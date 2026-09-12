@@ -2,30 +2,105 @@
 .companion-apply-guide-card{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:22px 24px;border-radius:22px;background:linear-gradient(135deg,rgba(255,255,255,.055),rgba(255,255,255,.018)),rgba(17,10,22,.82);border:1px solid rgba(243,168,203,.26);box-shadow:0 0 26px rgba(243,168,203,.12)}
 .companion-apply-guide-card h2{margin:0 0 8px;color:#fff5fa;font-size:24px}
 .companion-apply-guide-card p{margin:0;color:#d9bfcd;font-weight:850;line-height:1.55}
+
 /*
-  Layout ownership (do NOT put page inset on body):
-  - body.companion-apply-page: full-bleed canvas only (margin/padding 0).
-    boss-header.js injects header.mcj-boss-header as body.firstChild; any
-    body padding-top / UA margin creates the visible blank band ABOVE the header.
-  - header.mcj-boss-header (+ mcj-safe-area.css): sole owner of safe-area-inset-top.
-  - main.apply-shell: content inset for 返回首页 / hero / steps (all STEPs share this).
-*/
-.companion-apply-page{
-  box-sizing:border-box;
-  min-height:100vh;
+ * ============================================================
+ * APP SHELL (companion-apply) — structural fix, not padding hacks
+ * ------------------------------------------------------------
+ * ROOT CAUSE of floating header card:
+ *   body.companion-apply-page used padding:24px (and 10/16 on mobile).
+ *   boss-header.js mounts <header.mcj-boss-header> as body.firstChild.
+ *   Header therefore lived INSIDE the padded content box → visible gap
+ *   on top/left/right, and looked like a separate floating card from
+ *   main.apply-shell (which also had its own max-width column).
+ *
+ * FIX:
+ *   body = unpadded full-viewport app shell
+ *   header = full-bleed top chrome (width:100%, no radius/shadow/outer margin)
+ *   main.apply-shell = sole content column that owns horizontal padding
+ * ============================================================
+ */
+html:has(body.companion-apply-page){
   margin:0;
   padding:0;
+  width:100%;
+  max-width:100%;
+  overflow-x:hidden;
+  background:#07050a;
+}
+body.companion-apply-page{
+  margin:0;
+  padding:0; /* CRITICAL — never pad body; header is a direct child */
+  min-height:100vh;
+  min-height:100dvh;
+  width:100%;
+  max-width:100%;
+  box-sizing:border-box;
+  overflow-x:hidden;
   background:radial-gradient(circle at 18% 10%,rgba(255,91,170,.16),transparent 34%),linear-gradient(180deg,#07050a,#100812 48%,#060407);
   color:#fff5fa;
   font-family:"Microsoft YaHei UI",Inter,sans-serif;
 }
-.apply-shell{
+
+/* Full-bleed app nav — same left/right edges as the viewport shell */
+body.companion-apply-page > header.mcj-boss-header,
+body.companion-apply-page.mcj-boss-shell > header.mcj-boss-header{
+  display:block;
   box-sizing:border-box;
-  width:min(1100px,100%);
-  margin:0 auto;
-  padding:24px;
+  width:100%;
+  max-width:none !important;
+  margin:0 !important;
+  border-radius:0 !important;
+  box-shadow:none !important;
+  left:auto;
+  right:auto;
+  inset-inline:0;
+  position:sticky;
+  top:0;
+  z-index:1000;
+  /* Beat design-system.css fixed height:72px so safe-area stays INSIDE the bar */
+  height:auto !important;
+  min-height:calc(62px + env(safe-area-inset-top, 0px)) !important;
 }
-.apply-top{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:20px}
+
+/* Content column under the shared shell — owns inset, not body */
+body.companion-apply-page > main.apply-shell,
+body.companion-apply-page main.apply-shell{
+  box-sizing:border-box;
+  width:100%;
+  max-width:1100px;
+  margin:0 auto;
+  padding:16px 16px 28px;
+  padding-left:max(16px, env(safe-area-inset-left, 0px));
+  padding-right:max(16px, env(safe-area-inset-right, 0px));
+}
+
+/* Back row only — brand lives in boss header, not a second card */
+.apply-top{
+  display:flex;
+  align-items:center;
+  justify-content:flex-start;
+  gap:12px;
+  margin:0 0 14px;
+  padding:0;
+}
+.apply-top .apply-brand{display:none!important} /* legacy duplicate brand */
+.apply-back{
+  display:inline-flex;
+  align-items:center;
+  min-height:36px;
+  padding:0 2px;
+  color:#ffe2f0;
+  text-decoration:none;
+  font-weight:900;
+  font-size:14px;
+  letter-spacing:.02em;
+  border:0;
+  background:transparent;
+  box-shadow:none;
+  border-radius:0;
+}
+.apply-back:hover{color:#fff;text-decoration:underline}
 .apply-brand{display:flex;align-items:center;gap:12px;color:#fff;text-decoration:none;font-weight:1000}.apply-brand img{width:48px;height:48px;border-radius:50%;object-fit:cover;border:1px solid rgba(255,220,235,.36)}
 .apply-hero{border:1px solid rgba(243,168,203,.28);border-radius:28px;background:linear-gradient(145deg,rgba(33,18,40,.82),rgba(8,5,13,.92));box-shadow:0 0 38px rgba(243,168,203,.14),0 24px 80px rgba(0,0,0,.45);padding:28px;margin-bottom:18px}
 .apply-hero h1{margin:0;font-size:34px}.apply-hero p{margin:8px 0 0;color:#d9bfcd;font-weight:850}
@@ -58,8 +133,13 @@
   .apply-steps{position:static;display:flex;overflow:auto}
   .apply-step{flex:0 0 auto;width:auto}
   .apply-grid,.mcj-app-detail{grid-template-columns:1fr}
-  .companion-apply-page{margin:0;padding:0}
-  .apply-shell{padding:10px 16px 16px}
+  /* body padding stays 0 — content inset owned by main.apply-shell */
+  body.companion-apply-page{padding:0}
+  body.companion-apply-page > main.apply-shell{
+    padding:12px 16px 24px;
+    padding-left:max(16px, env(safe-area-inset-left, 0px));
+    padding-right:max(16px, env(safe-area-inset-right, 0px));
+  }
   .apply-hero{margin-bottom:14px;padding:22px 18px}
   .apply-hero h1{font-size:26px}
 }
@@ -116,9 +196,8 @@
   .apply-actions{flex-wrap:nowrap}
   .apply-actions .apply-btn{flex:1 1 0;min-width:0}
   .upload-card,.apply-preview{min-height:148px;height:148px}
-  /* Content inset stays on main — never reintroduce body padding-top. */
-  .companion-apply-page{margin:0;padding:0;overflow-x:hidden}
-  .apply-shell{padding:10px 16px 16px}
+  /* body stays unpadded; only the content column insets */
+  body.companion-apply-page{padding:0;overflow-x:hidden}
   .apply-brand{display:none!important}
   .apply-top{
     align-items:center;
@@ -127,7 +206,7 @@
     margin:0 0 10px;
     gap:0;
   }
-  .apply-top .apply-btn{height:36px;padding:0 14px;font-size:13px}
+  .apply-back{min-height:36px;font-size:13px}
   .apply-hero{margin-bottom:14px;padding:22px 18px}
   .apply-hero h1{font-size:26px}
   .agree-bar{position:sticky;bottom:0;left:0;right:0;margin-top:10px;padding:8px 0 calc(12px + env(safe-area-inset-bottom,0px))}
