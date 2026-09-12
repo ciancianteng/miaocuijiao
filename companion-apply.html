@@ -18,9 +18,10 @@
   <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>申请成为妙脆角认证陪玩 | MEOW CUI JIAO</title>
-  <link rel="stylesheet" href="src/companion-application.css?v=20260828applyLogin1">
-  <link rel="stylesheet" href="src/mcj-upload.css?v=20260809step3Upload1">
+  <!-- design-system (imports boss-header) first; page shell CSS last so layout hierarchy wins -->
   <link rel="stylesheet" href="src/design-system.css">
+  <link rel="stylesheet" href="src/mcj-upload.css?v=20260809step3Upload1">
+  <link rel="stylesheet" href="src/companion-application.css?v=20260912applyShell1">
   <script>
     // This page already loads boss-header (Vite entry / script tag). Prevent
     // design-system.js / role-gates.js from injecting a second classic
@@ -29,10 +30,15 @@
   </script>
 </head>
 <body class="companion-apply-page">
+  <!--
+    App shell hierarchy (do not wrap header inside padded containers):
+      body.companion-apply-page          ← padding:0 (full viewport shell)
+        header.mcj-boss-header          ← injected firstChild, full-bleed top bar
+        main.apply-shell                ← content column; owns page padding
+  -->
   <main class="apply-shell">
     <div class="apply-top">
-      <a class="apply-brand" href="index.html"><img src="assets/meow-cuijiao-brand.jpg" alt="MEOW CUI JIAO"><span>MEOW CUI JIAO</span></a>
-      <a class="apply-btn" href="index.html">返回首页</a>
+      <a class="apply-back" href="index.html">← 返回首页</a>
     </div>
     <section class="apply-hero">
       <h1>申请成为妙脆角认证陪玩</h1>

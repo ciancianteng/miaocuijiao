@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>申请成为认证陪玩 — shell fixture</title>
+  <link rel="stylesheet" href="/src/design-system.css">
+  <link rel="stylesheet" href="/src/boss-header.css">
+  <link rel="stylesheet" href="/src/companion-application.css?v=20260912applyShell1">
+</head>
+<body class="companion-apply-page mcj-boss-shell">
+  <!-- Mirrors production mount: header is body.firstChild, sibling of main.apply-shell -->
+  <header class="site-header mcj-boss-header" data-mcj-boss-header="1" aria-label="顶部导航">
+    <div class="mcj-boss-header-inner header-inner">
+      <a class="mcj-header-brand" href="/index.html" aria-label="MEOW CUI JIAO 妙脆角 首页">
+        <img class="mcj-header-brand-logo" src="/src/assets/meow-cuijiao-brand-96.webp" alt="MEOW CUI JIAO" width="40" height="40" onerror="this.onerror=null;this.src='/src/assets/meow-cuijiao-brand-96.jpg'">
+        <span class="mcj-header-brand-text">
+          <span class="mcj-header-brand-en">MEOW CUI JIAO</span>
+          <span class="mcj-header-brand-zh">妙脆角</span>
+        </span>
+      </a>
+      <nav class="mcj-desk-nav" aria-label="桌面导航">
+        <a href="/index.html">首页</a>
+        <a href="/companion-hall.html">大厅</a>
+        <a href="/orders.html">订单</a>
+        <a href="/messages.html">消息</a>
+        <a href="/mine.html">我的</a>
+      </nav>
+      <div class="mcj-mnav">
+        <button type="button" class="mcj-mnav-toggle" aria-label="打开菜单">☰</button>
+      </div>
+    </div>
+  </header>
+  <main class="apply-shell">
+    <div class="apply-top">
+      <a class="apply-back" href="/index.html">← 返回首页</a>
+    </div>
+    <section class="apply-hero">
+      <h1>申请成为认证陪玩</h1>
+      <p>Become a Verified Meow Cui Jiao Companion</p>
+    </section>
+    <section id="companionApplyRoot" data-step="0">
+      <div class="apply-mobile-step" style="display:block;margin:0 0 12px;padding:12px;border:1px solid rgba(243,168,203,.22);border-radius:18px;background:rgba(255,255,255,.035)">
+        <span>步骤 1 / 4</span>
+        <strong>身份认证 / 押金</strong>
+        <small>布局验收占位（Step 业务未改）</small>
+      </div>
+      <div class="apply-steps" style="display:flex;gap:8px;overflow:auto;padding:10px;margin-bottom:12px;border:1px solid rgba(243,168,203,.22);border-radius:18px;background:rgba(255,255,255,.035)">
+        <div class="apply-step active" style="padding:10px 12px;border-radius:14px;background:linear-gradient(180deg,#ffe2ef,#f0a7ca);color:#190812;font-weight:900">1 身份/押金</div>
+        <div class="apply-step" style="padding:10px 12px;color:#cdb8c4;font-weight:900">2 陪玩须知</div>
+        <div class="apply-step" style="padding:10px 12px;color:#cdb8c4;font-weight:900">3 基本资料</div>
+        <div class="apply-step" style="padding:10px 12px;color:#cdb8c4;font-weight:900">4 提交审核</div>
+      </div>
+      <div class="apply-panel" style="padding:18px;border:1px solid rgba(243,168,203,.22);border-radius:18px;background:rgba(255,255,255,.035)">
+        <h2 style="margin:0 0 10px">身份认证 / 押金</h2>
+        <p style="margin:0;color:#d9bfcd">Header 与申请内容同属一个 App Shell；本块仅用于布局验收。</p>
+      </div>
+    </section>
+  </main>
+</body>
+</html>
