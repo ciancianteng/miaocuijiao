@@ -840,3 +840,173 @@
   opacity:.9;
 }
 #companionApplyRoot .apply-rules-acc-body[hidden]{display:none !important;}
+
+/* ===== Apply wizard compact progress (PR #236 hotfix) ===== */
+#companionApplyRoot .apply-progress-compact{
+  margin:0 0 14px;
+  padding:12px 14px;
+  border:1px solid rgba(243,168,203,.22);
+  border-radius:16px;
+  background:rgba(255,255,255,.035);
+}
+#companionApplyRoot .apply-progress-compact-head{
+  display:flex;
+  align-items:baseline;
+  justify-content:space-between;
+  gap:10px;
+  margin-bottom:8px;
+}
+#companionApplyRoot .apply-progress-compact-head strong{
+  color:#fff5fa;
+  font-size:15px;
+  font-weight:1000;
+}
+#companionApplyRoot .apply-progress-compact-head span{
+  color:#d9bfcd;
+  font-size:13px;
+  font-weight:850;
+  text-align:right;
+  min-width:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+#companionApplyRoot .apply-progress-compact-bar{
+  height:6px;
+  border-radius:999px;
+  background:rgba(255,255,255,.08);
+  overflow:hidden;
+  margin-bottom:10px;
+}
+#companionApplyRoot .apply-progress-compact-bar i{
+  display:block;
+  height:100%;
+  border-radius:inherit;
+  background:linear-gradient(90deg,rgba(255,145,195,.7),rgba(255,207,229,.9));
+}
+#companionApplyRoot .apply-step-chip-row{
+  display:flex;
+  gap:8px;
+  overflow-x:auto;
+  overflow-y:hidden;
+  padding-bottom:2px;
+  scroll-snap-type:x proximity;
+  -webkit-overflow-scrolling:touch;
+  scrollbar-width:none;
+}
+#companionApplyRoot .apply-step-chip-row::-webkit-scrollbar{display:none}
+#companionApplyRoot .apply-step-chip{
+  flex:0 0 auto;
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  height:34px;
+  padding:0 10px;
+  border-radius:999px;
+  border:1px solid rgba(243,168,203,.22);
+  background:rgba(0,0,0,.18);
+  color:#ffdceb;
+  font-size:12px;
+  font-weight:900;
+  scroll-snap-align:center;
+  white-space:nowrap;
+  cursor:pointer;
+}
+#companionApplyRoot .apply-step-chip span{
+  font-variant-numeric:tabular-nums;
+  opacity:.9;
+}
+#companionApplyRoot .apply-step-chip em{
+  font-style:normal;
+  font-weight:900;
+}
+#companionApplyRoot .apply-step-chip.is-active{
+  border-color:rgba(255,176,214,.72);
+  background:rgba(243,168,203,.18);
+  color:#fff;
+  box-shadow:0 0 14px rgba(255,128,190,.16);
+}
+#companionApplyRoot .apply-step-chip.is-done{border-color:rgba(114,239,180,.28);color:#b8ffd7}
+#companionApplyRoot .apply-step-chip.is-locked{opacity:.42;cursor:not-allowed}
+
+/* Hide legacy duplicate/wide step rail if any leftover markup appears */
+#companionApplyRoot .apply-mobile-step,
+#companionApplyRoot .apply-steps,
+#companionApplyRoot .apply-progress-head,
+#companionApplyRoot .apply-step-list,
+#companionApplyRoot aside.apply-steps{
+  display:none !important;
+}
+
+#companionApplyRoot .apply-wizard-stack{display:grid;gap:10px}
+#companionApplyRoot .apply-wizard-item{
+  border:1px solid rgba(243,168,203,.18);
+  border-radius:16px;
+  background:rgba(255,255,255,.03);
+  overflow:hidden;
+}
+#companionApplyRoot .apply-wizard-item.is-open{
+  border-color:rgba(255,176,214,.42);
+  background:rgba(255,255,255,.045);
+}
+#companionApplyRoot .apply-wizard-item.is-upcoming{opacity:.72}
+#companionApplyRoot .apply-wizard-item.is-locked{opacity:.45}
+#companionApplyRoot .apply-wizard-item-head{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  padding:12px 14px;
+  min-width:0;
+}
+#companionApplyRoot .apply-wizard-item-head.is-current strong{color:#ffe2ef}
+#companionApplyRoot .apply-wizard-num{
+  flex:0 0 auto;
+  color:#ffd6e8;
+  font-size:12px;
+  font-weight:1000;
+  letter-spacing:.02em;
+}
+#companionApplyRoot .apply-wizard-item-head strong{
+  flex:0 1 auto;
+  min-width:0;
+  color:#fff5fa;
+  font-size:14px;
+  font-weight:950;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+#companionApplyRoot .apply-wizard-summary{
+  flex:1 1 auto;
+  min-width:0;
+  color:#cdb8c4;
+  font-size:12px;
+  font-weight:850;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+#companionApplyRoot .apply-wizard-item-head small{
+  margin-left:auto;
+  color:#d9bfcd;
+  font-size:11px;
+  font-weight:850;
+}
+#companionApplyRoot .apply-wizard-item-body{padding:0 12px 14px}
+#companionApplyRoot .apply-wizard-item .apply-btn.small{
+  height:30px;
+  padding:0 10px;
+  font-size:12px;
+  margin-left:auto;
+  flex:0 0 auto;
+}
+#companionApplyRoot .apply-wizard-item .apply-btn.small.ghost{
+  background:transparent;
+  border-color:rgba(243,168,203,.22);
+}
+@media(max-width:430px){
+  #companionApplyRoot .apply-progress-compact{padding:10px 12px}
+  #companionApplyRoot .apply-step-chip{height:32px;padding:0 9px;font-size:11px}
+  #companionApplyRoot .apply-layout,
+  #companionApplyRoot .apply-main{min-width:0;max-width:100%;overflow-x:hidden}
+}

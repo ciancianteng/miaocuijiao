@@ -5479,6 +5479,38 @@ export default async function handler(req, res) {
           message: "请先选择认证方式（身份证认证或押金认证）后再提交申请。",
         });
       }
+      // Applicant must NEVER set level / base_price / sell price via apply API.
+      // Level + base_price are assigned only by admin approve. Strip (do not trust) any such fields.
+      const forbiddenApplicantKeys = [
+        "level",
+        "level_id",
+        "levelId",
+        "companion_level",
+        "companionLevel",
+        "base_price",
+        "basePrice",
+        "price",
+        "service_price",
+        "servicePrice",
+        "unit_price",
+        "unitPrice",
+        "hourly_price",
+        "hourlyPrice",
+        "game_prices",
+        "gamePrices",
+        "custom_price",
+        "customPrice",
+      ];
+      const rejectedApplicantFields = forbiddenApplicantKeys.filter((k) => body[k] != null && String(body[k]).trim() !== "");
+      // Soft-reject path: if client explicitly tries to set level/price, refuse rather than silently apply.
+      if (rejectedApplicantFields.length) {
+        return json(res, 400, {
+          ok: false,
+          error: "applicant_level_price_forbidden",
+          message: "申请端不可自行设置陪玩等级或接单价格；等级与基础价格仅由管理员审核时指定。",
+          rejected_fields: rejectedApplicantFields,
+        });
+      }
       // Personal intro/signature → public bio (description). Never store intro as application remark.
       const bioText = String(body.bio || body.description || body.intro || "")
         .replace(/\[AUTH_MODE:(?:id_card|deposit)\]\s*/gi, "")

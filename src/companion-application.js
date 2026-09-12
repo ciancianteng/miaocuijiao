@@ -427,10 +427,32 @@
       draft.certification_method = draft.identity.authMode;
     }
     draft.step = Math.max(0, Math.min(steps.length - 1, Number(draft.step || 0) || 0));
-    // Drop any leftover applicant price fields from local draft (UI must not revive them)
+    // Drop any leftover applicant price / level fields from local draft (UI must not revive them)
     if (draft && draft.data) {
       delete draft.data.hourlyPrice;
       delete draft.data.gamePriceMap;
+      delete draft.data.price;
+      delete draft.data.basePrice;
+      delete draft.data.base_price;
+      delete draft.data.servicePrice;
+      delete draft.data.service_price;
+      delete draft.data.unitPrice;
+      delete draft.data.unit_price;
+      delete draft.data.level;
+      delete draft.data.levelId;
+      delete draft.data.level_id;
+      delete draft.data.companionLevel;
+      delete draft.data.companion_level;
+    }
+    if (draft) {
+      delete draft.level;
+      delete draft.levelId;
+      delete draft.level_id;
+      delete draft.companionLevel;
+      delete draft.companion_level;
+      delete draft.basePrice;
+      delete draft.base_price;
+      delete draft.price;
     }
     return draft;
   }
@@ -1406,20 +1428,148 @@
 
   function stepNav(index, draft) {
     draft = draft || readDraft();
-    var doneCount = steps.filter(function (_, i) { return stepComplete(i, draft); }).length;
     var reachable = maxReachableStep(draft);
-    var percent = Math.round((doneCount / steps.length) * 100);
-    var lockIcon = "🔒";
-    return '<div class="apply-mobile-step"><span>第 ' + (index + 1) + ' 步，共 ' + steps.length + ' 步</span><strong>' + esc(stepLabels[index] || steps[index]) + '</strong><small>已完成 ' + doneCount + ' / ' + steps.length + '</small></div>' +
-      '<aside class="apply-steps" aria-label="申请流程导航"><div class="apply-progress-head"><strong>申请进度</strong><span>' + doneCount + ' / ' + steps.length + ' · ' + percent + '%</span></div><div class="apply-progress-bar" aria-hidden="true"><i style="width:' + percent + '%"></i></div><div class="apply-step-list">' + steps.map(function (s, i) {
-        var done = stepComplete(i, draft);
-        var locked = i > reachable;
-        var stateText = i === index ? "当前步骤" : done ? "已完成" : locked ? "完成上一步后解锁" : "未完成";
-        var stateIcon = done ? "查看" : locked ? lockIcon : "›";
-        var numberText = String(i + 1).padStart(2, "0");
-        return '<button class="apply-step ' + (i === index ? "active" : "") + (done ? " done" : "") + (locked ? " locked" : "") + '" data-apply-step="' + i + '" type="button" ' + (locked ? 'aria-disabled="true" tabindex="-1"' : "") + '><span class="apply-step-index">' + esc(done ? "✓" : numberText) + '</span><span class="apply-step-copy"><strong>' + esc(stepLabels[i] || s) + '</strong><small>' + esc(stateText) + '</small></span><span class="apply-step-state" aria-hidden="true">' + esc(stateIcon) + '</span></button>';
-      }).join("") + '</div></aside>';
+    // Progress follows the current step position (not noisy "doneCount" which can show 6/6 while still on step 3).
+    var percent = Math.round(((index + 1) / steps.length) * 100);
+    var shortLabels = ["认证", "阅读", "资料", "游戏", "认证资料", "提交"];
+    var chips = steps.map(function (s, i) {
+      var done = stepComplete(i, draft);
+      var locked = i > reachable;
+      var numberText = String(i + 1).padStart(2, "0");
+      var label = shortLabels[i] || s;
+      return (
+        '<button class="apply-step-chip' +
+        (i === index ? " is-active" : "") +
+        (done ? " is-done" : "") +
+        (locked ? " is-locked" : "") +
+        '" data-apply-step="' +
+        i +
+        '" type="button" ' +
+        (locked ? 'aria-disabled="true" tabindex="-1"' : "") +
+        "><span>" +
+        esc(done && i !== index ? "✓" : numberText) +
+        "</span><em>" +
+        esc(label) +
+        "</em></button>"
+      );
+    }).join("");
+    return (
+      '<div class="apply-progress-compact" aria-label="申请进度">' +
+      '<div class="apply-progress-compact-head">' +
+      "<strong>第 " +
+      (index + 1) +
+      " / " +
+      steps.length +
+      " 步</strong>" +
+      "<span>" +
+      esc(stepLabels[index] || steps[index]) +
+      "</span>" +
+      "</div>" +
+      '<div class="apply-progress-compact-bar" aria-hidden="true"><i style="width:' +
+      percent +
+      '%"></i></div>' +
+      '<div class="apply-step-chip-row" role="navigation">' +
+      chips +
+      "</div>" +
+      "</div>"
+    );
   }
+
+  function stepSummaryLine(index, draft) {
+    draft = draft || readDraft();
+    var data = draft.data || {};
+    var identity = draft.identity || {};
+    var mode = String(identity.authMode || draft.certification_method || "").trim();
+    if (index === 0) {
+      if (mode === "id_card") return "身份证认证";
+      if (mode === "deposit") return "押金认证";
+      return "未选择";
+    }
+    if (index === 1) {
+      return (draft.rulesAgreement || {}).accepted ? "已阅读并同意" : "未确认";
+    }
+    if (index === 2) {
+      var bits = [data.nickname, data.gender, data.region].filter(Boolean);
+      return bits.length ? bits.join(" · ") : "已填写";
+    }
+    if (index === 3) {
+      var games = Array.isArray(data.mainGames) ? data.mainGames : [];
+      return games.length ? ("可接：" + games.slice(0, 3).join("、")) : "已填写游戏资料";
+    }
+    if (index === 4) {
+      if (mode === "id_card") return "身份证资料已上传";
+      if (mode === "deposit") return "押金凭证已上传";
+      return "认证资料";
+    }
+    return "确认资料后提交";
+  }
+
+  function wizardStackHtml(activeIndex, draft) {
+    draft = draft || readDraft();
+    var shortLabels = ["认证", "阅读", "资料", "游戏", "认证资料", "提交"];
+    var reachable = maxReachableStep(draft);
+    var html = '<div class="apply-wizard-stack">';
+    for (var i = 0; i < steps.length; i++) {
+      var num = String(i + 1).padStart(2, "0");
+      var done = stepComplete(i, draft);
+      var locked = i > reachable;
+      if (i === activeIndex) {
+        html +=
+          '<section class="apply-wizard-item is-open" data-wizard-step="' +
+          i +
+          '">' +
+          '<header class="apply-wizard-item-head is-current"><span class="apply-wizard-num">▼ ' +
+          esc(num) +
+          "</span><strong>" +
+          esc(stepLabels[i] || shortLabels[i]) +
+          '</strong><small>当前填写</small></header>' +
+          '<div class="apply-wizard-item-body">' +
+          stepHtml(i, draft) +
+          "</div></section>";
+        continue;
+      }
+      if (done && i < activeIndex) {
+        html +=
+          '<section class="apply-wizard-item is-done" data-wizard-step="' +
+          i +
+          '">' +
+          '<header class="apply-wizard-item-head">' +
+          '<span class="apply-wizard-num">✓ ' +
+          esc(num) +
+          "</span><strong>" +
+          esc(shortLabels[i] || steps[i]) +
+          "</strong>" +
+          '<span class="apply-wizard-summary">' +
+          esc(stepSummaryLine(i, draft)) +
+          "</span>" +
+          '<button type="button" class="apply-btn small" data-apply-step="' +
+          i +
+          '">修改</button>' +
+          "</header></section>";
+        continue;
+      }
+      // Upcoming / locked — collapsed title only, never expand full forms.
+      html +=
+        '<section class="apply-wizard-item is-upcoming' +
+        (locked ? " is-locked" : "") +
+        '" data-wizard-step="' +
+        i +
+        '">' +
+        '<header class="apply-wizard-item-head">' +
+        '<span class="apply-wizard-num">' +
+        esc(num) +
+        "</span><strong>" +
+        esc(shortLabels[i] || steps[i]) +
+        "</strong>" +
+        (locked
+          ? '<small>待完成上一步</small>'
+          : '<button type="button" class="apply-btn small ghost" data-apply-step="' + i + '">前往</button>') +
+        "</header></section>";
+    }
+    html += "</div>";
+    return html;
+  }
+
   function field(name, label, type, value, attrs) {
     type = type || "text";
     attrs = attrs || "";
@@ -1719,10 +1869,11 @@
       '</form></section>';
   }
   function pricingNoticeHtml() {
+    // Applicant must not see / choose level or base_price. Keep a soft note only.
     return (
       '<div class="form-field full" data-apply-pricing-notice>' +
       "<span>接单价格说明</span>" +
-      '<p class="apply-note">申请阶段无需填写接单价格。审核通过后，系统将按管理员指定的陪玩等级自动写入该等级的基础价格（base_price）。</p>' +
+      '<p class="apply-note">申请阶段不设置接单价格。价格由管理员在审核通过时统一配置，申请人无需填写。</p>' +
       "</div>"
     );
   }
@@ -2242,7 +2393,7 @@
     root.dataset.step = String(activeIndex);
     draft = readDraft();
     preservePageScroll(function () {
-      root.innerHTML = loadingBannerHtml() + statusNotice() + authGateHtml() + '<div class="apply-layout"' + (!companionToken() ? ' hidden' : '') + '>' + stepNav(activeIndex, draft) + '<div>' + stepHtml(activeIndex, draft) + '<div class="step-complete-mark">' + (stepComplete(activeIndex, draft) ? "已完成 ✔" : "未完成 ○") + '</div><div class="apply-actions"><button class="apply-btn" data-apply-prev type="button" ' + (activeIndex === 0 ? "disabled" : "") + '>上一步</button><button class="apply-btn" data-apply-save type="button">保存草稿</button><button class="apply-btn primary" data-apply-next type="button">' + (activeIndex === steps.length - 1 ? "提交审核" : "下一步") + '</button></div><p class="apply-note">每填写一个输入框都会自动保存草稿，刷新网页或返回修改后会自动恢复。</p></div></div>';
+      root.innerHTML = loadingBannerHtml() + statusNotice() + authGateHtml() + '<div class="apply-layout"' + (!companionToken() ? ' hidden' : '') + '>' + stepNav(activeIndex, draft) + '<div class="apply-main">' + wizardStackHtml(activeIndex, draft) + '<div class="apply-actions"><button class="apply-btn" data-apply-prev type="button" ' + (activeIndex === 0 ? "disabled" : "") + '>上一步</button><button class="apply-btn" data-apply-save type="button">保存草稿</button><button class="apply-btn primary" data-apply-next type="button">' + (activeIndex === steps.length - 1 ? "提交审核" : "下一步") + '</button></div><p class="apply-note">每填写一个输入框都会自动保存草稿，刷新网页或返回修改后会自动恢复。</p></div></div>';
       if (opts.alignStepNav) syncStepNavOnly(root);
     });
   }
