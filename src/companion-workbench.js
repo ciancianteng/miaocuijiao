@@ -4381,7 +4381,7 @@
       if(!email||!/^\S+@\S+\.\S+$/.test(email)){state.loginError='请输入有效邮箱。';paint();return}
       state.registerBusy=true;state.registerToken='';state.registerVerifiedEmail='';state.loginError='正在发送验证码…';paint();
       fetch('/api/auth',{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify({action:'send_register_otp',email:email,role:'companion'})})
-        .then(function(r){return r.json().then(function(j){if(!r.ok||j.ok===false){var err=new Error((j&&j.message)||'发送失败');err.retryAfterSec=j&&j.retryAfterSec;throw err;}return j;});})
+        .then(function(r){return r.json().then(function(j){if(!r.ok||j.ok===false){var err=new Error((j&&j.message)||'发送失败');err.retryAfterSec=j&&j.retryAfterSec;err.status=r.status;err.code=j&&j.code;throw err;}return j;});})
         .then(function(j){
           state.registerBusy=false;
           var tip=j.message||'验证码已发送';
@@ -4399,7 +4399,8 @@
         .catch(function(err){
           state.registerBusy=false;
           var retry=Number(err&&err.retryAfterSec)||0;
-          if(retry>0){
+          var rateLimited=Number(err&&err.status)===429||String((err&&err.code)||'')==='OTP_RESEND_COOLDOWN';
+          if(rateLimited&&retry>0){
             state.registerCooldownUntil=Date.now()+retry*1000;
             try{sessionStorage.setItem('mcj_otp_cd:send_register_otp:companion:'+email,String(state.registerCooldownUntil));}catch(e){}
           }

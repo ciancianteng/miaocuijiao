@@ -115,6 +115,8 @@
         if (!r.ok || (j && j.ok === false)) {
           var err = new Error((j && j.message) || "请求失败");
           err.retryAfterSec = j && j.retryAfterSec;
+          err.status = r.status;
+          err.code = j && j.code;
           err.payload = j;
           throw err;
         }
@@ -446,7 +448,8 @@
       .catch(function (err) {
         state.busy = false;
         var retry = Number(err && err.retryAfterSec) || 0;
-        if (retry > 0) startCountdown(retry);
+        var rateLimited = Number(err && err.status) === 429 || String((err && err.code) || "") === "OTP_RESEND_COOLDOWN";
+        if (rateLimited && retry > 0) startCountdown(retry);
         setMsg((err && err.message) || "发送失败");
         paint();
         throw err;

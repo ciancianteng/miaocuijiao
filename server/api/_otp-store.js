@@ -378,13 +378,15 @@ export async function recordOtpSendFailure({
   const key = normAccount(accountKey);
   const r = normRole(role);
   const k = normKind(kind);
+  // Never persist plaintext OTP on failed sends (code arg ignored by design).
+  void code;
   const payload = {
     id,
     account: key,
     role: r,
     kind: k,
     status: "send_failed",
-    code: code ? String(code) : null,
+    code: null,
     expires_at: null,
     sent_at: null,
     provider: String(provider || ""),
