@@ -1696,14 +1696,22 @@
         "</div>";
     }).join("");
     var addCard = list.length >= 6
-      ? '<p class="apply-note full">相册已达 6 张上限</p>'
-      :       fileField("photos", "相册照片（可多张）", {
+      ? '<p class="apply-note full">个人照片已达 6 张上限</p>'
+      : fileField("photos", "添加照片", {
           multiple: true,
           accept: "image/*",
-          hint: "支持 jpg / png / webp，最多 6 张；点击从相册选择或拍照",
+          hint: "jpg / png / webp · 最多 6 张 · 可多选",
           value: null,
         });
-    return '<div class="form-field full apply-gallery-block"><span class="mcj-upload-label">相册</span><div class="apply-gallery-grid">' + cards + "</div>" + addCard + "</div>";
+    return (
+      '<div class="form-field full apply-gallery-block">' +
+      '<span class="mcj-upload-label">个人照片</span>' +
+      '<div class="apply-gallery-grid">' +
+      cards +
+      "</div>" +
+      addCard +
+      "</div>"
+    );
   }
   function tagPicker(fieldName, label, selected, groups, limit) {
     selected = Array.isArray(selected) ? selected : [];
@@ -1878,58 +1886,129 @@
       "</section>"
     );
   }
-  function basicHtml(data) {
-    return '<section class="apply-panel"><h2>填写基本资料</h2><form class="apply-grid">' +
-      field("nickname", "昵称", "text", data.nickname) +
+
+  function sectionShell(id, title, hint, bodyHtml) {
+    return (
+      '<section class="apply-section" data-apply-section="' + esc(id) + '">' +
+      '<div class="apply-section-head">' +
+      "<h3>" + esc(title) + "</h3>" +
+      (hint ? '<p class="apply-section-hint">' + hint + "</p>" : "") +
+      "</div>" +
+      '<div class="apply-section-body">' + bodyHtml + "</div>" +
+      "</section>"
+    );
+  }
+  function personalProfileHtml(data) {
+    data = data || {};
+    var body =
+      '<form class="apply-fields">' +
+      field("nickname", "昵称", "text", data.nickname, 'placeholder="展示给老板的名字"') +
+      '<div class="apply-fields-row">' +
       field("age", "年龄", "number", data.age, 'min="16" max="60"') +
       selectField("gender", "性别", data.gender, ["女", "男", "保密"]) +
+      "</div>" +
       field("region", "地区", "text", data.region, 'placeholder="例如：Kuala Lumpur"') +
-      field("phone", "联系电话", "tel", data.phone) +
-      field("email", "邮箱", "email", data.email) +
-      selectField("contactPublic", "联系方式是否公开", data.contactPublic, ["不公开，仅平台可见", "审核通过后公开给已下单老板"]) +
+      field("phone", "联系电话", "tel", data.phone, 'placeholder="0123456789"') +
+      field("email", "邮箱", "email", data.email, 'placeholder="name@email.com"') +
+      selectField("contactPublic", "联系方式是否公开", data.contactPublic, ["不公开，仅平台可见", "审核通过后公开给已下单老板"], { full: true }) +
       tagPicker("personalTags", "个人标签（必填，最多 10 个）", data.personalTags, tagGroups.personalTags, 10) +
-      '</form></section>';
+      "</form>";
+    return sectionShell("personal", "个人资料", "基础信息，审核与接单都会用到", body);
+  }
+  function mediaShowcaseHtml(draft) {
+    var u = (draft && draft.uploads) || {};
+    var body =
+      '<form class="apply-fields apply-media-fields">' +
+      fileField("avatar", "头像（必填）", {
+        value: u.avatar,
+        accept: "image/*",
+        hint: "jpg / png / webp · 可相册选择或拍照 · 上传后可替换",
+      }) +
+      galleryUploadHtml(u) +
+      '<p class="apply-section-note">个人照片最多 6 张，会同步到后台审核与老板大厅展示。</p>' +
+      "</form>";
+    return sectionShell("photos", "展示资料", "让老板更了解你", body);
+  }
+  function gameProfileHtml(data, uploads) {
+    data = data || {};
+    uploads = uploads || {};
+    var body =
+      '<form class="apply-fields">' +
+      '<label class="form-field">游戏昵称<div class="copy-field"><input name="gameNickname" data-apply-field type="text" value="' +
+      esc(data.gameNickname || "") +
+      '"><button class="apply-btn small" type="button" data-copy-nickname>复制</button></div></label>' +
+      tagPicker("mainGames", "擅长游戏（多选）", data.mainGames, tagGroups.mainGames, 8) +
+      tagPicker("positions", "擅长位置（多选）", data.positions, tagGroups.positions, 8) +
+      tagPicker("modes", "可提供服务（多选）", data.modes, tagGroups.modes, 2) +
+      selectField("rank", "游戏段位", data.rank, rankOptions) +
+      selectField("voiceType", "声线", data.voiceType, voiceTypeOptions()) +
+      '<div class="apply-fields-row">' +
+      field("onlineStart", "常在线开始", "time", data.onlineStart) +
+      field("onlineEnd", "常在线结束", "time", data.onlineEnd) +
+      "</div>" +
+      fileField("records", "游戏截图 / 证明（选填）", {
+        value: uploads.records || null,
+        accept: "image/*",
+        hint: "选填；支持 jpg / png / webp",
+      }) +
+      pricingNoticeHtml() +
+      "</form>";
+    return sectionShell("games", "游戏资料", "帮助匹配更合适的老板订单", body);
+  }
+  function videoIntroHtml(draft) {
+    var u = (draft && draft.uploads) || {};
+    var body =
+      '<form class="apply-fields">' +
+      fileField("showcaseVideo", "上传视频（选填）", {
+        kind: "video",
+        value: u.showcaseVideo || null,
+        accept: U() && U().VIDEO_ACCEPT ? U().VIDEO_ACCEPT : "video/mp4,video/quicktime,.mp4,.mov",
+        capture: false,
+        hint: "mp4 / mov，最长约 30 秒；直传云端，选填",
+      }) +
+      '<p class="apply-section-note">视频会进入同一套 Storage 与后台审核，不会只存在前端。</p>' +
+      "</form>";
+    return sectionShell("video", "视频介绍", "让老板更快了解你的风格", body);
+  }
+  function selfIntroHtml(data) {
+    data = data || {};
+    var body =
+      '<form class="apply-fields">' +
+      field("intro", "自我介绍", "textarea", data.intro, 'placeholder="简单介绍自己的游戏风格、接单习惯或声音特点…" rows="5"') +
+      "</form>";
+    return sectionShell("intro", "自我介绍", "展示在个人主页", body);
+  }
+  function basicHtml(data) {
+    // Legacy alias — Step 3 now uses profileStepHtml sections.
+    return personalProfileHtml(data);
   }
   function pricingNoticeHtml() {
-    // Applicant must not see / choose level or base_price. Keep a soft note only.
     return (
-      '<div class="form-field full" data-apply-pricing-notice>' +
+      '<div class="form-field full apply-pricing-note" data-apply-pricing-notice>' +
       "<span>接单价格说明</span>" +
       '<p class="apply-note">申请阶段不设置接单价格。价格由管理员在审核通过时统一配置，申请人无需填写。</p>' +
       "</div>"
     );
   }
   function gameHtml(data) {
-    return '<section class="apply-panel"><h2>填写游戏资料</h2><form class="apply-grid">' +
-      '<label class="form-field">游戏昵称<div class="copy-field"><input name="gameNickname" data-apply-field type="text" value="' + esc(data.gameNickname || "") + '"><button class="apply-btn small" type="button" data-copy-nickname>复制</button></div></label>' +
-      tagPicker("mainGames", "可接游戏（多选）", data.mainGames, tagGroups.mainGames, 8) +
-      tagPicker("positions", "擅长位置（多选）", data.positions, tagGroups.positions, 8) +
-      tagPicker("modes", "可提供服务（多选）", data.modes, tagGroups.modes, 2) +
-      selectField("rank", "游戏段位", data.rank, rankOptions) +
-      selectField("voiceType", "声线", data.voiceType, voiceTypeOptions()) +
-      field("onlineStart", "常在线开始时间", "time", data.onlineStart) +
-      field("onlineEnd", "常在线结束时间", "time", data.onlineEnd) +
-      pricingNoticeHtml() +
-      field("intro", "自我介绍（展示在个人主页）", "textarea", data.intro) +
-      '</form></section>';
+    return gameProfileHtml(data);
   }
   function uploadHtml(draft) {
-    var u = draft.uploads || {};
+    // Keep callable for any leftover callers; media is split across showcase/video/voice cards.
+    return mediaShowcaseHtml(draft) + videoIntroHtml(draft) + voiceCardHtml(draft);
+  }
+
+  function voiceCardHtml(draft) {
+    // Premium Voice Card shell — reuses the same recorder/upload handlers as voiceHtml.
     return (
-      '<section class="apply-panel"><h2>上传头像与资料</h2><form class="apply-grid">' +
-      fileField("avatar", "头像", { value: u.avatar, accept: "image/*", hint: "支持 jpg / jpeg / png / webp；可从相册选择或拍照；上传成功后可替换" }) +
-      galleryUploadHtml(u) +
-      fileField("records", "游戏战绩图", { value: u.records, accept: "image/*", hint: "选填；支持 jpg / png / webp" }) +
-      fileField("showcaseVideo", "个人展示视频（可选）", {
-        kind: "video",
-        value: u.showcaseVideo || null,
-        accept: U() && U().VIDEO_ACCEPT ? U().VIDEO_ACCEPT : "video/mp4,video/quicktime,.mp4,.mov",
-        capture: false,
-        hint: "支持 mp4 / mov，最长 30 秒；直传云端（最大约 50MB），选填",
-      }) +
-      '<p class="apply-note full">头像、相册与试音会上传到云端 Storage。老板大厅卡面统一使用头像/相册。刷新后仍可恢复。</p>' +
-      '<p class="apply-note full"><a href="#applyVoicePanel" style="color:#ffd6e8;font-weight:1000">↓ 试音（必填）</a>：支持【现场录音】或【上传已有音频】，请完成其中一种。</p></form></section>' +
-      voiceHtml(draft)
+      '<section class="apply-section apply-voice-card" data-apply-section="voice" id="applyVoicePanel">' +
+      '<div class="apply-section-head">' +
+      "<h3>语音介绍</h3>" +
+      '<p class="apply-section-hint">录一段简单的自我介绍 · 必填，同步后台审核</p>' +
+      "</div>" +
+      '<div class="apply-section-body">' +
+      voiceHtml(draft) +
+      "</div></section>"
     );
   }
   function voiceHtml(draft) {
@@ -1974,25 +2053,44 @@
       hint: "支持 mp3 / m4a / aac / wav；浏览器不支持录音时可用此方式",
     });
 
+    var timerLabel = v.duration
+      ? String(Math.floor(Number(v.duration) / 60)).padStart(2, "0") +
+        ":" +
+        String(Math.floor(Number(v.duration) % 60)).padStart(2, "0")
+      : "00:00";
+    var primaryActions = uploadedOk
+      ? '<button class="apply-btn" type="button" data-record-play>▶ 试听</button>' +
+        '<button class="apply-btn" type="button" data-record-reset>重新录制</button>' +
+        '<span class="apply-voice-done-chip" role="status">已完成 ✓</span>'
+      : hasVoice
+        ? '<button class="apply-btn" type="button" data-record-play>▶ 试听</button>' +
+          '<button class="apply-btn" type="button" data-record-reset>重新录制</button>' +
+          '<button class="apply-btn primary" type="button" data-record-confirm ' +
+          (!canConfirm ? "disabled" : "") +
+          ' aria-busy="' +
+          (uploadBusy.voice ? "true" : "false") +
+          '">' +
+          (uploadBusy.voice ? "上传中…" : "确认上传") +
+          "</button>"
+        : '<button class="apply-btn primary" type="button" data-record-start>🎙 开始录音</button>' +
+          '<button class="apply-btn" type="button" data-record-stop disabled>停止</button>';
+
     return (
-      '<section class="apply-panel apply-voice-panel" id="applyVoicePanel"><h2>试音（必填）</h2>' +
-      '<p class="apply-note">必须完成现场录音或上传已有音频之一。推荐使用现场录音。</p>' +
-      '<div class="voice-recorder" data-voice-status="' +
+      '<div class="voice-card-inner" data-voice-card="1">' +
+      '<div class="voice-recorder apply-voice-premium" data-voice-status="' +
       esc(statusText) +
       '">' +
-      '<div class="voice-method-title">方式 A：现场录音</div>' +
-      '<div class="voice-stage"><span class="' +
-      (hasVoice ? "done" : "active") +
-      '">1 录制</span><span class="' +
-      (v.listened || uploadedOk ? "done" : hasVoice ? "active" : "") +
-      '">2 试听</span><span class="' +
-      (uploadedOk || v.confirmed ? "done" : canConfirm ? "active" : "") +
-      '">3 确认上传</span></div>' +
-      '<div class="voice-status"><strong id="voiceState">' +
-      esc(statusText) +
-      '</strong><span id="voiceTimer">' +
-      esc(v.duration ? v.duration + " 秒" : "00:00") +
+      '<div class="apply-voice-top">' +
+      '<div class="apply-voice-icon" aria-hidden="true">🎙</div>' +
+      '<div class="apply-voice-top-copy">' +
+      "<strong id=\"voiceState\">" +
+      esc(uploadedOk ? "语音介绍已完成" : statusText) +
+      "</strong>" +
+      '<span id="voiceTimer">' +
+      esc(timerLabel) +
       "</span></div>" +
+      (uploadedOk ? '<span class="apply-voice-done-chip">已完成 ✓</span>' : "") +
+      "</div>" +
       '<div class="voice-recording-badge" aria-live="polite">● 正在录音</div>' +
       '<div class="voice-wave" id="voiceWave">' +
       waveform
@@ -2001,49 +2099,34 @@
         })
         .join("") +
       "</div>" +
-      '<div class="voice-actions">' +
-      '<button class="apply-btn primary" type="button" data-record-start>🎤 开始录音</button>' +
-      '<button class="apply-btn" type="button" data-record-stop disabled>⏹ 停止录音</button>' +
-      '<button class="apply-btn" type="button" data-record-play ' +
-      (!hasVoice ? "disabled" : "") +
-      ">▶ 播放 / 暂停</button>" +
-      '<button class="apply-btn" type="button" data-record-reset ' +
-      (!hasVoice ? "disabled" : "") +
-      ">🔄 重录</button>" +
-      '<button class="apply-btn" type="button" data-record-delete ' +
-      (!hasVoice ? "disabled" : "") +
-      ">删除</button>" +
-      '<button class="apply-btn primary" type="button" data-record-confirm ' +
-      (!canConfirm ? "disabled" : "") +
-      ' aria-busy="' +
-      (uploadBusy.voice ? "true" : "false") +
-      '">' +
-      (uploadBusy.voice ? "上传中…" : uploadedOk ? "上传成功 / 已保存" : "✅ 确认上传") +
-      "</button>" +
+      '<div class="voice-actions apply-voice-actions">' +
+      primaryActions +
+      (hasVoice && !uploadedOk
+        ? '<button class="apply-btn apply-btn-ghost-soft" type="button" data-record-delete>删除</button>'
+        : "") +
       "</div>" +
       (voiceSrc
         ? '<audio id="voicePreview" controls preload="metadata" src="' + esc(voiceSrc) + '"></audio>'
         : '<audio id="voicePreview" controls hidden></audio>') +
-      (uploadedOk ? '<p class="pay-success apply-voice-uploaded" role="status">上传成功 / 已保存。可播放；可重录或改用下方上传文件替换。</p>' : "") +
       (uploadErrors.voice
         ? '<p class="voice-errors apply-voice-upload-error" role="alert">上传失败，请重试：' + esc(uploadErrors.voice) + "</p>"
         : "") +
       '<div class="voice-quality"><span class="' +
       (q.durationOk ? "ok" : "bad") +
-      '">✔ 时长' +
-      (q.durationOk ? "符合" : "需 10~60 秒") +
+      '">时长' +
+      (q.durationOk ? "✓" : " 10–60s") +
       '</span><span class="' +
       (q.humanVoice ? "ok" : "bad") +
-      '">✔ ' +
-      (q.humanVoice ? "检测到人声" : "人声不足") +
+      '">' +
+      (q.humanVoice ? "人声✓" : "人声不足") +
       '</span><span class="' +
       (q.volumeOk ? "ok" : "bad") +
-      '">✔ 音量' +
-      (q.volumeOk ? "正常" : "过低") +
+      '">' +
+      (q.volumeOk ? "音量✓" : "音量低") +
       '</span><span class="' +
       (q.notBlank ? "ok" : "bad") +
-      '">✔ ' +
-      (q.notBlank ? "无空白录音" : "静音过多") +
+      '">' +
+      (q.notBlank ? "有效✓" : "静音过多") +
       "</span></div>" +
       (reasons.length
         ? '<div class="voice-errors">' +
@@ -2058,26 +2141,28 @@
       (uploadBusy.voice
         ? "试音上传中，请稍候…"
         : uploadedOk
-          ? "上传成功 / 已保存到云端。如需更换，请重录并再次确认上传，或使用下方上传已有音频。"
+          ? "已保存到云端，后台审核可见。可重新录制替换。"
           : staleLocal
-            ? "录音仅保存在当前页面。刷新或离开后需重新录制，再点击「确认上传」。"
+            ? "本地录音已失效，请重新录制后确认上传。"
             : hasVoice
               ? canConfirm
-                ? "试听完成，请点击「确认上传」保存到云端。"
-                : "请播放完整试听，确认音量和内容正常后再上传。"
-              : "点击「开始录音」后允许麦克风权限，录制 10～60 秒自我介绍。") +
+                ? "试听完成后点「确认上传」同步到后台。"
+                : "请先完整试听，再确认上传。"
+              : "录制 10～60 秒自我介绍，上传后管理员可听审。") +
       "</div></div>" +
-      '<div class="voice-alt-upload"><div class="voice-method-title">方式 B：上传已有音频</div>' +
-      '<p class="apply-note">若浏览器不支持录音，或你已有音频文件，可在此上传。</p>' +
-      '<div class="apply-grid">' +
+      '<details class="apply-voice-advanced">' +
+      "<summary>其他方式 / 参考模板</summary>" +
+      '<div class="voice-alt-upload"><div class="voice-method-title">上传已有音频</div>' +
+      '<p class="apply-note">浏览器不支持录音时可用。</p>' +
+      '<div class="apply-fields">' +
       fileUploadCard +
       "</div></div>" +
-      '<div class="voice-template-card"><div><h3>不知道说什么？可以参考下面模板。</h3><p id="voiceTemplateText">' +
+      '<div class="voice-template-card"><div><h3>参考模板</h3><p id="voiceTemplateText">' +
       esc(template) +
-      '</p></div><button class="apply-btn small" type="button" data-copy-voice-template>一键复制模板</button></div>' +
-      '<form class="apply-grid">' +
-      field("voiceNote", "试音说明", "textarea", (draft.data || {}).voiceNote, 'placeholder="可以简单介绍自己的声音特点、擅长的聊天风格或游戏。"') +
-      "</form></section>"
+      '</p></div><button class="apply-btn small" type="button" data-copy-voice-template>复制模板</button></div>' +
+      '<form class="apply-fields">' +
+      field("voiceNote", "试音说明（选填）", "textarea", (draft.data || {}).voiceNote, 'placeholder="声音特点、聊天风格…" rows="3"') +
+      "</form></details></div>"
     );
   }
   function depositPayeeHtml(set) {
@@ -2318,39 +2403,64 @@
     var data = draft.data || {};
     var identity = draft.identity || {};
     var mode = String(identity.authMode || draft.certification_method || "").trim();
-    var modeLabel = mode === "id_card" ? "身份证认证" : mode === "deposit" ? "押金认证" : "—";
-    var appId = draft.applicationId || draft.submittedId || "";
-    var submittedAt = draft.submittedAt || "";
-    function row(label, value) {
-      return '<div class="apply-confirm-row"><span>' + esc(label) + '</span><strong>' + esc(value || "—") + "</strong></div>";
+    var modeLabel = mode === "id_card" ? "身份证认证" : mode === "deposit" ? "押金认证" : "";
+    var appId = String(draft.applicationId || draft.submittedId || "").trim();
+    var submittedAt = String(draft.submittedAt || "").trim();
+    function displayValue(value, loadingText) {
+      var v = String(value == null ? "" : value).trim();
+      if (v && v !== "—" && v !== "-") return esc(v);
+      return '<span class="apply-done-muted">' + esc(loadingText || "加载中…") + "</span>";
+    }
+    function row(label, valueHtml) {
+      return '<div class="apply-done-row"><span>' + esc(label) + "</span><strong>" + valueHtml + "</strong></div>";
     }
     return (
-      '<section class="apply-panel apply-done-panel">' +
-      "<h2>✓ 申请已提交</h2>" +
-      '<p class="apply-note full">你的陪玩申请已经成功提交，请等待平台管理员审核。</p>' +
-      '<div class="apply-done-status"><span>状态</span><strong>待审核</strong></div>' +
-      '<div class="apply-confirm-card">' +
-      row("认证方式", modeLabel) +
-      row("昵称", data.nickname) +
-      row("提交时间", submittedAt) +
-      row("申请编号", appId) +
+      '<section class="apply-done-premium">' +
+      '<div class="apply-done-badge" aria-hidden="true">✓</div>' +
+      "<h2>申请已提交</h2>" +
+      "<p>我们已经收到你的陪玩申请<br>审核完成后会更新申请状态</p>" +
+      '<div class="apply-done-pill">待审核</div>' +
+      '<div class="apply-done-meta">' +
+      row("认证方式", displayValue(modeLabel, "未选择")) +
+      row("申请编号", displayValue(appId, "生成中…")) +
+      row("提交时间", displayValue(submittedAt, "同步中…")) +
+      (data.nickname ? row("昵称", displayValue(data.nickname, "同步中…")) : "") +
       "</div>" +
       '<div class="apply-done-actions">' +
-      '<a class="apply-btn" href="companion/index.html">返回陪玩端</a>' +
       '<a class="apply-btn primary" href="companion-apply.html">查看申请状态</a>' +
+      '<a class="apply-btn" href="companion/index.html">返回陪玩端</a>' +
       "</div>" +
-      '<p class="apply-note full">等级与基础价格由管理员审核时指定，申请人无需填写。</p>' +
+      '<p class="apply-section-note">等级与基础价格由管理员审核时指定，申请人无需填写。</p>' +
       "</section>"
     );
   }
 
+  function profileStepHtml(draft) {
+    draft = draft || readDraft();
+    var data = draft.data || {};
+    return (
+      '<div class="apply-profile-step" data-apply-profile-step="1">' +
+      '<header class="apply-profile-hero">' +
+      "<h2>填写完整资料</h2>" +
+      '<p>完成资料后即可提交审核。照片、语音、视频会同步到后台审核。</p>' +
+      "</header>" +
+      // Media first — never bury uploads under a long text form again.
+      mediaShowcaseHtml(draft) +
+      personalProfileHtml(data) +
+      gameProfileHtml(data, draft.uploads || {}) +
+      voiceCardHtml(draft) +
+      videoIntroHtml(draft) +
+      selfIntroHtml(data) +
+      "</div>"
+    );
+  }
   function stepHtml(index, draft) {
     if (index === 0) {
       // STEP1: choose method + complete corresponding cert materials on the same page
       return certMethodHtml(draft) + (String(((draft.identity || {}).authMode) || draft.certification_method || "").trim() ? identityHtml(draft) : "");
     }
     if (index === 1) return rulesHtml(draft);
-    if (index === 2) return basicHtml(draft.data || {}) + gameHtml(draft.data || {}) + uploadHtml(draft);
+    if (index === 2) return profileStepHtml(draft);
     return doneHtml(draft);
   }
   function statusNotice() {
