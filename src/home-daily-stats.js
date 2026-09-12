@@ -8,11 +8,32 @@ import "./home-banner-promo.css";
 
   var API_URL = "/api/gateway?path=" + encodeURIComponent("home/daily-stats");
   /* Homepage trust metrics only — never show 今日有效订单 / 今日营业额. */
-  var fields = [
-    ["onlineCompanions", "在线陪玩", "number"],
-    ["completedOrders", "完成订单", "number"],
-    ["goodRate", "好评率", "percent"],
-  ];
+  var lastData = null;
+  var lastEmpty = false;
+
+  function tt(key, fallback, vars) {
+    try {
+      if (window.MCJI18n && typeof window.MCJI18n.t === "function") {
+        var out = window.MCJI18n.t(key, vars);
+        if (out && out !== key) return out;
+      }
+    } catch (e) {}
+    var text = fallback != null ? String(fallback) : String(key || "");
+    if (vars && typeof vars === "object") {
+      text = text.replace(/\{(\w+)\}/g, function (_, name) {
+        return vars[name] != null ? String(vars[name]) : "{" + name + "}";
+      });
+    }
+    return text;
+  }
+
+  function fieldDefs() {
+    return [
+      ["onlineCompanions", tt("home.stats_online", "在线陪玩"), "number"],
+      ["completedOrders", tt("home.stats_orders", "完成订单"), "number"],
+      ["goodRate", tt("home.stats_good_rate", "好评率"), "percent"],
+    ];
+  }
 
   function esc(value) {
     return String(value == null ? "" : value).replace(/[&<>"']/g, function (ch) {
@@ -28,11 +49,11 @@ import "./home-banner-promo.css";
 
   function valueText(data, key, kind) {
     if (kind === "percent") {
-      if (data && Number(data.reviewCount) === 0) return "暂无";
+      if (data && Number(data.reviewCount) === 0) return tt("home.stats_na", "暂无");
       if (data && data.goodRateLabel) return esc(data.goodRateLabel);
       var rate = numberValue(data, key);
       if (rate == null) rate = numberValue(data, "goodRatePercent");
-      if (rate == null) return "暂无";
+      if (rate == null) return tt("home.stats_na", "暂无");
       return esc(String(rate).replace(/%$/, "") + "%");
     }
     var n = numberValue(data, key);
@@ -50,9 +71,14 @@ import "./home-banner-promo.css";
   function renderEmpty() {
     var root = statsRoot();
     if (!root) return;
+    lastEmpty = true;
+    lastData = null;
     root.hidden = false;
     root.classList.add("home-trust-stats");
-    root.innerHTML = '<div class="home-trust-empty" role="status">暂无平台数据</div>';
+    root.innerHTML =
+      '<div class="home-trust-empty" role="status">' +
+      esc(tt("home.no_platform_stats", "暂无平台数据")) +
+      "</div>";
   }
 
   function render(data) {
@@ -63,10 +89,14 @@ import "./home-banner-promo.css";
       renderEmpty();
       return;
     }
+    lastEmpty = false;
+    lastData = data;
     root.classList.add("home-trust-stats");
     root.innerHTML =
-      '<div class="home-trust-strip" role="group" aria-label="平台实时数据">' +
-      fields
+      '<div class="home-trust-strip" role="group" aria-label="' +
+      esc(tt("home.stats_aria", "平台实时数据")) +
+      '">' +
+      fieldDefs()
         .map(function (field) {
           return (
             '<div class="home-trust-item">' +
@@ -111,6 +141,13 @@ import "./home-banner-promo.css";
       });
   }
 
+  function repaintLocale() {
+    if (lastData) render(lastData);
+    else if (lastEmpty) renderEmpty();
+  }
+
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", load);
   else load();
+
+  window.addEventListener("mcj:localechange", repaintLocale);
 })();

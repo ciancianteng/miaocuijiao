@@ -8,10 +8,29 @@
 
   if (window.MCJForgotPassword) return;
 
-  var SUCCESS_TOAST = "密码修改成功，请重新登录。";
   var COUNTDOWN_SEC = 60;
   var STYLE_ID = "mcj-forgot-password-style";
   var OTP_ACTION = "forgot_send_otp";
+
+  function tt(key, fallback, vars) {
+    try {
+      if (window.MCJI18n && typeof window.MCJI18n.t === "function") {
+        var out = window.MCJI18n.t(key, vars);
+        if (out && out !== key) return out;
+      }
+    } catch (e) {}
+    var text = fallback != null ? String(fallback) : String(key || "");
+    if (vars && typeof vars === "object") {
+      text = text.replace(/\{(\w+)\}/g, function (_, name) {
+        return vars[name] != null ? String(vars[name]) : "{" + name + "}";
+      });
+    }
+    return text;
+  }
+
+  function successToast() {
+    return tt("auth.forgot_success_toast", "密码修改成功，请重新登录。");
+  }
 
   function otpCd() {
     if (window.MCJOtpCooldown) return window.MCJOtpCooldown;
@@ -145,7 +164,9 @@
       left = Math.max(0, Number(state.countdown) || 0);
     }
     var counting = left > 0;
-    btn.textContent = counting ? "重新发送（" + left + "s）" : "重新发送";
+    btn.textContent = counting
+      ? tt("auth.forgot_resend_in", "重新发送（{sec}s）", { sec: left })
+      : tt("auth.forgot_resend", "重新发送");
     btn.disabled = !!(state.busy || counting);
   }
 
@@ -176,7 +197,7 @@
     var text = String(msg || "").trim();
     if (!text) return;
     if (window.MCJNotify && typeof window.MCJNotify.push === "function") {
-      window.MCJNotify.push("system", "找回密码", text);
+      window.MCJNotify.push("system", tt("auth.forgot_title", "找回密码"), text);
       return;
     }
     var el = document.createElement("div");
@@ -256,56 +277,87 @@
     var body = "";
     if (step === "email" || step === "phone") {
       body =
-        '<label>邮箱<input name="email" type="email" inputmode="email" autocomplete="email" placeholder="请输入绑定邮箱" value="' +
+        "<label>" +
+        esc(tt("auth.forgot_email_label", "邮箱")) +
+        '<input name="email" type="email" inputmode="email" autocomplete="email" placeholder="' +
+        esc(tt("auth.forgot_email_ph", "请输入绑定邮箱")) +
+        '" value="' +
         esc(state.email) +
         '" required></label>' +
         '<div class="mcj-forgot-actions">' +
         '<button class="mcj-forgot-btn primary" type="submit" data-forgot-submit' +
         (busy ? " disabled" : "") +
         ">" +
-        (busy ? "发送中…" : "发送验证码") +
+        esc(busy ? tt("auth.forgot_sending", "发送中…") : tt("auth.forgot_send", "发送验证码")) +
         "</button>" +
-        '<button class="mcj-forgot-btn ghost" type="button" data-forgot-back>返回登录</button>' +
+        '<button class="mcj-forgot-btn ghost" type="button" data-forgot-back>' +
+        esc(tt("auth.forgot_back_login", "返回登录")) +
+        "</button>" +
         "</div>";
     } else if (step === "code") {
-      var resendLabel = state.countdown > 0 ? "重新发送（" + state.countdown + "s）" : "重新发送";
+      var resendLabel =
+        state.countdown > 0
+          ? tt("auth.forgot_resend_in", "重新发送（{sec}s）", { sec: state.countdown })
+          : tt("auth.forgot_resend", "重新发送");
       body =
-        '<p class="mcj-forgot-desc">验证码已发送至 ' +
-        esc(state.emailMasked || state.email) +
-        "。请输入 6 位验证码。</p>" +
-        '<label>验证码<input name="code" type="text" inputmode="numeric" maxlength="6" autocomplete="one-time-code" data-auth-code="1" data-auth-sensitive="1" placeholder="000000" required value="' +
+        '<p class="mcj-forgot-desc">' +
+        esc(
+          tt("auth.forgot_code_sent", "验证码已发送至 {email}。请输入 6 位验证码。", {
+            email: state.emailMasked || state.email,
+          })
+        ) +
+        "</p>" +
+        "<label>" +
+        esc(tt("auth.forgot_code_label", "验证码")) +
+        '<input name="code" type="text" inputmode="numeric" maxlength="6" autocomplete="one-time-code" data-auth-code="1" data-auth-sensitive="1" placeholder="000000" required value="' +
         esc(prevCode) +
         '"></label>' +
         '<div class="mcj-forgot-actions">' +
         '<button class="mcj-forgot-btn primary" type="submit" data-forgot-submit' +
         (busy ? " disabled" : "") +
         ">" +
-        (busy ? "验证中…" : "验证") +
+        esc(busy ? tt("auth.forgot_verifying", "验证中…") : tt("auth.forgot_verify", "验证")) +
         "</button>" +
         '<button class="mcj-forgot-btn ghost" type="button" data-forgot-resend' +
         (busy || state.countdown > 0 ? " disabled" : "") +
         ">" +
-        resendLabel +
+        esc(resendLabel) +
         "</button>" +
-        '<button class="mcj-forgot-btn ghost" type="button" data-forgot-back>返回登录</button>' +
+        '<button class="mcj-forgot-btn ghost" type="button" data-forgot-back>' +
+        esc(tt("auth.forgot_back_login", "返回登录")) +
+        "</button>" +
         "</div>";
     } else {
       body =
-        '<label>新密码<input name="new_password" type="password" autocomplete="new-password" minlength="8" placeholder="至少 8 位" required></label>' +
-        '<label>确认新密码<input name="confirm_password" type="password" autocomplete="new-password" minlength="8" placeholder="再次输入新密码" required></label>' +
+        "<label>" +
+        esc(tt("auth.forgot_new_password", "新密码")) +
+        '<input name="new_password" type="password" autocomplete="new-password" minlength="8" placeholder="' +
+        esc(tt("auth.forgot_new_password_ph", "至少 8 位")) +
+        '" required></label>' +
+        "<label>" +
+        esc(tt("auth.forgot_confirm_password", "确认新密码")) +
+        '<input name="confirm_password" type="password" autocomplete="new-password" minlength="8" placeholder="' +
+        esc(tt("auth.forgot_confirm_password_ph", "再次输入新密码")) +
+        '" required></label>' +
         '<div class="mcj-forgot-actions">' +
         '<button class="mcj-forgot-btn primary" type="submit" data-forgot-submit' +
         (busy ? " disabled" : "") +
         ">" +
-        (busy ? "提交中…" : "设置新密码") +
+        esc(busy ? tt("auth.forgot_submitting", "提交中…") : tt("auth.forgot_set_password", "设置新密码")) +
         "</button>" +
-        '<button class="mcj-forgot-btn ghost" type="button" data-forgot-back>返回登录</button>' +
+        '<button class="mcj-forgot-btn ghost" type="button" data-forgot-back>' +
+        esc(tt("auth.forgot_back_login", "返回登录")) +
+        "</button>" +
         "</div>";
     }
     host.innerHTML =
       '<form class="mcj-forgot-card" data-forgot-form autocomplete="on">' +
-      "<h2>找回密码</h2>" +
-      '<p class="mcj-forgot-desc">通过绑定邮箱接收验证码后重设密码（MVP 不使用短信）。</p>' +
+      "<h2>" +
+      esc(tt("auth.forgot_title", "找回密码")) +
+      "</h2>" +
+      '<p class="mcj-forgot-desc">' +
+      esc(tt("auth.forgot_desc", "通过绑定邮箱接收验证码后重设密码（MVP 不使用短信）。")) +
+      "</p>" +
       body +
       '<p class="mcj-forgot-msg' +
       (state.msgOk ? " is-ok" : "") +
@@ -526,7 +578,7 @@
       })
         .then(function (res) {
           state.busy = false;
-          toast(res.message || SUCCESS_TOAST);
+          toast(res.message || successToast());
           close({ ok: true });
         })
         .catch(function (err) {
@@ -555,9 +607,15 @@
     true
   );
 
+  window.addEventListener("mcj:localechange", function () {
+    if (state.open) paint();
+  });
+
   window.MCJForgotPassword = {
     open: open,
     close: close,
-    SUCCESS_TOAST: SUCCESS_TOAST,
+    get SUCCESS_TOAST() {
+      return successToast();
+    },
   };
 })();

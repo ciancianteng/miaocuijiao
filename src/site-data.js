@@ -1,4 +1,23 @@
 (function () {
+  function tt(key, fallback, vars) {
+    try {
+      if (window.MCJI18n && typeof window.MCJI18n.t === "function") {
+        var out = window.MCJI18n.t(key, vars);
+        if (out && out !== key) return out;
+      }
+    } catch (e) {}
+    var text = fallback != null ? String(fallback) : String(key || "");
+    if (vars && typeof vars === "object") {
+      text = text.replace(/\{(\w+)\}/g, function (_, name) {
+        return vars[name] != null ? String(vars[name]) : "{" + name + "}";
+      });
+    }
+    return text;
+  }
+
+  var cachedHomeCompanions = null;
+  var cachedHomeOpts = null;
+
   var DB_KEY = "mcjRealDB.v1";
   var EMPTY_DB = {
     siteSettings: { bannerImage: "", noticeText: "", customerServiceUrl: "", discordInviteUrl: "" },
@@ -83,7 +102,7 @@
     return false;
   }
   function emptyCard(text) {
-    return '<article class="neon-card companion-card hot-card mcj-empty-card"><div class="hot-info"><h3>' + esc(text || "暂无陪玩") + '</h3></div></article>';
+    return '<article class="neon-card companion-card hot-card mcj-empty-card"><div class="hot-info"><h3>' + esc(text || tt("home.no_companions", "暂无陪玩")) + '</h3></div></article>';
   }
   /** Focal crop only — never change cover aspect / card size from JS. */
   var COVER_FOCUS_DEFAULTS = {
@@ -137,7 +156,7 @@
       }
     }
     var displayName = String(item.name || "").trim();
-    if (isGarbledName(displayName)) displayName = "未命名陪玩";
+    if (isGarbledName(displayName)) displayName = tt("home.unnamed_companion", "未命名陪玩");
     var uuid = String(item.id || item.uid || item.companionId || "").trim();
     var isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(uuid);
     var detail = isUuid ? ("profile.html?id=" + encodeURIComponent(uuid)) : "";
@@ -145,8 +164,8 @@
     var pos = focus.x + "% " + focus.y + "%";
     var verified = ""; // home cards: no verified badge clutter (hall keeps it)
     var actionHtml = detail
-      ? '<a class="mini-order" href="' + esc(detail) + '">查看详情</a>'
-      : '<span class="mini-order" aria-disabled="true" style="opacity:.55;pointer-events:none">资料不可用</span>';
+      ? '<a class="mini-order" href="' + esc(detail) + '">' + esc(tt("home.view_detail", "查看详情")) + "</a>"
+      : '<span class="mini-order" aria-disabled="true" style="opacity:.55;pointer-events:none">' + esc(tt("home.profile_unavailable", "资料不可用")) + "</span>";
     var levelId = item.levelId || (item.levelConfig && item.levelConfig.id) || "";
     var levelCfg = item.levelConfig || null;
     var inlineStyle = "";
@@ -170,8 +189,10 @@
       presence && presence.label
         ? String(presence.label).trim()
         : presenceCode === "offline"
-          ? "离线"
+          ? tt("hall.status_offline", "离线")
           : "";
+    var levelLabel = String(item.level || item.levelName || "").trim();
+    if (!levelLabel || levelLabel === "未设置等级") levelLabel = tt("home.level_unset", "未设置等级");
     // Home cards: real fields only — name + level + game + status + tags + detail (no price).
     return (
       '<article class="neon-card companion-card hot-card" data-companion-id="' +
@@ -215,7 +236,7 @@
       '<div class="hot-meta"><span class="companion-level-pill" data-level-id="' +
       esc(levelId) +
       '">' +
-      esc(item.level || "未设置等级") +
+      esc(levelLabel) +
       "</span>" +
       (statusLabel ? '<span class="hot-status">' + esc(statusLabel) + "</span>" : "") +
       "</div>" +
@@ -248,9 +269,9 @@
     // Desktop keeps horizontal top-N + MORE; mobile APP CSS owns 2-col grid.
     if (limit <= 3) track.style.gridTemplateColumns = "repeat(" + cols + ", minmax(0, 1fr))";
     else track.style.gridTemplateColumns = "";
-    if (!items.length) { track.innerHTML = emptyCard("暂无陪玩"); return; }
+    if (!items.length) { track.innerHTML = emptyCard(tt("home.no_companions", "暂无陪玩")); return; }
     track.innerHTML = items.map(companionCardHtml).join("") +
-      '<a class="neon-card companion-card hot-card hot-more-card" href="' + esc(options.moreHref || "companion-center.html") + '"><div class="hot-more-inner"><span>MORE</span><strong>更多</strong><p>' + esc(options.moreDesc || "进入陪玩大厅") + '</p></div></a>';
+      '<a class="neon-card companion-card hot-card hot-more-card" href="' + esc(options.moreHref || "companion-center.html") + '"><div class="hot-more-inner"><span>MORE</span><strong>' + esc(tt("home.more_label", "更多")) + '</strong><p>' + esc(options.moreDesc || tt("home.enter_hall_short", "进入陪玩大厅")) + '</p></div></a>';
   }
   function renderOfficialAds() {
     var track = document.getElementById("officialAdTrack");
@@ -413,6 +434,8 @@
   }
   function applyHomeCompanionTracks(comps, opts) {
     opts = opts || {};
+    cachedHomeCompanions = comps;
+    cachedHomeOpts = opts;
     var hallValid = (comps || []).filter(function (c) {
       var uuid = String((c && (c.id || c.uid || c.companionId)) || "").trim();
       var isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(uuid);
@@ -435,12 +458,16 @@
       return;
     }
     renderTopThreeTrack("hotCompanionTrack", hotPool);
-    [["recentCompanionTrack", "orders.html", "查看订单"], ["gameCompanionTrack", "companion-center.html", "进入陪玩大厅"], ["reviewCompanionTrack", "companion-center.html", "进入陪玩大厅"]].forEach(function (cfg) {
+    [
+      ["recentCompanionTrack", "orders.html", tt("home.view_orders", "查看订单")],
+      ["gameCompanionTrack", "companion-center.html", tt("home.enter_hall_short", "进入陪玩大厅")],
+      ["reviewCompanionTrack", "companion-center.html", tt("home.enter_hall_short", "进入陪玩大厅")],
+    ].forEach(function (cfg) {
       var track = document.getElementById(cfg[0]);
       var section = track && track.closest(".section");
       if (section) section.hidden = false;
       if (hotPool.length) renderTopThreeTrack(cfg[0], hotPool, { moreHref: cfg[1], moreDesc: cfg[2] });
-      else if (track && opts.fromApi) track.innerHTML = emptyCard("暂无陪玩");
+      else if (track && opts.fromApi) track.innerHTML = emptyCard(tt("home.no_companions", "暂无陪玩"));
     });
   }
   function loadHomeCompanionsFromApi() {
@@ -489,4 +516,9 @@
   window.MCJData = { read: function (key) { return list(key); }, enabledSorted: sorted, renderHomeManagedData: renderHomeManagedData };
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", renderHomeManagedData); else renderHomeManagedData();
   window.addEventListener("mcj:data-updated", renderHomeManagedData);
+  window.addEventListener("mcj:localechange", function () {
+    if (cachedHomeCompanions) {
+      applyHomeCompanionTracks(cachedHomeCompanions, Object.assign({}, cachedHomeOpts || {}, { skipEmpty: true }));
+    }
+  });
 })();
