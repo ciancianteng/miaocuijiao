@@ -11,6 +11,30 @@
   var SUCCESS_TOAST = "密码修改成功，请重新登录。";
   var COUNTDOWN_SEC = 60;
   var STYLE_ID = "mcj-forgot-password-style";
+  var OTP_ACTION = "forgot_send_otp";
+
+  function otpCd() {
+    if (window.MCJOtpCooldown) return window.MCJOtpCooldown;
+    var PREFIX = "mcj_otp_cd:";
+    function key(action, role, email) {
+      return PREFIX + action + ":" + role + ":" + String(email || "").trim().toLowerCase();
+    }
+    return {
+      getRemainingSec: function (action, role, email) {
+        try {
+          var until = Number(sessionStorage.getItem(key(action, role, email)) || 0);
+          return Math.max(0, Math.ceil((until - Date.now()) / 1000));
+        } catch (e) {
+          return 0;
+        }
+      },
+      setCooldown: function (action, role, email, sec) {
+        try {
+          sessionStorage.setItem(key(action, role, email), String(Date.now() + Math.max(0, Number(sec) || 0) * 1000));
+        } catch (e) {}
+      },
+    };
+  }
 
   var state = {
     open: false,
@@ -23,6 +47,7 @@
     msg: "",
     msgOk: false,
     countdown: 0,
+    countdownUntil: 0,
     countdownTimer: null,
     onDone: null,
     host: null,
@@ -88,7 +113,10 @@
     }).then(function (r) {
       return r.json().then(function (j) {
         if (!r.ok || (j && j.ok === false)) {
-          throw new Error((j && j.message) || "请求失败");
+          var err = new Error((j && j.message) || "请求失败");
+          err.retryAfterSec = j && j.retryAfterSec;
+          err.payload = j;
+          throw err;
         }
         return j || {};
       });
@@ -101,6 +129,7 @@
       state.countdownTimer = null;
     }
     state.countdown = 0;
+    state.countdownUntil = 0;
   }
 
   /** Update resend control only — never remount the OTP input (mobile keyboard / focus). */
@@ -108,23 +137,39 @@
     if (!state.open || state.step !== "code" || !state.host) return;
     var btn = state.host.querySelector("[data-forgot-resend]");
     if (!btn) return;
-    var counting = state.countdown > 0;
-    btn.textContent = counting ? "重新发送（" + state.countdown + "s）" : "重新发送";
+    var left = 0;
+    if (state.countdownUntil) {
+      left = Math.max(0, Math.ceil((state.countdownUntil - Date.now()) / 1000));
+      state.countdown = left;
+    } else {
+      left = Math.max(0, Number(state.countdown) || 0);
+    }
+    var counting = left > 0;
+    btn.textContent = counting ? "重新发送（" + left + "s）" : "重新发送";
     btn.disabled = !!(state.busy || counting);
   }
 
   function startCountdown(sec) {
     stopCountdown();
-    state.countdown = Math.max(0, Number(sec) || COUNTDOWN_SEC);
+    var seconds = Math.max(0, Number(sec) || COUNTDOWN_SEC);
+    state.countdownUntil = Date.now() + seconds * 1000;
+    state.countdown = seconds;
+    if (state.email) otpCd().setCooldown(OTP_ACTION, state.role, state.email, seconds);
     updateResendUi();
     state.countdownTimer = setInterval(function () {
-      state.countdown -= 1;
-      if (state.countdown <= 0) {
+      var left = Math.max(0, Math.ceil((state.countdownUntil - Date.now()) / 1000));
+      state.countdown = left;
+      if (left <= 0) {
         stopCountdown();
         state.countdown = 0;
       }
       updateResendUi();
-    }, 1000);
+    }, 500);
+  }
+
+  function restoreCooldownFromStorage(email) {
+    var left = otpCd().getRemainingSec(OTP_ACTION, state.role, email || state.email);
+    if (left > 0) startCountdown(left);
   }
 
   function toast(msg) {
@@ -176,6 +221,10 @@
       if (e.target.closest("[data-forgot-resend]")) {
         e.preventDefault();
         if (state.busy || state.countdown > 0) return;
+        if (otpCd().getRemainingSec(OTP_ACTION, state.role, state.email) > 0) {
+          restoreCooldownFromStorage(state.email);
+          return;
+        }
         sendOtp(state.email).catch(function () {});
       }
     });
@@ -350,6 +399,16 @@
   }
 
   function sendOtp(email) {
+    if (state.busy) return Promise.resolve();
+    var left0 = otpCd().getRemainingSec(OTP_ACTION, state.role, email);
+    if (left0 > 0) {
+      state.email = email;
+      state.step = "code";
+      setMsg("发送过于频繁，请 " + left0 + " 秒后再试。");
+      startCountdown(left0);
+      paint();
+      return Promise.reject(new Error("发送过于频繁"));
+    }
     state.busy = true;
     setMsg("");
     paint();
@@ -364,7 +423,11 @@
         var debugCode = res.debugCode || res.devCode;
         if (debugCode) hint += "（调试验证码 " + debugCode + "）";
         setMsg(hint, true);
-        startCountdown(COUNTDOWN_SEC);
+        var sec = Number(res.retryAfterSec) || COUNTDOWN_SEC;
+        if (res.ok === false && res.retryAfterSec) {
+          setMsg(res.message || hint);
+        }
+        startCountdown(sec);
         paint();
         setTimeout(function () {
           var codeInput = state.host && state.host.querySelector('input[name="code"]');
@@ -382,6 +445,8 @@
       })
       .catch(function (err) {
         state.busy = false;
+        var retry = Number(err && err.retryAfterSec) || 0;
+        if (retry > 0) startCountdown(retry);
         setMsg((err && err.message) || "发送失败");
         paint();
         throw err;
