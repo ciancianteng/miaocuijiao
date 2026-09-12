@@ -126,6 +126,7 @@ function normalizeCropMeta(raw, ratioDefaults = DESKTOP_RATIO) {
     ratioW,
     ratioH,
     ratio: `${Math.round(ratioW)}:${Math.round(ratioH)}`,
+    ...(src.i18n && typeof src.i18n === "object" && !Array.isArray(src.i18n) ? { i18n: { ...src.i18n } } : {}),
   };
 }
 function cropFromBody(body, fallback = null, ratioDefaults = DESKTOP_RATIO) {
@@ -384,9 +385,26 @@ async function assertBannerObjectPresent(bucket, objectPath) {
 }
 function mapBanner(row) {
   if (!row) return null;
-  const crop = normalizeCropMeta(row.crop_meta || row.crop || {}, DESKTOP_RATIO);
+  const cropRaw = row.crop_meta || row.crop || {};
+  const crop = normalizeCropMeta(cropRaw, DESKTOP_RATIO);
   const mobileCrop = normalizeCropMeta(row.mobile_crop_meta || row.mobile_crop || {}, MOBILE_RATIO);
   const mobileUrl = String(row.mobile_image_url || "").trim();
+  const i18nSrc =
+    (cropRaw && typeof cropRaw === "object" && !Array.isArray(cropRaw) && cropRaw.i18n && typeof cropRaw.i18n === "object"
+      ? cropRaw.i18n
+      : null) ||
+    (row.i18n && typeof row.i18n === "object" ? row.i18n : {}) ||
+    {};
+  const title_en = String(i18nSrc.title_en || row.title_en || "").trim();
+  const subtitle_en = String(i18nSrc.subtitle_en || row.subtitle_en || "").trim();
+  const button_text_en = String(i18nSrc.button_text_en || i18nSrc.buttonText_en || row.button_text_en || "").trim();
+  const image_url_en = String(i18nSrc.image_url_en || i18nSrc.image_en || row.image_url_en || "").trim();
+  const mobile_image_url_en = String(
+    i18nSrc.mobile_image_url_en || i18nSrc.mobileImage_en || row.mobile_image_url_en || ""
+  ).trim();
+  if (i18nSrc && typeof i18nSrc === "object" && Object.keys(i18nSrc).length) {
+    crop.i18n = { ...i18nSrc };
+  }
   return {
     id: row.id,
     title: row.title || "",
@@ -404,6 +422,14 @@ function mapBanner(row) {
     mobile_crop_meta: mobileCrop,
     mobile_crop: mobileCrop,
     has_dedicated_mobile: !!mobileUrl,
+    title_en,
+    subtitle_en,
+    button_text_en,
+    buttonText_en: button_text_en,
+    image_url_en,
+    image_en: image_url_en,
+    mobile_image_url_en,
+    mobileImage_en: mobile_image_url_en,
     created_at: row.created_at,
     updated_at: row.updated_at,
   };
@@ -483,6 +509,41 @@ async function promoteMainIfNeeded() {
   }
   return listBanners();
 }
+function mergeCropI18n(cropMeta, body, defaultsI18n = {}) {
+  const crop =
+    cropMeta && typeof cropMeta === "object" && !Array.isArray(cropMeta)
+      ? { ...cropMeta }
+      : normalizeCropMeta({}, DESKTOP_RATIO);
+  const fromBodyCrop =
+    (body.crop_meta && body.crop_meta.i18n) ||
+    (body.cropMeta && body.cropMeta.i18n) ||
+    (body.crop && body.crop.i18n) ||
+    null;
+  const prev =
+    (crop.i18n && typeof crop.i18n === "object" && !Array.isArray(crop.i18n) ? crop.i18n : null) ||
+    (fromBodyCrop && typeof fromBodyCrop === "object" ? fromBodyCrop : null) ||
+    (defaultsI18n && typeof defaultsI18n === "object" ? defaultsI18n : {}) ||
+    {};
+  const next = { ...prev };
+  const apply = (keys, outKey) => {
+    for (const key of keys) {
+      if (body[key] !== undefined) {
+        next[outKey] = String(body[key] ?? "").trim();
+        return;
+      }
+    }
+  };
+  apply(["title_en", "titleEn"], "title_en");
+  apply(["subtitle_en", "subtitleEn"], "subtitle_en");
+  apply(["button_text_en", "buttonText_en", "buttonTextEn", "cta_en"], "button_text_en");
+  apply(["image_url_en", "image_en", "imageUrlEn", "desktop_image_en"], "image_url_en");
+  apply(["mobile_image_url_en", "mobileImage_en", "mobile_image_en", "mobileImageEn"], "mobile_image_url_en");
+  if (body.i18n && typeof body.i18n === "object" && !Array.isArray(body.i18n)) {
+    Object.assign(next, body.i18n);
+  }
+  crop.i18n = next;
+  return crop;
+}
 function buildMetaFromBody(body, { defaults = {} } = {}) {
   const title = body.title !== undefined ? String(body.title || "").trim() : defaults.title;
   const subtitle = body.subtitle !== undefined ? String(body.subtitle || "").trim() : defaults.subtitle;
@@ -507,7 +568,18 @@ function buildMetaFromBody(body, { defaults = {} } = {}) {
     body.is_main !== undefined || body.isMain !== undefined
       ? truthy(body.is_main ?? body.isMain, false)
       : defaults.is_main;
-  const crop_meta = cropFromBody(body, defaults.crop_meta || defaults.crop || null, DESKTOP_RATIO);
+  let crop_meta = cropFromBody(body, defaults.crop_meta || defaults.crop || null, DESKTOP_RATIO);
+  const defaultsI18n =
+    (defaults.crop_meta && defaults.crop_meta.i18n) ||
+    (defaults.crop && defaults.crop.i18n) ||
+    {
+      title_en: defaults.title_en,
+      subtitle_en: defaults.subtitle_en,
+      button_text_en: defaults.button_text_en,
+      image_url_en: defaults.image_url_en,
+      mobile_image_url_en: defaults.mobile_image_url_en,
+    };
+  crop_meta = mergeCropI18n(crop_meta, body, defaultsI18n);
   const mobile_crop_meta = mobileCropFromBody(body, defaults.mobile_crop_meta || defaults.mobile_crop || null);
   return { title, subtitle, button_text, button_link, is_active, sort_order, is_main, crop_meta, mobile_crop_meta };
 }
@@ -683,6 +755,11 @@ export default async function handler(req, res) {
           is_main: mapped.is_main,
           crop_meta: mapped.crop_meta,
           mobile_crop_meta: mapped.mobile_crop_meta,
+          title_en: mapped.title_en,
+          subtitle_en: mapped.subtitle_en,
+          button_text_en: mapped.button_text_en,
+          image_url_en: mapped.image_url_en,
+          mobile_image_url_en: mapped.mobile_image_url_en,
         },
       });
       const patch = {

@@ -101,12 +101,15 @@
       };
     }).filter(function (item) { return item.value; });
   }
+  function levelUnsetLabel() {
+    return tt("hall.level_unset", "未设置等级");
+  }
   function levelLabel(item) {
     var id = item.levelId || levelIdFrom(item.level || item.rank || item.levelName);
     var levels = window.MCJCompanionLevels;
     if (levels && levels.label && id) {
       var fromLevels = levels.label(id);
-      if (fromLevels && fromLevels !== "未设置等级") return fromLevels;
+      if (fromLevels && fromLevels !== "未设置等级" && fromLevels !== levelUnsetLabel()) return fromLevels;
     }
     var api = taxonomy();
     if (api && api.levelLabel && id) {
@@ -114,12 +117,12 @@
       if (fromConfig) return fromConfig;
     }
     var raw = String(item.levelName || item.level || "").trim();
-    if (raw && raw !== "未设置等级" && raw !== "未设置") return raw;
-    return id ? String(id) : "未设置等级";
+    if (raw && raw !== "未设置等级" && raw !== "未设置" && raw !== levelUnsetLabel()) return raw;
+    return id ? String(id) : levelUnsetLabel();
   }
   function formatHourlyPrice(value) {
-    if (window.MCJCurrency) return window.MCJCurrency.formatRate(value, "小时");
-    return priceNumber(value) + " 猫粮/小时";
+    if (window.MCJCurrency) return window.MCJCurrency.formatRate(value, tt("hall.hour_unit", "小时"));
+    return priceNumber(value) + " " + tt("hall.price_unit", "猫粮/小时");
   }
   function normalizeStatus(value) {
     if (window.MCJCompanionPresence) {
@@ -172,8 +175,8 @@
       var levelConfig = normalized.levelConfig || item.levelConfig || null;
       return {
         id: normalized.uid || normalized.companionId || normalized.id || "",
-        name: normalized.name || normalized.nickname || "未命名陪玩",
-        game: normalized.game || normalized.mainGame || "未设置游戏",
+        name: normalized.name || normalized.nickname || tt("hall.unnamed", "未命名陪玩"),
+        game: normalized.game || normalized.mainGame || tt("hall.game_unset", "未设置游戏"),
         price: formatHourlyPrice(priceValue || normalized.price || normalized.servicePrice || normalized.hourlyPrice),
         priceValue: priceValue,
         rating: normalized.rating || normalized.score || "0",
@@ -193,8 +196,9 @@
         cardStyleInline: normalized.cardStyleInline || (window.MCJCompanionLevels && window.MCJCompanionLevels.inlineCardStyle
           ? window.MCJCompanionLevels.inlineCardStyle(levelConfig || normalized)
           : ""),
-        gender: normalized.gender || "保密",
+        gender: normalized.gender || tt("hall.gender_private", "保密"),
         voiceType: normalized.voiceType || normalized.voice_type || "",
+        // Keep Chinese codes for filter matching against API data; labels are translated in serviceTypeOptions().
         serviceType: (Array.isArray(normalized.serviceTypes) && normalized.serviceTypes[0])
           || normalized.serviceType
           || normalized.service_type
@@ -239,10 +243,13 @@
     }).join("");
     el.value = Array.prototype.some.call(el.options, function (opt) { return opt.value === current; }) ? current : "";
   }
-  var SERVICE_TYPE_OPTIONS = [
-    { value: "陪玩服务", label: "陪玩服务" },
-    { value: "陪聊服务", label: "陪聊服务" }
-  ];
+  function serviceTypeOptions() {
+    // Values stay Chinese to match API/filter data; only labels are localized.
+    return [
+      { value: "陪玩服务", label: tt("hall.service_play", "陪玩服务") },
+      { value: "陪聊服务", label: tt("hall.service_chat", "陪聊服务") }
+    ];
+  }
   var stateGameOptions = [];
   function companionGames(item) {
     return String(item && item.game || "")
@@ -268,6 +275,8 @@
     var rows = Array.isArray(levelOpts) ? levelOpts : enabledLevelOptions();
     var seen = {};
     var options = [];
+    var unit = tt("hall.price_unit_short", "猫粮");
+    var allPrice = tt("hall.filter_all_price", "全部价格");
     rows.forEach(function (row) {
       var min = Number(row.min) || 0;
       var max = Number(row.max) || 0;
@@ -279,17 +288,17 @@
       seen[value] = 1;
       options.push({
         value: value,
-        label: row.maxPlus ? (min + "+ 猫粮") : (min + "-" + max + " 猫粮")
+        label: row.maxPlus ? (min + "+ " + unit) : (min + "-" + max + " " + unit)
       });
     });
-    if (options.length) setOptions("priceFilter", options, "全部价格");
+    if (options.length) setOptions("priceFilter", options, allPrice);
   }
   function setupFilters() {
     // 服务类型：固定陪玩/陪聊，禁止游戏名进入此下拉
-    setOptions("typeFilter", SERVICE_TYPE_OPTIONS, "全部类型");
+    setOptions("typeFilter", serviceTypeOptions(), tt("hall.filter_all_type", "全部类型"));
     // 游戏分类：优先已加载的 services（value=service_id）
     if (stateGameOptions.length) {
-      setOptions("gameFilter", stateGameOptions, "全部游戏");
+      setOptions("gameFilter", stateGameOptions, tt("hall.filter_all_game", "全部游戏"));
     } else {
       var gameRows = taxonomyItems("games");
       if (!gameRows.length) gameRows = taxonomyItems("services");
@@ -297,13 +306,13 @@
         var id = String(item.id || item.value || "").trim();
         var label = taxonomyLabel(item);
         return { value: id || label, label: label };
-      }).filter(function (item) { return item.value && item.label; }), "全部游戏");
+      }).filter(function (item) { return item.value && item.label; }), tt("hall.filter_all_game", "全部游戏"));
     }
     // 陪玩等级：唯一来源 = 后台启用中的 companion_levels（禁止写死 Lv1/Lv2）
     var levelOpts = enabledLevelOptions();
     setOptions("levelFilter", levelOpts.map(function (item) {
       return { value: item.value, label: item.label };
-    }), "全部等级");
+    }), tt("hall.filter_all_level", "全部等级"));
     setupPriceOptions(levelOpts);
   }
   function loadGameFilterFromServicesApi() {
@@ -325,7 +334,7 @@
           var name = String(item.name || item.title || item.game || "").trim();
           return { value: id || name, label: name };
         }).filter(function (item) { return item.value && item.label; });
-        setOptions("gameFilter", stateGameOptions, "全部游戏");
+        setOptions("gameFilter", stateGameOptions, tt("hall.filter_all_game", "全部游戏"));
       })
       .catch(function () {});
   }
@@ -417,7 +426,7 @@
           .split(/[,，、/|]+/)
           .map(function (part) { return String(part || "").trim(); })
           .filter(Boolean);
-    if (!list.length) list = ["未设置游戏"];
+    if (!list.length) list = [tt("hall.game_unset", "未设置游戏")];
     return list.slice(0, 4).map(function (game) {
       return '<span class="mcj-service-tag companion-game-chip">' + esc(game) + "</span>";
     }).join("");
@@ -494,7 +503,7 @@
     var badgeClass = statusBadgeClass(item.status);
     var statusText = statusChipText(item.status);
     var publicId = item.publicId || "未生成";
-    var nickname = String(item.name || "").trim() || "未命名陪玩";
+    var nickname = String(item.name || "").trim() || tt("hall.unnamed", "未命名陪玩");
     var uuid = String(item.id || "").trim();
     var detailHref = uuid
       ? "profile.html?id=" +
@@ -682,10 +691,22 @@
           var pill = card && card.querySelector(".companion-level-pill");
           return (pill && pill.textContent) || "";
         })(),
-        pricingUnit: "小时",
+        pricingUnit: tt("hall.hour_unit", "小时"),
         availabilityStatus: orderBtn.getAttribute("data-hall-status") || "",
         availabilityText: orderBtn.getAttribute("data-hall-status-text") || "",
       });
+    });
+  }
+  function refreshLocaleSensitiveItemFields() {
+    var unnamed = tt("hall.unnamed", "未命名陪玩");
+    var gameUnset = tt("hall.game_unset", "未设置游戏");
+    var genderPrivate = tt("hall.gender_private", "保密");
+    state.items.forEach(function (item) {
+      item.price = formatHourlyPrice(item.priceValue);
+      item.level = levelLabel(item);
+      if (!item.name || item.name === "未命名陪玩" || item.name === "Unnamed companion") item.name = unnamed;
+      if (!item.game || item.game === "未设置游戏" || item.game === "Game unset") item.game = gameUnset;
+      if (!item.gender || item.gender === "保密" || item.gender === "Private") item.gender = genderPrivate;
     });
   }
   async function start() {
@@ -718,6 +739,8 @@
       try {
         if (window.MCJI18n && typeof window.MCJI18n.apply === "function") window.MCJI18n.apply(document);
       } catch (eApply) {}
+      refreshLocaleSensitiveItemFields();
+      setupFilters();
       render();
     });
   }
