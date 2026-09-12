@@ -2679,7 +2679,7 @@
       metric('今日完成',num(s.todayCompleted),'/companion/orders','completed')+
       '</section>'+
       dashboardOverviewAccHtml()+
-      '<section class="pw-acc-stack" style="margin-top:10px">'+pwAccHtml('dash-todos','待处理事项', (function(){var s=(state.data||{}).summary||{};return '待确认 '+(s.waitingConfirm||0)+' · 进行中 '+(s.runningOrders||0);})(), todoList(), true)+'</section>'+
+      '<section class="pw-acc-stack" style="margin-top:10px">'+pwAccHtml('dash-todos','待处理事项', (function(){var s=(state.data||{}).summary||{};return '待确认 '+(s.waitingConfirm||0)+' · 进行中 '+(s.runningOrders||0);})(), todoList(), false)+'</section>'+
       '<div class="pw-actions" style="margin-top:14px;flex-wrap:wrap"><button class="pw-btn" type="button" data-route="/companion/earnings">收益中心</button><button class="pw-btn" type="button" data-route="/companion/messages">消息中心</button><button class="pw-btn" type="button" data-route="/companion/rules">规则与制度</button></div>';
   }
   function dashboardOverviewAccHtml(){
@@ -2707,15 +2707,17 @@
     var stack=
       pwAccHtml('dash-services','我的服务', gameNames.length?('已开启 '+gameNames.length+' 个游戏'):'尚未配置游戏',
         '<div class="pw-info-list">'+infoRow('可接游戏',gameNames.join('、')||'-')+infoRow('服务类型',(selectedServiceTypesFromPlayer(p,raw)||[]).join('、')||'-')+'</div><div class="pw-actions" style="margin-top:10px"><button class="pw-btn" type="button" data-route="/companion/profile">去编辑服务</button></div>', false)+
-      pwAccHtml('dash-price','我的价格', '当前等级 '+levelLabel,
+      pwAccHtml('dash-price','我的等级与价格', (function(){var bp=level.basePrice!=null?level.basePrice:(level.base_price!=null?level.base_price:null);return bp!=null?('Lv '+levelLabel+' · 基础价 '+bp):('当前等级 '+levelLabel);})(),
         '<div class="pw-info-list">'+infoRow('等级',levelLabel)+infoRow('价格区间',level.priceRangeText||'-')+infoRow('说明','价格由等级/后台规则决定，可在公开资料页按游戏调整（若开放）')+'</div><div class="pw-actions" style="margin-top:10px"><button class="pw-btn" type="button" data-route="/companion/profile">查看价格设置</button></div>', false)+
       pwAccHtml('dash-profile','我的资料', (p.name||p.nickname)?'基本资料已填写':'待完善资料',
         '<div class="pw-info-list">'+infoRow('昵称',p.name||p.nickname||'-')+infoRow('地区',raw.region||p.region||'-')+infoRow('审核状态',STATUS_CN.verification(ua.profile_review_status))+'</div><div class="pw-actions" style="margin-top:10px"><button class="pw-btn" type="button" data-route="/companion/profile">编辑公开资料</button></div>', false)+
       pwAccHtml('dash-cert','认证信息', certLabel,
         '<div class="pw-info-list">'+infoRow('身份证',STATUS_CN.identity(ua.identity_status))+infoRow('押金',STATUS_CN.deposit(ua.deposit_status))+infoRow('接单权限',STATUS_CN.accountAccess(ua.account_access_status))+'</div><div class="pw-actions" style="margin-top:10px"><button class="pw-btn" type="button" data-route="/companion/account">前往账号认证</button></div>', false)+
       pwAccHtml('dash-earn','收益与提现', '可提现 '+money(withdrawable),
-        '<div class="pw-info-list">'+infoRow('可提现',money(withdrawable))+infoRow('今日完成订单',num(((state.data||{}).summary||{}).todayCompleted))+'</div><div class="pw-actions" style="margin-top:10px"><button class="pw-btn" type="button" data-route="/companion/earnings">打开收益中心</button></div>', false);
-    return '<section class="pw-acc-stack" style="margin-top:14px">'+head+stack+'</section>';
+        '<div class="pw-info-list">'+infoRow('可提现',money(withdrawable))+infoRow('今日完成订单',num(((state.data||{}).summary||{}).todayCompleted))+'</div><div class="pw-actions" style="margin-top:10px"><button class="pw-btn" type="button" data-route="/companion/earnings">打开收益中心</button></div>', false)+
+      pwAccHtml('dash-other','其他资料', '通知 · 规则入口',
+        '<div class="pw-info-list">'+infoRow('规则与制度','可随时查阅')+infoRow('消息中心','订单与系统通知')+'</div><div class="pw-actions" style="margin-top:10px"><button class="pw-btn" type="button" data-route="/companion/rules">规则与制度</button><button class="pw-btn" type="button" data-route="/companion/messages">消息中心</button></div>', false);
+    return '<section class="companion-workbench-accordion pw-acc-stack" style="margin-top:14px">'+head+stack+'</section>';
   }
   function todoList(){var s=(state.data||{}).summary||{},ua=unifiedAccess();var accessLabel=isForcedAckLocked()?'暂不可接单（待确认强制公告）':(isCredentialIncomplete()?'认证未完成':STATUS_CN.accountAccess(ua.account_access_status));var rows=[['待确认订单',s.waitingConfirm||0],['进行中就绪',s.waitingStart||0],['待完成订单',s.waitingComplete||0],['待处理消息',unreadCount()],['资料审核状态',STATUS_CN.verification(ua.profile_review_status)],['身份证认证',STATUS_CN.identity(ua.identity_status)],['押金认证',STATUS_CN.deposit(ua.deposit_status)],['账号接单权限',accessLabel]];return '<div class="pw-info-list">'+rows.map(function(r){return '<div><span>'+esc(r[0])+'</span><strong>'+esc(r[1])+'</strong></div>'}).join('')+'</div>'}
   function orderStatus(o){return o.orderStatus||o.statusText||o.status||'-'}
@@ -3679,7 +3681,7 @@
         '<div class="pw-chip-grid">'+tagChecks+'</div>'+
         '<p class="pw-field-hint">可多选；保存后同步老板端大厅展示</p></div>'+
         '<div class="pw-field">'+fieldLabel('介绍',false)+'<textarea name="bio" rows="4" placeholder="简单介绍你的技术、声音和陪玩风格">'+esc(bioVal)+'</textarea></div>'
-      , true)+
+      , false)+
       pwAccHtml('profile-games','游戏与价格', (selectedIds&&selectedIds.length?('已选 '+selectedIds.length+' 个游戏 · '+levelLabel):('待选择游戏 · '+levelLabel)),
         '<div class="pw-field" data-field="service_type">'+fieldLabel('可提供服务',true)+'<div class="pw-chip-grid">'+serviceTypeChecks+'</div>'+'<p class="pw-field-hint">可多选：陪玩服务 / 陪聊服务</p>'+fieldErr('service_type')+'</div>'+
         '<div class="pw-field" data-field="main_game">'+fieldLabel('可接游戏',true)+'<div class="pw-chip-grid">'+gameChecks+'</div>'+'<p class="pw-field-hint">从后台启用游戏中多选；每个勾选游戏需单独设置价格</p>'+fieldErr('main_game')+'</div>'+
@@ -6031,8 +6033,20 @@
     var el=e.target;
     if(!el || !el.matches || !el.matches('details.pw-acc[data-pw-acc]'))return;
     try{
+      // Prefer one open section at a time within the same stack.
+      if(el.open){
+        var stack=el.closest('.pw-acc-stack') || el.parentElement;
+        if(stack){
+          stack.querySelectorAll('details.pw-acc[data-pw-acc]').forEach(function(sib){
+            if(sib!==el && sib.open) sib.open=false;
+          });
+        }
+      }
       var map=pwAccOpenMap();
-      map[el.getAttribute('data-pw-acc')]=!!el.open;
+      // Persist only currently open ids in this document to avoid stale multi-open.
+      document.querySelectorAll('details.pw-acc[data-pw-acc]').forEach(function(node){
+        map[node.getAttribute('data-pw-acc')]=!!node.open;
+      });
       sessionStorage.setItem('mcjPwAccOpen.v1', JSON.stringify(map));
     }catch(err){}
   }, true);

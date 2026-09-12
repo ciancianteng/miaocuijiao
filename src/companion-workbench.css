@@ -971,3 +971,12 @@ a.pw-btn{display:inline-flex;align-items:center;justify-content:center;text-deco
 .pw-shell .pw-dash-hero-copy strong{font-size:16px;color:#fff5fa}
 .pw-shell .pw-dash-hero-copy span{font-size:12px;color:rgba(255,220,235,.72)}
 
+
+
+/* Scoped workbench accordion helpers — do not touch bottom nav */
+.companion-workbench-accordion.pw-acc-stack,
+.pw-shell .companion-workbench-accordion.pw-acc-stack{
+  display:grid;
+  gap:8px;
+}
+.companion-workbench-section{}
