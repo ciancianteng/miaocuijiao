@@ -621,7 +621,22 @@ export async function resolveBossIdFromInput(raw) {
 export async function resolveCompanionIdFromInput(raw) {
   const value = String(raw || "").trim();
   if (!value) return "";
-  if (/^[0-9a-f-]{36}$/i.test(value)) return value;
+  if (/^[0-9a-f-]{36}$/i.test(value)) {
+    // Prefer profiles.id; Admin players list often returns companion_profiles.id.
+    const profile = await loadProfile(value);
+    if (profile) return profile.id;
+    try {
+      const rows = await supabaseJson(
+        restUrl("companion_profiles", `?id=eq.${encodeURIComponent(value)}&select=id,user_id&limit=1`),
+        { headers: serviceHeaders() }
+      );
+      const userId = Array.isArray(rows) ? rows[0]?.user_id : "";
+      if (userId) return userId;
+    } catch {
+      /* ignore */
+    }
+    return value;
+  }
   const found = await searchProfileIds({ q: value, roleHint: "companion" });
   if (found.companionIds[0]) return found.companionIds[0];
   if (found.profileIds[0]) return found.profileIds[0];
