@@ -254,7 +254,7 @@
         img.setAttribute("data-pay-qr-src", img.currentSrc || img.src || "");
       }
       img.setAttribute("data-pay-qr-load", "pending");
-      img.addEventListener("load", function () {
+      function markOk() {
         img.setAttribute("data-pay-qr-load", "ok");
         img.style.display = "";
         img.style.visibility = "";
@@ -269,7 +269,8 @@
         }
         var panel = img.closest("[data-pay-qr]");
         if (panel) panel.setAttribute("data-pay-qr-img-status", "ok");
-      });
+      }
+      img.addEventListener("load", markOk);
       img.addEventListener("error", function () {
         // Never silently hide the QR on mobile/PC — keep the image slot visible for diagnosis + retry.
         img.setAttribute("data-pay-qr-load", "error");
@@ -301,6 +302,13 @@
           frame.appendChild(wrap);
         }
       });
+      // Cached images may already be complete before listeners attach.
+      if (img.complete && img.naturalWidth > 0) {
+        markOk();
+      } else if (img.complete && img.naturalWidth === 0 && (img.currentSrc || img.src)) {
+        // complete + 0 naturalWidth typically means a prior error; surface retry UI.
+        img.dispatchEvent(new Event("error"));
+      }
     });
   }
   function parseGameId(order) {
