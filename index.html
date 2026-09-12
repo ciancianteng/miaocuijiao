@@ -3510,7 +3510,9 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!import
   <script type="module" src="src/companion-media.js?v=20260802mediaSync"></script>
   <script type="module" src="src/launch-feature-freeze.js"></script>
   <script type="module" src="src/notify-system.js" defer></script>
-  <script type="module" src="src/boss-header.js?v=20260805p0home1" defer></script>
+    <script src="/src/i18n-catalog.js?v=20260912i18n1"></script>
+  <script src="/src/i18n.js?v=20260912i18n1"></script>
+<script type="module" src="src/boss-header.js?v=20260805p0home1" defer></script>
   <script type="module" src="src/boss-forced-ack.js?v=20260805p0home1" defer></script>
   <link rel="stylesheet" href="src/boss-header.css?v=20260910appProto1">
   <link rel="stylesheet" href="/src/mcj-safe-area.css?v=20260802mobileP0c">
@@ -3556,10 +3558,10 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!import
           <p class="home-brand-hero-kicker">MEOW CUI JIAO</p>
           <h1 class="home-brand-hero-title">妙脆角</h1>
           <div class="home-brand-hero-stats home-trust-stats" data-home-brand-hero-stats data-home-daily-stats aria-label="平台实时数据" hidden></div>
-          <p class="home-brand-hero-tagline">专业陪玩，每一场游戏认真对待，每一位热爱电竞的你。</p>
+          <p class="home-brand-hero-tagline" data-i18n="home.hero.tagline">专业陪玩，每一场游戏认真对待，每一位热爱电竞的你。</p>
           <div class="home-brand-hero-actions">
-            <a class="home-brand-hero-btn primary" href="companion-center.html">进入陪玩大厅</a>
-            <a class="home-brand-hero-btn" href="support.html?start=1">联系客服</a>
+            <a class="home-brand-hero-btn primary" href="companion-center.html" data-i18n="home.hero.enter_hall">进入陪玩大厅</a>
+            <a class="home-brand-hero-btn" href="support.html?start=1" data-i18n="home.hero.contact_support">联系客服</a>
           </div>
         </div>
         <div class="home-brand-hero-visual" aria-hidden="true">
@@ -3572,9 +3574,9 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!import
     <section class="mcj-home-hero mcj-home-hero--promo" data-mcj-home-hero aria-label="活动轮播"></section>
 
 <div class="announcement-strip home-announcement-bar" id="homeAnnouncementBar" role="region" aria-label="官方公告">
-      <div class="home-announcement-label"><span aria-hidden="true">📢</span><strong>官方公告</strong></div>
+      <div class="home-announcement-label"><span aria-hidden="true">📢</span><strong data-i18n="home.announcement">官方公告</strong></div>
       <div class="home-announcement-track-wrap" data-announcement-open data-empty="1" role="button" aria-label="暂无最新公告">
-        <span class="home-announcement-static">暂无最新公告。</span>
+        <span class="home-announcement-static" data-i18n="home.announcement_empty">暂无最新公告。</span>
       </div>
     </div>
 
@@ -3583,12 +3585,12 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!import
         <section class="section home-dual-entry companion-apply-guide" data-companion-apply-section aria-label="快捷入口">
       <div class="home-dual-entry-grid">
         <a class="home-dual-entry-card home-dual-entry-card--levels club-level-entry-card" href="club-levels.html" data-home-entry="club-levels">
-          <strong class="home-dual-entry-title">俱乐部等级</strong>
-          <span class="home-dual-entry-desc">查看等级与价格权益</span>
+          <strong class="home-dual-entry-title" data-i18n="home.club_level">俱乐部等级</strong>
+          <span class="home-dual-entry-desc" data-i18n="home.club_level_sub">查看等级与价格权益</span>
         </a>
         <a class="home-dual-entry-card home-dual-entry-card--apply companion-apply-guide-card" href="companion-apply.html" data-companion-apply-guide>
-          <strong class="home-dual-entry-title">申请陪玩</strong>
-          <span class="home-dual-entry-desc">提交资料，通过审核后接单</span>
+          <strong class="home-dual-entry-title" data-i18n="home.apply_companion">申请陪玩</strong>
+          <span class="home-dual-entry-desc" data-i18n="home.apply_companion_sub">提交资料，通过审核后接单</span>
         </a>
       </div>
     </section>
@@ -3603,10 +3605,10 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!import
     <section class="section home-popularity-section" aria-label="本周人气陪玩榜">
       <div class="section-title hot-title-row">
         <div>
-          <h2>本周人气榜</h2>
+          <h2 data-i18n="home.weekly_popular">本周人气榜</h2>
           <p>实时根据接单、好评、在线和礼物热度更新。</p>
         </div>
-        <a class="btn lobby-link" href="companion-center.html">更多陪玩</a>
+        <a class="btn lobby-link" href="companion-center.html" data-i18n="home.more_companions">更多陪玩</a>
       </div>
       <div class="pop-board" id="homePopularityBoard"></div>
     </section>
@@ -3627,7 +3629,7 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!import
               <h2>最近下单陪玩</h2>
               <p>有真实订单后将在这里展示</p>
             </div>
-            <a class="btn lobby-link" href="companion-center.html">更多陪玩</a>
+            <a class="btn lobby-link" href="companion-center.html" data-i18n="home.more_companions">更多陪玩</a>
           </div>
           <div class="auto-carousel">
             <div class="companion-track" id="recentCompanionTrack"></div>
@@ -3637,10 +3639,10 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!import
         <section class="section game-companions">
           <div class="section-title">
             <div>
-              <h2>热门游戏陪玩</h2>
+              <h2 data-i18n="home.hot_games">热门游戏陪玩</h2>
               <p>热门游戏陪玩实时推荐</p>
             </div>
-            <a class="btn lobby-link" href="companion-center.html">更多陪玩</a>
+            <a class="btn lobby-link" href="companion-center.html" data-i18n="home.more_companions">更多陪玩</a>
           </div>
           <div class="auto-carousel">
             <div class="companion-track" id="gameCompanionTrack"></div>
@@ -3653,7 +3655,7 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!import
               <h2>最新好评陪玩</h2>
               <p>最新评价同步展示</p>
             </div>
-            <a class="btn lobby-link" href="companion-center.html">更多陪玩</a>
+            <a class="btn lobby-link" href="companion-center.html" data-i18n="home.more_companions">更多陪玩</a>
           </div>
           <div class="auto-carousel">
             <div class="companion-track" id="reviewCompanionTrack"></div>
@@ -3663,11 +3665,11 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!import
     <footer class="site-footer"><strong>MEOW CUI JIAO ENTERPRISE</strong><br><span>✓ Registered Malaysian Enterprise</span><br><small>© MEOW CUI JIAO ENTERPRISE. All rights reserved.</small><br><small class="mcj-footer-ssm" style="display:inline-block;margin-top:4px;font-size:11px;line-height:1.35;opacity:.85">SSM Registration No. 202603181917</small></footer>
   </main>
     <nav class="mobile-bottom-nav mcj-app-tabbar" aria-label="底部导航">
-    <a class="active" href="index.html" data-app-tab="home"><span class="mcj-app-tab-ico" aria-hidden="true">⌂</span><span class="mcj-app-tab-label">首页</span></a>
-    <a href="companion-center.html" data-app-tab="hall"><span class="mcj-app-tab-ico" aria-hidden="true">▦</span><span class="mcj-app-tab-label">大厅</span></a>
-    <a href="orders.html" data-app-tab="orders"><span class="mcj-app-tab-ico" aria-hidden="true">☰</span><span class="mcj-app-tab-label">订单</span></a>
-    <a href="support.html?start=1" data-app-tab="support"><span class="mcj-app-tab-ico" aria-hidden="true">💬</span><span class="mcj-app-tab-label">客服</span></a>
-    <a href="mine.html" data-app-tab="mine" data-mobile-mine><span class="mcj-app-tab-ico" aria-hidden="true">☺</span><span class="mcj-app-tab-label">我的</span></a>
+    <a class="active" href="index.html" data-app-tab="home"><span class="mcj-app-tab-ico" aria-hidden="true">⌂</span><span class="mcj-app-tab-label" data-i18n="nav.home">首页</span></a>
+    <a href="companion-center.html" data-app-tab="hall"><span class="mcj-app-tab-ico" aria-hidden="true">▦</span><span class="mcj-app-tab-label" data-i18n="nav.hall">大厅</span></a>
+    <a href="orders.html" data-app-tab="orders"><span class="mcj-app-tab-ico" aria-hidden="true">☰</span><span class="mcj-app-tab-label" data-i18n="nav.orders">订单</span></a>
+    <a href="support.html?start=1" data-app-tab="support"><span class="mcj-app-tab-ico" aria-hidden="true">💬</span><span class="mcj-app-tab-label" data-i18n="nav.support">客服</span></a>
+    <a href="mine.html" data-app-tab="mine" data-mobile-mine><span class="mcj-app-tab-ico" aria-hidden="true">☺</span><span class="mcj-app-tab-label" data-i18n="nav.mine">我的</span></a>
   </nav>
 
   <div class="modal" id="modal"><div class="dialog"><button class="close" data-close>×</button><div id="modalBody"></div></div></div>

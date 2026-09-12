@@ -16,6 +16,16 @@
   var INTERACT_MIN = 1500;
 
   var deferredPrompt = null;
+
+  function tt(key, fallback) {
+    try {
+      if (window.MCJI18n && typeof window.MCJI18n.t === "function") {
+        var out = window.MCJI18n.t(key);
+        if (out && out !== key) return out;
+      }
+    } catch (e) {}
+    return fallback != null ? String(fallback) : String(key || "");
+  }
   var rootEl = null;
   var openState = false;
   var autoScheduled = false;
@@ -287,7 +297,7 @@
         '<div class="mcj-pwa-flow" aria-hidden="true">' +
         '<div class="mcj-pwa-step"><div class="mcj-pwa-step-ico">⇪</div><span>分享</span></div>' +
         '<div class="mcj-pwa-arrow">→</div>' +
-        '<div class="mcj-pwa-step"><div class="mcj-pwa-step-ico">＋</div><span>添加到主屏幕</span></div>' +
+        '<div class="mcj-pwa-step"><div class="mcj-pwa-step-ico">＋</div><span>" + tt("pwa.add_to_home", "添加到主屏幕") + "</span></div>' +
         '<div class="mcj-pwa-arrow">→</div>' +
         '<div class="mcj-pwa-step"><div class="mcj-pwa-step-ico">✓</div><span>添加</span></div>' +
         "</div>" +
@@ -297,7 +307,7 @@
     if (platform.android && hasBip) {
       return (
         '<div class="mcj-pwa-flow" aria-hidden="true">' +
-        '<div class="mcj-pwa-step"><div class="mcj-pwa-step-ico">◎</div><span>安装妙脆角</span></div>' +
+        '<div class="mcj-pwa-step"><div class="mcj-pwa-step-ico">◎</div><span>" + tt("pwa.install_btn", tt("pwa.install_btn", "安装妙脆角")) + "</span></div>' +
         '<div class="mcj-pwa-arrow">→</div>' +
         '<div class="mcj-pwa-step"><div class="mcj-pwa-step-ico">⌂</div><span>出现在主屏幕</span></div>' +
         "</div>"
@@ -317,27 +327,27 @@
   function titles(platform, hasBip) {
     if (platform.iOS) {
       return {
-        title: "把妙脆角装到主屏幕",
+        title: tt("pwa.install_title", "把妙脆角装到主屏幕"),
         sub: "打开更快，使用起来更像 App",
         hint: "点击 Safari 分享按钮 → 添加到主屏幕 → 添加",
       };
     }
     if (platform.android && hasBip) {
       return {
-        title: "把妙脆角装到主屏幕",
+        title: tt("pwa.install_title", "把妙脆角装到主屏幕"),
         sub: "打开更快，使用起来更像 App",
         hint: "点击下方「安装妙脆角」，使用系统原生安装提示",
       };
     }
     if (platform.android) {
       return {
-        title: "把妙脆角装到主屏幕",
+        title: tt("pwa.install_title", "把妙脆角装到主屏幕"),
         sub: "打开更快，使用起来更像 App",
         hint: "打开 Chrome 菜单 → 安装应用 / 添加到主屏幕",
       };
     }
     return {
-      title: "把妙脆角装到主屏幕",
+      title: tt("pwa.install_title", "把妙脆角装到主屏幕"),
       sub: "打开更快，使用起来更像 App",
       hint: "使用浏览器菜单中的「安装应用 / 添加到主屏幕」",
     };
@@ -359,7 +369,7 @@
       '" alt="" width="56" height="56" decoding="async" fetchpriority="high">' +
       "</div>" +
       "<div>" +
-      '<h2 id="mcjPwaTitle">把妙脆角装到主屏幕</h2>' +
+      '<h2 id="mcjPwaTitle">" + tt("pwa.install_title", "把妙脆角装到主屏幕") + "</h2>' +
       '<p data-mcj-pwa-sub>打开更快，使用起来更像 App</p>' +
       "</div></div>" +
       '<div data-mcj-pwa-body></div>' +
@@ -413,15 +423,15 @@
     if (actions) {
       if (platform.android && hasBip) {
         actions.innerHTML =
-          '<button type="button" class="mcj-pwa-btn" data-mcj-pwa-later>稍后再说</button>' +
-          '<button type="button" class="mcj-pwa-btn primary" data-mcj-pwa-install>安装妙脆角</button>';
+          '<button type="button" class="mcj-pwa-btn" data-mcj-pwa-later>" + tt("pwa.later", tt("pwa.later", "稍后再说")) + "</button>' +
+          '<button type="button" class="mcj-pwa-btn primary" data-mcj-pwa-install>" + tt("pwa.install_btn", tt("pwa.install_btn", "安装妙脆角")) + "</button>';
       } else if (platform.iOS) {
         actions.innerHTML =
-          '<button type="button" class="mcj-pwa-btn" data-mcj-pwa-later>稍后再说</button>' +
+          '<button type="button" class="mcj-pwa-btn" data-mcj-pwa-later>" + tt("pwa.later", tt("pwa.later", "稍后再说")) + "</button>' +
           '<button type="button" class="mcj-pwa-btn primary" data-mcj-pwa-ok>我知道了</button>';
       } else {
         actions.innerHTML =
-          '<button type="button" class="mcj-pwa-btn" data-mcj-pwa-later>稍后再说</button>' +
+          '<button type="button" class="mcj-pwa-btn" data-mcj-pwa-later>" + tt("pwa.later", tt("pwa.later", "稍后再说")) + "</button>' +
           '<button type="button" class="mcj-pwa-btn primary" data-mcj-pwa-ok>我知道了</button>';
       }
     }

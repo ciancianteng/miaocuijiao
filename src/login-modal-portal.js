@@ -1,6 +1,16 @@
 (function () {
   "use strict";
 
+  function tt(key, fallback) {
+    try {
+      if (window.MCJI18n && typeof window.MCJI18n.t === "function") {
+        var out = window.MCJI18n.t(key);
+        if (out && out !== key) return out;
+      }
+    } catch (e) {}
+    return fallback != null ? String(fallback) : String(key || "");
+  }
+
   if (window.MCJModal) return;
 
   var scrollY = 0;
@@ -98,6 +108,9 @@
     modal.scrollTop = 0;
     if (body) body.scrollTop = 0;
     modal.classList.add("open");
+    try {
+      if (window.MCJI18n && typeof window.MCJI18n.apply === "function") window.MCJI18n.apply(modal);
+    } catch (eI18n) {}
     lockBodyScroll();
     if (isAuth && body) {
       prepareAuthSurface(body.querySelector(".boss-login-modal") || body, { clearAccount: true });

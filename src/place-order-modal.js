@@ -1,6 +1,16 @@
 ﻿(function () {
   "use strict";
 
+  function tt(key, fallback) {
+    try {
+      if (window.MCJI18n && typeof window.MCJI18n.t === "function") {
+        var out = window.MCJI18n.t(key);
+        if (out && out !== key) return out;
+      }
+    } catch (e) {}
+    return fallback != null ? String(fallback) : String(key || "");
+  }
+
   var LEGACY_SERVICE_NAMES = { "陪玩": 1, "护航": 1, "跑刀": 1, "代肝": 1, "自定义": 1, "陪玩服务": 1, "陪聊服务": 1 };
   var HOURS = [
     { id: "1", label: "1 小时", value: 1 },
@@ -152,7 +162,7 @@
     return mask ? mask.querySelector(sel) : document.querySelector(sel);
   }
   function failValidate(msg, focusSel) {
-    var text = String(msg || "").trim() || "请完善下单信息";
+    var text = String(msg || "").trim() || tt("order.incomplete", "请完善下单信息");
     setError(text);
     toast(text);
     console.warn("[MCJPlaceOrder] validate", text);
@@ -238,7 +248,7 @@
         state.walletBalance = null;
         state.payMethods = [];
         state.payMethodsLoading = false;
-        state.payLoadError = "请先登录老板账号后再选择支付方式";
+        state.payLoadError = tt("order.need_login_pay", "请先登录老板账号后再选择支付方式");
         return Promise.resolve(null);
       }
       return fetch("/api/recharge", { method: "GET", headers: authHeaders(), cache: "no-store" })
@@ -730,7 +740,7 @@
   }
   function requireLogin() {
     if (token()) return true;
-    toast("请先登录老板账号后再下单");
+    toast(tt("order.need_login", "请先登录老板账号后再下单"));
     try {
       var cid = state.companion && state.companion.companionId;
       var back = cid
@@ -907,7 +917,7 @@
     mask.setAttribute("role", "presentation");
 
     mask.innerHTML =
-      '<div class="mcj-po-dialog" role="dialog" aria-modal="true" aria-label="立即下单" style="' +
+      '<div class="mcj-po-dialog" role="dialog" aria-modal="true" aria-label=tt("order.book_now", "立即下单") style="' +
       dialogInlineStyle() +
       '">' +
       '<div class="mcj-po-header">' +
@@ -919,7 +929,7 @@
       DEFAULT_AVATAR +
       '\'">' +
       '<div class="mcj-po-header-copy">' +
-      "<h3>立即下单</h3>" +
+      "<h3>" + tt("order.book_now", "立即下单") + "</h3>" +
       '<div class="mcj-po-name">' +
       esc(c.companionName) +
       "</div>" +
@@ -1163,7 +1173,7 @@
   function goOrderSuccess(order) {
     var oid = order && order.id ? order.id : "";
     close();
-    toast("下单成功");
+    toast(tt("order.create_success", "下单成功"));
     if (oid) {
       try {
         var list = [];
@@ -1215,7 +1225,7 @@
       if (state.submitting) {
         var waited = Date.now() - (state.submitStartedAt || 0);
         if (waited < 25000) {
-          toast("订单提交中，请稍候…");
+          toast(tt("order.submitting", "订单提交中，请稍候…"));
           setSubmitLoading(true);
           return;
         }
@@ -1346,7 +1356,7 @@
         .then(function (body) {
           var order = body.order || {};
           var oid = order.id || "";
-          if (!oid) throw new Error("订单创建失败");
+          if (!oid) throw new Error(tt("order.create_failed", "订单创建失败"));
           if (isWalletPayment(payment)) {
             setSubmitLoading(true);
             return payCreatedOrder(oid, payment).then(function (paid) {
@@ -1362,8 +1372,8 @@
           console.error("[MCJPlaceOrder] submit failed", err);
           var msg = String((err && err.message) || "");
           if (err && (err.code === "INSUFFICIENT_BALANCE" || /余额不足|猫粮/.test(msg))) {
-            failValidate(msg || "猫粮余额不足");
-            toast((msg || "猫粮余额不足") + "，可前往充值页");
+            failValidate(msg || tt("order.balance_low", "猫粮余额不足"));
+            toast((msg || tt("order.balance_low", "猫粮余额不足")) + "，可前往充值页");
             return;
           }
           if (/登录|401|未登录|老板账号/.test(msg)) {
@@ -1371,25 +1381,25 @@
             return;
           }
           if (/支付/.test(msg)) {
-            failValidate(msg || "支付失败");
-            toast(msg || "支付失败");
+            failValidate(msg || tt("order.pay_failed", "支付失败"));
+            toast(msg || tt("order.pay_failed", "支付失败"));
             return;
           }
-          failValidate(msg || "订单创建失败");
-          toast(msg || "订单创建失败");
+          failValidate(msg || tt("order.create_failed", "订单创建失败"));
+          toast(msg || tt("order.create_failed", "订单创建失败"));
         });
     } catch (err) {
       state.submitting = false;
       state.submitStartedAt = 0;
       setSubmitLoading(false);
       console.error("[MCJPlaceOrder] submit crashed", err);
-      failValidate((err && err.message) || "订单创建失败");
+      failValidate((err && err.message) || tt("order.create_failed", "订单创建失败"));
     }
   }
 
   function open(rawCompanion) {
     if (state.submitting) {
-      toast("订单提交中，请稍候…");
+      toast(tt("order.submitting", "订单提交中，请稍候…"));
       return;
     }
     // Coalesce rapid re-entry: keep the latest payload instead of silently dropping.

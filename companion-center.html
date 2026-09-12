@@ -37,9 +37,9 @@
         <span>MEOW CUI JIAO<small>妙脆角电竞</small></span>
       </a>
       <nav class="nav companion-market-nav" aria-label="页面导航">
-        <a href="index.html">首页</a>
+        <a href="index.html" data-i18n="nav.home">首页</a>
         <a class="active" href="companion-center.html">陪玩大厅</a>
-        <a href="mine.html">我的</a>
+        <a href="mine.html" data-i18n="nav.mine">我的</a>
       </nav>
     </div>
   </header>
@@ -178,11 +178,11 @@
   </main>
 
   <nav class="bottom-nav mcj-app-tabbar" aria-label="底部导航">
-    <a href="index.html" data-app-tab="home">首页</a>
-    <a class="active" href="companion-center.html" data-app-tab="hall">大厅</a>
-    <a href="orders.html" data-app-tab="orders">订单</a>
-    <a href="support.html?start=1" data-app-tab="support">客服</a>
-    <a href="mine.html" data-app-tab="mine">我的</a>
+    <a href="index.html" data-app-tab="home" data-i18n="nav.home">首页</a>
+    <a class="active" href="companion-center.html" data-app-tab="hall" data-i18n="nav.hall">大厅</a>
+    <a href="orders.html" data-app-tab="orders" data-i18n="nav.orders">订单</a>
+    <a href="support.html?start=1" data-app-tab="support" data-i18n="nav.support">客服</a>
+    <a href="mine.html" data-app-tab="mine" data-i18n="nav.mine">我的</a>
   </nav>
 
   <script src="src/platform-store.js"></script>
@@ -193,7 +193,9 @@
   <script src="src/avatar-fallback.js?v=20260911hallPhoto45"></script>
   <script src="src/companion-media.js?v=20260802mediaSync"></script>
   <script src="src/companion-identity.js?v=20260907capsuleFix1"></script>
-  <script src="src/boss-header.js?v=20260810hallLevel1" defer></script>
+    <script src="/src/i18n-catalog.js?v=20260912i18n1"></script>
+  <script src="/src/i18n.js?v=20260912i18n1"></script>
+<script src="src/boss-header.js?v=20260810hallLevel1" defer></script>
   <script src="src/dropdown-system.js" defer></script>
   <script src="src/design-system.js" defer></script>
   <script src="src/site-data.js?v=20260810hallLevel1" defer></script>

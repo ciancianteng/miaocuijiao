@@ -1,6 +1,16 @@
 ﻿(function () {
   "use strict";
 
+  function tt(key, fallback) {
+    try {
+      if (window.MCJI18n && typeof window.MCJI18n.t === "function") {
+        var out = window.MCJI18n.t(key);
+        if (out && out !== key) return out;
+      }
+    } catch (e) {}
+    return fallback != null ? String(fallback) : String(key || "");
+  }
+
   var PER_PAGE = 12;
   var state = { page: 1, items: [], taxonomyReady: false };
 
@@ -567,7 +577,7 @@
       esc(item.availabilityStatus || "") +
       '" data-hall-status-text="' +
       esc(item.status || "") +
-      '">立即下单</button></div>' +
+      '">" + tt("hall.book_now", "立即下单") + "</button></div>' +
       "</div>" +
       "</article>"
     );
@@ -595,10 +605,10 @@
           if (title) title.textContent = "陪玩列表加载失败";
           if (hint) hint.textContent = state.loadError;
         } else if (filteredEmpty) {
-          if (title) title.textContent = "暂无符合条件的陪玩";
-          if (hint) hint.textContent = "试试调整搜索词或筛选条件。";
+          if (title) title.textContent = tt("hall.empty_filtered_title", "暂无符合条件的陪玩");
+          if (hint) hint.textContent = tt("hall.empty_filtered_hint", "试试调整搜索词或筛选条件。");
         } else {
-          if (title) title.textContent = "目前暂无可接单陪玩";
+          if (title) title.textContent = tt("hall.empty_title", "目前暂无可接单陪玩");
           if (hint) hint.textContent = "通过审核并上线接单的陪玩将在这里展示。";
         }
       }
