@@ -2625,6 +2625,25 @@
       }).join('')+
       '</div></div>';
   }
+
+  function pwAccOpenMap(){
+    try{return JSON.parse(sessionStorage.getItem('mcjPwAccOpen.v1')||'{}')||{}}catch(e){return {}}
+  }
+  function pwAccIsOpen(id, fallbackOpen){
+    var map=pwAccOpenMap();
+    if(Object.prototype.hasOwnProperty.call(map,id))return !!map[id];
+    return !!fallbackOpen;
+  }
+  function pwAccHtml(id, title, summary, bodyHtml, fallbackOpen){
+    var open=pwAccIsOpen(id, fallbackOpen);
+    return '<details class="pw-acc" data-pw-acc="'+esc(id)+'"'+(open?' open':'')+'>'+
+      '<summary class="pw-acc-summary-row">'+
+        '<span class="pw-acc-copy"><strong>'+esc(title)+'</strong><small>'+esc(summary||'')+'</small></span>'+
+        '<i class="pw-acc-chevron" aria-hidden="true"></i>'+
+      '</summary>'+
+      '<div class="pw-acc-body">'+bodyHtml+'</div>'+
+      '</details>';
+  }
   function dashboardHtml(){
     var s=(state.data||{}).summary||{};
     var online=currentOnlineStatus()==='online';
@@ -2659,8 +2678,44 @@
       metric('进行中',num(s.runningOrders),'/companion/orders','running')+
       metric('今日完成',num(s.todayCompleted),'/companion/orders','completed')+
       '</section>'+
-      '<section class="pw-card pad" style="margin-top:14px"><h3>待处理事项</h3>'+todoList()+'</section>'+
+      dashboardOverviewAccHtml()+
+      '<section class="pw-acc-stack" style="margin-top:10px">'+pwAccHtml('dash-todos','待处理事项', (function(){var s=(state.data||{}).summary||{};return '待确认 '+(s.waitingConfirm||0)+' · 进行中 '+(s.runningOrders||0);})(), todoList(), true)+'</section>'+
       '<div class="pw-actions" style="margin-top:14px;flex-wrap:wrap"><button class="pw-btn" type="button" data-route="/companion/earnings">收益中心</button><button class="pw-btn" type="button" data-route="/companion/messages">消息中心</button><button class="pw-btn" type="button" data-route="/companion/rules">规则与制度</button></div>';
+  }
+  function dashboardOverviewAccHtml(){
+    var p=(state.data&&state.data.player)||{};
+    var raw=p.raw||{};
+    var level=(state.data&&state.data.levelInfo)||{};
+    var ua=unifiedAccess();
+    var earnings=(state.data&&state.data.earnings)||{};
+    var serviceIds=selectedServiceIdsFromPlayer(p,raw);
+    var gameNames=serviceIds.map(function(id){
+      var hit=(availableServiceOptions()||[]).find(function(s){return s.id===id});
+      return hit?hit.name:id;
+    }).filter(Boolean);
+    if(!gameNames.length){
+      gameNames=String(p.mainGame||raw.game||'').split(/[,，、/|]+/).map(function(x){return x.trim()}).filter(Boolean);
+    }
+    var levelLabel=level.level||p.level||'未设置';
+    var certLabel=ua.identityVerified?'身份证认证 · 已通过':(ua.depositVerified?'押金认证 · 已通过':'认证未完成');
+    var withdrawable=earnings.withdrawable!=null?earnings.withdrawable:(earnings.available!=null?earnings.available:(earnings.balance||0));
+    var head='<div class="pw-dash-hero">'+
+      '<img class="pw-dash-avatar" src="'+esc(p.avatar||'/default-avatar.png')+'" alt="" onerror="this.onerror=null;this.src=\'/default-avatar.png\'">'+
+      '<div class="pw-dash-hero-copy"><strong>'+esc(p.name||p.nickname||'陪玩')+'</strong>'+
+      '<span>编号 '+esc(p.companionCode||p.publicId||p.id||'-')+' · '+esc(levelLabel)+'</span>'+
+      '<span>'+esc(((STATUS_META[currentOnlineStatus()]||STATUS_META.offline||{}).label)||currentOnlineStatus())+' · '+esc(certLabel)+'</span></div></div>';
+    var stack=
+      pwAccHtml('dash-services','我的服务', gameNames.length?('已开启 '+gameNames.length+' 个游戏'):'尚未配置游戏',
+        '<div class="pw-info-list">'+infoRow('可接游戏',gameNames.join('、')||'-')+infoRow('服务类型',(selectedServiceTypesFromPlayer(p,raw)||[]).join('、')||'-')+'</div><div class="pw-actions" style="margin-top:10px"><button class="pw-btn" type="button" data-route="/companion/profile">去编辑服务</button></div>', false)+
+      pwAccHtml('dash-price','我的价格', '当前等级 '+levelLabel,
+        '<div class="pw-info-list">'+infoRow('等级',levelLabel)+infoRow('价格区间',level.priceRangeText||'-')+infoRow('说明','价格由等级/后台规则决定，可在公开资料页按游戏调整（若开放）')+'</div><div class="pw-actions" style="margin-top:10px"><button class="pw-btn" type="button" data-route="/companion/profile">查看价格设置</button></div>', false)+
+      pwAccHtml('dash-profile','我的资料', (p.name||p.nickname)?'基本资料已填写':'待完善资料',
+        '<div class="pw-info-list">'+infoRow('昵称',p.name||p.nickname||'-')+infoRow('地区',raw.region||p.region||'-')+infoRow('审核状态',STATUS_CN.verification(ua.profile_review_status))+'</div><div class="pw-actions" style="margin-top:10px"><button class="pw-btn" type="button" data-route="/companion/profile">编辑公开资料</button></div>', false)+
+      pwAccHtml('dash-cert','认证信息', certLabel,
+        '<div class="pw-info-list">'+infoRow('身份证',STATUS_CN.identity(ua.identity_status))+infoRow('押金',STATUS_CN.deposit(ua.deposit_status))+infoRow('接单权限',STATUS_CN.accountAccess(ua.account_access_status))+'</div><div class="pw-actions" style="margin-top:10px"><button class="pw-btn" type="button" data-route="/companion/account">前往账号认证</button></div>', false)+
+      pwAccHtml('dash-earn','收益与提现', '可提现 '+money(withdrawable),
+        '<div class="pw-info-list">'+infoRow('可提现',money(withdrawable))+infoRow('今日完成订单',num(((state.data||{}).summary||{}).todayCompleted))+'</div><div class="pw-actions" style="margin-top:10px"><button class="pw-btn" type="button" data-route="/companion/earnings">打开收益中心</button></div>', false);
+    return '<section class="pw-acc-stack" style="margin-top:14px">'+head+stack+'</section>';
   }
   function todoList(){var s=(state.data||{}).summary||{},ua=unifiedAccess();var accessLabel=isForcedAckLocked()?'暂不可接单（待确认强制公告）':(isCredentialIncomplete()?'认证未完成':STATUS_CN.accountAccess(ua.account_access_status));var rows=[['待确认订单',s.waitingConfirm||0],['进行中就绪',s.waitingStart||0],['待完成订单',s.waitingComplete||0],['待处理消息',unreadCount()],['资料审核状态',STATUS_CN.verification(ua.profile_review_status)],['身份证认证',STATUS_CN.identity(ua.identity_status)],['押金认证',STATUS_CN.deposit(ua.deposit_status)],['账号接单权限',accessLabel]];return '<div class="pw-info-list">'+rows.map(function(r){return '<div><span>'+esc(r[0])+'</span><strong>'+esc(r[1])+'</strong></div>'}).join('')+'</div>'}
   function orderStatus(o){return o.orderStatus||o.statusText||o.status||'-'}
@@ -3600,56 +3655,58 @@
       reviewRejectBannerHtml('/companion/profile')+
       '<div class="pw-alert"><strong>隐私提醒</strong><span>以下内容将展示给老板，请勿填写身份证、银行卡、私人联系方式等隐私信息。</span></div>'+
       '<form class="pw-form-narrow pw-profile-form" data-profile-form novalidate>'+
-      '<section class="pw-card pad" style="margin-bottom:14px"><h3>基本展示资料</h3>'+
-      '<div class="pw-field pw-upload-block'+(state.profileErrors&&state.profileErrors.avatar?' is-missing':'')+'" data-field="avatar">'+
-      fieldLabel('头像',true)+
-      pwAvatarUploadHtml(displayAvatar,avatarUrl,uploadBusy)+
-      fieldErr('avatar')+
+      '<div class="pw-acc-stack">'+
+      pwAccHtml('profile-basic','基本展示资料','头像 · 昵称 · 声线 · 标签',
+        '<div class="pw-field pw-upload-block'+(state.profileErrors&&state.profileErrors.avatar?' is-missing':'')+'" data-field="avatar">'+
+        fieldLabel('头像',true)+
+        pwAvatarUploadHtml(displayAvatar,avatarUrl,uploadBusy)+
+        fieldErr('avatar')+
+        '</div>'+
+        '<div class="pw-two-col">'+
+        '<div class="pw-field">'+fieldLabel('昵称',true)+'<input name="nickname" value="'+esc(nickname)+'" placeholder="例如：1717大王" autocomplete="nickname">'+fieldErr('nickname')+'</div>'+
+        '<div class="pw-field">'+fieldLabel('年龄',true)+'<input name="age" type="number" inputmode="numeric" min="18" max="60" value="'+esc(ageVal)+'" placeholder="例如 23">'+fieldErr('age')+'</div>'+
+        '</div>'+
+        '<div class="pw-two-col">'+
+        '<div class="pw-field">'+fieldLabel('性别',true)+'<div class="pw-radio-row">'+genderRadios+'</div>'+fieldErr('gender')+'</div>'+
+        '<div class="pw-field">'+fieldLabel('地区',true)+'<input name="region" value="'+esc(regionVal)+'" placeholder="例如：马来西亚·吉隆坡">'+fieldErr('region')+'</div>'+
+        '</div>'+
+        '<div class="pw-field" data-field="voice_type">'+fieldLabel('声线',true)+
+        '<div class="pw-chip-grid">'+voiceTypeChecks+'</div>'+
+        voiceCustomHtml+
+        '<p class="pw-field-hint">可多选；选择「其他」可填写自定义声线。展示为「声线：甜妹 / 慵懒」</p>'+fieldErr('voice_type')+'</div>'+
+        '<div class="pw-field"><span class="pw-field-label">当前等级</span><p class="pw-field-hint">'+esc(levelLabel)+'（由后台评定，决定可设置的价格区间）</p></div>'+
+        '<div class="pw-field">'+fieldLabel('标签',false)+
+        '<div class="pw-chip-grid">'+tagChecks+'</div>'+
+        '<p class="pw-field-hint">可多选；保存后同步老板端大厅展示</p></div>'+
+        '<div class="pw-field">'+fieldLabel('介绍',false)+'<textarea name="bio" rows="4" placeholder="简单介绍你的技术、声音和陪玩风格">'+esc(bioVal)+'</textarea></div>'
+      , true)+
+      pwAccHtml('profile-games','游戏与价格', (selectedIds&&selectedIds.length?('已选 '+selectedIds.length+' 个游戏 · '+levelLabel):('待选择游戏 · '+levelLabel)),
+        '<div class="pw-field" data-field="service_type">'+fieldLabel('可提供服务',true)+'<div class="pw-chip-grid">'+serviceTypeChecks+'</div>'+'<p class="pw-field-hint">可多选：陪玩服务 / 陪聊服务</p>'+fieldErr('service_type')+'</div>'+
+        '<div class="pw-field" data-field="main_game">'+fieldLabel('可接游戏',true)+'<div class="pw-chip-grid">'+gameChecks+'</div>'+'<p class="pw-field-hint">从后台启用游戏中多选；每个勾选游戏需单独设置价格</p>'+fieldErr('main_game')+'</div>'+
+        '<div class="pw-field" data-field="price">'+fieldLabel('各游戏价格',true)+
+        '<div class="pw-price-meta"><div>当前等级：<strong>'+esc(levelLabel)+'</strong></div><div>可设置范围：<strong>'+esc(rangeText)+'</strong></div>'+
+        (needsReset?'<div class="pw-field-error">有价格超出等级范围，请按游戏重新设置</div>':'')+
+        '</div>'+
+        '<div class="pw-game-price-grid" data-game-price-grid>'+priceRows+'</div>'+fieldErr('price')+'</div>'+
+        '<div class="pw-two-col">'+
+        '<div class="pw-field">'+fieldLabel('游戏 ID',true)+'<input name="game_id" value="'+esc(gameId)+'" placeholder="游戏内昵称或 ID">'+fieldErr('game_id')+'</div>'+
+        '<div class="pw-field">'+fieldLabel('段位',false)+'<input name="rank" value="'+esc(rankVal)+'" placeholder="例如：超凡 2"></div>'+
+        '</div>'+
+        '<div class="pw-field">'+fieldLabel('擅长位置',false)+'<input name="position" value="'+esc(positionVal)+'" placeholder="例如：决斗 / 烟位"></div>'
+      , false)+
+      pwAccHtml('profile-media','展示资料','相册 · 语音试听',
+        '<div class="pw-field pw-upload-block'+(state.profileErrors&&state.profileErrors.gallery?' is-missing':'')+'" data-field="gallery">'+
+        fieldLabel('相册照片',true)+
+        pwGalleryUploadHtml(gallery,uploadBusy)+
+        fieldErr('gallery')+
+        '</div>'+
+        '<div class="pw-field pw-upload-block'+(state.profileErrors&&state.profileErrors.voice?' is-missing':'')+'" data-field="voice">'+
+        fieldLabel('语音试听',true)+
+        pwVoiceUploadHtml(p,raw,uploadBusy)+
+        fieldErr('voice')+
+        '</div>'
+      , false)+
       '</div>'+
-      '<div class="pw-two-col">'+
-      '<div class="pw-field">'+fieldLabel('昵称',true)+'<input name="nickname" value="'+esc(nickname)+'" placeholder="例如：1717大王" autocomplete="nickname">'+fieldErr('nickname')+'</div>'+
-      '<div class="pw-field">'+fieldLabel('年龄',true)+'<input name="age" type="number" inputmode="numeric" min="18" max="60" value="'+esc(ageVal)+'" placeholder="例如 23">'+fieldErr('age')+'</div>'+
-      '</div>'+
-      '<div class="pw-two-col">'+
-      '<div class="pw-field">'+fieldLabel('性别',true)+'<div class="pw-radio-row">'+genderRadios+'</div>'+fieldErr('gender')+'</div>'+
-      '<div class="pw-field">'+fieldLabel('地区',true)+'<input name="region" value="'+esc(regionVal)+'" placeholder="例如：马来西亚·吉隆坡">'+fieldErr('region')+'</div>'+
-      '</div>'+
-      '<div class="pw-field" data-field="voice_type">'+fieldLabel('声线',true)+
-      '<div class="pw-chip-grid">'+voiceTypeChecks+'</div>'+
-      voiceCustomHtml+
-      '<p class="pw-field-hint">可多选；选择「其他」可填写自定义声线。展示为「声线：甜妹 / 慵懒」</p>'+fieldErr('voice_type')+'</div>'+
-      '<div class="pw-field"><span class="pw-field-label">当前等级</span><p class="pw-field-hint">'+esc(levelLabel)+'（由后台评定，决定可设置的价格区间）</p></div>'+
-      '<div class="pw-field">'+fieldLabel('标签',false)+
-      '<div class="pw-chip-grid">'+tagChecks+'</div>'+
-      '<p class="pw-field-hint">可多选；保存后同步老板端大厅展示</p></div>'+
-      '<div class="pw-field">'+fieldLabel('介绍',false)+'<textarea name="bio" rows="4" placeholder="简单介绍你的技术、声音和陪玩风格">'+esc(bioVal)+'</textarea></div>'+
-      '</section>'+
-      '<section class="pw-card pad" style="margin-bottom:14px"><h3>游戏与价格</h3>'+
-      '<div class="pw-field" data-field="service_type">'+fieldLabel('可提供服务',true)+'<div class="pw-chip-grid">'+serviceTypeChecks+'</div>'+'<p class="pw-field-hint">可多选：陪玩服务 / 陪聊服务</p>'+fieldErr('service_type')+'</div>'+
-      '<div class="pw-field" data-field="main_game">'+fieldLabel('可接游戏',true)+'<div class="pw-chip-grid">'+gameChecks+'</div>'+'<p class="pw-field-hint">从后台启用游戏中多选；每个勾选游戏需单独设置价格</p>'+fieldErr('main_game')+'</div>'+
-      '<div class="pw-field" data-field="price">'+fieldLabel('各游戏价格',true)+
-      '<div class="pw-price-meta"><div>当前等级：<strong>'+esc(levelLabel)+'</strong></div><div>可设置范围：<strong>'+esc(rangeText)+'</strong></div>'+
-      (needsReset?'<div class="pw-field-error">有价格超出等级范围，请按游戏重新设置</div>':'')+
-      '</div>'+
-      '<div class="pw-game-price-grid" data-game-price-grid>'+priceRows+'</div>'+fieldErr('price')+'</div>'+
-      '<div class="pw-two-col">'+
-      '<div class="pw-field">'+fieldLabel('游戏 ID',true)+'<input name="game_id" value="'+esc(gameId)+'" placeholder="游戏内昵称或 ID">'+fieldErr('game_id')+'</div>'+
-      '<div class="pw-field">'+fieldLabel('段位',false)+'<input name="rank" value="'+esc(rankVal)+'" placeholder="例如：超凡 2"></div>'+
-      '</div>'+
-      '<div class="pw-field">'+fieldLabel('擅长位置',false)+'<input name="position" value="'+esc(positionVal)+'" placeholder="例如：决斗 / 烟位"></div>'+
-      '</section>'+
-      '<section class="pw-card pad" style="margin-bottom:14px"><h3>展示资料</h3>'+
-      '<div class="pw-field pw-upload-block'+(state.profileErrors&&state.profileErrors.gallery?' is-missing':'')+'" data-field="gallery">'+
-      fieldLabel('相册照片',true)+
-      pwGalleryUploadHtml(gallery,uploadBusy)+
-      fieldErr('gallery')+
-      '</div>'+
-      '<div class="pw-field pw-upload-block'+(state.profileErrors&&state.profileErrors.voice?' is-missing':'')+'" data-field="voice">'+
-      fieldLabel('语音试听',true)+
-      pwVoiceUploadHtml(p,raw,uploadBusy)+
-      fieldErr('voice')+
-      '</div>'+
-      '</section>'+
       '<p class="pw-field-hint" style="margin:0 0 12px">在线状态、收藏、评价与完成订单等公开只读信息请在「预览老板端展示」查看；接单状态请在工作台切换。</p>'+
       '<button class="pw-btn primary" type="submit">保存公开资料</button>'+
       '</form>';
@@ -3957,12 +4014,15 @@
       '<form class="pw-card pad pw-form pw-form-narrow" style="margin-top:14px" data-private-contact-form><h3>联系方式</h3>'+
       '<label>联系方式（WhatsApp / 手机）<input name="contact_phone" value="'+esc(contactPhone)+'" required placeholder="仅后台/客服可见"></label>'+
       '<button class="pw-btn primary" type="submit">保存联系方式</button></form>'+
-      (verifyLocked?verifyView:verifyForm)+
-      depositBlock+
-      '<section class="pw-card pad pw-form-narrow" style="margin-top:14px" id="pwAccountSecurityMount"><h3>账号安全</h3><div class="pw-empty">加载中…</div></section>'+
-      '<section class="pw-card pad" style="margin-top:14px"><h3>安装妙脆角</h3>'+
-      '<p class="pw-note">把妙脆角加到主屏幕，打开更快，使用起来更像 App。</p>'+
-      '<button class="pw-btn" type="button" data-pwa-install-guide>安装妙脆角 / 添加到主屏幕</button></section>';
+      '<div class="pw-acc-stack" style="margin-top:14px">'+
+      pwAccHtml('account-id','身份证认证', idStatus, (verifyLocked?verifyView:verifyForm), false)+
+      pwAccHtml('account-deposit','押金认证', depositStatus, depositBlock, false)+
+      pwAccHtml('account-security','账号安全','密码 / 登录安全',
+        '<div id="pwAccountSecurityMount"><div class="pw-empty">加载中…</div></div>', false)+
+      pwAccHtml('account-install','安装妙脆角','添加到主屏幕',
+        '<p class="pw-note">把妙脆角加到主屏幕，打开更快，使用起来更像 App。</p>'+
+        '<button class="pw-btn" type="button" data-pwa-install-guide>安装妙脆角 / 添加到主屏幕</button>', false)+
+      '</div>';
   }
   function rulesHtml(){
     var rules=state.workRules||[];
@@ -5967,5 +6027,15 @@
     loadData({soft:true,forcePaint:true,preserveScroll:true}).catch(function(){});
   });
   init();
+  document.addEventListener('toggle', function(e){
+    var el=e.target;
+    if(!el || !el.matches || !el.matches('details.pw-acc[data-pw-acc]'))return;
+    try{
+      var map=pwAccOpenMap();
+      map[el.getAttribute('data-pw-acc')]=!!el.open;
+      sessionStorage.setItem('mcjPwAccOpen.v1', JSON.stringify(map));
+    }catch(err){}
+  }, true);
+
 })();
 
