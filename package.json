@@ -13,7 +13,8 @@
     "verify:companion-price-required": "node scripts/verify-companion-price-required.mjs",
     "verify:pricing-p1": "node scripts/verify-pricing-p1-offline.mjs",
     "verify:settlement-payment-fields": "node scripts/verify-settlement-payment-fields.mjs",
-    "verify:profiles-no-updated-at-patch": "node scripts/verify-profiles-no-updated-at-patch.mjs"
+    "verify:profiles-no-updated-at-patch": "node scripts/verify-profiles-no-updated-at-patch.mjs",
+    "verify:otp-fix": "node scripts/verify-otp-fix-offline.mjs"
   },
   "dependencies": {
     "@vitejs/plugin-react": "latest",

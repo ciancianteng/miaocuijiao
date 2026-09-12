@@ -1560,6 +1560,21 @@
           return;
         }
         var role = sendOtpBtn.getAttribute("data-login-role") || "boss";
+        var Cd = window.MCJOtpCooldown || null;
+        function cdLeft() {
+          if (!Cd) return 0;
+          return Cd.getRemainingSec("send_login_otp", role, otpEmail);
+        }
+        var remain = cdLeft();
+        if (remain > 0) {
+          setLoginMessage(sendOtpBtn, "发送过于频繁，请 " + remain + " 秒后再试。");
+          if (Cd && Cd.bindButtonCountdown) Cd.bindButtonCountdown(sendOtpBtn, "send_login_otp", role, otpEmail, "获取验证码");
+          else {
+            sendOtpBtn.disabled = true;
+            sendOtpBtn.textContent = remain + "s";
+          }
+          return;
+        }
         sendOtpBtn.disabled = true;
         var oldSend = sendOtpBtn.textContent;
         sendOtpBtn.textContent = "发送中…";
@@ -1570,7 +1585,11 @@
         })
           .then(function (r) {
             return r.json().then(function (j) {
-              if (!r.ok || j.ok === false) throw new Error((j && j.message) || "发送失败");
+              if (!r.ok || j.ok === false) {
+                var err = new Error((j && j.message) || "发送失败");
+                err.retryAfterSec = j && j.retryAfterSec;
+                throw err;
+              }
               return j;
             });
           })
@@ -1579,21 +1598,42 @@
             if (j.debugCode || j.devCode) tip += "（调试 " + (j.debugCode || j.devCode) + "）";
             setLoginMessage(sendOtpBtn, tip);
             var left = Number(j.retryAfterSec) || 60;
+            if (Cd) Cd.setCooldown("send_login_otp", role, otpEmail, left);
             sendOtpBtn.textContent = left + "s";
+            var deadline = Date.now() + left * 1000;
             var timer = setInterval(function () {
-              left -= 1;
-              if (left <= 0) {
+              var sec = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
+              if (sec <= 0) {
                 clearInterval(timer);
                 sendOtpBtn.disabled = false;
                 sendOtpBtn.textContent = oldSend || "获取验证码";
               } else {
-                sendOtpBtn.textContent = left + "s";
+                sendOtpBtn.disabled = true;
+                sendOtpBtn.textContent = sec + "s";
               }
-            }, 1000);
+            }, 500);
           })
           .catch(function (err) {
-            sendOtpBtn.disabled = false;
-            sendOtpBtn.textContent = oldSend || "获取验证码";
+            var retry = Number(err && err.retryAfterSec) || 0;
+            if (retry > 0 && Cd) Cd.setCooldown("send_login_otp", role, otpEmail, retry);
+            if (retry > 0) {
+              sendOtpBtn.disabled = true;
+              sendOtpBtn.textContent = retry + "s";
+              var deadline = Date.now() + retry * 1000;
+              var timer = setInterval(function () {
+                var sec = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
+                if (sec <= 0) {
+                  clearInterval(timer);
+                  sendOtpBtn.disabled = false;
+                  sendOtpBtn.textContent = oldSend || "获取验证码";
+                } else {
+                  sendOtpBtn.textContent = sec + "s";
+                }
+              }, 500);
+            } else {
+              sendOtpBtn.disabled = false;
+              sendOtpBtn.textContent = oldSend || "获取验证码";
+            }
             setLoginMessage(sendOtpBtn, humanizeAuthError(err));
           });
         return;
@@ -1610,6 +1650,18 @@
           return;
         }
         var regRole = sendRegOtpBtn.getAttribute("data-register-role") || "boss";
+        var CdReg = window.MCJOtpCooldown || null;
+        function regCdLeft() {
+          if (!CdReg) return 0;
+          return CdReg.getRemainingSec("send_register_otp", regRole, regEmail);
+        }
+        var remainReg = regCdLeft();
+        if (remainReg > 0) {
+          setLoginMessage(sendRegOtpBtn, "发送过于频繁，请 " + remainReg + " 秒后再试。");
+          sendRegOtpBtn.disabled = true;
+          sendRegOtpBtn.textContent = remainReg + "s";
+          return;
+        }
         sendRegOtpBtn.disabled = true;
         var oldRegSend = sendRegOtpBtn.textContent;
         sendRegOtpBtn.textContent = "发送中…";
@@ -1627,7 +1679,11 @@
         })
           .then(function (r) {
             return r.json().then(function (j) {
-              if (!r.ok || j.ok === false) throw new Error((j && j.message) || "发送失败");
+              if (!r.ok || j.ok === false) {
+                var err = new Error((j && j.message) || "发送失败");
+                err.retryAfterSec = j && j.retryAfterSec;
+                throw err;
+              }
               return j;
             });
           })
@@ -1636,21 +1692,42 @@
             if (j.debugCode || j.devCode) tip += "（调试 " + (j.debugCode || j.devCode) + "）";
             setLoginMessage(sendRegOtpBtn, tip);
             var left = Number(j.retryAfterSec) || 60;
+            if (CdReg) CdReg.setCooldown("send_register_otp", regRole, regEmail, left);
+            var deadline = Date.now() + left * 1000;
             sendRegOtpBtn.textContent = left + "s";
             var timer = setInterval(function () {
-              left -= 1;
-              if (left <= 0) {
+              var sec = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
+              if (sec <= 0) {
                 clearInterval(timer);
                 sendRegOtpBtn.disabled = false;
                 sendRegOtpBtn.textContent = oldRegSend || "获取验证码";
               } else {
-                sendRegOtpBtn.textContent = left + "s";
+                sendRegOtpBtn.disabled = true;
+                sendRegOtpBtn.textContent = sec + "s";
               }
-            }, 1000);
+            }, 500);
           })
           .catch(function (err) {
-            sendRegOtpBtn.disabled = false;
-            sendRegOtpBtn.textContent = oldRegSend || "获取验证码";
+            var retry = Number(err && err.retryAfterSec) || 0;
+            if (retry > 0 && CdReg) CdReg.setCooldown("send_register_otp", regRole, regEmail, retry);
+            if (retry > 0) {
+              sendRegOtpBtn.disabled = true;
+              var deadline = Date.now() + retry * 1000;
+              sendRegOtpBtn.textContent = retry + "s";
+              var timer = setInterval(function () {
+                var sec = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
+                if (sec <= 0) {
+                  clearInterval(timer);
+                  sendRegOtpBtn.disabled = false;
+                  sendRegOtpBtn.textContent = oldRegSend || "获取验证码";
+                } else {
+                  sendRegOtpBtn.textContent = sec + "s";
+                }
+              }, 500);
+            } else {
+              sendRegOtpBtn.disabled = false;
+              sendRegOtpBtn.textContent = oldRegSend || "获取验证码";
+            }
             setLoginMessage(sendRegOtpBtn, humanizeAuthError(err));
           });
         return;

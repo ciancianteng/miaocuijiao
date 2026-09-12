@@ -336,6 +336,40 @@
     try{return Object.assign({notify:true,sound:true,theme:'dark'},JSON.parse(localStorage.getItem(SETTINGS_KEY)||'{}'))}catch(e){return {notify:true,sound:true,theme:'dark'}}
   }
   function saveSettings(next){state.settings=next;try{localStorage.setItem(SETTINGS_KEY,JSON.stringify(next))}catch(e){}}
+  function openPwaInstallGuide(){
+    function tryOpen(){
+      if(window.MCJPwaInstall&&typeof window.MCJPwaInstall.openGuide==='function'){
+        window.MCJPwaInstall.openGuide();
+        return true;
+      }
+      return false;
+    }
+    if(tryOpen())return;
+    // Ensure shared guide assets (normally loaded by /pwa-boot.js).
+    try{
+      if(!document.querySelector('link[data-mcj-pwa-install-css]')){
+        var css=document.createElement('link');
+        css.rel='stylesheet';
+        css.href='/src/pwa-install-prompt.css?v=20260912pwaGuide1';
+        css.setAttribute('data-mcj-pwa-install-css','1');
+        document.head.appendChild(css);
+      }
+      if(!document.querySelector('script[data-mcj-pwa-install-js]')&&!window.__MCJPwaInstallLoaded){
+        var js=document.createElement('script');
+        js.src='/src/pwa-install-prompt.js?v=20260912pwaGuide1';
+        js.defer=true;
+        js.setAttribute('data-mcj-pwa-install-js','1');
+        js.onload=function(){tryOpen()};
+        document.head.appendChild(js);
+        return;
+      }
+    }catch(e){}
+    var n=0;
+    var t=setInterval(function(){
+      n+=1;
+      if(tryOpen()||n>20)clearInterval(t);
+    },100);
+  }
   function readMsgRead(){try{return JSON.parse(localStorage.getItem(MSG_READ_KEY)||'{}')}catch(e){return {}}}
   function markMsgRead(id){var map=readMsgRead();map[id]=1;try{localStorage.setItem(MSG_READ_KEY,JSON.stringify(map))}catch(e){}}
   function availableGames(){
@@ -670,7 +704,8 @@
     if(leavingAccount)state.accountDraft=null;
     closeMobileMenus();
     history.pushState(null,'',next);
-    paint({routeChange:true});
+    // Leaving account must rebuild the shell so privacy sections cannot linger outside .pw-page.
+    paint({routeChange:true,forceFull:leavingAccount});
   }
   function isAccountRoute(route){
     var r=route!=null?route:state.route;
@@ -1893,8 +1928,12 @@
       init();
       return;
     }
+    var prev=state.route;
+    var nextRoute=routeFromPath(location.pathname);
+    var leavingAccount=isAccountRoute(prev)&&!isAccountRoute(nextRoute);
     // Soft route restore — do not remount the whole workbench / re-run cold init.
-    paint({routeChange:true});
+    // Exception: leaving account forces a full shell rebuild to drop privacy DOM.
+    paint({routeChange:true,forceFull:leavingAccount});
     loadData({soft:true}).catch(function(){});
   });
   document.addEventListener('visibilitychange',function(){
@@ -2195,32 +2234,43 @@
       if(routeChanged)resetRouteScroll();
       var pageEl=existing.querySelector('.pw-page');
       if(pageEl)pageEl.innerHTML=pageHtml();
-      var menu=existing.querySelector('.pw-menu');
-      if(menu)menu.innerHTML=accountMenu;
-      var annHost=existing.querySelector('[data-pw-announcement-host], .pw-announcement-host');
-      if(!isolated&&!annHost&&window.MCJCompanionAnnouncements&&window.MCJCompanionAnnouncements.hostHtml){
-        var top=existing.querySelector('.pw-top');
-        if(top&&top.parentNode){
-          var holder=document.createElement('div');
-          holder.innerHTML=window.MCJCompanionAnnouncements.hostHtml();
-          if(holder.firstChild)top.parentNode.insertBefore(holder.firstChild,top.nextSibling);
+      else{
+        // Broken shell boundary (page node missing) — fall through to full rebuild.
+        opts.forceFull=true;
+        canPatch=false;
+      }
+      if(canPatch){
+        scrubCrossPageArtifacts(existing);
+        var menu=existing.querySelector('.pw-menu');
+        if(menu)menu.innerHTML=accountMenu;
+        var annHost=existing.querySelector('[data-pw-announcement-host], .pw-announcement-host');
+        if(!isolated&&!annHost&&window.MCJCompanionAnnouncements&&window.MCJCompanionAnnouncements.hostHtml){
+          var top=existing.querySelector('.pw-top');
+          if(top&&top.parentNode){
+            var holder=document.createElement('div');
+            holder.innerHTML=window.MCJCompanionAnnouncements.hostHtml();
+            if(holder.firstChild)top.parentNode.insertBefore(holder.firstChild,top.nextSibling);
+          }
         }
+        syncTransientOverlays();
+        if(routeChanged)resetRouteScroll();
+        else if(scrollPos)applyScrollPos(scrollPos);
+        bindPwKeyboardInset();
+        syncPwKeyboardInset();
+        if(!isolated&&window.MCJCompanionAnnouncements){
+          if(window.MCJCompanionAnnouncements.onShellPaint)window.MCJCompanionAnnouncements.onShellPaint();
+        }
+        if(state.route==='profile')restoreProfileFocus();
+        if(isAccountRoute()){
+          restoreAccountFocus();
+          mountCompanionAccountSecurity();
+          mountDirectBossCard();
+        }else{
+          // Defense in depth: never leave account mounts alive on other tabs.
+          scrubCrossPageArtifacts(existing);
+        }
+        return;
       }
-      syncTransientOverlays();
-      if(routeChanged)resetRouteScroll();
-      else if(scrollPos)applyScrollPos(scrollPos);
-      bindPwKeyboardInset();
-      syncPwKeyboardInset();
-      if(!isolated&&window.MCJCompanionAnnouncements){
-        if(window.MCJCompanionAnnouncements.onShellPaint)window.MCJCompanionAnnouncements.onShellPaint();
-      }
-      if(state.route==='profile')restoreProfileFocus();
-      if(isAccountRoute()){
-        restoreAccountFocus();
-        mountCompanionAccountSecurity();
-        mountDirectBossCard();
-      }
-      return;
     }
 
     state.drawerOpen=false;
@@ -2258,6 +2308,7 @@
     }
     bindPwKeyboardInset();
     syncPwKeyboardInset();
+    scrubCrossPageArtifacts(root);
     if(state.route==='profile')restoreProfileFocus();
     if(isAccountRoute()){
       restoreAccountFocus();
@@ -2265,9 +2316,48 @@
       mountDirectBossCard();
     }
   }
+  // Account/privacy sections must never survive outside the account page tree.
+  // Root cause class: SPA patch replaces only .pw-page; any node that escaped that
+  // container (broken nesting / stale mount) would otherwise keep showing on 抢单大厅.
+  function scrubCrossPageArtifacts(scope){
+    scope=scope||root;
+    if(!scope||!scope.querySelectorAll)return;
+    if(isAccountRoute()){
+      // Still remove duplicates that landed outside the active page.
+      var page=scope.querySelector('.pw-page');
+      scope.querySelectorAll('#pwDirectBossCard,[data-direct-boss-card],#pwAccountSecurityMount').forEach(function(el){
+        if(page&&page.contains(el))return;
+        el.remove();
+      });
+      return;
+    }
+    scope.querySelectorAll(
+      '#pwDirectBossCard,[data-direct-boss-card],#pwAccountSecurityMount,'+
+      '[data-private-contact-form],[data-verification-form],[data-deposit-form],'+
+      '[data-verification-view],[data-deposit-view],.pw-account-page'
+    ).forEach(function(el){el.remove();});
+    var main=scope.querySelector('.pw-main');
+    var pageEl=scope.querySelector('.pw-page');
+    if(!main||!pageEl)return;
+    Array.prototype.slice.call(main.children).forEach(function(child){
+      if(child===pageEl)return;
+      if(child.matches&&child.matches('.pw-top,.pw-announcement-host,[data-pw-announcement-host],header'))return;
+      if(child.id==='pwDirectBossCard'||(child.getAttribute&&child.getAttribute('data-direct-boss-card')!=null)){
+        child.remove();
+        return;
+      }
+      if(child.querySelector&&child.querySelector('#pwDirectBossCard,[data-direct-boss-card],[data-private-contact-form],[data-verification-form],[data-deposit-form]')){
+        child.remove();
+      }
+    });
+  }
   function mountDirectBossCard(){
+    if(!isAccountRoute())return;
     var mount=document.getElementById('pwDirectBossCard');
     if(!mount)return;
+    // Refuse to hydrate boss card unless it lives under the account page boundary.
+    if(!mount.closest||!mount.closest('.pw-page [data-pw-page="account"], .pw-account-page, .pw-page'))return;
+    if(mount.closest('[data-pw-page]')&&!mount.closest('[data-pw-page="account"]'))return;
     var token='';
     try{token=sessionStorage.getItem('companionAuthToken')||localStorage.getItem('companionAuthToken')||'';}catch(e){}
     if(!token&&state.session)token=String(state.session.token||state.session.accessToken||'').trim();
@@ -3099,10 +3189,16 @@
   }
   function settingsHtml(){
     var s=state.settings||readSettings();
+    var standalone=!!(window.MCJPwaInstall&&window.MCJPwaInstall.isStandalone&&window.MCJPwaInstall.isStandalone());
+    var installBlock=standalone
+      ? '<p class="pw-note">已从主屏幕打开，当前为 App 模式。</p>'
+      : '<p class="pw-note">添加到主屏幕后打开更快，使用起来更像 App。关闭自动提示后仍可从这里重新查看说明。</p>'+
+        '<button class="pw-btn primary" type="button" data-pwa-install-guide>安装妙脆角 / 添加到主屏幕</button>';
     return '<div class="pw-page-head"><div><h2>设置</h2><p>仅影响本机陪玩端体验。</p></div></div>'+
       '<section class="pw-card pad"><h3>主题</h3><p class="pw-note">当前为固定黑粉运营主题（上线版不可切换品牌色）。</p><div class="pw-info-list"><div><span>主题</span><strong>暗色粉（默认）</strong></div></div></section>'+
       '<section class="pw-card pad" style="margin-top:14px"><h3>通知</h3><label class="pw-check"><input type="checkbox" data-setting="notify" '+(s.notify?'checked':'')+'> 接收订单 / 提现 / 审核提醒</label></section>'+
       '<section class="pw-card pad" style="margin-top:14px"><h3>声音</h3><label class="pw-check"><input type="checkbox" data-setting="sound" '+(s.sound?'checked':'')+'> 提示音（新消息 / 订单 / 抢单 / 审核）</label></section>'+
+      '<section class="pw-card pad" style="margin-top:14px"><h3>安装妙脆角</h3>'+installBlock+'</section>'+
       '<section class="pw-card pad" style="margin-top:14px"><h3>账号</h3><button class="pw-btn danger" type="button" data-logout>退出登录</button></section>';
   }
   function fieldErr(name){var msg=state.profileErrors&&state.profileErrors[name];return msg?'<span class="pw-field-error" data-field-error="'+esc(name)+'">'+esc(msg)+'</span>':''}
@@ -3684,7 +3780,8 @@
       '</select>'+
       '<button class="pw-btn pw-btn-mini" type="button" data-hall-refresh>刷新</button>'+
       '</div></div>';
-    return '<div class="pw-page-head pw-hall-head"><div><h2>抢单大厅</h2><p>只展示真实可抢订单。</p></div></div>'+
+    return '<div class="pw-hall-page" data-pw-page="hall">'+
+      '<div class="pw-page-head pw-hall-head"><div><h2>抢单大厅</h2><p>只展示真实可抢订单。</p></div></div>'+
       statusBar+
       (locked?'<div class="pw-empty" style="margin-bottom:12px"><strong>暂不可抢单</strong><span>'+esc(auditHint())+'</span></div>':'')+
       filtersRow+
@@ -3741,7 +3838,7 @@
             '<button class="pw-btn primary pw-grab-cta" data-accept-order="'+esc(o.id)+'" '+(disabled?'disabled':'')+'>'+esc(btnLabel)+'</button>'+
           '</footer>'+
         '</article>';
-      }).join(''):'<div class="pw-empty"><strong>暂无可抢订单</strong><span>'+(locked?auditHint():(!online?'请先切换为在线接单。':'客服发布订单后会自动显示，或调整筛选条件。'))+'</span></div>')+'</section>';
+      }).join(''):'<div class="pw-empty"><strong>暂无可抢订单</strong><span>'+(locked?auditHint():(!online?'请先切换为在线接单。':'客服发布订单后会自动显示，或调整筛选条件。'))+'</span></div>')+'</section></div>';
   }
 
   function accountDocCard(opts){
@@ -3929,7 +4026,7 @@
       '<label>备注（可选）<textarea name="remark">'+esc((depositRemark||'').replace(/\[\[DEPOSIT_PAY\]\][\s\S]*?\[\[\/DEPOSIT_PAY\]\]/g,'').trim())+'</textarea></label>'+
       '<button class="pw-btn primary" type="submit" '+(depositChannelList.length?'':'disabled')+'>'+(depositPhase==='rejected'?'重新提交押金审核':'提交押金审核')+'</button></form>';
     var depositBlock=depositPhase==='approved'?depositPaidView:(depositLocked?depositPendingView:depositForm);
-    return '<div class="pw-page-head"><div><h2>账号中心（隐私）</h2><p>仅本人 / 客服 / 后台可见，老板永远看不到。</p></div><button class="pw-btn" type="button" data-route="/companion/profile">公开资料</button></div>'+
+    return '<div class="pw-account-page" data-pw-page="account"><div class="pw-page-head"><div><h2>账号中心（隐私）</h2><p>仅本人 / 客服 / 后台可见，老板永远看不到。</p></div><button class="pw-btn" type="button" data-route="/companion/profile">公开资料</button></div>'+
       accountAccessBannerHtml()+
       reviewRejectBannerHtml('/companion/account')+
       credentialBanner+
@@ -3973,7 +4070,10 @@
       '<button class="pw-btn primary" type="submit">保存联系方式</button></form>'+
       (verifyLocked?verifyView:verifyForm)+
       depositBlock+
-      '<section class="pw-card pad pw-form-narrow" style="margin-top:14px" id="pwAccountSecurityMount"><h3>账号安全</h3><div class="pw-empty">加载中…</div></section>';
+      '<section class="pw-card pad pw-form-narrow" style="margin-top:14px" id="pwAccountSecurityMount"><h3>账号安全</h3><div class="pw-empty">加载中…</div></section>'+
+      '<section class="pw-card pad" style="margin-top:14px"><h3>安装妙脆角</h3>'+
+      '<p class="pw-note">把妙脆角加到主屏幕，打开更快，使用起来更像 App。</p>'+
+      '<button class="pw-btn" type="button" data-pwa-install-guide>安装妙脆角 / 添加到主屏幕</button></section></div>';
   }
   function rulesHtml(){
     var rules=state.workRules||[];
@@ -4392,22 +4492,31 @@
       if(!email||!/^\S+@\S+\.\S+$/.test(email)){state.loginError='请输入有效邮箱。';paint();return}
       state.registerBusy=true;state.registerToken='';state.registerVerifiedEmail='';state.loginError='正在发送验证码…';paint();
       fetch('/api/auth',{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify({action:'send_register_otp',email:email,role:'companion'})})
-        .then(function(r){return r.json().then(function(j){if(!r.ok||j.ok===false)throw new Error((j&&j.message)||'发送失败');return j;});})
+        .then(function(r){return r.json().then(function(j){if(!r.ok||j.ok===false){var err=new Error((j&&j.message)||'发送失败');err.retryAfterSec=j&&j.retryAfterSec;throw err;}return j;});})
         .then(function(j){
           state.registerBusy=false;
           var tip=j.message||'验证码已发送';
           if(j.debugCode||j.devCode)tip+='（调试 '+(j.debugCode||j.devCode)+'）';
           state.loginError=tip;
           state.registerCooldownUntil=Date.now()+(Number(j.retryAfterSec)||60)*1000;
+          try{sessionStorage.setItem('mcj_otp_cd:send_register_otp:companion:'+email,String(state.registerCooldownUntil));}catch(e){}
           paint();
-          var left=Number(j.retryAfterSec)||60;
           var timer=setInterval(function(){
-            left-=1;
+            var left=Math.max(0,Math.ceil((state.registerCooldownUntil-Date.now())/1000));
             if(left<=0){clearInterval(timer);state.registerCooldownUntil=0;if(state.authTab==='register')paint();}
             else if(state.authTab==='register')paint();
-          },1000);
+          },500);
         })
-        .catch(function(err){state.registerBusy=false;state.loginError=err.message||'发送失败';paint();});
+        .catch(function(err){
+          state.registerBusy=false;
+          var retry=Number(err&&err.retryAfterSec)||0;
+          if(retry>0){
+            state.registerCooldownUntil=Date.now()+retry*1000;
+            try{sessionStorage.setItem('mcj_otp_cd:send_register_otp:companion:'+email,String(state.registerCooldownUntil));}catch(e){}
+          }
+          state.loginError=err.message||'发送失败';
+          paint();
+        });
       return;
     }
     var verifyRegOtp=e.target.closest('[data-verify-register-otp]');
@@ -4557,6 +4666,11 @@
     }
     if(e.target.closest('[data-reload-direct-boss]')){e.preventDefault();mountDirectBossCard();return}
     if(e.target.closest('[data-logout]')){clearSession();location.replace('/companion/login/');return}
+    if(e.target.closest('[data-pwa-install-guide]')){
+      e.preventDefault();
+      openPwaInstallGuide();
+      return;
+    }
     if(e.target.closest('[data-reload-inbox]')){reloadInbox().then(function(){return loadActiveThread({force:true});});return}
     if(e.target.closest('[data-reload-thread]')){loadActiveThread({force:true,clear:false});return}
     if(e.target.closest('[data-forgot-dialog] [data-forgot-close]')|| (e.target.closest('[data-forgot-close]')&&!e.target.closest('[data-forgot-dialog]'))){

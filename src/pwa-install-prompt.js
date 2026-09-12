@@ -8,6 +8,7 @@
   var LS_DISMISSED = "mcj_pwa_prompt_dismissed_at";
   var LS_SEEN = "mcj_pwa_prompt_seen";
   var LS_COUNT = "mcj_pwa_prompt_count";
+  var SS_AUTO_SHOWN = "mcj_pwa_prompt_session_shown";
   var MAX_AUTO = 3;
   var DISMISS_MS = 7 * 24 * 60 * 60 * 1000;
   var DELAY_MIN = 2500;
@@ -70,6 +71,20 @@
     return Date.now() - at < DISMISS_MS;
   }
 
+  function ssGet(key) {
+    try {
+      return sessionStorage.getItem(key);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function ssSet(key, val) {
+    try {
+      sessionStorage.setItem(key, String(val));
+    } catch (e) {}
+  }
+
   function canAutoShow() {
     if (isStandalone()) {
       markInstalled();
@@ -78,6 +93,8 @@
     if (isInstalledFlag()) return false;
     if (promptCount() >= MAX_AUTO) return false;
     if (withinDismissWindow()) return false;
+    // One auto prompt per browser tab session — avoids re-pop on portal HTML switches.
+    if (ssGet(SS_AUTO_SHOWN) === "1") return false;
     return true;
   }
 
@@ -199,13 +216,13 @@
         '<div class="mcj-pwa-arrow">→</div>' +
         '<div class="mcj-pwa-step"><div class="mcj-pwa-step-ico">✓</div><span>添加</span></div>' +
         "</div>" +
-        '<div class="mcj-pwa-hint"><span class="mcj-pwa-chevron">▼</span><span>点击 Safari 下方分享按钮</span></div>'
+        '<div class="mcj-pwa-hint"><span class="mcj-pwa-chevron">▼</span><span>点击 Safari 分享按钮 → 添加到主屏幕</span></div>'
       );
     }
     if (platform.android && hasBip) {
       return (
         '<div class="mcj-pwa-flow" aria-hidden="true">' +
-        '<div class="mcj-pwa-step"><div class="mcj-pwa-step-ico">◎</div><span>一键安装</span></div>' +
+        '<div class="mcj-pwa-step"><div class="mcj-pwa-step-ico">◎</div><span>安装妙脆角</span></div>' +
         '<div class="mcj-pwa-arrow">→</div>' +
         '<div class="mcj-pwa-step"><div class="mcj-pwa-step-ico">⌂</div><span>出现在主屏幕</span></div>' +
         "</div>"
@@ -225,25 +242,29 @@
   function titles(platform, hasBip) {
     if (platform.iOS) {
       return {
-        title: "把妙脆角加到主屏幕",
-        sub: "像 App 一样从主屏幕打开，更快更方便",
+        title: "把妙脆角装到主屏幕",
+        sub: "打开更快，使用起来更像 App",
+        hint: "点击 Safari 分享按钮 → 添加到主屏幕 → 添加",
       };
     }
     if (platform.android && hasBip) {
       return {
-        title: "安装妙脆角到主屏幕",
-        sub: "一键安装，随时打开陪玩大厅",
+        title: "把妙脆角装到主屏幕",
+        sub: "打开更快，使用起来更像 App",
+        hint: "点击下方「安装妙脆角」，使用系统原生安装提示",
       };
     }
     if (platform.android) {
       return {
-        title: "把妙脆角加到主屏幕",
-        sub: "通过 Chrome 菜单安装，像 App 一样使用",
+        title: "把妙脆角装到主屏幕",
+        sub: "打开更快，使用起来更像 App",
+        hint: "打开 Chrome 菜单 → 安装应用 / 添加到主屏幕",
       };
     }
     return {
-      title: "把妙脆角加到主屏幕",
-      sub: "添加到主屏幕，下次打开更快",
+      title: "把妙脆角装到主屏幕",
+      sub: "打开更快，使用起来更像 App",
+      hint: "使用浏览器菜单中的「安装应用 / 添加到主屏幕」",
     };
   }
 
@@ -261,8 +282,8 @@
       logoSrc() +
       '" alt="妙脆角" width="56" height="56" decoding="async">' +
       "<div>" +
-      '<h2 id="mcjPwaTitle">把妙脆角加到主屏幕</h2>' +
-      '<p data-mcj-pwa-sub>像 App 一样从主屏幕打开</p>' +
+      '<h2 id="mcjPwaTitle">把妙脆角装到主屏幕</h2>' +
+      '<p data-mcj-pwa-sub>打开更快，使用起来更像 App</p>' +
       "</div></div>" +
       '<div data-mcj-pwa-body></div>' +
       '<div class="mcj-pwa-actions" data-mcj-pwa-actions></div>' +
@@ -304,13 +325,13 @@
     var body = root.querySelector("[data-mcj-pwa-body]");
     var actions = root.querySelector("[data-mcj-pwa-actions]");
     if (titleEl) titleEl.textContent = t.title;
-    if (subEl) subEl.textContent = t.sub;
+    if (subEl) subEl.textContent = t.sub + (t.hint ? " · " + t.hint : "");
     if (body) body.innerHTML = buildFlow(platform, hasBip);
     if (actions) {
       if (platform.android && hasBip) {
         actions.innerHTML =
           '<button type="button" class="mcj-pwa-btn" data-mcj-pwa-later>稍后再说</button>' +
-          '<button type="button" class="mcj-pwa-btn primary" data-mcj-pwa-install>安装</button>';
+          '<button type="button" class="mcj-pwa-btn primary" data-mcj-pwa-install>安装妙脆角</button>';
       } else if (platform.iOS) {
         actions.innerHTML =
           '<button type="button" class="mcj-pwa-btn" data-mcj-pwa-later>稍后再说</button>' +
@@ -343,19 +364,23 @@
   function open(opts) {
     opts = opts || {};
     var force = !!opts.force;
+    // Already running as installed app — never show install chrome.
     if (isStandalone()) {
       markInstalled();
       return false;
     }
-    if (isInstalledFlag() && !force) return false;
-    if (!force && !canAutoShow()) return false;
-    // force still blocked only by standalone/installed above
-    if (force && isInstalledFlag()) return false;
+    // Auto prompt respects dismiss cooldown / install flag / max autos.
+    // force=true (settings entry) always reopens the guide while not standalone.
+    if (!force) {
+      if (isInstalledFlag()) return false;
+      if (!canAutoShow()) return false;
+    }
 
     renderContent();
     ensureDom().classList.add("is-open");
     openState = true;
     lsSet(LS_SEEN, "1");
+    if (!force) ssSet(SS_AUTO_SHOWN, "1");
     return true;
   }
 
@@ -474,8 +499,12 @@
 
   window.MCJPwaInstall = {
     open: open,
+    openGuide: function () {
+      return open({ force: true });
+    },
     close: close,
     isStandalone: isStandalone,
+    canAutoShow: canAutoShow,
     markInstalled: markInstalled,
     ensurePwaMeta: ensurePwaMeta,
   };

@@ -889,9 +889,52 @@ a.pw-btn{display:inline-flex;align-items:center;justify-content:center;text-deco
 .pw-hall-seg{display:inline-flex;padding:3px;border-radius:999px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);gap:2px}
 .pw-seg-item{height:30px;padding:0 12px;border:0;border-radius:999px;background:transparent;color:var(--pw-muted);font-size:12px;font-weight:700}
 .pw-seg-item.active{background:rgba(255,143,197,.18);color:#ffe8f3}
-.pw-hall-filter-tools{display:flex;align-items:center;gap:8px;margin-left:auto}
+.pw-hall-filter-tools{display:flex;align-items:center;gap:8px;margin-left:auto;width:auto}
 .pw-hall-filters{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:12px 0}
-.pw-btn-mini{height:34px;padding:0 12px;border-radius:10px;font-size:12px}
+.pw-btn-mini{height:34px;min-height:34px;padding:0 12px;border-radius:10px;font-size:12px;font-weight:700;line-height:1;box-sizing:border-box}
+/* Hall game select — must match dark pink UI (never native white chrome) */
+.pw-hall-select,
+select.pw-hall-select,
+.pw-hall-filter-tools select.pw-hall-select{
+  -webkit-appearance:none!important;
+  appearance:none!important;
+  color-scheme:dark;
+  flex:1 1 auto;
+  min-width:0;
+  width:auto;
+  height:34px;
+  min-height:34px;
+  max-height:34px;
+  margin:0;
+  padding:0 32px 0 12px;
+  border-radius:10px!important;
+  border:1px solid rgba(255,145,195,.45)!important;
+  background-color:rgba(12,10,16,.92)!important;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%23ff9ec8' d='M1.2 1.2L6 6l4.8-4.8' stroke='%23ff9ec8' stroke-width='1.6' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")!important;
+  background-repeat:no-repeat!important;
+  background-position:right 10px center!important;
+  background-size:12px 8px!important;
+  color:#fff!important;
+  font-size:12px!important;
+  font-weight:700!important;
+  line-height:34px;
+  box-shadow:none!important;
+  outline:none;
+  cursor:pointer;
+}
+.pw-hall-select:hover,
+.pw-hall-select:focus,
+.pw-hall-select:active,
+.pw-hall-select:focus-visible{
+  background-color:rgba(18,14,22,.96)!important;
+  border-color:rgba(255,145,195,.85)!important;
+  color:#fff!important;
+  box-shadow:0 0 0 3px rgba(255,145,195,.18)!important;
+}
+.pw-hall-select option{
+  background:#16131b;
+  color:#fff;
+}
 .pw-hall-head{margin-bottom:10px}
 .pw-hall-list{gap:12px}
 .pw-grab-main{display:grid;gap:6px;margin-bottom:10px}
@@ -909,6 +952,8 @@ a.pw-btn{display:inline-flex;align-items:center;justify-content:center;text-deco
 .pw-grab-card.is-blocked{opacity:.96}
 @media (max-width:720px){
   .pw-hall-filter-tools{margin-left:0;width:100%}
+  .pw-hall-select{flex:1 1 auto}
+  .pw-hall-filter-tools .pw-btn-mini{flex:0 0 auto}
   .pw-hall-status-hint{display:none}
 }
 

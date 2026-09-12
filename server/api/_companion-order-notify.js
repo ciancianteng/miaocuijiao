@@ -61,8 +61,11 @@ function publicSiteOrigin() {
     env("PUBLIC_SITE_URL") ||
     env("SITE_URL") ||
     env("APP_URL") ||
-    (env("VERCEL_ENV") === "production" ? "https://meowcuijiao.com" : "https://meow-cuijiao-homepage-staging.vercel.app");
-  return String(raw || "https://meow-cuijiao-homepage-staging.vercel.app").replace(/\/$/, "");
+    (env("VERCEL_ENV") === "production" ? "https://www.meowcuijiao.com" : "https://meow-cuijiao-homepage-staging.vercel.app");
+  // Canonical production origin is www (apex 308 → www). Never emit bare apex links.
+  return String(raw || "https://meow-cuijiao-homepage-staging.vercel.app")
+    .replace(/\/$/, "")
+    .replace(/^https:\/\/meowcuijiao\.com$/i, "https://www.meowcuijiao.com");
 }
 
 function formatTime(iso) {
