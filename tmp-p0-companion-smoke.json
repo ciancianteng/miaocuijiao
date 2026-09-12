@@ -1,0 +1,72 @@
+{
+  "BASE": "https://meow-cuijiao-homepage-c1e0xj1bh-ciancianteng-4581s-projects.vercel.app",
+  "orderNo": "P0CMP-1785437432539",
+  "orderId": "4c7f06b9-601a-4e95-bc19-7b218a0984a4",
+  "findings": [
+    {
+      "ok": true,
+      "id": "login-boss",
+      "detail": "89bbc343-d508-4539-b4d1-2b42949936a6"
+    },
+    {
+      "ok": true,
+      "id": "login-companion",
+      "detail": "c776e811-6003-48a4-8f11-ed9eb1b70898"
+    },
+    {
+      "ok": true,
+      "id": "bootstrap",
+      "detail": "HTTP 200 msg= myOrders=33"
+    },
+    {
+      "ok": true,
+      "id": "seed-claimed",
+      "detail": "P0CMP-1785437432539 claimed → companion c776e811-6003-48a4-8f11-ed9eb1b70898"
+    },
+    {
+      "ok": true,
+      "id": "see-claimed-order",
+      "detail": "found=1 waitingConfirm=1 status=claimed"
+    },
+    {
+      "ok": true,
+      "id": "accept-direct",
+      "detail": "HTTP 200 msg=已确认接单，订单进入待开始 status=confirmed"
+    },
+    {
+      "ok": true,
+      "id": "db-after-accept",
+      "detail": "status=confirmed"
+    },
+    {
+      "ok": true,
+      "id": "boss-sync",
+      "detail": "HTTP 200 status=confirmed"
+    },
+    {
+      "ok": true,
+      "id": "cs-sync",
+      "detail": "HTTP 200 hit=true status=confirmed orders=64"
+    },
+    {
+      "ok": true,
+      "id": "update-profile",
+      "detail": "HTTP 200 msg=资料已提交审核"
+    },
+    {
+      "ok": true,
+      "id": "wallet-summary",
+      "detail": "withdrawable=142 monthIncome=142 earnings=true"
+    },
+    {
+      "ok": true,
+      "id": "withdraw-no-500",
+      "detail": "HTTP 400 msg=请先提交并等待结款账户审核通过"
+    },
+    {
+      "ok": true,
+      "id": "history-orders",
+      "detail": "count=28"
+    }
+  ]
+}

@@ -1,0 +1,65 @@
+{
+  "base": "https://meow-cuijiao-homepage-staging.vercel.app",
+  "adminUrl": "https://meow-cuijiao-homepage-staging.vercel.app/admin.html",
+  "bossUrl": "https://meow-cuijiao-homepage-staging.vercel.app/more-gameplays.html",
+  "table": "gameplay_products",
+  "checks": {
+    "admin_login": {
+      "pass": true,
+      "detail": "admin@meow.test"
+    },
+    "boss_source_supabase": {
+      "pass": true,
+      "detail": "source=supabase count=4"
+    },
+    "boss_shows_migrated_catalog": {
+      "pass": true,
+      "detail": "三角洲跑刀, APEX 上分护航, LOL 陪练, 语音陪聊"
+    },
+    "admin_list_supabase": {
+      "pass": true,
+      "detail": "source=supabase count=4"
+    },
+    "admin_create": {
+      "pass": true,
+      "detail": "10c1930e-4610-48d4-9822-3a7fad957eb6"
+    },
+    "boss_shows_created": {
+      "pass": true,
+      "detail": "AdminBoss Sync 1785774531780"
+    },
+    "admin_edit": {
+      "pass": true,
+      "detail": "AdminBoss Sync 1785774531780 Edited"
+    },
+    "boss_shows_edited": {
+      "pass": true,
+      "detail": "AdminBoss Sync 1785774531780 Edited/99"
+    },
+    "admin_unpublish": {
+      "pass": true,
+      "detail": ""
+    },
+    "boss_hides_unpublished": {
+      "pass": true,
+      "detail": "hidden"
+    },
+    "admin_republish": {
+      "pass": true,
+      "detail": ""
+    },
+    "boss_shows_republished": {
+      "pass": true,
+      "detail": "AdminBoss Sync 1785774531780 Edited"
+    },
+    "admin_delete": {
+      "pass": true,
+      "detail": ""
+    },
+    "boss_hides_deleted": {
+      "pass": true,
+      "detail": "gone"
+    }
+  },
+  "ok": true
+}

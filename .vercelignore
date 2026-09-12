@@ -1,0 +1,22 @@
+# Hobby ≤12 serverless functions — exclude non-core / deferred endpoints from deploy.
+# Core launch path keeps: auth, orders, customer-service, companion, chat,
+# public/companions, boss/marketplace, notifications, popularity, recharge, home/daily-stats.
+
+api/admin/
+api/platform/
+api/coupons.js
+api/payment-callback.js
+api/reports.js
+api/service-packages.js
+api/gateway.js
+
+# local tooling / artifacts
+_tmp-*.cjs
+_tmp-*.mjs
+_tmp-*.js
+node_modules
+.local-data
+screenshots
+checkpoints
+dist
+*.log

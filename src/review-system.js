@@ -33,10 +33,14 @@
   function currentUser() {
     var user = read(USER_KEY, null);
     if (!user) {
-      user = { user_id: "user_demo_001", name: "Demo Boss" };
-      write(USER_KEY, user);
+      try {
+        user = JSON.parse(localStorage.getItem("customerUser") || "null");
+      } catch (e) {
+        user = null;
+      }
     }
-    return user;
+    // Never invent Demo Boss / acceptance identity.
+    return user || null;
   }
 
   function demoOrders() {
@@ -97,9 +101,9 @@
   }
 
   function seed() {
-    if (!localStorage.getItem(ORDER_KEY)) write(ORDER_KEY, demoOrders());
+    // Do not seed fake demo orders or auto-create a demo user.
+    if (!localStorage.getItem(ORDER_KEY)) write(ORDER_KEY, []);
     if (!localStorage.getItem(REVIEW_KEY)) write(REVIEW_KEY, []);
-    currentUser();
   }
 
   function getOrders() {
@@ -122,7 +126,7 @@
       in_progress: "进行中",
       cancelled: "已取消",
       refunding: "退款中",
-      pending: "待接单"
+      pending: "等待陪玩抢单"
     };
     return map[status] || status || "未知";
   }
@@ -236,7 +240,7 @@
     });
     box.innerHTML = orders.map(function (order) {
       return '<article class="card order-card" data-status="' + esc(order.status) + '">' +
-        '<div class="row"><div class="row"><img src="' + esc(order.player_avatar || "assets/meow-cuijiao-brand.jpg") + '" style="width:56px;height:56px;border-radius:16px;object-fit:cover"><div><h3>' + esc(order.player_name) + '</h3><p class="muted">' + esc(order.game) + ' · ' + esc(order.service_time) + '</p></div></div><span class="tag">' + esc(statusText(order.status)) + '</span></div>' +
+        '<div class="row"><div class="row"><img src="' + esc(order.player_avatar || "/default-avatar.png") + '" style="width:56px;height:56px;border-radius:16px;object-fit:cover" onerror="this.onerror=null;this.src=\'/default-avatar.png\'"><div><h3>' + esc(order.player_name) + '</h3><p class="muted">' + esc(order.game) + ' · ' + esc(order.service_time) + '</p></div></div><span class="tag">' + esc(statusText(order.status)) + '</span></div>' +
         '<p class="muted">服务时长 ' + esc(order.duration) + ' · 金额 <b class="price">' + esc(order.amount) + '</b></p>' +
         '<div class="row"><button class="btn" data-detail-order="' + esc(order.order_id) + '">查看详情</button>' + orderActionHtml(order) + '<button class="btn primary" data-reorder="' + esc(order.player_name) + '">再次下单</button></div>' +
         '</article>';

@@ -1,0 +1,101 @@
+{
+  "at": "2026-08-03T22:34:50.106Z",
+  "base": "https://meow-cuijiao-homepage-staging.vercel.app",
+  "pass": true,
+  "criterion": "approvedCount === hallCount === gateVisibleCount",
+  "approvedCount": 6,
+  "hallCount": 6,
+  "gateVisibleCount": 6,
+  "homeSourceCount": 6,
+  "homeNote": "Homepage recommendation data source = /api/public/companions (UI may show top 3 only).",
+  "approvedList": [
+    {
+      "code": "PW00002",
+      "nickname": "1717",
+      "user_id": "db27b7be-f0e2-4af1-9c1b-d1ddd18c6c81",
+      "id": "f6fa3ebf-8dd2-41b7-a990-5699e30a5128",
+      "hallVisible": true
+    },
+    {
+      "code": "PW00004",
+      "nickname": "凝梦",
+      "user_id": "bc2b1d20-e7e7-4399-ae9d-b3663f2b2abc",
+      "id": "dbffd3fa-b6d5-40b1-aa4f-25edcb7c24d5",
+      "hallVisible": true
+    },
+    {
+      "code": "PW00005",
+      "nickname": "流程验9314",
+      "user_id": "d1cafa3a-f6a9-46ab-a7c1-da052cb4c413",
+      "id": "76096c16-62a0-4d07-8858-164ec23b63ba",
+      "hallVisible": true
+    },
+    {
+      "code": "PW00006",
+      "nickname": "流程验6898",
+      "user_id": "7de60078-637e-439a-ac4c-fa7a6706efe1",
+      "id": "e4d83432-3907-4fa4-8058-251f90ce05cb",
+      "hallVisible": true
+    },
+    {
+      "code": "PW00007",
+      "nickname": "流程验9213",
+      "user_id": "520c58a2-453c-4761-b66e-b7eb70021b05",
+      "id": "9fc44ae9-fa0b-40c0-bc08-c73d0a31927e",
+      "hallVisible": true
+    },
+    {
+      "code": "PW00008",
+      "nickname": "流程验7254",
+      "user_id": "def5a888-1a90-4231-9975-d0b5758d5024",
+      "id": "2947cb27-4673-4267-822d-7bdd14c67f84",
+      "hallVisible": true
+    }
+  ],
+  "hallList": [
+    {
+      "code": "PW00008",
+      "nickname": "流程验7254",
+      "user_id": "def5a888-1a90-4231-9975-d0b5758d5024",
+      "hallVisible": true,
+      "publishStatus": "资料待完善"
+    },
+    {
+      "code": "PW00005",
+      "nickname": "流程验9314",
+      "user_id": "d1cafa3a-f6a9-46ab-a7c1-da052cb4c413",
+      "hallVisible": true,
+      "publishStatus": "资料待完善"
+    },
+    {
+      "code": "PW00004",
+      "nickname": "凝梦",
+      "user_id": "bc2b1d20-e7e7-4399-ae9d-b3663f2b2abc",
+      "hallVisible": true,
+      "publishStatus": "可上架"
+    },
+    {
+      "code": "PW00006",
+      "nickname": "流程验6898",
+      "user_id": "7de60078-637e-439a-ac4c-fa7a6706efe1",
+      "hallVisible": true,
+      "publishStatus": "资料待完善"
+    },
+    {
+      "code": "PW00007",
+      "nickname": "流程验9213",
+      "user_id": "520c58a2-453c-4761-b66e-b7eb70021b05",
+      "hallVisible": true,
+      "publishStatus": "资料待完善"
+    },
+    {
+      "code": "PW00002",
+      "nickname": "1717",
+      "user_id": "db27b7be-f0e2-4af1-9c1b-d1ddd18c6c81",
+      "hallVisible": true,
+      "publishStatus": "可上架"
+    }
+  ],
+  "hidden": [],
+  "missingFromHallApi": []
+}

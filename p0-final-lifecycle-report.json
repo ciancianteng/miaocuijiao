@@ -1,0 +1,100 @@
+{
+  "meta": {
+    "base": "https://meow-cuijiao-homepage-fhctk1t0f-ciancianteng-4581s-projects.vercel.app",
+    "startedAt": "2026-08-02T23:56:33.009Z",
+    "emails": {
+      "boss": "boss.final.1785714993009@meow.test",
+      "companion": "companion.final.1785714993009@meow.test",
+      "service": "service.final.1785714993009@meow.test"
+    },
+    "accounts": {
+      "admin": {
+        "email": "admin@meow.test",
+        "password": "McjTest@12345678"
+      },
+      "service": {
+        "email": "service.final.1785714993009@meow.test",
+        "password": "McjTest@12345678"
+      },
+      "boss": {
+        "email": "boss.final.1785714993009@meow.test",
+        "password": "McjTest@12345678"
+      },
+      "companion": {
+        "email": "companion.final.1785714993009@meow.test",
+        "password": "McjTest@12345678",
+        "authMode": "deposit"
+      }
+    },
+    "orderId": "96f4ccdd-9f91-4734-ad88-b7019586c049",
+    "orderNo": "MCJ-1785715171603-1B0H",
+    "conversationId": "e213e5e5-f9c4-4163-84fd-0cf5a09d0a8e",
+    "finishedAt": "2026-08-03T00:00:30.155Z"
+  },
+  "results": {
+    "01_purge": {
+      "status": "PASS",
+      "note": "已清理 4 个非管理员测试账号及相关数据。"
+    },
+    "01b_create_cs": {
+      "status": "PASS",
+      "note": "service.final.1785714993009@meow.test"
+    },
+    "02_register_boss": {
+      "status": "PASS",
+      "note": "boss.final.1785714993009@meow.test"
+    },
+    "03_companion_apply_deposit": {
+      "status": "PASS",
+      "note": "profile=f6fa3ebf-8dd2-41b7-a990-5699e30a5128;auth=deposit"
+    },
+    "04_admin_approve": {
+      "status": "PASS",
+      "note": "application+deposit"
+    },
+    "04b_companion_online": {
+      "status": "PASS",
+      "note": "acked=11"
+    },
+    "05_hall_visible": {
+      "status": "PASS",
+      "note": "终验陪玩"
+    },
+    "06_boss_order": {
+      "status": "PASS",
+      "note": "MCJ-1785715171603-1B0H"
+    },
+    "07_cs_pay_chat": {
+      "status": "PASS",
+      "note": "conv=e213e5e5-f9c4-4163-84fd-0cf5a09d0a8e; image_ok"
+    },
+    "08_cs_assign": {
+      "status": "PASS",
+      "note": ""
+    },
+    "09_companion_accept": {
+      "status": "PASS",
+      "note": ""
+    },
+    "10_in_progress": {
+      "status": "PASS",
+      "note": ""
+    },
+    "11_cs_complete": {
+      "status": "PASS",
+      "note": ""
+    },
+    "12_boss_review": {
+      "status": "PASS",
+      "note": ""
+    },
+    "13_sync": {
+      "status": "PASS",
+      "note": "status=completed; reviews=1; boss=a7ed815b; companion=db27b7be"
+    },
+    "X_no_seed_hall": {
+      "status": "PASS",
+      "note": "count=1"
+    }
+  }
+}

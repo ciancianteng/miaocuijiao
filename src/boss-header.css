@@ -1,0 +1,570 @@
+/* =========================================================
+   Boss header — brand left + nav right (desktop)
+                  brand left + ☰ right (mobile)
+   ========================================================= */
+
+html {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+body.mcj-boss-shell {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+header.mcj-boss-header {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100vw;
+  margin: 0;
+  padding: 0;
+  padding-top: env(safe-area-inset-top, 0px);
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+  border-bottom: 1px solid rgba(255, 158, 207, 0.2);
+  background: rgba(5, 4, 6, 0.96);
+  backdrop-filter: blur(16px);
+}
+
+header.mcj-boss-header .mcj-boss-header-inner {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+  max-width: 100%;
+  margin: 0 auto;
+  padding: 0 16px;
+  padding-left: max(16px, calc(env(safe-area-inset-left, 0px) + 16px));
+  padding-right: max(16px, calc(env(safe-area-inset-right, 0px) + 16px));
+  min-height: 62px;
+  height: 62px;
+}
+
+/* Kill legacy chrome / star / favorites completely */
+header.mcj-boss-header .top-actions,
+header.mcj-boss-header .live2d-avatar,
+header.mcj-boss-header .mcj-boss-user,
+header.mcj-boss-header .mcj-boss-mine,
+header.mcj-boss-header .mcj-boss-login,
+header.mcj-boss-header .mcj-boss-star,
+header.mcj-boss-header .header-star,
+header.mcj-boss-header [data-favorite],
+header.mcj-boss-header [data-mcj-favorite],
+header.mcj-boss-header [data-mcj-notify-toggle],
+header.mcj-boss-header .brand:not(.mcj-header-brand),
+header.mcj-boss-header .mcj-boss-brand:not(.mcj-header-brand),
+header.mcj-boss-header .mcj-mnav-brand,
+header.mcj-boss-header .mcj-boss-more,
+header.mcj-boss-header nav.header-nav:not(.mcj-desk-nav),
+header.mcj-boss-header nav.mcj-boss-nav:not(.mcj-desk-nav) {
+  display: none !important;
+}
+
+/* ---------- Shared brand (always visible; never display:none) ---------- */
+header.mcj-boss-header .mcj-header-brand {
+  display: flex !important;
+  flex: 0 0 auto;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  max-width: min(280px, 46vw);
+  margin: 0;
+  padding: 0;
+  color: #fff7fb;
+  text-decoration: none;
+  visibility: visible !important;
+  opacity: 1 !important;
+  position: relative;
+  z-index: 2;
+  overflow: visible;
+}
+
+header.mcj-boss-header .mcj-header-brand-logo {
+  display: block !important;
+  flex: 0 0 40px;
+  width: 40px;
+  height: 40px;
+  min-width: 40px;
+  min-height: 40px;
+  max-width: 40px;
+  max-height: 40px;
+  border-radius: 10px;
+  object-fit: cover;
+  border: 1px solid rgba(255, 158, 207, 0.35);
+  box-shadow: 0 0 14px rgba(255, 105, 180, 0.22);
+  visibility: visible !important;
+  opacity: 1 !important;
+}
+
+header.mcj-boss-header .mcj-header-brand-text {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 2px;
+  min-width: 0;
+  line-height: 1.1;
+}
+
+header.mcj-boss-header .mcj-header-brand-en {
+  display: block;
+  max-width: 100%;
+  color: #ffffff;
+  font-size: 15px;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+header.mcj-boss-header .mcj-header-brand-zh {
+  display: block;
+  max-width: 100%;
+  color: rgba(255, 214, 234, 0.78);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---------- Shared nav chrome: compact frosted chips ---------- */
+header.mcj-boss-header {
+  --mcj-nav-h: 40px;
+  --mcj-nav-radius: 10px;
+  --mcj-nav-pink: #ffb6d9;
+  --mcj-nav-pink-soft: #ffe3f0;
+  --mcj-nav-pink-deep: rgba(255, 158, 207, 0.38);
+  --mcj-nav-glass: rgba(10, 8, 12, 0.78);
+  --mcj-nav-glass-hover: rgba(18, 14, 20, 0.88);
+}
+
+header.mcj-boss-header .mcj-desk-nav {
+  display: none;
+}
+
+header.mcj-boss-header .mcj-mnav {
+  display: none;
+}
+
+header.mcj-boss-header .mcj-desk-nav > a,
+header.mcj-boss-header .mcj-desk-nav > .mcj-desk-logout,
+header.mcj-boss-header .mcj-mnav-drawer a,
+header.mcj-boss-header .mcj-mnav-drawer .mcj-mnav-logout,
+header.mcj-boss-header .mcj-mnav-toggle {
+  box-sizing: border-box;
+  position: relative;
+  height: var(--mcj-nav-h);
+  min-height: var(--mcj-nav-h);
+  max-height: var(--mcj-nav-h);
+  border-radius: var(--mcj-nav-radius);
+  border: 1px solid var(--mcj-nav-pink-deep);
+  background: var(--mcj-nav-glass);
+  backdrop-filter: blur(10px) saturate(1.1);
+  -webkit-backdrop-filter: blur(10px) saturate(1.1);
+  color: #f7f0f4;
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 750;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  cursor: pointer;
+  overflow: hidden;
+  box-shadow: none;
+  transition: border-color 0.18s ease, background 0.18s ease, color 0.18s ease;
+}
+
+header.mcj-boss-header .mcj-desk-nav > a,
+header.mcj-boss-header .mcj-desk-nav > .mcj-desk-logout,
+header.mcj-boss-header .mcj-mnav-drawer a,
+header.mcj-boss-header .mcj-mnav-drawer .mcj-mnav-logout {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 12px;
+}
+
+header.mcj-boss-header .mcj-desk-nav > a::after,
+header.mcj-boss-header .mcj-mnav-drawer a::after {
+  content: "";
+  position: absolute;
+  left: 22%;
+  right: 22%;
+  bottom: 5px;
+  height: 1.5px;
+  border-radius: 999px;
+  background: var(--mcj-nav-pink);
+  opacity: 0;
+  transform: scaleX(0.6);
+  transition: opacity 0.18s ease, transform 0.18s ease;
+  pointer-events: none;
+  box-shadow: none;
+}
+
+header.mcj-boss-header .mcj-desk-nav > a:hover,
+header.mcj-boss-header .mcj-desk-nav > .mcj-desk-logout:hover,
+header.mcj-boss-header .mcj-mnav-drawer a:hover,
+header.mcj-boss-header .mcj-mnav-drawer .mcj-mnav-logout:hover,
+header.mcj-boss-header .mcj-mnav-toggle:hover {
+  background: var(--mcj-nav-glass-hover);
+  border-color: rgba(255, 180, 220, 0.55);
+  box-shadow: none;
+}
+
+header.mcj-boss-header .mcj-desk-nav > .mcj-desk-logout {
+  appearance: none;
+  -webkit-appearance: none;
+  font-family: inherit;
+  margin: 0;
+}
+
+header.mcj-boss-header .mcj-desk-nav > a.active,
+header.mcj-boss-header .mcj-mnav-drawer a.active {
+  color: var(--mcj-nav-pink-soft);
+  background: rgba(12, 9, 14, 0.92);
+  border-color: rgba(255, 180, 220, 0.55);
+  font-weight: 850;
+  box-shadow: none;
+}
+
+header.mcj-boss-header .mcj-desk-nav > a.active::after,
+header.mcj-boss-header .mcj-mnav-drawer a.active::after {
+  opacity: 1;
+  transform: scaleX(1);
+}
+
+header.mcj-boss-header .mcj-desk-nav > a:focus-visible,
+header.mcj-boss-header .mcj-mnav-drawer a:focus-visible,
+header.mcj-boss-header .mcj-mnav-drawer .mcj-mnav-logout:focus-visible,
+header.mcj-boss-header .mcj-mnav-toggle:focus-visible {
+  outline: none;
+  border-color: rgba(255, 200, 230, 0.75);
+  box-shadow: 0 0 0 1px rgba(255, 180, 220, 0.25);
+}
+
+@media (min-width: 900px) {
+  header.mcj-boss-header .mcj-boss-header-inner {
+    max-width: 1180px;
+    height: 64px;
+    min-height: 64px;
+    gap: 20px;
+  }
+
+  header.mcj-boss-header .mcj-header-brand {
+    max-width: none;
+    order: 0;
+  }
+
+  header.mcj-boss-header .mcj-header-brand-en {
+    font-size: 16px;
+    letter-spacing: 0.08em;
+  }
+
+  header.mcj-boss-header .mcj-header-brand-zh {
+    font-size: 13px;
+  }
+
+  header.mcj-boss-header .mcj-mnav {
+    display: none !important;
+  }
+
+  header.mcj-boss-header .mcj-desk-nav {
+    display: flex !important;
+    flex-wrap: nowrap !important;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 6px;
+    flex: 0 1 auto;
+    min-width: 0;
+    width: auto;
+    margin-left: auto;
+    max-width: none;
+    order: 2;
+  }
+
+  header.mcj-boss-header .mcj-desk-nav > a,
+  header.mcj-boss-header .mcj-desk-nav > .mcj-desk-logout {
+    flex: 0 0 auto;
+    min-width: 0;
+    width: auto;
+    max-width: none;
+    padding: 0 11px;
+    font-size: 13px;
+  }
+}
+
+/* ---------- Mobile / tablet (<900): brand left + ☰ right ——— */
+@media (max-width: 899px) {
+  header.mcj-boss-header .mcj-desk-nav {
+    display: none !important;
+  }
+
+  header.mcj-boss-header .mcj-boss-header-inner {
+    gap: 12px !important;
+    height: 62px !important;
+    min-height: 62px !important;
+    max-height: 64px !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding-left: max(16px, calc(env(safe-area-inset-left, 0px) + 16px)) !important;
+    padding-right: max(16px, calc(env(safe-area-inset-right, 0px) + 16px)) !important;
+    justify-content: flex-start !important;
+    align-items: center !important;
+  }
+
+  /* Hamburger stays in header row — never over Banner, never full-width */
+  header.mcj-boss-header .mcj-header-brand {
+    display: flex !important;
+    flex: 1 1 auto !important;
+    flex-grow: 1 !important;
+    order: 0 !important;
+    max-width: none !important;
+    min-width: 0 !important;
+    pointer-events: auto !important;
+    margin: 0 !important;
+  }
+
+  header.mcj-boss-header .mcj-mnav {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    flex: 0 0 auto !important;
+    flex-grow: 0 !important;
+    flex-shrink: 0 !important;
+    order: 2 !important;
+    gap: 0 !important;
+    width: auto !important;
+    max-width: 48px !important;
+    min-width: 40px !important;
+    margin: 0 0 0 auto !important;
+    position: relative !important;
+    z-index: 3 !important;
+  }
+
+  header.mcj-boss-header .mcj-mnav-toggle {
+    flex: 0 0 40px !important;
+    width: 40px !important;
+    height: 40px !important;
+    min-width: 40px !important;
+    min-height: 40px !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    font-size: 20px !important;
+    line-height: 1 !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    z-index: 1 !important;
+    position: relative !important;
+  }
+
+  @media (max-width: 520px) {
+    /* Keep English brand visible on mobile (Meow Cui Jiao) */
+    header.mcj-boss-header .mcj-header-brand-en {
+      display: block;
+      font-size: 11px;
+      font-weight: 900;
+      letter-spacing: 0.04em;
+      line-height: 1.1;
+      max-width: 11em;
+    }
+
+    header.mcj-boss-header .mcj-header-brand-zh {
+      font-size: 14px;
+      font-weight: 950;
+      color: #fff7fb;
+      letter-spacing: 0.02em;
+    }
+
+    header.mcj-boss-header .mcj-header-brand-logo {
+      flex-basis: 36px;
+      width: 36px;
+      height: 36px;
+      min-width: 36px;
+      min-height: 36px;
+      max-width: 36px;
+      max-height: 36px;
+    }
+  }
+
+  header.mcj-boss-header .mcj-mnav-toggle[aria-expanded="true"] {
+    color: var(--mcj-nav-pink-soft);
+    border-color: rgba(255, 158, 207, 0.55);
+    box-shadow: none;
+  }
+
+  /* Kill any injected star/svg from design-system icon normalizer */
+  header.mcj-boss-header .mcj-mnav-toggle .mcj-line-icon,
+  header.mcj-boss-header .mcj-mnav-toggle .mcj-inline-icon,
+  header.mcj-boss-header .mcj-mnav-toggle svg {
+    display: none !important;
+  }
+}
+
+/* Mobile nav sheet lives on body (not clipped by sticky header overflow) */
+.mcj-mnav-sheet {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  height: 100dvh;
+  max-height: 100dvh;
+  z-index: 2147483000;
+  display: block;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.mcj-mnav-sheet[hidden] {
+  display: none !important;
+}
+
+.mcj-mnav-sheet.open {
+  pointer-events: auto;
+}
+
+.mcj-mnav-backdrop {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.58);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mcj-mnav-drawer {
+  position: absolute;
+  top: calc(62px + env(safe-area-inset-top, 0px));
+  right: 0;
+  bottom: 0;
+  z-index: 1;
+  box-sizing: border-box;
+  width: min(320px, calc(100vw - 48px));
+  max-width: 100%;
+  height: auto;
+  max-height: calc(100% - 62px - env(safe-area-inset-top, 0px));
+  padding: 12px 14px calc(16px + env(safe-area-inset-bottom, 0px));
+  border-left: 1px solid rgba(255, 140, 200, 0.28);
+  border-top: 1px solid rgba(255, 140, 200, 0.18);
+  border-radius: 16px 0 0 0;
+  background: rgba(8, 6, 10, 0.97);
+  backdrop-filter: blur(18px) saturate(1.25);
+  -webkit-backdrop-filter: blur(18px) saturate(1.25);
+  box-shadow:
+    -18px 0 48px rgba(0, 0, 0, 0.55),
+    0 0 24px rgba(255, 100, 170, 0.12);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.mcj-mnav-drawer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 44px;
+  padding: 4px 2px 8px;
+  border-bottom: 1px solid rgba(255, 158, 207, 0.18);
+  color: #fff7fb;
+}
+
+.mcj-mnav-drawer-head strong {
+  font-size: 16px;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+}
+
+.mcj-mnav-close {
+  box-sizing: border-box;
+  width: 40px;
+  height: 40px;
+  margin: 0;
+  padding: 0;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 140, 200, 0.35);
+  background: rgba(22, 14, 22, 0.82);
+  color: #ffe4f1;
+  font-size: 24px;
+  line-height: 1;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mcj-mnav-drawer-links {
+  display: grid;
+  gap: 8px;
+}
+
+.mcj-mnav-drawer-links a,
+.mcj-mnav-sheet .mcj-mnav-drawer a {
+  box-sizing: border-box;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  width: 100%;
+  min-height: 48px;
+  height: auto;
+  padding: 0 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 120, 180, 0.55);
+  background: rgba(8, 6, 10, 0.72);
+  color: #ffffff;
+  text-decoration: none;
+  font-size: 15px;
+  font-weight: 850;
+  letter-spacing: 0.04em;
+  overflow: hidden;
+}
+
+.mcj-mnav-drawer-links a.active,
+.mcj-mnav-sheet .mcj-mnav-drawer a.active {
+  color: #ffd6ea;
+  border-color: rgba(255, 158, 207, 0.72);
+  background: rgba(6, 4, 8, 0.88);
+}
+
+html.mcj-mnav-open,
+html.mcj-mnav-open body {
+  overscroll-behavior: none;
+}
+
+/* Keep ☰ clickable above the sheet so tapping it again closes the menu. */
+html.mcj-mnav-open header.mcj-boss-header {
+  z-index: 2147483001;
+}
+
+html.mcj-mnav-open header.mcj-boss-header .mcj-mnav-toggle {
+  position: relative;
+  z-index: 2;
+  pointer-events: auto;
+}
+
+@media (min-width: 900px) {
+  .mcj-mnav-sheet {
+    display: none !important;
+  }
+}
+
+/* Chat unread badge on 客服 nav */
+.mcj-chat-unread-badge{display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;margin-left:4px;padding:0 5px;border-radius:999px;background:#e11d48;color:#fff;font-size:11px;font-style:normal;font-weight:700;line-height:1;vertical-align:middle}
+.mcj-chat-unread-badge[hidden]{display:none!important}

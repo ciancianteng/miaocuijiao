@@ -1,0 +1,12 @@
+[
+  {
+    "file": "supabase/gameplay-products.sql",
+    "ok": true,
+    "detail": "applied"
+  },
+  {
+    "file": "admin_role",
+    "ok": true,
+    "detail": "already admin"
+  }
+]

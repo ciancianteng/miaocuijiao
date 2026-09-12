@@ -1,0 +1,69 @@
+{
+  "base": "https://meow-cuijiao-homepage-staging.vercel.app",
+  "at": "2026-08-03T16:24:21.920Z",
+  "companionEmail": "companion.idcard.1785715257525@meow.test",
+  "pass": 12,
+  "fail": 0,
+  "results": [
+    {
+      "id": "db.companion_notifications",
+      "pass": true,
+      "detail": "table reachable"
+    },
+    {
+      "id": "admin.login",
+      "pass": true,
+      "detail": "admin@meow.test"
+    },
+    {
+      "id": "companion.login",
+      "pass": true,
+      "detail": "companion.idcard.1785715257525@meow.test"
+    },
+    {
+      "id": "companion.profile_id",
+      "pass": true,
+      "detail": "592ec1d2-5357-42af-b4d3-dc4136fd10f4"
+    },
+    {
+      "id": "reject.companion_status",
+      "pass": true,
+      "detail": "auditStatus=rejected"
+    },
+    {
+      "id": "reject.reason_present",
+      "pass": true,
+      "detail": "验收驳回原因-1785774166575"
+    },
+    {
+      "id": "reject.notification",
+      "pass": true,
+      "detail": "[{\"title\":\"资料审核未通过\",\"body\":\"验收驳回原因-1785774166575\",\"fromDb\":true},{\"title\":\"订单 MCJ-1785761291232-9Q8P\",\"body\":\"已完成 · 无畏契约\"},{\"title\":\"订单 MCJ-1785744836224-WMO1\",\"body\":\"已完成 · 无畏契约\"}]"
+    },
+    {
+      "id": "reject.db_row",
+      "pass": true,
+      "detail": "[{\"notice_key\":\"audit-application-reject-1785774172057\",\"title\":\"资料审核未通过\",\"body\":\"验收驳回原因-1785774166575\",\"created_at\":\"2026-08-03T16:22:52.057+00:00\"}]"
+    },
+    {
+      "id": "approve.companion_status",
+      "pass": true,
+      "detail": "auditStatus=approved"
+    },
+    {
+      "id": "approve.notification",
+      "pass": true,
+      "detail": "[{\"title\":\"资料审核已通过\",\"body\":\"资料审核已通过\",\"fromDb\":true},{\"title\":\"资料审核未通过\",\"body\":\"验收驳回原因-1785774166575\",\"fromDb\":true},{\"title\":\"订单 MCJ-1785761291232-9Q8P\",\"body\":\"已完成 · 无畏契约\"}]"
+    },
+    {
+      "id": "approve.db_status",
+      "pass": true,
+      "detail": "{\"application_status\":\"approved\",\"verification_status\":\"approved\",\"application_reject_reason\":\"\"}"
+    },
+    {
+      "id": "approve.db_notification",
+      "pass": true,
+      "detail": "[{\"notice_key\":\"audit-application-pass-1785774216571\",\"title\":\"资料审核已通过\",\"body\":\"资料审核已通过\"},{\"notice_key\":\"audit-application-reject-1785774172057\",\"title\":\"资料审核未通过\",\"body\":\"验收驳回原因-1785774166575\"}]"
+    }
+  ]
+}

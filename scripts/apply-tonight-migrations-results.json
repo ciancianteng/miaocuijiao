@@ -1,0 +1,32 @@
+[
+  {
+    "file": "supabase/companion-levels.sql",
+    "ok": true,
+    "detail": "applied"
+  },
+  {
+    "file": "supabase/migrations/20260802_cs_dock_rewards.sql",
+    "ok": true,
+    "detail": "applied"
+  },
+  {
+    "file": "supabase/migrations/20260802_rules_hub_acks.sql",
+    "ok": true,
+    "detail": "applied"
+  },
+  {
+    "file": "supabase/migrations/20260802_ensure_payment_orders.sql",
+    "ok": true,
+    "detail": "applied"
+  },
+  {
+    "file": "supabase/migrations/20260802_security_hardening.sql",
+    "ok": true,
+    "detail": "applied"
+  },
+  {
+    "file": "supabase/migrations/20260802_platform_content_items.sql",
+    "ok": true,
+    "detail": "applied"
+  }
+]

@@ -4,91 +4,76 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>超级管理员后台 | MEOW CUI JIAO</title>
-  <link rel="stylesheet" href="src/admin-suite.css">
-  <link rel="stylesheet" href="src/design-system.css">
-  <script src="src/companion-levels.js"></script>
+  <!-- Sync early gate BEFORE paint: no soft-session-only access; hide shell until JWT+role OK. -->
+  <script src="/portal-early-gate.js?v=20260807adminAuthP0"></script>
+  <style id="mcj-admin-auth-hide">
+    html[data-mcj-auth-gate="1"] body > *:not(#adminAuthLoading):not(#mcjAuthBootOverlay){visibility:hidden!important}
+    html[data-mcj-auth-gate="1"] .admin-shell{display:none!important}
+  </style>
+  <link rel="stylesheet" href="/src/admin-suite.css?v=20260807adminP0">
+  <link rel="stylesheet" href="/src/admin-final-v1.css?v=20260801acceptFix2">
+  <link rel="stylesheet" href="/src/admin-layout.css">
+  <link rel="stylesheet" href="/src/admin-banner-manager.css?v=20260807adminP0">
+  <link rel="stylesheet" href="/src/admin-player-management.css?v=20260807adminP0">
+  <link rel="stylesheet" href="/src/admin-form-controls.css?v=20260801acceptFix2">
+  <link rel="stylesheet" href="/src/admin-gameplay-mall.css">
+  <script src="/src/role-gates.js?v=20260807adminAuthP0"></script>
+  <script>window.MCJRoleGate && window.MCJRoleGate.guard("admin");</script>
+  <script src="/src/companion-levels.js"></script>
 </head>
-<body data-allowed-roles="super_admin" data-default-role="super_admin">
-  <div class="admin-app">
+<body data-allowed-roles="admin,super_admin" data-default-role="admin">
+  <div class="admin-shell" hidden data-admin-shell="1">
     <aside class="admin-sidebar" id="adminSidebar">
       <div class="side-brand">
-        <div class="brand-mark">MCJ</div>
-        <div>
+        <div class="brand-copy">
           <strong>MEOW CUI JIAO</strong>
           <span>Super Admin</span>
         </div>
       </div>
-      <button class="collapse-btn" type="button" data-collapse-sidebar>收起菜单</button>
-      <nav class="side-nav" aria-label="超级管理员菜单">
-        <button class="active" type="button" data-section="dashboard">仪表盘</button>
-
-        <button class="nav-parent" type="button" data-toggle-group="users">用户管理</button>
-        <div class="nav-group open" data-group="users">
-          <button type="button" data-section="bosses">老板管理</button>
-          <button type="button" data-section="players">陪玩管理</button>
-          <button type="button" data-section="service">客服管理</button>
-        </div>
-
+      <nav class="side-nav compact-final" aria-label="超级管理员菜单">
+        <button class="active" type="button" data-section="dashboard">控制台</button>
+        <button type="button" data-section="bosses">老板管理</button>
+        <button type="button" data-section="players">陪玩管理</button>
+        <button type="button" data-section="service-accounts">客服管理</button>
+        <button type="button" data-section="service-reports">提现与发放</button>
         <button type="button" data-section="orders">订单管理</button>
-
-        <button class="nav-parent" type="button" data-toggle-group="finance">财务中心</button>
-        <div class="nav-group open" data-group="finance">
-          <button type="button" data-section="recharge-center">充值中心</button>
-          <button type="button" data-section="finance">财务流水</button>
-          <button type="button" data-section="recharges">充值记录</button>
-          <button type="button" data-section="withdraw">提现审核</button>
-          <button type="button" data-section="refunds">退款管理</button>
-          <button type="button" data-section="commissions">抽成与返点设置</button>
-        </div>
-
-        <button class="nav-parent" type="button" data-toggle-group="content">平台内容</button>
-        <div class="nav-group open" data-group="content">
-          <button type="button" data-section="banners">Banner 管理</button>
-          <button type="button" data-section="announcements">公告管理</button>
-          <button type="button" data-section="ads">广告位管理</button>
-          <button type="button" data-section="meow-butler">喵管家管理</button>
-          <button type="button" data-section="sync-center">全端功能同步</button>
-          <button type="button" data-section="price-table">俱乐部价格表管理</button>
-          <button type="button" data-section="gameplays">更多玩法管理</button>
-          <button type="button" data-section="custom-order-settings">自定义订单设置</button>
-          <button type="button" data-section="gameplay-qualifications">玩法资格审核</button>
-          <button type="button" data-section="companion-rules">陪玩制度管理</button>
-          <button type="button" data-section="voice-types">声音类型管理</button>
-          <button type="button" data-section="companion-deposit">陪玩押金设置</button>
-          <button type="button" data-section="companion-applications">陪玩申请审核</button>
-        </div>
-
-        <button type="button" data-section="messages">消息中心</button>
-        <button type="button" data-section="statistics">统计中心</button>
-
-        <button class="nav-parent" type="button" data-toggle-group="security">安全系统</button>
-        <div class="nav-group open" data-group="security">
-          <button type="button" data-section="admin-accounts">管理员账号</button>
-          <button type="button" data-section="permissions">权限系统</button>
-          <button type="button" data-section="logs">操作日志</button>
-        </div>
-
-        <button type="button" data-section="vip">VIP 设置</button>
+        <button type="button" data-section="recharge-campaigns">充值活动</button>
+        <button type="button" data-section="compensation-review">补偿审核</button>
+        <button type="button" data-section="banners">Banner</button>
+        <button type="button" data-section="announcements">公告</button>
+        <button type="button" data-section="rules-hub">制度与等级</button>
+        <button type="button" data-section="games">服务管理</button>
+        <button type="button" data-section="companion-levels">陪玩等级</button>
+        <button type="button" data-section="companion-tags">陪玩标签</button>
+        <button type="button" data-section="gameplays">更多玩法管理</button>
+        <button type="button" data-section="gifts">礼物管理</button>
+        <button type="button" data-section="popularity">人气榜设置</button>
         <button type="button" data-section="payment">支付设置</button>
+        <button type="button" data-section="mail-logs">邮件通知记录</button>
         <button type="button" data-section="settings">系统设置</button>
       </nav>
     </aside>
 
     <main class="admin-main">
-      <header class="admin-topbar">
-        <div>
-          <h1 id="pageTitle">仪表盘</h1>
-          <p id="pageSubtitle">平台核心数据与待处理事项</p>
+      <header class="admin-header">
+        <button class="admin-mobile-menu" type="button" data-mobile-sidebar aria-label="打开后台菜单">菜单</button>
+        <div class="admin-title-block">
+          <h1 id="pageTitle">工作台</h1>
+          <div class="admin-breadcrumb" id="adminBreadcrumb">超级管理员后台 / 工作台</div>
         </div>
         <div class="topbar-actions">
-          <button class="notice-pill" type="button" data-section="messages">消息 <b id="adminNoticeCount">0</b></button>
-          <span id="adminClock"></span>
-          <span id="adminName">admin_demo</span>
-          <button class="ghost-btn" type="button" data-admin-logout>退出登录</button>
+          <div class="admin-profile-menu">
+            <button class="admin-text-btn" type="button" data-admin-profile-toggle>超级管理员</button>
+            <div class="admin-profile-dropdown" role="menu">
+              <button type="button" data-section="admin-accounts">我的资料</button>
+              <button type="button" data-section="change-password">修改密码</button>
+            </div>
+          </div>
+          <button class="admin-text-btn admin-text-btn-danger" type="button" data-admin-logout>退出登录</button>
         </div>
       </header>
 
-      <section id="adminContent" class="content-area" aria-live="polite">
+      <div id="adminContent" class="admin-content" aria-live="polite">
         <section class="section active" id="section-dashboard">
           <div id="superStats"></div>
           <div class="panel-grid">
@@ -97,52 +82,96 @@
           </div>
         </section>
 
-        <section class="section" id="section-bosses"><section class="panel"><h2>老板管理</h2><div class="toolbar"><input data-table-search="table-bosses" placeholder="搜索老板昵称 / UID / 手机号"></div><div id="table-bosses"></div></section></section>
-        <section class="section" id="section-players"><section class="panel"><h2>陪玩管理</h2><div class="toolbar"><input data-table-search="table-players" placeholder="搜索陪玩昵称 / UID / 游戏 / 审核状态"></div><div id="table-players"></div></section><section class="panel"><h2>陪玩等级与价格设置</h2><button class="primary-btn" type="button" data-save-companion-levels>保存等级设置</button><div id="companionLevelSettings"></div></section></section>
-        <section class="section" id="section-service"><section class="panel"><h2>客服管理</h2><div id="table-customer_tickets"></div></section></section>
-        <section class="section" id="section-orders"><section class="panel"><h2>订单管理</h2><div id="table-orders"></div></section></section>
+        <section class="section" id="section-bosses"><section class="panel"><h2>老板管理</h2><div id="bossManagement"></div></section></section>
+        <section class="section" id="section-recharge-campaigns"><section class="panel"><h2>充值活动管理</h2><div id="rechargeCampaignMount"></div></section></section>
+        <section class="section" id="section-compensation-review"><section class="panel"><h2>补偿审核</h2><div id="compensationReviewMount"></div></section></section>
+        <section class="section" id="section-players"><section class="panel"><h2>陪玩管理</h2><div id="playerManagement"></div></section></section>
+        <section class="section" id="section-games"><section class="panel"><h2>服务管理</h2><div id="gameManagement"></div></section></section>
+        <section class="section" id="section-service-types"><section class="panel"><h2>服务类型管理</h2><div id="serviceTypeManagement"></div></section></section>
+        <section class="section" id="section-companion-tags"><section class="panel"><h2>陪玩标签管理</h2><div id="companionTagManagement"></div></section></section>
+        <section class="section" id="section-featured-players"><section class="panel"><h2>推荐陪玩管理</h2><div id="featuredPlayerManagement"></div></section></section>
+        <section class="section" id="section-hot-games"><section class="panel"><h2>热门游戏管理</h2><div id="hotGameManagement"></div></section></section>
+        <section class="section" id="section-companion-levels"><section class="panel"><div id="companionLevelSettings"></div></section></section>
+        <section class="section" id="section-service-accounts"><section class="panel service-account-panel"><div id="serviceAccountManagement"></div></section></section>
+        <section class="section" id="section-service-stats"><section class="panel service-account-panel"><div id="serviceWorkStats"></div></section></section>
+        <section class="section" id="section-service-reports"><section class="panel service-account-panel"><div id="serviceReportsManagement"></div></section></section>
+        <section class="section" id="section-orders"><section class="panel"><h2>订单管理</h2><div id="orderManagement"></div></section></section>
 
-        <section class="section" id="section-recharge-center"><section class="panel"><h2>充值中心</h2><div id="table-recharge_requests"></div></section></section>
-        <section class="section" id="section-finance"><div class="panel-grid"><section class="panel"><h2>财务流水</h2><div id="table-wallet_transactions"></div></section><section class="panel"><h2>钱包总览</h2><div id="table-wallets"></div></section></div></section>
-        <section class="section" id="section-recharges"><section class="panel"><h2>充值记录</h2><div id="table-recharge_requests_alt"></div></section></section>
+        <section class="section" id="section-recharge-center"><section class="panel"><h2>猫粮充值</h2><div id="table-recharge_requests"></div></section></section>
+        <section class="section" id="section-coupons"><section class="panel coupon-shell-panel"><div id="couponManagement"></div></section></section>
+        <section class="section" id="section-finance"><div class="panel-grid"><section class="panel"><h2>财务流水</h2><div id="table-wallet_transactions"></div></section><section class="panel"><h2>猫粮钱包总览</h2><div id="table-wallets"></div></section></div></section>
+        <section class="section" id="section-recharges"><section class="panel"><h2>猫粮充值记录</h2><div id="table-recharge_requests_alt"></div></section></section>
         <section class="section" id="section-withdraw"><section class="panel"><h2>提现审核</h2><div id="table-withdraw_requests"></div></section></section>
         <section class="section" id="section-refunds"><section class="panel"><h2>退款管理</h2><div id="table-refunds"></div></section></section>
         <section class="section" id="section-commissions"><section class="panel"><h2>抽成与返点设置</h2><div id="table-invite_rebates"></div></section></section>
 
         <section class="section" id="section-banners"><section class="panel"><h2>Banner 管理</h2><div id="crud-banners"></div></section></section>
         <section class="section" id="section-announcements"><section class="panel"><h2>公告管理</h2><div id="table-announcements"></div></section></section>
+        <section class="section" id="section-home-entry-settings"><section class="panel"><div id="homeEntryManager"></div></section></section>
         <section class="section" id="section-ads"><section class="panel"><h2>广告位管理</h2><div id="crud-ads"></div></section></section>
+        <section class="section" id="section-team-lobby-links"><section class="panel"><h2>组队大厅设置</h2><div id="teamLobbySettings"></div></section></section>
         <section class="section" id="section-meow-butler"><section class="panel"><h2>喵管家管理</h2><div id="table-meow_butler"></div></section></section>
         <section class="section" id="section-sync-center"><section class="panel"><h2>全端功能同步</h2><div id="table-sync_center"></div></section></section>
         <section class="section" id="section-price-table"><section class="panel"><h2>俱乐部价格表管理</h2><div id="table-price_table"></div></section></section>
-        <section class="section" id="section-gameplays"><section class="panel"><h2>更多玩法管理</h2><div id="table-gameplays"></div></section></section>
+        <section class="section" id="section-gameplays"><section class="panel"><div id="table-gameplays"></div></section></section>
         <section class="section" id="section-custom-order-settings"><section class="panel"><h2>自定义订单设置</h2><div id="table-custom_orders"></div></section></section>
         <section class="section" id="section-gameplay-qualifications"><section class="panel"><h2>玩法资格审核</h2><div id="table-gameplay_qualifications"></div></section></section>
-        <section class="section" id="section-companion-rules"><section class="panel"><h2>陪玩制度管理</h2><div id="table-companion_rules"></div></section></section>
+        <section class="section" id="section-rules-hub"><section class="panel"><div id="rulesHubMount"></div></section></section>
+        <section class="section" id="section-companion-rules"><section class="panel"><h2>制度管理 · 陪玩申请制度</h2><p class="muted" style="margin:0 0 12px;color:rgba(255,255,255,.62)">请改用左侧「制度与等级」。本页保留兼容。</p><div id="table-companion_rules_legacy"></div></section></section>
         <section class="section" id="section-voice-types"><section class="panel"><h2>声音类型管理</h2><div id="table-voice_types"></div></section></section>
         <section class="section" id="section-companion-deposit"><section class="panel"><h2>陪玩押金设置</h2><div id="table-companion_deposit"></div></section></section>
         <section class="section" id="section-companion-applications"><section class="panel"><h2>陪玩申请审核</h2><div id="table-companion_applications"></div></section></section>
-
-        <section class="section" id="section-messages"><section class="panel"><h2>消息中心</h2><div id="table-messages"></div></section></section>
         <section class="section" id="section-statistics"><section class="panel"><h2>统计中心</h2><div id="statisticsPanel"></div></section></section>
-        <section class="section" id="section-admin-accounts"><section class="panel"><h2>管理员账号</h2><div id="table-admin_accounts"></div></section></section>
+        <section class="section" id="section-admin-accounts"><section class="panel"><h2>我的资料</h2><div id="adminProfileMount"></div></section></section>
+        <section class="section" id="section-change-password"><section class="panel"><h2>修改密码</h2><div id="adminPasswordMount"></div></section></section>
         <section class="section" id="section-permissions"><section class="panel"><h2>权限系统</h2><div id="table-role_permissions"></div></section></section>
 
+        <section class="section" id="section-availability-times"><section class="panel"><h2>可接单时间配置</h2><div id="availabilityTimeManagement"></div></section></section>
+        <section class="section" id="section-vip-levels"><section class="panel"><h2>VIP等级管理</h2><div id="vipLevelManagement"></div></section></section>
+        <section class="section" id="section-badges"><section class="panel"><h2>徽章 / 身份组管理</h2><div id="badgeManagement"></div></section></section>
         <section class="section" id="section-vip"><section class="panel"><h2>VIP 设置</h2><div id="table-vip_settings"></div></section></section>
-        <section class="section" id="section-payment"><section class="panel"><h2>支付设置</h2><div id="paymentSettings"></div></section></section>
-        <section class="section" id="section-settings"><section class="panel"><h2>系统设置</h2><div id="systemSettings"></div></section></section>
+        <section class="section" id="section-payment"><section class="panel payment-shell-panel"><div id="paymentSettings"></div></section></section>
+        <section class="section" id="section-mail-logs"><section class="panel"><h2>邮件通知记录</h2><div id="mailNotificationLogs"></div></section></section>
+        <section class="section" id="section-gifts"><section class="panel"><h2>礼物管理</h2><div id="giftManagement"></div></section></section>
+        <section class="section" id="section-popularity"><section class="panel"><h2>人气榜设置</h2><div id="popularityManagement"></div></section></section>
+        <section class="section" id="section-settings"><section class="panel"><h2>系统设置</h2><p class="admin-sync-note" style="margin:0 0 12px">平台配置与接入中心：普通配置可编辑；敏感密钥仅服务端管理。</p><div id="systemSettings"></div></section></section>
         <section class="section" id="section-logs"><section class="panel"><h2>操作日志</h2><div id="table-admin_logs_full"></div></section></section>
-      </section>
+      </div>
     </main>
   </div>
 
   <div class="modal" id="adminModal" aria-hidden="true">
-    <div class="modal-card">
-      <button class="modal-close" type="button" data-close-modal>×</button>
-      <div id="modalBody"></div>
+    <div class="modal-card" data-admin-modal-card>
+      <header class="admin-modal-head">
+        <button class="modal-close admin-modal-close" type="button" data-close-modal aria-label="关闭">×</button>
+      </header>
+      <div class="admin-modal-scroll" id="modalBody"></div>
     </div>
   </div>
 
-  <script src="src/admin-suite.js"></script>
+  <script src="/src/admin-auth-fetch.js?v=20260807adminAuthP0"></script>
+  <script src="/src/admin-payment-settings.js?v=20260807payQrLive1"></script>
+  <script src="/src/admin-form-controls.js"></script>
+  <script src="/src/admin-banner-manager.js?v=20260808bannerPickerE2e1"></script>
+  <script src="/src/admin-service-manager.js"></script>
+  <script src="/src/admin-companion-levels.js?v=20260806p0final1"></script>
+  <script src="/src/admin-companion-tags.js?v=20260806p0final1"></script>
+  <script src="/src/admin-gameplay-mall.js?v=20260806p0final1"></script>
+  <script src="/src/admin-profile.js?v=20260805acctSec1"></script>
+  <script src="/src/admin-player-detail.js?v=20260805playerPerm1"></script>
+  <script src="/src/admin-recharge-campaigns.js"></script>
+  <script src="/src/admin-compensation-review.js"></script>
+  <script src="/src/admin-finance.js?v=20260807adminP0"></script>
+  <script src="/src/admin-gifts.js"></script>
+  <script src="/src/admin-popularity.js"></script>
+  <script src="/src/admin-suite.js?v=20260807adminAuthP0"></script>
+  <script src="/src/admin-companion-applications.js?v=20260806p0final1"></script>
+  <script src="/src/admin-service-accounts.js?v=20260807adminP0"></script>
+  <script src="/src/admin-cs-rewards.js?v=20260807adminP0"></script>
+  <script src="/src/admin-rules-hub.js?v=20260802rulesHub1"></script>
+  <script src="/src/admin-final-v1.js?v=20260807adminP0"></script>
+  <script src="/src/admin-service-packages.js"></script>
+  <script src="/src/admin-platform-settings.js"></script>
+  <script src="/src/admin-mail-logs.js?v=20260806orderNotify1"></script>
 </body>
 </html>

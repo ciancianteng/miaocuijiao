@@ -36,14 +36,22 @@
   }
   function footerHtml() {
     var isHome = /(^|\/)index\.html$|\/$/.test(location.pathname);
+    var ssm = '<div class="mcj-footer-ssm">SSM Registration No. 202603181917</div>';
     if (!isHome) {
       return '<footer class="mcj-site-footer" data-mcj-footer>' +
-        '<div class="mcj-footer-bottom"><span>© 2026 Meow Cui Jiao</span></div></footer>';
+        '<div class="mcj-footer-bottom"><span>© 2026 Meow Cui Jiao</span>' + ssm + '</div></footer>';
     }
     return '<footer class="mcj-site-footer" data-mcj-footer>' +
       '<div class="mcj-footer-inner compact">' +
-      '<section class="mcj-footer-block mcj-footer-brand"><h3>MEOW CUI JIAO ENTERPRISE</h3><p>✓ Registered Malaysian Enterprise</p><button class="mcj-footer-link" type="button" data-open-coop>商务合作</button></section>' +
-      '</div><div class="mcj-footer-bottom"><span>© MEOW CUI JIAO ENTERPRISE. All rights reserved.</span></div></footer>';
+      '<section class="mcj-footer-block mcj-footer-brand">' +
+      '<h3>MEOW CUI JIAO ENTERPRISE</h3>' +
+      '<p>✓ Registered Malaysian Enterprise</p>' +
+      '<div class="mcj-footer-actions">' +
+      '<button class="mcj-footer-link" type="button" data-open-coop>商务合作</button>' +
+      '<a class="mcj-footer-link" href="companion-apply.html">申请陪玩</a>' +
+      '<button class="mcj-footer-link" type="button" data-open-discord>Discord 社群</button>' +
+      '</div></section>' +
+      '</div><div class="mcj-footer-bottom"><span>© MEOW CUI JIAO ENTERPRISE. All rights reserved.</span>' + ssm + '</div></footer>';
   }
   function modalHtml() {
     return '<div class="mcj-modal" id="mcjCoopModal" aria-hidden="true"><div class="mcj-modal-box"><div class="mcj-modal-head"><div><h3>商务合作申请</h3><p>欢迎与 Meow Cui Jiao 建立合作关系。</p></div><button class="mcj-close" style="width:36px;height:36px;min-width:36px;min-height:36px;max-width:36px;max-height:36px;padding:0" type="button" data-close-coop>×</button></div>' +
@@ -117,6 +125,29 @@
       });
     });
   }
+  function getDiscordInviteUrl() {
+    var direct = (localStorage.getItem("discordInviteUrl") || "").trim();
+    if (direct) return direct;
+    try {
+      var platform = JSON.parse(localStorage.getItem("mcjPlatformSettings") || "{}");
+      var fromPlatform = String(platform.discordInviteUrl || "").trim();
+      if (fromPlatform) return fromPlatform;
+    } catch (e) {}
+    try {
+      var site = JSON.parse(localStorage.getItem("mcj_siteSettings") || "{}");
+      return String(site.discordInviteUrl || "").trim();
+    } catch (e2) {
+      return "";
+    }
+  }
+  function openDiscordInvite() {
+    var url = getDiscordInviteUrl();
+    if (!url) {
+      alert("Discord 社群链接暂未配置，请稍后再试或联系客服。");
+      return;
+    }
+    window.open(url, "_blank", "noopener,noreferrer");
+  }
   function bind() {
     function openModal() {
       var modal = ensureModal();
@@ -131,6 +162,7 @@
     }
     document.addEventListener("click", function (e) {
       if (e.target.closest("[data-open-coop]")) { e.preventDefault(); openModal(); }
+      if (e.target.closest("[data-open-discord]")) { e.preventDefault(); openDiscordInvite(); }
       var modal = document.getElementById("mcjCoopModal");
       if (modal && (e.target.closest("[data-close-coop]") || e.target === modal)) { e.preventDefault(); closeModal(); }
     });
@@ -140,10 +172,10 @@
   }
   function init() {
     removeBrokenText();
-    if (!document.querySelector('link[href="src/footer-system.css"]')) {
+    if (!document.querySelector('link[href*="footer-system.css"]')) {
       var link = document.createElement("link");
       link.rel = "stylesheet";
-      link.href = "src/footer-system.css";
+      link.href = "src/footer-system.css?v=20260805ssm1";
       document.head.appendChild(link);
     }
     document.querySelectorAll("[data-mcj-footer], .site-footer, #mcjCoopModal").forEach(function (el) { el.remove(); });

@@ -1,0 +1,379 @@
+/* Shared companion identity chips — boss / hall / CS / admin player panels */
+:root{
+  --mcj-id-gap:8px;
+  --mcj-badge-h:28px;
+  --mcj-badge-pad-x:10px;
+  --mcj-badge-radius:999px;
+  --mcj-badge-fs:12px;
+  --mcj-badge-lh:1;
+  --mcj-badge-bw:1px;
+  --mcj-cert-pink:#ff8ec8;
+  --mcj-cert-pink-deep:#e878b0;
+  --mcj-cert-ink:#14060e;
+}
+
+.mcj-id-tags,
+.tag-row.companion-tags,
+.companion-tags.mcj-id-tags,
+.companion-identity-row,
+.companion-games-row{
+  display:flex !important;
+  flex-wrap:wrap !important;
+  align-items:center !important;
+  gap:var(--mcj-id-gap) !important;
+  row-gap:var(--mcj-id-gap) !important;
+  column-gap:var(--mcj-id-gap) !important;
+}
+
+/*
+ * Unified badge geometry — ALL chips share height / pad / radius / font.
+ * No per-badge margin offsets (cross-browser baseline safe).
+ */
+.companion-level-pill,
+.mcj-level-tag,
+.mcj-gender-tag,
+.mcj-cert-badge,
+.mcj-cert-tag,
+.mcj-voice-tag,
+.mcj-service-tag{
+  display:inline-flex !important;
+  align-items:center !important;
+  justify-content:center !important;
+  box-sizing:border-box !important;
+  height:var(--mcj-badge-h) !important;
+  min-height:var(--mcj-badge-h) !important;
+  max-height:var(--mcj-badge-h) !important;
+  padding:0 var(--mcj-badge-pad-x) !important;
+  margin:0 !important;
+  border-width:var(--mcj-badge-bw) !important;
+  border-radius:var(--mcj-badge-radius) !important;
+  font-size:var(--mcj-badge-fs) !important;
+  line-height:var(--mcj-badge-lh) !important;
+  letter-spacing:.02em !important;
+  white-space:nowrap !important;
+  vertical-align:middle !important;
+  transform:none !important;
+  max-width:100% !important;
+  flex:0 1 auto !important;
+}
+
+/* Level pill — border follows card/photo level color system */
+.companion-level-pill,
+.mcj-level-tag{
+  gap:4px !important;
+  border-style:solid !important;
+  border-color:var(--mcj-level-badge-border, var(--mcj-level-color, #9CA3AF)) !important;
+  background:color-mix(in srgb, var(--mcj-level-color, #9CA3AF) 18%, transparent) !important;
+  color:var(--mcj-level-badge-text, #ffe8f4) !important;
+  font-weight:800 !important;
+}
+
+/* Gender chip */
+.mcj-gender-tag{
+  border-style:solid !important;
+  border-color:rgba(255,255,255,.18) !important;
+  background:rgba(255,255,255,.05) !important;
+  color:rgba(255,232,244,.88) !important;
+  font-weight:700 !important;
+}
+
+/* Official / cert badge — same box metrics; color only differs */
+.mcj-cert-badge,
+.mcj-cert-tag{
+  gap:6px !important;
+  border-style:solid !important;
+  border-color:rgba(255,142,200,.55) !important;
+  background:linear-gradient(180deg,rgba(20,8,16,.92),rgba(8,4,10,.96)) !important;
+  color:#ffe6f2 !important;
+  font-weight:800 !important;
+  box-shadow:0 0 0 1px rgba(0,0,0,.35),0 6px 16px rgba(232,120,176,.18) !important;
+  cursor:default !important;
+  transition:border-color .15s ease,box-shadow .15s ease,background .15s ease !important;
+}
+.mcj-cert-badge .mcj-cert-icon,
+.mcj-cert-tag .mcj-cert-icon{
+  display:inline-flex !important;
+  align-items:center !important;
+  justify-content:center !important;
+  flex:0 0 auto !important;
+  width:14px !important;
+  height:14px !important;
+  margin:0 !important;
+  padding:0 !important;
+  border:0 !important;
+  border-radius:0 !important;
+  background:transparent !important;
+  box-shadow:none !important;
+  font-size:12px !important;
+  line-height:1 !important;
+  transform:none !important;
+  filter:drop-shadow(0 0 4px rgba(255,142,200,.35));
+}
+.mcj-cert-badge:hover,
+.mcj-cert-tag:hover,
+.mcj-cert-badge.is-interactive:hover{
+  border-color:rgba(255,180,220,.78) !important;
+  box-shadow:0 0 0 1px rgba(255,142,200,.25),0 8px 20px rgba(232,120,176,.28) !important;
+  transform:none !important;
+}
+.mcj-cert-badge.is-official,
+.mcj-cert-tag.is-official{
+  border-color:rgba(255,142,200,.68) !important;
+  background:linear-gradient(165deg,#1a0a12 0%,#0c0609 55%,#160810 100%) !important;
+  color:#ffd6ea !important;
+}
+.mcj-cert-badge.is-official::before,
+.mcj-cert-tag.is-official::before{
+  content:"" !important;
+  display:block !important;
+  box-sizing:border-box !important;
+  width:6px !important;
+  height:6px !important;
+  margin:0 !important;
+  border-radius:50% !important;
+  background:var(--mcj-cert-pink) !important;
+  box-shadow:0 0 8px rgba(255,142,200,.65) !important;
+  flex:0 0 auto !important;
+  align-self:center !important;
+  transform:none !important;
+}
+
+/* Voice line — dashed border only; same box metrics */
+.mcj-voice-tag{
+  gap:4px !important;
+  border-style:dashed !important;
+  border-color:rgba(255,180,210,.42) !important;
+  background:rgba(255,120,180,.08) !important;
+  color:#ffd0e4 !important;
+  font-weight:750 !important;
+}
+.mcj-voice-tag .mcj-voice-label{
+  display:inline !important;
+  height:auto !important;
+  min-height:0 !important;
+  max-height:none !important;
+  padding:0 !important;
+  margin:0 !important;
+  border:0 !important;
+  border-radius:0 !important;
+  background:transparent !important;
+  box-shadow:none !important;
+  opacity:.72;
+  font-weight:700;
+  line-height:1 !important;
+}
+.mcj-voice-tag.is-unset{
+  opacity:.78;
+  border-style:dotted !important;
+  color:rgba(255,208,228,.72) !important;
+}
+
+/* Service / style tags */
+.mcj-service-tag{
+  border-style:solid !important;
+  border-color:rgba(255,255,255,.12) !important;
+  background:rgba(255,255,255,.04) !important;
+  color:rgba(255,255,255,.72) !important;
+  font-weight:650 !important;
+}
+
+/* Photo / card border follows level */
+[data-companion-level] .profile-avatar-wrap,
+.profile-hero[data-companion-level] .profile-avatar-wrap{
+  border-color:color-mix(in srgb, var(--mcj-level-color, #e89ac4) 70%, transparent) !important;
+  box-shadow:0 0 18px color-mix(in srgb, var(--mcj-level-color, #e178b4) 28%, transparent) !important;
+}
+.player-card[data-level-id] .companion-card-media,
+.player-card[data-companion-level] .companion-card-media{
+  box-shadow:inset 0 0 0 1.5px color-mix(in srgb, var(--mcj-level-color, transparent) 55%, transparent);
+}
+
+/* Profile bottom actions — black-pink bordered professional */
+.profile-bottom-bar.pd-bottom-bar .pd-bottom-secondary,
+.profile-bottom-bar.pd-bottom-bar .pd-bottom-primary,
+.profile-bottom-bar.pd-bottom-bar .order-now{
+  border-radius:14px !important;
+  transition:transform .12s ease,box-shadow .15s ease,border-color .15s ease,background .15s ease,filter .15s ease !important;
+}
+.profile-bottom-bar.pd-bottom-bar .pd-bottom-secondary{
+  border:1.5px solid rgba(255,142,200,.38) !important;
+  background:linear-gradient(180deg,rgba(22,12,18,.92),rgba(10,6,12,.96)) !important;
+  color:#ffe6f2 !important;
+  box-shadow:0 4px 14px rgba(0,0,0,.28) !important;
+}
+.profile-bottom-bar.pd-bottom-bar .pd-bottom-secondary:hover{
+  border-color:rgba(255,170,215,.62) !important;
+  background:linear-gradient(180deg,rgba(36,16,26,.95),rgba(14,8,16,.98)) !important;
+  box-shadow:0 6px 18px rgba(225,120,180,.22) !important;
+  transform:translateY(-1px);
+}
+.profile-bottom-bar.pd-bottom-bar .pd-bottom-secondary:active{
+  transform:translateY(1px) scale(.985);
+}
+.profile-bottom-bar.pd-bottom-bar .pd-bottom-primary,
+.profile-bottom-bar.pd-bottom-bar .order-now{
+  border:1.5px solid rgba(255,190,220,.55) !important;
+  background:linear-gradient(180deg,#ffe4f1,#ef9ac8) !important;
+  color:#1a0710 !important;
+  box-shadow:0 8px 22px rgba(225,120,180,.32) !important;
+}
+.profile-bottom-bar.pd-bottom-bar .pd-bottom-primary:hover,
+.profile-bottom-bar.pd-bottom-bar .order-now:hover{
+  filter:brightness(1.05);
+  box-shadow:0 10px 26px rgba(225,120,180,.4) !important;
+  transform:translateY(-1px);
+}
+.profile-bottom-bar.pd-bottom-bar .pd-bottom-primary:active,
+.profile-bottom-bar.pd-bottom-bar .order-now:active{
+  transform:translateY(1px) scale(.985);
+  filter:brightness(.97);
+}
+
+/* Album lightbox */
+.mcj-album-lightbox{
+  position:fixed;inset:0;z-index:120;
+  display:flex;align-items:center;justify-content:center;
+  background:rgba(2,0,6,.88);
+  backdrop-filter:blur(10px);
+  padding:max(12px,env(safe-area-inset-top)) 12px max(12px,env(safe-area-inset-bottom));
+  opacity:0;pointer-events:none;transition:opacity .18s ease;
+}
+.mcj-album-lightbox.is-open{opacity:1;pointer-events:auto}
+.mcj-album-lightbox__stage{
+  position:relative;
+  width:min(920px,100%);
+  max-height:min(88vh,920px);
+  display:flex;align-items:center;justify-content:center;
+  touch-action:pan-y;
+}
+.mcj-album-lightbox__img{
+  max-width:100%;
+  max-height:min(82vh,860px);
+  object-fit:contain;
+  border-radius:14px;
+  border:1px solid rgba(255,142,200,.28);
+  box-shadow:0 24px 80px rgba(0,0,0,.55);
+  background:#0a0609;
+  user-select:none;
+  -webkit-user-drag:none;
+}
+.mcj-album-lightbox__btn{
+  position:absolute;
+  top:50%;
+  transform:translateY(-50%);
+  width:44px;height:44px;
+  border-radius:50%;
+  border:1px solid rgba(255,142,200,.4);
+  background:rgba(12,8,14,.72);
+  color:#ffe6f2;
+  font-size:22px;font-weight:800;
+  cursor:pointer;
+  display:grid;place-items:center;
+  backdrop-filter:blur(8px);
+  transition:background .15s ease,border-color .15s ease,transform .12s ease;
+}
+.mcj-album-lightbox__btn:hover{
+  border-color:rgba(255,180,220,.7);
+  background:rgba(28,14,22,.88);
+}
+.mcj-album-lightbox__btn:active{transform:translateY(-50%) scale(.94)}
+.mcj-album-lightbox__prev{left:8px}
+.mcj-album-lightbox__next{right:8px}
+.mcj-album-lightbox__close{
+  position:absolute;
+  top:max(10px,env(safe-area-inset-top));
+  right:max(10px,env(safe-area-inset-right));
+  width:40px;height:40px;
+  border-radius:50%;
+  border:1px solid rgba(255,142,200,.4);
+  background:rgba(12,8,14,.78);
+  color:#ffe6f2;
+  font-size:22px;font-weight:800;
+  cursor:pointer;
+  z-index:2;
+}
+.mcj-album-lightbox__counter{
+  position:absolute;
+  left:50%;
+  bottom:max(14px,env(safe-area-inset-bottom));
+  transform:translateX(-50%);
+  padding:6px 12px;
+  border-radius:999px;
+  border:1px solid rgba(255,255,255,.14);
+  background:rgba(0,0,0,.55);
+  color:rgba(255,232,244,.9);
+  font-size:12px;font-weight:750;
+}
+.wall-grid img[data-album-index],
+.wall-grid img.mcj-album-thumb{
+  cursor:zoom-in;
+  transition:transform .15s ease,box-shadow .15s ease,border-color .15s ease;
+}
+.wall-grid img[data-album-index]:hover,
+.wall-grid img.mcj-album-thumb:hover{
+  transform:scale(1.015);
+  border-color:rgba(255,160,210,.55);
+  box-shadow:0 8px 22px rgba(0,0,0,.28);
+}
+
+/* Admin player panel — identity chips only (no shell redesign) */
+.player-detail-hero .mcj-id-tags,
+.admin-sync-note.mcj-id-tags,
+.player-detail-hero[data-companion-level] img{
+  /* keep existing layout; border tint via level var */
+}
+.player-detail-hero[data-companion-level] img{
+  border:1.5px solid color-mix(in srgb, var(--mcj-level-color, #e89ac4) 65%, transparent);
+  box-sizing:border-box;
+}
+.admin-sync-note.mcj-id-tags{
+  display:flex !important;
+  flex-wrap:wrap !important;
+  gap:8px !important;
+  align-items:center !important;
+  border:0 !important;
+  background:transparent !important;
+  padding:8px 0 0 !important;
+  color:inherit !important;
+}
+
+/* CS grab cards */
+.cs-grab-card .mcj-id-tags{
+  margin-top:6px;
+}
+
+@media(max-width:760px){
+  .mcj-album-lightbox__btn{width:40px;height:40px;font-size:20px}
+  .mcj-album-lightbox__prev{left:4px}
+  .mcj-album-lightbox__next{right:4px}
+  .companion-level-pill,.mcj-gender-tag,.mcj-voice-tag,.mcj-service-tag,.mcj-cert-badge,.mcj-cert-tag,.mcj-level-tag{
+    font-size:11px !important;
+    height:var(--mcj-badge-h) !important;
+    min-height:var(--mcj-badge-h) !important;
+    max-height:var(--mcj-badge-h) !important;
+    padding:0 var(--mcj-badge-pad-x) !important;
+    margin:0 !important;
+    box-sizing:border-box !important;
+    line-height:1 !important;
+    transform:none !important;
+  }
+  .mcj-id-tags,
+  .tag-row.companion-tags,
+  .companion-tags.mcj-id-tags,
+  .companion-identity-row,
+  .companion-games-row{
+    gap:var(--mcj-id-gap) !important;
+    row-gap:var(--mcj-id-gap) !important;
+    column-gap:var(--mcj-id-gap) !important;
+  }
+  .mcj-voice-tag{
+    white-space:nowrap !important;
+  }
+  /* Gold official badge shared on mobile identity surfaces — color only */
+  .companion-hall-grid .mcj-cert-badge.is-official,
+  .profile-detail-page .mcj-cert-badge.is-official,
+  .mcj-cert-badge.is-official,
+  .mcj-cert-tag.is-official{
+    border-color:rgba(212,160,40,.72) !important;
+  }
+}

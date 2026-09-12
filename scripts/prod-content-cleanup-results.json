@@ -1,0 +1,49 @@
+{
+  "at": "2026-08-02T23:55:55.514Z",
+  "actions": [
+    {
+      "ok": true,
+      "label": "deactivate_test_banners",
+      "detail": []
+    },
+    {
+      "ok": true,
+      "label": "disable_demo_campaigns",
+      "detail": [
+        {
+          "id": "94fd613a-0c8a-40b5-b1fe-80c9eb7aef8c",
+          "name": "会议演示入门包"
+        }
+      ]
+    },
+    {
+      "ok": true,
+      "label": "counts",
+      "detail": {
+        "profiles": [
+          {
+            "role": "boss",
+            "status": "active",
+            "n": 1
+          },
+          {
+            "role": "companion",
+            "status": "active",
+            "n": 2
+          },
+          {
+            "role": "customer_service",
+            "status": "active",
+            "n": 1
+          },
+          {
+            "role": "admin",
+            "status": "active",
+            "n": 1
+          }
+        ],
+        "activeBanners": 1
+      }
+    }
+  ]
+}

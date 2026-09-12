@@ -1,0 +1,65 @@
+{
+  "base": "https://meow-cuijiao-homepage-entj11d77-ciancianteng-4581s-projects.vercel.app",
+  "orderPaid": "CSRW-PAID-1785688632770",
+  "orderUnpaid": "CSRW-UNPAID-1785688625789",
+  "serviceAccount": "service@meow.test",
+  "serviceId": "9004a2b2-5ad7-4e10-8416-613f3de30ded",
+  "results": [
+    {
+      "name": "SETTINGS_SAVE",
+      "ok": true,
+      "detail": "客服奖励设置已保存"
+    },
+    {
+      "name": "T1_CHAT_NO_ORDER",
+      "ok": true,
+      "detail": "NO_ORDER 本次仅为咨询，未产生有效订单，不结算猫粮。"
+    },
+    {
+      "name": "T2_UNPAID",
+      "ok": true,
+      "detail": "UNPAID 订单已创建，奖励将在订单达到结算条件后到账。"
+    },
+    {
+      "name": "T3_SETTLE",
+      "ok": true,
+      "detail": "SETTLED 本次对接成功，已结算 7 猫粮。 amount=7"
+    },
+    {
+      "name": "T4_NO_DUP",
+      "ok": true,
+      "detail": "ALREADY_SETTLED 该订单奖励已结算过。"
+    },
+    {
+      "name": "T4_END_AGAIN",
+      "ok": true,
+      "detail": "ALREADY_SETTLED 该订单奖励已结算过（7 猫粮），不会重复发放。"
+    },
+    {
+      "name": "T5_CLAWBACK",
+      "ok": true,
+      "detail": "CANCELLED status=clawed_back reason=e2e cancel"
+    },
+    {
+      "name": "T6_WRONG_CS",
+      "ok": true,
+      "detail": "skip (no second CS account)"
+    },
+    {
+      "name": "T6_RIGHT_CS",
+      "ok": true,
+      "detail": "skip"
+    },
+    {
+      "name": "T7_NO_ACCEPT",
+      "ok": true,
+      "detail": "NOT_ACCEPTED 本次仅为咨询，未产生有效订单，不结算猫粮。"
+    },
+    {
+      "name": "ADMIN_RECORDS",
+      "ok": true,
+      "detail": "api=0 db=6 status=400"
+    }
+  ],
+  "pass": true
+}

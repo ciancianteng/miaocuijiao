@@ -1,0 +1,47 @@
+{
+  "url": "https://meow-cuijiao-homepage-staging.vercel.app/admin/login/?v=fix1",
+  "probe": {
+    "title": "后台中心登录 | 妙脆角",
+    "hasForm": true,
+    "formVisible": true,
+    "rootHTMLLength": 1271,
+    "hasAuth": true,
+    "hasGate": true,
+    "hasBootGuard": true,
+    "bootFail": false,
+    "bodyBg": "rgb(7, 7, 10)",
+    "h1": "后台中心"
+  },
+  "consoleLogs": [],
+  "failed": [],
+  "responses": [
+    {
+      "status": 200,
+      "url": "https://meow-cuijiao-homepage-staging.vercel.app/admin/login/?v=fix1"
+    },
+    {
+      "status": 200,
+      "url": "https://meow-cuijiao-homepage-staging.vercel.app/assets/admin/login/index-sSqwKA_f.js"
+    },
+    {
+      "status": 200,
+      "url": "https://meow-cuijiao-homepage-staging.vercel.app/assets/index-2zuKiusO.css"
+    },
+    {
+      "status": 200,
+      "url": "https://meow-cuijiao-homepage-staging.vercel.app/assets/role-gates-B559iHWA.js"
+    },
+    {
+      "status": 200,
+      "url": "https://meow-cuijiao-homepage-staging.vercel.app/assets/modulepreload-polyfill-Dezn_h7o.js"
+    },
+    {
+      "status": 200,
+      "url": "https://meow-cuijiao-homepage-staging.vercel.app/assets/auth-shell-Cxnh7D7J.js"
+    },
+    {
+      "status": 200,
+      "url": "https://meow-cuijiao-homepage-staging.vercel.app/assets/admin-boot-guard-D1_YVUkF.js"
+    }
+  ]
+}

@@ -1,0 +1,43 @@
+{
+  "API_BASE": "https://meow-cuijiao-homepage-staging.vercel.app",
+  "expectedSettlement": "2026-08-07",
+  "log": [
+    {
+      "name": "env",
+      "API_BASE": "https://meow-cuijiao-homepage-staging.vercel.app",
+      "expectedSettlement": "2026-08-07",
+      "timezone": "Asia/Kuala_Lumpur",
+      "at": "2026-08-03T20:13:09.434Z"
+    },
+    {
+      "name": "schema_ok",
+      "sample": {
+        "id": "f9fe3500-3a43-43f9-9ffa-eccf820e3407",
+        "status": "completed",
+        "settlement_date": "2026-08-07"
+      },
+      "payout_table": true,
+      "at": "2026-08-03T20:13:09.747Z"
+    },
+    {
+      "name": "payout_requests",
+      "ok": true,
+      "at": "2026-08-03T20:13:09.824Z"
+    },
+    {
+      "name": "companion_submit_skipped",
+      "reason": "no auth",
+      "at": "2026-08-03T20:13:09.824Z"
+    },
+    {
+      "name": "cs_submit_skipped",
+      "reason": "no auth",
+      "at": "2026-08-03T20:13:09.824Z"
+    },
+    {
+      "name": "admin_skipped",
+      "reason": "no auth",
+      "at": "2026-08-03T20:13:09.824Z"
+    }
+  ]
+}

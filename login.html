@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>老板登录 - MEOW CUI JIAO</title>
+  <meta http-equiv="refresh" content="0;url=/index.html#login">
+  <script>
+    (function () {
+      var q = String(location.search || "");
+      var hash = String(location.hash || "").replace(/^#/, "").toLowerCase();
+      var mode = hash === "register" || /[?&]mode=register/i.test(q) ? "register" : "login";
+      var ret = "";
+      try {
+        ret = new URLSearchParams(q).get("return") || "";
+      } catch (e) {}
+      if (ret) {
+        try {
+          sessionStorage.setItem("mcjAfterLoginRedirect", ret);
+        } catch (e2) {}
+      }
+      location.replace("/index.html#" + mode);
+    })();
+  </script>
+</head>
+<body style="background:#08070a;color:#ffd6e7;font-family:system-ui,sans-serif;padding:40px;text-align:center">
+  <p>正在进入老板登录…</p>
+  <p><a href="/index.html#login" style="color:#ff8fc5">如果没有自动跳转，请点这里</a></p>
+</body>
+</html>

@@ -1,0 +1,88 @@
+{
+  "ok": true,
+  "at": "2026-08-02T23:42:12.200Z",
+  "databaseConfigured": true,
+  "applyGate": {
+    "api": "/api/platform/content?types=player_rules,voice_types,player_deposit_settings",
+    "field": "byType.player_rules[] with status published + non-empty body",
+    "source": "src/companion-application.js loadRemoteApplyConfig / rulesHtml",
+    "blockMessage": "后台暂未发布陪玩制度"
+  },
+  "seeded": [],
+  "missing": [],
+  "dbHost": "aws-0-ap-southeast-1.pooler.supabase.com",
+  "banner": {
+    "table": "banners",
+    "action": "ok_existing",
+    "detail": "active banners with image: 1",
+    "needBanner": false,
+    "ids": [
+      "954b9c39-377d-4ec8-8580-07e258445e71"
+    ]
+  },
+  "announcement": {
+    "table": "announcements",
+    "action": "ok_existing",
+    "detail": "active home announcements: 5",
+    "ids": [
+      "7e22201b-99ed-4933-9bab-bff86f2420e4",
+      "123fc506-f55c-4ece-8ff1-cfc1fed681b2",
+      "7bc19400-39fa-4178-97f8-e92c9ad232dc",
+      "e79ccc67-d896-4ab0-a65c-61d52c1898af",
+      "e62f5c77-5777-464f-8491-b63aa21b39fc"
+    ]
+  },
+  "playerRules": {
+    "table": "platform_content_items",
+    "type": "player_rules",
+    "action": "ok_existing",
+    "detail": "apply rules already published id=pc-player-rules-default",
+    "publishedWithBody": 2,
+    "priorPublishedCount": 2
+  },
+  "workRules": {
+    "table": "platform_content_items",
+    "type": "companion_work_rules",
+    "action": "ok_existing",
+    "detail": "published work rules: 6",
+    "count": 6
+  },
+  "teamLobby": {
+    "platform_content_items": {
+      "action": "ok_existing",
+      "count": 3,
+      "filled": 0
+    },
+    "home_channels": {
+      "action": "missing_table"
+    },
+    "discordFilled": 0,
+    "created": 0
+  },
+  "counts": {
+    "companionsApproved": 1,
+    "gameplayProductsPublishedish": null,
+    "gameplayProductsTotal": null,
+    "csWithDisplayName": 1,
+    "csTotal": 1,
+    "csSample": [
+      {
+        "display_name": "终验客服",
+        "email": "service.final.1785706919378@meow.test",
+        "status": "active"
+      }
+    ]
+  },
+  "summary": {
+    "banner": "ok_existing",
+    "announcement": "ok_existing",
+    "playerRules": "ok_existing",
+    "workRules": "ok_existing",
+    "teamLobby": "ok_existing",
+    "companionsApproved": 1,
+    "gameplayProducts": null,
+    "csWithDisplayName": 1,
+    "seeded": [],
+    "missing": []
+  }
+}

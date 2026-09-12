@@ -1,0 +1,23 @@
+{
+  "ok": true,
+  "upserted": 4,
+  "published": [
+    {
+      "id": "gp-delta-loot",
+      "name": "三角洲跑刀"
+    },
+    {
+      "id": "gp-apex-boost",
+      "name": "APEX 上分护航"
+    },
+    {
+      "id": "gp-lol-coach",
+      "name": "LOL 陪练"
+    },
+    {
+      "id": "gp-voice-chat",
+      "name": "语音陪聊"
+    }
+  ],
+  "host": "jqfaknpmcnqwqvatrwgo.supabase.co"
+}

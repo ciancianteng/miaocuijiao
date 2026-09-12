@@ -15,10 +15,10 @@
     <section class="page-title"><p class="eyebrow">ACTIVITY CENTER</p><h1>活动中心</h1><p>后台发布的活动会在这里展示。</p></section>
     <section class="section-row" id="activityList"></section>
   </main>
-  <div class="modal" id="loginModal" aria-hidden="true"><div class="modal-box"><button class="close" data-close>×</button><h2>手机号登录</h2><p>登录后可参加活动</p><label>手机号<input id="phoneInput" maxlength="11" placeholder="请输入手机号"></label><label>验证码<div class="code-row"><input id="codeInput" maxlength="6" placeholder="6位验证码"><button id="sendCode">获取验证码</button></div></label><button class="primary full" id="confirmLogin">登录并进入</button><div class="login-state" id="loginState">请输入收到的验证码</div></div></div>
-  <script src="src/role-gates.js"></script>
-  <script src="src/app.js"></script>
-  <script src="src/site-data.js"></script>
+  <div class="modal" id="loginModal" aria-hidden="true"><div class="modal-box"><button class="close" data-close>×</button><h2>邮箱登录</h2><p>请使用邮箱登录后参加活动</p><a class="primary full" href="index.html" style="display:inline-flex;align-items:center;justify-content:center;text-decoration:none;min-height:44px">前往首页登录</a><div class="login-state" id="loginState">MVP 第一版使用邮箱体系，不再使用手机号验证码。</div></div></div>
+  <script type="module" src="src/role-gates.js"></script>
+  <script type="module" src="src/app.js"></script>
+  <script type="module" src="src/site-data.js"></script>
   <script>
     (function(){
       function readDb(){try{return JSON.parse(localStorage.getItem('mcjPlatformData.v1')||'{}')}catch(e){return {}}}
@@ -47,13 +47,12 @@
       },true);
     })();
   </script>
-  <script src="src/notify-system.js" defer></script>
-  <script src="src/real-data-admin.js" defer></script>
-  <script src="src/footer-system.js" defer></script>
-  <script src="src/launch-readiness-fixes.js" defer></script>
-  <script src="src/meow-butler.js?v=20260711-floating" defer></script>
-  <script src="src/text-guard.js" defer></script>
-  <script src="src/design-system.js" defer></script>
+  <script type="module" src="src/notify-system.js" defer></script>
+  <script type="module" src="src/real-data-admin.js" defer></script>
+  <script type="module" src="src/footer-system.js" defer></script>
+  <script type="module" src="src/launch-readiness-fixes.js" defer></script>
+<script type="module" src="src/text-guard.js" defer></script>
+  <script type="module" src="src/design-system.js" defer></script>
 </body>
 </html>
 
