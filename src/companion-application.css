@@ -1020,7 +1020,7 @@ body.companion-apply-page .apply-status-note{
   max-width:none;
   letter-spacing:0;
 }
-#companionApplyRoot .apply-stepper-item.is-active .apply-stepper-btn{color:#ffd6e8}
+#companionApplyRoot .apply-stepper-item.is-active .apply-stepper-btn{color:#ffd6e8 !important}
 #companionApplyRoot .apply-stepper-item.is-active .apply-stepper-num{color:#ffe2ef;opacity:1}
 #companionApplyRoot .apply-stepper-item.is-active .apply-stepper-label{color:#fff;font-weight:1000}
 #companionApplyRoot .apply-stepper-item.is-active .apply-stepper-dot{
@@ -1029,14 +1029,23 @@ body.companion-apply-page .apply-status-note{
   box-shadow:0 0 10px rgba(255,120,190,.35);
   color:#190812;
 }
-#companionApplyRoot .apply-stepper-item.is-done .apply-stepper-btn{color:rgba(255,230,242,.82)}
+#companionApplyRoot .apply-stepper-item.is-done .apply-stepper-btn{color:rgba(255,230,242,.82) !important}
 #companionApplyRoot .apply-stepper-item.is-done .apply-stepper-dot{
   border-color:transparent;
   background:linear-gradient(145deg,#b8ffd7,#72efb4);
   color:#0a1a12;
 }
-#companionApplyRoot .apply-stepper-item.is-todo .apply-stepper-btn{color:rgba(255,230,242,.42)}
+#companionApplyRoot .apply-stepper-item.is-todo .apply-stepper-btn{color:rgba(255,230,242,.42) !important}
 #companionApplyRoot .apply-stepper-item.is-locked .apply-stepper-btn{cursor:not-allowed;opacity:.72}
+#companionApplyRoot .apply-stepper-btn:hover,
+#companionApplyRoot .apply-stepper-btn:active,
+#companionApplyRoot .apply-stepper-btn:focus{
+  border:0 !important;
+  background:transparent !important;
+  box-shadow:none !important;
+  transform:none !important;
+  filter:none !important;
+}
 #companionApplyRoot .apply-wizard-single .apply-wizard-item-head{display:none}
 #companionApplyRoot .apply-wizard-single .apply-wizard-item-body{padding:0}
 #companionApplyRoot .apply-main{min-width:0;max-width:100%}
@@ -1142,3 +1151,218 @@ body.companion-apply-page .apply-status-note{
   #companionApplyRoot .apply-layout,
   #companionApplyRoot .apply-main{min-width:0;max-width:100%;overflow-x:hidden}
 }
+
+
+/* ===== STEP2 Terms (App-style, no nested capsules) ===== */
+#companionApplyRoot .apply-wizard-single .apply-wizard-item{
+  border:0 !important;
+  background:transparent !important;
+  border-radius:0 !important;
+  box-shadow:none !important;
+  overflow:visible !important;
+}
+#companionApplyRoot .apply-wizard-single .apply-wizard-item-body{padding:0 !important}
+#companionApplyRoot .apply-terms{
+  margin:0;
+  padding:4px 2px 8px;
+  border:0;
+  background:transparent;
+}
+#companionApplyRoot .apply-terms-head{margin:0 0 14px}
+#companionApplyRoot .apply-terms-head h2{
+  margin:0;
+  font-size:20px;
+  font-weight:950;
+  letter-spacing:.01em;
+  color:#fff6fb;
+  display:flex;
+  align-items:baseline;
+  gap:8px;
+  flex-wrap:wrap;
+}
+#companionApplyRoot .apply-terms-ver{
+  font-size:11px;
+  font-weight:700;
+  color:rgba(255,214,235,.45);
+  letter-spacing:.04em;
+}
+#companionApplyRoot .apply-terms-lead{
+  margin:6px 0 0;
+  font-size:13px;
+  font-weight:650;
+  color:rgba(217,191,205,.72);
+  line-height:1.4;
+}
+#companionApplyRoot .apply-terms-empty{
+  margin:18px 0;
+  color:rgba(217,191,205,.7);
+  font-size:13px;
+}
+#companionApplyRoot .apply-terms-list{display:grid;gap:0}
+#companionApplyRoot .apply-terms-section{
+  padding:14px 0;
+  border:0;
+  border-top:1px solid rgba(255,190,220,.12);
+  background:transparent;
+  border-radius:0;
+  box-shadow:none;
+}
+#companionApplyRoot .apply-terms-section:first-child{border-top:0;padding-top:2px}
+#companionApplyRoot .apply-terms-h{
+  margin:0 0 8px;
+  display:flex;
+  align-items:center;
+  gap:10px;
+  font-size:14px;
+  font-weight:900;
+  color:#ffe8f2;
+}
+#companionApplyRoot .apply-terms-num{
+  font-size:11px;
+  font-weight:900;
+  letter-spacing:.08em;
+  color:rgba(255,160,205,.7);
+  font-variant-numeric:tabular-nums;
+}
+#companionApplyRoot .apply-terms-body{
+  padding-left:28px;
+  color:rgba(230,210,222,.72);
+  font-size:13px;
+  font-weight:550;
+  line-height:1.55;
+}
+#companionApplyRoot .apply-terms-body p{margin:0}
+#companionApplyRoot .apply-terms-body ul{
+  margin:0;
+  padding:0;
+  list-style:none;
+  display:grid;
+  gap:6px;
+}
+#companionApplyRoot .apply-terms-body li{
+  position:relative;
+  padding-left:12px;
+}
+#companionApplyRoot .apply-terms-body li::before{
+  content:"";
+  position:absolute;
+  left:0;
+  top:.55em;
+  width:4px;
+  height:4px;
+  border-radius:50%;
+  background:rgba(255,160,205,.55);
+}
+#companionApplyRoot .apply-terms-muted{color:rgba(217,191,205,.45)}
+#companionApplyRoot .apply-terms-agree{
+  display:flex;
+  align-items:flex-start;
+  gap:10px;
+  margin:16px 0 4px;
+  padding:0;
+  border:0;
+  background:transparent;
+  color:#ffe2ef;
+  font-size:14px;
+  font-weight:850;
+  line-height:1.4;
+  cursor:pointer;
+}
+#companionApplyRoot .apply-terms-agree input{
+  flex:0 0 auto;
+  width:18px !important;
+  height:18px !important;
+  min-width:18px;
+  min-height:18px !important;
+  margin:1px 0 0;
+  accent-color:#f3a8cb;
+}
+#companionApplyRoot .apply-terms-agree span{flex:1 1 auto;min-width:0}
+/* Hide legacy accordion capsules if leftover */
+#companionApplyRoot .apply-rules-card,
+#companionApplyRoot .apply-rules-accordion,
+#companionApplyRoot .apply-rules-acc-item,
+#companionApplyRoot .agree-bar,
+#companionApplyRoot .rules-reader{
+  border:0 !important;
+  box-shadow:none !important;
+  background:transparent !important;
+}
+#companionApplyRoot .apply-actions-terms{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  margin-top:14px;
+}
+#companionApplyRoot .apply-actions-terms .apply-btn-ghost,
+#companionApplyRoot .apply-btn.apply-btn-ghost{
+  border:0 !important;
+  background:transparent !important;
+  box-shadow:none !important;
+  color:rgba(255,214,235,.78) !important;
+  min-width:0 !important;
+  padding:0 4px !important;
+  height:40px !important;
+  border-radius:0 !important;
+}
+#companionApplyRoot .apply-actions-terms .apply-btn-cta,
+#companionApplyRoot .apply-btn.apply-btn-cta.primary{
+  min-width:148px;
+  border-radius:14px !important;
+}
+#companionApplyRoot .apply-btn.apply-btn-cta:disabled{
+  opacity:.34 !important;
+  filter:saturate(.5);
+}
+#companionApplyRoot .apply-note-soft{
+  margin-top:8px;
+  text-align:center;
+  font-size:11px;
+  color:rgba(205,184,196,.55);
+  font-weight:650;
+}
+/* Extra anti-truncation for stepper labels on tiny phones */
+@media(max-width:430px){
+  #companionApplyRoot .apply-stepper-label{
+    font-size:12px !important;
+    letter-spacing:0 !important;
+    white-space:nowrap !important;
+    overflow:visible !important;
+    text-overflow:clip !important;
+    max-width:none !important;
+  }
+  #companionApplyRoot .apply-stepper-btn,
+  #companionApplyRoot button.apply-stepper-btn{
+    font-size:12px !important;
+  }
+}
+
+
+/* Soften nested chrome — fewer glowing boxes */
+body.companion-apply-page .apply-hero.apply-hero-compact{
+  border-color:rgba(255,190,220,.14);
+  box-shadow:none;
+  background:rgba(255,255,255,.03);
+}
+body.companion-apply-page .apply-status-note{
+  border-color:rgba(255,190,220,.12);
+  background:transparent;
+  box-shadow:none;
+}
+#companionApplyRoot .apply-terms-list{
+  max-width:100%;
+}
+#companionApplyRoot .apply-terms-section{
+  padding:10px 0;
+}
+#companionApplyRoot .apply-terms-body{
+  padding-left:30px;
+  margin-top:4px;
+}
+#companionApplyRoot .apply-terms-body li{
+  margin:0;
+  padding-left:12px;
+}
+#companionApplyRoot .apply-terms-body ul{gap:4px}
+

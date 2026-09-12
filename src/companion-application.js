@@ -1772,30 +1772,110 @@
   function rulesHtml(draft) {
     var rule = publishedRule();
     var agreed = draft.rulesAgreement && draft.rulesAgreement.accepted;
-    if (!remoteConfigLoaded && !rule) {
-      return '<section class="apply-panel apply-rules-card"><h2>阅读陪玩制度</h2><div class="rules-reader"><h3>正在加载制度…</h3><p>正在从后台读取最新陪玩制度，请稍候。</p></div><div class="agree-bar"><label class="agree-row"><input type="checkbox" disabled><span>我已阅读并同意妙脆角陪玩制度</span></label></div></section>';
-    }
-    if (!rule) return '<section class="apply-panel apply-rules-card"><h2>阅读陪玩制度</h2><div class="rules-reader"><h3>后台暂未发布陪玩制度</h3><p>请等待超级管理员在「后台中心 → 制度管理」发布陪玩申请制度后再继续申请。</p></div><div class="agree-bar"><label class="agree-row"><input type="checkbox" disabled><span>我已阅读并同意妙脆角陪玩制度</span></label></div></section>';
-    var updated = rule.updatedAt
-      ? ('<p class="rules-updated">最后更新：' + esc(formatRulesUpdatedAt(rule.updatedAt)) + (rule.version ? ' · 版本 ' + esc(rule.version) : '') + '</p>')
-      : (rule.version ? '<p class="rules-updated">版本 ' + esc(rule.version) + '</p>' : '');
-    var chapters = splitRulesChapters(rule);
-    // Default: all chapters collapsed — only open when user explicitly toggles.
-    var openId = String((draft.ui || {}).rulesOpenId || "");
-    var accordion = chapters.map(function (ch) {
-      var open = openId && String(ch.id) === openId;
+    function termsShell(inner, agreeDisabled, agreeChecked) {
       return (
-        '<div class="apply-rules-acc-item' + (open ? " is-open" : "") + '" data-rules-acc="' + esc(ch.id) + '">' +
-        '<button type="button" class="apply-rules-acc-head" data-rules-acc-toggle="' + esc(ch.id) + '" aria-expanded="' + (open ? "true" : "false") + '">' +
-        '<span>' + esc(ch.title) + '</span><i class="apply-rules-chevron" aria-hidden="true"></i></button>' +
-        '<div class="apply-rules-acc-body"' + (open ? "" : " hidden") + '><pre>' + esc(ch.body || "") + "</pre></div></div>"
+        '<section class="apply-terms">' +
+        '<header class="apply-terms-head"><h2>陪玩申请须知</h2>' +
+        '<p class="apply-terms-lead">申请前请阅读以下规则</p></header>' +
+        inner +
+        '<label class="apply-terms-agree">' +
+        '<input type="checkbox" ' +
+        (agreeDisabled ? "disabled " : "") +
+        'data-rule-agree ' +
+        (agreeChecked ? "checked" : "") +
+        ">" +
+        "<span>我已阅读并同意《陪玩申请须知》</span></label>" +
+        "</section>"
+      );
+    }
+    if (!remoteConfigLoaded && !rule) {
+      return termsShell('<p class="apply-terms-empty">正在加载制度…</p>', true, false);
+    }
+    if (!rule) {
+      return termsShell('<p class="apply-terms-empty">后台暂未发布陪玩制度，请稍后再试。</p>', true, false);
+    }
+    var ver = rule.version
+      ? ('<span class="apply-terms-ver">v' + esc(String(rule.version).replace(/^v/i, "")) + "</span>")
+      : "";
+    var chapters = splitRulesChapters(rule);
+    // Prefer cohesive sections: if splitter exploded into many tiny one-liners,
+    // rebuild from raw body using Chinese section headings only.
+    var tiny =
+      chapters.length > 4 &&
+      chapters.filter(function (ch) {
+        return /^\d+[\.、．]/.test(String(ch.title || "").trim()) || String(ch.body || "").trim().length < 48;
+      }).length >= Math.ceil(chapters.length * 0.6);
+    if (tiny) {
+      var raw = String(rule.body || "").replace(/\r\n/g, "\n").trim();
+      var blocks = raw.split(/\n(?=[一二三四五六七八九十]+[、.．]|第[一二三四五六七八九十\d]+[章节条]|【[^】]+】)/);
+      if (blocks.length >= 2) {
+        chapters = blocks.map(function (block, i) {
+          var lines = String(block || "")
+            .trim()
+            .split("\n")
+            .map(function (l) { return String(l || "").trim(); })
+            .filter(Boolean);
+          return {
+            id: "ch" + i,
+            title: (lines[0] || ("章节 " + (i + 1))).replace(/^【|】$/g, ""),
+            body: lines.slice(1).join("\n"),
+          };
+        });
+      } else {
+        chapters = [{ id: "all", title: rule.title || "陪玩申请须知", body: raw }];
+      }
+    }
+    var sections = chapters.map(function (ch, i) {
+      var num = String(i + 1).padStart(2, "0");
+      var title = String(ch.title || "").trim();
+      var rawBody = String(ch.body || "").replace(/\r\n/g, "\n").trim();
+      // Drop body lines that merely repeat the title.
+      var lines = rawBody
+        ? rawBody.split("\n").map(function (line) { return String(line || "").trim(); }).filter(function (line) {
+            return line && line !== title;
+          })
+        : [];
+      var bodyHtml;
+      if (!lines.length) {
+        bodyHtml = "";
+      } else {
+        bodyHtml =
+          "<ul>" +
+          lines
+            .map(function (line) {
+              return "<li>" + esc(line.replace(/^([•·\-*\d]+[\.\)、\s]+)/, "")) + "</li>";
+            })
+            .join("") +
+          "</ul>";
+      }
+      return (
+        '<section class="apply-terms-section">' +
+        '<h3 class="apply-terms-h"><span class="apply-terms-num">' +
+        num +
+        "</span><span>" +
+        esc(title) +
+        "</span></h3>" +
+        (bodyHtml ? '<div class="apply-terms-body">' + bodyHtml + "</div>" : "") +
+        "</section>"
       );
     }).join("");
     return (
-      '<section class="apply-panel apply-rules-card"><h2>陪玩申请须知</h2>' +
-      '<div class="rules-reader"><h3>' + esc(rule.title) + '</h3><p>' + esc(rule.subtitle || "") + "</p>" + updated +
-      '<div class="apply-rules-accordion" data-rules-accordion>' + accordion + "</div></div>" +
-      '<div class="agree-bar"><label class="agree-row"><input type="checkbox" data-rule-agree ' + (agreed ? "checked" : "") + '><span>我已阅读并同意陪玩申请须知</span></label></div></section>'
+      '<section class="apply-terms">' +
+      '<header class="apply-terms-head">' +
+      "<h2>陪玩申请须知" +
+      ver +
+      "</h2>" +
+      '<p class="apply-terms-lead">申请前请阅读以下规则</p>' +
+      "</header>" +
+      '<div class="apply-terms-list">' +
+      sections +
+      "</div>" +
+      '<label class="apply-terms-agree">' +
+      '<input type="checkbox" data-rule-agree ' +
+      (agreed ? "checked" : "") +
+      ">" +
+      "<span>我已阅读并同意《陪玩申请须知》</span></label>" +
+      "</section>"
     );
   }
   function basicHtml(data) {
@@ -2324,16 +2404,28 @@
   function actionsHtml(activeIndex, draft) {
     draft = draft || readDraft();
     var submitted = !!(draft.submitted || draft.status === "pending" || draft.status === "review");
-    if (activeIndex === 3 || submitted && activeIndex >= 3) {
-      // STEP4 result — no form actions
+    if (activeIndex === 3 || (submitted && activeIndex >= 3)) {
       return "";
     }
+    // STEP2 terms: only prev + agree CTA (auto-save tip, no draft button)
+    if (activeIndex === 1) {
+      var agreed = !!(draft.rulesAgreement && draft.rulesAgreement.accepted);
+      return (
+        '<div class="apply-actions apply-actions-terms">' +
+        '<button class="apply-btn apply-btn-ghost" data-apply-prev type="button">← 上一步</button>' +
+        '<button class="apply-btn primary apply-btn-cta" data-apply-next type="button" ' +
+        (agreed ? "" : "disabled") +
+        ">同意并继续 →</button></div>" +
+        '<p class="apply-note apply-note-soft">内容将自动保存</p>'
+      );
+    }
     var nextLabel = "保存并下一步";
-    if (activeIndex === 1) nextLabel = "同意并下一步";
     if (activeIndex === 2) nextLabel = "提交陪玩申请";
     return (
       '<div class="apply-actions">' +
-      '<button class="apply-btn" data-apply-prev type="button" ' + (activeIndex === 0 ? "disabled" : "") + ">上一步</button>" +
+      '<button class="apply-btn" data-apply-prev type="button" ' +
+      (activeIndex === 0 ? "disabled" : "") +
+      ">上一步</button>" +
       (activeIndex === 2
         ? ""
         : '<button class="apply-btn" data-apply-save type="button">保存草稿</button>') +
@@ -4109,6 +4201,8 @@
         saveDraft({ rulesAgreement: { accepted: e.target.checked, version: rule.version, ruleId: rule.id, agreedAt: e.target.checked ? now() : "", applicantId: applicantId(), device: navigator.userAgent } });
         var mark = root.querySelector(".step-complete-mark");
         if (mark) mark.textContent = stepComplete(Number(root.dataset.step || 0), readDraft()) ? "已完成 ✔" : "未完成 ○";
+        var nextCta = root.querySelector("[data-apply-next]");
+        if (nextCta) nextCta.disabled = !e.target.checked;
         return;
       }
       if (e.target.closest("[data-record-start]")) startRecording();
