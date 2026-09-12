@@ -8,9 +8,7 @@
       '<h1 class="mcj-auth-title">' +
       title +
       "</h1>" +
-      '<p class="mcj-auth-desc">' +
-      desc +
-      "</p>"
+      (desc ? '<p class="mcj-auth-desc">' + desc + "</p>" : "")
     );
   }
 

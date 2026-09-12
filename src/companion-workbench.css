@@ -509,7 +509,22 @@ a.pw-btn{display:inline-flex;align-items:center;justify-content:center;text-deco
 .pw-app .mcj-auth-form[hidden],
 .pw-app .mcj-auth-card [hidden]{display:none!important}
 .pw-app .mcj-auth-card{min-height:0;height:auto}
-.pw-app .mcj-auth-method-tabs{margin:20px 0 0}
+.pw-app .mcj-auth-method-block{margin:16px 0 2px}
+.pw-app .mcj-auth-segment{margin:0}
+.pw-app .mcj-auth-card--companion{min-height:0;height:auto;padding:28px 22px}
+.pw-app .mcj-auth-card--companion .mcj-auth-form{gap:14px}
+.pw-app .mcj-auth-text-btn{margin-top:2px}
+.pw-app .mcj-auth-card--companion input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="hidden"]):not([type="range"]),
+.pw-app .mcj-auth-card--companion select,
+.pw-app .mcj-auth-card--companion textarea{
+  border-color:rgba(255,255,255,.1)!important;
+  background:rgba(16,14,20,.9)!important;
+}
+.pw-app .mcj-auth-card--companion input:focus,
+.pw-app .mcj-auth-card--companion select:focus,
+.pw-app .mcj-auth-card--companion textarea:focus{
+  border-color:rgba(255,143,197,.75)!important;
+}
 .mcj-auth-check input{width:18px!important;height:18px!important;min-height:18px!important;min-width:18px!important}
 
 /* Ops form controls — dark + pink (companion workbench only) */
@@ -619,7 +634,8 @@ a.pw-btn{display:inline-flex;align-items:center;justify-content:center;text-deco
   background:rgba(255,145,195,.95);
 }
 .pw-app input[type="radio"]:checked::before{transform:scale(1)}
-.pw-app button:not(.pw-btn):not(.pw-nav button):not(.pw-tab){
+/* Do not restyle auth UI controls (tabs / segment / text links / primary CTA). */
+.pw-app button:not(.pw-btn):not(.pw-nav button):not(.pw-tab):not(.mcj-auth-btn):not(.mcj-auth-segment-btn):not(.mcj-auth-text-btn):not(.mcj-auth-eye){
   border:1px solid rgba(255,145,195,.35);
   background:rgba(12,10,16,.92);
   color:#fff;

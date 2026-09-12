@@ -21,6 +21,84 @@
   var autoScheduled = false;
   var bipWaitTimer = null;
 
+  var ICON_CACHE_V = "20260912pwaIcon4";
+  var LOGO_FALLBACKS = [
+    "/icons/icon-192.png",
+    "/apple-touch-icon.png",
+    "/icons/apple-touch-icon.png",
+    "/assets/meow-cuijiao-brand-96.jpg",
+    "/assets/meow-cuijiao-brand-96.webp",
+    "/src/assets/meow-cuijiao-brand-96.jpg"
+  ];
+
+  function canonicalOrigin() {
+    try {
+      var origin = String((location && location.origin) || "");
+      if (!origin || origin === "null") return "";
+      // Production canonical host is www — avoid apex path quirks after redirect.
+      if (origin === "https://meowcuijiao.com") return "https://www.meowcuijiao.com";
+      return origin;
+    } catch (e) {
+      return "";
+    }
+  }
+
+  function absoluteAsset(path) {
+    var p = String(path || "");
+    if (!p) return "";
+    if (/^https?:\/\//i.test(p) || p.indexOf("data:") === 0) return p;
+    if (p.charAt(0) !== "/") p = "/" + p;
+    var origin = canonicalOrigin();
+    return origin ? origin + p : p;
+  }
+
+  function logoCandidates() {
+    var q = "?v=" + ICON_CACHE_V;
+    return LOGO_FALLBACKS.map(function (path) {
+      return absoluteAsset(path + q);
+    });
+  }
+
+  function logoSrc() {
+    return logoCandidates()[0];
+  }
+
+  function bindLogoFallback(img) {
+    if (!img || img.getAttribute("data-mcj-logo-bound") === "1") return;
+    img.setAttribute("data-mcj-logo-bound", "1");
+    img.alt = "";
+    img.setAttribute("aria-hidden", "true");
+    img.addEventListener("error", function onLogoError() {
+      var list = logoCandidates();
+      var cur = String(img.getAttribute("src") || "");
+      var idx = -1;
+      for (var i = 0; i < list.length; i += 1) {
+        if (list[i] === cur || cur.indexOf(LOGO_FALLBACKS[i]) !== -1) {
+          idx = i;
+          break;
+        }
+      }
+      var next = list[idx + 1];
+      if (next) {
+        img.setAttribute("src", next);
+        return;
+      }
+      // Prefer hide over broken-image + alt text.
+      img.classList.add("is-failed");
+      img.removeAttribute("src");
+      img.style.display = "none";
+      var wrap = img.parentElement;
+      if (wrap && wrap.classList && wrap.classList.contains("mcj-pwa-logo-wrap")) {
+        wrap.classList.add("is-empty");
+        wrap.style.backgroundImage = "none";
+      }
+    });
+    // If already broken before listener attached (cached fail), hide immediately.
+    if (img.complete && img.naturalWidth === 0 && img.getAttribute("src")) {
+      img.dispatchEvent(new Event("error"));
+    }
+  }
+
   function lsGet(key) {
     try {
       return localStorage.getItem(key);
@@ -117,18 +195,18 @@
 
   function ensurePwaMeta() {
     if (!document.head) return;
-    var iconV = "20260911pwaIcon2";
+    var iconV = ICON_CACHE_V;
     ensureMetaTag('link[rel="manifest"][data-mcj-pwa-manifest]', function () {
       var l = document.createElement("link");
       l.rel = "manifest";
-      l.href = "/manifest.webmanifest?v=" + iconV;
+      l.href = absoluteAsset("/manifest.webmanifest?v=" + iconV);
       l.setAttribute("data-mcj-pwa-manifest", "1");
       return l;
     });
     ensureMetaTag('link[rel="apple-touch-icon"][data-mcj-pwa-ati]', function () {
       var l = document.createElement("link");
       l.rel = "apple-touch-icon";
-      l.href = "/apple-touch-icon.png?v=" + iconV;
+      l.href = absoluteAsset("/apple-touch-icon.png?v=" + iconV);
       l.setAttribute("data-mcj-pwa-ati", "1");
       return l;
     });
@@ -136,7 +214,7 @@
       var l = document.createElement("link");
       l.rel = "apple-touch-icon";
       l.sizes = "180x180";
-      l.href = "/icons/apple-touch-icon.png?v=" + iconV;
+      l.href = absoluteAsset("/icons/apple-touch-icon.png?v=" + iconV);
       l.setAttribute("data-mcj-pwa-ati-icons", "1");
       return l;
     });
@@ -145,7 +223,7 @@
       l.rel = "icon";
       l.type = "image/png";
       l.sizes = "32x32";
-      l.href = "/favicon-32.png?v=" + iconV;
+      l.href = absoluteAsset("/favicon-32.png?v=" + iconV);
       l.setAttribute("data-mcj-pwa-favicon-32", "1");
       return l;
     });
@@ -154,7 +232,7 @@
       l.rel = "icon";
       l.type = "image/png";
       l.sizes = "192x192";
-      l.href = "/icons/icon-192.png?v=" + iconV;
+      l.href = absoluteAsset("/icons/icon-192.png?v=" + iconV);
       l.setAttribute("data-mcj-pwa-favicon-192", "1");
       return l;
     });
@@ -202,9 +280,6 @@
     } catch (e) {}
   }
 
-  function logoSrc() {
-    return "/icons/icon-192.png?v=20260911pwaIcon2";
-  }
 
   function buildFlow(platform, hasBip) {
     if (platform.iOS) {
@@ -278,9 +353,11 @@
       '<div class="mcj-pwa-sheet" role="dialog" aria-modal="true" aria-labelledby="mcjPwaTitle">' +
       '<button type="button" class="mcj-pwa-close" data-mcj-pwa-close aria-label="关闭">×</button>' +
       '<div class="mcj-pwa-brand">' +
+      '<div class="mcj-pwa-logo-wrap" aria-hidden="true">' +
       '<img class="mcj-pwa-logo" src="' +
       logoSrc() +
-      '" alt="妙脆角" width="56" height="56" decoding="async">' +
+      '" alt="" width="56" height="56" decoding="async" fetchpriority="high">' +
+      "</div>" +
       "<div>" +
       '<h2 id="mcjPwaTitle">把妙脆角装到主屏幕</h2>' +
       '<p data-mcj-pwa-sub>打开更快，使用起来更像 App</p>' +
@@ -289,6 +366,12 @@
       '<div class="mcj-pwa-actions" data-mcj-pwa-actions></div>' +
       "</div>";
     document.body.appendChild(rootEl);
+    var logoImg = rootEl.querySelector(".mcj-pwa-logo");
+    var logoWrap = rootEl.querySelector(".mcj-pwa-logo-wrap");
+    if (logoWrap) {
+      logoWrap.style.backgroundImage = 'url("' + logoSrc().replace(/"/g, "") + '")';
+    }
+    bindLogoFallback(logoImg);
 
     rootEl.addEventListener("click", function (e) {
       if (e.target.closest("[data-mcj-pwa-close]") || e.target.closest("[data-mcj-pwa-overlay]")) {
