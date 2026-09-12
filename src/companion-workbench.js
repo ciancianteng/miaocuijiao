@@ -1,3 +1,4 @@
+import './companion-workbench.css';
 (function(){
   var root=document.getElementById('companionApp');
   if(!root)return;
