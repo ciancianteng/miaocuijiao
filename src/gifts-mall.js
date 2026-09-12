@@ -38,33 +38,32 @@
     }, 2600);
   }
 
-  function authHeaders() {
-    var h = { "Content-Type": "application/json", Accept: "application/json" };
+  function accessToken() {
     try {
-      var t =
+      return (
         localStorage.getItem("mcjAuthAccessToken") ||
+        sessionStorage.getItem("mcjAuthAccessToken") ||
         localStorage.getItem("customerAuthToken") ||
-        "";
-      if (t) h.Authorization = "Bearer " + t;
-    } catch (_) {}
-    return h;
-  }
-
-  function readBoss() {
-    try {
-      var raw = localStorage.getItem("mcjAuthUser");
-      if (!raw) return null;
-      var u = JSON.parse(raw);
-      if (!u || String(u.role || "").toLowerCase() !== "boss") return null;
-      return u;
+        ""
+      );
     } catch (_) {
-      return null;
+      return "";
     }
   }
 
+  function authHeaders() {
+    var h = { "Content-Type": "application/json", Accept: "application/json" };
+    var t = accessToken();
+    if (t) h.Authorization = "Bearer " + t;
+    return h;
+  }
+
   function requireBoss() {
-    var u = readBoss();
-    if (u) return u;
+    if (accessToken()) return true;
+    if (window.MCJAuthContinue && typeof window.MCJAuthContinue.requireLogin === "function") {
+      window.MCJAuthContinue.requireLogin(function () {});
+      return null;
+    }
     toast("请先以老板身份登录");
     try {
       sessionStorage.setItem("mcjReturnTo", location.pathname + location.search);
@@ -103,7 +102,14 @@
   }
 
   function giftPrice(g) {
-    return Number(g.catFoodPrice != null ? g.catFoodPrice : g.price_catfood || 0);
+    // API field: catFoodPrice (marketplace gift_catalog / catalog)
+    return Number(
+      g.catFoodPrice != null
+        ? g.catFoodPrice
+        : g.cat_food_price != null
+          ? g.cat_food_price
+          : g.price_catfood || 0
+    );
   }
 
   function companionMeta(c) {
