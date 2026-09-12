@@ -276,3 +276,87 @@ html[data-gifts-mall="1"] body {
 body.gm-sheet-open {
   overflow: hidden;
 }
+
+.gm-qty-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+  color: rgba(255, 232, 243, 0.8);
+}
+.gm-qty-row input {
+  width: 88px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 145, 195, 0.28);
+  background: rgba(0, 0, 0, 0.28);
+  color: #fff5fa;
+  padding: 8px 10px;
+  font-weight: 700;
+}
+.gm-pay-sheet {
+  max-height: min(92vh, 760px);
+}
+.gm-pay-body {
+  padding: 8px 14px 18px;
+  overflow: auto;
+  display: grid;
+  gap: 12px;
+}
+.gm-pay-card {
+  border-radius: 14px;
+  border: 1px solid rgba(255, 145, 195, 0.18);
+  background: rgba(255, 255, 255, 0.03);
+  padding: 12px;
+}
+.gm-pay-card h3 {
+  margin: 0 0 10px;
+  font-size: 13px;
+  color: rgba(255, 208, 228, 0.9);
+}
+.gm-pay-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.gm-pay-row strong { display: block; font-size: 14px; }
+.gm-pay-row em { display: block; font-style: normal; font-size: 12px; color: rgba(255,232,243,.55); margin-top: 2px; }
+.gm-pay-qr {
+  width: min(100%, 220px);
+  margin: 8px auto;
+  display: block;
+  border-radius: 12px;
+  background: #fff;
+  padding: 8px;
+}
+.gm-pay-channel, .gm-pay-ins, .gm-pay-amount {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: rgba(255, 232, 243, 0.72);
+  line-height: 1.5;
+}
+.gm-pay-amount strong { color: #ffd0e4; font-size: 16px; }
+.gm-proof-preview {
+  width: 100%;
+  max-height: 220px;
+  object-fit: contain;
+  border-radius: 12px;
+  border: 1px solid rgba(255,145,195,.25);
+  margin-bottom: 10px;
+  background: rgba(0,0,0,.25);
+}
+.gm-upload-btn {
+  display: block;
+  text-align: center;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px dashed rgba(255,145,195,.4);
+  color: #ffd0e4;
+  font-weight: 750;
+  margin-bottom: 10px;
+  cursor: pointer;
+}
+.gm-upload-btn input { display: none; }
+body.gm-pay-open { overflow: hidden; }
+.gm-gift-emoji { font-size: 34px; }
+.gm-gift-icon, .gm-gift-icon { width: 52px; height: 52px; object-fit: contain; border-radius: 12px; }
