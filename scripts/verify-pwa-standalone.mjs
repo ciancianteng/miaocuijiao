@@ -10,7 +10,7 @@ const root = process.cwd();
 const skip = new Set(["node_modules", "dist", ".git", "tmp", "scripts", "assets", "checkpoints"]);
 const need = [
   "apple-mobile-web-app-capable",
-  "manifest.webmanifest",
+  "manifest",
   "pwa-boot.js",
   "theme-color",
   "mobile-web-app-capable",
@@ -35,6 +35,25 @@ const critical = [
   "pwa-standalone-check.html",
 ];
 
+const portalManifestByHtml = {
+  "index.html": "/manifest.webmanifest",
+  "mine.html": "/manifest.webmanifest",
+  "orders.html": "/manifest.webmanifest",
+  "login.html": "/manifest.webmanifest",
+  "admin.html": "/manifest-admin.webmanifest",
+  "admin/login/index.html": "/manifest-admin.webmanifest",
+  "companion/login/index.html": "/manifest-companion.webmanifest",
+  "companion/dashboard/index.html": "/manifest-companion.webmanifest",
+  "companion/earnings/index.html": "/manifest-companion.webmanifest",
+  "companion/order-hall/index.html": "/manifest-companion.webmanifest",
+  "companion/orders/index.html": "/manifest-companion.webmanifest",
+  "customer-service/login/index.html": "/manifest-cs.webmanifest",
+  "customer-service/dashboard/index.html": "/manifest-cs.webmanifest",
+  "customer-service/conversations/index.html": "/manifest-cs.webmanifest",
+  "customer-service/orders/index.html": "/manifest-cs.webmanifest",
+  "pwa-standalone-check.html": "/manifest.webmanifest",
+};
+
 function walkHtml(dir, out = []) {
   for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
     if (skip.has(ent.name)) continue;
@@ -56,6 +75,10 @@ for (const rel of critical) {
   for (const n of need) {
     if (!text.includes(n)) failures.push(`${rel}: missing ${n}`);
   }
+  const expectedManifest = portalManifestByHtml[rel];
+  if (expectedManifest && !text.includes(expectedManifest)) {
+    failures.push(`${rel}: missing portal manifest ${expectedManifest}`);
+  }
 }
 
 const allHtml = walkHtml(root).filter((p) => {
@@ -69,11 +92,34 @@ for (const abs of allHtml) {
 }
 
 const manifest = JSON.parse(fs.readFileSync(path.join(root, "manifest.webmanifest"), "utf8"));
-if (manifest.scope !== "/") failures.push("manifest.scope != /");
+if (manifest.scope !== "/") failures.push("boss manifest.scope != /");
 if (manifest.display !== "standalone") failures.push("manifest.display != standalone");
-if (manifest.start_url !== "/") failures.push("manifest.start_url != /");
-if (!String(manifest.id || "").includes("www.meowcuijiao.com")) {
-  failures.push("manifest.id should be https://www.meowcuijiao.com/");
+if (manifest.start_url !== "/" && !String(manifest.start_url).startsWith("/?")) {
+  failures.push("boss manifest.start_url must be / (or /?…)");
+}
+if (!(manifest.id === "/" || String(manifest.id || "").includes("meowcuijiao.com"))) {
+  failures.push("boss manifest.id should be / or https://www.meowcuijiao.com/");
+}
+
+const portalManifests = [
+  ["manifest-companion.webmanifest", "/companion/"],
+  ["manifest-cs.webmanifest", "/customer-service/"],
+  ["manifest-admin.webmanifest", "/admin/"],
+];
+for (const [file, prefix] of portalManifests) {
+  const abs = path.join(root, file);
+  if (!fs.existsSync(abs)) {
+    failures.push(`${file}: missing`);
+    continue;
+  }
+  const m = JSON.parse(fs.readFileSync(abs, "utf8"));
+  if (m.display !== "standalone") failures.push(`${file}: display != standalone`);
+  if (!String(m.start_url || "").startsWith(prefix)) {
+    failures.push(`${file}: start_url must start with ${prefix}`);
+  }
+  if (m.start_url === "/" || m.start_url === "/index.html") {
+    failures.push(`${file}: start_url must not be boss home`);
+  }
 }
 if (!fs.existsSync(path.join(root, "public/pwa-boot.js")) && !fs.existsSync(path.join(root, "pwa-boot.js"))) {
   failures.push("pwa-boot.js missing");
