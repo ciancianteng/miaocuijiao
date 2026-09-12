@@ -248,7 +248,7 @@ function attachPublishFields(mapped = {}, row = {}, profile = {}) {
 
 
 function resolveCertificationMethod(row = {}) {
-  const raw = String(row.credential_mode || row.auth_mode || row.certification_method || "").trim().toLowerCase();
+  const raw = String(row.certification_method || row.credential_mode || row.auth_mode || "").trim().toLowerCase();
   if (raw === "id_card" || raw === "deposit") return raw;
   const note = String(row.application_note || "");
   const m = note.match(/\[AUTH_MODE:(id_card|deposit)\]/i);
