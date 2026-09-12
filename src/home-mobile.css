@@ -150,3 +150,35 @@
     font-size: 16px !important;
   }
 }
+
+/* Mobile companion rails: shorter covers so more cards fit per swipe */
+@media (max-width: 767px) {
+  main.container,
+  .container {
+    padding-bottom: calc(110px + env(safe-area-inset-bottom, 0px)) !important;
+  }
+
+  .companion-track .companion-card .avatar,
+  .hot-card .avatar,
+  #hotCompanionTrack .companion-card .avatar,
+  #recentCompanionTrack .companion-card .avatar,
+  #gameCompanionTrack .companion-card .avatar,
+  .top-rank-grid .companion-card .avatar,
+  .top-static-section .top-rank-card .avatar {
+    height: 148px !important;
+    max-height: 148px !important;
+  }
+
+  .companion-track .companion-card,
+  .hot-card,
+  #hotCompanionTrack .companion-card,
+  #recentCompanionTrack .companion-card {
+    flex-basis: min(220px, 72vw) !important;
+  }
+
+  .companion-track .companion-card .avatar img,
+  .hot-card .avatar img,
+  .top-rank-grid .companion-card .avatar img {
+    object-fit: cover !important;
+  }
+}
