@@ -137,6 +137,10 @@ html[data-gifts-mall="1"] body {
   z-index: 80;
   background: rgba(0, 0, 0, 0.62);
 }
+.gm-sheet-backdrop[hidden],
+.gm-sheet[hidden] {
+  display: none !important;
+}
 .gm-sheet {
   position: fixed;
   left: 0;
