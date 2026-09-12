@@ -3285,6 +3285,70 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
         order: { ...order, paymentReview: false, ...rejectFields },
       });
     }
+    // —— Gift orders (mall payment proof review) ——
+    if (
+      action === "list_gift_orders" ||
+      action === "gift_orders" ||
+      action === "list_gift_order_reviews"
+    ) {
+      const {
+        listReviewGiftOrders,
+        enrichGiftOrders,
+      } = await import("./_gift-orders.js");
+      const status = String(body.status || body.filter || req.query?.status || "under_review").trim();
+      const rows = await listReviewGiftOrders({ status, limit: 200 });
+      const orders = await enrichGiftOrders(rows);
+      return json(res, 200, { ok: true, orders });
+    }
+    if (action === "get_gift_order_proof" || action === "gift_order_proof_url") {
+      const { getGiftOrderById, signedGiftProofUrl, viewGiftOrder } = await import("./_gift-orders.js");
+      const id = String(body.id || body.order_id || body.orderId || "").trim();
+      if (!id) return json(res, 400, { ok: false, message: "缺少礼物订单 ID。" });
+      const row = await getGiftOrderById(id);
+      if (!row) return json(res, 404, { ok: false, message: "礼物订单不存在。" });
+      const proofUrl = await signedGiftProofUrl(row).catch(() => "");
+      if (!proofUrl) return json(res, 404, { ok: false, message: "付款截图不存在或无法访问。" });
+      return json(res, 200, {
+        ok: true,
+        paymentProofUrl: proofUrl,
+        order: viewGiftOrder(row, { paymentProofUrl: proofUrl }),
+      });
+    }
+    if (action === "approve_gift_order" || action === "gift_order_approve") {
+      const { approveGiftOrder } = await import("./_gift-orders.js");
+      const id = String(body.id || body.order_id || body.orderId || "").trim();
+      const result = await approveGiftOrder({
+        orderId: id,
+        staffId: service.profile.id,
+        staffName: staffReviewerNameFromProfile(service.profile) || service.profile.display_name || "",
+      });
+      return json(res, 200, {
+        ok: true,
+        message: result.message || "审核通过",
+        replayed: !!result.replayed,
+        order: result.order,
+        transaction: result.transaction || null,
+      });
+    }
+    if (action === "reject_gift_order" || action === "gift_order_reject") {
+      const { rejectGiftOrder } = await import("./_gift-orders.js");
+      const id = String(body.id || body.order_id || body.orderId || "").trim();
+      const reason = String(body.reason || body.reject_reason || body.rejectReason || "").trim();
+      if (!reason) return json(res, 400, { ok: false, message: "拒绝必须填写原因。" });
+      const result = await rejectGiftOrder({
+        orderId: id,
+        staffId: service.profile.id,
+        staffName: staffReviewerNameFromProfile(service.profile) || service.profile.display_name || "",
+        reason,
+      });
+      return json(res, 200, {
+        ok: true,
+        message: result.message || "已拒绝",
+        replayed: !!result.replayed,
+        order: result.order,
+      });
+    }
+
     if (action === "confirm_payment" || action === "push_to_grab_hall" || action === "send_to_grab_hall") {
       const order = await orderById(String(body.id || body.order_id || ""));
       if (!order) return json(res, 404, { ok: false, message: "订单不存在。" });
