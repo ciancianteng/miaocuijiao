@@ -262,9 +262,7 @@
         ? "上传中…"
         : status === "error"
           ? "上传失败"
-          : hasPreview
-            ? "上传成功"
-            : "";
+          : ""; // success badge removed — preview image is the success signal
     var tip =
       opts.hint ||
       (kind === "audio"
@@ -328,7 +326,7 @@
         esc(preview) +
         '" playsinline></video>' +
         (stateText
-          ? '<span class="mcj-upload-badge">' + esc(busy ? "上传中…" : stateText) + "</span>"
+          ? '<span class="mcj-upload-badge">' + esc(stateText) + "</span>"
           : "") +
         '<div class="mcj-upload-actions">' +
         '<label class="mcj-upload-btn' +
@@ -354,7 +352,7 @@
         esc(label) +
         '">' +
         (stateText
-          ? '<span class="mcj-upload-badge">' + esc(busy ? "上传中…" : stateText) + "</span>"
+          ? '<span class="mcj-upload-badge">' + esc(stateText) + "</span>"
           : "") +
         '<button type="button" class="mcj-upload-remove" data-mcj-clear="' +
         esc(key) +
@@ -364,7 +362,7 @@
         '<label class="mcj-upload-reopen' +
         (busy ? " is-busy" : "") +
         '">' +
-        (busy ? "上传中…" : "重新上传") +
+        (busy ? "上传中…" : "更换") +
         inputHtml +
         "</label>" +
         "</div>";
