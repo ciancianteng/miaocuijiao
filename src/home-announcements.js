@@ -13,12 +13,48 @@
     currentId: "",
     itemsSig: "",
     rotateTimer: null,
+    rawRows: [],
   };
 
   var PX_PER_SEC = 50;
   var MIN_SCROLL_SEC = 8;
   var STATIC_DWELL_MS = 5000;
   var GAP_PX = 100;
+
+  function tt(key, fallback, vars) {
+    try {
+      if (window.MCJI18n && typeof window.MCJI18n.t === "function") {
+        var out = window.MCJI18n.t(key, vars);
+        if (out && out !== key) return out;
+      }
+    } catch (e) {}
+    var text = fallback != null ? String(fallback) : String(key || "");
+    if (vars && typeof vars === "object") {
+      text = text.replace(/\{(\w+)\}/g, function (_, name) {
+        return vars[name] != null ? String(vars[name]) : "{" + name + "}";
+      });
+    }
+    return text;
+  }
+
+  function isEnLocale() {
+    try {
+      if (window.MCJI18n && typeof window.MCJI18n.getLocale === "function") {
+        return window.MCJI18n.getLocale() === "en";
+      }
+    } catch (e) {}
+    return false;
+  }
+
+  function pickLocalized(item, baseKey) {
+    item = item || {};
+    var enKey = baseKey + "_en";
+    if (isEnLocale()) {
+      var enVal = item[enKey];
+      if (enVal != null && String(enVal).trim()) return String(enVal).trim();
+    }
+    return String(item[baseKey] || "").trim();
+  }
 
   function esc(v) {
     return String(v == null ? "" : v).replace(/[&<>"']/g, function (c) {
@@ -56,10 +92,20 @@
     item = item || {};
     var kind = String(item.kind || "normal").toLowerCase() === "forced" ? "forced" : "normal";
     var requiresAck = kind === "forced" || item.requiresAck === true || item.requires_ack === true;
+    var title = pickLocalized(item, "title") || String(item.title || "").trim();
+    var content =
+      pickLocalized(item, "content") ||
+      pickLocalized(item, "body") ||
+      String(item.content || item.body || item.text || "").trim();
+    if (isEnLocale()) {
+      if (item.title_en) title = String(item.title_en).trim() || title;
+      if (item.content_en) content = String(item.content_en).trim() || content;
+      else if (item.body_en) content = String(item.body_en).trim() || content;
+    }
     return {
       id: String(item.id || ""),
-      title: String(item.title || "").trim(),
-      content: String(item.content || item.text || "").trim(),
+      title: title,
+      content: content,
       publishedAt: item.publishedAt || item.published_at || item.created_at || item.createdAt || "",
       pinned: item.pinned === true || item.is_pinned === true || item.isPinned === true,
       enabled: item.enabled !== false && item.is_active !== false,
@@ -90,11 +136,11 @@
   }
 
   function itemLine(item) {
-    if (!item) return "暂无最新公告。";
-    var title = item.title || "官方公告";
+    if (!item) return tt("announce.empty", "暂无最新公告。");
+    var title = item.title || tt("announce.label", "官方公告");
     var body = item.content || "";
     var line = body && body !== title ? title + "：" + body : title;
-    return String(line).replace(/\s+/g, " ").trim() || "暂无最新公告。";
+    return String(line).replace(/\s+/g, " ").trim() || tt("announce.empty", "暂无最新公告。");
   }
 
   function itemsSignature(items) {
@@ -160,11 +206,15 @@
     modal.hidden = true;
     modal.innerHTML =
       '<div class="home-announcement-dialog" role="dialog" aria-modal="true" aria-labelledby="homeAnnouncementModalTitle">' +
-      '<button type="button" class="home-announcement-close" data-announcement-close aria-label="关闭">×</button>' +
+      '<button type="button" class="home-announcement-close" data-announcement-close aria-label="' +
+      esc(tt("announce.close", "关闭")) +
+      '">×</button>' +
       '<h3 id="homeAnnouncementModalTitle"></h3>' +
       '<time class="home-announcement-time"></time>' +
       '<div class="home-announcement-body"></div>' +
-      '<button type="button" class="home-announcement-ok" data-announcement-close>关闭</button>' +
+      '<button type="button" class="home-announcement-ok" data-announcement-close>' +
+      tt("announce.close", "关闭") +
+      "</button>" +
       "</div>";
     document.body.appendChild(modal);
     modal.addEventListener("click", function (e) {
@@ -179,18 +229,19 @@
     var modal = ensureModal();
     state.activeId = item.id;
     state.forcedOpen = !!opts.forced;
-    modal.querySelector("#homeAnnouncementModalTitle").textContent = item.title || "官方公告";
+    modal.querySelector("#homeAnnouncementModalTitle").textContent = item.title || tt("announce.label", "官方公告");
     modal.querySelector(".home-announcement-time").textContent =
-      (item.kind === "forced" ? "强制公告 · " : "") + "发布时间：" + formatTime(item.publishedAt);
-    modal.querySelector(".home-announcement-body").textContent = item.content || item.title || "暂无最新公告。";
+      (item.kind === "forced" ? tt("announce.forced_prefix", "强制公告 · ") : "") +
+      tt("announce.published_at", "发布时间：{time}", { time: formatTime(item.publishedAt) });
+    modal.querySelector(".home-announcement-body").textContent = item.content || item.title || tt("announce.empty", "暂无最新公告。");
     var closeBtn = modal.querySelector(".home-announcement-close");
     var okBtn = modal.querySelector(".home-announcement-ok");
     if (item.kind === "forced" && opts.forced) {
       if (closeBtn) closeBtn.hidden = true;
-      if (okBtn) okBtn.textContent = "我已阅读";
+      if (okBtn) okBtn.textContent = tt("announce.read", "我已阅读");
     } else {
       if (closeBtn) closeBtn.hidden = false;
-      if (okBtn) okBtn.textContent = "关闭";
+      if (okBtn) okBtn.textContent = tt("announce.close", "关闭");
     }
     modal.hidden = false;
     document.body.style.overflow = "hidden";
@@ -375,23 +426,25 @@
     var items = state.items;
     var item = currentItem();
     var empty = !items.length;
-    var text = empty ? "暂无最新公告。" : itemLine(item);
+    var text = empty ? tt("announce.empty", "暂无最新公告。") : itemLine(item);
     var useEllipsis = !empty && preferEllipsis(item);
 
     bar.hidden = false;
     bar.classList.add("home-announcement-bar", "announcement-strip");
-    bar.setAttribute("aria-label", "官方公告");
+    bar.setAttribute("aria-label", tt("announce.label", "官方公告"));
     bar.dataset.announcementCount = String(items.length);
     bar.dataset.announcementIndex = String(empty ? 0 : state.index);
     if (item && item.id) bar.dataset.announcementId = String(item.id);
     else delete bar.dataset.announcementId;
 
     bar.innerHTML =
-      '<div class="home-announcement-label"><span aria-hidden="true">📢</span><strong>官方公告</strong></div>' +
+      '<div class="home-announcement-label"><span aria-hidden="true">📢</span><strong>' +
+      esc(tt("announce.label", "官方公告")) +
+      "</strong></div>" +
       '<div class="home-announcement-track-wrap" data-announcement-open' +
       (empty ? ' data-empty="1"' : ' tabindex="0"') +
       ' role="button" aria-label="' +
-      (empty ? "暂无最新公告" : "查看公告详情") +
+      esc(empty ? tt("announce.empty", "暂无最新公告") : tt("announce.view_detail", "查看公告详情")) +
       '">' +
       (empty || useEllipsis
         ? '<span class="home-announcement-static">' + esc(text) + "</span>"
@@ -438,6 +491,7 @@
   }
 
   function applyRows(rows) {
+    state.rawRows = Array.isArray(rows) ? rows.slice() : [];
     var all = sortItems(
       (rows || []).map(normalize).filter(function (item) {
         return item.enabled !== false && (item.title || item.content) && inSchedule(item);
@@ -476,10 +530,15 @@
     {
       id: "mcj-default-home-ops-announcement",
       title: "🎉 MEOW CUI JIAO 妙脆角开启试运营！",
+      title_en: "🎉 MEOW CUI JIAO soft launch is live!",
       content:
         "欢迎来到妙脆角陪玩平台！目前平台已进入试运营阶段，我们将持续优化功能与服务体验。欢迎大家注册体验并提出宝贵建议。\n\n感谢您的支持，让我们一起玩得开心、赢得尽兴！💗",
+      content_en:
+        "Welcome to MEOW CUI JIAO! We are in soft launch and keep improving features and service. Please try it out and share feedback.\n\nThanks for your support — play hard and have fun! 💗",
       text:
         "欢迎来到妙脆角陪玩平台！目前平台已进入试运营阶段，我们将持续优化功能与服务体验。欢迎大家注册体验并提出宝贵建议。\n\n感谢您的支持，让我们一起玩得开心、赢得尽兴！💗",
+      text_en:
+        "Welcome to MEOW CUI JIAO! We are in soft launch and keep improving features and service. Please try it out and share feedback.\n\nThanks for your support — play hard and have fun! 💗",
       category: "home",
       audience: "home",
       kind: "normal",
@@ -546,6 +605,10 @@
       } else {
         clearRotateTimer();
       }
+    });
+    window.addEventListener("mcj:localechange", function () {
+      if (state.rawRows && state.rawRows.length) applyRows(state.rawRows);
+      else render(true);
     });
   }
 

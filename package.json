@@ -14,7 +14,9 @@
     "verify:pricing-p1": "node scripts/verify-pricing-p1-offline.mjs",
     "verify:settlement-payment-fields": "node scripts/verify-settlement-payment-fields.mjs",
     "verify:profiles-no-updated-at-patch": "node scripts/verify-profiles-no-updated-at-patch.mjs",
-    "verify:otp-fix": "node scripts/verify-otp-fix-offline.mjs"
+    "verify:otp-fix": "node scripts/verify-otp-fix-offline.mjs",
+    "sync:i18n": "node scripts/sync-i18n-catalog.mjs",
+    "verify:locale-parity": "node scripts/sync-i18n-catalog.mjs && node scripts/verify-locale-parity.mjs"
   },
   "dependencies": {
     "@vitejs/plugin-react": "latest",

@@ -40,6 +40,13 @@
   }
   function label(status) {
     var key = normalize(status);
+    var i18nKey = "order.status." + key;
+    try {
+      if (global.MCJI18n && typeof global.MCJI18n.t === "function") {
+        var translated = global.MCJI18n.t(i18nKey);
+        if (translated && translated !== i18nKey) return translated;
+      }
+    } catch (e) {}
     return LABELS[key] || key;
   }
   function isPreviewHost() {

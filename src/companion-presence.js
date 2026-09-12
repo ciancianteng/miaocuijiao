@@ -4,26 +4,51 @@
  * companion workbench (writes via companion API; reads same codes/labels).
  *
  * Codes: online | busy | paused | offline
- * Labels: 在线可接单 | 忙碌中 | 暂停接单 | 离线
+ * Labels follow active locale via MCJI18n.
  */
 (function (global) {
   "use strict";
 
-  var LABELS = {
+  var LABEL_KEYS = {
+    online: "presence.online",
+    busy: "presence.busy",
+    paused: "presence.paused",
+    offline: "presence.offline",
+  };
+  var LABELS_FALLBACK = {
     online: "在线可接单",
     busy: "忙碌中",
     paused: "暂停接单",
     offline: "离线",
   };
 
+  function tt(key, fallback) {
+    try {
+      if (global.MCJI18n && typeof global.MCJI18n.t === "function") {
+        var out = global.MCJI18n.t(key);
+        if (out && out !== key) return out;
+      }
+    } catch (e) {}
+    return fallback;
+  }
+
+  function labelsMap() {
+    return {
+      online: tt(LABEL_KEYS.online, LABELS_FALLBACK.online),
+      busy: tt(LABEL_KEYS.busy, LABELS_FALLBACK.busy),
+      paused: tt(LABEL_KEYS.paused, LABELS_FALLBACK.paused),
+      offline: tt(LABEL_KEYS.offline, LABELS_FALLBACK.offline),
+    };
+  }
+
   function codeFrom(raw) {
     var s = String(raw == null ? "" : raw).trim();
     if (!s) return "";
     var lower = s.toLowerCase();
-    if (lower === "online" || /在线可接单|^在线$|可接单/.test(s)) return "online";
-    if (lower === "busy" || /忙碌|接单中/.test(s)) return "busy";
-    if (lower === "paused" || /暂停/.test(s)) return "paused";
-    if (lower === "offline" || /离线|下线/.test(s)) return "offline";
+    if (lower === "online" || /在线可接单|^在线$|可接单|Available/i.test(s)) return "online";
+    if (lower === "busy" || /忙碌|接单中|^Busy$/i.test(s)) return "busy";
+    if (lower === "paused" || /暂停|^Paused$/i.test(s)) return "paused";
+    if (lower === "offline" || /离线|下线|^Offline$/i.test(s)) return "offline";
     return "";
   }
 
@@ -45,10 +70,11 @@
       if (c.online === true || c.canOrderNow === true || c.isOnline === true) code = "online";
       else code = "offline";
     }
-    if (!LABELS[code]) code = "offline";
+    var labels = labelsMap();
+    if (!labels[code]) code = "offline";
     return {
       code: code,
-      label: LABELS[code],
+      label: labels[code],
       canOrderNow: code === "online",
       className: "is-" + code,
     };
@@ -94,15 +120,40 @@
     return " " + fromCompanion(c).className;
   }
 
+  function refreshDomLabels() {
+    try {
+      document.querySelectorAll("[data-online-status]").forEach(function (el) {
+        var code = el.getAttribute("data-online-status") || "offline";
+        var label = labelsMap()[code] || labelsMap().offline;
+        el.setAttribute("data-online-status-label", label);
+        var texts = [];
+        for (var i = 0; i < el.childNodes.length; i++) {
+          if (el.childNodes[i].nodeType === 3) texts.push(el.childNodes[i]);
+        }
+        if (texts.length) texts[texts.length - 1].textContent = label;
+        else if (!el.querySelector("i")) el.textContent = label;
+      });
+    } catch (e0) {}
+  }
+
   global.MCJCompanionPresence = {
-    LABELS: LABELS,
+    get LABELS() {
+      return labelsMap();
+    },
     codeFrom: codeFrom,
+    code: codeFrom,
     fromCompanion: fromCompanion,
     normalizeCompanionFields: normalizeCompanionFields,
     statusDotHtml: statusDotHtml,
     badgeClass: badgeClass,
     label: function (code) {
-      return LABELS[codeFrom(code) || "offline"] || LABELS.offline;
+      var labels = labelsMap();
+      return labels[codeFrom(code) || "offline"] || labels.offline;
     },
+    refreshDomLabels: refreshDomLabels,
   };
+
+  try {
+    global.addEventListener("mcj:localechange", refreshDomLabels);
+  } catch (e1) {}
 })(typeof window !== "undefined" ? window : globalThis);

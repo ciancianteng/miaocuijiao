@@ -244,14 +244,18 @@
   function deskAuthLinkHtml() {
     if (isLoggedIn()) {
       return (
-        navLink("mine.html", "个人中心") +
-        '<button type="button" class="mcj-desk-logout" data-mcj-boss-logout>退出登录</button>'
+        navLink("mine.html", t("nav.profile", "个人中心")) +
+        '<button type="button" class="mcj-desk-logout" data-mcj-boss-logout>' +
+        t("nav.logout", "退出登录") +
+        "</button>"
       );
     }
     return (
       '<a href="login.html" data-mcj-boss-login' +
       (activeHref("login.html") ? ' class="active"' : "") +
-      ">登录</a>"
+      ">" +
+      t("nav.login", "登录") +
+      "</a>"
     );
   }
 
@@ -334,9 +338,9 @@
       var desk = header.querySelector(".mcj-desk-nav");
       if (desk) {
         desk.innerHTML =
-          navLink("index.html", "首页") +
-          navLink("companion-center.html", "大厅") +
-          navLink("orders.html", "订单") +
+          navLink("index.html", t("nav.home", "首页")) +
+          navLink("companion-center.html", t("nav.hall", "大厅")) +
+          navLink("orders.html", t("nav.orders", "订单")) +
           supportNavLink() +
           deskAuthLinkHtml();
       }
@@ -370,7 +374,14 @@
           esc(unreadLabel(n)) +
           "</em>"
         : '<em class="mcj-chat-unread-badge" data-mcj-chat-unread-badge hidden></em>';
-    return '<a href="support.html?start=1"' + active + ">客服" + badge + "</a>";
+    return (
+      '<a href="support.html?start=1"' +
+      active +
+      ">" +
+      t("nav.support", "客服") +
+      badge +
+      "</a>"
+    );
   }
 
   function setChatUnread(n) {
@@ -458,28 +469,98 @@
     });
   }
 
+  function t(key, fallback) {
+    try {
+      if (window.MCJI18n && typeof window.MCJI18n.t === "function") {
+        var out = window.MCJI18n.t(key);
+        if (out && out !== key) return out;
+      }
+    } catch (e) {}
+    return fallback != null ? String(fallback) : String(key || "");
+  }
+
+  function ensureI18nRuntime() {
+    if (window.MCJI18n && window.MCJI18n.ready) return;
+    ensureScript("/src/i18n-catalog.js?v=20260912i18n1", "data-mcj-i18n-catalog");
+    ensureScript("/src/i18n.js?v=20260912i18n1", "data-mcj-i18n-runtime");
+  }
+
+  function languageMenuHtml() {
+    var loc = "zh-CN";
+    try {
+      if (window.MCJI18n && typeof window.MCJI18n.getLocale === "function") loc = window.MCJI18n.getLocale();
+    } catch (e0) {}
+    var zhMark = loc === "zh-CN" ? "✓ " : "";
+    var enMark = loc === "en" ? "✓ " : "";
+    return (
+      '<div class="mcj-mnav-lang" data-mcj-mnav-lang>' +
+      '<div class="mcj-mnav-lang-label">' + esc(t("nav.language", "语言")) + "</div>" +
+      '<button type="button" class="mcj-mnav-lang-opt' + (loc === "zh-CN" ? " is-active" : "") + '" data-mcj-set-locale="zh-CN">' +
+      zhMark + esc(t("nav.language_zh", "中文")) +
+      "</button>" +
+      '<button type="button" class="mcj-mnav-lang-opt' + (loc === "en" ? " is-active" : "") + '" data-mcj-set-locale="en">' +
+      enMark + esc(t("nav.language_en", "English")) +
+      "</button>" +
+      "</div>"
+    );
+  }
+
+  function applyBossTabbarI18n() {
+    var map = {
+      home: "nav.home",
+      hall: "nav.hall",
+      orders: "nav.orders",
+      support: "nav.support",
+      mine: "nav.mine",
+    };
+    document.querySelectorAll(
+      ".mcj-app-tabbar [data-app-tab], .mobile-bottom-nav [data-app-tab], .bottom-nav [data-app-tab], nav.bottom-nav [data-app-tab]"
+    ).forEach(function (a) {
+      var key = map[a.getAttribute("data-app-tab") || ""];
+      if (!key) return;
+      var label = a.querySelector(".mcj-app-tab-label") || a;
+      if (label) label.textContent = t(key, label.textContent);
+    });
+  }
+
+  function refreshI18nChrome() {
+    try {
+      var header = document.querySelector("header.mcj-boss-header");
+      if (header) header.innerHTML = headerHtml();
+      fillMobileDrawerLinks();
+      applyBossTabbarI18n();
+      if (window.MCJI18n && typeof window.MCJI18n.apply === "function") window.MCJI18n.apply(document);
+      scheduleAuthVisibility();
+    } catch (e) {}
+  }
+
   function mobileAuthLinkHtml() {
     if (isLoggedIn()) {
       return (
-        navLink("mine.html", "个人中心") +
-        '<button type="button" class="mcj-mnav-logout" data-mcj-boss-logout>退出登录</button>'
+        navLink("mine.html", t("nav.profile", "个人中心")) +
+        '<button type="button" class="mcj-mnav-logout" data-mcj-boss-logout>' +
+        t("nav.logout", "退出登录") +
+        "</button>"
       );
     }
     return (
       '<a href="login.html" data-mcj-boss-login' +
       (activeHref("login.html") ? ' class="active"' : "") +
-      ">登录</a>"
+      ">" +
+      t("nav.login", "登录") +
+      "</a>"
     );
   }
 
   function mobileDrawerLinksHtml() {
     // mobileAuthLinkHtml already includes one logout when logged in — do not append a second.
     return (
-      navLink("index.html", "首页") +
-      navLink("companion-center.html", "大厅") +
-      navLink("orders.html", "订单") +
+      navLink("index.html", t("nav.home", "首页")) +
+      navLink("companion-center.html", t("nav.hall", "大厅")) +
+      navLink("orders.html", t("nav.orders", "订单")) +
       supportNavLink() +
-      mobileAuthLinkHtml()
+      mobileAuthLinkHtml() +
+      languageMenuHtml()
     );
   }
 
@@ -504,9 +585,9 @@
       '<div class="mcj-boss-header-inner header-inner">' +
       brandHtml() +
       '<nav class="mcj-desk-nav" aria-label="桌面主导航">' +
-      navLink("index.html", "首页") +
-      navLink("companion-center.html", "大厅") +
-      navLink("orders.html", "订单") +
+      navLink("index.html", t("nav.home", "首页")) +
+      navLink("companion-center.html", t("nav.hall", "大厅")) +
+      navLink("orders.html", t("nav.orders", "订单")) +
       supportNavLink() +
       deskAuthLinkHtml() +
       "</nav>" +
@@ -528,11 +609,11 @@
     sheet.setAttribute("data-mcj-mnav-sheet", "1");
     sheet.hidden = true;
     sheet.innerHTML =
-      '<button type="button" class="mcj-mnav-backdrop" data-mcj-mnav-backdrop aria-label="关闭菜单" tabindex="-1"></button>' +
+      '<button type="button" class="mcj-mnav-backdrop" data-mcj-mnav-backdrop aria-label="' + t("nav.close_menu", "关闭菜单") + '" tabindex="-1"></button>' +
       '<div class="mcj-mnav-drawer" data-mcj-mnav-drawer role="dialog" aria-modal="true" aria-label="导航菜单">' +
       '<div class="mcj-mnav-drawer-head">' +
-      "<strong>菜单</strong>" +
-      '<button type="button" class="mcj-mnav-close" data-mcj-mnav-close aria-label="关闭菜单">×</button>' +
+      "<strong>" + t("nav.menu", "菜单") + "</strong>" +
+      '<button type="button" class="mcj-mnav-close" data-mcj-mnav-close aria-label="' + t("nav.close_menu", "关闭菜单") + '">×</button>' +
       "</div>" +
       '<nav class="mcj-mnav-drawer-links" data-mcj-mnav-links aria-label="移动端主导航">' +
       mobileDrawerLinksHtml() +
@@ -918,6 +999,24 @@
     window.__MCJBossHeaderBound = true;
 
     document.addEventListener("click", function (e) {
+      var localeBtn = e.target.closest("[data-mcj-set-locale]");
+      if (localeBtn) {
+        e.preventDefault();
+        e.stopPropagation();
+        var next = localeBtn.getAttribute("data-mcj-set-locale") || "zh-CN";
+        try {
+          if (window.MCJI18n && typeof window.MCJI18n.setLocale === "function") {
+            window.MCJI18n.setLocale(next);
+          } else {
+            try {
+              localStorage.setItem("mcj_locale", next);
+            } catch (eLs) {}
+            refreshI18nChrome();
+          }
+        } catch (eLoc) {}
+        return;
+      }
+
       var moreToggle = e.target.closest("[data-mcj-mnav-toggle], [data-mcj-nav-more]");
       if (moreToggle) {
         e.preventDefault();
@@ -1175,9 +1274,14 @@
 
   function boot() {
     if (!isBossPublicPage()) return;
+    ensureI18nRuntime();
     ensureAvatarFallback();
     mount();
     bind();
+    applyBossTabbarI18n();
+    window.addEventListener("mcj:localechange", function () {
+      refreshI18nChrome();
+    });
     syncAuthChrome().then(function () {
       if (!isLoggedIn()) return;
       startNotifyPoll();

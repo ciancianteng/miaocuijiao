@@ -1,6 +1,6 @@
 /**
  * i18n / multi-currency / international payment stubs (structure only).
- * Do not wire UI strings yet — reserved for future V1.x.
+ * Legacy stub. Prefer /src/i18n.js + /src/i18n-catalog.js for boss/public UI.
  */
 (function (root) {
   "use strict";
@@ -18,7 +18,7 @@
   };
 
   root.MCJLocaleReady = root.MCJLocaleReady || {
-    multiLanguage: false,
+    multiLanguage: true,
     multiCurrency: false,
     internationalPayment: false,
     /** Future: load language packs without changing order settlement. */

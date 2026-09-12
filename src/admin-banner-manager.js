@@ -24,7 +24,19 @@
     draft: null,
     mobileDraft: null,
     editingId: "",
-    editMeta: { title: "", link: "", sort_order: 100, is_active: true },
+    editMeta: {
+      title: "",
+      title_en: "",
+      subtitle: "",
+      subtitle_en: "",
+      button_text: "",
+      button_text_en: "",
+      image_url_en: "",
+      mobile_image_url_en: "",
+      link: "",
+      sort_order: 100,
+      is_active: true,
+    },
     crop: { zoom: 1, x: 0, y: 0 },
     mobileCrop: { zoom: 1, x: 0, y: 0 },
     natural: { width: 0, height: 0 },
@@ -32,13 +44,34 @@
     clearMobile: false,
   };
   function defaultEditMeta() {
-    return { title: "", link: "", sort_order: 100, is_active: true };
+    return {
+      title: "",
+      title_en: "",
+      subtitle: "",
+      subtitle_en: "",
+      button_text: "",
+      button_text_en: "",
+      image_url_en: "",
+      mobile_image_url_en: "",
+      link: "",
+      sort_order: 100,
+      is_active: true,
+    };
   }
 
   function esc(v) {
     return String(v == null ? "" : v).replace(/[&<>"']/g, function (c) {
       return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
     });
+  }
+  function fieldLabel(key, fallback) {
+    try {
+      if (window.MCJI18n && typeof window.MCJI18n.t === "function") {
+        var out = window.MCJI18n.t(key);
+        if (out && out !== key) return out;
+      }
+    } catch (e) {}
+    return fallback != null ? String(fallback) : String(key || "");
   }
   function target() {
     return document.getElementById(TARGET_ID);
@@ -124,10 +157,24 @@
   }
   function syncEditMetaFromForm() {
     var title = document.querySelector("[data-banner-editor-title]");
+    var titleEn = document.querySelector("[data-banner-editor-title-en]");
+    var subtitle = document.querySelector("[data-banner-editor-subtitle]");
+    var subtitleEn = document.querySelector("[data-banner-editor-subtitle-en]");
+    var buttonText = document.querySelector("[data-banner-editor-button-text]");
+    var buttonTextEn = document.querySelector("[data-banner-editor-button-text-en]");
+    var imageEn = document.querySelector("[data-banner-editor-image-en]");
+    var mobileImageEn = document.querySelector("[data-banner-editor-mobile-image-en]");
     var link = document.querySelector("[data-banner-editor-link]");
     var sort = document.querySelector("[data-banner-editor-sort]");
     var enabled = document.querySelector("[data-banner-editor-enabled]");
     if (title) state.editMeta.title = String(title.value || "").trim();
+    if (titleEn) state.editMeta.title_en = String(titleEn.value || "").trim();
+    if (subtitle) state.editMeta.subtitle = String(subtitle.value || "").trim();
+    if (subtitleEn) state.editMeta.subtitle_en = String(subtitleEn.value || "").trim();
+    if (buttonText) state.editMeta.button_text = String(buttonText.value || "").trim();
+    if (buttonTextEn) state.editMeta.button_text_en = String(buttonTextEn.value || "").trim();
+    if (imageEn) state.editMeta.image_url_en = String(imageEn.value || "").trim();
+    if (mobileImageEn) state.editMeta.mobile_image_url_en = String(mobileImageEn.value || "").trim();
     if (link) state.editMeta.link = String(link.value || "").trim();
     if (sort) {
       var n = Number(sort.value);
@@ -140,10 +187,46 @@
     var enabled = meta.is_active !== false;
     return (
       '<div class="banner-ops-form-grid" data-banner-editor-meta>' +
-      '<label class="banner-ops-field">Banner 标题' +
+      '<label class="banner-ops-field">' +
+      esc(fieldLabel("banner.field_title", "标题")) +
       '<input type="text" maxlength="80" data-banner-editor-title value="' +
       esc(meta.title || "") +
       '" placeholder="请输入 Banner 标题"></label>' +
+      '<label class="banner-ops-field">' +
+      esc(fieldLabel("banner.field_title_en", "英文标题")) +
+      '<input type="text" maxlength="80" data-banner-editor-title-en value="' +
+      esc(meta.title_en || "") +
+      '" placeholder="Title (EN)"></label>' +
+      '<label class="banner-ops-field">' +
+      esc(fieldLabel("banner.field_subtitle", "副标题")) +
+      '<input type="text" maxlength="160" data-banner-editor-subtitle value="' +
+      esc(meta.subtitle || "") +
+      '" placeholder="可选"></label>' +
+      '<label class="banner-ops-field">' +
+      esc(fieldLabel("banner.field_subtitle_en", "英文副标题")) +
+      '<input type="text" maxlength="160" data-banner-editor-subtitle-en value="' +
+      esc(meta.subtitle_en || "") +
+      '" placeholder="Subtitle (EN)"></label>' +
+      '<label class="banner-ops-field">' +
+      esc(fieldLabel("banner.field_cta", "按钮文案")) +
+      '<input type="text" maxlength="40" data-banner-editor-button-text value="' +
+      esc(meta.button_text || "") +
+      '" placeholder="可选"></label>' +
+      '<label class="banner-ops-field">' +
+      esc(fieldLabel("banner.field_cta_en", "英文按钮文案")) +
+      '<input type="text" maxlength="40" data-banner-editor-button-text-en value="' +
+      esc(meta.button_text_en || "") +
+      '" placeholder="Button (EN)"></label>' +
+      '<label class="banner-ops-field">' +
+      esc(fieldLabel("banner.field_image_en", "英文图片")) +
+      '<input type="url" maxlength="500" data-banner-editor-image-en value="' +
+      esc(meta.image_url_en || "") +
+      '" placeholder="https://… (EN image URL)"></label>' +
+      '<label class="banner-ops-field">' +
+      esc(fieldLabel("banner.field_mobile_image_en", "英文手机图片")) +
+      '<input type="url" maxlength="500" data-banner-editor-mobile-image-en value="' +
+      esc(meta.mobile_image_url_en || "") +
+      '" placeholder="https://… (EN mobile image URL)"></label>' +
       '<label class="banner-ops-field">跳转链接' +
       '<input type="text" maxlength="240" data-banner-editor-link value="' +
       esc(meta.link || "") +
@@ -928,6 +1011,13 @@
     state.editingId = String(item.id);
     state.editMeta = {
       title: item.title || "",
+      title_en: item.title_en || "",
+      subtitle: item.subtitle || "",
+      subtitle_en: item.subtitle_en || "",
+      button_text: item.button_text || item.buttonText || "",
+      button_text_en: item.button_text_en || item.buttonText_en || "",
+      image_url_en: item.image_url_en || item.image_en || "",
+      mobile_image_url_en: item.mobile_image_url_en || item.mobileImage_en || "",
       link: item.button_link || item.link || "",
       sort_order: item.sort_order != null ? item.sort_order : 100,
       is_active: item.is_active !== false,
@@ -994,6 +1084,13 @@
         // Do NOT set is_main from is_active — that broke sort order.
         var shared = {
           title: title,
+          subtitle: String(meta.subtitle || "").trim(),
+          button_text: String(meta.button_text || "").trim(),
+          title_en: String(meta.title_en || "").trim(),
+          subtitle_en: String(meta.subtitle_en || "").trim(),
+          button_text_en: String(meta.button_text_en || "").trim(),
+          image_url_en: String(meta.image_url_en || "").trim(),
+          mobile_image_url_en: String(meta.mobile_image_url_en || "").trim(),
           link: link,
           button_link: link,
           sort_order: sortOrder,

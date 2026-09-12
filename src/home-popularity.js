@@ -1,7 +1,23 @@
 (function () {
   "use strict";
 
-  var state = { items: [], rules: null, loading: true, error: "" };
+  var state = { items: [], rules: null, loading: true, error: "", errorKey: "" };
+
+  function tt(key, fallback, vars) {
+    try {
+      if (window.MCJI18n && typeof window.MCJI18n.t === "function") {
+        var out = window.MCJI18n.t(key, vars);
+        if (out && out !== key) return out;
+      }
+    } catch (e) {}
+    var text = fallback != null ? String(fallback) : String(key || "");
+    if (vars && typeof vars === "object") {
+      text = text.replace(/\{(\w+)\}/g, function (_, name) {
+        return vars[name] != null ? String(vars[name]) : "{" + name + "}";
+      });
+    }
+    return text;
+  }
 
   function esc(v) {
     return String(v == null ? "" : v).replace(/[&<>"']/g, function (c) {
@@ -28,8 +44,8 @@
   }
   function displayName(item) {
     var n = String((item && (item.nickname || item.name)) || "").trim();
-    if (isGarbledName(n)) return "未命名陪玩";
-    return n || "未命名陪玩";
+    if (isGarbledName(n)) return tt("home.unnamed_companion", "未命名陪玩");
+    return n || tt("home.unnamed_companion", "未命名陪玩");
   }
   function money(v) {
     var n = Number(v || 0);
@@ -48,7 +64,7 @@
     if (window.MCJCompanionPresence) {
       return window.MCJCompanionPresence.fromCompanion(item).label;
     }
-    return item.availabilityText || item.status || item.onlineStatus || "离线";
+    return item.availabilityText || item.status || item.onlineStatus || tt("hall.status_offline", "离线");
   }
   function presenceCode(item) {
     if (window.MCJCompanionPresence) {
@@ -57,9 +73,9 @@
     return item.availabilityStatus || "offline";
   }
   function badge(rank) {
-    if (rank === 1) return '<span class="pop-medal gold">冠军</span>';
-    if (rank === 2) return '<span class="pop-medal silver">亚军</span>';
-    if (rank === 3) return '<span class="pop-medal bronze">季军</span>';
+    if (rank === 1) return '<span class="pop-medal gold">' + esc(tt("home.pop_champion", "冠军")) + "</span>";
+    if (rank === 2) return '<span class="pop-medal silver">' + esc(tt("home.pop_runner_up", "亚军")) + "</span>";
+    if (rank === 3) return '<span class="pop-medal bronze">' + esc(tt("home.pop_third", "季军")) + "</span>";
     return '<span class="pop-rank-num">' + esc(rank) + "</span>";
   }
   function profileHref(item) {
@@ -75,6 +91,8 @@
 
   function podiumCard(item) {
     var r = item.rank;
+    var levelLabel = String(item.level || "").trim();
+    if (!levelLabel || levelLabel === "未设置等级") levelLabel = tt("home.level_unset", "未设置等级");
     return (
       '<article class="pop-podium-card rank-' +
       r +
@@ -93,7 +111,7 @@
       '<div class="pop-meta"><span class="companion-level-pill" data-level-id="' +
       esc(item.levelId || "") +
       '">' +
-      esc(item.level) +
+      esc(levelLabel) +
       '</span><span class="mcj-status-dot ' +
       statusClass(presenceCode(item)) +
       '"><i></i>' +
@@ -101,17 +119,23 @@
       "</span></div>" +
       '<div class="pop-stats">' +
       (state.rules && state.rules.showScore !== false
-        ? "<div><span>人气值</span><strong>" + esc(money(item.popularityScore)) + "</strong></div>"
+        ? "<div><span>" + esc(tt("home.pop_score", "人气值")) + "</span><strong>" + esc(money(item.popularityScore)) + "</strong></div>"
         : "") +
       (state.rules && state.rules.showOrders !== false
-        ? "<div><span>本周接单</span><strong>" + esc(item.completedOrders) + "</strong></div>"
+        ? "<div><span>" + esc(tt("home.pop_week_orders", "本周接单")) + "</span><strong>" + esc(item.completedOrders) + "</strong></div>"
         : "") +
-      "<div><span>好评</span><strong>" +
+      "<div><span>" +
+      esc(tt("home.pop_reviews", "好评")) +
+      "</span><strong>" +
       esc(item.fiveStarReviews) +
       "</strong></div>" +
-      "<div><span>单价</span><strong>" +
+      "<div><span>" +
+      esc(tt("home.pop_unit_price", "单价")) +
+      "</span><strong>" +
       esc(money(item.price).toFixed(0)) +
-      " 猫粮</strong></div>" +
+      " " +
+      esc(tt("home.pop_catfood", "猫粮")) +
+      "</strong></div>" +
       "</div>" +
       '<button type="button" class="pop-order-btn" data-pop-order="' +
       esc(item.companionId || "") +
@@ -129,12 +153,16 @@
       esc(item.availabilityStatus || "") +
       '" data-pop-status-text="' +
       esc(presenceLabel(item) || item.availabilityText || "") +
-      '">立即下单</button>' +
+      '">' +
+      esc(tt("home.pop_order_now", "立即下单")) +
+      "</button>" +
       "</article>"
     );
   }
 
   function listRow(item) {
+    var levelLabel = String(item.level || "").trim();
+    if (!levelLabel || levelLabel === "未设置等级") levelLabel = tt("home.level_unset", "未设置等级");
     return (
       '<article class="pop-list-row" style="display:grid">' +
       '<a class="pop-list-rank" href="' +
@@ -156,24 +184,30 @@
       ' · <span class="companion-level-pill" data-level-id="' +
       esc(item.levelId || "") +
       '">' +
-      esc(item.level) +
+      esc(levelLabel) +
       "</span> · " +
       esc(presenceLabel(item)) +
       "</span><span>" +
       esc(item.mainService || item.game || "-") +
       " · " +
       esc(money(item.price).toFixed(0)) +
-      " 猫粮" +
-      " · 单" +
+      " " +
+      esc(tt("home.pop_catfood", "猫粮")) +
+      " · " +
+      esc(tt("home.pop_orders_short", "单")) +
       esc(item.completedOrders) +
-      " · 好评" +
+      " · " +
+      esc(tt("home.pop_reviews", "好评")) +
       esc(item.fiveStarReviews) +
-      " · 礼物" +
+      " · " +
+      esc(tt("home.pop_gifts", "礼物")) +
       esc(money(item.giftCatFood)) +
       "</span></div>" +
       '<div class="pop-list-side"><strong>' +
       esc(money(item.popularityScore)) +
-      "</strong><span>人气值</span></div>" +
+      "</strong><span>" +
+      esc(tt("home.pop_score", "人气值")) +
+      "</span></div>" +
       '<div style="display:flex;gap:6px">' +
       '<button type="button" class="pop-list-cta" data-pop-order="' +
       esc(item.companionId || "") +
@@ -191,7 +225,9 @@
       esc(item.availabilityStatus || "") +
       '" data-pop-status-text="' +
       esc(presenceLabel(item) || item.availabilityText || "") +
-      '">下单</button></div></article>'
+      '">' +
+      esc(tt("home.pop_order", "下单")) +
+      "</button></div></article>"
     );
   }
 
@@ -207,21 +243,27 @@
       });
   }
 
+  function resolveErrorText() {
+    if (state.errorKey) return tt(state.errorKey, state.error || "");
+    return state.error || "";
+  }
+
   function paint() {
     var root = document.getElementById("homePopularityBoard");
     if (!root) return;
     if (state.loading) {
-      root.innerHTML = '<div class="pop-empty">正在读取本周人气榜...</div>';
+      root.innerHTML = '<div class="pop-empty">' + esc(tt("home.pop_loading", "正在读取本周人气榜...")) + "</div>";
       return;
     }
     if (state.error) {
-      root.innerHTML = '<div class="pop-empty">' + esc(state.error) + "</div>";
+      root.innerHTML = '<div class="pop-empty">' + esc(resolveErrorText()) + "</div>";
       return;
     }
     if (!state.items.length) {
+      var empty = esc(tt("home.no_companions", "暂无陪玩"));
       root.innerHTML =
-        '<div class="pop-desktop-grid"><div class="pop-empty pop-desktop-empty">暂无陪玩</div></div>' +
-        '<div class="pop-empty">暂无陪玩</div>';
+        '<div class="pop-desktop-grid"><div class="pop-empty pop-desktop-empty">' + empty + "</div></div>" +
+        '<div class="pop-empty">' + empty + "</div>";
       return;
     }
     var top = state.items.slice(0, 3);
@@ -246,19 +288,22 @@
 
   function load() {
     state.loading = true;
+    state.errorKey = "";
     paint();
     fetch("/api/popularity?action=home&period=weekly&limit=10", { headers: { Accept: "application/json" }, cache: "no-store" })
       .then(function (res) {
         return res.json().then(function (body) {
-          if (!res.ok || body.ok === false) throw new Error(body.message || "人气榜读取失败");
+          if (!res.ok || body.ok === false) throw new Error(body.message || tt("home.pop_failed", "人气榜读取失败"));
           return body;
         });
       })
       .then(function (body) {
         state.rules = body.rules || null;
         state.error = "";
+        state.errorKey = "";
         if (body.enabled === false) {
           state.items = [];
+          state.errorKey = "home.pop_disabled";
           state.error = "人气榜暂未开启";
           return null;
         }
@@ -267,9 +312,16 @@
       .catch(function (err) {
         state.items = [];
         var msg = String((err && err.message) || "");
-        state.error = !msg || /failed to fetch|fetch failed|networkerror|network request failed|load failed/i.test(msg)
-          ? "暂时无法连接服务器，请稍后重试"
-          : (msg || "人气榜暂不可用");
+        if (!msg || /failed to fetch|fetch failed|networkerror|network request failed|load failed/i.test(msg)) {
+          state.errorKey = "";
+          state.error = "暂时无法连接服务器，请稍后重试";
+        } else if (msg === "人气榜读取失败" || msg === tt("home.pop_failed", "人气榜读取失败")) {
+          state.errorKey = "home.pop_failed";
+          state.error = "人气榜读取失败";
+        } else {
+          state.errorKey = "";
+          state.error = msg || "人气榜暂不可用";
+        }
       })
       .finally(function () {
         state.loading = false;
@@ -279,6 +331,10 @@
 
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", load);
   else load();
+
+  window.addEventListener("mcj:localechange", function () {
+    paint();
+  });
 
   document.addEventListener("click", function (e) {
     var orderBtn = e.target.closest("[data-pop-order]");

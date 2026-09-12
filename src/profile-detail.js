@@ -7,6 +7,16 @@
     draft: null,
   };
 
+  function tt(key, fallback) {
+    try {
+      if (window.MCJI18n && typeof window.MCJI18n.t === "function") {
+        var out = window.MCJI18n.t(key);
+        if (out && out !== key) return out;
+      }
+    } catch (e) {}
+    return fallback != null ? String(fallback) : String(key || "");
+  }
+
   function esc(v) {
     return String(v == null ? "" : v).replace(/[&<>"']/g, function (c) {
       return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
@@ -99,7 +109,7 @@
 
   function renderLoading() {
     var s = shell();
-    if (s) s.innerHTML = '<section class="detail-card"><h1>陪玩资料</h1><p>正在读取真实陪玩资料...</p></section>';
+    if (s) s.innerHTML = '<section class="detail-card"><h1>' + tt("profile.title", "陪玩资料") + "</h1><p>" + tt("profile.loading", "正在读取真实陪玩资料...") + "</p></section>";
   }
   function renderError(msg, opts) {
     opts = opts || {};
@@ -113,7 +123,7 @@
     var s = shell();
     var retry =
       opts.retry !== false
-        ? '<button type="button" class="order-now" data-profile-reload>重新加载</button>'
+        ? '<button type="button" class="order-now" data-profile-reload>' + tt("profile.reload", "重新加载") + "</button>"
         : "";
     if (s)
       s.innerHTML =
@@ -328,7 +338,11 @@
       if (wr > 0 && wr <= 20) popBadges += '<span class="pop-medal" style="background:rgba(255,150,200,.12);color:#ffd0e4">热门陪玩</span>';
     }
     var giftActions = token()
-      ? '<div class="pd-info-actions"><button type="button" class="mcj-secondary" data-open-gift>送礼物</button><button type="button" data-open-tip>打赏猫粮</button></div>'
+      ? '<div class="pd-info-actions"><button type="button" class="mcj-secondary" data-open-gift>' +
+        tt("profile.gift", "送礼物") +
+        '</button><button type="button" data-open-tip>' +
+        tt("profile.tip", "打赏猫粮") +
+        "</button></div>"
       : "";
 
     var reviewList = Array.isArray(c.reviews) ? c.reviews : [];
@@ -517,8 +531,12 @@
       b.hidden = false;
       b.className = "profile-bottom-bar pd-bottom-bar";
       b.innerHTML =
-        '<a class="pd-bottom-secondary" href="support.html?start=1">咨询客服</a>' +
-        '<button type="button" class="order-now mcj-primary pd-bottom-primary" data-open-order>立即下单</button>';
+        '<a class="pd-bottom-secondary" href="support.html?start=1">' +
+        tt("support.entry", "咨询客服") +
+        '</a>' +
+        '<button type="button" class="order-now mcj-primary pd-bottom-primary" data-open-order>' +
+        tt("profile.book_now", "立即下单") +
+        "</button>";
     }
 
     // Empty / corrupt voice files must not leave a dead 0:00/0:00 control.
@@ -527,7 +545,7 @@
       var body = audio.closest(".pd-voice-body");
       function showVoiceEmpty() {
         if (!body) return;
-        body.innerHTML = '<p class="pd-voice-empty">暂未上传语音介绍</p>';
+        body.innerHTML = '<p class="pd-voice-empty">' + tt("profile.voice_empty", "暂未上传语音介绍") + "</p>";
         if (card) card.classList.add("is-empty");
       }
       audio.addEventListener("error", showVoiceEmpty);
@@ -1081,6 +1099,10 @@
         if (cid && state.companion && cid !== String(state.companion.id || state.companion.uid || "")) return;
       } catch (_) {}
       refetchCompanion({ force: true });
+    });
+    window.addEventListener("mcj:localechange", function () {
+      if (state.companion) render(state.companion);
+      else if (document.querySelector(".profile-detail-shell")) renderLoading();
     });
   })();
   if (window.MCJBossHeader && typeof window.MCJBossHeader.sync === "function") {

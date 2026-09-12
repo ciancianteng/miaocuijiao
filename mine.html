@@ -291,7 +291,9 @@
   <script src="src/boss-nav-prefetch.js?v=20260911perfP2"></script>
   <script src="src/role-gates.js?v=20260911authPerfP0"></script>
   <script src="src/account-security.js?v=20260805acctSec1"></script>
-  <script src="src/boss-header.js" defer></script>
+    <script src="/src/i18n-catalog.js?v=20260912i18n1"></script>
+  <script src="/src/i18n.js?v=20260912i18n1"></script>
+<script src="src/boss-header.js" defer></script>
   <script>
     (function(){
       var root=document.getElementById('accountApp');
@@ -327,6 +329,7 @@
           }
         }catch(e){}
       }
+      function tt(key,fallback,vars){try{if(window.MCJI18n&&typeof window.MCJI18n.t==='function'){var out=window.MCJI18n.t(key,vars);if(out&&out!==key)return out}}catch(e){}var text=fallback!=null?String(fallback):String(key||'');if(vars&&typeof vars==='object'){text=text.replace(/\{(\w+)\}/g,function(_,n){return vars[n]!=null?String(vars[n]):'{'+n+'}'})}return text}
       function token(){try{return sessionStorage.getItem('mcjAuthAccessToken')||localStorage.getItem('mcjAuthAccessToken')||''}catch(e){return ''}}
       function fetchWithTimeout(url,opts,ms){
         var ctrl=typeof AbortController!=='undefined'?new AbortController():null;
@@ -441,9 +444,9 @@
         }
       }
       function paint(){
-        if(!token()){root.innerHTML='<section class="empty-card"><h1>请先登录</h1><p style="color:#9ca3af">登录后可以查看账号资料、订单和在线客服。</p><a class="boss-btn" href="index.html">返回首页登录</a></section>';return}
-        if(state.loading){root.innerHTML='<section class="empty-card">加载中…</section>';return}
-        if(state.error){root.innerHTML='<section class="empty-card"><h1>账号资料读取失败</h1><p style="color:#ffb9d6">'+esc(state.error)+'</p><button class="boss-btn" data-refresh>重试</button></section>';return}
+        if(!token()){root.innerHTML='<section class="empty-card"><h1>'+tt('mine.login_required','请先登录')+'</h1><p style="color:#9ca3af">'+tt('mine.login_required_hint','登录后可以查看账号资料、订单和在线客服。')+'</p><a class="boss-btn" href="index.html">'+tt('mine.back_home_login','返回首页登录')+'</a></section>';return}
+        if(state.loading){root.innerHTML='<section class="empty-card">'+tt('common.loading','加载中…')+'</section>';return}
+        if(state.error){root.innerHTML='<section class="empty-card"><h1>'+tt('mine.load_failed','账号资料读取失败')+'</h1><p style="color:#ffb9d6">'+esc(state.error)+'</p><button class="boss-btn" data-refresh>'+tt('common.retry','重试')+'</button></section>';return}
         var u=state.user||{};
         var publicUid=u.bossUid||u.boss_uid||u.uid||'-';
         var pointsBal=(state.points&&state.points.balance!=null)?state.points.balance:0;
@@ -457,35 +460,35 @@
             '<div class="boss-id-top">'+
               '<div class="boss-id-avatar">'+avatarHtml(u)+'</div>'+
               '<div class="boss-id-meta">'+
-                '<h1>'+esc(u.displayName||'老板账号')+'</h1>'+
-                '<p>老板 UID '+esc(publicUid)+'</p>'+
+                '<h1>'+esc(u.displayName||tt('mine.boss_account','老板账号'))+'</h1>'+
+                '<p>'+esc(tt('mine.boss_uid','老板 UID {uid}',{uid:publicUid}))+'</p>'+
               '</div>'+
             '</div>'+
             '<div class="boss-stats">'+
-              '<a class="boss-stat" href="points.html"><span class="boss-stat-label">积分</span><strong class="boss-stat-value">'+esc(pointsBal)+'</strong></a>'+
-              '<a class="boss-stat" href="my-direct-companions.html"><span class="boss-stat-label">直属</span><strong class="boss-stat-value">'+esc(directCount)+'</strong></a>'+
+              '<a class="boss-stat" href="points.html"><span class="boss-stat-label">'+tt('mine.stat_points','积分')+'</span><strong class="boss-stat-value">'+esc(pointsBal)+'</strong></a>'+
+              '<a class="boss-stat" href="my-direct-companions.html"><span class="boss-stat-label">'+tt('mine.stat_direct','直属')+'</span><strong class="boss-stat-value">'+esc(directCount)+'</strong></a>'+
             '</div>'+
           '</section>'+
           (setHint?'<p style="margin:0 0 14px;color:#fbbf24;font-size:12px;line-height:1.45">'+esc(setHint)+'</p>':'')+
           '<div class="mine-quick" aria-label="常用功能">'+
-            '<a href="/orders.html"><span class="mine-quick-ico" aria-hidden="true">单</span><span class="mine-quick-label">订单</span></a>'+
-            '<a href="/messages.html"><span class="mine-quick-ico" aria-hidden="true">信</span><span class="mine-quick-label">消息</span></a>'+
-            '<a href="support.html?start=1"><span class="mine-quick-ico" aria-hidden="true">客</span><span class="mine-quick-label">客服</span></a>'+
-            '<a href="/recharge.html"><span class="mine-quick-ico" aria-hidden="true">充</span><span class="mine-quick-label">充值</span></a>'+
+            '<a href="/orders.html"><span class="mine-quick-ico" aria-hidden="true">单</span><span class="mine-quick-label">'+tt('mine.quick_orders','订单')+'</span></a>'+
+            '<a href="/messages.html"><span class="mine-quick-ico" aria-hidden="true">信</span><span class="mine-quick-label">'+tt('mine.quick_messages','消息')+'</span></a>'+
+            '<a href="support.html?start=1"><span class="mine-quick-ico" aria-hidden="true">客</span><span class="mine-quick-label">'+tt('mine.quick_support','客服')+'</span></a>'+
+            '<a href="/recharge.html"><span class="mine-quick-ico" aria-hidden="true">充</span><span class="mine-quick-label">'+tt('mine.quick_recharge','充值')+'</span></a>'+
           '</div>'+
-          '<p class="mine-section-title">账户与服务</p>'+
+          '<p class="mine-section-title">'+tt('mine.section_account','账户与服务')+'</p>'+
           '<div class="entry-stack">'+
-          entryRow('profile','编辑资料')+
-          entryRow('assets','我的资产')+
-          entryRow('security','账号安全')+
-          entryRow('orders','订单与服务')+
-          '<section class="entry"><a class="entry-trigger" href="/messages.html"><span class="entry-title">消息中心</span><span class="entry-arrow" aria-hidden="true"></span></a></section>'+
-          '<section class="entry"><a class="entry-trigger" href="points.html"><span class="entry-title">我的积分</span><span class="entry-arrow" aria-hidden="true"></span></a></section>'+
-          '<section class="entry"><a class="entry-trigger" href="gifts.html"><span class="entry-title">礼物中心</span><span class="entry-arrow" aria-hidden="true"></span></a></section>'+
-          '<section class="entry"><a class="entry-trigger" href="my-direct-companions.html"><span class="entry-title">直属陪玩</span><span class="entry-arrow" aria-hidden="true"></span></a></section>'+
-          '<section class="entry"><button type="button" class="entry-trigger" data-pwa-install><span class="entry-title">添加妙脆角到主屏幕</span><span class="entry-arrow" aria-hidden="true"></span></button></section>'+
+          entryRow('profile',tt('mine.edit_profile','编辑资料'))+
+          entryRow('assets',tt('mine.assets','我的资产'))+
+          entryRow('security',tt('mine.settings','账号安全'))+
+          entryRow('orders',tt('mine.orders_services','订单与服务'))+
+          '<section class="entry"><a class="entry-trigger" href="/messages.html"><span class="entry-title">'+tt('mine.messages_center','消息中心')+'</span><span class="entry-arrow" aria-hidden="true"></span></a></section>'+
+          '<section class="entry"><a class="entry-trigger" href="points.html"><span class="entry-title">'+tt('mine.points','我的积分')+'</span><span class="entry-arrow" aria-hidden="true"></span></a></section>'+
+          '<section class="entry"><a class="entry-trigger" href="gifts.html"><span class="entry-title">'+tt('mine.gifts','礼物中心')+'</span><span class="entry-arrow" aria-hidden="true"></span></a></section>'+
+          '<section class="entry"><a class="entry-trigger" href="my-direct-companions.html"><span class="entry-title">'+tt('mine.direct','直属陪玩')+'</span><span class="entry-arrow" aria-hidden="true"></span></a></section>'+
+          '<section class="entry"><button type="button" class="entry-trigger" data-pwa-install><span class="entry-title">'+tt('mine.add_to_home','添加妙脆角到主屏幕')+'</span><span class="entry-arrow" aria-hidden="true"></span></button></section>'+
           '</div>'+
-          '<div class="mine-logout-wrap"><button class="mine-logout" type="button" data-logout>退出登录</button></div>';
+          '<div class="mine-logout-wrap"><button class="mine-logout" type="button" data-logout>'+tt('mine.logout','退出登录')+'</button></div>';
       }
       function paintRegister(){
         root.innerHTML='<section class="account-card"><h1>注册老板账号</h1><p style="color:#9ca3af">必须先完成邮箱验证码验证，成功后系统会自动分配老板 UID。密码至少 8 位且含字母和数字。</p><form class="form-grid" data-register-form style="margin-top:16px"><label>昵称<input name="displayName" maxlength="40" required placeholder="请输入昵称"></label><label>邮箱<div style="display:flex;gap:8px;align-items:center"><input name="email" type="email" inputmode="email" required autocomplete="email" style="flex:1"><button class="boss-btn ghost" type="button" data-mine-send-register-otp>获取验证码</button></div></label><label>邮箱验证码<div style="display:flex;gap:8px;align-items:center"><input name="otp" type="text" inputmode="numeric" maxlength="6" autocomplete="one-time-code" data-auth-code="1" placeholder="6 位验证码" style="flex:1"><button class="boss-btn ghost" type="button" data-mine-verify-register-otp>验证邮箱</button></div></label><input type="hidden" name="registerToken" value=""><p class="state" data-register-verified-hint style="color:#9ca3af">请先完成邮箱验证，验证成功后才能注册。</p><label>密码<input name="password" type="password" required minlength="8" autocomplete="new-password"></label><label>确认密码<input name="confirmPassword" type="password" required minlength="8" autocomplete="new-password"></label><button class="boss-btn" type="submit" data-register-submit disabled>注册</button><p class="state" data-register-state></p><p style="color:#9ca3af;font-size:13px">已有账号？<a href="index.html" style="color:#ffd6e7">返回登录</a></p></form></section>';
@@ -782,6 +785,7 @@ async function load(){
         a.classList.add('is-nav-pending');
       },true);
       load();
+    window.addEventListener('mcj:localechange',function(){try{if(window.MCJI18n&&window.MCJI18n.apply)window.MCJI18n.apply(document)}catch(e){}paint();});
     })();
   </script>
 </body>

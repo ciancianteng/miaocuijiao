@@ -1,0 +1,561 @@
+{
+  "base": "http://127.0.0.1:4173",
+  "results": [
+    {
+      "locale": "zh-CN",
+      "page": "home",
+      "file": "zh_home_390.png",
+      "ok": true,
+      "meta": {
+        "hasApi": true,
+        "methods": [
+          "locale",
+          "fallbackLocale",
+          "supported",
+          "storageKey",
+          "t",
+          "setLocale",
+          "getLocale",
+          "apply",
+          "has",
+          "ready"
+        ],
+        "getLocale": "zh-CN",
+        "storage": "zh-CN",
+        "lang": "zh-CN",
+        "dataLocale": "zh-CN",
+        "sampleNav": [
+          "首页",
+          "大厅",
+          "订单",
+          "客服",
+          "登录",
+          "专业陪玩，每一场游戏认真对待，每一位热爱电竞的你。",
+          "进入陪玩大厅",
+          "联系客服",
+          "俱乐部等级",
+          "查看等级与价格权益",
+          "申请陪玩",
+          "提交资料，通过审核后接单"
+        ]
+      }
+    },
+    {
+      "locale": "zh-CN",
+      "page": "hall",
+      "file": "zh_hall_390.png",
+      "ok": true,
+      "meta": {
+        "hasApi": true,
+        "methods": [
+          "locale",
+          "fallbackLocale",
+          "supported",
+          "storageKey",
+          "t",
+          "setLocale",
+          "getLocale",
+          "apply",
+          "has",
+          "ready"
+        ],
+        "getLocale": "zh-CN",
+        "storage": "zh-CN",
+        "lang": "zh-CN",
+        "dataLocale": "zh-CN",
+        "sampleNav": [
+          "首页",
+          "大厅",
+          "订单",
+          "客服",
+          "登录",
+          "陪玩大厅",
+          "找到喜欢的陪玩，立即开始游戏。",
+          "搜索",
+          "搜索",
+          "清除",
+          "筛选",
+          "筛选"
+        ]
+      }
+    },
+    {
+      "locale": "zh-CN",
+      "page": "orders",
+      "file": "zh_orders_390.png",
+      "ok": true,
+      "meta": {
+        "hasApi": true,
+        "methods": [
+          "locale",
+          "fallbackLocale",
+          "supported",
+          "storageKey",
+          "t",
+          "setLocale",
+          "getLocale",
+          "apply",
+          "has",
+          "ready"
+        ],
+        "getLocale": "zh-CN",
+        "storage": "zh-CN",
+        "lang": "zh-CN",
+        "dataLocale": "zh-CN",
+        "sampleNav": [
+          "首页",
+          "大厅",
+          "订单",
+          "客服",
+          "登录",
+          "专业陪玩，每一场游戏认真对待，每一位热爱电竞的你。",
+          "进入陪玩大厅",
+          "联系客服",
+          "俱乐部等级",
+          "查看等级与价格权益",
+          "申请陪玩",
+          "提交资料，通过审核后接单"
+        ]
+      }
+    },
+    {
+      "locale": "zh-CN",
+      "page": "mine",
+      "file": "zh_mine_390.png",
+      "ok": true,
+      "meta": {
+        "hasApi": true,
+        "methods": [
+          "locale",
+          "fallbackLocale",
+          "supported",
+          "storageKey",
+          "t",
+          "setLocale",
+          "getLocale",
+          "apply",
+          "has",
+          "ready"
+        ],
+        "getLocale": "zh-CN",
+        "storage": "zh-CN",
+        "lang": "zh-CN",
+        "dataLocale": "zh-CN",
+        "sampleNav": [
+          "首页",
+          "大厅",
+          "订单",
+          "客服",
+          "登录",
+          "专业陪玩，每一场游戏认真对待，每一位热爱电竞的你。",
+          "进入陪玩大厅",
+          "联系客服",
+          "俱乐部等级",
+          "查看等级与价格权益",
+          "申请陪玩",
+          "提交资料，通过审核后接单"
+        ]
+      }
+    },
+    {
+      "locale": "zh-CN",
+      "page": "support",
+      "file": "zh_support_390.png",
+      "ok": true,
+      "meta": {
+        "hasApi": true,
+        "methods": [
+          "locale",
+          "fallbackLocale",
+          "supported",
+          "storageKey",
+          "t",
+          "setLocale",
+          "getLocale",
+          "apply",
+          "has",
+          "ready"
+        ],
+        "getLocale": "zh-CN",
+        "storage": "zh-CN",
+        "lang": "zh-CN",
+        "dataLocale": "zh-CN",
+        "sampleNav": [
+          "首页",
+          "大厅",
+          "订单",
+          "客服",
+          "登录",
+          "首页",
+          "大厅",
+          "订单",
+          "客服",
+          "登录"
+        ]
+      }
+    },
+    {
+      "locale": "zh-CN",
+      "page": "apply",
+      "file": "zh_apply_390.png",
+      "ok": true,
+      "meta": {
+        "hasApi": true,
+        "methods": [
+          "locale",
+          "fallbackLocale",
+          "supported",
+          "storageKey",
+          "t",
+          "setLocale",
+          "getLocale",
+          "apply",
+          "has",
+          "ready"
+        ],
+        "getLocale": "zh-CN",
+        "storage": "zh-CN",
+        "lang": "zh-CN",
+        "dataLocale": "zh-CN",
+        "sampleNav": [
+          "首页",
+          "大厅",
+          "订单",
+          "客服",
+          "登录",
+          "专业陪玩，每一场游戏认真对待，每一位热爱电竞的你。",
+          "进入陪玩大厅",
+          "联系客服",
+          "俱乐部等级",
+          "查看等级与价格权益",
+          "申请陪玩",
+          "提交资料，通过审核后接单"
+        ]
+      }
+    },
+    {
+      "locale": "zh-CN",
+      "page": "login",
+      "file": "zh_login_390.png",
+      "ok": true,
+      "meta": {
+        "hasApi": true,
+        "methods": [
+          "locale",
+          "fallbackLocale",
+          "supported",
+          "storageKey",
+          "t",
+          "setLocale",
+          "getLocale",
+          "apply",
+          "has",
+          "ready"
+        ],
+        "getLocale": "zh-CN",
+        "storage": "zh-CN",
+        "lang": "zh-CN",
+        "dataLocale": "zh-CN",
+        "sampleNav": [
+          "首页",
+          "大厅",
+          "订单",
+          "客服",
+          "登录",
+          "专业陪玩，每一场游戏认真对待，每一位热爱电竞的你。",
+          "进入陪玩大厅",
+          "联系客服",
+          "俱乐部等级",
+          "查看等级与价格权益",
+          "申请陪玩",
+          "提交资料，通过审核后接单"
+        ]
+      }
+    },
+    {
+      "locale": "en",
+      "page": "home",
+      "file": "en_home_390.png",
+      "ok": true,
+      "meta": {
+        "hasApi": true,
+        "methods": [
+          "locale",
+          "fallbackLocale",
+          "supported",
+          "storageKey",
+          "t",
+          "setLocale",
+          "getLocale",
+          "apply",
+          "has",
+          "ready"
+        ],
+        "getLocale": "en",
+        "storage": "en",
+        "lang": "en",
+        "dataLocale": "en",
+        "sampleNav": [
+          "Home",
+          "Companions",
+          "Orders",
+          "Support",
+          "Log in",
+          "Pro companions who take every match seri",
+          "Browse Companions",
+          "Contact Support",
+          "Club Levels",
+          "View levels and pricing perks",
+          "Become a Companion",
+          "Apply now — take orders after approval"
+        ]
+      }
+    },
+    {
+      "locale": "en",
+      "page": "hall",
+      "file": "en_hall_390.png",
+      "ok": true,
+      "meta": {
+        "hasApi": true,
+        "methods": [
+          "locale",
+          "fallbackLocale",
+          "supported",
+          "storageKey",
+          "t",
+          "setLocale",
+          "getLocale",
+          "apply",
+          "has",
+          "ready"
+        ],
+        "getLocale": "en",
+        "storage": "en",
+        "lang": "en",
+        "dataLocale": "en",
+        "sampleNav": [
+          "Home",
+          "Companions",
+          "Orders",
+          "Support",
+          "Log in",
+          "Companions",
+          "Find a companion and start playing.",
+          "Search",
+          "Search",
+          "Clear",
+          "Filter",
+          "Filter"
+        ]
+      }
+    },
+    {
+      "locale": "en",
+      "page": "orders",
+      "file": "en_orders_390.png",
+      "ok": true,
+      "meta": {
+        "hasApi": true,
+        "methods": [
+          "locale",
+          "fallbackLocale",
+          "supported",
+          "storageKey",
+          "t",
+          "setLocale",
+          "getLocale",
+          "apply",
+          "has",
+          "ready"
+        ],
+        "getLocale": "en",
+        "storage": "en",
+        "lang": "en",
+        "dataLocale": "en",
+        "sampleNav": [
+          "Home",
+          "Companions",
+          "Orders",
+          "Support",
+          "Log in",
+          "Pro companions who take every match seri",
+          "Browse Companions",
+          "Contact Support",
+          "Club Levels",
+          "View levels and pricing perks",
+          "Become a Companion",
+          "Apply now — take orders after approval"
+        ]
+      }
+    },
+    {
+      "locale": "en",
+      "page": "mine",
+      "file": "en_mine_390.png",
+      "ok": true,
+      "meta": {
+        "hasApi": true,
+        "methods": [
+          "locale",
+          "fallbackLocale",
+          "supported",
+          "storageKey",
+          "t",
+          "setLocale",
+          "getLocale",
+          "apply",
+          "has",
+          "ready"
+        ],
+        "getLocale": "en",
+        "storage": "en",
+        "lang": "en",
+        "dataLocale": "en",
+        "sampleNav": [
+          "Home",
+          "Companions",
+          "Orders",
+          "Support",
+          "Log in",
+          "Pro companions who take every match seri",
+          "Browse Companions",
+          "Contact Support",
+          "Club Levels",
+          "View levels and pricing perks",
+          "Become a Companion",
+          "Apply now — take orders after approval"
+        ]
+      }
+    },
+    {
+      "locale": "en",
+      "page": "support",
+      "file": "en_support_390.png",
+      "ok": true,
+      "meta": {
+        "hasApi": true,
+        "methods": [
+          "locale",
+          "fallbackLocale",
+          "supported",
+          "storageKey",
+          "t",
+          "setLocale",
+          "getLocale",
+          "apply",
+          "has",
+          "ready"
+        ],
+        "getLocale": "en",
+        "storage": "en",
+        "lang": "en",
+        "dataLocale": "en",
+        "sampleNav": [
+          "Home",
+          "Companions",
+          "Orders",
+          "Support",
+          "Log in",
+          "Home",
+          "Companions",
+          "Orders",
+          "Support",
+          "Log in"
+        ]
+      }
+    },
+    {
+      "locale": "en",
+      "page": "apply",
+      "file": "en_apply_390.png",
+      "ok": true,
+      "meta": {
+        "hasApi": true,
+        "methods": [
+          "locale",
+          "fallbackLocale",
+          "supported",
+          "storageKey",
+          "t",
+          "setLocale",
+          "getLocale",
+          "apply",
+          "has",
+          "ready"
+        ],
+        "getLocale": "en",
+        "storage": "en",
+        "lang": "en",
+        "dataLocale": "en",
+        "sampleNav": [
+          "Home",
+          "Companions",
+          "Orders",
+          "Support",
+          "Log in",
+          "Pro companions who take every match seri",
+          "Browse Companions",
+          "Contact Support",
+          "Club Levels",
+          "View levels and pricing perks",
+          "Become a Companion",
+          "Apply now — take orders after approval"
+        ]
+      }
+    },
+    {
+      "locale": "en",
+      "page": "login",
+      "file": "en_login_390.png",
+      "ok": true,
+      "meta": {
+        "hasApi": true,
+        "methods": [
+          "locale",
+          "fallbackLocale",
+          "supported",
+          "storageKey",
+          "t",
+          "setLocale",
+          "getLocale",
+          "apply",
+          "has",
+          "ready"
+        ],
+        "getLocale": "en",
+        "storage": "en",
+        "lang": "en",
+        "dataLocale": "en",
+        "sampleNav": [
+          "Home",
+          "Companions",
+          "Orders",
+          "Support",
+          "Log in",
+          "Pro companions who take every match seri",
+          "Browse Companions",
+          "Contact Support",
+          "Club Levels",
+          "View levels and pricing perks",
+          "Become a Companion",
+          "Apply now — take orders after approval"
+        ]
+      }
+    }
+  ],
+  "persistence": {
+    "before": {
+      "storage": "en",
+      "api": "en",
+      "lang": "en",
+      "data": "en"
+    },
+    "after": {
+      "storage": "en",
+      "api": "en",
+      "lang": "en",
+      "data": "en"
+    }
+  }
+}

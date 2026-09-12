@@ -35,6 +35,50 @@ function stripMcjMarker(text) {
     .replace(/\s*\[mcj-ann:[^\]]+\]/gi, "")
     .trim();
 }
+const MCJ_I18N_BLOCK_RE = /\n?\[mcj-i18n\]([\s\S]*?)\[\/mcj-i18n\]\s*$/i;
+function parseMcjI18nBlock(text) {
+  const raw = String(text || "");
+  const match = raw.match(MCJ_I18N_BLOCK_RE);
+  if (!match) return { text: raw, i18n: null };
+  let i18n = null;
+  try {
+    const parsed = JSON.parse(String(match[1] || "").trim() || "{}");
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) i18n = parsed;
+  } catch {
+    i18n = null;
+  }
+  return { text: raw.replace(MCJ_I18N_BLOCK_RE, "").trimEnd(), i18n };
+}
+function pickBannerI18n(row, cropRaw) {
+  const fromCrop =
+    cropRaw && typeof cropRaw === "object" && !Array.isArray(cropRaw) && cropRaw.i18n && typeof cropRaw.i18n === "object"
+      ? cropRaw.i18n
+      : {};
+  const fromRowI18n =
+    row && row.i18n && typeof row.i18n === "object" && !Array.isArray(row.i18n) ? row.i18n : {};
+  const pick = (...keys) => {
+    for (const key of keys) {
+      const val = fromCrop[key] ?? fromRowI18n[key] ?? row?.[key];
+      if (val != null && String(val).trim()) return String(val).trim();
+    }
+    return "";
+  };
+  const title_en = pick("title_en", "titleEn");
+  const subtitle_en = pick("subtitle_en", "subtitleEn");
+  const button_text_en = pick("button_text_en", "buttonText_en", "button_textEn", "cta_en");
+  const image_url_en = pick("image_url_en", "image_en", "desktopImage_en", "desktop_image_en");
+  const mobile_image_url_en = pick("mobile_image_url_en", "mobileImage_en", "mobile_image_en");
+  return {
+    title_en,
+    subtitle_en,
+    button_text_en,
+    buttonText_en: button_text_en,
+    image_url_en,
+    image_en: image_url_en,
+    mobile_image_url_en,
+    mobileImage_en: mobile_image_url_en,
+  };
+}
 function bannerItem(row) {
   const image = row.image_url || "";
   const mobileImage = String(row.mobile_image_url || "").trim();
@@ -42,6 +86,7 @@ function bannerItem(row) {
   const isMain = row.is_main === true;
   const cropRaw = row.crop_meta || row.crop || {};
   const mobileCropRaw = row.mobile_crop_meta || row.mobile_crop || {};
+  const i18nFields = pickBannerI18n(row, cropRaw);
   const crop =
     cropRaw && typeof cropRaw === "object" && !Array.isArray(cropRaw)
       ? (() => {
@@ -53,7 +98,7 @@ function bannerItem(row) {
             x = Math.max(-1.5, Math.min(1.5, x / 640));
             y = Math.max(-1.5, Math.min(1.5, y / 360));
           }
-          return {
+          const next = {
             zoom,
             scale: zoom,
             x,
@@ -64,6 +109,10 @@ function bannerItem(row) {
             ratioH: Number(cropRaw.ratioH ?? cropRaw.ratio_h ?? 640) || 640,
             ratio: String(cropRaw.ratio || `${cropRaw.ratioW || 1920}:${cropRaw.ratioH || 640}`),
           };
+          if (cropRaw.i18n && typeof cropRaw.i18n === "object" && !Array.isArray(cropRaw.i18n)) {
+            next.i18n = cropRaw.i18n;
+          }
+          return next;
         })()
       : { zoom: 1, scale: 1, x: 0, y: 0, offsetX: 0, offsetY: 0, ratioW: 1920, ratioH: 640, ratio: "1920:640" };
   const mobileCrop =
@@ -109,10 +158,27 @@ function bannerItem(row) {
     created_at: row.created_at || null,
     createdAt: row.created_at || null,
     updated_at: row.updated_at || null,
+    ...i18nFields,
   };
 }
 function announcementItem(row) {
   const title = stripMcjMarker(row.title || "");
+  const parsedContent = parseMcjI18nBlock(row.content || "");
+  const contentZh = parsedContent.text;
+  const fromMarker = parsedContent.i18n && typeof parsedContent.i18n === "object" ? parsedContent.i18n : {};
+  const pickEn = (...keys) => {
+    for (const key of keys) {
+      const fromRow = row?.[key];
+      if (fromRow != null && String(fromRow).trim()) return String(fromRow).trim();
+      const fromBlock = fromMarker[key];
+      if (fromBlock != null && String(fromBlock).trim()) return String(fromBlock).trim();
+    }
+    return "";
+  };
+  const title_en = pickEn("title_en", "titleEn");
+  const content_en = pickEn("content_en", "contentEn", "body_en", "bodyEn", "text_en", "textEn");
+  const text_en = pickEn("text_en", "textEn") || content_en;
+  const body_en = pickEn("body_en", "bodyEn") || content_en;
   const rawCat = String(row.category || "").trim().toLowerCase();
   let category = "home";
   if (rawCat === "companion" || rawCat === "player") category = "companion";
@@ -131,8 +197,12 @@ function announcementItem(row) {
   return {
     id: row.id,
     title: title,
-    content: row.content || "",
-    text: row.content || title || "",
+    content: contentZh,
+    text: contentZh || title || "",
+    title_en,
+    content_en,
+    text_en,
+    body_en,
     category,
     audience,
     kind,
