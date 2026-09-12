@@ -8,7 +8,7 @@
  */
 (function () {
   var ICON_V = "20260911pwa3";
-  var INSTALL_V = "20260912pwaGuide2";
+  var INSTALL_V = "20260912pwaBrand8";
   function inStandalone() {
     try {
       if (window.navigator && navigator.standalone === true) return true;

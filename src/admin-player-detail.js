@@ -208,14 +208,17 @@
   }
 
   function section(key, title, html) {
+    var open = key === "basic" || key === "application" || key === "split";
     return (
-      '<section class="player-detail-section" data-player-detail-section="' +
+      '<details class="player-detail-section" data-player-detail-section="' +
       esc(key) +
-      '"><h3>' +
+      '"' +
+      (open ? " open" : "") +
+      "><summary><h3>" +
       esc(title) +
-      "</h3>" +
+      "</h3></summary>" +
       html +
-      "</section>"
+      "</details>"
     );
   }
 
@@ -317,14 +320,22 @@
   }
 
   function levelOptions(selected, levels) {
-    var html = '<option value="">未设置</option>';
+    var html = '<option value="">请选择等级</option>';
     (levels || []).forEach(function (level) {
       var value = level.id || level.code || level.name;
+      var base =
+        level.basePrice != null
+          ? level.basePrice
+          : level.base_price != null
+            ? level.base_price
+            : level.minPrice != null
+              ? level.minPrice
+              : level.min;
       var label =
         (level.code ? level.code + " " : "") +
         (level.name || value) +
-        (level.color ? " · " + level.color : "") +
-        (level.minPrice != null ? " · RM" + level.minPrice + (level.maxPrice != null ? "-" + level.maxPrice : "") : "");
+        (base != null && base !== "" ? " · 基础价格 " + base + " 猫粮" : "") +
+        (level.color ? " · " + level.color : "");
       html +=
         '<option value="' +
         esc(value) +
@@ -335,6 +346,44 @@
         "</option>";
     });
     return html;
+  }
+  function levelBasePriceOf(level) {
+    if (!level) return 0;
+    var n = Number(
+      level.basePrice != null
+        ? level.basePrice
+        : level.base_price != null
+          ? level.base_price
+          : level.minPrice != null
+            ? level.minPrice
+            : level.min
+    );
+    return Number.isFinite(n) ? n : 0;
+  }
+  function findLevelByValue(value, levels) {
+    var key = String(value || "").trim();
+    if (!key) return null;
+    return (levels || []).find(function (level) {
+      return (
+        String(level.id) === key ||
+        String(level.code) === key ||
+        String(level.name) === key
+      );
+    }) || null;
+  }
+  function levelPricePreviewHtml(selected, levels) {
+    var lv = findLevelByValue(selected, levels);
+    if (!lv) {
+      return '<p class="admin-sync-note" data-level-price-preview style="grid-column:1/-1">通过审核前必须选择陪玩等级；服务价格将按该等级 base_price 自动写入。</p>';
+    }
+    var base = levelBasePriceOf(lv);
+    return (
+      '<p class="admin-sync-note" data-level-price-preview style="grid-column:1/-1">已选等级：' +
+      esc((lv.code || "") + " " + (lv.name || "")) +
+      " · 基础价格：" +
+      esc(String(base)) +
+      " 猫粮（通过后按此价格初始化 companion_services）</p>"
+    );
   }
 
   function getLevels() {
@@ -421,6 +470,7 @@
       ? emptyText("尚未提交陪玩申请资料")
       : rows([
           ["申请时间", app.submittedAt || "—"],
+          ["认证方式", d.certificationMethodLabel || app.certificationMethodLabel || (String(d.certificationMethod || app.certificationMethod || d.credential_mode || "").toLowerCase() === "deposit" ? "押金认证" : String(d.certificationMethod || app.certificationMethod || d.credential_mode || "").toLowerCase() === "id_card" ? "身份证认证" : "未选择")],
           ["主接服务", app.mainService || "尚未填写"],
           ["主接游戏", app.mainGame || "尚未填写"],
           ["游戏段位", app.gameRank || "尚未填写"],
@@ -604,9 +654,7 @@
           field("礼物抽成 %", "giftCommissionRate", d.giftCommissionRate != null ? d.giftCommissionRate : d.gift_commission_rate || 0) +
           field("直属陪返点 %", "directRebateRate", d.directRebateRate != null ? d.directRebateRate : d.direct_rebate_rate || 0) +
           field("调整原因", "reason", "") +
-          (playerMissingPrice(d)
-            ? '<p class="admin-sync-note error" style="grid-column:1/-1">未设置接单价格：通过申请前请先填写单价（> 0），否则审核将被拦截。</p>'
-            : "") +
+          levelPricePreviewHtml(d.levelId || d.level_id || d.levelName, levels) +
           "</div>"
         : "");
 
@@ -812,12 +860,20 @@
       "</span></div>" +
       section("basic", "基础资料", basic) +
       section("application", "陪玩申请资料", applicationHtml) +
-      section("identity", "身份认证", identityHtml) +
-      section("payment", "结款账户", paymentHtml) +
+      (function () {
+        var mode = String(d.certificationMethod || d.certification_method || d.credential_mode || (d.application && (d.application.certificationMethod || d.application.credential_mode)) || "").toLowerCase();
+        if (mode === "deposit") {
+          return section("deposit", "押金认证资料", depositHtml) + section("payment", "结款账户", paymentHtml);
+        }
+        if (mode === "id_card") {
+          return section("identity", "身份证认证资料", identityHtml) + section("payment", "结款账户", paymentHtml);
+        }
+        return section("identity", "身份认证", identityHtml) + section("deposit", "押金记录", depositHtml) + section("payment", "结款账户", paymentHtml);
+      })() +
       section("media", "头像 / 相册 / 语音", mediaHtml) +
       section("split", "等级与价格", split) +
       section("cert-badges", "认证徽章（前台卡片）", certHtml) +
-      section("deposit", "押金记录", depositHtml) +
+      (String(d.certificationMethod || d.certification_method || d.credential_mode || "").toLowerCase() === "id_card" || String(d.certificationMethod || d.certification_method || d.credential_mode || "").toLowerCase() === "deposit" ? "" : section("deposit", "押金记录", depositHtml)) +
       section("income", "订单与收益", income) +
       section("account", "账号管理", account) +
       (edit
@@ -1004,11 +1060,17 @@
         return;
       }
       if (kind2 === "application" && status === "approved") {
-        var priceInput = form3.querySelector('[name="price"]');
-        var formPrice = priceInput ? Number(priceInput.value) : NaN;
-        var hasFormPrice = Number.isFinite(formPrice) && formPrice > 0;
-        if (!hasFormPrice && form3.getAttribute("data-missing-price") === "1") {
-          alert("无法通过：该陪玩尚未设置接单价格（单价 > 0 或至少一个游戏价格 > 0）。请先在「等级与价格」填写单价后再通过。");
+        var levelEl = form3.querySelector('[name="levelId"]');
+        var levelVal = levelEl ? String(levelEl.value || "").trim() : "";
+        if (!levelVal) {
+          alert("无法通过：必须选择陪玩等级。禁止无等级默认 Lv1。");
+          return;
+        }
+        var levelsNow = getLevels();
+        var lv = findLevelByValue(levelVal, levelsNow);
+        var base = levelBasePriceOf(lv);
+        if (!(base > 0)) {
+          alert("无法通过：所选等级缺少有效的基础价格 base_price。");
           return;
         }
       }
@@ -1024,10 +1086,16 @@
                 : "review_application";
       var payload = { status: status, rejectReason: reason };
       if (kind2 === "application" && status === "approved") {
-        var priceEl = form3.querySelector('[name="price"]');
-        if (priceEl && String(priceEl.value || "").trim() !== "") {
-          payload.price = priceEl.value;
+        var levelEl2 = form3.querySelector('[name="levelId"]');
+        var levelVal2 = levelEl2 ? String(levelEl2.value || "").trim() : "";
+        payload.levelId = levelVal2;
+        payload.level_id = levelVal2;
+        var lv2 = findLevelByValue(levelVal2, getLevels());
+        if (lv2) {
+          payload.levelName = lv2.name || "";
+          payload.level_name = lv2.name || "";
         }
+        // Do not send applicant/admin free-form price on approve — server seeds from level.base_price.
       }
       apiPost({
         action: action,
