@@ -47,6 +47,14 @@ import "./home-banner-promo.css";
     );
   }
 
+  function renderLoading() {
+    var root = statsRoot();
+    if (!root) return;
+    root.hidden = false;
+    root.classList.add("home-trust-stats");
+    root.innerHTML = '<div class="home-trust-empty" role="status">正在加载…</div>';
+  }
+
   function renderEmpty() {
     var root = statsRoot();
     if (!root) return;
@@ -99,6 +107,7 @@ import "./home-banner-promo.css";
   }
 
   function load() {
+    renderLoading();
     fetchOnce()
       .catch(function () {
         return fetchOnce();

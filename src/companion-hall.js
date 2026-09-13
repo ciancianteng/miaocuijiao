@@ -2,7 +2,8 @@
   "use strict";
 
   var PER_PAGE = 12;
-  var state = { page: 1, items: [], taxonomyReady: false };
+  // loading=true until first companions fetch settles — never paint fake empty/0 meanwhile.
+  var state = { page: 1, items: [], taxonomyReady: false, loading: true, loadError: "" };
 
   function esc(value) {
     return String(value || "").replace(/[&<>"']/g, function (ch) {
@@ -137,7 +138,9 @@
     var dataItems = [];
     state.loadError = "";
     try {
-      var response = await fetch("/api/public/companions", { headers: { Accept: "application/json" }, cache: "no-store" });
+      // Allow short CDN/browser cache from API Cache-Control (list is slowly changing).
+      // Detail pages still fetch by id with no-store on the server.
+      var response = await fetch("/api/public/companions", { headers: { Accept: "application/json" }, cache: "default" });
       var body = await response.json().catch(function () { return {}; });
       if (!response.ok || !body.ok) throw new Error(body.message || "陪玩列表读取失败");
       dataItems = Array.isArray(body.companions) ? body.companions : [];
@@ -575,6 +578,16 @@
   function render() {
     var list = document.getElementById("playerList");
     if (!list) return;
+    var empty = document.getElementById("emptyState");
+    var count = document.getElementById("resultCount");
+    // While the first companions request is in flight: skeleton only — never "共 0" / empty copy.
+    if (state.loading) {
+      list.setAttribute("aria-busy", "true");
+      if (empty) empty.hidden = true;
+      if (count) count.textContent = "正在加载陪玩…";
+      if (!list.querySelector(".hall-skel-card, .player-card")) paintHallSkeleton();
+      return;
+    }
     list.removeAttribute("aria-busy");
     var items = filtered();
     var pages = Math.max(1, Math.ceil(items.length / PER_PAGE));
@@ -582,9 +595,7 @@
     var start = (state.page - 1) * PER_PAGE;
     // Never keep stale cards when the filtered set is empty.
     list.innerHTML = items.length ? items.slice(start, start + PER_PAGE).map(card).join("") : "";
-    var count = document.getElementById("resultCount");
     if (count) count.textContent = "共 " + items.length + " 位陪玩";
-    var empty = document.getElementById("emptyState");
     if (empty) {
       var showEmpty = !items.length;
       empty.hidden = !showEmpty;
@@ -682,6 +693,8 @@
   }
 
   async function start() {
+    state.loading = true;
+    state.loadError = "";
     paintHallSkeleton();
     var count = document.getElementById("resultCount");
     if (count) count.textContent = "正在加载陪玩…";
@@ -690,7 +703,11 @@
     if (window.MCJCompanionLevels && typeof window.MCJCompanionLevels.hydrateFromApi === "function") {
       try { await window.MCJCompanionLevels.hydrateFromApi(); } catch (e) { /* keep last known */ }
     }
-    state.items = await readItems();
+    try {
+      state.items = await readItems();
+    } finally {
+      state.loading = false;
+    }
     setupFilters();
     await loadGameFilterFromServicesApi();
     bind();
@@ -705,7 +722,10 @@
           setupFilters();
           return loadGameFilterFromServicesApi();
         })
-        .then(function () { render(); })
+        .then(function () {
+          // Taxonomy may finish before companions — render() must not clear loading shell.
+          if (!state.loading) render();
+        })
         .catch(function () {});
     }
   }

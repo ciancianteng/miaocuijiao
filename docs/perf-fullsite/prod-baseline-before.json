@@ -1,0 +1,531 @@
+{
+  "measuredAt": "2026-09-13T00:18:23.045678+00:00",
+  "env": "production",
+  "base": "https://www.meowcuijiao.com",
+  "pages": [
+    {
+      "path": "/",
+      "n": 3,
+      "ok": 3,
+      "p50_ms": 96,
+      "p95_ms": 99,
+      "min_ms": 78,
+      "max_ms": 99,
+      "bytes": 255609,
+      "cache": "HIT",
+      "cc": "no-cache, no-store, must-revalidate",
+      "runs": [
+        {
+          "status": 200,
+          "ttfb_proxy_s": 0.1,
+          "total_ms": 99,
+          "bytes": 255609,
+          "cache": "HIT",
+          "cc": "no-cache, no-store, must-revalidate"
+        },
+        {
+          "status": 200,
+          "ttfb_proxy_s": 0.097,
+          "total_ms": 96,
+          "bytes": 255609,
+          "cache": "HIT",
+          "cc": "no-cache, no-store, must-revalidate"
+        },
+        {
+          "status": 200,
+          "ttfb_proxy_s": 0.078,
+          "total_ms": 78,
+          "bytes": 255609,
+          "cache": "HIT",
+          "cc": "no-cache, no-store, must-revalidate"
+        }
+      ]
+    },
+    {
+      "path": "/companion-center.html",
+      "n": 3,
+      "ok": 3,
+      "p50_ms": 50,
+      "p95_ms": 55,
+      "min_ms": 47,
+      "max_ms": 55,
+      "bytes": 11642,
+      "cache": "HIT",
+      "cc": "no-cache, no-store, must-revalidate",
+      "runs": [
+        {
+          "status": 200,
+          "ttfb_proxy_s": 0.056,
+          "total_ms": 55,
+          "bytes": 11642,
+          "cache": "HIT",
+          "cc": "no-cache, no-store, must-revalidate"
+        },
+        {
+          "status": 200,
+          "ttfb_proxy_s": 0.05,
+          "total_ms": 50,
+          "bytes": 11642,
+          "cache": "HIT",
+          "cc": "no-cache, no-store, must-revalidate"
+        },
+        {
+          "status": 200,
+          "ttfb_proxy_s": 0.048,
+          "total_ms": 47,
+          "bytes": 11642,
+          "cache": "HIT",
+          "cc": "no-cache, no-store, must-revalidate"
+        }
+      ]
+    },
+    {
+      "path": "/profile.html",
+      "n": 3,
+      "ok": 3,
+      "p50_ms": 52,
+      "p95_ms": 58,
+      "min_ms": 50,
+      "max_ms": 58,
+      "bytes": 2711,
+      "cache": "HIT",
+      "cc": "no-cache, no-store, must-revalidate",
+      "runs": [
+        {
+          "status": 200,
+          "ttfb_proxy_s": 0.052,
+          "total_ms": 52,
+          "bytes": 2711,
+          "cache": "HIT",
+          "cc": "no-cache, no-store, must-revalidate"
+        },
+        {
+          "status": 200,
+          "ttfb_proxy_s": 0.051,
+          "total_ms": 50,
+          "bytes": 2711,
+          "cache": "HIT",
+          "cc": "no-cache, no-store, must-revalidate"
+        },
+        {
+          "status": 200,
+          "ttfb_proxy_s": 0.059,
+          "total_ms": 58,
+          "bytes": 2711,
+          "cache": "HIT",
+          "cc": "no-cache, no-store, must-revalidate"
+        }
+      ]
+    },
+    {
+      "path": "/orders.html",
+      "n": 3,
+      "ok": 3,
+      "p50_ms": 64,
+      "p95_ms": 65,
+      "min_ms": 60,
+      "max_ms": 65,
+      "bytes": 56687,
+      "cache": "HIT",
+      "cc": "no-cache, no-store, must-revalidate",
+      "runs": [
+        {
+          "status": 200,
+          "ttfb_proxy_s": 0.061,
+          "total_ms": 60,
+          "bytes": 56687,
+          "cache": "HIT",
+          "cc": "no-cache, no-store, must-revalidate"
+        },
+        {
+          "status": 200,
+          "ttfb_proxy_s": 0.064,
+          "total_ms": 64,
+          "bytes": 56687,
+          "cache": "HIT",
+          "cc": "no-cache, no-store, must-revalidate"
+        },
+        {
+          "status": 200,
+          "ttfb_proxy_s": 0.065,
+          "total_ms": 65,
+          "bytes": 56687,
+          "cache": "HIT",
+          "cc": "no-cache, no-store, must-revalidate"
+        }
+      ]
+    },
+    {
+      "path": "/support.html",
+      "n": 3,
+      "ok": 3,
+      "p50_ms": 53,
+      "p95_ms": 61,
+      "min_ms": 50,
+      "max_ms": 61,
+      "bytes": 2907,
+      "cache": "HIT",
+      "cc": "no-cache, no-store, must-revalidate",
+      "runs": [
+        {
+          "status": 200,
+          "ttfb_proxy_s": 0.053,
+          "total_ms": 53,
+          "bytes": 2907,
+          "cache": "HIT",
+          "cc": "no-cache, no-store, must-revalidate"
+        },
+        {
+          "status": 200,
+          "ttfb_proxy_s": 0.062,
+          "total_ms": 61,
+          "bytes": 2907,
+          "cache": "HIT",
+          "cc": "no-cache, no-store, must-revalidate"
+        },
+        {
+          "status": 200,
+          "ttfb_proxy_s": 0.051,
+          "total_ms": 50,
+          "bytes": 2907,
+          "cache": "HIT",
+          "cc": "no-cache, no-store, must-revalidate"
+        }
+      ]
+    },
+    {
+      "path": "/mine.html",
+      "n": 3,
+      "ok": 3,
+      "p50_ms": 54,
+      "p95_ms": 58,
+      "min_ms": 53,
+      "max_ms": 58,
+      "bytes": 56230,
+      "cache": "HIT",
+      "cc": "no-cache, no-store, must-revalidate",
+      "runs": [
+        {
+          "status": 200,
+          "ttfb_proxy_s": 0.055,
+          "total_ms": 54,
+          "bytes": 56230,
+          "cache": "HIT",
+          "cc": "no-cache, no-store, must-revalidate"
+        },
+        {
+          "status": 200,
+          "ttfb_proxy_s": 0.059,
+          "total_ms": 58,
+          "bytes": 56230,
+          "cache": "HIT",
+          "cc": "no-cache, no-store, must-revalidate"
+        },
+        {
+          "status": 200,
+          "ttfb_proxy_s": 0.054,
+          "total_ms": 53,
+          "bytes": 56230,
+          "cache": "HIT",
+          "cc": "no-cache, no-store, must-revalidate"
+        }
+      ]
+    },
+    {
+      "path": "/companion/",
+      "n": 3,
+      "ok": 3,
+      "p50_ms": 50,
+      "p95_ms": 52,
+      "min_ms": 49,
+      "max_ms": 52,
+      "bytes": 2129,
+      "cache": "HIT",
+      "cc": "no-cache, no-store, must-revalidate",
+      "runs": [
+        {
+          "status": 200,
+          "ttfb_proxy_s": 0.052,
+          "total_ms": 52,
+          "bytes": 2129,
+          "cache": "HIT",
+          "cc": "no-cache, no-store, must-revalidate"
+        },
+        {
+          "status": 200,
+          "ttfb_proxy_s": 0.051,
+          "total_ms": 50,
+          "bytes": 2129,
+          "cache": "HIT",
+          "cc": "no-cache, no-store, must-revalidate"
+        },
+        {
+          "status": 200,
+          "ttfb_proxy_s": 0.049,
+          "total_ms": 49,
+          "bytes": 2129,
+          "cache": "HIT",
+          "cc": "no-cache, no-store, must-revalidate"
+        }
+      ]
+    },
+    {
+      "path": "/admin.html",
+      "n": 3,
+      "ok": 3,
+      "p50_ms": 50,
+      "p95_ms": 55,
+      "min_ms": 49,
+      "max_ms": 55,
+      "bytes": 19032,
+      "cache": "HIT",
+      "cc": "no-cache, no-store, must-revalidate",
+      "runs": [
+        {
+          "status": 200,
+          "ttfb_proxy_s": 0.056,
+          "total_ms": 55,
+          "bytes": 19032,
+          "cache": "HIT",
+          "cc": "no-cache, no-store, must-revalidate"
+        },
+        {
+          "status": 200,
+          "ttfb_proxy_s": 0.049,
+          "total_ms": 49,
+          "bytes": 19032,
+          "cache": "HIT",
+          "cc": "no-cache, no-store, must-revalidate"
+        },
+        {
+          "status": 200,
+          "ttfb_proxy_s": 0.05,
+          "total_ms": 50,
+          "bytes": 19032,
+          "cache": "HIT",
+          "cc": "no-cache, no-store, must-revalidate"
+        }
+      ]
+    }
+  ],
+  "apis": [
+    {
+      "path": "/api/public/companions",
+      "n": 5,
+      "ok": 5,
+      "p50_ms": 3150,
+      "p95_ms": 3864,
+      "min_ms": 2857,
+      "max_ms": 3864,
+      "bytes": 35613,
+      "cache": "MISS",
+      "cc": "no-store",
+      "runs": [
+        {
+          "status": 200,
+          "ttfb_proxy_s": 3.865,
+          "total_ms": 3864,
+          "bytes": 35613,
+          "cache": "MISS",
+          "cc": "no-store"
+        },
+        {
+          "status": 200,
+          "ttfb_proxy_s": 2.857,
+          "total_ms": 2857,
+          "bytes": 35613,
+          "cache": "MISS",
+          "cc": "no-store"
+        },
+        {
+          "status": 200,
+          "ttfb_proxy_s": 3.008,
+          "total_ms": 3008,
+          "bytes": 35613,
+          "cache": "MISS",
+          "cc": "no-store"
+        },
+        {
+          "status": 200,
+          "ttfb_proxy_s": 3.183,
+          "total_ms": 3182,
+          "bytes": 35613,
+          "cache": "MISS",
+          "cc": "no-store"
+        },
+        {
+          "status": 200,
+          "ttfb_proxy_s": 3.15,
+          "total_ms": 3150,
+          "bytes": 35613,
+          "cache": "MISS",
+          "cc": "no-store"
+        }
+      ]
+    },
+    {
+      "path": "/api/home/daily-stats",
+      "n": 5,
+      "ok": 5,
+      "p50_ms": 655,
+      "p95_ms": 722,
+      "min_ms": 630,
+      "max_ms": 722,
+      "bytes": 853,
+      "cache": "MISS",
+      "cc": "no-store, no-cache, must-revalidate",
+      "runs": [
+        {
+          "status": 200,
+          "ttfb_proxy_s": 0.66,
+          "total_ms": 660,
+          "bytes": 853,
+          "cache": "MISS",
+          "cc": "no-store, no-cache, must-revalidate"
+        },
+        {
+          "status": 200,
+          "ttfb_proxy_s": 0.63,
+          "total_ms": 630,
+          "bytes": 853,
+          "cache": "MISS",
+          "cc": "no-store, no-cache, must-revalidate"
+        },
+        {
+          "status": 200,
+          "ttfb_proxy_s": 0.723,
+          "total_ms": 722,
+          "bytes": 853,
+          "cache": "MISS",
+          "cc": "no-store, no-cache, must-revalidate"
+        },
+        {
+          "status": 200,
+          "ttfb_proxy_s": 0.656,
+          "total_ms": 655,
+          "bytes": 853,
+          "cache": "MISS",
+          "cc": "no-store, no-cache, must-revalidate"
+        },
+        {
+          "status": 200,
+          "ttfb_proxy_s": 0.644,
+          "total_ms": 644,
+          "bytes": 853,
+          "cache": "MISS",
+          "cc": "no-store, no-cache, must-revalidate"
+        }
+      ]
+    },
+    {
+      "path": "/api/platform/services",
+      "n": 5,
+      "ok": 5,
+      "p50_ms": 296,
+      "p95_ms": 318,
+      "min_ms": 293,
+      "max_ms": 318,
+      "bytes": 4666,
+      "cache": "MISS",
+      "cc": "no-store",
+      "runs": [
+        {
+          "status": 200,
+          "ttfb_proxy_s": 0.293,
+          "total_ms": 293,
+          "bytes": 4666,
+          "cache": "MISS",
+          "cc": "no-store"
+        },
+        {
+          "status": 200,
+          "ttfb_proxy_s": 0.319,
+          "total_ms": 318,
+          "bytes": 4666,
+          "cache": "MISS",
+          "cc": "no-store"
+        },
+        {
+          "status": 200,
+          "ttfb_proxy_s": 0.302,
+          "total_ms": 302,
+          "bytes": 4666,
+          "cache": "MISS",
+          "cc": "no-store"
+        },
+        {
+          "status": 200,
+          "ttfb_proxy_s": 0.296,
+          "total_ms": 296,
+          "bytes": 4666,
+          "cache": "MISS",
+          "cc": "no-store"
+        },
+        {
+          "status": 200,
+          "ttfb_proxy_s": 0.293,
+          "total_ms": 293,
+          "bytes": 4666,
+          "cache": "MISS",
+          "cc": "no-store"
+        }
+      ]
+    },
+    {
+      "path": "/api/platform/content?types=banners",
+      "n": 5,
+      "ok": 5,
+      "p50_ms": 293,
+      "p95_ms": 296,
+      "min_ms": 285,
+      "max_ms": 296,
+      "bytes": 7531,
+      "cache": "MISS",
+      "cc": "no-store, no-cache, must-revalidate, max-age=0",
+      "runs": [
+        {
+          "status": 200,
+          "ttfb_proxy_s": 0.285,
+          "total_ms": 285,
+          "bytes": 7531,
+          "cache": "MISS",
+          "cc": "no-store, no-cache, must-revalidate, max-age=0"
+        },
+        {
+          "status": 200,
+          "ttfb_proxy_s": 0.296,
+          "total_ms": 295,
+          "bytes": 7531,
+          "cache": "MISS",
+          "cc": "no-store, no-cache, must-revalidate, max-age=0"
+        },
+        {
+          "status": 200,
+          "ttfb_proxy_s": 0.29,
+          "total_ms": 290,
+          "bytes": 7531,
+          "cache": "MISS",
+          "cc": "no-store, no-cache, must-revalidate, max-age=0"
+        },
+        {
+          "status": 200,
+          "ttfb_proxy_s": 0.296,
+          "total_ms": 296,
+          "bytes": 7531,
+          "cache": "MISS",
+          "cc": "no-store, no-cache, must-revalidate, max-age=0"
+        },
+        {
+          "status": 200,
+          "ttfb_proxy_s": 0.293,
+          "total_ms": 293,
+          "bytes": 7531,
+          "cache": "MISS",
+          "cc": "no-store, no-cache, must-revalidate, max-age=0"
+        }
+      ]
+    }
+  ],
+  "companionsCount": 8,
+  "companionsOk": true
+}

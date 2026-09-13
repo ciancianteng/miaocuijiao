@@ -457,15 +457,25 @@ async function attachReviews(companions = [], opts = {}) {
   });
 }
 
-async function mediaExtrasByProfile(profileIds = []) {
+/**
+ * @param {string[]} profileIds
+ * @param {{ listMode?: boolean }} [opts]
+ *   listMode (hall): only avatar/cover (+ light gallery for cover fallback).
+ *   Skips voice/video rows so list does not pay N signed-URL RTTs for unused media.
+ */
+async function mediaExtrasByProfile(profileIds = [], opts = {}) {
   const ids = [...new Set((profileIds || []).filter(Boolean))];
   if (!ids.length) return {};
+  const listMode = !!opts.listMode;
+  const mediaTypes = listMode
+    ? "avatar,cover,gallery"
+    : "avatar,cover,gallery,voice,video";
   let rows = [];
   try {
     rows = await supabaseJson(
       restUrl(
         "companion_media",
-        `?companion_profile_id=in.(${ids.map(encodeURIComponent).join(",")})&media_type=in.(avatar,cover,gallery,voice,video)&order=sort_order.asc&limit=3000&select=id,companion_profile_id,media_type,storage_bucket,storage_path,status,content_type`
+        `?companion_profile_id=in.(${ids.map(encodeURIComponent).join(",")})&media_type=in.(${mediaTypes})&order=sort_order.asc&limit=${listMode ? 1200 : 3000}&select=id,companion_profile_id,media_type,storage_bucket,storage_path,status,content_type`
       ),
       { headers: headers() }
     );
@@ -473,10 +483,11 @@ async function mediaExtrasByProfile(profileIds = []) {
     // Older DBs without video in check constraint: fall back without video filter.
     if (/companion_media|schema cache|PGRST|does not exist|media_type|check/i.test(String(e.message || e))) {
       try {
+        const fallbackTypes = listMode ? "avatar,cover,gallery" : "avatar,cover,gallery,voice";
         rows = await supabaseJson(
           restUrl(
             "companion_media",
-            `?companion_profile_id=in.(${ids.map(encodeURIComponent).join(",")})&media_type=in.(avatar,cover,gallery,voice)&order=sort_order.asc&limit=3000&select=id,companion_profile_id,media_type,storage_bucket,storage_path,status,content_type`
+            `?companion_profile_id=in.(${ids.map(encodeURIComponent).join(",")})&media_type=in.(${fallbackTypes})&order=sort_order.asc&limit=${listMode ? 1200 : 3000}&select=id,companion_profile_id,media_type,storage_bucket,storage_path,status,content_type`
           ),
           { headers: headers() }
         );
@@ -502,6 +513,8 @@ async function mediaExtrasByProfile(profileIds = []) {
         row.media_type === "video" ||
         (row.media_type === "gallery" && /^video\//.test(ctype)) ||
         (row.media_type === "gallery" && /\/video\//i.test(path));
+      // List mode: never sign voice/video (hall cards do not play them).
+      if (listMode && (row.media_type === "voice" || isVideo)) return null;
       // Boss/public: voice + video only after approve (existing review rule).
       if ((row.media_type === "voice" || isVideo) && status && status !== "approved") return null;
       let url = "";
@@ -655,19 +668,19 @@ async function loadCompanions(id = "") {
       )
     );
   }
+  // List/hall: skip HEAD size-gate (N companions × voice/video/gallery was multi-second).
+  // Single-id detail keeps HEAD so tiny voice stubs still drop.
+  const skipHead = !String(id || "").trim();
+  const resolveOpts = { skipHead };
   const [levels, servicesBundle, mediaMap, certMap] = await Promise.all([
     readLocalLevels().catch(() => []),
     loadPublicServices().catch(() => ({ services: [] })),
-    mediaExtrasByProfile(profileIds).catch(() => ({})),
+    mediaExtrasByProfile(profileIds, { listMode: skipHead }).catch(() => ({})),
     resolveCertTagsForProfiles(profileIds).catch(() => ({})),
   ]);
   const catalog = Array.isArray(servicesBundle?.services) ? servicesBundle.services : [];
   const profileMap = Object.fromEntries((profiles || []).map((row) => [row.id, row]));
   const levelList = Array.isArray(levels) ? levels.map((l) => toPublicLevel(l)) : [];
-  // List/hall: skip HEAD size-gate (N companions × voice/video/gallery was multi-second).
-  // Single-id detail keeps HEAD so tiny voice stubs still drop.
-  const skipHead = !String(id || "").trim();
-  const resolveOpts = { skipHead };
 
   async function enrichOne(row) {
     if (!isAuditApprovedCompanion(row)) return null;
@@ -681,37 +694,48 @@ async function loadCompanions(id = "") {
     if (isTestAccountRecord(profile, row)) return null;
     if (profile.is_test_account === true || row.is_test_account === true) return null;
     const media = { ...(mediaMap[row.id] || {}) };
-    // Prefer companion_media voice, else durable storage:// / legacy URL.
-    // If media signed URL is expired/invalid, fall back to companion_profiles.voice_url.
-    const [fromMedia, fromProfile, videoUrl] = await Promise.all([
-      resolvePlayableUrl(media.voiceUrl, resolveOpts),
-      resolvePlayableUrl(row.voice_url, resolveOpts),
-      resolvePlayableUrl(media.videoUrl || media.showcaseVideoUrl || "", resolveOpts),
-    ]);
-    media.voiceUrl = fromMedia || fromProfile;
-    media.videoUrl = videoUrl;
-    media.showcaseVideoUrl = media.videoUrl;
-    // Parse legacy gallery tags when companion_media has no gallery rows.
-    if (!Array.isArray(media.gallery) || !media.gallery.length) {
-      const tag = String(row.tags || "");
-      const m = tag.match(/\[\[MCJ_GALLERY:([\s\S]*?)\]\]/);
-      if (m) {
-        try {
-          const items = JSON.parse(m[1]);
-          const galleryRaw = Array.isArray(items) ? items : [];
-          const resolved = await Promise.all(
-            galleryRaw.map(async (item) => {
-              const raw = typeof item === "string" ? item : item?.url || item?.path || "";
-              const url = await resolvePlayableUrl(raw, resolveOpts);
-              return url ? { id: item?.id || url, url } : null;
-            })
-          );
-          const gallery = resolved.filter(Boolean);
-          if (gallery.length) media.gallery = gallery;
-        } catch {
-          /* ignore bad gallery tag */
+    // Hall/list cards only need cover/avatar (already signed in mediaMap).
+    // Soft media never gates hallVisible — skip voice/video/gallery re-resolve on list
+    // (detail id=… still resolves full playable media below).
+    if (!skipHead) {
+      // Prefer companion_media voice, else durable storage:// / legacy URL.
+      // If media signed URL is expired/invalid, fall back to companion_profiles.voice_url.
+      const [fromMedia, fromProfile, videoUrl] = await Promise.all([
+        resolvePlayableUrl(media.voiceUrl, resolveOpts),
+        resolvePlayableUrl(row.voice_url, resolveOpts),
+        resolvePlayableUrl(media.videoUrl || media.showcaseVideoUrl || "", resolveOpts),
+      ]);
+      media.voiceUrl = fromMedia || fromProfile;
+      media.videoUrl = videoUrl;
+      media.showcaseVideoUrl = media.videoUrl;
+      // Parse legacy gallery tags when companion_media has no gallery rows.
+      if (!Array.isArray(media.gallery) || !media.gallery.length) {
+        const tag = String(row.tags || "");
+        const m = tag.match(/\[\[MCJ_GALLERY:([\s\S]*?)\]\]/);
+        if (m) {
+          try {
+            const items = JSON.parse(m[1]);
+            const galleryRaw = Array.isArray(items) ? items : [];
+            const resolved = await Promise.all(
+              galleryRaw.map(async (item) => {
+                const raw = typeof item === "string" ? item : item?.url || item?.path || "";
+                const url = await resolvePlayableUrl(raw, resolveOpts);
+                return url ? { id: item?.id || url, url } : null;
+              })
+            );
+            const gallery = resolved.filter(Boolean);
+            if (gallery.length) media.gallery = gallery;
+          } catch {
+            /* ignore bad gallery tag */
+          }
         }
       }
+    } else {
+      // Drop heavy media from list payload — detail API fills them on open.
+      media.voiceUrl = "";
+      media.videoUrl = "";
+      media.showcaseVideoUrl = "";
+      media.gallery = Array.isArray(media.gallery) ? media.gallery.slice(0, 1) : [];
     }
     const gate = evaluatePublishGate(row, profile, media);
     // Homepage / hall (PR A): hallVisible = approved + active + allow_orders + !test.
