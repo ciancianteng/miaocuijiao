@@ -20,9 +20,17 @@ import {
 } from "../_companion-public-map.js";
 import { createSignedUrl, publicObjectUrl } from "../_companion-media-store.js";
 
-async function resolvePlayableUrl(raw) {
+/**
+ * Resolve storage:// or http(s) media to a playable URL.
+ * @param {string} raw
+ * @param {{ skipHead?: boolean }} [opts]
+ *   skipHead: hall/list path — skip per-URL HEAD (was sequential N×RTT on every companion).
+ *   Detail/single lookup still size-gates voice stubs via HEAD.
+ */
+async function resolvePlayableUrl(raw, opts = {}) {
   const s = String(raw || "").trim();
   if (!s) return "";
+  const skipHead = !!opts.skipHead;
   let url = "";
   // Never treat expired/private signed links as durable — re-sign from storage:// instead.
   const looksSigned =
@@ -51,6 +59,7 @@ async function resolvePlayableUrl(raw) {
     url = s;
   }
   if (!url) return "";
+  if (skipHead) return url;
   // Drop empty / header-only audio stubs (WAV header alone is 44 bytes).
   // Also drop expired/invalid signed URLs (non-OK HEAD) so callers can fall back to storage://.
   try {
@@ -337,15 +346,27 @@ function summarizeReviews(list = []) {
   };
 }
 
-async function attachReviews(companions = []) {
+/**
+ * @param {object[]} companions
+ * @param {{ summaryOnly?: boolean }} [opts]
+ *   summaryOnly (hall list): ratings aggregate only — skip boss/order joins + review bodies.
+ *   Detail path keeps full reviews for the companion detail page.
+ */
+async function attachReviews(companions = [], opts = {}) {
+  const summaryOnly = !!opts.summaryOnly;
   const ids = [...new Set((companions || []).map((c) => c.id || c.uid).filter(Boolean))];
   if (!ids.length) return companions || [];
   let rows = [];
   try {
+    // List: lighter select + lower limit — hall only needs rating aggregates.
+    const select = summaryOnly
+      ? "id,companion_id,order_id,rating,status,created_at"
+      : "id,companion_id,boss_id,order_id,rating,content,status,created_at";
+    const limit = summaryOnly ? 800 : 3000;
     rows = await supabaseJson(
       restUrl(
         "companion_reviews",
-        `?companion_id=in.(${ids.map(encodeURIComponent).join(",")})&or=(status.eq.published,status.is.null)&order=created_at.desc&limit=3000&select=id,companion_id,boss_id,order_id,rating,content,status,created_at`
+        `?companion_id=in.(${ids.map(encodeURIComponent).join(",")})&or=(status.eq.published,status.is.null)&order=created_at.desc&limit=${limit}&select=${select}`
       ),
       { headers: headers() }
     );
@@ -362,6 +383,23 @@ async function attachReviews(companions = []) {
     byOrder.set(key, r);
   }
   const deduped = [...byOrder.values()];
+  const byCid = {};
+  for (const r of deduped) {
+    const cid = r.companion_id;
+    if (!cid) continue;
+    if (!byCid[cid]) byCid[cid] = [];
+    byCid[cid].push(r);
+  }
+
+  if (summaryOnly) {
+    return (companions || []).map((c) => {
+      const cid = c.id || c.uid;
+      const list = byCid[cid] || [];
+      const summary = summarizeReviews(list);
+      return { ...c, ...summary, reviews: [] };
+    });
+  }
+
   const bossIds = [...new Set(deduped.map((r) => r.boss_id).filter(Boolean))];
   const orderIds = [...new Set(deduped.map((r) => r.order_id).filter(Boolean))];
   let bosses = {};
@@ -380,15 +418,13 @@ async function attachReviews(companions = []) {
     ).catch(() => []);
     orders = Object.fromEntries((orderRows || []).map((o) => [o.id, o]));
   }
-  const byCid = {};
-  for (const r of deduped) {
-    const cid = r.companion_id;
-    if (!cid) continue;
-    // Never attach a review to the wrong companion even if companion_id was corrupted.
-    const order = orders[r.order_id] || {};
-    if (order.companion_id && String(order.companion_id) !== String(cid)) continue;
-    if (!byCid[cid]) byCid[cid] = [];
-    byCid[cid].push(r);
+  // Detail: drop reviews whose order.companion_id disagrees (same as before).
+  for (const cid of Object.keys(byCid)) {
+    byCid[cid] = byCid[cid].filter((r) => {
+      const order = orders[r.order_id] || {};
+      if (order.companion_id && String(order.companion_id) !== String(cid)) return false;
+      return true;
+    });
   }
   return (companions || []).map((c) => {
     const cid = c.id || c.uid;
@@ -421,15 +457,25 @@ async function attachReviews(companions = []) {
   });
 }
 
-async function mediaExtrasByProfile(profileIds = []) {
+/**
+ * @param {string[]} profileIds
+ * @param {{ listMode?: boolean }} [opts]
+ *   listMode (hall): only avatar/cover (+ light gallery for cover fallback).
+ *   Skips voice/video rows so list does not pay N signed-URL RTTs for unused media.
+ */
+async function mediaExtrasByProfile(profileIds = [], opts = {}) {
   const ids = [...new Set((profileIds || []).filter(Boolean))];
   if (!ids.length) return {};
+  const listMode = !!opts.listMode;
+  const mediaTypes = listMode
+    ? "avatar,cover,gallery"
+    : "avatar,cover,gallery,voice,video";
   let rows = [];
   try {
     rows = await supabaseJson(
       restUrl(
         "companion_media",
-        `?companion_profile_id=in.(${ids.map(encodeURIComponent).join(",")})&media_type=in.(avatar,cover,gallery,voice,video)&order=sort_order.asc&limit=3000&select=id,companion_profile_id,media_type,storage_bucket,storage_path,status,content_type`
+        `?companion_profile_id=in.(${ids.map(encodeURIComponent).join(",")})&media_type=in.(${mediaTypes})&order=sort_order.asc&limit=${listMode ? 1200 : 3000}&select=id,companion_profile_id,media_type,storage_bucket,storage_path,status,content_type`
       ),
       { headers: headers() }
     );
@@ -437,10 +483,11 @@ async function mediaExtrasByProfile(profileIds = []) {
     // Older DBs without video in check constraint: fall back without video filter.
     if (/companion_media|schema cache|PGRST|does not exist|media_type|check/i.test(String(e.message || e))) {
       try {
+        const fallbackTypes = listMode ? "avatar,cover,gallery" : "avatar,cover,gallery,voice";
         rows = await supabaseJson(
           restUrl(
             "companion_media",
-            `?companion_profile_id=in.(${ids.map(encodeURIComponent).join(",")})&media_type=in.(avatar,cover,gallery,voice)&order=sort_order.asc&limit=3000&select=id,companion_profile_id,media_type,storage_bucket,storage_path,status,content_type`
+            `?companion_profile_id=in.(${ids.map(encodeURIComponent).join(",")})&media_type=in.(${fallbackTypes})&order=sort_order.asc&limit=${listMode ? 1200 : 3000}&select=id,companion_profile_id,media_type,storage_bucket,storage_path,status,content_type`
           ),
           { headers: headers() }
         );
@@ -452,34 +499,44 @@ async function mediaExtrasByProfile(profileIds = []) {
       throw e;
     }
   }
-  const byProfile = {};
-  for (const row of Array.isArray(rows) ? rows : []) {
-    const pid = row.companion_profile_id;
-    if (!pid) continue;
-    if (!byProfile[pid]) byProfile[pid] = { avatarUrl: "", coverUrl: "", voiceUrl: "", videoUrl: "", showcaseVideoUrl: "", gallery: [] };
-    const bucket = String(row.storage_bucket || "").trim();
-    const path = String(row.storage_path || "").trim();
-    if (!bucket || !path) continue;
-    const status = String(row.status || "pending").toLowerCase();
-    const ctype = String(row.content_type || "").toLowerCase();
-    const isVideo =
-      row.media_type === "video" ||
-      (row.media_type === "gallery" && /^video\//.test(ctype)) ||
-      (row.media_type === "gallery" && /\/video\//i.test(path));
-    // Boss/public: voice + video only after approve (existing review rule).
-    if ((row.media_type === "voice" || isVideo) && status && status !== "approved") continue;
-    let url = "";
-    try {
-      if (bucket === "companion-public" || /public/i.test(bucket)) {
-        url = publicObjectUrl(bucket, path);
-      } else {
-        url = await createSignedUrl(bucket, path, 60 * 60 * 12);
+  const list = Array.isArray(rows) ? rows : [];
+  // Phase 2: resolve all signed URLs in parallel (was sequential N×RTT per media row).
+  const resolved = await Promise.all(
+    list.map(async (row) => {
+      const pid = row.companion_profile_id;
+      const bucket = String(row.storage_bucket || "").trim();
+      const path = String(row.storage_path || "").trim();
+      if (!pid || !bucket || !path) return null;
+      const status = String(row.status || "pending").toLowerCase();
+      const ctype = String(row.content_type || "").toLowerCase();
+      const isVideo =
+        row.media_type === "video" ||
+        (row.media_type === "gallery" && /^video\//.test(ctype)) ||
+        (row.media_type === "gallery" && /\/video\//i.test(path));
+      // List mode: never sign voice/video (hall cards do not play them).
+      if (listMode && (row.media_type === "voice" || isVideo)) return null;
+      // Boss/public: voice + video only after approve (existing review rule).
+      if ((row.media_type === "voice" || isVideo) && status && status !== "approved") return null;
+      let url = "";
+      try {
+        if (bucket === "companion-public" || /public/i.test(bucket)) {
+          url = publicObjectUrl(bucket, path);
+        } else {
+          url = await createSignedUrl(bucket, path, 60 * 60 * 12);
+        }
+      } catch (err) {
+        console.warn("[public/companions] media URL resolve failed", bucket, path, err?.message || err);
+        return null;
       }
-    } catch (err) {
-      console.warn("[public/companions] media URL resolve failed", bucket, path, err?.message || err);
-      continue;
-    }
-    if (!url || !/^https?:\/\//i.test(url)) continue;
+      if (!url || !/^https?:\/\//i.test(url)) return null;
+      return { row, pid, url, isVideo };
+    })
+  );
+  const byProfile = {};
+  for (const item of resolved) {
+    if (!item) continue;
+    const { row, pid, url, isVideo } = item;
+    if (!byProfile[pid]) byProfile[pid] = { avatarUrl: "", coverUrl: "", voiceUrl: "", videoUrl: "", showcaseVideoUrl: "", gallery: [] };
     if (row.media_type === "avatar" && !byProfile[pid].avatarUrl) byProfile[pid].avatarUrl = url;
     if (row.media_type === "cover" && !byProfile[pid].coverUrl) byProfile[pid].coverUrl = url;
     if (row.media_type === "gallery" && !isVideo) {
@@ -611,65 +668,96 @@ async function loadCompanions(id = "") {
       )
     );
   }
+  // List/hall: skip HEAD size-gate (N companions × voice/video/gallery was multi-second).
+  // Single-id detail keeps HEAD so tiny voice stubs still drop.
+  const skipHead = !String(id || "").trim();
+  const resolveOpts = { skipHead };
   const [levels, servicesBundle, mediaMap, certMap] = await Promise.all([
     readLocalLevels().catch(() => []),
     loadPublicServices().catch(() => ({ services: [] })),
-    mediaExtrasByProfile(profileIds).catch(() => ({})),
+    mediaExtrasByProfile(profileIds, { listMode: skipHead }).catch(() => ({})),
     resolveCertTagsForProfiles(profileIds).catch(() => ({})),
   ]);
   const catalog = Array.isArray(servicesBundle?.services) ? servicesBundle.services : [];
   const profileMap = Object.fromEntries((profiles || []).map((row) => [row.id, row]));
   const levelList = Array.isArray(levels) ? levels.map((l) => toPublicLevel(l)) : [];
-  const mapped = [];
-  for (const row of companions) {
-    if (!isAuditApprovedCompanion(row)) continue;
+
+  async function enrichOne(row) {
+    if (!isAuditApprovedCompanion(row)) return null;
     const profile = profileMap[row.user_id];
     // Approved companions drop here only when profile join missed (inactive/missing) —
     // approve flow activates profile before writing application_status=approved.
-    if (!profile) continue;
+    if (!profile) return null;
     // Hide smoke/test accounts from homepage / hall / public detail (matches admin filter).
     // Heuristics are mirrored at approve-time (assertApproveCanPublish) so real approve
     // cannot create a silent approved-but-hidden hall row via smoke name/email.
-    if (isTestAccountRecord(profile, row)) continue;
-    if (profile.is_test_account === true || row.is_test_account === true) continue;
+    if (isTestAccountRecord(profile, row)) return null;
+    if (profile.is_test_account === true || row.is_test_account === true) return null;
     const media = { ...(mediaMap[row.id] || {}) };
-    // Prefer companion_media voice, else durable storage:// / legacy URL — always size-gate.
-    // If media signed URL is expired/invalid, fall back to companion_profiles.voice_url.
-    const fromMedia = await resolvePlayableUrl(media.voiceUrl);
-    const fromProfile = fromMedia ? "" : await resolvePlayableUrl(row.voice_url);
-    media.voiceUrl = fromMedia || fromProfile;
-    media.videoUrl = await resolvePlayableUrl(media.videoUrl || media.showcaseVideoUrl || "");
-    media.showcaseVideoUrl = media.videoUrl;
-    // Parse legacy gallery tags when companion_media has no gallery rows.
-    if (!Array.isArray(media.gallery) || !media.gallery.length) {
-      const tag = String(row.tags || "");
-      const m = tag.match(/\[\[MCJ_GALLERY:([\s\S]*?)\]\]/);
-      if (m) {
-        try {
-          const items = JSON.parse(m[1]);
-          const gallery = [];
-          for (const item of Array.isArray(items) ? items : []) {
-            const raw = typeof item === "string" ? item : item?.url || item?.path || "";
-            const url = await resolvePlayableUrl(raw);
-            if (url) gallery.push({ id: item?.id || url, url });
+    // Hall/list cards only need cover/avatar (already signed in mediaMap).
+    // Soft media never gates hallVisible — skip voice/video/gallery re-resolve on list
+    // (detail id=… still resolves full playable media below).
+    if (!skipHead) {
+      // Prefer companion_media voice, else durable storage:// / legacy URL.
+      // If media signed URL is expired/invalid, fall back to companion_profiles.voice_url.
+      const [fromMedia, fromProfile, videoUrl] = await Promise.all([
+        resolvePlayableUrl(media.voiceUrl, resolveOpts),
+        resolvePlayableUrl(row.voice_url, resolveOpts),
+        resolvePlayableUrl(media.videoUrl || media.showcaseVideoUrl || "", resolveOpts),
+      ]);
+      media.voiceUrl = fromMedia || fromProfile;
+      media.videoUrl = videoUrl;
+      media.showcaseVideoUrl = media.videoUrl;
+      // Parse legacy gallery tags when companion_media has no gallery rows.
+      if (!Array.isArray(media.gallery) || !media.gallery.length) {
+        const tag = String(row.tags || "");
+        const m = tag.match(/\[\[MCJ_GALLERY:([\s\S]*?)\]\]/);
+        if (m) {
+          try {
+            const items = JSON.parse(m[1]);
+            const galleryRaw = Array.isArray(items) ? items : [];
+            const resolved = await Promise.all(
+              galleryRaw.map(async (item) => {
+                const raw = typeof item === "string" ? item : item?.url || item?.path || "";
+                const url = await resolvePlayableUrl(raw, resolveOpts);
+                return url ? { id: item?.id || url, url } : null;
+              })
+            );
+            const gallery = resolved.filter(Boolean);
+            if (gallery.length) media.gallery = gallery;
+          } catch {
+            /* ignore bad gallery tag */
           }
-          if (gallery.length) media.gallery = gallery;
-        } catch {
-          /* ignore bad gallery tag */
         }
       }
+    } else {
+      // Drop heavy media from list payload — detail API fills them on open.
+      media.voiceUrl = "";
+      media.videoUrl = "";
+      media.showcaseVideoUrl = "";
+      media.gallery = Array.isArray(media.gallery) ? media.gallery.slice(0, 1) : [];
     }
     const gate = evaluatePublishGate(row, profile, media);
     // Homepage / hall (PR A): hallVisible = approved + active + allow_orders + !test.
     // Critical profile is approve-time only; credential OR does not hide hall.
-    if (!gate.hallVisible) continue;
-    mapped.push(publicCompanion(row, profile, levelList, catalog, media, certMap[row.id] || []));
+    if (!gate.hallVisible) return null;
+    return publicCompanion(row, profile, levelList, catalog, media, certMap[row.id] || []);
   }
-  return attachReviews(mapped);
+
+  const mapped = (await Promise.all((companions || []).map((row) => enrichOne(row)))).filter(Boolean);
+  // Hall list: summaryOnly (rating aggregates). Detail keeps full review bodies + joins.
+  return attachReviews(mapped, { summaryOnly: !String(id || "").trim() });
 }
 
 export default async function handler(req, res) {
-  res.setHeader("Cache-Control", "no-store");
+  const lookup = String(req.query.id || req.query.uid || req.query.player || "").trim();
+  // List is public + slowly changing; allow short edge cache (overridden only if vercel.json permits).
+  // Detail stays no-store so voice HEAD gating / signed URLs stay fresh.
+  if (lookup) {
+    res.setHeader("Cache-Control", "no-store");
+  } else {
+    res.setHeader("Cache-Control", "public, max-age=15, s-maxage=30, stale-while-revalidate=60");
+  }
   if (req.method !== "GET") {
     res.setHeader("Allow", "GET");
     return json(res, 405, { ok: false, message: "Method Not Allowed" });
@@ -678,7 +766,6 @@ export default async function handler(req, res) {
     return json(res, 200, { ok: true, configured: false, companions: [], message: "未配置 Supabase，陪玩大厅不返回假数据。" });
   }
   try {
-    const lookup = String(req.query.id || req.query.uid || req.query.player || "").trim();
     const companions = await loadCompanions(lookup);
     return json(res, 200, { ok: true, configured: true, companions });
   } catch (error) {

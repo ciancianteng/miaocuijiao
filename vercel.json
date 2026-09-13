@@ -67,8 +67,33 @@
       "source": "/api/(.*)",
       "headers": [
         { "key": "Cache-Control", "value": "no-store" },
-        { "key": "CDN-Cache-Control", "value": "no-store" },
-        { "key": "Vercel-CDN-Cache-Control", "value": "no-store" },
+        { "key": "X-Content-Type-Options", "value": "nosniff" }
+      ]
+    },
+    {
+      "source": "/api/home/daily-stats",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=30, s-maxage=60, stale-while-revalidate=120" },
+        { "key": "CDN-Cache-Control", "value": "public, max-age=30, s-maxage=60, stale-while-revalidate=120" },
+        { "key": "Vercel-CDN-Cache-Control", "value": "public, max-age=30, s-maxage=60, stale-while-revalidate=120" },
+        { "key": "X-Content-Type-Options", "value": "nosniff" }
+      ]
+    },
+    {
+      "source": "/api/public/companions",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=15, s-maxage=30, stale-while-revalidate=60" },
+        { "key": "CDN-Cache-Control", "value": "public, max-age=15, s-maxage=30, stale-while-revalidate=60" },
+        { "key": "Vercel-CDN-Cache-Control", "value": "public, max-age=15, s-maxage=30, stale-while-revalidate=60" },
+        { "key": "X-Content-Type-Options", "value": "nosniff" }
+      ]
+    },
+    {
+      "source": "/api/platform/services",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=30, s-maxage=60, stale-while-revalidate=120" },
+        { "key": "CDN-Cache-Control", "value": "public, max-age=30, s-maxage=60, stale-while-revalidate=120" },
+        { "key": "Vercel-CDN-Cache-Control", "value": "public, max-age=30, s-maxage=60, stale-while-revalidate=120" },
         { "key": "X-Content-Type-Options", "value": "nosniff" }
       ]
     },
