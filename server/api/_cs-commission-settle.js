@@ -334,11 +334,24 @@ export async function trySettleCommission(order, opts = {}) {
   }
 
   const status = normalizeOrderStatus(order.status);
-  if (!nodeReached(status, config)) {
+  const endReceptionPaid = !!(fromEndReception || source === "end_reception" || opts.endReception === true);
+  // Ledger settle_node is end_reception_paid: after payment proof + end reception,
+  // do not require settleOnOrderComplete (paid in-progress orders must still credit).
+  if (!endReceptionPaid && !nodeReached(status, config)) {
     return {
       ok: false,
       code: "NODE_NOT_REACHED",
       message: "订单尚未达到佣金结算节点。",
+      status,
+      consultation: false,
+      commissionAmount: 0,
+    };
+  }
+  if (endReceptionPaid && ["cancelled", "canceled", "refunded", "refund_requested", "awaiting_payment"].includes(status)) {
+    return {
+      ok: false,
+      code: "NODE_NOT_REACHED",
+      message: "订单状态不可结算提成。",
       status,
       consultation: false,
       commissionAmount: 0,
@@ -474,6 +487,14 @@ export async function evaluateEndReceptionCommission({ serviceId, conversation }
     fromEndReception: true,
   });
   if (result.ok && (result.code === "SETTLED" || result.code === "ALREADY_SETTLED")) {
+    if (result.code === "SETTLED" && !result.duplicate) {
+      await notifyCsCommissionSettled({
+        serviceId,
+        settlement: result.settlement,
+        order,
+        duplicate: false,
+      });
+    }
     return {
       code: result.code,
       message: result.duplicate
@@ -591,6 +612,58 @@ export async function clawbackOrCancelCommission(order, { reason = "", mode = "a
 }
 
 /** Settle both cat-food dock reward and RM commission (best-effort). */
+
+function receptionAlreadyEnded(conversation) {
+  const s = String(conversation?.status || "").toLowerCase();
+  return s === "ended" || s === "closed";
+}
+
+async function findEndedConversationForOrder(order) {
+  const orderId = order?.id;
+  if (!orderId) return null;
+  try {
+    const rows = await sb(
+      rest(
+        "conversations",
+        `?order_id=eq.${encodeURIComponent(orderId)}&or=(status.eq.ended,status.eq.closed)&order=updated_at.desc&limit=1`
+      )
+    );
+    return Array.isArray(rows) ? rows[0] : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Inbox notice after real ledger credit. Never notify without a settlement row. */
+export async function notifyCsCommissionSettled({ serviceId, settlement, order, duplicate = false }) {
+  if (!serviceId || !settlement || duplicate) return { ok: false, skipped: true };
+  const amount = round(settlement.finalAmountRm ?? settlement.final_amount_rm ?? 0);
+  const orderNo = settlement.orderNo || settlement.order_no || order?.order_no || "";
+  const noticeKey = `cs-commission-settled-${settlement.id || settlement.orderId || order?.id || ""}`;
+  try {
+    await sb(rest("staff_notifications"), {
+      method: "POST",
+      body: JSON.stringify({
+        staff_id: serviceId,
+        notice_key: noticeKey,
+        category: "salary",
+        title: "客服提成已入账",
+        body: `本次客服服务已完成，工资/提成 RM ${amount.toFixed(2)} 已计入${orderNo ? `（订单 ${orderNo}）` : ""}。`,
+        href: "/customer-service/reports/",
+        created_at: nowIso(),
+      }),
+    });
+    return { ok: true, noticeKey };
+  } catch (err) {
+    return { ok: false, error: err?.message || String(err) };
+  }
+}
+
+/** Unique SoT for amount display — UI must not invent salary math. */
+export function calculateStaffSalary(order, config) {
+  return computeCommissionBreakdown(order, config);
+}
+
 export async function settleCsOrderIncome(order, opts = {}) {
   let dock = null;
   let commission = null;
@@ -601,12 +674,36 @@ export async function settleCsOrderIncome(order, opts = {}) {
   }
   try {
     // RM 提成硬门禁：仅 end_reception（真实已付款订单）才结算；付款确认/改状态路径不得提前入账。
-    const fromEnd =
+    // Catch-up: if CS already ended reception and order later paid/completed, settle once.
+    let conversation = opts.conversation || null;
+    let fromEnd =
       opts.fromEndReception === true ||
       opts.endReception === true ||
       String(opts.source || "") === "end_reception";
+    if (!fromEnd) {
+      if (!conversation) conversation = await findEndedConversationForOrder(order);
+      if (receptionAlreadyEnded(conversation)) {
+        const endedCs = String(conversation.customer_service_id || "").trim();
+        const orderCs = String(order.customer_service_id || opts.forceServiceId || "").trim();
+        if (endedCs && (!orderCs || endedCs === orderCs)) {
+          fromEnd = true;
+          opts = { ...opts, conversation, forceServiceId: opts.forceServiceId || endedCs };
+        }
+      }
+    }
     if (fromEnd) {
-      commission = await trySettleCommission(order, { ...opts, fromEndReception: true });
+      commission = await trySettleCommission(order, { ...opts, conversation, fromEndReception: true });
+      if (commission?.ok && commission.code === "SETTLED" && !commission.duplicate) {
+        const sid = String(
+          opts.forceServiceId || order.customer_service_id || conversation?.customer_service_id || ""
+        ).trim();
+        await notifyCsCommissionSettled({
+          serviceId: sid,
+          settlement: commission.settlement,
+          order,
+          duplicate: false,
+        });
+      }
     } else {
       commission = {
         ok: false,

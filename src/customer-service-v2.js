@@ -3438,9 +3438,14 @@ import './mcj-chat-realtime.js';
     }var endTake=e.target.closest('[data-end]');if(endTake){e.preventDefault();if(!confirm('确认结束本次对话吗？结束后会话只读，聊天记录保留。'))return;
       var endId=String(endTake.dataset.end||'').trim();
       api('end_conversation',{id:endId,conversation_id:endId}).then(function(res){
+        var commissionMsg=(res.commission&&res.commission.message)||'';
         var rewardMsg=(res.reward&&res.reward.message)||'';
-        var msg=rewardMsg||res.message||'已结束对话';
-        if(!rewardMsg&&/奖励已到账|已结算.*猫粮/i.test(String(res.message||''))){
+        var msg=res.message||commissionMsg||rewardMsg||'已结束对话';
+        // Prefer salary/commission clarity; append dock reward if both present and distinct.
+        if(commissionMsg&&rewardMsg&&commissionMsg!==rewardMsg&&msg.indexOf(rewardMsg)<0){
+          msg=msg+'；'+rewardMsg;
+        }
+        if(!commissionMsg&&!rewardMsg&&/奖励已到账|已结算.*猫粮/i.test(String(res.message||''))){
           msg='本次仅为咨询，未产生有效订单，不结算猫粮。';
         }
         toast(msg);

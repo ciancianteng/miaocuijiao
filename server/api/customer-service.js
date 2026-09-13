@@ -2326,7 +2326,49 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
       if (!existing) return json(res, 404, { ok: false, message: "会话不存在。" });
       if (existing.status === "closed" || existing.status === "ended") {
         await markConversationBossMessagesRead(id, { bossId: existing.boss_id, conversation: existing });
-        return json(res, 200, { ok: true, message: "会话已结束。", conversation: existing });
+        // Idempotent catch-up: ending twice must still attempt salary settle once (unique ledger).
+        let rewardEval = null;
+        let commissionEval = null;
+        try {
+          rewardEval = await (await import("./_cs-dock-rewards.js")).evaluateEndReceptionReward({
+            serviceId: service.profile.id,
+            conversation: existing,
+          });
+        } catch (err) {
+          console.error("[cs-salary] dock catch-up failed", err?.message || err);
+          rewardEval = { code: "ERROR", message: "奖励结算检查失败，请稍后在后台核对。", settled: false };
+        }
+        try {
+          commissionEval = await (await import("./_cs-commission-settle.js")).evaluateEndReceptionCommission({
+            serviceId: service.profile.id,
+            conversation: existing,
+          });
+        } catch (err) {
+          console.error("[cs-salary] commission catch-up failed", err?.message || err);
+          commissionEval = {
+            code: "ERROR",
+            message: "提成结算检查失败，请稍后在后台核对。",
+            settled: false,
+            commissionAmount: 0,
+          };
+        }
+        const consultMsg =
+          commissionEval?.consultation || commissionEval?.code === "CONSULTATION" || commissionEval?.code === "UNPAID"
+            ? "本次为普通咨询，无订单提成"
+            : "";
+        const endMessage =
+          consultMsg ||
+          commissionEval?.message ||
+          rewardEval?.message ||
+          "会话已结束。";
+        return json(res, 200, {
+          ok: true,
+          message: endMessage,
+          reward: rewardEval,
+          commission: commissionEval,
+          conversation: existing,
+          alreadyEnded: true,
+        });
       }
       if (!existing.customer_service_id) {
         return json(res, 400, { ok: false, message: "该会话当前无人接待。" });
@@ -2405,7 +2447,8 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
           serviceId: service.profile.id,
           conversation: conversation || existing,
         });
-      } catch (_) {
+      } catch (err) {
+        console.error("[cs-salary] dock settle failed", err?.message || err);
         rewardEval = { code: "ERROR", message: "奖励结算检查失败，请稍后在后台核对。", settled: false };
       }
       try {
@@ -2413,7 +2456,8 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
           serviceId: service.profile.id,
           conversation: conversation || existing,
         });
-      } catch (_) {
+      } catch (err) {
+        console.error("[cs-salary] commission settle failed", err?.message || err);
         commissionEval = {
           code: "ERROR",
           message: "提成结算检查失败，请稍后在后台核对。",
