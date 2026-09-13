@@ -134,7 +134,10 @@
     if (/暂停/.test(s)) return "暂停";
     return "离线";
   }
+  var inflightCompanions = null;
   async function readItems() {
+    if (inflightCompanions) return inflightCompanions;
+    inflightCompanions = (async function () {
     var dataItems = [];
     state.loadError = "";
     try {
