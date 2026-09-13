@@ -3332,7 +3332,7 @@
       body: JSON.stringify(Object.assign({ action: action }, payload || {})),
     }).then(function (res) {
       return res.json().then(function (body) {
-        if (!res.ok || body.ok === false) {
+        if (!res.ok || body.ok !== true) {
           var err = new Error((body && body.message) || "请求失败");
           err.body = body;
           err.status = res.status;
@@ -3599,12 +3599,12 @@
         setAuthMessage("正在发送验证码…", "ok");
         render(Number(root.dataset.step || 0));
         try {
-          var sent = await postAuthJson("send_register_otp", { email: regEmail, role: "companion" });
+          var sent = await postAuthJson("send_register_otp", { email: regEmail, role: "companion", source: "companion_apply_register" });
           authUi.busy = false;
           var tip = sent.message || "验证码已发送";
           if (sent.debugCode || sent.devCode) tip += "（调试 " + (sent.debugCode || sent.devCode) + "）";
           setAuthMessage(tip, "ok");
-          startAuthCooldown("register", 60);
+          startAuthCooldown("register", Number(sent.retryAfterSec || sent.retryAfterSec || 60) || 60);
           render(Number(root.dataset.step || 0));
         } catch (err) {
           authUi.busy = false;
@@ -3670,12 +3670,12 @@
         setAuthMessage("正在发送登录验证码…", "ok");
         render(Number(root.dataset.step || 0));
         try {
-          var loginSent = await postAuthJson("send_login_otp", { email: loEmail, role: "companion" });
+          var loginSent = await postAuthJson("send_login_otp", { email: loEmail, role: "companion", source: "companion_apply_login" });
           authUi.busy = false;
-          var loginTip = loginSent.message || "验证码已发送";
+          var loginTip = loginSent.message || (loginSent.delivery === "sent" ? "验证码已发送" : "如该邮箱已在陪玩端注册，将收到验证码。");
           if (loginSent.debugCode || loginSent.devCode) loginTip += "（调试 " + (loginSent.debugCode || loginSent.devCode) + "）";
           setAuthMessage(loginTip, "ok");
-          startAuthCooldown("login", 60);
+          startAuthCooldown("login", Number(loginSent.retryAfterSec || loginSent.retryAfterSec || 60) || 60);
           render(Number(root.dataset.step || 0));
         } catch (err) {
           authUi.busy = false;

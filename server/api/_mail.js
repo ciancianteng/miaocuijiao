@@ -1,3 +1,4 @@
+import { logOtpEvent } from "./_otp-identity.js";
 /**
  * Platform mail sender for MVP.
  * Primary: Resend HTTP API
@@ -175,6 +176,18 @@ async function sendViaResend({ to, subject, text, html, from: fromOverride, purp
       toMasked: maskEmail(payload.to[0]),
       latencyMs: Date.now() - started,
     });
+    if (String(purpose || "").startsWith("otp")) {
+      logOtpEvent("otp_provider_failed", {
+        ok: false,
+        requestId: requestId || "",
+        purpose,
+        provider: "resend",
+        providerStatus: response.status,
+        error: String(detail).slice(0, 240),
+        emailMasked: maskEmail(payload.to[0]),
+        latencyMs: Date.now() - started,
+      });
+    }
     throw Object.assign(new Error(detail), {
       status: response.status || 502,
       code: "RESEND_FAIL",
@@ -189,6 +202,18 @@ async function sendViaResend({ to, subject, text, html, from: fromOverride, purp
     from,
     latencyMs: Date.now() - started,
   });
+  if (String(purpose || "").startsWith("otp")) {
+    logOtpEvent("otp_provider_success", {
+      ok: true,
+      requestId: requestId || "",
+      purpose,
+      provider: "resend",
+      providerStatus: response.status,
+      providerMessageId: body.id || "",
+      emailMasked: maskEmail(payload.to[0]),
+      latencyMs: Date.now() - started,
+    });
+  }
   return { ok: true, provider: "resend", id: body.id || "", to, requestId: requestId || "" };
 }
 

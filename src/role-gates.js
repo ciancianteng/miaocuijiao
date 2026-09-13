@@ -281,7 +281,23 @@
     }
   }
 
+
   function fieldValue(ids) { for (var i = 0; i < ids.length; i += 1) { var el = document.getElementById(ids[i]); if (el) return el.value || ""; } return ""; }
+  /** Prefer email input in the same auth panel as the clicked control (avoids reading the wrong portal field). */
+  function otpEmailNear(btn, ids) {
+    ids = ids || ["loginOtpEmail", "loginGmail", "loginEmail", "email"];
+    try {
+      var root = (btn && (btn.closest(".boss-login-modal") || btn.closest("[data-login-panel]") || btn.closest("form") || btn.closest(".mcj-auth-card"))) || document;
+      for (var i = 0; i < ids.length; i += 1) {
+        var el = root.querySelector("#" + ids[i]) || root.querySelector('[name="' + ids[i] + '"]');
+        if (el && String(el.value || "").trim()) return String(el.value || "").trim();
+      }
+      var typed = root.querySelector('input[type="email"]');
+      if (typed && String(typed.value || "").trim()) return String(typed.value || "").trim();
+    } catch (e) {}
+    return fieldValue(ids);
+  }
+
   function closeLoginModal() {
     if (window.MCJModal && typeof window.MCJModal.close === "function") {
       window.MCJModal.close();
@@ -1554,7 +1570,7 @@
         event.preventDefault();
         event.stopPropagation();
         if (sendOtpBtn.disabled) return;
-        var otpEmail = fieldValue(["loginOtpEmail", "loginGmail", "loginEmail", "email"]).trim().toLowerCase();
+        var otpEmail = otpEmailNear(sendOtpBtn, ["loginOtpEmail", "loginGmail", "loginEmail", "email"]).trim().toLowerCase();
         if (!otpEmail || !/^\S+@\S+\.\S+$/.test(otpEmail)) {
           setLoginMessage(sendOtpBtn, "请输入有效邮箱。");
           return;
@@ -1581,13 +1597,13 @@
         fetch("/api/auth", {
           method: "POST",
           headers: { "Content-Type": "application/json", Accept: "application/json" },
-          body: JSON.stringify({ action: "send_login_otp", email: otpEmail, role: role }),
+          body: JSON.stringify({ action: "send_login_otp", email: otpEmail, role: role, source: role === "companion" ? "companion_portal" : "boss_home" }),
         })
           .then(function (r) {
             return r.json().then(function (j) {
-              if (!r.ok || j.ok === false) {
-                var err = new Error((j && j.message) || "发送失败");
-                err.retryAfterSec = j && j.retryAfterSec;
+              if (!r.ok || j.ok !== true) {
+                var err = new Error((j && j.message) || "验证码发送失败，请稍后再试");
+                err.retryAfterSec = j && (j.retryAfterSec || j.retryAfterSec);
                 err.status = r.status;
                 err.code = j && j.code;
                 throw err;
@@ -1596,11 +1612,19 @@
             });
           })
           .then(function (j) {
-            var tip = j.message || "验证码已发送";
+            var tip = j.message || (j.delivery === "sent" ? "验证码已发送" : "如该邮箱已在当前端注册，将收到验证码。请检查收件箱与垃圾箱。");
             if (j.debugCode || j.devCode) tip += "（调试 " + (j.debugCode || j.devCode) + "）";
             setLoginMessage(sendOtpBtn, tip);
-            var left = Number(j.retryAfterSec) || 60;
-            if (Cd) Cd.setCooldown("send_login_otp", role, otpEmail, left);
+            // Cooldown only when server authorizes it (real send or intentional anti-enum).
+            // Never invent cooldown on provider failure (those throw above).
+            var left = Number(j.retryAfterSec || j.retryAfterSec || 0) || 0;
+            if (left > 0 && Cd) Cd.setCooldown("send_login_otp", role, otpEmail, left);
+            if (!(left > 0)) left = 0;
+            if (!left) {
+              sendOtpBtn.disabled = false;
+              sendOtpBtn.textContent = oldSend || "获取验证码";
+              return;
+            }
             sendOtpBtn.textContent = left + "s";
             var deadline = Date.now() + left * 1000;
             var timer = setInterval(function () {
@@ -1678,12 +1702,12 @@
         fetch("/api/auth", {
           method: "POST",
           headers: { "Content-Type": "application/json", Accept: "application/json" },
-          body: JSON.stringify({ action: "send_register_otp", email: regEmail, role: regRole }),
+          body: JSON.stringify({ action: "send_register_otp", email: regEmail, role: regRole, source: regRole === "companion" ? "companion_register" : "boss_register" }),
         })
           .then(function (r) {
             return r.json().then(function (j) {
-              if (!r.ok || j.ok === false) {
-                var err = new Error((j && j.message) || "发送失败");
+              if (!r.ok || j.ok !== true) {
+                var err = new Error((j && j.message) || "验证码发送失败，请稍后再试");
                 err.retryAfterSec = j && j.retryAfterSec;
                 err.status = r.status;
                 err.code = j && j.code;
@@ -1693,7 +1717,7 @@
             });
           })
           .then(function (j) {
-            var tip = j.message || "验证码已发送";
+            var tip = j.message || (j.delivery === "sent" ? "验证码已发送" : "如邮箱可用，将收到验证码。");
             if (j.debugCode || j.devCode) tip += "（调试 " + (j.debugCode || j.devCode) + "）";
             setLoginMessage(sendRegOtpBtn, tip);
             var left = Number(j.retryAfterSec) || 60;
@@ -1850,7 +1874,7 @@
       if (event.stopImmediatePropagation) event.stopImmediatePropagation();
       var method = String(target.getAttribute("data-login-method") || "email").toLowerCase();
       if (method === "otp") {
-        var otpAccount = fieldValue(["loginOtpEmail", "loginGmail", "loginEmail", "email"]).trim().toLowerCase();
+        var otpAccount = otpEmailNear(target, ["loginOtpEmail", "loginGmail", "loginEmail", "email"]).trim().toLowerCase();
         var otpCode = fieldValue(["loginOtpCode", "loginCode", "otp"]);
         if (!otpAccount || !otpCode) { setLoginMessage(target, "请输入邮箱和验证码。"); return; }
         if (target.disabled) return;
