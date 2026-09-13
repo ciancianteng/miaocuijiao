@@ -280,6 +280,34 @@ export async function notifyBoss(bossId, title, body, kind = "wallet", relatedId
   } catch {
     /* optional */
   }
+  // Fan-out Web Push (same event as inbox). Never block wallet/order flows.
+  try {
+    const { fanoutWebPush } = await import("./_web-push.js");
+    const kindKey = String(kind || "").toLowerCase();
+    const rid = String(relatedId || "").trim();
+    let deepLink = "/mine.html";
+    if (rid && /order|accept|start|complete|cancel|paid|pay|claim|service|refund/.test(kindKey)) {
+      deepLink = "/orders.html?id=" + encodeURIComponent(rid);
+    } else if (/recharge|compensation|wallet|bonus|cat_food|catfood/.test(kindKey)) {
+      deepLink = "/recharge.html";
+    } else if (/cs|support|message|chat|service_reply/.test(kindKey)) {
+      deepLink = rid ? "/support.html?order=" + encodeURIComponent(rid) : "/support.html";
+    } else if (/gift/.test(kindKey)) {
+      deepLink = "/gifts.html";
+    } else if (rid) {
+      deepLink = "/orders.html?id=" + encodeURIComponent(rid);
+    }
+    fanoutWebPush(bossId, {
+      title: title || "妙脆角通知",
+      body: body || "",
+      url: deepLink,
+      notificationType: String(kind || "boss"),
+      entityId: rid,
+      tag: "boss-" + String(kind || "notice") + "-" + rid,
+    });
+  } catch {
+    /* push optional */
+  }
 }
 
 export function viewCampaign(row = {}) {

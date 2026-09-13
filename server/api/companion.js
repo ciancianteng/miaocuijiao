@@ -3864,6 +3864,17 @@ export default async function handler(req, res) {
         { status: "in_progress", accepted_at: now, started_at: now },
         `陪玩 ${name} 已确认接单，订单进入进行中。`
       );
+
+      try {
+        const { notifyBossOrderEvent } = await import("./_boss-order-notify.js");
+        await notifyBossOrderEvent(order, {
+          title: "陪玩已接单",
+          body: "陪玩已确认接单，订单进行中。",
+          kind: "order_accepted",
+        });
+      } catch (err) {
+        console.warn("[companion/accept_direct] boss push", err?.message || err);
+      }
       return json(res, 200, { ok: true, message: "已确认接单，订单进入进行中", order: viewOrder(order) });
     }
     if (action === "reject_direct_order") {
@@ -3984,7 +3995,7 @@ export default async function handler(req, res) {
       if (!before) return json(res, 404, { ok: false, message: "订单不存在。" });
       // Already started by accept_direct (claimed → in_progress): idempotent OK.
       if (before.status === "in_progress") {
-        return json(res, 200, {
+return json(res, 200, {
           ok: true,
           message: "订单已在进行中。",
           order: viewOrder(before),
@@ -4017,6 +4028,17 @@ export default async function handler(req, res) {
           { source: "companion_start" }
         );
       } catch (_) {}
+      
+      try {
+        const { notifyBossOrderEvent } = await import("./_boss-order-notify.js");
+        await notifyBossOrderEvent(order, {
+          title: "陪玩已开始服务",
+          body: "陪玩已开始服务。",
+          kind: "order_started",
+        });
+      } catch (err) {
+        console.warn("[companion/start_order] boss push", err?.message || err);
+      }
       return json(res, 200, {
         ok: true,
         message: "已开始服务，订单进入进行中。",
@@ -4036,7 +4058,7 @@ export default async function handler(req, res) {
       );
       if (existingTx) {
         const settlement = parseSettlementNote(existingTx.note) || null;
-        return json(res, 200, {
+return json(res, 200, {
           ok: true,
           message: "订单已结算",
           order: { id: orderId, status: "completed" },
@@ -4078,6 +4100,17 @@ export default async function handler(req, res) {
       );
       const saved = afterRows?.[0] || before;
       await addSystemMessage(saved, auth.profile.id, "companion", "陪玩已完成服务，请确认订单。若老板 24 小时内未确认且无售后/争议，系统将自动确认完成。");
+      
+      try {
+        const { notifyBossOrderEvent } = await import("./_boss-order-notify.js");
+        await notifyBossOrderEvent(saved, {
+          title: "请确认订单",
+          body: "陪玩已完成服务，请确认订单。",
+          kind: "order_complete_requested",
+        });
+      } catch (err) {
+        console.warn("[companion/complete_order] boss push", err?.message || err);
+      }
       return json(res, 200, {
         ok: true,
         message: "已提交完成申请，等待老板确认后结算。",

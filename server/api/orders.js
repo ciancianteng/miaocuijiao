@@ -1564,6 +1564,22 @@ export default async function handler(req, res) {
           console.warn("[orders/pay_order] companion notify import", err?.message || err);
         }
       }
+      
+      
+      
+      try {
+        const { notifyBossOrderEvent } = await import("./_boss-order-notify.js");
+        await notifyBossOrderEvent(saved || { ...before, status: nextStatus }, {
+          title: "付款成功",
+          body:
+            nextStatus === "claimed"
+              ? "订单已支付，等待陪玩确认接单。"
+              : "订单已支付，已进入抢单大厅。",
+          kind: "order_paid",
+        });
+      } catch (err) {
+        console.warn("[orders/pay_order] boss push", err?.message || err);
+      }
       let reward = null;
       try {
         reward = await (await import("./_cs-commission-settle.js")).settleCsOrderIncome(saved, {
@@ -1896,7 +1912,18 @@ export default async function handler(req, res) {
           actorId: profile.id,
           message: "老板已确认完成订单。",
         });
-        return json(res, 200, {
+        
+        try {
+          const { notifyBossOrderEvent } = await import("./_boss-order-notify.js");
+          await notifyBossOrderEvent(out.order || before, {
+            title: "订单完成",
+            body: "您已确认完成，订单已结束。",
+            kind: "order_completed",
+          });
+        } catch (err) {
+          console.warn("[orders/confirm_completion] boss push", err?.message || err);
+        }
+      return json(res, 200, {
           ok: true,
           message: out.message || "已确认完成，订单已完成。",
           order: viewOrder(out.order || before),
@@ -1984,6 +2011,17 @@ export default async function handler(req, res) {
           { reason: "老板取消订单", mode: "cancel" }
         );
       } catch (_) {}
+      
+      try {
+        const { notifyBossOrderEvent } = await import("./_boss-order-notify.js");
+        await notifyBossOrderEvent(order || before, {
+          title: "订单已取消",
+          body: "订单已取消。",
+          kind: "order_cancelled",
+        });
+      } catch (err) {
+        console.warn("[orders/cancel_order] boss push", err?.message || err);
+      }
       return json(res, 200, { ok: true, message: "订单已取消。", order });
     }
     if (action === "request_refund") {

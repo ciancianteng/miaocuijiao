@@ -306,11 +306,10 @@
     try{
       if(navigator.vibrate)navigator.vibrate([120,60,120]);
     }catch(e){}
-    try{
+        try{
+      // Web Push only — never auto-prompt system permission here.
       if(typeof Notification==='function'&&Notification.permission==='granted'){
         new Notification('妙脆角陪玩',{body:'你有新的指定订单',tag:id||'designated-order'});
-      }else if(typeof Notification==='function'&&Notification.permission==='default'){
-        Notification.requestPermission().catch(function(){});
       }
     }catch(e){}
     var s=(state.data||{}).summary||{};
@@ -336,6 +335,24 @@
     try{return Object.assign({notify:true,sound:true,theme:'dark'},JSON.parse(localStorage.getItem(SETTINGS_KEY)||'{}'))}catch(e){return {notify:true,sound:true,theme:'dark'}}
   }
   function saveSettings(next){state.settings=next;try{localStorage.setItem(SETTINGS_KEY,JSON.stringify(next))}catch(e){}}
+  function ensureCompanionWebPushScript(){
+    return new Promise(function(resolve){
+      if(window.MCJWebPush){resolve(window.MCJWebPush);return}
+      var existing=document.querySelector('script[data-mcj-webpush-client]');
+      if(existing){
+        existing.addEventListener('load',function(){resolve(window.MCJWebPush)});
+        existing.addEventListener('error',function(){resolve(null)});
+        return;
+      }
+      var s=document.createElement('script');
+      s.src='/src/web-push-client.js?v=20260913webpush1';
+      s.defer=true;
+      s.setAttribute('data-mcj-webpush-client','1');
+      s.onload=function(){resolve(window.MCJWebPush)};
+      s.onerror=function(){resolve(null)};
+      document.head.appendChild(s);
+    });
+  }
   function openPwaInstallGuide(){
     function tryOpen(){
       if(window.MCJPwaInstall&&typeof window.MCJPwaInstall.openGuide==='function'){
@@ -1043,6 +1060,7 @@
     state.session=normalized;
   }
   function clearSession(){
+    try{if(window.MCJWebPush&&window.MCJWebPush.disablePush)window.MCJWebPush.disablePush()}catch(e){}
     localStorage.removeItem(SESSION_KEY);
     sessionStorage.removeItem(SESSION_KEY);
     try{
@@ -2046,6 +2064,16 @@
       preserveScroll:preserveScroll,
       forceFull:!!opts.forceFull
     });
+    if(state.route==='settings'){
+      try{
+        ensureCompanionWebPushScript().then(function(){
+          var mount=document.getElementById('mcjWebPushSettingsMount');
+          if(mount&&window.MCJWebPush&&typeof window.MCJWebPush.mountSettings==='function'){
+            window.MCJWebPush.mountSettings(mount,{role:'companion'});
+          }
+        });
+      }catch(e){}
+    }
   }
   function noticeHtml(){return state.notice?'<div class="pw-toast show">'+esc(state.notice)+'</div>':''}
   function forgotPasswordModalHtml(){
@@ -3114,7 +3142,7 @@
         '<button class="pw-btn primary" type="button" data-pwa-install-guide>安装妙脆角 / 添加到主屏幕</button>';
     return '<div class="pw-page-head"><div><h2>设置</h2><p>仅影响本机陪玩端体验。</p></div></div>'+
       '<section class="pw-card pad"><h3>主题</h3><p class="pw-note">当前为固定黑粉运营主题（上线版不可切换品牌色）。</p><div class="pw-info-list"><div><span>主题</span><strong>暗色粉（默认）</strong></div></div></section>'+
-      '<section class="pw-card pad" style="margin-top:14px"><h3>通知</h3><label class="pw-check"><input type="checkbox" data-setting="notify" '+(s.notify?'checked':'')+'> 接收订单 / 提现 / 审核提醒</label></section>'+
+      '<section class="pw-card pad" style="margin-top:14px"><h3>通知设置</h3><div id="mcjWebPushSettingsMount" class="mcj-webpush-companion-mount"></div><p class="pw-note">关闭开关会取消本机 Web Push 订阅；站内消息仍可在消息中心查看。</p></section>'+
       '<section class="pw-card pad" style="margin-top:14px"><h3>声音</h3><label class="pw-check"><input type="checkbox" data-setting="sound" '+(s.sound?'checked':'')+'> 提示音（新消息 / 订单 / 抢单 / 审核）</label></section>'+
       '<section class="pw-card pad" style="margin-top:14px"><h3>安装妙脆角</h3>'+installBlock+'</section>'+
       '<section class="pw-card pad" style="margin-top:14px"><h3>账号</h3><button class="pw-btn danger" type="button" data-logout>退出登录</button></section>';

@@ -12,6 +12,7 @@
   <meta name="theme-color" content="#0a0610">
   <meta name="mobile-web-app-capable" content="yes">
   <script src="/pwa-boot.js" defer></script>
+  <script src="/src/web-push-client.js?v=20260913webpush1" defer></script>
   <!-- mcj-pwa-meta:end -->
 
   <script src="/portal-early-gate.js?v=20260911authPerfP0"></script>
@@ -542,7 +543,9 @@
           '<section class="entry"><a class="entry-trigger" href="gifts.html"><span class="entry-title">礼物中心</span><span class="entry-arrow" aria-hidden="true"></span></a></section>'+
           '<section class="entry"><a class="entry-trigger" href="my-direct-companions.html"><span class="entry-title">直属陪玩</span><span class="entry-arrow" aria-hidden="true"></span></a></section>'+
           '<section class="entry"><button type="button" class="entry-trigger" data-pwa-install><span class="entry-title">添加妙脆角到主屏幕</span><span class="entry-arrow" aria-hidden="true"></span></button></section>'+
+          '<section class="entry"><button type="button" class="entry-trigger" data-open-notify-settings><span class="entry-title">通知设置</span><span class="entry-arrow" aria-hidden="true"></span></button></section>'+
           '</div>'+
+          '<div id="mcjWebPushSettingsMount" class="mcj-webpush-mine-mount" hidden></div>'+
           '<div class="mine-logout-wrap"><button class="mine-logout" type="button" data-logout>退出登录</button></div>';
       }
       function paintRegister(){
@@ -744,8 +747,8 @@ async function load(){
           location.href='/companion/login/';
           return;
         }
-        if(e.target.closest('[data-pwa-install]')){if(window.MCJPwaInstall&&typeof window.MCJPwaInstall.open==='function'){window.MCJPwaInstall.open({force:true})}return}
-        if(e.target.closest('[data-logout]')){if(window.MCJBossAuth&&window.MCJBossAuth.clearSession)window.MCJBossAuth.clearSession();if(window.MCJRoleGate){window.MCJRoleGate.logout('boss');window.MCJRoleGate.logout('customer')}['mcjAuthAccessToken','mcjAuthRefreshToken','mcjAuthExpiresAt','customerAuthToken','customerUser','mcjCurrentUser','mcjRole'].forEach(function(k){try{localStorage.removeItem(k);sessionStorage.removeItem(k)}catch(e){}});location.href='index.html';return}
+        if(e.target.closest('[data-open-notify-settings]')){var mount=document.getElementById('mcjWebPushSettingsMount');if(mount){mount.hidden=false;}if(window.MCJWebPush&&typeof window.MCJWebPush.mountSettings==='function'){window.MCJWebPush.mountSettings(mount,{role:'boss'});}else if(window.MCJWebPush&&typeof window.MCJWebPush.showGuide==='function'){window.MCJWebPush.showGuide({force:true,role:'boss'});}return}if(e.target.closest('[data-pwa-install]')){if(window.MCJPwaInstall&&typeof window.MCJPwaInstall.open==='function'){window.MCJPwaInstall.open({force:true})}return}
+        if(e.target.closest('[data-logout]')){try{if(window.MCJWebPush&&window.MCJWebPush.disablePush)window.MCJWebPush.disablePush()}catch(err){} if(window.MCJBossAuth&&window.MCJBossAuth.clearSession)window.MCJBossAuth.clearSession();if(window.MCJRoleGate){window.MCJRoleGate.logout('boss');window.MCJRoleGate.logout('customer')}['mcjAuthAccessToken','mcjAuthRefreshToken','mcjAuthExpiresAt','customerAuthToken','customerUser','mcjCurrentUser','mcjRole'].forEach(function(k){try{localStorage.removeItem(k);sessionStorage.removeItem(k)}catch(e){}});location.href='index.html';return}
       });
       if(avatarFileInput){
         avatarFileInput.addEventListener('change',async function(){
