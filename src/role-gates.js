@@ -1612,15 +1612,16 @@
             });
           })
           .then(function (j) {
-            var tip = j.message || (j.delivery === "sent" ? "验证码已发送" : "如该邮箱已在当前端注册，将收到验证码。请检查收件箱与垃圾箱。");
+            var delivered = j.delivery === "sent";
+            var tip = delivered
+              ? (j.message || "验证码已发送")
+              : (j.message || "如该邮箱已在当前端注册，将收到验证码。请检查收件箱与垃圾箱。");
             if (j.debugCode || j.devCode) tip += "（调试 " + (j.debugCode || j.devCode) + "）";
             setLoginMessage(sendOtpBtn, tip);
-            // Cooldown only when server authorizes it (real send or intentional anti-enum).
-            // Never invent cooldown on provider failure (those throw above).
-            var left = Number(j.retryAfterSec || j.retryAfterSec || 0) || 0;
-            if (left > 0 && Cd) Cd.setCooldown("send_login_otp", role, otpEmail, left);
-            if (!(left > 0)) left = 0;
-            if (!left) {
+            // Cooldown ONLY after provider accepted send. suppressed/failed must not fake success.
+            var left = delivered ? Number(j.retryAfterSec || j.retryAfterSec || 0) || 0 : 0;
+            if (delivered && left > 0 && Cd) Cd.setCooldown("send_login_otp", role, otpEmail, left);
+            if (!delivered || !left) {
               sendOtpBtn.disabled = false;
               sendOtpBtn.textContent = oldSend || "获取验证码";
               return;
@@ -1717,11 +1718,19 @@
             });
           })
           .then(function (j) {
-            var tip = j.message || (j.delivery === "sent" ? "验证码已发送" : "如邮箱可用，将收到验证码。");
+            var delivered = j.delivery === "sent";
+            var tip = delivered
+              ? (j.message || "验证码已发送")
+              : (j.message || "如邮箱可用，将收到验证码。");
             if (j.debugCode || j.devCode) tip += "（调试 " + (j.debugCode || j.devCode) + "）";
             setLoginMessage(sendRegOtpBtn, tip);
-            var left = Number(j.retryAfterSec) || 60;
-            if (CdReg) CdReg.setCooldown("send_register_otp", regRole, regEmail, left);
+            var left = delivered ? Number(j.retryAfterSec || 0) || 0 : 0;
+            if (delivered && left > 0 && CdReg) CdReg.setCooldown("send_register_otp", regRole, regEmail, left);
+            if (!delivered || !left) {
+              sendRegOtpBtn.disabled = false;
+              sendRegOtpBtn.textContent = "获取验证码";
+              return;
+            }
             var deadline = Date.now() + left * 1000;
             sendRegOtpBtn.textContent = left + "s";
             var timer = setInterval(function () {

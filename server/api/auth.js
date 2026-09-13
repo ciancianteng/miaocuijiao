@@ -679,7 +679,6 @@ async function handleForgotSendOtp(body, res) {
     message: RESET_EMAIL_GENERIC_MESSAGE,
     channel: "email",
     expiresInSec: Math.floor(OTP_TTL_MS / 1000),
-    retryAfterSec: otpRetryAfterSec(),
   };
   if (!account) return json(res, 400, { ok: false, message: "请输入绑定邮箱。" });
   if (!/@/.test(account)) {
@@ -817,12 +816,13 @@ async function handleLoginSendOtp(body, res) {
     sharedLogOtpEvent("otp_provider_failed", { ok: false, requestId, route, role, source, reason: "prod_test_blocked", emailMasked: maskEmailForLog(email) });
     return blockedSend;
   }
+  // Anti-enumeration: HTTP 200 + suppressed. Do NOT attach retryAfterSec —
+  // clients must not enter "sent" cooldown unless the provider actually accepted.
   const generic = {
     ok: true,
     message: "如该邮箱已在当前端注册，将收到登录验证码。请确认选择了正确入口（老板/陪玩），并检查收件箱与垃圾箱。",
     channel: "email",
     expiresInSec: Math.floor(OTP_TTL_MS / 1000),
-    retryAfterSec: otpRetryAfterSec(),
     requestId,
     delivery: "suppressed",
   };
