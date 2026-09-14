@@ -13,6 +13,15 @@ import {
 } from "./_companion-media-store.js";
 import { sendEmailOtp, sendSmsOtp, mailProviderStatus, publicMailHint } from "./_mail.js";
 import {
+  normalizeEmail as sharedNormalizeEmail,
+  isValidEmail as sharedIsValidEmail,
+  maskEmail as sharedMaskEmail,
+  normalizePhoneNumber as sharedNormalizePhoneNumber,
+  maskPhone as sharedMaskPhone,
+  newOtpRequestId as sharedNewOtpRequestId,
+  logOtpEvent as sharedLogOtpEvent,
+} from "./_otp-identity.js";
+import {
   storeOtp,
   findOtp,
   markOtpVerified,
@@ -404,27 +413,22 @@ function otpRetryAfterSec() {
 }
 
 function newOtpRequestId() {
-  return `otp_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+  return sharedNewOtpRequestId();
 }
 
 function maskEmailForLog(email) {
-  const value = String(email || "").trim().toLowerCase();
-  const at = value.indexOf("@");
-  if (at <= 0) return "***";
-  return `${value.slice(0, Math.min(2, at))}***@${value.slice(at + 1)}`;
+  return sharedMaskEmail(email);
 }
 
 function logOtpSendEvent(event, fields = {}) {
-  const safe = { event, ts: new Date().toISOString(), ...fields };
-  // Never log plaintext OTP / passwords / tokens.
-  delete safe.code;
-  delete safe.otp;
-  delete safe.password;
-  delete safe.token;
-  delete safe.accessToken;
-  delete safe.refreshToken;
-  if (safe.ok) console.info("[otp/send]", safe);
-  else console.error("[otp/send]", safe);
+  // Bridge legacy [otp/send] callers to structured otp_* events.
+  const mapped =
+    event === "login_mail_accepted" || event === "forgot_mail_accepted" || event === "register_mail_accepted"
+      ? "otp_provider_success"
+      : event === "login_mail_failed" || event === "forgot_mail_failed" || event === "register_mail_failed"
+        ? "otp_provider_failed"
+        : event;
+  sharedLogOtpEvent(mapped, { source: "auth", legacyEvent: event, ...fields });
 }
 
 
@@ -675,14 +679,23 @@ async function handleForgotSendOtp(body, res) {
     message: RESET_EMAIL_GENERIC_MESSAGE,
     channel: "email",
     expiresInSec: Math.floor(OTP_TTL_MS / 1000),
-    retryAfterSec: otpRetryAfterSec(),
   };
   if (!account) return json(res, 400, { ok: false, message: "请输入绑定邮箱。" });
   if (!/@/.test(account)) {
     return json(res, 400, { ok: false, message: "请输入有效邮箱地址。" });
   }
   const resolved = await resolveForgotAccount(account, role);
-  if (!resolved?.profile || resolved.profile.status === "disabled") return json(res, 200, genericOk);
+  if (!resolved?.profile || resolved.profile.status === "disabled") {
+    sharedLogOtpEvent("otp_suppressed", {
+      ok: true,
+      requestId,
+      route: "forgot_send_otp",
+      role,
+      emailMasked: maskEmailForLog(account),
+      reason: !resolved?.profile ? "account_not_found_for_role" : "account_disabled",
+    });
+    return json(res, 200, { ...genericOk, requestId, delivery: "suppressed" });
+  }
   const profile = resolved.profile;
   const email = String(profile.email || account).trim().toLowerCase();
   if (!email || !/@/.test(email)) return json(res, 200, genericOk);
@@ -779,35 +792,84 @@ function rejectProductionTestIdentity(res, { email = "", displayName = "" } = {}
 async function handleLoginSendOtp(body, res) {
   const requestId = newOtpRequestId();
   const role = normalizeForgotRole(body.role || "boss");
+  const route = "send_login_otp";
+  const source = String(body.source || body.entry || body.clientEntry || "").trim().slice(0, 64);
   if (role === "customer_service" || role === "admin" || role === "super_admin") {
+    sharedLogOtpEvent("otp_request", { ok: false, requestId, route, role, source, reason: "role_password_only" });
     return json(res, 400, { ok: false, message: "该端请使用邮箱密码登录。" });
   }
-  const email = String(body.email || body.account || "").trim().toLowerCase();
-  if (!email || !/^\S+@\S+\.\S+$/.test(email)) {
+  const email = sharedNormalizeEmail(body.email || body.account || "");
+  sharedLogOtpEvent("otp_request", {
+    ok: true,
+    requestId,
+    route,
+    role,
+    source,
+    emailMasked: email ? maskEmailForLog(email) : "",
+  });
+  if (!sharedIsValidEmail(email)) {
+    sharedLogOtpEvent("otp_provider_failed", { ok: false, requestId, route, role, source, reason: "invalid_email" });
     return json(res, 400, { ok: false, message: "请输入有效邮箱。" });
   }
   const blockedSend = rejectProductionTestIdentity(res, { email });
-  if (blockedSend) return blockedSend;
+  if (blockedSend) {
+    sharedLogOtpEvent("otp_provider_failed", { ok: false, requestId, route, role, source, reason: "prod_test_blocked", emailMasked: maskEmailForLog(email) });
+    return blockedSend;
+  }
+  // Anti-enumeration: HTTP 200 + suppressed. Do NOT attach retryAfterSec —
+  // clients must not enter "sent" cooldown unless the provider actually accepted.
   const generic = {
     ok: true,
     message: "如该邮箱已在当前端注册，将收到登录验证码。请确认选择了正确入口（老板/陪玩），并检查收件箱与垃圾箱。",
     channel: "email",
     expiresInSec: Math.floor(OTP_TTL_MS / 1000),
-    retryAfterSec: otpRetryAfterSec(),
+    requestId,
+    delivery: "suppressed",
   };
   const resolved = await resolveForgotAccount(email, role);
-  if (!resolved?.profile || resolved.profile.status === "disabled") return json(res, 200, generic);
+  if (!resolved?.profile || resolved.profile.status === "disabled") {
+    sharedLogOtpEvent("otp_suppressed", {
+      ok: true,
+      requestId,
+      route,
+      role,
+      source,
+      emailMasked: maskEmailForLog(email),
+      reason: !resolved?.profile ? "account_not_found_for_role" : "account_disabled",
+    });
+    return json(res, 200, generic);
+  }
   if (!resolveEmailVerified(resolved.profile, {})) {
-    return json(res, 403, { ok: false, message: "请先完成邮箱验证。", code: "EMAIL_NOT_VERIFIED" });
+    sharedLogOtpEvent("otp_provider_failed", {
+      ok: false,
+      requestId,
+      route,
+      role,
+      source,
+      emailMasked: maskEmailForLog(email),
+      reason: "email_not_verified",
+    });
+    return json(res, 403, { ok: false, message: "请先完成邮箱验证。", code: "EMAIL_NOT_VERIFIED", requestId });
   }
   const profile = resolved.profile;
   try {
     await assertOtpResendCooldown(forgotAccountKey(profile), role, "login_otp");
   } catch (err) {
+    sharedLogOtpEvent("otp_rate_limited", {
+      ok: false,
+      requestId,
+      route,
+      role,
+      source,
+      emailMasked: maskEmailForLog(profile.email || email),
+      retryAfterSec: err.retryAfterSec || 60,
+    });
     return json(res, err.status || 429, {
       ok: false,
       message: err.message || "发送过于频繁，请稍后再试。",
       retryAfterSec: err.retryAfterSec || 60,
+      requestId,
+      code: err.code || "OTP_RESEND_COOLDOWN",
     });
   }
   const code = randomOtpCode();
@@ -816,9 +878,19 @@ async function handleLoginSendOtp(body, res) {
   let mailOk = false;
   let mailError = "";
   let mailMeta = { provider: "", providerMessageId: "" };
+  sharedLogOtpEvent("otp_provider_request", {
+    ok: true,
+    requestId,
+    route,
+    role,
+    source,
+    emailMasked: maskEmailForLog(profile.email || email),
+    provider: "resend_or_smtp",
+    purpose: "login",
+  });
   try {
     const sendResult = await sendEmailOtp({
-      to: String(profile.email || email).toLowerCase(),
+      to: sharedNormalizeEmail(profile.email || email),
       code,
       purpose: "login",
       roleLabel: roleLabelOf(role),
@@ -882,6 +954,8 @@ async function handleLoginSendOtp(body, res) {
     expiresInSec: Math.floor(OTP_TTL_MS / 1000),
     role,
     requestId,
+    delivery: mailOk ? "sent" : "failed",
+    source: source || undefined,
   };
   if (payload.ok) responseBody.retryAfterSec = otpRetryAfterSec();
   return json(res, payload.ok ? 200 : 503, responseBody);
@@ -925,6 +999,13 @@ async function handleLoginWithOtp(body, res) {
   const otpRoleKey = loginPortal || role || "boss";
   const stored = await findForgotOtp(key, otpRoleKey, "login_otp");
   if (!stored?.code || String(stored.code) !== code || Number(stored.exp) <= Date.now()) {
+    sharedLogOtpEvent("otp_verify_failed", {
+      ok: false,
+      route: "login_with_otp",
+      role: otpRoleKey,
+      emailMasked: maskEmailForLog(email),
+      reason: !stored?.code ? "missing" : Number(stored.exp) <= Date.now() ? "expired" : "mismatch",
+    });
     return json(res, 400, { ok: false, message: "验证码无效或已过期" });
   }
   const auth = await createSessionForUserId(profile0.id, profile0.email || email);
@@ -938,6 +1019,12 @@ async function handleLoginWithOtp(body, res) {
     }
   }
   await touchLastLogin(profile.id, "");
+  sharedLogOtpEvent("otp_verify_success", {
+    ok: true,
+    route: "login_with_otp",
+    role: otpRoleKey,
+    emailMasked: maskEmailForLog(profile.email || email),
+  });
   const user = await enrichSafeProfile(profile, {
     ...(auth.user || {}),
     user_metadata: { ...((auth.user && auth.user.user_metadata) || {}), boss_uid: profile.boss_uid || metaBossUid(auth.user) },
@@ -1141,6 +1228,7 @@ async function handleSendRegisterOtp(body, res) {
     expiresInSec: Math.floor(OTP_TTL_MS / 1000),
     role,
     requestId,
+    delivery: mailOk ? "sent" : "failed",
   };
   if (payload.ok) responseBody.retryAfterSec = otpRetryAfterSec();
   return json(res, payload.ok ? 200 : 503, responseBody);
