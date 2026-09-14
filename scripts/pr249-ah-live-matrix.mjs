@@ -16,6 +16,8 @@ if (!BASE || !SUPABASE_URL || !SERVICE) {
 }
 
 const admin = createClient(SUPABASE_URL, SERVICE, { auth: { autoRefreshToken: false, persistSession: false } });
+// Never call signIn on `admin` — it would replace the service-role Authorization header with a user JWT
+// and subsequent inserts would hit RLS. Use a throwaway client for password login only.
 const results = [];
 const log = (id, ok, detail) => {
   results.push({ id, ok: !!ok, detail: String(detail || "") });
@@ -84,7 +86,10 @@ async function ensureCompanionRow(userId, { approved = true } = {}) {
 }
 
 async function passwordLogin(email) {
-  const { data, error } = await admin.auth.signInWithPassword({ email, password: PASS });
+  const loginClient = createClient(SUPABASE_URL, SERVICE, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+  const { data, error } = await loginClient.auth.signInWithPassword({ email, password: PASS });
   if (error) throw error;
   return data.session.access_token;
 }
