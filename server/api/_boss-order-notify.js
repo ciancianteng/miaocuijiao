@@ -25,6 +25,21 @@ export async function notifyBossOrderEvent(order, { title, body, kind = "order" 
       String(body || "").trim() ||
       (no ? `订单 ${no} 有新的状态更新。` : "您的订单有新的状态更新。");
     await notifyBoss(bossId, safeTitle, safeBody, kind || "order", id);
+    // Idempotent business Web Push (P0). notifyBoss skips duplicate fan-out for these kinds.
+    try {
+      const { mapInboxKindToOrderPushEvent, fanoutOrderLifecyclePush } = await import(
+        "./_web-push-business-events.js"
+      );
+      const eventType = mapInboxKindToOrderPushEvent(kind);
+      if (eventType) {
+        fanoutOrderLifecyclePush(eventType, order, { title: safeTitle, body: safeBody });
+      }
+    } catch (pushErr) {
+      console.warn(
+        "[boss-order-notify] business push",
+        String(pushErr && pushErr.message ? pushErr.message : pushErr).slice(0, 120)
+      );
+    }
     return true;
   } catch (err) {
     console.warn("[boss-order-notify]", String(err && err.message ? err.message : err).slice(0, 160));

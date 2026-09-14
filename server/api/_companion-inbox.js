@@ -159,12 +159,18 @@ export async function insertCompanionNotification({
   }
   if (savedKey) {
     try {
+      const typeKey = String(notificationType || category || "companion");
+      const { mapInboxKindToOrderPushEvent } = await import("./_web-push-business-events.js");
+      // Order P0 business events use idempotent dispatcher — avoid double push.
+      if (mapInboxKindToOrderPushEvent(typeKey)) {
+        return savedKey;
+      }
       const { fanoutWebPush } = await import("./_web-push.js");
       fanoutWebPush(uid, {
         title: base.title,
         body: base.body,
         url: base.href || "/companion/messages",
-        notificationType: String(notificationType || category || "companion"),
+        notificationType: typeKey,
         entityId: String(relatedApplicationId || ""),
         tag: "companion-" + savedKey,
       });

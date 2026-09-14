@@ -281,9 +281,15 @@ export async function notifyBoss(bossId, title, body, kind = "wallet", relatedId
     /* optional */
   }
   // Fan-out Web Push (same event as inbox). Never block wallet/order flows.
+  // Order P0 business events are owned by _web-push-business-events.js (idempotent);
+  // skip duplicate fan-out here for those kinds.
   try {
-    const { fanoutWebPush } = await import("./_web-push.js");
     const kindKey = String(kind || "").toLowerCase();
+    const { mapInboxKindToOrderPushEvent } = await import("./_web-push-business-events.js");
+    if (mapInboxKindToOrderPushEvent(kindKey)) {
+      return;
+    }
+    const { fanoutWebPush } = await import("./_web-push.js");
     const rid = String(relatedId || "").trim();
     let deepLink = "/mine.html";
     if (rid && /order|accept|start|complete|cancel|paid|pay|claim|service|refund/.test(kindKey)) {
