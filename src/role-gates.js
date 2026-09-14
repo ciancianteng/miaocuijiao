@@ -1596,11 +1596,20 @@
             });
           })
           .then(function (j) {
-            var tip = j.message || "验证码已发送";
+            var delivered = j.delivery === "sent";
+            var tip = delivered
+              ? (j.message || "验证码已发送")
+              : (j.message || "如该邮箱已在当前端注册，将收到验证码。请确认入口（老板/陪玩）正确。");
             if (j.debugCode || j.devCode) tip += "（调试 " + (j.debugCode || j.devCode) + "）";
             setLoginMessage(sendOtpBtn, tip);
-            var left = Number(j.retryAfterSec) || 60;
-            if (Cd) Cd.setCooldown("send_login_otp", role, otpEmail, left);
+            // Cooldown ONLY after provider-accepted send. suppressed/blocked must not fake success.
+            var left = delivered ? Number(j.retryAfterSec || 0) || 0 : 0;
+            if (delivered && left > 0 && Cd) Cd.setCooldown("send_login_otp", role, otpEmail, left);
+            if (!delivered || !left) {
+              sendOtpBtn.disabled = false;
+              sendOtpBtn.textContent = oldSend || "获取验证码";
+              return;
+            }
             sendOtpBtn.textContent = left + "s";
             var deadline = Date.now() + left * 1000;
             var timer = setInterval(function () {
@@ -1617,7 +1626,8 @@
           })
           .catch(function (err) {
             var retry = Number(err && err.retryAfterSec) || 0;
-            var rateLimited = Number(err && err.status) === 429 || String((err && err.code) || "") === "OTP_RESEND_COOLDOWN";
+            var code = String((err && err.code) || "");
+            var rateLimited = Number(err && err.status) === 429 || code === "OTP_RESEND_COOLDOWN";
             if (rateLimited && retry > 0 && Cd) Cd.setCooldown("send_login_otp", role, otpEmail, retry);
             if (rateLimited && retry > 0) {
               sendOtpBtn.disabled = true;
@@ -1637,7 +1647,13 @@
               sendOtpBtn.disabled = false;
               sendOtpBtn.textContent = oldSend || "获取验证码";
             }
-            setLoginMessage(sendOtpBtn, humanizeAuthError(err));
+            var tip = humanizeAuthError(err);
+            if (code === "BOSS_ROLE_NOT_OPENED") {
+              tip = (err && err.message) || "该账号尚未开通老板身份。请先用陪玩入口登录，再开通老板身份。";
+            } else if (code === "COMPANION_ROLE_NOT_OPENED") {
+              tip = (err && err.message) || "该账号尚未开通陪玩身份。请先用老板入口登录，再申请陪玩。";
+            }
+            setLoginMessage(sendOtpBtn, tip);
           });
         return;
       }
@@ -1693,11 +1709,20 @@
             });
           })
           .then(function (j) {
-            var tip = j.message || "验证码已发送";
+            var delivered = j.delivery === "sent";
+            var tip = delivered
+              ? (j.message || "验证码已发送")
+              : (j.message || "如该邮箱可用，将收到验证码。");
             if (j.debugCode || j.devCode) tip += "（调试 " + (j.debugCode || j.devCode) + "）";
             setLoginMessage(sendRegOtpBtn, tip);
-            var left = Number(j.retryAfterSec) || 60;
-            if (CdReg) CdReg.setCooldown("send_register_otp", regRole, regEmail, left);
+            // Cooldown ONLY after provider-accepted send. suppressed/blocked must not fake success.
+            var left = delivered ? Number(j.retryAfterSec || 0) || 0 : 0;
+            if (delivered && left > 0 && CdReg) CdReg.setCooldown("send_register_otp", regRole, regEmail, left);
+            if (!delivered || !left) {
+              sendRegOtpBtn.disabled = false;
+              sendRegOtpBtn.textContent = oldRegSend || "获取验证码";
+              return;
+            }
             var deadline = Date.now() + left * 1000;
             sendRegOtpBtn.textContent = left + "s";
             var timer = setInterval(function () {
