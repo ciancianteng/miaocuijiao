@@ -360,6 +360,165 @@ export async function sendWebPushToUser(userId, payloadInput) {
   return { ok: failed === 0, sent: sent, failed: failed };
 }
 
+/**
+ * Admin diagnostics: send to ONE user's active endpoints only.
+ * Returns per-endpoint outcomes. Never logs or returns VAPID private key.
+ * Does not create orders / mutate wallet / points / CS payroll / profiles.
+ */
+export async function sendAdminTestWebPushToUser(userId, payloadInput) {
+  const uid = String(userId || "").trim();
+  if (!uid) {
+    return {
+      ok: false,
+      vapidConfigured: isWebPushConfigured(),
+      sent: 0,
+      failed: 0,
+      skipped: "missing_user",
+      results: [],
+    };
+  }
+  const vapidConfigured = isWebPushConfigured();
+  if (!vapidConfigured) {
+    return {
+      ok: false,
+      vapidConfigured: false,
+      sent: 0,
+      failed: 0,
+      skipped: "vapid_unconfigured",
+      results: [],
+      message: "Production VAPID 未配置（VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY）",
+    };
+  }
+
+  const rows = await listActiveSubscriptionsForUser(uid);
+  if (!rows.length) {
+    return {
+      ok: false,
+      vapidConfigured: true,
+      userId: uid,
+      activeCount: 0,
+      sent: 0,
+      failed: 0,
+      skipped: "no_active_subscriptions",
+      results: [],
+      message: "该用户没有 status=active 的 push_subscriptions",
+    };
+  }
+
+  let webPush;
+  try {
+    webPush = await loadWebPush();
+  } catch (err) {
+    return {
+      ok: false,
+      vapidConfigured: true,
+      userId: uid,
+      activeCount: rows.length,
+      sent: 0,
+      failed: 0,
+      skipped: "webpush_load_failed",
+      results: [],
+      message: String(err && err.message ? err.message : "webpush_load_failed").slice(0, 120),
+    };
+  }
+
+  const payload = buildPayload(
+    Object.assign(
+      {
+        title: "妙脆角测试通知 🐱",
+        body: "如果你看到这条通知，说明妙脆角 Web Push 已成功开启。",
+        url: "/mine.html",
+        notificationType: "admin_test",
+        tag: "admin_test_web_push",
+      },
+      payloadInput || {}
+    )
+  );
+  const body = JSON.stringify(payload);
+  let sent = 0;
+  let failed = 0;
+  const results = [];
+
+  await Promise.all(
+    rows.map(async function (row) {
+      const endpoint = String(row.endpoint || "");
+      const endpointPrefix = endpoint.slice(0, 48);
+      const base = {
+        subscriptionId: row.id || null,
+        deviceLabel: row.device_label || "Browser",
+        endpointPrefix: endpointPrefix,
+        endpointHash: row.endpoint_hash || hashEndpoint(endpoint),
+      };
+      try {
+        await webPush.sendNotification(
+          {
+            endpoint: endpoint,
+            keys: { p256dh: row.p256dh, auth: row.auth },
+          },
+          body,
+          { TTL: 60 * 60 * 12, urgency: "high" }
+        );
+        sent += 1;
+        await markSuccess(row.id);
+        results.push(
+          Object.assign({}, base, {
+            outcome: "success",
+            statusCode: 201,
+            message: "sent",
+          })
+        );
+      } catch (err) {
+        failed += 1;
+        const statusCode = Number(err && (err.statusCode || err.status) ? err.statusCode || err.status : 0);
+        const rawMsg = String(err && err.message ? err.message : "send failed").slice(0, 160);
+        let outcome = "fail";
+        if (statusCode === 404 || statusCode === 410) outcome = "expired";
+        else if (
+          statusCode === 400 ||
+          statusCode === 403 ||
+          /invalid\s*subscription|bad\s*jwt|unauthorized|forbidden/i.test(rawMsg)
+        ) {
+          outcome = "invalid_subscription";
+        }
+        // Only mark expired/disabled for THIS endpoint; never delete other rows.
+        await markFailure(row, statusCode, rawMsg);
+        console.warn(
+          "[web-push] admin test send failed",
+          JSON.stringify({
+            userId: uid,
+            status: statusCode || null,
+            outcome: outcome,
+            device: row.device_label || "",
+            message: rawMsg.slice(0, 120),
+          })
+        );
+        results.push(
+          Object.assign({}, base, {
+            outcome: outcome,
+            statusCode: statusCode || null,
+            message: rawMsg,
+          })
+        );
+      }
+    })
+  );
+
+  return {
+    ok: failed === 0 && sent > 0,
+    vapidConfigured: true,
+    userId: uid,
+    activeCount: rows.length,
+    sent: sent,
+    failed: failed,
+    payload: {
+      title: payload.title,
+      body: payload.body,
+      url: payload.url,
+    },
+    results: results,
+  };
+}
+
 export function fanoutWebPush(userId, payload) {
   Promise.resolve()
     .then(function () {

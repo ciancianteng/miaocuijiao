@@ -1380,6 +1380,122 @@ export default async function handler(req, res) {
       return json(res, 200, { ok: true, message: `测试邮件已发送至 ${to}`, result });
     }
 
+    // Admin-only single-user Web Push test. Never returns VAPID private key.
+    // Does not create orders / mutate wallet / points / CS payroll / profiles.
+    if (action === "send_test_web_push" || action === "send_test_push") {
+      if (!isSuper(profile, req) && profile.role !== "admin" && profile.role !== "super_admin") {
+        return json(res, 403, { ok: false, message: "仅 Admin 可发送测试 Web Push" });
+      }
+      const { sendAdminTestWebPushToUser, isWebPushConfigured } = await import("../_web-push.js");
+      const query = String(
+        body.query || body.target || body.display_name || body.displayName || body.boss_uid || body.bossUid || body.user_id || body.userId || ""
+      ).trim();
+      if (!query) {
+        return json(res, 400, { ok: false, message: "请输入 display_name / boss_uid / user_id" });
+      }
+
+      const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+      let targets = [];
+      if (uuidRe.test(query)) {
+        targets = await supabaseJson(
+          restUrl("profiles", "?id=eq." + encodeURIComponent(query) + "&select=id,display_name,boss_uid,role,status&limit=2"),
+          { headers: serviceHeaders() }
+        ).catch(function () {
+          return [];
+        });
+      }
+      if (!targets.length) {
+        targets = await supabaseJson(
+          restUrl(
+            "profiles",
+            "?or=(display_name.eq." +
+              encodeURIComponent(query) +
+              ",boss_uid.eq." +
+              encodeURIComponent(query) +
+              ")&select=id,display_name,boss_uid,role,status&limit=5"
+          ),
+          { headers: serviceHeaders() }
+        ).catch(function () {
+          return [];
+        });
+      }
+      if (!Array.isArray(targets) || !targets.length) {
+        return json(res, 404, { ok: false, message: "未找到对应用户", query: query });
+      }
+      if (targets.length > 1) {
+        return json(res, 409, {
+          ok: false,
+          message: "匹配到多个用户，请改用精确 user_id",
+          matches: targets.map(function (t) {
+            return {
+              userId: t.id,
+              displayName: t.display_name || "",
+              bossUid: t.boss_uid || "",
+              role: t.role || "",
+            };
+          }),
+        });
+      }
+
+      const target = targets[0];
+      const title = String(body.title || "妙脆角测试通知 🐱").slice(0, 80);
+      const pushBody = String(
+        body.body || "如果你看到这条通知，说明妙脆角 Web Push 已成功开启。"
+      ).slice(0, 180);
+      const url = String(body.url || "/mine.html").slice(0, 500);
+
+      const pushResult = await sendAdminTestWebPushToUser(target.id, {
+        title: title,
+        body: pushBody,
+        url: url,
+        notificationType: "admin_test",
+        tag: "admin_test_web_push",
+      });
+
+      await writeConfigLog({
+        admin: profile,
+        configType: "web_push",
+        action: "send_test_web_push",
+        beforeStatus: isWebPushConfigured() ? "vapid_configured" : "vapid_missing",
+        afterStatus: pushResult.ok ? "sent" : pushResult.skipped || "failed",
+        reason:
+          "target=" +
+          (target.display_name || "") +
+          "/" +
+          (target.boss_uid || "") +
+          "/" +
+          target.id +
+          "; sent=" +
+          (pushResult.sent || 0) +
+          "; failed=" +
+          (pushResult.failed || 0),
+        ip: clientIp(req),
+      }).catch(function () {
+        return null;
+      });
+
+      return json(res, pushResult.ok ? 200 : 400, {
+        ok: !!pushResult.ok,
+        message: pushResult.ok
+          ? "测试 Push 已发送（仅该用户的 active endpoints）"
+          : pushResult.message || "测试 Push 发送失败",
+        vapidConfigured: !!pushResult.vapidConfigured,
+        target: {
+          userId: target.id,
+          displayName: target.display_name || "",
+          bossUid: target.boss_uid || "",
+          role: target.role || "",
+          status: target.status || "",
+        },
+        activeCount: pushResult.activeCount || 0,
+        sent: pushResult.sent || 0,
+        failed: pushResult.failed || 0,
+        skipped: pushResult.skipped || "",
+        payload: pushResult.payload || { title: title, body: pushBody, url: url },
+        results: pushResult.results || [],
+      });
+    }
+
     return json(res, 400, { ok: false, message: "未知系统设置操作" });
   } catch (error) {
     if (isMissingTable(error)) {
