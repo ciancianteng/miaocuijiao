@@ -3026,7 +3026,7 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
         } catch (selfErr) {
           return json(res, selfErr.status || 403, {
             ok: false,
-            code: selfErr.code || "SELF_TRADE_FORBIDDEN",
+            code: selfErr.code || "SELF_ORDER_NOT_ALLOWED",
             message: selfErr.message || "不能指定订单老板本人为陪玩。",
           });
         }
@@ -3831,7 +3831,7 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
       if (order && companionInput && String(order.boss_id || "").trim() === companionInput) {
         return json(res, 403, {
           ok: false,
-          code: "SELF_TRADE_FORBIDDEN",
+          code: "SELF_ORDER_NOT_ALLOWED",
           message: "不能把订单指定给订单老板本人的陪玩身份：老板与陪玩属于同一账号（user_id）。",
         });
       }
@@ -3844,7 +3844,7 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
             assertNotSelfTrade(order.boss_id, resolvedPlayer || companionInput, "把订单指定给订单老板本人");
           }
         } catch (selfErr) {
-          if (selfErr?.code === "SELF_TRADE_FORBIDDEN") {
+          if ((selfErr?.code === "SELF_ORDER_NOT_ALLOWED" || selfErr?.code === "SELF_TRADE_FORBIDDEN")) {
             return json(res, selfErr.status || 403, {
               ok: false,
               code: selfErr.code,
@@ -3881,7 +3881,7 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
       } catch (selfErr) {
         return json(res, selfErr.status || 403, {
           ok: false,
-          code: selfErr.code || "SELF_TRADE_FORBIDDEN",
+          code: selfErr.code || "SELF_ORDER_NOT_ALLOWED",
           message: selfErr.message || "不能把订单指定给订单老板本人的陪玩身份。",
         });
       }

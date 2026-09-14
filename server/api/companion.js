@@ -3777,7 +3777,7 @@ export default async function handler(req, res) {
             assertNotSelfTrade(before.boss_id, auth.profile.id, "抢自己的订单");
           }
         } catch (selfErr) {
-          if (selfErr?.code === "SELF_TRADE_FORBIDDEN") {
+          if ((selfErr?.code === "SELF_ORDER_NOT_ALLOWED" || selfErr?.code === "SELF_TRADE_FORBIDDEN")) {
             return json(res, selfErr.status || 403, {
               ok: false,
               code: selfErr.code,

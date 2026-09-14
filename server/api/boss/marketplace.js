@@ -355,6 +355,19 @@ export default async function handler(req, res) {
 
       const companion = await loadCompanion(companionId);
       if (!companion) return json(res, 404, { ok: false, message: "陪玩不存在" });
+      try {
+        const { assertNotSelfTrade } = await import("../_account-roles.js");
+        assertNotSelfTrade(boss.id, companion.user_id || companionId, "给自己下单");
+      } catch (selfErr) {
+        if (selfErr?.code === "SELF_ORDER_NOT_ALLOWED" || selfErr?.code === "SELF_TRADE_FORBIDDEN") {
+          return json(res, 403, {
+            ok: false,
+            code: selfErr.code || "SELF_ORDER_NOT_ALLOWED",
+            message: "不能向自己的陪玩账号下单",
+          });
+        }
+        throw selfErr;
+      }
       if (companion.verification_status && !/approved|verified/.test(companion.verification_status)) {
         return json(res, 400, { ok: false, message: "该陪玩尚未通过审核，暂不可下单" });
       }
@@ -602,6 +615,19 @@ export default async function handler(req, res) {
 
       const companion = await loadCompanion(companionId);
       if (!companion) return json(res, 404, { ok: false, message: "陪玩不存在" });
+      try {
+        const { assertNotSelfTrade } = await import("../_account-roles.js");
+        assertNotSelfTrade(boss.id, companion.user_id || companionId, "打赏/送礼给自己");
+      } catch (selfErr) {
+        if (selfErr?.code === "SELF_ORDER_NOT_ALLOWED" || selfErr?.code === "SELF_TRADE_FORBIDDEN") {
+          return json(res, 403, {
+            ok: false,
+            code: selfErr.code || "SELF_ORDER_NOT_ALLOWED",
+            message: "不能向自己的陪玩账号送礼或打赏",
+          });
+        }
+        throw selfErr;
+      }
       const rate = await giftCommissionRate(companion);
       let gross = 0;
       let giftName = "打赏";

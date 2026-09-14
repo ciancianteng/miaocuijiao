@@ -1709,11 +1709,20 @@
             });
           })
           .then(function (j) {
-            var tip = j.message || "验证码已发送";
+            var delivered = j.delivery === "sent";
+            var tip = delivered
+              ? (j.message || "验证码已发送")
+              : (j.message || "如该邮箱可用，将收到验证码。");
             if (j.debugCode || j.devCode) tip += "（调试 " + (j.debugCode || j.devCode) + "）";
             setLoginMessage(sendRegOtpBtn, tip);
-            var left = Number(j.retryAfterSec) || 60;
-            if (CdReg) CdReg.setCooldown("send_register_otp", regRole, regEmail, left);
+            // Cooldown ONLY after provider-accepted send. suppressed/blocked must not fake success.
+            var left = delivered ? Number(j.retryAfterSec || 0) || 0 : 0;
+            if (delivered && left > 0 && CdReg) CdReg.setCooldown("send_register_otp", regRole, regEmail, left);
+            if (!delivered || !left) {
+              sendRegOtpBtn.disabled = false;
+              sendRegOtpBtn.textContent = oldRegSend || "获取验证码";
+              return;
+            }
             var deadline = Date.now() + left * 1000;
             sendRegOtpBtn.textContent = left + "s";
             var timer = setInterval(function () {

@@ -233,11 +233,18 @@ export function isSamePerson(bossUserId, companionUserId) {
 
 export function assertNotSelfTrade(bossUserId, companionUserId, actionLabel = "该操作") {
   if (isSamePerson(bossUserId, companionUserId)) {
-    const err = new Error(`不能${actionLabel}：老板与陪玩属于同一账号（user_id）。`);
+    const err = new Error(`不能向自己的陪玩账号下单：老板与陪玩属于同一账号（user_id）。`);
     err.status = 403;
-    err.code = "SELF_TRADE_FORBIDDEN";
+    // Canonical product code; keep legacy alias for older clients/e2e.
+    err.code = "SELF_ORDER_NOT_ALLOWED";
+    err.legacyCode = "SELF_TRADE_FORBIDDEN";
     throw err;
   }
+}
+
+export function isSelfOrderBlockedCode(code) {
+  const c = String(code || "");
+  return c === "SELF_ORDER_NOT_ALLOWED" || c === "SELF_TRADE_FORBIDDEN";
 }
 
 export async function resolveCompanionUserIdFlexible(rawId) {

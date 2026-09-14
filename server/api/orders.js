@@ -1066,7 +1066,7 @@ export default async function handler(req, res) {
         } catch (selfErr) {
           return json(res, selfErr.status || 403, {
             ok: false,
-            code: selfErr.code || "SELF_TRADE_FORBIDDEN",
+            code: selfErr.code || "SELF_ORDER_NOT_ALLOWED",
             message: selfErr.message || "不能给自己下单。",
           });
         }
@@ -1684,7 +1684,7 @@ export default async function handler(req, res) {
       } catch (selfErr) {
         return json(res, selfErr.status || 403, {
           ok: false,
-          code: selfErr.code || "SELF_TRADE_FORBIDDEN",
+          code: selfErr.code || "SELF_ORDER_NOT_ALLOWED",
           message: selfErr.message || "不能选择自己作为陪玩。",
         });
       }
@@ -2071,7 +2071,7 @@ export default async function handler(req, res) {
       } catch (selfErr) {
         return json(res, selfErr.status || 403, {
           ok: false,
-          code: selfErr.code || "SELF_TRADE_FORBIDDEN",
+          code: selfErr.code || "SELF_ORDER_NOT_ALLOWED",
           message: selfErr.message || "不能评价自己。",
         });
       }
