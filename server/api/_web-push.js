@@ -262,9 +262,13 @@ function buildPayload(input) {
     icon: opts.icon || "/icons/icon-192.png",
     badge: opts.badge || "/icons/icon-192.png",
     url: String(opts.url || "/").slice(0, 500),
-    notification_type: String(opts.notificationType || "system").slice(0, 64),
-    entity_id: String(opts.entityId || "").slice(0, 120),
-    tag: String(opts.tag || opts.notificationType || "mcj").slice(0, 80),
+    notification_type: String(opts.notificationType || opts.eventType || "system").slice(0, 64),
+    entity_id: String(opts.entityId || opts.orderId || "").slice(0, 120),
+    // Business-event fields (additive; admin test path unchanged)
+    event_type: String(opts.eventType || opts.notificationType || "").slice(0, 64),
+    order_id: String(opts.orderId || opts.entityId || "").slice(0, 120),
+    target_user_id: String(opts.targetUserId || "").slice(0, 80),
+    tag: String(opts.tag || opts.notificationType || opts.eventType || "mcj").slice(0, 80),
   };
 }
 

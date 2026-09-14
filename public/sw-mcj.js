@@ -66,8 +66,11 @@ self.addEventListener("push", function (event) {
           badge: data.badge || "/icons/icon-192.png",
           data: {
             url: data.url || "/",
-            notification_type: data.notification_type || "",
-            entity_id: data.entity_id || "",
+            notification_type: data.notification_type || data.event_type || "",
+            entity_id: data.entity_id || data.order_id || "",
+            event_type: data.event_type || data.notification_type || "",
+            order_id: data.order_id || data.entity_id || "",
+            target_user_id: data.target_user_id || "",
           },
           tag: data.tag || data.notification_type || "mcj-push",
           renotify: true,
