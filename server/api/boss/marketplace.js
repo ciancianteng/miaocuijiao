@@ -248,6 +248,29 @@ export default async function handler(req, res) {
     const body = req.method === "GET" ? {} : await parseBody(req);
     const action = String(req.method === "GET" ? req.query.action || "catalog" : body.action || "").trim();
 
+    // Gift mall catalog: global enabled gifts, no companion required.
+    // Recipient is chosen in the mall UI before send_gift (which still requires companionId).
+    if (req.method === "GET" && (action === "gift_catalog" || action === "gifts")) {
+      let gifts = [];
+      try {
+        gifts = await companionDb("gifts", "?enabled=eq.true&deleted_at=is.null&order=sort_order.asc&limit=100");
+      } catch (e) {
+        if (!isMissingRelation(e)) throw e;
+        gifts = [];
+      }
+      return json(res, 200, {
+        ok: true,
+        gifts: (gifts || []).map((g) => ({
+          id: g.id,
+          name: g.name,
+          iconUrl: g.icon_url || "",
+          catFoodPrice: money(g.cat_food_price),
+          featured: !!g.featured,
+          animationLevel: g.animation_level || "normal",
+        })),
+      });
+    }
+
     if (req.method === "GET" && action === "catalog") {
       const companionId = String(req.query.companionId || req.query.id || "").trim();
       if (!companionId) return json(res, 400, { ok: false, message: "缺少陪玩 ID" });

@@ -504,7 +504,35 @@
         : "好评 " + esc(goodText) + " · 共 " + esc(reviewCount) + " 条") +
       '</span></div><div class="review-list" id="realReviewList">' +
       reviewHtml +
-      "</div></section>";
+      "</div></section>" +
+      (function () {
+        var wall = Array.isArray(c.giftWall) ? c.giftWall : Array.isArray(c.gift_wall) ? c.gift_wall : [];
+        var chips = wall.length
+          ? wall
+              .map(function (w) {
+                var img = w.giftImage || w.gift_image_url || w.image || "";
+                var name = w.giftName || w.gift_name || "礼物";
+                var qty = w.totalQuantity != null ? w.totalQuantity : w.total_quantity || 0;
+                return (
+                  '<div class="pd-gift-chip">' +
+                  (img
+                    ? '<img src="' + esc(img) + '" alt="" loading="lazy" />'
+                    : '<span class="pd-gift-emoji" aria-hidden="true">🎁</span>') +
+                  "<strong>" +
+                  esc(name) +
+                  "</strong><em>×" +
+                  esc(qty) +
+                  "</em></div>"
+                );
+              })
+              .join("")
+          : '<p class="pd-gift-empty">TA 还没有收到礼物</p>';
+        return (
+          '<section class="detail-card pd-gift-wall"><div class="section-head"><h2>礼物墙</h2><span>仅展示已到账礼物</span></div><div class="pd-gift-wall-grid">' +
+          chips +
+          "</div></section>"
+        );
+      })();
 
     bindReviewExpand(s.querySelector("#realReviewList"));
 

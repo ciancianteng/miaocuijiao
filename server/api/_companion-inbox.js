@@ -220,7 +220,7 @@ export async function loadCompanionNotifications(companionUserId) {
   const rows = await supabaseJson(
     restUrl(
       "companion_notifications",
-      `?companion_id=eq.${encodeURIComponent(uid)}&order=created_at.desc&limit=100&select=id,notice_key,category,title,body,href,created_at`
+      `?companion_id=eq.${encodeURIComponent(uid)}&order=created_at.desc&limit=100&select=id,notice_key,category,title,body,href,created_at,notification_type`
     ),
     { headers: serviceHeaders() }
   ).catch(() => []);
@@ -239,6 +239,7 @@ export async function loadCompanionNotifications(companionUserId) {
         body: row.body || "",
         at: row.created_at || "",
         href: row.href || "/companion/account",
+        notificationType: row.notification_type || "",
         fromDb: true,
       };
     })
