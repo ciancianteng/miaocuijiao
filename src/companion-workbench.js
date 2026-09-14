@@ -345,7 +345,7 @@
         return;
       }
       var s=document.createElement('script');
-      s.src='/src/web-push-client.js?v=20260913webpush1';
+      s.src='/src/web-push-client.js?v=20260914webpush2';
       s.defer=true;
       s.setAttribute('data-mcj-webpush-client','1');
       s.onload=function(){resolve(window.MCJWebPush)};
@@ -1915,6 +1915,13 @@
         bindCompanionOrdersRealtime();
         var s=(state.data||{}).summary||{};
         updateTabBadge(s.waitingConfirm||s.designatedPending);
+        try{
+          ensureCompanionWebPushScript().then(function(api){
+            if(api&&typeof api.maybePromptOnFirstVisit==='function'){
+              api.maybePromptOnFirstVisit({role:'companion'});
+            }
+          });
+        }catch(ePush){}
       });
     }else paint();
   }
@@ -3142,7 +3149,7 @@
         '<button class="pw-btn primary" type="button" data-pwa-install-guide>安装妙脆角 / 添加到主屏幕</button>';
     return '<div class="pw-page-head"><div><h2>设置</h2><p>仅影响本机陪玩端体验。</p></div></div>'+
       '<section class="pw-card pad"><h3>主题</h3><p class="pw-note">当前为固定黑粉运营主题（上线版不可切换品牌色）。</p><div class="pw-info-list"><div><span>主题</span><strong>暗色粉（默认）</strong></div></div></section>'+
-      '<section class="pw-card pad" style="margin-top:14px"><h3>通知设置</h3><div id="mcjWebPushSettingsMount" class="mcj-webpush-companion-mount"></div><p class="pw-note">关闭开关会取消本机 Web Push 订阅；站内消息仍可在消息中心查看。</p></section>'+
+      '<section class="pw-card pad" style="margin-top:14px"><h3>消息通知</h3><div id="mcjWebPushSettingsMount" class="mcj-webpush-companion-mount"></div><p class="pw-note">关闭开关会取消本机 Web Push 订阅；站内消息仍可在消息中心查看。</p></section>'+
       '<section class="pw-card pad" style="margin-top:14px"><h3>声音</h3><label class="pw-check"><input type="checkbox" data-setting="sound" '+(s.sound?'checked':'')+'> 提示音（新消息 / 订单 / 抢单 / 审核）</label></section>'+
       '<section class="pw-card pad" style="margin-top:14px"><h3>安装妙脆角</h3>'+installBlock+'</section>'+
       '<section class="pw-card pad" style="margin-top:14px"><h3>账号</h3><button class="pw-btn danger" type="button" data-logout>退出登录</button></section>';
