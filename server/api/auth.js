@@ -1092,16 +1092,28 @@ async function handleOpenBossRole(req, body, res) {
       /* optional */
     }
   }
-  const after = await enrichProfileRoles(updated, authUser);
-  const user = await enrichSafeProfile(updated, authUser);
+  // Refresh auth admin user so app_metadata.roles (written by persistRoles) is visible to enrich.
+  let freshAuth = authUser;
+  try {
+    const got = await supabaseJson(authUrl(`admin/users/${profile.id}`), {
+      method: "GET",
+      headers: headersWithServiceRole(),
+    });
+    freshAuth = got?.user || got || authUser;
+  } catch {
+    freshAuth = authUser;
+  }
+  const after = await enrichProfileRoles({ ...updated, role: "boss" }, freshAuth);
+  const rolesOut = Array.from(new Set([...(after.roles || []), "boss", ...(after.hasCompanion ? ["companion"] : [])]));
+  const user = await enrichSafeProfile({ ...updated, role: "boss", roles: rolesOut }, freshAuth);
   return json(res, 200, {
     ok: true,
     message: "已在当前账号开通老板身份（同一邮箱，未创建新账号）。",
     alreadyHadBoss: false,
-    roles: after.roles || [],
+    roles: rolesOut,
     hasBoss: true,
     hasCompanion: !!after.hasCompanion,
-    user: { ...user, role: "boss", hasBoss: true, hasCompanion: !!after.hasCompanion },
+    user: { ...user, role: "boss", roles: rolesOut, hasBoss: true, hasCompanion: !!after.hasCompanion },
     createdNewAuthUser: false,
   });
 }

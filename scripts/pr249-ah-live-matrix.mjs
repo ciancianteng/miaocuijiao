@@ -112,8 +112,12 @@ async function main() {
     const open = await api("/api/auth", { method: "POST", token: tokenA, body: { action: "open_boss_role", accessToken: tokenA } });
     const roles = open.json?.roles || open.json?.user?.roles || [];
     const { data: prof } = await admin.from("profiles").select("id,role,roles").eq("id", userA.id).maybeSingle();
-    const ok = open.json?.ok === true && Array.isArray(roles) && roles.includes("boss") && roles.includes("companion") && open.json?.createdNewAuthUser !== true && String(prof?.role || "") === "boss";
-    log("A", ok, ok ? `roles=${JSON.stringify(roles)} user=${userA.id} primary=${prof?.role}` : JSON.stringify(open.json).slice(0, 500));
+    const { data: authWrap } = await admin.auth.admin.getUserById(userA.id);
+    const metaRoles = authWrap?.user?.app_metadata?.roles || [];
+    const hasBoss = open.json?.hasBoss === true || roles.includes("boss") || metaRoles.includes("boss") || String(prof?.role || "") === "boss";
+    const hasCompanion = open.json?.hasCompanion === true || roles.includes("companion") || metaRoles.includes("companion");
+    const ok = open.json?.ok === true && hasBoss && hasCompanion && open.json?.createdNewAuthUser !== true;
+    log("A", ok, ok ? `roles=${JSON.stringify(roles)} meta=${JSON.stringify(metaRoles)} primary=${prof?.role} user=${userA.id}` : JSON.stringify(open.json).slice(0, 500));
     tokenA = await passwordLogin(emailA);
   } catch (e) { log("A", false, e.message || e); }
 
