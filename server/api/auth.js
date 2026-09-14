@@ -588,15 +588,22 @@ async function classifyLoginPortalAccount(accountRaw, roleRaw) {
   const role = normalizeForgotRole(roleRaw);
   const account = String(accountRaw || "").trim();
   if (!account) return { allowed: false, role, code: "INVALID_ACCOUNT" };
-  const select = "id,email,phone,phone_e164,display_name,status,role,roles,boss_uid";
+  // Prefer roles when column exists; Staging/Prod may lag the migration — never 400 into anti-enum.
+  const selectWithRoles = "id,email,phone,phone_e164,display_name,status,role,roles,boss_uid";
+  const selectNoRoles = "id,email,phone,phone_e164,display_name,status,role,boss_uid";
 
   if (!/@/.test(account)) {
     return { allowed: false, role, code: "INVALID_ACCOUNT" };
   }
 
-  const byEmail = await profilesLookup(
-    `?email=eq.${encodeURIComponent(account.toLowerCase())}&select=${select}&limit=5`
+  let byEmail = await profilesLookup(
+    `?email=eq.${encodeURIComponent(account.toLowerCase())}&select=${selectWithRoles}&limit=5`
   );
+  if (!Array.isArray(byEmail) || !byEmail.length) {
+    byEmail = await profilesLookup(
+      `?email=eq.${encodeURIComponent(account.toLowerCase())}&select=${selectNoRoles}&limit=5`
+    );
+  }
   if (!Array.isArray(byEmail) || !byEmail.length) {
     return { allowed: false, role, email: account.toLowerCase(), code: "ACCOUNT_NOT_FOUND" };
   }
@@ -1029,6 +1036,17 @@ async function handleOpenBossRole(req, body, res) {
     authUser,
   });
   let updated = (await profileFor(profile.id)) || { ...profile, role: "boss" };
+  // Hard guarantee: dual-role open must leave primary role = boss on the same user_id.
+  if (String(updated?.role || "").toLowerCase() !== "boss") {
+    try {
+      const { persistRoles } = await import("./_account-roles.js");
+      const forcedRoles = Array.from(new Set([...(updated.roles || before.roles || []), "companion", "boss"]));
+      await persistRoles(profile.id, forcedRoles, { primaryRole: "boss" });
+      updated = (await profileFor(profile.id)) || { ...updated, role: "boss", roles: forcedRoles };
+    } catch {
+      updated = { ...updated, role: "boss" };
+    }
+  }
   try {
     updated = await ensureBossUid({ ...updated, role: "boss" }, authUser);
   } catch {

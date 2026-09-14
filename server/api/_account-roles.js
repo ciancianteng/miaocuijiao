@@ -128,27 +128,26 @@ export async function enrichProfileRoles(profile, authUser = null) {
   const companion = await loadCompanionRowForUser(profile.id);
   let rolesInfo = publicRolesPayload(profile, { companion, authUser, grantBossWithCompanion: false });
   const primary = normalizeRoleName(profile?.role);
-  // Heal legacy companion register that stamped roles:["companion","boss"] while primary stayed companion.
-  // True dual accounts keep primary role "boss" (or aliases) and also have companion_profiles.
+  // Dual-role heal: if roles already includes boss (or auth metadata says so) but primary
+  // stayed "companion", promote primary to boss — never strip boss (that broke open_boss_role).
   if (
     primary === "companion" &&
     rolesInfo.hasBoss &&
     Array.isArray(rolesInfo.roles) &&
     rolesInfo.roles.includes("boss")
   ) {
-    const healed = uniq(rolesInfo.roles.filter((r) => r !== "boss"));
     try {
-      await persistRoles(profile.id, healed.length ? healed : ["companion"], { primaryRole: "companion" });
+      await persistRoles(profile.id, rolesInfo.roles, { primaryRole: "boss" });
     } catch {
       /* best-effort */
     }
     rolesInfo = publicRolesPayload(
-      { ...profile, roles: healed.length ? healed : ["companion"], role: "companion" },
+      { ...profile, roles: rolesInfo.roles, role: "boss" },
       { companion, authUser, grantBossWithCompanion: false }
     );
   }
   return {
-    profile: { ...profile, roles: rolesInfo.roles },
+    profile: { ...profile, roles: rolesInfo.roles, role: rolesInfo.hasBoss && primary === "companion" ? "boss" : profile.role },
     companion,
     ...rolesInfo,
   };
@@ -179,28 +178,28 @@ export async function persistRoles(userId, rolesInput, { primaryRole = "" } = {}
       console.warn("[account-roles] auth metadata roles persist failed", err?.message || err);
     }
   }
-  const patch = { roles };
-  if (primaryRole) patch.role = normalizeRoleName(primaryRole);
+  // Always persist primary role first so dual-role OTP classify cannot fall back to anti-enum
+  // when the optional profiles.roles column is missing / schema-cache lagging.
+  const primary = primaryRole ? normalizeRoleName(primaryRole) : "";
+  if (primary) {
+    try {
+      await supabaseJson(restUrl("profiles", `?id=eq.${encodeURIComponent(userId)}`), {
+        method: "PATCH",
+        headers: headersWithServiceRole({ Prefer: "return=minimal" }),
+        body: JSON.stringify({ role: primary }),
+      });
+    } catch (err) {
+      console.warn("[account-roles] profiles.role persist failed", err?.message || err);
+    }
+  }
   try {
     await supabaseJson(restUrl("profiles", `?id=eq.${encodeURIComponent(userId)}`), {
       method: "PATCH",
       headers: headersWithServiceRole({ Prefer: "return=minimal" }),
-      body: JSON.stringify(patch),
+      body: JSON.stringify(primary ? { roles, role: primary } : { roles }),
     });
   } catch (err) {
-    if (/roles|column|schema cache|PGRST/i.test(String(err?.message || ""))) {
-      if (primaryRole) {
-        try {
-          await supabaseJson(restUrl("profiles", `?id=eq.${encodeURIComponent(userId)}`), {
-            method: "PATCH",
-            headers: headersWithServiceRole({ Prefer: "return=minimal" }),
-            body: JSON.stringify({ role: normalizeRoleName(primaryRole) }),
-          });
-        } catch {
-          /* ignore */
-        }
-      }
-    } else {
+    if (!/roles|column|schema cache|PGRST/i.test(String(err?.message || ""))) {
       console.warn("[account-roles] profiles.roles persist failed", err?.message || err);
     }
   }

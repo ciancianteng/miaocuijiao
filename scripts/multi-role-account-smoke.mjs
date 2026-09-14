@@ -49,6 +49,8 @@ for (const needle of [
   "COMPANION_EXISTS_OPEN_BOSS",
   "createdNewAuthUser: false",
   'delivery: mailOk ? "sent"',
+  "selectNoRoles",
+  "selectWithRoles",
 ]) {
   assert.match(auth, new RegExp(needle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), "auth missing " + needle);
 }
