@@ -11,7 +11,7 @@
   var DISMISS_KEY = "mcj_webpush_dismiss_until";
   var DENIED_KEY = "mcj_webpush_denied";
   var PROMPTED_KEY = "mcj_webpush_first_prompted";
-  var CSS_VER = "20260914webpush2";
+  var CSS_VER = "20260914webpush4";
   var GUIDE_COPY = {
     title: "开启消息通知",
     body: "开启后可及时收到订单、陪玩状态及重要消息通知。",
@@ -328,7 +328,8 @@
         var q = "/api/push?action=status" + (endpoint ? "&endpoint=" + encodeURIComponent(endpoint) : "");
         var data = await authFetch(q);
         if (data && data.ok) {
-          currentActive = !!data.currentActive;
+          // Server field is currentActive (#244); accept camel/legacy aliases.
+          currentActive = !!(data.currentActive || data.current_active);;
           devices = data.devices || [];
         }
       } catch (e) {}
@@ -451,10 +452,18 @@
       return Promise.resolve({ shown: false, reason: "denied" });
     }
 
-    // iOS Safari (non-standalone): do not request push; optional soft tip only via force.
+    // iOS Safari (non-standalone): never request push permission.
+    // Soft tip card only (Add to Home Screen) — no Notification.requestPermission().
     if (isIos() && !isStandalone()) {
-      if (opts.force) showGuide({ force: true, role: opts.role, onEnabled: opts.onEnabled });
-      return Promise.resolve({ shown: !!opts.force, reason: "need_pwa" });
+      if (dismissedRecently() && !opts.force) {
+        return Promise.resolve({ shown: false, reason: "dismissed" });
+      }
+      if (wasFirstPrompted() && !opts.force) {
+        return Promise.resolve({ shown: false, reason: "already_prompted" });
+      }
+      markFirstPrompted();
+      showGuide({ force: true, role: opts.role, onEnabled: opts.onEnabled });
+      return Promise.resolve({ shown: true, reason: "need_pwa_tip" });
     }
 
     // First-visit auto guide only in installed PWA / standalone.
@@ -472,23 +481,15 @@
 
   function mountSettings(root, options) {
     if (!root) return;
-    var opts = options || {};
+    root._mcjWebPushOpts = options || {};
     ensureGuideCss();
-    root.innerHTML =
-      '<div class="mcj-webpush-settings">' +
-      '<div class="mcj-webpush-settings-row">' +
-      "<div><strong>消息通知</strong><p data-webpush-status-text>检测中…</p></div>" +
-      '<label class="mcj-webpush-switch"><input type="checkbox" data-webpush-toggle disabled /><span></span></label>' +
-      "</div>" +
-      '<p class="mcj-webpush-hint" data-webpush-hint></p>' +
-      '<button type="button" class="mcj-webpush-btn ghost" data-webpush-open-guide>开启 / 恢复通知</button>' +
-      "</div>";
-
-    var toggle = root.querySelector("[data-webpush-toggle]");
-    var statusText = root.querySelector("[data-webpush-status-text]");
-    var hint = root.querySelector("[data-webpush-hint]");
 
     function paint() {
+      var opts = root._mcjWebPushOpts || {};
+      var toggle = root.querySelector("[data-webpush-toggle]");
+      var statusText = root.querySelector("[data-webpush-status-text]");
+      var hint = root.querySelector("[data-webpush-hint]");
+      if (!toggle || !statusText || !hint) return Promise.resolve(null);
       return refreshStatus().then(function (st) {
         statusText.textContent = st.label;
         toggle.disabled = st.state === "unsupported" || st.state === "denied" || st.state === "need_pwa";
@@ -504,32 +505,48 @@
       });
     }
 
+    root.innerHTML =
+      '<div class="mcj-webpush-settings">' +
+      '<div class="mcj-webpush-settings-row">' +
+      "<div><strong>消息通知</strong><p data-webpush-status-text>检测中…</p></div>" +
+      '<label class="mcj-webpush-switch"><input type="checkbox" data-webpush-toggle disabled /><span></span></label>' +
+      "</div>" +
+      '<p class="mcj-webpush-hint" data-webpush-hint></p>' +
+      '<button type="button" class="mcj-webpush-btn ghost" data-webpush-open-guide>开启 / 恢复通知</button>' +
+      "</div>";
+
+    if (root.getAttribute("data-mcj-webpush-bound") !== "1") {
+      root.setAttribute("data-mcj-webpush-bound", "1");
+      root.addEventListener("change", function (ev) {
+        if (!ev.target || !ev.target.matches("[data-webpush-toggle]")) return;
+        var opts = root._mcjWebPushOpts || {};
+        var toggle = root.querySelector("[data-webpush-toggle]");
+        var want = !!ev.target.checked;
+        if (toggle) toggle.disabled = true;
+        var job = want ? enablePush({ role: opts.role }) : disablePush();
+        job
+          .then(function () {
+            return paint();
+          })
+          .catch(function (err) {
+            alert((err && err.message) || "操作失败");
+            return paint();
+          });
+      });
+      root.addEventListener("click", function (ev) {
+        if (ev.target && ev.target.closest("[data-webpush-open-guide]")) {
+          var opts = root._mcjWebPushOpts || {};
+          showGuide({ force: true, role: opts.role, onEnabled: paint });
+        }
+      });
+    }
+
     paint().then(function (st) {
+      var opts = root._mcjWebPushOpts || {};
       if (st && st.permission === "granted" && !st.currentActive) {
         restoreIfGranted({ role: opts.role }).then(function () {
           return paint();
         });
-      }
-    });
-
-    root.addEventListener("change", function (ev) {
-      if (!ev.target || !ev.target.matches("[data-webpush-toggle]")) return;
-      var want = !!ev.target.checked;
-      toggle.disabled = true;
-      var job = want ? enablePush({ role: opts.role }) : disablePush();
-      job
-        .then(function () {
-          return paint();
-        })
-        .catch(function (err) {
-          alert((err && err.message) || "操作失败");
-          return paint();
-        });
-    });
-
-    root.addEventListener("click", function (ev) {
-      if (ev.target && ev.target.closest("[data-webpush-open-guide]")) {
-        showGuide({ force: true, role: opts.role, onEnabled: paint });
       }
     });
   }

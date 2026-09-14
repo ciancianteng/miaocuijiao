@@ -3023,7 +3023,7 @@ import './mcj-chat-realtime.js';
         return;
       }
       var s=document.createElement('script');
-      s.src='/src/web-push-client.js?v=20260914webpush2';
+      s.src='/src/web-push-client.js?v=20260914webpush4';
       s.defer=true;
       s.setAttribute('data-mcj-webpush-client','1');
       s.onload=function(){resolve(window.MCJWebPush)};
