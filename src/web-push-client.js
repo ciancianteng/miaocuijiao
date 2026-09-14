@@ -11,7 +11,7 @@
   var DISMISS_KEY = "mcj_webpush_dismiss_until";
   var DENIED_KEY = "mcj_webpush_denied";
   var PROMPTED_KEY = "mcj_webpush_first_prompted";
-  var CSS_VER = "20260914webpush4";
+  var CSS_VER = "20260914webpush5";
   var GUIDE_COPY = {
     title: "开启消息通知",
     body: "开启后可及时收到订单、陪玩状态及重要消息通知。",
@@ -198,7 +198,10 @@
   }
 
   function renderStatusLabel(state) {
-    if (state === "granted" || state === "active") return "已开启";
+    // "已开启" ONLY when permission granted + browser subscription + server active.
+    if (state === "active") return "已开启";
+    if (state === "needs_sync") return "未同步（需重新开启）";
+    if (state === "granted") return "未开启";
     if (state === "denied") return "已被系统拒绝";
     if (state === "unsupported") return "当前设备不支持";
     if (state === "need_pwa") return "请先添加到主屏幕";
@@ -279,13 +282,22 @@
         userVisibleOnly: true,
         applicationServerKey: urlBase64ToUint8Array(publicKey),
       }));
+    // Always upsert — reactivates disabled/user_unsubscribe rows for this endpoint.
     var saved = await subscribeOnServer(sub, opts.role);
     if (!saved || !saved.ok) throw new Error((saved && saved.message) || "订阅保存失败");
-    try {
-      localStorage.removeItem(DENIED_KEY);
-    } catch (e) {}
+
+    var endpoint = sub && sub.endpoint ? sub.endpoint : "";
+    var verify = await authFetch(
+      "/api/push?action=status" + (endpoint ? "&endpoint=" + encodeURIComponent(endpoint) : "")
+    ).catch(function () { return null; });
+    var serverActive = !!(verify && verify.ok && (verify.currentActive || verify.current_active));
+    if (!serverActive) {
+      throw new Error("订阅未同步到服务器，请重试开启通知");
+    }
+
+    try { localStorage.removeItem(DENIED_KEY); } catch (e) {}
     markFirstPrompted();
-    return { ok: true, subscription: sub, server: saved };
+    return { ok: true, subscription: sub, server: saved, currentActive: true };
   }
 
   async function disablePush() {
@@ -320,16 +332,19 @@
     var perm = permissionState();
     var needPwa = isIos() && !isStandalone();
     var currentActive = false;
+    var matchedStatus = "";
+    var hasBrowserSub = false;
     var devices = [];
     if (support && getAccessToken()) {
       try {
         var sub = await getCurrentSubscription();
-        var endpoint = sub && sub.endpoint ? sub.endpoint : "";
+        hasBrowserSub = !!(sub && sub.endpoint);
+        var endpoint = hasBrowserSub ? sub.endpoint : "";
         var q = "/api/push?action=status" + (endpoint ? "&endpoint=" + encodeURIComponent(endpoint) : "");
         var data = await authFetch(q);
         if (data && data.ok) {
-          // Server field is currentActive (#244); accept camel/legacy aliases.
-          currentActive = !!(data.currentActive || data.current_active);;
+          currentActive = !!(data.currentActive || data.current_active);
+          matchedStatus = String(data.matchedStatus || data.matched_status || "");
           devices = data.devices || [];
         }
       } catch (e) {}
@@ -338,8 +353,9 @@
     if (!support) state = "unsupported";
     else if (needPwa) state = "need_pwa";
     else if (perm === "denied" || wasDeniedStored()) state = "denied";
-    else if (perm === "granted" && currentActive) state = "active";
-    else if (perm === "granted") state = "granted";
+    else if (perm === "granted" && currentActive && hasBrowserSub) state = "active";
+    else if (perm === "granted" && hasBrowserSub && !currentActive) state = "needs_sync";
+    else if (perm === "granted") state = "granted"; // permission only — NOT enabled on server
     return {
       supported: support,
       permission: perm,
@@ -347,9 +363,11 @@
       ios: isIos(),
       needPwa: needPwa,
       currentActive: currentActive,
+      hasBrowserSub: hasBrowserSub,
+      matchedStatus: matchedStatus,
       devices: devices,
       state: state,
-      label: renderStatusLabel(state === "granted" ? "granted" : state),
+      label: renderStatusLabel(state),
     };
   }
 
@@ -493,13 +511,17 @@
       return refreshStatus().then(function (st) {
         statusText.textContent = st.label;
         toggle.disabled = st.state === "unsupported" || st.state === "denied" || st.state === "need_pwa";
-        toggle.checked = st.state === "active" || st.state === "granted";
+        // Toggle ON only when server subscription is active — never for permission-only.
+        toggle.checked = st.state === "active";
         if (st.state === "need_pwa") hint.textContent = GUIDE_COPY.needPwa;
         else if (st.state === "denied")
           hint.textContent = "通知已被系统拒绝。请到系统设置允许后，再回到这里重新开启。";
         else if (st.state === "unsupported") hint.textContent = "当前浏览器不支持 Web Push。";
         else if (st.state === "active") hint.textContent = "已在本机开启。关闭开关将取消本机订阅。";
-        else if (st.state === "granted") hint.textContent = "系统已授权，正在同步订阅…可点下方按钮恢复。";
+        else if (st.state === "needs_sync")
+          hint.textContent = "系统权限已开，但服务器订阅未激活。请点「开启 / 恢复通知」重新同步。";
+        else if (st.state === "granted")
+          hint.textContent = "系统已授权，但尚未完成推送订阅。请点「开启 / 恢复通知」。";
         else hint.textContent = "开启后即使关闭网页，也能收到订单与重要消息推送。";
         return st;
       });
@@ -543,6 +565,7 @@
 
     paint().then(function (st) {
       var opts = root._mcjWebPushOpts || {};
+      // Permission granted but server not active → force restore/upsert to active.
       if (st && st.permission === "granted" && !st.currentActive) {
         restoreIfGranted({ role: opts.role }).then(function () {
           return paint();

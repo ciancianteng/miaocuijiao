@@ -125,6 +125,7 @@ export async function upsertPushSubscription(input) {
     throw Object.assign(new Error("缺少 subscription keys"), { status: 400 });
   }
 
+  const nextStatus = String(opts.status || "active").trim() || "active";
   const row = {
     user_id: uid,
     role: String(opts.role || "boss").trim().toLowerCase() || "boss",
@@ -134,10 +135,15 @@ export async function upsertPushSubscription(input) {
     auth: authSecret,
     user_agent: sanitizeUa(opts.userAgent || ""),
     device_label: deviceLabelFromUa(opts.userAgent || ""),
-    status: String(opts.status || "active"),
+    status: nextStatus,
     updated_at: nowIso(),
     last_seen_at: nowIso(),
   };
+  // Re-enable must clear prior user_unsubscribe / disabled markers.
+  if (nextStatus === "active") {
+    row.last_error = "";
+    row.last_error_at = null;
+  }
 
   const saved = await supabaseJson(restUrl(TABLE, "?on_conflict=endpoint_hash"), {
     method: "POST",
@@ -198,9 +204,37 @@ export async function getPushStatusForUser(userId, currentEndpoint) {
   const rows = await listActiveSubscriptionsForUser(userId);
   const ep = String(currentEndpoint || "").trim();
   const currentHash = ep ? hashEndpoint(ep) : "";
-  const current = currentHash ? rows.find(function (r) {
-    return r.endpoint_hash === currentHash;
-  }) : null;
+  const current = currentHash
+    ? rows.find(function (r) {
+        return r.endpoint_hash === currentHash;
+      })
+    : null;
+
+  // Look up THIS browser endpoint even when disabled/expired so UI cannot lie.
+  let matchedStatus = "";
+  let matchedId = null;
+  if (currentHash && hasDb()) {
+    const uid = String(userId || "").trim();
+    const matched = await supabaseJson(
+      restUrl(
+        TABLE,
+        "?user_id=eq." +
+          encodeURIComponent(uid) +
+          "&endpoint_hash=eq." +
+          encodeURIComponent(currentHash) +
+          "&select=id,status,last_error,updated_at&limit=1"
+      ),
+      { headers: serviceHeaders() }
+    ).catch(function () {
+      return [];
+    });
+    const row = Array.isArray(matched) ? matched[0] : matched;
+    if (row) {
+      matchedStatus = String(row.status || "");
+      matchedId = row.id || null;
+    }
+  }
+
   return {
     configured: isWebPushConfigured(),
     activeCount: rows.length,
@@ -214,6 +248,9 @@ export async function getPushStatusForUser(userId, currentEndpoint) {
       };
     }),
     currentActive: !!current,
+    matchedStatus: matchedStatus || (current ? "active" : ""),
+    matchedId: matchedId,
+    hasBrowserEndpoint: !!currentHash,
   };
 }
 
