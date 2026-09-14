@@ -8,6 +8,10 @@ import {
   isTestAccountRecord,
   isTestEmail,
   isTestUsername,
+  isTestTouchedOrder,
+  isAutomatedTestOrderRecord,
+  isProtectedProductionBusinessIdentity,
+  productionOrderWriteBlock,
   shouldBlockTestIdentityOnProduction,
 } from "../server/api/_test-accounts.js";
 
@@ -19,7 +23,32 @@ assert.equal(isTestUsername("xiaohou"), false);
 assert.equal(isTestAccountRecord({ email: "cs.smoke.1@meow.test", display_name: "CS" }), true);
 assert.equal(isTestAccountRecord({ email: "x@gmail.com", display_name: "ProdSmokeCS" }), true);
 assert.equal(isTestAccountRecord({ email: "x@gmail.com", display_name: "凝梦", is_test_account: true }), true);
-assert.equal(isTestAccountRecord({ email: "x@gmail.com", display_name: "凝梦" }), false);
+assert.equal(isAutomatedTestOrderRecord({ title: "WP-BIZ-E2E-A", description: "webpush-biz-e2e-complete" }), true);
+assert.equal(isAutomatedTestOrderRecord({ title: "手瓦上分", description: "顶尖青年音" }), false);
+assert.equal(
+  isTestTouchedOrder(
+    { title: "WP-BIZ-E2E-A", description: "webpush-biz-e2e-complete", boss_id: "real-boss", companion_id: "real-comp" },
+    new Set(),
+    new Map()
+  ),
+  true
+);
+assert.equal(isProtectedProductionBusinessIdentity("1717", "MCJ00015"), true);
+assert.equal(isProtectedProductionBusinessIdentity("凝梦"), false);
+assert.equal(
+  productionOrderWriteBlock(
+    { profile: { email: "ciancianteng@gmail.com", display_name: "1717" }, body: { title: "WP-BIZ-E2E-A" } },
+    { VERCEL_ENV: "production" }
+  )?.code,
+  "PROD_AUTOMATED_ORDER_BLOCKED"
+);
+assert.equal(
+  productionOrderWriteBlock(
+    { profile: { email: "ciancianteng@gmail.com", display_name: "1717" }, body: { title: "三角洲陪玩" } },
+    { VERCEL_ENV: "production" }
+  ),
+  null
+);
 
 assert.equal(
   shouldBlockTestIdentityOnProduction({ email: "admin@meow.test" }, { VERCEL_ENV: "production" }),
@@ -76,6 +105,16 @@ const orders = [
     companion_id: null,
     boss_name: "033",
   },
+  {
+    id: "o4",
+    status: "completed",
+    total_amount: 25,
+    created_at: "2026-09-14T08:16:29.465Z",
+    boss_id: realBossId,
+    companion_id: realCompId,
+    title: "WP-BIZ-E2E-A",
+    description: "webpush-biz-e2e-complete",
+  },
 ];
 
 const { stats, filter } = buildDashboardStats({
@@ -95,7 +134,7 @@ assert.equal(filter.testAccountsExcluded, true);
 assert.equal(filter.excludedBosses, 2);
 assert.equal(filter.excludedCompanions, 1);
 assert.equal(filter.excludedCustomerServices, 1);
-assert.equal(filter.excludedOrders, 2);
+assert.equal(filter.excludedOrders, 3);
 
 console.log(
   JSON.stringify(

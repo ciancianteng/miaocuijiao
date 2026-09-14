@@ -43,7 +43,12 @@ function tok(j) {
   step("Logins", !!(bossT && csT && compT && adminT), `boss=${!!bossT} cs=${!!csT} comp=${!!compT} admin=${!!adminT}`);
 
   const comps = (await api("/api/public/companions", null, null, "GET")).json.companions || [];
-  const c1 = comps.find((c) => /Final/i.test(c.name || "")) || comps[0];
+  const c1 = comps.find((c) => /Final|TEST|验收/i.test(c.name || "") && !/^(?:1717|瑞秋)$/.test(String(c.name || "").trim()));
+  if (!c1?.id) {
+    step("Companion exists", false, "no isolated test companion (refusing live hall fallback)");
+    console.log(JSON.stringify({ results, overall: "FAIL" }, null, 2));
+    process.exit(1);
+  }
   step("Companion exists", !!c1?.id, `${c1?.name} ${c1?.id}`);
 
   // --- Assign path ---

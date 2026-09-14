@@ -12,6 +12,8 @@ import {
   isStagingOrPreviewAppBase,
   assertNonProductionSupabase,
   assertSmokeTargetAllowed,
+  assertSmokePartiesAreIsolated,
+  isProtectedSmokeParty,
 } from "./lib/prod-guard.mjs";
 
 let passed = 0;
@@ -66,6 +68,27 @@ check(
       script: "unit",
       base: "https://meow-cuijiao-homepage-staging.vercel.app",
       supabaseUrl: stagingUrl,
+    })
+  )
+);
+check("protected-party-1717", isProtectedSmokeParty({ name: "1717", publicId: "PW00021" }));
+check("protected-party-normal", !isProtectedSmokeParty({ name: "凝梦" }));
+check(
+  "deny-real-party",
+  throws(() =>
+    assertSmokePartiesAreIsolated({
+      script: "unit",
+      companion: { name: "1717", publicId: "PW00021" },
+    })
+  )
+);
+check(
+  "deny-prod-base-parties",
+  throws(() =>
+    assertSmokePartiesAreIsolated({
+      script: "unit",
+      base: "https://www.meowcuijiao.com",
+      companion: { name: "Final" },
     })
   )
 );

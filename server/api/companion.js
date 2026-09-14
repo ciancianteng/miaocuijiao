@@ -3768,11 +3768,20 @@ export default async function handler(req, res) {
       const orderId = String(body.id || body.orderId || body.order_id || "").trim();
       if (orderId) {
         try {
-          const beforeRows = await supabaseJson(restUrl("orders", `?id=eq.${encodeURIComponent(orderId)}&select=id,boss_id,status,companion_id&limit=1`), {
+          const beforeRows = await supabaseJson(restUrl("orders", `?id=eq.${encodeURIComponent(orderId)}&select=id,boss_id,status,companion_id,title,description,note,idempotency_key&limit=1`), {
             headers: serviceHeaders(),
           });
           const before = beforeRows?.[0];
           if (before) {
+            const { productionOrderWriteBlock } = await import("./_test-accounts.js");
+            const blocked = productionOrderWriteBlock({
+              profile: auth.profile,
+              order: before,
+              body,
+            });
+            if (blocked) {
+              return json(res, 403, { ok: false, message: blocked.message, code: blocked.code });
+            }
             const { assertNotSelfTrade } = await import("./_account-roles.js");
             assertNotSelfTrade(before.boss_id, auth.profile.id, "抢自己的订单");
           }

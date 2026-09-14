@@ -195,9 +195,8 @@ async function item3Search(csToken) {
   const comps = boot.json?.data?.companions || [];
   // Prefer idcard companion for PW seed
   const nick =
-    comps.find((c) => /草稿保留|idcard/i.test(c.name || "")) ||
-    comps.find((c) => /1717|大王/i.test(c.name || "")) ||
-    comps[0];
+    comps.find((c) => /草稿保留|idcard|Final|验收/i.test(c.name || "") && !/^(?:1717|瑞秋)$/.test(String(c.name || "").trim())) ||
+    comps.find((c) => /TEST/i.test(c.name || ""));
   const results = { companionPayloadHasCode: comps.some((c) => c.companionCode || c.publicId) };
 
   async function tryOpen(label, q) {

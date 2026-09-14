@@ -92,8 +92,10 @@ function sleep(ms) {
   const comps = await api("/api/public/companions", null, null, "GET");
   const testComp =
     (comps.json?.companions || []).find((c) => String(c.id) === String(companionId)) ||
-    (comps.json?.companions || []).find((c) => /Final|1717|TEST|验收/i.test(c.name || "")) ||
-    (comps.json?.companions || [])[0];
+    (comps.json?.companions || []).find((c) => /Final|TEST|验收/i.test(c.name || "") && !/^(?:1717|瑞秋)$/.test(String(c.name || "").trim()));
+  if (!testComp?.id && !companionId) {
+    throw new Error("Refusing hall fallback onto live companions (1717/瑞秋). Isolated test companion required.");
+  }
   const unit = Number(
     (Array.isArray(testComp?.services) && testComp.services[0] && (testComp.services[0].price ?? testComp.services[0].unitPrice)) ||
       testComp?.priceValue ||

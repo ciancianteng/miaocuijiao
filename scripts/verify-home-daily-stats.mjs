@@ -49,6 +49,16 @@ const smokeToday = {
   boss_id: smokeBoss.id,
   companion_id: realComp.id,
 };
+const wpBizOnReal = {
+  id: "o-wp-biz",
+  status: "completed",
+  total_amount: 25,
+  created_at: "2026-09-02T18:10:00.000Z",
+  boss_id: realBoss.id,
+  companion_id: realComp.id,
+  title: "WP-BIZ-E2E-A",
+  description: "webpush-biz-e2e-complete",
+};
 const olderCompleted = {
   id: "o-old",
   status: "completed",
@@ -64,7 +74,7 @@ assert.equal(isCreatedOnLocalDay(klMorningOrder.created_at, "2026-09-03"), true)
 assert.equal(isCreatedOnLocalDay(utcSameCalendarButPrevKlDay.created_at, "2026-09-03"), false);
 
 const profiles = [realBoss, realComp, smokeBoss];
-const orders = [klMorningOrder, utcSameCalendarButPrevKlDay, unpaidToday, smokeToday, olderCompleted];
+const orders = [klMorningOrder, utcSameCalendarButPrevKlDay, unpaidToday, smokeToday, wpBizOnReal, olderCompleted];
 
 const admin = buildDashboardStats({ profiles, orders, withdrawals: [], now });
 const reviews = [

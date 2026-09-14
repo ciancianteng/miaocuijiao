@@ -42,3 +42,13 @@ jobs:
           test -s scripts/lib/prod-guard.mjs
           node scripts/smoke-prod-guard.mjs
           node scripts/smoke-test-accounts-guard.mjs
+          node scripts/verify-dashboard-test-filter.mjs
+          node scripts/verify-home-daily-stats.mjs
+          if grep -RIn --include='*.mjs' --include='*.js' -E 'find\(\(c\) => /Final\|1717' scripts; then
+            echo "FAIL: e2e scripts must not treat live nickname 1717 as a test companion"
+            exit 1
+          fi
+          if grep -RIn --include='*.yml' -E 'BASE=https://www\.meowcuijiao\.com' .github/workflows; then
+            echo "FAIL: workflows must not default BASE to Production"
+            exit 1
+          fi

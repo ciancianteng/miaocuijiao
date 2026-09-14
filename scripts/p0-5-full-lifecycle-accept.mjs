@@ -87,7 +87,10 @@ function tok(j) {
   const bootMe = await api("/api/companion?action=bootstrap", compT, null, "GET");
   const meId = bootMe.json?.data?.player?.id || "";
   const comps = (await api("/api/public/companions", null, null, "GET")).json?.companions || [];
-  const c1 = comps.find((c) => String(c.id) === String(meId)) || comps.find((c) => /Final|1717/i.test(c.name || "")) || comps[0];
+  const c1 = comps.find((c) => String(c.id) === String(meId)) || comps.find((c) => /Final|TEST|验收/i.test(c.name || "") && !/^(?:1717|瑞秋)$/.test(String(c.name || "").trim()));
+  if (!c1?.id || /^(?:1717|瑞秋)$/.test(String(c1.name || "").trim()) || /PW00021|PW00012|MCJ00015/i.test(String(c1.publicId || c1.uid || ""))) {
+    throw new Error("Refusing to place order against a live Production companion fixture (1717/瑞秋). Use an isolated test companion.");
+  }
   step("Public companions published", !!c1?.id && String(c1.id) === String(meId || c1.id), `${c1?.name} id=${c1?.id} me=${meId}`);
 
   const unit = Number(

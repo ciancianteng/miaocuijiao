@@ -173,6 +173,41 @@ export function assertSafeDbTarget(opts = {}) {
 }
 
 /**
+ * Live Production MCJ/PW identities that smoke/E2E must never target.
+ */
+export function isProtectedSmokeParty(party = {}) {
+  const blob = [party.boss_uid, party.companion_uid, party.publicId, party.display_name, party.nickname, party.name]
+    .map((v) => String(v || "").trim())
+    .filter(Boolean)
+    .join(" ");
+  if (!blob) return false;
+  return /MCJ00015|PW00021|PW00012|MCJ00013|(?:^|\s)(?:1717|瑞秋)(?:\s|$)/i.test(blob);
+}
+
+export function assertSmokePartiesAreIsolated({
+  script = "smoke",
+  base = "",
+  boss = {},
+  companion = {},
+} = {}) {
+  if (base && isProductionAppBase(base)) {
+    throw new Error(
+      `[prod-guard] Refusing ${script}: smoke/E2E cannot write Production orders ` +
+        `(base=${base}). Use Staging only.`
+    );
+  }
+  for (const party of [boss, companion].filter((p) => p && typeof p === "object")) {
+    if (isProtectedSmokeParty(party)) {
+      throw new Error(
+        `[prod-guard] Refusing ${script}: party looks like a live Production MCJ/PW fixture ` +
+          `(${party.display_name || party.nickname || party.name || party.boss_uid || party.publicId}).`
+      );
+    }
+  }
+  return { ok: true };
+}
+
+/**
  * Hard staging-only gate for smoke / E2E scripts that create records.
  * Blocks Production app hosts, Production Supabase ref, and Production DATABASE_URL.
  *

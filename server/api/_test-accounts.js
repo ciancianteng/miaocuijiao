@@ -111,6 +111,116 @@ export function shouldBlockTestIdentityOnProduction({ email = "", displayName = 
 export const PROD_TEST_ACCOUNT_BLOCK_MESSAGE =
   "正式环境禁止使用测试账号（@meow.test / Smoke）登录或注册。请使用正式管理员账号。";
 
+export const PROD_AUTOMATED_ORDER_BLOCK_MESSAGE =
+  "正式环境禁止自动化 / Smoke / E2E 创建或变更真实业务订单。";
+
+/**
+ * Order title / notes / idempotency markers left by agent & E2E harnesses.
+ * These must never enter Production business stats, even when the logged-in
+ * party is a real MCJ/PW account (incident 2026-09-14: WP-BIZ-E2E-* on 1717).
+ */
+export const AUTOMATED_ORDER_TEXT_RE =
+  /WP-BIZ-E2E|webpush-biz-e2e|webpush-cancel|webpush-started|PROD-REFERRAL-SMOKE|prod-ref-smoke|prod-smoke|PR180|E2E-GAME-ID|E2E-ALIAS|E2E-FINAL|P0-5 full|review-entry-e2e|p0-refund-meowcoin|pr249-|MCJ_TEST|\be2e\b|lifecycle verify|settlement verify|alias check/i;
+
+/** Live Production public codes that smoke/E2E must never use as fixtures. */
+export const PROTECTED_PRODUCTION_PUBLIC_IDS = Object.freeze(["MCJ00015", "PW00021", "PW00012", "MCJ00013"]);
+export const PROTECTED_PRODUCTION_DISPLAY_NAMES = Object.freeze(["1717", "瑞秋"]);
+
+export function isAutomatedTestOrderText(...parts) {
+  const blob = parts
+    .map((p) => String(p == null ? "" : p))
+    .filter(Boolean)
+    .join(" ");
+  return blob ? AUTOMATED_ORDER_TEXT_RE.test(blob) : false;
+}
+
+export function isAutomatedTestOrderRecord(order = {}, body = {}) {
+  if (!order && !body) return false;
+  const row = order && typeof order === "object" ? order : {};
+  const payload = body && typeof body === "object" ? body : {};
+  const nested = payload.order && typeof payload.order === "object" ? payload.order : {};
+  if (row.is_test === true || payload.is_test === true || nested.is_test === true) return true;
+  return isAutomatedTestOrderText(
+    row.order_no,
+    row.title,
+    row.description,
+    row.note,
+    row.notes,
+    row.game,
+    row.gameId,
+    row.idempotency_key,
+    payload.title,
+    payload.description,
+    payload.note,
+    payload.notes,
+    payload.game,
+    payload.gameId,
+    payload.idempotencyKey,
+    payload.idempotency_key,
+    nested.title,
+    nested.description,
+    nested.note,
+    nested.notes,
+    nested.game,
+    nested.gameId,
+    nested.idempotencyKey,
+    nested.idempotency_key
+  );
+}
+
+export function isProtectedProductionBusinessIdentity(...parts) {
+  const blob = parts
+    .map((p) => String(p == null ? "" : p).trim())
+    .filter(Boolean)
+    .join(" ");
+  if (!blob) return false;
+  const upper = blob.toUpperCase();
+  for (const id of PROTECTED_PRODUCTION_PUBLIC_IDS) {
+    if (upper.includes(id)) return true;
+  }
+  for (const name of PROTECTED_PRODUCTION_DISPLAY_NAMES) {
+    if (new RegExp(`(?:^|\\s)${name}(?:\\s|$)`).test(blob)) return true;
+  }
+  return false;
+}
+
+/**
+ * Production must refuse smoke identities AND automation-marked order writes,
+ * even when the caller is a real user (owner session / dual-role 1717).
+ */
+export function productionOrderWriteBlock(
+  { profile = null, order = null, body = null, companion = null } = {},
+  env = process.env
+) {
+  if (!isProductionRuntime(env)) return null;
+  if (isTestAccountRecord(profile || {})) {
+    return { code: "PROD_TEST_ACCOUNT_BLOCKED", message: PROD_TEST_ACCOUNT_BLOCK_MESSAGE };
+  }
+  if (isTestAccountRecord(companion || {})) {
+    return { code: "PROD_TEST_ACCOUNT_BLOCKED", message: PROD_TEST_ACCOUNT_BLOCK_MESSAGE };
+  }
+  if (isAutomatedTestOrderRecord(order || {}, body || {})) {
+    return { code: "PROD_AUTOMATED_ORDER_BLOCKED", message: PROD_AUTOMATED_ORDER_BLOCK_MESSAGE };
+  }
+  if (
+    isProtectedProductionBusinessIdentity(
+      profile?.boss_uid,
+      profile?.display_name,
+      profile?.nickname,
+      companion?.companion_uid,
+      companion?.display_name,
+      companion?.nickname,
+      companion?.name,
+      body?.companionName,
+      body?.companion_name
+    ) &&
+    isAutomatedTestOrderRecord({}, body || {})
+  ) {
+    return { code: "PROD_AUTOMATED_ORDER_BLOCKED", message: PROD_AUTOMATED_ORDER_BLOCK_MESSAGE };
+  }
+  return null;
+}
+
 /**
  * Build id → profile map and a Set of test profile ids for order filtering.
  * @param {object[]} profiles
@@ -130,6 +240,7 @@ export function indexProfilesForStats(profiles = []) {
  * True when an order involves a known test party (by id set or denormalized names).
  */
 export function isTestTouchedOrder(order = {}, testIds = new Set(), byId = new Map()) {
+  if (isAutomatedTestOrderRecord(order)) return true;
   const partyIds = [order.boss_id, order.companion_id, order.customer_service_id, order.player_id].filter(
     Boolean
   );
@@ -190,6 +301,9 @@ export function assertNotTestPartiesForSettlement({
   }
   if (order && (isTestUsername(order.boss_name, order.companion_name, order.customer_service_name))) {
     return { ok: false, skipped: true, reason: "test_order_names" };
+  }
+  if (order && isAutomatedTestOrderRecord(order)) {
+    return { ok: false, skipped: true, reason: "automated_test_order" };
   }
   return { ok: true, skipped: false, reason: null };
 }

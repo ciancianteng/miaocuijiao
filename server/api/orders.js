@@ -1008,11 +1008,39 @@ export default async function handler(req, res) {
     const actionRaw = String(body.action || "create");
     const action = actionRaw === "create_order" ? "place_order" : actionRaw;
     if (
-      ["create", "place_order", "create_order", "pay_order", "want_him", "grab", "claim"].includes(actionRaw)
+      [
+        "create",
+        "place_order",
+        "create_order",
+        "pay_order",
+        "want_him",
+        "grab",
+        "claim",
+        "confirm_completion",
+        "confirm_complete",
+        "cancel_order",
+        "submit_payment_proof",
+      ].includes(actionRaw) ||
+      ["place_order", "pay_order", "confirm_completion", "confirm_complete", "cancel_order"].includes(action)
     ) {
-      const { isProductionRuntime, isTestAccountRecord, PROD_TEST_ACCOUNT_BLOCK_MESSAGE } = await import(
-        "./_test-accounts.js"
-      );
+      const {
+        isProductionRuntime,
+        isTestAccountRecord,
+        productionOrderWriteBlock,
+        PROD_TEST_ACCOUNT_BLOCK_MESSAGE,
+      } = await import("./_test-accounts.js");
+      const blocked = productionOrderWriteBlock({
+        profile,
+        body,
+        order: body.order || body,
+      });
+      if (blocked) {
+        return json(res, 403, {
+          ok: false,
+          message: blocked.message,
+          code: blocked.code,
+        });
+      }
       if (isProductionRuntime() && isTestAccountRecord(profile || {})) {
         return json(res, 403, {
           ok: false,
@@ -1230,6 +1258,8 @@ export default async function handler(req, res) {
       }
 
       // Optional marketplace columns (ignore if schema missing).
+      const { isAutomatedTestOrderRecord } = await import("./_test-accounts.js");
+      const automated = isAutomatedTestOrderRecord(row, body);
       const enriched = {
         ...row,
         payment_method: paymentMethod,
@@ -1239,6 +1269,7 @@ export default async function handler(req, res) {
         quantity,
         pricing_unit: String(order.pricingUnit || order.pricing_unit || "小时"),
       };
+      if (automated) enriched.is_test = true;
       if (productCommissionSnapshot != null) {
         enriched.platform_fee_rate = productCommissionSnapshot;
       }
@@ -1370,6 +1401,13 @@ export default async function handler(req, res) {
       const beforeRows = await supabaseJson(restUrl(TABLE, `?id=eq.${encodeURIComponent(id)}&boss_id=eq.${encodeURIComponent(profile.id)}&limit=1`), { headers: serviceHeaders() });
       const before = Array.isArray(beforeRows) ? beforeRows[0] : null;
       if (!before) return json(res, 404, { ok: false, message: "订单不存在。" });
+      {
+        const { productionOrderWriteBlock } = await import("./_test-accounts.js");
+        const blocked = productionOrderWriteBlock({ profile, order: before, body });
+        if (blocked) {
+          return json(res, 403, { ok: false, message: blocked.message, code: blocked.code });
+        }
+      }
       if (normalizeOrderStatus(before.status) !== "awaiting_payment") {
         return json(res, 409, { ok: false, message: "当前订单无需再次支付。", order: viewOrder(before) });
       }
@@ -1900,6 +1938,13 @@ export default async function handler(req, res) {
       const beforeRows = await supabaseJson(restUrl(TABLE, `?id=eq.${encodeURIComponent(id)}&boss_id=eq.${encodeURIComponent(profile.id)}&limit=1`), { headers: serviceHeaders() });
       const before = Array.isArray(beforeRows) ? beforeRows[0] : null;
       if (!before) return json(res, 404, { ok: false, message: "订单不存在。" });
+      {
+        const { productionOrderWriteBlock } = await import("./_test-accounts.js");
+        const blocked = productionOrderWriteBlock({ profile, order: before, body });
+        if (blocked) {
+          return json(res, 403, { ok: false, message: blocked.message, code: blocked.code });
+        }
+      }
       const helpers = createOrderCompleteHelpers({
         restUrl,
         supabaseJson,
@@ -1981,6 +2026,13 @@ export default async function handler(req, res) {
       );
       const before = Array.isArray(beforeRows) ? beforeRows[0] : null;
       if (!before) return json(res, 404, { ok: false, message: "订单不存在。" });
+      {
+        const { productionOrderWriteBlock } = await import("./_test-accounts.js");
+        const blocked = productionOrderWriteBlock({ profile, order: before, body });
+        if (blocked) {
+          return json(res, 403, { ok: false, message: blocked.message, code: blocked.code });
+        }
+      }
       const beforeStatus = normalizeOrderStatus(before.status);
       // Paid / post-payment rows must use request_refund (wallet already debited).
       if (

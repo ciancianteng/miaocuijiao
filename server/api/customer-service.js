@@ -2950,6 +2950,17 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
         }
       }
       const o = body.order || body;
+      {
+        const { productionOrderWriteBlock } = await import("./_test-accounts.js");
+        const blocked = productionOrderWriteBlock({
+          profile: service.profile,
+          body: o,
+          order: o,
+        });
+        if (blocked) {
+          return json(res, 403, { ok: false, message: blocked.message, code: blocked.code });
+        }
+      }
       const rawBossId = String(o.boss_id || o.bossId || o.boss || "").trim();
       const rawBossUid = String(o.boss_uid || o.bossUid || "").trim();
       const bossInput = isUuid(rawBossId) ? rawBossId : (rawBossUid || rawBossId);
