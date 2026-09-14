@@ -965,7 +965,18 @@
     }
     var roleHome = result.redirect || routeFor(role);
     // Boss may resume a pending page; other roles always land on their portal.
+    // Critical for per-portal PWAs: companion/CS/admin must never bounce to boss "/".
     var redirect = profileRole(role) === "boss" && pending ? pending : roleHome;
+    try {
+      var roleKey = profileRole(role);
+      if (roleKey === "companion" && !/^\/companion(\/|$)/i.test(String(redirect || ""))) {
+        redirect = "/companion/";
+      } else if (roleKey === "customer_service" && !/^\/customer-service(\/|$)/i.test(String(redirect || ""))) {
+        redirect = "/customer-service/";
+      } else if (roleKey === "admin" && !/^\/admin(\/|\.html|$)/i.test(String(redirect || ""))) {
+        redirect = "/admin/";
+      }
+    } catch (eRoleGuard) {}
     var here = String(location.pathname || "").replace(/\/+$/, "") || "/";
     var dest = String(redirect || "/").replace(/\/+$/, "") || "/";
     // Never reopen login/register after success (clear #login / #register).

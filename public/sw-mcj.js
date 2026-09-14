@@ -1,4 +1,7 @@
-/* MCJ service worker — installability + Web Push */
+/* MCJ service worker — installability + Web Push
+   Do NOT rewrite navigations to "/". Portal PWAs (companion / customer-service /
+   admin) must keep their own start_url paths when launched from the home screen.
+   Shared SW scope "/" keeps Web Push / #248 subscriptions intact. */
 self.addEventListener("install", function () {
   self.skipWaiting();
 });
