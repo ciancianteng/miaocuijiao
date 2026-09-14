@@ -50,12 +50,16 @@ async function createAuthUser(email, { role = "companion" } = {}) {
   if (error) throw error;
   const user = data.user;
   const base = { id: user.id, email, role, status: "active", display_name: `U249-${stamp}` };
+  // Pre-assign a unique boss_uid for boss rows — empty-string unique index collisions are common on Staging.
+  if (role === "boss") {
+    base.boss_uid = `T${String(stamp).slice(-9)}${Math.floor(Math.random() * 90 + 10)}`;
+  }
   let pErr = (await admin.from("profiles").upsert({ ...base, roles: [role] }, { onConflict: "id" })).error;
   if (pErr && /roles|column|42703/i.test(String(pErr.message || ""))) {
     pErr = (await admin.from("profiles").upsert(base, { onConflict: "id" })).error;
   }
-  // boss_uid unique index can collide on blank values — clear and let trigger assign for boss.
   if (pErr && /boss_uid|duplicate key|unique/i.test(String(pErr.message || ""))) {
+    base.boss_uid = `T${Date.now()}${Math.floor(Math.random() * 900 + 100)}`;
     await admin.from("profiles").delete().eq("id", user.id);
     pErr = (await admin.from("profiles").insert({ ...base, roles: [role] }).select()).error;
     if (pErr && /roles|column|42703/i.test(String(pErr.message || ""))) {
