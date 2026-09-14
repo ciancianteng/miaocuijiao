@@ -615,7 +615,16 @@ async function classifyLoginPortalAccount(accountRaw, roleRaw) {
       if (!row?.id) continue;
       try {
         const { enrichProfileRoles } = await import("./_account-roles.js");
-        const enriched = await enrichProfileRoles(row);
+        let authUser = null;
+        try {
+          authUser = await supabaseJson(authUrl(`admin/users/${row.id}`), {
+            method: "GET",
+            headers: headersWithServiceRole(),
+          });
+        } catch {
+          authUser = null;
+        }
+        const enriched = await enrichProfileRoles(row, authUser?.user || authUser || null);
         if (role === "companion" && enriched?.hasCompanion) {
           hit = { ...row, roles: enriched.roles || row.roles };
           break;
@@ -1035,17 +1044,35 @@ async function handleOpenBossRole(req, body, res) {
     existingProfile: profile,
     authUser,
   });
-  let updated = (await profileFor(profile.id)) || { ...profile, role: "boss" };
-  // Hard guarantee: dual-role open must leave primary role = boss on the same user_id.
-  if (String(updated?.role || "").toLowerCase() !== "boss") {
-    try {
-      const { persistRoles } = await import("./_account-roles.js");
-      const forcedRoles = Array.from(new Set([...(updated.roles || before.roles || []), "companion", "boss"]));
-      await persistRoles(profile.id, forcedRoles, { primaryRole: "boss" });
-      updated = (await profileFor(profile.id)) || { ...updated, role: "boss", roles: forcedRoles };
-    } catch {
-      updated = { ...updated, role: "boss" };
+  // Force-write via auth.js helpers (same path as ensureBossUid) so dual-role cannot
+  // silently remain companion-only when _account-roles persist is swallowed.
+  const forcedRoles = Array.from(
+    new Set([...(Array.isArray(profile.roles) ? profile.roles : []), "companion", "boss"])
+  );
+  try {
+    const patched = await supabaseJson(restUrl("profiles", `?id=eq.${encodeURIComponent(profile.id)}`), {
+      method: "PATCH",
+      headers: headersWithServiceRole({ Prefer: "return=representation" }),
+      body: JSON.stringify({ role: "boss", roles: forcedRoles }),
+    });
+    if (Array.isArray(patched) && patched[0]) {
+      /* ok */
     }
+  } catch (err) {
+    // roles column may lag schema cache — still force primary role.
+    try {
+      await supabaseJson(restUrl("profiles", `?id=eq.${encodeURIComponent(profile.id)}`), {
+        method: "PATCH",
+        headers: headersWithServiceRole({ Prefer: "return=representation" }),
+        body: JSON.stringify({ role: "boss" }),
+      });
+    } catch (err2) {
+      console.warn("[auth/open_boss_role] force role patch failed", err2?.message || err2);
+    }
+  }
+  let updated = (await profileFor(profile.id)) || { ...profile, role: "boss", roles: forcedRoles };
+  if (String(updated?.role || "").toLowerCase() !== "boss") {
+    updated = { ...updated, role: "boss", roles: forcedRoles };
   }
   try {
     updated = await ensureBossUid({ ...updated, role: "boss" }, authUser);

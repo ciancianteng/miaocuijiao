@@ -52,17 +52,29 @@ async function createAuthUser(email, { role = "companion" } = {}) {
   if (pErr && /roles|column|42703/i.test(String(pErr.message || ""))) {
     pErr = (await admin.from("profiles").upsert(base, { onConflict: "id" })).error;
   }
+  // boss_uid unique index can collide on blank values — clear and let trigger assign for boss.
+  if (pErr && /boss_uid|duplicate key|unique/i.test(String(pErr.message || ""))) {
+    await admin.from("profiles").delete().eq("id", user.id);
+    pErr = (await admin.from("profiles").insert({ ...base, roles: [role] }).select()).error;
+    if (pErr && /roles|column|42703/i.test(String(pErr.message || ""))) {
+      pErr = (await admin.from("profiles").insert(base).select()).error;
+    }
+  }
   if (pErr) throw pErr;
   return user;
 }
 
 async function ensureCompanionRow(userId, { approved = true } = {}) {
   const row = {
-    id: userId, user_id: userId, nickname: `CP249-${stamp}`,
+    id: userId,
+    user_id: userId,
+    nickname: `CP249-${stamp}`,
     verification_status: approved ? "approved" : "pending",
     application_status: approved ? "approved" : "draft",
     deposit_status: approved ? "paid" : "unpaid",
-    online_status: "online", allow_orders: true, updated_at: new Date().toISOString(),
+    online_status: "online",
+    allow_orders: true,
+    updated_at: new Date().toISOString(),
   };
   let { error } = await admin.from("companion_profiles").upsert(row, { onConflict: "user_id" });
   if (error) {
