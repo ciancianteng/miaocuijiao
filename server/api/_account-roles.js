@@ -207,12 +207,18 @@ export async function persistRoles(userId, rolesInput, { primaryRole = "" } = {}
   return roles;
 }
 
-export async function addRoleToUser(userId, roleToAdd, { primaryRole = "", existingProfile = null, authUser = null } = {}) {
+export async function addRoleToUser(userId, roleToAdd, opts = {}) {
+  const primaryRole = String(opts.primaryRole || '').trim();
+  const existingProfile = opts.existingProfile || null;
+  const authUser = opts.authUser || null;
   const add = normalizeRoleName(roleToAdd);
-  const companion = add === "companion" ? await loadCompanionRowForUser(userId) : null;
+  const companion = await loadCompanionRowForUser(userId);
   const current = resolveRoles(existingProfile || { id: userId, role: primaryRole }, { companion, authUser });
   const next = uniq([...current, add]);
-  await persistRoles(userId, next, { primaryRole: primaryRole || existingProfile?.role || add });
+  // Dual-role invariant: if account has (or is gaining) boss, keep primary role as boss.
+  let nextPrimary = normalizeRoleName(primaryRole || existingProfile?.role || add) || add;
+  if (add === 'boss' || next.includes('boss')) nextPrimary = 'boss';
+  await persistRoles(userId, next, { primaryRole: nextPrimary });
   return next;
 }
 
@@ -341,3 +347,4 @@ export async function scanDuplicateEmails({ limit = 2000 } = {}) {
   }
   return { scanned: Array.isArray(rows) ? rows.length : 0, duplicateGroups: duplicates };
 }
+

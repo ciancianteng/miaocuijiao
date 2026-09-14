@@ -3995,6 +3995,10 @@
       (verifyLocked?verifyView:verifyForm)+
       depositBlock+
       '<section class="pw-card pad pw-form-narrow" style="margin-top:14px" id="pwAccountSecurityMount"><h3>账号安全</h3><div class="pw-empty">加载中…</div></section>'+
+      '<section class="pw-card pad pw-form-narrow" style="margin-top:14px" id="pwOpenBossMount"><h3>老板身份</h3>'+
+      '<p class="pw-note">同一邮箱可同时拥有陪玩与老板身份，不会创建第二个账号。开通后可用老板入口登录，钱包/订单仍绑定本账号。</p>'+
+      '<button class="pw-btn primary" type="button" data-open-boss-role>开通老板身份</button>'+
+      '<p class="pw-note" data-open-boss-msg style="margin-top:8px"></p></section>'+
       '<section class="pw-card pad" style="margin-top:14px"><h3>安装妙脆角</h3>'+
       '<p class="pw-note">把妙脆角加到主屏幕，打开更快，使用起来更像 App。</p>'+
       '<button class="pw-btn" type="button" data-pwa-install-guide>安装妙脆角 / 添加到主屏幕</button></section>';
@@ -4593,6 +4597,37 @@
     if(e.target.closest('[data-pwa-install-guide]')){
       e.preventDefault();
       openPwaInstallGuide();
+      return;
+    }
+    if(e.target.closest('[data-open-boss-role]')){
+      e.preventDefault();
+      var btn=e.target.closest('[data-open-boss-role]');
+      var msgEl=document.querySelector('[data-open-boss-msg]');
+      var token=String((state.session&&(state.session.token||state.session.accessToken||state.session.access_token))||'').trim();
+      if(!token){
+        if(msgEl)msgEl.textContent='请先登录陪玩账号。';
+        return;
+      }
+      btn.disabled=true;
+      if(msgEl)msgEl.textContent='正在开通老板身份…';
+      fetch('/api/auth',{
+        method:'POST',
+        headers:{'Content-Type':'application/json',Accept:'application/json',Authorization:'Bearer '+token},
+        body:JSON.stringify({action:'open_boss_role',accessToken:token})
+      }).then(function(r){return r.json().then(function(j){return {r:r,j:j};});})
+        .then(function(x){
+          btn.disabled=false;
+          if(!x.r.ok||x.j.ok===false){
+            if(msgEl)msgEl.textContent=(x.j&&x.j.message)||'开通失败，请稍后重试';
+            return;
+          }
+          if(msgEl)msgEl.textContent=(x.j&&x.j.message)||'已开通老板身份。请前往老板入口登录（同一邮箱）。';
+          try{toast((x.j&&x.j.message)||'已开通老板身份');}catch(err){}
+        })
+        .catch(function(){
+          btn.disabled=false;
+          if(msgEl)msgEl.textContent='网络异常，请稍后重试';
+        });
       return;
     }
     if(e.target.closest('[data-reload-inbox]')){reloadInbox().then(function(){return loadActiveThread({force:true});});return}
