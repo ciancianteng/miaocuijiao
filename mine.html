@@ -12,7 +12,7 @@
   <meta name="theme-color" content="#0a0610">
   <meta name="mobile-web-app-capable" content="yes">
   <script src="/pwa-boot.js" defer></script>
-  <script src="/src/web-push-client.js?v=20260913webpush1" defer></script>
+  <script src="/src/web-push-client.js?v=20260914webpush5" defer></script>
   <!-- mcj-pwa-meta:end -->
 
   <script src="/portal-early-gate.js?v=20260911authPerfP0"></script>
@@ -543,7 +543,7 @@
           '<section class="entry"><a class="entry-trigger" href="gifts.html"><span class="entry-title">礼物中心</span><span class="entry-arrow" aria-hidden="true"></span></a></section>'+
           '<section class="entry"><a class="entry-trigger" href="my-direct-companions.html"><span class="entry-title">直属陪玩</span><span class="entry-arrow" aria-hidden="true"></span></a></section>'+
           '<section class="entry"><button type="button" class="entry-trigger" data-pwa-install><span class="entry-title">添加妙脆角到主屏幕</span><span class="entry-arrow" aria-hidden="true"></span></button></section>'+
-          '<section class="entry"><button type="button" class="entry-trigger" data-open-notify-settings><span class="entry-title">通知设置</span><span class="entry-arrow" aria-hidden="true"></span></button></section>'+
+          '<section class="entry"><button type="button" class="entry-trigger" data-open-notify-settings><span class="entry-title">消息通知</span><span class="entry-arrow" aria-hidden="true"></span></button></section>'+
           '</div>'+
           '<div id="mcjWebPushSettingsMount" class="mcj-webpush-mine-mount" hidden></div>'+
           '<div class="mine-logout-wrap"><button class="mine-logout" type="button" data-logout>退出登录</button></div>';
@@ -574,6 +574,11 @@ async function load(){
           // First usable UI: paint identity shell immediately after /me.
           // Non-critical wallet/points/direct/security must not block first paint.
           state.loading=false;paint();
+          try{
+            if(window.MCJWebPush&&typeof window.MCJWebPush.maybePromptOnFirstVisit==='function'){
+              window.MCJWebPush.maybePromptOnFirstVisit({role:'boss'});
+            }
+          }catch(ePushPrompt){}
           try{
             if(window.MCJBossNavPrefetch) window.MCJBossNavPrefetch.run({delayMs:500});
           }catch(ePrefetch){}

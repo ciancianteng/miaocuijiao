@@ -3,14 +3,27 @@
  * - Never auto-prompts system permission on page load.
  * - Custom guide first; only then Notification.requestPermission().
  * - iOS non-standalone: require Add to Home Screen first.
+ * - First standalone visit (permission=default) shows opt-in guide.
  */
 (function (global) {
   "use strict";
 
   var DISMISS_KEY = "mcj_webpush_dismiss_until";
   var DENIED_KEY = "mcj_webpush_denied";
+  var PROMPTED_KEY = "mcj_webpush_first_prompted";
+  var CSS_VER = "20260914webpush5";
+  var GUIDE_COPY = {
+    title: "开启消息通知",
+    body: "开启后可及时收到订单、陪玩状态及重要消息通知。",
+    enable: "开启通知",
+    later: "暂时不要",
+    needPwa: "请先将妙脆角添加到主屏幕，再开启通知。",
+    install: "先添加到主屏幕",
+  };
 
-  function nowMs() { return Date.now(); }
+  function nowMs() {
+    return Date.now();
+  }
 
   function isStandalone() {
     try {
@@ -30,6 +43,17 @@
     return !!(global.Notification && global.PushManager && navigator.serviceWorker && global.isSecureContext);
   }
 
+  function tokenFromSessionBlob(raw) {
+    if (!raw) return "";
+    try {
+      var obj = typeof raw === "string" ? JSON.parse(raw) : raw;
+      if (!obj || typeof obj !== "object") return "";
+      return String(obj.token || obj.accessToken || obj.access_token || "").trim();
+    } catch (e) {
+      return "";
+    }
+  }
+
   function getAccessToken() {
     try {
       if (global.MCJBossAuth && typeof MCJBossAuth.getAccessToken === "function") {
@@ -38,21 +62,38 @@
       }
     } catch (e) {}
     try {
+      if (global.MCJServiceAuth && typeof MCJServiceAuth.getAccessToken === "function") {
+        var st = String(MCJServiceAuth.getAccessToken() || "").trim();
+        if (st) return st;
+      }
+    } catch (e0) {}
+    try {
       var boss =
         sessionStorage.getItem("mcjAuthAccessToken") ||
         localStorage.getItem("mcjAuthAccessToken") ||
         "";
-      if (boss) return boss;
+      if (boss) return String(boss).trim();
     } catch (e2) {}
     try {
-      return (
+      var companion =
         sessionStorage.getItem("companionAuthToken") ||
         localStorage.getItem("companionAuthToken") ||
-        ""
-      );
-    } catch (e3) {
-      return "";
-    }
+        "";
+      if (companion) return String(companion).trim();
+    } catch (e3) {}
+    try {
+      var fromCompanionSession =
+        tokenFromSessionBlob(sessionStorage.getItem("mcjCompanionSession")) ||
+        tokenFromSessionBlob(localStorage.getItem("mcjCompanionSession"));
+      if (fromCompanionSession) return fromCompanionSession;
+    } catch (e4) {}
+    try {
+      var fromServiceSession =
+        tokenFromSessionBlob(sessionStorage.getItem("mcjServiceSession")) ||
+        tokenFromSessionBlob(localStorage.getItem("mcjServiceSession"));
+      if (fromServiceSession) return fromServiceSession;
+    } catch (e5) {}
+    return "";
   }
 
   function authFetch(url, init) {
@@ -61,11 +102,16 @@
     var token = getAccessToken();
     if (token) headers.Authorization = "Bearer " + token;
     return fetch(url, Object.assign({}, opts, { headers: headers, cache: "no-store" })).then(function (res) {
-      return res.json().catch(function () { return { ok: false, message: "响应解析失败" }; }).then(function (body) {
-        body = body || {};
-        body._httpStatus = res.status;
-        return body;
-      });
+      return res
+        .json()
+        .catch(function () {
+          return { ok: false, message: "响应解析失败" };
+        })
+        .then(function (body) {
+          body = body || {};
+          body._httpStatus = res.status;
+          return body;
+        });
     });
   }
 
@@ -80,33 +126,61 @@
 
   function permissionState() {
     if (!supportsWebPush()) return "unsupported";
-    try { return Notification.permission || "default"; } catch (e) { return "unsupported"; }
+    try {
+      return Notification.permission || "default";
+    } catch (e) {
+      return "unsupported";
+    }
   }
 
   function dismissedRecently() {
     try {
       var until = Number(localStorage.getItem(DISMISS_KEY) || 0);
       return !!(until && until > nowMs());
-    } catch (e) { return false; }
+    } catch (e) {
+      return false;
+    }
   }
 
   function markDismissed(hours) {
-    try { localStorage.setItem(DISMISS_KEY, String(nowMs() + (hours || 72) * 3600 * 1000)); } catch (e) {}
+    try {
+      localStorage.setItem(DISMISS_KEY, String(nowMs() + (hours || 72) * 3600 * 1000));
+    } catch (e) {}
   }
 
   function markDenied() {
-    try { localStorage.setItem(DENIED_KEY, "1"); } catch (e) {}
+    try {
+      localStorage.setItem(DENIED_KEY, "1");
+    } catch (e) {}
   }
 
   function wasDeniedStored() {
-    try { return localStorage.getItem(DENIED_KEY) === "1"; } catch (e) { return false; }
+    try {
+      return localStorage.getItem(DENIED_KEY) === "1";
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function markFirstPrompted() {
+    try {
+      localStorage.setItem(PROMPTED_KEY, "1");
+    } catch (e) {}
+  }
+
+  function wasFirstPrompted() {
+    try {
+      return localStorage.getItem(PROMPTED_KEY) === "1";
+    } catch (e) {
+      return false;
+    }
   }
 
   function ensureGuideCss() {
     if (document.querySelector('link[data-mcj-webpush-css]')) return;
     var link = document.createElement("link");
     link.rel = "stylesheet";
-    link.href = "/src/web-push-client.css?v=20260913webpush1";
+    link.href = "/src/web-push-client.css?v=" + CSS_VER;
     link.setAttribute("data-mcj-webpush-css", "1");
     document.head.appendChild(link);
   }
@@ -120,12 +194,15 @@
       MCJPwaInstall.openGuide();
       return;
     }
-    alert("要接收妙脆角即时通知，请先将妙脆角添加到主屏幕，然后从主屏幕图标打开。");
+    alert(GUIDE_COPY.needPwa);
   }
 
   function renderStatusLabel(state) {
-    if (state === "granted" || state === "active") return "已开启";
-    if (state === "denied") return "浏览器已禁止";
+    // "已开启" ONLY when permission granted + browser subscription + server active.
+    if (state === "active") return "已开启";
+    if (state === "needs_sync") return "未同步（需重新开启）";
+    if (state === "granted") return "未开启";
+    if (state === "denied") return "已被系统拒绝";
     if (state === "unsupported") return "当前设备不支持";
     if (state === "need_pwa") return "请先添加到主屏幕";
     return "未开启";
@@ -174,7 +251,7 @@
     if (!supportsWebPush()) throw new Error("当前设备不支持 Web Push");
     if (isIos() && !isStandalone()) {
       openIosInstallGuide();
-      var needPwaErr = new Error("要接收妙脆角即时通知，请先将妙脆角添加到主屏幕。");
+      var needPwaErr = new Error(GUIDE_COPY.needPwa);
       needPwaErr.code = "NEED_PWA";
       throw needPwaErr;
     }
@@ -182,8 +259,9 @@
     var perm = permissionState();
     if (perm === "denied") {
       markDenied();
-      throw new Error("浏览器已禁止通知，请到系统设置中允许妙脆角通知。");
+      throw new Error("通知已被系统拒绝，请到系统设置中手动开启妙脆角通知。");
     }
+    // Only request system permission after an explicit user gesture (caller must gate).
     if (perm !== "granted") perm = await Notification.requestPermission();
     if (perm !== "granted") {
       if (perm === "denied") markDenied();
@@ -192,20 +270,34 @@
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "deny" }),
       }).catch(function () {});
-      throw new Error(perm === "denied" ? "你已拒绝通知权限" : "未获得通知权限");
+      throw new Error(perm === "denied" ? "通知已被系统拒绝，请到系统设置中手动开启。" : "未获得通知权限");
     }
 
     var publicKey = await fetchVapidPublicKey();
     var reg = await ensureServiceWorker();
     var existing = await reg.pushManager.getSubscription();
-    var sub = existing || (await reg.pushManager.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey: urlBase64ToUint8Array(publicKey),
-    }));
+    var sub =
+      existing ||
+      (await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(publicKey),
+      }));
+    // Always upsert — reactivates disabled/user_unsubscribe rows for this endpoint.
     var saved = await subscribeOnServer(sub, opts.role);
     if (!saved || !saved.ok) throw new Error((saved && saved.message) || "订阅保存失败");
+
+    var endpoint = sub && sub.endpoint ? sub.endpoint : "";
+    var verify = await authFetch(
+      "/api/push?action=status" + (endpoint ? "&endpoint=" + encodeURIComponent(endpoint) : "")
+    ).catch(function () { return null; });
+    var serverActive = !!(verify && verify.ok && (verify.currentActive || verify.current_active));
+    if (!serverActive) {
+      throw new Error("订阅未同步到服务器，请重试开启通知");
+    }
+
     try { localStorage.removeItem(DENIED_KEY); } catch (e) {}
-    return { ok: true, subscription: sub, server: saved };
+    markFirstPrompted();
+    return { ok: true, subscription: sub, server: saved, currentActive: true };
   }
 
   async function disablePush() {
@@ -213,9 +305,26 @@
     var sub = await getCurrentSubscription();
     if (sub) {
       await unsubscribeOnServer(sub).catch(function () {});
-      try { await sub.unsubscribe(); } catch (e) {}
+      try {
+        await sub.unsubscribe();
+      } catch (e) {}
     }
     return { ok: true };
+  }
+
+  /** When permission already granted, silently restore/upsert subscription (no permission prompt). */
+  async function restoreIfGranted(options) {
+    var opts = options || {};
+    if (!getAccessToken()) return { ok: false, reason: "no_token" };
+    if (!supportsWebPush()) return { ok: false, reason: "unsupported" };
+    if (isIos() && !isStandalone()) return { ok: false, reason: "need_pwa" };
+    if (permissionState() !== "granted") return { ok: false, reason: "not_granted" };
+    try {
+      var result = await enablePush({ role: opts.role });
+      return { ok: true, restored: true, result: result };
+    } catch (err) {
+      return { ok: false, reason: (err && err.message) || "restore_failed" };
+    }
   }
 
   async function refreshStatus() {
@@ -223,15 +332,19 @@
     var perm = permissionState();
     var needPwa = isIos() && !isStandalone();
     var currentActive = false;
+    var matchedStatus = "";
+    var hasBrowserSub = false;
     var devices = [];
     if (support && getAccessToken()) {
       try {
         var sub = await getCurrentSubscription();
-        var endpoint = sub && sub.endpoint ? sub.endpoint : "";
+        hasBrowserSub = !!(sub && sub.endpoint);
+        var endpoint = hasBrowserSub ? sub.endpoint : "";
         var q = "/api/push?action=status" + (endpoint ? "&endpoint=" + encodeURIComponent(endpoint) : "");
         var data = await authFetch(q);
         if (data && data.ok) {
-          currentActive = !!data.currentActive;
+          currentActive = !!(data.currentActive || data.current_active);
+          matchedStatus = String(data.matchedStatus || data.matched_status || "");
           devices = data.devices || [];
         }
       } catch (e) {}
@@ -240,7 +353,9 @@
     if (!support) state = "unsupported";
     else if (needPwa) state = "need_pwa";
     else if (perm === "denied" || wasDeniedStored()) state = "denied";
-    else if (perm === "granted" && currentActive) state = "active";
+    else if (perm === "granted" && currentActive && hasBrowserSub) state = "active";
+    else if (perm === "granted" && hasBrowserSub && !currentActive) state = "needs_sync";
+    else if (perm === "granted") state = "granted"; // permission only — NOT enabled on server
     return {
       supported: support,
       permission: perm,
@@ -248,6 +363,8 @@
       ios: isIos(),
       needPwa: needPwa,
       currentActive: currentActive,
+      hasBrowserSub: hasBrowserSub,
+      matchedStatus: matchedStatus,
       devices: devices,
       state: state,
       label: renderStatusLabel(state),
@@ -274,14 +391,29 @@
       wrap.innerHTML =
         '<div class="mcj-webpush-card" role="dialog" aria-modal="true" aria-labelledby="mcjWebPushTitle">' +
         '<button type="button" class="mcj-webpush-close" data-webpush-later aria-label="关闭">×</button>' +
-        '<h3 id="mcjWebPushTitle">开启妙脆角通知</h3>' +
-        "<p>开启后可及时收到订单状态、陪玩接单、客服消息和重要账户通知。</p>" +
-        (st.needPwa ? '<p class="mcj-webpush-ios">要接收妙脆角即时通知，请先将妙脆角添加到主屏幕。</p>' : "") +
+        '<h3 id="mcjWebPushTitle">' +
+        GUIDE_COPY.title +
+        "</h3>" +
+        "<p>" +
+        GUIDE_COPY.body +
+        "</p>" +
+        (st.needPwa ? '<p class="mcj-webpush-ios">' + GUIDE_COPY.needPwa + "</p>" : "") +
+        (st.state === "denied"
+          ? '<p class="mcj-webpush-ios">通知已被系统拒绝，请到系统设置中手动开启妙脆角通知。</p>'
+          : "") +
         '<div class="mcj-webpush-actions">' +
         (st.needPwa
-          ? '<button type="button" class="mcj-webpush-btn primary" data-webpush-install>先添加到主屏幕</button>'
-          : '<button type="button" class="mcj-webpush-btn primary" data-webpush-enable>开启通知</button>') +
-        '<button type="button" class="mcj-webpush-btn ghost" data-webpush-later>稍后再说</button>' +
+          ? '<button type="button" class="mcj-webpush-btn primary" data-webpush-install>' +
+            GUIDE_COPY.install +
+            "</button>"
+          : st.state === "denied"
+            ? ""
+            : '<button type="button" class="mcj-webpush-btn primary" data-webpush-enable>' +
+              GUIDE_COPY.enable +
+              "</button>") +
+        '<button type="button" class="mcj-webpush-btn ghost" data-webpush-later>' +
+        GUIDE_COPY.later +
+        "</button>" +
         "</div></div>";
       document.body.appendChild(wrap);
 
@@ -290,6 +422,7 @@
         if (!t) return;
         if (t.closest("[data-webpush-later]")) {
           markDismissed(72);
+          markFirstPrompted();
           closeGuide();
           return;
         }
@@ -308,7 +441,7 @@
             })
             .catch(function (err) {
               btn.disabled = false;
-              btn.textContent = "开启通知";
+              btn.textContent = GUIDE_COPY.enable;
               alert((err && err.message) || "开启失败");
             });
         }
@@ -316,54 +449,127 @@
     });
   }
 
+  /**
+   * First enter PWA: show guide when standalone + permission default + supported.
+   * Never calls Notification.requestPermission() by itself.
+   * If already granted, silently restores subscription.
+   */
+  function maybePromptOnFirstVisit(options) {
+    var opts = options || {};
+    if (!getAccessToken()) return Promise.resolve({ shown: false, reason: "no_token" });
+    if (!supportsWebPush()) return Promise.resolve({ shown: false, reason: "unsupported" });
+
+    var perm = permissionState();
+    if (perm === "granted") {
+      return restoreIfGranted({ role: opts.role }).then(function (r) {
+        return { shown: false, restored: !!(r && r.ok), reason: "already_granted" };
+      });
+    }
+    if (perm === "denied") {
+      markDenied();
+      return Promise.resolve({ shown: false, reason: "denied" });
+    }
+
+    // iOS Safari (non-standalone): never request push permission.
+    // Soft tip card only (Add to Home Screen) — no Notification.requestPermission().
+    if (isIos() && !isStandalone()) {
+      if (dismissedRecently() && !opts.force) {
+        return Promise.resolve({ shown: false, reason: "dismissed" });
+      }
+      if (wasFirstPrompted() && !opts.force) {
+        return Promise.resolve({ shown: false, reason: "already_prompted" });
+      }
+      markFirstPrompted();
+      showGuide({ force: true, role: opts.role, onEnabled: opts.onEnabled });
+      return Promise.resolve({ shown: true, reason: "need_pwa_tip" });
+    }
+
+    // First-visit auto guide only in installed PWA / standalone.
+    if (!isStandalone() && !opts.force) {
+      return Promise.resolve({ shown: false, reason: "not_standalone" });
+    }
+    if (perm !== "default") return Promise.resolve({ shown: false, reason: "perm_" + perm });
+    if (dismissedRecently() && !opts.force) return Promise.resolve({ shown: false, reason: "dismissed" });
+    if (wasFirstPrompted() && !opts.force) return Promise.resolve({ shown: false, reason: "already_prompted" });
+
+    markFirstPrompted();
+    showGuide({ role: opts.role, onEnabled: opts.onEnabled, force: !!opts.force });
+    return Promise.resolve({ shown: true, reason: "guide" });
+  }
+
   function mountSettings(root, options) {
     if (!root) return;
-    var opts = options || {};
+    root._mcjWebPushOpts = options || {};
     ensureGuideCss();
-    root.innerHTML =
-      '<div class="mcj-webpush-settings">' +
-      '<div class="mcj-webpush-settings-row">' +
-      "<div><strong>通知设置</strong><p data-webpush-status-text>检测中…</p></div>" +
-      '<label class="mcj-webpush-switch"><input type="checkbox" data-webpush-toggle disabled /><span></span></label>' +
-      "</div>" +
-      '<p class="mcj-webpush-hint" data-webpush-hint></p>' +
-      '<button type="button" class="mcj-webpush-btn ghost" data-webpush-open-guide>打开通知引导</button>' +
-      "</div>";
-
-    var toggle = root.querySelector("[data-webpush-toggle]");
-    var statusText = root.querySelector("[data-webpush-status-text]");
-    var hint = root.querySelector("[data-webpush-hint]");
 
     function paint() {
+      var opts = root._mcjWebPushOpts || {};
+      var toggle = root.querySelector("[data-webpush-toggle]");
+      var statusText = root.querySelector("[data-webpush-status-text]");
+      var hint = root.querySelector("[data-webpush-hint]");
+      if (!toggle || !statusText || !hint) return Promise.resolve(null);
       return refreshStatus().then(function (st) {
         statusText.textContent = st.label;
         toggle.disabled = st.state === "unsupported" || st.state === "denied" || st.state === "need_pwa";
+        // Toggle ON only when server subscription is active — never for permission-only.
         toggle.checked = st.state === "active";
-        if (st.state === "need_pwa") hint.textContent = "要接收妙脆角即时通知，请先将妙脆角添加到主屏幕。";
-        else if (st.state === "denied") hint.textContent = "浏览器已禁止通知。请到系统设置允许后，再回到这里重新开启。";
+        if (st.state === "need_pwa") hint.textContent = GUIDE_COPY.needPwa;
+        else if (st.state === "denied")
+          hint.textContent = "通知已被系统拒绝。请到系统设置允许后，再回到这里重新开启。";
         else if (st.state === "unsupported") hint.textContent = "当前浏览器不支持 Web Push。";
         else if (st.state === "active") hint.textContent = "已在本机开启。关闭开关将取消本机订阅。";
+        else if (st.state === "needs_sync")
+          hint.textContent = "系统权限已开，但服务器订阅未激活。请点「开启 / 恢复通知」重新同步。";
+        else if (st.state === "granted")
+          hint.textContent = "系统已授权，但尚未完成推送订阅。请点「开启 / 恢复通知」。";
         else hint.textContent = "开启后即使关闭网页，也能收到订单与重要消息推送。";
         return st;
       });
     }
 
-    paint();
+    root.innerHTML =
+      '<div class="mcj-webpush-settings">' +
+      '<div class="mcj-webpush-settings-row">' +
+      "<div><strong>消息通知</strong><p data-webpush-status-text>检测中…</p></div>" +
+      '<label class="mcj-webpush-switch"><input type="checkbox" data-webpush-toggle disabled /><span></span></label>' +
+      "</div>" +
+      '<p class="mcj-webpush-hint" data-webpush-hint></p>' +
+      '<button type="button" class="mcj-webpush-btn ghost" data-webpush-open-guide>开启 / 恢复通知</button>' +
+      "</div>";
 
-    root.addEventListener("change", function (ev) {
-      if (!ev.target || !ev.target.matches("[data-webpush-toggle]")) return;
-      var want = !!ev.target.checked;
-      toggle.disabled = true;
-      var job = want ? enablePush({ role: opts.role }) : disablePush();
-      job.then(function () { return paint(); }).catch(function (err) {
-        alert((err && err.message) || "操作失败");
-        return paint();
+    if (root.getAttribute("data-mcj-webpush-bound") !== "1") {
+      root.setAttribute("data-mcj-webpush-bound", "1");
+      root.addEventListener("change", function (ev) {
+        if (!ev.target || !ev.target.matches("[data-webpush-toggle]")) return;
+        var opts = root._mcjWebPushOpts || {};
+        var toggle = root.querySelector("[data-webpush-toggle]");
+        var want = !!ev.target.checked;
+        if (toggle) toggle.disabled = true;
+        var job = want ? enablePush({ role: opts.role }) : disablePush();
+        job
+          .then(function () {
+            return paint();
+          })
+          .catch(function (err) {
+            alert((err && err.message) || "操作失败");
+            return paint();
+          });
       });
-    });
+      root.addEventListener("click", function (ev) {
+        if (ev.target && ev.target.closest("[data-webpush-open-guide]")) {
+          var opts = root._mcjWebPushOpts || {};
+          showGuide({ force: true, role: opts.role, onEnabled: paint });
+        }
+      });
+    }
 
-    root.addEventListener("click", function (ev) {
-      if (ev.target && ev.target.closest("[data-webpush-open-guide]")) {
-        showGuide({ force: true, role: opts.role, onEnabled: paint });
+    paint().then(function (st) {
+      var opts = root._mcjWebPushOpts || {};
+      // Permission granted but server not active → force restore/upsert to active.
+      if (st && st.permission === "granted" && !st.currentActive) {
+        restoreIfGranted({ role: opts.role }).then(function () {
+          return paint();
+        });
       }
     });
   }
@@ -376,6 +582,8 @@
     refreshStatus: refreshStatus,
     enablePush: enablePush,
     disablePush: disablePush,
+    restoreIfGranted: restoreIfGranted,
+    maybePromptOnFirstVisit: maybePromptOnFirstVisit,
     showGuide: showGuide,
     closeGuide: closeGuide,
     mountSettings: mountSettings,
