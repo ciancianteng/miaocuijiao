@@ -415,15 +415,17 @@ export async function listPendingForCs({ orderIds = [] } = {}) {
 }
 
 async function insertPaidTransaction({ order, receipt, reviewerId, at }) {
+  const confirmed =
+    money(receipt?.amount) > 0 ? money(receipt.amount) : money(order.total_amount);
   const rows = await companionDb("payment_transactions", "", {
     method: "POST",
     body: JSON.stringify({
       order_id: order.id,
       receipt_id: receipt.id,
       boss_id: order.boss_id,
-      gross_amount: money(order.total_amount),
+      gross_amount: confirmed,
       refunded_amount: 0,
-      net_amount: money(order.total_amount),
+      net_amount: confirmed,
       payment_status: "paid",
       payment_method: receipt.payment_method || paymentMethod(order),
       confirmed_by: reviewerId,
@@ -431,7 +433,16 @@ async function insertPaidTransaction({ order, receipt, reviewerId, at }) {
       created_at: at,
     }),
   });
-  return rows?.[0] || null;
+  const row = rows?.[0] || null;
+  if (row && order?.boss_id) {
+    try {
+      const { recastBossVipSafe } = await import("./_boss-vip.js");
+      await recastBossVipSafe(order.boss_id, { triggerOrderId: order.id, reason: "confirm" });
+    } catch (err) {
+      console.warn("[boss-vip] recast after paid tx", err?.message || err);
+    }
+  }
+  return row;
 }
 
 /** Recover approved receipt that never got a payment_transactions row (half-commit). */

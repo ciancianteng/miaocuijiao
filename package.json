@@ -21,6 +21,7 @@
     "verify:companion-earnings-classification": "node scripts/verify-companion-earnings-classification.mjs",
     "verify:multi-companion-frontend": "node scripts/verify-multi-companion-frontend.mjs",
     "verify:og-share-meta": "node scripts/verify-og-share-meta.mjs",
+<<<<<<< HEAD
     "verify:pwa-portal-start-urls": "node scripts/verify-pwa-portal-start-urls.mjs",
     "verify:multi-companion-order": "node scripts/verify-multi-companion-order.mjs",
     "verify:gift-system": "node scripts/verify-gift-system-offline.mjs",
@@ -31,6 +32,10 @@
     "verify:service-pricing-dedup": "node scripts/verify-service-pricing-dedup-offline.mjs",
     "verify:boss-order-form-simplify": "node scripts/verify-boss-order-form-simplify.mjs",
     "verify:invite-confirm-rewards": "node scripts/verify-invite-confirm-rewards-offline.mjs"
+=======
+    "verify:boss-vip": "node scripts/verify-boss-vip-offline.mjs",
+    "verify:pwa-portal-start-urls": "node scripts/verify-pwa-portal-start-urls.mjs"
+>>>>>>> 3a501aa (feat(boss-vip): auto-upgrade VIP from CS-confirmed spend)
   },
   "dependencies": {
     "@vitejs/plugin-react": "latest",
