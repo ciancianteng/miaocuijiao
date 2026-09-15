@@ -5,7 +5,6 @@
 --   policy create with duplicate_object guard
 --   seed insert on conflict do nothing (never overwrite existing rows)
 -- Does NOT drop, truncate, or update existing tag rows.
--- Keep in sync with supabase/migrations/20260915_companion_tags.sql
 
 create table if not exists public.companion_tags (
   id text primary key,

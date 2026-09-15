@@ -1,0 +1,9 @@
+{
+  "note": "Filled by verify-prod-companion-tags-crud.mjs output at apply time; see chat evidence.",
+  "migration": "supabase/migrations/20260915_companion_tags.sql",
+  "productionRef": "jqfaknpmcnqwqvatrwgo",
+  "table": "public.companion_tags",
+  "appliedAt": "2026-09-15T14:47Z",
+  "seedCount": 10,
+  "crudPass": true
+}
