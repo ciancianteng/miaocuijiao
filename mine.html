@@ -112,6 +112,16 @@
     .boss-stat:hover,.boss-stat:active{background:rgba(232,154,196,.1)}
     .boss-stat-label{display:flex;align-items:center;gap:6px;color:#ffd6e7;font-size:13px;font-weight:700}
     .boss-stat-value{font-size:22px;font-weight:800;line-height:1.1;letter-spacing:.01em}
+    .boss-vip-card{
+      margin:0 0 16px;padding:14px 16px;border-radius:18px;
+      border:1px solid rgba(232,154,196,.34);
+      background:rgba(232,154,196,.06);
+    }
+    .boss-vip-card h2{margin:0 0 10px;font-size:16px;font-weight:800}
+    .boss-vip-row{display:flex;justify-content:space-between;gap:12px;margin:6px 0;font-size:13px;line-height:1.45}
+    .boss-vip-row span{color:#ffd6e7;font-weight:700}
+    .boss-vip-row strong{font-weight:800;text-align:right}
+    .boss-vip-benefits{margin:10px 0 0;color:rgba(255,255,255,.72);font-size:12px;line-height:1.5;white-space:pre-wrap}
 
     /* 4 entry buttons — open modal, never inline expand */
     .entry-stack{display:grid;gap:14px}
@@ -340,7 +350,7 @@
       var avatarFileInput=document.getElementById('avatarFileInput');
       var avatarUrlField=document.getElementById('avatarUrlField');
       var avatarUploading=false;
-      var state={loading:true,error:'',user:null,wallet:null,points:null,directCount:null,passwordHint:'',pendingReviewTipId:'',openFeature:''};
+      var state={loading:true,error:'',user:null,wallet:null,points:null,vip:null,directCount:null,passwordHint:'',pendingReviewTipId:'',openFeature:''};
       var TIP_KEY='mcjBossPendingReviewTipShown';
       function tipAlreadyShown(){try{return sessionStorage.getItem(TIP_KEY)==='1'}catch(e){return false}}
       function markTipShown(){try{sessionStorage.setItem(TIP_KEY,'1')}catch(e){}}
@@ -437,6 +447,24 @@
         return url;
       }
 
+      function bossVipCardHtml(){
+        var v=state.vip||{};
+        var name=v.currentLevelName||'普通会员';
+        var spend=v.confirmedSpend!=null?v.confirmedSpend:0;
+        var next=v.nextLevelName||'已是最高等级';
+        var nextTh=v.nextThreshold!=null?v.nextThreshold:'—';
+        var remain=v.isMaxLevel?0:(v.remaining!=null?v.remaining:0);
+        var benefits=v.benefits||'暂无';
+        return '<section class="boss-vip-card">'+
+          '<h2>我的 VIP</h2>'+
+          '<div class="boss-vip-row"><span>当前等级</span><strong>'+esc(name)+'</strong></div>'+
+          '<div class="boss-vip-row"><span>累计有效消费</span><strong>'+esc(spend)+' 猫粮</strong></div>'+
+          '<div class="boss-vip-row"><span>下一等级</span><strong>'+esc(next)+'</strong></div>'+
+          '<div class="boss-vip-row"><span>升级门槛</span><strong>'+esc(nextTh)+(v.nextThreshold!=null?' 猫粮':'')+'</strong></div>'+
+          '<div class="boss-vip-row"><span>还差</span><strong>'+esc(v.isMaxLevel?'—':(remain+' 猫粮'))+'</strong></div>'+
+          '<p class="boss-vip-benefits">福利：'+esc(benefits)+'</p>'+
+        '</section>';
+      }
       function entryLink(opts){
         var tag=opts.tag||'a';
         return '<'+tag+' class="entry-link" '+(opts.attrs||'')+'>'+esc(opts.title)+'</'+tag+'>';
@@ -524,6 +552,7 @@
               '<a class="boss-stat" href="my-direct-companions.html"><span class="boss-stat-label">直属</span><strong class="boss-stat-value">'+esc(directCount)+'</strong></a>'+
             '</div>'+
           '</section>'+
+          bossVipCardHtml()+
           (setHint?'<p style="margin:0 0 14px;color:#fbbf24;font-size:12px;line-height:1.45">'+esc(setHint)+'</p>':'')+
           '<div class="mine-quick" aria-label="'+mineL('常用功能','Quick actions')+'">'+
             '<a href="/orders.html" aria-label="'+mineL('订单','Orders')+'"><span class="mine-quick-ico" aria-hidden="true">'+mineQuickIco('orders')+'</span><span class="mine-quick-label">'+mineL('订单','Orders')+'</span></a>'+
@@ -590,10 +619,12 @@ async function load(){
             fetch('/api/points?limit=1',{headers:authHdr,cache:'no-store'})
               .then(function(r){return r.json().then(function(b){return {r:r,b:b}})}).catch(function(){return null}),
             fetch('/api/boss/direct-companions',{headers:authHdr,cache:'no-store'})
+              .then(function(r){return r.json().then(function(b){return {r:r,b:b}})}).catch(function(){return null}),
+            fetch('/api/boss/vip',{headers:authHdr,cache:'no-store'})
               .then(function(r){return r.json().then(function(b){return {r:r,b:b}})}).catch(function(){return null})
           ]);
           secondary.then(function(rows){
-            var sec=rows[0], wr=rows[1], pr=rows[2], dr=rows[3];
+            var sec=rows[0], wr=rows[1], pr=rows[2], dr=rows[3], vr=rows[4];
             if(sec&&sec.r&&sec.r.ok&&sec.b&&sec.b.ok&&sec.b.user){
               state.user=Object.assign({},state.user,sec.b.user);
               state.passwordHint=sec.b.passwordHint||state.passwordHint;
@@ -609,6 +640,8 @@ async function load(){
             else state.points=state.points||{balance:0,lifetimeEarned:0};
             if(dr&&dr.r&&dr.r.ok&&dr.b&&dr.b.ok&&Array.isArray(dr.b.companions))state.directCount=dr.b.companions.length;
             else state.directCount=state.directCount!=null?state.directCount:0;
+            if(vr&&vr.r&&vr.r.ok&&vr.b&&vr.b.ok)state.vip=vr.b.vip||null;
+            else state.vip=state.vip||null;
             paint();
             checkPendingReviewTip();
           });

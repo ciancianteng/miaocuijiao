@@ -3643,6 +3643,13 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
         }
       }
 
+      try {
+        const { recastBossVipSafe } = await import("./_boss-vip.js");
+        await recastBossVipSafe(order.boss_id, { triggerOrderId: order.id, reason: "confirm" });
+      } catch (err) {
+        console.warn("[cs/confirm_payment] boss vip recast", err?.message || err);
+      }
+
       return json(res, 200, {
         ok: true,
         message: isAssignedPath
