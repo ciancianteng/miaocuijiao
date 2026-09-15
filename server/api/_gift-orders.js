@@ -179,13 +179,20 @@ async function creditCompanionIncome(companionId, amount, note, relatedId) {
 export async function resolveGiftPaymentInfo(preferredMethod = "") {
   const listed = await listBossOrderPaymentMethods([]).catch(() => ({ methods: [] }));
   const methods = Array.isArray(listed?.methods) ? listed.methods : Array.isArray(listed) ? listed : [];
+  const walletMethods = methods.filter((m) => {
+    const code = String(m.code || m.id || "").toLowerCase();
+    return m.enabled !== false && m.open !== false && /catfood|wallet|猫粮/.test(code);
+  });
   const manual = methods.filter((m) => {
     const code = String(m.code || m.id || "").toLowerCase();
     return m.enabled !== false && m.open !== false && !/catfood|wallet|猫粮/.test(code);
   });
   const preferred = String(preferredMethod || "").trim();
+  const preferWallet = /catfood|wallet|猫粮|balance/.test(preferred.toLowerCase());
   const pick =
-    (preferred && manual.find((m) => String(m.code || m.id).toLowerCase() === preferred.toLowerCase())) ||
+    (!preferWallet &&
+      preferred &&
+      manual.find((m) => String(m.code || m.id).toLowerCase() === preferred.toLowerCase())) ||
     manual.find((m) => m.configured || m.qrUrl) ||
     manual[0] ||
     null;
@@ -199,6 +206,12 @@ export async function resolveGiftPaymentInfo(preferredMethod = "") {
       pay?.instructions ||
       pick?.instructions ||
       "请按应付金额完成转账，并上传付款截图等待客服审核。审核通过后礼物才会到账。",
+    walletAvailable: walletMethods.length > 0 || true,
+    walletMethods: walletMethods.map((m) => ({
+      code: m.code || m.id,
+      name: m.name || m.label || "猫粮余额",
+      enabled: m.enabled !== false,
+    })),
     methods: manual.map((m) => ({
       code: m.code || m.id,
       name: m.name || m.label || m.code,
@@ -474,6 +487,23 @@ async function upsertGiftWall(order) {
       last_received_at: nowIso(),
       updated_at: nowIso(),
     }),
+  });
+}
+
+/** Wallet / tip path: bump gift wall after a successful paid gift_transaction (not pending mall orders). */
+export async function recordCompanionGiftWallHit({
+  companionId,
+  giftId = null,
+  giftName = "礼物",
+  giftImageUrl = "",
+  quantity = 1,
+} = {}) {
+  return upsertGiftWall({
+    receiver_companion_id: companionId,
+    gift_id: giftId,
+    gift_name_snapshot: giftName,
+    gift_image_snapshot: giftImageUrl || "",
+    quantity,
   });
 }
 

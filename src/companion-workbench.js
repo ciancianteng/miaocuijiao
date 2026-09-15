@@ -1917,7 +1917,6 @@
         bindCompanionOrdersRealtime();
         var s=(state.data||{}).summary||{};
         updateTabBadge(s.waitingConfirm||s.designatedPending);
-<<<<<<< HEAD
         try{
           ensureCompanionWebPushScript().then(function(api){
             if(api&&typeof api.maybePromptOnFirstVisit==='function'){
@@ -1925,9 +1924,7 @@
             }
           });
         }catch(ePush){}
-=======
         try{setTimeout(maybeShowGiftReceivedPopup,300)}catch(e){}
->>>>>>> acaa4fd (feat(gifts): companion gift popup, GET my_gifts, profile wall order)
       });
     }else paint();
   }

@@ -431,16 +431,80 @@
     if (!state.selectedGift || !state.selectedCompanion) return;
     if (!requireBoss()) return;
     if (state.creating) return;
-    var btn = $("gmConfirmBtn");
-    state.creating = true;
-    if (btn) {
-      btn.disabled = true;
-      btn.textContent = "创建订单…";
-    }
-    var gift = state.selectedGift;
-    var companion = state.selectedCompanion;
+    openPayMethodChooser();
+  }
+
+  function openPayMethodChooser() {
+    var gift = state.selectedGift || {};
+    var companion = state.selectedCompanion || {};
     var qtyEl = $("gmQty");
     state.quantity = Math.max(1, Math.floor(Number((qtyEl && qtyEl.value) || state.quantity || 1)));
+    var total = giftPrice(gift) * state.quantity;
+    closeSheet({ keepSelection: true });
+    var pay = $("gmPay");
+    var backdrop = $("gmPayBackdrop");
+    if (pay) pay.hidden = false;
+    if (backdrop) backdrop.hidden = false;
+    document.body.classList.add("gm-pay-open");
+    var root = $("gmPayBody");
+    if (!root) return;
+    root.innerHTML =
+      '<section class="gm-pay-card"><h3>确认赠送</h3><p>送给 <strong>' +
+      escapeHtml(companion.nickname || "陪玩") +
+      "</strong> · " +
+      escapeHtml(gift.name || "礼物") +
+      " ×" +
+      escapeHtml(String(state.quantity)) +
+      " · <strong>" +
+      escapeHtml(String(total)) +
+      "</strong> 猫粮</p></section>" +
+      '<section class="gm-pay-card"><h3>选择付款方式</h3>' +
+      '<button type="button" class="gm-btn primary" id="gmPayWallet">猫粮余额支付</button>' +
+      '<button type="button" class="gm-btn" id="gmPayExternal" style="margin-top:10px">外部支付 / 上传付款截图</button>' +
+      '<p class="gm-confirm-hint">外部支付需客服审核通过后才会到账；余额支付成功后立即送达。</p></section>';
+  }
+
+  async function payWithWalletFromMall() {
+    if (!state.selectedGift || !state.selectedCompanion) return;
+    if (state.creating) return;
+    state.creating = true;
+    try {
+      var res = await fetch("/api/boss/marketplace", {
+        method: "POST",
+        headers: authHeaders(),
+        credentials: "same-origin",
+        body: JSON.stringify({
+          action: "send_gift",
+          companionId: state.selectedCompanion.id,
+          giftId: state.selectedGift.id,
+          quantity: state.quantity,
+          idempotencyKey: idem(),
+        }),
+      });
+      var data = await res.json().catch(function () {
+        return {};
+      });
+      if (!res.ok || !data.ok) {
+        if (data && data.code === "INSUFFICIENT_BALANCE") {
+          if (confirm("猫粮余额不足，是否去充值？")) location.href = data.rechargeUrl || "/recharge.html";
+          return;
+        }
+        toast(String((data && data.message) || "余额支付失败"));
+        return;
+      }
+      closePay();
+      showStatus("礼物已送出", "猫粮余额支付成功，已计入陪玩礼物墙");
+    } catch (e) {
+      toast("网络错误，请重试");
+    } finally {
+      state.creating = false;
+    }
+  }
+
+  async function createExternalGiftOrder() {
+    if (!state.selectedGift || !state.selectedCompanion) return;
+    if (state.creating) return;
+    state.creating = true;
     try {
       var res = await fetch("/api/boss/gift-orders", {
         method: "POST",
@@ -448,8 +512,8 @@
         credentials: "same-origin",
         body: JSON.stringify({
           action: "create",
-          companionId: companion.id,
-          giftId: gift.id,
+          companionId: state.selectedCompanion.id,
+          giftId: state.selectedGift.id,
           quantity: state.quantity,
           idempotencyKey: idem(),
         }),
@@ -467,10 +531,6 @@
       toast("网络错误，请重试");
     } finally {
       state.creating = false;
-      if (btn) {
-        btn.textContent = "确认赠送";
-        setConfirmEnabled();
-      }
     }
   }
 
@@ -596,6 +656,18 @@
     if (t.closest("#gmConfirmBtn")) {
       e.preventDefault();
       confirmCreateOrder();
+      return;
+    }
+
+    if (t.closest("#gmPayWallet")) {
+      e.preventDefault();
+      payWithWalletFromMall();
+      return;
+    }
+
+    if (t.closest("#gmPayExternal")) {
+      e.preventDefault();
+      createExternalGiftOrder();
       return;
     }
 
