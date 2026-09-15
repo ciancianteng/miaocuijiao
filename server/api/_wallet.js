@@ -300,6 +300,8 @@ export async function notifyBoss(bossId, title, body, kind = "wallet", relatedId
       deepLink = rid ? "/support.html?order=" + encodeURIComponent(rid) : "/support.html";
     } else if (/gift/.test(kindKey)) {
       deepLink = "/gifts.html";
+    } else if (/vip/.test(kindKey)) {
+      deepLink = "/mine.html";
     } else if (rid) {
       deepLink = "/orders.html?id=" + encodeURIComponent(rid);
     }
