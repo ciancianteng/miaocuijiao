@@ -3148,7 +3148,8 @@
       : '<p class="pw-note">添加到主屏幕后打开更快，使用起来更像 App。关闭自动提示后仍可从这里重新查看说明。</p>'+
         '<button class="pw-btn primary" type="button" data-pwa-install-guide>安装妙脆角 / 添加到主屏幕</button>';
     return '<div class="pw-page-head"><div><h2>设置</h2><p>仅影响本机陪玩端体验。</p></div></div>'+
-      '<section class="pw-card pad"><h3>主题</h3><p class="pw-note">当前为固定黑粉运营主题（上线版不可切换品牌色）。</p><div class="pw-info-list"><div><span>主题</span><strong>暗色粉（默认）</strong></div></div></section>'+
+      '<section class="pw-card pad"><h3>新手教学</h3><p class="pw-note">约 1～2 分钟了解申请、抢单与收入流程（可随时重看）。</p><a class="pw-btn primary" href="/guide.html?role=companion">打开新手教学</a></section>'+
+      '<section class="pw-card pad" style="margin-top:14px"><h3>主题</h3><p class="pw-note">当前为固定黑粉运营主题（上线版不可切换品牌色）。</p><div class="pw-info-list"><div><span>主题</span><strong>暗色粉（默认）</strong></div></div></section>'+
       '<section class="pw-card pad" style="margin-top:14px"><h3>消息通知</h3><div id="mcjWebPushSettingsMount" class="mcj-webpush-companion-mount"></div><p class="pw-note">关闭开关会取消本机 Web Push 订阅；站内消息仍可在消息中心查看。</p></section>'+
       '<section class="pw-card pad" style="margin-top:14px"><h3>声音</h3><label class="pw-check"><input type="checkbox" data-setting="sound" '+(s.sound?'checked':'')+'> 提示音（新消息 / 订单 / 抢单 / 审核）</label></section>'+
       '<section class="pw-card pad" style="margin-top:14px"><h3>安装妙脆角</h3>'+installBlock+'</section>'+
