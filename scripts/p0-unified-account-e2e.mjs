@@ -250,9 +250,9 @@ async function main() {
         serviceType: "陪玩",
       },
     });
-    const ok = place.json?.ok === true || !/SELF_TRADE|自己/i.test(String(place.json?.message || ""));
+    const ok = place.json?.ok === true || !/SELF_ORDER_NOT_ALLOWED|SELF_TRADE|自己/i.test(String(place.json?.message || ""));
     // If companion offline, still count as pass for "not self" path when code is not SELF_TRADE
-    const selfBlocked = place.json?.code === "SELF_TRADE_FORBIDDEN";
+    const selfBlocked = (place.json?.code === "SELF_ORDER_NOT_ALLOWED" || place.json?.code === "SELF_TRADE_FORBIDDEN");
     log("E", ok && !selfBlocked, place.json?.message || `status=${place.status} order=${place.json?.order?.id || ""}`);
   } catch (e) {
     log("E", false, e.message);
@@ -274,8 +274,8 @@ async function main() {
     });
     const rejected =
       place.status === 403 ||
-      place.json?.code === "SELF_TRADE_FORBIDDEN" ||
-      /自己|同一账号|SELF_TRADE/i.test(String(place.json?.message || ""));
+      (place.json?.code === "SELF_ORDER_NOT_ALLOWED" || place.json?.code === "SELF_TRADE_FORBIDDEN") ||
+      /自己|同一账号|SELF_ORDER_NOT_ALLOWED|SELF_TRADE/i.test(String(place.json?.message || ""));
     log("F", rejected, place.json?.message || `status=${place.status}`);
   } catch (e) {
     log("F", false, e.message);
@@ -310,8 +310,8 @@ async function main() {
       body: { action: "accept_order", id: orderId },
     });
     const grabOk =
-      grab.json?.code === "SELF_TRADE_FORBIDDEN" ||
-      /抢自己的订单|同一账号|SELF_TRADE/i.test(String(grab.json?.message || ""));
+      (grab.json?.code === "SELF_ORDER_NOT_ALLOWED" || grab.json?.code === "SELF_TRADE_FORBIDDEN") ||
+      /抢自己的订单|同一账号|SELF_ORDER_NOT_ALLOWED|SELF_TRADE/i.test(String(grab.json?.message || ""));
     log("G", grabOk, grab.json?.message || `status=${grab.status}`);
   } catch (e) {
     log("G", false, e.message);
@@ -356,8 +356,8 @@ async function main() {
       },
     });
     const rejected =
-      assign.json?.code === "SELF_TRADE_FORBIDDEN" ||
-      /自己|老板本人|同一账号|SELF_TRADE/i.test(String(assign.json?.message || ""));
+      (assign.json?.code === "SELF_ORDER_NOT_ALLOWED" || assign.json?.code === "SELF_TRADE_FORBIDDEN") ||
+      /自己|老板本人|同一账号|SELF_ORDER_NOT_ALLOWED|SELF_TRADE/i.test(String(assign.json?.message || ""));
     log("H", rejected, assign.json?.message || `status=${assign.status}`);
   } catch (e) {
     log("H", false, e.message);
@@ -378,7 +378,7 @@ async function main() {
       body: { action: "favorite", companionId: userId },
     });
     const favBlocked =
-      fav.json?.code === "SELF_TRADE_FORBIDDEN" || /收藏自己|同一账号|SELF_TRADE/i.test(String(fav.json?.message || ""));
+      (fav.json?.code === "SELF_ORDER_NOT_ALLOWED" || fav.json?.code === "SELF_TRADE_FORBIDDEN") || /收藏自己|同一账号|SELF_ORDER_NOT_ALLOWED|SELF_TRADE/i.test(String(fav.json?.message || ""));
     const adm = await adminToken();
     const rebate = await api("/api/admin/wallet", {
       method: "POST",

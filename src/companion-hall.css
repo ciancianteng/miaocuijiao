@@ -1159,3 +1159,12 @@ body{background:radial-gradient(circle at 76% 4%,rgba(255,145,195,.055),transpar
     max-height:36px!important;
   }
 }
+
+
+/* Phase 2 UX: immediate hall shell while /api/public/companions loads */
+.hall-skel-card{pointer-events:none!important;opacity:.72!important}
+.hall-skel-media{min-height:160px!important;background:linear-gradient(90deg,rgba(255,255,255,.04),rgba(255,145,195,.10),rgba(255,255,255,.04))!important;background-size:200% 100%!important;animation:hallSkel 1.2s ease-in-out infinite!important}
+.hall-skel-line{height:12px!important;margin:10px 12px!important;border-radius:999px!important;background:rgba(255,255,255,.08)!important}
+.hall-skel-line.lg{height:16px!important;width:62%!important}
+.hall-skel-line.short{width:40%!important}
+@keyframes hallSkel{0%{background-position:200% 0}100%{background-position:-200% 0}}

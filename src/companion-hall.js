@@ -2,7 +2,8 @@
   "use strict";
 
   var PER_PAGE = 12;
-  var state = { page: 1, items: [], taxonomyReady: false };
+  // loading=true until first companions fetch settles — never paint fake empty/0 meanwhile.
+  var state = { page: 1, items: [], taxonomyReady: false, loading: true, loadError: "" };
 
   function esc(value) {
     return String(value || "").replace(/[&<>"']/g, function (ch) {
@@ -133,11 +134,16 @@
     if (/暂停/.test(s)) return "暂停";
     return "离线";
   }
+  var inflightCompanions = null;
   async function readItems() {
+    if (inflightCompanions) return inflightCompanions;
+    inflightCompanions = (async function () {
     var dataItems = [];
     state.loadError = "";
     try {
-      var response = await fetch("/api/public/companions", { headers: { Accept: "application/json" }, cache: "no-store" });
+      // Allow short CDN/browser cache from API Cache-Control (list is slowly changing).
+      // Detail pages still fetch by id with no-store on the server.
+      var response = await fetch("/api/public/companions", { headers: { Accept: "application/json" }, cache: "default" });
       var body = await response.json().catch(function () { return {}; });
       if (!response.ok || !body.ok) throw new Error(body.message || "陪玩列表读取失败");
       dataItems = Array.isArray(body.companions) ? body.companions : [];
@@ -214,7 +220,10 @@
     }).filter(function (item) {
       return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(item.id || ""));
     });
-  }  function setOptions(id, options, allLabel) {
+    })();
+    return inflightCompanions;
+  }
+  function setOptions(id, options, allLabel) {
     var el = document.getElementById(id);
     if (!el) return;
     var current = el.value;
@@ -575,15 +584,24 @@
   function render() {
     var list = document.getElementById("playerList");
     if (!list) return;
+    var empty = document.getElementById("emptyState");
+    var count = document.getElementById("resultCount");
+    // While the first companions request is in flight: skeleton only — never "共 0" / empty copy.
+    if (state.loading) {
+      list.setAttribute("aria-busy", "true");
+      if (empty) empty.hidden = true;
+      if (count) count.textContent = "正在加载陪玩…";
+      if (!list.querySelector(".hall-skel-card, .player-card")) paintHallSkeleton();
+      return;
+    }
+    list.removeAttribute("aria-busy");
     var items = filtered();
     var pages = Math.max(1, Math.ceil(items.length / PER_PAGE));
     if (state.page > pages) state.page = pages;
     var start = (state.page - 1) * PER_PAGE;
     // Never keep stale cards when the filtered set is empty.
     list.innerHTML = items.length ? items.slice(start, start + PER_PAGE).map(card).join("") : "";
-    var count = document.getElementById("resultCount");
     if (count) count.textContent = "共 " + items.length + " 位陪玩";
-    var empty = document.getElementById("emptyState");
     if (empty) {
       var showEmpty = !items.length;
       empty.hidden = !showEmpty;
@@ -668,7 +686,22 @@
       });
     });
   }
+  
+  function paintHallSkeleton() {
+    var list = document.getElementById("playerList");
+    if (!list) return;
+    if (list.querySelector(".player-card, .hall-skel-card")) return;
+    var card = '<article class="player-card hall-skel-card" aria-hidden="true"><div class="companion-card-media hall-skel-media"></div><div class="player-info"><div class="hall-skel-line lg"></div><div class="hall-skel-line"></div><div class="hall-skel-line short"></div></div></article>';
+    list.innerHTML = card + card + card + card;
+    list.setAttribute("aria-busy", "true");
+    var count = document.getElementById("resultCount");
+    if (count) count.textContent = "正在加载陪玩…";
+  }
+
   async function start() {
+    state.loading = true;
+    state.loadError = "";
+    paintHallSkeleton();
     var count = document.getElementById("resultCount");
     if (count) count.textContent = "正在加载陪玩…";
     // Do not auto-seed preview fixtures into the public hall path.
@@ -676,7 +709,11 @@
     if (window.MCJCompanionLevels && typeof window.MCJCompanionLevels.hydrateFromApi === "function") {
       try { await window.MCJCompanionLevels.hydrateFromApi(); } catch (e) { /* keep last known */ }
     }
-    state.items = await readItems();
+    try {
+      state.items = await readItems();
+    } finally {
+      state.loading = false;
+    }
     setupFilters();
     await loadGameFilterFromServicesApi();
     bind();
@@ -691,7 +728,10 @@
           setupFilters();
           return loadGameFilterFromServicesApi();
         })
-        .then(function () { render(); })
+        .then(function () {
+          // Taxonomy may finish before companions — render() must not clear loading shell.
+          if (!state.loading) render();
+        })
         .catch(function () {});
     }
   }

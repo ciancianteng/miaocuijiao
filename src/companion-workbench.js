@@ -306,11 +306,10 @@
     try{
       if(navigator.vibrate)navigator.vibrate([120,60,120]);
     }catch(e){}
-    try{
+        try{
+      // Web Push only — never auto-prompt system permission here.
       if(typeof Notification==='function'&&Notification.permission==='granted'){
         new Notification('妙脆角陪玩',{body:'你有新的指定订单',tag:id||'designated-order'});
-      }else if(typeof Notification==='function'&&Notification.permission==='default'){
-        Notification.requestPermission().catch(function(){});
       }
     }catch(e){}
     var s=(state.data||{}).summary||{};
@@ -336,6 +335,24 @@
     try{return Object.assign({notify:true,sound:true,theme:'dark'},JSON.parse(localStorage.getItem(SETTINGS_KEY)||'{}'))}catch(e){return {notify:true,sound:true,theme:'dark'}}
   }
   function saveSettings(next){state.settings=next;try{localStorage.setItem(SETTINGS_KEY,JSON.stringify(next))}catch(e){}}
+  function ensureCompanionWebPushScript(){
+    return new Promise(function(resolve){
+      if(window.MCJWebPush){resolve(window.MCJWebPush);return}
+      var existing=document.querySelector('script[data-mcj-webpush-client]');
+      if(existing){
+        existing.addEventListener('load',function(){resolve(window.MCJWebPush)});
+        existing.addEventListener('error',function(){resolve(null)});
+        return;
+      }
+      var s=document.createElement('script');
+      s.src='/src/web-push-client.js?v=20260914webpush5';
+      s.defer=true;
+      s.setAttribute('data-mcj-webpush-client','1');
+      s.onload=function(){resolve(window.MCJWebPush)};
+      s.onerror=function(){resolve(null)};
+      document.head.appendChild(s);
+    });
+  }
   function openPwaInstallGuide(){
     function tryOpen(){
       if(window.MCJPwaInstall&&typeof window.MCJPwaInstall.openGuide==='function'){
@@ -1043,6 +1060,7 @@
     state.session=normalized;
   }
   function clearSession(){
+    try{if(window.MCJWebPush&&window.MCJWebPush.disablePush)window.MCJWebPush.disablePush()}catch(e){}
     localStorage.removeItem(SESSION_KEY);
     sessionStorage.removeItem(SESSION_KEY);
     try{
@@ -1897,6 +1915,13 @@
         bindCompanionOrdersRealtime();
         var s=(state.data||{}).summary||{};
         updateTabBadge(s.waitingConfirm||s.designatedPending);
+        try{
+          ensureCompanionWebPushScript().then(function(api){
+            if(api&&typeof api.maybePromptOnFirstVisit==='function'){
+              api.maybePromptOnFirstVisit({role:'companion'});
+            }
+          });
+        }catch(ePush){}
       });
     }else paint();
   }
@@ -2046,6 +2071,16 @@
       preserveScroll:preserveScroll,
       forceFull:!!opts.forceFull
     });
+    if(state.route==='settings'){
+      try{
+        ensureCompanionWebPushScript().then(function(){
+          var mount=document.getElementById('mcjWebPushSettingsMount');
+          if(mount&&window.MCJWebPush&&typeof window.MCJWebPush.mountSettings==='function'){
+            window.MCJWebPush.mountSettings(mount,{role:'companion'});
+          }
+        });
+      }catch(e){}
+    }
   }
   function noticeHtml(){return state.notice?'<div class="pw-toast show">'+esc(state.notice)+'</div>':''}
   function forgotPasswordModalHtml(){
@@ -3114,7 +3149,7 @@
         '<button class="pw-btn primary" type="button" data-pwa-install-guide>安装妙脆角 / 添加到主屏幕</button>';
     return '<div class="pw-page-head"><div><h2>设置</h2><p>仅影响本机陪玩端体验。</p></div></div>'+
       '<section class="pw-card pad"><h3>主题</h3><p class="pw-note">当前为固定黑粉运营主题（上线版不可切换品牌色）。</p><div class="pw-info-list"><div><span>主题</span><strong>暗色粉（默认）</strong></div></div></section>'+
-      '<section class="pw-card pad" style="margin-top:14px"><h3>通知</h3><label class="pw-check"><input type="checkbox" data-setting="notify" '+(s.notify?'checked':'')+'> 接收订单 / 提现 / 审核提醒</label></section>'+
+      '<section class="pw-card pad" style="margin-top:14px"><h3>消息通知</h3><div id="mcjWebPushSettingsMount" class="mcj-webpush-companion-mount"></div><p class="pw-note">关闭开关会取消本机 Web Push 订阅；站内消息仍可在消息中心查看。</p></section>'+
       '<section class="pw-card pad" style="margin-top:14px"><h3>声音</h3><label class="pw-check"><input type="checkbox" data-setting="sound" '+(s.sound?'checked':'')+'> 提示音（新消息 / 订单 / 抢单 / 审核）</label></section>'+
       '<section class="pw-card pad" style="margin-top:14px"><h3>安装妙脆角</h3>'+installBlock+'</section>'+
       '<section class="pw-card pad" style="margin-top:14px"><h3>账号</h3><button class="pw-btn danger" type="button" data-logout>退出登录</button></section>';
@@ -3960,6 +3995,19 @@
       (verifyLocked?verifyView:verifyForm)+
       depositBlock+
       '<section class="pw-card pad pw-form-narrow" style="margin-top:14px" id="pwAccountSecurityMount"><h3>账号安全</h3><div class="pw-empty">加载中…</div></section>'+
+      '<section class="pw-card pad pw-form-narrow" style="margin-top:14px" id="pwOpenBossMount"><h3>老板身份</h3>'+
+      (function(){
+        var roles=((state.session&&state.session.user&&state.session.user.roles)||(state.data&&state.data.roles)||[]);
+        var hasBoss=!!(state.session&&state.session.user&&(state.session.user.hasBoss||state.session.user.role==='boss'))||
+          (Array.isArray(roles)&&roles.indexOf('boss')>=0);
+        if(hasBoss){
+          return '<p class="pw-note">本账号已开通老板身份。可用同一邮箱从老板入口登录，不会创建第二个账号。</p>';
+        }
+        return '<p class="pw-note">同一邮箱可同时拥有陪玩与老板身份，不会创建第二个账号。开通后可用老板入口登录，钱包/订单仍绑定本账号。</p>'+
+          '<button class="pw-btn primary" type="button" data-open-boss-role>开通老板身份</button>'+
+          '<p class="pw-note" data-open-boss-msg style="margin-top:8px"></p>';
+      })()+
+      '</section>'+
       '<section class="pw-card pad" style="margin-top:14px"><h3>安装妙脆角</h3>'+
       '<p class="pw-note">把妙脆角加到主屏幕，打开更快，使用起来更像 App。</p>'+
       '<button class="pw-btn" type="button" data-pwa-install-guide>安装妙脆角 / 添加到主屏幕</button></section>';
@@ -4381,7 +4429,7 @@
       if(!email||!/^\S+@\S+\.\S+$/.test(email)){state.loginError='请输入有效邮箱。';paint();return}
       state.registerBusy=true;state.registerToken='';state.registerVerifiedEmail='';state.loginError='正在发送验证码…';paint();
       fetch('/api/auth',{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify({action:'send_register_otp',email:email,role:'companion'})})
-        .then(function(r){return r.json().then(function(j){if(!r.ok||j.ok===false){var err=new Error((j&&j.message)||'发送失败');err.retryAfterSec=j&&j.retryAfterSec;throw err;}return j;});})
+        .then(function(r){return r.json().then(function(j){if(!r.ok||j.ok===false){var err=new Error((j&&j.message)||'发送失败');err.retryAfterSec=j&&j.retryAfterSec;err.status=r.status;err.code=j&&j.code;throw err;}return j;});})
         .then(function(j){
           state.registerBusy=false;
           var tip=j.message||'验证码已发送';
@@ -4399,7 +4447,8 @@
         .catch(function(err){
           state.registerBusy=false;
           var retry=Number(err&&err.retryAfterSec)||0;
-          if(retry>0){
+          var rateLimited=Number(err&&err.status)===429||String((err&&err.code)||'')==='OTP_RESEND_COOLDOWN';
+          if(rateLimited&&retry>0){
             state.registerCooldownUntil=Date.now()+retry*1000;
             try{sessionStorage.setItem('mcj_otp_cd:send_register_otp:companion:'+email,String(state.registerCooldownUntil));}catch(e){}
           }
@@ -4557,6 +4606,45 @@
     if(e.target.closest('[data-pwa-install-guide]')){
       e.preventDefault();
       openPwaInstallGuide();
+      return;
+    }
+    if(e.target.closest('[data-open-boss-role]')){
+      e.preventDefault();
+      var btn=e.target.closest('[data-open-boss-role]');
+      var msgEl=document.querySelector('[data-open-boss-msg]');
+      var token=String((state.session&&(state.session.token||state.session.accessToken||state.session.access_token))||'').trim();
+      if(!token){
+        if(msgEl)msgEl.textContent='请先登录陪玩账号。';
+        return;
+      }
+      btn.disabled=true;
+      if(msgEl)msgEl.textContent='正在开通老板身份…';
+      fetch('/api/auth',{
+        method:'POST',
+        headers:{'Content-Type':'application/json',Accept:'application/json',Authorization:'Bearer '+token},
+        body:JSON.stringify({action:'open_boss_role',accessToken:token})
+      }).then(function(r){return r.json().then(function(j){return {r:r,j:j};});})
+        .then(function(x){
+          btn.disabled=false;
+          if(!x.r.ok||x.j.ok===false){
+            if(msgEl)msgEl.textContent=(x.j&&x.j.message)||'开通失败，请稍后重试';
+            return;
+          }
+          try{
+            if(x.j&&x.j.user){
+              state.session=state.session||{};
+              state.session.user=Object.assign({},state.session.user||{},x.j.user,{hasBoss:true,roles:x.j.roles||(x.j.user&&x.j.user.roles)||[]});
+              if(typeof writeSession==='function')writeSession(state.session);
+            }
+          }catch(err){}
+          if(msgEl)msgEl.textContent=(x.j&&x.j.message)||'已开通老板身份。请前往老板入口登录（同一邮箱）。';
+          try{toast((x.j&&x.j.message)||'已开通老板身份');}catch(err){}
+          try{paint();}catch(err){}
+        })
+        .catch(function(){
+          btn.disabled=false;
+          if(msgEl)msgEl.textContent='网络异常，请稍后重试';
+        });
       return;
     }
     if(e.target.closest('[data-reload-inbox]')){reloadInbox().then(function(){return loadActiveThread({force:true});});return}

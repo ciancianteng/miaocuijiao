@@ -62,7 +62,7 @@ function read(rel) {
 // --- Source guards: apply UI / API / admin must encode P2 rules ---
 {
   const apply = read("src/companion-application.js");
-  assert.match(apply, /var steps = \[\s*"基本资料"/);
+  assert.match(apply, /var steps = \[\s*"认证",\s*"须知",\s*"资料",\s*"完成"/);
   assert.equal((apply.match(/接单价格（必填）/g) || []).length, 0);
   assert.equal((apply.match(/data-game-price/g) || []).length, 0);
   assert.match(apply, /Pricing V2 P2: never submit applicant price fields/);

@@ -128,27 +128,26 @@ export async function enrichProfileRoles(profile, authUser = null) {
   const companion = await loadCompanionRowForUser(profile.id);
   let rolesInfo = publicRolesPayload(profile, { companion, authUser, grantBossWithCompanion: false });
   const primary = normalizeRoleName(profile?.role);
-  // Heal legacy companion register that stamped roles:["companion","boss"] while primary stayed companion.
-  // True dual accounts keep primary role "boss" (or aliases) and also have companion_profiles.
+  // Dual-role heal: if roles already includes boss (or auth metadata says so) but primary
+  // stayed "companion", promote primary to boss — never strip boss (that broke open_boss_role).
   if (
     primary === "companion" &&
     rolesInfo.hasBoss &&
     Array.isArray(rolesInfo.roles) &&
     rolesInfo.roles.includes("boss")
   ) {
-    const healed = uniq(rolesInfo.roles.filter((r) => r !== "boss"));
     try {
-      await persistRoles(profile.id, healed.length ? healed : ["companion"], { primaryRole: "companion" });
+      await persistRoles(profile.id, rolesInfo.roles, { primaryRole: "boss" });
     } catch {
       /* best-effort */
     }
     rolesInfo = publicRolesPayload(
-      { ...profile, roles: healed.length ? healed : ["companion"], role: "companion" },
+      { ...profile, roles: rolesInfo.roles, role: "boss" },
       { companion, authUser, grantBossWithCompanion: false }
     );
   }
   return {
-    profile: { ...profile, roles: rolesInfo.roles },
+    profile: { ...profile, roles: rolesInfo.roles, role: rolesInfo.hasBoss && primary === "companion" ? "boss" : profile.role },
     companion,
     ...rolesInfo,
   };
@@ -179,40 +178,46 @@ export async function persistRoles(userId, rolesInput, { primaryRole = "" } = {}
       console.warn("[account-roles] auth metadata roles persist failed", err?.message || err);
     }
   }
-  const patch = { roles };
-  if (primaryRole) patch.role = normalizeRoleName(primaryRole);
+  // Always persist primary role first so dual-role OTP classify cannot fall back to anti-enum
+  // when the optional profiles.roles column is missing / schema-cache lagging.
+  const primary = primaryRole ? normalizeRoleName(primaryRole) : "";
+  if (primary) {
+    try {
+      await supabaseJson(restUrl("profiles", `?id=eq.${encodeURIComponent(userId)}`), {
+        method: "PATCH",
+        headers: headersWithServiceRole({ Prefer: "return=minimal" }),
+        body: JSON.stringify({ role: primary }),
+      });
+    } catch (err) {
+      console.warn("[account-roles] profiles.role persist failed", err?.message || err);
+    }
+  }
   try {
     await supabaseJson(restUrl("profiles", `?id=eq.${encodeURIComponent(userId)}`), {
       method: "PATCH",
       headers: headersWithServiceRole({ Prefer: "return=minimal" }),
-      body: JSON.stringify(patch),
+      body: JSON.stringify(primary ? { roles, role: primary } : { roles }),
     });
   } catch (err) {
-    if (/roles|column|schema cache|PGRST/i.test(String(err?.message || ""))) {
-      if (primaryRole) {
-        try {
-          await supabaseJson(restUrl("profiles", `?id=eq.${encodeURIComponent(userId)}`), {
-            method: "PATCH",
-            headers: headersWithServiceRole({ Prefer: "return=minimal" }),
-            body: JSON.stringify({ role: normalizeRoleName(primaryRole) }),
-          });
-        } catch {
-          /* ignore */
-        }
-      }
-    } else {
+    if (!/roles|column|schema cache|PGRST/i.test(String(err?.message || ""))) {
       console.warn("[account-roles] profiles.roles persist failed", err?.message || err);
     }
   }
   return roles;
 }
 
-export async function addRoleToUser(userId, roleToAdd, { primaryRole = "", existingProfile = null, authUser = null } = {}) {
+export async function addRoleToUser(userId, roleToAdd, opts = {}) {
+  const primaryRole = String(opts.primaryRole || '').trim();
+  const existingProfile = opts.existingProfile || null;
+  const authUser = opts.authUser || null;
   const add = normalizeRoleName(roleToAdd);
-  const companion = add === "companion" ? await loadCompanionRowForUser(userId) : null;
+  const companion = await loadCompanionRowForUser(userId);
   const current = resolveRoles(existingProfile || { id: userId, role: primaryRole }, { companion, authUser });
   const next = uniq([...current, add]);
-  await persistRoles(userId, next, { primaryRole: primaryRole || existingProfile?.role || add });
+  // Dual-role invariant: if account has (or is gaining) boss, keep primary role as boss.
+  let nextPrimary = normalizeRoleName(primaryRole || existingProfile?.role || add) || add;
+  if (add === 'boss' || next.includes('boss')) nextPrimary = 'boss';
+  await persistRoles(userId, next, { primaryRole: nextPrimary });
   return next;
 }
 
@@ -227,11 +232,18 @@ export function isSamePerson(bossUserId, companionUserId) {
 
 export function assertNotSelfTrade(bossUserId, companionUserId, actionLabel = "该操作") {
   if (isSamePerson(bossUserId, companionUserId)) {
-    const err = new Error(`不能${actionLabel}：老板与陪玩属于同一账号（user_id）。`);
+    const err = new Error(`不能向自己的陪玩账号下单：老板与陪玩属于同一账号（user_id）。`);
     err.status = 403;
-    err.code = "SELF_TRADE_FORBIDDEN";
+    // Canonical product code; keep legacy alias for older clients/e2e.
+    err.code = "SELF_ORDER_NOT_ALLOWED";
+    err.legacyCode = "SELF_TRADE_FORBIDDEN";
     throw err;
   }
+}
+
+export function isSelfOrderBlockedCode(code) {
+  const c = String(code || "");
+  return c === "SELF_ORDER_NOT_ALLOWED" || c === "SELF_TRADE_FORBIDDEN";
 }
 
 export async function resolveCompanionUserIdFlexible(rawId) {
@@ -341,3 +353,4 @@ export async function scanDuplicateEmails({ limit = 2000 } = {}) {
   }
   return { scanned: Array.isArray(rows) ? rows.length : 0, duplicateGroups: duplicates };
 }
+

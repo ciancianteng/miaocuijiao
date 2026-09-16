@@ -1,0 +1,26 @@
+{
+  "phase": 1,
+  "note": "Page-level browser Web Vitals fill in Phase 5 after Preview deploy. Phase 1 AFTER is code/API expected + measurable post-deploy.",
+  "production_before": {
+    "api_public_companions_p50_s": 2.781,
+    "api_public_companions_cold_s": 3.044,
+    "api_daily_stats_p50_s": 0.719,
+    "api_daily_stats_cold_s": 1.152,
+    "home_header_brand_bytes": 638486,
+    "orders_get_expire_block_ms_max": 3500,
+    "forced_ack_db_roundtrips": "N+1"
+  },
+  "phase1_after_expected": {
+    "api_public_companions_p50_s": "<0.8 (Preview)",
+    "api_daily_stats_edge_hit_ms": "<50 within s-maxage window",
+    "home_header_brand_bytes": 3494,
+    "orders_get_expire_block_ms_max": 0,
+    "forced_ack_db_roundtrips": 1
+  },
+  "page_table_placeholder": {
+    "Homepage": { "before": "measure Phase 5", "after": "measure Phase 5" },
+    "Companion Hall": { "before": "API 2.8s + shell", "after": "API target <0.8s" },
+    "Profile": { "before": "measure Phase 5", "after": "measure Phase 5" },
+    "Orders": { "before": "expire wait up to 3.5s", "after": "expire non-blocking" }
+  }
+}

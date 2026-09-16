@@ -2782,6 +2782,24 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
             senderName: String(service.profile.display_name || "").trim() || "客服",
           })
         : null;
+      
+      try {
+        const role = String(conversation.customer_role || conversation.user_role || conversation.role || "").toLowerCase();
+        const bossId = conversation.boss_id || conversation.bossId || (role.includes("boss") || role.includes("customer") || !conversation.companion_id ? conversation.user_id || conversation.customer_id : "");
+        if (bossId && messageType !== "system") {
+          const { notifyBossCsReply } = await import("./_boss-order-notify.js");
+          await notifyBossCsReply(
+            { boss_id: bossId, order_id: conversation.order_id || conversation.orderId || "" },
+            {
+              title: "客服重要回复",
+              body: messageType === "image" ? "客服发来一张图片，请及时查看。" : String(content || "").slice(0, 120),
+              orderId: conversation.order_id || conversation.orderId || "",
+            }
+          );
+        }
+      } catch (err) {
+        console.warn("[customer-service/send_message] boss push", err?.message || err);
+      }
       return json(res, 200, { ok: true, message: "消息已发送。", messageRow });
     }
     if (action === "clock_in" || action === "clock_out") {
@@ -3008,7 +3026,7 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
         } catch (selfErr) {
           return json(res, selfErr.status || 403, {
             ok: false,
-            code: selfErr.code || "SELF_TRADE_FORBIDDEN",
+            code: selfErr.code || "SELF_ORDER_NOT_ALLOWED",
             message: selfErr.message || "不能指定订单老板本人为陪玩。",
           });
         }
@@ -3813,7 +3831,7 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
       if (order && companionInput && String(order.boss_id || "").trim() === companionInput) {
         return json(res, 403, {
           ok: false,
-          code: "SELF_TRADE_FORBIDDEN",
+          code: "SELF_ORDER_NOT_ALLOWED",
           message: "不能把订单指定给订单老板本人的陪玩身份：老板与陪玩属于同一账号（user_id）。",
         });
       }
@@ -3826,7 +3844,7 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
             assertNotSelfTrade(order.boss_id, resolvedPlayer || companionInput, "把订单指定给订单老板本人");
           }
         } catch (selfErr) {
-          if (selfErr?.code === "SELF_TRADE_FORBIDDEN") {
+          if ((selfErr?.code === "SELF_ORDER_NOT_ALLOWED" || selfErr?.code === "SELF_TRADE_FORBIDDEN")) {
             return json(res, selfErr.status || 403, {
               ok: false,
               code: selfErr.code,
@@ -3863,7 +3881,7 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
       } catch (selfErr) {
         return json(res, selfErr.status || 403, {
           ok: false,
-          code: selfErr.code || "SELF_TRADE_FORBIDDEN",
+          code: selfErr.code || "SELF_ORDER_NOT_ALLOWED",
           message: selfErr.message || "不能把订单指定给订单老板本人的陪玩身份。",
         });
       }

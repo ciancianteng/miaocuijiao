@@ -142,6 +142,9 @@ async function insertStaffNotification({ staffId, category = "payroll", title = 
   const uid = String(staffId || "").trim();
   if (!uid) return null;
   const key = String(noticeKey || "").trim() || `${category}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const titleText = String(title || "").trim() || "系统通知";
+  const bodyText = String(body || "").trim();
+  const hrefText = String(href || "/customer-service/reports/");
   try {
     await companionDb("staff_notifications", "", {
       method: "POST",
@@ -149,17 +152,30 @@ async function insertStaffNotification({ staffId, category = "payroll", title = 
         staff_id: uid,
         notice_key: key,
         category: String(category || "payroll"),
-        title: String(title || "").trim() || "系统通知",
-        body: String(body || "").trim(),
-        href: String(href || "/customer-service/reports/"),
+        title: titleText,
+        body: bodyText,
+        href: hrefText,
         created_at: nowIso(),
       }),
     });
-    return key;
   } catch (err) {
     if (!isMissingRelation(err)) console.warn("[finance] insertStaffNotification:", err?.message || err);
     return null;
   }
+  try {
+    const { fanoutWebPush } = await import("../_web-push.js");
+    fanoutWebPush(uid, {
+      title: titleText,
+      body: bodyText,
+      url: hrefText,
+      notificationType: String(category || "staff"),
+      entityId: key,
+      tag: "staff-" + key,
+    });
+  } catch {
+    /* push optional */
+  }
+  return key;
 }
 
 async function writePayoutLog({

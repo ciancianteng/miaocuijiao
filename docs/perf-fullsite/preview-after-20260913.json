@@ -1,0 +1,370 @@
+{
+  "measuredAt": "2026-09-13T00:23:47.453181+00:00",
+  "env": "preview",
+  "base": "https://meow-cuijiao-homepage-git-cu-f1d74e-ciancianteng-4581s-projects.vercel.app",
+  "companionsCount": 2,
+  "cold": [
+    {
+      "path": "/api/public/companions",
+      "p50_ms": 723,
+      "p95_ms": 723,
+      "min_ms": 723,
+      "max_ms": 723,
+      "bytes": 5140,
+      "cache_samples": [
+        "MISS"
+      ],
+      "cc": "public, max-age=15, s-maxage=30, stale-while-revalidate=60",
+      "mem_samples": [
+        ""
+      ],
+      "runs": [
+        {
+          "status": 200,
+          "total_ms": 723,
+          "bytes": 5140,
+          "cache": "MISS",
+          "cc": "public, max-age=15, s-maxage=30, stale-while-revalidate=60",
+          "mem": ""
+        }
+      ]
+    },
+    {
+      "path": "/api/home/daily-stats",
+      "p50_ms": 676,
+      "p95_ms": 676,
+      "min_ms": 676,
+      "max_ms": 676,
+      "bytes": 853,
+      "cache_samples": [
+        "MISS"
+      ],
+      "cc": "public, max-age=30, s-maxage=60, stale-while-revalidate=120",
+      "mem_samples": [
+        "MISS"
+      ],
+      "runs": [
+        {
+          "status": 200,
+          "total_ms": 676,
+          "bytes": 853,
+          "cache": "MISS",
+          "cc": "public, max-age=30, s-maxage=60, stale-while-revalidate=120",
+          "mem": "MISS"
+        }
+      ]
+    },
+    {
+      "path": "/api/platform/services",
+      "p50_ms": 275,
+      "p95_ms": 275,
+      "min_ms": 275,
+      "max_ms": 275,
+      "bytes": 640,
+      "cache_samples": [
+        "MISS"
+      ],
+      "cc": "public, max-age=30, s-maxage=60, stale-while-revalidate=120",
+      "mem_samples": [
+        ""
+      ],
+      "runs": [
+        {
+          "status": 200,
+          "total_ms": 275,
+          "bytes": 640,
+          "cache": "MISS",
+          "cc": "public, max-age=30, s-maxage=60, stale-while-revalidate=120",
+          "mem": ""
+        }
+      ]
+    },
+    {
+      "path": "/api/platform/content?types=banners",
+      "p50_ms": 280,
+      "p95_ms": 280,
+      "min_ms": 280,
+      "max_ms": 280,
+      "bytes": 3600,
+      "cache_samples": [
+        "MISS"
+      ],
+      "cc": "no-store, no-cache, must-revalidate, max-age=0",
+      "mem_samples": [
+        ""
+      ],
+      "runs": [
+        {
+          "status": 200,
+          "total_ms": 280,
+          "bytes": 3600,
+          "cache": "MISS",
+          "cc": "no-store, no-cache, must-revalidate, max-age=0",
+          "mem": ""
+        }
+      ]
+    }
+  ],
+  "warm": [
+    {
+      "path": "/api/public/companions",
+      "p50_ms": 604,
+      "p95_ms": 663,
+      "min_ms": 592,
+      "max_ms": 663,
+      "bytes": 5140,
+      "cache_samples": [
+        "MISS",
+        "MISS",
+        "MISS",
+        "MISS",
+        "MISS"
+      ],
+      "cc": "public, max-age=15, s-maxage=30, stale-while-revalidate=60",
+      "mem_samples": [
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      "runs": [
+        {
+          "status": 200,
+          "total_ms": 592,
+          "bytes": 5140,
+          "cache": "MISS",
+          "cc": "public, max-age=15, s-maxage=30, stale-while-revalidate=60",
+          "mem": ""
+        },
+        {
+          "status": 200,
+          "total_ms": 602,
+          "bytes": 5140,
+          "cache": "MISS",
+          "cc": "public, max-age=15, s-maxage=30, stale-while-revalidate=60",
+          "mem": ""
+        },
+        {
+          "status": 200,
+          "total_ms": 604,
+          "bytes": 5140,
+          "cache": "MISS",
+          "cc": "public, max-age=15, s-maxage=30, stale-while-revalidate=60",
+          "mem": ""
+        },
+        {
+          "status": 200,
+          "total_ms": 663,
+          "bytes": 5140,
+          "cache": "MISS",
+          "cc": "public, max-age=15, s-maxage=30, stale-while-revalidate=60",
+          "mem": ""
+        },
+        {
+          "status": 200,
+          "total_ms": 609,
+          "bytes": 5140,
+          "cache": "MISS",
+          "cc": "public, max-age=15, s-maxage=30, stale-while-revalidate=60",
+          "mem": ""
+        }
+      ]
+    },
+    {
+      "path": "/api/home/daily-stats",
+      "p50_ms": 233,
+      "p95_ms": 648,
+      "min_ms": 216,
+      "max_ms": 648,
+      "bytes": 853,
+      "cache_samples": [
+        "MISS",
+        "MISS",
+        "MISS",
+        "MISS",
+        "MISS"
+      ],
+      "cc": "public, max-age=30, s-maxage=60, stale-while-revalidate=120",
+      "mem_samples": [
+        "HIT",
+        "HIT",
+        "HIT",
+        "HIT",
+        "HIT"
+      ],
+      "runs": [
+        {
+          "status": 200,
+          "total_ms": 648,
+          "bytes": 853,
+          "cache": "MISS",
+          "cc": "public, max-age=30, s-maxage=60, stale-while-revalidate=120",
+          "mem": "HIT"
+        },
+        {
+          "status": 200,
+          "total_ms": 253,
+          "bytes": 853,
+          "cache": "MISS",
+          "cc": "public, max-age=30, s-maxage=60, stale-while-revalidate=120",
+          "mem": "HIT"
+        },
+        {
+          "status": 200,
+          "total_ms": 216,
+          "bytes": 853,
+          "cache": "MISS",
+          "cc": "public, max-age=30, s-maxage=60, stale-while-revalidate=120",
+          "mem": "HIT"
+        },
+        {
+          "status": 200,
+          "total_ms": 216,
+          "bytes": 853,
+          "cache": "MISS",
+          "cc": "public, max-age=30, s-maxage=60, stale-while-revalidate=120",
+          "mem": "HIT"
+        },
+        {
+          "status": 200,
+          "total_ms": 233,
+          "bytes": 853,
+          "cache": "MISS",
+          "cc": "public, max-age=30, s-maxage=60, stale-while-revalidate=120",
+          "mem": "HIT"
+        }
+      ]
+    },
+    {
+      "path": "/api/platform/services",
+      "p50_ms": 277,
+      "p95_ms": 287,
+      "min_ms": 265,
+      "max_ms": 287,
+      "bytes": 640,
+      "cache_samples": [
+        "MISS",
+        "MISS",
+        "MISS",
+        "MISS",
+        "MISS"
+      ],
+      "cc": "public, max-age=30, s-maxage=60, stale-while-revalidate=120",
+      "mem_samples": [
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      "runs": [
+        {
+          "status": 200,
+          "total_ms": 287,
+          "bytes": 640,
+          "cache": "MISS",
+          "cc": "public, max-age=30, s-maxage=60, stale-while-revalidate=120",
+          "mem": ""
+        },
+        {
+          "status": 200,
+          "total_ms": 265,
+          "bytes": 640,
+          "cache": "MISS",
+          "cc": "public, max-age=30, s-maxage=60, stale-while-revalidate=120",
+          "mem": ""
+        },
+        {
+          "status": 200,
+          "total_ms": 281,
+          "bytes": 640,
+          "cache": "MISS",
+          "cc": "public, max-age=30, s-maxage=60, stale-while-revalidate=120",
+          "mem": ""
+        },
+        {
+          "status": 200,
+          "total_ms": 272,
+          "bytes": 640,
+          "cache": "MISS",
+          "cc": "public, max-age=30, s-maxage=60, stale-while-revalidate=120",
+          "mem": ""
+        },
+        {
+          "status": 200,
+          "total_ms": 277,
+          "bytes": 640,
+          "cache": "MISS",
+          "cc": "public, max-age=30, s-maxage=60, stale-while-revalidate=120",
+          "mem": ""
+        }
+      ]
+    },
+    {
+      "path": "/api/platform/content?types=banners",
+      "p50_ms": 274,
+      "p95_ms": 711,
+      "min_ms": 262,
+      "max_ms": 711,
+      "bytes": 3600,
+      "cache_samples": [
+        "MISS",
+        "MISS",
+        "MISS",
+        "MISS",
+        "MISS"
+      ],
+      "cc": "no-store, no-cache, must-revalidate, max-age=0",
+      "mem_samples": [
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      "runs": [
+        {
+          "status": 200,
+          "total_ms": 274,
+          "bytes": 3600,
+          "cache": "MISS",
+          "cc": "no-store, no-cache, must-revalidate, max-age=0",
+          "mem": ""
+        },
+        {
+          "status": 200,
+          "total_ms": 268,
+          "bytes": 3600,
+          "cache": "MISS",
+          "cc": "no-store, no-cache, must-revalidate, max-age=0",
+          "mem": ""
+        },
+        {
+          "status": 200,
+          "total_ms": 280,
+          "bytes": 3600,
+          "cache": "MISS",
+          "cc": "no-store, no-cache, must-revalidate, max-age=0",
+          "mem": ""
+        },
+        {
+          "status": 200,
+          "total_ms": 262,
+          "bytes": 3600,
+          "cache": "MISS",
+          "cc": "no-store, no-cache, must-revalidate, max-age=0",
+          "mem": ""
+        },
+        {
+          "status": 200,
+          "total_ms": 711,
+          "bytes": 3600,
+          "cache": "MISS",
+          "cc": "no-store, no-cache, must-revalidate, max-age=0",
+          "mem": ""
+        }
+      ]
+    }
+  ]
+}

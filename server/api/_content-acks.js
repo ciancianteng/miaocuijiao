@@ -97,13 +97,49 @@ export async function getAck(userId, contentType, contentId, contentVersion) {
   }
 }
 
+function ackKey(contentType, contentId, contentVersion) {
+  return `${contentType}\0${contentId}\0${contentVersion}`;
+}
+
+/** One round-trip for all acks of a user (pendingForcedForUser N+1 fix). */
+export async function listAcksForUser(userId, { limit = 500 } = {}) {
+  if (!userId) return [];
+  try {
+    const rows = await sb(
+      rest(
+        "content_ack_records",
+        `?user_id=eq.${encodeURIComponent(userId)}&select=id,user_id,content_type,content_id,content_version,status,revoked,expired,acknowledged_at&order=acknowledged_at.desc&limit=${Math.max(1, Math.min(2000, Number(limit) || 500))}`
+      )
+    );
+    return Array.isArray(rows) ? rows : [];
+  } catch (err) {
+    if (missing(err)) return [];
+    throw err;
+  }
+}
+
+function indexAcks(rows = []) {
+  const map = new Map();
+  for (const row of rows || []) {
+    const key = ackKey(row.content_type, row.content_id, row.content_version);
+    if (!map.has(key)) map.set(key, row);
+  }
+  return map;
+}
+
+function ackFromMap(map, contentType, contentId, contentVersion) {
+  if (!map) return null;
+  return map.get(ackKey(contentType, contentId, String(contentVersion))) || null;
+}
+
 export async function pendingForcedForUser(userId, { audience = "companion" } = {}) {
   const pending = [];
+  const ackMap = indexAcks(await listAcksForUser(userId).catch(() => []));
   const forced = await listActiveForcedAnnouncements({ audience });
   for (const row of forced) {
     if (row.requires_ack === false) continue;
     const ver = String(row.content_version || 1);
-    const ack = await getAck(userId, "announcement", String(row.id), ver);
+    const ack = ackFromMap(ackMap, "announcement", String(row.id), ver);
     if (!ack || ack.status !== "acked" || ack.revoked || ack.expired) {
       pending.push({
         id: row.id,
@@ -129,7 +165,7 @@ export async function pendingForcedForUser(userId, { audience = "companion" } = 
       for (const rule of rules) {
         if (!rule.forceConfirm) continue;
         const ver = String(rule.version || 1);
-        const ack = await getAck(userId, "companion_work_rules", String(rule.id), ver);
+        const ack = ackFromMap(ackMap, "companion_work_rules", String(rule.id), ver);
         if (!ack || ack.status !== "acked" || ack.revoked || ack.expired) {
           pending.push({
             id: rule.id,
@@ -164,7 +200,7 @@ export async function pendingForcedForUser(userId, { audience = "companion" } = 
         // Apply-step institution is for applicants; platform-usage is for boss
         if (String(row.slug || "") === "apply-step1" && audience !== "all") continue;
         const ver = String(data.version || row.version || 1);
-        const ack = await getAck(userId, "player_rules", String(row.id), ver);
+        const ack = ackFromMap(ackMap, "player_rules", String(row.id), ver);
         if (!ack || ack.status !== "acked" || ack.revoked || ack.expired) {
           pending.push({
             id: row.id,

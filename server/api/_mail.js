@@ -6,13 +6,22 @@
  *
  * Env (Vercel Preview + Production):
  * - RESEND_API_KEY
- * - RESEND_FROM  (bare email or `Name <email@domain>`)
+ * - RESEND_FROM        bare email or `Name <email@domain>` (orders / general)
+ * - RESEND_OTP_FROM    preferred OTP From — keep OTP off orders@ for inbox placement
  */
 
 function env(name, fallback = "") {
   const raw = process.env[name];
   if (raw == null) return String(fallback || "").trim();
   return String(raw).trim().replace(/^['"]|['"]$/g, "");
+}
+
+function formatFrom(raw, displayName = "MEOW CUI JIAO") {
+  const value = String(raw || "").trim();
+  if (!value) return "";
+  if (/<[^>]+@[^>]+>/.test(value)) return value;
+  if (/^\S+@\S+\.\S+$/.test(value)) return `${displayName} <${value}>`;
+  return value;
 }
 
 /** Normalize From header: accept bare email or RFC display-name form. */
@@ -23,9 +32,26 @@ function mailFrom(override = "") {
     env("SMTP_FROM") ||
     env("MAIL_FROM") ||
     "onboarding@resend.dev";
-  if (/<[^>]+@[^>]+>/.test(raw)) return raw;
-  if (/^\S+@\S+\.\S+$/.test(raw)) return `MEOW CUI JIAO <${raw}>`;
-  return raw;
+  return formatFrom(raw) || raw;
+}
+
+/**
+ * OTP should not share the orders mailbox. Prefer RESEND_OTP_FROM, then a
+ * noreply@ on the same domain as RESEND_FROM, then RESEND_FROM.
+ */
+export function otpMailFrom() {
+  const explicit = env("RESEND_OTP_FROM") || env("MAIL_OTP_FROM");
+  if (explicit) return formatFrom(explicit, "MEOW CUI JIAO");
+  const general = env("RESEND_FROM") || env("SMTP_FROM") || env("MAIL_FROM");
+  const bare = String(general).match(/<?([\w.+-]+@[\w.-]+\.[A-Za-z]{2,})>?/);
+  if (bare?.[1]) {
+    const domain = bare[1].split("@")[1];
+    const local = bare[1].split("@")[0].toLowerCase();
+    if (domain && local !== "noreply" && local !== "auth" && local !== "otp") {
+      return formatFrom(`noreply@${domain}`, "MEOW CUI JIAO");
+    }
+  }
+  return mailFrom();
 }
 
 function hasResend() {
@@ -44,6 +70,7 @@ export function mailProviderStatus() {
     resendKeyPrefix: key ? `${key.slice(0, 3)}…` : "",
     smtp: hasSmtp(),
     from: mailFrom(),
+    otpFrom: otpMailFrom(),
     vercelEnv: String(process.env.VERCEL_ENV || ""),
     smsEnabled: false,
   };
@@ -51,7 +78,12 @@ export function mailProviderStatus() {
 
 /** Safe for API clients — never expose provider keys, env names, or deploy labels. */
 export function publicMailHint() {
-  return { configured: hasResend() || hasSmtp() };
+  const otpFrom = otpMailFrom();
+  const domainMatch = String(otpFrom).match(/@([\w.-]+\.[A-Za-z]{2,})/);
+  return {
+    configured: hasResend() || hasSmtp(),
+    otpFromDomain: domainMatch ? domainMatch[1].toLowerCase() : "",
+  };
 }
 
 /** Reserved for later SMS OTP — MVP always returns disabled. */
@@ -69,7 +101,17 @@ export async function sendSmsOtp({ phone, code, purpose } = {}) {
   };
 }
 
-async function sendViaResend({ to, subject, text, html, from: fromOverride } = {}) {
+function maskEmail(email) {
+  const value = String(email || "").trim().toLowerCase();
+  const at = value.indexOf("@");
+  if (at <= 0) return "***";
+  const name = value.slice(0, at);
+  const domain = value.slice(at + 1);
+  const visible = name.slice(0, Math.min(2, name.length));
+  return `${visible}***@${domain}`;
+}
+
+async function sendViaResend({ to, subject, text, html, from: fromOverride, purpose = "", requestId = "" } = {}) {
   const apiKey = env("RESEND_API_KEY");
   if (!apiKey) throw Object.assign(new Error("未配置 RESEND_API_KEY"), { status: 503, code: "NO_RESEND" });
   const from = mailFrom(fromOverride);
@@ -80,6 +122,12 @@ async function sendViaResend({ to, subject, text, html, from: fromOverride } = {
     text: String(text || ""),
     html: html || undefined,
   };
+  if (purpose || requestId) {
+    payload.tags = [];
+    if (purpose) payload.tags.push({ name: "purpose", value: String(purpose).slice(0, 40) });
+    if (requestId) payload.tags.push({ name: "request_id", value: String(requestId).slice(0, 64) });
+  }
+  const started = Date.now();
   let response;
   try {
     response = await fetch("https://api.resend.com/emails", {
@@ -92,7 +140,13 @@ async function sendViaResend({ to, subject, text, html, from: fromOverride } = {
       body: JSON.stringify(payload),
     });
   } catch (err) {
-    console.error("[mail/resend] network error", err?.message || err);
+    console.error("[mail/resend] network error", {
+      requestId: requestId || undefined,
+      purpose: purpose || undefined,
+      toMasked: maskEmail(to),
+      error: err?.message || String(err),
+      latencyMs: Date.now() - started,
+    });
     throw Object.assign(new Error(`Resend 网络错误：${err?.message || err}`), {
       status: 502,
       code: "RESEND_NETWORK",
@@ -106,16 +160,36 @@ async function sendViaResend({ to, subject, text, html, from: fromOverride } = {
     body = { raw };
   }
   if (!response.ok) {
-    const detail = body?.message || body?.error?.message || (typeof body?.error === "string" ? body.error : "") || raw || "Resend 发送失败";
-    console.error("[mail/resend] fail", response.status, detail, { from, to: payload.to });
+    const detail =
+      body?.message ||
+      body?.error?.message ||
+      (typeof body?.error === "string" ? body.error : "") ||
+      raw ||
+      "Resend 发送失败";
+    console.error("[mail/resend] fail", {
+      requestId: requestId || undefined,
+      purpose: purpose || undefined,
+      status: response.status,
+      detail: String(detail).slice(0, 300),
+      from,
+      toMasked: maskEmail(payload.to[0]),
+      latencyMs: Date.now() - started,
+    });
     throw Object.assign(new Error(detail), {
       status: response.status || 502,
       code: "RESEND_FAIL",
       body,
     });
   }
-  console.info("[mail/resend] sent", { id: body.id || "", to: payload.to[0], from });
-  return { ok: true, provider: "resend", id: body.id || "", to };
+  console.info("[mail/resend] sent", {
+    requestId: requestId || undefined,
+    purpose: purpose || undefined,
+    id: body.id || "",
+    toMasked: maskEmail(payload.to[0]),
+    from,
+    latencyMs: Date.now() - started,
+  });
+  return { ok: true, provider: "resend", id: body.id || "", to, requestId: requestId || "" };
 }
 
 async function sendViaSmtp({ to, subject, text, html, from: fromOverride } = {}) {
@@ -142,22 +216,32 @@ async function sendViaSmtp({ to, subject, text, html, from: fromOverride } = {})
  * Send a transactional email. Prefers Resend, then SMTP.
  * Optional `from` overrides RESEND_FROM for transactional order mail.
  */
-export async function sendMail({ to, subject, text, html, purpose, from } = {}) {
+export async function sendMail({ to, subject, text, html, purpose, from, requestId } = {}) {
   const email = String(to || "").trim().toLowerCase();
   if (!email || !/^\S+@\S+\.\S+$/.test(email)) {
     throw Object.assign(new Error("收件邮箱无效"), { status: 400, code: "BAD_EMAIL" });
   }
   if (hasResend()) {
     try {
-      return await sendViaResend({ to: email, subject, text, html, from });
+      return await sendViaResend({ to: email, subject, text, html, from, purpose, requestId });
     } catch (err) {
-      console.error("[mail] Resend failed, smtp=", hasSmtp(), "purpose=", purpose || "", err?.message || err);
+      console.error("[mail] Resend failed", {
+        smtpConfigured: hasSmtp(),
+        purpose: purpose || "",
+        requestId: requestId || undefined,
+        toMasked: maskEmail(email),
+        error: err?.message || String(err),
+      });
       if (!hasSmtp()) throw err;
       // Fall through to SMTP if Resend fails and SMTP exists.
     }
   }
   if (hasSmtp()) return sendViaSmtp({ to: email, subject, text, html, from });
-  console.error("[mail] no provider", mailProviderStatus(), "purpose=", purpose || "");
+  console.error("[mail] no provider", {
+    purpose: purpose || "",
+    requestId: requestId || undefined,
+    status: mailProviderStatus(),
+  });
   throw Object.assign(new Error("邮件服务未配置（需要 RESEND_API_KEY 或 SMTP_*）"), {
     status: 503,
     code: "NO_MAIL",
@@ -165,7 +249,7 @@ export async function sendMail({ to, subject, text, html, purpose, from } = {}) 
   });
 }
 
-export async function sendEmailOtp({ to, code, purpose = "otp", roleLabel = "" } = {}) {
+export async function sendEmailOtp({ to, code, purpose = "otp", roleLabel = "", requestId = "" } = {}) {
   const purposeText =
     purpose === "login"
       ? "登录验证码"
@@ -186,7 +270,15 @@ export async function sendEmailOtp({ to, code, purpose = "otp", roleLabel = "" }
     `<p style="font-size:28px;font-weight:800;letter-spacing:6px;margin:0 0 16px;color:#d9488a">${code}</p>` +
     `<p style="margin:0;color:#666;font-size:13px">有效期 10 分钟，使用一次后立即失效。如非本人操作请忽略本邮件。</p>` +
     `</div>`;
-  return sendMail({ to, subject: title, text, html, purpose });
+  return sendMail({
+    to,
+    subject: title,
+    text,
+    html,
+    purpose: `otp_${purpose}`,
+    from: otpMailFrom(),
+    requestId,
+  });
 }
 
 export default {
@@ -194,4 +286,6 @@ export default {
   sendEmailOtp,
   sendSmsOtp,
   mailProviderStatus,
+  publicMailHint,
+  otpMailFrom,
 };

@@ -965,7 +965,18 @@
     }
     var roleHome = result.redirect || routeFor(role);
     // Boss may resume a pending page; other roles always land on their portal.
+    // Critical for per-portal PWAs: companion/CS/admin must never bounce to boss "/".
     var redirect = profileRole(role) === "boss" && pending ? pending : roleHome;
+    try {
+      var roleKey = profileRole(role);
+      if (roleKey === "companion" && !/^\/companion(\/|$)/i.test(String(redirect || ""))) {
+        redirect = "/companion/";
+      } else if (roleKey === "customer_service" && !/^\/customer-service(\/|$)/i.test(String(redirect || ""))) {
+        redirect = "/customer-service/";
+      } else if (roleKey === "admin" && !/^\/admin(\/|\.html|$)/i.test(String(redirect || ""))) {
+        redirect = "/admin/";
+      }
+    } catch (eRoleGuard) {}
     var here = String(location.pathname || "").replace(/\/+$/, "") || "/";
     var dest = String(redirect || "/").replace(/\/+$/, "") || "/";
     // Never reopen login/register after success (clear #login / #register).
@@ -1588,17 +1599,28 @@
               if (!r.ok || j.ok === false) {
                 var err = new Error((j && j.message) || "发送失败");
                 err.retryAfterSec = j && j.retryAfterSec;
+                err.status = r.status;
+                err.code = j && j.code;
                 throw err;
               }
               return j;
             });
           })
           .then(function (j) {
-            var tip = j.message || "验证码已发送";
+            var delivered = j.delivery === "sent";
+            var tip = delivered
+              ? (j.message || "验证码已发送")
+              : (j.message || "如该邮箱已在当前端注册，将收到验证码。请确认入口（老板/陪玩）正确。");
             if (j.debugCode || j.devCode) tip += "（调试 " + (j.debugCode || j.devCode) + "）";
             setLoginMessage(sendOtpBtn, tip);
-            var left = Number(j.retryAfterSec) || 60;
-            if (Cd) Cd.setCooldown("send_login_otp", role, otpEmail, left);
+            // Cooldown ONLY after provider-accepted send. suppressed/blocked must not fake success.
+            var left = delivered ? Number(j.retryAfterSec || 0) || 0 : 0;
+            if (delivered && left > 0 && Cd) Cd.setCooldown("send_login_otp", role, otpEmail, left);
+            if (!delivered || !left) {
+              sendOtpBtn.disabled = false;
+              sendOtpBtn.textContent = oldSend || "获取验证码";
+              return;
+            }
             sendOtpBtn.textContent = left + "s";
             var deadline = Date.now() + left * 1000;
             var timer = setInterval(function () {
@@ -1615,8 +1637,10 @@
           })
           .catch(function (err) {
             var retry = Number(err && err.retryAfterSec) || 0;
-            if (retry > 0 && Cd) Cd.setCooldown("send_login_otp", role, otpEmail, retry);
-            if (retry > 0) {
+            var code = String((err && err.code) || "");
+            var rateLimited = Number(err && err.status) === 429 || code === "OTP_RESEND_COOLDOWN";
+            if (rateLimited && retry > 0 && Cd) Cd.setCooldown("send_login_otp", role, otpEmail, retry);
+            if (rateLimited && retry > 0) {
               sendOtpBtn.disabled = true;
               sendOtpBtn.textContent = retry + "s";
               var deadline = Date.now() + retry * 1000;
@@ -1634,7 +1658,13 @@
               sendOtpBtn.disabled = false;
               sendOtpBtn.textContent = oldSend || "获取验证码";
             }
-            setLoginMessage(sendOtpBtn, humanizeAuthError(err));
+            var tip = humanizeAuthError(err);
+            if (code === "BOSS_ROLE_NOT_OPENED") {
+              tip = (err && err.message) || "该账号尚未开通老板身份。请先用陪玩入口登录，再开通老板身份。";
+            } else if (code === "COMPANION_ROLE_NOT_OPENED") {
+              tip = (err && err.message) || "该账号尚未开通陪玩身份。请先用老板入口登录，再申请陪玩。";
+            }
+            setLoginMessage(sendOtpBtn, tip);
           });
         return;
       }
@@ -1682,17 +1712,28 @@
               if (!r.ok || j.ok === false) {
                 var err = new Error((j && j.message) || "发送失败");
                 err.retryAfterSec = j && j.retryAfterSec;
+                err.status = r.status;
+                err.code = j && j.code;
                 throw err;
               }
               return j;
             });
           })
           .then(function (j) {
-            var tip = j.message || "验证码已发送";
+            var delivered = j.delivery === "sent";
+            var tip = delivered
+              ? (j.message || "验证码已发送")
+              : (j.message || "如该邮箱可用，将收到验证码。");
             if (j.debugCode || j.devCode) tip += "（调试 " + (j.debugCode || j.devCode) + "）";
             setLoginMessage(sendRegOtpBtn, tip);
-            var left = Number(j.retryAfterSec) || 60;
-            if (CdReg) CdReg.setCooldown("send_register_otp", regRole, regEmail, left);
+            // Cooldown ONLY after provider-accepted send. suppressed/blocked must not fake success.
+            var left = delivered ? Number(j.retryAfterSec || 0) || 0 : 0;
+            if (delivered && left > 0 && CdReg) CdReg.setCooldown("send_register_otp", regRole, regEmail, left);
+            if (!delivered || !left) {
+              sendRegOtpBtn.disabled = false;
+              sendRegOtpBtn.textContent = oldRegSend || "获取验证码";
+              return;
+            }
             var deadline = Date.now() + left * 1000;
             sendRegOtpBtn.textContent = left + "s";
             var timer = setInterval(function () {
@@ -1709,8 +1750,9 @@
           })
           .catch(function (err) {
             var retry = Number(err && err.retryAfterSec) || 0;
-            if (retry > 0 && CdReg) CdReg.setCooldown("send_register_otp", regRole, regEmail, retry);
-            if (retry > 0) {
+            var rateLimited = Number(err && err.status) === 429 || String((err && err.code) || "") === "OTP_RESEND_COOLDOWN";
+            if (rateLimited && retry > 0 && CdReg) CdReg.setCooldown("send_register_otp", regRole, regEmail, retry);
+            if (rateLimited && retry > 0) {
               sendRegOtpBtn.disabled = true;
               var deadline = Date.now() + retry * 1000;
               sendRegOtpBtn.textContent = retry + "s";

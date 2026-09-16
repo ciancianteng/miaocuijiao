@@ -92,25 +92,7 @@ export async function getCompanionTagsTableStatus() {
     return { ready: false, reason: "error", rows: null, message: error.message || String(error) };
   }
 }
-async function writeDbTags(rows) {
-  if (!hasDb()) return null;
-  const list = (Array.isArray(rows) ? rows : []).map((row, index) => normalizeTagRow(row, index)).filter((row) => row.name);
-  const del = await fetch(restUrl("?id=neq.__never__"), {
-    method: "DELETE",
-    headers: serviceHeaders({ Prefer: "return=minimal" }),
-  });
-  if (!del.ok) {
-    const text = await del.text();
-    const err = new Error(text || `HTTP ${del.status}`);
-    if (isMissingTable(err) || del.status === 404) return null;
-    throw err;
-  }
-  if (!list.length) return [];
-  const response = await fetch(restUrl(""), {
-    method: "POST",
-    headers: serviceHeaders(),
-    body: JSON.stringify(list.map(rowToDb)),
-  });
+async function parseRestResponse(response) {
   const text = await response.text();
   let body = null;
   try {
@@ -120,12 +102,88 @@ async function writeDbTags(rows) {
   }
   if (!response.ok) {
     const err = new Error(body?.message || body?.hint || text || `HTTP ${response.status}`);
-    if (isMissingTable(err) || response.status === 404) return null;
+    err.status = response.status;
     throw err;
   }
-  return (Array.isArray(body) ? body : list).map((row, index) =>
-    row.tag_group != null ? rowFromDb(row, index) : normalizeTagRow(row, index)
-  );
+  return body;
+}
+
+/** Upsert a single tag by primary key. Never wipes other rows. */
+export async function upsertDbTag(row, index = 0) {
+  if (!hasDb()) return null;
+  const item = normalizeTagRow(row, index);
+  if (!item.name) throw Object.assign(new Error("请填写标签名称。"), { status: 400 });
+  try {
+    const body = await parseRestResponse(
+      await fetch(restUrl(""), {
+        method: "POST",
+        headers: serviceHeaders({ Prefer: "resolution=merge-duplicates,return=representation" }),
+        body: JSON.stringify(rowToDb(item)),
+      })
+    );
+    const saved = Array.isArray(body) ? body[0] : body;
+    return saved && saved.tag_group != null ? rowFromDb(saved, index) : item;
+  } catch (error) {
+    if (isMissingTable(error) || error.status === 404) return null;
+    throw error;
+  }
+}
+
+export async function deleteDbTagById(id) {
+  if (!hasDb()) return null;
+  const tagId = String(id || "").trim();
+  if (!tagId) throw Object.assign(new Error("缺少标签 ID。"), { status: 400 });
+  try {
+    await parseRestResponse(
+      await fetch(restUrl(`?id=eq.${encodeURIComponent(tagId)}`), {
+        method: "DELETE",
+        headers: serviceHeaders({ Prefer: "return=minimal" }),
+      })
+    );
+    return true;
+  } catch (error) {
+    if (isMissingTable(error) || error.status === 404) return null;
+    throw error;
+  }
+}
+
+/**
+ * Sync DB to the given list without truncate:
+ * upsert every row, then delete only ids that are no longer present.
+ * Refuses to delete-all when the incoming list is empty (protects Production).
+ */
+async function writeDbTags(rows) {
+  if (!hasDb()) return null;
+  const list = (Array.isArray(rows) ? rows : [])
+    .map((row, index) => normalizeTagRow(row, index))
+    .filter((row) => row.name);
+  let existing;
+  try {
+    existing = await readDbTags();
+  } catch (error) {
+    if (isMissingTable(error)) return null;
+    throw error;
+  }
+  if (existing === null) return null;
+
+  for (let i = 0; i < list.length; i += 1) {
+    const saved = await upsertDbTag(list[i], i);
+    if (saved === null) return null;
+  }
+
+  if (!list.length) {
+    // Empty payload must not wipe Production tags.
+    return existing;
+  }
+
+  const keep = new Set(list.map((row) => String(row.id)));
+  for (const old of existing) {
+    if (!keep.has(String(old.id))) {
+      const removed = await deleteDbTagById(old.id);
+      if (removed === null) return null;
+    }
+  }
+  return readDbTags();
 }
 
 export const DEFAULT_TAGS = [
