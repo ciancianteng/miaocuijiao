@@ -3023,7 +3023,7 @@ import './mcj-chat-realtime.js';
         return;
       }
       var s=document.createElement('script');
-      s.src='/src/web-push-client.js?v=20260914webpush5';
+      s.src='/src/web-push-client.js?v=20260916androidpush2';
       s.defer=true;
       s.setAttribute('data-mcj-webpush-client','1');
       s.onload=function(){resolve(window.MCJWebPush)};
@@ -3278,7 +3278,7 @@ import './mcj-chat-realtime.js';
     }
     if(e.target.matches('[data-login]')){e.preventDefault();var form=e.target;var fd=new FormData(form);var btn=form.querySelector('[type="submit"]');var remember=!!fd.get('remember');captureLoginDraft();state.loginError='';state.loginBusy=true;updateLoginChrome();if(Auth&&Auth.setFormError)Auth.setFormError(form,'');else{var box=form.querySelector('[data-auth-error]');if(box)box.textContent='';}if(Auth&&Auth.setLoading)Auth.setLoading(btn,true);else if(btn){btn.disabled=true;btn.textContent='登录中…';}api('login',{account:String(fd.get('account')||'').trim(),password:String(fd.get('password')||''),remember:remember}).then(function(res){saveSession(res.session,true);state.loginBusy=false;state.loginError='';state.loginDraft={account:'',password:'',remember:false};location.assign('/customer-service/dashboard/');}).catch(function(err){state.loginBusy=false;state.loginError=err.message||'账号或密码错误。';updateLoginChrome();if(Auth&&Auth.setLoading)Auth.setLoading(btn,false,'登录');else if(btn){btn.disabled=false;btn.textContent='登录';}if(Auth&&Auth.setFormError)Auth.setFormError(form,state.loginError);else{var errBox=form.querySelector('[data-auth-error]');if(errBox)errBox.textContent=state.loginError;else toast(state.loginError);}restoreLoginDraft();});return}if(e.target.matches('[data-order-form]')){e.preventDefault();var fd2=new FormData(e.target),order={};fd2.forEach(function(v,k){order[k]=String(v||'')});var bossId=String(order.boss_id||'').trim();var bossUid=String(order.boss_uid||'').trim();var companionId=String(order.companion_id||'').trim();if(!bossId&&!bossUid){toast('请选择老板或输入老板 UID');return;}order.boss_id=bossId||bossUid;order.boss_uid=bossUid||'';order.companion_id=companionId||null;if(!companionId){order.send_to_hall=true;order.order_type=order.order_type||'open_grab';}api('create_order',{order:order}).then(function(res){toast(res.message||(res.sentToGrabHall?'已发送至抢单大厅。':'订单已创建'));go('/customer-service/orders');return softRefresh()}).catch(function(err){toast(err.message||'创建订单失败')});return}if(e.target.matches('[data-compensation-form]')){e.preventDefault();var cf=new FormData(e.target),payload={};cf.forEach(function(v,k){payload[k]=String(v||'')});if(payload.boss_uid&&payload.boss_uid.trim())payload.boss_id=payload.boss_uid.trim();api('apply_compensation',payload).then(function(res){toast(res.message||'补偿申请已提交');go('/customer-service/orders');return softRefresh()}).catch(function(err){toast(err.message)});return}if(e.target.matches('[data-report-form]')){e.preventDefault();toast('客服不能自行填写应付工资，请使用工资记录申诉');return}
   });
-  document.addEventListener('click',function(e){
+  document.addEventListener('click',async function(e){
     if(e.target.closest('[data-clock-in]')){
       e.preventDefault();
       runClock('clock_in');
@@ -3395,8 +3395,8 @@ import './mcj-chat-realtime.js';
     if(state.logoutBusy)return;
     state.logoutBusy=true;
     logoutConfirm.disabled=true;
+    try{if(window.MCJWebPush&&window.MCJWebPush.disablePush)await window.MCJWebPush.disablePush({role:'customer_service'})}catch(ePushOff){}
     clearSession();
-    try{if(window.MCJWebPush&&window.MCJWebPush.disablePush)window.MCJWebPush.disablePush({role:'customer_service'})}catch(ePushOff){}
     if(window.MCJRoleGate&&window.MCJRoleGate.logout)window.MCJRoleGate.logout('customer_service');
     location.replace('/customer-service/login/');
     return;

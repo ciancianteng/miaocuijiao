@@ -303,7 +303,7 @@ export async function notifyBoss(bossId, title, body, kind = "wallet", relatedId
     } else if (rid) {
       deepLink = "/orders.html?id=" + encodeURIComponent(rid);
     }
-    fanoutWebPush(bossId, {
+    await fanoutWebPush(bossId, {
       title: title || "妙脆角通知",
       body: body || "",
       url: deepLink,

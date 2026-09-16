@@ -12,7 +12,7 @@
   var DENIED_KEY = "mcj_webpush_denied";
   var PROMPTED_KEY = "mcj_webpush_first_prompted";
   var BINDING_KEY = "mcj_webpush_binding";
-  var CSS_VER = "20260916androidpush1";
+  var CSS_VER = "20260916androidpush2";
   var GUIDE_COPY = {
     title: "开启消息通知",
     body: "开启后可及时收到订单、陪玩状态及重要消息通知。",
@@ -150,6 +150,22 @@
     var out = new Uint8Array(raw.length);
     for (var i = 0; i < raw.length; i += 1) out[i] = raw.charCodeAt(i);
     return out;
+  }
+
+  function subscriptionUsesVapidKey(subscription, publicKey) {
+    try {
+      var actual = subscription && subscription.options && subscription.options.applicationServerKey;
+      if (!actual) return true;
+      var expected = urlBase64ToUint8Array(publicKey);
+      var bytes = actual instanceof ArrayBuffer ? new Uint8Array(actual) : new Uint8Array(actual.buffer || actual);
+      if (bytes.length !== expected.length) return false;
+      for (var i = 0; i < bytes.length; i += 1) {
+        if (bytes[i] !== expected[i]) return false;
+      }
+      return true;
+    } catch (e) {
+      return false;
+    }
   }
 
   function permissionState() {
@@ -306,6 +322,12 @@
     var publicKey = await fetchVapidPublicKey();
     var reg = await ensureServiceWorker();
     var existing = await reg.pushManager.getSubscription();
+    if (existing && !subscriptionUsesVapidKey(existing, publicKey)) {
+      try {
+        await existing.unsubscribe();
+      } catch (e0) {}
+      existing = null;
+    }
     if (existing && existing.endpoint) {
       var existingStatus = await authFetch(
         "/api/push?action=status&endpoint=" +
@@ -383,7 +405,7 @@
       });
       // One origin/scope has one browser PushSubscription. Preserve it when a
       // different authenticated user/portal still owns an active server bind.
-      if (!serverResult || !serverResult.hasOtherActiveBindings) {
+      if (serverResult && serverResult.ok && !serverResult.hasOtherActiveBindings) {
         try {
           await sub.unsubscribe();
         } catch (e) {}

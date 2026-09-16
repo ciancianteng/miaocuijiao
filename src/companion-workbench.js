@@ -345,7 +345,7 @@
         return;
       }
       var s=document.createElement('script');
-      s.src='/src/web-push-client.js?v=20260916androidpush1';
+      s.src='/src/web-push-client.js?v=20260916androidpush2';
       s.defer=true;
       s.setAttribute('data-mcj-webpush-client','1');
       s.onload=function(){resolve(window.MCJWebPush)};
@@ -1059,8 +1059,10 @@
     }catch(e){}
     state.session=normalized;
   }
-  function clearSession(){
-    try{if(window.MCJWebPush&&window.MCJWebPush.disablePush)window.MCJWebPush.disablePush({role:'companion'})}catch(e){}
+  function clearSession(skipPushCleanup){
+    if(!skipPushCleanup){
+      try{if(window.MCJWebPush&&window.MCJWebPush.disablePush)window.MCJWebPush.disablePush({role:'companion'})}catch(e){}
+    }
     localStorage.removeItem(SESSION_KEY);
     sessionStorage.removeItem(SESSION_KEY);
     try{
@@ -4384,7 +4386,7 @@
     var tmp=media[idx];media[idx]=media[next];media[next]=tmp;
     api('reorder_media',{ordered_ids:media.map(function(m){return m.id})}).then(function(res){toast(res.message||'顺序已更新');return loadData()}).catch(function(err){toast(err.message)});
   }
-  document.addEventListener('click',function(e){
+  document.addEventListener('click',async function(e){
     var qrZoom=e.target.closest('[data-pay-qr-zoom], [data-mcj-pay-qr]');
     if(qrZoom && (e.target.closest('[data-deposit-form], [data-deposit-view], [data-deposit-channels]')||qrZoom.closest('.pw-deposit-qr-block'))){
       var qImg=qrZoom.tagName==='IMG'?qrZoom:qrZoom.querySelector('img[data-mcj-pay-qr], img');
@@ -4602,7 +4604,12 @@
       if(willOpen)account.classList.add('open');
       return;
     }
-    if(e.target.closest('[data-logout]')){clearSession();location.replace('/companion/login/');return}
+    if(e.target.closest('[data-logout]')){
+      try{if(window.MCJWebPush&&window.MCJWebPush.disablePush)await window.MCJWebPush.disablePush({role:'companion'})}catch(e){}
+      clearSession(true);
+      location.replace('/companion/login/');
+      return;
+    }
     if(e.target.closest('[data-pwa-install-guide]')){
       e.preventDefault();
       openPwaInstallGuide();

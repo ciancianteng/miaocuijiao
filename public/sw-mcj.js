@@ -2,8 +2,8 @@
    Do NOT rewrite navigations to "/". Portal PWAs (companion / customer-service /
    admin) must keep their own start_url paths when launched from the home screen.
    Shared SW scope "/" keeps Web Push / #248 subscriptions intact. */
-self.addEventListener("install", function () {
-  self.skipWaiting();
+self.addEventListener("install", function (event) {
+  event.waitUntil(self.skipWaiting());
 });
 
 self.addEventListener("activate", function (event) {
@@ -133,7 +133,11 @@ self.addEventListener("notificationclick", function (event) {
   var data = (event.notification && event.notification.data) || {};
   var target = "/";
   try {
-    target = new URL(data.url || "/", self.location.origin).href;
+    var parsedTarget = new URL(data.url || "/", self.location.origin);
+    target =
+      parsedTarget.origin === self.location.origin
+        ? parsedTarget.href
+        : self.location.origin + "/";
   } catch (e) {
     target = self.location.origin + "/";
   }
@@ -142,13 +146,27 @@ self.addEventListener("notificationclick", function (event) {
     recordPushDiagnostic("notification_clicked", { url: target }).then(function () {
       return clients.matchAll({ type: "window", includeUncontrolled: true });
     }).then(function (list) {
-      for (var i = 0; i < list.length; i++) {
-        var client = list[i];
+      var targetPath = new URL(target).pathname;
+      var portalPrefix = targetPath.indexOf("/companion/") === 0
+        ? "/companion/"
+        : targetPath.indexOf("/customer-service/") === 0
+          ? "/customer-service/"
+          : "";
+      var ordered = list.slice().sort(function (a, b) {
+        if (!portalPrefix) return 0;
+        var aMatch = String(a.url || "").indexOf(self.location.origin + portalPrefix) === 0 ? 1 : 0;
+        var bMatch = String(b.url || "").indexOf(self.location.origin + portalPrefix) === 0 ? 1 : 0;
+        return bMatch - aMatch;
+      });
+      for (var i = 0; i < ordered.length; i++) {
+        var client = ordered[i];
         try {
           if (client.url && client.url.indexOf(self.location.origin) === 0 && "focus" in client) {
             if ("navigate" in client) {
               return client.navigate(target).then(function (c) {
                 return c && c.focus ? c.focus() : client.focus();
+              }).catch(function () {
+                return clients.openWindow ? clients.openWindow(target) : undefined;
               });
             }
             return client.focus();

@@ -181,9 +181,7 @@ export async function disablePushSubscription(input) {
         last_error_at: nowIso(),
       }),
     }
-  ).catch(function () {
-    return null;
-  });
+  );
   const other = await supabaseJson(
     restUrl(
       TABLE,
@@ -193,11 +191,12 @@ export async function disablePushSubscription(input) {
     ),
     { headers: serviceHeaders() }
   ).catch(function () {
-    return [];
+    return null;
   });
   return {
     disabled: true,
-    hasOtherActiveBindings: Array.isArray(other) && other.length > 0,
+    // Query failure is conservative: keep the browser subscription alive.
+    hasOtherActiveBindings: !Array.isArray(other) || other.length > 0,
   };
 }
 
@@ -309,6 +308,12 @@ export async function getPushStatusForUser(userId, currentEndpoint, expectedRole
   };
 }
 
+function internalClickUrl(value) {
+  const raw = String(value || "/").trim();
+  if (!raw.startsWith("/") || raw.startsWith("//") || raw.includes("\\")) return "/";
+  return raw.slice(0, 500);
+}
+
 function buildPayload(input) {
   const opts = input || {};
   return {
@@ -316,7 +321,7 @@ function buildPayload(input) {
     body: String(opts.body || "").slice(0, 180),
     icon: opts.icon || "/icons/icon-192.png",
     badge: opts.badge || "/icons/icon-192.png",
-    url: String(opts.url || "/").slice(0, 500),
+    url: internalClickUrl(opts.url),
     notification_type: String(opts.notificationType || opts.eventType || "system").slice(0, 64),
     entity_id: String(opts.entityId || opts.orderId || "").slice(0, 120),
     // Business-event fields (additive; admin test path unchanged)
@@ -660,7 +665,7 @@ export async function sendAdminTestWebPushToUser(userId, payloadInput) {
 }
 
 export function fanoutWebPush(userId, payload) {
-  Promise.resolve()
+  return Promise.resolve()
     .then(function () {
       return sendWebPushToUser(userId, payload);
     })

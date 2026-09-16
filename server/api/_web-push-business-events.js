@@ -123,7 +123,31 @@ async function claimDelivery({ dedupeKey, eventType, orderId, targetUserId, titl
     return true;
   } catch (err) {
     const msg = String(err && err.message ? err.message : err);
-    if (err.status === 409 || /duplicate|unique|23505/i.test(msg)) return false;
+    if (err.status === 409 || /duplicate|unique|23505/i.test(msg)) {
+      const rows = await supabaseJson(
+        restUrl(
+          LOG_TABLE,
+          "?dedupe_key=eq." +
+            encodeURIComponent(dedupeKey) +
+            "&select=sent_count,failed_count,skipped,created_at&limit=1"
+        ),
+        { headers: serviceHeaders() }
+      ).catch(function () {
+        return [];
+      });
+      const prior = Array.isArray(rows) ? rows[0] : rows;
+      if (Number(prior?.sent_count || 0) > 0) return false;
+      const ageMs = Date.now() - Date.parse(prior?.created_at || 0);
+      const looksInFlight =
+        Number.isFinite(ageMs) &&
+        ageMs >= 0 &&
+        ageMs < 2 * 60 * 1000 &&
+        Number(prior?.failed_count || 0) === 0 &&
+        !String(prior?.skipped || "");
+      // A confirmed send remains deduped. Failed/no-subscription claims retry
+      // immediately; an abandoned pending claim retries after a short lease.
+      return !looksInFlight;
+    }
     if (/does not exist|schema cache|web_push_delivery_log|PGRST/i.test(msg)) {
       console.warn("[web-push-biz] delivery_log unavailable, sending without dedupe claim");
       return true;
@@ -317,7 +341,7 @@ export async function emitOrderLifecyclePush(eventType, order, { title, body } =
 
 /** Fire-and-forget wrapper for order lifecycle hooks. */
 export function fanoutOrderLifecyclePush(eventType, order, opts) {
-  Promise.resolve()
+  return Promise.resolve()
     .then(function () {
       return emitOrderLifecyclePush(eventType, order, opts || {});
     })

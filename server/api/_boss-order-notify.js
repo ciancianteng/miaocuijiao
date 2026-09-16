@@ -32,7 +32,7 @@ export async function notifyBossOrderEvent(order, { title, body, kind = "order" 
       );
       const eventType = mapInboxKindToOrderPushEvent(kind);
       if (eventType) {
-        fanoutOrderLifecyclePush(eventType, order, { title: safeTitle, body: safeBody });
+        await fanoutOrderLifecyclePush(eventType, order, { title: safeTitle, body: safeBody });
       }
     } catch (pushErr) {
       console.warn(

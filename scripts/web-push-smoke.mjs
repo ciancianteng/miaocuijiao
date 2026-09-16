@@ -48,6 +48,7 @@ assert.match(client, /function getAccessToken\(preferredRole\)/);
 assert.match(client, /role === "companion"\) return companionToken\(\)/);
 assert.match(client, /matched === "expired"/);
 assert.match(client, /Service Worker 尚未激活/);
+assert.match(client, /subscriptionUsesVapidKey/);
 
 // 4) API rejects foreign target_user_id
 const api = readFileSync(path.join(root, "server/api/push.js"), "utf8");
@@ -61,6 +62,8 @@ assert.match(sender, /last_provider_status/);
 assert.match(sender, /statusCode === 404 \|\| statusCode === 410/);
 assert.match(sender, /妙脆角通知测试/);
 assert.match(sender, /这是一条系统 Push 测试通知/);
+assert.match(sender, /return Promise\.resolve\(\)/);
+assert.match(sender, /on_conflict=user_id,role,endpoint_hash/);
 
 const diagnosticsMigration = readFileSync(
   path.join(root, "supabase/migrations/20260916_web_push_provider_diagnostics.sql"),
@@ -72,6 +75,24 @@ assert.match(diagnosticsMigration, /unique index if not exists push_subscription
 assert.doesNotMatch(diagnosticsMigration, /\b(truncate|delete\s+from)\b/i);
 assert.match(sender, /on_conflict=user_id,role,endpoint_hash/);
 assert.match(sender, /hasOtherActiveBindings/);
+
+const businessPush = readFileSync(
+  path.join(root, "server/api/_web-push-business-events.js"),
+  "utf8"
+);
+assert.match(businessPush, /return Promise\.resolve\(\)/);
+assert.match(businessPush, /sent_count[\s\S]*looksInFlight/);
+
+for (const file of [
+  "server/api/_boss-order-notify.js",
+  "server/api/_companion-inbox.js",
+  "server/api/_companion-order-notify.js",
+  "server/api/_wallet.js",
+  "server/api/admin/finance.js",
+]) {
+  const source = readFileSync(path.join(root, file), "utf8");
+  assert.match(source, /await fanout(?:WebPush|OrderLifecyclePush)\(/, `${file} must await Web Push`);
+}
 
 // 5) A companion portal must never inherit a concurrently logged-in boss JWT.
 function storage(values = {}) {

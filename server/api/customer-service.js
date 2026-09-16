@@ -3631,13 +3631,10 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
             companion_id: assignedCompanionId,
             assignment_type: "assigned",
           };
-          await Promise.race([
-            notifyCompanionOrderAssigned(notifyOrder, {
+          await notifyCompanionOrderAssigned(notifyOrder, {
               eventType: "assign",
               email: profiles[assignedCompanionId]?.email || "",
-            }).catch((err) => console.warn("[cs/confirm_payment] companion notify", err?.message || err)),
-            new Promise((resolve) => setTimeout(resolve, 3500)),
-          ]);
+            }).catch((err) => console.warn("[cs/confirm_payment] companion notify", err?.message || err));
         } catch (err) {
           console.warn("[cs/confirm_payment] companion notify import", err?.message || err);
         }
@@ -4054,14 +4051,11 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
         try {
           const { notifyCompanionOrderAssigned } = await import("./_companion-order-notify.js");
           const prevCompanion = String(order.companion_id || "").trim();
-          await Promise.race([
-            notifyCompanionOrderAssigned(outOrder, {
+          await notifyCompanionOrderAssigned(outOrder, {
               eventType: prevCompanion && prevCompanion !== companionId ? "reassign" : "assign",
               previousCompanionId: prevCompanion,
               email: companion.email || profiles[companionId]?.email || "",
-            }).catch((err) => console.warn("[cs/assign] companion notify", err?.message || err)),
-            new Promise((resolve) => setTimeout(resolve, 3500)),
-          ]);
+            }).catch((err) => console.warn("[cs/assign] companion notify", err?.message || err));
         } catch (err) {
           console.warn("[cs/assign] companion notify import", err?.message || err);
         }
@@ -4149,7 +4143,7 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
         const { notifyCompanionOrderStatusChange } = await import("./_companion-order-notify.js");
         const out = patched || { ...order, status: transition.to };
         if (out.companion_id) {
-          notifyCompanionOrderStatusChange(out, { status: transition.to }).catch(() => {});
+          await notifyCompanionOrderStatusChange(out, { status: transition.to }).catch(() => {});
         }
       } catch (_) {}
       return json(res, 200, { ok: true, message: "订单状态已更新。", order: patched, reward });
