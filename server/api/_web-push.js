@@ -143,6 +143,31 @@ export async function upsertPushSubscription(input) {
   if (nextStatus === "active") {
     row.last_error = "";
     row.last_error_at = null;
+    // Same portal role on one browser belongs to the latest authenticated
+    // account. Preserve other roles (boss + companion can coexist), but stop
+    // the previous companion/boss account from receiving after an account switch.
+    await supabaseJson(
+      restUrl(
+        TABLE,
+        "?endpoint_hash=eq." +
+          encodeURIComponent(row.endpoint_hash) +
+          "&role=eq." +
+          encodeURIComponent(row.role) +
+          "&user_id=neq." +
+          encodeURIComponent(uid) +
+          "&status=eq.active"
+      ),
+      {
+        method: "PATCH",
+        headers: serviceHeaders(),
+        body: JSON.stringify({
+          status: "disabled",
+          updated_at: nowIso(),
+          last_error: "account_rebound",
+          last_error_at: nowIso(),
+        }),
+      }
+    );
   }
 
   const saved = await supabaseJson(restUrl(TABLE, "?on_conflict=user_id,role,endpoint_hash"), {

@@ -72,9 +72,11 @@ const diagnosticsMigration = readFileSync(
 assert.match(diagnosticsMigration, /last_provider_status/);
 assert.match(diagnosticsMigration, /provider_results/);
 assert.match(diagnosticsMigration, /unique index if not exists push_subscriptions_user_role_endpoint_key/i);
+assert.match(diagnosticsMigration, /unique index if not exists push_subscriptions_active_role_endpoint_key/i);
 assert.doesNotMatch(diagnosticsMigration, /\b(truncate|delete\s+from)\b/i);
 assert.match(sender, /on_conflict=user_id,role,endpoint_hash/);
 assert.match(sender, /hasOtherActiveBindings/);
+assert.match(sender, /account_rebound/);
 
 const businessPush = readFileSync(
   path.join(root, "server/api/_web-push-business-events.js"),

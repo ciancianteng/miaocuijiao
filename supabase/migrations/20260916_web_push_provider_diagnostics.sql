@@ -10,6 +10,10 @@ alter table public.push_subscriptions
 create unique index if not exists push_subscriptions_user_role_endpoint_key
   on public.push_subscriptions (user_id, role, endpoint_hash);
 
+create unique index if not exists push_subscriptions_active_role_endpoint_key
+  on public.push_subscriptions (role, endpoint_hash)
+  where status = 'active';
+
 alter table public.push_subscriptions
   add column if not exists last_provider_status integer,
   add column if not exists last_provider_response text not null default '',

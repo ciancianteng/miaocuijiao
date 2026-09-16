@@ -136,7 +136,13 @@ async function claimDelivery({ dedupeKey, eventType, orderId, targetUserId, titl
         return [];
       });
       const prior = Array.isArray(rows) ? rows[0] : rows;
-      if (Number(prior?.sent_count || 0) > 0) return false;
+      if (
+        Number(prior?.sent_count || 0) > 0 &&
+        Number(prior?.failed_count || 0) === 0 &&
+        !String(prior?.skipped || "")
+      ) {
+        return false;
+      }
       const ageMs = Date.now() - Date.parse(prior?.created_at || 0);
       const looksInFlight =
         Number.isFinite(ageMs) &&
