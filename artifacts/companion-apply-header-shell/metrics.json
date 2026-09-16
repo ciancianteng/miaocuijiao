@@ -1,0 +1,142 @@
+[
+  {
+    "viewport": "390",
+    "bodyPadding": [
+      "0px",
+      "0px",
+      "0px",
+      "0px"
+    ],
+    "header": {
+      "top": 0,
+      "left": 0,
+      "right": 390,
+      "width": 390,
+      "height": 63
+    },
+    "headerRadius": "0px",
+    "headerMargin": "0px",
+    "headerShadow": "none",
+    "shellTop": 63,
+    "shellLeft": 0,
+    "shellWidth": 390,
+    "headerFullBleed": true,
+    "hasBack": true,
+    "hasHero": true,
+    "hasSteps": true,
+    "brand": true,
+    "vw": 390
+  },
+  {
+    "viewport": "430",
+    "bodyPadding": [
+      "0px",
+      "0px",
+      "0px",
+      "0px"
+    ],
+    "header": {
+      "top": 0,
+      "left": 0,
+      "right": 430,
+      "width": 430,
+      "height": 63
+    },
+    "headerRadius": "0px",
+    "headerMargin": "0px",
+    "headerShadow": "none",
+    "shellTop": 63,
+    "shellLeft": 0,
+    "shellWidth": 430,
+    "headerFullBleed": true,
+    "hasBack": true,
+    "hasHero": true,
+    "hasSteps": true,
+    "brand": true,
+    "vw": 430
+  },
+  {
+    "viewport": "768",
+    "bodyPadding": [
+      "0px",
+      "0px",
+      "0px",
+      "0px"
+    ],
+    "header": {
+      "top": 0,
+      "left": 0,
+      "right": 768,
+      "width": 768,
+      "height": 63
+    },
+    "headerRadius": "0px",
+    "headerMargin": "0px",
+    "headerShadow": "none",
+    "shellTop": 63,
+    "shellLeft": 0,
+    "shellWidth": 768,
+    "headerFullBleed": true,
+    "hasBack": true,
+    "hasHero": true,
+    "hasSteps": true,
+    "brand": true,
+    "vw": 768
+  },
+  {
+    "viewport": "1024",
+    "bodyPadding": [
+      "0px",
+      "0px",
+      "0px",
+      "0px"
+    ],
+    "header": {
+      "top": 0,
+      "left": 0,
+      "right": 1024,
+      "width": 1024,
+      "height": 65
+    },
+    "headerRadius": "0px",
+    "headerMargin": "0px",
+    "headerShadow": "none",
+    "shellTop": 65,
+    "shellLeft": 0,
+    "shellWidth": 1024,
+    "headerFullBleed": true,
+    "hasBack": true,
+    "hasHero": true,
+    "hasSteps": true,
+    "brand": true,
+    "vw": 1024
+  },
+  {
+    "viewport": "1440",
+    "bodyPadding": [
+      "0px",
+      "0px",
+      "0px",
+      "0px"
+    ],
+    "header": {
+      "top": 0,
+      "left": 0,
+      "right": 1440,
+      "width": 1440,
+      "height": 65
+    },
+    "headerRadius": "0px",
+    "headerMargin": "0px",
+    "headerShadow": "none",
+    "shellTop": 65,
+    "shellLeft": 170,
+    "shellWidth": 1100,
+    "headerFullBleed": true,
+    "hasBack": true,
+    "hasHero": true,
+    "hasSteps": true,
+    "brand": true,
+    "vw": 1440
+  }
+]

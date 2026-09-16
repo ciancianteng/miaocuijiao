@@ -21,7 +21,7 @@
   var autoScheduled = false;
   var bipWaitTimer = null;
 
-  var ICON_CACHE_V = "20260912pwaIcon4";
+  var ICON_CACHE_V = "20260914pwaPortal4";
   var LOGO_FALLBACKS = [
     "/icons/icon-192.png",
     "/apple-touch-icon.png",
@@ -193,16 +193,48 @@
     return el;
   }
 
+  function portalManifestAndTitle() {
+    var p = "/";
+    try {
+      p = String(location.pathname || "/");
+    } catch (e) {
+      p = "/";
+    }
+    if (/^\/companion(\/|$)/i.test(p) || /^\/companion-apply\.html$/i.test(p)) {
+      return { manifest: "/manifest-companion.webmanifest", title: "妙脆角陪玩" };
+    }
+    if (/^\/customer-service(\/|$)/i.test(p)) {
+      return { manifest: "/manifest-cs.webmanifest", title: "妙脆角客服" };
+    }
+    if (
+      /^\/admin(\/|$)/i.test(p) ||
+      /^\/admin\.html$/i.test(p) ||
+      /^\/admin-(dashboard|center|audit)\.html$/i.test(p)
+    ) {
+      return { manifest: "/manifest-admin.webmanifest", title: "妙脆角后台" };
+    }
+    return { manifest: "/manifest.webmanifest", title: "妙脆角老板" };
+  }
+
   function ensurePwaMeta() {
     if (!document.head) return;
     var iconV = ICON_CACHE_V;
+    var portal = portalManifestAndTitle();
     ensureMetaTag('link[rel="manifest"][data-mcj-pwa-manifest]', function () {
       var l = document.createElement("link");
       l.rel = "manifest";
-      l.href = absoluteAsset("/manifest.webmanifest?v=" + iconV);
+      l.href = absoluteAsset(portal.manifest + "?v=" + iconV);
       l.setAttribute("data-mcj-pwa-manifest", "1");
       return l;
     });
+    // Retarget any pre-existing static/boot manifest links to this portal.
+    try {
+      var href = absoluteAsset(portal.manifest + "?v=" + iconV);
+      document.head.querySelectorAll('link[rel="manifest"]').forEach(function (el) {
+        el.href = href;
+        el.setAttribute("data-mcj-pwa-manifest", "1");
+      });
+    } catch (eRetarget) {}
     ensureMetaTag('link[rel="apple-touch-icon"][data-mcj-pwa-ati]', function () {
       var l = document.createElement("link");
       l.rel = "apple-touch-icon";
@@ -253,10 +285,14 @@
     ensureMetaTag('meta[name="apple-mobile-web-app-title"][data-mcj-pwa]', function () {
       var m = document.createElement("meta");
       m.name = "apple-mobile-web-app-title";
-      m.content = "妙脆角";
+      m.content = portal.title;
       m.setAttribute("data-mcj-pwa", "1");
       return m;
     });
+    try {
+      var titleEl = document.head.querySelector('meta[name="apple-mobile-web-app-title"]');
+      if (titleEl) titleEl.content = portal.title;
+    } catch (eTitle) {}
     ensureMetaTag('meta[name="theme-color"][data-mcj-pwa]', function () {
       var m = document.createElement("meta");
       m.name = "theme-color";

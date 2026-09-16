@@ -3601,10 +3601,14 @@
         try {
           var sent = await postAuthJson("send_register_otp", { email: regEmail, role: "companion" });
           authUi.busy = false;
-          var tip = sent.message || "验证码已发送";
+          var delivered = sent && sent.delivery === "sent";
+          var tip = delivered
+            ? (sent.message || "验证码已发送")
+            : (sent.message || "如该邮箱可用，将收到验证码。");
           if (sent.debugCode || sent.devCode) tip += "（调试 " + (sent.debugCode || sent.devCode) + "）";
-          setAuthMessage(tip, "ok");
-          startAuthCooldown("register", 60);
+          setAuthMessage(tip, delivered ? "ok" : "");
+          // Cooldown only after provider-accepted send — never fake success.
+          if (delivered) startAuthCooldown("register", Number(sent.retryAfterSec) || 60);
           render(Number(root.dataset.step || 0));
         } catch (err) {
           authUi.busy = false;
@@ -3672,10 +3676,14 @@
         try {
           var loginSent = await postAuthJson("send_login_otp", { email: loEmail, role: "companion" });
           authUi.busy = false;
-          var loginTip = loginSent.message || "验证码已发送";
+          var loginDelivered = loginSent && loginSent.delivery === "sent";
+          var loginTip = loginDelivered
+            ? (loginSent.message || "验证码已发送")
+            : (loginSent.message || "如该邮箱已注册陪玩端，将收到验证码。");
           if (loginSent.debugCode || loginSent.devCode) loginTip += "（调试 " + (loginSent.debugCode || loginSent.devCode) + "）";
-          setAuthMessage(loginTip, "ok");
-          startAuthCooldown("login", 60);
+          setAuthMessage(loginTip, loginDelivered ? "ok" : "");
+          // Cooldown only after provider-accepted send — never fake success.
+          if (loginDelivered) startAuthCooldown("login", Number(loginSent.retryAfterSec) || 60);
           render(Number(root.dataset.step || 0));
         } catch (err) {
           authUi.busy = false;

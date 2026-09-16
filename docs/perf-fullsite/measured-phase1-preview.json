@@ -1,0 +1,77 @@
+{
+  "at": "2026-09-12T21:10:00Z",
+  "method": "urllib from cloud agent",
+  "before_prod": {
+    "origin": "https://www.meowcuijiao.com",
+    "apis": {
+      "/api/public/companions": {
+        "p50_ms": 4032,
+        "samples_ms": [
+          5515,
+          3958,
+          4032
+        ],
+        "companions": 8,
+        "cache": "no-store",
+        "x_vercel_cache": "MISS"
+      },
+      "/api/home/daily-stats": {
+        "p50_ms": 690,
+        "samples_ms": [
+          730,
+          655,
+          690
+        ],
+        "cache": "no-store",
+        "x_vercel_cache": "MISS"
+      },
+      "/api/platform/services": {
+        "p50_ms": 304,
+        "samples_ms": [
+          304,
+          304,
+          321
+        ],
+        "cache": "no-store",
+        "x_vercel_cache": "MISS"
+      }
+    }
+  },
+  "after_preview_phase1_commit_771ddce": {
+    "origin": "https://meow-cuijiao-homepage-gqdnoa84c-ciancianteng-4581s-projects.vercel.app",
+    "note": "Preview companion set (n=2) differs from prod (n=8) \u2014 Preview env/DB divergence, not a hall visibility rule change in this PR.",
+    "apis": {
+      "/api/public/companions": {
+        "cold_ms": 2064,
+        "p50_ms": 176,
+        "samples_ms": [
+          2064,
+          64,
+          176
+        ],
+        "companions": 2,
+        "cache": "public, max-age=15, s-maxage=30, stale-while-revalidate=60",
+        "x_vercel_cache_warm": "HIT"
+      },
+      "/api/home/daily-stats": {
+        "cold_ms": 713,
+        "p50_ms": 168,
+        "samples_ms": [
+          713,
+          168,
+          73
+        ],
+        "cache": "public, max-age=30, s-maxage=60, stale-while-revalidate=120",
+        "x_vercel_cache_warm": "HIT"
+      },
+      "/api/platform/services": {
+        "p50_ms": 286,
+        "cache": "no-store",
+        "x_vercel_cache": "MISS"
+      }
+    }
+  },
+  "phase2_5_code_status": "committed in follow-up; requires Preview redeploy for AFTER re-measure",
+  "otp_p0": "NOT introduced by perf PR \u2014 see OTP-P0-ATTRIBUTION.md",
+  "merge_gate": "BLOCKED \u2014 not READY FOR FINAL REVIEW"
+}
