@@ -1438,10 +1438,8 @@ export default async function handler(req, res) {
       }
 
       const target = targets[0];
-      const title = String(body.title || "妙脆角测试通知 🐱").slice(0, 80);
-      const pushBody = String(
-        body.body || "如果你看到这条通知，说明妙脆角 Web Push 已成功开启。"
-      ).slice(0, 180);
+      const title = "妙脆角通知测试";
+      const pushBody = "这是一条系统 Push 测试通知";
       const url = String(body.url || "/mine.html").slice(0, 500);
 
       const pushResult = await sendAdminTestWebPushToUser(target.id, {

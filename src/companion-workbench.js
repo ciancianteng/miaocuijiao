@@ -345,7 +345,7 @@
         return;
       }
       var s=document.createElement('script');
-      s.src='/src/web-push-client.js?v=20260914webpush5';
+      s.src='/src/web-push-client.js?v=20260916androidpush1';
       s.defer=true;
       s.setAttribute('data-mcj-webpush-client','1');
       s.onload=function(){resolve(window.MCJWebPush)};
@@ -1060,7 +1060,7 @@
     state.session=normalized;
   }
   function clearSession(){
-    try{if(window.MCJWebPush&&window.MCJWebPush.disablePush)window.MCJWebPush.disablePush()}catch(e){}
+    try{if(window.MCJWebPush&&window.MCJWebPush.disablePush)window.MCJWebPush.disablePush({role:'companion'})}catch(e){}
     localStorage.removeItem(SESSION_KEY);
     sessionStorage.removeItem(SESSION_KEY);
     try{

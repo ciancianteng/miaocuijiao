@@ -145,7 +145,7 @@ export async function upsertPushSubscription(input) {
     row.last_error_at = null;
   }
 
-  const saved = await supabaseJson(restUrl(TABLE, "?on_conflict=endpoint_hash"), {
+  const saved = await supabaseJson(restUrl(TABLE, "?on_conflict=user_id,role,endpoint_hash"), {
     method: "POST",
     headers: serviceHeaders({ Prefer: "resolution=merge-duplicates,return=representation" }),
     body: JSON.stringify(row),
@@ -158,12 +158,18 @@ export async function disablePushSubscription(input) {
   if (!hasDb()) return false;
   const uid = String(opts.userId || "").trim();
   const ep = String(opts.endpoint || "").trim();
+  const role = String(opts.role || "").trim().toLowerCase();
   if (!uid || !ep) return false;
   const hash = hashEndpoint(ep);
+  const roleFilter = role ? "&role=eq." + encodeURIComponent(role) : "";
   await supabaseJson(
     restUrl(
       TABLE,
-      "?user_id=eq." + encodeURIComponent(uid) + "&endpoint_hash=eq." + encodeURIComponent(hash)
+      "?user_id=eq." +
+        encodeURIComponent(uid) +
+        roleFilter +
+        "&endpoint_hash=eq." +
+        encodeURIComponent(hash)
     ),
     {
       method: "PATCH",
@@ -178,35 +184,80 @@ export async function disablePushSubscription(input) {
   ).catch(function () {
     return null;
   });
-  return true;
+  const other = await supabaseJson(
+    restUrl(
+      TABLE,
+      "?endpoint_hash=eq." +
+        encodeURIComponent(hash) +
+        "&status=eq.active&select=id&limit=1"
+    ),
+    { headers: serviceHeaders() }
+  ).catch(function () {
+    return [];
+  });
+  return {
+    disabled: true,
+    hasOtherActiveBindings: Array.isArray(other) && other.length > 0,
+  };
 }
 
 export async function listActiveSubscriptionsForUser(userId) {
   if (!hasDb()) return [];
   const uid = String(userId || "").trim();
   if (!uid) return [];
-  const query =
+  const base =
     "?user_id=eq." +
     encodeURIComponent(uid) +
-    "&status=eq.active&select=id,user_id,role,endpoint,endpoint_hash,p256dh,auth,device_label,user_agent,updated_at,last_seen_at&limit=50";
-  const rows = await supabaseJson(restUrl(TABLE, query), {
-    headers: serviceHeaders(),
-  }).catch(function (err) {
-    if (/does not exist|schema cache|push_subscriptions/i.test(String(err && err.message ? err.message : ""))) {
-      return [];
+    "&status=eq.active";
+  const columns =
+    "id,user_id,role,endpoint,endpoint_hash,p256dh,auth,device_label,user_agent,updated_at,last_seen_at";
+  let rows;
+  try {
+    rows = await supabaseJson(
+      restUrl(
+        TABLE,
+        base +
+          "&select=" +
+          columns +
+          ",last_provider_status,last_provider_response,last_provider_request_id&limit=50"
+      ),
+      { headers: serviceHeaders() }
+    );
+  } catch (err) {
+    // Safe deploy order: delivery still works before the additive diagnostics
+    // migration reaches an environment.
+    if (/last_provider_|PGRST204|column/i.test(String(err && err.message ? err.message : ""))) {
+      rows = await supabaseJson(restUrl(TABLE, base + "&select=" + columns + "&limit=50"), {
+        headers: serviceHeaders(),
+      });
+    } else if (/does not exist|schema cache|push_subscriptions/i.test(String(err && err.message ? err.message : ""))) {
+      rows = [];
+    } else {
+      throw err;
     }
-    throw err;
-  });
+  }
+  if (!rows) rows = [];
   return Array.isArray(rows) ? rows : [];
 }
 
-export async function getPushStatusForUser(userId, currentEndpoint) {
+async function listUniqueActiveSubscriptionsForUser(userId) {
+  const rows = await listActiveSubscriptionsForUser(userId);
+  const unique = new Map();
+  rows.forEach(function (row) {
+    const key = row.endpoint_hash || hashEndpoint(row.endpoint);
+    if (!unique.has(key)) unique.set(key, row);
+  });
+  return Array.from(unique.values());
+}
+
+export async function getPushStatusForUser(userId, currentEndpoint, expectedRole = "") {
   const rows = await listActiveSubscriptionsForUser(userId);
   const ep = String(currentEndpoint || "").trim();
+  const role = String(expectedRole || "").trim().toLowerCase();
   const currentHash = ep ? hashEndpoint(ep) : "";
   const current = currentHash
     ? rows.find(function (r) {
-        return r.endpoint_hash === currentHash;
+        return r.endpoint_hash === currentHash && (!role || r.role === role);
       })
     : null;
 
@@ -245,12 +296,16 @@ export async function getPushStatusForUser(userId, currentEndpoint) {
         deviceLabel: r.device_label || "Browser",
         lastSeenAt: r.last_seen_at || r.updated_at || "",
         isCurrent: currentHash ? r.endpoint_hash === currentHash : false,
+        providerStatus: r.last_provider_status || null,
+        providerResponse: r.last_provider_response || "",
+        providerRequestId: r.last_provider_request_id || "",
       };
     }),
     currentActive: !!current,
     matchedStatus: matchedStatus || (current ? "active" : ""),
     matchedId: matchedId,
     hasBrowserEndpoint: !!currentHash,
+    expectedRole: role,
   };
 }
 
@@ -272,35 +327,82 @@ function buildPayload(input) {
   };
 }
 
-async function markSuccess(id) {
-  if (!id) return;
-  await supabaseJson(restUrl(TABLE, "?id=eq." + encodeURIComponent(id)), {
+function providerResult(response, fallbackStatus = 0) {
+  const statusCode = Number(response?.statusCode || response?.status || fallbackStatus || 0);
+  const requestId = String(
+    response?.headers?.["x-request-id"] ||
+      response?.headers?.["x-guploader-uploadid"] ||
+      response?.headers?.location ||
+      ""
+  ).slice(0, 160);
+  return {
+    statusCode: statusCode || null,
+    requestId,
+    body: String(response?.body || "").slice(0, 240),
+  };
+}
+
+async function markSuccess(row, response) {
+  if (!row || (!row.id && !row.endpoint)) return;
+  const provider = providerResult(response, 201);
+  const targetQuery =
+    row.endpoint_hash || row.endpoint
+      ? "?endpoint_hash=eq." + encodeURIComponent(row.endpoint_hash || hashEndpoint(row.endpoint))
+      : "?id=eq." + encodeURIComponent(row.id);
+  const basePatch = {
+    last_success_at: nowIso(),
+    last_seen_at: nowIso(),
+    updated_at: nowIso(),
+    last_error: "",
+  };
+  const diagnosticsPatch = {
+    last_provider_status: provider.statusCode || 201,
+    last_provider_response: provider.body || "accepted",
+    last_provider_request_id: provider.requestId,
+  };
+  await supabaseJson(restUrl(TABLE, targetQuery), {
     method: "PATCH",
     headers: serviceHeaders(),
-    body: JSON.stringify({
-      last_success_at: nowIso(),
-      last_seen_at: nowIso(),
-      updated_at: nowIso(),
-      last_error: "",
-    }),
-  }).catch(function () {
-    return null;
+    body: JSON.stringify({ ...basePatch, ...diagnosticsPatch }),
+  }).catch(async function (err) {
+    if (/last_provider_|PGRST204|column/i.test(String(err && err.message ? err.message : ""))) {
+      await supabaseJson(restUrl(TABLE, targetQuery), {
+        method: "PATCH",
+        headers: serviceHeaders(),
+        body: JSON.stringify(basePatch),
+      }).catch(function () {});
+    }
   });
 }
 
 async function markFailure(row, statusCode, message) {
   const gone = statusCode === 404 || statusCode === 410;
-  await supabaseJson(restUrl(TABLE, "?id=eq." + encodeURIComponent(row.id)), {
+  const basePatch = {
+    status: gone ? "expired" : row.status || "active",
+    last_error_at: nowIso(),
+    last_error: String(message || statusCode || "push failed").slice(0, 200),
+    updated_at: nowIso(),
+  };
+  const diagnosticsPatch = {
+    last_provider_status: Number(statusCode) || null,
+    last_provider_response: String(message || "push failed").slice(0, 240),
+    last_provider_request_id: "",
+  };
+  const targetQuery = gone
+    ? "?endpoint_hash=eq." + encodeURIComponent(row.endpoint_hash || hashEndpoint(row.endpoint))
+    : "?id=eq." + encodeURIComponent(row.id);
+  await supabaseJson(restUrl(TABLE, targetQuery), {
     method: "PATCH",
     headers: serviceHeaders(),
-    body: JSON.stringify({
-      status: gone ? "expired" : row.status || "active",
-      last_error_at: nowIso(),
-      last_error: String(message || statusCode || "push failed").slice(0, 200),
-      updated_at: nowIso(),
-    }),
-  }).catch(function () {
-    return null;
+    body: JSON.stringify({ ...basePatch, ...diagnosticsPatch }),
+  }).catch(async function (err) {
+    if (/last_provider_|PGRST204|column/i.test(String(err && err.message ? err.message : ""))) {
+      await supabaseJson(restUrl(TABLE, targetQuery), {
+        method: "PATCH",
+        headers: serviceHeaders(),
+        body: JSON.stringify(basePatch),
+      }).catch(function () {});
+    }
   });
 }
 
@@ -311,7 +413,7 @@ export async function sendWebPushToUser(userId, payloadInput) {
     return { ok: false, sent: 0, failed: 0, skipped: "vapid_unconfigured" };
   }
 
-  const rows = await listActiveSubscriptionsForUser(uid);
+  const rows = await listUniqueActiveSubscriptionsForUser(uid);
   if (!rows.length) return { ok: true, sent: 0, failed: 0, skipped: "no_subscriptions" };
 
   let webPush;
@@ -330,11 +432,12 @@ export async function sendWebPushToUser(userId, payloadInput) {
   const body = JSON.stringify(payload);
   let sent = 0;
   let failed = 0;
+  const results = [];
 
   await Promise.all(
     rows.map(async function (row) {
       try {
-        await webPush.sendNotification(
+        const response = await webPush.sendNotification(
           {
             endpoint: row.endpoint,
             keys: { p256dh: row.p256dh, auth: row.auth },
@@ -343,7 +446,25 @@ export async function sendWebPushToUser(userId, payloadInput) {
           { TTL: 60 * 60 * 12, urgency: "high" }
         );
         sent += 1;
-        await markSuccess(row.id);
+        const provider = providerResult(response, 201);
+        await markSuccess(row, response);
+        console.info(
+          "[web-push] provider accepted",
+          JSON.stringify({
+            userId: uid,
+            subscriptionId: row.id || null,
+            endpointHash: row.endpoint_hash || hashEndpoint(row.endpoint),
+            status: provider.statusCode || 201,
+            requestId: provider.requestId || null,
+          })
+        );
+        results.push({
+          subscriptionId: row.id || null,
+          endpointHash: row.endpoint_hash || hashEndpoint(row.endpoint),
+          outcome: "success",
+          statusCode: provider.statusCode || 201,
+          requestId: provider.requestId || null,
+        });
       } catch (err) {
         failed += 1;
         const statusCode = Number(err && (err.statusCode || err.status) ? err.statusCode || err.status : 0);
@@ -357,11 +478,18 @@ export async function sendWebPushToUser(userId, payloadInput) {
           })
         );
         await markFailure(row, statusCode, (err && err.message) || "send failed");
+        results.push({
+          subscriptionId: row.id || null,
+          endpointHash: row.endpoint_hash || hashEndpoint(row.endpoint),
+          outcome: statusCode === 404 || statusCode === 410 ? "expired" : "failed",
+          statusCode: statusCode || null,
+          message: String(err && err.message ? err.message : "send failed").slice(0, 160),
+        });
       }
     })
   );
 
-  return { ok: failed === 0, sent: sent, failed: failed };
+  return { ok: failed === 0, sent: sent, failed: failed, results: results };
 }
 
 /**
@@ -394,7 +522,7 @@ export async function sendAdminTestWebPushToUser(userId, payloadInput) {
     };
   }
 
-  const rows = await listActiveSubscriptionsForUser(uid);
+  const rows = await listUniqueActiveSubscriptionsForUser(uid);
   if (!rows.length) {
     return {
       ok: false,
@@ -429,13 +557,19 @@ export async function sendAdminTestWebPushToUser(userId, payloadInput) {
   const payload = buildPayload(
     Object.assign(
       {
-        title: "妙脆角测试通知 🐱",
-        body: "如果你看到这条通知，说明妙脆角 Web Push 已成功开启。",
         url: "/mine.html",
         notificationType: "admin_test",
         tag: "admin_test_web_push",
       },
-      payloadInput || {}
+      payloadInput || {},
+      {
+        // Test sender is diagnostic-only. Never impersonate a business event.
+        title: "妙脆角通知测试",
+        body: "这是一条系统 Push 测试通知",
+        notificationType: "admin_test",
+        eventType: "admin_test",
+        tag: "admin_test_web_push",
+      }
     )
   );
   const body = JSON.stringify(payload);
@@ -454,7 +588,7 @@ export async function sendAdminTestWebPushToUser(userId, payloadInput) {
         endpointHash: row.endpoint_hash || hashEndpoint(endpoint),
       };
       try {
-        await webPush.sendNotification(
+        const response = await webPush.sendNotification(
           {
             endpoint: endpoint,
             keys: { p256dh: row.p256dh, auth: row.auth },
@@ -463,11 +597,13 @@ export async function sendAdminTestWebPushToUser(userId, payloadInput) {
           { TTL: 60 * 60 * 12, urgency: "high" }
         );
         sent += 1;
-        await markSuccess(row.id);
+        const provider = providerResult(response, 201);
+        await markSuccess(row, response);
         results.push(
           Object.assign({}, base, {
             outcome: "success",
-            statusCode: 201,
+            statusCode: provider.statusCode || 201,
+            requestId: provider.requestId || null,
             message: "sent",
           })
         );

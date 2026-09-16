@@ -201,7 +201,9 @@ export default async function handler(req, res) {
 
     if (req.method === "GET" && (action === "status" || action === "list" || !action)) {
       const endpoint = String((req.query && req.query.endpoint) || "").trim();
-      const status = await getPushStatusForUser(userId, endpoint);
+      const requestedRole = String((req.query && req.query.role) || "").trim();
+      const role = pickRole(profile, authUser, requestedRole);
+      const status = await getPushStatusForUser(userId, endpoint, role);
       return json(res, 200, Object.assign({ ok: true, userId: userId }, status));
     }
 
@@ -235,6 +237,7 @@ export default async function handler(req, res) {
       return json(res, 200, {
         ok: true,
         message: "已开启通知",
+        userId: userId,
         subscriptionId: (saved && saved.id) || null,
         role: role,
       });
@@ -243,12 +246,19 @@ export default async function handler(req, res) {
     if (action === "unsubscribe") {
       const sub = readSubscription(body);
       if (!sub.endpoint) return json(res, 400, { ok: false, message: "缺少 endpoint" });
-      await disablePushSubscription({
+      const role = pickRole(profile, authUser, body.role);
+      const disabled = await disablePushSubscription({
         userId: userId,
+        role: role,
         endpoint: sub.endpoint,
         reason: "user_unsubscribe",
       });
-      return json(res, 200, { ok: true, message: "已关闭本机通知" });
+      return json(res, 200, {
+        ok: true,
+        message: "已关闭本账号通知",
+        role: role,
+        hasOtherActiveBindings: !!(disabled && disabled.hasOtherActiveBindings),
+      });
     }
 
     if (action === "deny") {

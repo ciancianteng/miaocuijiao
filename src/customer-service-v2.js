@@ -3396,7 +3396,7 @@ import './mcj-chat-realtime.js';
     state.logoutBusy=true;
     logoutConfirm.disabled=true;
     clearSession();
-    try{if(window.MCJWebPush&&window.MCJWebPush.disablePush)window.MCJWebPush.disablePush()}catch(ePushOff){}
+    try{if(window.MCJWebPush&&window.MCJWebPush.disablePush)window.MCJWebPush.disablePush({role:'customer_service'})}catch(ePushOff){}
     if(window.MCJRoleGate&&window.MCJRoleGate.logout)window.MCJRoleGate.logout('customer_service');
     location.replace('/customer-service/login/');
     return;
