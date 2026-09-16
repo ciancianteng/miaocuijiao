@@ -248,6 +248,29 @@ export default async function handler(req, res) {
     const body = req.method === "GET" ? {} : await parseBody(req);
     const action = String(req.method === "GET" ? req.query.action || "catalog" : body.action || "").trim();
 
+    // Gift mall catalog: global enabled gifts, no companion required.
+    // Recipient is chosen in the mall UI before send_gift (which still requires companionId).
+    if (req.method === "GET" && (action === "gift_catalog" || action === "gifts")) {
+      let gifts = [];
+      try {
+        gifts = await companionDb("gifts", "?enabled=eq.true&deleted_at=is.null&order=sort_order.asc&limit=100");
+      } catch (e) {
+        if (!isMissingRelation(e)) throw e;
+        gifts = [];
+      }
+      return json(res, 200, {
+        ok: true,
+        gifts: (gifts || []).map((g) => ({
+          id: g.id,
+          name: g.name,
+          iconUrl: g.icon_url || "",
+          catFoodPrice: money(g.cat_food_price),
+          featured: !!g.featured,
+          animationLevel: g.animation_level || "normal",
+        })),
+      });
+    }
+
     if (req.method === "GET" && action === "catalog") {
       const companionId = String(req.query.companionId || req.query.id || "").trim();
       if (!companionId) return json(res, 400, { ok: false, message: "缺少陪玩 ID" });
@@ -634,6 +657,7 @@ export default async function handler(req, res) {
       let giftId = null;
       let quantity = 1;
 
+      let giftIconUrl = "";
       if (action === "send_gift") {
         giftId = String(body.giftId || body.gift_id || "").trim();
         quantity = Math.max(1, Math.floor(Number(body.quantity || 1)));
@@ -644,6 +668,7 @@ export default async function handler(req, res) {
         const gift = gifts?.[0];
         if (!gift) return json(res, 400, { ok: false, message: "礼物不存在或已下架" });
         giftName = gift.name;
+        giftIconUrl = String(gift.icon_url || "");
         gross = money(gift.cat_food_price) * quantity;
       } else {
         gross = money(body.amount || body.catFood || body.cat_food);
@@ -718,12 +743,29 @@ export default async function handler(req, res) {
             related_order_id: body.relatedOrderId || null,
             kind: action === "send_gift" ? "gift" : "tip",
             idempotency_key: idempotencyKey,
+            fulfillment_status: "completed",
+            gift_image_url: giftIconUrl || "",
             created_at: nowIso(),
           }),
         });
         tx = rows?.[0] || null;
       } catch (e) {
         if (!isMissingRelation(e)) throw e;
+      }
+
+      if (action === "send_gift") {
+        try {
+          const { recordCompanionGiftWallHit } = await import("../_gift-orders.js");
+          await recordCompanionGiftWallHit({
+            companionId,
+            giftId,
+            giftName,
+            giftImageUrl: giftIconUrl,
+            quantity,
+          });
+        } catch (wallErr) {
+          console.warn("[marketplace/send_gift] gift wall", wallErr?.message || wallErr);
+        }
       }
 
       scheduleRecomputeSoft();
