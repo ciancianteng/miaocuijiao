@@ -1712,10 +1712,15 @@ body.companion-apply-page .apply-success{
 /* Done page — premium, no debug dashes */
 #companionApplyRoot .apply-done-premium{
   text-align:center;
+  box-sizing:border-box;
+  width:100%;
+  max-width:100%;
+  min-width:0;
   padding:28px 16px 18px;
   border:1px solid rgba(255,190,220,.12);
   border-radius:22px;
   background:rgba(255,255,255,.03);
+  overflow-wrap:anywhere;
 }
 #companionApplyRoot .apply-done-badge{
   width:64px;height:64px;margin:0 auto 14px;
@@ -1742,6 +1747,8 @@ body.companion-apply-page .apply-success{
 }
 #companionApplyRoot .apply-done-meta{
   display:grid;gap:0;text-align:left;
+  box-sizing:border-box;
+  width:100%;max-width:100%;min-width:0;
   border:1px solid rgba(255,255,255,.07);
   border-radius:16px;overflow:hidden;
   background:rgba(0,0,0,.18);
@@ -1749,18 +1756,29 @@ body.companion-apply-page .apply-success{
 }
 #companionApplyRoot .apply-done-row{
   display:flex;justify-content:space-between;gap:12px;
+  box-sizing:border-box;
+  min-width:0;max-width:100%;
   padding:12px 14px;
   border-bottom:1px solid rgba(255,255,255,.05);
   font-size:13px;
 }
 #companionApplyRoot .apply-done-row:last-child{border-bottom:0}
-#companionApplyRoot .apply-done-row span{color:rgba(205,184,196,.7);font-weight:800}
-#companionApplyRoot .apply-done-row strong{color:#fff5fa;font-weight:950;text-align:right}
+#companionApplyRoot .apply-done-row span{min-width:0;color:rgba(205,184,196,.7);font-weight:800}
+#companionApplyRoot .apply-done-row strong{min-width:0;color:#fff5fa;font-weight:950;text-align:right;overflow-wrap:anywhere}
 #companionApplyRoot .apply-done-muted{color:rgba(205,184,196,.45);font-weight:750}
 #companionApplyRoot .apply-done-actions{
-  display:grid;gap:10px;margin-bottom:10px;
+  display:grid;gap:10px;
+  box-sizing:border-box;
+  width:100%;max-width:100%;min-width:0;
+  margin-bottom:10px;
 }
-#companionApplyRoot .apply-done-actions .apply-btn{width:100%;justify-content:center}
+#companionApplyRoot .apply-done-actions .apply-btn{
+  box-sizing:border-box;
+  width:100%;max-width:100%;min-width:0;
+  justify-content:center;
+  white-space:normal;
+  overflow-wrap:anywhere;
+}
 
 /* Compact stepper a bit more so content owns the viewport */
 #companionApplyRoot .apply-stepper{margin:0 0 2px;padding:0}
