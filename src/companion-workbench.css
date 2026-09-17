@@ -892,3 +892,91 @@ a.pw-btn{display:inline-flex;align-items:center;justify-content:center;text-deco
   .pw-gallery-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
 
+/* companion workbench accordion — scoped, no bottom-nav pollution */
+.pw-shell .pw-acc-stack,
+.pw-shell .pw-acc-stack{
+  display:grid;
+  gap:8px;
+}
+.pw-shell details.pw-acc{
+  margin:0;
+  border:0;
+  border-bottom:1px solid rgba(243,168,203,.16);
+  border-radius:0;
+  background:transparent;
+  box-shadow:none;
+  overflow:hidden;
+}
+.pw-shell details.pw-acc + details.pw-acc{margin-top:0}
+.pw-shell .pw-acc > summary.pw-acc-summary-row{
+  list-style:none;
+  cursor:pointer;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  padding:12px 2px;
+  color:inherit;
+  background:transparent;
+  border:0;
+  box-shadow:none;
+}
+.pw-shell .pw-acc > summary.pw-acc-summary-row::-webkit-details-marker{display:none}
+.pw-shell .pw-acc > summary.pw-acc-summary-row::marker{content:''}
+.pw-shell .pw-acc-copy{
+  display:grid;
+  gap:2px;
+  min-width:0;
+}
+.pw-shell .pw-acc-copy strong{
+  font-size:14px;
+  font-weight:800;
+  color:#ffe2ef;
+}
+.pw-shell .pw-acc-copy small{
+  font-size:12px;
+  color:rgba(255,220,235,.72);
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.pw-shell .pw-acc-chevron{
+  width:7px;height:7px;flex:0 0 auto;
+  border-right:2px solid rgba(243,168,203,.75);
+  border-bottom:2px solid rgba(243,168,203,.75);
+  transform:rotate(-45deg);
+  transition:transform .18s ease;
+  margin-right:4px;
+}
+.pw-shell details.pw-acc[open] > summary .pw-acc-chevron{
+  transform:rotate(45deg);
+}
+.pw-shell .pw-acc-body{
+  padding:0 2px 12px;
+}
+.pw-shell .pw-dash-hero{
+  display:flex;
+  align-items:center;
+  gap:12px;
+  padding:4px 2px 10px;
+}
+.pw-shell .pw-dash-avatar{
+  width:52px;height:52px;border-radius:16px;object-fit:cover;
+  border:1px solid rgba(243,168,203,.28);
+  background:rgba(255,255,255,.04);
+}
+.pw-shell .pw-dash-hero-copy{
+  display:grid;gap:2px;min-width:0;
+}
+.pw-shell .pw-dash-hero-copy strong{font-size:16px;color:#fff5fa}
+.pw-shell .pw-dash-hero-copy span{font-size:12px;color:rgba(255,220,235,.72)}
+
+
+
+/* Scoped workbench accordion helpers — do not touch bottom nav */
+.companion-workbench-accordion.pw-acc-stack,
+.pw-shell .companion-workbench-accordion.pw-acc-stack{
+  display:grid;
+  gap:8px;
+}
+.companion-workbench-section{}
