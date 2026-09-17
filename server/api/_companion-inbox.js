@@ -166,7 +166,7 @@ export async function insertCompanionNotification({
         return savedKey;
       }
       const { fanoutWebPush } = await import("./_web-push.js");
-      fanoutWebPush(uid, {
+      await fanoutWebPush(uid, {
         title: base.title,
         body: base.body,
         url: base.href || "/companion/messages",

@@ -605,7 +605,7 @@ export async function notifyCompanionOrderAssigned(order, { eventType = "assign"
   // P0 business Web Push (idempotent). Inbox fan-out skips order_assigned kinds.
   try {
     const { ORDER_PUSH_EVENTS, fanoutOrderLifecyclePush } = await import("./_web-push-business-events.js");
-    fanoutOrderLifecyclePush(ORDER_PUSH_EVENTS.ORDER_ASSIGNED, order, {
+    await fanoutOrderLifecyclePush(ORDER_PUSH_EVENTS.ORDER_ASSIGNED, order, {
       title: type === "reassign" ? "你有新的重新指定订单" : "你有新的指定订单",
       body: `订单 ${no} 等待确认接单。`,
     });
@@ -684,13 +684,13 @@ export async function notifyCompanionOrderStatusChange(order, { status, email = 
   try {
     const { ORDER_PUSH_EVENTS, fanoutOrderLifecyclePush } = await import("./_web-push-business-events.js");
     if (st === "completed") {
-      fanoutOrderLifecyclePush(ORDER_PUSH_EVENTS.ORDER_COMPLETED, { ...order, status: st });
+      await fanoutOrderLifecyclePush(ORDER_PUSH_EVENTS.ORDER_COMPLETED, { ...order, status: st });
     } else if (st === "cancelled") {
-      fanoutOrderLifecyclePush(ORDER_PUSH_EVENTS.ORDER_CANCELLED, { ...order, status: st });
+      await fanoutOrderLifecyclePush(ORDER_PUSH_EVENTS.ORDER_CANCELLED, { ...order, status: st });
     } else if (st === "in_progress") {
-      fanoutOrderLifecyclePush(ORDER_PUSH_EVENTS.ORDER_STARTED, { ...order, status: st });
+      await fanoutOrderLifecyclePush(ORDER_PUSH_EVENTS.ORDER_STARTED, { ...order, status: st });
     } else if (st === "confirmed") {
-      fanoutOrderLifecyclePush(ORDER_PUSH_EVENTS.ORDER_ACCEPTED, { ...order, status: st });
+      await fanoutOrderLifecyclePush(ORDER_PUSH_EVENTS.ORDER_ACCEPTED, { ...order, status: st });
     }
   } catch (err) {
     console.warn("[companion-order-notify] status business push", err?.message || err);

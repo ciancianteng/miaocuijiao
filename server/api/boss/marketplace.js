@@ -335,12 +335,9 @@ export default async function handler(req, res) {
           if (String(replayed.status || "") === "claimed" && replayed.companion_id) {
             try {
               const { notifyCompanionOrderAssigned } = await import("../_companion-order-notify.js");
-              await Promise.race([
-                notifyCompanionOrderAssigned(replayed, { eventType: "assign", email: "" }).catch((err) =>
+              await notifyCompanionOrderAssigned(replayed, { eventType: "assign", email: "" }).catch((err) =>
                   console.warn("[marketplace/create_and_pay] companion notify replay", err?.message || err)
-                ),
-                new Promise((resolve) => setTimeout(resolve, 3500)),
-              ]);
+                );
             } catch (err) {
               console.warn("[marketplace/create_and_pay] companion notify replay import", err?.message || err);
             }
@@ -576,12 +573,9 @@ export default async function handler(req, res) {
       if (claimedOrder?.companion_id) {
         try {
           const { notifyCompanionOrderAssigned } = await import("../_companion-order-notify.js");
-          await Promise.race([
-            notifyCompanionOrderAssigned(claimedOrder, { eventType: "assign", email: "" }).catch((err) =>
+          await notifyCompanionOrderAssigned(claimedOrder, { eventType: "assign", email: "" }).catch((err) =>
               console.warn("[marketplace/create_and_pay] companion notify", err?.message || err)
-            ),
-            new Promise((resolve) => setTimeout(resolve, 3500)),
-          ]);
+            );
         } catch (err) {
           console.warn("[marketplace/create_and_pay] companion notify import", err?.message || err);
         }

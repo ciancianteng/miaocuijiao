@@ -1553,13 +1553,10 @@ export default async function handler(req, res) {
       if (nextStatus === "claimed" && before.companion_id) {
         try {
           const { notifyCompanionOrderAssigned } = await import("./_companion-order-notify.js");
-          await Promise.race([
-            notifyCompanionOrderAssigned(saved || { ...before, status: "claimed" }, {
+          await notifyCompanionOrderAssigned(saved || { ...before, status: "claimed" }, {
               eventType: "assign",
               email: "",
-            }).catch((err) => console.warn("[orders/pay_order] companion notify", err?.message || err)),
-            new Promise((resolve) => setTimeout(resolve, 3500)),
-          ]);
+            }).catch((err) => console.warn("[orders/pay_order] companion notify", err?.message || err));
         } catch (err) {
           console.warn("[orders/pay_order] companion notify import", err?.message || err);
         }
@@ -1807,13 +1804,10 @@ export default async function handler(req, res) {
         }
         try {
           const { notifyCompanionOrderAssigned } = await import("./_companion-order-notify.js");
-          await Promise.race([
-            notifyCompanionOrderAssigned(
+          await notifyCompanionOrderAssigned(
               { ...order, companion_id: selectedId, status: "claimed" },
               { eventType: "assign" }
-            ).catch((err) => console.warn("[orders/want_him] companion notify", err?.message || err)),
-            new Promise((resolve) => setTimeout(resolve, 3500)),
-          ]);
+            ).catch((err) => console.warn("[orders/want_him] companion notify", err?.message || err));
         } catch (err) {
           console.warn("[orders/want_him] companion notify import", err?.message || err);
         }

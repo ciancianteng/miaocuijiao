@@ -2,8 +2,8 @@
    Do NOT rewrite navigations to "/". Portal PWAs (companion / customer-service /
    admin) must keep their own start_url paths when launched from the home screen.
    Shared SW scope "/" keeps Web Push / #248 subscriptions intact. */
-self.addEventListener("install", function () {
-  self.skipWaiting();
+self.addEventListener("install", function (event) {
+  event.waitUntil(self.skipWaiting());
 });
 
 self.addEventListener("activate", function (event) {
@@ -36,6 +36,34 @@ function safeParse(data) {
   } catch (e) {
     return { title: "妙脆角", body: String(data) };
   }
+}
+
+function recordPushDiagnostic(kind, detail) {
+  return new Promise(function (resolve) {
+    try {
+      var request = indexedDB.open("mcj-push-diagnostics", 1);
+      request.onupgradeneeded = function () {
+        var db = request.result;
+        if (!db.objectStoreNames.contains("events")) {
+          db.createObjectStore("events", { keyPath: "id", autoIncrement: true });
+        }
+      };
+      request.onerror = function () { resolve(); };
+      request.onsuccess = function () {
+        var db = request.result;
+        var tx = db.transaction("events", "readwrite");
+        tx.objectStore("events").add({
+          kind: String(kind || "unknown"),
+          at: new Date().toISOString(),
+          detail: detail || {},
+        });
+        tx.oncomplete = function () { db.close(); resolve(); };
+        tx.onerror = function () { db.close(); resolve(); };
+      };
+    } catch (e) {
+      resolve();
+    }
+  });
 }
 
 self.addEventListener("push", function (event) {
@@ -75,7 +103,27 @@ self.addEventListener("push", function (event) {
           tag: data.tag || data.notification_type || "mcj-push",
           renotify: true,
         };
-        return self.registration.showNotification(title, options);
+        return recordPushDiagnostic("push_received", {
+          eventType: options.data.event_type,
+          entityId: options.data.entity_id,
+          targetUserId: options.data.target_user_id,
+        })
+          .then(function () {
+            return self.registration.showNotification(title, options);
+          })
+          .then(function () {
+            return recordPushDiagnostic("notification_shown", {
+              eventType: options.data.event_type,
+              entityId: options.data.entity_id,
+            });
+          })
+          .catch(function (error) {
+            return recordPushDiagnostic("notification_show_failed", {
+              message: String(error && error.message ? error.message : error).slice(0, 180),
+            }).then(function () {
+              throw error;
+            });
+          });
       })
   );
 });
@@ -85,20 +133,40 @@ self.addEventListener("notificationclick", function (event) {
   var data = (event.notification && event.notification.data) || {};
   var target = "/";
   try {
-    target = new URL(data.url || "/", self.location.origin).href;
+    var parsedTarget = new URL(data.url || "/", self.location.origin);
+    target =
+      parsedTarget.origin === self.location.origin
+        ? parsedTarget.href
+        : self.location.origin + "/";
   } catch (e) {
     target = self.location.origin + "/";
   }
 
   event.waitUntil(
-    clients.matchAll({ type: "window", includeUncontrolled: true }).then(function (list) {
-      for (var i = 0; i < list.length; i++) {
-        var client = list[i];
+    recordPushDiagnostic("notification_clicked", { url: target }).then(function () {
+      return clients.matchAll({ type: "window", includeUncontrolled: true });
+    }).then(function (list) {
+      var targetPath = new URL(target).pathname;
+      var portalPrefix = targetPath.indexOf("/companion/") === 0
+        ? "/companion/"
+        : targetPath.indexOf("/customer-service/") === 0
+          ? "/customer-service/"
+          : "";
+      var ordered = list.slice().sort(function (a, b) {
+        if (!portalPrefix) return 0;
+        var aMatch = String(a.url || "").indexOf(self.location.origin + portalPrefix) === 0 ? 1 : 0;
+        var bMatch = String(b.url || "").indexOf(self.location.origin + portalPrefix) === 0 ? 1 : 0;
+        return bMatch - aMatch;
+      });
+      for (var i = 0; i < ordered.length; i++) {
+        var client = ordered[i];
         try {
           if (client.url && client.url.indexOf(self.location.origin) === 0 && "focus" in client) {
             if ("navigate" in client) {
               return client.navigate(target).then(function (c) {
                 return c && c.focus ? c.focus() : client.focus();
+              }).catch(function () {
+                return clients.openWindow ? clients.openWindow(target) : undefined;
               });
             }
             return client.focus();
@@ -112,6 +180,18 @@ self.addEventListener("notificationclick", function (event) {
 });
 
 self.addEventListener("pushsubscriptionchange", function (event) {
-  // Best-effort: cannot re-auth here. Client settings page will rebind on next open.
-  event.waitUntil(Promise.resolve());
+  // A service worker has no authenticated portal session. Record the loss and
+  // notify any open client; next authenticated app boot performs a fresh bind.
+  event.waitUntil(
+    recordPushDiagnostic("subscription_changed", {
+      hadOldSubscription: !!event.oldSubscription,
+      hasNewSubscription: !!event.newSubscription,
+    }).then(function () {
+      return clients.matchAll({ type: "window", includeUncontrolled: true });
+    }).then(function (list) {
+      return Promise.all(list.map(function (client) {
+        client.postMessage({ type: "MCJ_PUSH_SUBSCRIPTION_CHANGED" });
+      }));
+    })
+  );
 });

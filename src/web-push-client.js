@@ -11,7 +11,8 @@
   var DISMISS_KEY = "mcj_webpush_dismiss_until";
   var DENIED_KEY = "mcj_webpush_denied";
   var PROMPTED_KEY = "mcj_webpush_first_prompted";
-  var CSS_VER = "20260914webpush5";
+  var BINDING_KEY = "mcj_webpush_binding";
+  var CSS_VER = "20260916androidpush2";
   var GUIDE_COPY = {
     title: "开启消息通知",
     body: "开启后可及时收到订单、陪玩状态及重要消息通知。",
@@ -54,52 +55,79 @@
     }
   }
 
-  function getAccessToken() {
+  function normalizeRole(role) {
+    var r = String(role || "").trim().toLowerCase();
+    if (r === "player" || r === "pw") return "companion";
+    if (r === "cs" || r === "service") return "customer_service";
+    if (r === "customer") return "boss";
+    return r;
+  }
+
+  function companionToken() {
     try {
-      if (global.MCJBossAuth && typeof MCJBossAuth.getAccessToken === "function") {
-        var t = String(MCJBossAuth.getAccessToken() || "").trim();
-        if (t) return t;
-      }
-    } catch (e) {}
+      return (
+        tokenFromSessionBlob(sessionStorage.getItem("mcjCompanionSession")) ||
+        tokenFromSessionBlob(localStorage.getItem("mcjCompanionSession"))
+      );
+    } catch (e) {
+      return "";
+    }
+  }
+
+  function serviceToken() {
     try {
       if (global.MCJServiceAuth && typeof MCJServiceAuth.getAccessToken === "function") {
-        var st = String(MCJServiceAuth.getAccessToken() || "").trim();
-        if (st) return st;
+        var token = String(MCJServiceAuth.getAccessToken() || "").trim();
+        if (token) return token;
       }
-    } catch (e0) {}
-    try {
-      var boss =
-        sessionStorage.getItem("mcjAuthAccessToken") ||
-        localStorage.getItem("mcjAuthAccessToken") ||
-        "";
-      if (boss) return String(boss).trim();
-    } catch (e2) {}
-    try {
-      var companion =
-        sessionStorage.getItem("companionAuthToken") ||
-        localStorage.getItem("companionAuthToken") ||
-        "";
-      if (companion) return String(companion).trim();
-    } catch (e3) {}
-    try {
-      var fromCompanionSession =
-        tokenFromSessionBlob(sessionStorage.getItem("mcjCompanionSession")) ||
-        tokenFromSessionBlob(localStorage.getItem("mcjCompanionSession"));
-      if (fromCompanionSession) return fromCompanionSession;
-    } catch (e4) {}
-    try {
-      var fromServiceSession =
+      return (
         tokenFromSessionBlob(sessionStorage.getItem("mcjServiceSession")) ||
-        tokenFromSessionBlob(localStorage.getItem("mcjServiceSession"));
-      if (fromServiceSession) return fromServiceSession;
-    } catch (e5) {}
+        tokenFromSessionBlob(localStorage.getItem("mcjServiceSession"))
+      );
+    } catch (e) {
+      return "";
+    }
+  }
+
+  function bossToken() {
+    try {
+      if (global.MCJBossAuth && typeof MCJBossAuth.getAccessToken === "function") {
+        var token = String(MCJBossAuth.getAccessToken() || "").trim();
+        if (token) return token;
+      }
+      return String(
+        sessionStorage.getItem("mcjAuthAccessToken") ||
+          localStorage.getItem("mcjAuthAccessToken") ||
+          ""
+      ).trim();
+    } catch (e) {
+      return "";
+    }
+  }
+
+  function inferredPortalRole() {
+    var path = String((global.location && global.location.pathname) || "").toLowerCase();
+    if (path.indexOf("/companion") === 0) return "companion";
+    if (path.indexOf("/customer-service") === 0) return "customer_service";
+    return "boss";
+  }
+
+  /**
+   * Never choose a different portal's JWT merely because it exists.
+   * Android Chrome/PWA can retain boss + companion sessions simultaneously.
+   */
+  function getAccessToken(preferredRole) {
+    var role = normalizeRole(preferredRole || inferredPortalRole());
+    if (role === "companion") return companionToken();
+    if (role === "customer_service") return serviceToken();
+    if (role === "boss") return bossToken();
     return "";
   }
 
-  function authFetch(url, init) {
+  function authFetch(url, init, preferredRole, accessTokenOverride) {
     var opts = init || {};
     var headers = Object.assign({ Accept: "application/json" }, opts.headers || {});
-    var token = getAccessToken();
+    var token = String(accessTokenOverride || getAccessToken(preferredRole) || "").trim();
     if (token) headers.Authorization = "Bearer " + token;
     return fetch(url, Object.assign({}, opts, { headers: headers, cache: "no-store" })).then(function (res) {
       return res
@@ -122,6 +150,22 @@
     var out = new Uint8Array(raw.length);
     for (var i = 0; i < raw.length; i += 1) out[i] = raw.charCodeAt(i);
     return out;
+  }
+
+  function subscriptionUsesVapidKey(subscription, publicKey) {
+    try {
+      var actual = subscription && subscription.options && subscription.options.applicationServerKey;
+      if (!actual) return true;
+      var expected = urlBase64ToUint8Array(publicKey);
+      var bytes = actual instanceof ArrayBuffer ? new Uint8Array(actual) : new Uint8Array(actual.buffer || actual);
+      if (bytes.length !== expected.length) return false;
+      for (var i = 0; i < bytes.length; i += 1) {
+        if (bytes[i] !== expected[i]) return false;
+      }
+      return true;
+    } catch (e) {
+      return false;
+    }
   }
 
   function permissionState() {
@@ -218,8 +262,9 @@
     if (!("serviceWorker" in navigator)) throw new Error("当前浏览器不支持 Service Worker");
     var reg = await navigator.serviceWorker.getRegistration();
     if (!reg) reg = await navigator.serviceWorker.register("/sw-mcj.js", { scope: "/" });
-    await navigator.serviceWorker.ready;
-    return reg;
+    var ready = await navigator.serviceWorker.ready;
+    if (!ready || !ready.active) throw new Error("Service Worker 尚未激活，请刷新后重试");
+    return ready;
   }
 
   async function getCurrentSubscription() {
@@ -233,21 +278,22 @@
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action: "subscribe", role: role || "", subscription: json }),
-    });
+    }, role);
   }
 
-  async function unsubscribeOnServer(subscription) {
+  async function unsubscribeOnServer(subscription, role, accessToken) {
     var json = subscription.toJSON ? subscription.toJSON() : subscription;
     return authFetch("/api/push", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "unsubscribe", subscription: json }),
-    });
+      body: JSON.stringify({ action: "unsubscribe", role: role || "", subscription: json }),
+    }, role, accessToken);
   }
 
   async function enablePush(options) {
     var opts = options || {};
-    if (!getAccessToken()) throw new Error("请先登录后再开启通知");
+    var role = normalizeRole(opts.role || inferredPortalRole());
+    if (!getAccessToken(role)) throw new Error("请先登录后再开启通知");
     if (!supportsWebPush()) throw new Error("当前设备不支持 Web Push");
     if (isIos() && !isStandalone()) {
       openIosInstallGuide();
@@ -269,13 +315,42 @@
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "deny" }),
-      }).catch(function () {});
+      }, role).catch(function () {});
       throw new Error(perm === "denied" ? "通知已被系统拒绝，请到系统设置中手动开启。" : "未获得通知权限");
     }
 
     var publicKey = await fetchVapidPublicKey();
     var reg = await ensureServiceWorker();
     var existing = await reg.pushManager.getSubscription();
+    if (existing && !subscriptionUsesVapidKey(existing, publicKey)) {
+      try {
+        await existing.unsubscribe();
+      } catch (e0) {}
+      existing = null;
+    }
+    if (existing && existing.endpoint) {
+      var existingStatus = await authFetch(
+        "/api/push?action=status&endpoint=" +
+          encodeURIComponent(existing.endpoint) +
+          "&role=" +
+          encodeURIComponent(role),
+        {},
+        role
+      ).catch(function () {
+        return null;
+      });
+      var matched = String(
+        (existingStatus && (existingStatus.matchedStatus || existingStatus.matched_status)) || ""
+      ).toLowerCase();
+      // A provider 404/410 marks this endpoint expired. Reusing it would create
+      // an endless "reactivate → 410" loop; force a fresh browser subscription.
+      if (matched === "expired") {
+        try {
+          await existing.unsubscribe();
+        } catch (e) {}
+        existing = null;
+      }
+    }
     var sub =
       existing ||
       (await reg.pushManager.subscribe({
@@ -283,12 +358,17 @@
         applicationServerKey: urlBase64ToUint8Array(publicKey),
       }));
     // Always upsert — reactivates disabled/user_unsubscribe rows for this endpoint.
-    var saved = await subscribeOnServer(sub, opts.role);
+    var saved = await subscribeOnServer(sub, role);
     if (!saved || !saved.ok) throw new Error((saved && saved.message) || "订阅保存失败");
 
     var endpoint = sub && sub.endpoint ? sub.endpoint : "";
     var verify = await authFetch(
-      "/api/push?action=status" + (endpoint ? "&endpoint=" + encodeURIComponent(endpoint) : "")
+      "/api/push?action=status" +
+        (endpoint ? "&endpoint=" + encodeURIComponent(endpoint) : "") +
+        "&role=" +
+        encodeURIComponent(role),
+      {},
+      role
     ).catch(function () { return null; });
     var serverActive = !!(verify && verify.ok && (verify.currentActive || verify.current_active));
     if (!serverActive) {
@@ -296,52 +376,95 @@
     }
 
     try { localStorage.removeItem(DENIED_KEY); } catch (e) {}
+    try {
+      localStorage.setItem(
+        BINDING_KEY,
+        JSON.stringify({
+          endpoint: endpoint,
+          role: role,
+          userId: String(saved.userId || ""),
+          subscriptionId: String(saved.subscriptionId || ""),
+          boundAt: nowMs(),
+        })
+      );
+    } catch (e2) {}
     markFirstPrompted();
-    return { ok: true, subscription: sub, server: saved, currentActive: true };
+    return { ok: true, subscription: sub, server: saved, currentActive: true, role: role };
   }
 
-  async function disablePush() {
+  async function disablePush(options) {
+    var opts = options || {};
+    var role = normalizeRole(opts.role || inferredPortalRole());
+    // Capture before caller clears portal storage during logout.
+    var accessToken = String(opts.accessToken || getAccessToken(role) || "").trim();
     if (!supportsWebPush()) return { ok: true };
     var sub = await getCurrentSubscription();
     if (sub) {
-      await unsubscribeOnServer(sub).catch(function () {});
-      try {
-        await sub.unsubscribe();
-      } catch (e) {}
+      var serverResult = await unsubscribeOnServer(sub, role, accessToken).catch(function () {
+        return null;
+      });
+      // One origin/scope has one browser PushSubscription. Preserve it when a
+      // different authenticated user/portal still owns an active server bind.
+      if (serverResult && serverResult.ok && !serverResult.hasOtherActiveBindings) {
+        try {
+          await sub.unsubscribe();
+        } catch (e) {}
+      }
     }
+    try { localStorage.removeItem(BINDING_KEY); } catch (e2) {}
     return { ok: true };
   }
 
   /** When permission already granted, silently restore/upsert subscription (no permission prompt). */
   async function restoreIfGranted(options) {
     var opts = options || {};
-    if (!getAccessToken()) return { ok: false, reason: "no_token" };
+    var role = normalizeRole(opts.role || inferredPortalRole());
+    if (!getAccessToken(role)) return { ok: false, reason: "no_token" };
     if (!supportsWebPush()) return { ok: false, reason: "unsupported" };
     if (isIos() && !isStandalone()) return { ok: false, reason: "need_pwa" };
     if (permissionState() !== "granted") return { ok: false, reason: "not_granted" };
     try {
-      var result = await enablePush({ role: opts.role });
+      var result = await enablePush({ role: role });
       return { ok: true, restored: true, result: result };
     } catch (err) {
       return { ok: false, reason: (err && err.message) || "restore_failed" };
     }
   }
 
-  async function refreshStatus() {
+  async function refreshStatus(options) {
+    var opts = options || {};
+    var role = normalizeRole(opts.role || inferredPortalRole());
     var support = supportsWebPush();
     var perm = permissionState();
     var needPwa = isIos() && !isStandalone();
     var currentActive = false;
     var matchedStatus = "";
     var hasBrowserSub = false;
+    var serviceWorkerActive = false;
+    var subscriptionKeysValid = false;
+    var endpoint = "";
     var devices = [];
-    if (support && getAccessToken()) {
+    if (support && getAccessToken(role)) {
       try {
-        var sub = await getCurrentSubscription();
+        var reg = await ensureServiceWorker();
+        serviceWorkerActive = !!reg.active;
+        var sub = await reg.pushManager.getSubscription();
         hasBrowserSub = !!(sub && sub.endpoint);
-        var endpoint = hasBrowserSub ? sub.endpoint : "";
-        var q = "/api/push?action=status" + (endpoint ? "&endpoint=" + encodeURIComponent(endpoint) : "");
-        var data = await authFetch(q);
+        endpoint = hasBrowserSub ? sub.endpoint : "";
+        if (sub && sub.toJSON) {
+          var serialized = sub.toJSON() || {};
+          subscriptionKeysValid = !!(
+            serialized.keys &&
+            serialized.keys.p256dh &&
+            serialized.keys.auth
+          );
+        }
+        var q =
+          "/api/push?action=status" +
+          (endpoint ? "&endpoint=" + encodeURIComponent(endpoint) : "") +
+          "&role=" +
+          encodeURIComponent(role);
+        var data = await authFetch(q, {}, role);
         if (data && data.ok) {
           currentActive = !!(data.currentActive || data.current_active);
           matchedStatus = String(data.matchedStatus || data.matched_status || "");
@@ -364,10 +487,14 @@
       needPwa: needPwa,
       currentActive: currentActive,
       hasBrowserSub: hasBrowserSub,
+      serviceWorkerActive: serviceWorkerActive,
+      subscriptionKeysValid: subscriptionKeysValid,
+      endpoint: endpoint,
       matchedStatus: matchedStatus,
       devices: devices,
       state: state,
       label: renderStatusLabel(state),
+      role: role,
     };
   }
 
@@ -380,7 +507,7 @@
     var opts = options || {};
     if (document.getElementById("mcjWebPushGuide")) return;
     ensureGuideCss();
-    refreshStatus().then(function (st) {
+    refreshStatus({ role: opts.role }).then(function (st) {
       if (st.state === "active" && !opts.force) return;
       if (st.state === "denied" && !opts.force) return;
       if (dismissedRecently() && !opts.force) return;
@@ -456,7 +583,9 @@
    */
   function maybePromptOnFirstVisit(options) {
     var opts = options || {};
-    if (!getAccessToken()) return Promise.resolve({ shown: false, reason: "no_token" });
+    if (!getAccessToken(opts.role || inferredPortalRole())) {
+      return Promise.resolve({ shown: false, reason: "no_token" });
+    }
     if (!supportsWebPush()) return Promise.resolve({ shown: false, reason: "unsupported" });
 
     var perm = permissionState();
@@ -508,7 +637,7 @@
       var statusText = root.querySelector("[data-webpush-status-text]");
       var hint = root.querySelector("[data-webpush-hint]");
       if (!toggle || !statusText || !hint) return Promise.resolve(null);
-      return refreshStatus().then(function (st) {
+      return refreshStatus({ role: opts.role }).then(function (st) {
         statusText.textContent = st.label;
         toggle.disabled = st.state === "unsupported" || st.state === "denied" || st.state === "need_pwa";
         // Toggle ON only when server subscription is active — never for permission-only.
@@ -545,7 +674,7 @@
         var toggle = root.querySelector("[data-webpush-toggle]");
         var want = !!ev.target.checked;
         if (toggle) toggle.disabled = true;
-        var job = want ? enablePush({ role: opts.role }) : disablePush();
+        var job = want ? enablePush({ role: opts.role }) : disablePush({ role: opts.role });
         job
           .then(function () {
             return paint();
@@ -574,12 +703,65 @@
     });
   }
 
+  function readServiceWorkerDiagnostics(limit) {
+    return new Promise(function (resolve) {
+      if (!global.indexedDB) return resolve([]);
+      try {
+        var request = indexedDB.open("mcj-push-diagnostics", 1);
+        request.onerror = function () { resolve([]); };
+        request.onsuccess = function () {
+          var db = request.result;
+          if (!db.objectStoreNames.contains("events")) {
+            db.close();
+            return resolve([]);
+          }
+          var tx = db.transaction("events", "readonly");
+          var cursor = tx.objectStore("events").openCursor(null, "prev");
+          var rows = [];
+          cursor.onsuccess = function () {
+            var cur = cursor.result;
+            if (!cur || rows.length >= Number(limit || 20)) {
+              db.close();
+              return resolve(rows);
+            }
+            rows.push(cur.value);
+            cur.continue();
+          };
+          cursor.onerror = function () { db.close(); resolve(rows); };
+        };
+      } catch (e) {
+        resolve([]);
+      }
+    });
+  }
+
+  var restoreTimer = null;
+  function scheduleAuthenticatedRestore() {
+    if (restoreTimer) clearTimeout(restoreTimer);
+    restoreTimer = setTimeout(function () {
+      restoreTimer = null;
+      restoreIfGranted({ role: inferredPortalRole() }).catch(function () {});
+    }, 250);
+  }
+
+  try {
+    if (navigator.serviceWorker) {
+      navigator.serviceWorker.addEventListener("message", function (event) {
+        if (event.data && event.data.type === "MCJ_PUSH_SUBSCRIPTION_CHANGED") {
+          scheduleAuthenticatedRestore();
+        }
+      });
+      navigator.serviceWorker.addEventListener("controllerchange", scheduleAuthenticatedRestore);
+    }
+  } catch (e) {}
+
   global.MCJWebPush = {
     supportsWebPush: supportsWebPush,
     isStandalone: isStandalone,
     isIos: isIos,
     permissionState: permissionState,
     refreshStatus: refreshStatus,
+    getAccessTokenForRole: getAccessToken,
     enablePush: enablePush,
     disablePush: disablePush,
     restoreIfGranted: restoreIfGranted,
@@ -588,5 +770,6 @@
     closeGuide: closeGuide,
     mountSettings: mountSettings,
     renderStatusLabel: renderStatusLabel,
+    readServiceWorkerDiagnostics: readServiceWorkerDiagnostics,
   };
 })(typeof window !== "undefined" ? window : globalThis);

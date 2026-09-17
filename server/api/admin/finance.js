@@ -164,7 +164,7 @@ async function insertStaffNotification({ staffId, category = "payroll", title = 
   }
   try {
     const { fanoutWebPush } = await import("../_web-push.js");
-    fanoutWebPush(uid, {
+    await fanoutWebPush(uid, {
       title: titleText,
       body: bodyText,
       url: hrefText,
