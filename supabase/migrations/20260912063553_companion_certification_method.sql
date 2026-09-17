@@ -13,17 +13,22 @@ COMMENT ON COLUMN public.companion_profiles.certification_method IS
 COMMENT ON COLUMN public.companion_profiles.credential_mode IS
   'Legacy alias of certification_method (id_card | deposit). Kept for older readers.';
 
--- Backfill from note marker or credential_mode only — never touch price/level/service rows.
+-- Backfill only rows with an explicit legacy source. Rows without a valid
+-- credential_mode or AUTH_MODE marker are left untouched.
 UPDATE public.companion_profiles
 SET certification_method = CASE
-  WHEN lower(coalesce(certification_method, '')) IN ('id_card', 'deposit') THEN lower(certification_method)
   WHEN lower(coalesce(credential_mode, '')) IN ('id_card', 'deposit') THEN lower(credential_mode)
   WHEN application_note ~* '\[AUTH_MODE:id_card\]' THEN 'id_card'
   WHEN application_note ~* '\[AUTH_MODE:deposit\]' THEN 'deposit'
-  ELSE certification_method
 END
-WHERE certification_method IS NULL
-   OR lower(coalesce(certification_method, '')) NOT IN ('id_card', 'deposit');
+WHERE (
+    certification_method IS NULL
+    OR lower(coalesce(certification_method, '')) NOT IN ('id_card', 'deposit')
+  )
+  AND (
+    lower(coalesce(credential_mode, '')) IN ('id_card', 'deposit')
+    OR application_note ~* '\[AUTH_MODE:(id_card|deposit)\]'
+  );
 
 UPDATE public.companion_profiles
 SET credential_mode = certification_method
