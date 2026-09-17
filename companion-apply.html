@@ -20,8 +20,8 @@
   <title>申请成为妙脆角认证陪玩 | MEOW CUI JIAO</title>
   <!-- design-system (imports boss-header) first; page shell CSS last so layout hierarchy wins -->
   <link rel="stylesheet" href="src/design-system.css">
-  <link rel="stylesheet" href="src/mcj-upload.css?v=20260809step3Upload1">
-  <link rel="stylesheet" href="src/companion-application.css?v=20260912applyShell1">
+  <link rel="stylesheet" href="src/mcj-upload.css?v=20260912applyP1P2Ui4">
+  <link rel="stylesheet" href="src/companion-application.css?v=20260912applyP1P2Ui4">
   <script>
     // This page already loads boss-header (Vite entry / script tag). Prevent
     // design-system.js / role-gates.js from injecting a second classic
@@ -37,24 +37,22 @@
         main.apply-shell                ← content column; owns page padding
   -->
   <main class="apply-shell">
-    <div class="apply-top">
-      <a class="apply-back" href="index.html">← 返回首页</a>
-    </div>
-    <section class="apply-hero">
-      <h1>申请成为妙脆角认证陪玩</h1>
-      <p>Become a Verified Meow Cui Jiao Companion</p>
+    <a class="apply-back-link" href="index.html">← 返回首页</a>
+    <section class="apply-hero apply-hero-compact">
+      <h1>申请成为认证陪玩</h1>
+      <p>Become a Verified Companion</p>
     </section>
     <section id="companionApplyRoot" data-step="0"></section>
   </main>
   <script type="module" src="src/site-data.js" defer></script>
   <script type="module" src="src/dropdown-system.js" defer></script>
   <script type="module" src="src/platform-taxonomy.js" defer></script>
-  <script type="module" src="src/mcj-upload.js?v=20260814videoDirect1" defer></script>
+  <script type="module" src="src/mcj-upload.js?v=20260912applyP1P2Ui4" defer></script>
   <script type="module" src="src/mcj-companion-video-upload.js?v=20260814videoDirect1" defer></script>
   <script type="module" src="src/boss-auth-session.js?v=20260815applyBossHeader2"></script>
   <script type="module" src="src/otp-cooldown.js?v=20260908otpFix1"></script>
   <script type="module" src="src/forgot-password.js?v=20260907otpFocus1" defer></script>
-  <script type="module" src="src/companion-application.js?v=20260907authUnify1" defer></script>
+  <script type="module" src="src/companion-application.js?v=20260912applyP1P2Ui4" defer></script>
   <script type="module" src="src/role-gates.js?v=20260908antiBlank1"></script>
   <script type="module" src="src/boss-header.js?v=20260815applyBossHeader2" defer></script>
 <script type="module" src="src/design-system.js" defer></script>

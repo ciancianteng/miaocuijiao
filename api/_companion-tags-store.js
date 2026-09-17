@@ -60,7 +60,7 @@ function rowToDb(row) {
     updated_at: new Date().toISOString(),
   };
 }
-async function readDbTags() {
+export async function readDbTags() {
   if (!hasDb()) return null;
   const response = await fetch(restUrl("?order=sort_order.asc,name.asc"), { headers: serviceHeaders() });
   const text = await response.text();
@@ -77,25 +77,22 @@ async function readDbTags() {
   }
   return (Array.isArray(body) ? body : []).map((row, index) => rowFromDb(row, index)).filter((row) => row.name);
 }
-async function writeDbTags(rows) {
-  if (!hasDb()) return null;
-  const list = (Array.isArray(rows) ? rows : []).map((row, index) => normalizeTagRow(row, index)).filter((row) => row.name);
-  const del = await fetch(restUrl("?id=neq.__never__"), {
-    method: "DELETE",
-    headers: serviceHeaders({ Prefer: "return=minimal" }),
-  });
-  if (!del.ok) {
-    const text = await del.text();
-    const err = new Error(text || `HTTP ${del.status}`);
-    if (isMissingTable(err) || del.status === 404) return null;
-    throw err;
+
+/** Probe whether companion_tags exists and is readable via service role. */
+export async function getCompanionTagsTableStatus() {
+  if (!hasDb()) {
+    return { ready: false, reason: "no_db", rows: null };
   }
-  if (!list.length) return [];
-  const response = await fetch(restUrl(""), {
-    method: "POST",
-    headers: serviceHeaders(),
-    body: JSON.stringify(list.map(rowToDb)),
-  });
+  try {
+    const rows = await readDbTags();
+    if (rows === null) return { ready: false, reason: "missing_table", rows: null };
+    return { ready: true, reason: "ok", rows };
+  } catch (error) {
+    if (isMissingTable(error)) return { ready: false, reason: "missing_table", rows: null };
+    return { ready: false, reason: "error", rows: null, message: error.message || String(error) };
+  }
+}
+async function parseRestResponse(response) {
   const text = await response.text();
   let body = null;
   try {
@@ -105,12 +102,88 @@ async function writeDbTags(rows) {
   }
   if (!response.ok) {
     const err = new Error(body?.message || body?.hint || text || `HTTP ${response.status}`);
-    if (isMissingTable(err) || response.status === 404) return null;
+    err.status = response.status;
     throw err;
   }
-  return (Array.isArray(body) ? body : list).map((row, index) =>
-    row.tag_group != null ? rowFromDb(row, index) : normalizeTagRow(row, index)
-  );
+  return body;
+}
+
+/** Upsert a single tag by primary key. Never wipes other rows. */
+export async function upsertDbTag(row, index = 0) {
+  if (!hasDb()) return null;
+  const item = normalizeTagRow(row, index);
+  if (!item.name) throw Object.assign(new Error("请填写标签名称。"), { status: 400 });
+  try {
+    const body = await parseRestResponse(
+      await fetch(restUrl(""), {
+        method: "POST",
+        headers: serviceHeaders({ Prefer: "resolution=merge-duplicates,return=representation" }),
+        body: JSON.stringify(rowToDb(item)),
+      })
+    );
+    const saved = Array.isArray(body) ? body[0] : body;
+    return saved && saved.tag_group != null ? rowFromDb(saved, index) : item;
+  } catch (error) {
+    if (isMissingTable(error) || error.status === 404) return null;
+    throw error;
+  }
+}
+
+export async function deleteDbTagById(id) {
+  if (!hasDb()) return null;
+  const tagId = String(id || "").trim();
+  if (!tagId) throw Object.assign(new Error("缺少标签 ID。"), { status: 400 });
+  try {
+    await parseRestResponse(
+      await fetch(restUrl(`?id=eq.${encodeURIComponent(tagId)}`), {
+        method: "DELETE",
+        headers: serviceHeaders({ Prefer: "return=minimal" }),
+      })
+    );
+    return true;
+  } catch (error) {
+    if (isMissingTable(error) || error.status === 404) return null;
+    throw error;
+  }
+}
+
+/**
+ * Sync DB to the given list without truncate:
+ * upsert every row, then delete only ids that are no longer present.
+ * Refuses to delete-all when the incoming list is empty (protects Production).
+ */
+async function writeDbTags(rows) {
+  if (!hasDb()) return null;
+  const list = (Array.isArray(rows) ? rows : [])
+    .map((row, index) => normalizeTagRow(row, index))
+    .filter((row) => row.name);
+  let existing;
+  try {
+    existing = await readDbTags();
+  } catch (error) {
+    if (isMissingTable(error)) return null;
+    throw error;
+  }
+  if (existing === null) return null;
+
+  for (let i = 0; i < list.length; i += 1) {
+    const saved = await upsertDbTag(list[i], i);
+    if (saved === null) return null;
+  }
+
+  if (!list.length) {
+    // Empty payload must not wipe Production tags.
+    return existing;
+  }
+
+  const keep = new Set(list.map((row) => String(row.id)));
+  for (const old of existing) {
+    if (!keep.has(String(old.id))) {
+      const removed = await deleteDbTagById(old.id);
+      if (removed === null) return null;
+    }
+  }
+  return readDbTags();
 }
 
 export const DEFAULT_TAGS = [
@@ -148,14 +221,30 @@ export function normalizeTagRow(row = {}, index = 0) {
   };
 }
 
-export async function readLocalTags() {
-  try {
-    const dbRows = await readDbTags();
-    if (Array.isArray(dbRows) && dbRows.length) {
-      return dbRows.sort((a, b) => a.sort - b.sort || a.name.localeCompare(b.name, "zh"));
+function isServerlessFs() {
+  return !!(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.NOW_REGION);
+}
+
+export async function readLocalTags(opts = {}) {
+  const preferDb = opts.preferDb !== false;
+  const allowSeed = opts.allowSeed !== false;
+  if (preferDb && hasDb()) {
+    try {
+      const dbRows = await readDbTags();
+      // Array (even empty) means table exists — never fall back to mock seed for admin.
+      if (Array.isArray(dbRows)) {
+        return dbRows.sort((a, b) => a.sort - b.sort || a.name.localeCompare(b.name, "zh"));
+      }
+      // null = missing table
+      if (!allowSeed) return [];
+    } catch (error) {
+      if (!isMissingTable(error)) console.error("[companion-tags] DB read failed, fallback defaults", error.message || error);
+      if (!allowSeed) return [];
     }
-  } catch (error) {
-    if (!isMissingTable(error)) console.error("[companion-tags] DB read failed, fallback local", error.message || error);
+  }
+  // On Vercel/serverless, never mkdir cwd (.local-data) — return in-memory defaults only when allowed.
+  if (isServerlessFs()) {
+    return allowSeed ? DEFAULT_TAGS.map((row, index) => normalizeTagRow(row, index)) : [];
   }
   await ensureDir();
   try {
@@ -166,29 +255,54 @@ export async function readLocalTags() {
   } catch (error) {
     if (error.code !== "ENOENT") throw error;
   }
+  if (!allowSeed) return [];
   const seeded = DEFAULT_TAGS.map((row, index) => normalizeTagRow(row, index));
-  await writeLocalTags(seeded);
+  await writeLocalTags(seeded, { requireDb: false });
   return seeded;
 }
 
-export async function writeLocalTags(rows) {
+export async function writeLocalTags(rows, opts = {}) {
+  const requireDb = opts.requireDb === true;
   const list = (Array.isArray(rows) ? rows : []).map((row, index) => normalizeTagRow(row, index)).filter((row) => row.name)
     .sort((a, b) => a.sort - b.sort || a.name.localeCompare(b.name, "zh"));
   try {
     const saved = await writeDbTags(list);
     if (Array.isArray(saved)) return saved.sort((a, b) => a.sort - b.sort || a.name.localeCompare(b.name, "zh"));
+    if (requireDb) {
+      throw Object.assign(new Error("标签表未就绪，无法写入数据库。请联系运维完成内部迁移。"), { status: 503 });
+    }
   } catch (error) {
-    if (!isMissingTable(error)) console.error("[companion-tags] DB write failed, fallback local", error.message || error);
+    if (error.status === 503) throw error;
+    if (!isMissingTable(error)) {
+      console.error("[companion-tags] DB write failed", error.message || error);
+      throw Object.assign(new Error(`标签保存失败：${error.message || error}`), { status: 503 });
+    }
+    if (requireDb) {
+      throw Object.assign(new Error("标签表未就绪，无法写入数据库。请联系运维完成内部迁移。"), { status: 503 });
+    }
   }
-  await ensureDir();
-  await fs.writeFile(DATA_FILE, JSON.stringify(list, null, 2), "utf8");
+  if (isServerlessFs()) {
+    throw Object.assign(
+      new Error("标签表未就绪，无法写入。请由运维在内部执行 companion-tags 迁移脚本后重试。"),
+      { status: 503 }
+    );
+  }
+  try {
+    await ensureDir();
+    await fs.writeFile(DATA_FILE, JSON.stringify(list, null, 2), "utf8");
+  } catch (error) {
+    throw Object.assign(new Error(`标签本地保存失败：${error.message || error}`), { status: 500 });
+  }
   return list;
 }
 
-export async function updateLocalTags(mutator) {
-  const list = await readLocalTags();
+export async function updateLocalTags(mutator, opts = {}) {
+  const list = await readLocalTags({
+    preferDb: true,
+    allowSeed: opts.requireDb !== true,
+  });
   const result = await mutator(list);
-  await writeLocalTags(list);
+  await writeLocalTags(list, opts);
   return result;
 }
 
