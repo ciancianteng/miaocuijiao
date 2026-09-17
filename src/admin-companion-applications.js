@@ -2,8 +2,17 @@
   "use strict";
   var Auth = window.MCJAdminAuthFetch;
   var TARGET = "table-companion_applications";
-  var state = { loading: true, error: "", rows: [], filter: "pending", message: "" };
+  var state = { loading: true, error: "", rows: [], filter: "pending", message: "", levels: [], selectedLevelById: {} };
 
+  function certMethodOf(item) {
+    var mode = String(
+      (item && (item.certificationMethod || item.certification_method || item.credential_mode || item.auth_mode || item.authMode)) || ""
+    ).trim().toLowerCase();
+    if (mode === "id_card") return "身份证认证";
+    if (mode === "deposit") return "押金认证";
+    if (item && item.certificationMethodLabel) return String(item.certificationMethodLabel);
+    return "未选择";
+  }
   function esc(v) {
     return String(v == null ? "" : v).replace(/[&<>"']/g, function (c) {
       return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
@@ -33,6 +42,81 @@
         return body;
       });
     });
+  }
+
+  function loadLevels() {
+    return api("/api/admin/companion-levels")
+      .then(function (res) {
+        var list = res.levels || res.data || [];
+        state.levels = (list || []).filter(function (lv) {
+          return lv && (lv.enabled !== false && lv.open !== false);
+        });
+        return state.levels;
+      })
+      .catch(function () {
+        state.levels = state.levels || [];
+        return state.levels;
+      });
+  }
+  function levelBasePrice(lv) {
+    if (!lv) return 0;
+    var n = Number(lv.basePrice != null ? lv.basePrice : lv.base_price != null ? lv.base_price : lv.min);
+    return Number.isFinite(n) ? n : 0;
+  }
+  function levelOptionLabel(lv) {
+    var code = lv.code || lv.name || lv.id || "";
+    var name = lv.name && lv.code && lv.name !== lv.code ? (" " + lv.name) : (lv.name && !lv.code ? lv.name : "");
+    var price = levelBasePrice(lv);
+    return String(code) + (name && name !== (" " + code) ? name : "") + (price > 0 ? (" · 基础价格 " + price + " 猫粮") : "");
+  }
+  function selectedLevel(id) {
+    var key = String(state.selectedLevelById[id] || "").trim();
+    if (!key) return null;
+    return (state.levels || []).find(function (lv) {
+      return String(lv.id) === key || String(lv.code) === key || String(lv.name) === key;
+    }) || null;
+  }
+  function levelPickerHtml(id) {
+    var selected = String(state.selectedLevelById[id] || "");
+    var lv = selectedLevel(id);
+    var opts =
+      '<option value="">请选择等级</option>' +
+      (state.levels || [])
+        .map(function (item) {
+          var value = String(item.id || item.code || "");
+          return (
+            '<option value="' +
+            esc(value) +
+            '" ' +
+            (selected === value ? "selected" : "") +
+            ">" +
+            esc(levelOptionLabel(item)) +
+            "</option>"
+          );
+        })
+        .join("");
+    var preview = lv
+      ? '<div class="admin-sync-note" data-capp-level-preview="' +
+        esc(id) +
+        '">等级：' +
+        esc((lv.code || "") + " " + (lv.name || "")) +
+        " · 基础价格：" +
+        esc(String(levelBasePrice(lv))) +
+        " 猫粮</div>"
+      : '<div class="admin-sync-note" data-capp-level-preview="' +
+        esc(id) +
+        '">通过审核前必须选择陪玩等级；价格将按该等级 base_price 自动写入。</div>';
+    return (
+      '<div class="capp-level-picker" data-capp-level-wrap="' +
+      esc(id) +
+      '"><label>陪玩等级 <select data-capp-level="' +
+      esc(id) +
+      '">' +
+      opts +
+      "</select></label>" +
+      preview +
+      "</div>"
+    );
   }
   function statusCode(row) {
     return String(row.application_status || row.applicationStatus || row.verification_status || row.auditStatus || "pending").toLowerCase();
@@ -165,14 +249,19 @@
           esc(statusText) +
           (hidden && hint ? "<br><small>" + esc(hint) + "</small>" : "") +
           "</td><td>" +
+          esc(certMethodOf(item)) +
+          "</td><td>" +
           esc(item.depositStatus || item.deposit_status || "-") +
           "</td><td>" +
+          levelPickerHtml(id) +
           '<button class="mini-btn primary-lite" type="button" data-capp-open="' +
           esc(id) +
           '">审核</button> ' +
           '<button class="mini-btn" type="button" data-capp-approve="' +
           esc(id) +
-          '">通过</button> ' +
+          '"' +
+          (selectedLevel(id) ? "" : " disabled") +
+          '>通过</button> ' +
           '<button class="mini-btn" type="button" data-capp-resubmit="' +
           esc(id) +
           '">补资料</button> ' +
@@ -184,7 +273,7 @@
       })
       .join("");
     box.innerHTML =
-      '<div class="admin-section-head compact"><div><h3>陪玩申请审核</h3><p>通过审核即同步大厅展示条件：真实用户须具备昵称、游戏、价格，且账号 active；测试账号保持隔离不进正式大厅。</p></div>' +
+      '<div class="admin-section-head compact"><div><h3>陪玩申请审核</h3><p>通过审核前必须选择陪玩等级。系统按等级 base_price 初始化服务价格；真实用户须具备昵称、游戏，且账号 active；测试账号保持隔离不进正式大厅。</p></div>' +
       '<div class="content-admin-toolbar compact"><select data-capp-filter>' +
       [
         ["pending", "审核中"],
@@ -209,16 +298,17 @@
         .join("") +
       '</select><button class="mini-btn" type="button" data-capp-reload>刷新</button></div></div>' +
       (state.message ? '<div class="admin-sync-note">' + esc(state.message) + "</div>" : "") +
-      '<div class="table-wrap"><table><thead><tr><th>申请ID</th><th>昵称</th><th>联系方式</th><th>游戏</th><th>申请/大厅状态</th><th>押金</th><th>操作</th></tr></thead><tbody>' +
-      (body || '<tr><td colspan="7">暂无陪玩申请</td></tr>') +
+      '<div class="table-wrap"><table><thead><tr><th>申请ID</th><th>昵称</th><th>联系方式</th><th>游戏</th><th>申请/大厅状态</th><th>认证方式</th><th>押金</th><th>操作</th></tr></thead><tbody>' +
+      (body || '<tr><td colspan="8">暂无陪玩申请</td></tr>') +
       "</tbody></table></div>";
   }
   function load() {
     state.loading = true;
     state.error = "";
     paint();
-    api("/api/admin/players")
-      .then(function (res) {
+    Promise.all([api("/api/admin/players"), loadLevels()])
+      .then(function (pair) {
+        var res = pair[0] || {};
         state.rows = res.players || res.data || [];
         state.loading = false;
         paint();
@@ -229,14 +319,19 @@
         paint();
       });
   }
-  function review(id, status, reason) {
+  function review(id, status, reason, levelId) {
+    var payload = { status: status, rejectReason: reason || "" };
+    if (status === "approved") {
+      payload.levelId = levelId || "";
+      payload.level_id = levelId || "";
+    }
     return api("/api/admin/players", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         action: "review_application",
         id: id,
-        payload: { status: status, rejectReason: reason || "" },
+        payload: payload,
       }),
     }).then(function (res) {
       state.message = res.message || "审核已保存";
@@ -270,16 +365,23 @@
     }
     var approve = e.target.closest("[data-capp-approve]");
     if (approve) {
-      var approveId = approve.getAttribute("data-capp-approve");
-      var approveRow = (state.rows || []).find(function (r) {
-        return String(r.id || r.playerId || "") === String(approveId || "");
-      });
-      if (approveRow && missingPrice(approveRow)) {
-        alert("无法通过：该陪玩尚未设置接单价格（单价 > 0 或至少一个游戏价格 > 0）。请先在资料中填写价格后再通过。");
+      if (approve.disabled) {
+        alert("请先选择陪玩等级后再通过审核。");
         return;
       }
-      if (!confirm("确认通过该陪玩申请？通过后将同步大厅展示（需已具备昵称/游戏/价格）；测试账号仍隔离。")) return;
-      review(approveId, "approved", "")
+      var approveId = approve.getAttribute("data-capp-approve");
+      var lv = selectedLevel(approveId);
+      if (!lv || !lv.id) {
+        alert("请先选择陪玩等级后再通过审核。");
+        return;
+      }
+      var base = levelBasePrice(lv);
+      if (!(base > 0)) {
+        alert("所选等级缺少有效的基础价格 base_price，无法通过。");
+        return;
+      }
+      if (!confirm("确认通过该陪玩申请？\n等级：" + levelOptionLabel(lv) + "\n通过后将按该等级基础价格初始化服务，并同步大厅展示条件；测试账号仍隔离。")) return;
+      review(approveId, "approved", "", lv.id)
         .then(function (res) {
           var msg = (res && res.message) || "已通过。";
           if (res && res.hallVisible) msg = "已通过，已同步进入陪玩大厅。";
@@ -328,6 +430,13 @@
   document.addEventListener("change", function (e) {
     if (e.target.matches("[data-capp-filter]")) {
       state.filter = e.target.value || "pending";
+      paint();
+      return;
+    }
+    var levelSel = e.target.closest("[data-capp-level]");
+    if (levelSel) {
+      var pid = levelSel.getAttribute("data-capp-level");
+      state.selectedLevelById[pid] = levelSel.value || "";
       paint();
     }
   });
