@@ -18,8 +18,8 @@ const INELIGIBLE_ORDER_STATUSES = new Set(["awaiting_payment"]);
 const TX_SELECT =
   "id,order_id,boss_id,gross_amount,refunded_amount,net_amount,payment_status,confirmed_by,confirmed_at";
 const ORDER_SELECT =
-  "id,boss_id,companion_id,customer_service_id,player_id,status,boss_name,companion_name,player_name,customer_service_name,service_name,total_amount";
-const PROFILE_SELECT = "id,email,display_name,nickname,name,role,is_test_account,boss_uid";
+  "id,boss_id,companion_id,customer_service_id,status,total_amount";
+const PROFILE_SELECT = "id,email,display_name,role,boss_uid";
 
 function httpError(message, status = 400, extra = {}) {
   return Object.assign(new Error(message), { status, ...extra });
@@ -279,7 +279,7 @@ async function computeBossSpend(bossId) {
   const orders = await loadByIds("orders", orderIds, ORDER_SELECT);
   const profileIds = new Set([bossId]);
   for (const order of orders.values()) {
-    [order.boss_id, order.companion_id, order.customer_service_id, order.player_id]
+    [order.boss_id, order.companion_id, order.customer_service_id]
       .filter(Boolean)
       .forEach((id) => profileIds.add(id));
   }
@@ -433,7 +433,7 @@ export async function previewBossVipBackfill() {
   const profileIds = new Set();
   for (const tx of txs) if (tx.boss_id) profileIds.add(tx.boss_id);
   for (const order of orders.values()) {
-    [order.boss_id, order.companion_id, order.customer_service_id, order.player_id]
+    [order.boss_id, order.companion_id, order.customer_service_id]
       .filter(Boolean)
       .forEach((id) => profileIds.add(id));
   }
