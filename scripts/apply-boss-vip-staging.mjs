@@ -18,7 +18,7 @@ import {
 } from "../server/api/_staging-sql.js";
 
 const SQL_CANDIDATES = [
-  "supabase/migrations/20260915_boss_vip_spend.sql",
+  "supabase/migrations/20260915090000_boss_vip_spend.sql",
   "server/api/_sql/20260915_boss_vip_spend.sql",
 ];
 
@@ -44,7 +44,7 @@ async function main() {
         "Missing Staging credentials.",
         `Expected STAGING_DATABASE_URL (ref ${STAGING_PROJECT_REF}) or STAGING_DB_PASSWORD or SUPABASE_ACCESS_TOKEN.`,
         `SQL Editor: https://supabase.com/dashboard/project/${STAGING_PROJECT_REF}/sql/new`,
-        "File: supabase/migrations/20260915_boss_vip_spend.sql",
+        "File: supabase/migrations/20260915090000_boss_vip_spend.sql",
       ].join("\n")
     );
     process.exit(2);
