@@ -1374,10 +1374,90 @@ function viewOrder(row = {}, boss = {}, settlement = null) {
     hasSettlement: !!parsed || String(row.settlement_status || "").toLowerCase() === "settled",
     isDesignatedConfirm: row.status === "claimed",
     assignmentType: row.assignment_type || "",
+    parentOrderId: row.parent_order_id || null,
+    isMultiGroupChild: !!row.parent_order_id,
+    isMultiGroupParent:
+      String(row.order_type || "").toLowerCase() === "multi_group" && !row.parent_order_id,
+    groupPeerCount: Number(row._groupPeerCount || 0) || 0,
+    groupPeers: Array.isArray(row._groupPeers) ? row._groupPeers : [],
     raw: row
   };
 }
 async function bossesForOrders(orders) { const ids=[...new Set((orders||[]).map((row)=>row.boss_id).filter(Boolean))]; if(!ids.length) return {}; const rows=await supabaseJson(restUrl("profiles", `?id=in.(${ids.map(encodeURIComponent).join(",")})`), { headers: serviceHeaders() }); return Object.fromEntries((rows||[]).map((row)=>[row.id,row])); }
+
+/** Safe co-companion peers for multi-group child orders (no income / amount fields). */
+async function attachGroupPeers(rows = []) {
+  const list = Array.isArray(rows) ? rows : [];
+  const parentIds = [
+    ...new Set(
+      list
+        .map((r) => String(r.parent_order_id || "").trim())
+        .filter(Boolean)
+    ),
+  ];
+  if (!parentIds.length) return list;
+  let siblings = [];
+  try {
+    siblings = await supabaseJson(
+      restUrl(
+        "orders",
+        `?parent_order_id=in.(${parentIds.map(encodeURIComponent).join(",")})&select=id,parent_order_id,companion_id,status,service_name,game,order_no&order=created_at.asc&limit=200`
+      ),
+      { headers: serviceHeaders() }
+    );
+    if (!Array.isArray(siblings)) siblings = [];
+  } catch {
+    siblings = [];
+  }
+  const companionIds = [
+    ...new Set(siblings.map((s) => s.companion_id).filter(Boolean)),
+  ];
+  let profileMap = {};
+  if (companionIds.length) {
+    try {
+      const profiles = await supabaseJson(
+        restUrl(
+          "profiles",
+          `?id=in.(${companionIds.map(encodeURIComponent).join(",")})&select=id,display_name,nickname,avatar_url,avatar`
+        ),
+        { headers: serviceHeaders() }
+      );
+      profileMap = Object.fromEntries((profiles || []).map((p) => [p.id, p]));
+    } catch {
+      profileMap = {};
+    }
+  }
+  const byParent = {};
+  for (const s of siblings) {
+    const pid = String(s.parent_order_id || "");
+    if (!byParent[pid]) byParent[pid] = [];
+    const p = profileMap[s.companion_id] || {};
+    byParent[pid].push({
+      orderId: s.id,
+      orderNo: s.order_no || s.id,
+      companionId: s.companion_id || "",
+      nickname:
+        p.display_name || p.nickname || s.service_name || s.game || "陪玩",
+      avatar: p.avatar_url || p.avatar || "",
+      service: s.service_name || s.game || "",
+      status: s.status || "",
+    });
+  }
+  return list.map((row) => {
+    const pid = String(row.parent_order_id || "").trim();
+    if (!pid) return row;
+    const peers = (byParent[pid] || []).filter(
+      (p) => String(p.companionId) !== String(row.companion_id || "")
+    );
+    const total = (byParent[pid] || []).length || 0;
+    return {
+      ...row,
+      _groupPeers: peers,
+      _groupPeerCount: total || peers.length + 1,
+    };
+  });
+}
+
 async function loadOrdersFor(profile, companion, transactions = []) {
   const {
     resolveAssignmentType,
@@ -1423,7 +1503,12 @@ async function loadOrdersFor(profile, companion, transactions = []) {
   }
   // Never surface unpaid designated orders (awaiting_payment) as actionable confirm tasks.
   // Assigned pending-confirm stays in 我的订单→待确认 only.
-  const visibleMine = (myRows || []).filter((row) => row.status !== "awaiting_payment");
+  let visibleMine = (myRows || []).filter((row) => row.status !== "awaiting_payment");
+  try {
+    visibleMine = await attachGroupPeers(visibleMine);
+  } catch {
+    /* best-effort co-peer enrichment */
+  }
   // 抢单大厅 ONLY: public (or null assignment_type) + companion_id null + hall-open statuses.
   const openQueryWithType =
     "?and=(or(assignment_type.eq.public,assignment_type.is.null),companion_id.is.null,or(status.eq.pending,status.eq.waiting_boss_confirm))&order=created_at.desc&limit=100";

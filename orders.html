@@ -116,7 +116,7 @@
   </style>
   <link rel="stylesheet" crossorigin href="/src/boss-header.css">
   <link rel="stylesheet" crossorigin href="/src/style.css">
-  <link rel="stylesheet" href="/src/multi-companion-team.css?v=20260919team1">
+  <link rel="stylesheet" href="/src/multi-companion-team.css?v=20260919team2">
 </head>
 <body>
   <header class="topbar"><a class="brand" href="index.html"><img src="/assets/meow-cuijiao-brand-96.webp" alt="MEOW CUI JIAO" width="32" height="32" decoding="async" onerror="this.onerror=null;this.src='/assets/meow-cuijiao-brand-96.jpg'"><span>MEOW CUI JIAO</span></a><nav class="boss-nav"><a href="index.html">首页</a><a href="companion-center.html">陪玩大厅</a><a href="orders.html">我的订单</a><a href="support.html?start=1">在线客服</a></nav></header>
@@ -222,7 +222,22 @@
       function parentIdOf(o){return String((o&&(o.parentOrderId||o.parent_order_id))||'')}
       function childrenOf(parentId){
         var pid=String(parentId||'');
-        return state.orders.filter(function(o){return parentIdOf(o)===pid});
+        var fromList=state.orders.filter(function(o){return parentIdOf(o)===pid});
+        if(fromList.length)return fromList;
+        var parent=state.orders.find(function(o){return String(o.id)===pid});
+        if(parent&&Array.isArray(parent.children)&&parent.children.length)return parent.children;
+        return [];
+      }
+      function multiParentStatusLabel(o,kids){
+        var base=orderLabel(o);
+        if(!kids||!kids.length)return base;
+        var completed=kids.filter(function(ch){var s=String(ch.status||'');return s==='completed'||s==='reviewed'||ch.reviewed}).length;
+        var refunded=kids.filter(function(ch){var s=String(ch.status||'');return s==='refunded'||s==='refund_requested'}).length;
+        var active=kids.filter(function(ch){var s=String(ch.status||'');return s==='confirmed'||s==='in_progress'||s==='claimed'||s==='pending'}).length;
+        if(refunded&&completed&&completed+refunded===kids.length)return '部分退款';
+        if(refunded&&refunded<kids.length)return '部分退款';
+        if(completed&&completed<kids.length&&active)return '部分完成';
+        return base;
       }
       function visibleOrders(){
         return state.orders.filter(function(o){
@@ -251,6 +266,12 @@
         return sync+'<section class="order-list" aria-label="订单列表">'+(rows.length?rows.map(card).join(''):'<div class="order-empty"><strong>暂无订单</strong><p>下单成功后，订单会出现在这里。</p><p style="margin-top:12px"><a class="order-btn primary" href="custom-order.html">创建自定义订单</a></p></div>')+'</section>';
       }
       function companionName(o){return (o.companion&&(o.companion.display_name||o.companion.email))||o.companionName||o.companion_name||'待安排'}
+      function multiCompanionLabel(kids){
+        var names=kids.map(function(c){return companionName(c)}).filter(Boolean);
+        if(!names.length)return '组合订单';
+        if(names.length<=3)return names.join(' + ');
+        return names.slice(0,2).join(' + ')+' +'+(names.length-2);
+      }
       function serviceName(o){return o.customerService&&(o.customerService.display_name||o.customerService.email)||'待接入'}
       function bossProfile(){
         try{
@@ -340,10 +361,11 @@
         var gc=Number(o.grabCount!=null?o.grabCount:(o.grabs&&o.grabs.length)||0)||0;
         var grabHint=(o.status==='pending'||o.status==='waiting_boss_confirm')?('<div><span>抢单人数</span><strong>已有 '+gc+' 位陪玩抢单</strong></div>'):'';
         var kids=isMultiParent(o)?childrenOf(o.id):[];
-        var multiBadge=isMultiParent(o)?('<div class="order-multi-badge">多人订单 · '+(kids.length||'?')+'位陪玩</div>'):'';
-        var serviceLabel=isMultiParent(o)?('多人订单 · '+(kids.length||'')+'位陪玩'):(o.serviceType||o.game||'-');
-        var companionLabel=isMultiParent(o)?(kids.map(function(c){return companionName(c)}).filter(Boolean).join('、')||'组合订单'):companionName(o);
-        return '<article class="order-card" data-order-id="'+esc(o.id)+'"'+(isMultiParent(o)?' data-multi-parent="1"':'')+'><header><div><h3>'+esc(o.orderNo||o.order_no||o.id)+'</h3><p>'+esc(o.createdAt?date(o.createdAt):'-')+'</p>'+multiBadge+'</div><span class="order-status">'+esc(orderLabel(o))+'</span></header><div class="order-grid"><div><span>游戏/服务</span><strong title="'+esc(serviceLabel)+'">'+esc(serviceLabel)+'</strong></div><div><span>'+(isMultiParent(o)?'陪玩':'陪玩昵称')+'</span><strong title="'+esc(companionLabel)+'">'+esc(companionLabel)+'</strong></div><div><span>消费</span><strong>'+moneyEmoji(o.totalAmount||o.amount)+'</strong></div><div><span>当前状态</span><strong>'+esc(orderLabel(o))+'</strong></div>'+grabHint+'<div><span>创建时间</span><strong>'+esc(date(o.createdAt))+'</strong></div><div class="order-actions">'+actions(o)+'</div></div></article>';
+        var multiBadge=isMultiParent(o)?('<div class="order-multi-badge">多人陪玩订单 · 共'+(kids.length||'?')+'位陪玩</div>'):'';
+        var serviceLabel=isMultiParent(o)?('共'+(kids.length||0)+'位陪玩 · 一次付款'):(o.serviceType||o.game||'-');
+        var companionLabel=isMultiParent(o)?multiCompanionLabel(kids):companionName(o);
+        var statusShown=isMultiParent(o)?multiParentStatusLabel(o,kids):orderLabel(o);
+        return '<article class="order-card" data-order-id="'+esc(o.id)+'"'+(isMultiParent(o)?' data-multi-parent="1"':'')+(isMultiChild(o)?' data-multi-child="1" hidden':'')+'><header><div><h3>'+esc(isMultiParent(o)?('多人陪玩订单 · '+(o.orderNo||o.order_no||o.id)):(o.orderNo||o.order_no||o.id))+'</h3><p>'+esc(o.createdAt?date(o.createdAt):'-')+'</p>'+multiBadge+'</div><span class="order-status">'+esc(statusShown)+'</span></header><div class="order-grid"><div><span>游戏/服务</span><strong title="'+esc(serviceLabel)+'">'+esc(serviceLabel)+'</strong></div><div><span>'+(isMultiParent(o)?'陪玩':'陪玩昵称')+'</span><strong title="'+esc(companionLabel)+'">'+esc(companionLabel)+'</strong></div><div><span>'+(isMultiParent(o)?'总消费':'消费')+'</span><strong>'+moneyEmoji(o.totalAmount||o.amount)+'</strong></div><div><span>当前状态</span><strong>'+esc(statusShown)+'</strong></div>'+grabHint+'<div><span>创建时间</span><strong>'+esc(date(o.createdAt))+'</strong></div><div class="order-actions">'+actions(o)+'</div></div></article>';
       }
       function detail(o,openReview){
         var boss=bossProfile();
@@ -351,11 +373,12 @@
           '<div class="od-col">'+
             '<div class="od-module"><h3>订单信息</h3><div class="od-fields">'+
               field('订单编号',esc(o.orderNo||o.order_no||o.id))+
-              field('订单状态',esc(orderLabel(o)))+
-              field('付款状态',esc(o.paymentStatus||(o.status==='awaiting_payment'?'待付款':'已付款')))+
+              field('订单类型',esc(isMultiParent(o)?'多人陪玩订单':'普通订单'))+
+              field('订单状态',esc(isMultiParent(o)?multiParentStatusLabel(o,childrenOf(o.id)):orderLabel(o)))+
+              field('付款状态',esc(o.paymentStatus||(o.status==='awaiting_payment'?'待付款':'已付款（整组一次）')))+
               field('接单状态',esc(o.acceptStatus||orderLabel(o)))+
               field('创建时间',esc(date(o.createdAt)))+
-              field('实付猫粮',esc(money(o.paidCatFood||o.totalAmount||o.amount)))+
+              field(isMultiParent(o)?'订单总额':'实付猫粮',esc(money(o.paidCatFood||o.totalAmount||o.amount)))+
               field('当前说明',esc(statusReason(o)),true)+
             '</div></div>'+
             '<div class="od-module"><h3>老板信息</h3><div class="od-fields">'+
@@ -368,19 +391,19 @@
               field('陪玩昵称',esc(isMultiParent(o)?'组合订单（见下方子订单）':companionName(o)))+
               field('陪玩 ID',esc(isMultiParent(o)?'—':(o.companionId||o.companion_id||'-')))+
             '</div></div>'+
-            (isMultiParent(o)?('<div class="od-module"><h3>子订单 · 各陪玩</h3><div class="od-children">'+childrenOf(o.id).map(function(ch){
+            (isMultiParent(o)?('<div class="od-module"><h3>陪玩列表 · 各子订单</h3><div class="od-children">'+childrenOf(o.id).map(function(ch){
               var canRefundChild=['completed','reviewed','in_progress','confirmed','claimed','pending'].indexOf(String(ch.status||''))>=0||canReview(ch)||ch.reviewed;
               return '<div class="od-child-row" data-child-id="'+esc(ch.id)+'">'+
                 '<strong>'+esc(companionName(ch))+'</strong>'+
                 '<div class="od-child-meta">'+
-                  '<span>'+esc(ch.serviceType||ch.game||'-')+'</span>'+
+                  '<span>服务：'+esc(ch.serviceType||ch.game||'-')+'</span>'+
                   '<span>'+moneyEmoji(ch.totalAmount||ch.amount)+'</span>'+
                   '<span>状态：'+esc(orderLabel(ch))+'</span>'+
                 '</div>'+
                 '<div class="od-child-actions">'+
                   (canRefundChild?'<button class="order-btn" type="button" data-action="request_refund" data-id="'+esc(ch.id)+'">申请售后</button>':'')+
                 '</div></div>';
-            }).join('')+'</div><p class="order-hint">售后请针对具体陪玩子订单申请，不会整组一次退款。</p></div>'):'')+
+            }).join('')+'</div><p class="order-hint">本订单一次付款；售后请针对具体陪玩子订单申请，不会整组一次退款。</p></div>'):'')+
             '<div class="od-module"><h3>服务信息</h3><div class="od-fields">'+
               field('游戏/服务',esc(isMultiParent(o)?('多人订单 · '+childrenOf(o.id).length+'位陪玩'):(o.serviceType||o.serviceName||o.game||o.title||'-')))+
               field('游戏 ID',esc(o.gameId||o.game_id||'-'))+

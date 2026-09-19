@@ -317,6 +317,30 @@
       "待安排"
     );
   }
+  function isMultiParent(order) {
+    return !!(
+      order &&
+      (order.isMultiGroupParent ||
+        (String(order.orderTypeKey || order.order_type || "").toLowerCase() === "multi_group" &&
+          !(order.parentOrderId || order.parent_order_id)))
+    );
+  }
+  function isMultiChild(order) {
+    return !!(order && (order.isMultiGroupChild || order.parentOrderId || order.parent_order_id));
+  }
+  function multiChildren(order) {
+    if (Array.isArray(order.children) && order.children.length) return order.children;
+    try {
+      var list = JSON.parse(localStorage.getItem("mcjBossOrdersCache") || "[]");
+      if (!Array.isArray(list)) return [];
+      var pid = String(order.id || "");
+      return list.filter(function (o) {
+        return String(o.parentOrderId || o.parent_order_id || "") === pid;
+      });
+    } catch (e) {
+      return [];
+    }
+  }
   function isReviewing(order) {
     return !!(
       order &&
@@ -854,10 +878,43 @@
     }
     actions += '<a class="pay-btn" href="companion-center.html">继续浏览陪玩</a></div>';
 
+    var multi = isMultiParent(order);
+    var kids = multi ? multiChildren(order) : [];
+    var companionCell = multi
+      ? kids.length
+        ? kids
+            .map(function (ch) {
+              return companionName(ch) + " " + money(ch.totalAmount || ch.amount);
+            })
+            .join(" · ")
+        : "多人陪玩订单"
+      : companionName(order);
+    var serviceCell = multi
+      ? "多人陪玩订单 · 共" + (kids.length || "?") + "位 · 一次付款"
+      : order.game || order.serviceName || order.title || "-";
+    var title = multi ? "多人陪玩订单 · 支付确认" : "支付确认";
+    var multiHint = multi
+      ? '<p class="pay-hint">本订单一次付款 ' +
+        esc(money(order.totalAmount || order.amount)) +
+        "，系统会分别为每位陪玩结算。请勿分别支付子订单。</p>"
+      : "";
+    if (isMultiChild(order)) {
+      multiHint =
+        '<p class="pay-hint">这是多人订单的子订单，请回到联合订单父单完成一次付款。</p>';
+      actions =
+        '<div class="pay-actions"><a class="pay-btn primary" href="orders.html?id=' +
+        encodeURIComponent(order.parentOrderId || order.parent_order_id || order.id) +
+        '">查看联合订单</a><a class="pay-btn" href="orders.html">我的订单</a></div>';
+    }
+
     paint(
       '<section class="pay-card" data-order-id="' +
         esc(order.id) +
-        '"><h1>支付确认</h1>' +
+        '"' +
+        (multi ? ' data-multi-parent="1"' : "") +
+        '><h1>' +
+        esc(title) +
+        "</h1>" +
         '<div class="pay-status-box"><strong data-pay-status>' +
         esc(label) +
         "</strong><p>" +
@@ -872,19 +929,36 @@
         '<div class="pay-row"><span>订单号</span><strong>' +
         esc(order.orderNo || order.order_no || order.id) +
         "</strong></div>" +
-        '<div class="pay-row"><span>陪玩</span><strong>' +
-        esc(companionName(order)) +
+        '<div class="pay-row"><span>' +
+        (multi ? "陪玩组合" : "陪玩") +
+        "</span><strong>" +
+        esc(companionCell) +
         "</strong></div>" +
         '<div class="pay-row"><span>服务</span><strong>' +
-        esc(order.game || order.serviceName || order.title || "-") +
+        esc(serviceCell) +
         "</strong></div>" +
+        (multi
+          ? kids
+              .map(function (ch) {
+                return (
+                  '<div class="pay-row"><span>' +
+                  esc(companionName(ch)) +
+                  "</span><strong>" +
+                  esc(money(ch.totalAmount || ch.amount)) +
+                  "</strong></div>"
+                );
+              })
+              .join("")
+          : "") +
         '<div class="pay-row"><span>时长</span><strong>' +
         esc(order.hours ? order.hours + " 小时" : order.duration || "-") +
         "</strong></div>" +
         '<div class="pay-row"><span>游戏 ID</span><strong>' +
         esc(parseGameId(order)) +
         "</strong></div>" +
-        '<div class="pay-row"><span>应付金额</span><strong>' +
+        '<div class="pay-row"><span>' +
+        (multi ? "总付款" : "应付金额") +
+        "</span><strong>" +
         esc(money(order.totalAmount || order.amount)) +
         "</strong></div>" +
         '<div class="pay-row"><span>支付方式</span><strong>' +
@@ -893,6 +967,7 @@
         '<div class="pay-row"><span>当前状态</span><strong>' +
         esc(label) +
         "</strong></div></div>" +
+        multiHint +
         (reviewing
           ? '<p class="pay-hint">付款凭证已提交，当前为待人工审核。客服确认收款前不会进入接单流程。</p>'
           : needsManualProof

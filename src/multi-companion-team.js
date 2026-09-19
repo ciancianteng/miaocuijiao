@@ -21,6 +21,7 @@
     sharedGameId: "",
     sharedNotes: "",
     paymentMethod: "catfood",
+    pendingIdempotencyKey: "",
   };
 
   function money(v) {
@@ -95,7 +96,7 @@
     if (document.querySelector('link[data-mcj-team-css]')) return;
     var link = document.createElement("link");
     link.rel = "stylesheet";
-    link.href = "src/multi-companion-team.css?v=20260919team1";
+    link.href = "src/multi-companion-team.css?v=20260919team2";
     link.setAttribute("data-mcj-team-css", "1");
     document.head.appendChild(link);
   }
@@ -163,6 +164,7 @@
     state.sharedGameId = "";
     state.sharedNotes = "";
     state.expanded = false;
+    state.pendingIdempotencyKey = "";
     try {
       sessionStorage.removeItem(STORAGE_KEY);
     } catch (e) {}
@@ -236,24 +238,31 @@
       toast("该陪玩暂无可下单服务项目");
       return { ok: false, error: "no_service" };
     }
-    var first = services[0];
+    var preferService = String(raw.service || raw.serviceType || raw.game || "").trim();
+    var first =
+      (preferService &&
+        services.find(function (s) {
+          return String(s.name) === preferService;
+        })) ||
+      services[0];
+    var lineUnit = money(raw.unitPrice || first.price || unitPrice) || unitPrice;
     var line = {
       companionId: companionId,
       companionName: companion.companionName,
       avatar: companion.avatar,
-      unitPrice: money(first.price || unitPrice) || unitPrice,
+      unitPrice: lineUnit,
       service: first.name || companion.service,
       serviceType: first.name || companion.service,
       game: first.name || companion.game,
-      hours: 1,
-      quantity: 1,
+      hours: Math.max(0.5, money(raw.hours || 1) || 1),
+      quantity: Math.max(1, Math.floor(money(raw.quantity || 1) || 1)),
       services: services,
       online: companion.online,
     };
     state.lines.push(line);
     persist();
     renderBar();
-    toast("已加入一起下单");
+    toast(state.lines.length === 1 ? "已加入队伍，可继续选陪玩" : "已加入一起下单");
     return { ok: true, count: state.lines.length };
   }
 
@@ -263,7 +272,8 @@
     });
     persist();
     renderBar();
-    if (state.sheetOpen) paintSheet();
+    if (state.lines.length < 2) closeSheet();
+    else if (state.sheetOpen) paintSheet();
   }
 
   function updateLine(companionId, patch) {
@@ -325,27 +335,33 @@
     }
     var n = state.lines.length;
     var total = groupTotal();
+    var secondaryLabel = n >= 2 ? "查看队伍" : "继续选";
+    var secondaryAttr = n >= 2 ? "data-mcj-team-expand" : "data-mcj-team-continue";
     bar.innerHTML =
-      '<button type="button" class="mcj-team-bar-main" data-mcj-team-expand aria-expanded="' +
-      (state.expanded ? "true" : "false") +
-      '">' +
       '<div class="mcj-team-avatars">' +
       avatarStackHtml() +
       "</div>" +
       '<div class="mcj-team-meta">' +
       "<strong>已选 " +
       n +
-      " 人</strong>" +
-      "<span>合计 " +
+      " 人 · " +
       esc(String(total)) +
-      " 猫粮</span>" +
-      "</div>" +
-      '<span class="mcj-team-chevron" aria-hidden="true">' +
-      (state.expanded ? "▾" : "▴") +
+      "猫粮</strong>" +
+      "<span>" +
+      (n >= 2 ? "一次付款，分别结算" : "可继续选陪玩，或去结算（单人走普通下单）") +
       "</span>" +
+      "</div>" +
+      '<div class="mcj-team-bar-actions">' +
+      '<button type="button" class="mcj-team-secondary" ' +
+      secondaryAttr +
+      ' aria-expanded="' +
+      (state.expanded ? "true" : "false") +
+      '">' +
+      secondaryLabel +
       "</button>" +
-      '<button type="button" class="mcj-team-checkout" data-mcj-team-checkout>去结算</button>';
-    if (state.expanded) {
+      '<button type="button" class="mcj-team-checkout" data-mcj-team-checkout>去结算</button>' +
+      "</div>";
+    if (state.expanded && n >= 2) {
       bar.classList.add("is-expanded");
       var panel = document.createElement("div");
       panel.className = "mcj-team-bar-panel";
@@ -358,6 +374,8 @@
             '" alt="">' +
             "<span>" +
             esc(l.companionName) +
+            " · " +
+            esc(l.service || "") +
             "</span>" +
             "<em>" +
             esc(String(lineSubtotal(l))) +
@@ -382,13 +400,14 @@
   }
 
   function paintSheetTotals() {
+    var total = groupTotal();
     var el = document.querySelector("[data-mcj-team-sheet-total]");
-    if (el) el.textContent = String(groupTotal()) + " 猫粮";
+    if (el) el.textContent = String(total) + " 猫粮";
     var btn = document.querySelector("[data-mcj-team-submit]");
     if (btn) {
       var ok = state.lines.length >= 2;
       btn.disabled = !ok || state.submitting;
-      btn.textContent = state.submitting ? "提交中…" : "确认一起下单";
+      btn.textContent = state.submitting ? "提交中…" : "确认并支付 " + total + "猫粮";
     }
   }
 
@@ -477,6 +496,26 @@
       })
       .join("");
 
+    var total = groupTotal();
+    var summaryRows = state.lines
+      .map(function (l, idx) {
+        return (
+          '<div class="mcj-team-summary-row">' +
+          "<span>陪玩" +
+          (idx + 1) +
+          " · " +
+          esc(l.companionName) +
+          "</span>" +
+          "<span>服务：" +
+          esc(l.service || "-") +
+          "</span>" +
+          "<strong>小计：" +
+          esc(String(lineSubtotal(l))) +
+          "猫粮</strong>" +
+          "</div>"
+        );
+      })
+      .join("");
     mask.innerHTML =
       '<div class="mcj-team-sheet" role="dialog" aria-modal="true" aria-label="多人一起下单">' +
       '<div class="mcj-team-sheet-head">' +
@@ -484,6 +523,9 @@
       '<button type="button" class="mcj-team-sheet-close" data-mcj-team-sheet-close aria-label="关闭">×</button>' +
       "</div>" +
       '<div class="mcj-team-sheet-scroll">' +
+      '<div class="mcj-team-summary">' +
+      summaryRows +
+      "</div>" +
       rows +
       '<div class="mcj-team-field"><span>游戏 ID（共用）</span><input type="text" data-mcj-team-game-id value="' +
       esc(state.sharedGameId) +
@@ -491,16 +533,39 @@
       '<div class="mcj-team-field"><span>备注（可选）</span><input type="text" data-mcj-team-notes value="' +
       esc(state.sharedNotes) +
       '" placeholder="给整组订单的备注"></div>' +
-      '<p class="mcj-team-pay-hint">一次支付整组订单 · 仅支持猫粮钱包</p>' +
+      '<p class="mcj-team-pay-hint">本订单一次付款，系统会分别为每位陪玩结算。</p>' +
       "</div>" +
       '<div class="mcj-team-sheet-foot">' +
       '<div class="mcj-team-sheet-total">合计 <strong data-mcj-team-sheet-total>' +
-      esc(String(groupTotal())) +
+      esc(String(total)) +
       " 猫粮</strong></div>" +
       '<button type="button" class="mcj-team-submit" data-mcj-team-submit' +
       (state.lines.length < 2 ? " disabled" : "") +
-      ">确认一起下单</button>" +
+      ">确认并支付 " +
+      esc(String(total)) +
+      "猫粮</button>" +
       "</div></div>";
+  }
+
+  function openSingleLegacyFromTeam() {
+    if (state.lines.length !== 1) return false;
+    var line = state.lines[0];
+    if (!window.MCJPlaceOrder || typeof window.MCJPlaceOrder.open !== "function") {
+      toast("请使用「立即下单」完成单人订单");
+      return false;
+    }
+    window.MCJPlaceOrder.open({
+      companionId: line.companionId,
+      companionName: line.companionName,
+      avatar: line.avatar,
+      unitPrice: line.unitPrice,
+      price: line.unitPrice,
+      service: line.service,
+      game: line.game || line.service,
+      services: line.services,
+      online: line.online !== false,
+    });
+    return true;
   }
 
   function openCheckout() {
@@ -509,6 +574,8 @@
       return;
     }
     if (state.lines.length < 2) {
+      // Prefer legacy single place_order when only one companion remains.
+      if (openSingleLegacyFromTeam()) return;
       toast("多人下单至少选择 2 位陪玩");
       return;
     }
@@ -528,19 +595,25 @@
     });
   }
 
+  function ensureIdempotencyKey() {
+    if (state.pendingIdempotencyKey) return state.pendingIdempotencyKey;
+    state.pendingIdempotencyKey =
+      "pom-" +
+      bossKey().slice(0, 8) +
+      "-" +
+      Date.now() +
+      "-" +
+      Math.random().toString(36).slice(2, 8);
+    return state.pendingIdempotencyKey;
+  }
+
   function buildPayload() {
     return {
       action: "place_multi_order",
       paymentMethod: "catfood",
       gameId: String(state.sharedGameId || "").trim(),
       notes: String(state.sharedNotes || "").trim(),
-      idempotencyKey:
-        "pom-" +
-        bossKey().slice(0, 8) +
-        "-" +
-        Date.now() +
-        "-" +
-        Math.random().toString(36).slice(2, 8),
+      idempotencyKey: ensureIdempotencyKey(),
       companions: state.lines.map(function (l) {
         var hours = Math.max(0.5, money(l.hours || 1));
         var quantity = Math.max(1, Math.floor(money(l.quantity || 1) || 1));
@@ -597,6 +670,8 @@
       .then(function (body) {
         var parent = body.parent || body.order || {};
         var oid = parent.id || "";
+        var kids = Array.isArray(body.children) ? body.children : [];
+        state.pendingIdempotencyKey = "";
         clearTeam();
         toast("多人订单创建成功");
         if (oid) {
@@ -610,13 +685,21 @@
             }
             var row = Object.assign({}, parent, {
               isMultiGroupParent: true,
-              children: body.children || [],
+              children: kids,
             });
-            list = [row].concat(
-              list.filter(function (x) {
-                return String(x.id) !== String(oid);
-              })
-            );
+            // Cache parent + children so list can hide child cards and still render peer names.
+            var childIds = {};
+            kids.forEach(function (ch) {
+              if (ch && ch.id) childIds[String(ch.id)] = true;
+            });
+            list = [row]
+              .concat(kids)
+              .concat(
+                list.filter(function (x) {
+                  var xid = String(x && x.id);
+                  return xid !== String(oid) && !childIds[xid];
+                })
+              );
             localStorage.setItem("mcjBossOrdersCache", JSON.stringify(list.slice(0, 80)));
           } catch (e2) {}
           location.href = "orders.html?id=" + encodeURIComponent(oid);
@@ -626,6 +709,7 @@
       })
       .catch(function (err) {
         state.submitting = false;
+        // Keep pendingIdempotencyKey so duplicate click retries are safe.
         paintSheetTotals();
         toast(err.message || "多人下单失败");
       });
@@ -652,6 +736,13 @@
     if (e.target.closest("[data-mcj-team-checkout]")) {
       e.preventDefault();
       openCheckout();
+      return;
+    }
+    if (e.target.closest("[data-mcj-team-continue]")) {
+      e.preventDefault();
+      state.expanded = false;
+      renderBar();
+      toast("继续浏览陪玩大厅，再选一位");
       return;
     }
     if (e.target.closest("[data-mcj-team-expand]")) {
