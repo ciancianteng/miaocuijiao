@@ -3648,6 +3648,32 @@ export default async function handler(req, res) {
         });
       }
     }
+    if (req.method === "GET" && (action === "my_gifts" || action === "received_gifts" || action === "gifts")) {
+      try {
+        const { listCompanionReceivedGifts, getCompanionGiftWall } = await import("./_gift-orders.js");
+        const companionId = String(auth.profile.id || companion?.user_id || "").trim();
+        const gifts = await listCompanionReceivedGifts(companionId, { limit: 100 });
+        const wall = await getCompanionGiftWall(companionId);
+        return json(res, 200, {
+          ok: true,
+          gifts: (gifts || []).map((g) => ({
+            id: g.id,
+            txNo: g.tx_no,
+            giftId: g.gift_id,
+            giftName: g.gift_name,
+            giftImage: g.gift_image_url || "",
+            quantity: Number(g.quantity || 1),
+            senderBossId: g.sender_boss_id,
+            createdAt: g.created_at,
+            giftOrderId: g.gift_order_id || "",
+          })),
+          wall,
+        });
+      } catch (err) {
+        return json(res, err.status || 500, { ok: false, message: err.message || "礼物加载失败" });
+      }
+    }
+
     if (req.method === "GET" && (action === "thread" || action === "conversation_messages")) {
       const conversationId = String(req.query.conversation_id || req.query.conversationId || "").trim();
       try {
