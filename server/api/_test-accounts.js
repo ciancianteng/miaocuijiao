@@ -193,3 +193,50 @@ export function assertNotTestPartiesForSettlement({
   }
   return { ok: true, skipped: false, reason: null };
 }
+
+/**
+ * Companion income gate (P0 fix):
+ * - REAL boss + REAL companion + CS flagged test → ALLOW (warn only)
+ * - test boss / test companion / test-touched / test names → BLOCK
+ * Does not widen skip beyond boss/companion safety.
+ */
+export function companionIncomeTestPartyDecision({
+  bossProfile = null,
+  companionProfile = null,
+  customerServiceProfile = null,
+  order = null,
+  testIds = null,
+  byId = null,
+} = {}) {
+  const partyGuard = assertNotTestPartiesForSettlement({
+    bossProfile,
+    companionProfile,
+    customerServiceProfile,
+    order,
+    testIds,
+    byId,
+  });
+  if (!partyGuard.ok) {
+    if (partyGuard.reason === "test_customer_service") {
+      return {
+        skip: false,
+        reason: null,
+        warnCsTest: true,
+        partyGuardReason: partyGuard.reason,
+      };
+    }
+    return {
+      skip: true,
+      reason: partyGuard.reason || "test_party",
+      warnCsTest: false,
+      partyGuardReason: partyGuard.reason,
+    };
+  }
+  if (bossProfile && isTestAccountRecord(bossProfile)) {
+    return { skip: true, reason: "test_party", warnCsTest: false, partyGuardReason: null };
+  }
+  if (companionProfile && isTestAccountRecord(companionProfile)) {
+    return { skip: true, reason: "test_party", warnCsTest: false, partyGuardReason: null };
+  }
+  return { skip: false, reason: null, warnCsTest: false, partyGuardReason: null };
+}
