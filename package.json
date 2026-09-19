@@ -21,7 +21,8 @@
     "verify:companion-earnings-classification": "node scripts/verify-companion-earnings-classification.mjs",
     "verify:og-share-meta": "node scripts/verify-og-share-meta.mjs",
     "verify:pwa-portal-start-urls": "node scripts/verify-pwa-portal-start-urls.mjs",
-    "verify:multi-companion-order": "node scripts/verify-multi-companion-order.mjs"
+    "verify:multi-companion-order": "node scripts/verify-multi-companion-order.mjs",
+    "verify:gift-system": "node scripts/verify-gift-system-offline.mjs"
   },
   "dependencies": {
     "@vitejs/plugin-react": "latest",
