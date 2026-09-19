@@ -2792,13 +2792,33 @@
   function designatedOrderCard(o){
     var banner=o.status==='claimed'?'<div class="pw-order-banner">你有新的指定订单</div>':'';
     var focused=state._focusOrderId&&String(o.id)===String(state._focusOrderId);
-    return '<article id="order-'+esc(o.id)+'" class="pw-order-card'+(o.status==='claimed'?' is-designated':'')+(focused?' is-focus':'')+'"'+(focused?' data-order-focus="1"':'')+'>'+banner+
+    var peers=Array.isArray(o.groupPeers)?o.groupPeers:[];
+    var isGroup=!!(o.isMultiGroupChild||o.parentOrderId||peers.length);
+    var peerCount=Number(o.groupPeerCount||0)||(peers.length?peers.length+1:0);
+    var peerHtml='';
+    if(isGroup){
+      var shown=peers.slice(0,2);
+      var extra=Math.max(0,peers.length-shown.length);
+      var peerChips=shown.map(function(p){
+        return '<span class="pw-peer-chip"><img src="'+esc(p.avatar||'/default-avatar.png')+'" alt="" onerror="this.onerror=null;this.src=\'/default-avatar.png\'">'+esc(p.nickname||'陪玩')+'</span>';
+      }).join('');
+      if(extra>0)peerChips+='<span class="pw-peer-more">+'+extra+'</span>';
+      if(!peerChips)peerChips='暂无';
+      peerHtml='<div class="pw-group-peers" data-group-peers="1">'+
+        '<div class="pw-group-peers-title">联合订单 · 本单共 '+(peerCount||peers.length+1)+' 位陪玩</div>'+
+        '<div class="pw-group-peers-row"><span>同单陪玩</span><strong>'+peerChips+'</strong></div>'+
+        '<p class="pw-note">你只能操作自己的子订单；其他陪玩收入不会显示。</p>'+
+        '</div>';
+    }
+    return '<article id="order-'+esc(o.id)+'" class="pw-order-card'+(o.status==='claimed'?' is-designated':'')+(focused?' is-focus':'')+(isGroup?' is-multi-group':'')+'"'+(focused?' data-order-focus="1"':'')+(isGroup?' data-multi-child="1"':'')+'>'+banner+
+      (isGroup?'<div class="pw-order-banner group">这是多人联合订单</div>':'')+
       '<header><div><h3>'+esc(humanOrderNo(o))+'</h3><p>'+esc(o.game||o.serviceName||'-')+' / '+esc(o.serviceName||o.serviceContent||'-')+'</p></div><span class="pw-status info">'+esc(orderStatus(o))+'</span></header>'+
       '<div class="pw-order-meta">'+
       '<div><span>老板昵称/编号</span><strong>'+esc((o.bossName||'-')+(o.bossUid?' / '+o.bossUid:''))+'</strong></div>'+
+      '<div><span>你的服务</span><strong>'+esc(o.serviceName||o.game||'-')+'</strong></div>'+
       '<div><span>数量/预计时长</span><strong>'+esc(o.duration||(o.hours?o.hours+'小时':'-'))+'</strong></div>'+
       '<div><span>陪玩单价</span><strong>'+money(o.unitPrice||0)+'</strong></div>'+
-      '<div><span>本单总额</span><strong>'+money(o.amount||0)+'</strong></div>'+
+      '<div><span>你的订单金额</span><strong>'+money(o.amount||0)+'</strong></div>'+
       '<div><span>预计到手猫粮</span><strong>'+money(o.playerIncome||0)+'</strong></div>'+
       '<div><span>平台抽成</span><strong>'+money(o.platformFee||0)+'</strong></div>'+
       '<div><span>游戏 ID</span><strong>'+esc(o.gameId||'-')+'</strong></div>'+
@@ -2810,7 +2830,7 @@
           (o.paymentReviewedByName?'<div><span>审核客服</span><strong>'+esc(o.paymentReviewedByName)+'</strong></div>':'')+
           (o.paymentReviewedAt?'<div><span>审核时间</span><strong>'+esc(fmtTime(o.paymentReviewedAt))+'</strong></div>':''))
         :'')+
-      '</div><footer class="pw-actions">'+orderActions(o)+'</footer></article>';
+      '</div>'+peerHtml+'<footer class="pw-actions">'+orderActions(o)+'</footer></article>';
   }
   function ordersHtml(){
     var rows=(state.data&&state.data.myOrders)||[];

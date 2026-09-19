@@ -198,7 +198,17 @@ a.pw-btn{display:inline-flex;align-items:center;justify-content:center;text-deco
 .pw-alert span{flex:1 1 auto;color:rgba(255,214,231,.85);font-size:13px}
 .pw-alert.designated{border-color:rgba(255,180,80,.45);background:rgba(255,160,60,.12)}
 .pw-order-banner{margin:0 0 10px;padding:8px 10px;border-radius:10px;background:rgba(255,160,60,.16);color:#ffd9a8;font-weight:700;font-size:13px}
+.pw-order-banner.group{background:rgba(255,143,197,.14);color:#ffd6e8}
 .pw-order-card.is-designated{border-color:rgba(255,160,60,.35)}
+.pw-order-card.is-multi-group{border-color:rgba(255,143,197,.35)}
+.pw-group-peers{margin:12px 0 0;padding:12px;border-radius:12px;border:1px solid rgba(255,143,197,.22);background:rgba(255,143,197,.06)}
+.pw-group-peers-title{font-size:13px;font-weight:800;color:#ffeaf4;margin-bottom:8px}
+.pw-group-peers-row{display:flex;justify-content:space-between;gap:10px;align-items:center;font-size:13px}
+.pw-group-peers-row span{color:var(--pw-muted)}
+.pw-group-peers-row strong{display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-weight:700}
+.pw-peer-chip{display:inline-flex;align-items:center;gap:6px;padding:4px 8px 4px 4px;border-radius:999px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1)}
+.pw-peer-chip img{width:22px;height:22px;border-radius:50%;object-fit:cover}
+.pw-peer-more{color:#ffd6e8;font-weight:800}
 .pw-order-card.is-focus{outline:2px solid rgba(217,72,138,.75);box-shadow:0 0 0 4px rgba(217,72,138,.18)}
 .pw-order-actions{display:flex;flex-wrap:wrap;gap:10px;width:100%}
 .pw-order-actions .pw-btn{flex:1 1 calc(50% - 8px);min-height:44px}

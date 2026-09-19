@@ -993,7 +993,10 @@
       esc(moneyText(totalAmount())) +
       "</strong></div>" +
       '<p class="mcj-po-error mcj-po-footer-error" data-po-error hidden></p>' +
+      '<div class="mcj-po-footer-actions">' +
+      '<button type="button" class="mcj-po-add-another" data-po-add-another>再加一位陪玩</button>' +
       '<button type="button" class="primary mcj-po-submit" data-po-submit disabled aria-busy="false">支付方式加载中…</button>' +
+      "</div>" +
       "</div></div>";
 
     var dialog = mask.querySelector(".mcj-po-dialog");
@@ -1121,6 +1124,14 @@
         submitOrder();
       });
     }
+    var addAnother = mask.querySelector("[data-po-add-another]");
+    if (addAnother) {
+      addAnother.addEventListener("click", function (ev) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        addAnotherCompanion();
+      });
+    }
     refreshWalletBalance().then(function () {
       if (!state.open || !activeMask()) return;
       paintPayCards();
@@ -1208,6 +1219,41 @@
       return;
     }
     location.href = "orders.html";
+  }
+
+  function addAnotherCompanion() {
+    var c = state.companion;
+    if (!c || !(c.companionId || c.id)) {
+      toast("缺少陪玩信息");
+      return;
+    }
+    if (!window.MCJMultiCompanionTeam || typeof window.MCJMultiCompanionTeam.add !== "function") {
+      toast("多人一起下单组件未加载，请刷新大厅后重试");
+      return;
+    }
+    if (!(money(c.unitPrice) > 0)) {
+      toast("当前单价无效，无法加入队伍");
+      return;
+    }
+    var result = window.MCJMultiCompanionTeam.add({
+      companionId: c.companionId || c.id,
+      companionName: c.companionName || c.name || "陪玩",
+      avatar: c.avatar || c.image || "",
+      unitPrice: money(c.unitPrice),
+      service: currentServiceLabel(),
+      serviceType: currentServiceLabel(),
+      game: c.game || currentServiceLabel(),
+      hours: currentHours(),
+      quantity: currentQuantity(),
+      services: resolveServices(c),
+      online: c.online !== false,
+      status: c.availabilityStatus || "",
+      statusText: c.availabilityText || "",
+    });
+    if (!result || !result.ok) return;
+    // Do NOT create an order — close modal and return to hall browsing.
+    close();
+    toast(result.count >= 2 ? "已加入队伍，可去结算" : "已加入队伍，继续选择下一位陪玩");
   }
 
   function submitOrder() {
