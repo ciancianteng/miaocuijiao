@@ -446,3 +446,24 @@
     font-size:14px;
   }
 }
+
+.pd-gift-wall-grid{display:flex;flex-wrap:wrap;gap:10px;margin-top:8px}
+.pd-gift-chip{display:flex;align-items:center;gap:8px;padding:10px 12px;border-radius:14px;border:1px solid rgba(255,145,195,.22);background:linear-gradient(180deg,rgba(255,255,255,.05),rgba(255,255,255,.02))}
+.pd-gift-chip img{width:32px;height:32px;object-fit:contain;border-radius:10px}
+.pd-gift-chip strong{font-size:13px;color:#fff5fa}
+.pd-gift-chip em{font-style:normal;color:rgba(255,208,228,.78);font-size:12px;font-weight:800}
+.pd-gift-empty{margin:0;color:rgba(255,232,243,.55);font-size:13px}
+.pd-gift-empty-state{width:100%;text-align:center;padding:18px 12px 8px;border-radius:16px;border:1px dashed rgba(239,171,201,.28);background:rgba(255,255,255,.025)}
+.pd-gift-empty-state p{margin:0 0 8px;color:rgba(255,232,243,.7);font-size:13px;line-height:1.5}
+.pd-gift-empty-state strong{color:#ffe1ef;font-size:15px}
+.pd-gift-cta{display:inline-flex;align-items:center;justify-content:center;min-height:40px;margin-top:6px;padding:0 16px;border-radius:999px;border:0;background:linear-gradient(180deg,#ffe2ef,#e7a0c4);color:#1b0712;font-weight:950;cursor:pointer;text-decoration:none}
+.pd-gift-emoji{font-size:20px}
+.mcj-gift-icon{width:36px;height:36px;object-fit:contain;margin:0 auto 4px;display:block}
+.mcj-gift-emoji{font-size:28px;line-height:1;margin-bottom:4px}
+.mcj-gift-target{margin:0 0 12px;color:rgba(255,232,243,.78);font-size:13px}
+.mcj-gift-pay-actions{flex-wrap:wrap}
+.mcj-gift-pay-hint{margin:10px 0 0;color:rgba(255,232,243,.55);font-size:12px;line-height:1.45}
+.mcj-gift-pay-qr,.mcj-gift-proof-preview{display:block;width:min(220px,100%);margin:10px auto;border-radius:14px;border:1px solid rgba(239,171,201,.28)}
+.mcj-gift-upload{display:block;margin:12px 0;padding:12px;border-radius:14px;border:1px dashed rgba(239,171,201,.35);text-align:center;cursor:pointer;color:#ffd9ea;font-weight:850}
+.mcj-gift-upload input{display:none}
+.ghost-outline{background:transparent!important;border:1px solid rgba(239,171,201,.45)!important;color:#ffe1ef!important}
