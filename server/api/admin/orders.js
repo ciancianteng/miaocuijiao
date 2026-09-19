@@ -956,6 +956,17 @@ export default async function handler(req, res) {
       patch.started_at = new Date().toISOString();
     } else if (action === "confirm_complete") {
       try {
+        const { isMultiGroupParent, ORDER_TYPE_MULTI_GROUP } = await import("../_order-group.js");
+        if (
+          isMultiGroupParent(before) ||
+          String(before.order_type || "").toLowerCase() === ORDER_TYPE_MULTI_GROUP
+        ) {
+          return json(res, 409, {
+            ok: false,
+            message: "多人主订单不能后台直接完成结算；请完成各子订单。",
+            code: "MULTI_PARENT_NO_DIRECT_FINALIZE",
+          });
+        }
         const { createOrderCompleteHelpers } = await import("../_order-complete.js");
         const helpers = createOrderCompleteHelpers({
           restUrl,

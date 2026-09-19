@@ -4086,6 +4086,19 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
       } catch (err) {
         return json(res, err.status || 403, { ok: false, message: err.message || CS_LOCK_DENIED, code: err.code || "CS_SESSION_LOCKED" });
       }
+      if (String(status).toLowerCase() === "completed") {
+        const { isMultiGroupParent, ORDER_TYPE_MULTI_GROUP } = await import("./_order-group.js");
+        if (
+          isMultiGroupParent(order) ||
+          String(order.order_type || "").toLowerCase() === ORDER_TYPE_MULTI_GROUP
+        ) {
+          return json(res, 409, {
+            ok: false,
+            message: "多人主订单不能客服直接完成；请完成各子订单。",
+            code: "MULTI_PARENT_NO_DIRECT_FINALIZE",
+          });
+        }
+      }
       const { assertCsStatusTransition, transitionOrderStatus, CS_STATUS_ACTION_LABELS } = await import("./_order-status.js");
       let transition;
       try {

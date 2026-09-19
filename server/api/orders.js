@@ -55,7 +55,8 @@ const ORDER_TYPE_TEXT = {
   open_grab: "公开抢单",
   custom: "自定义订单",
   gameplay_mall: "固定玩法订单",
-  gameplay: "固定玩法订单"
+  gameplay: "固定玩法订单",
+  multi_group: "多人订单（主单）",
 };
 
 function json(res, status, data) { res.status(status).json(data); }
@@ -476,6 +477,9 @@ function viewOrder(row = {}) {
   const cleanNote = stripInternalOrderMarkers(String(row.note || ""));
   return {
     id: row.id,
+    parentOrderId: row.parent_order_id || null,
+    isMultiGroupParent: String(row.order_type || "").toLowerCase() === "multi_group" && !row.parent_order_id,
+    isMultiGroupChild: !!row.parent_order_id,
     orderNo: row.order_no || row.id,
     order_no: row.order_no || row.id,
     bossId: row.boss_id || "",
@@ -1006,9 +1010,15 @@ export default async function handler(req, res) {
     const body = await parseBody(req);
     // place-order-page historically posts create_order; treat as place_order (direct companion).
     const actionRaw = String(body.action || "create");
-    const action = actionRaw === "create_order" ? "place_order" : actionRaw;
+    const action =
+      actionRaw === "create_order"
+        ? "place_order"
+        : actionRaw === "place_multi" || actionRaw === "create_multi_order"
+          ? "place_multi_order"
+          : actionRaw;
     if (
-      ["create", "place_order", "create_order", "pay_order", "want_him", "grab", "claim"].includes(actionRaw)
+      ["create", "place_order", "create_order", "place_multi_order", "place_multi", "pay_order", "want_him", "grab", "claim"].includes(actionRaw) ||
+      action === "place_multi_order"
     ) {
       const { isProductionRuntime, isTestAccountRecord, PROD_TEST_ACCOUNT_BLOCK_MESSAGE } = await import(
         "./_test-accounts.js"
@@ -1029,6 +1039,31 @@ export default async function handler(req, res) {
       } catch (e) {
         return json(res, 200, { ok: true, refunds: [], message: e.message || "" });
       }
+    }
+    if (action === "place_multi_order") {
+      const { placeMultiOrder } = await import("./_place-multi-order.js");
+      const { assertNotSelfTrade } = await import("./_account-roles.js");
+      const walletApi = await import("./_wallet.js");
+      const result = await placeMultiOrder({
+        profile,
+        body,
+        deps: {
+          restUrl,
+          supabaseJson,
+          serviceHeaders,
+          nextOrderNo,
+          resolveCompanionUserId,
+          assertCompanionOrderable,
+          priceForGame,
+          assertNotSelfTrade,
+          assertOrderPaymentMethodAllowed,
+          isWalletMethod,
+          debitWallet: (p) => walletApi.debitWallet(p),
+          viewOrder,
+          addSystemMessage,
+        },
+      });
+      return json(res, result.status || (result.ok ? 200 : 400), result);
     }
     if (action === "create" || action === "place_order") {
       const order = body.order || body;
@@ -1370,6 +1405,16 @@ export default async function handler(req, res) {
       const beforeRows = await supabaseJson(restUrl(TABLE, `?id=eq.${encodeURIComponent(id)}&boss_id=eq.${encodeURIComponent(profile.id)}&limit=1`), { headers: serviceHeaders() });
       const before = Array.isArray(beforeRows) ? beforeRows[0] : null;
       if (!before) return json(res, 404, { ok: false, message: "订单不存在。" });
+      const { assertPayOrderAllowed } = await import("./_place-multi-order.js");
+      const payGuard = assertPayOrderAllowed(before);
+      if (!payGuard.ok) {
+        return json(res, payGuard.status || 409, {
+          ok: false,
+          message: payGuard.message,
+          code: payGuard.code,
+          order: viewOrder(before),
+        });
+      }
       if (normalizeOrderStatus(before.status) !== "awaiting_payment") {
         return json(res, 409, { ok: false, message: "当前订单无需再次支付。", order: viewOrder(before) });
       }
@@ -2030,6 +2075,15 @@ export default async function handler(req, res) {
         { headers: serviceHeaders() }
       ).catch(() => []);
       const before = Array.isArray(beforeRows) ? beforeRows[0] : null;
+      const { isMultiGroupParent } = await import("./_order-group.js");
+      if (before && isMultiGroupParent(before)) {
+        return json(res, 409, {
+          ok: false,
+          message: "多人主订单不支持整单退款；请对需要退款的子订单申请退款。",
+          code: "MULTI_PARENT_NO_DIRECT_REFUND",
+          order: viewOrder(before),
+        });
+      }
       const order = await patchOwnedOrder(profile, id, ["confirmed", "in_progress", "completed"], { status: "refund_requested" }, "老板已申请退款，等待客服/后台审核。审核通过并确认后，退款将退回猫粮余额（不退现金）。");
       let refund = null;
       try {

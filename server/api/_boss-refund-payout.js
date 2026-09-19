@@ -103,6 +103,18 @@ export async function createBossRefundRequest(db, {
   reason,
   settings,
 } = {}) {
+  try {
+    const { isMultiGroupParent, canCreateWalletRefundForOrder } = await import("./_order-group.js");
+    if (isMultiGroupParent(order) || !canCreateWalletRefundForOrder(order)) {
+      return {
+        ok: false,
+        message: "多人主订单不支持整单退款；请对子订单申请退款。",
+        code: "MULTI_PARENT_NO_DIRECT_REFUND",
+      };
+    }
+  } catch (_) {
+    /* soft */
+  }
   const paid = money(order.paid_cat_food || order.total_amount || order.amount || 0);
   const reqAmount = money(amount != null ? amount : paid);
   if (reqAmount <= 0) {
@@ -110,6 +122,33 @@ export async function createBossRefundRequest(db, {
   }
   if (reqAmount > paid + 0.001) {
     return { ok: false, message: "退款金额不能超过实际支付金额。" };
+  }
+  // Group cap: child refunds + sibling open/paid cannot exceed parent paid total.
+  if (order?.parent_order_id) {
+    try {
+      const parentRows = await db(
+        "orders",
+        `?id=eq.${encodeURIComponent(order.parent_order_id)}&select=id,paid_cat_food,total_amount&limit=1`
+      );
+      const parent = parentRows?.[0];
+      const parentPaid = money(parent?.paid_cat_food || parent?.total_amount || 0);
+      if (parentPaid > 0) {
+        const siblings = await db(
+          "orders",
+          `?parent_order_id=eq.${encodeURIComponent(order.parent_order_id)}&select=id&limit=50`
+        );
+        let groupRefunded = 0;
+        for (const sib of siblings || []) {
+          groupRefunded += await sumOpenOrPaidRefunds(db, sib.id);
+        }
+        groupRefunded += await sumOpenOrPaidRefunds(db, order.parent_order_id);
+        if (groupRefunded + reqAmount > parentPaid + 0.001) {
+          return { ok: false, message: "多人订单累计退款不能超过主单实付金额。" };
+        }
+      }
+    } catch (_) {
+      /* fall through to per-order cap */
+    }
   }
   const already = await sumOpenOrPaidRefunds(db, order.id);
   if (already + reqAmount > paid + 0.001) {
