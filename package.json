@@ -18,6 +18,7 @@
     "verify:pricing-p2": "node scripts/verify-pricing-v2-p2-offline.mjs",
     "verify:order-completion-points": "node scripts/verify-order-completion-points-decoupling.mjs",
     "verify:og-share-meta": "node scripts/verify-og-share-meta.mjs",
+    "verify:boss-vip": "node scripts/verify-boss-vip-offline.mjs",
     "verify:pwa-portal-start-urls": "node scripts/verify-pwa-portal-start-urls.mjs"
   },
   "dependencies": {

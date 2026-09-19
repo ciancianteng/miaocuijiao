@@ -348,6 +348,15 @@ export async function confirmBossCatFoodRefund(db, {
     } catch (e) {
       console.warn("[refund-meow] payment_transactions:", e?.message || e);
     }
+    try {
+      const { recastBossVipSafe } = await import("./_boss-vip.js");
+      await recastBossVipSafe(saved.boss_id || row.boss_id, {
+        triggerOrderId: saved.order_id,
+        reason: "refund",
+      });
+    } catch (e) {
+      console.warn("[refund-meow] boss vip recast:", e?.message || e);
+    }
   }
 
   if (saved.batch_id || row.batch_id) {
