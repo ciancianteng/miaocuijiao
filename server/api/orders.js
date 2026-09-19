@@ -1631,6 +1631,45 @@ export default async function handler(req, res) {
           source: usedTestPay ? "boss_test_pay" : "boss_pay",
         });
       } catch (_) {}
+      // Multi-group parent: cascade children to claimed with line paid snapshot (no second debit).
+      let children = [];
+      if (payGuard.cascadeChildren) {
+        try {
+          const kids = await supabaseJson(
+            restUrl(TABLE, `?parent_order_id=eq.${encodeURIComponent(before.id)}&select=*&order=created_at.asc`),
+            { headers: serviceHeaders() }
+          );
+          for (const child of kids || []) {
+            if (normalizeOrderStatus(child.status) !== "awaiting_payment") {
+              children.push(child);
+              continue;
+            }
+            const lineAmt = money(child.total_amount);
+            const childPatches = [
+              { status: "claimed", paid_at: paidAtIso, paid_cat_food: lineAmt },
+              { status: "claimed", paid_cat_food: lineAmt },
+              { status: "claimed" },
+            ];
+            let savedChild = child;
+            for (const patch of childPatches) {
+              try {
+                const rows = await supabaseJson(restUrl(TABLE, `?id=eq.${encodeURIComponent(child.id)}`), {
+                  method: "PATCH",
+                  headers: serviceHeaders(),
+                  body: JSON.stringify(patch),
+                });
+                savedChild = rows?.[0] || { ...child, ...patch };
+                break;
+              } catch (err) {
+                if (!/paid_at|paid_cat_food|column|schema cache|PGRST/i.test(String(err?.message || ""))) break;
+              }
+            }
+            children.push(savedChild);
+          }
+        } catch (cascErr) {
+          console.warn("[orders/pay_order] multi child cascade", String(cascErr?.message || cascErr).slice(0, 160));
+        }
+      }
       return json(res, 200, {
         ok: true,
         testPay: usedTestPay,
@@ -1642,6 +1681,7 @@ export default async function handler(req, res) {
             ? "支付成功，订单已进入等待陪玩确认。"
             : "支付成功，订单已进入抢单大厅。",
         order: viewOrder(saved),
+        children: children.map(viewOrder),
         allowTestPay: previewAllowed,
         reward,
       });
