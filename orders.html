@@ -116,6 +116,7 @@
   </style>
   <link rel="stylesheet" crossorigin href="/src/boss-header.css">
   <link rel="stylesheet" crossorigin href="/src/style.css">
+  <link rel="stylesheet" href="/src/multi-companion-team.css?v=20260919team1">
 </head>
 <body>
   <header class="topbar"><a class="brand" href="index.html"><img src="/assets/meow-cuijiao-brand-96.webp" alt="MEOW CUI JIAO" width="32" height="32" decoding="async" onerror="this.onerror=null;this.src='/assets/meow-cuijiao-brand-96.jpg'"><span>MEOW CUI JIAO</span></a><nav class="boss-nav"><a href="index.html">首页</a><a href="companion-center.html">陪玩大厅</a><a href="orders.html">我的订单</a><a href="support.html?start=1">在线客服</a></nav></header>
@@ -216,7 +217,28 @@
         if(s==='refunded')return '已退款';
         return '请查看详情了解下一步';
       }
-      function visibleOrders(){return state.orders.filter(function(o){if(state.filter==='all')return true;if(state.filter==='awaiting_payment')return o.status==='awaiting_payment'&&!isPaymentReview(o);if(state.filter==='payment_review')return isPaymentReview(o)&&o.status==='awaiting_payment';if(state.filter==='waiting_companion')return o.status==='claimed';if(state.filter==='arranging')return o.status==='pending';if(state.filter==='boss_confirm')return o.status==='waiting_boss_confirm';if(state.filter==='active')return o.status==='confirmed'||o.status==='in_progress';if(state.filter==='after_sale')return o.status==='refund_requested'||o.status==='refunded';if(state.filter==='completed')return o.status==='completed'||o.status==='reviewed'||o.reviewed;return o.status===state.filter})}
+      function isMultiParent(o){return !!(o&&(o.isMultiGroupParent||(String(o.orderTypeKey||o.order_type||'').toLowerCase()==='multi_group'&&!(o.parentOrderId||o.parent_order_id))))}
+      function isMultiChild(o){return !!(o&&(o.isMultiGroupChild||o.parentOrderId||o.parent_order_id))}
+      function parentIdOf(o){return String((o&&(o.parentOrderId||o.parent_order_id))||'')}
+      function childrenOf(parentId){
+        var pid=String(parentId||'');
+        return state.orders.filter(function(o){return parentIdOf(o)===pid});
+      }
+      function visibleOrders(){
+        return state.orders.filter(function(o){
+          if(isMultiChild(o))return false;
+          if(state.filter==='all')return true;
+          if(state.filter==='awaiting_payment')return o.status==='awaiting_payment'&&!isPaymentReview(o);
+          if(state.filter==='payment_review')return isPaymentReview(o)&&o.status==='awaiting_payment';
+          if(state.filter==='waiting_companion')return o.status==='claimed';
+          if(state.filter==='arranging')return o.status==='pending';
+          if(state.filter==='boss_confirm')return o.status==='waiting_boss_confirm';
+          if(state.filter==='active')return o.status==='confirmed'||o.status==='in_progress';
+          if(state.filter==='after_sale')return o.status==='refund_requested'||o.status==='refunded';
+          if(state.filter==='completed')return o.status==='completed'||o.status==='reviewed'||o.reviewed;
+          return o.status===state.filter;
+        });
+      }
       function skeletonHtml(){return '<div class="order-skel" aria-busy="true">'+[0,1,2].map(function(){return '<div class="order-skel-card"><div class="order-skel-line lg"></div><div class="order-skel-line"></div><div class="order-skel-line"></div></div>'}).join('')+'</div><p class="order-empty">正在读取订单…</p>'}
       function failHtml(){return '<div class="order-alert"><strong>订单加载失败，请重试</strong><p style="margin:8px 0 0;color:#ffd6e8">'+esc(state.error||'请检查网络后重试')+'</p><button class="order-btn primary" type="button" data-refresh>重新加载</button></div>'}
       function paint(){root.innerHTML='<section class="orders-head"><div><h1>我的订单</h1><p>只显示当前老板账号的真实订单。</p></div><button class="order-btn" data-refresh type="button">刷新</button></section><div class="tabs">'+tabs.map(function(t){return '<button class="tab '+(state.filter===t[0]?'active':'')+'" type="button" data-filter="'+t[0]+'">'+t[1]+'</button>'}).join('')+'</div>'+bodyHtml()}
@@ -268,6 +290,7 @@
       function actions(o){
         var out=['<button class="order-btn" data-detail="'+esc(o.id)+'" type="button">查看详情</button>'];
         var s=String(o.status||'');
+        var multiParent=isMultiParent(o);
         if(s==='awaiting_payment'){
           if(isPaymentReview(o)){
             out.push('<a class="order-btn primary" href="payment-confirm.html?order='+encodeURIComponent(o.id)+'">查看审核进度</a>');
@@ -292,26 +315,36 @@
           out.push('<a class="order-btn primary" href="support.html?order='+encodeURIComponent(o.id)+'">联系客服</a>');
           out.push('<button class="order-btn is-disabled" type="button" disabled aria-disabled="true">进行中</button>');
         }else if(s==='in_progress'){
-          if(o.completionPending){
+          if(o.completionPending&&!multiParent){
             out.push('<button class="order-btn primary" data-action="confirm_completion" data-id="'+esc(o.id)+'">确认完成订单</button>');
             out.push('<button class="order-btn" data-action="report_order_problem" data-id="'+esc(o.id)+'">订单有问题，联系客服</button>');
           }else{
             out.push('<a class="order-btn primary" href="support.html?order='+encodeURIComponent(o.id)+'">联系客服</a>');
+            if(multiParent)out.push('<button class="order-btn" data-detail="'+esc(o.id)+'" type="button">查看各陪玩进度</button>');
           }
-        }else if(canReview(o)){
+        }else if(canReview(o)&&!multiParent){
           out.push('<button class="order-btn primary" data-review-order="'+esc(o.id)+'" type="button">评价陪玩</button>');
           out.push('<button class="order-btn" data-action="request_refund" data-id="'+esc(o.id)+'">申请售后</button>');
         }else if(o.reviewed||s==='reviewed'){
           out.push('<button class="order-btn is-disabled" type="button" disabled aria-disabled="true">已评价</button>');
-          out.push('<button class="order-btn" data-action="request_refund" data-id="'+esc(o.id)+'">申请售后</button>');
+          if(!multiParent)out.push('<button class="order-btn" data-action="request_refund" data-id="'+esc(o.id)+'">申请售后</button>');
         }else if(s==='completed'){
-          out.push('<button class="order-btn" data-action="request_refund" data-id="'+esc(o.id)+'">申请售后</button>');
+          if(multiParent)out.push('<button class="order-btn" data-detail="'+esc(o.id)+'" type="button">查看子订单售后</button>');
+          else out.push('<button class="order-btn" data-action="request_refund" data-id="'+esc(o.id)+'">申请售后</button>');
         }else if(s==='cancelled'){
           out.push('<button class="order-btn is-disabled" type="button" disabled aria-disabled="true">已取消</button>');
         }
         return out.join('')+'<p class="order-hint">'+esc(statusReason(o))+'</p>';
       }
-      function card(o){var gc=Number(o.grabCount!=null?o.grabCount:(o.grabs&&o.grabs.length)||0)||0;var grabHint=(o.status==='pending'||o.status==='waiting_boss_confirm')?('<div><span>抢单人数</span><strong>已有 '+gc+' 位陪玩抢单</strong></div>'):'';return '<article class="order-card" data-order-id="'+esc(o.id)+'"><header><div><h3>'+esc(o.orderNo||o.order_no||o.id)+'</h3><p>'+esc(o.createdAt?date(o.createdAt):'-')+'</p></div><span class="order-status">'+esc(orderLabel(o))+'</span></header><div class="order-grid"><div><span>游戏/服务</span><strong title="'+esc(o.serviceType||o.game||'-')+'">'+esc(o.serviceType||o.game||'-')+'</strong></div><div><span>陪玩昵称</span><strong title="'+esc(companionName(o))+'">'+esc(companionName(o))+'</strong></div><div><span>消费</span><strong>'+moneyEmoji(o.totalAmount||o.amount)+'</strong></div><div><span>当前状态</span><strong>'+esc(orderLabel(o))+'</strong></div>'+grabHint+'<div><span>创建时间</span><strong>'+esc(date(o.createdAt))+'</strong></div><div class="order-actions">'+actions(o)+'</div></div></article>'}
+      function card(o){
+        var gc=Number(o.grabCount!=null?o.grabCount:(o.grabs&&o.grabs.length)||0)||0;
+        var grabHint=(o.status==='pending'||o.status==='waiting_boss_confirm')?('<div><span>抢单人数</span><strong>已有 '+gc+' 位陪玩抢单</strong></div>'):'';
+        var kids=isMultiParent(o)?childrenOf(o.id):[];
+        var multiBadge=isMultiParent(o)?('<div class="order-multi-badge">多人订单 · '+(kids.length||'?')+'位陪玩</div>'):'';
+        var serviceLabel=isMultiParent(o)?('多人订单 · '+(kids.length||'')+'位陪玩'):(o.serviceType||o.game||'-');
+        var companionLabel=isMultiParent(o)?(kids.map(function(c){return companionName(c)}).filter(Boolean).join('、')||'组合订单'):companionName(o);
+        return '<article class="order-card" data-order-id="'+esc(o.id)+'"'+(isMultiParent(o)?' data-multi-parent="1"':'')+'><header><div><h3>'+esc(o.orderNo||o.order_no||o.id)+'</h3><p>'+esc(o.createdAt?date(o.createdAt):'-')+'</p>'+multiBadge+'</div><span class="order-status">'+esc(orderLabel(o))+'</span></header><div class="order-grid"><div><span>游戏/服务</span><strong title="'+esc(serviceLabel)+'">'+esc(serviceLabel)+'</strong></div><div><span>'+(isMultiParent(o)?'陪玩':'陪玩昵称')+'</span><strong title="'+esc(companionLabel)+'">'+esc(companionLabel)+'</strong></div><div><span>消费</span><strong>'+moneyEmoji(o.totalAmount||o.amount)+'</strong></div><div><span>当前状态</span><strong>'+esc(orderLabel(o))+'</strong></div>'+grabHint+'<div><span>创建时间</span><strong>'+esc(date(o.createdAt))+'</strong></div><div class="order-actions">'+actions(o)+'</div></div></article>';
+      }
       function detail(o,openReview){
         var boss=bossProfile();
         var left=
@@ -332,11 +365,24 @@
               field('老板备注',esc(o.bossNotes||o.notes||'-'),true)+
             '</div></div>'+
             '<div class="od-module"><h3>陪玩信息</h3><div class="od-fields">'+
-              field('陪玩昵称',esc(companionName(o)))+
-              field('陪玩 ID',esc(o.companionId||o.companion_id||'-'))+
+              field('陪玩昵称',esc(isMultiParent(o)?'组合订单（见下方子订单）':companionName(o)))+
+              field('陪玩 ID',esc(isMultiParent(o)?'—':(o.companionId||o.companion_id||'-')))+
             '</div></div>'+
+            (isMultiParent(o)?('<div class="od-module"><h3>子订单 · 各陪玩</h3><div class="od-children">'+childrenOf(o.id).map(function(ch){
+              var canRefundChild=['completed','reviewed','in_progress','confirmed','claimed','pending'].indexOf(String(ch.status||''))>=0||canReview(ch)||ch.reviewed;
+              return '<div class="od-child-row" data-child-id="'+esc(ch.id)+'">'+
+                '<strong>'+esc(companionName(ch))+'</strong>'+
+                '<div class="od-child-meta">'+
+                  '<span>'+esc(ch.serviceType||ch.game||'-')+'</span>'+
+                  '<span>'+moneyEmoji(ch.totalAmount||ch.amount)+'</span>'+
+                  '<span>状态：'+esc(orderLabel(ch))+'</span>'+
+                '</div>'+
+                '<div class="od-child-actions">'+
+                  (canRefundChild?'<button class="order-btn" type="button" data-action="request_refund" data-id="'+esc(ch.id)+'">申请售后</button>':'')+
+                '</div></div>';
+            }).join('')+'</div><p class="order-hint">售后请针对具体陪玩子订单申请，不会整组一次退款。</p></div>'):'')+
             '<div class="od-module"><h3>服务信息</h3><div class="od-fields">'+
-              field('游戏/服务',esc(o.serviceType||o.serviceName||o.game||o.title||'-'))+
+              field('游戏/服务',esc(isMultiParent(o)?('多人订单 · '+childrenOf(o.id).length+'位陪玩'):(o.serviceType||o.serviceName||o.game||o.title||'-')))+
               field('游戏 ID',esc(o.gameId||o.game_id||'-'))+
               field('时长',esc((o.hours!=null?o.hours:'-')+' 小时'))+
               field('单价',esc(money(o.unitPrice)+'/小时'))+
@@ -491,6 +537,10 @@
             var focusId=new URLSearchParams(location.search).get('id')||'';
             if(focusId&&!opts.silent){
               var focusOrder=state.orders.find(function(x){return String(x.id)===String(focusId)||String(x.orderNo||x.order_no||'')===String(focusId)});
+              if(focusOrder&&isMultiChild(focusOrder)){
+                var pFocus=state.orders.find(function(x){return String(x.id)===parentIdOf(focusOrder)});
+                if(pFocus)focusOrder=pFocus;
+              }
               if(focusOrder){
                 try{detail(focusOrder)}catch(eDetail){}
                 var el=document.querySelector('[data-order-id="'+String(focusOrder.id).replace(/"/g,'')+'"]');
