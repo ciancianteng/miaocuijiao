@@ -350,7 +350,7 @@
       (commissionState.error ? '<div class="admin-sync-note error">' + esc(commissionState.error) + "</div>" : "") +
       '<form data-cs-commission-form style="display:flex;flex-direction:column;gap:12px">' +
       '<div style="display:flex;flex-wrap:wrap;gap:12px">' +
-      commissionField("底薪 (RM)", "baseSalary", c.baseSalary, "") +
+      commissionField("月薪标准 (猫粮/月)", "baseSalary", c.baseSalary, "费率，不是立即可提余额；默认 200") +
       commissionField("全勤奖励", "attendanceBonus", c.attendanceBonus, "") +
       commissionField("接待奖励", "receptionBonus", c.receptionBonus, "") +
       commissionField("每单提成 (RM)", "orderCommission", c.orderCommission, "") +
@@ -443,16 +443,16 @@
   }
   function wagesBodyHtml() {
     return (
-      '<header class="service-account-head" style="margin:0 0 12px"><div><h3 style="margin:0">客服工资中心</h3><p style="margin:4px 0 0">与客服端工资中心同源（全局佣金配置 + 打卡/接待/订单）。</p></div><div style="display:flex;gap:8px"><button class="mini-btn primary-lite" type="button" data-cs-wage-export>导出 CSV</button><button class="mini-btn" type="button" data-service-account-refresh>刷新</button></div></header>' +
+      '<header class="service-account-head" style="margin:0 0 12px"><div><h3 style="margin:0">客服工资中心</h3><p style="margin:4px 0 0">月薪标准是费率；可申请=已结束周期且未入账金额。历史结算来自 staff_payrolls。</p></div><div style="display:flex;gap:8px"><button class="mini-btn primary-lite" type="button" data-cs-wage-export>导出 CSV</button><button class="mini-btn" type="button" data-service-account-refresh>刷新</button></div></header>' +
       (state.loading ? '<div class="empty">Loading… 正在读取工资数据...</div>' : "") +
       (!state.loading && state.error
         ? '<div class="admin-sync-note error">' +
           esc(state.error) +
           ' <button class="mini-btn" type="button" data-service-account-refresh>重试</button></div>'
         : "") +
-      '<div class="table-wrap service-account-table-wrap"><table class="service-account-table"><thead><tr><th>客服</th><th>底薪</th><th>接待奖励</th><th>订单提成</th><th>夜班补贴</th><th>全勤奖励</th><th>扣款</th><th>其他调整</th><th>实发工资</th><th>状态</th><th>工资计算明细</th></tr></thead><tbody>' +
+      '<div class="table-wrap service-account-table-wrap"><table class="service-account-table"><thead><tr><th>客服</th><th>入职</th><th>月薪标准</th><th>接待奖励</th><th>订单提成</th><th>夜班补贴</th><th>全勤奖励</th><th>扣款</th><th>其他调整</th><th>本月预计</th><th>可申请</th><th>状态</th><th>明细/历史</th></tr></thead><tbody>' +
       (state.loading
-        ? '<tr><td colspan="11"><div class="empty">Loading…</div></td></tr>'
+        ? '<tr><td colspan="13"><div class="empty">Loading…</div></td></tr>'
         : state.rows.length
           ? state.rows
               .map(function (row) {
@@ -461,9 +461,30 @@
                 var attendance = d.attendanceBonus != null ? d.attendanceBonus : row.attendanceBonus;
                 var night = d.nightShiftAllowance != null ? d.nightShiftAllowance : row.nightShiftAllowance;
                 var other = d.otherAdjustment != null ? d.otherAdjustment : row.otherAdjustment;
+                var hist = Array.isArray(row.payrollHistory) ? row.payrollHistory : [];
+                var histHtml = hist.length
+                  ? '<details style="max-width:240px"><summary>结算 ' +
+                    hist.length +
+                    " 笔</summary><ul style=\"margin:6px 0 0;padding-left:16px;font-size:12px\">" +
+                    hist
+                      .slice(0, 8)
+                      .map(function (p) {
+                        return (
+                          "<li>" +
+                          esc((p.periodStart || "").slice(0, 7) || "-") +
+                          " · " +
+                          money(p.netSalaryRm) +
+                          " · " +
+                          esc(p.statusText || p.status || "-") +
+                          "</li>"
+                        );
+                      })
+                      .join("") +
+                    "</ul></details>"
+                  : '<span style="color:#9ca3af;font-size:12px">暂无结算记录</span>';
                 var detail =
                   d.formula ||
-                  "底薪" +
+                  "月薪标准" +
                     money(row.baseSalary) +
                     "+接待" +
                     money(reception) +
@@ -477,11 +498,13 @@
                     money(other) +
                     "-扣款" +
                     money(row.penaltyTotal) +
-                    "=" +
+                    "=预计" +
                     money(row.estimatedSalary);
                 return (
                   "<tr><td>" +
                   esc(row.name || "-") +
+                  "</td><td>" +
+                  esc(row.joinDate || "-") +
                   "</td><td>" +
                   esc(money(row.baseSalary)) +
                   "</td><td>" +
@@ -499,14 +522,18 @@
                   "</td><td>" +
                   esc(money(row.estimatedSalary)) +
                   "</td><td>" +
+                  esc(money(row.withdrawableSalary != null ? row.withdrawableSalary : 0)) +
+                  "</td><td>" +
                   esc(wageStatusLabel(row)) +
-                  "</td><td style=\"max-width:280px;font-size:12px;word-break:break-all\">" +
+                  '</td><td style="max-width:280px;font-size:12px;word-break:break-all">' +
                   esc(detail) +
-                  "</td></tr>"
+                  "<div style=\"margin-top:6px\">" +
+                  histHtml +
+                  "</div></td></tr>"
                 );
               })
               .join("")
-          : '<tr><td colspan="11"><div class="empty">暂无客服工资数据</div></td></tr>') +
+          : '<tr><td colspan="13"><div class="empty">暂无客服工资数据</div></td></tr>') +
       "</tbody></table></div>"
     );
   }
@@ -878,13 +905,16 @@
       });
   }
   function exportWageCsv() {
-    var headers = ["客服", "底薪", "接待奖励", "订单提成", "夜班补贴", "全勤奖励", "扣款", "其他调整", "实发工资", "状态", "明细"];
-    var lines = [headers.join(",")];
-    (state.rows || []).forEach(function (row) {
-      var d = row.wageDetail || {};
-      lines.push(
-        [
-          row.name || "-",
+    function csvEscape(v) {
+      return '"' + String(v == null ? "" : v).replace(/"/g, '""') + '"';
+    }
+    var headers = ["客服", "入职", "月薪标准", "接待奖励", "订单提成", "夜班补贴", "全勤奖励", "扣款", "其他调整", "本月预计", "可申请", "状态", "明细"];
+    var lines = [headers.join(",")].concat(
+      state.rows.map(function (row) {
+        var d = row.wageDetail || {};
+        return [
+          csvEscape(row.name || ""),
+          csvEscape(row.joinDate || ""),
           money(row.baseSalary),
           money(d.receptionBonus != null ? d.receptionBonus : row.receptionBonus),
           money(row.orderCommission),
@@ -893,15 +923,12 @@
           money(row.penaltyTotal),
           money(d.otherAdjustment != null ? d.otherAdjustment : row.otherAdjustment),
           money(row.estimatedSalary),
-          wageStatusLabel(row),
-          d.formula || "",
-        ]
-          .map(function (v) {
-            return '"' + String(v).replace(/"/g, '""') + '"';
-          })
-          .join(",")
-      );
-    });
+          money(row.withdrawableSalary != null ? row.withdrawableSalary : 0),
+          csvEscape(wageStatusLabel(row)),
+          csvEscape(d.formula || ""),
+        ].join(",");
+      })
+    );
     var blob = new Blob(["\ufeff" + lines.join("\n")], { type: "text/csv;charset=utf-8" });
     var a = document.createElement("a");
     a.href = URL.createObjectURL(blob);

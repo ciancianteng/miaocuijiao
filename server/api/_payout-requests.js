@@ -176,10 +176,16 @@ export async function releasePayoutSources(db, { relatedTable, relatedRecordId, 
     else if (relatedTable && relatedRecordId) {
       q = `?related_table=eq.${encodeURIComponent(relatedTable)}&related_record_id=eq.${encodeURIComponent(relatedRecordId)}&status=eq.frozen`;
     } else return null;
-    await db("payout_source_locks", q, {
-      method: "PATCH",
-      body: JSON.stringify({ status: "released" }),
-    });
+    // Prefer DELETE so the same period key can be re-locked after reject
+    // (partial unique index only covers frozen/settled). Soft-fail to PATCH.
+    try {
+      await db("payout_source_locks", q, { method: "DELETE" });
+    } catch {
+      await db("payout_source_locks", q, {
+        method: "PATCH",
+        body: JSON.stringify({ status: "released" }),
+      });
+    }
   } catch (err) {
     if (!isMissingRelation(err)) console.warn("[payout] releasePayoutSources:", err?.message || err);
   }

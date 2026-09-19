@@ -1299,12 +1299,44 @@ async function loadBootstrap(serviceProfile) {
   summary.incomeToday = workData?.summary?.incomeToday || 0;
   summary.incomeMonth = workData?.summary?.incomeMonth || 0;
   summary.incomeTotal = workData?.summary?.incomeTotal || 0;
-  const activePayrollStatuses = new Set(["draft", "pending_review", "approved_pending_pay", "paying", "paid_pending_receipt", "completed"]);
-  const monthPayrollLocked = (payrolls || [])
-    .filter((p) => activePayrollStatuses.has(String(p.status || "")) && String(p.periodStart || "").slice(0, 7) === String(today || "").slice(0, 7))
-    .reduce((sum, p) => sum + money(p.netSalaryRm), 0);
-  const estimated = money(workData?.summary?.estimatedSalary || summary.estimatedSalary || 0);
-  summary.withdrawableSalary = Math.max(0, money(estimated - monthPayrollLocked));
+  const activePayrollStatuses = new Set(["draft", "pending_review", "pending_friday", "submitted", "reviewing", "pending", "approved", "pending_payment", "approved_pending_pay", "paying", "paid_pending_receipt", "paid", "completed", "rolled_over"]);
+  const creditedStatuses = new Set([...activePayrollStatuses]);
+  const workApi = await import("./_customer-service-work.js");
+  const eligibleMonth = workApi.previousMonthKey();
+  const eligibleBounds = workApi.monthPeriodBounds(eligibleMonth);
+  const eligibleComplete = workApi.isSalaryPeriodComplete(eligibleBounds.periodEnd);
+  const hasCreditedEligible = (payrolls || []).some(
+    (p) =>
+      creditedStatuses.has(String(p.status || "")) &&
+      String(p.periodStart || "").slice(0, 7) === eligibleMonth
+  );
+  let eligibleSalary = 0;
+  if (eligibleComplete && !hasCreditedEligible) {
+    try {
+      const draft = await workApi.payrollDraftFromAttendance(
+        serviceProfile.id,
+        eligibleBounds.periodStart,
+        eligibleBounds.periodEnd
+      );
+      eligibleSalary = money(draft.netSalaryRm);
+    } catch {
+      eligibleSalary = 0;
+    }
+  }
+  // Monthly rate is never immediate cash. New staff / open period → 0.
+  summary.salaryRate = money(workData?.summary?.salaryRate || workData?.config?.baseSalary || 0);
+  summary.estimatedSalary = money(workData?.summary?.estimatedSalary || summary.estimatedSalary || 0);
+  summary.withdrawableSalary = Math.max(0, eligibleSalary);
+  summary.salaryPeriodStart = workData?.summary?.salaryPeriodStart || "";
+  summary.salaryPeriodEnd = workData?.summary?.salaryPeriodEnd || "";
+  summary.salaryPeriodComplete = !!workData?.summary?.salaryPeriodComplete;
+  summary.nextAccrualDate = workData?.summary?.nextAccrualDate || "";
+  summary.eligibleSalaryPeriod = eligibleComplete ? eligibleMonth : "";
+  summary.joinDate =
+    workData?.summary?.joinDate ||
+    workData?.config?.joinDate ||
+    String(serviceProfile.created_at || "").slice(0, 10) ||
+    "";
   summary.orderFixedReward = money(workData?.config?.orderCommission || workData?.salary?.current?.orderFixedReward || 0);
   const conversationsWithLock = conversations.map((c) => withConversationLockFields(c, serviceProfile.id));
   const commissionSettlements = (workData?.commissionSettlements || []).map((r) => ({
@@ -1339,10 +1371,16 @@ async function loadBootstrap(serviceProfile) {
     payrolls,
     weeklySettlement,
     payrollSummary: {
-      settleableAmount: money((workData?.summary?.estimatedSalary || 0) - pendingFridayAmount),
+      settleableAmount: money(summary.withdrawableSalary || 0),
       appliedAmount,
       pendingFridayAmount,
       nextSettlementDate: weeklySettlement?.nextSettlementDate || "",
+      salaryRate: money(summary.salaryRate || 0),
+      salaryPeriodStart: summary.salaryPeriodStart || "",
+      salaryPeriodEnd: summary.salaryPeriodEnd || "",
+      nextAccrualDate: summary.nextAccrualDate || "",
+      eligibleSalaryPeriod: summary.eligibleSalaryPeriod || "",
+      joinDate: summary.joinDate || "",
     },
     dockRewards: (dockRewards || []).slice(0, 40).map((r) => ({
       id: r.id,
@@ -4354,8 +4392,34 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
       } = await import("./_payout-requests.js");
       const { companionDb } = await import("./_companion-media-store.js");
 
-      const work = await workApi.loadServiceWorkData(service.profile.id);
-      const estimated = money(work?.summary?.estimatedSalary || work?.salary?.current?.totalSalary || 0);
+      // Only closed salary periods are eligible. Monthly rate is never mid-month cash.
+      const eligibleMonth = workApi.previousMonthKey();
+      const eligibleBounds = workApi.monthPeriodBounds(eligibleMonth);
+      if (!workApi.isSalaryPeriodComplete(eligibleBounds.periodEnd)) {
+        return json(res, 400, {
+          ok: false,
+          message: `薪资周期 ${eligibleMonth} 尚未结束。月薪标准不可提前支取，周期结束后才可申请。`,
+          salaryPeriodEnd: eligibleBounds.periodEnd,
+          nextAccrualDate: workApi.nextMonthStart(eligibleMonth),
+        });
+      }
+
+      const draft = await workApi.payrollDraftFromAttendance(
+        service.profile.id,
+        eligibleBounds.periodStart,
+        eligibleBounds.periodEnd
+      );
+      const amount = Math.max(0, money(draft.netSalaryRm));
+      if (amount <= 0) {
+        return json(res, 400, {
+          ok: false,
+          message: "该已结束周期无可申请工资（计算为 0）。新入职客服在首个薪资周期结束前可申请金额为 0。",
+          amount: 0,
+          periodStart: draft.periodStart,
+          periodEnd: draft.periodEnd,
+        });
+      }
+
       const payrollsRaw = await maybeRows(
         "staff_payrolls",
         `?staff_id=eq.${encodeURIComponent(service.profile.id)}&order=created_at.desc&limit=100`
@@ -4376,45 +4440,31 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
         "completed",
         "rolled_over",
       ]);
-      const month = String(new Date().toISOString()).slice(0, 7);
-      const locked = (payrollsRaw || [])
-        .filter((p) => activeStatuses.has(String(p.status || "")) && String(p.period_start || "").slice(0, 7) === month)
-        .reduce((sum, p) => sum + money(p.net_salary_rm), 0);
-      const amount = Math.max(0, money(estimated - locked));
-      if (amount <= 0) {
-        return json(res, 400, {
+      const periodMonth = String(draft.periodStart).slice(0, 7);
+      const openDup = (payrollsRaw || []).find(
+        (r) =>
+          activeStatuses.has(String(r.status || "")) &&
+          String(r.period_start || "").slice(0, 7) === periodMonth &&
+          !/rejected|cancelled|pay_failed/.test(String(r.status || ""))
+      );
+      if (openDup) {
+        return json(res, 409, {
           ok: false,
-          message: "当前无可申请工资（工资中心实时计算为 0 或本月已申请/冻结）。",
-          amount: 0,
-          estimated,
-          locked,
+          message: `本薪资周期已有结算单 ${openDup.payroll_no || openDup.id}（${payoutStatusText(openDup.status)}），不可重复入账。`,
+          payrollId: openDup.id,
+          settlementDate: openDup.settlement_date || "",
+          periodStart: openDup.period_start,
         });
       }
-      // Reject any client-supplied amount — must use wage-center calculation only.
+
       if (body.amount != null && Math.abs(money(body.amount) - amount) > 0.009) {
         return json(res, 400, {
           ok: false,
-          message: `提现金额必须等于工资中心实时计算值 RM ${amount}，不可人工修改。`,
+          message: `提现金额必须等于已结束周期系统计算值 ${amount} 猫粮，不可人工修改。`,
           amount,
         });
       }
 
-      const openDup = (payrollsRaw || []).find(
-        (r) =>
-          activeStatuses.has(String(r.status || "")) &&
-          String(r.period_start || "").slice(0, 7) === month &&
-          !/completed|rejected|cancelled|pay_failed/.test(String(r.status || ""))
-      );
-      if (openDup && /pending_friday|reviewing|pending_review|pending|submitted|rolled_over|approved|pending_payment|paying|paid/.test(String(openDup.status || ""))) {
-        return json(res, 409, {
-          ok: false,
-          message: `本周期已有结算单 ${openDup.payroll_no || openDup.id}（${payoutStatusText(openDup.status)}），不可重复申请。`,
-          payrollId: openDup.id,
-          settlementDate: openDup.settlement_date || "",
-        });
-      }
-
-      // Block CS payroll while this CS owns open Friday refund queues (commission may still claw)
       try {
         const openRefunds = await companionDb(
           "boss_refund_requests",
@@ -4430,10 +4480,9 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
         /* keep apply path available if refund table missing */
       }
 
-      const draft = await workApi.payrollDraftFromAttendance(service.profile.id);
       const weeklyCfg = await loadFinanceWeeklySettings(companionDb).catch(() => mergeWeeklySettings({}));
       const settlementDate = computeSettlementDate(new Date(), weeklyCfg);
-      const periodKey = `cs-payroll:${service.profile.id}:${String(draft.periodStart).slice(0, 7)}`;
+      const periodKey = `cs-payroll:${service.profile.id}:${periodMonth}`;
       const salary = draft.salary || {};
       const commissionRm = money(salary.orderCommission || 0);
       let catFoodRewardRm = 0;
@@ -4458,6 +4507,8 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
         netSalaryRm: amount,
         autoCalculated: true,
         fromWageCenter: true,
+        salaryPeriod: periodMonth,
+        periodComplete: true,
       };
       const payrollNo = `PAYROLL-CS-${Date.now().toString(36).toUpperCase()}`;
       const insertPayload = {
@@ -4476,7 +4527,7 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
         commission_rm: commissionRm,
         cat_food_reward_rm: catFoodRewardRm,
         wage_breakdown: wageBreakdown,
-        note: `客服申请周结（工资中心实时计算 RM ${amount}，预计发放 ${settlementDate}）`,
+        note: `客服月薪周期 ${periodMonth} 结算（系统计算 ${amount} 猫粮，预计发放 ${settlementDate}）`,
         status: "pending_friday",
         settlement_date: settlementDate,
         source_ledger_ids: [periodKey],
@@ -4494,6 +4545,13 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
         });
       } catch (err) {
         const msg = `${err?.message || ""}`;
+        if (/duplicate|unique|23505|uq_staff_payrolls_staff_period/i.test(msg)) {
+          return json(res, 409, {
+            ok: false,
+            message: `薪资周期 ${periodMonth} 已入账，不可重复申请。`,
+            code: "SALARY_PERIOD_EXISTS",
+          });
+        }
         if (/Could not find the '/i.test(msg)) {
           delete insertPayload.commission_rm;
           delete insertPayload.cat_food_reward_rm;
@@ -4572,8 +4630,8 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
             staff_id: service.profile.id,
             notice_key: `payroll-submitted-${item.id}`,
             category: "payroll",
-            title: "工资结算已提交",
-            body: `工资单 ${item.payroll_no || payrollNo} 已进入待周五结算，应发 RM ${amount}，预计发放 ${settlementDate}。`,
+            title: "月薪结算已申请",
+            body: `周期 ${periodMonth} 工资 ${amount} 猫粮已进入待周五结算，预计发放 ${settlementDate}。`,
             href: "/customer-service/reports/",
             created_at: nowIso(),
           }),
@@ -4584,7 +4642,7 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
 
       return json(res, 200, {
         ok: true,
-        message: `已提交工资结算 RM ${amount}，进入待周五结算。预计发放日期：${settlementDate}（星期五）`,
+        message: `已申请周期 ${periodMonth} 结算 ${amount}，预计发放 ${settlementDate}`,
         amount,
         settlementDate,
         weeklyRules: viewWeeklyRules(weeklyCfg),
@@ -4596,6 +4654,8 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
           status: item.status || "pending_friday",
           statusText: "待周五结算",
           settlementDate,
+          periodStart: draft.periodStart,
+          periodEnd: draft.periodEnd,
         },
       });
     }

@@ -197,7 +197,7 @@ async function configRow(serviceId) {
   return rows[0] || null;
 }
 const DEFAULT_GLOBAL_COMMISSION = Object.freeze({
-  baseSalary: 350,
+  baseSalary: 200,
   attendanceBonus: 50,
   receptionBonus: 0,
   orderCommission: 2,
@@ -214,6 +214,37 @@ const DEFAULT_GLOBAL_COMMISSION = Object.freeze({
   settleOnPayment: false,
   clawbackOnRefund: true,
 });
+
+/** Calendar helpers for monthly salary periods (YYYY-MM). */
+export function previousMonthKey(month = monthKey()) {
+  const [y, m] = String(month).split("-").map(Number);
+  const d = new Date(Date.UTC(y, m - 2, 1));
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+export function lastDayOfMonth(month = monthKey()) {
+  const [y, m] = String(month).split("-").map(Number);
+  const d = new Date(Date.UTC(y, m, 0));
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
+}
+
+export function monthPeriodBounds(month = monthKey()) {
+  return {
+    periodStart: `${month}-01`,
+    periodEnd: lastDayOfMonth(month),
+  };
+}
+
+/** Salary for a period is eligible only after the period calendar day has ended. */
+export function isSalaryPeriodComplete(periodEnd, today = todayKey()) {
+  return String(periodEnd || "").slice(0, 10) < String(today || "").slice(0, 10);
+}
+
+export function nextMonthStart(month = monthKey()) {
+  const [y, m] = String(month).split("-").map(Number);
+  const d = new Date(Date.UTC(y, m, 1));
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-01`;
+}
 
 async function readPlatformCsCommission() {
   if (!hasDb()) return null;
@@ -965,29 +996,62 @@ export async function listAttendanceHistory(opts = {}) {
   }
   return rows;
 }
-/** Build payroll draft numbers from live attendance + reception stats. */
+/** Build payroll draft numbers from live attendance + reception stats.
+ * Defaults to the CLOSED previous month when no period is supplied,
+ * so mid-month requests cannot treat the monthly rate as cash.
+ */
 export async function payrollDraftFromAttendance(serviceId, periodStart, periodEnd) {
-  const work = await loadServiceWorkData(serviceId);
+  const today = todayKey();
+  let start = periodStart;
+  let end = periodEnd;
+  if (!start || !end) {
+    const eligibleMonth = previousMonthKey();
+    const bounds = monthPeriodBounds(eligibleMonth);
+    start = bounds.periodStart;
+    end = bounds.periodEnd;
+    if (!isSalaryPeriodComplete(end, today)) {
+      // First calendar days of a brand-new deployment month — still not eligible.
+      start = bounds.periodStart;
+      end = bounds.periodEnd;
+    }
+  }
+  const periodMonth = String(start).slice(0, 7);
+  const work = await loadServiceWorkData(serviceId, { salaryMonth: periodMonth });
   const salary = work?.salary?.current || {};
   const att = work?.attendance || {};
+  const periodComplete = isSalaryPeriodComplete(end, today);
   return {
     staffId: serviceId,
-    periodStart: periodStart || `${monthKey()}-01`,
-    periodEnd: periodEnd || todayKey(),
+    periodStart: start,
+    periodEnd: end,
+    periodMonth,
+    periodComplete,
     workDays: num(att.actualDays || 0),
     fullAttendance: !!att.fullAttendance,
     receptionCount: num(work?.summary?.monthReceptions || 0),
     orderCount: 0,
-    baseSalaryRm: num(salary.baseSalary || 0),
-    bonusRm: round(num(salary.bonusRewards || 0) || num(salary.attendanceBonus || 0) + num(salary.receptionBonus || 0) + num(salary.orderCommission || 0) + num(salary.nightShiftAllowance || 0)),
-    deductionRm: round(num(salary.penaltyTotal || 0) || num(salary.lateDeduction || 0) + num(salary.absenceDeduction || 0) + num(salary.earlyLeaveDeduction || 0)),
-    netSalaryRm: num(salary.totalSalary || 0),
-    note: `自动读取 ${monthKey()} 打卡与接待统计`,
+    baseSalaryRm: num(salary.baseSalary || work?.summary?.salaryRate || 0),
+    bonusRm: round(
+      num(salary.bonusRewards || 0) ||
+        num(salary.attendanceBonus || 0) +
+          num(salary.receptionBonus || 0) +
+          num(salary.orderCommission || 0) +
+          num(salary.nightShiftAllowance || 0)
+    ),
+    deductionRm: round(
+      num(salary.penaltyTotal || 0) ||
+        num(salary.lateDeduction || 0) + num(salary.absenceDeduction || 0) + num(salary.earlyLeaveDeduction || 0)
+    ),
+    netSalaryRm: periodComplete ? num(salary.totalSalary || 0) : 0,
+    note: periodComplete
+      ? `月薪周期 ${periodMonth} 已结束，可申请结算`
+      : `月薪周期 ${periodMonth} 尚未结束，月薪标准不可提前支取`,
     attendance: att,
     salary,
   };
 }
-export async function loadServiceWorkData(serviceId) {
+export async function loadServiceWorkData(serviceId, opts = {}) {
+  const salaryMonth = String(opts.salaryMonth || monthKey()).slice(0, 7);
   const [staffConfig, globalConfig, profiles, orders, conversations, receptions, reports, monthSessions, settlements] = await Promise.all([
     getServiceConfig(serviceId),
     getGlobalCommissionConfig(),
@@ -996,7 +1060,7 @@ export async function loadServiceWorkData(serviceId) {
     maybeRows("conversations", "?order=updated_at.desc&limit=1000"),
     maybeRows("service_receptions", `?customer_service_id=eq.${encodeURIComponent(serviceId)}&order=started_at.desc&limit=1000`),
     maybeRows("customer_service_reports", `?customer_service_id=eq.${encodeURIComponent(serviceId)}&order=report_date.desc&limit=1000`),
-    listSessionsForService(serviceId, { month: monthKey() }).catch(() => []),
+    listSessionsForService(serviceId, { month: salaryMonth }).catch(() => []),
     (async () => {
       try {
         const settleApi = await import("./_cs-commission-settle.js");
@@ -1008,8 +1072,11 @@ export async function loadServiceWorkData(serviceId) {
   ]);
   const config = mergeServiceConfig(globalConfig, staffConfig);
   const profile = profiles[0] || null;
-  const month = monthKey();
+  const month = salaryMonth;
   const today = todayKey();
+  const periodBounds = monthPeriodBounds(month);
+  const periodComplete = isSalaryPeriodComplete(periodBounds.periodEnd, today);
+  const joinDate = String(config.joinDate || profile?.created_at || "").slice(0, 10) || "";
   const attendanceRows = reports.filter((row) => row.report_date !== CONFIG_DATE);
   const sessions = Array.isArray(monthSessions) ? monthSessions : [];
   const todaySessions = sessions.filter((s) => String(s.work_date || "") === today);
@@ -1099,6 +1166,7 @@ export async function loadServiceWorkData(serviceId) {
   const salaryRecord = {
     salaryMonth: month,
     baseSalary: num(config.baseSalary || 0),
+    salaryRate: num(config.baseSalary || 0),
     attendanceBonus: allPerfect ? num(config.attendanceBonus || 0) : 0,
     receptionBonus,
     orderCommission,
@@ -1119,7 +1187,10 @@ export async function loadServiceWorkData(serviceId) {
     incomeToday,
     incomeMonth,
     incomeTotal,
-    status: "统计中",
+    status: periodComplete ? "周期已结束待申请" : "统计中（月薪未入账）",
+    periodStart: periodBounds.periodStart,
+    periodEnd: periodBounds.periodEnd,
+    periodComplete,
   };
   const attendanceHistoryRows = sessionViews.length
     ? sessionViews
@@ -1136,7 +1207,11 @@ export async function loadServiceWorkData(serviceId) {
       });
   return {
     profile,
-    config,
+    config: {
+      ...config,
+      joinDate: joinDate || config.joinDate || "",
+      salaryRate: num(config.baseSalary || 0),
+    },
     globalConfig,
     todayAttendance: attendanceMeta,
     summary: {
@@ -1155,10 +1230,18 @@ export async function loadServiceWorkData(serviceId) {
       monthAbsenceCount: absenceCount,
       monthOvertimeHours: overtimeHoursMonth,
       estimatedSalary,
+      // Monthly rate is NOT cash. New staff / open period → 0 withdrawable here;
+      // loadBootstrap overlays eligible closed-period credits.
+      salaryRate: num(config.baseSalary || 0),
+      withdrawableSalary: 0,
+      salaryPeriodStart: periodBounds.periodStart,
+      salaryPeriodEnd: periodBounds.periodEnd,
+      salaryPeriodComplete: periodComplete,
+      nextAccrualDate: nextMonthStart(month),
+      joinDate,
       incomeToday,
       incomeMonth,
       incomeTotal,
-      withdrawableSalary: estimatedSalary,
     },
     attendance: {
       standardDays: num(config.standardDays || 22),

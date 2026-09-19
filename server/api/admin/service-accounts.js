@@ -92,6 +92,9 @@ function safeStaff(row, stats = {}) {
     monthCompletedOrders: stats.monthCompletedOrders || 0,
     estimatedSalary: stats.estimatedSalary || 0,
     baseSalary: stats.baseSalary || 0,
+    withdrawableSalary: stats.withdrawableSalary != null ? stats.withdrawableSalary : 0,
+    joinDate: stats.joinDate || "",
+    payrollHistory: stats.payrollHistory || [],
     orderCommission: stats.orderCommission || 0,
     receptionBonus: stats.receptionBonus || 0,
     attendanceBonus: stats.attendanceBonus || 0,
@@ -152,15 +155,16 @@ function calcOrderCommissionLocal(orders, config, settlementsByOrderId = {}) {
 async function rows() {
   const today = shanghaiToday();
   const month = shanghaiMonth();
-  const [staff, orders, conversations, reports, receptions] = await Promise.all([
+  const [staff, orders, conversations, reports, receptions, payrollsRaw] = await Promise.all([
     supabaseJson(restUrl("profiles", "?role=eq.customer_service&order=created_at.desc&limit=500"), { headers: serviceHeaders() }),
     supabaseJson(restUrl("orders", "?order=created_at.desc&limit=1000"), { headers: serviceHeaders() }).catch(() => []),
     supabaseJson(restUrl("conversations", "?order=updated_at.desc&limit=1000"), { headers: serviceHeaders() }).catch(() => []),
     supabaseJson(restUrl("customer_service_reports", "?order=report_date.desc&limit=2000"), { headers: serviceHeaders() }).catch(() => []),
     supabaseJson(restUrl("service_receptions", "?order=started_at.desc&limit=2000"), { headers: serviceHeaders() }).catch(() => []),
+    supabaseJson(restUrl("staff_payrolls", "?order=created_at.desc&limit=1000"), { headers: serviceHeaders() }).catch(() => []),
   ]);
   let workApi = null;
-  let globalConfig = { shiftStart: "09:00", shiftEnd: "18:00", graceMinutes: 10, standardDays: 22 };
+  let globalConfig = { shiftStart: "09:00", shiftEnd: "18:00", graceMinutes: 10, standardDays: 22, baseSalary: 200 };
   let settlementsAll = [];
   try {
     workApi = await import("../_customer-service-work.js");
@@ -172,8 +176,46 @@ async function rows() {
   } catch (_) {
     settlementsAll = [];
   }
+  const payrollByStaff = {};
+  (payrollsRaw || []).forEach((p) => {
+    const sid = String(p.staff_id || "");
+    if (!sid) return;
+    if (!payrollByStaff[sid]) payrollByStaff[sid] = [];
+    payrollByStaff[sid].push({
+      id: p.id,
+      payrollNo: p.payroll_no,
+      periodStart: p.period_start,
+      periodEnd: p.period_end,
+      netSalaryRm: num(p.net_salary_rm),
+      status: p.status,
+      statusText: p.status,
+      settlementDate: p.settlement_date || "",
+      receiptUrl: p.receipt_url || "",
+    });
+  });
   // Single global config + already-fetched rows — no N× loadServiceWorkData (was hanging create/list).
   const staffConfig = workApi ? workApi.mergeServiceConfig(globalConfig, {}) : globalConfig;
+  const eligibleMonth = workApi ? workApi.previousMonthKey(month) : month;
+  const eligibleBounds = workApi
+    ? workApi.monthPeriodBounds(eligibleMonth)
+    : { periodStart: `${eligibleMonth}-01`, periodEnd: `${eligibleMonth}-28` };
+  const eligibleComplete = workApi ? workApi.isSalaryPeriodComplete(eligibleBounds.periodEnd, today) : false;
+  const creditedStatuses = new Set([
+    "draft",
+    "pending_review",
+    "pending_friday",
+    "submitted",
+    "reviewing",
+    "pending",
+    "approved",
+    "pending_payment",
+    "approved_pending_pay",
+    "paying",
+    "paid_pending_receipt",
+    "paid",
+    "completed",
+    "rolled_over",
+  ]);
   const seenStaff = new Set();
   const uniqueStaff = (staff || []).filter((row) => {
     const id = String(row?.id || "");
@@ -251,6 +293,13 @@ async function rows() {
     const bonusRewards = round(receptionBonus + attendanceBonus + nightShiftAllowance);
     const penaltyTotal = round(lateDeduction + absenceDeduction + earlyLeaveDeduction);
     const estimatedSalary = round(num(staffConfig.baseSalary || 0) + bonusRewards + orderCommission + otherAdjustment - penaltyTotal);
+    const payrollHistory = payrollByStaff[String(row.id)] || [];
+    const hasCreditedEligible = payrollHistory.some(
+      (p) => creditedStatuses.has(String(p.status || "")) && String(p.periodStart || "").slice(0, 7) === eligibleMonth
+    );
+    const withdrawableSalary =
+      eligibleComplete && !hasCreditedEligible ? round(num(staffConfig.baseSalary || 0)) : 0;
+    const joinDate = String(row.created_at || "").slice(0, 10);
     return safeStaff(row, {
       todayClockStatus: todayMeta?.attendanceStatus || "未打卡",
       todayClockInAt: todayMeta?.clockInText || "-",
@@ -269,6 +318,9 @@ async function rows() {
       monthCompletedOrders: monthOrders.filter((o) => o.status === "completed").length,
       estimatedSalary,
       baseSalary: num(staffConfig.baseSalary || 0),
+      withdrawableSalary,
+      joinDate,
+      payrollHistory,
       orderCommission,
       receptionBonus,
       attendanceBonus,
@@ -290,7 +342,8 @@ async function rows() {
         earlyLeaveDeduction,
         otherAdjustment,
         totalSalary: estimatedSalary,
-        formula: `底薪${num(staffConfig.baseSalary || 0)}+接待${receptionBonus}+提成${orderCommission}+夜班${nightShiftAllowance}+全勤${attendanceBonus}+其他${otherAdjustment}-扣款${penaltyTotal}=${estimatedSalary}`,
+        withdrawableSalary,
+        formula: `月薪标准${num(staffConfig.baseSalary || 0)}+接待${receptionBonus}+提成${orderCommission}+夜班${nightShiftAllowance}+全勤${attendanceBonus}+其他${otherAdjustment}-扣款${penaltyTotal}=预计${estimatedSalary}（可申请${withdrawableSalary}）`,
       },
     });
   });
