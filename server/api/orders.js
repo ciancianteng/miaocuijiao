@@ -1362,7 +1362,16 @@ export default async function handler(req, res) {
       const before = Array.isArray(beforeRows) ? beforeRows[0] : null;
       if (!before) return json(res, 404, { ok: false, message: "订单不存在。" });
       if (before.status !== "awaiting_payment") {
-        return json(res, 409, { ok: false, message: "当前订单无需提交付款凭证。", order: viewOrder(before) });
+        const st = normalizeOrderStatus(before.status);
+        return json(res, 409, {
+          ok: false,
+          code: st === "cancelled" ? "ORDER_CANCELLED" : "NOT_AWAITING_PAYMENT",
+          message:
+            st === "cancelled"
+              ? "该订单已取消，无法继续上传付款凭证。"
+              : "当前订单无需提交付款凭证。",
+          order: viewOrder(before),
+        });
       }
       const result = await uploadProof({
         order: before,
@@ -1416,7 +1425,16 @@ export default async function handler(req, res) {
         });
       }
       if (normalizeOrderStatus(before.status) !== "awaiting_payment") {
-        return json(res, 409, { ok: false, message: "当前订单无需再次支付。", order: viewOrder(before) });
+        const st = normalizeOrderStatus(before.status);
+        return json(res, 409, {
+          ok: false,
+          code: st === "cancelled" ? "ORDER_CANCELLED" : "NOT_AWAITING_PAYMENT",
+          message:
+            st === "cancelled"
+              ? "该订单已取消，无法继续付款。"
+              : "当前订单无需再次支付。",
+          order: viewOrder(before),
+        });
       }
       const paymentMethodRaw = String(body.paymentMethod || body.payment_method || viewOrder(before).paymentMethod || "").trim().toLowerCase();
       const payGate = await assertOrderPaymentMethodAllowed(paymentMethodRaw);
@@ -2067,6 +2085,18 @@ export default async function handler(req, res) {
       const before = Array.isArray(beforeRows) ? beforeRows[0] : null;
       if (!before) return json(res, 404, { ok: false, message: "订单不存在。" });
       const beforeStatus = normalizeOrderStatus(before.status);
+
+      // Idempotent: already cancelled → no refund / no ledger / no double write.
+      if (beforeStatus === "cancelled") {
+        return json(res, 200, {
+          ok: true,
+          code: "ALREADY_CANCELLED",
+          alreadyCancelled: true,
+          message: "订单已取消。",
+          order: viewOrder(before),
+        });
+      }
+
       // Paid / post-payment rows must use request_refund (wallet already debited).
       if (
         beforeStatus !== "awaiting_payment" ||
@@ -2075,7 +2105,7 @@ export default async function handler(req, res) {
       ) {
         return json(res, 409, {
           ok: false,
-          code: beforeStatus === "awaiting_payment" ? "PAID_CANCEL_USE_REFUND" : "PAID_CANCEL_USE_REFUND",
+          code: "PAID_CANCEL_USE_REFUND",
           message:
             beforeStatus === "awaiting_payment"
               ? "订单已记录支付信息，无法直接取消。请申请退款或联系客服。"
@@ -2083,20 +2113,68 @@ export default async function handler(req, res) {
           order: viewOrder(before),
         });
       }
-      const order = await patchOwnedOrder(
-        profile,
-        id,
-        ["awaiting_payment"],
-        { status: "cancelled", cancelled_at: nowIso() },
-        "老板已取消订单。"
-      );
+
+      const { isMultiGroupParent } = await import("./_order-group.js");
+      const cancelPatchBase = {
+        status: "cancelled",
+        cancelled_at: nowIso(),
+      };
+      const cancelReason = String(body.reason || body.cancel_reason || "老板取消未付款订单").slice(0, 200);
+      const cancelPatchFull = {
+        ...cancelPatchBase,
+        cancelled_by: profile.id,
+        cancel_reason: cancelReason,
+      };
+
+      async function patchCancel(orderId, allowed = ["awaiting_payment"]) {
+        try {
+          return await patchOwnedOrder(profile, orderId, allowed, cancelPatchFull, "老板已取消订单。");
+        } catch (err) {
+          // Schema may lack cancelled_by / cancel_reason — fall back to core fields.
+          if (!/cancelled_by|cancel_reason|column|schema cache|PGRST/i.test(String(err?.message || ""))) throw err;
+          return patchOwnedOrder(profile, orderId, allowed, cancelPatchBase, "老板已取消订单。");
+        }
+      }
+
+      let order = await patchCancel(id);
+      let cancelledChildren = [];
+
+      // Multi parent (unpaid): cancel entire group so children cannot still pay/accept.
+      if (isMultiGroupParent(before)) {
+        const kids = await supabaseJson(
+          restUrl(
+            TABLE,
+            `?parent_order_id=eq.${encodeURIComponent(before.id)}&boss_id=eq.${encodeURIComponent(profile.id)}&select=id,status,paid_cat_food,paid_at&order=created_at.asc&limit=50`
+          ),
+          { headers: serviceHeaders() }
+        ).catch(() => []);
+        for (const child of kids || []) {
+          const st = normalizeOrderStatus(child.status);
+          if (st === "cancelled") continue;
+          if (st !== "awaiting_payment" || money(child.paid_cat_food) > 0 || child.paid_at) {
+            return json(res, 409, {
+              ok: false,
+              code: "MULTI_CHILD_NOT_UNPAID",
+              message: "多人订单中有子单已付款或非待付款，无法整组直接取消。请联系客服处理。",
+              order: viewOrder(before),
+            });
+          }
+          try {
+            const childView = await patchCancel(child.id);
+            cancelledChildren.push(childView);
+          } catch (err) {
+            console.warn("[orders/cancel_order] child", child.id, err?.message || err);
+          }
+        }
+      }
+
       try {
         await (await import("./_cs-commission-settle.js")).clawbackCsOrderIncome(
           { id: order?.id || id, status: "cancelled" },
           { reason: "老板取消订单", mode: "cancel" }
         );
       } catch (_) {}
-      
+
       try {
         const { notifyBossOrderEvent } = await import("./_boss-order-notify.js");
         await notifyBossOrderEvent(order || before, {
@@ -2107,7 +2185,15 @@ export default async function handler(req, res) {
       } catch (err) {
         console.warn("[orders/cancel_order] boss push", err?.message || err);
       }
-      return json(res, 200, { ok: true, message: "订单已取消。", order });
+      return json(res, 200, {
+        ok: true,
+        message: cancelledChildren.length
+          ? `订单已取消（含 ${cancelledChildren.length} 笔子订单）。`
+          : "订单已取消。",
+        order,
+        cancelledChildren,
+        refund: 0,
+      });
     }
     if (action === "request_refund") {
       const beforeRows = await supabaseJson(
