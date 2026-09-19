@@ -576,7 +576,25 @@
       esc(item.availabilityStatus || "") +
       '" data-hall-status-text="' +
       esc(item.status || "") +
-      '">立即下单</button></div>' +
+      '" data-hall-online="' +
+      esc(item.online === false || /离线|offline/i.test(String(item.status || "")) ? "0" : "1") +
+      '">立即下单</button><button type="button" class="companion-card-action team-add" data-hall-team-add="' +
+      esc(uuid) +
+      '" data-hall-name="' +
+      esc(nickname) +
+      '" data-hall-price="' +
+      esc(item.priceValue || "") +
+      '" data-hall-game="' +
+      esc(item.game || "") +
+      '" data-hall-avatar="' +
+      esc(item.image || "") +
+      '" data-hall-status="' +
+      esc(item.availabilityStatus || "") +
+      '" data-hall-status-text="' +
+      esc(item.status || "") +
+      '" data-hall-online="' +
+      esc(item.online === false || /离线|offline/i.test(String(item.status || "")) ? "0" : "1") +
+      '">加入一起下单</button></div>' +
       "</div>" +
       "</article>"
     );
