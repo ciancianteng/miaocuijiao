@@ -12,9 +12,8 @@ import { awardBossPointsForCompletedOrder } from "./_user-points.js";
 import { settleBossCommissionFromPlatformFee } from "./_boss-commission.js";
 import { isSettlementEnabled, settlementDisabledReason } from "./_feature-flags.js";
 import {
-  assertNotTestPartiesForSettlement,
+  companionIncomeTestPartyDecision,
   isProductionRuntime,
-  isTestAccountRecord,
 } from "./_test-accounts.js";
 
 export const COMPLETION_AUTO_CONFIRM_MS = 24 * 60 * 60 * 1000;
@@ -321,29 +320,21 @@ export function createOrderCompleteHelpers({ restUrl, supabaseJson, serviceHeade
         }
       }
       const byId = new Map(profiles.map((p) => [p.id, p]));
-      const partyGuard = assertNotTestPartiesForSettlement({
+      const decision = companionIncomeTestPartyDecision({
         bossProfile: byId.get(saved.boss_id) || null,
         companionProfile: byId.get(saved.companion_id) || null,
         customerServiceProfile: byId.get(saved.customer_service_id) || null,
         order: saved,
       });
-      if (!partyGuard.ok) {
-        if (partyGuard.reason === "test_customer_service") {
-          console.warn(
-            "[order-complete] companion_income continuing despite test CS flag",
-            saved?.id || "",
-            saved?.order_no || ""
-          );
-        } else {
-          return { skipped: true, reason: partyGuard.reason || "test_party" };
-        }
+      if (decision.warnCsTest) {
+        console.warn(
+          "[order-complete] companion_income continuing despite test CS flag",
+          saved?.id || "",
+          saved?.order_no || ""
+        );
       }
-      // Extra: boss/companion flagged test → skip (covers relation mismatches).
-      // Do not skip solely because CS profile is_test_account.
-      const bossP = byId.get(saved.boss_id);
-      const companionP = byId.get(saved.companion_id);
-      if ((bossP && isTestAccountRecord(bossP)) || (companionP && isTestAccountRecord(companionP))) {
-        return { skipped: true, reason: "test_party" };
+      if (decision.skip) {
+        return { skipped: true, reason: decision.reason || "test_party" };
       }
     } catch (_) {
       if (isProductionRuntime()) {

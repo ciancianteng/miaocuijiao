@@ -11,6 +11,7 @@ import {
 } from "../server/api/_feature-flags.js";
 import {
   assertNotTestPartiesForSettlement,
+  companionIncomeTestPartyDecision,
   isTestAccountRecord,
   isTestEmail,
 } from "../server/api/_test-accounts.js";
@@ -64,6 +65,42 @@ const allowed = assertNotTestPartiesForSettlement({
 });
 assert.equal(allowed.ok, true);
 
+// P0 regression: REAL boss + REAL companion + CS flagged test → companion income MUST run
+const realWithTestCs = companionIncomeTestPartyDecision({
+  bossProfile: { id: "b3", email: "1717@gmail.com", display_name: "1717", is_test_account: false },
+  companionProfile: { id: "c3", email: "qingzi@gmail.com", display_name: "晴子", is_test_account: false },
+  customerServiceProfile: {
+    id: "cs1",
+    email: "cs@gmail.com",
+    display_name: "MCJ客服-小喵",
+    is_test_account: true,
+    role: "customer_service",
+  },
+  order: { boss_name: "1717", companion_name: "晴子", total_amount: 30 },
+});
+assert.equal(realWithTestCs.skip, false, "CS test flag alone must not block companion income");
+assert.equal(realWithTestCs.warnCsTest, true);
+
+// True test order (test boss) → still blocked
+const testBossBlocked = companionIncomeTestPartyDecision({
+  bossProfile: { id: "b4", email: "smoke@meow.test", display_name: "ProdSmokeBoss", is_test_account: true },
+  companionProfile: { id: "c4", email: "comp@gmail.com", display_name: "凝梦", is_test_account: false },
+  customerServiceProfile: { id: "cs2", email: "cs@gmail.com", is_test_account: false },
+  order: { boss_name: "ProdSmokeBoss", companion_name: "凝梦", total_amount: 6000 },
+});
+assert.equal(testBossBlocked.skip, true);
+assert.equal(testBossBlocked.reason, "test_boss");
+
+// Test companion → still blocked
+const testCompanionBlocked = companionIncomeTestPartyDecision({
+  bossProfile: { id: "b5", email: "boss@gmail.com", is_test_account: false },
+  companionProfile: { id: "c5", email: "comp@meow.test", display_name: "TestComp", is_test_account: true },
+  customerServiceProfile: { id: "cs3", email: "cs@gmail.com", is_test_account: true },
+  order: { total_amount: 30 },
+});
+assert.equal(testCompanionBlocked.skip, true);
+assert.match(String(testCompanionBlocked.reason), /test_companion|test_party/);
+
 console.log(
   JSON.stringify(
     {
@@ -71,6 +108,8 @@ console.log(
       message: "settlement/points feature flags + test party guards verification passed",
       prodSettlementDefault: isSettlementEnabled(prod),
       prodPointsDefault: isPointsAwardEnabled(prod),
+      csTestFlagAllowsRealCompanionIncome: !realWithTestCs.skip,
+      testBossStillBlocked: testBossBlocked.skip,
     },
     null,
     2
