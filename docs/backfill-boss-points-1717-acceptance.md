@@ -26,7 +26,8 @@ ALLOW_PROD_POINTS_BACKFILL=1 CONFIRM_PROD_POINTS_BACKFILL=I_UNDERSTAND_PROD_RISK
 ```
 
 ## Verify
-- Two ledger rows with keys `order_points:{id}` and `points=300`
+- Two ledger rows with keys `order_points:{id}` and `delta=300` (ledger column is `delta`, not `points`)
+- Amount source on Production orders is `total_amount` (`paid_cat_food` may be absent)
 - `user_points_accounts.balance` for boss 1717 increased by **600** (if starting from 0 and no other awards)
 - Re-run WRITE → `duplicate` / skip, balance unchanged
 
