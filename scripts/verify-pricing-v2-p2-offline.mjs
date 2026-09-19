@@ -12,8 +12,10 @@ import { fileURLToPath } from "node:url";
 import { approveListingPatchForRow } from "../server/api/_companion-listing-sync.js";
 import {
   buildLevelDefaultServiceSeeds,
+  buildProfilesPricingPatchFromLevel,
   derivedListingPriceFromLevel,
 } from "../server/api/_companion-services-seed.js";
+import { isMissingRelation } from "../server/api/_companion-media-store.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -42,6 +44,38 @@ function read(rel) {
   assert.equal(derivedListingPriceFromLevel(level), 30);
   assert.equal(derivedListingPriceFromLevel({ base_price: 18 }), 18);
   assert.deepEqual(buildLevelDefaultServiceSeeds(companion, { id: "lv1", basePrice: 0 }), []);
+}
+
+// --- Production SoT fallback when companion_services table is absent ---
+{
+  const companion = {
+    user_id: "user-1",
+    game: "VALORANT,和平精英",
+    game_prices: { VALORANT: 25 },
+  };
+  const level = { id: "lv2", basePrice: 30, name: "Lv2" };
+  const seeds = buildLevelDefaultServiceSeeds(companion, level);
+  const patch = buildProfilesPricingPatchFromLevel(companion, level, seeds);
+  assert.equal(patch.price, 30);
+  assert.equal(patch.game_prices.VALORANT, 25, "existing game_prices preserved");
+  assert.equal(patch.game_prices["和平精英"], 30, "missing game filled from level base_price");
+
+  const missingErr = Object.assign(
+    new Error("Could not find the table 'public.companion_services' in the schema cache"),
+    { status: 404, body: { code: "PGRST205", message: "Could not find the table 'public.companion_services' in the schema cache" } }
+  );
+  assert.equal(isMissingRelation(missingErr), true);
+
+  const seedSrc = read("server/api/_companion-services-seed.js");
+  assert.match(seedSrc, /isMissingRelation/);
+  assert.match(seedSrc, /skippedTable:\s*true/);
+  assert.match(seedSrc, /profilesPatch/);
+  assert.match(seedSrc, /companion_profiles/);
+  // Must soft-skip missing table — never rethrow as fatal "读取 companion_services 失败" for PGRST205.
+  const readFailIdx = seedSrc.indexOf("SERVICES_SEED_READ_FAILED");
+  assert.ok(readFailIdx > 0);
+  const beforeReadFail = seedSrc.slice(0, readFailIdx);
+  assert.match(beforeReadFail, /if \(isMissingRelation\(e\)\)/);
 }
 
 // --- Approve listing patch must NOT inject silent Lv1 ---

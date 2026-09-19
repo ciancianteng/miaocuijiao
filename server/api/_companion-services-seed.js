@@ -1,10 +1,16 @@
 /**
- * Pricing V2 P2 — seed companion_services from level.base_price on first approve.
- * Reuses P1 columns (source=level_default, base_price_snapshot, level_id_at_price).
- * Does NOT invent a second pricing system. Does NOT bulk-rewrite existing companions.
+ * Pricing V2 P2 — seed sell price from level.base_price on first approve.
+ *
+ * Preferred path (when table exists): upsert companion_services rows (source=level_default).
+ * Production SoT today: companion_profiles.price / game_prices / service_ids / game.
+ * When public.companion_services is missing (Prod never created the table), soft-skip the
+ * table write and return a companion_profiles pricing patch so approve still succeeds.
+ *
+ * Does NOT invent a second pricing system. Does NOT create companion_services.
+ * Does NOT bulk-rewrite existing companions.
  */
-import { companionDb, hasCompanionDb } from "./_companion-media-store.js";
-import { parseServiceIds, splitGames } from "./_game-prices.js";
+import { companionDb, hasCompanionDb, isMissingRelation } from "./_companion-media-store.js";
+import { parseServiceIds, readGamePrices, splitGames } from "./_game-prices.js";
 
 function money(value) {
   const n = Number(String(value ?? "").replace(/[^\d.-]/g, ""));
@@ -68,6 +74,28 @@ export function buildLevelDefaultServiceSeeds(companion = {}, level = {}) {
   return seeds;
 }
 
+/**
+ * Production fallback SoT when companion_services table is absent.
+ * Fills missing game_prices keys from level base_price; never overwrites existing >0 prices.
+ */
+export function buildProfilesPricingPatchFromLevel(companion = {}, level = {}, seeds = []) {
+  const base = money(level.basePrice ?? level.base_price);
+  if (!(base > 0)) return null;
+  const game_prices = { ...readGamePrices(companion) };
+  const games = splitGames(companion.game || companion.main_service || companion.main_game || "");
+  for (const g of games) {
+    if (!(money(game_prices[g]) > 0)) game_prices[g] = base;
+  }
+  for (const seed of seeds || []) {
+    const nm = String(seed.service_name || "").trim();
+    if (!nm || nm === "默认服务" || nm === "服务") continue;
+    if (!(money(game_prices[nm]) > 0)) game_prices[nm] = base;
+  }
+  const patch = { price: base };
+  if (Object.keys(game_prices).length) patch.game_prices = game_prices;
+  return patch;
+}
+
 function findExisting(existing, seed) {
   const sid = String(seed.service_id || "");
   const name = String(seed.service_name || "");
@@ -78,11 +106,22 @@ function findExisting(existing, seed) {
   );
 }
 
+function profilesOnlyResult(companionId, level, base, seeds, companion) {
+  return {
+    companionId,
+    basePrice: base,
+    levelId: String(level.id || level.level_id || ""),
+    seeds: (seeds || []).length,
+    written: [],
+    mode: "companion_profiles",
+    skippedTable: true,
+    profilesPatch: buildProfilesPricingPatchFromLevel(companion, level, seeds) || { price: base },
+  };
+}
+
 /**
- * Upsert level_default companion_services for approve-time seeding.
- * - Skips rows that already have a non-level_default source (preserve legacy / custom).
- * - Updates empty / level_default rows to the approved level base_price.
- * - Never bulk-rewrites unrelated companions.
+ * Upsert level_default companion_services for approve-time seeding when the table exists.
+ * If the table is missing (Production), soft-skip and return companion_profiles patch.
  */
 export async function seedCompanionServicesFromLevel(companion = {}, level = {}) {
   if (!hasCompanionDb()) {
@@ -109,12 +148,6 @@ export async function seedCompanionServicesFromLevel(companion = {}, level = {})
   }
 
   const seeds = buildLevelDefaultServiceSeeds(companion, level);
-  if (!seeds.length) {
-    const err = new Error("无法根据申请资料生成服务价格行");
-    err.status = 400;
-    err.code = "SERVICES_SEED_EMPTY";
-    throw err;
-  }
 
   let existing = [];
   try {
@@ -124,10 +157,29 @@ export async function seedCompanionServicesFromLevel(companion = {}, level = {})
         `?companion_id=eq.${encodeURIComponent(companionId)}&select=id,service_id,service_name,price,source,enabled,review_status`
       )) || [];
   } catch (e) {
+    if (isMissingRelation(e)) {
+      console.warn(
+        "[companion-services-seed] public.companion_services missing — using companion_profiles.price/game_prices SoT"
+      );
+      return profilesOnlyResult(companionId, level, base, seeds, companion);
+    }
     const err = new Error(`读取 companion_services 失败：${e?.message || e}`);
     err.status = 500;
     err.code = "SERVICES_SEED_READ_FAILED";
     throw err;
+  }
+
+  if (!seeds.length) {
+    // Table exists but no games/service_ids — still OK to approve with listing price only.
+    return {
+      companionId,
+      basePrice: base,
+      levelId: String(level.id || level.level_id || ""),
+      seeds: 0,
+      written: [],
+      mode: "companion_services",
+      profilesPatch: { price: base },
+    };
   }
 
   const written = [];
@@ -165,6 +217,9 @@ export async function seedCompanionServicesFromLevel(companion = {}, level = {})
           row: Array.isArray(patched) ? patched[0] : patched,
         });
       } catch (e) {
+        if (isMissingRelation(e)) {
+          return profilesOnlyResult(companionId, level, base, seeds, companion);
+        }
         const err = new Error(`更新 companion_services 失败：${e?.message || e}`);
         err.status = 500;
         err.code = "SERVICES_SEED_UPDATE_FAILED";
@@ -185,6 +240,9 @@ export async function seedCompanionServicesFromLevel(companion = {}, level = {})
         row: Array.isArray(inserted) ? inserted[0] : inserted,
       });
     } catch (e) {
+      if (isMissingRelation(e)) {
+        return profilesOnlyResult(companionId, level, base, seeds, companion);
+      }
       const err = new Error(`写入 companion_services 失败：${e?.message || e}`);
       err.status = 500;
       err.code = "SERVICES_SEED_INSERT_FAILED";
@@ -198,6 +256,8 @@ export async function seedCompanionServicesFromLevel(companion = {}, level = {})
     levelId: String(level.id || level.level_id || ""),
     seeds: seeds.length,
     written,
+    mode: "companion_services",
+    profilesPatch: { price: base },
   };
 }
 
