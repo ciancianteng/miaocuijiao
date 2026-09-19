@@ -292,6 +292,8 @@ export function createOrderCompleteHelpers({ restUrl, supabaseJson, serviceHeade
     }
 
     // G5/G7: never settle smoke/test-touched orders (incl. RM6000 smoke fixtures).
+    // Companion income requires non-test boss + companion. A mis-flagged CS account alone
+    // must NOT starve real companion settlement (P0: MCJO000356/357).
     try {
       const ids = [saved.boss_id, saved.companion_id, saved.customer_service_id].filter(Boolean);
       const profiles = [];
@@ -326,10 +328,21 @@ export function createOrderCompleteHelpers({ restUrl, supabaseJson, serviceHeade
         order: saved,
       });
       if (!partyGuard.ok) {
-        return { skipped: true, reason: partyGuard.reason || "test_party" };
+        if (partyGuard.reason === "test_customer_service") {
+          console.warn(
+            "[order-complete] companion_income continuing despite test CS flag",
+            saved?.id || "",
+            saved?.order_no || ""
+          );
+        } else {
+          return { skipped: true, reason: partyGuard.reason || "test_party" };
+        }
       }
-      // Extra: any loaded party flagged test → skip (covers relation mismatches).
-      if (profiles.some((p) => isTestAccountRecord(p))) {
+      // Extra: boss/companion flagged test → skip (covers relation mismatches).
+      // Do not skip solely because CS profile is_test_account.
+      const bossP = byId.get(saved.boss_id);
+      const companionP = byId.get(saved.companion_id);
+      if ((bossP && isTestAccountRecord(bossP)) || (companionP && isTestAccountRecord(companionP))) {
         return { skipped: true, reason: "test_party" };
       }
     } catch (_) {
@@ -845,6 +858,7 @@ export function createOrderCompleteHelpers({ restUrl, supabaseJson, serviceHeade
     stampFrozen,
     clearFrozen,
     finalizeOrderCompletion,
+    settleCompanionIncome,
     expireCompletionAutoConfirms,
     orderHasCompletionPending,
     completionCountdown,

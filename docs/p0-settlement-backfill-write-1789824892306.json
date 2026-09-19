@@ -1,0 +1,100 @@
+{
+  "mode": "WRITE",
+  "productionRef": "jqfaknpmcnqwqvatrwgo",
+  "settlementEnabled": true,
+  "plans": [
+    {
+      "orderNo": "MCJO000356",
+      "orderId": "3d5a951e-34b3-4549-87cc-9ebd55792529",
+      "status": "completed",
+      "expected": {
+        "gross": 30,
+        "platformRate": 20,
+        "companionShareRate": 80,
+        "platformFee": 6,
+        "companionNet": 24
+      },
+      "existingCompanionIncome": false,
+      "existingCount": 0,
+      "existingAmounts": [],
+      "willWrite": true
+    },
+    {
+      "orderNo": "MCJO000357",
+      "orderId": "6ea4e05d-cced-4581-a5c2-ffe9d0be8f4a",
+      "status": "completed",
+      "expected": {
+        "gross": 30,
+        "platformRate": 20,
+        "companionShareRate": 80,
+        "platformFee": 6,
+        "companionNet": 24
+      },
+      "existingCompanionIncome": false,
+      "existingCount": 0,
+      "existingAmounts": [],
+      "willWrite": true
+    }
+  ],
+  "totalExpected": 48,
+  "results": [
+    {
+      "orderNo": "MCJO000356",
+      "settle": {
+        "duplicate": false,
+        "settlement": {
+          "orderId": "3d5a951e-34b3-4549-87cc-9ebd55792529",
+          "orderNo": "MCJO000356",
+          "companionNetCatFood": 24,
+          "platformCommissionCatFood": 6,
+          "platformCommissionRate": 20,
+          "companionShareRate": 80,
+          "completedAt": "2026-09-15T14:48:54.554+00:00",
+          "completionMethod": "admin_backfill_p0",
+          "bossCommissionTransparencyNote": "老板直属分成由平台抽成支付，不扣陪玩收入",
+          "companionIncomeUnchangedByBossCommission": true
+        },
+        "bossCommission": {
+          "skipped": true,
+          "reason": "earnings_table_missing"
+        }
+      },
+      "afterIncome": [
+        {
+          "id": "3833177d-cf3c-4590-9c86-c17b2419d727",
+          "amount": 24,
+          "status": "completed"
+        }
+      ]
+    },
+    {
+      "orderNo": "MCJO000357",
+      "settle": {
+        "duplicate": false,
+        "settlement": {
+          "orderId": "6ea4e05d-cced-4581-a5c2-ffe9d0be8f4a",
+          "orderNo": "MCJO000357",
+          "companionNetCatFood": 24,
+          "platformCommissionCatFood": 6,
+          "platformCommissionRate": 20,
+          "companionShareRate": 80,
+          "completedAt": "2026-09-15T14:48:51.553+00:00",
+          "completionMethod": "admin_backfill_p0",
+          "bossCommissionTransparencyNote": "老板直属分成由平台抽成支付，不扣陪玩收入",
+          "companionIncomeUnchangedByBossCommission": true
+        },
+        "bossCommission": {
+          "skipped": true,
+          "reason": "earnings_table_missing"
+        }
+      },
+      "afterIncome": [
+        {
+          "id": "24e3d0bc-c88a-47db-b028-392cbe9414ab",
+          "amount": 24,
+          "status": "completed"
+        }
+      ]
+    }
+  ]
+}

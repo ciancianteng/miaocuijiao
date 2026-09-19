@@ -1,0 +1,40 @@
+{
+  "mode": "DRY_RUN",
+  "productionRef": "jqfaknpmcnqwqvatrwgo",
+  "settlementEnabled": true,
+  "plans": [
+    {
+      "orderNo": "MCJO000356",
+      "orderId": "3d5a951e-34b3-4549-87cc-9ebd55792529",
+      "status": "completed",
+      "expected": {
+        "gross": 30,
+        "platformRate": 20,
+        "companionShareRate": 80,
+        "platformFee": 6,
+        "companionNet": 24
+      },
+      "existingCompanionIncome": false,
+      "existingCount": 0,
+      "existingAmounts": [],
+      "willWrite": false
+    },
+    {
+      "orderNo": "MCJO000357",
+      "orderId": "6ea4e05d-cced-4581-a5c2-ffe9d0be8f4a",
+      "status": "completed",
+      "expected": {
+        "gross": 30,
+        "platformRate": 20,
+        "companionShareRate": 80,
+        "platformFee": 6,
+        "companionNet": 24
+      },
+      "existingCompanionIncome": false,
+      "existingCount": 0,
+      "existingAmounts": [],
+      "willWrite": false
+    }
+  ],
+  "totalExpected": 48
+}
