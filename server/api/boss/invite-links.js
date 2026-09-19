@@ -1,7 +1,7 @@
 /**
- * Boss · invite links (open codes for companion recruitment).
- * Auth: authenticated + hasBossRole + profile.status=active.
- * boss_id is always the caller — never accept another boss_id from the client.
+ * Invite links (open codes for direct-relation recruitment).
+ * Auth: authenticated + profile.status=active (role-agnostic inviter).
+ * boss_id column = inviter / beneficiary — always the caller.
  */
 import { hasBossRole } from "../_account-roles.js";
 import {
@@ -63,8 +63,9 @@ async function parseBody(req) {
 }
 
 async function requireBoss(req) {
+  // Legacy name retained; any active account may create/manage own invite links.
   const token = tokenFrom(req);
-  if (!token) throw Object.assign(new Error("请先登录老板账号"), { status: 401 });
+  if (!token) throw Object.assign(new Error("请先登录"), { status: 401 });
   const user = await supabaseJson(`${url()}/auth/v1/user`, {
     headers: { ...anonHeaders(), Authorization: `Bearer ${token}` },
   });
@@ -73,11 +74,13 @@ async function requireBoss(req) {
     { headers: serviceHeaders() }
   );
   const profile = Array.isArray(profiles) ? profiles[0] : null;
-  if (!profile || !hasBossRole(profile, { authUser: user })) {
-    throw Object.assign(new Error("请使用老板账号操作"), { status: 403, code: "BOSS_ROLE_REQUIRED" });
+  if (!profile) {
+    throw Object.assign(new Error("请先完成账号资料"), { status: 403, code: "PROFILE_REQUIRED" });
   }
+  // Prefer boss capability when present; otherwise allow any active account (role-agnostic).
+  void hasBossRole;
   if (profile.status && String(profile.status).toLowerCase() !== "active") {
-    throw Object.assign(new Error("账号已停用"), { status: 403, code: "BOSS_INACTIVE" });
+    throw Object.assign(new Error("账号已停用"), { status: 403, code: "ACCOUNT_INACTIVE" });
   }
   return { user, profile, token };
 }

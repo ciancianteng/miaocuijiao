@@ -1,11 +1,11 @@
 /**
- * Boss ↔ Companion 直属关系（运营关系 SoT）。
- * Independent from invitation / referral / orders / capability.
+ * Direct relation SoT (role-agnostic account → account).
+ * Physical columns (legacy names, zero dual-write):
+ *   boss_id       = beneficiary (earner / direct referrer)
+ *   companion_id  = target (invitee)
  *
- * Invariant (verified on Staging): auth.uid() === profiles.id
- * API still resolves profiles by auth user id explicitly (same as requireAdmin/requireBoss).
- *
- * Capability: bind/rebind MUST use hasBossRole / hasCompanionRole from _account-roles.js.
+ * Rules: DIRECT ONLY · one active per target · first bind wins · admin rebind ·
+ * no upline cascade in settlement · self/cycle forbidden.
  * This module NEVER mutates profiles.role / companion capability / auth metadata.
  */
 import {
@@ -24,6 +24,7 @@ const EVT_TABLE = "boss_companion_relation_events";
 const ACTIVE = "active";
 const UNBOUND = "unbound";
 const REPLACED = "replaced";
+const CYCLE_WALK_LIMIT = 32;
 
 function nowIso() {
   return new Date().toISOString();
@@ -67,10 +68,15 @@ export function viewRelation(row = {}, extras = {}) {
   const boss = extras.boss || null;
   const companion = extras.companion || null;
   const companionProfile = extras.companionProfile || null;
+  const beneficiaryId = row.boss_id || "";
+  const targetId = row.companion_id || "";
   return {
     id: row.id || "",
-    bossId: row.boss_id || "",
-    companionId: row.companion_id || "",
+    bossId: beneficiaryId,
+    companionId: targetId,
+    // Role-agnostic aliases (same physical columns)
+    beneficiaryUserId: beneficiaryId,
+    targetUserId: targetId,
     status: row.status || "",
     boundAt: row.bound_at || "",
     unboundAt: row.unbound_at || null,
@@ -93,6 +99,26 @@ export function viewRelation(row = {}, extras = {}) {
           id: companion.id,
           displayName: companion.display_name || companion.nickname || companion.email || "",
           companionCode: resolveCompanionPublicCode(companionProfile || companion, companion),
+          email: companion.email || "",
+          role: companion.role || "",
+        }
+      : null,
+    beneficiary: boss
+      ? {
+          id: boss.id,
+          displayName: boss.display_name || boss.nickname || boss.email || "",
+          publicCode: resolveBossPublicCode(boss) || resolveCompanionPublicCode(null, boss),
+          email: boss.email || "",
+          role: boss.role || "",
+        }
+      : null,
+    target: companion
+      ? {
+          id: companion.id,
+          displayName: companion.display_name || companion.nickname || companion.email || "",
+          publicCode:
+            resolveCompanionPublicCode(companionProfile || companion, companion) ||
+            resolveBossPublicCode(companion),
           email: companion.email || "",
           role: companion.role || "",
         }
@@ -200,30 +226,71 @@ export async function enrichEvents(rows = []) {
 }
 
 /**
- * Assert bind targets have required capabilities (#128 shared resolver).
+ * Assert bind parties exist (role-agnostic). Does not require boss/companion capability.
  * Does not write any capability fields.
  */
 export async function assertBindCapabilities(bossId, companionId) {
-  const [boss, companion, companionRow] = await Promise.all([
-    loadProfile(bossId),
-    loadProfile(companionId),
-    loadCompanionRowForUser(companionId),
-  ]);
-  if (!boss) throw httpError("老板账号不存在", 404);
-  if (!companion) throw httpError("陪玩账号不存在", 404);
-  if (bossId === companionId) throw httpError("不能绑定自己", 400);
+  return assertBindParties(bossId, companionId);
+}
 
-  if (!hasBossRole(boss)) {
-    throw httpError("目标账号没有 Boss 能力（hasBoss=false），禁止绑定", 400, {
-      code: "BOSS_CAPABILITY_REQUIRED",
-    });
+/**
+ * Role-agnostic party check + self-bind guard.
+ * @param {string} beneficiaryId - earner (legacy boss_id)
+ * @param {string} targetId - invitee (legacy companion_id)
+ */
+export async function assertBindParties(beneficiaryId, targetId) {
+  const [beneficiary, target] = await Promise.all([
+    loadProfile(beneficiaryId),
+    loadProfile(targetId),
+  ]);
+  if (!beneficiary) throw httpError("直属受益人账号不存在", 404, { code: "BENEFICIARY_NOT_FOUND" });
+  if (!target) throw httpError("目标账号不存在", 404, { code: "TARGET_NOT_FOUND" });
+  if (String(beneficiaryId) === String(targetId)) {
+    throw httpError("不能绑定自己", 400, { code: "SELF_BIND_FORBIDDEN" });
   }
-  if (!hasCompanionRole(companion, { companion: companionRow })) {
-    throw httpError("目标账号没有 Companion 能力（hasCompanion=false），禁止绑定", 400, {
-      code: "COMPANION_CAPABILITY_REQUIRED",
-    });
+  const beneficiaryStatus = String(beneficiary.status || "active").toLowerCase();
+  const targetStatus = String(target.status || "active").toLowerCase();
+  if (beneficiaryStatus && beneficiaryStatus !== "active") {
+    throw httpError("直属受益人账号未激活", 400, { code: "BENEFICIARY_INACTIVE" });
   }
-  return { boss, companion, companionRow };
+  if (targetStatus && targetStatus !== "active") {
+    throw httpError("目标账号未激活", 400, { code: "TARGET_INACTIVE" });
+  }
+  await assertNoRelationCycle(beneficiaryId, targetId);
+  // companionRow kept for callers that still enrich companion codes (optional)
+  const companionRow = await loadCompanionRowForUser(targetId).catch(() => null);
+  return {
+    boss: beneficiary,
+    companion: target,
+    beneficiary,
+    target,
+    companionRow,
+  };
+}
+
+/**
+ * Walk beneficiary → their beneficiary … ; reject if target appears (cycle / mutual).
+ * Settlement never walks this chain — bind-time only.
+ */
+export async function assertNoRelationCycle(beneficiaryId, targetId) {
+  const beneficiary = String(beneficiaryId || "").trim();
+  const target = String(targetId || "").trim();
+  if (!beneficiary || !target) return;
+  if (beneficiary === target) {
+    throw httpError("不能绑定自己", 400, { code: "SELF_BIND_FORBIDDEN" });
+  }
+  let cursor = beneficiary;
+  const seen = new Set();
+  for (let i = 0; i < CYCLE_WALK_LIMIT; i++) {
+    if (seen.has(cursor)) break;
+    seen.add(cursor);
+    const rel = await getActiveRelationForCompanion(cursor);
+    if (!rel?.boss_id) break;
+    if (String(rel.boss_id) === target) {
+      throw httpError("禁止形成直属闭环（cycle）", 400, { code: "CYCLE_FORBIDDEN" });
+    }
+    cursor = String(rel.boss_id);
+  }
 }
 
 async function insertEvent(payload) {
@@ -235,6 +302,7 @@ async function insertEvent(payload) {
   return Array.isArray(rows) ? rows[0] : rows;
 }
 
+/** Active relation for target (legacy companion_id). */
 export async function getActiveRelationForCompanion(companionId) {
   if (!companionId) return null;
   const rows = await supabaseJson(
@@ -245,6 +313,11 @@ export async function getActiveRelationForCompanion(companionId) {
     { headers: serviceHeaders() }
   );
   return Array.isArray(rows) ? rows[0] || null : null;
+}
+
+/** Alias: active relation where user is the target/invitee. */
+export async function getActiveRelationForTarget(targetUserId) {
+  return getActiveRelationForCompanion(targetUserId);
 }
 
 export async function listActiveRelationsForBoss(bossId) {
@@ -382,18 +455,24 @@ export async function adminSearchRelations({ q = "", status = "", limit = 100 } 
   }
   const found = await searchProfileIds({ q: query });
   const orParts = [];
-  if (found.bossIds.length) {
-    orParts.push(`boss_id.in.(${found.bossIds.map((id) => `"${id}"`).join(",")})`);
+  const beneficiaryIds = found.bossIds.length ? found.bossIds : found.profileIds;
+  const targetIds = found.companionIds.length ? found.companionIds : found.profileIds;
+  if (beneficiaryIds.length) {
+    orParts.push(`boss_id.in.(${beneficiaryIds.map((id) => `"${id}"`).join(",")})`);
   }
-  if (found.companionIds.length || found.profileIds.length) {
-    const cids = found.companionIds.length ? found.companionIds : found.profileIds;
-    orParts.push(`companion_id.in.(${cids.map((id) => `"${id}"`).join(",")})`);
+  if (targetIds.length) {
+    orParts.push(`companion_id.in.(${targetIds.map((id) => `"${id}"`).join(",")})`);
+  }
+  // Also match any profile id on either side (role-agnostic)
+  if (found.profileIds.length) {
+    orParts.push(`boss_id.in.(${found.profileIds.map((id) => `"${id}"`).join(",")})`);
+    orParts.push(`companion_id.in.(${found.profileIds.map((id) => `"${id}"`).join(",")})`);
   }
   if (!orParts.length) return [];
 
   const parts = [
     `select=*`,
-    `or=(${orParts.join(",")})`,
+    `or=(${[...new Set(orParts)].join(",")})`,
     `order=bound_at.desc`,
     `limit=${Math.min(500, Math.max(1, Number(limit) || 100))}`,
   ];
@@ -404,24 +483,37 @@ export async function adminSearchRelations({ q = "", status = "", limit = 100 } 
   return enrichRelations(Array.isArray(rows) ? rows : []);
 }
 
-export async function bindRelation({ bossId, companionId, operatorId, remark = "", commissionRate = null, reason = "" } = {}) {
+export async function bindRelation({
+  bossId,
+  companionId,
+  beneficiaryId = "",
+  targetId = "",
+  operatorId,
+  remark = "",
+  commissionRate = null,
+  reason = "",
+} = {}) {
+  const beneficiary = String(beneficiaryId || bossId || "").trim();
+  const target = String(targetId || companionId || "").trim();
   const auditReason = requireAdminReason(reason, "绑定");
-  const caps = await assertBindCapabilities(bossId, companionId);
-  const existing = await getActiveRelationForCompanion(companionId);
+  const caps = await assertBindParties(beneficiary, target);
+  const existing = await getActiveRelationForCompanion(target);
   if (existing) {
-    if (existing.boss_id === bossId) {
-      throw httpError("该陪玩已绑定到此老板", 409, { code: "ALREADY_BOUND" });
+    if (existing.boss_id === beneficiary) {
+      throw httpError("该账号已绑定到此直属受益人", 409, { code: "ALREADY_BOUND" });
     }
-    throw httpError("该陪玩已有 active 直属老板，请使用 rebind", 409, {
+    throw httpError("该账号已有 active 直属受益人，请使用 rebind（或联系管理员）", 409, {
       code: "ACTIVE_EXISTS",
       activeRelationId: existing.id,
       activeBossId: existing.boss_id,
+      activeBeneficiaryId: existing.boss_id,
+      messageHint: "已有账号如需绑定/调整直属关系，请联系管理员。",
     });
   }
 
   const payload = {
-    boss_id: bossId,
-    companion_id: companionId,
+    boss_id: beneficiary,
+    companion_id: target,
     status: ACTIVE,
     bound_at: nowIso(),
     unbound_at: null,
@@ -440,37 +532,54 @@ export async function bindRelation({ bossId, companionId, operatorId, remark = "
     created = Array.isArray(rows) ? rows[0] : rows;
   } catch (error) {
     if (String(error?.message || "").includes("uq_boss_companion_relations_active_companion")) {
-      throw httpError("该陪玩已有 active 直属老板，请使用 rebind", 409, { code: "ACTIVE_EXISTS" });
+      throw httpError("该账号已有 active 直属受益人，请使用 rebind", 409, { code: "ACTIVE_EXISTS" });
     }
     throw error;
   }
 
   await insertEvent({
     relation_id: created.id,
-    companion_id: companionId,
+    companion_id: target,
     from_boss_id: null,
-    to_boss_id: bossId,
+    to_boss_id: beneficiary,
     action: "bind",
     operator_id: operatorId || null,
     remark: String(remark || "").trim() || null,
     reason: auditReason,
   });
 
-  await maybeReevalBossLevel(bossId, operatorId, auditReason);
+  await maybeReevalBossLevel(beneficiary, operatorId, auditReason);
 
   const [enriched] = await enrichRelations([created]);
-  return { relation: enriched, boss: caps.boss, companion: caps.companion };
+  return {
+    relation: enriched,
+    boss: caps.boss,
+    companion: caps.companion,
+    beneficiary: caps.beneficiary,
+    target: caps.target,
+  };
 }
 
-export async function rebindRelation({ companionId, newBossId, operatorId, remark = "", commissionRate = null, reason = "" } = {}) {
+export async function rebindRelation({
+  companionId,
+  newBossId,
+  targetId = "",
+  newBeneficiaryId = "",
+  operatorId,
+  remark = "",
+  commissionRate = null,
+  reason = "",
+} = {}) {
+  const target = String(targetId || companionId || "").trim();
+  const newBeneficiary = String(newBeneficiaryId || newBossId || "").trim();
   const auditReason = requireAdminReason(reason, "换绑");
-  const caps = await assertBindCapabilities(newBossId, companionId);
-  const existing = await getActiveRelationForCompanion(companionId);
+  const caps = await assertBindParties(newBeneficiary, target);
+  const existing = await getActiveRelationForCompanion(target);
   if (!existing) {
-    throw httpError("该陪玩当前没有 active 直属关系，请使用 bind", 404, { code: "NO_ACTIVE" });
+    throw httpError("该账号当前没有 active 直属关系，请使用 bind", 404, { code: "NO_ACTIVE" });
   }
-  if (existing.boss_id === newBossId) {
-    throw httpError("新老板与当前老板相同", 400, { code: "SAME_BOSS" });
+  if (existing.boss_id === newBeneficiary) {
+    throw httpError("新直属受益人与当前相同", 400, { code: "SAME_BOSS" });
   }
 
   const ts = nowIso();
@@ -490,8 +599,8 @@ export async function rebindRelation({ companionId, newBossId, operatorId, remar
     headers: serviceHeaders(),
     body: JSON.stringify((() => {
       const payload = {
-        boss_id: newBossId,
-        companion_id: companionId,
+        boss_id: newBeneficiary,
+        companion_id: target,
         status: ACTIVE,
         bound_at: ts,
         unbound_at: null,
@@ -512,32 +621,36 @@ export async function rebindRelation({ companionId, newBossId, operatorId, remar
 
   await insertEvent({
     relation_id: created.id,
-    companion_id: companionId,
+    companion_id: target,
     from_boss_id: existing.boss_id,
-    to_boss_id: newBossId,
+    to_boss_id: newBeneficiary,
     action: "rebind",
     operator_id: operatorId || null,
     remark: String(remark || "").trim() || null,
     reason: auditReason,
   });
   await maybeReevalBossLevel(existing.boss_id, operatorId, auditReason);
-  await maybeReevalBossLevel(newBossId, operatorId, auditReason);
+  await maybeReevalBossLevel(newBeneficiary, operatorId, auditReason);
 
   const [enriched] = await enrichRelations([created]);
   return {
     relation: enriched,
     previousRelationId: existing.id,
     fromBossId: existing.boss_id,
+    fromBeneficiaryId: existing.boss_id,
     boss: caps.boss,
     companion: caps.companion,
+    beneficiary: caps.beneficiary,
+    target: caps.target,
   };
 }
 
-export async function unbindRelation({ companionId, operatorId, remark = "", reason = "" } = {}) {
+export async function unbindRelation({ companionId, targetId = "", operatorId, remark = "", reason = "" } = {}) {
+  const target = String(targetId || companionId || "").trim();
   const auditReason = requireAdminReason(reason, "解绑");
-  const existing = await getActiveRelationForCompanion(companionId);
+  const existing = await getActiveRelationForCompanion(target);
   if (!existing) {
-    throw httpError("该陪玩当前没有 active 直属关系", 404, { code: "NO_ACTIVE" });
+    throw httpError("该账号当前没有 active 直属关系", 404, { code: "NO_ACTIVE" });
   }
   const ts = nowIso();
   await supabaseJson(restUrl(REL_TABLE, `?id=eq.${encodeURIComponent(existing.id)}`), {
@@ -551,7 +664,7 @@ export async function unbindRelation({ companionId, operatorId, remark = "", rea
 
   await insertEvent({
     relation_id: existing.id,
-    companion_id: companionId,
+    companion_id: target,
     from_boss_id: existing.boss_id,
     to_boss_id: null,
     action: "unbind",
@@ -628,4 +741,11 @@ export async function resolveCompanionIdFromInput(raw) {
   return "";
 }
 
-export { ACTIVE, UNBOUND, REPLACED, REL_TABLE, EVT_TABLE };
+export {
+  ACTIVE,
+  UNBOUND,
+  REPLACED,
+  REL_TABLE,
+  EVT_TABLE,
+  CYCLE_WALK_LIMIT,
+};

@@ -1,5 +1,5 @@
 /**
- * Admin · 直属关系管理（Boss ↔ Companion）
+ * Admin · 直属关系管理（角色无关：受益人 ↔ 目标账号）
  * list / search / bind / rebind / unbind / history
  * 塞进现有 admin shell，不改布局壳子。
  */
@@ -79,19 +79,19 @@
     var rows =
       (state.relations || [])
         .map(function (r) {
-          var boss = r.boss || {};
-          var companion = r.companion || {};
+          var boss = r.beneficiary || r.boss || {};
+          var companion = r.target || r.companion || {};
           return (
             "<tr>" +
             "<td>" +
             esc(boss.displayName || "-") +
             "<div class='admin-sync-note'>" +
-            esc(boss.bossUid || boss.id || "") +
+            esc(boss.publicCode || boss.bossUid || boss.id || "") +
             "</div></td>" +
             "<td>" +
             esc(companion.displayName || "-") +
             "<div class='admin-sync-note'>" +
-            esc(companion.companionCode || companion.id || "") +
+            esc(companion.publicCode || companion.companionCode || companion.id || "") +
             "</div></td>" +
             "<td>" +
             esc(statusLabel(r.status)) +
@@ -183,13 +183,13 @@
       '<div class="admin-card" style="margin-bottom:16px;padding:12px;border:1px solid rgba(255,255,255,.08);border-radius:12px">' +
       "<h3 style='margin:0 0 10px;font-size:16px'>绑定 / 换绑</h3>" +
       '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px">' +
-      '<label>老板（id / boss_uid）<input id="bcrBoss" value="' +
+      '<label>直属受益人（id / boss_uid / 邮箱）<input id="bcrBoss" value="' +
       esc(state.form.boss) +
       '"></label>' +
-      '<label>陪玩（id / PW编码）<input id="bcrCompanion" value="' +
+      '<label>目标账号（id / PW编码 / 邮箱）<input id="bcrCompanion" value="' +
       esc(state.form.companion) +
       '"></label>' +
-      '<label>换绑新老板（可选）<input id="bcrNewBoss" value="' +
+      '<label>换绑新受益人（可选）<input id="bcrNewBoss" value="' +
       esc(state.form.newBoss) +
       '"></label>' +
       '<label>备注<input id="bcrRemark" value="' +
@@ -210,15 +210,15 @@
       (state.busy ? " disabled" : "") +
       ">换绑</button>" +
       "</div>" +
-      '<p class="admin-sync-note" style="margin:8px 0 0">仅 Admin 可写。绑定/换绑/解绑/设分成必须填写 reason（审计）。≤1 活跃直属老板/陪玩。历史事件不可变。</p>' +
+      '<p class="admin-sync-note" style="margin:8px 0 0">仅 Admin 可写。绑定/换绑/解绑/设分成必须填写 reason（审计）。每个账号最多 1 个 active 直属受益人。历史事件不可变。已有账号调整请走本页。</p>' +
       "</div>" +
-      '<div class="table-wrap"><table class="data-table"><thead><tr><th>老板</th><th>陪玩</th><th>状态</th><th>分成%</th><th>绑定时间</th><th>操作</th></tr></thead><tbody>' +
+      '<div class="table-wrap"><table class="data-table"><thead><tr><th>直属受益人</th><th>目标账号</th><th>状态</th><th>分成%</th><th>绑定时间</th><th>操作</th></tr></thead><tbody>' +
       rows +
       "</tbody></table></div>" +
       '<h3 style="margin:18px 0 8px;font-size:16px">关系历史' +
       (state.historyCompanionId ? " · " + esc(state.historyCompanionId) : "") +
       "</h3>" +
-      '<div class="table-wrap"><table class="data-table"><thead><tr><th>动作</th><th>原老板</th><th>新老板</th><th>备注</th><th>原因</th><th>时间</th></tr></thead><tbody>' +
+      '<div class="table-wrap"><table class="data-table"><thead><tr><th>动作</th><th>原受益人</th><th>新受益人</th><th>备注</th><th>原因</th><th>时间</th></tr></thead><tbody>' +
       historyRows +
       "</tbody></table></div>";
   }
@@ -383,7 +383,7 @@
     }
     var unbind = e.target.closest("[data-bcr-unbind]");
     if (unbind) {
-      if (!confirm("确认解绑该陪玩的直属关系？历史将保留。")) return;
+      if (!confirm("确认解绑该账号的直属关系？历史将保留。")) return;
       readForm();
       var unbindReason =
         String(state.form.reason || "").trim() ||

@@ -2321,6 +2321,21 @@ export default async function handler(req, res) {
         } catch {
           /* optional roles column / metadata */
         }
+        // Role-agnostic invite redeem: bind new boss as target → inviter as beneficiary.
+        let inviteRedeem = null;
+        try {
+          const inviteCode = String(body.inviteCode || body.invite_code || body.code || "").trim();
+          if (inviteCode) {
+            const { redeemInviteAfterCompanionReady } = await import("./_boss-invite-links.js");
+            inviteRedeem = await redeemInviteAfterCompanionReady({
+              inviteCode,
+              inviteeId: userId,
+            });
+          }
+        } catch (inviteErr) {
+          console.warn("[auth/register] invite redeem", inviteErr?.message || inviteErr);
+        }
+        void inviteRedeem;
       } catch (error) {
         try {
           await supabaseJson(authUrl(`admin/users/${encodeURIComponent(userId)}`), {
