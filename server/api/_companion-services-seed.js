@@ -1,12 +1,16 @@
 /**
  * Pricing V2 P2 — seed sell price from level.base_price on first approve.
  *
- * Preferred path (when table exists): upsert companion_services rows (source=level_default).
- * Production SoT today: companion_profiles.price / game_prices / service_ids / game.
- * When public.companion_services is missing (Prod never created the table), soft-skip the
- * table write and return a companion_profiles pricing patch so approve still succeeds.
+ * Code status (main): P1 (#205 / 975ee9f+) and P2 (3910be4, entered main via #240 ancestry)
+ * are IN main. Runtime prefers companion_services when the table exists.
  *
- * Does NOT invent a second pricing system. Does NOT create companion_services.
+ * Schema drift: repo CREATE lives only in supabase/companion-marketplace.sql (bootstrap,
+ * 3fdc1b6) + Staging-only ensure in scripts/backfill-companion-pricing-p1-staging.mjs
+ * (fbd85c7). P1 migrations / pending-prod/11 only ALTER companion_services — they never
+ * CREATE it. Production confirmed missing public.companion_services → soft-skip here and
+ * use companion_profiles.price / game_prices SoT so approve does not fatal.
+ *
+ * Does NOT invent a second pricing system. Does NOT CREATE companion_services.
  * Does NOT bulk-rewrite existing companions.
  */
 import { companionDb, hasCompanionDb, isMissingRelation } from "./_companion-media-store.js";
