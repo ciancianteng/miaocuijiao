@@ -2794,13 +2794,14 @@
     if(isGroup){
       var shown=peers.slice(0,2);
       var extra=Math.max(0,peers.length-shown.length);
+      var peerChips=shown.map(function(p){
+        return '<span class="pw-peer-chip"><img src="'+esc(p.avatar||'/default-avatar.png')+'" alt="" onerror="this.onerror=null;this.src=\'/default-avatar.png\'">'+esc(p.nickname||'陪玩')+'</span>';
+      }).join('');
+      if(extra>0)peerChips+='<span class="pw-peer-more">+'+extra+'</span>';
+      if(!peerChips)peerChips='暂无';
       peerHtml='<div class="pw-group-peers" data-group-peers="1">'+
         '<div class="pw-group-peers-title">联合订单 · 本单共 '+(peerCount||peers.length+1)+' 位陪玩</div>'+
-        '<div class="pw-group-peers-row"><span>同单陪玩</span><strong>'+
-        (shown.length?shown.map(function(p){
-          return '<span class="pw-peer-chip"><img src="'+esc(p.avatar||'/default-avatar.png')+'" alt="" onerror="this.onerror=null;this.src=\'/default-avatar.png\'">'+esc(p.nickname||'陪玩')+'</span>';
-        }).join('')+(extra?'<span class="pw-peer-more">+'+extra+'</span>'):'暂无')+
-        '</strong></div>'+
+        '<div class="pw-group-peers-row"><span>同单陪玩</span><strong>'+peerChips+'</strong></div>'+
         '<p class="pw-note">你只能操作自己的子订单；其他陪玩收入不会显示。</p>'+
         '</div>';
     }
