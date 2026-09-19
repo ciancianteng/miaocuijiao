@@ -121,10 +121,10 @@ async function main() {
   console.log("api_base", API_BASE || "(direct REST only)");
   await ensureIncome();
 
-  // Cancel any pending withdrawals so we can create a fresh one
+  // Cancel any open withdrawals so we can create a fresh one
   const pending = await rest(
     "companion_withdrawals",
-    `?companion_id=eq.${COMPANION_ID}&status=in.(pending,pending_review)&select=id,status`,
+    `?companion_id=eq.${COMPANION_ID}&status=in.(submitted,pending_friday,reviewing,pending,pending_review,rolled_over,approved,pending_payment,approved_pending_pay,paying,paid_pending_receipt,paid,processing)&select=id,status`,
     { service: true }
   );
   for (const p of pending || []) {

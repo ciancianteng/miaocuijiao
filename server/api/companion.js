@@ -1888,7 +1888,7 @@ function summaryFrom(myOrders, transactions, withdrawals = [], linkedOrders = []
     .filter((w) => WITHDRAW_FROZEN.has(w.status))
     .reduce((n, w) => n + money(w.cat_food_amount), 0);
   const withdrawn = (withdrawals || [])
-    .filter((w) => w.status === "completed")
+    .filter((w) => /^(completed|paid)$/.test(String(w.status || "")))
     .reduce((n, w) => n + money(w.cat_food_amount), 0);
   const locked = (withdrawals || [])
     .filter((w) => WITHDRAW_ACTIVE.has(w.status))
@@ -2272,7 +2272,9 @@ async function bootstrapData(profile, companion) {
   const authModeWd = resolveCredentialMode(companionRow, deposit);
   const credentialOk = authModeWd === "deposit" ? depositOk : true;
   const openPending = withdrawalRows.some((w) =>
-    /^(submitted|pending_friday|reviewing|pending|pending_review|rolled_over)$/.test(String(w.status || ""))
+    /^(submitted|pending_friday|reviewing|pending|pending_review|rolled_over|approved|pending_payment|approved_pending_pay|paying|paid_pending_receipt|paid|processing)$/.test(
+      String(w.status || "")
+    )
   );
   const canWithdrawNow =
     canWork(profile, companionRow, deposit, identity) &&
@@ -2296,7 +2298,7 @@ async function bootstrapData(profile, companion) {
     } else if (!credentialOk) permissions.withdrawLockReason = "请先完成押金认证并通过审核";
     else if (!bankOk) permissions.withdrawLockReason = "请先提交并等待结款账户审核通过";
     else if (companionRow?.withdraw_frozen) permissions.withdrawLockReason = "提现已被冻结";
-    else if (openPending) permissions.withdrawLockReason = "已有待周五结算的提现申请，请等待处理后再提交";
+    else if (openPending) permissions.withdrawLockReason = "已有进行中的提现申请，请等待处理后再提交";
     else if (summary.withdrawable < minAmount) permissions.withdrawLockReason = `可提现余额不足（最低 ${minAmount}）`;
     else if (usedThisWeek >= weeklyLimit) permissions.withdrawLockReason = "已达本周提现次数上限";
     else if (profile.status !== "active") permissions.withdrawLockReason = "账号状态异常";
@@ -5909,13 +5911,19 @@ return json(res, 200, {
         return json(res, 400, { ok: false, message: "结款账户未审核通过" });
       }
 
+      // One open withdrawal at a time (pending → approved/pending_payment → paid).
+      // Rejected/completed/cancelled free the slot; DB partial unique index is the hard guard.
       const pendingDup = (data.withdrawals || []).find((w) =>
-        /^(submitted|pending_friday|reviewing|pending|pending_review|rolled_over)$/.test(String(w.status || ""))
+        /^(submitted|pending_friday|reviewing|pending|pending_review|rolled_over|approved|pending_payment|approved_pending_pay|paying|paid_pending_receipt|paid|processing)$/.test(
+          String(w.status || "")
+        )
       );
       if (pendingDup) {
         return json(res, 400, {
           ok: false,
-          message: "已有待周五结算的提现申请，请等待后台处理后再提交",
+          message: "已有进行中的提现申请，请等待后台处理（打款或驳回）后再提交",
+          withdrawalId: pendingDup.id,
+          status: pendingDup.status,
         });
       }
 
@@ -6002,6 +6010,13 @@ return json(res, 200, {
             break;
           } catch (error) {
             const msg = `${error?.message || ""} ${JSON.stringify(error?.body || "")}`;
+            if (/duplicate|unique|23505|uq_companion_withdrawals_one_open/i.test(msg)) {
+              return json(res, 409, {
+                ok: false,
+                message: "已有进行中的提现申请，请等待后台处理后再提交",
+                code: "WITHDRAWAL_OPEN_EXISTS",
+              });
+            }
             if (/companion_withdrawals|schema cache|PGRST/i.test(msg) && /Could not find the table/i.test(msg)) {
               return json(res, 503, {
                 ok: false,
