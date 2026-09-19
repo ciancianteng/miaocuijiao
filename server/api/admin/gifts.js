@@ -1,5 +1,7 @@
-import { companionDb, isMissingRelation } from "../_companion-media-store.js";
+import { companionDb, isMissingRelation, decodeDataUrl } from "../_companion-media-store.js";
 import { writeAdminLog } from "../_wallet.js";
+
+const GIFT_BUCKET = "gift-icons";
 
 function json(res, status, data) {
   return res.status(status).json(data);
@@ -20,6 +22,78 @@ async function parseBody(req) {
   } catch {
     return {};
   }
+}
+
+async function ensurePublicGiftBucket() {
+  const base = String(process.env.SUPABASE_URL || "").replace(/\/$/, "");
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+  if (!base || !key) throw Object.assign(new Error("Storage 未配置"), { status: 503 });
+  const listRes = await fetch(`${base}/storage/v1/bucket`, {
+    headers: { apikey: key, Authorization: `Bearer ${key}` },
+  });
+  const listText = await listRes.text();
+  let list = [];
+  try {
+    list = listText ? JSON.parse(listText) : [];
+  } catch {
+    list = [];
+  }
+  if (!listRes.ok) throw new Error(`读取 Storage 失败：${listText || listRes.status}`);
+  const exists = Array.isArray(list) && list.some((b) => b && (b.id === GIFT_BUCKET || b.name === GIFT_BUCKET));
+  if (!exists) {
+    const createRes = await fetch(`${base}/storage/v1/bucket`, {
+      method: "POST",
+      headers: {
+        apikey: key,
+        Authorization: `Bearer ${key}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        id: GIFT_BUCKET,
+        name: GIFT_BUCKET,
+        public: true,
+        file_size_limit: 5 * 1024 * 1024,
+        allowed_mime_types: ["image/jpeg", "image/png", "image/webp"],
+      }),
+    });
+    const createText = await createRes.text();
+    if (!createRes.ok && !/already exists|duplicate/i.test(createText)) {
+      throw new Error(`创建礼物图片桶失败：${createText || createRes.status}`);
+    }
+  }
+  return GIFT_BUCKET;
+}
+
+async function uploadGiftImage(dataUrl, filename = "gift") {
+  const file = decodeDataUrl(dataUrl);
+  if (!file?.buffer?.length) throw Object.assign(new Error("图片数据无效，请重新上传。"), { status: 400 });
+  if (!/^image\/(jpeg|png|webp)$/i.test(file.contentType)) {
+    throw Object.assign(new Error("仅支持 JPG / PNG / WEBP"), { status: 400 });
+  }
+  if (file.buffer.length > 5 * 1024 * 1024) {
+    throw Object.assign(new Error("图片不能超过 5MB"), { status: 413 });
+  }
+  const base = String(process.env.SUPABASE_URL || "").replace(/\/$/, "");
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+  const bucket = await ensurePublicGiftBucket();
+  const ext = (file.contentType.split("/")[1] || "png").replace("jpeg", "jpg");
+  const safeName = String(filename || "gift").replace(/[^a-z0-9.-]/gi, "-") || "gift";
+  const objectPath = `icons/${Date.now()}-${safeName}.${ext}`;
+  const response = await fetch(`${base}/storage/v1/object/${bucket}/${objectPath}`, {
+    method: "POST",
+    headers: {
+      apikey: key,
+      Authorization: `Bearer ${key}`,
+      "Content-Type": file.contentType,
+      "x-upsert": "true",
+    },
+    body: file.buffer,
+  });
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`礼物图片上传失败：${text || response.status}`);
+  }
+  return `${base}/storage/v1/object/public/${bucket}/${objectPath}`;
 }
 
 export default async function handler(req, res) {
@@ -57,6 +131,12 @@ export default async function handler(req, res) {
     }
     const body = await parseBody(req);
     const action = String(body.action || "save").trim();
+    if (action === "upload_icon") {
+      const dataUrl = String(body.imageDataUrl || body.iconDataUrl || body.dataUrl || "").trim();
+      if (!dataUrl) return json(res, 400, { ok: false, message: "请先选择礼物图片" });
+      const iconUrl = await uploadGiftImage(dataUrl, body.filename || "gift-icon");
+      return json(res, 200, { ok: true, iconUrl, message: "图片已上传" });
+    }
     if (action === "save") {
       const id = String(body.id || "").trim();
       const name = String(body.name || "").trim();
@@ -64,7 +144,6 @@ export default async function handler(req, res) {
         return json(res, 400, { ok: false, message: "礼物名称不能为空" });
       }
       const isCreate = !id;
-      // Create defaults: enabled=true（启用）, featured=false（推荐关闭）. Explicit body values still win.
       const enabled =
         body.enabled === undefined || body.enabled === null || body.enabled === ""
           ? true
@@ -87,7 +166,6 @@ export default async function handler(req, res) {
         return json(res, 400, { ok: false, message: "请填写有效猫粮价格" });
       }
 
-      // Prevent duplicate gift names among non-deleted rows (case-insensitive, trimmed).
       const existing = await companionDb("gifts", "?select=id,name,deleted_at&limit=500").catch((e) => {
         if (isMissingRelation(e)) return [];
         throw e;
@@ -122,7 +200,7 @@ export default async function handler(req, res) {
         operatorRole: roleFrom(req),
       });
       const saved = rows?.[0] || payload;
-      const statusText = (saved.enabled !== false && saved.enabled !== "false" ? "启用" : "停用");
+      const statusText = saved.enabled !== false && saved.enabled !== "false" ? "启用" : "停用";
       const featuredText = saved.featured === true || saved.featured === "true" ? "是" : "否";
       const message = isCreate
         ? `礼物已新增（状态：${statusText}，推荐：${featuredText}）`

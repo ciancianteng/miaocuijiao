@@ -601,11 +601,13 @@ export async function approveGiftOrder({ orderId, staffId, staffName = "" }) {
   const fulfilled = await insertFulfilledTransaction(working, rate);
 
   if (!fulfilled.replayed) {
+    // Note must include 礼物 so earnings classify as reward_other (not order settlement).
+    // Do NOT put gift_order id into transactions.order_id — that field is companion order FK.
     await creditCompanionIncome(
       working.receiver_companion_id,
       fulfilled.companionIncome,
-      `${working.gift_name_snapshot}收益`,
-      working.id
+      `礼物收益：${working.gift_name_snapshot || "礼物"}`,
+      null
     );
     await upsertGiftWall(working);
     const boss = await loadBossProfile(working.sender_boss_id);

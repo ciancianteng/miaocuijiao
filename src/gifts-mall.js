@@ -9,7 +9,7 @@
     gifts: [],
     companions: [],
     selectedGift: null,
-    selectedCompanion: null,
+    selectedCompanions: [],
     companionsLoaded: false,
     quantity: 1,
     order: null,
@@ -128,32 +128,60 @@
     return bits.join(" · ") || "在线陪玩";
   }
 
+  function selectedCompanions() {
+    return Array.isArray(state.selectedCompanions) ? state.selectedCompanions : [];
+  }
+  function selectedNames() {
+    return selectedCompanions()
+      .map(function (c) {
+        return c.nickname || "陪玩";
+      })
+      .join("、");
+  }
+  function hasRecipients() {
+    return selectedCompanions().length > 0;
+  }
+  function toggleCompanion(c) {
+    if (!c || !c.id) return;
+    var id = String(c.id);
+    var list = selectedCompanions().slice();
+    var idx = list.findIndex(function (x) {
+      return String(x.id) === id;
+    });
+    if (idx >= 0) list.splice(idx, 1);
+    else list.push(c);
+    state.selectedCompanions = list;
+  }
+
   function setConfirmEnabled() {
     var btn = $("gmConfirmBtn");
     if (!btn) return;
-    btn.disabled = !(state.selectedGift && state.selectedCompanion) || state.creating;
+    btn.disabled = !(state.selectedGift && hasRecipients()) || state.creating;
   }
 
   function updateSummary() {
     var line = $("gmConfirmLine");
     var hint = $("gmConfirmHint");
     if (!line) return;
-    if (!state.selectedCompanion || !state.selectedGift) {
-      line.innerHTML = "请选择一位陪玩";
+    if (!hasRecipients() || !state.selectedGift) {
+      line.innerHTML = "请选择一位或多位陪玩";
       if (hint) hint.hidden = false;
       setConfirmEnabled();
       return;
     }
     var qty = Math.max(1, Number(state.quantity || 1));
-    var total = giftPrice(state.selectedGift) * qty;
+    var n = selectedCompanions().length;
+    var total = giftPrice(state.selectedGift) * qty * n;
     line.innerHTML =
       "赠送给：<strong>" +
-      escapeHtml(state.selectedCompanion.nickname || "陪玩") +
-      "</strong><br>" +
+      escapeHtml(selectedNames()) +
+      "</strong>（共 " +
+      n +
+      " 人）<br>" +
       escapeHtml(state.selectedGift.name || "礼物") +
       " ×" +
       qty +
-      " · " +
+      " / 人 · " +
       total +
       " 猫粮";
     if (hint) hint.hidden = true;
@@ -177,7 +205,7 @@
     document.body.classList.remove("gm-sheet-open");
     if (!opts.keepSelection) {
       state.selectedGift = null;
-      state.selectedCompanion = null;
+      state.selectedCompanions = [];
       state.quantity = 1;
       updateSummary();
     }
@@ -186,7 +214,7 @@
   function openSheet(gift) {
     if (!requireBoss()) return;
     state.selectedGift = gift;
-    state.selectedCompanion = null;
+    state.selectedCompanions = [];
     state.quantity = 1;
     var title = $("gmSheetTitle");
     if (title) title.textContent = "选择赠送对象";
@@ -230,7 +258,7 @@
     var root = $("gmPayBody");
     if (!root) return;
     var order = state.order || {};
-    var companion = state.selectedCompanion || {};
+    var companion = (selectedCompanions()[0] || {});
     var gift = state.selectedGift || {};
     var pay = state.payInfo || {};
     var qr = pay.qrUrl || order.paymentQrUrl || "";
@@ -332,15 +360,18 @@
       list.innerHTML = '<p class="gm-empty soft">暂无可选陪玩</p>';
       return;
     }
-    var selId = state.selectedCompanion ? String(state.selectedCompanion.id) : "";
+    var selectedIds = {};
+    selectedCompanions().forEach(function (c) {
+      selectedIds[String(c.id)] = true;
+    });
     list.innerHTML = state.companions
       .map(function (c) {
         var id = String(c.id || "");
         var nick = escapeHtml(c.nickname || "陪玩");
         var meta = escapeHtml(companionMeta(c));
         var av = escapeHtml(c.avatar_url || "");
-        var selected = id === selId ? " is-selected" : "";
-        var mark = id === selId ? "✓" : "";
+        var selected = selectedIds[id] ? " is-selected" : "";
+        var mark = selectedIds[id] ? "✓" : "";
         var avatar = av
           ? '<img class="gm-avatar" src="' + av + '" alt="" loading="lazy" />'
           : '<span class="gm-avatar" aria-hidden="true" style="display:grid;place-items:center;font-weight:800">' +
@@ -352,7 +383,7 @@
           '" data-pick-companion="' +
           encodeURIComponent(id) +
           '" aria-pressed="' +
-          (id === selId ? "true" : "false") +
+          (selectedIds[id] ? "true" : "false") +
           '">' +
           avatar +
           '<span class="gm-companion-meta"><strong>' +
@@ -428,7 +459,7 @@
   }
 
   async function confirmCreateOrder() {
-    if (!state.selectedGift || !state.selectedCompanion) return;
+    if (!state.selectedGift || !hasRecipients()) return;
     if (!requireBoss()) return;
     if (state.creating) return;
     openPayMethodChooser();
@@ -436,10 +467,10 @@
 
   function openPayMethodChooser() {
     var gift = state.selectedGift || {};
-    var companion = state.selectedCompanion || {};
     var qtyEl = $("gmQty");
     state.quantity = Math.max(1, Math.floor(Number((qtyEl && qtyEl.value) || state.quantity || 1)));
-    var total = giftPrice(gift) * state.quantity;
+    var n = selectedCompanions().length;
+    var total = giftPrice(gift) * state.quantity * n;
     closeSheet({ keepSelection: true });
     var pay = $("gmPay");
     var backdrop = $("gmPayBackdrop");
@@ -450,50 +481,59 @@
     if (!root) return;
     root.innerHTML =
       '<section class="gm-pay-card"><h3>确认赠送</h3><p>送给 <strong>' +
-      escapeHtml(companion.nickname || "陪玩") +
-      "</strong> · " +
+      escapeHtml(selectedNames()) +
+      "</strong>（" +
+      n +
+      " 人） · " +
       escapeHtml(gift.name || "礼物") +
       " ×" +
       escapeHtml(String(state.quantity)) +
-      " · <strong>" +
+      " / 人 · <strong>" +
       escapeHtml(String(total)) +
       "</strong> 猫粮</p></section>" +
       '<section class="gm-pay-card"><h3>选择付款方式</h3>' +
       '<button type="button" class="gm-btn primary" id="gmPayWallet">猫粮余额支付</button>' +
       '<button type="button" class="gm-btn" id="gmPayExternal" style="margin-top:10px">外部支付 / 上传付款截图</button>' +
-      '<p class="gm-confirm-hint">外部支付需客服审核通过后才会到账；余额支付成功后立即送达。</p></section>';
+      '<p class="gm-confirm-hint">多人赠送会为每位陪玩生成独立订单；外部支付需客服审核通过后才会到账；余额支付成功后立即送达。</p></section>';
   }
 
   async function payWithWalletFromMall() {
-    if (!state.selectedGift || !state.selectedCompanion) return;
+    if (!state.selectedGift || !hasRecipients()) return;
     if (state.creating) return;
     state.creating = true;
+    var okCount = 0;
     try {
-      var res = await fetch("/api/boss/marketplace", {
-        method: "POST",
-        headers: authHeaders(),
-        credentials: "same-origin",
-        body: JSON.stringify({
-          action: "send_gift",
-          companionId: state.selectedCompanion.id,
-          giftId: state.selectedGift.id,
-          quantity: state.quantity,
-          idempotencyKey: idem(),
-        }),
-      });
-      var data = await res.json().catch(function () {
-        return {};
-      });
-      if (!res.ok || !data.ok) {
-        if (data && data.code === "INSUFFICIENT_BALANCE") {
-          if (confirm("猫粮余额不足，是否去充值？")) location.href = data.rechargeUrl || "/recharge.html";
+      var recipients = selectedCompanions().slice();
+      for (var i = 0; i < recipients.length; i++) {
+        var companion = recipients[i];
+        var res = await fetch("/api/boss/marketplace", {
+          method: "POST",
+          headers: authHeaders(),
+          credentials: "same-origin",
+          body: JSON.stringify({
+            action: "send_gift",
+            companionId: companion.id,
+            giftId: state.selectedGift.id,
+            quantity: state.quantity,
+            idempotencyKey: idem(),
+          }),
+        });
+        var data = await res.json().catch(function () {
+          return {};
+        });
+        if (!res.ok || !data.ok) {
+          if (data && data.code === "INSUFFICIENT_BALANCE") {
+            if (confirm("猫粮余额不足，是否去充值？")) location.href = data.rechargeUrl || "/recharge.html";
+            return;
+          }
+          toast(String((data && data.message) || "余额支付失败") + "（" + (companion.nickname || "陪玩") + "）");
           return;
         }
-        toast(String((data && data.message) || "余额支付失败"));
-        return;
+        okCount += 1;
       }
       closePay();
-      showStatus("礼物已送出", "猫粮余额支付成功，已计入陪玩礼物墙");
+      showStatus("礼物已送出", "猫粮余额支付成功，已送达 " + okCount + " 位陪玩礼物墙");
+      state.selectedCompanions = [];
     } catch (e) {
       toast("网络错误，请重试");
     } finally {
@@ -502,31 +542,50 @@
   }
 
   async function createExternalGiftOrder() {
-    if (!state.selectedGift || !state.selectedCompanion) return;
+    if (!state.selectedGift || !hasRecipients()) return;
     if (state.creating) return;
     state.creating = true;
     try {
-      var res = await fetch("/api/boss/gift-orders", {
-        method: "POST",
-        headers: authHeaders(),
-        credentials: "same-origin",
-        body: JSON.stringify({
-          action: "create",
-          companionId: state.selectedCompanion.id,
-          giftId: state.selectedGift.id,
-          quantity: state.quantity,
-          idempotencyKey: idem(),
-        }),
-      });
-      var data = await res.json().catch(function () {
-        return {};
-      });
-      if (!res.ok || !data.ok) {
-        toast(String((data && data.message) || "创建订单失败"));
-        return;
+      var recipients = selectedCompanions().slice();
+      var first = null;
+      var firstPay = null;
+      for (var i = 0; i < recipients.length; i++) {
+        var companion = recipients[i];
+        var res = await fetch("/api/boss/gift-orders", {
+          method: "POST",
+          headers: authHeaders(),
+          credentials: "same-origin",
+          body: JSON.stringify({
+            action: "create",
+            companionId: companion.id,
+            giftId: state.selectedGift.id,
+            quantity: state.quantity,
+            idempotencyKey: idem(),
+          }),
+        });
+        var data = await res.json().catch(function () {
+          return {};
+        });
+        if (!res.ok || !data.ok) {
+          toast(String((data && data.message) || "创建订单失败") + "（" + (companion.nickname || "陪玩") + "）");
+          return;
+        }
+        if (!first) {
+          first = data.order;
+          firstPay = data.payInfo;
+        }
       }
-      openPay(data.order, data.payInfo);
-      showStatus("订单已创建", "请完成付款并上传截图，客服审核通过后才会到账");
+      if (recipients.length === 1) {
+        openPay(first, firstPay);
+        showStatus("订单已创建", "请完成付款并上传截图，客服审核通过后才会到账");
+      } else {
+        closePay();
+        showStatus(
+          "已创建 " + recipients.length + " 笔礼物订单",
+          "请到消息/订单中心为每笔外部支付上传付款截图；客服审核通过后才会到账"
+        );
+        state.selectedCompanions = [];
+      }
     } catch (e) {
       toast("网络错误，请重试");
     } finally {
@@ -632,10 +691,10 @@
     if (pick) {
       e.preventDefault();
       var cid = decodeURIComponent(pick.getAttribute("data-pick-companion") || "");
-      state.selectedCompanion =
-        state.companions.find(function (c) {
-          return String(c.id) === String(cid);
-        }) || null;
+      var hit = state.companions.find(function (c) {
+        return String(c.id) === String(cid);
+      });
+      if (hit) toggleCompanion(hit);
       renderCompanions();
       updateSummary();
       return;
