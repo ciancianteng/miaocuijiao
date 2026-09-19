@@ -4106,8 +4106,77 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
       } catch (err) {
         return json(res, err.status || 400, { ok: false, message: err.message || "非法状态跳转。" });
       }
+
+      // Canonical completion: never bare-patch status=completed (misses points/settlement markers).
+      if (transition.to === "completed") {
+        try {
+          if (!order.customer_service_id || order.customer_service_id !== service.profile.id) {
+            await patchOrder(order.id, { customer_service_id: service.profile.id });
+          }
+          const { createOrderCompleteHelpers } = await import("./_order-complete.js");
+          const helpers = createOrderCompleteHelpers({
+            restUrl,
+            supabaseJson,
+            serviceHeaders,
+            addSystemMessage: async (ord, actorId, content) => {
+              const conversation = await ensureConversation({
+                boss_id: ord.boss_id,
+                companion_id: ord.companion_id,
+                customer_service_id: service.profile.id,
+                order_id: ord.id,
+              });
+              await addMessage(conversation, actorId || service.profile.id, "customer_service", content, "system", ord.id);
+            },
+          });
+          let working = (await orderById(id)) || order;
+          if (String(working.status) === "in_progress" && !helpers.orderHasCompletionPending(working)) {
+            await helpers.markCompletionPending(working);
+            working = (await orderById(id)) || working;
+          }
+          const out = await helpers.finalizeOrderCompletion(working, {
+            method: "cs_force",
+            actorId: service.profile.id,
+            message: String(body.note || "客服确认完成订单"),
+          });
+          const patched = out.order || working;
+          const conversation = await ensureConversation({
+            boss_id: patched.boss_id,
+            companion_id: patched.companion_id,
+            customer_service_id: service.profile.id,
+            order_id: patched.id,
+          });
+          await addMessage(
+            conversation,
+            service.profile.id,
+            "customer_service",
+            `订单状态已更新为：${CS_STATUS_ACTION_LABELS.completed || "已完成"}`,
+            "system",
+            id
+          );
+          try {
+            const { notifyCompanionOrderStatusChange } = await import("./_companion-order-notify.js");
+            if (patched.companion_id) {
+              notifyCompanionOrderStatusChange(patched, { status: "completed" }).catch(() => {});
+            }
+          } catch (_) {}
+          return json(res, 200, {
+            ok: true,
+            message: out.message || "订单状态已更新。",
+            order: patched,
+            reward: out.reward || null,
+            bossPoints: out.bossPoints || null,
+            completionMethod: out.completionMethod || "cs_force",
+            settlement: out.settlement || null,
+          });
+        } catch (err) {
+          return json(res, err.status || 500, {
+            ok: false,
+            message: err?.message || "客服确认完成失败。",
+          });
+        }
+      }
+
       const patch = { customer_service_id: service.profile.id };
-      if (transition.to === "completed") patch.completed_at = nowIso();
       if (transition.to === "cancelled") patch.cancelled_at = nowIso();
       if (transition.to === "in_progress") patch.started_at = order.started_at || nowIso();
       const deps = { restUrl, supabaseJson, serviceHeaders };
@@ -4157,7 +4226,16 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
             forceServiceId: service.profile.id,
           });
         }
-      } catch (_) {}
+      } catch (settleErr) {
+        console.warn(
+          "[cs] status_side_effects_failed",
+          JSON.stringify({
+            order_id: order?.id || null,
+            to: transition.to,
+            error: String(settleErr?.message || settleErr || "").slice(0, 200),
+          })
+        );
+      }
       try {
         const { notifyCompanionOrderStatusChange } = await import("./_companion-order-notify.js");
         const out = patched || { ...order, status: transition.to };

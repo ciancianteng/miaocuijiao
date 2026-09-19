@@ -671,7 +671,9 @@ export async function awardBossPointsForCompletedOrder(order, { method = "boss_m
       ? "order_complete_auto"
       : method === "admin_force"
         ? "order_complete_admin"
-        : "order_complete_boss";
+        : method === "cs_force"
+          ? "order_complete_cs"
+          : "order_complete_boss";
 
   let settings;
   try {
