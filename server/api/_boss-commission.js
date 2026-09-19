@@ -1,19 +1,24 @@
 /**
- * Boss direct-commission from platform fee.
+ * Boss / channel direct-commission from platform fee (role-agnostic beneficiary).
  *
  * Business rule (locked):
  *   order_amount = customer payment (gross)
  *   platform_fee = order_amount * platform_rate / 100
  *   boss_commission = platform_fee * boss_commission_rate / 100
- *   companion income is UNCHANGED (boss paid from platform revenue)
+ *   companion income is UNCHANGED (paid from platform revenue)
  *
- * Rate resolution:
+ * Beneficiaries (DIRECT ONLY — no upline walk):
+ *   - active relation of order.companion_id (target)
+ *   - active relation of order.boss_id / user_id (target)
+ *   dedupe by beneficiary_user_id → at most one earning per beneficiary per order
+ *
+ * Rate resolution per candidate:
  *   1) active relation.commission_rate (admin override)
- *   2) boss current level.commission_rate
+ *   2) beneficiary boss level.commission_rate (if any)
  *   3) platform_settings.defaultBossCommissionRate
- *   4) missing → skip (fail closed)
+ *   4) missing → skip that candidate
  *
- * SAFEGUARD: boss_commission ALWAYS = platform_fee * rate / 100 (never companion income).
+ * SAFEGUARD: commission ALWAYS = platform_fee * rate / 100 (never companion income).
  * Snapshots frozen after settle; level changes do not rewrite historical earnings.
  */
 import { money, roundMoney } from "./_commission-rates.js";
@@ -49,6 +54,7 @@ async function loadProfileForSettlementGuard(userId) {
 
 const EARNINGS_TABLE = "boss_commission_earnings";
 const SETTINGS_ID = "global";
+const SOURCE_RANK = { relation: 3, boss_level: 2, platform_default: 1, none: 0 };
 
 export function calcBossCommissionFromPlatformFee({
   orderAmount,
@@ -59,9 +65,7 @@ export function calcBossCommissionFromPlatformFee({
   const gross = roundMoney(orderAmount);
   const platformRate = Math.min(100, Math.max(0, money(platformFeeRate)));
   const bossRate = Math.min(100, Math.max(0, money(bossCommissionRate)));
-  // SAFETY: platform fee from order gross only
   const platformFeeAmount = roundMoney((gross * platformRate) / 100);
-  // SAFETY: boss commission from platform_fee only — never from companion income
   const bossCommissionAmount = roundMoney((platformFeeAmount * bossRate) / 100);
   void companionIncomeAmount;
   return {
@@ -72,6 +76,41 @@ export function calcBossCommissionFromPlatformFee({
     bossCommissionAmount,
     companionIncomeUnchanged: true,
     calculatedFrom: "platform_fee_only",
+  };
+}
+
+/** Partial / full clawback math (unit-testable). */
+export function calcBossCommissionClawback({
+  settledAmount,
+  alreadyClawed = 0,
+  orderAmount,
+  refundAmount = null,
+  mode = "refund",
+} = {}) {
+  const settled = roundMoney(settledAmount);
+  const clawed = Math.max(0, roundMoney(alreadyClawed));
+  const gross = roundMoney(orderAmount);
+  if (!(settled > 0)) {
+    return { targetClawback: clawed, delta: 0, fullyClawed: true, remaining: 0 };
+  }
+  let ratio = 1;
+  if (mode === "partial_refund" || (refundAmount != null && refundAmount !== "" && gross > 0)) {
+    const refund = Math.max(0, roundMoney(refundAmount));
+    ratio = Math.min(1, Math.max(0, refund / gross));
+  }
+  if (mode === "cancel" || mode === "refund") {
+    ratio = 1;
+  }
+  const targetClawback = roundMoney(settled * ratio);
+  const nextClawed = Math.max(clawed, targetClawback);
+  const delta = roundMoney(nextClawed - clawed);
+  const remaining = roundMoney(Math.max(0, settled - nextClawed));
+  return {
+    targetClawback: nextClawed,
+    delta,
+    fullyClawed: remaining <= 0,
+    remaining,
+    ratio,
   };
 }
 
@@ -95,20 +134,20 @@ export async function readDefaultBossCommissionRate() {
 }
 
 /**
- * @returns {{ rate: number|null, source: 'relation'|'platform_default'|'none', relation: object|null }}
+ * Resolve rate for a target user's active direct relation (depth-1 only).
  */
 export async function resolveBossCommissionRateForCompanion(companionId) {
-  if (!companionId) return { rate: null, source: "none", relation: null };
+  if (!companionId) return { rate: null, source: "none", relation: null, bossLevel: null };
   let relation = null;
   try {
     relation = await getActiveRelationForCompanion(companionId);
   } catch (error) {
     if (isRelationsMissing(error) || isMissingRelation(error)) {
-      return { rate: null, source: "none", relation: null };
+      return { rate: null, source: "none", relation: null, bossLevel: null };
     }
     throw error;
   }
-  if (!relation) return { rate: null, source: "none", relation: null };
+  if (!relation) return { rate: null, source: "none", relation: null, bossLevel: null };
 
   if (relation.commission_rate != null && relation.commission_rate !== "") {
     const n = money(relation.commission_rate);
@@ -146,10 +185,50 @@ export async function resolveBossCommissionRateForCompanion(companionId) {
   return { rate: platformDefault, source: "platform_default", relation, bossLevel };
 }
 
+/**
+ * Collect DIRECT beneficiaries for an order (companion side + boss side), dedupe by beneficiary id.
+ * Never walks beneficiary → beneficiary.
+ */
+export async function collectOrderCommissionCandidates(order = {}) {
+  const companionId = String(order.companion_id || "").trim();
+  const bossId = String(order.boss_id || order.user_id || order.customer_id || "").trim();
+  const sides = [];
+  if (companionId) sides.push({ side: "companion", targetId: companionId });
+  if (bossId && bossId !== companionId) sides.push({ side: "boss", targetId: bossId });
+
+  const byBeneficiary = new Map();
+  for (const { side, targetId } of sides) {
+    const resolved = await resolveBossCommissionRateForCompanion(targetId);
+    if (!resolved.relation || resolved.rate == null) continue;
+    const beneficiaryId = String(resolved.relation.boss_id || "").trim();
+    if (!beneficiaryId) continue;
+    if (companionId && beneficiaryId === companionId) continue;
+    const prev = byBeneficiary.get(beneficiaryId);
+    const rank = SOURCE_RANK[resolved.source] || 0;
+    const prevRank = prev ? SOURCE_RANK[prev.source] || 0 : -1;
+    if (!prev || rank > prevRank) {
+      byBeneficiary.set(beneficiaryId, {
+        beneficiaryId,
+        side,
+        sides: prev ? [...new Set([...(prev.sides || [prev.side]), side])] : [side],
+        rate: resolved.rate,
+        source: resolved.source,
+        relation: resolved.relation,
+        bossLevel: resolved.bossLevel || null,
+        targetId,
+      });
+    } else if (prev) {
+      prev.sides = [...new Set([...(prev.sides || [prev.side]), side])];
+    }
+  }
+  return [...byBeneficiary.values()];
+}
+
 export function viewBossCommissionEarning(row = {}) {
   return {
     id: row.id || "",
     bossId: row.boss_id || "",
+    beneficiaryUserId: row.beneficiary_user_id || row.boss_id || "",
     companionId: row.companion_id || "",
     relationId: row.relation_id || null,
     orderId: row.order_id || "",
@@ -158,6 +237,7 @@ export function viewBossCommissionEarning(row = {}) {
     platformFeeAmount: money(row.platform_fee_amount),
     bossCommissionRate: money(row.boss_commission_rate),
     bossCommissionAmount: money(row.boss_commission_amount),
+    clawbackAmount: money(row.clawback_amount),
     companionIncomeAmount: money(row.companion_income_amount),
     rateSource: row.rate_source || "",
     bossLevelId: row.boss_level_id || null,
@@ -170,55 +250,17 @@ export function viewBossCommissionEarning(row = {}) {
   };
 }
 
-/**
- * Idempotent settle: insert earnings + boss transaction + order snapshot.
- * Does not modify companion_income amount.
- */
-export async function settleBossCommissionFromPlatformFee(
+async function settleOneBeneficiary(
   order,
-  {
-    platformFeeRate,
-    platformFeeAmount,
-    companionIncomeAmount,
-    completedAt,
-    method = "",
-  } = {}
+  candidate,
+  { platformFee, platformRate, companionIncomeAmount, settledAt, method }
 ) {
-  if (!order?.id || !order?.companion_id) {
-    return { skipped: true, reason: "no_order_or_companion" };
-  }
-
-  // G8: Production settlement writes stay off until flag explicitly enabled.
-  if (!isSettlementEnabled()) {
-    return { skipped: true, reason: settlementDisabledReason() || "settlement_flag_disabled" };
-  }
-
-  // G5: fail-closed — never write earnings for smoke / test parties.
-  try {
-    const companionProfile = await loadProfileForSettlementGuard(order.companion_id);
-    const bossProfile = order.boss_id
-      ? await loadProfileForSettlementGuard(order.boss_id)
-      : null;
-    const partyGuard = assertNotTestPartiesForSettlement({
-      bossProfile,
-      companionProfile,
-      order,
-    });
-    if (!partyGuard.ok) {
-      return { skipped: true, reason: partyGuard.reason || "test_party" };
-    }
-  } catch (_) {
-    // Production: refuse to invent earnings when guard lookup fails.
-    if (isProductionRuntime()) {
-      return { skipped: true, reason: "test_guard_error" };
-    }
-  }
-
+  const beneficiaryId = candidate.beneficiaryId;
   try {
     const existing = await supabaseJson(
       restUrl(
         EARNINGS_TABLE,
-        `?order_id=eq.${encodeURIComponent(order.id)}&status=in.(pending,settled)&limit=1`
+        `?order_id=eq.${encodeURIComponent(order.id)}&or=(beneficiary_user_id.eq.${encodeURIComponent(beneficiaryId)},boss_id.eq.${encodeURIComponent(beneficiaryId)})&status=in.(pending,settled)&limit=1`
       ),
       { headers: serviceHeaders() }
     );
@@ -236,7 +278,7 @@ export async function settleBossCommissionFromPlatformFee(
     const existingTx = await supabaseJson(
       restUrl(
         "transactions",
-        `?order_id=eq.${encodeURIComponent(order.id)}&transaction_type=eq.boss_commission&limit=1`
+        `?order_id=eq.${encodeURIComponent(order.id)}&transaction_type=eq.boss_commission&user_id=eq.${encodeURIComponent(beneficiaryId)}&limit=1`
       ),
       { headers: serviceHeaders() }
     );
@@ -247,20 +289,10 @@ export async function settleBossCommissionFromPlatformFee(
     /* optional */
   }
 
-  const resolved = await resolveBossCommissionRateForCompanion(order.companion_id);
-  if (!resolved.relation || resolved.rate == null) {
-    return {
-      skipped: true,
-      reason: !resolved.relation ? "no_active_relation" : "no_commission_rate",
-      relation: resolved.relation || null,
-    };
-  }
-
-  // Re-check relation boss after rate resolve (authoritative earning recipient).
   try {
-    const earningBoss = await loadProfileForSettlementGuard(resolved.relation.boss_id);
+    const earningBoss = await loadProfileForSettlementGuard(beneficiaryId);
     if (earningBoss && isTestAccountRecord(earningBoss)) {
-      return { skipped: true, reason: "test_boss", relation: resolved.relation };
+      return { skipped: true, reason: "test_beneficiary", relation: candidate.relation };
     }
   } catch (_) {
     if (isProductionRuntime()) {
@@ -269,26 +301,11 @@ export async function settleBossCommissionFromPlatformFee(
   }
 
   const orderAmount = roundMoney(order.total_amount);
-  const platformRate = money(
-    platformFeeRate != null && platformFeeRate !== ""
-      ? platformFeeRate
-      : order.platform_fee_rate != null
-        ? order.platform_fee_rate
-        : order.platform_commission_rate
-  );
-  const platformFee =
-    platformFeeAmount != null && platformFeeAmount !== ""
-      ? roundMoney(platformFeeAmount)
-      : order.platform_fee != null && order.platform_fee !== ""
-        ? roundMoney(order.platform_fee)
-        : roundMoney((orderAmount * platformRate) / 100);
-
   const calc = calcBossCommissionFromPlatformFee({
     orderAmount,
     platformFeeRate: platformRate,
-    bossCommissionRate: resolved.rate,
+    bossCommissionRate: candidate.rate,
   });
-  // Keep platform fee amount aligned with companion settlement when provided
   calc.platformFeeAmount = platformFee;
   calc.bossCommissionAmount = roundMoney((platformFee * calc.bossCommissionRate) / 100);
 
@@ -297,36 +314,40 @@ export async function settleBossCommissionFromPlatformFee(
       skipped: true,
       reason: "zero_amount",
       calc,
-      relation: resolved.relation,
-      rateSource: resolved.source,
+      relation: candidate.relation,
+      rateSource: candidate.source,
     };
   }
 
-  const settledAt = completedAt || new Date().toISOString();
-  const level = resolved.bossLevel || null;
+  const level = candidate.bossLevel || null;
   const meta = {
     formula: "boss_commission = platform_fee * boss_commission_rate / 100",
     calculatedFrom: "platform_fee_only",
-    rateSource: resolved.source,
+    rateSource: candidate.source,
     completionMethod: method || "",
     companionIncomeUnchanged: true,
     companionIncomeAmount: money(companionIncomeAmount),
     bossLevelId: level?.id || null,
     bossLevelCode: level?.code || null,
+    sides: candidate.sides || [candidate.side],
+    directOnly: true,
+    noUplineTraversal: true,
   };
 
   const earningPayload = {
-    boss_id: resolved.relation.boss_id,
+    boss_id: beneficiaryId,
+    beneficiary_user_id: beneficiaryId,
     companion_id: order.companion_id,
-    relation_id: resolved.relation.id,
+    relation_id: candidate.relation.id,
     order_id: String(order.id),
     order_amount: calc.orderAmount,
     platform_fee_rate: calc.platformFeeRate,
     platform_fee_amount: calc.platformFeeAmount,
     boss_commission_rate: calc.bossCommissionRate,
     boss_commission_amount: calc.bossCommissionAmount,
+    clawback_amount: 0,
     companion_income_amount: money(companionIncomeAmount),
-    rate_source: resolved.source,
+    rate_source: candidate.source,
     boss_level_id: level?.id || null,
     boss_level_code: level?.code || null,
     status: "settled",
@@ -346,14 +367,29 @@ export async function settleBossCommissionFromPlatformFee(
     });
     earningRow = Array.isArray(rows) ? rows[0] : rows;
   } catch (error) {
-    if (/uq_boss_commission_earnings_order|duplicate|23505/i.test(String(error?.message || ""))) {
-      const again = await supabaseJson(
-        restUrl(EARNINGS_TABLE, `?order_id=eq.${encodeURIComponent(order.id)}&limit=1`),
-        { headers: serviceHeaders() }
-      ).catch(() => []);
-      return { duplicate: true, earning: viewBossCommissionEarning(again?.[0] || {}) };
+    const msg = String(error?.message || "");
+    if (/beneficiary_user_id|clawback_amount|PGRST204|42703|schema cache/i.test(msg)) {
+      const slim = { ...earningPayload };
+      delete slim.beneficiary_user_id;
+      delete slim.clawback_amount;
+      try {
+        const rows = await supabaseJson(restUrl(EARNINGS_TABLE), {
+          method: "POST",
+          headers: serviceHeaders(),
+          body: JSON.stringify(slim),
+        });
+        earningRow = Array.isArray(rows) ? rows[0] : rows;
+      } catch (error2) {
+        if (/uq_boss_commission_earnings_order|duplicate|23505/i.test(String(error2?.message || ""))) {
+          return { duplicate: true };
+        }
+        throw error2;
+      }
+    } else if (/uq_boss_commission_earnings_order|duplicate|23505/i.test(msg)) {
+      return { duplicate: true };
+    } else {
+      throw error;
     }
-    throw error;
   }
 
   try {
@@ -361,7 +397,7 @@ export async function settleBossCommissionFromPlatformFee(
       method: "POST",
       headers: serviceHeaders(),
       body: JSON.stringify({
-        user_id: resolved.relation.boss_id,
+        user_id: beneficiaryId,
         order_id: order.id,
         transaction_type: "boss_commission",
         amount: calc.bossCommissionAmount,
@@ -378,33 +414,276 @@ export async function settleBossCommissionFromPlatformFee(
     /* earnings row remains SoT */
   }
 
+  return {
+    skipped: false,
+    duplicate: false,
+    rateSource: candidate.source,
+    calc,
+    earning: viewBossCommissionEarning(earningRow || earningPayload),
+    beneficiaryId,
+  };
+}
+
+/**
+ * Idempotent settle with dual-side lookup + beneficiary dedupe.
+ * Never recursively walks beneficiary uplines.
+ */
+export async function settleBossCommissionFromPlatformFee(
+  order,
+  {
+    platformFeeRate,
+    platformFeeAmount,
+    companionIncomeAmount,
+    completedAt,
+    method = "",
+  } = {}
+) {
+  if (!order?.id || !order?.companion_id) {
+    return { skipped: true, reason: "no_order_or_companion" };
+  }
+
+  if (!isSettlementEnabled()) {
+    return { skipped: true, reason: settlementDisabledReason() || "settlement_flag_disabled" };
+  }
+
   try {
-    await supabaseJson(restUrl("orders", `?id=eq.${encodeURIComponent(order.id)}`), {
-      method: "PATCH",
-      headers: serviceHeaders(),
-      body: JSON.stringify({
-        platform_fee_rate: calc.platformFeeRate,
-        platform_fee: calc.platformFeeAmount,
-        boss_commission_rate: calc.bossCommissionRate,
-        boss_commission_amount: calc.bossCommissionAmount,
-        boss_commission_rate_source: resolved.source,
-        boss_level_id: level?.id || null,
-        boss_level_code: level?.code || null,
-        direct_boss_id: resolved.relation.boss_id,
-        boss_commission_relation_id: resolved.relation.id,
-      }),
+    const companionProfile = await loadProfileForSettlementGuard(order.companion_id);
+    const bossProfile = order.boss_id
+      ? await loadProfileForSettlementGuard(order.boss_id)
+      : null;
+    const partyGuard = assertNotTestPartiesForSettlement({
+      bossProfile,
+      companionProfile,
+      order,
     });
+    if (!partyGuard.ok) {
+      return { skipped: true, reason: partyGuard.reason || "test_party" };
+    }
   } catch (_) {
-    /* columns may be missing until migration applied */
+    if (isProductionRuntime()) {
+      return { skipped: true, reason: "test_guard_error" };
+    }
+  }
+
+  let candidates = [];
+  try {
+    candidates = await collectOrderCommissionCandidates(order);
+  } catch (error) {
+    if (isRelationsMissing(error) || isMissingRelation(error)) {
+      return { skipped: true, reason: "relations_missing" };
+    }
+    throw error;
+  }
+
+  if (!candidates.length) {
+    return { skipped: true, reason: "no_active_relation" };
+  }
+
+  const orderAmount = roundMoney(order.total_amount);
+  const platformRate = money(
+    platformFeeRate != null && platformFeeRate !== ""
+      ? platformFeeRate
+      : order.platform_fee_rate != null
+        ? order.platform_fee_rate
+        : order.platform_commission_rate
+  );
+  const platformFee =
+    platformFeeAmount != null && platformFeeAmount !== ""
+      ? roundMoney(platformFeeAmount)
+      : order.platform_fee != null && order.platform_fee !== ""
+        ? roundMoney(order.platform_fee)
+        : roundMoney((orderAmount * platformRate) / 100);
+
+  const settledAt = completedAt || new Date().toISOString();
+  const results = [];
+  for (const candidate of candidates) {
+    const one = await settleOneBeneficiary(order, candidate, {
+      platformFee,
+      platformRate,
+      companionIncomeAmount,
+      settledAt,
+      method,
+    });
+    results.push(one);
+  }
+
+  const settled = results.filter((r) => r && !r.skipped && !r.duplicate);
+  const duplicates = results.filter((r) => r?.duplicate);
+  const primary =
+    settled.find((r) => (r.earning?.meta?.sides || []).includes("companion")) ||
+    settled[0] ||
+    duplicates[0] ||
+    results[0];
+
+  if (primary?.earning && !primary.skipped) {
+    try {
+      await supabaseJson(restUrl("orders", `?id=eq.${encodeURIComponent(order.id)}`), {
+        method: "PATCH",
+        headers: serviceHeaders(),
+        body: JSON.stringify({
+          platform_fee_rate: primary.calc?.platformFeeRate ?? platformRate,
+          platform_fee: primary.calc?.platformFeeAmount ?? platformFee,
+          boss_commission_rate: primary.calc?.bossCommissionRate,
+          boss_commission_amount: primary.calc?.bossCommissionAmount,
+          boss_commission_rate_source: primary.rateSource,
+          boss_level_id: primary.earning?.bossLevelId || null,
+          boss_level_code: primary.earning?.bossLevelCode || null,
+          direct_boss_id: primary.beneficiaryId || primary.earning?.bossId,
+          boss_commission_relation_id: primary.earning?.relationId || null,
+        }),
+      });
+    } catch (_) {
+      /* columns may be missing until migration applied */
+    }
+  }
+
+  if (!settled.length && duplicates.length === results.length) {
+    return {
+      duplicate: true,
+      earnings: duplicates.map((d) => d.earning).filter(Boolean),
+      earning: duplicates[0]?.earning || null,
+      beneficiaries: candidates.map((c) => c.beneficiaryId),
+    };
+  }
+
+  if (!settled.length) {
+    return {
+      skipped: true,
+      reason: results[0]?.reason || "no_settleable_candidate",
+      results,
+      beneficiaries: candidates.map((c) => c.beneficiaryId),
+    };
   }
 
   return {
     skipped: false,
     duplicate: false,
-    rateSource: resolved.source,
-    calc,
-    earning: viewBossCommissionEarning(earningRow || earningPayload),
+    rateSource: primary?.rateSource,
+    calc: primary?.calc,
+    earning: primary?.earning,
+    earnings: settled.map((s) => s.earning).filter(Boolean),
+    beneficiaries: settled.map((s) => s.beneficiaryId).filter(Boolean),
+    candidateCount: candidates.length,
+    settledCount: settled.length,
   };
+}
+
+/**
+ * Refund / cancel clawback for channel commission rows on an order.
+ * Money fields stay immutable; uses clawback_amount (+ status=clawed_back when fully clawed).
+ */
+export async function clawbackBossCommissionForOrder(
+  order,
+  { refundAmount = null, reason = "", mode = "refund" } = {}
+) {
+  if (!order?.id) return { ok: false, reason: "no_order" };
+  let rows = [];
+  try {
+    rows =
+      (await supabaseJson(
+        restUrl(
+          EARNINGS_TABLE,
+          `?order_id=eq.${encodeURIComponent(order.id)}&status=in.(pending,settled)&select=*`
+        ),
+        { headers: serviceHeaders() }
+      )) || [];
+  } catch (error) {
+    if (isMissingRelation(error)) return { ok: true, skipped: true, reason: "earnings_table_missing" };
+    throw error;
+  }
+  if (!rows.length) return { ok: true, skipped: true, reason: "no_earnings", clawed: [] };
+
+  const orderAmount = roundMoney(order.total_amount ?? order.order_amount ?? 0);
+  const clawed = [];
+  for (const row of rows) {
+    const settledAmt = money(row.boss_commission_amount);
+    const already = money(row.clawback_amount);
+    const effectiveMode =
+      mode === "partial_refund"
+        ? "partial_refund"
+        : mode === "cancel" || mode === "refund"
+          ? mode
+          : refundAmount != null && refundAmount !== "" && Number(refundAmount) < orderAmount
+            ? "partial_refund"
+            : mode;
+    const math = calcBossCommissionClawback({
+      settledAmount: settledAmt,
+      alreadyClawed: already,
+      orderAmount,
+      refundAmount:
+        refundAmount != null && refundAmount !== ""
+          ? refundAmount
+          : effectiveMode === "cancel" || effectiveMode === "refund"
+            ? orderAmount
+            : refundAmount,
+      mode: effectiveMode,
+    });
+    if (!(math.delta > 0) && math.fullyClawed && already >= settledAmt) {
+      clawed.push({ id: row.id, skipped: true, reason: "already_fully_clawed" });
+      continue;
+    }
+    if (!(math.delta > 0) && !math.fullyClawed) {
+      clawed.push({ id: row.id, skipped: true, reason: "no_delta" });
+      continue;
+    }
+    const patch = {
+      clawback_amount: math.targetClawback,
+      updated_at: new Date().toISOString(),
+    };
+    if (math.fullyClawed) patch.status = "clawed_back";
+    try {
+      await supabaseJson(restUrl(EARNINGS_TABLE, `?id=eq.${encodeURIComponent(row.id)}`), {
+        method: "PATCH",
+        headers: serviceHeaders(),
+        body: JSON.stringify(patch),
+      });
+    } catch (error) {
+      if (/clawback_amount|PGRST204|42703|schema cache/i.test(String(error?.message || ""))) {
+        if (math.fullyClawed || effectiveMode === "cancel" || effectiveMode === "refund") {
+          await supabaseJson(restUrl(EARNINGS_TABLE, `?id=eq.${encodeURIComponent(row.id)}`), {
+            method: "PATCH",
+            headers: serviceHeaders(),
+            body: JSON.stringify({ status: "clawed_back", updated_at: new Date().toISOString() }),
+          }).catch(() => null);
+        }
+      } else {
+        throw error;
+      }
+    }
+
+    if (math.delta > 0) {
+      try {
+        await supabaseJson(restUrl("transactions"), {
+          method: "POST",
+          headers: serviceHeaders(),
+          body: JSON.stringify({
+            user_id: row.beneficiary_user_id || row.boss_id,
+            order_id: order.id,
+            transaction_type: "boss_commission_clawback",
+            amount: -Math.abs(math.delta),
+            status: "completed",
+            note: `MCJ_BOSS_COMMISSION_CLAWBACK:${JSON.stringify({
+              reason: reason || mode,
+              mode: effectiveMode,
+              earningId: row.id,
+              delta: math.delta,
+            })}`,
+            created_at: new Date().toISOString(),
+          }),
+        });
+      } catch (_) {
+        /* best-effort */
+      }
+    }
+    clawed.push({
+      id: row.id,
+      beneficiaryId: row.beneficiary_user_id || row.boss_id,
+      delta: math.delta,
+      clawbackAmount: math.targetClawback,
+      fullyClawed: math.fullyClawed,
+    });
+  }
+  return { ok: true, clawed, count: clawed.length };
 }
 
 export async function listBossCommissionEarnings({
@@ -417,7 +696,11 @@ export async function listBossCommissionEarnings({
     "order=settled_at.desc",
     `limit=${Math.min(200, Math.max(1, Number(limit) || 50))}`,
   ];
-  if (bossId) parts.push(`boss_id=eq.${encodeURIComponent(bossId)}`);
+  if (bossId) {
+    parts.push(
+      `or=(boss_id.eq.${encodeURIComponent(bossId)},beneficiary_user_id.eq.${encodeURIComponent(bossId)})`
+    );
+  }
   if (companionId) parts.push(`companion_id=eq.${encodeURIComponent(companionId)}`);
   const rows = await supabaseJson(restUrl(EARNINGS_TABLE, `?${parts.join("&")}`), {
     headers: serviceHeaders(),
@@ -425,4 +708,4 @@ export async function listBossCommissionEarnings({
   return (Array.isArray(rows) ? rows : []).map(viewBossCommissionEarning);
 }
 
-export { EARNINGS_TABLE };
+export { EARNINGS_TABLE, SOURCE_RANK };

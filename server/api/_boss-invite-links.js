@@ -106,12 +106,14 @@ function linkValidity(link) {
 
 export async function createBossInviteLink({
   bossId,
+  inviterId = "",
   maxUses = null,
   expiresInDays = null,
   label = "",
 } = {}) {
   assertInviteLinksEnabled();
-  if (!bossId) throw httpError("缺少老板账号", 400);
+  const inviter = String(inviterId || bossId || "").trim();
+  if (!inviter) throw httpError("缺少邀请人账号", 400);
   const code = generateInviteCode();
   let expiresAt = null;
   const days = Number(expiresInDays);
@@ -125,7 +127,7 @@ export async function createBossInviteLink({
   }
   const payload = {
     code,
-    boss_id: bossId,
+    boss_id: inviter,
     status: "active",
     max_uses: max,
     use_count: 0,
@@ -321,6 +323,8 @@ export async function redeemInviteAfterCompanionReady({
         outcome: "skipped_already_bound",
         relationId: existing.id || null,
         bossId: existing.boss_id,
+        beneficiaryId: existing.boss_id,
+        message: "已有账号如需绑定/调整直属关系，请联系管理员。",
       };
     }
   } catch (error) {

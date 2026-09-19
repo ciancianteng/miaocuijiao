@@ -39,6 +39,7 @@
 -- | 12 | password_reset_requests OTP fix columns | 耐久 OTP / cooldown / Resend id（评审稿；Staging 先行） | P0 | 12_... |
 -- | 10 | gameplay_products.commission_rate | 更多玩法商品平台抽成%（0–100）持久化 | P0 | 10_... |
 -- | 11 | companion_levels.base_price + companion_services pricing cols | 陪玩定价 P1 SoT（评审稿；Staging 先行） | P1 | 11_... |
+-- | 13 | direct relation role-agnostic (earnings beneficiary + clawback) | 扩展现有直属 SoT；不新建并行关系表 | P0 | 13_... |
 --
 -- 共性风险：
 --   R1 缺表会导致对应 API 降级/报缺 relation，功能不可用

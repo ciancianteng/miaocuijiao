@@ -1176,15 +1176,27 @@ export default async function handler(req, res) {
     });
     const after = updated[0] || { ...before, ...patch };
     if ((action === "cancel" || String(after.status || "") === "cancelled" || String(after.status || "") === "refunded") && before.status !== after.status) {
+      const clawMode = action === "refund" || after.status === "refunded" ? "refund" : "cancel";
+      const clawReason = String(payload.reason || body.reason || action);
       try {
         const { clawbackCompanionIncomeForOrder } = await import("../_companion-income.js");
         await clawbackCompanionIncomeForOrder(
           { supabaseJson, restUrl, serviceHeaders },
           after,
-          { reason: String(payload.reason || body.reason || action), mode: action === "refund" || after.status === "refunded" ? "refund" : "cancel" }
+          { reason: clawReason, mode: clawMode }
         );
       } catch (err) {
         console.warn("[admin/orders] companion income clawback", err?.message || err);
+      }
+      try {
+        const { clawbackBossCommissionForOrder } = await import("../_boss-commission.js");
+        await clawbackBossCommissionForOrder(after, {
+          reason: clawReason,
+          mode: clawMode,
+          refundAmount: payload.refundAmount ?? body.refundAmount ?? body.refund_amount ?? null,
+        });
+      } catch (err) {
+        console.warn("[admin/orders] boss commission clawback", err?.message || err);
       }
     }
     const ids = [after.boss_id, after.companion_id, after.customer_service_id].filter(Boolean);
