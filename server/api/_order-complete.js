@@ -257,6 +257,14 @@ export function createOrderCompleteHelpers({ restUrl, supabaseJson, serviceHeade
 
   async function settleCompanionIncome(saved, completedAt, method) {
     if (!saved?.companion_id) return null;
+    try {
+      const { canSettleCompanionIncomeForOrder, isMultiGroupParent } = await import("./_order-group.js");
+      if (isMultiGroupParent(saved) || !canSettleCompanionIncomeForOrder(saved)) {
+        return { skipped: true, reason: "multi_group_parent_no_companion_income" };
+      }
+    } catch (_) {
+      /* soft */
+    }
 
     // G8: keep Production settlement writes off until flag is explicitly enabled.
     if (!isSettlementEnabled()) {
@@ -518,6 +526,23 @@ export function createOrderCompleteHelpers({ restUrl, supabaseJson, serviceHeade
    */
   async function finalizeOrderCompletion(before, { method = "boss_manual", actorId = "", message = "" } = {}) {
     if (!before?.id) throw Object.assign(new Error("订单不存在。"), { status: 404 });
+
+    // Multi-group parent is status-aggregated only — never companion finalize / settle.
+    try {
+      const { isMultiGroupParent, ORDER_TYPE_MULTI_GROUP } = await import("./_order-group.js");
+      if (
+        isMultiGroupParent(before) ||
+        String(before.order_type || "").toLowerCase() === ORDER_TYPE_MULTI_GROUP
+      ) {
+        throw Object.assign(
+          new Error("多人主订单不能按陪玩单完成；请完成各子订单，系统将自动聚合主单状态。"),
+          { status: 409, code: "MULTI_PARENT_NO_DIRECT_FINALIZE" }
+        );
+      }
+    } catch (guardErr) {
+      if (guardErr?.status === 409) throw guardErr;
+    }
+
     if (String(before.status) === "completed" || String(before.settlement_status || "") === "settled") {
       const bossPoints = await safeAwardBossPoints(before, {
         method,
@@ -642,11 +667,49 @@ export function createOrderCompleteHelpers({ restUrl, supabaseJson, serviceHeade
     }
 
     // Boss loyalty points: independent of settlement enabled/skipped/fail.
-    // Order is already completed — award attempt must not block the response.
+    // Multi-group children: awardBossPointsForCompletedOrder skips child (parent_order_id).
+    // After child complete: refresh parent aggregate; award once on parent when group completes.
     const bossPoints = await safeAwardBossPoints(saved, {
       method,
       operatorId: actorId || null,
     });
+
+    let parentRefresh = null;
+    if (saved?.parent_order_id) {
+      try {
+        const { refreshParentOrderStatus } = await import("./_order-group.js");
+        parentRefresh = await refreshParentOrderStatus(saved.parent_order_id, {
+          loadOrder: async (pid) =>
+            (
+              await supabaseJson(restUrl("orders", `?id=eq.${encodeURIComponent(pid)}&limit=1`), {
+                headers: serviceHeaders(),
+              })
+            )?.[0] || null,
+          loadChildren: async (pid) =>
+            (await supabaseJson(
+              restUrl("orders", `?parent_order_id=eq.${encodeURIComponent(pid)}&select=*&order=created_at.asc`),
+              { headers: serviceHeaders() }
+            ).catch(() => [])) || [],
+          patchOrder: async (pid, patch) => {
+            const rows = await supabaseJson(restUrl("orders", `?id=eq.${encodeURIComponent(pid)}`), {
+              method: "PATCH",
+              headers: serviceHeaders(),
+              body: JSON.stringify(patch),
+            });
+            return rows?.[0] || null;
+          },
+          awardBossPointsForCompletedOrder: async (order, opts = {}) =>
+            safeAwardBossPoints(order, {
+              method: opts.method || method,
+              operatorId: opts.operatorId ?? actorId ?? null,
+            }),
+          awardMethod: method,
+          operatorId: actorId || null,
+        });
+      } catch (e) {
+        parentRefresh = { ok: false, error: String(e?.message || e).slice(0, 160) };
+      }
+    }
 
     let reward = null;
     try {
@@ -707,6 +770,7 @@ export function createOrderCompleteHelpers({ restUrl, supabaseJson, serviceHeade
       },
       settlement,
       bossPoints,
+      parentRefresh,
       reward,
       completionMethod: method,
     };
