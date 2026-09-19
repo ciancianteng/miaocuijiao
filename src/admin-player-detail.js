@@ -382,7 +382,7 @@
       esc((lv.code || "") + " " + (lv.name || "")) +
       " · 基础价格：" +
       esc(String(base)) +
-      " 猫粮（通过后按此价格初始化 companion_services）</p>"
+      " 猫粮（通过后按此价格写入陪玩资料价格）</p>"
     );
   }
 

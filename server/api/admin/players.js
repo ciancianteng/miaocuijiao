@@ -1147,20 +1147,28 @@ async function reviewApplication(req, companion, payload) {
   let profileBefore = companion.user_id ? await getProfile(companion.user_id) : {};
   let patch;
   if (status === "approved") {
-    // Pricing V2 P2: require level, seed companion_services from level.base_price, no applicant price.
+    // Pricing V2 P2: require level; seed sell price from level.base_price.
+    // Prefer companion_services when table exists; else companion_profiles.price/game_prices.
     let publishPreview = null;
     let levelMeta = null;
     let basePrice = 0;
+    let seedProfilesPatch = null;
     if (isFirstApprovalTransition(companion, status)) {
       publishPreview = await ensureFirstApprovalReady(companion, payload, profileBefore);
       void publishPreview;
       levelMeta = payload._p2LevelMeta || (await resolveLevelMeta(payload.levelId || payload.level_id));
       basePrice = Number(payload._p2BasePrice ?? levelMeta?.basePrice ?? levelMeta?.base_price);
       try {
-        await seedCompanionServicesFromLevel(
+        const seedResult = await seedCompanionServicesFromLevel(
           { ...companion, user_id: companion.user_id },
           { id: levelMeta.id, basePrice, base_price: basePrice, name: levelMeta.name }
         );
+        seedProfilesPatch = seedResult?.profilesPatch || null;
+        if (seedResult?.skippedTable) {
+          console.warn(
+            "[admin/players] companion_services missing — approve continues via companion_profiles pricing SoT"
+          );
+        }
       } catch (seedErr) {
         throw Object.assign(new Error(seedErr?.message || "初始化陪玩服务价格失败"), {
           status: seedErr?.status || 500,
@@ -1206,6 +1214,7 @@ async function reviewApplication(req, companion, payload) {
       level_id: String(levelMeta.id),
       level_name: String(levelMeta.name || ""),
       price: basePrice,
+      ...(seedProfilesPatch?.game_prices ? { game_prices: seedProfilesPatch.game_prices } : {}),
     };
     const orderRate = percent(payload.orderCommissionRate ?? payload.commission_rate ?? payload.commissionRate);
     if (orderRate !== undefined) extras.commission_rate = orderRate;
@@ -1601,10 +1610,18 @@ export default async function handler(req, res) {
       companionPatch.level_name = levelMeta.name;
       companionPatch.price = basePrice;
       try {
-        await seedCompanionServicesFromLevel(
+        const seedResult = await seedCompanionServicesFromLevel(
           { ...companion, user_id: companion.user_id },
           { id: levelMeta.id, basePrice, base_price: basePrice, name: levelMeta.name }
         );
+        if (seedResult?.profilesPatch?.game_prices) {
+          companionPatch.game_prices = seedResult.profilesPatch.game_prices;
+        }
+        if (seedResult?.skippedTable) {
+          console.warn(
+            "[admin/players] companion_services missing — edit-approve continues via companion_profiles pricing SoT"
+          );
+        }
       } catch (seedErr) {
         return json(res, seedErr?.status || 500, {
           ok: false,
