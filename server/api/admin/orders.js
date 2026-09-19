@@ -717,6 +717,43 @@ export default async function handler(req, res) {
       });
     } else if (action === "update_status") {
       patch.status = String(body.status || payload.status || "");
+      const { normalizeOrderStatus } = await import("../_order-status.js");
+      if (normalizeOrderStatus(patch.status) === "completed") {
+        try {
+          const { createOrderCompleteHelpers } = await import("../_order-complete.js");
+          const helpers = createOrderCompleteHelpers({
+            restUrl,
+            supabaseJson,
+            serviceHeaders,
+            addSystemMessage: async (order, actorId, content) => addSystem(order, actorId || admin.id, content),
+          });
+          let working = before;
+          if (String(before.status) === "in_progress" && !helpers.orderHasCompletionPending(before)) {
+            await helpers.markCompletionPending(before);
+            working =
+              (
+                await supabaseJson(restUrl("orders", `?id=eq.${encodeURIComponent(id)}&limit=1`), {
+                  headers: serviceHeaders(),
+                })
+              )?.[0] || before;
+          }
+          const out = await helpers.finalizeOrderCompletion(working, {
+            method: "admin_force",
+            actorId: admin.id,
+            message: String(payload.reason || body.reason || "后台改状态确认完成"),
+          });
+          return json(res, 200, {
+            ok: true,
+            message: out.message || "订单已完成。",
+            order: safeOrder(out.order || working, {}),
+            completionMethod: out.completionMethod || "admin_force",
+            bossPoints: out.bossPoints || null,
+            settlement: out.settlement || null,
+          });
+        } catch (err) {
+          return json(res, err.status || 500, { ok: false, message: err.message || "确认完成失败" });
+        }
+      }
     } else if (action === "assign_service") {
       patch.customer_service_id = String(body.customer_service_id || payload.customer_service_id || payload.service_id || "") || null;
     } else if (action === "assign_companion" || action === "confirm_grab_assignment") {
