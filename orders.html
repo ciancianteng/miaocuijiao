@@ -696,7 +696,7 @@
           html='<div class="status-panel"><p>订单金额：'+moneyEmoji(o.totalAmount||o.amount)+'</p><p>支付方式：'+esc(o.paymentMethod||o.payment_method||'待确认')+'</p><p class="order-hint">下一步：进入支付页扫码付款并上传截图，点击「我已付款」后进入“待人工审核”</p><div class="status-actions"><a class="order-btn primary" href="payment-confirm.html?order='+encodeURIComponent(o.id)+'">立即去支付</a></div></div>';
         }else if(o.status==='claimed'){
           if(isMultiParent(o)){
-            html='<div class="status-panel"><p>付款状态：已付款</p><p>接单状态：等待陪玩确认</p><p class="order-hint">请查看下方每位陪玩的确认状态。有人无法接单时可补位或只保留其余陪玩。</p>'+multiConfirmQueueHtml(o)+'</div>';
+            html='<div class="status-panel"><p>付款状态：已付款</p><p>接单状态：等待陪玩确认</p><p class="order-hint">请查看左侧每位陪玩的确认状态。有人无法接单时可补位或只保留其余陪玩。</p></div>';
           }else{
             html='<div class="status-panel"><p>付款状态：已付款</p><p>接单状态：等待陪玩确认</p><p>陪玩：'+esc(companionName(o))+'</p><p class="order-hint">订单已支付，正在等待陪玩确认接单</p></div>';
           }
