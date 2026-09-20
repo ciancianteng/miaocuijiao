@@ -121,7 +121,7 @@
     if (document.querySelector('link[data-mcj-place-order-css]')) return;
     var link = document.createElement("link");
     link.rel = "stylesheet";
-    link.href = "src/place-order-modal.css?v=20260730-viewport-fix2";
+    link.href = "/src/place-order-modal.css?v=20260920multiMobileP0";
     link.setAttribute("data-mcj-place-order-css", "1");
     document.head.appendChild(link);
   }
@@ -155,11 +155,20 @@
     var mask = activeMask();
     return mask ? mask.querySelector(sel) : document.querySelector(sel);
   }
+  function sanitizeUserError(msg) {
+    var text = String(msg || "").trim();
+    if (!text) return "操作失败，请重试";
+    // Never surface raw JS engine errors (esp. Safari "Can't find variable: …") to bosses.
+    if (/Can't find variable|is not defined|ReferenceError|TypeError|SyntaxError|InternalError/i.test(text)) {
+      return "下单出错了，请刷新页面后重试";
+    }
+    return text;
+  }
   function failValidate(msg, focusSel) {
-    var text = String(msg || "").trim() || "请完善下单信息";
+    var text = sanitizeUserError(msg) || "请完善下单信息";
     setError(text);
     toast(text);
-    console.warn("[MCJPlaceOrder] validate", text);
+    console.warn("[MCJPlaceOrder] validate", msg);
     if (focusSel) {
       var el = qs(focusSel);
       if (el) {
@@ -1382,7 +1391,9 @@
       unitPrice: money(c.unitPrice),
       service: currentServiceLabel(),
       serviceType: currentServiceLabel(),
+      serviceId: state.selectedServiceId || "",
       game: c.game || currentServiceLabel(),
+      gamePrices: c.gamePrices || c.game_prices || {},
       hours: currentHours(),
       quantity: currentQuantity(),
       services: resolveServices(c),
@@ -1391,9 +1402,20 @@
       statusText: c.availabilityText || "",
     });
     if (!result || !result.ok) return;
-    // Do NOT create an order — close modal and return to hall browsing.
+    // Do NOT create an order — close modal and continue multi-pick / checkout.
     close();
-    toast(result.count >= 2 ? "已加入队伍，可去结算" : "已加入队伍，继续选择下一位陪玩");
+    if (result.count >= 2) {
+      toast("已加入队伍，可去结算");
+      if (typeof window.MCJMultiCompanionTeam.openCheckout === "function") {
+        window.MCJMultiCompanionTeam.openCheckout();
+      }
+      return;
+    }
+    try {
+      sessionStorage.setItem("mcjMultiTeamPicking", "1");
+    } catch (ePick) {}
+    toast("已加入队伍，继续选择下一位陪玩");
+    location.href = "/companion-center.html";
   }
 
   function submitOrder() {
@@ -1434,7 +1456,10 @@
       var notesEl = qs("[data-po-notes]");
       var couponEl = qs("[data-po-coupon]");
       var qtyEl = qs("[data-po-quantity]");
-      var startTime = readStartTimeFromDom(mask) || normalizeTimeValue(state.startTime);
+      // Root-cause: never use bare `mask` here — submitOrder is outside open()'s scope.
+      // Safari throws "Can't find variable: mask" (commit 6662598 introduced this).
+      var startTime =
+        readStartTimeFromDom(activeMask()) || normalizeTimeValue(state.startTime);
       var gameId = gameIdEl ? String(gameIdEl.value || "").trim() : "";
       var payment = String(state.payment || "").trim();
 
@@ -1620,7 +1645,7 @@
       state.submitStartedAt = 0;
       setSubmitLoading(false);
       console.error("[MCJPlaceOrder] submit crashed", err);
-      failValidate((err && err.message) || "订单创建失败");
+      failValidate(sanitizeUserError((err && err.message) || "订单创建失败"));
     }
   }
 

@@ -7,6 +7,8 @@
 
   var MAX_TEAM = 4; // product default; backend allows up to 20
   var STORAGE_KEY = "mcjMultiTeamSelection";
+  var PICKING_KEY = "mcjMultiTeamPicking";
+  var HALL_HREF = "/companion-center.html";
   var DEFAULT_AVATAR =
     "data:image/svg+xml," +
     encodeURIComponent(
@@ -97,7 +99,7 @@
     if (document.querySelector('link[data-mcj-team-css]')) return;
     var link = document.createElement("link");
     link.rel = "stylesheet";
-    link.href = "src/multi-companion-team.css?v=20260920timePicker24h";
+    link.href = "/src/multi-companion-team.css?v=20260920multiMobileP0";
     link.setAttribute("data-mcj-team-css", "1");
     document.head.appendChild(link);
   }
@@ -243,6 +245,7 @@
             unitPrice: money(l.unitPrice),
             service: l.service || "",
             serviceType: l.serviceType || l.service || "",
+            serviceId: l.serviceId || "",
             game: l.game || l.service || "",
             hours: money(l.hours || 1),
             quantity: Math.max(1, Math.floor(money(l.quantity || 1) || 1)),
@@ -285,9 +288,68 @@
     state.pendingIdempotencyKey = "";
     try {
       sessionStorage.removeItem(STORAGE_KEY);
+      sessionStorage.removeItem(PICKING_KEY);
     } catch (e) {}
     renderBar();
     closeSheet();
+  }
+
+  function isPicking() {
+    try {
+      return sessionStorage.getItem(PICKING_KEY) === "1";
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function setPicking(on) {
+    try {
+      if (on) sessionStorage.setItem(PICKING_KEY, "1");
+      else sessionStorage.removeItem(PICKING_KEY);
+    } catch (e) {}
+  }
+
+  function continueToHall() {
+    setPicking(true);
+    state.expanded = false;
+    renderBar();
+    // Draft stays in sessionStorage (STORAGE_KEY). Only clearTeam() wipes it.
+    location.href = HALL_HREF;
+  }
+
+  /**
+   * Stack multi team bar above the real bottom action bar (profile CS/下单,
+   * app tabbar, etc). Measure — do not hardcode a magic bottom offset.
+   */
+  function syncBottomStackOffset() {
+    try {
+      var root = document.documentElement;
+      var actions =
+        document.querySelector(".profile-bottom-bar.pd-bottom-bar") ||
+        document.querySelector(".profile-bottom-bar") ||
+        document.querySelector(".mobile-bottom-nav.mcj-app-tabbar") ||
+        document.querySelector(".mcj-app-tabbar");
+      var h = 0;
+      if (actions) {
+        var rect = actions.getBoundingClientRect();
+        h = Math.max(0, Math.ceil(rect.height || 0));
+        // Include the bar's own bottom offset from the visual viewport edge.
+        var style = window.getComputedStyle(actions);
+        var bottomPx = parseFloat(style.bottom) || 0;
+        if (bottomPx > 0) h += Math.ceil(bottomPx);
+        else {
+          // fixed bar may use transform; fall back to viewport gap
+          var gap = Math.max(0, window.innerHeight - rect.bottom);
+          h += Math.ceil(gap);
+        }
+      }
+      if (!(h > 0)) h = 64;
+      root.style.setProperty("--mcj-bottom-actions-h", h + "px");
+      // Team bar height for page padding
+      var teamBar = document.querySelector("[data-mcj-team-bar]");
+      var teamH = teamBar ? Math.ceil(teamBar.getBoundingClientRect().height || 0) : 0;
+      root.style.setProperty("--mcj-team-bar-h", (teamH || 64) + "px");
+    } catch (e) {}
   }
 
   function findLine(companionId) {
@@ -300,11 +362,27 @@
   function resolveServicesFor(companion) {
     if (window.MCJPlaceOrder && typeof window.MCJPlaceOrder.resolveServices === "function") {
       try {
-        return window.MCJPlaceOrder.resolveServices(companion) || [];
+        var resolved = window.MCJPlaceOrder.resolveServices(companion) || [];
+        if (resolved.length) return resolved;
       } catch (e) {}
     }
+    if (Array.isArray(companion.services) && companion.services.length) {
+      return companion.services
+        .map(function (s, i) {
+          if (!s) return null;
+          return {
+            name: String(s.name || s.service || "").trim(),
+            price: money(s.price != null ? s.price : s.unitPrice != null ? s.unitPrice : 0),
+            serviceId: String(s.serviceId || s.service_id || s.id || "").trim(),
+            sort: s.sort != null ? Number(s.sort) : i,
+          };
+        })
+        .filter(function (s) {
+          return s && s.name;
+        });
+    }
     var name = companion.service || companion.game || "陪玩";
-    return [{ name: name, price: money(companion.unitPrice || companion.price) }];
+    return [{ name: name, price: money(companion.unitPrice || companion.price), serviceId: companion.serviceId || "" }];
   }
 
   function isUnavailable(payload) {
@@ -347,7 +425,9 @@
       avatar: raw.avatar || raw.image || "",
       unitPrice: unitPrice,
       service: raw.service || raw.game || "陪玩",
+      serviceId: raw.serviceId || raw.service_id || "",
       game: raw.game || raw.service || "陪玩",
+      gamePrices: raw.gamePrices || raw.game_prices || {},
       services: raw.services,
       online: raw.online !== false,
     };
@@ -357,21 +437,28 @@
       return { ok: false, error: "no_service" };
     }
     var preferService = String(raw.service || raw.serviceType || raw.game || "").trim();
+    var preferId = String(raw.serviceId || raw.service_id || "").trim();
     var first =
+      (preferId &&
+        services.find(function (s) {
+          return String(s.serviceId || s.id || "") === preferId;
+        })) ||
       (preferService &&
         services.find(function (s) {
           return String(s.name) === preferService;
         })) ||
       services[0];
-    var lineUnit = money(raw.unitPrice || first.price || unitPrice) || unitPrice;
+    // SoT: selected service price wins over companion-level default unitPrice.
+    var lineUnit = money(first && first.price) > 0 ? money(first.price) : unitPrice;
     var line = {
       companionId: companionId,
       companionName: companion.companionName,
       avatar: companion.avatar,
       unitPrice: lineUnit,
-      service: first.name || companion.service,
-      serviceType: first.name || companion.service,
-      game: first.name || companion.game,
+      service: (first && first.name) || companion.service,
+      serviceType: (first && first.name) || companion.service,
+      serviceId: (first && (first.serviceId || first.id)) || companion.serviceId || "",
+      game: (first && first.name) || companion.game,
       hours: Math.max(0.5, money(raw.hours || 1) || 1),
       quantity: Math.max(1, Math.floor(money(raw.quantity || 1) || 1)),
       services: services,
@@ -380,7 +467,12 @@
     state.lines.push(line);
     persist();
     renderBar();
+    syncBottomStackOffset();
     toast(state.lines.length === 1 ? "已加入队伍，可继续选陪玩" : "已加入一起下单");
+    if (isPicking() && state.lines.length >= 2) {
+      setPicking(false);
+      openCheckout();
+    }
     return { ok: true, count: state.lines.length };
   }
 
@@ -400,15 +492,30 @@
     Object.keys(patch || {}).forEach(function (k) {
       line[k] = patch[k];
     });
-    if (patch.service || patch.serviceType) {
-      var name = patch.service || patch.serviceType;
-      var hit = (line.services || []).find(function (s) {
-        return s.name === name;
-      });
+    if (patch.service || patch.serviceType || patch.serviceId) {
+      var name = patch.service || patch.serviceType || line.service;
+      var sid = String(patch.serviceId || "").trim();
+      var hit =
+        (sid &&
+          (line.services || []).find(function (s) {
+            return String(s.serviceId || s.id || "") === sid;
+          })) ||
+        (line.services || []).find(function (s) {
+          return s.name === name;
+        });
       if (hit && money(hit.price) > 0) line.unitPrice = money(hit.price);
-      line.service = name;
-      line.serviceType = name;
-      line.game = name;
+      else if (patch.unitPrice != null && money(patch.unitPrice) > 0) line.unitPrice = money(patch.unitPrice);
+      if (hit) {
+        line.serviceId = hit.serviceId || hit.id || sid || line.serviceId || "";
+        name = hit.name || name;
+      } else if (sid) {
+        line.serviceId = sid;
+      }
+      if (name) {
+        line.service = name;
+        line.serviceType = name;
+        line.game = name;
+      }
     }
     persist();
     renderBar();
@@ -442,6 +549,7 @@
     if (!state.lines.length) {
       if (bar) bar.remove();
       document.documentElement.classList.remove("mcj-team-bar-on");
+      syncBottomStackOffset();
       return;
     }
     document.documentElement.classList.add("mcj-team-bar-on");
@@ -509,6 +617,7 @@
     } else {
       bar.classList.remove("is-expanded");
     }
+    syncBottomStackOffset();
   }
 
   function closeSheet() {
@@ -552,6 +661,10 @@
               esc(l.companionId) +
               '" data-svc="' +
               esc(s.name) +
+              '" data-svc-id="' +
+              esc(s.serviceId || s.id || "") +
+              '" data-svc-price="' +
+              esc(String(money(s.price))) +
               '">' +
               esc(s.name) +
               "</button>"
@@ -872,7 +985,13 @@
         state.submitting = false;
         // Keep pendingIdempotencyKey so duplicate click retries are safe.
         paintSheetTotals();
-        toast(err.message || "多人下单失败");
+        var raw = String((err && err.message) || "");
+        console.error("[MCJMultiCompanionTeam] submit failed", err);
+        if (/Can't find variable|is not defined|ReferenceError|TypeError/i.test(raw)) {
+          toast("下单出错了，请刷新页面后重试");
+        } else {
+          toast(raw || "多人下单失败");
+        }
       });
   }
 
@@ -901,9 +1020,7 @@
     }
     if (e.target.closest("[data-mcj-team-continue]")) {
       e.preventDefault();
-      state.expanded = false;
-      renderBar();
-      toast("继续浏览陪玩大厅，再选一位");
+      continueToHall();
       return;
     }
     if (e.target.closest("[data-mcj-team-expand]")) {
@@ -929,6 +1046,7 @@
       updateLine(svc.getAttribute("data-mcj-team-svc"), {
         service: svc.getAttribute("data-svc"),
         serviceType: svc.getAttribute("data-svc"),
+        serviceId: svc.getAttribute("data-svc-id") || "",
       });
       paintSheet();
       return;
@@ -997,6 +1115,11 @@
   ensureCss();
   restore();
   renderBar();
+  syncBottomStackOffset();
+  window.addEventListener("resize", syncBottomStackOffset);
+  window.addEventListener("orientationchange", function () {
+    setTimeout(syncBottomStackOffset, 120);
+  });
   document.addEventListener("click", onDocClick, true);
   document.addEventListener("input", onDocInput, true);
   window.addEventListener("storage", onStorage);
@@ -1010,6 +1133,7 @@
     remove: removeCompanion,
     clear: clearTeam,
     openCheckout: openCheckout,
+    continueToHall: continueToHall,
     getLines: function () {
       return state.lines.slice();
     },
@@ -1024,6 +1148,8 @@
       isUnavailable: isUnavailable,
       findLine: findLine,
       state: state,
+      syncBottomStackOffset: syncBottomStackOffset,
+      isPicking: isPicking,
     },
   };
 })();

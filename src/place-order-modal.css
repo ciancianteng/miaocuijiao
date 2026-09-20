@@ -3,7 +3,8 @@
 .mcj-po-mask {
   position: fixed !important;
   inset: 0 !important;
-  width: 100vw !important;
+  width: 100% !important;
+  height: 100% !important;
   height: 100dvh !important;
   z-index: 99998 !important;
   display: flex !important;
@@ -24,6 +25,8 @@
   margin: 0 !important;
   transform: none !important;
   filter: none !important;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
 .mcj-po-dialog {
@@ -40,8 +43,8 @@
   right: auto !important;
   bottom: auto !important;
   transform: none !important;
-  width: min(760px, calc(100vw - 40px)) !important;
-  max-width: calc(100vw - 40px) !important;
+  width: min(760px, calc(100% - 40px)) !important;
+  max-width: calc(100% - 40px) !important;
   height: auto !important;
   max-height: calc(100dvh - 40px) !important;
   max-height: min(88dvh, calc(100dvh - 40px)) !important;
@@ -515,7 +518,8 @@
   background: rgba(0, 0, 0, 0.28);
   color: #fff;
   padding: 12px 14px;
-  font-size: 15px;
+  /* iOS zooms the whole page when focused inputs are <16px; keep >=16 to avoid sticky zoom. */
+  font-size: 16px;
   font-family: inherit;
 }
 
