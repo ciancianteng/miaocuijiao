@@ -242,8 +242,11 @@
       function date(v){if(!v)return '-';try{return new Date(v).toLocaleString('zh-CN',{hour12:false})}catch(e){return v}}
       function voiceModeLabel(o){
         var m=String((o&& (o.voiceMode||o.voice_mode))||'game_mic').toLowerCase();
-        if(m==='discord')return '🎧 Discord 私人语音房';
         if(m==='none')return '💬 仅平台聊天';
+        if(m==='discord'){
+          var hasCh=!!(o.discordChannelUrl||o.discord_channel_url||o.discordChannelId||o.discord_channel_id);
+          return hasCh?'🎧 Discord 私人语音房':'🎧 Discord';
+        }
         return '🎮 游戏麦';
       }
       function startDiscordOAuthFromOrders(returnTo){
@@ -671,7 +674,7 @@
                 ? (o.discordChannelUrl || o.discord_channel_url
                     ? field('Discord 语音房','<a class="order-btn" style="display:inline-flex;width:auto;padding:6px 10px" href="'+esc(o.discordChannelUrl||o.discord_channel_url)+'" target="_blank" rel="noopener">🎧 进入 Discord 语音房</a>')
                     : (String(o.discordChannelStatus||o.discord_channel_status||'')==='error'
-                        ? field('Discord 语音','创建失败 · <button class="order-btn" type="button" data-discord-retry="'+esc(o.id)+'">重试创建</button>')
+                        ? field('Discord 语音','暂时创建失败 · <button class="order-btn" type="button" data-discord-retry="'+esc(o.id)+'">重试创建</button>')
                         : field('Discord 语音','等待陪玩确认后开启')))
                 : '')+
             '</div></div>'+

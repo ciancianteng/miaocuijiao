@@ -2794,8 +2794,11 @@
   var REJECT_REASONS=['正在服务其他订单','时间无法配合','临时有事','不接该项目','其他'];
   function voiceModeLabel(o){
     var m=String((o&&(o.voiceMode||o.voice_mode))||'game_mic').toLowerCase();
-    if(m==='discord')return '🎧 Discord 私人语音房';
     if(m==='none')return '💬 仅平台聊天';
+    if(m==='discord'){
+      var hasCh=!!(o.discordChannelUrl||o.discord_channel_url||o.discordChannelId||o.discord_channel_id);
+      return hasCh?'🎧 Discord 私人语音房':'🎧 Discord 私人语音房';
+    }
     return '🎮 游戏麦';
   }
   function startDiscordOAuth(returnTo){
@@ -2820,7 +2823,7 @@
       return '<div><span>Discord 语音房</span><strong><a class="pw-btn" href="'+esc(url)+'" target="_blank" rel="noopener">🎧 进入 Discord 语音房</a></strong></div>';
     }
     if(String(o.discordChannelStatus||o.discord_channel_status||'')==='error'){
-      return '<div><span>Discord 语音房</span><strong>创建失败 <button class="pw-btn" type="button" data-discord-retry="'+esc(o.id)+'">重试创建</button></strong></div>';
+      return '<div><span>Discord 语音房</span><strong>暂时创建失败 <button class="pw-btn" type="button" data-discord-retry="'+esc(o.id)+'">重试创建</button></strong></div>';
     }
     var bound=!!(o.discordBound||o.discord_bound);
     if(!bound){
