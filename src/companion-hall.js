@@ -486,7 +486,15 @@
       "</div>";
     var badgeClass = statusBadgeClass(item.status);
     var statusText = statusChipText(item.status);
-    var publicId = item.publicId || "未生成";
+    var publicId =
+      (window.MCJCompanionPublicId && window.MCJCompanionPublicId.customerFacingCompanionId
+        ? window.MCJCompanionPublicId.customerFacingCompanionId(item)
+        : "") ||
+      item.publicId ||
+      item.companionCode ||
+      "";
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(String(publicId))) publicId = "";
+    if (!publicId) publicId = "未生成";
     var nickname = String(item.name || "").trim() || "未命名陪玩";
     var uuid = String(item.id || "").trim();
     var detailHref = uuid

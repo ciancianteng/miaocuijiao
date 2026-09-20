@@ -252,7 +252,19 @@
         "-"
     );
     if (!rangeText || rangeText === "-") rangeText = "暂无数据";
-    var publicId = c.publicId || (c.companionUid ? "P" + c.companionUid : "");
+    var publicId =
+      (window.MCJCompanionPublicId && window.MCJCompanionPublicId.customerFacingCompanionId
+        ? window.MCJCompanionPublicId.customerFacingCompanionId(c)
+        : "") ||
+      c.publicId ||
+      c.companionCode ||
+      "";
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(String(publicId))) publicId = "";
+    if (!publicId && c.companionUid) {
+      var n = Number(c.companionUid);
+      if (n >= 100001) publicId = "PW" + String(n - 100000).padStart(5, "0");
+      else if (n > 0) publicId = "PW" + String(n).padStart(5, "0");
+    }
     var identityApi = window.MCJCompanionIdentity;
     // Same badge order as hall: level + verification + voice (game shown in meta line below).
     var tagsHtml = identityApi

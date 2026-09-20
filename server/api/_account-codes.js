@@ -227,6 +227,116 @@ export async function allocateOrderNo(dbFn) {
   return fallback || formatOrderNo(Date.now() % 1000000 || 1);
 }
 
+export async function allocateCompanionCode(dbFn) {
+  const viaRpc = await allocateCodeViaRpc(dbFn, "mcj_allocate_companion_code");
+  if (/^PW\d+$/i.test(viaRpc)) return viaRpc.toUpperCase().replace(/^pw/i, "PW");
+  const fallback = await allocateCodeByScan(
+    () =>
+      dbFn(
+        "companion_profiles",
+        `?select=companion_code&companion_code=not.is.null&order=companion_code.desc&limit=500`
+      ).catch(() => []),
+    { field: "companion_code", parse: parseCompanionCodeNumber, format: formatCompanionCode, table: "companion_profiles" }
+  );
+  return fallback || formatCompanionCode(1);
+}
+
+/**
+ * Ensure a companion_profiles row has a durable customer-facing PW code.
+ * Never returns a UUID. Persists newly allocated codes.
+ *
+ * @param {(table:string, query?:string, init?:object)=>Promise<any>} dbFn
+ * @param {object} row companion_profiles row (needs id)
+ * @returns {Promise<string>} PW##### or ""
+ */
+export async function ensureCompanionPublicCode(dbFn, row = {}) {
+  const existing = resolveCompanionPublicCode(row);
+  if (existing) {
+    const stored = String(row.companion_code || "").trim();
+    if (!/^PW\d+$/i.test(stored) && row.id) {
+      try {
+        await dbFn(`companion_profiles`, `?id=eq.${encodeURIComponent(row.id)}`, {
+          method: "PATCH",
+          body: JSON.stringify({ companion_code: existing, updated_at: new Date().toISOString() }),
+        });
+        row.companion_code = existing;
+      } catch {
+        /* best effort persist derived code */
+      }
+    }
+    return existing;
+  }
+  if (!row.id || typeof dbFn !== "function") return "";
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const code = await allocateCompanionCode(dbFn);
+    if (!code) continue;
+    try {
+      const patched = await dbFn(`companion_profiles`, `?id=eq.${encodeURIComponent(row.id)}`, {
+        method: "PATCH",
+        body: JSON.stringify({ companion_code: code, updated_at: new Date().toISOString() }),
+      });
+      const after = Array.isArray(patched) ? patched[0] : patched;
+      const saved = resolveCompanionPublicCode(after || { ...row, companion_code: code });
+      if (saved) {
+        row.companion_code = saved;
+        return saved;
+      }
+    } catch (err) {
+      const msg = String(err?.message || err || "");
+      if (/duplicate|unique|23505/i.test(msg)) continue;
+      // Column missing / RPC missing — stop retrying
+      if (/companion_code|PGRST204|42703|schema cache/i.test(msg)) return "";
+    }
+  }
+  return resolveCompanionPublicCode(row) || "";
+}
+
+/**
+ * Batch ensure for many companion_profiles rows. Mutates rows in place.
+ */
+export async function ensureCompanionPublicCodes(dbFn, rows = []) {
+  const list = Array.isArray(rows) ? rows : [];
+  for (const row of list) {
+    if (!row || row.companion_code) {
+      const code = resolveCompanionPublicCode(row);
+      if (code) {
+        row.companion_code = code;
+        continue;
+      }
+    }
+    try {
+      await ensureCompanionPublicCode(dbFn, row);
+    } catch {
+      /* continue */
+    }
+  }
+  return list;
+}
+
+/** Customer-facing display helper — never returns a UUID. */
+export function customerFacingCompanionId(row = {}, extras = {}) {
+  const code = resolveCompanionPublicCode(row, extras);
+  if (code) return code;
+  const candidates = [
+    extras.publicId,
+    extras.companionCode,
+    row.publicId,
+    row.companionCode,
+    row.companion_code,
+  ];
+  for (const c of candidates) {
+    const s = String(c || "").trim();
+    if (!s || isDbUuid(s)) continue;
+    if (/^PW\d+$/i.test(s)) return s.toUpperCase().replace(/^pw/i, "PW");
+    if (/^P\d+$/i.test(s)) {
+      const n = parseCompanionCodeNumber(s);
+      if (n) return formatCompanionCode(n);
+    }
+    if (!isDbUuid(s) && s.length <= 24) return s;
+  }
+  return "";
+}
+
 export async function allocateWithdrawalNo(dbFn) {
   const viaRpc = await allocateCodeViaRpc(dbFn, "mcj_allocate_withdrawal_no");
   if (/^WD\d+$/i.test(viaRpc)) return viaRpc.toUpperCase();

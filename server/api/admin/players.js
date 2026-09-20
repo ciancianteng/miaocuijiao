@@ -1258,6 +1258,17 @@ async function reviewApplication(req, companion, payload) {
     }
     // Must set verification_status=approved so /api/public/companions publishes the companion.
     patch = approveListingPatchForRow(companion, extras);
+    if (!String(companion.companion_code || "").trim() && !patch.companion_code) {
+      try {
+        const { allocateCompanionCode, resolveCompanionPublicCode } = await import("../_account-codes.js");
+        if (!resolveCompanionPublicCode(companion)) {
+          const code = await allocateCompanionCode(companionDb);
+          if (code) patch.companion_code = code;
+        }
+      } catch (err) {
+        console.warn("[admin/players] companion_code allocate failed", err?.message || err);
+      }
+    }
   } else {
     patch = unlistListingPatch({ status, reason });
     Object.keys(patch).forEach((k) => {

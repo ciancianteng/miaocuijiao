@@ -122,6 +122,14 @@ async function supabaseJson(url, init = {}) {
   if (!response.ok) throw new Error(body?.message || body?.hint || body?.details || "陪玩数据库请求失败");
   return body;
 }
+/** Adapter for ensureCompanionPublicCode(dbFn, row). */
+async function companionDb(table, query = "", init = {}) {
+  const headersBag = {
+    ...headers(),
+    Prefer: init.method && init.method !== "GET" ? "return=representation" : undefined,
+  };
+  return supabaseJson(restUrl(table, query), { ...init, headers: { ...headersBag, ...(init.headers || {}) } });
+}
 function money(value) {
   const n = Number(String(value ?? "").replace(/[^\d.-]/g, ""));
   return Number.isFinite(n) ? n : 0;
@@ -195,7 +203,7 @@ function resolveCompanionServiceIds(row = {}, catalog = []) {
 function publicCompanion(row = {}, profile = {}, levels = [], catalog = [], mediaExtras = {}, certTags = []) {
   const base = mapCompanionPublicFields(row, profile, mediaExtras);
   const avail = base.availabilityStatus || availabilityCode(row);
-  const publicId = base.publicId || (row.companion_uid ? `P${row.companion_uid}` : "");
+  const publicId = base.publicId || "";
   const avatar = resolveCompanionAvatar(profile, row, mediaExtras) || DEFAULT_COMPANION_AVATAR;
   const cover = resolveCompanionCover(profile, row, mediaExtras) || avatar;
   const name = base.name || "未命名陪玩";
@@ -206,6 +214,12 @@ function publicCompanion(row = {}, profile = {}, levels = [], catalog = [], medi
     : row.level_name && !/^未设置/.test(String(row.level_name))
       ? row.level_name
       : "未设置等级";
+  const levelMin = level?.min ?? level?.minPrice ?? null;
+  const levelMax = level?.max ?? level?.maxPrice ?? null;
+  const levelPriceRange =
+    levelMin != null && levelMax != null
+      ? `${levelMin}–${levelMax}${level?.maxPlus ? "+" : ""}`
+      : "";
   const rates = resolvePlatformCommission(row.commission_rate, level?.commissionRate ?? 20);
   const serviceTypes = resolveServiceTypes(row);
   const serviceIds = resolveCompanionServiceIds(row, catalog);
@@ -634,6 +648,13 @@ async function loadCompanions(id = "") {
   }
   // JS safety net (no deletes): drop smoke/test companions even if DB filter unavailable.
   companions = companions.filter((row) => row && row.is_test_account !== true);
+  // Soft-heal: allocate durable PW public IDs for customer-facing surfaces.
+  try {
+    const { ensureCompanionPublicCodes } = await import("../_account-codes.js");
+    await ensureCompanionPublicCodes(companionDb, companions);
+  } catch {
+    /* best effort */
+  }
   const userIds = [...new Set(companions.map((row) => row.user_id).filter(Boolean))];
   if (!userIds.length) return [];
   const profileIds = companions.map((row) => row.id).filter(Boolean);
