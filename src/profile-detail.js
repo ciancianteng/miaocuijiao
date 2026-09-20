@@ -266,29 +266,23 @@
       else if (n > 0) publicId = "PW" + String(n).padStart(5, "0");
     }
     var identityApi = window.MCJCompanionIdentity;
-    // Same badge order as hall: level + verification + voice (game shown in meta line below).
-    var tagsHtml = identityApi
+    // Hero: certification only. Game / level / price live once in service chips (no voice "未设置").
+    var certHtml = identityApi
       ? identityApi.renderTags({
-          levelId: c.levelId || "",
-          levelLabel: levelText,
-          levelColor: c.levelColor || (c.levelConfig && c.levelConfig.color) || "",
-          badgeBorder: c.badgeBorder || (c.levelConfig && c.levelConfig.badgeBorder) || "",
-          badgeText: c.badgeText || (c.levelConfig && c.levelConfig.badgeText) || "",
+          levelId: "",
+          levelLabel: "",
           gender: "",
-          voiceType: c.voiceType || c.voice_type || "",
+          voiceType: "",
           certTags: c.certTags || c.certificationTags || [],
           tags: [],
-          className: "tag-row companion-tags companion-identity-row",
-          includeLevel: true,
+          className: "pd-cert-row tag-row companion-tags companion-identity-row",
+          includeLevel: false,
           includeGender: false,
-          includeVoice: true,
+          includeVoice: false,
           serviceLimit: 0,
           certLimit: 3,
         })
       : (function () {
-          var level = levelText && levelText !== "-"
-            ? '<span class="companion-level-pill mcj-level-tag">' + esc(levelText) + "</span>"
-            : "";
           var certTags = (c.certTags || c.certificationTags || [])
             .slice(0, 3)
             .map(function (t) {
@@ -299,15 +293,46 @@
             })
             .filter(Boolean)
             .join("");
-          var voice = String(c.voiceType || c.voice_type || "").trim().replace(/^声线\s*[:：]\s*/, "");
-          var voiceHtml =
-            '<span class="mcj-voice-tag' +
-            (voice ? "" : " is-unset") +
-            '"><span class="mcj-voice-label">声线：</span>' +
-            esc(voice || "未设置") +
-            "</span>";
-          return '<div class="mcj-id-tags tag-row companion-tags companion-identity-row">' + level + certTags + voiceHtml + "</div>";
+          return certTags
+            ? '<div class="pd-cert-row mcj-id-tags tag-row companion-tags companion-identity-row">' +
+                certTags +
+                "</div>"
+            : "";
         })();
+    var voiceLineRaw = String(c.voiceType || c.voice_type || "")
+      .trim()
+      .replace(/^声线\s*[:：]\s*/, "");
+    if (/^(无|暂无|未设置|-|—)$/.test(voiceLineRaw)) voiceLineRaw = "";
+    var voiceChipHtml = voiceLineRaw
+      ? '<span class="pd-service-chip pd-service-chip--voice">声线：' + esc(voiceLineRaw) + "</span>"
+      : "";
+    var gameChipLabel = String(c.game || "").trim();
+    if (!gameChipLabel || /^(未设置|综合游戏|-|—)$/.test(gameChipLabel)) gameChipLabel = "";
+    var levelChipLabel = levelText && levelText !== "-" ? String(levelText).trim() : "";
+    var priceChipLabel = "";
+    if (rangeText && rangeText !== "暂无数据") {
+      priceChipLabel = /猫粮/.test(rangeText) ? String(rangeText).trim() : String(rangeText).trim() + " 猫粮";
+    }
+    var serviceChips = [];
+    if (gameChipLabel) {
+      serviceChips.push('<span class="pd-service-chip">' + esc(gameChipLabel) + "</span>");
+    }
+    if (levelChipLabel) {
+      serviceChips.push(
+        '<span class="pd-service-chip pd-service-chip--level" data-level-id="' +
+          esc(c.levelId || "") +
+          '">' +
+          esc(levelChipLabel) +
+          "</span>"
+      );
+    }
+    if (priceChipLabel) {
+      serviceChips.push('<span class="pd-service-chip">' + esc(priceChipLabel) + "</span>");
+    }
+    if (voiceChipHtml) serviceChips.push(voiceChipHtml);
+    var serviceChipsHtml = serviceChips.length
+      ? '<div class="pd-service-chips" aria-label="服务标签">' + serviceChips.join("") + "</div>"
+      : "";
     var galleryUrls = galleryList.map(function (g) {
       return g.url;
     });
@@ -422,17 +447,13 @@
               : (pop && (pop.favorites || (pop.total && pop.total.favorites) || (pop.weekly && pop.weekly.favorites))) || 0
       ) || 0;
     var favText = plainEmptyMetric(favCount);
-    var orderSummaryText =
-      completedOrders > 0
-        ? "完成 " + plainEmptyMetric(completedOrders) + " 单 · 好评 " + goodText
-        : "暂无订单记录";
     var bioRaw = String(c.desc || c.description || "").trim();
     var bioText = bioRaw || "该陪玩暂未填写个人介绍";
     var bioEmpty = !bioRaw;
     var weeklyRankText = rankText(weeklyRank);
     var monthlyRankText = rankText(monthlyRank);
     var popScoreText = plainEmptyMetric(popScore);
-    var newcomerBadge = isNewcomer ? '<span class="pd-newcomer-badge">⭐ 新人陪玩</span>' : "";
+    var newcomerBadge = isNewcomer ? '<span class="pd-newcomer-badge">新人陪玩</span>' : "";
 
     s.setAttribute("data-companion-level", c.levelId || "");
     s.innerHTML =
@@ -444,23 +465,20 @@
       esc(c.name) +
       ' 头像" onerror="this.onerror=null;this.src=\'/default-avatar.png\'">' +
       (popBadges ? '<div class="profile-pop-badges" style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;justify-content:center">' + popBadges + "</div>" : "") +
-      '</div><div class="profile-info-panel"><p class="detail-label">MEOW CUI JIAO</p><h1>' +
+      '</div><div class="profile-info-panel"><p class="detail-label">MEOW CUI JIAO</p>' +
+      '<div class="pd-name-row"><h1>' +
       esc(c.name || c.nickname || "陪玩") +
-      " " +
-      statusHtml(c) +
-      (newcomerBadge ? " " + newcomerBadge : "") +
-      '</h1><div class="profile-id">ID：' +
+      "</h1>" +
+      (certHtml || "") +
+      (newcomerBadge || "") +
+      '</div><div class="profile-id">ID：' +
       esc(publicId || "待生成") +
       '</div><p class="profile-bio' +
       (bioEmpty ? " is-empty" : "") +
       '">' +
       esc(bioText) +
-      '</p><div class="game-line">' +
-      esc(c.game || "未设置游戏") +
-      " · " +
-      esc(levelText) +
-      "</div>" +
-      (tagsHtml || "") +
+      "</p>" +
+      serviceChipsHtml +
       '<div class="detail-card price-card pd-voice-card pd-voice-in-hero' +
       (hasVoice ? "" : " is-empty") +
       '"><div class="section-head"><h2>语音介绍</h2></div><div class="pd-voice-body">' +
@@ -469,15 +487,6 @@
       (hasVideo
         ? '<div class="detail-card pd-video-card"><div class="section-head"><h2>个人展示视频</h2></div>' + videoHtml + "</div>"
         : "") +
-      '</div></section><section class="detail-card info-card pd-info-card pd-info-card--full"><div class="section-head"><h2>基本资料</h2></div><div class="pd-meta-list">' +
-      metaRow("游戏", esc(c.game || "综合游戏")) +
-      metaRow(
-        "等级",
-        '<span class="companion-level-pill" data-level-id="' + esc(c.levelId || "") + '">' + esc(levelText) + "</span>"
-      ) +
-      metaRow("在线状态", statusHtml(c)) +
-      metaRow("价格区间", esc(rangeText), rangeText === "暂无数据") +
-      metaRow("订单摘要", esc(orderSummaryText), !(completedOrders > 0)) +
       '</div></section><section class="detail-card info-card pd-info-card pd-info-card--full"><div class="section-head"><h2>数据表现</h2></div>' +
       (function () {
         var hasAny =

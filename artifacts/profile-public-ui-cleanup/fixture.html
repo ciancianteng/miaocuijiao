@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Profile UI cleanup fixture</title>
+  <link rel="stylesheet" href="/src/style.css">
+  <link rel="stylesheet" href="/src/design-system.css">
+  <link rel="stylesheet" href="/src/profile.css?v=20260920profileClean1">
+  <style>
+    body.profile-detail-page{min-height:100vh;background:#0a0610;padding-bottom:90px}
+  </style>
+</head>
+<body class="profile-detail-page">
+  <main class="profile-detail-shell">
+    <section class="detail-card"><h1>陪玩资料</h1><p>fixture loading…</p></section>
+  </main>
+  <nav class="profile-bottom-bar" hidden></nav>
+  <script src="/src/currency.js"></script>
+  <script src="/src/companion-levels.js?v=20260907tagLayout1"></script>
+  <script src="/src/companion-identity.js?v=20260907tagLayout1"></script>
+  <script src="/src/companion-public-id.js?v=20260920publicId1"></script>
+  <script>
+    // Intercept public companion fetch used by profile-detail.js
+    const mock = {
+      ok: true,
+      companions: [{
+        id: "6a26fe4d-cbc4-4383-8ab5-66051721f729",
+        name: "P2种子验收陪玩",
+        nickname: "P2种子验收陪玩",
+        companionCode: "PW00010",
+        publicId: "PW00010",
+        game: "VALORANT",
+        levelId: "lv2",
+        levelName: "Lv2 灵喵",
+        levelLabel: "Lv2 灵喵",
+        level: "Lv2 灵喵",
+        priceMin: 30,
+        priceMax: 40,
+        online: false,
+        onlineStatus: "offline",
+        voiceType: "",
+        desc: "",
+        avatarUrl: "/default-avatar.png",
+        image: "/default-avatar.png",
+        certTags: [{ name: "验真陪玩", icon: "✓" }],
+        certificationTags: [{ name: "验真陪玩", icon: "✓" }],
+        reviews: [],
+        reviewCount: 0,
+        completedOrders: 0,
+        giftWall: [],
+        gallery: [],
+        popularity: null
+      }]
+    };
+    const _fetch = window.fetch.bind(window);
+    window.fetch = function (url, opts) {
+      const u = String(url || "");
+      if (u.includes("/api/public/companions")) {
+        return Promise.resolve(new Response(JSON.stringify(mock), {
+          status: 200,
+          headers: { "Content-Type": "application/json" }
+        }));
+      }
+      return _fetch(url, opts);
+    };
+    // Force profile-detail to resolve this companion
+    history.replaceState({}, "", "/artifacts/profile-public-ui-cleanup/fixture.html?code=PW00010&id=6a26fe4d-cbc4-4383-8ab5-66051721f729");
+  </script>
+  <script src="/src/profile-detail.js?v=20260920profileClean1"></script>
+</body>
+</html>
