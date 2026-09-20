@@ -189,7 +189,11 @@
     if (endEl) endEl.textContent = end;
     if (hintEl) {
       hintEl.textContent =
-        "服务时段：" + scheduleWindowLabel(start, end) + "（" + serviceDurationHours() + " 小时）";
+        "服务时段：" +
+        scheduleWindowLabel(start, end) +
+        "（" +
+        serviceDurationHours() +
+        " 小时，按时长×数量自动计算）";
     }
   }
   function totalAmount() {
