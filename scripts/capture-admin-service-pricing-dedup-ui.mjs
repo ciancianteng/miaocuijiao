@@ -16,6 +16,7 @@ fs.mkdirSync(ART, { recursive: true });
 fs.mkdirSync(OUT, { recursive: true });
 
 const css = fs.readFileSync(path.join(root, "src/admin-suite.css"), "utf8");
+const formCss = fs.readFileSync(path.join(root, "src/admin-form-controls.css"), "utf8");
 
 const html = `<!doctype html>
 <html lang="zh-CN">
@@ -24,6 +25,7 @@ const html = `<!doctype html>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>Admin service pricing harness</title>
 <style>${css}
+${formCss}
 body{margin:0;background:#0b0b0f;font-family:ui-sans-serif,system-ui,sans-serif;color:#f6eef3;}
 .harness-shell{min-height:100vh;position:relative;}
 .harness-bg{padding:24px;color:#9f949c;font-size:13px;}
@@ -37,8 +39,8 @@ body{margin:0;background:#0b0b0f;font-family:ui-sans-serif,system-ui,sans-serif;
 </head>
 <body>
 <div class="shot-label" id="shot-label">harness</div>
-<div class="harness-shell" id="admin-shell">
-  <div class="harness-bg">Admin 陪玩管理 · 编辑抽屉 harness（真实 admin-suite.css）</div>
+<div class="harness-shell admin-shell" id="admin-shell">
+  <div class="harness-bg">Admin 陪玩管理 · 编辑抽屉 harness（真实 admin-suite.css + admin-form-controls.css）</div>
   <aside class="player-detail-drawer" id="drawer">
     <div class="player-drawer-head">
       <div>
@@ -53,14 +55,14 @@ body{margin:0;background:#0b0b0f;font-family:ui-sans-serif,system-ui,sans-serif;
       <span style="color:#9f949c;font-size:12px">Lv2</span>
     </div>
     <section class="player-detail-section">
-      <h3>基础资料</h3>
-      <div class="player-edit-grid">
-        <label>昵称<input value="小橘"/></label>
-        <label>等级<select><option>Lv2 灵喵</option></select></label>
-      </div>
-      <div class="admin-service-prices" data-service-prices id="price-block">
-        <h4>游戏/服务独立价格</h4>
-        <p class="muted admin-service-prices-hint">每个服务单独设置单价。老板下单时按所选服务读取；等级默认价格仅作 fallback。</p>
+      <h3>等级与分成</h3>
+      <div class="player-edit-grid" data-player-section-split>
+        <label><span>当前等级</span><select><option>Lv2 灵喵</option></select></label>
+        <label><span>订单平台抽成 %</span><input value="20"/></label>
+        <div class="admin-service-prices" data-service-prices id="price-block">
+          <h4>游戏/服务独立价格</h4>
+          <p class="muted admin-service-prices-hint">每个服务单独设置单价。老板下单时按所选服务读取；等级默认价格仅作 fallback。</p>
+        </div>
       </div>
     </section>
     <div class="player-drawer-actions" id="footer">
@@ -116,7 +118,7 @@ function render(list, label) {
     labelEl.className = "admin-service-price-row";
     labelEl.innerHTML =
       '<span class="admin-service-price-name"><strong title="' + s.serviceName + '">' + s.serviceName + "</strong></span>" +
-      '<span class="admin-service-price-input"><input type="number" value="' + s.unitPrice + '"><small>猫粮 / 小时</small></span>';
+      '<span class="admin-service-price-input"><input type="number" min="1" step="1" value="' + s.unitPrice + '" required><small>猫粮 / 小时</small></span>';
     block.appendChild(labelEl);
   });
   const chips = document.getElementById("boss-chips");
@@ -161,6 +163,7 @@ async function main() {
   const browser = await chromium.launch({
     executablePath:
       process.env.PLAYWRIGHT_CHROMIUM_PATH ||
+      "/usr/local/bin/google-chrome" ||
       "/usr/bin/chromium-browser" ||
       "/usr/bin/chromium" ||
       "/usr/bin/google-chrome",
@@ -169,48 +172,67 @@ async function main() {
   });
 
   const shots = [
-    { name: "01-mobile-390.png", w: 390, h: 844, fn: async (p) => { await p.evaluate(() => window.renderDeduped("390 Mobile")); } },
-    { name: "02-tablet-768.png", w: 768, h: 1024, fn: async (p) => { await p.evaluate(() => window.renderDeduped("768 Tablet")); } },
-    { name: "03-desktop-1366.png", w: 1366, h: 768, fn: async (p) => { await p.evaluate(() => window.renderDeduped("1366 Desktop")); } },
-    { name: "04-desktop-1920-prices.png", w: 1920, h: 1080, fn: async (p) => {
+    { name: "01-mobile-390.png", w: 390, h: 844, fn: async (p) => {
+      await p.evaluate(() => window.renderDeduped("390 Mobile"));
+      await p.locator("#price-block").scrollIntoViewIfNeeded();
+    }},
+    { name: "02-tablet-768.png", w: 768, h: 1024, fn: async (p) => {
+      await p.evaluate(() => window.renderDeduped("768 Tablet"));
+      await p.locator("#price-block").scrollIntoViewIfNeeded();
+    }},
+    { name: "03-desktop-1366.png", w: 1366, h: 768, fn: async (p) => {
+      await p.evaluate(() => window.renderDeduped("1366 Desktop"));
+      await p.locator("#price-block").scrollIntoViewIfNeeded();
+    }},
+    { name: "04-price-input-focus.png", w: 1366, h: 768, fn: async (p) => {
+      await p.evaluate(() => window.renderDeduped("Focus price input"));
+      await p.locator("#price-block").scrollIntoViewIfNeeded();
+      await p.locator(".admin-service-price-input input").first().focus();
+    }},
+    { name: "05-desktop-footer-save.png", w: 1366, h: 900, fn: async (p) => {
+      await p.evaluate(() => window.renderDeduped("Save footer"));
+      await p.locator("#footer").scrollIntoViewIfNeeded();
+    }},
+    { name: "06-desktop-1920-prices.png", w: 1920, h: 1080, fn: async (p) => {
       await p.evaluate(() => window.renderDeduped("1920 Desktop prices"));
       await p.locator("#price-block").scrollIntoViewIfNeeded();
     }},
-    { name: "05-desktop-footer.png", w: 1920, h: 1080, fn: async (p) => {
-      await p.evaluate(() => window.renderDeduped("1920 Footer"));
-      await p.locator("#footer").scrollIntoViewIfNeeded();
-    }},
-    { name: "06-desktop-no-hscroll.png", w: 1920, h: 1080, fn: async (p) => {
+    { name: "07-desktop-no-hscroll.png", w: 1920, h: 1080, fn: async (p) => {
       await p.evaluate(() => window.renderDeduped("1920 no h-scroll"));
-      const metrics = await p.evaluate(() => ({
-        docSW: document.documentElement.scrollWidth,
-        docCW: document.documentElement.clientWidth,
-        bodySW: document.body.scrollWidth,
-        bodyCW: document.body.clientWidth,
-        drawerSW: document.getElementById("drawer").scrollWidth,
-        drawerCW: document.getElementById("drawer").clientWidth,
-        overflow: window.__OVERFLOW__,
-        listLen: window.__LIST__.length,
-      }));
+      const metrics = await p.evaluate(() => {
+        const input = document.querySelector(".admin-service-price-input input");
+        const cs = input ? getComputedStyle(input) : null;
+        return {
+          docSW: document.documentElement.scrollWidth,
+          docCW: document.documentElement.clientWidth,
+          bodySW: document.body.scrollWidth,
+          bodyCW: document.body.clientWidth,
+          drawerSW: document.getElementById("drawer").scrollWidth,
+          drawerCW: document.getElementById("drawer").clientWidth,
+          overflow: window.__OVERFLOW__,
+          listLen: window.__LIST__.length,
+          inputBg: cs ? cs.backgroundColor : null,
+          inputColor: cs ? cs.color : null,
+          inputBorder: cs ? cs.borderColor : null,
+        };
+      });
       fs.writeFileSync(path.join(OUT, "overflow-metrics.json"), JSON.stringify(metrics, null, 2));
-      // Annotate bottom bar proving no page overflow
       await p.evaluate((m) => {
         const el = document.createElement("div");
         el.style.cssText = "position:fixed;left:0;right:0;bottom:0;z-index:1000;background:#102418;color:#b7f7c8;padding:10px 14px;font:12px/1.4 ui-monospace,monospace;border-top:1px solid #2f6b45";
-        el.textContent = `document.scrollWidth=${m.docSW} clientWidth=${m.docCW} | drawer ${m.drawerSW}/${m.drawerCW} | horizontalOverflow=${m.overflow} | rows=${m.listLen}`;
+        el.textContent = `document.scrollWidth=${m.docSW} clientWidth=${m.docCW} | drawer ${m.drawerSW}/${m.drawerCW} | horizontalOverflow=${m.overflow} | rows=${m.listLen} | inputBg=${m.inputBg}`;
         document.body.appendChild(el);
       }, metrics);
     }},
-    { name: "07-admin-deduped-prices.png", w: 1366, h: 768, fn: async (p) => {
+    { name: "08-admin-deduped-prices.png", w: 1366, h: 768, fn: async (p) => {
       await p.evaluate(() => window.renderDeduped("Admin 3 rows 35/30/40"));
       await p.locator("#price-block").scrollIntoViewIfNeeded();
     }},
-    { name: "08-after-save-refresh.png", w: 1366, h: 768, fn: async (p) => {
-      // Simulate save+refresh: re-run dedupe on dual-source payload again
+    { name: "09-after-save-refresh.png", w: 1366, h: 768, fn: async (p) => {
       await p.evaluate(() => window.renderDeduped("After save+refresh still 3"));
       await p.locator("#price-block").scrollIntoViewIfNeeded();
     }},
-    { name: "09-boss-services.png", w: 390, h: 844, fn: async (p) => {
+    { name: "10-boss-services.png", w: 390, h: 844, fn: async (p) => {
       await p.evaluate(() => { window.renderDeduped("Boss"); window.showBoss(); });
     }},
   ];

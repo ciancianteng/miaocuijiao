@@ -1778,7 +1778,47 @@ body[data-admin-section="players"] .player-data-table th:nth-child(14){z-index:8
 .admin-service-price-name{min-width:0;max-width:100%;}
 .admin-service-price-name strong{display:block;color:#fff;font-size:13px;font-weight:800;line-height:1.35;overflow-wrap:anywhere;word-break:break-word;white-space:normal;}
 .admin-service-price-input{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center;min-width:0;max-width:100%;}
-.admin-service-price-input input{width:100%;min-width:0;max-width:100%;box-sizing:border-box;}
+/* Self-contained dark theme: do not rely on .player-edit-grid / browser number defaults */
+.admin-service-price-input input,
+.admin-service-price-input input[type="number"]{
+  width:100%;
+  min-width:0;
+  max-width:100%;
+  box-sizing:border-box;
+  height:36px;
+  border-radius:9px;
+  border:1px solid rgba(255,255,255,.09);
+  background:#15151a;
+  color:#fff;
+  padding:0 10px;
+  outline:none;
+  color-scheme:dark;
+  appearance:textfield;
+  -moz-appearance:textfield;
+  -webkit-appearance:none;
+}
+.admin-service-price-input input::placeholder{
+  color:rgba(255,200,225,.55);
+}
+.admin-service-price-input input:focus,
+.admin-service-price-input input[type="number"]:focus{
+  border-color:rgba(243,168,203,.42);
+  box-shadow:0 0 0 3px rgba(243,168,203,.12);
+}
+.admin-service-price-input input:disabled,
+.admin-service-price-input input:read-only,
+.admin-service-price-input input[readonly]{
+  background:#121218;
+  color:rgba(255,255,255,.72);
+  border-color:rgba(255,255,255,.08);
+  opacity:1;
+  cursor:default;
+}
+.admin-service-price-input input[type="number"]::-webkit-outer-spin-button,
+.admin-service-price-input input[type="number"]::-webkit-inner-spin-button{
+  -webkit-appearance:none;
+  margin:0;
+}
 .admin-service-price-input small{color:#9f949c;font-size:11px;white-space:nowrap;}
 
 /* Desktop (>=1024): wide drawer; do not let the tablet rule below override this */
