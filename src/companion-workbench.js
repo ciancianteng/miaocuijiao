@@ -2114,7 +2114,7 @@
         '<input type="hidden" name="registerToken" value="'+esc(state.registerToken||'')+'">'+
         (state.inviteCode
           ? '<input type="hidden" name="inviteCode" value="'+esc(state.inviteCode)+'">'+
-            '<p class="mcj-auth-note">邀请注册：完成后将自动绑定直属老板（邀请码 '+esc(state.inviteCode.slice(0,8))+'…）</p>'
+            '<p class="mcj-auth-note">邀请注册：登录后需确认绑定才会成为直属（邀请码 '+esc(state.inviteCode.slice(0,8))+'…）</p>'
           : '')+
         regPwd+regConfirm+
         '<label class="mcj-auth-check"><input name="agree" type="checkbox" required> 我已阅读并同意服务条款</label>'+

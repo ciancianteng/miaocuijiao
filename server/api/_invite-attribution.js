@@ -458,6 +458,18 @@ export async function confirmInviteAttribution({
     attr = Array.isArray(rows) ? rows[0] : null;
   } else {
     attr = await getPendingAttributionForInvitee(inviteeUserId);
+    // Idempotent retry: no pending left → treat existing confirmed as success (no second reward).
+    if (!attr) {
+      const confirmedExisting = await getConfirmedAttributionForInvitee(inviteeUserId);
+      if (confirmedExisting) {
+        return {
+          ok: true,
+          alreadyConfirmed: true,
+          attribution: viewAttribution(confirmedExisting),
+          reward: { granted: false, duplicate: true },
+        };
+      }
+    }
   }
   if (!attr) throw httpError("没有待确认的邀请关系", 404, { code: "NO_PENDING" });
   if (String(attr.invitee_user_id) !== String(inviteeUserId)) {

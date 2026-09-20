@@ -373,7 +373,7 @@
     return (
       '<section class="panel" data-invite-panel>' +
       "<h2>邀请陪玩加入</h2>" +
-      '<p class="sub">生成专属邀请链接。陪玩通过链接注册后自动绑定为你的直属（结算仍走现有直属关系）。</p>' +
+      '<p class="sub">生成专属邀请链接。对方注册/登录后需主动确认绑定，才会成为你的直属并发放邀请奖励。</p>' +
       (ready
         ? '<div class="wallet-actions"><button type="button" class="boss-btn primary" data-create-invite>生成邀请链接</button></div>'
         : '<p class="message">' + esc((inviteMeta && inviteMeta.message) || "邀请链接功能尚未开通") + "</p>") +
