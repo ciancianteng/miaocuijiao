@@ -7,7 +7,7 @@
     },
     {
       "path": "/api/cron/discord-channel-cleanup",
-      "schedule": "30 * * * *"
+      "schedule": "30 4 * * *"
     }
   ],
   "headers": [
