@@ -1370,27 +1370,65 @@
       if (schedule) noteParts.push("服务时间：" + schedule);
       if (contact) noteParts.push("联系方式：" + contact);
 
-      var payload = {
-        action: "place_order",
-        companionId: c.companionId,
-        companionName: c.companionName,
-        serviceType: currentServiceLabel(),
-        service: currentServiceLabel(),
-        game: currentServiceLabel(),
-        unitPrice: money(c.unitPrice),
-        hours: hours,
-        quantity: quantity,
-        totalAmount: total,
-        gameId: gameId,
-        region: region,
-        schedule: schedule,
-        couponCode: state.couponCode || "",
-        contact: contact,
-        notes: noteParts.join("；"),
-        paymentMethod: payment,
-        idempotencyKey:
-          "po-" + c.companionId + "-" + Date.now() + "-" + Math.random().toString(36).slice(2, 8),
-      };
+      var replaceSlot = null;
+      try {
+        replaceSlot = JSON.parse(sessionStorage.getItem("mcjReplaceSlot") || "null");
+      } catch (eRep) {
+        replaceSlot = null;
+      }
+      var isReplacement =
+        replaceSlot &&
+        replaceSlot.mode === "replacement" &&
+        replaceSlot.parentOrderId &&
+        replaceSlot.replaceChildId;
+
+      var payload = isReplacement
+        ? {
+            action: "replace_companion",
+            parentOrderId: String(replaceSlot.parentOrderId),
+            replaceChildId: String(replaceSlot.replaceChildId),
+            companionId: c.companionId,
+            companionName: c.companionName,
+            serviceType: currentServiceLabel(),
+            service: currentServiceLabel(),
+            game: currentServiceLabel(),
+            serviceId: state.selectedServiceId || "",
+            unitPrice: money(c.unitPrice),
+            hours: hours,
+            quantity: quantity,
+            totalAmount: total,
+            gameId: gameId,
+            notes: noteParts.join("；"),
+            paymentMethod: "catfood",
+            idempotencyKey:
+              "replace-" +
+              replaceSlot.replaceChildId +
+              "-" +
+              c.companionId +
+              "-" +
+              Date.now(),
+          }
+        : {
+            action: "place_order",
+            companionId: c.companionId,
+            companionName: c.companionName,
+            serviceType: currentServiceLabel(),
+            service: currentServiceLabel(),
+            game: currentServiceLabel(),
+            unitPrice: money(c.unitPrice),
+            hours: hours,
+            quantity: quantity,
+            totalAmount: total,
+            gameId: gameId,
+            region: region,
+            schedule: schedule,
+            couponCode: state.couponCode || "",
+            contact: contact,
+            notes: noteParts.join("；"),
+            paymentMethod: payment,
+            idempotencyKey:
+              "po-" + c.companionId + "-" + Date.now() + "-" + Math.random().toString(36).slice(2, 8),
+          };
 
       fetch("/api/orders", {
         method: "POST",
@@ -1399,6 +1437,21 @@
       })
         .then(parseApiJson)
         .then(function (body) {
+          if (isReplacement) {
+            try {
+              sessionStorage.removeItem("mcjReplaceSlot");
+            } catch (eClear) {}
+            state.submitting = false;
+            state.submitStartedAt = 0;
+            setSubmitLoading(false);
+            close();
+            toast(body.message || "已补位加入原联合订单");
+            var parentId = (body.parentOrderId || replaceSlot.parentOrderId || "").toString();
+            location.href = parentId
+              ? "orders.html?id=" + encodeURIComponent(parentId)
+              : "orders.html";
+            return;
+          }
           var order = body.order || {};
           var oid = order.id || "";
           if (!oid) throw new Error("订单创建失败");

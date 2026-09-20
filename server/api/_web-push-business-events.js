@@ -311,5 +311,9 @@ export function mapInboxKindToOrderPushEvent(kind) {
   if (k === "order_started" || k === "started") return ORDER_PUSH_EVENTS.ORDER_STARTED;
   if (k === "order_completed" || k === "completed") return ORDER_PUSH_EVENTS.ORDER_COMPLETED;
   if (k === "order_cancelled" || k === "cancelled" || k === "canceled") return ORDER_PUSH_EVENTS.ORDER_CANCELLED;
+  // Companion soft-exit on multi child — reuse cancelled push channel for inbox delivery.
+  if (k === "order_companion_unavailable" || k === "companion_unavailable" || k === "order_rejected") {
+    return ORDER_PUSH_EVENTS.ORDER_CANCELLED;
+  }
   return "";
 }

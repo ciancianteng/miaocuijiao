@@ -232,6 +232,8 @@
     { "source": "/team-lobby", "destination": "/team-lobby.html" },
     { "source": "/custom-order", "destination": "/custom-order.html" },
     { "source": "/payment-confirm", "destination": "/payment-confirm.html" },
+    { "source": "/guide", "destination": "/guide.html" },
+    { "source": "/guide/", "destination": "/guide.html" },
     { "source": "/support", "destination": "/support.html" },
     { "source": "/support/", "destination": "/support.html" },
     { "source": "/club-levels", "destination": "/club-levels.html" },
