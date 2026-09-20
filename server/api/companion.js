@@ -3986,6 +3986,15 @@ export default async function handler(req, res) {
       } catch (err) {
         console.warn("[companion/accept_direct] boss push", err?.message || err);
       }
+      // Multi child accept → refresh parent aggregate; never reset siblings.
+      if (order?.parent_order_id) {
+        try {
+          const partial = await import("./_multi-order-partial.js");
+          await partial.refreshParentWithDeps(order.parent_order_id, { restUrl, supabaseJson, serviceHeaders });
+        } catch (err) {
+          console.warn("[companion/accept_direct] parent refresh", err?.message || err);
+        }
+      }
       return json(res, 200, { ok: true, message: "已确认接单，订单进入进行中", order: viewOrder(order) });
     }
     if (action === "reject_direct_order") {
@@ -4002,8 +4011,41 @@ export default async function handler(req, res) {
       const before = beforeRows?.[0];
       if (!before || before.status !== "claimed") return json(res, 409, { ok: false, message: "当前订单不能拒绝" });
       const name = String(auth.profile.display_name || companion.nickname || "陪玩").trim() || "陪玩";
+
+      // Multi-group child: soft-exit (cancelled + keep companion/parent) — do NOT open public hall.
+      if (before.parent_order_id) {
+        const partial = await import("./_multi-order-partial.js");
+        const { notifyBossOrderEvent } = await import("./_boss-order-notify.js");
+        const result = await partial.softExitMultiChildOrder(before, {
+          reason,
+          companionId: auth.profile.id,
+          companionName: name,
+          deps: {
+            restUrl,
+            supabaseJson,
+            serviceHeaders,
+            writeOrderStatusLog: (payload) =>
+              writeOrderStatusLog({ restUrl, supabaseJson, serviceHeaders }, payload),
+            refreshParent: (parentId) =>
+              partial.refreshParentWithDeps(parentId, { restUrl, supabaseJson, serviceHeaders }),
+            notifyBoss: (order, opts) => notifyBossOrderEvent(order, opts),
+            addSystemMessage,
+          },
+        });
+        scheduleRecomputeSoft();
+        return json(res, 200, {
+          ok: true,
+          message: "已提交无法接单。老板可重新选择陪玩或只保留其余陪玩继续。",
+          softExit: true,
+          code: "MULTI_CHILD_SOFT_EXIT",
+          order: viewOrder(result.order || before),
+          parentRefresh: result.parentRefresh || null,
+          reasons: REJECT_REASONS,
+        });
+      }
+
       const note = `陪玩无法接单|原因:${reason}|原陪玩:${auth.profile.id}|${nowIso()}`;
-      // Reject designated → reopen as public hall for CS re-assign / public grab.
+      // Legacy standalone: Reject designated → reopen as public hall for CS re-assign / public grab.
       // Staging schema may lack cancel_reason / assignment_type / order_type — try progressively.
       const rejectAttempts = [
         {
@@ -4063,6 +4105,19 @@ export default async function handler(req, res) {
         "companion",
         `陪玩 ${name} 无法接单（${reason}）。订单 ${before.order_no || before.id} 状态：陪玩无法接单，等待重新安排。请客服更换陪玩、推送抢单、联系老板或发起退款。`
       );
+      try {
+        const { notifyBossOrderEvent } = await import("./_boss-order-notify.js");
+        await notifyBossOrderEvent(
+          { ...before, ...saved, boss_id: before.boss_id },
+          {
+            title: "当前陪玩无法接单",
+            body: "当前陪玩无法接单，请重新选择陪玩。",
+            kind: "order_companion_unavailable",
+          }
+        );
+      } catch (err) {
+        console.warn("[companion/reject_direct] boss push", err?.message || err);
+      }
       scheduleRecomputeSoft();
       return json(res, 200, {
         ok: true,
