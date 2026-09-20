@@ -1077,20 +1077,23 @@
       '<input data-po-game-id required placeholder="请输入游戏ID" autocomplete="off" inputmode="text"></div>' +
       '<div class="mcj-po-field mcj-po-schedule-field"><span class="mcj-po-label">服务时间 *</span>' +
       '<div class="mcj-po-time-row">' +
-      '<div class="mcj-po-time-start"><span class="mcj-po-time-cap">开始时间</span>' +
+      '<div class="mcj-po-time-col mcj-po-time-start"><span class="mcj-po-time-cap">开始时间</span>' +
       (window.MCJTimePicker && window.MCJTimePicker.startCardHtml
         ? window.MCJTimePicker.startCardHtml(state.startTime || defaultStartTime(), {
             startAttr: "data-po-start-time",
             openAttr: "data-po-open-time",
           })
-        : '<button type="button" class="mcj-po-time-card" data-po-start-time="' +
+        : '<button type="button" class="mcj-po-time-card is-interactive" data-po-start-time="' +
           esc(state.startTime || defaultStartTime()) +
-          '" data-po-open-time="1"><span class="mcj-po-time-card-icon" aria-hidden="true">🕘</span><strong class="mcj-po-time-card-value" data-po-start-display>' +
+          '" data-po-open-time="1" aria-label="选择开始时间"><span class="mcj-po-time-card-value" data-po-start-display>' +
           esc(state.startTime || defaultStartTime()) +
-          '</strong><span class="mcj-po-time-card-chevron" aria-hidden="true">›</span></button>') +
+          '</span><span class="mcj-po-time-card-chevron" aria-hidden="true">›</span></button>') +
       "</div>" +
-      '<div class="mcj-po-time-end" data-po-end-wrap><span class="mcj-po-time-cap">预计结束</span>' +
-      '<strong data-po-end-time>--</strong></div></div>' +
+      '<div class="mcj-po-time-col mcj-po-time-end" data-po-end-wrap><span class="mcj-po-time-cap">预计结束</span>' +
+      (window.MCJTimePicker && window.MCJTimePicker.endCardHtml
+        ? window.MCJTimePicker.endCardHtml("--", { endAttr: "data-po-end-time" })
+        : '<div class="mcj-po-time-card is-readonly" aria-live="polite"><span class="mcj-po-time-card-value" data-po-end-time>--</span></div>') +
+      "</div></div>" +
       '<p class="mcj-po-time-hint" data-po-schedule-preview>选择开始时间后自动计算结束时间</p></div>' +
       '<label>订单备注（选填）<textarea data-po-notes rows="2" placeholder="选填：特殊要求、开局说明等"></textarea></label>' +
       '<label>优惠码<input data-po-coupon placeholder="可选" value="' +

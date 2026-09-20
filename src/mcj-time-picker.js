@@ -227,14 +227,17 @@
     return { close: close };
   }
 
-  /** Compact start-time card HTML (no native time input). */
+  /**
+   * Minimal start-time card: HH:mm + light chevron. No emoji / decorative icons.
+   * End card should mirror this with class `is-readonly` and no chevron.
+   */
   function startCardHtml(value, attrs) {
     attrs = attrs || {};
     var v = normalizeTimeValue(value) || "21:00";
     var startAttr = attrs.startAttr || "data-po-start-time";
     var openAttr = attrs.openAttr || "data-po-open-time";
     return (
-      '<button type="button" class="mcj-po-time-card" ' +
+      '<button type="button" class="mcj-po-time-card is-interactive" ' +
       startAttr +
       '="' +
       v +
@@ -243,12 +246,27 @@
       '="1" aria-label="选择开始时间 ' +
       v +
       '">' +
-      '<span class="mcj-po-time-card-icon" aria-hidden="true">🕘</span>' +
-      '<strong class="mcj-po-time-card-value" data-po-start-display>' +
+      '<span class="mcj-po-time-card-value" data-po-start-display>' +
       v +
-      "</strong>" +
+      "</span>" +
       '<span class="mcj-po-time-card-chevron" aria-hidden="true">›</span>' +
       "</button>"
+    );
+  }
+
+  /** Readonly end-time card — same shell as start, no chevron. */
+  function endCardHtml(value, attrs) {
+    attrs = attrs || {};
+    var v = normalizeTimeValue(value) || "--";
+    var endAttr = attrs.endAttr || "data-po-end-time";
+    return (
+      '<div class="mcj-po-time-card is-readonly" aria-live="polite">' +
+      '<span class="mcj-po-time-card-value" ' +
+      endAttr +
+      ">" +
+      v +
+      "</span>" +
+      "</div>"
     );
   }
 
@@ -259,5 +277,6 @@
     pad2: pad2,
     minuteStepDefault: MINUTE_STEP_DEFAULT,
     startCardHtml: startCardHtml,
+    endCardHtml: endCardHtml,
   };
 })();

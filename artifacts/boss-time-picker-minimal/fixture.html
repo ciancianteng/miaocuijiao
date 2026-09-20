@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>服务时间 UI fixture</title>
+  <link rel="stylesheet" href="/src/place-order-modal.css?v=20260920timeMinimal1" />
+  <style>
+    html, body {
+      margin: 0;
+      min-height: 100%;
+      background: #0c0a10;
+      color: #ffe6f2;
+      font-family: "Segoe UI", "PingFang SC", "Noto Sans SC", sans-serif;
+    }
+    .wrap {
+      max-width: 420px;
+      margin: 0 auto;
+      padding: 28px 18px 48px;
+    }
+    .panel {
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 16px;
+      background: rgba(22,16,28,0.96);
+      padding: 18px 16px 20px;
+    }
+    h1 {
+      margin: 0 0 6px;
+      font-size: 18px;
+      font-weight: 650;
+    }
+    .sub {
+      margin: 0 0 18px;
+      font-size: 13px;
+      color: rgba(255,214,231,0.5);
+      font-weight: 400;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="panel" id="panel">
+      <h1>确认下单</h1>
+      <p class="sub">服务时间区域验收 fixture（极简双卡片）</p>
+      <div class="mcj-po-field mcj-po-schedule-field">
+        <span class="mcj-po-label">服务时间 *</span>
+        <div class="mcj-po-time-row" id="timeRow"></div>
+        <p class="mcj-po-time-hint" data-po-schedule-preview>选择开始时间后自动计算结束时间</p>
+      </div>
+    </div>
+  </div>
+  <script src="/src/mcj-time-picker.js?v=20260920timeMinimal1"></script>
+  <script>
+    (function () {
+      function pad(n) { return (n < 10 ? "0" : "") + n; }
+      function addHours(start, hours) {
+        var p = String(start).split(":");
+        var total = (Number(p[0]) || 0) * 60 + (Number(p[1]) || 0) + Math.round(Number(hours) * 60);
+        total = ((total % (24 * 60)) + 24 * 60) % (24 * 60);
+        return pad(Math.floor(total / 60)) + ":" + pad(total % 60);
+      }
+      function paint(start) {
+        var row = document.getElementById("timeRow");
+        var end = addHours(start, 1);
+        row.innerHTML =
+          '<div class="mcj-po-time-col mcj-po-time-start"><span class="mcj-po-time-cap">开始时间</span>' +
+          window.MCJTimePicker.startCardHtml(start) +
+          "</div>" +
+          '<div class="mcj-po-time-col mcj-po-time-end"><span class="mcj-po-time-cap">预计结束</span>' +
+          window.MCJTimePicker.endCardHtml(end) +
+          "</div>";
+        document.querySelector("[data-po-schedule-preview]").textContent =
+          "服务时段：" + start + " – " + end + "（1小时）";
+        row.querySelector("[data-po-open-time]").addEventListener("click", function () {
+          var cur = this.getAttribute("data-po-start-time") || start;
+          window.MCJTimePicker.open({
+            title: "选择开始时间",
+            value: cur,
+            minuteStep: 60,
+            onConfirm: function (v) { paint(v); },
+          });
+        });
+      }
+      paint("21:00");
+    })();
+  </script>
+</body>
+</html>

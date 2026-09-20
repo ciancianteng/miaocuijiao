@@ -650,20 +650,23 @@
       '" placeholder="请输入游戏ID" autocomplete="off" inputmode="text"></div>' +
       '<div class="mcj-team-field mcj-team-schedule-field"><span>服务时间 *</span>' +
       '<div class="mcj-team-time-row">' +
-      '<div class="mcj-team-time-start"><span class="mcj-team-time-cap">开始时间</span>' +
+      '<div class="mcj-team-time-col mcj-team-time-start"><span class="mcj-team-time-cap">开始时间</span>' +
       (window.MCJTimePicker && window.MCJTimePicker.startCardHtml
         ? window.MCJTimePicker.startCardHtml(ensureSharedStartTime(), {
             startAttr: "data-mcj-team-start-time",
             openAttr: "data-mcj-team-open-time",
           })
-        : '<button type="button" class="mcj-po-time-card" data-mcj-team-start-time="' +
+        : '<button type="button" class="mcj-po-time-card is-interactive" data-mcj-team-start-time="' +
           esc(ensureSharedStartTime()) +
-          '" data-mcj-team-open-time="1"><span class="mcj-po-time-card-icon" aria-hidden="true">🕘</span><strong class="mcj-po-time-card-value" data-po-start-display>' +
+          '" data-mcj-team-open-time="1" aria-label="选择开始时间"><span class="mcj-po-time-card-value" data-po-start-display>' +
           esc(ensureSharedStartTime()) +
-          '</strong><span class="mcj-po-time-card-chevron" aria-hidden="true">›</span></button>') +
+          '</span><span class="mcj-po-time-card-chevron" aria-hidden="true">›</span></button>') +
       "</div>" +
-      '<div class="mcj-team-time-end"><span class="mcj-team-time-cap">预计结束</span>' +
-      '<strong data-mcj-team-end-time>--</strong></div></div>' +
+      '<div class="mcj-team-time-col mcj-team-time-end"><span class="mcj-team-time-cap">预计结束</span>' +
+      (window.MCJTimePicker && window.MCJTimePicker.endCardHtml
+        ? window.MCJTimePicker.endCardHtml("--", { endAttr: "data-mcj-team-end-time" })
+        : '<div class="mcj-po-time-card is-readonly" aria-live="polite"><span class="mcj-po-time-card-value" data-mcj-team-end-time>--</span></div>') +
+      "</div></div>" +
       '<p class="mcj-team-time-hint" data-mcj-team-schedule-preview>选择开始时间后自动计算结束时间</p></div>' +
       '<div class="mcj-team-field"><span>订单备注（选填）</span><input type="text" data-mcj-team-notes value="' +
       esc(state.sharedNotes) +
