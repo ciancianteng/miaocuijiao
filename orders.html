@@ -966,10 +966,12 @@
       window.addEventListener('pagehide',function(){if(abortCtrl)abortCtrl.abort();if(pollTimer)clearInterval(pollTimer)});
       var boot=readCache();
       if(boot&&boot.length){state.orders=boot;state.fromCache=true;state.loading=false;state.syncing=true}
+      var demoMultiConfirm=false;
       // Preview / QA harness: ?demo=multiConfirm seeds a local multi-group confirmation flow (no API writes).
       (function seedDemoMultiConfirm(){
         try{
           if(String(new URLSearchParams(location.search).get('demo')||'')!=='multiConfirm')return;
+          demoMultiConfirm=true;
           var parentId='demo-parent-multi';
           var mk=function(id,name,status,extra){
             return Object.assign({
@@ -981,7 +983,7 @@
           };
           var parent={
             id:parentId,orderNo:'MCJ-DEMO-MULTI',isMultiGroupParent:true,orderTypeKey:'multi_group',
-            status:'claimed',totalAmount:120,paidCatFood:120,createdAt:'2026-09-20T02:00:00Z',
+            order_type:'multi_group',status:'claimed',totalAmount:120,paidCatFood:120,createdAt:'2026-09-20T02:00:00Z',
             paymentStatus:'已付款',serviceType:'多人陪玩'
           };
           var step=String(new URLSearchParams(location.search).get('step')||'1');
@@ -999,20 +1001,23 @@
           }
           state.orders=[parent].concat(kids);
           state.loading=false;state.syncing=false;state.fromCache=false;state.error='';
-          writeCache(state.orders);
+          try{localStorage.removeItem(CACHE_KEY)}catch(eCache){}
           paint();
           openDetailId=parentId;
           setTimeout(function(){
-            detail(parent,false);
+            var p=state.orders.find(function(x){return String(x.id)===parentId});
+            if(p)detail(p,false);
             if(step==='4'){
               openUnavailableModal({parentId:parentId,childId:'cA',companionName:'陪玩A'});
             }
-          },80);
-        }catch(eDemo){}
+          },120);
+        }catch(eDemo){console.warn('[demo multiConfirm]',eDemo)}
       })();
-      paint();
-      load().then(function(){maybeOpenPendingReview()});
-      pollTimer=setInterval(function(){if(!document.hidden)load({silent:true})},POLL_MS);
+      if(!demoMultiConfirm){
+        paint();
+        load().then(function(){maybeOpenPendingReview()});
+        pollTimer=setInterval(function(){if(!document.hidden)load({silent:true})},POLL_MS);
+      }
     })();
   </script>
 </body>
