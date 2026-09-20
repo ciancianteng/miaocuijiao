@@ -334,7 +334,7 @@
       var label =
         (level.code ? level.code + " " : "") +
         (level.name || value) +
-        (base != null && base !== "" ? " · 基础价格 " + base + " 猫粮" : "") +
+        (base != null && base !== "" ? " · 等级默认 " + base + " 猫粮" : "") +
         (level.color ? " · " + level.color : "");
       html +=
         '<option value="' +
@@ -374,16 +374,112 @@
   function levelPricePreviewHtml(selected, levels) {
     var lv = findLevelByValue(selected, levels);
     if (!lv) {
-      return '<p class="admin-sync-note" data-level-price-preview style="grid-column:1/-1">通过审核前必须选择陪玩等级；服务价格将按该等级 base_price 自动写入。</p>';
+      return '<p class="admin-sync-note" data-level-price-preview style="grid-column:1/-1">等级默认价格：未选择。新服务或无独立单价时将 fallback 到等级 base_price。</p>';
     }
     var base = levelBasePriceOf(lv);
     return (
-      '<p class="admin-sync-note" data-level-price-preview style="grid-column:1/-1">已选等级：' +
-      esc((lv.code || "") + " " + (lv.name || "")) +
-      " · 基础价格：" +
+      '<p class="admin-sync-note" data-level-price-preview style="grid-column:1/-1"><strong>等级默认价格：</strong>' +
       esc(String(base)) +
-      " 猫粮（通过后按此价格写入陪玩资料价格）</p>"
+      " 猫粮（" +
+      esc((lv.code || "") + " " + (lv.name || "")) +
+      "）。仅作为新服务默认价 / 无独立价时的 fallback，不会覆盖下方已保存的服务独立价格。</p>"
     );
+  }
+
+  function servicePricesList(d) {
+    var list = Array.isArray(d.servicePrices) ? d.servicePrices : Array.isArray(d.service_prices) ? d.service_prices : [];
+    if (list.length) return list;
+    // Fallback from game_prices / games when API older
+    var gp = d.game_prices || d.gamePrices || {};
+    if (typeof gp === "string") {
+      try {
+        gp = JSON.parse(gp);
+      } catch (e) {
+        gp = {};
+      }
+    }
+    var games = String(d.game || d.mainGame || d.main_service || "")
+      .split(/[,，、/|]+/)
+      .map(function (x) {
+        return x.trim();
+      })
+      .filter(Boolean);
+    var out = [];
+    var seen = {};
+    function push(name, price) {
+      var n = String(name || "").trim();
+      if (!n || seen[n]) return;
+      seen[n] = 1;
+      out.push({ serviceName: n, serviceId: "", unitPrice: price });
+    }
+    games.forEach(function (g) {
+      push(g, gp[g] != null ? gp[g] : d.price);
+    });
+    Object.keys(gp || {}).forEach(function (k) {
+      if (/^[0-9a-f-]{36}$/i.test(k)) return;
+      push(k, gp[k]);
+    });
+    if (!out.length && d.price != null) push("默认服务", d.price);
+    return out;
+  }
+
+  function servicePricesEditHtml(d, levels) {
+    var list = servicePricesList(d);
+    var lv = findLevelByValue(d.levelId || d.level_id || d.levelName, levels);
+    var base = levelBasePriceOf(lv);
+    var rowsHtml = list.length
+      ? list
+          .map(function (s, idx) {
+            var name = s.serviceName || s.service_name || s.name || "服务";
+            var sid = s.serviceId || s.service_id || "";
+            var price = s.unitPrice != null ? s.unitPrice : s.unit_price != null ? s.unit_price : s.price != null ? s.price : base || "";
+            return (
+              '<label class="admin-service-price-row" style="display:grid;grid-template-columns:1fr 140px;gap:10px;align-items:end;margin:0 0 10px">' +
+              "<span><strong>" +
+              esc(name) +
+              '</strong><input type="hidden" name="servicePrices[' +
+              idx +
+              '][serviceName]" value="' +
+              esc(name) +
+              '"><input type="hidden" name="servicePrices[' +
+              idx +
+              '][serviceId]" value="' +
+              esc(sid) +
+              '"></span>' +
+              '<span><input name="servicePrices[' +
+              idx +
+              '][unitPrice]" type="number" min="1" step="1" value="' +
+              esc(price) +
+              '" required> <small>猫粮 / 小时</small></span>' +
+              "</label>"
+            );
+          })
+          .join("")
+      : '<p class="admin-sync-note">该陪玩尚未配置游戏/服务。请先在资料中填写游戏，或通过审核时按等级默认价初始化。</p>';
+    return (
+      '<div class="admin-service-prices" data-service-prices style="grid-column:1/-1;margin-top:8px;padding:12px;border:1px solid rgba(255,255,255,.12);border-radius:12px;background:rgba(0,0,0,.18)">' +
+      "<h4 style=\"margin:0 0 6px;color:#ffd6e7;font-size:13px\">游戏/服务独立价格</h4>" +
+      '<p class="muted" style="margin:0 0 10px;font-size:12px">每个服务单独设置单价。老板下单时按所选服务读取；等级默认价格仅作 fallback。</p>' +
+      rowsHtml +
+      "</div>"
+    );
+  }
+
+  function servicePricesViewHtml(d) {
+    var list = servicePricesList(d);
+    if (!list.length) {
+      return rows([
+        ["等级默认价格", d.levelBasePrice != null ? d.levelBasePrice + " 猫粮" : "—"],
+        ["服务独立价格", "尚未配置"],
+      ]);
+    }
+    var pairs = [["等级默认价格", d.levelBasePrice != null ? d.levelBasePrice + " 猫粮（fallback）" : "—"]];
+    list.forEach(function (s) {
+      var name = s.serviceName || s.service_name || s.name || "服务";
+      var price = s.unitPrice != null ? s.unitPrice : s.price;
+      pairs.push([name, (price != null ? price : "—") + " 猫粮/小时"]);
+    });
+    return rows(pairs);
   }
 
   function getLevels() {
@@ -634,9 +730,9 @@
     if (edit) mediaHtml += reviewBox("media", media.status);
 
     var split =
+      (edit ? "" : servicePricesViewHtml(d)) +
       rows([
         ["当前等级", d.levelName || d.level_name || "未设置"],
-        ["单价", d.price != null ? d.price + " 猫粮/小时" : "—"],
         ["平台抽成", (d.orderCommissionRate != null ? d.orderCommissionRate : d.commission_rate) + "%"],
         ["礼物抽成", (d.giftCommissionRate != null ? d.giftCommissionRate : d.gift_commission_rate || 0) + "%"],
         ["直属陪返点", (d.directRebateRate != null ? d.directRebateRate : d.direct_rebate_rate || 0) + "%"],
@@ -649,12 +745,12 @@
           '<label><span>当前等级</span><select name="levelId">' +
           levelOptions(d.levelId || d.level_id || d.levelName, levels) +
           "</select></label>" +
-          field("单价", "price", d.price) +
           field("订单平台抽成 %", "orderCommissionRate", d.orderCommissionRate != null ? d.orderCommissionRate : d.commission_rate) +
           field("礼物抽成 %", "giftCommissionRate", d.giftCommissionRate != null ? d.giftCommissionRate : d.gift_commission_rate || 0) +
           field("直属陪返点 %", "directRebateRate", d.directRebateRate != null ? d.directRebateRate : d.direct_rebate_rate || 0) +
           field("调整原因", "reason", "") +
           levelPricePreviewHtml(d.levelId || d.level_id || d.levelName, levels) +
+          servicePricesEditHtml(d, levels) +
           "</div>"
         : "");
 

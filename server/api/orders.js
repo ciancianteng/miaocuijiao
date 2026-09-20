@@ -4,6 +4,7 @@ import { assertBossProfile, identityView } from "./_boss-identity.js";
 import { resolvePlatformCommission } from "./_commission-rates.js";
 import { readLocalLevels } from "./_companion-levels-store.js";
 import { priceForGame } from "./_game-prices.js";
+import { resolveOrderUnitPrice } from "./_admin-service-prices.js";
 import {
   ORDER_STATUS_LABELS,
   allowPreviewTestPay,
@@ -1160,21 +1161,29 @@ export default async function handler(req, res) {
         const cp = orderable.cp;
         const serviceId = String(order.serviceId || order.service_id || "").trim();
         const gameHint = String(order.gameName || order.game_name || order.mainGame || order.main_game || game || "").trim();
-        unitPrice = money(priceForGame(cp, gameHint, serviceId));
-        if (!(unitPrice > 0)) unitPrice = money(cp.price);
+        // Server-authoritative: companion_services → game_prices → level.base_price. Never trust client unit.
+        const levels = readLocalLevels();
+        const level =
+          (levels || []).find(
+            (l) =>
+              String(l.id) === String(cp.level_id || "") ||
+              String(l.code) === String(cp.level_id || "") ||
+              String(l.name) === String(cp.level_name || "")
+          ) || null;
+        const resolved = await resolveOrderUnitPrice({
+          companion: cp,
+          companionId,
+          serviceId,
+          gameName: gameHint,
+          level,
+        });
+        unitPrice = money(resolved.price);
         if (!(unitPrice > 0)) {
-          // Prefer first positive game_prices entry when service/game labels don't match keys.
-          const gp = cp.game_prices && typeof cp.game_prices === "object" ? cp.game_prices : {};
-          for (const k of Object.keys(gp)) {
-            const v = money(gp[k]);
-            if (v > 0) {
-              unitPrice = v;
-              break;
-            }
-          }
-        }
-        if (!(unitPrice > 0)) {
-          return json(res, 400, { ok: false, message: "该陪玩尚未设置单价" });
+          return json(res, 400, {
+            ok: false,
+            code: "SERVICE_PRICE_MISSING",
+            message: "该陪玩所选服务尚未设置单价，且等级无基础价格，无法下单。",
+          });
         }
         totalAmount = Math.round(unitPrice * hours * 100) / 100;
         const clientUnit = money(order.unit_price || order.unitPrice || order.price || order.budget || 0);
