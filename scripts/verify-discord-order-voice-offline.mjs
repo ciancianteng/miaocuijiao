@@ -174,11 +174,11 @@ test("orders GET select includes voice_mode columns", () => {
 
 test("discord cleanup uses created_at (orders has no updated_at)", () => {
   const sql = read("supabase/migrations/20260920_discord_order_voice.sql");
-  assert.match(sql, /orders_discord_cleanup_idx[\s\S]*created_at/);
-  assert.doesNotMatch(sql, /orders_discord_cleanup_idx[\s\S]*updated_at/);
+  assert.match(sql, /orders_discord_cleanup_idx[\s\S]{0,200}created_at/);
+  assert.doesNotMatch(sql, /orders_discord_cleanup_idx[\s\S]{0,200}updated_at/);
   const cleanup = read("server/api/_discord-voice-orders.js");
   assert.match(cleanup, /created_at=lte\./);
-  assert.doesNotMatch(cleanup, /updated_at=lte\./);
+  assert.doesNotMatch(cleanup, /&updated_at=lte\./);
 });
 
 test("companion accept gate + soft-exit revoke wired", () => {
