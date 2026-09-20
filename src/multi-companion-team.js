@@ -23,6 +23,7 @@
     sharedGameId: "",
     sharedNotes: "",
     sharedStartTime: "",
+    sharedVoiceMode: "game_mic",
     paymentMethod: "catfood",
     pendingIdempotencyKey: "",
   };
@@ -256,6 +257,7 @@
         sharedGameId: state.sharedGameId || "",
         sharedNotes: state.sharedNotes || "",
         sharedStartTime: state.sharedStartTime || "",
+        sharedVoiceMode: state.sharedVoiceMode || "game_mic",
       };
       sessionStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
     } catch (e) {}
@@ -274,6 +276,7 @@
       state.sharedGameId = data.sharedGameId || "";
       state.sharedNotes = data.sharedNotes || "";
       state.sharedStartTime = normalizeTimeValue(data.sharedStartTime || "") || "";
+      state.sharedVoiceMode = data.sharedVoiceMode || "game_mic";
     } catch (e) {
       state.lines = [];
     }
@@ -284,6 +287,7 @@
     state.sharedGameId = "";
     state.sharedNotes = "";
     state.sharedStartTime = "";
+    state.sharedVoiceMode = "game_mic";
     state.expanded = false;
     state.pendingIdempotencyKey = "";
     try {
@@ -829,6 +833,17 @@
       '<div class="mcj-team-field"><span>订单备注（选填）</span><input type="text" data-mcj-team-notes value="' +
       esc(state.sharedNotes) +
       '" placeholder="选填：特殊要求、开局说明等"></div>' +
+      '<div class="mcj-team-field"><span>本单语音方式</span><div class="mcj-team-voice-grid">' +
+      '<button type="button" class="mcj-team-voice' +
+      (state.sharedVoiceMode === "game_mic" ? " active" : "") +
+      '" data-mcj-team-voice="game_mic">🎮 游戏麦</button>' +
+      '<button type="button" class="mcj-team-voice' +
+      (state.sharedVoiceMode === "discord" ? " active" : "") +
+      '" data-mcj-team-voice="discord">🎧 Discord</button>' +
+      '<button type="button" class="mcj-team-voice' +
+      (state.sharedVoiceMode === "none" ? " active" : "") +
+      '" data-mcj-team-voice="none">💬 不需要语音</button>' +
+      "</div></div>" +
       '<p class="mcj-team-pay-hint">本订单一次付款，系统会分别为每位陪玩结算。</p>' +
       "</div>" +
       '<div class="mcj-team-sheet-foot">' +
@@ -920,6 +935,7 @@
       schedule: schedule,
       startTime: startTime,
       endTime: endTime,
+      voiceMode: state.sharedVoiceMode || "game_mic",
       idempotencyKey: ensureIdempotencyKey(),
       companions: state.lines.map(function (l) {
         var hours = Math.max(0.5, money(l.hours || 1));
@@ -1224,6 +1240,13 @@
     if (e.target.closest("[data-mcj-team-submit]")) {
       e.preventDefault();
       submitTeam();
+    }
+    var voiceBtn = e.target.closest("[data-mcj-team-voice]");
+    if (voiceBtn) {
+      e.preventDefault();
+      state.sharedVoiceMode = voiceBtn.getAttribute("data-mcj-team-voice") || "game_mic";
+      persist();
+      paintSheet();
     }
   }
 

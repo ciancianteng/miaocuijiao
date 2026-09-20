@@ -467,6 +467,49 @@
   filter: brightness(1.05);
 }
 
+.mcj-po-voice-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+.mcj-po-voice-card {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  text-align: left;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 145, 195, 0.22);
+  background: rgba(255, 255, 255, 0.04);
+  color: #ffd6e7;
+  cursor: pointer;
+}
+.mcj-po-voice-card strong {
+  font-size: 13px;
+  font-weight: 800;
+}
+.mcj-po-voice-card span {
+  font-size: 11px;
+  line-height: 1.35;
+  color: rgba(255, 214, 231, 0.62);
+}
+.mcj-po-voice-card.active {
+  border-color: rgba(243, 168, 203, 0.7);
+  background: rgba(243, 168, 203, 0.16);
+  box-shadow: 0 0 0 1px rgba(243, 168, 203, 0.2);
+}
+.mcj-po-voice-hint {
+  margin: 8px 0 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: rgba(255, 214, 231, 0.58);
+}
+@media (max-width: 560px) {
+  .mcj-po-voice-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 .mcj-po-chips {
   display: flex;
   flex-wrap: wrap;

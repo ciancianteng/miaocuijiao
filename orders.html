@@ -240,6 +240,18 @@
       function money(v){if(window.MCJCurrency)return window.MCJCurrency.formatPlain(v);var n=Number(v||0);return (Number.isFinite(n)?n:0).toFixed(2).replace(/\.00$/,'')+' 猫粮'}
       function moneyEmoji(v){if(window.MCJCurrency)return window.MCJCurrency.formatAmount(v);return '🐱 '+money(v)}
       function date(v){if(!v)return '-';try{return new Date(v).toLocaleString('zh-CN',{hour12:false})}catch(e){return v}}
+      function voiceModeLabel(o){
+        var m=String((o&& (o.voiceMode||o.voice_mode))||'game_mic').toLowerCase();
+        if(m==='discord')return '🎧 Discord 私人语音房';
+        if(m==='none')return '💬 仅平台聊天';
+        return '🎮 游戏麦';
+      }
+      function startDiscordOAuthFromOrders(returnTo){
+        return fetch('/api/discord/oauth-start?format=json&returnTo='+encodeURIComponent(returnTo||'/orders.html'),{
+          headers:{Accept:'application/json',Authorization:'Bearer '+token()}
+        }).then(function(r){return r.json().then(function(j){if(!r.ok||j.ok===false)throw new Error((j&&j.message)||'无法开始 Discord 连接');return j;});})
+          .then(function(j){if(j.authorizeUrl)location.href=j.authorizeUrl;else throw new Error('Discord 授权地址缺失');});
+      }
       function isPaymentReview(o){return !!(o&&(o.paymentReview||o.paymentStatus==='待审核'||o.paymentStatus==='待人工审核'||/待审核|待人工审核/.test(String(o.statusText||o.paymentStatus||''))))}
       function orderLabel(o){
         if(o.reviewed||o.status==='reviewed')return '已评价';
@@ -654,6 +666,14 @@
               field('单价',esc(money(o.unitPrice)+'/小时'))+
               field('负责客服',esc(serviceName(o)))+
               field('支付方式',esc(o.paymentMethod||o.payment_method||'-'))+
+              field('语音方式',esc(voiceModeLabel(o)))+
+              (String(o.voiceMode||o.voice_mode||'')==='discord'
+                ? (o.discordChannelUrl || o.discord_channel_url
+                    ? field('Discord 语音房','<a class="order-btn" style="display:inline-flex;width:auto;padding:6px 10px" href="'+esc(o.discordChannelUrl||o.discord_channel_url)+'" target="_blank" rel="noopener">🎧 进入 Discord 语音房</a>')
+                    : (String(o.discordChannelStatus||o.discord_channel_status||'')==='error'
+                        ? field('Discord 语音','创建失败 · <button class="order-btn" type="button" data-discord-retry="'+esc(o.id)+'">重试创建</button>')
+                        : field('Discord 语音','等待陪玩确认后开启')))
+                : '')+
             '</div></div>'+
           '</div>';
         var right=
@@ -937,6 +957,19 @@
         }
       }
       document.addEventListener('click',function(e){
+        var discordRetryBtn=e.target.closest('[data-discord-retry]');
+        if(discordRetryBtn){
+          e.preventDefault();
+          var rid=discordRetryBtn.getAttribute('data-discord-retry');
+          fetch('/api/discord/retry-channel',{
+            method:'POST',
+            headers:{'Content-Type':'application/json',Authorization:'Bearer '+token()},
+            body:JSON.stringify({orderId:rid})
+          }).then(function(r){return r.json().then(function(j){if(!r.ok||j.ok===false)throw new Error((j&&j.message)||'重试失败');return j;});})
+            .then(function(j){alert(j.message||'已重试');load();})
+            .catch(function(err){alert(err.message||'重试失败')});
+          return;
+        }
         var unavailReselect=e.target.closest('[data-unavailable-reselect]');
         if(unavailReselect){
           var ctx=pendingUnavailable||{};

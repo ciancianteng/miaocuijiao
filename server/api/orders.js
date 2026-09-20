@@ -542,6 +542,17 @@ function viewOrder(row = {}) {
     game_id: gameId,
     paymentMethod: paymentMethod || "线下确认",
     payment_method: paymentMethod || "线下确认",
+    voiceMode: String(row.voice_mode || "game_mic").trim() || "game_mic",
+    voice_mode: String(row.voice_mode || "game_mic").trim() || "game_mic",
+    discordChannelId: row.discord_channel_id || null,
+    discord_channel_id: row.discord_channel_id || null,
+    discordChannelStatus: row.discord_channel_status || null,
+    discord_channel_status: row.discord_channel_status || null,
+    discordChannelCreatedAt: row.discord_channel_created_at || null,
+    discordChannelUrl:
+      row.discord_channel_id && process.env.DISCORD_GUILD_ID
+        ? `https://discord.com/channels/${process.env.DISCORD_GUILD_ID}/${row.discord_channel_id}`
+        : null,
     hours: Number(row.hours || 0),
     unitPrice: money(row.unit_price),
     totalAmount: money(row.total_amount),
@@ -1369,6 +1380,13 @@ export default async function handler(req, res) {
       }
 
       // Optional marketplace columns (ignore if schema missing).
+      let voiceMode = "game_mic";
+      try {
+        const { normalizeVoiceMode } = await import("./_discord-voice-orders.js");
+        voiceMode = normalizeVoiceMode(order.voiceMode || order.voice_mode || body.voiceMode || body.voice_mode);
+      } catch (_) {
+        voiceMode = "game_mic";
+      }
       const enriched = {
         ...row,
         payment_method: paymentMethod,
@@ -1377,6 +1395,7 @@ export default async function handler(req, res) {
         notes: notes || descriptionParts.join("\n"),
         quantity,
         pricing_unit: String(order.pricingUnit || order.pricing_unit || "小时"),
+        voice_mode: voiceMode,
       };
       if (productCommissionSnapshot != null) {
         enriched.platform_fee_rate = productCommissionSnapshot;
@@ -1477,6 +1496,27 @@ export default async function handler(req, res) {
           order: viewOrder(before),
         });
       }
+      // Discord voice orders: Boss must bind Discord before proof/pay.
+      try {
+        const voiceMode = String(before.voice_mode || "game_mic").trim() || "game_mic";
+        if (voiceMode === "discord") {
+          const { getDiscordLink, discordConfigured } = await import("./_discord-voice-orders.js");
+          if (discordConfigured()) {
+            const link = await getDiscordLink(profile.id);
+            if (!link?.discord_user_id) {
+              return json(res, 409, {
+                ok: false,
+                code: "DISCORD_BIND_REQUIRED",
+                message: "本单选择了 Discord 语音，请先连接 Discord 后再上传付款凭证。",
+                oauthStartUrl: "/api/discord/oauth-start",
+                order: viewOrder(before),
+              });
+            }
+          }
+        }
+      } catch (discordGateErr) {
+        console.warn("[orders/submit_payment_proof] discord gate", String(discordGateErr?.message || discordGateErr).slice(0, 160));
+      }
       const result = await uploadProof({
         order: before,
         bossId: profile.id,
@@ -1546,6 +1586,27 @@ export default async function handler(req, res) {
         return json(res, 409, { ok: false, message: payGate.message || "该支付方式暂未开放" });
       }
       const paymentMethod = String(payGate.code || paymentMethodRaw).toLowerCase();
+      // Discord voice orders: Boss must bind Discord before pay completes.
+      try {
+        const voiceMode = String(before.voice_mode || "game_mic").trim() || "game_mic";
+        if (voiceMode === "discord") {
+          const { getDiscordLink, discordConfigured } = await import("./_discord-voice-orders.js");
+          if (discordConfigured()) {
+            const link = await getDiscordLink(profile.id);
+            if (!link?.discord_user_id) {
+              return json(res, 409, {
+                ok: false,
+                code: "DISCORD_BIND_REQUIRED",
+                message: "本单选择了 Discord 语音，请先连接 Discord 后再付款。",
+                oauthStartUrl: "/api/discord/oauth-start",
+                order: viewOrder(before),
+              });
+            }
+          }
+        }
+      } catch (discordGateErr) {
+        console.warn("[orders/pay_order] discord gate", String(discordGateErr?.message || discordGateErr).slice(0, 160));
+      }
       const previewTest =
         String(body.preview_test || body.previewTest || "").trim() === "1" ||
         String(body.test_pay || "").trim() === "1";

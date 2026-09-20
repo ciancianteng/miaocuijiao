@@ -1236,6 +1236,7 @@
       if(!res.ok||body.ok===false){
         var err=new Error(body.message||('请求失败：HTTP '+res.status));
         err.status=res.status;
+        err.code=body&&body.code;
         err.serverMessage=String((body&&body.message)||'');
         err.uploadUrl='/api/companion';
         throw err;
@@ -2791,6 +2792,43 @@
   }
   function fmtTime(v){if(!v)return '-';try{return new Date(v).toLocaleString('zh-CN',{hour12:false})}catch(e){return String(v)}}
   var REJECT_REASONS=['正在服务其他订单','时间无法配合','临时有事','不接该项目','其他'];
+  function voiceModeLabel(o){
+    var m=String((o&&(o.voiceMode||o.voice_mode))||'game_mic').toLowerCase();
+    if(m==='discord')return '🎧 Discord 私人语音房';
+    if(m==='none')return '💬 仅平台聊天';
+    return '🎮 游戏麦';
+  }
+  function startDiscordOAuth(returnTo){
+    var session=state.session||readSession();
+    var tok=String((session&&(session.token||session.accessToken||session.access_token))||'').trim();
+    if(!tok){toast('请先登录');return Promise.resolve()}
+    var dest=returnTo||'/companion/orders/';
+    return fetch('/api/discord/oauth-start?format=json&returnTo='+encodeURIComponent(dest),{
+      headers:{Accept:'application/json',Authorization:'Bearer '+tok,'x-mcj-companion-token':tok}
+    }).then(function(r){return r.json().then(function(j){if(!r.ok||j.ok===false)throw new Error((j&&j.message)||'无法开始 Discord 连接');return j;});})
+      .then(function(j){
+        if(j.authorizeUrl){location.href=j.authorizeUrl;return}
+        throw new Error('Discord 授权地址缺失');
+      })
+      .catch(function(err){toast(err.message||'连接 Discord 失败')});
+  }
+  function voiceDiscordActions(o){
+    var m=String((o&&(o.voiceMode||o.voice_mode))||'').toLowerCase();
+    if(m!=='discord')return '';
+    var url=o.discordChannelUrl||o.discord_channel_url||'';
+    if(url){
+      return '<div><span>Discord 语音房</span><strong><a class="pw-btn" href="'+esc(url)+'" target="_blank" rel="noopener">🎧 进入 Discord 语音房</a></strong></div>';
+    }
+    if(String(o.discordChannelStatus||o.discord_channel_status||'')==='error'){
+      return '<div><span>Discord 语音房</span><strong>创建失败 <button class="pw-btn" type="button" data-discord-retry="'+esc(o.id)+'">重试创建</button></strong></div>';
+    }
+    var bound=!!(o.discordBound||o.discord_bound);
+    if(!bound){
+      return '<div><span>Discord 语音房</span><strong>本订单使用 Discord 私人语音房</strong></div>'+
+        '<div><span>Discord 账号</span><strong><button class="pw-btn primary" type="button" data-discord-connect="1">连接 Discord</button></strong></div>';
+    }
+    return '<div><span>Discord 语音房</span><strong>等待开启（确认接单后创建）</strong></div>';
+  }
   function orderActions(o){
     var s=orderStatus(o),id=esc(o.id);var raw=o.status||o.rawStatus||'';var out=[];
     // Open-grab applicant: never show 开始订单 until boss selected (confirmed).
@@ -2853,6 +2891,8 @@
       (o.serviceSchedule||o.schedule
         ?'<div><span>服务时段</span><strong>'+esc(formatSchedule24h(o.serviceSchedule||o.schedule))+'</strong></div>'
         :'')+
+      '<div><span>语音方式</span><strong>'+esc(voiceModeLabel(o))+'</strong></div>'+
+      voiceDiscordActions(o)+
       '<div><span>老板备注</span><strong>'+esc(o.bossNotes||'-')+'</strong></div>'+
       '<div><span>下单时间</span><strong>'+esc(fmtTime(o.createdAt))+'</strong></div>'+
       (o.confirmDeadline?'<div><span>最迟确认时间</span><strong>'+esc(fmtTime(o.confirmDeadline))+'</strong></div>':'')+
@@ -5016,6 +5056,24 @@
       }).catch(function(err){toast(err.message||'暂无结算详情')});
       return;
     }
+    if(e.target.closest('[data-discord-connect]')){
+      startDiscordOAuth('/companion/orders/?discord=connected');
+      return;
+    }
+    var discordRetry=e.target.closest('[data-discord-retry]');
+    if(discordRetry){
+      var rid=discordRetry.getAttribute('data-discord-retry');
+      var session=state.session||readSession();
+      var tok=String((session&&(session.token||session.accessToken||session.access_token))||'').trim();
+      fetch('/api/discord/retry-channel',{
+        method:'POST',
+        headers:{'Content-Type':'application/json',Authorization:'Bearer '+tok,'x-mcj-companion-token':tok},
+        body:JSON.stringify({orderId:rid})
+      }).then(function(r){return r.json().then(function(j){if(!r.ok||j.ok===false)throw new Error((j&&j.message)||'重试失败');return j;});})
+        .then(function(j){toast(j.message||'已重试');return loadData()})
+        .catch(function(err){toast(err.message||'重试失败')});
+      return;
+    }
     var action=e.target.closest('[data-order-action]');
     if(action){
       var act=action.dataset.orderAction;
@@ -5028,7 +5086,15 @@
           state.orderFilter='running';
           go('/companion/orders');
           return loadData();
-        }).catch(function(err){toast(err.message)});
+        }).catch(function(err){
+          if(err&&err.code==='DISCORD_BIND_REQUIRED'){
+            if(confirm((err.message||'请先连接 Discord')+'\n\n现在去连接 Discord？')){
+              startDiscordOAuth('/companion/orders/');
+            }
+            return;
+          }
+          toast(err.message||'操作失败');
+        });
         return;
       }
       if(act==='reject_direct_order'){

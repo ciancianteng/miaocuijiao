@@ -29,6 +29,7 @@
     endTime: "",
     couponCode: "",
     payment: "",
+    voiceMode: "game_mic",
     submitting: false,
     submitStartedAt: 0,
     walletBalance: null,
@@ -49,6 +50,7 @@
     state.endTime = "";
     state.couponCode = "";
     state.payment = "";
+    state.voiceMode = "game_mic";
     state.submitting = false;
     state.submitStartedAt = 0;
     state.walletBalance = null;
@@ -1117,6 +1119,31 @@
       '<label>优惠码<input data-po-coupon placeholder="可选" value="' +
       esc(state.couponCode) +
       '"></label>' +
+      '<div class="mcj-po-field mcj-po-voice-field"><span class="mcj-po-label">本单语音方式</span>' +
+      '<div class="mcj-po-voice-grid" role="radiogroup" aria-label="本单语音方式">' +
+      '<button type="button" class="mcj-po-voice-card' +
+      (state.voiceMode === "game_mic" ? " active" : "") +
+      '" data-po-voice="game_mic" aria-pressed="' +
+      (state.voiceMode === "game_mic" ? "true" : "false") +
+      '"><strong>🎮 游戏麦</strong><span>使用游戏本身的语音系统</span></button>' +
+      '<button type="button" class="mcj-po-voice-card' +
+      (state.voiceMode === "discord" ? " active" : "") +
+      '" data-po-voice="discord" aria-pressed="' +
+      (state.voiceMode === "discord" ? "true" : "false") +
+      '"><strong>🎧 Discord</strong><span>妙脆角私人 Discord 订单语音房</span></button>' +
+      '<button type="button" class="mcj-po-voice-card' +
+      (state.voiceMode === "none" ? " active" : "") +
+      '" data-po-voice="none" aria-pressed="' +
+      (state.voiceMode === "none" ? "true" : "false") +
+      '"><strong>💬 不需要语音</strong><span>仅使用平台文字聊天</span></button>' +
+      "</div>" +
+      '<p class="mcj-po-voice-hint" data-po-voice-hint>' +
+      (state.voiceMode === "discord"
+        ? "选择 Discord 后，付款前需连接 Discord；陪玩确认接单后才会开启私人语音房。"
+        : state.voiceMode === "none"
+          ? "双方将仅通过平台文字沟通。"
+          : "默认使用游戏内语音，无需连接 Discord。") +
+      "</p></div>" +
       '<div class="mcj-po-pay-block"><div class="mcj-po-pay-label">支付方式</div><div class="mcj-po-pay-grid" data-po-pay-grid>' +
       payCards +
       "</div></div>" +
@@ -1272,6 +1299,25 @@
         if (btn.disabled) return;
         state.payment = btn.getAttribute("data-po-pay") || "";
         setExclusiveActive(mask.querySelectorAll("[data-po-pay]"), btn);
+      });
+    });
+    mask.querySelectorAll("[data-po-voice]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        state.voiceMode = btn.getAttribute("data-po-voice") || "game_mic";
+        mask.querySelectorAll("[data-po-voice]").forEach(function (b) {
+          var on = b === btn;
+          b.classList.toggle("active", on);
+          b.setAttribute("aria-pressed", on ? "true" : "false");
+        });
+        var hint = mask.querySelector("[data-po-voice-hint]");
+        if (hint) {
+          hint.textContent =
+            state.voiceMode === "discord"
+              ? "选择 Discord 后，付款前需连接 Discord；陪玩确认接单后才会开启私人语音房。"
+              : state.voiceMode === "none"
+                ? "双方将仅通过平台文字沟通。"
+                : "默认使用游戏内语音，无需连接 Discord。";
+        }
       });
     });
     var submit = mask.querySelector("[data-po-submit]");
@@ -1563,6 +1609,7 @@
             gameId: gameId,
             notes: noteParts.join("；"),
             paymentMethod: "catfood",
+            voiceMode: state.voiceMode || "game_mic",
             idempotencyKey:
               "replace-" +
               replaceSlot.replaceChildId +
@@ -1589,6 +1636,7 @@
             couponCode: state.couponCode || "",
             notes: noteParts.join("；"),
             paymentMethod: payment,
+            voiceMode: state.voiceMode || "game_mic",
             idempotencyKey:
               "po-" + c.companionId + "-" + Date.now() + "-" + Math.random().toString(36).slice(2, 8),
           };

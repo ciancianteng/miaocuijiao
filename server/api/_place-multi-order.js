@@ -133,6 +133,13 @@ export async function placeMultiOrder(ctx) {
 
   const sharedGameId = String(body.gameId || body.game_id || "").trim();
   const sharedNotes = String(body.notes || body.remark || "").trim();
+  let voiceMode = "game_mic";
+  try {
+    const { normalizeVoiceMode } = await import("./_discord-voice-orders.js");
+    voiceMode = normalizeVoiceMode(body.voiceMode || body.voice_mode);
+  } catch (_) {
+    voiceMode = "game_mic";
+  }
   const sharedGame = String(body.game || body.gameName || "陪玩").trim() || "陪玩";
 
   const prepared = [];
@@ -320,6 +327,7 @@ export async function placeMultiOrder(ctx) {
     idempotency_key: idempotencyKey,
     payment_method: paymentMethod,
     notes: sharedNotes || parentDesc,
+    voice_mode: voiceMode,
   };
 
   let parent;
@@ -424,6 +432,7 @@ export async function placeMultiOrder(ctx) {
         game_id_value: line.gameId,
         notes: description,
         quantity: line.quantity,
+        voice_mode: voiceMode,
       };
       let child;
       try {

@@ -579,6 +579,98 @@
   };
 
   var platformPayInfo = null;
+  var discordStatus = { loaded: false, bound: false, username: "", configured: true };
+
+  function orderVoiceMode(order) {
+    return String((order && (order.voiceMode || order.voice_mode)) || "game_mic")
+      .trim()
+      .toLowerCase() || "game_mic";
+  }
+  function voiceModeLabel(mode) {
+    var m = String(mode || "game_mic").toLowerCase();
+    if (m === "discord") return "🎧 Discord 私人语音房";
+    if (m === "none") return "💬 仅平台聊天";
+    return "🎮 游戏麦";
+  }
+  function paymentReturnPath(orderId) {
+    var oid = orderId || q("order") || q("id") || "";
+    return "/payment-confirm.html?order=" + encodeURIComponent(oid) + "&discord=connected";
+  }
+  function startDiscordOAuth(orderId) {
+    var returnTo = paymentReturnPath(orderId);
+    return fetch("/api/discord/oauth-start?format=json&returnTo=" + encodeURIComponent(returnTo), {
+      headers: { Accept: "application/json", Authorization: "Bearer " + token() },
+    })
+      .then(function (r) {
+        return r.json().then(function (j) {
+          if (!r.ok || j.ok === false) throw new Error((j && j.message) || "无法开始 Discord 连接");
+          return j;
+        });
+      })
+      .then(function (j) {
+        if (j.authorizeUrl) {
+          location.href = j.authorizeUrl;
+          return;
+        }
+        throw new Error("Discord 授权地址缺失");
+      });
+  }
+  function discordPanelHtml(order) {
+    var mode = orderVoiceMode(order);
+    if (mode !== "discord") return "";
+    var st = String(order.status || "");
+    if (st !== "awaiting_payment") return "";
+    var bound = !!(discordStatus.bound || order.discordBound);
+    var name = discordStatus.username || order.discordUsername || "";
+    if (bound) {
+      return (
+        '<div class="pay-discord is-bound" data-discord-panel="1">' +
+        "<h2>Discord 语音</h2>" +
+        '<p class="pay-hint">本单将使用妙脆角私人 Discord 订单语音房。陪玩确认接单后才会开启房间。</p>' +
+        '<div class="pay-row"><span>Discord 账号</span><strong>已连接' +
+        (name ? " · " + esc(name) : "") +
+        "</strong></div></div>"
+      );
+    }
+    return (
+      '<div class="pay-discord" data-discord-panel="1">' +
+      "<h2>连接 Discord</h2>" +
+      '<p class="pay-hint">本单选择了 Discord 语音。请先连接 Discord，再完成付款。连接完成后会回到本页，订单资料不会丢失。</p>' +
+      '<div class="pay-actions" style="margin-top:12px">' +
+      '<button type="button" class="pay-btn primary" data-discord-connect="' +
+      esc(order.id) +
+      '">连接 Discord</button></div></div>'
+    );
+  }
+  async function refreshDiscordStatus(order) {
+    var mode = orderVoiceMode(order);
+    if (mode !== "discord") {
+      discordStatus = { loaded: true, bound: false, username: "", configured: true };
+      return discordStatus;
+    }
+    try {
+      var res = await fetch(
+        "/api/discord/status?orderId=" + encodeURIComponent(order.id || ""),
+        { headers: { Accept: "application/json", Authorization: "Bearer " + token() }, cache: "no-store" }
+      );
+      var body = await res.json().catch(function () {
+        return {};
+      });
+      if (res.ok && body.ok !== false) {
+        discordStatus = {
+          loaded: true,
+          bound: !!body.bound,
+          username: (body.discord && body.discord.username) || "",
+          configured: body.configured !== false,
+        };
+      } else {
+        discordStatus = { loaded: true, bound: false, username: "", configured: true };
+      }
+    } catch (e) {
+      discordStatus = { loaded: true, bound: false, username: "", configured: true };
+    }
+    return discordStatus;
+  }
 
   function canShowTestPay() {
     if (allowTestPay === true) return true;
@@ -979,10 +1071,14 @@
         '<div class="pay-row"><span>支付方式</span><strong>' +
         esc(order.paymentMethod || order.payment_method || "-") +
         "</strong></div>" +
+        '<div class="pay-row"><span>语音方式</span><strong>' +
+        esc(voiceModeLabel(orderVoiceMode(order))) +
+        "</strong></div>" +
         '<div class="pay-row"><span>当前状态</span><strong>' +
         esc(label) +
         "</strong></div></div>" +
         multiHint +
+        discordPanelHtml(order) +
         (reviewing
           ? '<p class="pay-hint">付款凭证已提交，当前为待人工审核。客服确认收款前不会进入接单流程。</p>'
           : needsManualProof
@@ -997,6 +1093,15 @@
 
   async function submitPay(orderId, previewTest) {
     if (paying) return;
+    var cachedForVoice = readCache(orderId);
+    if (orderVoiceMode(cachedForVoice) === "discord" && !discordStatus.bound) {
+      await refreshDiscordStatus(cachedForVoice || { id: orderId, voice_mode: "discord" });
+      if (!discordStatus.bound) {
+        failUi("本单选择了 Discord 语音，请先连接 Discord 后再付款。");
+        if (cachedForVoice) renderOrder(cachedForVoice);
+        return;
+      }
+    }
     paying = true;
     try {
       var res = await fetch("/api/orders", {
@@ -1014,6 +1119,13 @@
       });
       if (typeof body.allowTestPay === "boolean") allowTestPay = body.allowTestPay;
       if (!res.ok || body.ok === false) {
+        if (body.code === "DISCORD_BIND_REQUIRED") {
+          discordStatus.bound = false;
+          var cachedDiscord = readCache(orderId);
+          if (cachedDiscord) renderOrder(cachedDiscord);
+          failUi(body.message || "请先连接 Discord 后再付款");
+          return;
+        }
         if (body.code === "USE_TEST_PAY" && canShowTestPay()) {
           allowTestPay = true;
           var cached = readCache(orderId);
@@ -1236,6 +1348,11 @@
           proofDraft.successTip = proofDraft.successTip || "付款凭证已上传，当前状态：待人工审核";
         }
       }
+      await refreshDiscordStatus(order);
+      if (gen !== loadGen) return;
+      if (q("discord") === "connected") {
+        discordStatus.bound = true;
+      }
       renderOrder(order);
     } catch (err) {
       if (gen !== loadGen) return;
@@ -1300,6 +1417,14 @@
     if (previewBtn) {
       e.preventDefault();
       submitPay(previewBtn.getAttribute("data-preview-pay"), true);
+      return;
+    }
+    var discordBtn = e.target.closest("[data-discord-connect]");
+    if (discordBtn) {
+      e.preventDefault();
+      startDiscordOAuth(discordBtn.getAttribute("data-discord-connect") || q("order") || q("id")).catch(function (err) {
+        failUi(err.message || "连接 Discord 失败");
+      });
     }
   });
   root.addEventListener("change", function (e) {

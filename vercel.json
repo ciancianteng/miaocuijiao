@@ -4,6 +4,10 @@
     {
       "path": "/api/cron/order-auto-complete",
       "schedule": "0 4 * * *"
+    },
+    {
+      "path": "/api/cron/discord-channel-cleanup",
+      "schedule": "30 * * * *"
     }
   ],
   "headers": [
