@@ -8,7 +8,7 @@
   var MAX_TEAM = 4; // product default; backend allows up to 20
   var STORAGE_KEY = "mcjMultiTeamSelection";
   var PICKING_KEY = "mcjMultiTeamPicking";
-  var HALL_HREF = "companion-center.html";
+  var HALL_HREF = "/companion-center.html";
   var DEFAULT_AVATAR =
     "data:image/svg+xml," +
     encodeURIComponent(
@@ -99,7 +99,7 @@
     if (document.querySelector('link[data-mcj-team-css]')) return;
     var link = document.createElement("link");
     link.rel = "stylesheet";
-    link.href = "src/multi-companion-team.css?v=20260920multiMobileP0";
+    link.href = "/src/multi-companion-team.css?v=20260920multiMobileP0";
     link.setAttribute("data-mcj-team-css", "1");
     document.head.appendChild(link);
   }
@@ -362,8 +362,24 @@
   function resolveServicesFor(companion) {
     if (window.MCJPlaceOrder && typeof window.MCJPlaceOrder.resolveServices === "function") {
       try {
-        return window.MCJPlaceOrder.resolveServices(companion) || [];
+        var resolved = window.MCJPlaceOrder.resolveServices(companion) || [];
+        if (resolved.length) return resolved;
       } catch (e) {}
+    }
+    if (Array.isArray(companion.services) && companion.services.length) {
+      return companion.services
+        .map(function (s, i) {
+          if (!s) return null;
+          return {
+            name: String(s.name || s.service || "").trim(),
+            price: money(s.price != null ? s.price : s.unitPrice != null ? s.unitPrice : 0),
+            serviceId: String(s.serviceId || s.service_id || s.id || "").trim(),
+            sort: s.sort != null ? Number(s.sort) : i,
+          };
+        })
+        .filter(function (s) {
+          return s && s.name;
+        });
     }
     var name = companion.service || companion.game || "陪玩";
     return [{ name: name, price: money(companion.unitPrice || companion.price), serviceId: companion.serviceId || "" }];

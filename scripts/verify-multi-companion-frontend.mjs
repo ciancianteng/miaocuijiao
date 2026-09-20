@@ -70,7 +70,17 @@ test("TEST 2–3 add companions increments count + group total", () => {
   const window = {
     MCJPlaceOrder: {
       resolveServices(c) {
-        return [{ name: c.service || "陪玩", price: Number(c.unitPrice || 30) }];
+        if (Array.isArray(c.services) && c.services.length) {
+          return c.services.map(function (s, i) {
+            return {
+              name: s.name,
+              price: Number(s.price || 0),
+              serviceId: s.serviceId || s.id || "",
+              sort: i,
+            };
+          });
+        }
+        return [{ name: c.service || "陪玩", price: Number(c.unitPrice || 30), serviceId: c.serviceId || "" }];
       },
     },
     addEventListener() {},
@@ -204,7 +214,7 @@ test("TEST floating bar + checkout copy", () => {
   assert.match(teamSrc, /本订单一次付款，系统会分别为每位陪玩结算/);
   assert.match(teamSrc, /data-mcj-team-continue/);
   assert.match(teamSrc, /continueToHall/);
-  assert.match(teamSrc, /companion-center\.html/);
+  assert.match(teamSrc, /\/companion-center\.html/);
   assert.match(teamSrc, /mcjMultiTeamPicking/);
 });
 

@@ -121,7 +121,7 @@
     if (document.querySelector('link[data-mcj-place-order-css]')) return;
     var link = document.createElement("link");
     link.rel = "stylesheet";
-    link.href = "src/place-order-modal.css?v=20260920multiMobileP0";
+    link.href = "/src/place-order-modal.css?v=20260920multiMobileP0";
     link.setAttribute("data-mcj-place-order-css", "1");
     document.head.appendChild(link);
   }
@@ -1415,7 +1415,7 @@
       sessionStorage.setItem("mcjMultiTeamPicking", "1");
     } catch (ePick) {}
     toast("已加入队伍，继续选择下一位陪玩");
-    location.href = "companion-center.html";
+    location.href = "/companion-center.html";
   }
 
   function submitOrder() {
