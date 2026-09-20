@@ -135,8 +135,8 @@ export async function placeMultiOrder(ctx) {
   const sharedNotes = String(body.notes || body.remark || "").trim();
   let voiceMode = "game_mic";
   try {
-    const { normalizeVoiceMode } = await import("./_discord-voice-orders.js");
-    voiceMode = normalizeVoiceMode(body.voiceMode || body.voice_mode);
+    const { normalizeVoiceModeForNewOrder } = await import("./_discord-voice-orders.js");
+    voiceMode = normalizeVoiceModeForNewOrder(body.voiceMode || body.voice_mode);
   } catch (_) {
     voiceMode = "game_mic";
   }

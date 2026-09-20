@@ -29,11 +29,18 @@ export function normalizeVoiceMode(raw) {
   return "game_mic";
 }
 
+/** New order create: only discord | game_mic (legacy "none" no longer selectable). */
+export function normalizeVoiceModeForNewOrder(raw) {
+  const m = normalizeVoiceMode(raw);
+  return m === "discord" ? "discord" : "game_mic";
+}
+
 export function voiceModeLabel(mode) {
   const m = normalizeVoiceMode(mode);
-  if (m === "discord") return "🎧 Discord 私人语音房";
-  if (m === "none") return "💬 仅平台聊天";
-  return "🎮 游戏麦";
+  if (m === "discord") return "Discord语音房";
+  // Legacy value kept for historical orders only (no longer selectable on new orders).
+  if (m === "none") return "仅平台文字聊天";
+  return "游戏麦";
 }
 
 function envUrl() {

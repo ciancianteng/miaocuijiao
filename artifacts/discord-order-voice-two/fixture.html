@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>本单语音方式 · 二选一</title>
+  <link rel="stylesheet" href="/src/place-order-modal.css?v=20260920voiceTwo1" />
+  <style>
+    html,body{margin:0;min-height:100%;background:#0c0a10;color:#ffe6f2;font-family:"Segoe UI","PingFang SC","Noto Sans SC",sans-serif}
+    .wrap{max-width:420px;margin:0 auto;padding:24px 16px 48px}
+    .panel{border:1px solid rgba(255,255,255,.08);border-radius:16px;background:rgba(22,16,28,.96);padding:18px 16px 20px}
+    h1{margin:0 0 4px;font-size:18px;font-weight:650}
+    .sub{margin:0 0 16px;font-size:12px;color:rgba(255,214,231,.45)}
+    .detail{margin-top:18px;padding-top:14px;border-top:1px solid rgba(255,255,255,.08)}
+    .detail h2{margin:0 0 10px;font-size:14px;font-weight:600;color:rgba(255,214,231,.7)}
+    .row{display:flex;justify-content:space-between;gap:12px;padding:8px 0;font-size:13px}
+    .row span{color:rgba(255,214,231,.45)}
+    .row strong{font-weight:600;color:#fff}
+    .tabs{display:flex;gap:8px;margin:0 0 12px}
+    .tabs button{flex:1;height:36px;border-radius:10px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.04);color:#ffd6e7;cursor:pointer}
+    .tabs button.active{border-color:rgba(243,168,203,.45);background:rgba(243,168,203,.12)}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="panel">
+      <h1>确认下单</h1>
+      <p class="sub">本单语音方式 · 仅 Discord / 游戏麦</p>
+      <div class="mcj-po-field mcj-po-voice-field">
+        <span class="mcj-po-label">本单语音方式</span>
+        <div class="mcj-po-voice-grid" role="radiogroup" id="voiceGrid"></div>
+      </div>
+      <div class="detail">
+        <div class="tabs">
+          <button type="button" class="active" data-role="boss">老板订单详情</button>
+          <button type="button" data-role="companion">陪玩端订单</button>
+        </div>
+        <h2 id="detailTitle">老板订单详情</h2>
+        <div class="row"><span>订单号</span><strong>MCJ-DEMO-001</strong></div>
+        <div class="row"><span>语音方式</span><strong id="voiceDisplay">游戏麦</strong></div>
+        <div class="row"><span>旧单兼容</span><strong>仅平台文字聊天（历史）</strong></div>
+      </div>
+    </div>
+  </div>
+  <script>
+    (function () {
+      var mode = "game_mic";
+      var grid = document.getElementById("voiceGrid");
+      var display = document.getElementById("voiceDisplay");
+      function label(m) {
+        if (m === "discord") return "Discord语音房";
+        return "游戏麦";
+      }
+      function paint() {
+        grid.innerHTML =
+          '<button type="button" class="mcj-po-voice-card' + (mode === "discord" ? " active" : "") + '" data-v="discord">' +
+          '<span class="mcj-po-voice-card-icon" aria-hidden="true">🎧</span>' +
+          '<span class="mcj-po-voice-card-title">Discord语音房</span>' +
+          '<span class="mcj-po-voice-card-desc">下单后使用 Discord 私人语音房沟通</span></button>' +
+          '<button type="button" class="mcj-po-voice-card' + (mode !== "discord" ? " active" : "") + '" data-v="game_mic">' +
+          '<span class="mcj-po-voice-card-icon" aria-hidden="true">🎮</span>' +
+          '<span class="mcj-po-voice-card-title">游戏麦</span>' +
+          '<span class="mcj-po-voice-card-desc">使用游戏内语音沟通</span></button>';
+        display.textContent = label(mode);
+        grid.querySelectorAll("[data-v]").forEach(function (btn) {
+          btn.addEventListener("click", function () {
+            mode = btn.getAttribute("data-v");
+            paint();
+          });
+        });
+      }
+      document.querySelectorAll("[data-role]").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          document.querySelectorAll("[data-role]").forEach(function (b) { b.classList.toggle("active", b === btn); });
+          document.getElementById("detailTitle").textContent =
+            btn.getAttribute("data-role") === "companion" ? "陪玩端订单" : "老板订单详情";
+        });
+      });
+      paint();
+      window.__setVoice = function (m) { mode = m; paint(); };
+    })();
+  </script>
+</body>
+</html>

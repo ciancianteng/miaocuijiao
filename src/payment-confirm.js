@@ -588,9 +588,9 @@
   }
   function voiceModeLabel(mode) {
     var m = String(mode || "game_mic").toLowerCase();
-    if (m === "discord") return "🎧 Discord 私人语音房";
-    if (m === "none") return "💬 仅平台聊天";
-    return "🎮 游戏麦";
+    if (m === "discord") return "Discord语音房";
+    if (m === "none") return "仅平台文字聊天"; // legacy orders only
+    return "游戏麦";
   }
   function paymentReturnPath(orderId) {
     var oid = orderId || q("order") || q("id") || "";

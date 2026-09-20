@@ -469,45 +469,63 @@
 
 .mcj-po-voice-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: 1fr;
   gap: 8px;
 }
 .mcj-po-voice-card {
   display: grid;
-  gap: 4px;
+  grid-template-columns: 28px minmax(0, 1fr);
+  column-gap: 10px;
+  row-gap: 2px;
+  align-items: start;
+  min-height: 56px;
   min-width: 0;
   text-align: left;
-  padding: 10px 12px;
-  border-radius: 14px;
-  border: 1px solid rgba(255, 145, 195, 0.22);
-  background: rgba(255, 255, 255, 0.04);
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.035);
   color: #ffd6e7;
   cursor: pointer;
+  box-shadow: none;
+  transition: border-color 0.15s ease, background 0.15s ease;
 }
-.mcj-po-voice-card strong {
-  font-size: 13px;
-  font-weight: 800;
+.mcj-po-voice-card-icon {
+  grid-row: 1 / span 2;
+  align-self: center;
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  font-size: 14px;
+  line-height: 1;
+  opacity: 0.9;
 }
-.mcj-po-voice-card span {
-  font-size: 11px;
-  line-height: 1.35;
-  color: rgba(255, 214, 231, 0.62);
+.mcj-po-voice-card-title {
+  font-size: 14px;
+  font-weight: 650;
+  line-height: 1.3;
+  color: rgba(255, 248, 252, 0.96);
+}
+.mcj-po-voice-card-desc {
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.4;
+  color: rgba(255, 214, 231, 0.45);
 }
 .mcj-po-voice-card.active {
-  border-color: rgba(243, 168, 203, 0.7);
-  background: rgba(243, 168, 203, 0.16);
-  box-shadow: 0 0 0 1px rgba(243, 168, 203, 0.2);
+  border-color: rgba(243, 168, 203, 0.45);
+  background: rgba(243, 168, 203, 0.12);
+  box-shadow: none;
+}
+.mcj-po-voice-card.active .mcj-po-voice-card-icon {
+  background: rgba(243, 168, 203, 0.18);
 }
 .mcj-po-voice-hint {
-  margin: 8px 0 0;
-  font-size: 12px;
-  line-height: 1.45;
-  color: rgba(255, 214, 231, 0.58);
-}
-@media (max-width: 560px) {
-  .mcj-po-voice-grid {
-    grid-template-columns: 1fr;
-  }
+  display: none;
 }
 
 .mcj-po-chips {

@@ -165,7 +165,7 @@
   </style>
   <link rel="stylesheet" crossorigin href="/src/boss-header.css">
   <link rel="stylesheet" crossorigin href="/src/style.css">
-  <link rel="stylesheet" href="/src/multi-companion-team.css?v=20260920bossOrderFormSimplify">
+  <link rel="stylesheet" href="/src/multi-companion-team.css?v=20260920voiceTwo1">
 </head>
 <body>
   <header class="topbar"><a class="brand" href="index.html"><img src="/assets/meow-cuijiao-brand-96.webp" alt="MEOW CUI JIAO" width="32" height="32" decoding="async" onerror="this.onerror=null;this.src='/assets/meow-cuijiao-brand-96.jpg'"><span>MEOW CUI JIAO</span></a><nav class="boss-nav"><a href="index.html">首页</a><a href="companion-center.html">陪玩大厅</a><a href="orders.html">我的订单</a><a href="support.html?start=1">在线客服</a></nav></header>
@@ -242,12 +242,9 @@
       function date(v){if(!v)return '-';try{return new Date(v).toLocaleString('zh-CN',{hour12:false})}catch(e){return v}}
       function voiceModeLabel(o){
         var m=String((o&& (o.voiceMode||o.voice_mode))||'game_mic').toLowerCase();
-        if(m==='none')return '💬 仅平台聊天';
-        if(m==='discord'){
-          var hasCh=!!(o.discordChannelUrl||o.discord_channel_url||o.discordChannelId||o.discord_channel_id);
-          return hasCh?'🎧 Discord 私人语音房':'🎧 Discord';
-        }
-        return '🎮 游戏麦';
+        if(m==='discord')return 'Discord语音房';
+        if(m==='none')return '仅平台文字聊天'; // legacy
+        return '游戏麦';
       }
       function startDiscordOAuthFromOrders(returnTo){
         return fetch('/api/discord/oauth-start?format=json&returnTo='+encodeURIComponent(returnTo||'/orders.html'),{

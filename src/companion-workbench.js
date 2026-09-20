@@ -2794,12 +2794,9 @@
   var REJECT_REASONS=['正在服务其他订单','时间无法配合','临时有事','不接该项目','其他'];
   function voiceModeLabel(o){
     var m=String((o&&(o.voiceMode||o.voice_mode))||'game_mic').toLowerCase();
-    if(m==='none')return '💬 仅平台聊天';
-    if(m==='discord'){
-      var hasCh=!!(o.discordChannelUrl||o.discord_channel_url||o.discordChannelId||o.discord_channel_id);
-      return hasCh?'🎧 Discord 私人语音房':'🎧 Discord 私人语音房';
-    }
-    return '🎮 游戏麦';
+    if(m==='discord')return 'Discord语音房';
+    if(m==='none')return '仅平台文字聊天'; // legacy
+    return '游戏麦';
   }
   function startDiscordOAuth(returnTo){
     var session=state.session||readSession();

@@ -1382,8 +1382,8 @@ export default async function handler(req, res) {
       // Optional marketplace columns (ignore if schema missing).
       let voiceMode = "game_mic";
       try {
-        const { normalizeVoiceMode } = await import("./_discord-voice-orders.js");
-        voiceMode = normalizeVoiceMode(order.voiceMode || order.voice_mode || body.voiceMode || body.voice_mode);
+        const { normalizeVoiceModeForNewOrder } = await import("./_discord-voice-orders.js");
+        voiceMode = normalizeVoiceModeForNewOrder(order.voiceMode || order.voice_mode || body.voiceMode || body.voice_mode);
       } catch (_) {
         voiceMode = "game_mic";
       }
