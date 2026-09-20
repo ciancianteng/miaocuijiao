@@ -948,6 +948,12 @@ export default async function handler(req, res) {
           reason: "admin approved manual payment proof",
           after: { orderId: order.id, nextStatus: next },
         }).catch(() => null);
+        try {
+          const { recastBossVipSafe } = await import("../_boss-vip.js");
+          await recastBossVipSafe(order.boss_id, { triggerOrderId: order.id, reason: "confirm" });
+        } catch (vipErr) {
+          console.warn("[finance] boss vip recast", vipErr?.message || vipErr);
+        }
         return json(res, 200, {
           ok: true,
           message: order.companion_id ? "已审核通过，订单进入待陪玩确认。" : "已审核通过，订单已进入抢单大厅。",

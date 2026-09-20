@@ -1,0 +1,562 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Boss VIP UI</title>
+<style>
+  :root{--text:#fff;--muted:#9ca3af}
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;font-family:"Segoe UI",system-ui,sans-serif;color:var(--text);
+    background:radial-gradient(1200px 600px at 20% -10%,rgba(232,154,196,.16),transparent 55%),
+               radial-gradient(900px 500px at 100% 0%,rgba(120,60,100,.2),transparent 50%),
+               #0a0710;padding:20px}
+  .shell{max-width:1080px;margin:0 auto}
+  .boss-id{margin-bottom:14px;padding:14px;border-radius:18px;border:1px solid rgba(232,154,196,.28);background:rgba(10,10,12,.85)}
+  .boss-id h1{margin:0;font-size:18px}
+  .boss-id p{margin:6px 0 0;color:#ffd6e7;font-size:13px;font-weight:600}
+  /* Boss VIP premium membership panel — display only */
+
+.bv-panel{
+  --bv-ink:#0a0710;
+  --bv-rose:#e89ac4;
+  --bv-rose-soft:#ffd6e7;
+  --bv-gold:#d4b56a;
+  --bv-line:rgba(232,154,196,.28);
+  margin:0 0 18px;
+}
+
+.bv-panel-grid{
+  display:grid;
+  gap:16px;
+  align-items:stretch;
+}
+
+@media (min-width:900px){
+  .bv-panel-grid{
+    grid-template-columns:minmax(0,1.05fr) minmax(280px,.95fr);
+    gap:20px;
+  }
+  .bv-panel-card{order:2}
+  .bv-panel-info{order:1}
+}
+
+/* Mobile: card first */
+@media (max-width:899px){
+  .bv-panel-card{order:0}
+  .bv-panel-info{order:1}
+}
+
+.bv-panel-head{
+  margin:0 0 12px;
+}
+.bv-panel-head h2{
+  margin:0;
+  font-size:18px;
+  font-weight:800;
+  letter-spacing:.02em;
+  color:#fff;
+}
+.bv-panel-head p{
+  margin:6px 0 0;
+  color:rgba(255,214,231,.72);
+  font-size:12px;
+  line-height:1.45;
+  font-weight:600;
+}
+
+.bv-summary,
+.bv-progress,
+.bv-benefits{
+  margin:0 0 12px;
+  padding:14px 14px 12px;
+  border-radius:16px;
+  border:1px solid rgba(255,255,255,.07);
+  background:linear-gradient(180deg,rgba(255,255,255,.045),rgba(10,8,14,.55));
+}
+.bv-summary h3,
+.bv-progress h3,
+.bv-benefits h3{
+  margin:0 0 10px;
+  font-size:13px;
+  font-weight:800;
+  letter-spacing:.04em;
+  text-transform:uppercase;
+  color:var(--bv-rose-soft);
+}
+
+.bv-summary-list{
+  margin:0;
+  display:grid;
+  gap:8px;
+}
+.bv-summary-list > div{
+  display:flex;
+  justify-content:space-between;
+  gap:12px;
+  align-items:baseline;
+}
+.bv-summary-list dt{
+  margin:0;
+  color:rgba(255,214,231,.78);
+  font-size:13px;
+  font-weight:700;
+}
+.bv-summary-list dd{
+  margin:0;
+  color:#fff;
+  font-size:13px;
+  font-weight:800;
+  text-align:right;
+  word-break:break-word;
+}
+
+.bv-progress-head{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:10px;
+  margin-bottom:10px;
+}
+.bv-progress-head h3{margin:0}
+.bv-progress-meta{
+  color:rgba(255,255,255,.7);
+  font-size:12px;
+  font-weight:700;
+  white-space:nowrap;
+}
+.bv-progress-track{
+  height:10px;
+  border-radius:999px;
+  background:rgba(255,255,255,.08);
+  overflow:hidden;
+  border:1px solid rgba(232,154,196,.18);
+}
+.bv-progress-fill{
+  height:100%;
+  border-radius:inherit;
+  background:linear-gradient(90deg,#8b5a7a 0%,var(--bv-rose) 45%,var(--bv-gold) 100%);
+  box-shadow:0 0 12px rgba(232,154,196,.35);
+  transition:width .35s ease;
+  max-width:100%;
+}
+.bv-progress-note{
+  margin:10px 0 0;
+  color:rgba(255,255,255,.72);
+  font-size:12px;
+  line-height:1.5;
+}
+.bv-progress-note strong{color:#fff;font-weight:800}
+
+.bv-benefits-body{
+  margin:0;
+  color:#fff;
+  font-size:14px;
+  font-weight:700;
+  line-height:1.5;
+  white-space:pre-wrap;
+  word-break:break-word;
+}
+.bv-benefits-tip{
+  margin:10px 0 0;
+  color:rgba(255,214,231,.62);
+  font-size:12px;
+  line-height:1.5;
+}
+
+/* ===== Premium VIP card ===== */
+.bv-hero-card{
+  position:relative;
+  isolation:isolate;
+  min-height:220px;
+  padding:20px 20px 18px;
+  border-radius:22px;
+  overflow:hidden;
+  color:#f8f1e8;
+  background:
+    radial-gradient(120% 90% at 100% 0%, rgba(212,181,106,.18), transparent 55%),
+    radial-gradient(90% 80% at 0% 100%, rgba(232,154,196,.16), transparent 50%),
+    linear-gradient(145deg,#141018 0%,#0b090f 42%,#17101c 100%);
+  border:1px solid rgba(212,181,106,.28);
+  box-shadow:
+    0 18px 40px rgba(0,0,0,.45),
+    inset 0 1px 0 rgba(255,255,255,.08);
+}
+.bv-hero-card::before{
+  content:"";
+  position:absolute;
+  inset:0;
+  border-radius:inherit;
+  padding:1px;
+  background:linear-gradient(
+    120deg,
+    rgba(212,181,106,.55),
+    rgba(255,255,255,.08) 28%,
+    rgba(232,154,196,.45) 55%,
+    rgba(212,181,106,.25) 78%,
+    rgba(255,255,255,.12)
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite:xor;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite:exclude;
+  pointer-events:none;
+  opacity:.9;
+}
+.bv-hero-sheen{
+  position:absolute;
+  inset:-40% -60%;
+  background:linear-gradient(
+    105deg,
+    transparent 35%,
+    rgba(255,255,255,.07) 48%,
+    rgba(212,181,106,.16) 52%,
+    transparent 65%
+  );
+  transform:translateX(-30%);
+  animation:bv-sheen 7.5s ease-in-out infinite;
+  pointer-events:none;
+  opacity:.85;
+}
+@media (prefers-reduced-motion:reduce){
+  .bv-hero-sheen{animation:none;opacity:.35}
+}
+@keyframes bv-sheen{
+  0%,18%{transform:translateX(-42%)}
+  48%{transform:translateX(42%)}
+  100%{transform:translateX(42%)}
+}
+@media (hover:hover) and (pointer:fine){
+  .bv-hero-card:hover{
+    border-color:rgba(212,181,106,.42);
+    box-shadow:
+      0 22px 48px rgba(0,0,0,.5),
+      0 0 0 1px rgba(232,154,196,.12),
+      inset 0 1px 0 rgba(255,255,255,.1);
+  }
+  .bv-hero-card:hover .bv-hero-sheen{
+    animation-duration:4.8s;
+  }
+}
+
+.bv-hero-top{
+  position:relative;
+  z-index:1;
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:10px;
+  margin-bottom:18px;
+}
+.bv-hero-brand{
+  display:inline-flex;
+  align-items:center;
+  gap:8px;
+  font-size:11px;
+  font-weight:800;
+  letter-spacing:.12em;
+  text-transform:uppercase;
+  color:rgba(248,241,232,.78);
+}
+.bv-hero-mark{
+  color:var(--bv-gold);
+  font-size:12px;
+  filter:drop-shadow(0 0 6px rgba(212,181,106,.45));
+}
+.bv-hero-chip{
+  flex:0 0 auto;
+  padding:5px 10px;
+  border-radius:999px;
+  border:1px solid rgba(212,181,106,.35);
+  background:rgba(212,181,106,.08);
+  color:rgba(248,241,232,.88);
+  font-size:10px;
+  font-weight:800;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+  white-space:nowrap;
+}
+
+.bv-hero-level{position:relative;z-index:1;margin:0 0 16px}
+.bv-hero-kicker{
+  margin:0 0 4px;
+  color:rgba(255,214,231,.7);
+  font-size:11px;
+  font-weight:700;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+}
+.bv-hero-title{
+  margin:0;
+  font-size:clamp(26px,5vw,34px);
+  line-height:1.1;
+  font-weight:860;
+  letter-spacing:.02em;
+  color:#fff7ee;
+  text-shadow:0 0 24px rgba(232,154,196,.25);
+  word-break:break-word;
+}
+
+.bv-hero-stats{
+  position:relative;
+  z-index:1;
+  display:grid;
+  grid-template-columns:1fr;
+  gap:8px;
+  margin:0 0 14px;
+}
+.bv-hero-stats > div{
+  display:flex;
+  justify-content:space-between;
+  gap:10px;
+  align-items:baseline;
+  padding:8px 0;
+  border-top:1px solid rgba(255,255,255,.06);
+}
+.bv-hero-stats span{
+  color:rgba(255,214,231,.72);
+  font-size:12px;
+  font-weight:700;
+}
+.bv-hero-stats strong{
+  color:#fff;
+  font-size:13px;
+  font-weight:800;
+  text-align:right;
+  word-break:break-word;
+}
+
+.bv-hero-perk{
+  position:relative;
+  z-index:1;
+  margin:0 0 10px;
+  padding:10px 12px;
+  border-radius:12px;
+  background:rgba(255,255,255,.04);
+  border:1px solid rgba(255,255,255,.06);
+  color:rgba(255,255,255,.88);
+  font-size:12px;
+  line-height:1.5;
+  font-weight:650;
+  white-space:pre-wrap;
+  word-break:break-word;
+}
+.bv-hero-perk span{
+  display:block;
+  margin-bottom:4px;
+  color:var(--bv-gold);
+  font-size:10px;
+  font-weight:800;
+  letter-spacing:.1em;
+  text-transform:uppercase;
+}
+.bv-hero-foot{
+  position:relative;
+  z-index:1;
+  margin:0;
+  color:rgba(255,255,255,.42);
+  font-size:10px;
+  line-height:1.4;
+  font-weight:600;
+  letter-spacing:.02em;
+}
+
+/* Legacy class kept as no-op alias if old CSS remnants exist */
+.boss-vip-card{display:contents}
+
+</style></head>
+<body><div class="shell">
+  <section class="boss-id"><h1>VIP验收老板</h1><p>老板 UID VUI-DEMO</p></section>
+  <div id="mount"></div>
+</div>
+<script>/**
+ * Boss VIP front-end panel (display only).
+ * Data SoT remains /api/boss/vip — no business logic here.
+ */
+(function (global) {
+  "use strict";
+
+  function esc(v) {
+    return String(v == null ? "" : v).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+
+  function money(v) {
+    var n = Number(v);
+    if (!Number.isFinite(n)) return 0;
+    return Math.round(n * 100) / 100;
+  }
+
+  function normalize(vip) {
+    var v = vip && typeof vip === "object" ? vip : {};
+    var spend = money(v.confirmedSpend);
+    var nextTh = v.nextThreshold != null && v.nextThreshold !== "" ? money(v.nextThreshold) : null;
+    var remain = v.isMaxLevel ? 0 : money(v.remaining != null ? v.remaining : 0);
+    var progressSpend = nextTh != null ? Math.max(0, Math.min(spend, nextTh)) : spend;
+    var pct = 100;
+    if (!v.isMaxLevel && nextTh != null && nextTh > 0) {
+      pct = Math.max(0, Math.min(100, Math.round((progressSpend / nextTh) * 1000) / 10));
+    }
+    return {
+      name: v.currentLevelName || "普通会员",
+      spend: spend,
+      next: v.nextLevelName || (v.isMaxLevel ? "已是最高等级" : "—"),
+      nextTh: nextTh,
+      remain: remain,
+      benefits: v.benefits || "暂无专属福利",
+      isMax: !!v.isMaxLevel,
+      pct: pct,
+      progressSpend: progressSpend,
+    };
+  }
+
+  function BossVipHeroCard(n) {
+    return (
+      '<article class="bv-hero-card" aria-label="Boss VIP 会员卡">' +
+      '<div class="bv-hero-sheen" aria-hidden="true"></div>' +
+      '<div class="bv-hero-top">' +
+      '<div class="bv-hero-brand">' +
+      '<span class="bv-hero-mark" aria-hidden="true">◆</span>' +
+      "<span>MEOW CUI JIAO VIP</span>" +
+      "</div>" +
+      '<span class="bv-hero-chip">Boss Member</span>' +
+      "</div>" +
+      '<div class="bv-hero-level">' +
+      '<p class="bv-hero-kicker">当前等级</p>' +
+      '<h2 class="bv-hero-title">' +
+      esc(n.name) +
+      "</h2>" +
+      "</div>" +
+      '<div class="bv-hero-stats">' +
+      "<div><span>累计有效消费</span><strong>" +
+      esc(n.spend) +
+      " 猫粮</strong></div>" +
+      "<div><span>下一等级</span><strong>" +
+      esc(n.next) +
+      "</strong></div>" +
+      "<div><span>" +
+      (n.isMax ? "状态" : "距离升级") +
+      "</span><strong>" +
+      (n.isMax ? "已满级" : "还差 " + esc(n.remain) + " 猫粮") +
+      "</strong></div>" +
+      "</div>" +
+      '<p class="bv-hero-perk"><span>Exclusive Benefits</span>' +
+      esc(n.benefits) +
+      "</p>" +
+      '<p class="bv-hero-foot">客服确认的有效消费自动累计 · 达标即升</p>' +
+      "</article>"
+    );
+  }
+
+  function BossVipProgress(n) {
+    var label = n.isMax
+      ? "已达最高等级"
+      : esc(n.progressSpend) + " / " + esc(n.nextTh) + " 猫粮";
+    var remainLine = n.isMax
+      ? "恭喜，您已解锁当前最高 VIP 权益。"
+      : "距离 <strong>" + esc(n.next) + "</strong> 还差 <strong>" + esc(n.remain) + "</strong> 猫粮";
+    return (
+      '<section class="bv-progress" aria-label="升级进度">' +
+      '<div class="bv-progress-head">' +
+      "<h3>升级进度</h3>" +
+      '<span class="bv-progress-meta">' +
+      label +
+      "</span>" +
+      "</div>" +
+      '<div class="bv-progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' +
+      esc(n.pct) +
+      '">' +
+      '<div class="bv-progress-fill" style="width:' +
+      esc(n.pct) +
+      '%"></div>' +
+      "</div>" +
+      '<p class="bv-progress-note">' +
+      remainLine +
+      "</p>" +
+      "</section>"
+    );
+  }
+
+  function BossVipSummary(n) {
+    return (
+      '<section class="bv-summary" aria-label="VIP 概况">' +
+      "<h3>会员概况</h3>" +
+      '<dl class="bv-summary-list">' +
+      "<div><dt>当前等级</dt><dd>" +
+      esc(n.name) +
+      "</dd></div>" +
+      "<div><dt>累计有效消费</dt><dd>" +
+      esc(n.spend) +
+      " 猫粮</dd></div>" +
+      "<div><dt>下一等级</dt><dd>" +
+      esc(n.next) +
+      "</dd></div>" +
+      "<div><dt>升级门槛</dt><dd>" +
+      (n.nextTh != null ? esc(n.nextTh) + " 猫粮" : "—") +
+      "</dd></div>" +
+      "<div><dt>还差</dt><dd>" +
+      (n.isMax ? "—" : esc(n.remain) + " 猫粮") +
+      "</dd></div>" +
+      "</dl>" +
+      "</section>"
+    );
+  }
+
+  function BossVipBenefits(n) {
+    return (
+      '<section class="bv-benefits" aria-label="当前权益">' +
+      "<h3>当前权益</h3>" +
+      '<p class="bv-benefits-body">' +
+      esc(n.benefits) +
+      "</p>" +
+      '<p class="bv-benefits-tip">达到下一等级门槛后将自动升级，并解锁该等级配置的福利。升级以客服确认的有效消费为准。</p>' +
+      "</section>"
+    );
+  }
+
+  function renderBossVipPanel(vip) {
+    var n = normalize(vip);
+    return (
+      '<section class="bv-panel" data-boss-vip-panel="1">' +
+      '<div class="bv-panel-grid">' +
+      '<div class="bv-panel-info">' +
+      '<header class="bv-panel-head">' +
+      "<h2>我的 VIP</h2>" +
+      '<p>高级会员身份 · 有效消费自动升级</p>' +
+      "</header>" +
+      BossVipSummary(n) +
+      BossVipProgress(n) +
+      BossVipBenefits(n) +
+      "</div>" +
+      '<div class="bv-panel-card">' +
+      BossVipHeroCard(n) +
+      "</div>" +
+      "</div>" +
+      "</section>"
+    );
+  }
+
+  global.MCJBossVipUI = {
+    renderPanel: renderBossVipPanel,
+    BossVipHeroCard: function (vip) {
+      return BossVipHeroCard(normalize(vip));
+    },
+    BossVipSummary: function (vip) {
+      return BossVipSummary(normalize(vip));
+    },
+    BossVipProgress: function (vip) {
+      return BossVipProgress(normalize(vip));
+    },
+    BossVipBenefits: function (vip) {
+      return BossVipBenefits(normalize(vip));
+    },
+  };
+})(typeof window !== "undefined" ? window : globalThis);
+</script>
+<script>
+  document.getElementById('mount').innerHTML = window.MCJBossVipUI.renderPanel({"currentLevelName":"VIP1","confirmedSpend":600,"nextLevelName":"VIP2","nextThreshold":1500,"remaining":900,"benefits":"专属优惠","isMaxLevel":false});
+</script>
+</body></html>
