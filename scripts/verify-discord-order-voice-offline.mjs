@@ -51,7 +51,7 @@ test("normalizeVoiceMode defaults to game_mic", () => {
 test("voice labels", () => {
   assert.match(voiceModeLabel("game_mic"), /游戏麦/);
   assert.match(voiceModeLabel("discord"), /Discord/);
-  assert.match(voiceModeLabel("none"), /平台聊天/);
+  assert.match(voiceModeLabel("none"), /平台.*聊天|文字/);
 });
 
 test("safe channel name strips PII-like chars", () => {
@@ -141,21 +141,29 @@ test("env examples list Discord vars without values", () => {
   }
 });
 
-test("Boss checkout UI includes three voice modes default game_mic", () => {
+test("Boss checkout UI is Discord / 游戏麦 only (default game_mic)", () => {
   const js = read("src/place-order-modal.js");
   assert.match(js, /voiceMode:\s*"game_mic"/);
   assert.match(js, /data-po-voice="game_mic"/);
   assert.match(js, /data-po-voice="discord"/);
-  assert.match(js, /data-po-voice="none"/);
-  assert.match(js, /本单语音方式/);
+  assert.doesNotMatch(js, /data-po-voice="none"/);
+  assert.match(js, /本单语音方式|Discord语音房/);
+  const team = read("src/multi-companion-team.js");
+  assert.match(team, /data-mcj-team-voice="discord"/);
+  assert.match(team, /data-mcj-team-voice="game_mic"/);
+  assert.doesNotMatch(team, /data-mcj-team-voice="none"/);
 });
 
-test("payment-confirm Discord bind gate UI", () => {
+test("payment-confirm post-pay Discord bind UI (no pay-time gate)", () => {
   const js = read("src/payment-confirm.js");
   assert.match(js, /连接 Discord/);
-  assert.match(js, /DISCORD_BIND_REQUIRED/);
   assert.match(js, /data-discord-connect/);
   assert.match(js, /oauth-start\?format=json/);
+  assert.match(js, /支付成功后可连接 Discord|私人语音房/);
+  // Pay path must not hard-block on Discord bind.
+  assert.doesNotMatch(js, /DISCORD_BIND_REQUIRED/);
+  const orders = read("server/api/orders.js");
+  assert.doesNotMatch(orders, /DISCORD_BIND_REQUIRED/);
 });
 
 test("companion accept gate + soft-exit revoke wired", () => {
