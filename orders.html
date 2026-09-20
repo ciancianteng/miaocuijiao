@@ -966,6 +966,50 @@
       window.addEventListener('pagehide',function(){if(abortCtrl)abortCtrl.abort();if(pollTimer)clearInterval(pollTimer)});
       var boot=readCache();
       if(boot&&boot.length){state.orders=boot;state.fromCache=true;state.loading=false;state.syncing=true}
+      // Preview / QA harness: ?demo=multiConfirm seeds a local multi-group confirmation flow (no API writes).
+      (function seedDemoMultiConfirm(){
+        try{
+          if(String(new URLSearchParams(location.search).get('demo')||'')!=='multiConfirm')return;
+          var parentId='demo-parent-multi';
+          var mk=function(id,name,status,extra){
+            return Object.assign({
+              id:id,orderNo:'MCJ-DEMO-'+id,parentOrderId:parentId,parent_order_id:parentId,
+              isMultiGroupChild:true,status:status,companionId:id,companionName:name,
+              companion:{display_name:name,avatar_url:''},totalAmount:30,amount:30,
+              createdAt:'2026-09-20T02:00:00Z',serviceType:'陪玩'
+            },extra||{});
+          };
+          var parent={
+            id:parentId,orderNo:'MCJ-DEMO-MULTI',isMultiGroupParent:true,orderTypeKey:'multi_group',
+            status:'claimed',totalAmount:120,paidCatFood:120,createdAt:'2026-09-20T02:00:00Z',
+            paymentStatus:'已付款',serviceType:'多人陪玩'
+          };
+          var step=String(new URLSearchParams(location.search).get('step')||'1');
+          var kids=[mk('cA','陪玩A','claimed'),mk('cB','陪玩B','claimed'),mk('cC','陪玩C','claimed')];
+          if(step==='2'||step==='3'||step==='4'){
+            kids[1]=mk('cB','陪玩B','in_progress',{companionConfirm:{key:'accepted',icon:'check',label:'已确认',needsReplacement:false}});
+          }
+          if(step==='3'||step==='4'){
+            kids[0]=mk('cA','陪玩A','cancelled',{
+              cancelReason:'无法接单 / 已退出（时间无法配合）',
+              note:'[[COMPANION_UNAVAILABLE]]|reason:时间无法配合|companion:cA',
+              needsReplacement:true,
+              companionConfirm:{key:'exited',icon:'replace',label:'无法接单 / 已退出',needsReplacement:true}
+            });
+          }
+          state.orders=[parent].concat(kids);
+          state.loading=false;state.syncing=false;state.fromCache=false;state.error='';
+          writeCache(state.orders);
+          paint();
+          openDetailId=parentId;
+          setTimeout(function(){
+            detail(parent,false);
+            if(step==='4'){
+              openUnavailableModal({parentId:parentId,childId:'cA',companionName:'陪玩A'});
+            }
+          },80);
+        }catch(eDemo){}
+      })();
       paint();
       load().then(function(){maybeOpenPendingReview()});
       pollTimer=setInterval(function(){if(!document.hidden)load({silent:true})},POLL_MS);
