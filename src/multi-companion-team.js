@@ -97,7 +97,7 @@
     if (document.querySelector('link[data-mcj-team-css]')) return;
     var link = document.createElement("link");
     link.rel = "stylesheet";
-    link.href = "src/multi-companion-team.css?v=20260920bossOrderFormSimplify";
+    link.href = "src/multi-companion-team.css?v=20260920timePicker24h";
     link.setAttribute("data-mcj-team-css", "1");
     document.head.appendChild(link);
   }
@@ -135,13 +135,21 @@
   }
 
   function normalizeTimeValue(v) {
-    var m = String(v || "")
-      .trim()
-      .match(/^(\d{1,2}):(\d{2})/);
+    if (window.MCJTimePicker && typeof window.MCJTimePicker.normalize === "function") {
+      return window.MCJTimePicker.normalize(v);
+    }
+    var raw = String(v || "").trim();
+    var ampm = raw.match(/\b(am|pm)\b/i);
+    var m = raw.match(/(\d{1,2})\s*[:：.]\s*(\d{1,2})/);
     if (!m) return "";
-    var h = Math.min(23, Math.max(0, Number(m[1]) || 0));
-    var min = Math.min(59, Math.max(0, Number(m[2]) || 0));
-    return pad2(h) + ":" + pad2(min);
+    var h = Number(m[1]) || 0;
+    var min = Number(m[2]) || 0;
+    if (ampm) {
+      var ap = ampm[1].toLowerCase();
+      if (ap === "pm" && h < 12) h += 12;
+      if (ap === "am" && h === 12) h = 0;
+    }
+    return pad2(Math.min(23, Math.max(0, h))) + ":" + pad2(Math.min(59, Math.max(0, min)));
   }
 
   function addHoursToTime(hhmm, hours) {
@@ -154,7 +162,7 @@
   }
 
   function scheduleWindowLabel(start, end) {
-    return String(start || "") + " - " + String(end || "");
+    return String(start || "") + " – " + String(end || "");
   }
 
   function ensureSharedStartTime() {
@@ -164,16 +172,48 @@
     return start;
   }
 
+  function writeTeamStartTime(mask, value) {
+    var v = normalizeTimeValue(value) || defaultStartTime();
+    state.sharedStartTime = v;
+    var card = mask && mask.querySelector("[data-mcj-team-start-time]");
+    if (card) {
+      card.setAttribute("data-mcj-team-start-time", v);
+      var display = card.querySelector("[data-po-start-display]");
+      if (display) display.textContent = v;
+    }
+    return v;
+  }
+
+  function readTeamStartTime(mask) {
+    var card = mask && mask.querySelector("[data-mcj-team-start-time]");
+    if (!card) return ensureSharedStartTime();
+    return normalizeTimeValue(card.getAttribute("data-mcj-team-start-time") || "") || ensureSharedStartTime();
+  }
+
+  function openTeamStartTimePicker(mask) {
+    if (!window.MCJTimePicker || typeof window.MCJTimePicker.open !== "function") {
+      toast("时间选择器加载失败，请刷新后重试");
+      return;
+    }
+    window.MCJTimePicker.open({
+      title: "选择开始时间",
+      value: readTeamStartTime(mask),
+      minuteStep: 60,
+      onConfirm: function (value) {
+        writeTeamStartTime(mask, value);
+        persist();
+        refreshTeamSchedulePreview();
+      },
+    });
+  }
+
   function refreshTeamSchedulePreview() {
     var mask = document.querySelector("[data-mcj-team-sheet]");
     if (!mask) return;
-    var startEl = mask.querySelector("[data-mcj-team-start-time]");
     var endEl = mask.querySelector("[data-mcj-team-end-time]");
     var hintEl = mask.querySelector("[data-mcj-team-schedule-preview]");
-    var start = startEl ? normalizeTimeValue(startEl.value) : ensureSharedStartTime();
-    if (!start) start = defaultStartTime();
-    state.sharedStartTime = start;
-    if (startEl && startEl.value !== start) startEl.value = start;
+    var start = readTeamStartTime(mask);
+    writeTeamStartTime(mask, start);
     var duration = maxTeamDurationHours();
     var end = addHoursToTime(start, duration);
     if (endEl) endEl.textContent = end;
@@ -610,10 +650,18 @@
       '" placeholder="请输入游戏ID" autocomplete="off" inputmode="text"></div>' +
       '<div class="mcj-team-field mcj-team-schedule-field"><span>服务时间 *</span>' +
       '<div class="mcj-team-time-row">' +
-      '<label class="mcj-team-time-start"><span class="mcj-team-time-cap">开始时间</span>' +
-      '<input type="time" data-mcj-team-start-time required step="60" value="' +
-      esc(ensureSharedStartTime()) +
-      '"></label>' +
+      '<div class="mcj-team-time-start"><span class="mcj-team-time-cap">开始时间</span>' +
+      (window.MCJTimePicker && window.MCJTimePicker.startCardHtml
+        ? window.MCJTimePicker.startCardHtml(ensureSharedStartTime(), {
+            startAttr: "data-mcj-team-start-time",
+            openAttr: "data-mcj-team-open-time",
+          })
+        : '<button type="button" class="mcj-po-time-card" data-mcj-team-start-time="' +
+          esc(ensureSharedStartTime()) +
+          '" data-mcj-team-open-time="1"><span class="mcj-po-time-card-icon" aria-hidden="true">🕘</span><strong class="mcj-po-time-card-value" data-po-start-display>' +
+          esc(ensureSharedStartTime()) +
+          '</strong><span class="mcj-po-time-card-chevron" aria-hidden="true">›</span></button>') +
+      "</div>" +
       '<div class="mcj-team-time-end"><span class="mcj-team-time-cap">预计结束</span>' +
       '<strong data-mcj-team-end-time>--</strong></div></div>' +
       '<p class="mcj-team-time-hint" data-mcj-team-schedule-preview>选择开始时间后自动计算结束时间</p></div>' +
@@ -749,8 +797,8 @@
     if (gameIdEl) state.sharedGameId = String(gameIdEl.value || "").trim();
     var notesEl = document.querySelector("[data-mcj-team-notes]");
     if (notesEl) state.sharedNotes = String(notesEl.value || "").trim();
-    var startEl = document.querySelector("[data-mcj-team-start-time]");
-    if (startEl) state.sharedStartTime = normalizeTimeValue(startEl.value) || "";
+    var startTime = readTeamStartTime(document.querySelector("[data-mcj-team-sheet]"));
+    state.sharedStartTime = startTime;
     if (!state.sharedGameId) {
       toast("请填写游戏ID");
       return;
@@ -919,13 +967,16 @@
       state.sharedNotes = String(e.target.value || "");
       persist();
     }
-    if (e.target.matches("[data-mcj-team-start-time]")) {
-      state.sharedStartTime = normalizeTimeValue(e.target.value) || defaultStartTime();
-      if (e.target.value !== state.sharedStartTime) e.target.value = state.sharedStartTime;
-      persist();
-      refreshTeamSchedulePreview();
-    }
   }
+
+  document.addEventListener("click", function (e) {
+    var openTime = e.target.closest("[data-mcj-team-open-time]");
+    if (openTime) {
+      e.preventDefault();
+      var sheet = openTime.closest("[data-mcj-team-sheet]");
+      openTeamStartTimePicker(sheet || document.querySelector("[data-mcj-team-sheet]"));
+    }
+  });
 
   function onStorage() {
     /* ignore */

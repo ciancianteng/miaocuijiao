@@ -159,11 +159,21 @@
     return pad2(d.getHours()) + ":" + pad2(d.getMinutes());
   }
   function normalizeTimeValue(v) {
-    var m = String(v || "").trim().match(/^(\d{1,2}):(\d{2})/);
+    if (window.MCJTimePicker && typeof window.MCJTimePicker.normalize === "function") {
+      return window.MCJTimePicker.normalize(v);
+    }
+    var raw = String(v || "").trim();
+    var ampm = raw.match(/\b(am|pm)\b/i);
+    var m = raw.match(/(\d{1,2})\s*[:：.]\s*(\d{1,2})/);
     if (!m) return "";
-    var h = Math.min(23, Math.max(0, Number(m[1]) || 0));
-    var min = Math.min(59, Math.max(0, Number(m[2]) || 0));
-    return pad2(h) + ":" + pad2(min);
+    var h = Number(m[1]) || 0;
+    var min = Number(m[2]) || 0;
+    if (ampm) {
+      var ap = ampm[1].toLowerCase();
+      if (ap === "pm" && h < 12) h += 12;
+      if (ap === "am" && h === 12) h = 0;
+    }
+    return pad2(Math.min(23, Math.max(0, h))) + ":" + pad2(Math.min(59, Math.max(0, min)));
   }
   function addHoursToTime(hhmm, hours) {
     var t = normalizeTimeValue(hhmm);
@@ -174,26 +184,51 @@
     return pad2(Math.floor(totalMin / 60)) + ":" + pad2(totalMin % 60);
   }
   function scheduleWindowLabel(start, end) {
-    return String(start || "") + " - " + String(end || "");
+    return String(start || "") + " – " + String(end || "");
+  }
+  function readStartTimeFromDom() {
+    var card = root.querySelector("[data-po-start-time]");
+    if (!card) return normalizeTimeValue(state.startTime);
+    return normalizeTimeValue(card.getAttribute("data-po-start-time") || card.value || "");
+  }
+  function writeStartTimeToDom(value) {
+    var v = normalizeTimeValue(value) || defaultStartTime();
+    state.startTime = v;
+    var card = root.querySelector("[data-po-start-time]");
+    if (card) {
+      card.setAttribute("data-po-start-time", v);
+      var display = card.querySelector("[data-po-start-display]");
+      if (display) display.textContent = v;
+    }
+    return v;
+  }
+  function openStartTimePicker() {
+    if (!window.MCJTimePicker || typeof window.MCJTimePicker.open !== "function") {
+      setError("时间选择器加载失败，请刷新后重试");
+      return;
+    }
+    window.MCJTimePicker.open({
+      title: "选择开始时间",
+      value: readStartTimeFromDom() || defaultStartTime(),
+      minuteStep: 60,
+      onConfirm: function (value) {
+        writeStartTimeToDom(value);
+        refreshSchedulePreview();
+      },
+    });
   }
   function refreshSchedulePreview() {
-    var startEl = root.querySelector("[data-po-start-time]");
     var endEl = root.querySelector("[data-po-end-time]");
     var hintEl = root.querySelector("[data-po-schedule-preview]");
-    var start = startEl ? normalizeTimeValue(startEl.value) : normalizeTimeValue(state.startTime);
+    var start = readStartTimeFromDom();
     if (!start) start = defaultStartTime();
-    state.startTime = start;
-    if (startEl && startEl.value !== start) startEl.value = start;
+    writeStartTimeToDom(start);
     var end = addHoursToTime(start, serviceDurationHours());
     state.endTime = end;
     if (endEl) endEl.textContent = end;
     if (hintEl) {
       hintEl.textContent =
-        "服务时段：" +
-        scheduleWindowLabel(start, end) +
-        "（" +
-        serviceDurationHours() +
-        " 小时，按时长×数量自动计算）";
+        "服务时段：" + scheduleWindowLabel(start, end) + "（" + serviceDurationHours() + "小时）";
     }
   }
   function totalAmount() {
@@ -467,10 +502,15 @@
       '<input data-po-game-id required placeholder="请输入游戏ID" autocomplete="off" inputmode="text"></div>' +
       '<div class="mcj-po-field mcj-po-schedule-field"><span class="mcj-po-label">服务时间 *</span>' +
       '<div class="mcj-po-time-row">' +
-      '<label class="mcj-po-time-start"><span class="mcj-po-time-cap">开始时间</span>' +
-      '<input type="time" data-po-start-time required step="60" value="' +
-      esc(state.startTime || defaultStartTime()) +
-      '"></label>' +
+      '<div class="mcj-po-time-start"><span class="mcj-po-time-cap">开始时间</span>' +
+      (window.MCJTimePicker && window.MCJTimePicker.startCardHtml
+        ? window.MCJTimePicker.startCardHtml(state.startTime || defaultStartTime())
+        : '<button type="button" class="mcj-po-time-card" data-po-start-time="' +
+          esc(state.startTime || defaultStartTime()) +
+          '" data-po-open-time="1"><span class="mcj-po-time-card-icon" aria-hidden="true">🕘</span><strong class="mcj-po-time-card-value" data-po-start-display>' +
+          esc(state.startTime || defaultStartTime()) +
+          '</strong><span class="mcj-po-time-card-chevron" aria-hidden="true">›</span></button>') +
+      "</div>" +
       '<div class="mcj-po-time-end"><span class="mcj-po-time-cap">预计结束</span>' +
       '<strong data-po-end-time>--</strong></div></div>' +
       '<p class="mcj-po-time-hint" data-po-schedule-preview>选择开始时间后自动计算结束时间</p></div>' +
@@ -555,18 +595,12 @@
         refreshTotals();
       });
     }
-    var startTimeInput = root.querySelector("[data-po-start-time]");
-    if (startTimeInput) {
-      if (!startTimeInput.value) startTimeInput.value = defaultStartTime();
-      state.startTime = normalizeTimeValue(startTimeInput.value) || defaultStartTime();
-      startTimeInput.addEventListener("input", function () {
-        state.startTime = normalizeTimeValue(startTimeInput.value) || defaultStartTime();
-        refreshSchedulePreview();
-      });
-      startTimeInput.addEventListener("change", function () {
-        state.startTime = normalizeTimeValue(startTimeInput.value) || defaultStartTime();
-        if (startTimeInput.value !== state.startTime) startTimeInput.value = state.startTime;
-        refreshSchedulePreview();
+    var startTimeCard = root.querySelector("[data-po-open-time]");
+    if (startTimeCard) {
+      writeStartTimeToDom(state.startTime || defaultStartTime());
+      startTimeCard.addEventListener("click", function (ev) {
+        ev.preventDefault();
+        openStartTimePicker();
       });
     }
     refreshSchedulePreview();
@@ -651,10 +685,7 @@
       setError("请填写游戏ID");
       return;
     }
-    var startEl = root.querySelector("[data-po-start-time]");
-    var startTime = startEl
-      ? normalizeTimeValue(startEl.value)
-      : normalizeTimeValue(state.startTime);
+    var startTime = readStartTimeFromDom() || normalizeTimeValue(state.startTime);
     if (!startTime) {
       setError("请选择开始时间");
       return;

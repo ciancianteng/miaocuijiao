@@ -356,29 +356,17 @@
   font-weight: 700;
   color: rgba(255, 214, 231, 0.62);
 }
-.mcj-team-time-start input[type="time"] {
+.mcj-team-time-start .mcj-po-time-card {
   width: 100%;
-  min-width: 0;
-  box-sizing: border-box;
-  height: 40px;
-  border: 0;
-  border-radius: 10px;
-  background: rgba(12, 10, 16, 0.92);
-  color: #fff;
-  padding: 0 10px;
-  font: inherit;
-  font-size: 18px;
-  font-weight: 800;
-  color-scheme: dark;
-  outline: none;
 }
 .mcj-team-time-end strong {
   display: block;
-  min-height: 40px;
-  line-height: 40px;
+  min-height: 44px;
+  line-height: 44px;
   font-size: 22px;
   font-weight: 900;
   color: #ffd6e7;
+  letter-spacing: 0.04em;
 }
 .mcj-team-time-hint {
   margin: 8px 0 0;
