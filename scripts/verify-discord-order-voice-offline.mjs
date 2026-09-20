@@ -166,6 +166,21 @@ test("payment-confirm post-pay Discord bind UI (no pay-time gate)", () => {
   assert.doesNotMatch(orders, /DISCORD_BIND_REQUIRED/);
 });
 
+test("orders GET select includes voice_mode columns", () => {
+  const orders = read("server/api/orders.js");
+  assert.match(orders, /selectVoice[\s\S]*voice_mode,discord_channel_id/);
+  assert.match(orders, /selectCore\s*=\s*[\s\S]*selectVoice/);
+});
+
+test("discord cleanup uses created_at (orders has no updated_at)", () => {
+  const sql = read("supabase/migrations/20260920_discord_order_voice.sql");
+  assert.match(sql, /orders_discord_cleanup_idx[\s\S]*created_at/);
+  assert.doesNotMatch(sql, /orders_discord_cleanup_idx[\s\S]*updated_at/);
+  const cleanup = read("server/api/_discord-voice-orders.js");
+  assert.match(cleanup, /created_at=lte\./);
+  assert.doesNotMatch(cleanup, /updated_at=lte\./);
+});
+
 test("companion accept gate + soft-exit revoke wired", () => {
   const companion = read("server/api/companion.js");
   assert.match(companion, /DISCORD_BIND_REQUIRED/);

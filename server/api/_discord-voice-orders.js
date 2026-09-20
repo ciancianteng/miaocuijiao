@@ -412,10 +412,10 @@ export async function cleanupExpiredDiscordChannels({ graceMinutes = 30, limit =
     rows = await supabaseJson(
       restUrl(
         "orders",
-        `?select=id,parent_order_id,status,discord_channel_id,discord_channel_status,updated_at,order_no` +
+        `?select=id,parent_order_id,status,discord_channel_id,discord_channel_status,created_at,order_no` +
           `&discord_channel_id=not.is.null` +
           `&or=(parent_order_id.is.null,order_type.eq.multi_group)` +
-          `&updated_at=lte.${encodeURIComponent(graceIso)}` +
+          `&created_at=lte.${encodeURIComponent(graceIso)}` +
           `&limit=${Math.max(1, Math.min(100, limit))}`
       ),
       { headers: serviceHeaders() }

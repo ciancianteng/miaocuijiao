@@ -61,8 +61,9 @@ create index if not exists orders_discord_channel_id_idx
   on public.orders (discord_channel_id)
   where discord_channel_id is not null and btrim(discord_channel_id) <> '';
 
+-- orders has no updated_at in current Staging/Prod schema; use created_at.
 create index if not exists orders_discord_cleanup_idx
-  on public.orders (discord_channel_status, status, updated_at)
+  on public.orders (discord_channel_status, status, created_at)
   where discord_channel_id is not null;
 
 -- User ↔ Discord account bindings (Boss + Companion)

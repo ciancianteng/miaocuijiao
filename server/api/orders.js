@@ -635,8 +635,11 @@ async function loadOrders(profile, id = "") {
   // Core columns always include description (completion-pending marker dual-writes here).
   // note is preferred for markers; cancel_reason is optional — never drop note when cancel_reason is missing.
   // parent_order_id / paid_* required for multi-group child grouping + unpaid cancel guards.
+  const selectVoice =
+    ",voice_mode,discord_channel_id,discord_channel_status,discord_channel_created_at,discord_channel_deleted_at";
   const selectCore =
-    "id,order_no,boss_id,companion_id,customer_service_id,order_type,game,title,description,hours,unit_price,total_amount,status,created_at,accepted_at,started_at,completed_at,cancelled_at,parent_order_id,paid_cat_food,paid_at";
+    "id,order_no,boss_id,companion_id,customer_service_id,order_type,game,title,description,hours,unit_price,total_amount,status,created_at,accepted_at,started_at,completed_at,cancelled_at,parent_order_id,paid_cat_food,paid_at" +
+    selectVoice;
   const selectWithNote = selectCore + ",note";
   const selectRich = selectWithNote + ",cancel_reason";
   const selectCoreLegacy =
