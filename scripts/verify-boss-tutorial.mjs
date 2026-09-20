@@ -156,6 +156,12 @@ test("TEST 15 role-gates allow guide + cancel step enabled", () => {
   assert.match(guideHtml, /20260920bossV2/);
 });
 
+test("TEST 16 vite build includes guide.html (prevents Production 404)", () => {
+  const viteConfig = read("vite.config.js");
+  assert.match(viteConfig, /["']guide\.html["']/);
+  assert.match(viteConfig, /\["\/guide",\s*"\/guide\.html"\]/);
+});
+
 const failed = results.filter((r) => !r.ok);
 console.log(`\n${results.length - failed.length}/${results.length} passed`);
 if (failed.length) process.exitCode = 1;

@@ -63,6 +63,7 @@ const pages = [
   "fixed-order.html",
   "gifts.html",
   "gameplay-product.html",
+  "guide.html",
   "invite.html",
   "launch-audit.html",
   "login.html",
@@ -162,6 +163,7 @@ function localRouteAliases() {
     ["/fixed-order", "/fixed-order.html"],
     ["/ranking", "/ranking.html"],
     ["/leaderboard", "/ranking.html"],
+    ["/guide", "/guide.html"],
   ]);
   return {
     name: "local-route-aliases",
