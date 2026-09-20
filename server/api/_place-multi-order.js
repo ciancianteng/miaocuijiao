@@ -9,6 +9,8 @@ import {
   isMultiGroupChild,
   isMultiGroupParent,
 } from "./_order-group.js";
+import { resolveOrderUnitPrice } from "./_admin-service-prices.js";
+import { readLocalLevels } from "./_companion-levels-store.js";
 
 function money(v) {
   const n = Number(String(v ?? "").replace(/[^\d.-]/g, ""));
@@ -163,17 +165,29 @@ export async function placeMultiOrder(ctx) {
     const gameHint = String(
       line.game || line.gameName || line.game_name || sharedGame || ""
     ).trim();
-    let unitPrice = money(priceForGame(cp, gameHint, serviceId));
-    if (!(unitPrice > 0)) unitPrice = money(cp.price);
+    const levels = readLocalLevels();
+    const level =
+      (levels || []).find(
+        (l) =>
+          String(l.id) === String(cp.level_id || "") ||
+          String(l.code) === String(cp.level_id || "") ||
+          String(l.name) === String(cp.level_name || "")
+      ) || null;
+    const resolved = await resolveOrderUnitPrice({
+      companion: cp,
+      companionId,
+      serviceId,
+      gameName: gameHint,
+      level,
+    });
+    let unitPrice = money(resolved.price);
     if (!(unitPrice > 0)) {
-      const gp = cp.game_prices && typeof cp.game_prices === "object" ? cp.game_prices : {};
-      for (const k of Object.keys(gp)) {
-        const v = money(gp[k]);
-        if (v > 0) {
-          unitPrice = v;
-          break;
-        }
-      }
+      return {
+        ok: false,
+        status: 400,
+        code: "SERVICE_PRICE_MISSING",
+        message: `陪玩所选服务尚未设置单价（${companionId}）`,
+      };
     }
     // Allow explicit amount override only when it matches server unit*hours (±0.05) OR
     // client sends amount that equals server calc — never trust bare client amount alone.

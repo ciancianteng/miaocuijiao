@@ -29,6 +29,12 @@ import {
 import {
   seedCompanionServicesFromLevel,
 } from "../_companion-services-seed.js";
+import {
+  applyAdminServicePrices,
+  buildAdminServicePriceList,
+  loadCompanionServiceRows,
+  parseServicePricesPayload,
+} from "../_admin-service-prices.js";
 
 // PERMANENT: price / hall-critical checks apply only to new submit + first approval.
 // Admin edits of already-approved companions must never be blocked by this.
@@ -802,6 +808,28 @@ async function buildDetail(row, profile, opts = {}) {
     certCatalog,
     certTags,
     certTagIds,
+    ...(await (async () => {
+      try {
+        const levelMeta = await resolveLevelMeta(row.level_id || row.level_name);
+        const serviceRows = await loadCompanionServiceRows(row.user_id);
+        const baseRaw = levelMeta?.basePrice ?? levelMeta?.base_price ?? levelMeta?.min ?? null;
+        const baseN = Number(baseRaw);
+        return {
+          servicePrices: buildAdminServicePriceList(row, serviceRows, levelMeta),
+          levelBasePrice: Number.isFinite(baseN) && baseN > 0 ? baseN : null,
+          levelBasePriceLabel: levelMeta
+            ? `${levelMeta.code || ""} ${levelMeta.name || ""}`.trim()
+            : "",
+        };
+      } catch (err) {
+        console.error("[players] servicePrices load failed", err?.message || err);
+        return {
+          servicePrices: buildAdminServicePriceList(row, [], null),
+          levelBasePrice: null,
+          levelBasePriceLabel: "",
+        };
+      }
+    })()),
   };
 }
 
@@ -1674,6 +1702,51 @@ export default async function handler(req, res) {
     }
 
     companionPatch.updated_at = new Date().toISOString();
+
+    // Per-service pricing: Admin sets unit_price per game/service → companion_services + game_prices.
+    // Scalar payload.price alone must NOT leave stale game_prices / companion_services at level base.
+    const servicePriceItems = parseServicePricesPayload(payload);
+    if (servicePriceItems.length || payload.price != null) {
+      let items = servicePriceItems;
+      if (!items.length && payload.price != null) {
+        // Legacy single "单价" field: apply to every known service for this companion.
+        const levelMeta =
+          (await resolveLevelMeta(companionPatch.level_id || companion.level_id || companion.level_name)) || null;
+        const existingRows = await loadCompanionServiceRows(companion.user_id);
+        const list = buildAdminServicePriceList(companion, existingRows, levelMeta);
+        const unit = money(payload.price);
+        items = (list.length ? list : [{ serviceName: String(companion.game || "默认服务").split(/[,，]/)[0] || "默认服务" }]).map(
+          (s) => ({
+            serviceId: s.serviceId || "",
+            serviceName: s.serviceName || s.name || "服务",
+            unitPrice: unit,
+            rowId: s.rowId || "",
+          })
+        );
+      }
+      if (items.length) {
+        const levelMeta =
+          (await resolveLevelMeta(companionPatch.level_id || companion.level_id || companion.level_name)) || null;
+        try {
+          const applied = await applyAdminServicePrices(
+            { ...companion, ...companionPatch, user_id: companion.user_id },
+            items,
+            levelMeta
+          );
+          if (applied?.profilesPatch) {
+            if (applied.profilesPatch.game_prices) companionPatch.game_prices = applied.profilesPatch.game_prices;
+            if (applied.profilesPatch.price != null) companionPatch.price = applied.profilesPatch.price;
+          }
+        } catch (priceErr) {
+          return json(res, priceErr?.status || 500, {
+            ok: false,
+            code: priceErr?.code || "SERVICE_PRICE_SAVE_FAILED",
+            message: priceErr?.message || "保存服务价格失败",
+          });
+        }
+      }
+    }
+
     const rows = await patchCompanionRow(id, companionPatch);
 
     if (Object.prototype.hasOwnProperty.call(payload, "certTagIds") || Object.prototype.hasOwnProperty.call(payload, "certTags")) {
