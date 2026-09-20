@@ -393,20 +393,121 @@
   cursor: not-allowed;
 }
 
-/* Hall secondary CTA */
-.companion-card-action.team-add {
-  background: transparent !important;
-  border-color: rgba(255, 143, 197, 0.28) !important;
-  color: #ffd6e8 !important;
-  font-size: 12px !important;
+/* Joint checkout member list */
+.mcj-team-members {
+  display: grid;
+  gap: 12px;
+}
+.mcj-team-member {
+  padding: 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(243, 168, 203, 0.22);
+  background: rgba(255, 255, 255, 0.035);
+}
+.mcj-team-member-main {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+}
+.mcj-team-member-avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+  object-fit: cover;
+  background: #222;
+}
+.mcj-team-member-info {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+.mcj-team-member-info strong {
+  color: #fff;
+  font-size: 15px;
+  font-weight: 820;
+}
+.mcj-team-member-info span {
+  color: rgba(255, 214, 235, 0.72);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.mcj-team-member-info em {
+  font-style: normal;
+  color: #ffd6e8;
+  font-weight: 860;
+  font-size: 14px;
+}
+.mcj-team-member-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.mcj-team-edit,
+.mcj-team-remove {
+  min-height: 32px;
+  padding: 0 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(0, 0, 0, 0.2);
+  color: #ffe2ef;
+  font-size: 12px;
+  font-weight: 760;
+  cursor: pointer;
+}
+.mcj-team-remove {
+  border-color: rgba(255, 120, 140, 0.35);
+  color: #ffb7c4;
+}
+.mcj-team-member-edit {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  display: grid;
+  gap: 10px;
+}
+.mcj-team-member-edit[hidden] {
+  display: none !important;
+}
+.mcj-team-add-more {
+  width: 100%;
+  min-height: 48px;
+  margin: 4px 0 8px;
+  border-radius: 14px;
+  border: 1px dashed rgba(255, 143, 197, 0.45);
+  background: transparent;
+  color: #ffd6e8;
+  font-weight: 820;
+  font-size: 15px;
+  cursor: pointer;
+}
+.mcj-team-add-more:active {
+  background: rgba(255, 143, 197, 0.1);
+}
+.mcj-team-sheet-meta {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+.mcj-team-sheet-meta > span {
+  color: rgba(255, 214, 235, 0.7);
+  font-size: 13px;
+}
+.mcj-team-sheet-total strong {
+  color: #ffe2ef;
 }
 
 @media (max-width: 420px) {
-  .companion-card-actions {
-    flex-wrap: wrap;
+  .mcj-team-member-main {
+    grid-template-columns: 44px minmax(0, 1fr);
   }
-  .companion-card-action.team-add {
-    flex: 1 1 100%;
+  .mcj-team-member-actions {
+    grid-column: 1 / -1;
+    flex-direction: row;
+  }
+  .mcj-team-edit,
+  .mcj-team-remove {
+    flex: 1;
   }
 }
 

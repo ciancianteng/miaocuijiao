@@ -2805,9 +2805,9 @@
       if(extra>0)peerChips+='<span class="pw-peer-more">+'+extra+'</span>';
       if(!peerChips)peerChips='暂无';
       peerHtml='<div class="pw-group-peers" data-group-peers="1">'+
-        '<div class="pw-group-peers-title">联合订单 · 本单共 '+(peerCount||peers.length+1)+' 位陪玩</div>'+
-        '<div class="pw-group-peers-row"><span>同单陪玩</span><strong>'+peerChips+'</strong></div>'+
-        '<p class="pw-note">你只能操作自己的子订单；其他陪玩收入不会显示。</p>'+
+        '<div class="pw-group-peers-title">本次联合陪玩 · 共 '+(peerCount||peers.length+1)+' 位</div>'+
+        '<div class="pw-group-peers-row"><span>一起接单</span><strong>'+peerChips+'</strong></div>'+
+        '<p class="pw-note">你只能看到自己的订单金额与收入；其他陪玩收入不会显示。</p>'+
         '</div>';
     }
     return '<article id="order-'+esc(o.id)+'" class="pw-order-card'+(o.status==='claimed'?' is-designated':'')+(focused?' is-focus':'')+(isGroup?' is-multi-group':'')+'"'+(focused?' data-order-focus="1"':'')+(isGroup?' data-multi-child="1"':'')+'>'+banner+
