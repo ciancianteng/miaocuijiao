@@ -339,18 +339,42 @@
     var galleryWall =
       galleryList.length > 0
         ? galleryList
-            .slice(0, 6)
+            .slice(0, 12)
             .map(function (g, idx) {
+              var url = String(g.url || "");
+              var isVideo = /\.(mp4|webm|mov)(\?|$)/i.test(url) || /video/i.test(String(g.mediaType || g.media_type || g.type || ""));
+              if (isVideo) {
+                return (
+                  '<button type="button" class="mcj-album-thumb mcj-album-thumb--video" data-album-index="' +
+                  idx +
+                  '" data-album-url="' +
+                  esc(url) +
+                  '" aria-label="播放相册视频">' +
+                  '<video src="' +
+                  esc(url) +
+                  '" muted playsinline preload="metadata"></video>' +
+                  '<span class="mcj-album-play" aria-hidden="true">▶</span></button>'
+                );
+              }
               return (
                 '<img class="mcj-album-thumb" data-album-index="' +
                 idx +
                 '" src="' +
-                esc(g.url) +
-                '" alt="相册" loading="lazy" onerror="this.onerror=null;this.src=\'/default-avatar.png\'">'
+                esc(url) +
+                '" alt="陪玩相册" loading="lazy" onerror="this.onerror=null;this.src=\'/default-avatar.png\'">'
               );
             })
             .join("")
-        : "";
+        : '<p class="pd-album-empty">暂无相册内容</p>';
+    var albumSectionHtml =
+      '<section class="detail-card game-wall pd-album-card" data-pd-album-section>' +
+      '<div class="section-head"><h2>陪玩相册</h2>' +
+      (galleryList.length ? "<span>" + galleryList.length + " 张</span>" : "") +
+      "</div>" +
+      (galleryList.length
+        ? '<div class="wall-grid" data-profile-album>' + galleryWall + "</div>"
+        : '<div class="pd-album-empty-wrap">' + galleryWall + "</div>") +
+      "</section>";
     var pop = c.popularity || state.popularity || null;
     var weeklyRank = pop && pop.weekly ? pop.weekly.rank : 0;
     var monthlyRank = pop && pop.monthly ? pop.monthly.rank : 0;
@@ -487,7 +511,9 @@
       (hasVideo
         ? '<div class="detail-card pd-video-card"><div class="section-head"><h2>个人展示视频</h2></div>' + videoHtml + "</div>"
         : "") +
-      '</div></section><section class="detail-card info-card pd-info-card pd-info-card--full"><div class="section-head"><h2>数据表现</h2></div>' +
+      "</div></section>" +
+      albumSectionHtml +
+      '<section class="detail-card info-card pd-info-card pd-info-card--full"><div class="section-head"><h2>数据表现</h2></div>' +
       (function () {
         var hasAny =
           hasRating ||
@@ -514,11 +540,6 @@
       })() +
       giftActions +
       "</section>" +
-      (galleryList.length
-        ? '<section class="detail-card game-wall"><div class="section-head"><h2>相册</h2></div><div class="wall-grid" data-profile-album>' +
-          galleryWall +
-          "</div></section>"
-        : "") +
       (function () {
         var wall = Array.isArray(c.giftWall) ? c.giftWall : Array.isArray(c.gift_wall) ? c.gift_wall : [];
         var chips = wall.length

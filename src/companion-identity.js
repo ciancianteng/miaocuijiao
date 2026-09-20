@@ -286,24 +286,34 @@
         return String(u || "").trim();
       })
       .filter(Boolean);
-    root.querySelectorAll("img").forEach(function (img, idx) {
-      var src = img.getAttribute("src") || list[idx] || "";
+    root.querySelectorAll("img[data-album-index], [data-album-index][data-album-url]").forEach(function (node, idx) {
+      var src =
+        node.getAttribute("data-album-url") ||
+        node.getAttribute("src") ||
+        (node.querySelector && node.querySelector("video") && node.querySelector("video").getAttribute("src")) ||
+        list[idx] ||
+        "";
       if (!src) return;
       if (!list[idx]) list[idx] = src;
-      img.classList.add("mcj-album-thumb");
-      img.setAttribute("data-album-index", String(idx));
-      img.style.cursor = "zoom-in";
+      node.classList.add("mcj-album-thumb");
+      node.setAttribute("data-album-index", String(idx));
+      node.style.cursor = "zoom-in";
     });
     if (root._mcjAlbumBound) return;
     root._mcjAlbumBound = true;
     root.addEventListener("click", function (e) {
-      var img = e.target.closest("img[data-album-index]");
-      if (!img || !root.contains(img)) return;
+      var hit = e.target.closest("[data-album-index]");
+      if (!hit || !root.contains(hit)) return;
       e.preventDefault();
-      var idx = Number(img.getAttribute("data-album-index") || 0);
+      var idx = Number(hit.getAttribute("data-album-index") || 0);
       var live = [];
-      root.querySelectorAll("img[data-album-index]").forEach(function (node) {
-        live.push(node.getAttribute("src") || "");
+      root.querySelectorAll("[data-album-index]").forEach(function (node) {
+        live.push(
+          node.getAttribute("data-album-url") ||
+            node.getAttribute("src") ||
+            (node.querySelector && node.querySelector("video") && node.querySelector("video").getAttribute("src")) ||
+            ""
+        );
       });
       openLightbox(live.filter(Boolean).length ? live : list, idx);
     });

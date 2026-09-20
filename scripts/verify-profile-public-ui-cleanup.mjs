@@ -60,8 +60,29 @@ test("keeps bottom CTAs 咨询客服 + 立即下单", () => {
 });
 
 test("cache bust updated on profile.html", () => {
-  assert.match(html, /profile-detail\.js\?v=20260920profileClean1/);
-  assert.match(html, /profile\.css\?v=20260920profileClean1/);
+  assert.match(html, /profile-detail\.js\?v=20260920profileAlbum1/);
+  assert.match(html, /profile\.css\?v=20260920profileAlbum1/);
+});
+
+test("always renders 陪玩相册 section (not only when gallery has items)", () => {
+  assert.match(js, /陪玩相册/);
+  assert.match(js, /data-pd-album-section/);
+  assert.match(js, /暂无相册内容/);
+  // Must not gate the whole section on galleryList.length alone (empty → disappear)
+  assert.match(js, /albumSectionHtml/);
+});
+
+test("album section placed before 数据表现", () => {
+  const albumIdx = js.indexOf("albumSectionHtml");
+  const perfIdx = js.indexOf("<h2>数据表现</h2>");
+  assert.ok(albumIdx > 0 && perfIdx > albumIdx, "albumSectionHtml must appear before 数据表现 markup");
+});
+
+test("does not restore removed duplicate meta", () => {
+  assert.doesNotMatch(js, /<h2>基本资料<\/h2>/);
+  assert.doesNotMatch(js, /metaRow\("在线状态"/);
+  assert.doesNotMatch(js, /metaRow\("订单摘要"/);
+  assert.doesNotMatch(js, /暂无订单记录/);
 });
 
 const failed = results.filter((r) => !r.ok);
