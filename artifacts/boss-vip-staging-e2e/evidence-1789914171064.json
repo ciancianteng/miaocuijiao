@@ -1,0 +1,318 @@
+{
+  "cases": {
+    "1_admin_vip_config": {
+      "ok": true,
+      "detail": [
+        {
+          "name": "普通会员",
+          "spendThreshold": 0,
+          "benefits": "",
+          "isActive": true,
+          "sortOrder": 0
+        },
+        {
+          "name": "VIP1",
+          "spendThreshold": 500,
+          "benefits": "专属优惠",
+          "isActive": true,
+          "sortOrder": 10
+        },
+        {
+          "name": "VIP2",
+          "spendThreshold": 1500,
+          "benefits": "优先客服",
+          "isActive": true,
+          "sortOrder": 20
+        },
+        {
+          "name": "VIP3",
+          "spendThreshold": 3000,
+          "benefits": "专属活动",
+          "isActive": true,
+          "sortOrder": 30
+        },
+        {
+          "name": "VIP4",
+          "spendThreshold": 5000,
+          "benefits": "优先抢名额",
+          "isActive": true,
+          "sortOrder": 40
+        }
+      ]
+    },
+    "2_boss_initial_level": {
+      "ok": true,
+      "detail": {
+        "confirmedSpend": 0,
+        "levelName": "普通会员",
+        "nextLevelName": "VIP1",
+        "remaining": 500,
+        "benefits": ""
+      }
+    },
+    "3_cs_confirm_spend_upgrade": {
+      "ok": true,
+      "detail": {
+        "orderId": "cf63dd88-db93-4639-965c-cea800acff91",
+        "txId": "27a2c630-b32f-4340-8885-0e69a0762478",
+        "recast": {
+          "upgraded": true,
+          "levelChanged": true,
+          "confirmedSpend": 600,
+          "currentName": "VIP1"
+        },
+        "vip": {
+          "currentLevelName": "VIP1",
+          "currentLevelId": "a1000000-0000-4000-8000-000000000001",
+          "confirmedSpend": 600,
+          "nextLevelName": "VIP2",
+          "nextThreshold": 1500,
+          "remaining": 900,
+          "benefits": "专属优惠",
+          "isMaxLevel": false,
+          "history": [
+            {
+              "oldLevelName": "普通会员",
+              "newLevelName": "VIP1",
+              "confirmedSpend": 600,
+              "reason": "confirm",
+              "createdAt": "2026-09-20T14:22:57.798+00:00",
+              "triggerOrderId": "cf63dd88-db93-4639-965c-cea800acff91"
+            },
+            {
+              "oldLevelName": "",
+              "newLevelName": "普通会员",
+              "confirmedSpend": 0,
+              "reason": "e2e_init",
+              "createdAt": "2026-09-20T14:22:53.969+00:00",
+              "triggerOrderId": ""
+            }
+          ]
+        }
+      }
+    },
+    "4_spend_and_next_progress": {
+      "ok": true,
+      "detail": {
+        "confirmedSpend": 600,
+        "current": "VIP1",
+        "next": "VIP2",
+        "nextThreshold": 1500,
+        "remainingToNext": 900,
+        "benefits": "专属优惠"
+      }
+    },
+    "5_auto_upgrade_history": {
+      "ok": true,
+      "detail": [
+        {
+          "id": "baac6f5d",
+          "old_level_name": "普通会员",
+          "new_level_name": "VIP1",
+          "confirmed_spend": 600,
+          "reason": "confirm"
+        },
+        {
+          "id": "a03c56f0",
+          "old_level_name": "",
+          "new_level_name": "普通会员",
+          "confirmed_spend": 0,
+          "reason": "e2e_init"
+        }
+      ]
+    },
+    "6_upgrade_notification": {
+      "ok": true,
+      "detail": [
+        {
+          "title": "🎉 恭喜升级！",
+          "body": "您的累计有效消费已达到 600 猫粮，已自动升级为 VIP1。当前可享福利：专属优惠",
+          "kind": "vip_upgrade"
+        }
+      ]
+    },
+    "7_boss_page_snapshot_fields": {
+      "ok": true,
+      "detail": {
+        "confirmedSpend": 600,
+        "current": "VIP1",
+        "next": "VIP2",
+        "nextThreshold": 1500,
+        "remainingToNext": 900,
+        "benefits": "专属优惠"
+      }
+    },
+    "8_duplicate_confirm_no_double_count": {
+      "ok": true,
+      "detail": {
+        "spendAfterRetry": 600,
+        "upgradedAgain": false,
+        "levelChangedAgain": false,
+        "historyBefore": 2,
+        "historyAfter": 2
+      }
+    },
+    "9_unconfirmed_excluded": {
+      "ok": true,
+      "detail": {
+        "junkOrderId": "1e396c23-c36c-47b9-a0a7-643de30d27a7",
+        "spend": 600
+      }
+    },
+    "10_separate_from_boss_levels": {
+      "ok": true,
+      "detail": {
+        "boss_levels_still_exists": true,
+        "vip_tables": [
+          "boss_vip_levels",
+          "boss_vip_status",
+          "boss_vip_history"
+        ],
+        "note": "VIP spend SoT is payment_transactions; commission SoT remains boss_levels / relations"
+      }
+    }
+  },
+  "evidence": {
+    "adminLevels": [
+      {
+        "name": "普通会员",
+        "spendThreshold": 0,
+        "benefits": "",
+        "isActive": true,
+        "sortOrder": 0
+      },
+      {
+        "name": "VIP1",
+        "spendThreshold": 500,
+        "benefits": "专属优惠",
+        "isActive": true,
+        "sortOrder": 10
+      },
+      {
+        "name": "VIP2",
+        "spendThreshold": 1500,
+        "benefits": "优先客服",
+        "isActive": true,
+        "sortOrder": 20
+      },
+      {
+        "name": "VIP3",
+        "spendThreshold": 3000,
+        "benefits": "专属活动",
+        "isActive": true,
+        "sortOrder": 30
+      },
+      {
+        "name": "VIP4",
+        "spendThreshold": 5000,
+        "benefits": "优先抢名额",
+        "isActive": true,
+        "sortOrder": 40
+      }
+    ],
+    "initial": {
+      "confirmedSpend": 0,
+      "levelName": "普通会员",
+      "nextLevelName": "VIP1",
+      "remaining": 500,
+      "benefits": ""
+    },
+    "afterConfirm": {
+      "orderId": "cf63dd88-db93-4639-965c-cea800acff91",
+      "txId": "27a2c630-b32f-4340-8885-0e69a0762478",
+      "recast": {
+        "upgraded": true,
+        "levelChanged": true,
+        "confirmedSpend": 600,
+        "currentName": "VIP1"
+      },
+      "vip": {
+        "currentLevelName": "VIP1",
+        "currentLevelId": "a1000000-0000-4000-8000-000000000001",
+        "confirmedSpend": 600,
+        "nextLevelName": "VIP2",
+        "nextThreshold": 1500,
+        "remaining": 900,
+        "benefits": "专属优惠",
+        "isMaxLevel": false,
+        "history": [
+          {
+            "oldLevelName": "普通会员",
+            "newLevelName": "VIP1",
+            "confirmedSpend": 600,
+            "reason": "confirm",
+            "createdAt": "2026-09-20T14:22:57.798+00:00",
+            "triggerOrderId": "cf63dd88-db93-4639-965c-cea800acff91"
+          },
+          {
+            "oldLevelName": "",
+            "newLevelName": "普通会员",
+            "confirmedSpend": 0,
+            "reason": "e2e_init",
+            "createdAt": "2026-09-20T14:22:53.969+00:00",
+            "triggerOrderId": ""
+          }
+        ]
+      }
+    },
+    "progress": {
+      "confirmedSpend": 600,
+      "current": "VIP1",
+      "next": "VIP2",
+      "nextThreshold": 1500,
+      "remainingToNext": 900,
+      "benefits": "专属优惠"
+    },
+    "history": [
+      {
+        "id": "baac6f5d",
+        "old_level_name": "普通会员",
+        "new_level_name": "VIP1",
+        "confirmed_spend": 600,
+        "reason": "confirm"
+      },
+      {
+        "id": "a03c56f0",
+        "old_level_name": "",
+        "new_level_name": "普通会员",
+        "confirmed_spend": 0,
+        "reason": "e2e_init"
+      }
+    ],
+    "notifications": [
+      {
+        "title": "🎉 恭喜升级！",
+        "body": "您的累计有效消费已达到 600 猫粮，已自动升级为 VIP1。当前可享福利：专属优惠",
+        "kind": "vip_upgrade"
+      }
+    ],
+    "idempotent": {
+      "spendAfterRetry": 600,
+      "upgradedAgain": false,
+      "levelChangedAgain": false,
+      "historyBefore": 2,
+      "historyAfter": 2
+    },
+    "unconfirmedExcluded": {
+      "junkOrderId": "1e396c23-c36c-47b9-a0a7-643de30d27a7",
+      "spend": 600
+    },
+    "separation": {
+      "boss_levels_still_exists": true,
+      "vip_tables": [
+        "boss_vip_levels",
+        "boss_vip_status",
+        "boss_vip_history"
+      ],
+      "note": "VIP spend SoT is payment_transactions; commission SoT remains boss_levels / relations"
+    }
+  },
+  "meta": {
+    "startedAt": "2026-09-20T14:22:51.065Z",
+    "stagingRef": "cfccwysniduwkjskiqgy",
+    "productionTouched": false,
+    "mainBaseHint": "origin/main at rebase time",
+    "finishedAt": "2026-09-20T14:23:07.077Z",
+    "allPass": true
+  }
+}
