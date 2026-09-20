@@ -25,6 +25,8 @@
     hoursMode: "1",
     hours: 1,
     quantity: 1,
+    startTime: "",
+    endTime: "",
     couponCode: "",
     payment: "",
     submitting: false,
@@ -43,6 +45,8 @@
     state.hoursMode = "1";
     state.hours = 1;
     state.quantity = 1;
+    state.startTime = defaultStartTime();
+    state.endTime = "";
     state.couponCode = "";
     state.payment = "";
     state.submitting = false;
@@ -732,6 +736,58 @@
   function currentQuantity() {
     return Math.max(1, Math.floor(money(state.quantity) || 1));
   }
+  /** Effective service duration in hours: hours × quantity (matches price formula). */
+  function serviceDurationHours() {
+    return Math.round(currentHours() * currentQuantity() * 100) / 100;
+  }
+  function pad2(n) {
+    return (n < 10 ? "0" : "") + n;
+  }
+  function defaultStartTime() {
+    var d = new Date();
+    d.setSeconds(0, 0);
+    d.setMinutes(0);
+    d.setHours(d.getHours() + 1);
+    return pad2(d.getHours()) + ":" + pad2(d.getMinutes());
+  }
+  function normalizeTimeValue(v) {
+    var m = String(v || "").trim().match(/^(\d{1,2}):(\d{2})/);
+    if (!m) return "";
+    var h = Math.min(23, Math.max(0, Number(m[1]) || 0));
+    var min = Math.min(59, Math.max(0, Number(m[2]) || 0));
+    return pad2(h) + ":" + pad2(min);
+  }
+  function addHoursToTime(hhmm, hours) {
+    var t = normalizeTimeValue(hhmm);
+    if (!t) return "--:--";
+    var parts = t.split(":");
+    var totalMin = Number(parts[0]) * 60 + Number(parts[1]) + Math.round(Number(hours) * 60);
+    totalMin = ((totalMin % (24 * 60)) + 24 * 60) % (24 * 60);
+    return pad2(Math.floor(totalMin / 60)) + ":" + pad2(totalMin % 60);
+  }
+  function scheduleWindowLabel(start, end) {
+    return String(start || "") + " - " + String(end || "");
+  }
+  function refreshSchedulePreview() {
+    var startEl = document.querySelector("[data-po-start-time]");
+    var endEl = document.querySelector("[data-po-end-time]");
+    var hintEl = document.querySelector("[data-po-schedule-preview]");
+    var start = startEl ? normalizeTimeValue(startEl.value) : normalizeTimeValue(state.startTime);
+    if (!start) start = defaultStartTime();
+    state.startTime = start;
+    if (startEl && startEl.value !== start) startEl.value = start;
+    var end = addHoursToTime(start, serviceDurationHours());
+    state.endTime = end;
+    if (endEl) endEl.textContent = end;
+    if (hintEl) {
+      hintEl.textContent =
+        "服务时段：" +
+        scheduleWindowLabel(start, end) +
+        "（" +
+        serviceDurationHours() +
+        " 小时，按时长×数量自动计算）";
+    }
+  }
   function totalAmount() {
     var c = state.companion;
     if (!c) return 0;
@@ -829,6 +885,7 @@
     });
     var priceHero = document.querySelector("[data-po-price-hero]");
     if (priceHero && c) priceHero.textContent = moneyText(c.unitPrice);
+    refreshSchedulePreview();
     // Soft totals refresh must not wipe payment UI while methods are still loading.
     if (activeMask() && (state.payMethods.length || !state.payMethodsLoading)) {
       paintPayCards();
@@ -970,11 +1027,18 @@
       '<label>数量<input type="number" min="1" step="1" data-po-quantity value="' +
       esc(state.quantity) +
       '"></label>' +
-      '<label>游戏 ID *<input data-po-game-id required placeholder="必填，用于开局" autocomplete="off"></label>' +
-      '<label>区服<input data-po-region placeholder="例如：亚服 / 国服 / 欧服"></label>' +
-      '<label>联系方式<input data-po-contact placeholder="手机号 / WhatsApp / Discord"></label>' +
-      '<label>服务时间<input data-po-schedule placeholder="例如：今晚 9 点后"></label>' +
-      '<label>订单备注<textarea data-po-notes rows="3" placeholder="特殊要求、开局说明等"></textarea></label>' +
+      '<div class="mcj-po-field"><span class="mcj-po-label">游戏ID *</span>' +
+      '<input data-po-game-id required placeholder="请输入游戏ID" autocomplete="off" inputmode="text"></div>' +
+      '<div class="mcj-po-field mcj-po-schedule-field"><span class="mcj-po-label">服务时间 *</span>' +
+      '<div class="mcj-po-time-row">' +
+      '<label class="mcj-po-time-start"><span class="mcj-po-time-cap">开始时间</span>' +
+      '<input type="time" data-po-start-time required step="60" value="' +
+      esc(state.startTime || defaultStartTime()) +
+      '"></label>' +
+      '<div class="mcj-po-time-end" data-po-end-wrap><span class="mcj-po-time-cap">预计结束</span>' +
+      '<strong data-po-end-time>--</strong></div></div>' +
+      '<p class="mcj-po-time-hint" data-po-schedule-preview>选择开始时间后自动计算结束时间</p></div>' +
+      '<label>订单备注（选填）<textarea data-po-notes rows="2" placeholder="选填：特殊要求、开局说明等"></textarea></label>' +
       '<label>优惠码<input data-po-coupon placeholder="可选" value="' +
       esc(state.couponCode) +
       '"></label>' +
@@ -1112,6 +1176,21 @@
         refreshTotals();
       });
     }
+    var startTimeInput = mask.querySelector("[data-po-start-time]");
+    if (startTimeInput) {
+      if (!startTimeInput.value) startTimeInput.value = defaultStartTime();
+      state.startTime = normalizeTimeValue(startTimeInput.value) || defaultStartTime();
+      startTimeInput.addEventListener("input", function () {
+        state.startTime = normalizeTimeValue(startTimeInput.value) || defaultStartTime();
+        refreshSchedulePreview();
+      });
+      startTimeInput.addEventListener("change", function () {
+        state.startTime = normalizeTimeValue(startTimeInput.value) || defaultStartTime();
+        if (startTimeInput.value !== state.startTime) startTimeInput.value = state.startTime;
+        refreshSchedulePreview();
+      });
+    }
+    refreshSchedulePreview();
     var couponInput = mask.querySelector("[data-po-coupon]");
     if (couponInput) {
       couponInput.addEventListener("input", function () {
@@ -1303,23 +1382,25 @@
       var notesEl = qs("[data-po-notes]");
       var couponEl = qs("[data-po-coupon]");
       var qtyEl = qs("[data-po-quantity]");
-      var contactEl = qs("[data-po-contact]");
-      var regionEl = qs("[data-po-region]");
-      var scheduleEl = qs("[data-po-schedule]");
+      var startEl = qs("[data-po-start-time]");
       var gameId = gameIdEl ? String(gameIdEl.value || "").trim() : "";
-      var contact = contactEl ? String(contactEl.value || "").trim() : "";
-      var region = regionEl ? String(regionEl.value || "").trim() : "";
-      var schedule = scheduleEl ? String(scheduleEl.value || "").trim() : "";
+      var startTime = startEl
+        ? normalizeTimeValue(startEl.value)
+        : normalizeTimeValue(state.startTime);
       var payment = String(state.payment || "").trim();
 
       if (!gameId) {
         failValidate("游戏ID不能为空", "[data-po-game-id]");
         return;
       }
-      if (!schedule) {
-        failValidate("服务时间不能为空", "[data-po-schedule]");
+      if (!startTime) {
+        failValidate("请选择开始时间", "[data-po-start-time]");
         return;
       }
+      state.startTime = startTime;
+      var endTime = addHoursToTime(startTime, serviceDurationHours());
+      state.endTime = endTime;
+      var schedule = scheduleWindowLabel(startTime, endTime);
       if (state.payMethodsLoading) {
         failValidate("支付方式加载中，请稍候再试");
         return;
@@ -1362,13 +1443,12 @@
         payment: payment,
         total: total,
         gameId: gameId,
+        schedule: schedule,
       });
 
       var noteParts = [];
       if (notesEl && String(notesEl.value || "").trim()) noteParts.push(String(notesEl.value || "").trim());
-      if (region) noteParts.push("区服：" + region);
-      if (schedule) noteParts.push("服务时间：" + schedule);
-      if (contact) noteParts.push("联系方式：" + contact);
+      noteParts.push("服务时段：" + schedule);
 
       var replaceSlot = null;
       try {
@@ -1420,10 +1500,10 @@
             quantity: quantity,
             totalAmount: total,
             gameId: gameId,
-            region: region,
             schedule: schedule,
+            startTime: startTime,
+            endTime: endTime,
             couponCode: state.couponCode || "",
-            contact: contact,
             notes: noteParts.join("；"),
             paymentMethod: payment,
             idempotencyKey:
@@ -1545,6 +1625,8 @@
     state.hoursMode = "1";
     state.hours = 1;
     state.quantity = 1;
+    state.startTime = defaultStartTime();
+    state.endTime = "";
     state.couponCode = "";
     state.payment = "";
     state.payMethods = [];

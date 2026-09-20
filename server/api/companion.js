@@ -1279,17 +1279,34 @@ function viewOrder(row = {}, boss = {}, settlement = null) {
   const platformFee = parsed ? money(parsed.platformCommissionCatFood) : roundMoney(amount - net);
   const description = stripOrderFacingText(row.description || "");
   const gameIdFromDesc = (description.match(/游戏ID[：:]\s*([^\n；;]+)/i) || [])[1] || "";
+  const scheduleFromDesc =
+    (description.match(/服务时段[：:]\s*([^\n；;]+)/i) || [])[1] ||
+    (description.match(/(?:开始时间|服务时间)[：:]\s*([^\n；;]+)/i) || [])[1] ||
+    "";
   const serverFromDesc =
     (description.match(/(?:区服|服务器|大区)[：:]\s*([^\n；;]+)/i) || [])[1] ||
     (String(row.server || row.region || row.game_server || "").trim());
   const notesLine = (() => {
     const rawNotes = stripOrderFacingText(row.notes || "").trim();
-    if (rawNotes && !/^(区服|服务器|大区|游戏ID|付款方式)[：:]/i.test(rawNotes)) return rawNotes;
+    const scheduleFromNotes = (rawNotes.match(/服务时段[：:]\s*([^\n；;]+)/i) || [])[1] || "";
+    const cleanedNotes = rawNotes
+      .replace(/(?:^|[；;\n])\s*服务时段[：:][^；;\n]*/gi, "")
+      .replace(/^[；;\s]+|[；;\s]+$/g, "")
+      .trim();
+    if (cleanedNotes && !/^(区服|服务器|大区|游戏ID|付款方式|服务时段)[：:]/i.test(cleanedNotes)) {
+      return { remark: cleanedNotes, schedule: scheduleFromNotes || scheduleFromDesc };
+    }
     const remarkFromDesc = (description.match(/(?:老板备注|备注)[：:]\s*([^\n；;]+)/i) || [])[1];
-    if (remarkFromDesc) return stripOrderFacingText(remarkFromDesc).trim();
-    return rawNotes || "";
+    if (remarkFromDesc) {
+      return {
+        remark: stripOrderFacingText(remarkFromDesc).trim(),
+        schedule: scheduleFromNotes || scheduleFromDesc,
+      };
+    }
+    return { remark: cleanedNotes || "", schedule: scheduleFromNotes || scheduleFromDesc };
   })();
   const gameId = String(row.game_id_value || row.game_id || gameIdFromDesc || "").trim();
+  const serviceSchedule = String(notesLine.schedule || scheduleFromDesc || "").trim();
   const unitPrice = money(row.unit_price);
   const confirmAnchor = row.accepted_at || row.created_at || "";
   // Companion confirm timeout cancelled — no deadline countdown.
@@ -1327,7 +1344,9 @@ function viewOrder(row = {}, boss = {}, settlement = null) {
     bossUid: resolveBossPublicCode(boss),
     bossId: row.boss_id || "",
     game: row.game || "",
-    gameServer: serverFromDesc || "-",
+    gameServer: serverFromDesc || "",
+    serviceSchedule,
+    schedule: serviceSchedule,
     serviceContent: serviceContent || "无补充说明",
     serviceName: row.service_name || row.game || row.title || "",
     serviceType: row.service_name || row.title || ORDER_TYPE_TEXT[orderTypeKey] || orderTypeKey,
@@ -1338,8 +1357,8 @@ function viewOrder(row = {}, boss = {}, settlement = null) {
     playerIncome: net,
     platformFee,
     gameId,
-    bossNotes: notesLine,
-    remark: notesLine,
+    bossNotes: notesLine.remark || "",
+    remark: notesLine.remark || "",
     confirmDeadline,
     acceptedAt: row.accepted_at || "",
     startedAt: row.started_at || "",

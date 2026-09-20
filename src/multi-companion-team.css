@@ -335,6 +335,62 @@
   padding: 0 12px;
   font-size: 14px;
 }
+.mcj-team-schedule-field .mcj-team-time-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 10px;
+  align-items: stretch;
+}
+.mcj-team-time-start,
+.mcj-team-time-end {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 145, 195, 0.22);
+  background: rgba(255, 255, 255, 0.04);
+}
+.mcj-team-time-cap {
+  font-size: 11px;
+  font-weight: 700;
+  color: rgba(255, 214, 231, 0.62);
+}
+.mcj-team-time-start input[type="time"] {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  height: 40px;
+  border: 0;
+  border-radius: 10px;
+  background: rgba(12, 10, 16, 0.92);
+  color: #fff;
+  padding: 0 10px;
+  font: inherit;
+  font-size: 18px;
+  font-weight: 800;
+  color-scheme: dark;
+  outline: none;
+}
+.mcj-team-time-end strong {
+  display: block;
+  min-height: 40px;
+  line-height: 40px;
+  font-size: 22px;
+  font-weight: 900;
+  color: #ffd6e7;
+}
+.mcj-team-time-hint {
+  margin: 8px 0 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: rgba(255, 214, 231, 0.58);
+}
+@media (max-width: 520px) {
+  .mcj-team-schedule-field .mcj-team-time-row {
+    grid-template-columns: 1fr;
+  }
+}
 .mcj-team-chips {
   display: flex;
   flex-wrap: wrap;

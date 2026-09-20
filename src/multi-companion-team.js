@@ -20,6 +20,7 @@
     submitting: false,
     sharedGameId: "",
     sharedNotes: "",
+    sharedStartTime: "",
     paymentMethod: "catfood",
     pendingIdempotencyKey: "",
   };
@@ -96,7 +97,7 @@
     if (document.querySelector('link[data-mcj-team-css]')) return;
     var link = document.createElement("link");
     link.rel = "stylesheet";
-    link.href = "src/multi-companion-team.css?v=20260919team2";
+    link.href = "src/multi-companion-team.css?v=20260920bossOrderFormSimplify";
     link.setAttribute("data-mcj-team-css", "1");
     document.head.appendChild(link);
   }
@@ -106,6 +107,80 @@
     var qty = Math.max(1, Math.floor(money(line.quantity || 1) || 1));
     var unit = money(line.unitPrice);
     return Math.round(unit * hours * qty * 100) / 100;
+  }
+
+  function lineDurationHours(line) {
+    var hours = Math.max(0.5, money(line.hours || 1));
+    var qty = Math.max(1, Math.floor(money(line.quantity || 1) || 1));
+    return Math.round(hours * qty * 100) / 100;
+  }
+
+  function maxTeamDurationHours() {
+    if (!state.lines.length) return 1;
+    return state.lines.reduce(function (max, line) {
+      return Math.max(max, lineDurationHours(line));
+    }, 0.5);
+  }
+
+  function pad2(n) {
+    return (n < 10 ? "0" : "") + n;
+  }
+
+  function defaultStartTime() {
+    var d = new Date();
+    d.setSeconds(0, 0);
+    d.setMinutes(0);
+    d.setHours(d.getHours() + 1);
+    return pad2(d.getHours()) + ":" + pad2(d.getMinutes());
+  }
+
+  function normalizeTimeValue(v) {
+    var m = String(v || "")
+      .trim()
+      .match(/^(\d{1,2}):(\d{2})/);
+    if (!m) return "";
+    var h = Math.min(23, Math.max(0, Number(m[1]) || 0));
+    var min = Math.min(59, Math.max(0, Number(m[2]) || 0));
+    return pad2(h) + ":" + pad2(min);
+  }
+
+  function addHoursToTime(hhmm, hours) {
+    var t = normalizeTimeValue(hhmm);
+    if (!t) return "--:--";
+    var parts = t.split(":");
+    var totalMin = Number(parts[0]) * 60 + Number(parts[1]) + Math.round(Number(hours) * 60);
+    totalMin = ((totalMin % (24 * 60)) + 24 * 60) % (24 * 60);
+    return pad2(Math.floor(totalMin / 60)) + ":" + pad2(totalMin % 60);
+  }
+
+  function scheduleWindowLabel(start, end) {
+    return String(start || "") + " - " + String(end || "");
+  }
+
+  function ensureSharedStartTime() {
+    var start = normalizeTimeValue(state.sharedStartTime);
+    if (!start) start = defaultStartTime();
+    state.sharedStartTime = start;
+    return start;
+  }
+
+  function refreshTeamSchedulePreview() {
+    var mask = document.querySelector("[data-mcj-team-sheet]");
+    if (!mask) return;
+    var startEl = mask.querySelector("[data-mcj-team-start-time]");
+    var endEl = mask.querySelector("[data-mcj-team-end-time]");
+    var hintEl = mask.querySelector("[data-mcj-team-schedule-preview]");
+    var start = startEl ? normalizeTimeValue(startEl.value) : ensureSharedStartTime();
+    if (!start) start = defaultStartTime();
+    state.sharedStartTime = start;
+    if (startEl && startEl.value !== start) startEl.value = start;
+    var duration = maxTeamDurationHours();
+    var end = addHoursToTime(start, duration);
+    if (endEl) endEl.textContent = end;
+    if (hintEl) {
+      hintEl.textContent =
+        "服务时段：" + scheduleWindowLabel(start, end) + "（按最长 " + duration + " 小时自动计算）";
+    }
   }
 
   function groupTotal() {
@@ -137,6 +212,7 @@
         }),
         sharedGameId: state.sharedGameId || "",
         sharedNotes: state.sharedNotes || "",
+        sharedStartTime: state.sharedStartTime || "",
       };
       sessionStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
     } catch (e) {}
@@ -154,6 +230,7 @@
       state.lines = Array.isArray(data.lines) ? data.lines : [];
       state.sharedGameId = data.sharedGameId || "";
       state.sharedNotes = data.sharedNotes || "";
+      state.sharedStartTime = normalizeTimeValue(data.sharedStartTime || "") || "";
     } catch (e) {
       state.lines = [];
     }
@@ -163,6 +240,7 @@
     state.lines = [];
     state.sharedGameId = "";
     state.sharedNotes = "";
+    state.sharedStartTime = "";
     state.expanded = false;
     state.pendingIdempotencyKey = "";
     try {
@@ -527,12 +605,21 @@
       summaryRows +
       "</div>" +
       rows +
-      '<div class="mcj-team-field"><span>游戏 ID（共用）</span><input type="text" data-mcj-team-game-id value="' +
+      '<div class="mcj-team-field"><span>游戏ID *（共用）</span><input type="text" data-mcj-team-game-id value="' +
       esc(state.sharedGameId) +
-      '" placeholder="请填写游戏 ID"></div>' +
-      '<div class="mcj-team-field"><span>备注（可选）</span><input type="text" data-mcj-team-notes value="' +
+      '" placeholder="请输入游戏ID" autocomplete="off" inputmode="text"></div>' +
+      '<div class="mcj-team-field mcj-team-schedule-field"><span>服务时间 *</span>' +
+      '<div class="mcj-team-time-row">' +
+      '<label class="mcj-team-time-start"><span class="mcj-team-time-cap">开始时间</span>' +
+      '<input type="time" data-mcj-team-start-time required step="60" value="' +
+      esc(ensureSharedStartTime()) +
+      '"></label>' +
+      '<div class="mcj-team-time-end"><span class="mcj-team-time-cap">预计结束</span>' +
+      '<strong data-mcj-team-end-time>--</strong></div></div>' +
+      '<p class="mcj-team-time-hint" data-mcj-team-schedule-preview>选择开始时间后自动计算结束时间</p></div>' +
+      '<div class="mcj-team-field"><span>订单备注（选填）</span><input type="text" data-mcj-team-notes value="' +
       esc(state.sharedNotes) +
-      '" placeholder="给整组订单的备注"></div>' +
+      '" placeholder="选填：特殊要求、开局说明等"></div>' +
       '<p class="mcj-team-pay-hint">本订单一次付款，系统会分别为每位陪玩结算。</p>' +
       "</div>" +
       '<div class="mcj-team-sheet-foot">' +
@@ -545,6 +632,7 @@
       esc(String(total)) +
       "猫粮</button>" +
       "</div></div>";
+    refreshTeamSchedulePreview();
   }
 
   function openSingleLegacyFromTeam() {
@@ -608,11 +696,21 @@
   }
 
   function buildPayload() {
+    var startTime = ensureSharedStartTime();
+    var endTime = addHoursToTime(startTime, maxTeamDurationHours());
+    var schedule = scheduleWindowLabel(startTime, endTime);
+    var noteParts = [];
+    if (String(state.sharedNotes || "").trim()) noteParts.push(String(state.sharedNotes || "").trim());
+    noteParts.push("服务时段：" + schedule);
+    var notes = noteParts.join("；");
     return {
       action: "place_multi_order",
       paymentMethod: "catfood",
       gameId: String(state.sharedGameId || "").trim(),
-      notes: String(state.sharedNotes || "").trim(),
+      notes: notes,
+      schedule: schedule,
+      startTime: startTime,
+      endTime: endTime,
       idempotencyKey: ensureIdempotencyKey(),
       companions: state.lines.map(function (l) {
         var hours = Math.max(0.5, money(l.hours || 1));
@@ -632,6 +730,10 @@
           quantity: quantity,
           unitPrice: unitPrice,
           totalAmount: totalAmount,
+          schedule: schedule,
+          startTime: startTime,
+          endTime: endTime,
+          notes: notes,
         };
       }),
     };
@@ -647,8 +749,14 @@
     if (gameIdEl) state.sharedGameId = String(gameIdEl.value || "").trim();
     var notesEl = document.querySelector("[data-mcj-team-notes]");
     if (notesEl) state.sharedNotes = String(notesEl.value || "").trim();
+    var startEl = document.querySelector("[data-mcj-team-start-time]");
+    if (startEl) state.sharedStartTime = normalizeTimeValue(startEl.value) || "";
     if (!state.sharedGameId) {
-      toast("请填写游戏 ID");
+      toast("请填写游戏ID");
+      return;
+    }
+    if (!ensureSharedStartTime()) {
+      toast("请选择开始时间");
       return;
     }
     if (!token()) {
@@ -801,6 +909,7 @@
         if (sub && line) sub.textContent = String(lineSubtotal(line));
       }
       paintSheetTotals();
+      refreshTeamSchedulePreview();
     }
     if (e.target.matches("[data-mcj-team-game-id]")) {
       state.sharedGameId = String(e.target.value || "").trim();
@@ -809,6 +918,12 @@
     if (e.target.matches("[data-mcj-team-notes]")) {
       state.sharedNotes = String(e.target.value || "");
       persist();
+    }
+    if (e.target.matches("[data-mcj-team-start-time]")) {
+      state.sharedStartTime = normalizeTimeValue(e.target.value) || defaultStartTime();
+      if (e.target.value !== state.sharedStartTime) e.target.value = state.sharedStartTime;
+      persist();
+      refreshTeamSchedulePreview();
     }
   }
 
