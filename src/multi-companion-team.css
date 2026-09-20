@@ -335,6 +335,44 @@
   padding: 0 12px;
   font-size: 14px;
 }
+.mcj-team-schedule-field .mcj-team-time-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+  align-items: stretch;
+}
+.mcj-team-time-start,
+.mcj-team-time-end,
+.mcj-team-time-col {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+.mcj-team-time-cap {
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: rgba(255, 214, 231, 0.48);
+}
+.mcj-team-time-start .mcj-po-time-card,
+.mcj-team-time-end .mcj-po-time-card {
+  width: 100%;
+}
+.mcj-team-time-hint {
+  margin: 10px 0 0;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.45;
+  color: rgba(255, 214, 231, 0.42);
+}
+@media (max-width: 520px) {
+  .mcj-team-schedule-field .mcj-team-time-row {
+    grid-template-columns: 1fr;
+  }
+}
 .mcj-team-chips {
   display: flex;
   flex-wrap: wrap;

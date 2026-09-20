@@ -22,6 +22,8 @@
     hoursMode: "1",
     hours: 1,
     quantity: 1,
+    startTime: "",
+    endTime: "",
     couponCode: "",
     payment: "",
     submitting: false,
@@ -142,6 +144,92 @@
   }
   function currentServiceLabel() {
     return String(state.service || "").trim() || "未选择服务";
+  }
+  function serviceDurationHours() {
+    return Math.round(currentHours() * currentQuantity() * 100) / 100;
+  }
+  function pad2(n) {
+    return (n < 10 ? "0" : "") + n;
+  }
+  function defaultStartTime() {
+    var d = new Date();
+    d.setSeconds(0, 0);
+    d.setMinutes(0);
+    d.setHours(d.getHours() + 1);
+    return pad2(d.getHours()) + ":" + pad2(d.getMinutes());
+  }
+  function normalizeTimeValue(v) {
+    if (window.MCJTimePicker && typeof window.MCJTimePicker.normalize === "function") {
+      return window.MCJTimePicker.normalize(v);
+    }
+    var raw = String(v || "").trim();
+    var ampm = raw.match(/\b(am|pm)\b/i);
+    var m = raw.match(/(\d{1,2})\s*[:：.]\s*(\d{1,2})/);
+    if (!m) return "";
+    var h = Number(m[1]) || 0;
+    var min = Number(m[2]) || 0;
+    if (ampm) {
+      var ap = ampm[1].toLowerCase();
+      if (ap === "pm" && h < 12) h += 12;
+      if (ap === "am" && h === 12) h = 0;
+    }
+    return pad2(Math.min(23, Math.max(0, h))) + ":" + pad2(Math.min(59, Math.max(0, min)));
+  }
+  function addHoursToTime(hhmm, hours) {
+    var t = normalizeTimeValue(hhmm);
+    if (!t) return "--:--";
+    var parts = t.split(":");
+    var totalMin = Number(parts[0]) * 60 + Number(parts[1]) + Math.round(Number(hours) * 60);
+    totalMin = ((totalMin % (24 * 60)) + 24 * 60) % (24 * 60);
+    return pad2(Math.floor(totalMin / 60)) + ":" + pad2(totalMin % 60);
+  }
+  function scheduleWindowLabel(start, end) {
+    return String(start || "") + " – " + String(end || "");
+  }
+  function readStartTimeFromDom() {
+    var card = root.querySelector("[data-po-start-time]");
+    if (!card) return normalizeTimeValue(state.startTime);
+    return normalizeTimeValue(card.getAttribute("data-po-start-time") || card.value || "");
+  }
+  function writeStartTimeToDom(value) {
+    var v = normalizeTimeValue(value) || defaultStartTime();
+    state.startTime = v;
+    var card = root.querySelector("[data-po-start-time]");
+    if (card) {
+      card.setAttribute("data-po-start-time", v);
+      var display = card.querySelector("[data-po-start-display]");
+      if (display) display.textContent = v;
+    }
+    return v;
+  }
+  function openStartTimePicker() {
+    if (!window.MCJTimePicker || typeof window.MCJTimePicker.open !== "function") {
+      setError("时间选择器加载失败，请刷新后重试");
+      return;
+    }
+    window.MCJTimePicker.open({
+      title: "选择开始时间",
+      value: readStartTimeFromDom() || defaultStartTime(),
+      minuteStep: 60,
+      onConfirm: function (value) {
+        writeStartTimeToDom(value);
+        refreshSchedulePreview();
+      },
+    });
+  }
+  function refreshSchedulePreview() {
+    var endEl = root.querySelector("[data-po-end-time]");
+    var hintEl = root.querySelector("[data-po-schedule-preview]");
+    var start = readStartTimeFromDom();
+    if (!start) start = defaultStartTime();
+    writeStartTimeToDom(start);
+    var end = addHoursToTime(start, serviceDurationHours());
+    state.endTime = end;
+    if (endEl) endEl.textContent = end;
+    if (hintEl) {
+      hintEl.textContent =
+        "服务时段：" + scheduleWindowLabel(start, end) + "（" + serviceDurationHours() + "小时）";
+    }
   }
   function totalAmount() {
     var c = state.companion;
@@ -304,6 +392,7 @@
     if (hero) hero.textContent = moneyText(c.unitPrice);
     var preview = root.querySelector("[data-po-service-preview]");
     if (preview) preview.textContent = currentServiceLabel();
+    refreshSchedulePreview();
   }
 
   function paint() {
@@ -409,11 +498,26 @@
       '<label>数量<input type="number" min="1" step="1" data-po-quantity value="' +
       esc(state.quantity) +
       '"></label>' +
-      '<label>游戏 ID *<input data-po-game-id required placeholder="必填，用于开局" autocomplete="off"></label>' +
-      '<label>区服<input data-po-region placeholder="例如：亚服 / 国服 / 欧服"></label>' +
-      '<label>联系方式<input data-po-contact placeholder="手机号 / WhatsApp / Discord"></label>' +
-      '<label>服务时间<input data-po-schedule placeholder="例如：今晚 9 点后"></label>' +
-      '<label>订单备注<textarea data-po-notes rows="3" placeholder="特殊要求、开局说明等"></textarea></label>' +
+      '<div class="mcj-po-field"><span class="mcj-po-label">游戏ID *</span>' +
+      '<input data-po-game-id required placeholder="请输入游戏ID" autocomplete="off" inputmode="text"></div>' +
+      '<div class="mcj-po-field mcj-po-schedule-field"><span class="mcj-po-label">服务时间 *</span>' +
+      '<div class="mcj-po-time-row">' +
+      '<div class="mcj-po-time-col mcj-po-time-start"><span class="mcj-po-time-cap">开始时间</span>' +
+      (window.MCJTimePicker && window.MCJTimePicker.startCardHtml
+        ? window.MCJTimePicker.startCardHtml(state.startTime || defaultStartTime())
+        : '<button type="button" class="mcj-po-time-card is-interactive" data-po-start-time="' +
+          esc(state.startTime || defaultStartTime()) +
+          '" data-po-open-time="1" aria-label="选择开始时间"><span class="mcj-po-time-card-value" data-po-start-display>' +
+          esc(state.startTime || defaultStartTime()) +
+          '</span><span class="mcj-po-time-card-chevron" aria-hidden="true">›</span></button>') +
+      "</div>" +
+      '<div class="mcj-po-time-col mcj-po-time-end"><span class="mcj-po-time-cap">预计结束</span>' +
+      (window.MCJTimePicker && window.MCJTimePicker.endCardHtml
+        ? window.MCJTimePicker.endCardHtml("--", { endAttr: "data-po-end-time" })
+        : '<div class="mcj-po-time-card is-readonly" aria-live="polite"><span class="mcj-po-time-card-value" data-po-end-time>--</span></div>') +
+      "</div></div>" +
+      '<p class="mcj-po-time-hint" data-po-schedule-preview>选择开始时间后自动计算结束时间</p></div>' +
+      '<label>订单备注（选填）<textarea data-po-notes rows="2" placeholder="选填：特殊要求、开局说明等"></textarea></label>' +
       '<label>优惠码<input data-po-coupon placeholder="可选" value="' +
       esc(state.couponCode) +
       '"></label>' +
@@ -494,6 +598,15 @@
         refreshTotals();
       });
     }
+    var startTimeCard = root.querySelector("[data-po-open-time]");
+    if (startTimeCard) {
+      writeStartTimeToDom(state.startTime || defaultStartTime());
+      startTimeCard.addEventListener("click", function (ev) {
+        ev.preventDefault();
+        openStartTimePicker();
+      });
+    }
+    refreshSchedulePreview();
     var couponInput = root.querySelector("[data-po-coupon]");
     if (couponInput) {
       couponInput.addEventListener("input", function () {
@@ -572,13 +685,22 @@
     var gameIdEl = root.querySelector("[data-po-game-id]");
     var gameId = gameIdEl ? String(gameIdEl.value || "").trim() : "";
     if (!gameId) {
-      setError("请填写游戏 ID");
+      setError("请填写游戏ID");
       return;
     }
+    var startTime = readStartTimeFromDom() || normalizeTimeValue(state.startTime);
+    if (!startTime) {
+      setError("请选择开始时间");
+      return;
+    }
+    state.startTime = startTime;
+    var endTime = addHoursToTime(startTime, serviceDurationHours());
+    state.endTime = endTime;
+    var schedule = scheduleWindowLabel(startTime, endTime);
     var notesEl = root.querySelector("[data-po-notes]");
-    var regionEl = root.querySelector("[data-po-region]");
-    var contactEl = root.querySelector("[data-po-contact]");
-    var scheduleEl = root.querySelector("[data-po-schedule]");
+    var noteParts = [];
+    if (notesEl && String(notesEl.value || "").trim()) noteParts.push(String(notesEl.value || "").trim());
+    noteParts.push("服务时段：" + schedule);
     var btn = root.querySelector("[data-po-submit]");
     state.submitting = true;
     setError("");
@@ -600,10 +722,10 @@
         unitPrice: c.unitPrice,
         totalAmount: totalAmount(),
         gameId: gameId,
-        region: regionEl ? regionEl.value : "",
-        contact: contactEl ? contactEl.value : "",
-        schedule: scheduleEl ? scheduleEl.value : "",
-        notes: notesEl ? notesEl.value : "",
+        schedule: schedule,
+        startTime: startTime,
+        endTime: endTime,
+        notes: noteParts.join("；"),
         couponCode: state.couponCode,
         paymentMethod: state.payment,
         idempotencyKey: "po-page-" + c.companionId + "-" + Date.now(),

@@ -2761,6 +2761,34 @@
   }
   function todoList(){var s=(state.data||{}).summary||{},ua=unifiedAccess();var accessLabel=isForcedAckLocked()?'暂不可接单（待确认强制公告）':(isCredentialIncomplete()?'认证未完成':STATUS_CN.accountAccess(ua.account_access_status));var rows=[['待确认订单',s.waitingConfirm||0],['进行中就绪',s.waitingStart||0],['待完成订单',s.waitingComplete||0],['待处理消息',unreadCount()],['资料审核状态',STATUS_CN.verification(ua.profile_review_status)],['身份证认证',STATUS_CN.identity(ua.identity_status)],['押金认证',STATUS_CN.deposit(ua.deposit_status)],['账号接单权限',accessLabel]];return '<div class="pw-info-list">'+rows.map(function(r){return '<div><span>'+esc(r[0])+'</span><strong>'+esc(r[1])+'</strong></div>'}).join('')+'</div>'}
   function orderStatus(o){return o.orderStatus||o.statusText||o.status||'-'}
+  function formatSchedule24h(raw){
+    var s=String(raw||'').trim();
+    if(!s)return '';
+    function normOne(chunk){
+      var rawc=String(chunk||'').trim();
+      var ampm=rawc.match(/\b(am|pm)\b/i);
+      var m=rawc.match(/(\d{1,2})\s*[:：.]\s*(\d{1,2})/);
+      if(!m)return rawc;
+      var h=Number(m[1])||0;
+      var min=Number(m[2])||0;
+      if(ampm){
+        var ap=ampm[1].toLowerCase();
+        if(ap==='pm'&&h<12)h+=12;
+        if(ap==='am'&&h===12)h=0;
+      }
+      h=Math.min(23,Math.max(0,h));
+      min=Math.min(59,Math.max(0,min));
+      return (h<10?'0':'')+h+':'+(min<10?'0':'')+min;
+    }
+    var parts=s.split(/\s*[–—\-~至到]+\s*/);
+    if(parts.length>=2){
+      var a=normOne(parts[0]);
+      var b=normOne(parts[1]);
+      if(/^\d{2}:\d{2}$/.test(a)&&/^\d{2}:\d{2}$/.test(b))return a+' – '+b;
+    }
+    var one=normOne(s);
+    return /^\d{2}:\d{2}$/.test(one)?one:s.replace(/\s*-\s*/g,' – ');
+  }
   function fmtTime(v){if(!v)return '-';try{return new Date(v).toLocaleString('zh-CN',{hour12:false})}catch(e){return String(v)}}
   var REJECT_REASONS=['正在服务其他订单','时间无法配合','临时有事','不接该项目','其他'];
   function orderActions(o){
@@ -2821,7 +2849,10 @@
       '<div><span>你的订单金额</span><strong>'+money(o.amount||0)+'</strong></div>'+
       '<div><span>预计到手猫粮</span><strong>'+money(o.playerIncome||0)+'</strong></div>'+
       '<div><span>平台抽成</span><strong>'+money(o.platformFee||0)+'</strong></div>'+
-      '<div><span>游戏 ID</span><strong>'+esc(o.gameId||'-')+'</strong></div>'+
+      '<div><span>老板游戏ID</span><strong>'+esc(o.gameId||'-')+'</strong></div>'+
+      (o.serviceSchedule||o.schedule
+        ?'<div><span>服务时段</span><strong>'+esc(formatSchedule24h(o.serviceSchedule||o.schedule))+'</strong></div>'
+        :'')+
       '<div><span>老板备注</span><strong>'+esc(o.bossNotes||'-')+'</strong></div>'+
       '<div><span>下单时间</span><strong>'+esc(fmtTime(o.createdAt))+'</strong></div>'+
       (o.confirmDeadline?'<div><span>最迟确认时间</span><strong>'+esc(fmtTime(o.confirmDeadline))+'</strong></div>':'')+
@@ -3847,7 +3878,7 @@
         var orderNo=o.orderNo||humanId(o.id)||'-';
         var created=o.createdAt||o.appointmentAt||'';
         var createdLabel=created?fmtTime(created):'-';
-        return '<article class="pw-grab-card'+(hallState==='settled'?' is-settled':'')+'" data-order-id="'+esc(o.id)+'"><header><div><span class="pw-type">'+esc(o.orderType||o.orderSource||'订单')+'</span>'+hallBadge+'<h3>'+esc(o.game||'-')+'</h3><p>'+esc(serviceText)+'</p></div><strong>'+money(o.amount||o.budget||0)+'</strong></header><div class="pw-order-meta"><div><span>订单编号</span><strong>'+esc(orderNo)+'</strong></div><div><span>服务类型</span><strong>'+esc(o.serviceType||o.serviceName||o.orderType||'-')+'</strong></div><div><span>游戏</span><strong>'+esc(o.game||'-')+'</strong></div><div><span>区服</span><strong>'+esc(o.gameServer||'-')+'</strong></div><div><span>单价</span><strong>'+money(o.unitPrice||0)+'</strong></div><div><span>时长/局数</span><strong>'+esc(o.duration||'-')+'</strong></div><div><span>老板备注</span><strong>'+esc(o.bossNotes||o.remark||'-')+'</strong></div><div><span>下单时间</span><strong>'+esc(createdLabel)+'</strong></div><div><span>订单来源</span><strong>'+esc(o.orderSource||o.orderType||'-')+'</strong></div><div><span>预计收入</span><strong>'+money(o.playerIncome||0)+'</strong></div><div><span>抢单人数</span><strong>'+esc(grabCount)+'</strong></div><div><span>当前状态</span><strong>'+esc(o.hallStateLabel||o.statusText||o.orderStatus||'待抢单')+'</strong></div></div><footer><button class="pw-btn primary" data-accept-order="'+esc(o.id)+'" '+(disabled?'disabled':'')+'>'+esc(btnLabel)+'</button></footer></article>';
+        return '<article class="pw-grab-card'+(hallState==='settled'?' is-settled':'')+'" data-order-id="'+esc(o.id)+'"><header><div><span class="pw-type">'+esc(o.orderType||o.orderSource||'订单')+'</span>'+hallBadge+'<h3>'+esc(o.game||'-')+'</h3><p>'+esc(serviceText)+'</p></div><strong>'+money(o.amount||o.budget||0)+'</strong></header><div class="pw-order-meta"><div><span>订单编号</span><strong>'+esc(orderNo)+'</strong></div><div><span>服务类型</span><strong>'+esc(o.serviceType||o.serviceName||o.orderType||'-')+'</strong></div><div><span>游戏</span><strong>'+esc(o.game||'-')+'</strong></div>'+(o.gameId?'<div><span>老板游戏ID</span><strong>'+esc(o.gameId)+'</strong></div>':'')+(o.serviceSchedule||o.schedule?'<div><span>服务时段</span><strong>'+esc(formatSchedule24h(o.serviceSchedule||o.schedule))+'</strong></div>':(o.gameServer&&o.gameServer!=='-'?'<div><span>区服</span><strong>'+esc(o.gameServer)+'</strong></div>':''))+'<div><span>单价</span><strong>'+money(o.unitPrice||0)+'</strong></div><div><span>时长/局数</span><strong>'+esc(o.duration||'-')+'</strong></div><div><span>老板备注</span><strong>'+esc(o.bossNotes||o.remark||'-')+'</strong></div><div><span>下单时间</span><strong>'+esc(createdLabel)+'</strong></div><div><span>订单来源</span><strong>'+esc(o.orderSource||o.orderType||'-')+'</strong></div><div><span>预计收入</span><strong>'+money(o.playerIncome||0)+'</strong></div><div><span>抢单人数</span><strong>'+esc(grabCount)+'</strong></div><div><span>当前状态</span><strong>'+esc(o.hallStateLabel||o.statusText||o.orderStatus||'待抢单')+'</strong></div></div><footer><button class="pw-btn primary" data-accept-order="'+esc(o.id)+'" '+(disabled?'disabled':'')+'>'+esc(btnLabel)+'</button></footer></article>';
       }).join(''):'<div class="pw-empty"><strong>暂无可抢订单</strong><span>'+(locked?auditHint():(!online?'请先切换为在线接单。':'客服发布订单后会自动显示，或调整筛选条件。'))+'</span></div>')+'</section>';
   }
   function accountDocCard(opts){
