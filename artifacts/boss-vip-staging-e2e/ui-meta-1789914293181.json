@@ -1,0 +1,72 @@
+{
+  "stagingRef": "cfccwysniduwkjskiqgy",
+  "bossId": "e9e7abc9-df24-4e24-a695-5f75817b2f5e",
+  "orderId": "9fd9977c-0c41-4da3-a7b0-bf499e2b6092",
+  "txId": "b8417d9b-9469-42fd-af41-03c16c6ab470",
+  "initial": {
+    "currentLevelName": "普通会员",
+    "currentLevelId": "a1000000-0000-4000-8000-000000000000",
+    "confirmedSpend": 0,
+    "nextLevelName": "VIP1",
+    "nextThreshold": 500,
+    "remaining": 500,
+    "benefits": "",
+    "isMaxLevel": false,
+    "history": [
+      {
+        "oldLevelName": "",
+        "newLevelName": "普通会员",
+        "confirmedSpend": 0,
+        "reason": "shot_init",
+        "createdAt": "2026-09-20T14:24:58.738+00:00",
+        "triggerOrderId": ""
+      }
+    ]
+  },
+  "upgraded": {
+    "upgraded": true,
+    "confirmedSpend": 600,
+    "currentName": "VIP1"
+  },
+  "after": {
+    "currentLevelName": "VIP1",
+    "currentLevelId": "a1000000-0000-4000-8000-000000000001",
+    "confirmedSpend": 600,
+    "nextLevelName": "VIP2",
+    "nextThreshold": 1500,
+    "remaining": 900,
+    "benefits": "专属优惠",
+    "isMaxLevel": false,
+    "history": [
+      {
+        "oldLevelName": "普通会员",
+        "newLevelName": "VIP1",
+        "confirmedSpend": 600,
+        "reason": "confirm",
+        "createdAt": "2026-09-20T14:25:02.833+00:00",
+        "triggerOrderId": "9fd9977c-0c41-4da3-a7b0-bf499e2b6092"
+      },
+      {
+        "oldLevelName": "",
+        "newLevelName": "普通会员",
+        "confirmedSpend": 0,
+        "reason": "shot_init",
+        "createdAt": "2026-09-20T14:24:58.738+00:00",
+        "triggerOrderId": ""
+      }
+    ]
+  },
+  "notifications": [
+    {
+      "id": "9649655a-39e8-4fb3-a299-f2f8856a603a",
+      "boss_id": "e9e7abc9-df24-4e24-a695-5f75817b2f5e",
+      "title": "🎉 恭喜升级！",
+      "body": "您的累计有效消费已达到 600 猫粮，已自动升级为 VIP1。当前可享福利：专属优惠",
+      "kind": "vip_upgrade",
+      "related_id": "9fd9977c-0c41-4da3-a7b0-bf499e2b6092",
+      "read_at": null,
+      "created_at": "2026-09-20T14:25:03.401+00:00"
+    }
+  ],
+  "adminLevelCount": 5
+}
