@@ -60,9 +60,20 @@
     var label = step.visualLabel || slot;
     var hl = step.highlight || "";
     var mock = step.visualMock || "";
-    var mockBlock = mock
-      ? '<div class="mcj-guide-mock" data-guide-mock>' + mock + "</div>"
-      : "";
+    if (mock) {
+      return (
+        '<div class="mcj-guide-phone has-mock" data-slot="' +
+        esc(slot) +
+        '">' +
+        '<div class="mcj-guide-mock" data-guide-mock>' +
+        mock +
+        "</div>" +
+        '<p class="mcj-guide-mock-hl-label">高亮：' +
+        esc(hl) +
+        "</p>" +
+        "</div>"
+      );
+    }
     return (
       '<div class="mcj-guide-phone" data-slot="' +
       esc(slot) +
@@ -70,45 +81,33 @@
       '<img alt="" hidden data-guide-shot src="' +
       esc(assetUrl(slot)) +
       '">' +
-      (mockBlock ||
-        '<div class="mcj-guide-phone-placeholder" data-guide-ph>' +
-          '<span class="slot-badge">待补真实截图</span>' +
-          '<div class="slot-stage">' +
-          "<strong>" +
-          esc(label) +
-          "</strong>" +
-          "<small>请放入手机比例真实截图<br><code>assets/guide/" +
-          esc(slot) +
-          ".png</code></small>" +
-          '<div class="mcj-guide-hl" data-label="' +
-          esc(hl) +
-          '"></div>' +
-          "</div></div>") +
-      (mock
-        ? '<div class="mcj-guide-phone-placeholder" data-guide-ph hidden></div>'
-        : "") +
-      "</div>"
+      '<div class="mcj-guide-phone-placeholder" data-guide-ph>' +
+      '<span class="slot-badge">待补真实截图</span>' +
+      '<div class="slot-stage">' +
+      "<strong>" +
+      esc(label) +
+      "</strong>" +
+      "<small>请放入手机比例真实截图<br><code>assets/guide/" +
+      esc(slot) +
+      ".png</code></small>" +
+      '<div class="mcj-guide-hl" data-label="' +
+      esc(hl) +
+      '"></div>' +
+      "</div></div></div>"
     );
   }
 
   function bindShot(el) {
     var img = el.querySelector("[data-guide-shot]");
     var ph = el.querySelector("[data-guide-ph]");
-    var mock = el.querySelector("[data-guide-mock]");
-    if (!img) return;
+    if (!img || !ph) return;
     img.addEventListener("load", function () {
       img.hidden = false;
-      if (ph) ph.hidden = true;
-      if (mock) mock.hidden = true;
+      ph.hidden = true;
     });
     img.addEventListener("error", function () {
       img.hidden = true;
-      if (mock) {
-        mock.hidden = false;
-        if (ph) ph.hidden = true;
-      } else if (ph) {
-        ph.hidden = false;
-      }
+      ph.hidden = false;
     });
   }
 

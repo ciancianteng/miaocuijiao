@@ -295,16 +295,30 @@
 }
 
 /* Soft UI mocks for steps without uploaded PNGs (~70% visual) */
+.mcj-guide-phone.has-mock {
+  display: flex;
+  flex-direction: column;
+  background: #120d15;
+}
 .mcj-guide-mock {
-  position: absolute;
-  inset: 10px 8px 12px;
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
   overflow: auto;
   -webkit-overflow-scrolling: touch;
   border-radius: 18px;
+  margin: 10px 8px 0;
   background: linear-gradient(180deg, #1a1218, #0c090c);
   padding: 10px;
   color: #ffeaf4;
   font-size: 12px;
+}
+.mcj-guide-mock-hl-label {
+  margin: 6px 10px 10px;
+  font-size: 11px;
+  font-weight: 800;
+  color: #ffd6e7;
+  text-align: center;
 }
 .mcj-guide-mock .gm-screen { display: grid; gap: 8px; }
 .mcj-guide-mock .gm-top {
