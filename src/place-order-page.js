@@ -183,10 +183,19 @@
     var seen = Object.create(null);
     function push(item) {
       if (!item || !item.name || LEGACY_SERVICE_NAMES[item.name]) return;
-      var key = String(item.serviceId || item.id || item.name).toLowerCase();
-      if (seen[key] || seen["n:" + item.name]) return;
-      seen[key] = 1;
-      seen["n:" + item.name] = 1;
+      var nkey = String(item.name || "")
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, " ");
+      var sid = String(item.serviceId || "").trim();
+      var idKey = /^[0-9a-f-]{36}$/i.test(sid)
+        ? "id:" + sid.toLowerCase()
+        : /^[0-9a-f-]{36}$/i.test(String(item.id || ""))
+          ? "id:" + String(item.id).toLowerCase()
+          : "";
+      if ((idKey && seen[idKey]) || (nkey && seen["n:" + nkey])) return;
+      if (idKey) seen[idKey] = 1;
+      if (nkey) seen["n:" + nkey] = 1;
       out.push(item);
     }
     if (Array.isArray(companion.services)) {

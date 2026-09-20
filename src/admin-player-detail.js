@@ -388,7 +388,7 @@
 
   function servicePricesList(d) {
     var list = Array.isArray(d.servicePrices) ? d.servicePrices : Array.isArray(d.service_prices) ? d.service_prices : [];
-    if (list.length) return list;
+    if (list.length) return dedupeServicePriceRows(list);
     // Fallback from game_prices / games when API older
     var gp = d.game_prices || d.gamePrices || {};
     if (typeof gp === "string") {
@@ -408,8 +408,9 @@
     var seen = {};
     function push(name, price) {
       var n = String(name || "").trim();
-      if (!n || seen[n]) return;
-      seen[n] = 1;
+      var key = n.toLowerCase().replace(/\s+/g, " ");
+      if (!n || seen[key]) return;
+      seen[key] = 1;
       out.push({ serviceName: n, serviceId: "", unitPrice: price });
     }
     games.forEach(function (g) {
@@ -423,6 +424,38 @@
     return out;
   }
 
+  /** Client safety net: one row per service_id / normalized name. */
+  function dedupeServicePriceRows(list) {
+    var byKey = {};
+    var nameToKey = {};
+    (list || []).forEach(function (s) {
+      if (!s) return;
+      var name = String(s.serviceName || s.service_name || s.name || "").trim();
+      var sid = String(s.serviceId || s.service_id || "").trim();
+      if (!name && !sid) return;
+      var nkey = name.toLowerCase().replace(/\s+/g, " ");
+      var key = /^[0-9a-f-]{36}$/i.test(sid) ? "id:" + sid.toLowerCase() : nkey ? "name:" + nkey : "";
+      if (!key) return;
+      if (nkey && nameToKey[nkey]) key = nameToKey[nkey];
+      if (byKey[key]) {
+        if (!byKey[key].serviceId && sid) byKey[key].serviceId = sid;
+        return;
+      }
+      byKey[key] = {
+        rowId: s.rowId || s.id || "",
+        serviceId: sid,
+        serviceName: name || sid || "服务",
+        unitPrice: s.unitPrice != null ? s.unitPrice : s.unit_price != null ? s.unit_price : s.price,
+        source: s.source || "",
+        pricingUnit: s.pricingUnit || s.pricing_unit || "小时",
+      };
+      if (nkey) nameToKey[nkey] = key;
+    });
+    return Object.keys(byKey).map(function (k) {
+      return byKey[k];
+    });
+  }
+
   function servicePricesEditHtml(d, levels) {
     var list = servicePricesList(d);
     var lv = findLevelByValue(d.levelId || d.level_id || d.levelName, levels);
@@ -434,10 +467,13 @@
             var sid = s.serviceId || s.service_id || "";
             var price = s.unitPrice != null ? s.unitPrice : s.unit_price != null ? s.unit_price : s.price != null ? s.price : base || "";
             return (
-              '<label class="admin-service-price-row" style="display:grid;grid-template-columns:1fr 140px;gap:10px;align-items:end;margin:0 0 10px">' +
-              "<span><strong>" +
+              '<label class="admin-service-price-row">' +
+              '<span class="admin-service-price-name"><strong title="' +
               esc(name) +
-              '</strong><input type="hidden" name="servicePrices[' +
+              '">' +
+              esc(name) +
+              "</strong>" +
+              '<input type="hidden" name="servicePrices[' +
               idx +
               '][serviceName]" value="' +
               esc(name) +
@@ -446,20 +482,22 @@
               '][serviceId]" value="' +
               esc(sid) +
               '"></span>' +
-              '<span><input name="servicePrices[' +
+              '<span class="admin-service-price-input">' +
+              '<input name="servicePrices[' +
               idx +
               '][unitPrice]" type="number" min="1" step="1" value="' +
               esc(price) +
-              '" required> <small>猫粮 / 小时</small></span>' +
+              '" required>' +
+              '<small>猫粮 / 小时</small></span>' +
               "</label>"
             );
           })
           .join("")
       : '<p class="admin-sync-note">该陪玩尚未配置游戏/服务。请先在资料中填写游戏，或通过审核时按等级默认价初始化。</p>';
     return (
-      '<div class="admin-service-prices" data-service-prices style="grid-column:1/-1;margin-top:8px;padding:12px;border:1px solid rgba(255,255,255,.12);border-radius:12px;background:rgba(0,0,0,.18)">' +
-      "<h4 style=\"margin:0 0 6px;color:#ffd6e7;font-size:13px\">游戏/服务独立价格</h4>" +
-      '<p class="muted" style="margin:0 0 10px;font-size:12px">每个服务单独设置单价。老板下单时按所选服务读取；等级默认价格仅作 fallback。</p>' +
+      '<div class="admin-service-prices" data-service-prices>' +
+      "<h4>游戏/服务独立价格</h4>" +
+      '<p class="muted admin-service-prices-hint">每个服务单独设置单价。老板下单时按所选服务读取；等级默认价格仅作 fallback。</p>' +
       rowsHtml +
       "</div>"
     );

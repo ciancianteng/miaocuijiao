@@ -23,9 +23,23 @@ function levelBase(level) {
   return money(level.basePrice ?? level.base_price ?? level.min ?? level.min_price);
 }
 
+function isUuid(v) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(v || "").trim());
+}
+
+/** Stable display identity helper: prefer service_id UUID, else normalized name. */
+export function normalizeServiceName(name) {
+  return String(name || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+}
+
 /**
  * Build the editable service price list for Admin UI from real companion data.
  * Prefers companion_services rows; falls back to game / service_ids / game_prices.
+ * One companion + one service → at most one row (dedupe by service_id, then name).
+ * Price priority when merging sources: companion_services.price → game_prices → level.base_price.
  */
 export function buildAdminServicePriceList(companion = {}, serviceRows = [], level = null) {
   const base = levelBase(level);
@@ -33,35 +47,68 @@ export function buildAdminServicePriceList(companion = {}, serviceRows = [], lev
   const ids = parseServiceIds(companion.service_ids ?? companion.serviceIds);
   const games = splitGames(companion.game || companion.main_service || companion.main_game || "");
   const rows = Array.isArray(serviceRows) ? serviceRows.filter(Boolean) : [];
-  const out = [];
-  const seen = new Set();
+  const byKey = new Map();
+  const nameToKey = new Map();
 
-  const push = ({ serviceId = "", serviceName = "", unitPrice = 0, source = "", rowId = "" } = {}) => {
-    const name = String(serviceName || "").trim();
+  const resolvePrice = ({ serviceId = "", serviceName = "", unitPrice = 0 } = {}) => {
     const sid = String(serviceId || "").trim();
-    if (!name && !sid) return;
-    const key = `${sid}::${name || sid}`;
-    if (seen.has(key)) return;
-    seen.add(key);
+    const name = String(serviceName || "").trim();
     let price = money(unitPrice);
     if (!(price > 0) && sid && money(prices[sid]) > 0) price = money(prices[sid]);
     if (!(price > 0) && name && money(prices[name]) > 0) price = money(prices[name]);
     if (!(price > 0) && base > 0) price = base;
-    out.push({
+    return price;
+  };
+
+  const upsert = ({ serviceId = "", serviceName = "", unitPrice = 0, source = "", rowId = "" } = {}) => {
+    const name = String(serviceName || "").trim();
+    const sid = String(serviceId || "").trim();
+    if (!name && !sid) return;
+    const nkey = normalizeServiceName(name);
+    let key = isUuid(sid) ? `id:${sid.toLowerCase()}` : nkey ? `name:${nkey}` : "";
+    if (!key) return;
+    // Same display name as an existing row → merge into that row (don't create a second line).
+    if (nkey && nameToKey.has(nkey)) {
+      key = nameToKey.get(nkey);
+    }
+
+    const existing = byKey.get(key);
+    if (existing) {
+      if (!existing.serviceId && isUuid(sid)) existing.serviceId = sid;
+      if ((!existing.serviceName || existing.serviceName === existing.serviceId) && name) {
+        existing.serviceName = name;
+      }
+      if (!existing.rowId && rowId) existing.rowId = rowId;
+      // Prefer already-set companion_services price; only fill if missing.
+      if (!(money(existing.unitPrice) > 0)) {
+        existing.unitPrice = resolvePrice({
+          serviceId: existing.serviceId || sid,
+          serviceName: existing.serviceName || name,
+          unitPrice,
+        });
+        if (source) existing.source = source;
+      }
+      return;
+    }
+
+    const price = resolvePrice({ serviceId: sid, serviceName: name, unitPrice });
+    const item = {
       rowId: rowId || "",
       serviceId: sid,
       serviceName: name || sid || "服务",
       unitPrice: price,
       source: source || (price === base && base > 0 ? "level_base_price" : "legacy_profile"),
       pricingUnit: "小时",
-    });
+    };
+    byKey.set(key, item);
+    if (nkey) nameToKey.set(nkey, key);
   };
 
   for (const r of rows) {
     if (r.enabled === false) continue;
     const status = String(r.review_status || r.reviewStatus || "approved").toLowerCase();
     if (status && !["approved", "active", "pending"].includes(status)) continue;
-    push({
+    upsert({
       rowId: r.id || "",
       serviceId: r.service_id || r.serviceId || "",
       serviceName: r.service_name || r.serviceName || r.name || "",
@@ -72,29 +119,30 @@ export function buildAdminServicePriceList(companion = {}, serviceRows = [], lev
 
   if (ids.length) {
     ids.forEach((id, idx) => {
-      const uuid = /^[0-9a-f-]{36}$/i.test(String(id));
-      const name = games[idx] || (uuid ? "游戏" : String(id));
-      push({ serviceId: id, serviceName: name, unitPrice: prices[id] || prices[name] });
+      const uuid = isUuid(id);
+      const name = games[idx] || (uuid ? "" : String(id));
+      upsert({ serviceId: id, serviceName: name, unitPrice: prices[id] || prices[name] });
     });
   } else if (games.length) {
-    games.forEach((g) => push({ serviceName: g, unitPrice: prices[g] }));
+    games.forEach((g) => upsert({ serviceName: g, unitPrice: prices[g] }));
   }
 
-  // Include any leftover game_prices name keys (non-uuid) not already listed.
+  // Leftover game_prices name keys — merge into existing rows; never create a duplicate line
+  // when companion_services already listed the same service (name or id).
   Object.keys(prices).forEach((k) => {
-    if (/^[0-9a-f-]{36}$/i.test(k)) return;
-    push({ serviceName: k, unitPrice: prices[k] });
+    if (isUuid(k)) return;
+    upsert({ serviceName: k, unitPrice: prices[k] });
   });
 
-  if (!out.length && money(companion.price) > 0) {
-    push({
+  if (!byKey.size && money(companion.price) > 0) {
+    upsert({
       serviceName: String(companion.game || companion.main_service || "默认服务").split(/[,，]/)[0] || "默认服务",
       unitPrice: companion.price,
       source: "legacy_profile",
     });
   }
 
-  return out;
+  return [...byKey.values()];
 }
 
 export function parseServicePricesPayload(payload = {}) {
@@ -128,13 +176,30 @@ export function parseServicePricesPayload(payload = {}) {
       rowId: "",
     });
   });
-  // Dedupe by serviceName/serviceId keeping last
+  // Dedupe by service_id UUID first, else normalized name — keep last price (form order).
   const map = new Map();
+  const nameToKey = new Map();
   for (const item of list) {
     if (!(item.unitPrice > 0)) continue;
     if (!item.serviceName && !item.serviceId) continue;
-    const key = `${item.serviceId}::${item.serviceName || item.serviceId}`;
-    map.set(key, item);
+    const nkey = normalizeServiceName(item.serviceName);
+    let key = isUuid(item.serviceId) ? `id:${String(item.serviceId).toLowerCase()}` : nkey ? `name:${nkey}` : "";
+    if (!key) continue;
+    if (nkey && nameToKey.has(nkey)) key = nameToKey.get(nkey);
+    const prev = map.get(key);
+    if (prev) {
+      map.set(key, {
+        ...prev,
+        ...item,
+        serviceId: isUuid(item.serviceId) ? item.serviceId : prev.serviceId || item.serviceId,
+        serviceName: item.serviceName || prev.serviceName,
+        rowId: item.rowId || prev.rowId,
+        unitPrice: item.unitPrice,
+      });
+    } else {
+      map.set(key, item);
+    }
+    if (nkey) nameToKey.set(nkey, key);
   }
   return [...map.values()];
 }
