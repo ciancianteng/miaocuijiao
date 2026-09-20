@@ -56,9 +56,23 @@
       return p.auditStatus === "approved" && p.visible !== false && p.visible !== "false" && p.status !== "offline";
     }));
   }
-  function tagsHtml(tags) {
-    if (!Array.isArray(tags)) tags = String(tags || "").split(/[，,]/).map(function (s) { return s.trim(); }).filter(Boolean);
-    return tags.map(function (tag) { return "<span>" + esc(tag) + "</span>"; }).join("");
+  function tagsHtml(tags, maxVisible) {
+    if (!Array.isArray(tags)) tags = String(tags || "").split(/[，,、]/).map(function (s) { return s.trim(); }).filter(Boolean);
+    tags = tags.filter(Boolean);
+    var limit = Number(maxVisible);
+    if (!Number.isFinite(limit) || limit < 1) limit = 4;
+    var shown = tags.slice(0, limit);
+    var more = tags.length - shown.length;
+    return (
+      shown.map(function (tag) { return "<span>" + esc(tag) + "</span>"; }).join("") +
+      (more > 0 ? '<span class="hot-tag-more">+' + more + "</span>" : "")
+    );
+  }
+  function homeCompanionTrackLimit() {
+    try {
+      if (window.matchMedia && window.matchMedia("(max-width: 720px)").matches) return 8;
+    } catch (e) {}
+    return 3;
   }
   function isGarbledName(value) {
     var s = String(value == null ? "" : value).trim();
@@ -125,48 +139,95 @@
     }
     var displayName = String(item.name || "").trim();
     if (isGarbledName(displayName)) displayName = "未命名陪玩";
-    var price = item.price || item.servicePrice || "";
     var uuid = String(item.id || item.uid || item.companionId || "").trim();
     var isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(uuid);
-    // Always navigate by real companion/user UUID — never by PW public display code.
     var detail = isUuid ? ("profile.html?id=" + encodeURIComponent(uuid)) : "";
     var focus = resolveCoverFocus(item);
     var pos = focus.x + "% " + focus.y + "%";
-    var certBadges = "";
-    var certList = item.certTags || item.certificationTags || [];
-    if (Array.isArray(certList) && certList.length) {
-      certBadges =
-        '<div class="hot-tags mcj-cert-tags">' +
-        certList
-          .slice(0, 4)
-          .map(function (t) {
-            var name = typeof t === "string" ? t : t.name || t.title || "";
-            if (!name) return "";
-            var icon = typeof t === "object" && t.icon ? t.icon + " " : "🏅 ";
-            return "<span>" + esc(icon + name) + "</span>";
-          })
-          .filter(Boolean)
-          .join("") +
-        "</div>";
-    } else if (item.certificationStatus === "approved") {
-      certBadges =
-        '<div class="hot-tags mcj-cert-tags"><span>✔ 已认证</span></div>';
-    }
+    var verified = ""; // home cards: no verified badge clutter (hall keeps it)
     var actionHtml = detail
       ? '<a class="mini-order" href="' + esc(detail) + '">查看详情</a>'
       : '<span class="mini-order" aria-disabled="true" style="opacity:.55;pointer-events:none">资料不可用</span>';
-    return '<article class="neon-card companion-card hot-card" data-companion-id="' + esc(isUuid ? uuid : "") + '" data-public-id="' + esc(focus.publicId || item.publicId || "") + '">' +
-      '<div class="hot-cover"><img src="' + esc(cover || avatar || "/default-avatar.png") + '" alt="' + esc(displayName) + '" data-cover-fit="' + esc(focus.fit) + '" style="object-fit:' + esc(focus.fit) + ';object-position:' + esc(pos) + ';--mcj-cover-pos:' + esc(pos) + '" onerror="this.onerror=null;this.src=\'/default-avatar.png\'"><span class="online-dot"></span></div>' +
+    var levelId = item.levelId || (item.levelConfig && item.levelConfig.id) || "";
+    var levelCfg = item.levelConfig || null;
+    var inlineStyle = "";
+    if (window.MCJCompanionLevels && window.MCJCompanionLevels.inlineCardStyle) {
+      inlineStyle = window.MCJCompanionLevels.inlineCardStyle(levelCfg || item);
+    }
+    var styleAttr = inlineStyle ? ' style="' + esc(inlineStyle) + '"' : "";
+    var presence =
+      window.MCJCompanionPresence && window.MCJCompanionPresence.fromCompanion
+        ? window.MCJCompanionPresence.fromCompanion(item)
+        : null;
+    /* Always emit is-* — never leave bare .online-dot (CSS used to default green = offline bug). */
+    var presenceCode =
+      presence && presence.code && /^(online|busy|paused|offline)$/.test(presence.code)
+        ? presence.code
+        : "offline";
+    var onlineClass = " is-" + presenceCode;
+    var gameLine = String(item.game || item.mainGame || item.serviceType || "").trim();
+    if (isGarbledName(gameLine)) gameLine = "";
+    var statusLabel =
+      presence && presence.label
+        ? String(presence.label).trim()
+        : presenceCode === "offline"
+          ? "离线"
+          : "";
+    // Home cards: real fields only — name + level + game + status + tags + detail (no price).
+    return (
+      '<article class="neon-card companion-card hot-card" data-companion-id="' +
+      esc(isUuid ? uuid : "") +
+      '" data-public-id="' +
+      esc(focus.publicId || item.publicId || "") +
+      '" data-level-id="' +
+      esc(levelId) +
+      '" data-companion-level="' +
+      esc(levelId) +
+      '" data-online-status="' +
+      esc(presenceCode) +
+      '" data-card-style="' +
+      esc(item.cardBackground || (levelCfg && levelCfg.cardBackground) || "") +
+      '" data-level-color="' +
+      esc(item.levelColor || (levelCfg && levelCfg.color) || "") +
+      '"' +
+      styleAttr +
+      ">" +
+      '<div class="hot-cover"><img src="' +
+      esc(cover || avatar || "/default-avatar.png") +
+      '" alt="' +
+      esc(displayName) +
+      '" data-cover-fit="' +
+      esc(focus.fit) +
+      '" style="object-fit:' +
+      esc(focus.fit) +
+      ";object-position:" +
+      esc(pos) +
+      ";--mcj-cover-pos:" +
+      esc(pos) +
+      "\" onerror=\"this.onerror=null;this.src='/default-avatar.png'\"><span class=\"online-dot" +
+      onlineClass +
+      '" data-online-status="' +
+      esc(presenceCode) +
+      '" aria-hidden="true"></span></div>' +
       '<div class="hot-info">' +
-      '<h3>' + esc(displayName) + '</h3>' +
-      '<p>' + esc(item.game || item.mainGame || "") + '</p>' +
-      '<div class="hot-meta"><span>' + esc(item.level || "未设置等级") + '</span><span>★ ' + esc(item.rating || "") + '</span></div>' +
-      '<div class="hot-orders">' + esc(price || "") + '</div>' +
-      certBadges +
-      '<div class="hot-tags">' + tagsHtml(item.tags || item.serviceTags) + '</div>' +
+      '<div class="hot-name-row"><h3>' +
+      esc(displayName) +
+      '</h3><span class="mcj-brand-mark" title="MEOW CUI JIAO">MCJ</span></div>' +
+      '<div class="hot-meta"><span class="companion-level-pill" data-level-id="' +
+      esc(levelId) +
+      '">' +
+      esc(item.level || "未设置等级") +
+      "</span>" +
+      (statusLabel ? '<span class="hot-status">' + esc(statusLabel) + "</span>" : "") +
+      "</div>" +
+      (gameLine ? '<p class="hot-game">' + esc(gameLine) + "</p>" : "") +
+      '<div class="hot-tags">' +
+      tagsHtml(item.tags || item.serviceTags, 4) +
+      "</div>" +
       actionHtml +
-      '</div>' +
-      '</article>';
+      "</div>" +
+      "</article>"
+    );
   }
   function renderTopThreeTrack(id, companions, options) {
     options = options || {};
@@ -178,12 +239,16 @@
       var isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(uuid);
       return c && isUuid && !isGarbledName(c.name) && c.name;
     });
-    var items = source.slice(0, 3);
+    var limit = Number(options.limit);
+    if (!Number.isFinite(limit) || limit < 1) limit = homeCompanionTrackLimit();
+    var items = source.slice(0, limit);
     var cols = Math.max(1, items.length + 1); // companions + MORE
     track.dataset.ready = "1";
     track.dataset.sourceCount = String(source.length);
     track.setAttribute("data-home-source-count", String(source.length));
-    track.style.gridTemplateColumns = "repeat(" + cols + ", minmax(0, 1fr))";
+    // Desktop keeps horizontal top-N + MORE; mobile APP CSS owns 2-col grid.
+    if (limit <= 3) track.style.gridTemplateColumns = "repeat(" + cols + ", minmax(0, 1fr))";
+    else track.style.gridTemplateColumns = "";
     if (!items.length) { track.innerHTML = emptyCard("暂无陪玩"); return; }
     track.innerHTML = items.map(companionCardHtml).join("") +
       '<a class="neon-card companion-card hot-card hot-more-card" href="' + esc(options.moreHref || "companion-center.html") + '"><div class="hot-more-inner"><span>MORE</span><strong>更多</strong><p>' + esc(options.moreDesc || "进入陪玩大厅") + '</p></div></a>';
@@ -243,7 +308,7 @@
     return homeEntryDefaults().map(function (def) { return mapped[def.slug] || def; }).sort(function (a, b) { return Number(a.sort || 0) - Number(b.sort || 0); });
   }
   function ensureCompanionApplyCard() {
-    /* Homepage grid: hall / gameplay / custom / team only. Orders & support are top-nav. */
+    /* Homepage QUICK ACCESS grid removed (PR #214). Hall/orders own secondary entries. */
   }
   function applyHomeEntries(entries) {
     ensureCompanionApplyCard();
@@ -297,6 +362,14 @@
       level: item.levelName || item.level || "未设置等级",
       levelId: item.levelId || item.level_id || "",
       levelName: item.levelName || item.level || "",
+      levelConfig: item.levelConfig || null,
+      levelColor: item.levelColor || (item.levelConfig && item.levelConfig.color) || "",
+      displayColor: item.displayColor || (item.levelConfig && item.levelConfig.displayColor) || "",
+      cardBackground: item.cardBackground || item.cardStyle || (item.levelConfig && item.levelConfig.cardBackground) || "",
+      badgeBorder: item.badgeBorder || (item.levelConfig && item.levelConfig.badgeBorder) || "",
+      badgeText: item.badgeText || (item.levelConfig && item.levelConfig.badgeText) || "",
+      levelPriceRange: item.levelPriceRange || (item.levelConfig && item.levelConfig.priceRangeLabel) || "",
+      levelPriceRangeText: item.levelPriceRangeText || (item.levelConfig && item.levelConfig.priceRangeText) || "",
       rating: item.rating || item.score || "",
       price: priceLabel,
       servicePrice: priceLabel,

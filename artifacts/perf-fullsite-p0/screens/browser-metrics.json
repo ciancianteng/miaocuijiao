@@ -1,0 +1,370 @@
+[
+  {
+    "name": "home",
+    "path": "/",
+    "ms": 3975,
+    "metrics": {
+      "title": "MEOW CUI JIAO GAMING CLUB",
+      "countText": null,
+      "emptyHidden": null,
+      "emptyText": null,
+      "cards": 0,
+      "skels": 0,
+      "busy": null
+    },
+    "apiTimings": [
+      {
+        "url": "/api/platform/settings",
+        "status": 200,
+        "cache": "MISS",
+        "cc": "no-store"
+      },
+      {
+        "url": "/api/gateway?path=platform%2Fcontent&types=banners&_=1789259057019",
+        "status": 200,
+        "cache": "MISS",
+        "cc": "no-store, no-cache, must-revalidate, max-age=0"
+      },
+      {
+        "url": "/api/gateway?path=home%2Fdaily-stats",
+        "status": 200,
+        "cache": "MISS",
+        "cc": "public, max-age=30, s-maxage=60, stale-while-revalidate=120"
+      },
+      {
+        "url": "/api/platform/content?types=homepage_entries",
+        "status": 200,
+        "cache": "MISS",
+        "cc": "no-store, no-cache, must-revalidate, max-age=0"
+      },
+      {
+        "url": "/api/platform/content?types=announcements&audience=home",
+        "status": 200,
+        "cache": "MISS",
+        "cc": "no-store, no-cache, must-revalidate, max-age=0"
+      },
+      {
+        "url": "/api/platform/content?types=announcements",
+        "status": 200,
+        "cache": "MISS",
+        "cc": "no-store, no-cache, must-revalidate, max-age=0"
+      },
+      {
+        "url": "/api/platform/services?scope=home",
+        "status": 200,
+        "cache": "MISS",
+        "cc": "public, max-age=30, s-maxage=60, stale-while-revalidate=120"
+      },
+      {
+        "url": "/api/platform/gameplay-products",
+        "status": 200,
+        "cache": "MISS",
+        "cc": "no-store, no-cache, must-revalidate"
+      },
+      {
+        "url": "/api/popularity?action=home&period=weekly&limit=10",
+        "status": 200,
+        "cache": "MISS",
+        "cc": "no-store"
+      },
+      {
+        "url": "/api/public/companions",
+        "status": 200,
+        "cache": "MISS",
+        "cc": "public, max-age=15, s-maxage=30, stale-while-revalidate=60"
+      }
+    ]
+  },
+  {
+    "name": "hall",
+    "path": "/companion-center.html",
+    "ms": 3660,
+    "metrics": {
+      "title": "陪玩大厅 | Meow Cui Jiao",
+      "countText": "共 2 位陪玩",
+      "emptyHidden": true,
+      "emptyText": null,
+      "cards": 2,
+      "skels": 0,
+      "busy": null
+    },
+    "apiTimings": [
+      {
+        "url": "/api/platform/content?types=homepage_entries",
+        "status": 200,
+        "cache": "MISS",
+        "cc": "no-store, no-cache, must-revalidate, max-age=0"
+      },
+      {
+        "url": "/api/platform/companion-levels",
+        "status": 200,
+        "cache": "MISS",
+        "cc": "no-store"
+      },
+      {
+        "url": "/api/platform/services",
+        "status": 200,
+        "cache": "MISS",
+        "cc": "public, max-age=30, s-maxage=60, stale-while-revalidate=120"
+      },
+      {
+        "url": "/api/platform/companion-levels",
+        "status": 200,
+        "cache": "MISS",
+        "cc": "no-store"
+      },
+      {
+        "url": "/api/public/companions",
+        "status": 200,
+        "cache": "MISS",
+        "cc": "public, max-age=15, s-maxage=30, stale-while-revalidate=60"
+      },
+      {
+        "url": "/api/platform/content?types=companion_tags%2Cvoice_types%2Ccompanion_levels%2Cfeatured_players",
+        "status": 200,
+        "cache": "MISS",
+        "cc": "no-store, no-cache, must-revalidate, max-age=0"
+      },
+      {
+        "url": "/api/platform/services",
+        "status": 200,
+        "cache": "MISS",
+        "cc": "public, max-age=30, s-maxage=60, stale-while-revalidate=120"
+      },
+      {
+        "url": "/api/public/companions",
+        "status": 200,
+        "cache": "MISS",
+        "cc": "public, max-age=15, s-maxage=30, stale-while-revalidate=60"
+      },
+      {
+        "url": "/api/platform/services",
+        "status": 200,
+        "cache": "MISS",
+        "cc": "public, max-age=30, s-maxage=60, stale-while-revalidate=120"
+      }
+    ]
+  },
+  {
+    "name": "hall430",
+    "path": "/companion-center.html",
+    "ms": 3438,
+    "metrics": {
+      "title": "陪玩大厅 | Meow Cui Jiao",
+      "countText": "共 2 位陪玩",
+      "emptyHidden": true,
+      "emptyText": null,
+      "cards": 2,
+      "skels": 0,
+      "busy": null
+    },
+    "apiTimings": [
+      {
+        "url": "/api/platform/content?types=homepage_entries",
+        "status": 200,
+        "cache": "MISS",
+        "cc": "no-store, no-cache, must-revalidate, max-age=0"
+      },
+      {
+        "url": "/api/platform/companion-levels",
+        "status": 200,
+        "cache": "MISS",
+        "cc": "no-store"
+      },
+      {
+        "url": "/api/platform/companion-levels",
+        "status": 200,
+        "cache": "MISS",
+        "cc": "no-store"
+      },
+      {
+        "url": "/api/platform/services",
+        "status": 200,
+        "cache": "MISS",
+        "cc": "public, max-age=30, s-maxage=60, stale-while-revalidate=120"
+      },
+      {
+        "url": "/api/platform/content?types=companion_tags%2Cvoice_types%2Ccompanion_levels%2Cfeatured_players",
+        "status": 200,
+        "cache": "MISS",
+        "cc": "no-store, no-cache, must-revalidate, max-age=0"
+      },
+      {
+        "url": "/api/platform/services",
+        "status": 200,
+        "cache": "MISS",
+        "cc": "public, max-age=30, s-maxage=60, stale-while-revalidate=120"
+      },
+      {
+        "url": "/api/public/companions",
+        "status": 200,
+        "cache": "MISS",
+        "cc": "public, max-age=15, s-maxage=30, stale-while-revalidate=60"
+      },
+      {
+        "url": "/api/public/companions",
+        "status": 200,
+        "cache": "MISS",
+        "cc": "public, max-age=15, s-maxage=30, stale-while-revalidate=60"
+      },
+      {
+        "url": "/api/platform/services",
+        "status": 200,
+        "cache": "MISS",
+        "cc": "public, max-age=30, s-maxage=60, stale-while-revalidate=120"
+      }
+    ]
+  },
+  {
+    "name": "orders",
+    "path": "/orders.html",
+    "ms": 4660,
+    "metrics": {
+      "title": "MEOW CUI JIAO GAMING CLUB",
+      "countText": null,
+      "emptyHidden": null,
+      "emptyText": null,
+      "cards": 0,
+      "skels": 0,
+      "busy": null
+    },
+    "apiTimings": [
+      {
+        "url": "/api/platform/content?types=homepage_entries",
+        "status": 200,
+        "cache": "MISS",
+        "cc": "no-store, no-cache, must-revalidate, max-age=0"
+      },
+      {
+        "url": "/api/platform/settings",
+        "status": 200,
+        "cache": "MISS",
+        "cc": "no-store"
+      },
+      {
+        "url": "/api/platform/gameplay-products",
+        "status": 200,
+        "cache": "MISS",
+        "cc": "no-store, no-cache, must-revalidate"
+      },
+      {
+        "url": "/api/platform/content?types=announcements&audience=home",
+        "status": 200,
+        "cache": "MISS",
+        "cc": "no-store, no-cache, must-revalidate, max-age=0"
+      },
+      {
+        "url": "/api/popularity?action=home&period=weekly&limit=10",
+        "status": 200,
+        "cache": "MISS",
+        "cc": "no-store"
+      },
+      {
+        "url": "/api/platform/services?scope=home",
+        "status": 200,
+        "cache": "MISS",
+        "cc": "public, max-age=30, s-maxage=60, stale-while-revalidate=120"
+      },
+      {
+        "url": "/api/gateway?path=platform%2Fcontent&types=banners&_=1789259068735",
+        "status": 200,
+        "cache": "MISS",
+        "cc": "no-store, no-cache, must-revalidate, max-age=0"
+      },
+      {
+        "url": "/api/gateway?path=home%2Fdaily-stats",
+        "status": 200,
+        "cache": "MISS",
+        "cc": "public, max-age=30, s-maxage=60, stale-while-revalidate=120"
+      },
+      {
+        "url": "/api/platform/content?types=announcements",
+        "status": 200,
+        "cache": "MISS",
+        "cc": "no-store, no-cache, must-revalidate, max-age=0"
+      },
+      {
+        "url": "/api/public/companions",
+        "status": 200,
+        "cache": "MISS",
+        "cc": "public, max-age=15, s-maxage=30, stale-while-revalidate=60"
+      }
+    ]
+  },
+  {
+    "name": "mine",
+    "path": "/mine.html",
+    "ms": 4334,
+    "metrics": {
+      "title": "MEOW CUI JIAO GAMING CLUB",
+      "countText": null,
+      "emptyHidden": null,
+      "emptyText": null,
+      "cards": 0,
+      "skels": 0,
+      "busy": null
+    },
+    "apiTimings": [
+      {
+        "url": "/api/platform/content?types=homepage_entries",
+        "status": 200,
+        "cache": "MISS",
+        "cc": "no-store, no-cache, must-revalidate, max-age=0"
+      },
+      {
+        "url": "/api/platform/settings",
+        "status": 200,
+        "cache": "MISS",
+        "cc": "no-store"
+      },
+      {
+        "url": "/api/platform/services?scope=home",
+        "status": 200,
+        "cache": "MISS",
+        "cc": "public, max-age=30, s-maxage=60, stale-while-revalidate=120"
+      },
+      {
+        "url": "/api/gateway?path=platform%2Fcontent&types=banners&_=1789259073033",
+        "status": 200,
+        "cache": "MISS",
+        "cc": "no-store, no-cache, must-revalidate, max-age=0"
+      },
+      {
+        "url": "/api/platform/gameplay-products",
+        "status": 200,
+        "cache": "MISS",
+        "cc": "no-store, no-cache, must-revalidate"
+      },
+      {
+        "url": "/api/platform/content?types=announcements&audience=home",
+        "status": 200,
+        "cache": "MISS",
+        "cc": "no-store, no-cache, must-revalidate, max-age=0"
+      },
+      {
+        "url": "/api/popularity?action=home&period=weekly&limit=10",
+        "status": 200,
+        "cache": "MISS",
+        "cc": "no-store"
+      },
+      {
+        "url": "/api/gateway?path=home%2Fdaily-stats",
+        "status": 200,
+        "cache": "MISS",
+        "cc": "public, max-age=30, s-maxage=60, stale-while-revalidate=120"
+      },
+      {
+        "url": "/api/platform/content?types=announcements",
+        "status": 200,
+        "cache": "MISS",
+        "cc": "no-store, no-cache, must-revalidate, max-age=0"
+      },
+      {
+        "url": "/api/public/companions",
+        "status": 200,
+        "cache": "MISS",
+        "cc": "public, max-age=15, s-maxage=30, stale-while-revalidate=60"
+      }
+    ]
+  }
+]

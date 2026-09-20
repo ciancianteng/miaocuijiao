@@ -258,7 +258,21 @@
         if ((response.status === 401 || response.status === 403) && isJwtAuthError(body.message)) {
           throw new Error("登录已过期，请重新登录。");
         }
-        throw new Error(body.message || "请求失败：HTTP " + response.status);
+        var err = new Error(body.message || "请求失败：HTTP " + response.status);
+        err.status = response.status;
+        err.code = body.code || "";
+        err.blockReasons = body.blockReasons || body.block_reasons || body.criticalMissing || [];
+        err.criticalMissing = body.criticalMissing || [];
+        err.publish = body.publish || null;
+        // Pass through diagnostics / test-push fields for Admin UI.
+        if (body.results) err.results = body.results;
+        if (body.target) err.target = body.target;
+        if (body.activeCount != null) err.activeCount = body.activeCount;
+        if (body.vapidConfigured != null) err.vapidConfigured = body.vapidConfigured;
+        if (body.sent != null) err.sent = body.sent;
+        if (body.failed != null) err.failed = body.failed;
+        if (body.skipped) err.skipped = body.skipped;
+        throw err;
       }
       return body;
     });

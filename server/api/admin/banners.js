@@ -92,8 +92,8 @@ function isMissingMobileColumn(error) {
   const msg = String(error?.message || error || "");
   return /mobile_image_url|mobile_crop_meta/i.test(msg) && /(column|schema|does not exist|PGRST204|42703)/i.test(msg);
 }
-const DESKTOP_RATIO = { w: 1920, h: 700 };
-const MOBILE_RATIO = { w: 1080, h: 1350 };
+const DESKTOP_RATIO = { w: 1920, h: 640 }; // live homepage promo = 3:1
+const MOBILE_RATIO = { w: 1080, h: 360 }; // same 3:1 frame on phone (not 4:5)
 function clampNum(value, min, max, fallback) {
   const n = Number(value);
   if (!Number.isFinite(n)) return fallback;

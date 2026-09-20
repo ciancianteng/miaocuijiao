@@ -11,14 +11,19 @@ import {
   assertImageUpload,
   PUBLIC_BUCKETS,
 } from "./_companion-media-store.js";
-import { sendEmailOtp, sendSmsOtp, mailProviderStatus } from "./_mail.js";
+import { sendEmailOtp, sendSmsOtp, mailProviderStatus, publicMailHint } from "./_mail.js";
 import {
   storeOtp,
   findOtp,
   markOtpVerified,
   findRegisterVerified as findRegisterVerifiedRow,
   consumeRegisterVerified,
+  invalidateOtp,
   randomOtpCode as sharedRandomOtpCode,
+  assertResendCooldown,
+  commitOtpAfterSuccessfulSend,
+  recordOtpSendFailure,
+  OTP_STORE_COOLDOWN_MS,
 } from "./_otp-store.js";
 import { validatePassword, PASSWORD_RULE_HINT } from "./_password-policy.js";
 import {
@@ -373,17 +378,66 @@ function clearOtpFails(key) {
 }
 
 async function assertOtpResendCooldown(accountKey, role, kind = "otp") {
-  const key = `${String(role || "").toLowerCase()}:${String(kind || "otp")}:${String(accountKey || "").toLowerCase()}`;
-  globalThis.__mcjOtpCooldown = globalThis.__mcjOtpCooldown || new Map();
-  const last = Number(globalThis.__mcjOtpCooldown.get(key) || 0);
-  const wait = OTP_RESEND_COOLDOWN_MS - (Date.now() - last);
-  if (last && wait > 0) {
-    throw Object.assign(new Error(`发送过于频繁，请 ${Math.ceil(wait / 1000)} 秒后再试。`), {
-      status: 429,
-      retryAfterSec: Math.ceil(wait / 1000),
-    });
-  }
-  globalThis.__mcjOtpCooldown.set(key, Date.now());
+  // DB-backed cooldown; does NOT stamp until mail succeeds (commitOtpAfterSuccessfulSend).
+  return assertResendCooldown({
+    accountKey,
+    role,
+    kind,
+    cooldownMs: OTP_STORE_COOLDOWN_MS || OTP_RESEND_COOLDOWN_MS,
+  });
+}
+
+function extractMailProviderMeta(sendResult) {
+  const provider = String(sendResult?.provider || sendResult?.mailProvider || "resend");
+  const providerMessageId = String(
+    sendResult?.id ||
+      sendResult?.messageId ||
+      sendResult?.providerMessageId ||
+      sendResult?.data?.id ||
+      ""
+  );
+  return { provider, providerMessageId };
+}
+
+function otpRetryAfterSec() {
+  return Math.floor((OTP_STORE_COOLDOWN_MS || OTP_RESEND_COOLDOWN_MS) / 1000);
+}
+
+function newOtpRequestId() {
+  return `otp_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function maskEmailForLog(email) {
+  const value = String(email || "").trim().toLowerCase();
+  const at = value.indexOf("@");
+  if (at <= 0) return "***";
+  return `${value.slice(0, Math.min(2, at))}***@${value.slice(at + 1)}`;
+}
+
+function logOtpSendEvent(event, fields = {}) {
+  const safe = { event, ts: new Date().toISOString(), ...fields };
+  // Never log plaintext OTP / passwords / tokens.
+  delete safe.code;
+  delete safe.otp;
+  delete safe.password;
+  delete safe.token;
+  delete safe.accessToken;
+  delete safe.refreshToken;
+  if (safe.ok) console.info("[otp/send]", safe);
+  else console.error("[otp/send]", safe);
+}
+
+
+async function commitForgotOtpAfterSend(accountKey, role, code, kind, mailMeta = {}) {
+  return commitOtpAfterSuccessfulSend({
+    accountKey,
+    role,
+    code,
+    kind,
+    ttlMs: OTP_TTL_MS,
+    provider: mailMeta.provider || "resend",
+    providerMessageId: mailMeta.providerMessageId || "",
+  });
 }
 
 async function parseBody(req) {
@@ -437,14 +491,55 @@ function maskEmailHint(email) {
   return `${s.slice(0, 1)}***${s.slice(at)}`;
 }
 
-function allowStagingOtp() {
+function allowDebugOtp() {
+  // Hard fail-closed on Vercel Production — never expose debug OTP even if MCJ_OTP_DEBUG is set.
+  if (String(process.env.VERCEL_ENV || "").toLowerCase() === "production") return false;
+  // Explicit opt-in only. Vercel Preview must fail closed like production so a mail
+  // outage never looks like a successful send (no silent ok + no client-visible codes).
   if (String(process.env.ALLOW_STAGING_OTP || "") === "1" || String(process.env.MCJ_OTP_DEBUG || "") === "1") {
     return true;
   }
-  // Never expose OTP codes on production deployments.
-  if (String(process.env.VERCEL_ENV || "").toLowerCase() === "production") return false;
+  if (String(process.env.VERCEL_ENV || "").toLowerCase() === "preview") return false;
   const base = String(process.env.MCJ_PUBLIC_BASE || process.env.VERCEL_URL || "");
-  return /staging|localhost|127\.0\.0\.1/i.test(base) || String(process.env.VERCEL_ENV || "").toLowerCase() === "preview";
+  return /localhost|127\.0\.0\.1/i.test(base);
+}
+
+/** @deprecated use allowDebugOtp — kept for internal call sites during rename. */
+function allowStagingOtp() {
+  return allowDebugOtp();
+}
+
+const OTP_SEND_FAIL_MESSAGE = "验证码发送失败，请稍后重试。若持续失败请联系客服。";
+
+function clientOtpSendPayload({ mailOk, mailError, code, emailMasked, successMessage, genericMessage }) {
+  const mail = publicMailHint();
+  if (mailOk) {
+    return {
+      ok: true,
+      message: successMessage,
+      channel: "email",
+      emailMasked: emailMasked || "",
+      mail,
+    };
+  }
+  if (allowDebugOtp()) {
+    return {
+      ok: true,
+      message: "邮件暂不可用，已生成本地调试验证码。",
+      channel: "email",
+      emailMasked: emailMasked || "",
+      debugCode: code,
+      devCode: code, // legacy clients
+      mail,
+    };
+  }
+  return {
+    ok: false,
+    message: OTP_SEND_FAIL_MESSAGE,
+    channel: "email",
+    emailMasked: emailMasked || "",
+    mail,
+  };
 }
 
 function normalizeForgotRole(roleRaw) {
@@ -477,43 +572,115 @@ function profileMatchesRole(profile, role) {
 }
 
 async function resolveForgotAccount(accountRaw, roleRaw) {
-  const role = normalizeForgotRole(roleRaw);
-  const account = String(accountRaw || "").trim();
-  if (!account) return null;
-  const select = "id,email,phone,phone_e164,display_name,status,role,boss_uid";
-
-  // MVP: email is the auth recovery identity. Phone lookup is intentionally not used.
-  if (/@/.test(account)) {
-    const byEmail = await profilesLookup(
-      `?email=eq.${encodeURIComponent(account.toLowerCase())}&select=${select}&limit=3`
-    );
-    let hit = (byEmail || []).find((row) => profileMatchesRole(row, role));
-    // Dual-role / staff-primary (e.g. admin + companion_profiles): primary role alone
-    // must not block companion/boss portal OTP. Match portal capability via enrichment.
-    if (!hit?.id && (role === "companion" || role === "boss") && Array.isArray(byEmail)) {
-      for (const row of byEmail) {
-        if (!row?.id) continue;
-        try {
-          const { enrichProfileRoles } = await import("./_account-roles.js");
-          const enriched = await enrichProfileRoles(row);
-          if (role === "companion" && enriched?.hasCompanion) {
-            hit = row;
-            break;
-          }
-          if (role === "boss" && enriched?.hasBoss) {
-            hit = row;
-            break;
-          }
-        } catch {
-          /* best-effort capability lookup */
-        }
-      }
-    }
-    if (hit?.id) return { profile: hit, via: "email", role };
+  const classified = await classifyLoginPortalAccount(accountRaw, roleRaw);
+  if (classified?.allowed && classified.profile?.id) {
+    return { profile: classified.profile, via: classified.via || "email", role: classified.role };
   }
-
   return null;
 }
+
+/**
+ * Portal-scoped account classification for login OTP / forgot.
+ * Distinguishes ACCOUNT_NOT_FOUND vs ROLE_NOT_OPENED (same email, wrong portal).
+ * Dual-role accounts (boss+companion on one user_id) must pass on both portals.
+ */
+async function classifyLoginPortalAccount(accountRaw, roleRaw) {
+  const role = normalizeForgotRole(roleRaw);
+  const account = String(accountRaw || "").trim();
+  if (!account) return { allowed: false, role, code: "INVALID_ACCOUNT" };
+  // Prefer roles when column exists; Staging/Prod may lag the migration — never 400 into anti-enum.
+  const selectWithRoles = "id,email,phone,phone_e164,display_name,status,role,roles,boss_uid";
+  const selectNoRoles = "id,email,phone,phone_e164,display_name,status,role,boss_uid";
+
+  if (!/@/.test(account)) {
+    return { allowed: false, role, code: "INVALID_ACCOUNT" };
+  }
+
+  let byEmail = await profilesLookup(
+    `?email=eq.${encodeURIComponent(account.toLowerCase())}&select=${selectWithRoles}&limit=5`
+  );
+  if (!Array.isArray(byEmail) || !byEmail.length) {
+    byEmail = await profilesLookup(
+      `?email=eq.${encodeURIComponent(account.toLowerCase())}&select=${selectNoRoles}&limit=5`
+    );
+  }
+  if (!Array.isArray(byEmail) || !byEmail.length) {
+    return { allowed: false, role, email: account.toLowerCase(), code: "ACCOUNT_NOT_FOUND" };
+  }
+
+  let hit = (byEmail || []).find((row) => profileMatchesRole(row, role));
+  // Dual-role / staff-primary: primary role alone must not block companion/boss portal OTP.
+  if (!hit?.id && (role === "companion" || role === "boss") && Array.isArray(byEmail)) {
+    for (const row of byEmail) {
+      if (!row?.id) continue;
+      try {
+        const { enrichProfileRoles } = await import("./_account-roles.js");
+        let authUser = null;
+        try {
+          authUser = await supabaseJson(authUrl(`admin/users/${row.id}`), {
+            method: "GET",
+            headers: headersWithServiceRole(),
+          });
+        } catch {
+          authUser = null;
+        }
+        const enriched = await enrichProfileRoles(row, authUser?.user || authUser || null);
+        if (role === "companion" && enriched?.hasCompanion) {
+          hit = { ...row, roles: enriched.roles || row.roles };
+          break;
+        }
+        if (role === "boss" && enriched?.hasBoss) {
+          hit = { ...row, roles: enriched.roles || row.roles };
+          break;
+        }
+      } catch {
+        /* best-effort capability lookup */
+      }
+    }
+  }
+
+  if (!hit?.id) {
+    const existing = byEmail[0];
+    let existingRoles = [];
+    try {
+      const { enrichProfileRoles } = await import("./_account-roles.js");
+      const enriched = await enrichProfileRoles(existing);
+      existingRoles = enriched?.roles || [];
+    } catch {
+      existingRoles = [String(existing?.role || "")].filter(Boolean);
+    }
+    return {
+      allowed: false,
+      role,
+      email: account.toLowerCase(),
+      profile: existing,
+      existingPrimaryRole: String(existing?.role || ""),
+      existingRoles,
+      code: "ROLE_NOT_OPENED",
+    };
+  }
+
+  if (String(hit.status || "").toLowerCase() === "disabled") {
+    return {
+      allowed: false,
+      role,
+      email: account.toLowerCase(),
+      profile: hit,
+      via: "email",
+      code: "ACCOUNT_DISABLED",
+    };
+  }
+
+  return {
+    allowed: true,
+    role,
+    email: account.toLowerCase(),
+    profile: hit,
+    via: "email",
+    code: "ALLOWED",
+  };
+}
+
 
 function forgotAccountKey(profile) {
   return String(profile?.id || profile?.email || "").trim().toLowerCase();
@@ -572,6 +739,7 @@ async function createSessionForUserId(userId, email) {
 }
 
 async function handleForgotSendOtp(body, res) {
+  const requestId = newOtpRequestId();
   const role = normalizeForgotRole(body.role);
   const account = String(body.email || body.account || body.phone || "").trim();
   const genericOk = {
@@ -579,6 +747,7 @@ async function handleForgotSendOtp(body, res) {
     message: RESET_EMAIL_GENERIC_MESSAGE,
     channel: "email",
     expiresInSec: Math.floor(OTP_TTL_MS / 1000),
+    retryAfterSec: otpRetryAfterSec(),
   };
   if (!account) return json(res, 400, { ok: false, message: "请输入绑定邮箱。" });
   if (!/@/.test(account)) {
@@ -600,39 +769,74 @@ async function handleForgotSendOtp(body, res) {
   }
   const code = randomOtpCode();
   const key = forgotAccountKey(profile);
-  await storeForgotOtp(key, role, code, "otp");
   // MVP: email only. SMS stub kept for later international release.
   void sendSmsOtp({ phone: profile.phone || profile.phone_e164 || "", code, purpose: "forgot" });
   let mailOk = false;
   let mailError = "";
+  let mailMeta = { provider: "", providerMessageId: "" };
   try {
-    await sendEmailOtp({ to: email, code, purpose: "forgot", roleLabel: roleLabelOf(role) });
+    const sendResult = await sendEmailOtp({ to: email, code, purpose: "forgot", roleLabel: roleLabelOf(role), requestId });
+    mailMeta = extractMailProviderMeta(sendResult);
     mailOk = true;
   } catch (err) {
     mailError = String(err?.message || err || "");
   }
-  const mailStatus = mailProviderStatus();
-  const out = {
-    ok: true,
-    message: mailOk
-      ? `验证码已发送至邮箱 ${maskEmailHint(email)}。`
-      : allowStagingOtp()
-        ? mailStatus.resend
-          ? `验证码邮件发送失败：${mailError || "Resend 错误"}。已生成 Staging 调试验证码（${maskEmailHint(email)}）。`
-          : `邮件服务暂不可用（未读到 RESEND_API_KEY），已生成 Staging 调试验证码（${maskEmailHint(email)}）。`
-        : RESET_EMAIL_GENERIC_MESSAGE,
-    channel: "email",
+  if (mailOk) {
+    try {
+      await commitForgotOtpAfterSend(key, role, code, "otp", mailMeta);
+    } catch (storeErr) {
+      return json(res, storeErr?.status || 503, {
+        ok: false,
+        message: "验证码存储失败，请稍后重试。",
+        mail: publicMailHint(),
+        requestId,
+      });
+    }
+  } else {
+    logOtpSendEvent("forgot_mail_failed", {
+      ok: false,
+      requestId,
+      role,
+      emailMasked: maskEmailForLog(email),
+      provider: mailMeta.provider || "",
+      error: String(mailError || "").slice(0, 240),
+    });
+    await recordOtpSendFailure({
+      accountKey: key,
+      role,
+      kind: "otp",
+      error: mailError,
+      provider: mailMeta.provider,
+      providerMessageId: mailMeta.providerMessageId || "",
+    }).catch(() => null);
+  }
+  if (mailOk) {
+    logOtpSendEvent("forgot_mail_accepted", {
+      ok: true,
+      requestId,
+      role,
+      emailMasked: maskEmailForLog(email),
+      provider: mailMeta.provider || "resend",
+      providerMessageId: mailMeta.providerMessageId || "",
+    });
+  }
+  const payload = clientOtpSendPayload({
+    mailOk,
+    mailError,
+    code,
     emailMasked: maskEmailHint(email),
+    successMessage: `验证码已发送至邮箱 ${maskEmailHint(email)}。请同时检查垃圾箱，并确认选择了正确的端。`,
+    genericMessage: RESET_EMAIL_GENERIC_MESSAGE,
+  });
+  const responseBody = {
+    ...payload,
     phoneMasked: "",
     expiresInSec: Math.floor(OTP_TTL_MS / 1000),
     role,
-    mail: mailStatus,
+    requestId,
   };
-  // Only expose Staging debug OTP when mail actually failed.
-  if (!mailOk && allowStagingOtp()) out.devCode = code;
-  if (!mailOk && allowStagingOtp() && mailError) out.mailWarning = mailError;
-  if (!mailOk) console.error("[auth/forgot_send_otp] mail failed", mailError, mailStatus);
-  return json(res, 200, out);
+  if (payload.ok) responseBody.retryAfterSec = otpRetryAfterSec();
+  return json(res, payload.ok ? 200 : 503, responseBody);
 }
 
 function rejectProductionTestIdentity(res, { email = "", displayName = "" } = {}) {
@@ -645,6 +849,7 @@ function rejectProductionTestIdentity(res, { email = "", displayName = "" } = {}
 }
 
 async function handleLoginSendOtp(body, res) {
+  const requestId = newOtpRequestId();
   const role = normalizeForgotRole(body.role || "boss");
   if (role === "customer_service" || role === "admin" || role === "super_admin") {
     return json(res, 400, { ok: false, message: "该端请使用邮箱密码登录。" });
@@ -655,18 +860,48 @@ async function handleLoginSendOtp(body, res) {
   }
   const blockedSend = rejectProductionTestIdentity(res, { email });
   if (blockedSend) return blockedSend;
-  const generic = {
-    ok: true,
-    message: "如该邮箱已注册，将收到登录验证码。",
-    channel: "email",
-    expiresInSec: Math.floor(OTP_TTL_MS / 1000),
-  };
-  const resolved = await resolveForgotAccount(email, role);
-  if (!resolved?.profile || resolved.profile.status === "disabled") return json(res, 200, generic);
-  if (!resolveEmailVerified(resolved.profile, {})) {
-    return json(res, 403, { ok: false, message: "请先完成邮箱验证。", code: "EMAIL_NOT_VERIFIED" });
+
+  const classified = await classifyLoginPortalAccount(email, role);
+  // Unknown email: keep anti-enumeration (do not reveal whether account exists).
+  if (classified?.code === "ACCOUNT_NOT_FOUND" || classified?.code === "ACCOUNT_DISABLED") {
+    return json(res, 200, {
+      ok: true,
+      message: "如该邮箱已在当前端注册，将收到登录验证码。请确认选择了正确入口（老板/陪玩），并检查收件箱与垃圾箱。",
+      channel: "email",
+      expiresInSec: Math.floor(OTP_TTL_MS / 1000),
+      requestId,
+      delivery: "suppressed",
+    });
   }
-  const profile = resolved.profile;
+  // Known account but missing portal role: do NOT fake OTP_SENT — guide open-role product flow.
+  if (classified?.code === "ROLE_NOT_OPENED") {
+    const missingBoss = role === "boss";
+    return json(res, 403, {
+      ok: false,
+      code: missingBoss ? "BOSS_ROLE_NOT_OPENED" : "COMPANION_ROLE_NOT_OPENED",
+      delivery: "blocked",
+      requestId,
+      message: missingBoss
+        ? "该账号尚未开通老板身份。请先用陪玩入口登录，再在账号内开通老板身份（同一邮箱，不会创建第二个账号）。"
+        : "该账号尚未开通陪玩身份。请先用老板入口登录，再在当前账号下申请陪玩（同一邮箱，不会创建第二个账号）。",
+      nextAction: missingBoss ? "open_boss_role" : "apply_companion_role",
+      existingPrimaryRole: classified.existingPrimaryRole || "",
+    });
+  }
+  if (!classified?.allowed || !classified.profile) {
+    return json(res, 200, {
+      ok: true,
+      message: "如该邮箱已在当前端注册，将收到登录验证码。请确认选择了正确入口（老板/陪玩），并检查收件箱与垃圾箱。",
+      channel: "email",
+      expiresInSec: Math.floor(OTP_TTL_MS / 1000),
+      requestId,
+      delivery: "suppressed",
+    });
+  }
+  if (!resolveEmailVerified(classified.profile, {})) {
+    return json(res, 403, { ok: false, message: "请先完成邮箱验证。", code: "EMAIL_NOT_VERIFIED", requestId });
+  }
+  const profile = classified.profile;
   try {
     await assertOtpResendCooldown(forgotAccountKey(profile), role, "login_otp");
   } catch (err) {
@@ -674,50 +909,215 @@ async function handleLoginSendOtp(body, res) {
       ok: false,
       message: err.message || "发送过于频繁，请稍后再试。",
       retryAfterSec: err.retryAfterSec || 60,
+      requestId,
+      code: err.code || "OTP_RESEND_COOLDOWN",
     });
   }
   const code = randomOtpCode();
   const key = forgotAccountKey(profile);
-  try {
-    await storeForgotOtp(key, role, code, "login_otp");
-  } catch (storeErr) {
-    return json(res, storeErr?.status || 503, {
-      ok: false,
-      message: storeErr?.message || "验证码存储失败，请稍后重试。",
-      mail: mailProviderStatus(),
-    });
-  }
   void sendSmsOtp({ phone: profile.phone || "", code, purpose: "login" });
   let mailOk = false;
   let mailError = "";
+  let mailMeta = { provider: "", providerMessageId: "" };
   try {
-    await sendEmailOtp({ to: String(profile.email || email).toLowerCase(), code, purpose: "login", roleLabel: roleLabelOf(role) });
+    const sendResult = await sendEmailOtp({
+      to: String(profile.email || email).toLowerCase(),
+      code,
+      purpose: "login",
+      roleLabel: roleLabelOf(role),
+      requestId,
+    });
+    mailMeta = extractMailProviderMeta(sendResult);
     mailOk = true;
   } catch (err) {
     mailError = String(err?.message || err || "");
   }
-  const mailStatus = mailProviderStatus();
-  const out = {
-    ok: true,
-    message: mailOk
-      ? `登录验证码已发送至 ${maskEmailHint(profile.email || email)}。`
-      : allowStagingOtp()
-        ? mailStatus.resend
-          ? `验证码邮件发送失败：${mailError || "Resend 错误"}。已生成 Staging 调试验证码。`
-          : "邮件服务暂不可用（未读到 RESEND_API_KEY），已生成 Staging 调试验证码。"
-        : generic.message,
-    channel: "email",
+  if (mailOk) {
+    try {
+      await commitForgotOtpAfterSend(key, role, code, "login_otp", mailMeta);
+    } catch (storeErr) {
+      return json(res, storeErr?.status || 503, {
+        ok: false,
+        message: "验证码存储失败，请稍后重试。",
+        mail: publicMailHint(),
+        requestId,
+      });
+    }
+  } else {
+    logOtpSendEvent("login_mail_failed", {
+      ok: false,
+      requestId,
+      role,
+      emailMasked: maskEmailForLog(profile.email || email),
+      provider: mailMeta.provider || "",
+      error: String(mailError || "").slice(0, 240),
+      mail: { configured: !!publicMailHint()?.configured, otpFromDomain: publicMailHint()?.otpFromDomain || "" },
+    });
+    await recordOtpSendFailure({
+      accountKey: key,
+      role,
+      kind: "login_otp",
+      error: mailError,
+      provider: mailMeta.provider,
+      providerMessageId: mailMeta.providerMessageId || "",
+    }).catch(() => null);
+  }
+  if (mailOk) {
+    logOtpSendEvent("login_mail_accepted", {
+      ok: true,
+      requestId,
+      role,
+      emailMasked: maskEmailForLog(profile.email || email),
+      provider: mailMeta.provider || "resend",
+      providerMessageId: mailMeta.providerMessageId || "",
+    });
+  }
+  const payload = clientOtpSendPayload({
+    mailOk,
+    mailError,
+    code,
     emailMasked: maskEmailHint(profile.email || email),
+    successMessage: `登录验证码已发送至 ${maskEmailHint(profile.email || email)}。请同时检查垃圾箱，并确认选择了正确的端。`,
+    genericMessage: "验证码发送失败，请稍后重试。",
+  });
+  const responseBody = {
+    ...payload,
     expiresInSec: Math.floor(OTP_TTL_MS / 1000),
     role,
-    mail: mailStatus,
+    requestId,
+    delivery: mailOk ? "sent" : "failed",
   };
-  // Only expose Staging debug OTP when mail actually failed.
-  if (!mailOk && allowStagingOtp()) out.devCode = code;
-  if (!mailOk && allowStagingOtp() && mailError) out.mailWarning = mailError;
-  if (!mailOk) console.error("[auth/send_login_otp] mail failed", mailError, mailStatus);
-  return json(res, 200, out);
+  if (payload.ok) responseBody.retryAfterSec = otpRetryAfterSec();
+  return json(res, payload.ok ? 200 : 503, responseBody);
 }
+
+
+
+/**
+ * Open boss role on the CURRENT logged-in account (typically companion-only).
+ * Same email / same auth user_id — never creates a second Auth user.
+ */
+async function handleOpenBossRole(req, body, res) {
+  const token = String(
+    (req.headers.authorization || "").replace(/^Bearer\s+/i, "") ||
+      body.accessToken ||
+      body.token ||
+      ""
+  ).trim();
+  if (!token) {
+    return json(res, 401, { ok: false, message: "请先登录后再开通老板身份。", code: "LOGIN_REQUIRED" });
+  }
+  let authUser;
+  try {
+    authUser = await userFromToken(token);
+  } catch {
+    return json(res, 401, { ok: false, message: "登录状态已过期，请重新登录后继续。", code: "LOGIN_REQUIRED" });
+  }
+  const profile = await profileFor(authUser.id);
+  if (!profile) return json(res, 403, { ok: false, message: "账号未绑定平台资料。" });
+  if (String(profile.status || "").toLowerCase() === "disabled") {
+    return json(res, 403, { ok: false, message: "账号已停用。" });
+  }
+
+  const { enrichProfileRoles, addRoleToUser } = await import("./_account-roles.js");
+  const before = await enrichProfileRoles(profile, authUser);
+  if (before?.hasBoss) {
+    let ensured = profile;
+    try {
+      ensured = await ensureBossUid({ ...profile, role: "boss" }, authUser);
+    } catch {
+      /* optional */
+    }
+    const user = await enrichSafeProfile(ensured, authUser);
+    return json(res, 200, {
+      ok: true,
+      message: "该账号已开通老板身份。",
+      alreadyHadBoss: true,
+      roles: before.roles || user.roles || [],
+      user: { ...user, role: "boss" },
+    });
+  }
+
+  // Require companion (or any existing account) — opening boss is an add-role, not a new register.
+  await addRoleToUser(profile.id, "boss", {
+    primaryRole: "boss",
+    existingProfile: profile,
+    authUser,
+  });
+  // Force-write via auth.js helpers (same path as ensureBossUid) so dual-role cannot
+  // silently remain companion-only when _account-roles persist is swallowed.
+  const forcedRoles = Array.from(
+    new Set([...(Array.isArray(profile.roles) ? profile.roles : []), "companion", "boss"])
+  );
+  try {
+    const patched = await supabaseJson(restUrl("profiles", `?id=eq.${encodeURIComponent(profile.id)}`), {
+      method: "PATCH",
+      headers: headersWithServiceRole({ Prefer: "return=representation" }),
+      body: JSON.stringify({ role: "boss", roles: forcedRoles }),
+    });
+    if (Array.isArray(patched) && patched[0]) {
+      /* ok */
+    }
+  } catch (err) {
+    // roles column may lag schema cache — still force primary role.
+    try {
+      await supabaseJson(restUrl("profiles", `?id=eq.${encodeURIComponent(profile.id)}`), {
+        method: "PATCH",
+        headers: headersWithServiceRole({ Prefer: "return=representation" }),
+        body: JSON.stringify({ role: "boss" }),
+      });
+    } catch (err2) {
+      console.warn("[auth/open_boss_role] force role patch failed", err2?.message || err2);
+    }
+  }
+  let updated = (await profileFor(profile.id)) || { ...profile, role: "boss", roles: forcedRoles };
+  if (String(updated?.role || "").toLowerCase() !== "boss") {
+    updated = { ...updated, role: "boss", roles: forcedRoles };
+  }
+  try {
+    updated = await ensureBossUid({ ...updated, role: "boss" }, authUser);
+  } catch {
+    /* boss_uid best-effort */
+  }
+  // Ensure status usable for boss portal when companion was pending-only.
+  if (!String(updated.status || "") || String(updated.status).toLowerCase() === "pending") {
+    try {
+      await supabaseJson(restUrl("profiles", `?id=eq.${encodeURIComponent(profile.id)}`), {
+        method: "PATCH",
+        headers: headersWithServiceRole({ Prefer: "return=minimal" }),
+        body: JSON.stringify({ status: "active", updated_at: new Date().toISOString() }),
+      });
+      updated = (await profileFor(profile.id)) || updated;
+    } catch {
+      /* optional */
+    }
+  }
+  // Refresh auth admin user so app_metadata.roles (written by persistRoles) is visible to enrich.
+  let freshAuth = authUser;
+  try {
+    const got = await supabaseJson(authUrl(`admin/users/${profile.id}`), {
+      method: "GET",
+      headers: headersWithServiceRole(),
+    });
+    freshAuth = got?.user || got || authUser;
+  } catch {
+    freshAuth = authUser;
+  }
+  const after = await enrichProfileRoles({ ...updated, role: "boss" }, freshAuth);
+  const rolesOut = Array.from(new Set([...(after.roles || []), "boss", ...(after.hasCompanion ? ["companion"] : [])]));
+  const user = await enrichSafeProfile({ ...updated, role: "boss", roles: rolesOut }, freshAuth);
+  return json(res, 200, {
+    ok: true,
+    message: "已在当前账号开通老板身份（同一邮箱，未创建新账号）。",
+    alreadyHadBoss: false,
+    roles: rolesOut,
+    hasBoss: true,
+    hasCompanion: !!after.hasCompanion,
+    user: { ...user, role: "boss", roles: rolesOut, hasBoss: true, hasCompanion: !!after.hasCompanion },
+    createdNewAuthUser: false,
+  });
+}
+
 
 async function handleLoginWithOtp(body, res) {
   const role = normalizeForgotRole(body.role || body.loginPortal || "boss");
@@ -859,6 +1259,7 @@ export async function assertRegisterEmailVerified(emailRaw, tokenRaw, roleRaw = 
 }
 
 async function handleSendRegisterOtp(body, res) {
+  const requestId = newOtpRequestId();
   const role = normalizeForgotRole(body.role || "companion");
   if (role !== "companion" && role !== "boss") {
     return json(res, 400, { ok: false, message: "该端不支持邮箱注册验证码。" });
@@ -891,17 +1292,46 @@ async function handleSendRegisterOtp(body, res) {
   });
   // Unified account: one normalized email → one user_id. Never create a second Auth user for role switch.
   if ((existing || []).length) {
+    // Never create a second Auth user for the same email — open the missing role on the same account.
     if (role === "boss") {
-      return json(res, 409, { ok: false, message: "该邮箱已注册，请直接登录。" });
+      const row = companionHit || bossHit || otherHit || existing[0];
+      let hasBoss = !!bossHit;
+      let hasCompanion = !!companionHit;
+      try {
+        const { enrichProfileRoles } = await import("./_account-roles.js");
+        const enriched = await enrichProfileRoles(row);
+        hasBoss = !!enriched?.hasBoss;
+        hasCompanion = !!enriched?.hasCompanion;
+      } catch {
+        /* keep primary-role hints */
+      }
+      if (hasBoss) {
+        return json(res, 409, {
+          ok: false,
+          code: "EMAIL_EXISTS_LOGIN",
+          message: "该邮箱已开通老板身份，请直接登录。",
+          nextAction: "login_boss",
+        });
+      }
+      if (hasCompanion) {
+        return json(res, 409, {
+          ok: false,
+          code: "COMPANION_EXISTS_OPEN_BOSS",
+          message: "该邮箱已是陪玩账号。请先用陪玩入口登录，再在账号内开通老板身份（同一邮箱，不会创建第二个账号）。",
+          nextAction: "open_boss_role",
+        });
+      }
+      return json(res, 409, { ok: false, message: "该邮箱已注册，请直接登录。", code: "EMAIL_EXISTS_LOGIN" });
     }
     if (companionHit) {
-      return json(res, 409, { ok: false, message: "该邮箱已有陪玩账号，请切换到「已有账号登录」。" });
+      return json(res, 409, { ok: false, message: "该邮箱已有陪玩账号，请切换到「已有账号登录」。", code: "EMAIL_EXISTS_LOGIN" });
     }
     if (bossHit) {
       return json(res, 409, {
         ok: false,
         code: "EMAIL_EXISTS_LOGIN_THEN_APPLY",
         message: "该邮箱已注册，请直接登录；登录后可在当前账号下申请陪玩身份，不会创建新账号。",
+        nextAction: "apply_companion_role",
       });
     }
     if (otherHit) {
@@ -910,44 +1340,71 @@ async function handleSendRegisterOtp(body, res) {
     return json(res, 409, { ok: false, message: "该邮箱已注册，请直接登录。" });
   }
   const code = randomOtpCode();
-  try {
-    await storeForgotOtp(email, role, code, "register_otp");
-  } catch (storeErr) {
-    return json(res, storeErr?.status || 503, {
-      ok: false,
-      message: storeErr?.message || "验证码存储失败，请稍后重试。",
-      mail: mailProviderStatus(),
-    });
-  }
   let mailOk = false;
   let mailError = "";
+  let mailMeta = { provider: "", providerMessageId: "" };
   try {
-    await sendEmailOtp({ to: email, code, purpose: "register", roleLabel: roleLabelOf(role) });
+    const sendResult = await sendEmailOtp({ to: email, code, purpose: "register", roleLabel: roleLabelOf(role), requestId });
+    mailMeta = extractMailProviderMeta(sendResult);
     mailOk = true;
   } catch (err) {
     mailError = String(err?.message || err || "");
   }
-  const mailStatus = mailProviderStatus();
-  const out = {
-    ok: true,
-    message: mailOk
-      ? `注册验证码已发送至 ${maskEmailHint(email)}。`
-      : allowStagingOtp()
-        ? mailStatus.resend
-          ? `验证码邮件发送失败：${mailError || "Resend 错误"}。已生成 Staging 调试验证码。`
-          : "邮件服务暂不可用（未读到 RESEND_API_KEY），已生成 Staging 调试验证码。"
-        : "如邮箱可用，将收到注册验证码，请查收后继续。",
-    channel: "email",
+  if (mailOk) {
+    try {
+      await commitForgotOtpAfterSend(email, role, code, "register_otp", mailMeta);
+    } catch (storeErr) {
+      return json(res, storeErr?.status || 503, {
+        ok: false,
+        message: "验证码存储失败，请稍后重试。",
+        mail: publicMailHint(),
+        requestId,
+      });
+    }
+  } else {
+    logOtpSendEvent("register_mail_failed", {
+      ok: false,
+      requestId,
+      role,
+      emailMasked: maskEmailForLog(email),
+      provider: mailMeta.provider || "",
+      error: String(mailError || "").slice(0, 240),
+    });
+    await recordOtpSendFailure({
+      accountKey: email,
+      role,
+      kind: "register_otp",
+      error: mailError,
+      provider: mailMeta.provider,
+      providerMessageId: mailMeta.providerMessageId || "",
+    }).catch(() => null);
+  }
+  if (mailOk) {
+    logOtpSendEvent("register_mail_accepted", {
+      ok: true,
+      requestId,
+      role,
+      emailMasked: maskEmailForLog(email),
+      provider: mailMeta.provider || "resend",
+      providerMessageId: mailMeta.providerMessageId || "",
+    });
+  }
+  const payload = clientOtpSendPayload({
+    mailOk,
+    mailError,
+    code,
     emailMasked: maskEmailHint(email),
+    successMessage: `注册验证码已发送至 ${maskEmailHint(email)}。请同时检查垃圾箱。`,
+    genericMessage: "如邮箱可用，将收到注册验证码，请查收后继续。",
+  });
+  const responseBody = {
+    ...payload,
     expiresInSec: Math.floor(OTP_TTL_MS / 1000),
-    retryAfterSec: Math.floor(OTP_RESEND_COOLDOWN_MS / 1000),
     role,
-    mail: mailStatus,
+    requestId,
   };
-  if (!mailOk && allowStagingOtp()) out.devCode = code;
-  if (!mailOk && allowStagingOtp() && mailError) out.mailWarning = mailError;
-  if (!mailOk) console.error("[auth/send_register_otp] mail failed", mailError, mailStatus);
-  return json(res, 200, out);
+  if (payload.ok) responseBody.retryAfterSec = otpRetryAfterSec();
+  return json(res, payload.ok ? 200 : 503, responseBody);
 }
 
 async function handleVerifyRegisterOtp(body, res) {
@@ -1051,17 +1508,7 @@ async function handleForgotResetPassword(body, res) {
   await stampPasswordSet(resolved.profile.id, { mustChangePassword: false });
   await markMustChangePassword(resolved.profile.id, false);
   await revokeUserSessions(resolved.profile.id);
-  if (globalThis.__mcjForgotResets) {
-    globalThis.__mcjForgotResets.delete(`${role}:otp:${key}`);
-    globalThis.__mcjForgotResets.delete(`${role}:${key}`);
-  }
-  if (stored.id) {
-    await supabaseJson(restUrl("password_reset_requests", `?id=eq.${encodeURIComponent(stored.id)}`), {
-      method: "PATCH",
-      headers: headersWithServiceRole(),
-      body: JSON.stringify({ status: `used:${Date.now()}` }),
-    }).catch(() => null);
-  }
+  await invalidateOtp(key, role, "otp").catch(() => null);
   return json(res, 200, { ok: true, message: "密码修改成功，请重新登录。" });
 }
 
@@ -1964,32 +2411,43 @@ export default async function handler(req, res) {
     ) {
       return handleVerifyRegisterOtp(body, res);
     }
+    if (
+      requestedAction === "open_boss_role" ||
+      requestedAction === "apply_boss_role" ||
+      requestedAction === "upgrade_to_boss" ||
+      requestedAction === "companion_open_boss"
+    ) {
+      return handleOpenBossRole(req, body, res);
+    }
     if (requestedAction === "mail_status") {
-      return json(res, 200, { ok: true, mail: mailProviderStatus() });
+      if (!allowDebugOtp()) {
+        return json(res, 403, { ok: false, message: "无权限。" });
+      }
+      return json(res, 200, { ok: true, mail: publicMailHint() });
     }
     if (requestedAction === "mail_ping") {
-      if (!allowStagingOtp()) {
-        return json(res, 403, { ok: false, message: "mail_ping 仅 Staging / Preview 可用。" });
+      if (!allowDebugOtp()) {
+        return json(res, 403, { ok: false, message: "无权限。" });
       }
       const to = String(body.to || body.email || "").trim().toLowerCase();
       if (!to || !/^\S+@\S+\.\S+$/.test(to)) {
-        return json(res, 400, { ok: false, message: "请提供 to 邮箱。", mail: mailProviderStatus() });
+        return json(res, 400, { ok: false, message: "请提供 to 邮箱。", mail: publicMailHint() });
       }
       try {
         const { sendMail } = await import("./_mail.js");
         const result = await sendMail({
           to,
-          subject: "妙脆角 · Resend 探活邮件",
-          text: "这是 Staging mail_ping 探活邮件。若你收到此信，说明 RESEND_API_KEY / RESEND_FROM 已生效。",
-          html: "<p>这是 Staging <b>mail_ping</b> 探活邮件。若你收到此信，说明 Resend 已生效。</p>",
+          subject: "妙脆角 · 邮件探活",
+          text: "这是一封邮件探活测试信。若你收到此信，说明邮件发送已生效。",
+          html: "<p>这是一封邮件探活测试信。若你收到此信，说明邮件发送已生效。</p>",
           purpose: "mail_ping",
         });
-        return json(res, 200, { ok: true, message: "探活邮件已发送", result, mail: mailProviderStatus() });
+        return json(res, 200, { ok: true, message: "探活邮件已发送", result: { id: result?.id || "", provider: result?.provider || "" }, mail: publicMailHint() });
       } catch (err) {
         return json(res, 502, {
           ok: false,
-          message: String(err?.message || err || "发送失败"),
-          mail: mailProviderStatus(),
+          message: "探活邮件发送失败。",
+          mail: publicMailHint(),
         });
       }
     }

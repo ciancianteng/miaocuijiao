@@ -1,0 +1,1135 @@
+{
+  "at": "2026-09-11T14:09:36.377Z",
+  "preview": "https://meow-cuijiao-homepage-git-cu-e740fd-ciancianteng-4581s-projects.vercel.app",
+  "results": [
+    {
+      "label": "home",
+      "from": null,
+      "to": "/",
+      "fullReload": true,
+      "clickToNavStartMs": 550,
+      "clickToFirstVisibleMs": 1035,
+      "clickToInteractiveMs": 1035,
+      "navToFirstVisibleMs": 485,
+      "navToInteractiveMs": 485,
+      "navToSettledMs": 1386,
+      "perfNav": {
+        "type": "navigate",
+        "ttfb": 13,
+        "dcl": 1012,
+        "load": 1436
+      },
+      "apiTotal": 13,
+      "apiDupes": [],
+      "apiList": [
+        {
+          "endpoint": "GET /api/platform/settings",
+          "count": 1
+        },
+        {
+          "endpoint": "GET /api/public/companions",
+          "count": 1
+        },
+        {
+          "endpoint": "GET /api/platform/content?types=homepage_entries",
+          "count": 1
+        },
+        {
+          "endpoint": "GET /api/gateway?path=platform%2Fcontent&types=banners&_=1789135743310",
+          "count": 1
+        },
+        {
+          "endpoint": "GET /api/platform/content?types=announcements&audience=home",
+          "count": 1
+        },
+        {
+          "endpoint": "GET /api/gateway?path=home%2Fdaily-stats",
+          "count": 1
+        },
+        {
+          "endpoint": "GET /api/popularity?action=home&period=weekly&limit=10",
+          "count": 1
+        },
+        {
+          "endpoint": "GET /api/platform/services?scope=home",
+          "count": 1
+        },
+        {
+          "endpoint": "GET /api/platform/gameplay-products",
+          "count": 1
+        },
+        {
+          "endpoint": "GET /api/chat?action=conversations",
+          "count": 1
+        },
+        {
+          "endpoint": "GET /api/notifications?action=list",
+          "count": 1
+        },
+        {
+          "endpoint": "GET /api/platform/content?types=announcements",
+          "count": 1
+        },
+        {
+          "endpoint": "GET /api/auth?action=pending_forced",
+          "count": 1
+        }
+      ],
+      "brand": [
+        {
+          "name": "/assets/meow-cuijiao-brand-CuF7I-dn.jpg",
+          "dur": 547,
+          "transfer": 638786,
+          "encoded": 638486,
+          "type": "img"
+        },
+        {
+          "name": "/src/assets/meow-cuijiao-brand-96.webp",
+          "dur": 141,
+          "transfer": 3794,
+          "encoded": 3494,
+          "type": "img"
+        }
+      ],
+      "srcJsBytes": 81326,
+      "srcJs": [
+        {
+          "name": "/src/role-gates.js?v=20260911authPerfP0",
+          "dur": 212,
+          "transfer": 18830,
+          "encoded": 18530,
+          "type": "link"
+        },
+        {
+          "name": "/src/place-order-modal.js?v=20260811authUnify1",
+          "dur": 454,
+          "transfer": 16452,
+          "encoded": 16152,
+          "type": "script"
+        },
+        {
+          "name": "/src/boss-header.js",
+          "dur": 109,
+          "transfer": 10664,
+          "encoded": 10364,
+          "type": "link"
+        },
+        {
+          "name": "/src/boss-header.js",
+          "dur": 174,
+          "transfer": 10412,
+          "encoded": 10112,
+          "type": "script"
+        },
+        {
+          "name": "/src/supabase-recovery-reset.js?v=20260907recoveryReset1",
+          "dur": 307,
+          "transfer": 5062,
+          "encoded": 4762,
+          "type": "script"
+        },
+        {
+          "name": "/src/boss-auth-session.js?v=20260911authPerfP0",
+          "dur": 193,
+          "transfer": 4328,
+          "encoded": 4028,
+          "type": "link"
+        },
+        {
+          "name": "/src/pwa-install-prompt.js?v=20260911pwaIcon2",
+          "dur": 156,
+          "transfer": 4147,
+          "encoded": 3847,
+          "type": "script"
+        },
+        {
+          "name": "/src/auth-shell.js?v=20260806emailKeyboard1",
+          "dur": 240,
+          "transfer": 3476,
+          "encoded": 3176,
+          "type": "script"
+        },
+        {
+          "name": "/src/boss-profile-cache.js?v=20260911perfP2",
+          "dur": 215,
+          "transfer": 1957,
+          "encoded": 1657,
+          "type": "link"
+        },
+        {
+          "name": "/src/banner-crop.js?v=20260809bannerCropSync1",
+          "dur": 249,
+          "transfer": 1738,
+          "encoded": 1438,
+          "type": "script"
+        }
+      ]
+    },
+    {
+      "label": "home→mine",
+      "from": "/",
+      "to": "/mine.html",
+      "fullReload": true,
+      "clickToNavStartMs": 3118,
+      "clickToFirstVisibleMs": 3320,
+      "clickToInteractiveMs": 3320,
+      "navToFirstVisibleMs": 202,
+      "navToInteractiveMs": 202,
+      "navToSettledMs": 1103,
+      "perfNav": {
+        "type": "navigate",
+        "ttfb": 84,
+        "dcl": 259,
+        "load": 389
+      },
+      "apiTotal": 8,
+      "apiDupes": [],
+      "apiList": [
+        {
+          "endpoint": "GET /api/auth?action=me",
+          "count": 1
+        },
+        {
+          "endpoint": "GET /api/chat?action=conversations",
+          "count": 1
+        },
+        {
+          "endpoint": "GET /api/notifications?action=list",
+          "count": 1
+        },
+        {
+          "endpoint": "POST /api/auth",
+          "count": 1
+        },
+        {
+          "endpoint": "GET /api/recharge",
+          "count": 1
+        },
+        {
+          "endpoint": "GET /api/points?limit=1",
+          "count": 1
+        },
+        {
+          "endpoint": "GET /api/boss/direct-companions",
+          "count": 1
+        },
+        {
+          "endpoint": "GET /api/orders",
+          "count": 1
+        }
+      ],
+      "brand": [
+        {
+          "name": "/src/assets/meow-cuijiao-brand-96.webp",
+          "dur": 26,
+          "transfer": 0,
+          "encoded": 3494,
+          "type": "img"
+        }
+      ],
+      "srcJsBytes": 0,
+      "srcJs": [
+        {
+          "name": "/src/boss-auth-session.js?v=20260911authPerfP0",
+          "dur": 46,
+          "transfer": 0,
+          "encoded": 13679,
+          "type": "script"
+        },
+        {
+          "name": "/src/boss-nav-prefetch.js?v=20260911perfP2",
+          "dur": 47,
+          "transfer": 0,
+          "encoded": 2753,
+          "type": "script"
+        },
+        {
+          "name": "/src/role-gates.js?v=20260911authPerfP0",
+          "dur": 52,
+          "transfer": 0,
+          "encoded": 79217,
+          "type": "script"
+        },
+        {
+          "name": "/src/boss-profile-cache.js?v=20260911perfP2",
+          "dur": 52,
+          "transfer": 0,
+          "encoded": 4451,
+          "type": "script"
+        },
+        {
+          "name": "/src/boss-header.js",
+          "dur": 97,
+          "transfer": 0,
+          "encoded": 41451,
+          "type": "script"
+        },
+        {
+          "name": "/src/account-security.js?v=20260805acctSec1",
+          "dur": 155,
+          "transfer": 0,
+          "encoded": 11901,
+          "type": "script"
+        },
+        {
+          "name": "/src/launch-feature-freeze.js",
+          "dur": 29,
+          "transfer": 0,
+          "encoded": 926,
+          "type": "script"
+        },
+        {
+          "name": "/src/avatar-fallback.js?v=20260809imgChat2",
+          "dur": 133,
+          "transfer": 0,
+          "encoded": 8982,
+          "type": "script"
+        },
+        {
+          "name": "/src/pwa-install-prompt.js?v=20260911pwaIcon2",
+          "dur": 57,
+          "transfer": 0,
+          "encoded": 14815,
+          "type": "script"
+        }
+      ]
+    },
+    {
+      "label": "mine→orders",
+      "from": "/mine.html",
+      "to": "/orders.html",
+      "fullReload": true,
+      "clickToNavStartMs": 143,
+      "clickToFirstVisibleMs": 406,
+      "clickToInteractiveMs": 406,
+      "navToFirstVisibleMs": 263,
+      "navToInteractiveMs": 263,
+      "navToSettledMs": 1163,
+      "perfNav": {
+        "type": "navigate",
+        "ttfb": 80,
+        "dcl": 338,
+        "load": 395
+      },
+      "apiTotal": 4,
+      "apiDupes": [],
+      "apiList": [
+        {
+          "endpoint": "GET /api/orders",
+          "count": 1
+        },
+        {
+          "endpoint": "GET /api/chat?action=conversations",
+          "count": 1
+        },
+        {
+          "endpoint": "GET /api/notifications?action=list",
+          "count": 1
+        },
+        {
+          "endpoint": "GET /api/auth?action=pending_forced",
+          "count": 1
+        }
+      ],
+      "brand": [
+        {
+          "name": "/assets/meow-cuijiao-brand-96.webp",
+          "dur": 175,
+          "transfer": 0,
+          "encoded": 3494,
+          "type": "img"
+        },
+        {
+          "name": "/src/assets/meow-cuijiao-brand-96.webp",
+          "dur": 30,
+          "transfer": 0,
+          "encoded": 3494,
+          "type": "img"
+        }
+      ],
+      "srcJsBytes": 0,
+      "srcJs": [
+        {
+          "name": "/src/boss-auth-session.js?v=20260911authPerfP0",
+          "dur": 45,
+          "transfer": 0,
+          "encoded": 13679,
+          "type": "script"
+        },
+        {
+          "name": "/src/role-gates.js?v=20260908antiBlank1",
+          "dur": 64,
+          "transfer": 0,
+          "encoded": 79217,
+          "type": "script"
+        },
+        {
+          "name": "/src/boss-header.js?v=20260804authP0boss2",
+          "dur": 86,
+          "transfer": 0,
+          "encoded": 41451,
+          "type": "script"
+        },
+        {
+          "name": "/src/boss-forced-ack.js?v=20260803rules1",
+          "dur": 245,
+          "transfer": 0,
+          "encoded": 8044,
+          "type": "script"
+        },
+        {
+          "name": "/src/currency.js",
+          "dur": 190,
+          "transfer": 0,
+          "encoded": 3856,
+          "type": "script"
+        },
+        {
+          "name": "/src/order-status.js",
+          "dur": 185,
+          "transfer": 0,
+          "encoded": 1854,
+          "type": "script"
+        },
+        {
+          "name": "/src/launch-feature-freeze.js",
+          "dur": 35,
+          "transfer": 0,
+          "encoded": 926,
+          "type": "script"
+        },
+        {
+          "name": "/src/boss-header.js",
+          "dur": 42,
+          "transfer": 0,
+          "encoded": 41451,
+          "type": "script"
+        },
+        {
+          "name": "/src/avatar-fallback.js?v=20260809imgChat2",
+          "dur": 27,
+          "transfer": 0,
+          "encoded": 8982,
+          "type": "script"
+        },
+        {
+          "name": "/src/pwa-install-prompt.js?v=20260911pwaIcon2",
+          "dur": 57,
+          "transfer": 0,
+          "encoded": 14815,
+          "type": "script"
+        }
+      ]
+    },
+    {
+      "label": "mine→messages",
+      "from": "/mine.html",
+      "to": "/messages.html",
+      "fullReload": true,
+      "clickToNavStartMs": 144,
+      "clickToFirstVisibleMs": 393,
+      "clickToInteractiveMs": 393,
+      "navToFirstVisibleMs": 249,
+      "navToInteractiveMs": 249,
+      "navToSettledMs": 1150,
+      "perfNav": {
+        "type": "navigate",
+        "ttfb": 91,
+        "dcl": 342,
+        "load": 424
+      },
+      "apiTotal": 3,
+      "apiDupes": [],
+      "apiList": [
+        {
+          "endpoint": "GET /api/notifications?action=list",
+          "count": 1
+        },
+        {
+          "endpoint": "GET /api/chat?action=conversations",
+          "count": 1
+        },
+        {
+          "endpoint": "GET /api/chat/conversations?role=customer&search=&filter=service",
+          "count": 1
+        }
+      ],
+      "brand": [
+        {
+          "name": "/assets/meow-cuijiao-brand-96.webp",
+          "dur": 72,
+          "transfer": 0,
+          "encoded": 3494,
+          "type": "img"
+        },
+        {
+          "name": "/src/assets/meow-cuijiao-brand-96.webp",
+          "dur": 23,
+          "transfer": 0,
+          "encoded": 3494,
+          "type": "img"
+        }
+      ],
+      "srcJsBytes": 0,
+      "srcJs": [
+        {
+          "name": "/src/boss-auth-session.js?v=20260911authPerfP0",
+          "dur": 39,
+          "transfer": 0,
+          "encoded": 13679,
+          "type": "script"
+        },
+        {
+          "name": "/src/role-gates.js?v=20260908antiBlank1",
+          "dur": 50,
+          "transfer": 0,
+          "encoded": 79217,
+          "type": "script"
+        },
+        {
+          "name": "/src/boss-header.js",
+          "dur": 92,
+          "transfer": 0,
+          "encoded": 41451,
+          "type": "script"
+        },
+        {
+          "name": "/src/chat-api.js",
+          "dur": 188,
+          "transfer": 0,
+          "encoded": 16051,
+          "type": "script"
+        },
+        {
+          "name": "/src/chat-ui.js",
+          "dur": 198,
+          "transfer": 0,
+          "encoded": 19545,
+          "type": "script"
+        },
+        {
+          "name": "/src/text-guard.js",
+          "dur": 190,
+          "transfer": 0,
+          "encoded": 5110,
+          "type": "script"
+        },
+        {
+          "name": "/src/customer-service-customer-chat.js",
+          "dur": 228,
+          "transfer": 0,
+          "encoded": 9873,
+          "type": "script"
+        },
+        {
+          "name": "/src/design-system.js",
+          "dur": 236,
+          "transfer": 0,
+          "encoded": 7699,
+          "type": "script"
+        },
+        {
+          "name": "/src/launch-feature-freeze.js",
+          "dur": 40,
+          "transfer": 0,
+          "encoded": 926,
+          "type": "script"
+        },
+        {
+          "name": "/src/avatar-fallback.js?v=20260809imgChat2",
+          "dur": 42,
+          "transfer": 0,
+          "encoded": 8982,
+          "type": "script"
+        }
+      ]
+    },
+    {
+      "label": "mine→support",
+      "from": "/mine.html",
+      "to": "/support.html?start=1",
+      "fullReload": true,
+      "clickToNavStartMs": 3175,
+      "clickToFirstVisibleMs": 3355,
+      "clickToInteractiveMs": 3355,
+      "navToFirstVisibleMs": 180,
+      "navToInteractiveMs": 180,
+      "navToSettledMs": 1080,
+      "perfNav": {
+        "type": "navigate",
+        "ttfb": 142,
+        "dcl": 315,
+        "load": 537
+      },
+      "apiTotal": 7,
+      "apiDupes": [
+        {
+          "endpoint": "GET /api/chat?action=conversations",
+          "count": 2
+        }
+      ],
+      "apiList": [
+        {
+          "endpoint": "GET /api/chat?action=conversations",
+          "count": 2
+        },
+        {
+          "endpoint": "GET /api/platform/settings",
+          "count": 1
+        },
+        {
+          "endpoint": "GET /api/auth?action=me",
+          "count": 1
+        },
+        {
+          "endpoint": "GET /api/notifications?action=list",
+          "count": 1
+        },
+        {
+          "endpoint": "POST /api/chat",
+          "count": 1
+        },
+        {
+          "endpoint": "GET /api/public/realtime-config",
+          "count": 1
+        }
+      ],
+      "brand": [
+        {
+          "name": "/src/assets/meow-cuijiao-brand-96.webp",
+          "dur": 25,
+          "transfer": 0,
+          "encoded": 3494,
+          "type": "img"
+        }
+      ],
+      "srcJsBytes": 0,
+      "srcJs": [
+        {
+          "name": "/src/currency.js",
+          "dur": 44,
+          "transfer": 0,
+          "encoded": 3856,
+          "type": "script"
+        },
+        {
+          "name": "/src/role-gates.js?v=20260910supportGuest1",
+          "dur": 45,
+          "transfer": 0,
+          "encoded": 79217,
+          "type": "script"
+        },
+        {
+          "name": "/src/boss-auth-session.js?v=20260811authUnify2",
+          "dur": 47,
+          "transfer": 0,
+          "encoded": 13679,
+          "type": "script"
+        },
+        {
+          "name": "/src/boss-header.js?v=20260809bossUnread4",
+          "dur": 79,
+          "transfer": 0,
+          "encoded": 41451,
+          "type": "script"
+        },
+        {
+          "name": "/src/launch-feature-freeze.js",
+          "dur": 39,
+          "transfer": 0,
+          "encoded": 926,
+          "type": "script"
+        },
+        {
+          "name": "/src/boss-header.js",
+          "dur": 38,
+          "transfer": 0,
+          "encoded": 41451,
+          "type": "script"
+        },
+        {
+          "name": "/src/avatar-fallback.js?v=20260809imgChat2",
+          "dur": 49,
+          "transfer": 0,
+          "encoded": 8982,
+          "type": "script"
+        },
+        {
+          "name": "/src/pwa-install-prompt.js?v=20260911pwaIcon2",
+          "dur": 48,
+          "transfer": 0,
+          "encoded": 14815,
+          "type": "script"
+        },
+        {
+          "name": "/src/boss-nav-prefetch.js?v=20260911perfP2",
+          "dur": 60,
+          "transfer": 0,
+          "encoded": 2753,
+          "type": "script"
+        }
+      ]
+    },
+    {
+      "label": "mine→recharge",
+      "from": "/mine.html",
+      "to": "/recharge.html",
+      "fullReload": true,
+      "clickToNavStartMs": 138,
+      "clickToFirstVisibleMs": 428,
+      "clickToInteractiveMs": 428,
+      "navToFirstVisibleMs": 290,
+      "navToInteractiveMs": 290,
+      "navToSettledMs": 1191,
+      "perfNav": {
+        "type": "navigate",
+        "ttfb": 85,
+        "dcl": 363,
+        "load": 454
+      },
+      "apiTotal": 3,
+      "apiDupes": [],
+      "apiList": [
+        {
+          "endpoint": "GET /api/recharge",
+          "count": 1
+        },
+        {
+          "endpoint": "GET /api/chat?action=conversations",
+          "count": 1
+        },
+        {
+          "endpoint": "GET /api/notifications?action=list",
+          "count": 1
+        }
+      ],
+      "brand": [
+        {
+          "name": "/assets/meow-cuijiao-brand-96.webp",
+          "dur": 66,
+          "transfer": 0,
+          "encoded": 3494,
+          "type": "img"
+        },
+        {
+          "name": "/src/assets/meow-cuijiao-brand-96.webp",
+          "dur": 92,
+          "transfer": 0,
+          "encoded": 3494,
+          "type": "img"
+        }
+      ],
+      "srcJsBytes": 0,
+      "srcJs": [
+        {
+          "name": "/src/boss-auth-session.js?v=20260911authPerfP0",
+          "dur": 42,
+          "transfer": 0,
+          "encoded": 13679,
+          "type": "script"
+        },
+        {
+          "name": "/src/role-gates.js?v=20260908antiBlank1",
+          "dur": 42,
+          "transfer": 0,
+          "encoded": 79217,
+          "type": "script"
+        },
+        {
+          "name": "/src/avatar-fallback.js",
+          "dur": 88,
+          "transfer": 0,
+          "encoded": 8982,
+          "type": "script"
+        },
+        {
+          "name": "/src/boss-header.js",
+          "dur": 90,
+          "transfer": 0,
+          "encoded": 41451,
+          "type": "script"
+        },
+        {
+          "name": "/src/recharge-center.js?v=20260813payQrConfirmZoom1",
+          "dur": 189,
+          "transfer": 0,
+          "encoded": 28624,
+          "type": "script"
+        },
+        {
+          "name": "/src/pay-qr-preview.js?v=20260813payQrConfirmZoom1",
+          "dur": 202,
+          "transfer": 0,
+          "encoded": 10018,
+          "type": "script"
+        },
+        {
+          "name": "/src/launch-feature-freeze.js",
+          "dur": 38,
+          "transfer": 0,
+          "encoded": 926,
+          "type": "script"
+        },
+        {
+          "name": "/src/pwa-install-prompt.js?v=20260911pwaIcon2",
+          "dur": 40,
+          "transfer": 0,
+          "encoded": 14815,
+          "type": "script"
+        },
+        {
+          "name": "/src/boss-nav-prefetch.js?v=20260911perfP2",
+          "dur": 38,
+          "transfer": 0,
+          "encoded": 2753,
+          "type": "script"
+        }
+      ]
+    },
+    {
+      "label": "mine→hall",
+      "from": "/mine.html",
+      "to": "/companion-center.html",
+      "fullReload": true,
+      "clickToNavStartMs": 3111,
+      "clickToFirstVisibleMs": 3304,
+      "clickToInteractiveMs": 3304,
+      "navToFirstVisibleMs": 193,
+      "navToInteractiveMs": 193,
+      "navToSettledMs": 1093,
+      "perfNav": {
+        "type": "navigate",
+        "ttfb": 82,
+        "dcl": 271,
+        "load": 359
+      },
+      "apiTotal": 11,
+      "apiDupes": [
+        {
+          "endpoint": "GET /api/platform/services",
+          "count": 3
+        },
+        {
+          "endpoint": "GET /api/platform/companion-levels",
+          "count": 2
+        },
+        {
+          "endpoint": "GET /api/public/companions",
+          "count": 2
+        }
+      ],
+      "apiList": [
+        {
+          "endpoint": "GET /api/platform/services",
+          "count": 3
+        },
+        {
+          "endpoint": "GET /api/platform/companion-levels",
+          "count": 2
+        },
+        {
+          "endpoint": "GET /api/public/companions",
+          "count": 2
+        },
+        {
+          "endpoint": "GET /api/chat?action=conversations",
+          "count": 1
+        },
+        {
+          "endpoint": "GET /api/notifications?action=list",
+          "count": 1
+        },
+        {
+          "endpoint": "GET /api/platform/content?types=homepage_entries",
+          "count": 1
+        },
+        {
+          "endpoint": "GET /api/platform/content?types=companion_tags%2Cvoice_types%2Ccompanion_levels%2Cfeatured_players",
+          "count": 1
+        }
+      ],
+      "brand": [
+        {
+          "name": "/src/assets/meow-cuijiao-brand-96.webp",
+          "dur": 29,
+          "transfer": 0,
+          "encoded": 3494,
+          "type": "img"
+        },
+        {
+          "name": "/assets/meow-cuijiao-brand-CuF7I-dn.jpg",
+          "dur": 35,
+          "transfer": 0,
+          "encoded": 638486,
+          "type": "other"
+        }
+      ],
+      "srcJsBytes": 0,
+      "srcJs": [
+        {
+          "name": "/src/platform-taxonomy.js",
+          "dur": 160,
+          "transfer": 0,
+          "encoded": 7928,
+          "type": "script"
+        },
+        {
+          "name": "/src/platform-store.js",
+          "dur": 164,
+          "transfer": 0,
+          "encoded": 607,
+          "type": "script"
+        },
+        {
+          "name": "/src/companion-levels.js?v=20260907capsuleFix1",
+          "dur": 142,
+          "transfer": 0,
+          "encoded": 19565,
+          "type": "script"
+        },
+        {
+          "name": "/src/role-gates.js?v=20260908antiBlank1",
+          "dur": 44,
+          "transfer": 0,
+          "encoded": 79217,
+          "type": "script"
+        },
+        {
+          "name": "/src/avatar-fallback.js?v=20260911hallPhoto45",
+          "dur": 47,
+          "transfer": 0,
+          "encoded": 8982,
+          "type": "script"
+        },
+        {
+          "name": "/src/boss-auth-session.js?v=20260811authUnify2",
+          "dur": 55,
+          "transfer": 0,
+          "encoded": 13679,
+          "type": "script"
+        },
+        {
+          "name": "/src/companion-identity.js?v=20260907capsuleFix1",
+          "dur": 152,
+          "transfer": 0,
+          "encoded": 11113,
+          "type": "script"
+        },
+        {
+          "name": "/src/companion-media.js?v=20260802mediaSync",
+          "dur": 152,
+          "transfer": 0,
+          "encoded": 3182,
+          "type": "script"
+        },
+        {
+          "name": "/src/design-system.js",
+          "dur": 69,
+          "transfer": 0,
+          "encoded": 7699,
+          "type": "script"
+        },
+        {
+          "name": "/src/boss-header.js?v=20260810hallLevel1",
+          "dur": 88,
+          "transfer": 0,
+          "encoded": 41451,
+          "type": "script"
+        }
+      ]
+    },
+    {
+      "label": "back→mine",
+      "from": "/orders.html",
+      "to": "/mine.html",
+      "fullReload": true,
+      "clickToNavStartMs": 3126,
+      "clickToFirstVisibleMs": 3225,
+      "clickToInteractiveMs": 3225,
+      "navToFirstVisibleMs": 99,
+      "navToInteractiveMs": 99,
+      "navToSettledMs": 1000,
+      "perfNav": {
+        "type": "navigate",
+        "ttfb": 94,
+        "dcl": 193,
+        "load": 273
+      },
+      "apiTotal": 8,
+      "apiDupes": [],
+      "apiList": [
+        {
+          "endpoint": "GET /api/auth?action=me",
+          "count": 1
+        },
+        {
+          "endpoint": "POST /api/auth",
+          "count": 1
+        },
+        {
+          "endpoint": "GET /api/recharge",
+          "count": 1
+        },
+        {
+          "endpoint": "GET /api/points?limit=1",
+          "count": 1
+        },
+        {
+          "endpoint": "GET /api/boss/direct-companions",
+          "count": 1
+        },
+        {
+          "endpoint": "GET /api/orders",
+          "count": 1
+        },
+        {
+          "endpoint": "GET /api/chat?action=conversations",
+          "count": 1
+        },
+        {
+          "endpoint": "GET /api/notifications?action=list",
+          "count": 1
+        }
+      ],
+      "brand": [
+        {
+          "name": "/src/assets/meow-cuijiao-brand-96.webp",
+          "dur": 25,
+          "transfer": 0,
+          "encoded": 3494,
+          "type": "img"
+        }
+      ],
+      "srcJsBytes": 0,
+      "srcJs": [
+        {
+          "name": "/src/boss-auth-session.js?v=20260911authPerfP0",
+          "dur": 40,
+          "transfer": 0,
+          "encoded": 13679,
+          "type": "script"
+        },
+        {
+          "name": "/src/boss-nav-prefetch.js?v=20260911perfP2",
+          "dur": 44,
+          "transfer": 0,
+          "encoded": 2753,
+          "type": "script"
+        },
+        {
+          "name": "/src/boss-profile-cache.js?v=20260911perfP2",
+          "dur": 45,
+          "transfer": 0,
+          "encoded": 4451,
+          "type": "script"
+        },
+        {
+          "name": "/src/role-gates.js?v=20260911authPerfP0",
+          "dur": 44,
+          "transfer": 0,
+          "encoded": 79217,
+          "type": "script"
+        },
+        {
+          "name": "/src/account-security.js?v=20260805acctSec1",
+          "dur": 46,
+          "transfer": 0,
+          "encoded": 11901,
+          "type": "script"
+        },
+        {
+          "name": "/src/boss-header.js",
+          "dur": 83,
+          "transfer": 0,
+          "encoded": 41451,
+          "type": "script"
+        },
+        {
+          "name": "/src/launch-feature-freeze.js",
+          "dur": 41,
+          "transfer": 0,
+          "encoded": 926,
+          "type": "script"
+        },
+        {
+          "name": "/src/avatar-fallback.js?v=20260809imgChat2",
+          "dur": 28,
+          "transfer": 0,
+          "encoded": 8982,
+          "type": "script"
+        },
+        {
+          "name": "/src/pwa-install-prompt.js?v=20260911pwaIcon2",
+          "dur": 40,
+          "transfer": 0,
+          "encoded": 14815,
+          "type": "script"
+        }
+      ]
+    }
+  ],
+  "shots": {
+    "375": "/opt/cursor/artifacts/perf-phase2/after-mine-375.png",
+    "390": "/opt/cursor/artifacts/perf-phase2/after-mine-390.png",
+    "393": "/opt/cursor/artifacts/perf-phase2/after-mine-393.png",
+    "430": "/opt/cursor/artifacts/perf-phase2/after-mine-430.png"
+  },
+  "topSlow": [
+    {
+      "label": "mine→support",
+      "clickToFirstVisibleMs": 3355,
+      "clickToInteractiveMs": 3355,
+      "apiTotal": 7,
+      "srcJsBytes": 0
+    },
+    {
+      "label": "home→mine",
+      "clickToFirstVisibleMs": 3320,
+      "clickToInteractiveMs": 3320,
+      "apiTotal": 8,
+      "srcJsBytes": 0
+    },
+    {
+      "label": "mine→hall",
+      "clickToFirstVisibleMs": 3304,
+      "clickToInteractiveMs": 3304,
+      "apiTotal": 11,
+      "srcJsBytes": 0
+    },
+    {
+      "label": "back→mine",
+      "clickToFirstVisibleMs": 3225,
+      "clickToInteractiveMs": 3225,
+      "apiTotal": 8,
+      "srcJsBytes": 0
+    },
+    {
+      "label": "home",
+      "clickToFirstVisibleMs": 1035,
+      "clickToInteractiveMs": 1035,
+      "apiTotal": 13,
+      "srcJsBytes": 81326
+    },
+    {
+      "label": "mine→recharge",
+      "clickToFirstVisibleMs": 428,
+      "clickToInteractiveMs": 428,
+      "apiTotal": 3,
+      "srcJsBytes": 0
+    },
+    {
+      "label": "mine→orders",
+      "clickToFirstVisibleMs": 406,
+      "clickToInteractiveMs": 406,
+      "apiTotal": 4,
+      "srcJsBytes": 0
+    },
+    {
+      "label": "mine→messages",
+      "clickToFirstVisibleMs": 393,
+      "clickToInteractiveMs": 393,
+      "apiTotal": 3,
+      "srcJsBytes": 0
+    }
+  ]
+}

@@ -39,6 +39,12 @@ import {
 } from "./_game-prices.js";
 import { loadPublicServices } from "./platform/services.js";
 import {
+  partitionCompanionIncome,
+  sumTxAmount,
+  money as incomeMoney,
+  clawbackCompanionIncomeForOrder,
+} from "./_companion-income.js";
+import {
   anonymousBossLabel,
   allocateWithdrawalNo,
   resolveBossPublicCode,
@@ -1361,13 +1367,97 @@ function viewOrder(row = {}, boss = {}, settlement = null) {
     createdAt: row.created_at || "",
     completedAt: row.completed_at || parsed?.completedAt || "",
     settlement,
-    hasSettlement: !!parsed || row.status === "completed",
+    settlementStatus: row.settlement_status || (parsed ? "settled" : ""),
+    settlementSkipped:
+      String(row.settlement_status || "").toLowerCase() === "skipped" ||
+      /\[\[SETTLEMENT_SKIPPED\]\]/i.test(String(row.note || "") + String(row.description || "")),
+    hasSettlement: !!parsed || String(row.settlement_status || "").toLowerCase() === "settled",
     isDesignatedConfirm: row.status === "claimed",
     assignmentType: row.assignment_type || "",
+    parentOrderId: row.parent_order_id || null,
+    isMultiGroupChild: !!row.parent_order_id,
+    isMultiGroupParent:
+      String(row.order_type || "").toLowerCase() === "multi_group" && !row.parent_order_id,
+    groupPeerCount: Number(row._groupPeerCount || 0) || 0,
+    groupPeers: Array.isArray(row._groupPeers) ? row._groupPeers : [],
     raw: row
   };
 }
 async function bossesForOrders(orders) { const ids=[...new Set((orders||[]).map((row)=>row.boss_id).filter(Boolean))]; if(!ids.length) return {}; const rows=await supabaseJson(restUrl("profiles", `?id=in.(${ids.map(encodeURIComponent).join(",")})`), { headers: serviceHeaders() }); return Object.fromEntries((rows||[]).map((row)=>[row.id,row])); }
+
+/** Safe co-companion peers for multi-group child orders (no income / amount fields). */
+async function attachGroupPeers(rows = []) {
+  const list = Array.isArray(rows) ? rows : [];
+  const parentIds = [
+    ...new Set(
+      list
+        .map((r) => String(r.parent_order_id || "").trim())
+        .filter(Boolean)
+    ),
+  ];
+  if (!parentIds.length) return list;
+  let siblings = [];
+  try {
+    siblings = await supabaseJson(
+      restUrl(
+        "orders",
+        `?parent_order_id=in.(${parentIds.map(encodeURIComponent).join(",")})&select=id,parent_order_id,companion_id,status,service_name,game,order_no&order=created_at.asc&limit=200`
+      ),
+      { headers: serviceHeaders() }
+    );
+    if (!Array.isArray(siblings)) siblings = [];
+  } catch {
+    siblings = [];
+  }
+  const companionIds = [
+    ...new Set(siblings.map((s) => s.companion_id).filter(Boolean)),
+  ];
+  let profileMap = {};
+  if (companionIds.length) {
+    try {
+      const profiles = await supabaseJson(
+        restUrl(
+          "profiles",
+          `?id=in.(${companionIds.map(encodeURIComponent).join(",")})&select=id,display_name,nickname,avatar_url,avatar`
+        ),
+        { headers: serviceHeaders() }
+      );
+      profileMap = Object.fromEntries((profiles || []).map((p) => [p.id, p]));
+    } catch {
+      profileMap = {};
+    }
+  }
+  const byParent = {};
+  for (const s of siblings) {
+    const pid = String(s.parent_order_id || "");
+    if (!byParent[pid]) byParent[pid] = [];
+    const p = profileMap[s.companion_id] || {};
+    byParent[pid].push({
+      orderId: s.id,
+      orderNo: s.order_no || s.id,
+      companionId: s.companion_id || "",
+      nickname:
+        p.display_name || p.nickname || s.service_name || s.game || "陪玩",
+      avatar: p.avatar_url || p.avatar || "",
+      service: s.service_name || s.game || "",
+      status: s.status || "",
+    });
+  }
+  return list.map((row) => {
+    const pid = String(row.parent_order_id || "").trim();
+    if (!pid) return row;
+    const peers = (byParent[pid] || []).filter(
+      (p) => String(p.companionId) !== String(row.companion_id || "")
+    );
+    const total = (byParent[pid] || []).length || 0;
+    return {
+      ...row,
+      _groupPeers: peers,
+      _groupPeerCount: total || peers.length + 1,
+    };
+  });
+}
+
 async function loadOrdersFor(profile, companion, transactions = []) {
   const {
     resolveAssignmentType,
@@ -1413,7 +1503,12 @@ async function loadOrdersFor(profile, companion, transactions = []) {
   }
   // Never surface unpaid designated orders (awaiting_payment) as actionable confirm tasks.
   // Assigned pending-confirm stays in 我的订单→待确认 only.
-  const visibleMine = (myRows || []).filter((row) => row.status !== "awaiting_payment");
+  let visibleMine = (myRows || []).filter((row) => row.status !== "awaiting_payment");
+  try {
+    visibleMine = await attachGroupPeers(visibleMine);
+  } catch {
+    /* best-effort co-peer enrichment */
+  }
   // 抢单大厅 ONLY: public (or null assignment_type) + companion_id null + hall-open statuses.
   const openQueryWithType =
     "?and=(or(assignment_type.eq.public,assignment_type.is.null),companion_id.is.null,or(status.eq.pending,status.eq.waiting_boss_confirm))&order=created_at.desc&limit=100";
@@ -1691,8 +1786,50 @@ function emptyWalletBundle() {
       frozen: 0,
       pendingSettlement: 0,
       withdrawn: 0,
+      bonus: 0,
+      reward: 0,
+      rewardWithdrawable: false,
+      rewardNote: "",
     },
   };
+}
+
+async function ordersForIncomeTransactions(transactions = [], myOrders = []) {
+  const byId = new Map();
+  for (const o of myOrders || []) {
+    const id = o?.id || o?.orderId;
+    if (!id) continue;
+    byId.set(String(id), {
+      id: String(id),
+      status: o.status || o.orderStatus || "",
+      order_no: o.orderNo || o.order_no || "",
+    });
+  }
+  const missing = [];
+  for (const tx of transactions || []) {
+    if (String(tx.transaction_type || "") !== "companion_income") continue;
+    const oid = tx.order_id ? String(tx.order_id) : "";
+    if (!oid || byId.has(oid)) continue;
+    missing.push(oid);
+  }
+  const uniq = [...new Set(missing)].slice(0, 80);
+  if (uniq.length) {
+    try {
+      const rows = await supabaseJson(
+        restUrl(
+          "orders",
+          `?id=in.(${uniq.map(encodeURIComponent).join(",")})&select=id,status,order_no,companion_id,completed_at,cancelled_at`
+        ),
+        { headers: serviceHeaders() }
+      );
+      for (const row of Array.isArray(rows) ? rows : []) {
+        byId.set(String(row.id), row);
+      }
+    } catch {
+      /* soft-fail: missing order => settlement income treated as void */
+    }
+  }
+  return [...byId.values()];
 }
 
 async function loadWalletBundle(profile, myOrders = []) {
@@ -1711,19 +1848,30 @@ async function loadWalletBundle(profile, myOrders = []) {
     warnings.push(`companion_withdrawals: ${error.message || error}`);
     withdrawalRows = [];
   }
-  const summary = summaryFrom(myOrders, transactions, withdrawalRows);
-  const ledgerFromTx = (transactions || []).map((row) => ({
-    id: row.id,
-    orderId: row.order_id || "",
-    type: ledgerTypeLabel(row),
-    typeCode: row.transaction_type,
-    amount: money(row.amount),
-    direction: row.transaction_type === "refund" || row.transaction_type === "withdrawal" ? "out" : "in",
-    status: row.status || "completed",
-    note: row.note || "",
-    createdAt: row.created_at,
-    settlement: parseSettlementNote(row.note),
-  }));
+  const linkedOrders = await ordersForIncomeTransactions(transactions, myOrders);
+  const partitioned = partitionCompanionIncome(transactions, linkedOrders);
+  const summary = summaryFrom(myOrders, transactions, withdrawalRows, linkedOrders);
+  const incomeKindById = new Map();
+  for (const tx of partitioned.orderIncome) incomeKindById.set(String(tx.id), "order_income");
+  for (const tx of partitioned.rewardOther) incomeKindById.set(String(tx.id), "reward_other");
+  for (const item of partitioned.voided) incomeKindById.set(String(item.tx.id), "void");
+
+  const ledgerFromTx = (transactions || []).map((row) => {
+    const kind = incomeKindById.get(String(row.id)) || "";
+    return {
+      id: row.id,
+      orderId: row.order_id || "",
+      type: ledgerTypeLabel(row),
+      typeCode: row.transaction_type,
+      incomeKind: kind || (row.transaction_type === "companion_income" ? "void" : ""),
+      amount: money(row.amount),
+      direction: row.transaction_type === "refund" || row.transaction_type === "withdrawal" ? "out" : "in",
+      status: row.status || "completed",
+      note: row.note || "",
+      createdAt: row.created_at,
+      settlement: parseSettlementNote(row.note),
+    };
+  });
   const ledgerFromWithdraw = (withdrawalRows || []).flatMap((w) => {
     const rows = [
       {
@@ -1731,6 +1879,7 @@ async function loadWalletBundle(profile, myOrders = []) {
         orderId: "",
         type: "提现申请",
         typeCode: "withdrawal_request",
+        incomeKind: "",
         amount: money(w.cat_food_amount),
         direction: "out",
         status: w.status,
@@ -1745,6 +1894,7 @@ async function loadWalletBundle(profile, myOrders = []) {
         orderId: "",
         type: "提现驳回退回",
         typeCode: "withdrawal_reject_return",
+        incomeKind: "",
         amount: money(w.cat_food_amount),
         direction: "in",
         status: "completed",
@@ -1759,7 +1909,7 @@ async function loadWalletBundle(profile, myOrders = []) {
     String(b.createdAt || "").localeCompare(String(a.createdAt || ""))
   );
   const earningDetails = ledgerFromTx
-    .filter((row) => row.typeCode === "companion_income")
+    .filter((row) => row.typeCode === "companion_income" && row.incomeKind === "order_income")
     .map((row) => {
       const settlement = row.settlement || parseSettlementNote(row.note) || {};
       return {
@@ -1771,6 +1921,7 @@ async function loadWalletBundle(profile, myOrders = []) {
         statusText: row.status === "completed" ? "已完成" : row.status === "pending" ? "待处理" : row.status || "-",
       };
     });
+  const bonus = sumTxAmount(partitioned.rewardOther);
   return {
     transactions,
     withdrawalRows,
@@ -1788,11 +1939,15 @@ async function loadWalletBundle(profile, myOrders = []) {
       frozen: summary.frozen || 0,
       pendingSettlement: summary.pendingSettlement || 0,
       withdrawn: summary.withdrawn || 0,
+      bonus,
+      reward: bonus,
+      rewardWithdrawable: false,
+      rewardNote: "奖励/其它不计入订单收入，默认不可作为陪玩订单提现额度。",
     },
     warnings,
   };
 }
-function summaryFrom(myOrders, transactions, withdrawals = []) {
+function summaryFrom(myOrders, transactions, withdrawals = [], linkedOrders = []) {
   const today = todayKey();
   const month = monthKey();
   const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
@@ -1802,8 +1957,18 @@ function summaryFrom(myOrders, transactions, withdrawals = []) {
     d.setUTCDate(d.getUTCDate() - (day - 1));
     return d.toISOString().slice(0, 10);
   })();
-  const incomeRows = (transactions || []).filter((row) => row.transaction_type === "companion_income" && row.status !== "cancelled");
-  const refundRows = (transactions || []).filter((row) => row.transaction_type === "refund" && row.status !== "cancelled");
+  const { orderIncome, rewardOther } = partitionCompanionIncome(
+    transactions,
+    linkedOrders && linkedOrders.length ? linkedOrders : myOrders
+  );
+  const incomeRows = orderIncome;
+  const orderIncomeIds = new Set(incomeRows.map((r) => String(r.order_id || "")).filter(Boolean));
+  const refundRows = (transactions || []).filter((row) => {
+    if (row.transaction_type !== "refund" || row.status === "cancelled") return false;
+    const oid = row.order_id ? String(row.order_id) : "";
+    if (!oid) return true;
+    return orderIncomeIds.has(oid);
+  });
   const frozen = (withdrawals || [])
     .filter((w) => WITHDRAW_FROZEN.has(w.status))
     .reduce((n, w) => n + money(w.cat_food_amount), 0);
@@ -1816,6 +1981,7 @@ function summaryFrom(myOrders, transactions, withdrawals = []) {
   const gross = incomeRows.reduce((n, row) => n + money(row.amount), 0);
   const refundTotal = refundRows.reduce((n, row) => n + money(row.amount), 0);
   const netGross = Math.max(0, roundMoney(gross - refundTotal));
+  const bonus = sumTxAmount(rewardOther);
   const sumIncomeOn = (pred) => incomeRows.filter(pred).reduce((n, row) => n + money(row.amount), 0);
   return {
     todayOrders: myOrders.filter((o) => String(o.createdAt || "").slice(0,10) === today).length,
@@ -1833,6 +1999,8 @@ function summaryFrom(myOrders, transactions, withdrawals = []) {
       .reduce((n, o) => n + money(o.playerIncome), 0),
     monthIncome: sumIncomeOn((row) => String(row.created_at || "").slice(0, 7) === month),
     totalIncome: netGross,
+    bonus,
+    reward: bonus,
     withdrawn,
     frozen,
     pendingSettlement: frozen,
@@ -2439,6 +2607,10 @@ async function bootstrapData(profile, companion) {
           frozen: summary.frozen || 0,
           pendingSettlement: summary.pendingSettlement || 0,
           withdrawn: summary.withdrawn || 0,
+          bonus: summary.bonus || earnings?.bonus || 0,
+          reward: summary.reward || earnings?.reward || 0,
+          rewardWithdrawable: false,
+          rewardNote: earnings?.rewardNote || "奖励/其它不计入订单收入，默认不可作为陪玩订单提现额度。",
         },
     earningDetails: permissions.isolationMode ? [] : earningDetails,
     walletLedger: permissions.isolationMode ? [] : walletLedger,
@@ -3144,137 +3316,58 @@ export default async function handler(req, res) {
       },needRolePick:false});
     }
     if (action === "forgot_password" || action === "send_reset_code") {
-      const body = await parseBody(req);
-      const account = String(body.account || body.email || "").trim();
-      const genericOk = {
-        ok: true,
-        message: "如该邮箱已注册，将收到重设邮件或验证码，请查收后继续。",
-        emailMasked: "",
-        expiresInSec: 900,
+      // Unify with /api/auth forgot flow (same OTP store + auth.users password reset).
+      const body = bodyEarly || (await parseBody(req));
+      req.body = {
+        ...(body && typeof body === "object" ? body : {}),
+        action: "forgot_send_otp",
+        role: "companion",
+        email: String(body?.email || body?.account || "").trim(),
+        account: String(body?.account || body?.email || "").trim(),
       };
-      if (!account) return json(res, 400, { ok: false, message: "请输入注册邮箱" });
-      const resolved = await resolveCompanionAuthEmail(account);
-      const email = resolved && resolved.email;
-      // Anti-enumeration: always return the same success shape when lookup fails.
-      if (!email) return json(res, 200, genericOk);
-      const profile =
-        (resolved && resolved.profile) ||
-        (
-          await supabaseJson(
-            restUrl("profiles", `?role=eq.companion&email=eq.${encodeURIComponent(email)}&select=id,role,status&limit=1`),
-            { headers: serviceHeaders() }
-          ).catch(() => [])
-        )?.[0];
-      if (!profile || profile.status === "disabled") return json(res, 200, genericOk);
-      const code = randomOtpCode();
-      await storePasswordResetOtp(email, code);
-      const mailSent = await trySendResetCodeEmail(email, code);
-      const staging =
-        String(process.env.ALLOW_STAGING_OTP || "") === "1" ||
-        String(process.env.MCJ_OTP_DEBUG || "") === "1" ||
-        (String(process.env.VERCEL_ENV || "").toLowerCase() !== "production" &&
-          (/staging|localhost|127\.0\.0\.1/i.test(String(process.env.MCJ_PUBLIC_BASE || process.env.VERCEL_URL || "")) ||
-            String(process.env.VERCEL_ENV || "").toLowerCase() === "preview"));
-      const masked = maskEmailHint(email);
-      const out = {
-        ok: true,
-        message: mailSent
-          ? `如该邮箱已注册，验证码已发送至 ${masked || "你的邮箱"}。`
-          : staging
-            ? "邮件服务暂不可用，已生成 Staging 调试验证码。"
-            : "如该邮箱已注册，将收到验证码邮件，请查收后继续。",
-        emailMasked: masked,
-        expiresInSec: 900,
-      };
-      if (staging) out.devCode = code;
-      return json(res, 200, out);
+      const authHandler = (await import("./auth.js")).default;
+      return authHandler(req, res);
     }
     if (action === "verify_reset_code") {
-      const body = await parseBody(req);
-      const account = String(body.account || body.email || "").trim();
-      const code = String(body.code || body.otp || "").trim();
-      const resolvedV = await resolveCompanionAuthEmail(account);
-      const email = resolvedV && resolvedV.email;
-      if (!email || !/^\d{4,8}$/.test(code)) {
-        return json(res, 400, { ok: false, message: "验证码无效或已过期" });
-      }
-      const stored = await findPasswordResetOtp(email);
-      if (stored && stored.code && String(stored.code) === code && Number(stored.exp) > Date.now()) {
-        const token = "mcj_" + randomOtpCode() + Date.now().toString(36);
-        await markPasswordResetVerified(email, stored.id, token);
-        // One-time: wipe OTP code from memory after issue token
-        return json(res, 200, { ok: true, message: "验证成功，请设置新密码", resetToken: token, emailMasked: maskEmailHint(email) });
-      }
-      try {
-        const verified = await supabaseJson(authUrl("verify"), {
-          method: "POST",
-          headers: anonHeaders(),
-          body: JSON.stringify({ type: "email", email, token: code }),
-        });
-        if (verified?.access_token) {
-          return json(res, 200, {
-            ok: true,
-            message: "验证成功，请设置新密码",
-            resetToken: verified.access_token,
-            emailMasked: maskEmailHint(email),
-          });
-        }
-      } catch {
-        /* fall through */
-      }
-      try {
-        const verified = await supabaseJson(authUrl("verify"), {
-          method: "POST",
-          headers: anonHeaders(),
-          body: JSON.stringify({ type: "recovery", email, token: code }),
-        });
-        if (verified?.access_token) {
-          return json(res, 200, {
-            ok: true,
-            message: "验证成功，请设置新密码",
-            resetToken: verified.access_token,
-            emailMasked: maskEmailHint(email),
-          });
-        }
-      } catch {
-        /* fall through */
-      }
-      return json(res, 400, { ok: false, message: "验证码无效或已过期" });
+      const body = bodyEarly || (await parseBody(req));
+      req.body = {
+        ...(body && typeof body === "object" ? body : {}),
+        action: "forgot_verify_otp",
+        role: "companion",
+        email: String(body?.email || body?.account || "").trim(),
+        account: String(body?.account || body?.email || "").trim(),
+        code: String(body?.code || body?.otp || "").trim(),
+      };
+      const authHandler = (await import("./auth.js")).default;
+      return authHandler(req, res);
     }
     if (action === "reset_password") {
-      const body = await parseBody(req);
+      const body = bodyEarly || (await parseBody(req));
+      const resetToken = String(body?.resetToken || body?.token || "").trim();
+      // Shared auth OTP token path (mcj_…)
+      if (resetToken.startsWith("mcj_")) {
+        req.body = {
+          ...(body && typeof body === "object" ? body : {}),
+          action: "forgot_reset_password",
+          role: "companion",
+          email: String(body?.email || body?.account || "").trim(),
+          account: String(body?.account || body?.email || "").trim(),
+          resetToken,
+          newPassword: String(body?.newPassword || body?.password || ""),
+          confirmPassword: String(body?.confirmPassword || body?.confirm_password || body?.newPassword || body?.password || ""),
+        };
+        const authHandler = (await import("./auth.js")).default;
+        return authHandler(req, res);
+      }
+      // Legacy Supabase recovery / mcj: base64 token paths (kept for in-flight tokens).
       const newPassword = String(body.newPassword || body.password || "");
       const confirmPassword = String(body.confirmPassword || body.confirm_password || "");
       if (!newPassword || newPassword.length < 8) return json(res, 400, { ok: false, message: "新密码至少 8 位" });
       if (confirmPassword && confirmPassword !== newPassword) {
         return json(res, 400, { ok: false, message: "两次输入的新密码不一致" });
       }
-      const resetToken = String(body.resetToken || body.token || "").trim();
       if (!resetToken) return json(res, 400, { ok: false, message: "请先完成验证码校验" });
-      if (resetToken.startsWith("mcj_") || resetToken.startsWith("mcj:")) {
-        if (resetToken.startsWith("mcj_")) {
-          const resolvedR = await resolveCompanionAuthEmail(String(body.account || body.email || ""));
-          const emailR = resolvedR && resolvedR.email;
-          if (!emailR) return json(res, 400, { ok: false, message: "缺少账号信息" });
-          const storedR = await findPasswordResetOtp(emailR);
-          if (!storedR || storedR.verifiedToken !== resetToken || Number(storedR.exp) < Date.now()) {
-            return json(res, 400, { ok: false, message: "重置凭证无效或已过期，请重新获取验证码" });
-          }
-          const rowsR = await supabaseJson(
-            restUrl("profiles", "?role=eq.companion&email=eq." + encodeURIComponent(emailR) + "&select=id&limit=1"),
-            { headers: serviceHeaders() }
-          ).catch(() => []);
-          const profileR = (resolvedR && resolvedR.profile) || (rowsR && rowsR[0]);
-          if (!profileR || !profileR.id) return json(res, 404, { ok: false, message: "账号不存在" });
-          await supabaseJson(authUrl("admin/users/" + encodeURIComponent(profileR.id)), {
-            method: "PUT",
-            headers: serviceHeaders(),
-            body: JSON.stringify({ password: newPassword }),
-          });
-          if (globalThis.__mcjPwResets) globalThis.__mcjPwResets.delete(emailR);
-          return json(res, 200, { ok: true, message: "密码已重设，请使用新密码登录" });
-        }
-        if (resetToken.startsWith("mcj:")) {
+      if (resetToken.startsWith("mcj:")) {
         let payload;
         try {
           payload = JSON.parse(Buffer.from(resetToken.slice(4), "base64url").toString("utf8"));
@@ -3297,9 +3390,7 @@ export default async function handler(req, res) {
           body: JSON.stringify({ password: newPassword }),
         });
         return json(res, 200, { ok: true, message: "密码已重设，请使用新密码登录" });
-        }
       }
-      // Supabase recovery/session token path
       try {
         await supabaseJson(authUrl("user"), {
           method: "PUT",
@@ -3415,6 +3506,21 @@ export default async function handler(req, res) {
         if (wantsPassword) await stampPasswordSet(created.id, { mustChangePassword: false });
         else await stampPasswordUnset(created.id);
       } catch { /* optional columns */ }
+      // Invite redeem ONLY after auth user + profiles + companion_profiles succeeded.
+      let inviteRedeem = null;
+      const inviteCode = String(body.inviteCode || body.invite_code || body.code || "").trim();
+      if (inviteCode) {
+        try {
+          const { redeemInviteAfterCompanionReady } = await import("./_boss-invite-links.js");
+          inviteRedeem = await redeemInviteAfterCompanionReady({
+            inviteCode,
+            inviteeId: created.id,
+          });
+        } catch (inviteErr) {
+          console.warn("[companion/register] invite redeem soft-fail:", inviteErr?.message || inviteErr);
+          inviteRedeem = { attempted: true, outcome: "error", detail: inviteErr?.message || "redeem_failed" };
+        }
+      }
       let auth;
       if (wantsPassword) {
         auth = await supabaseJson(authUrl("token?grant_type=password"), { method:"POST", headers: anonHeaders(), body: JSON.stringify({ email, password: authPassword }) });
@@ -3440,6 +3546,7 @@ export default async function handler(req, res) {
           ? "陪玩账号已创建，请继续填写资料。草稿不会出现在正式陪玩列表。"
           : "陪玩账号已创建。建议前往账号安全设置密码（审核状态不影响密码设置）。",
         suggestSetPassword: !wantsPassword,
+        inviteRedeem: inviteRedeem || null,
         session:{token:auth.access_token,accessToken:auth.access_token,refreshToken:auth.refresh_token||"",user:safePlayer(profile, companion || {}),remember:!!body.remember}
       });
     }
@@ -3494,6 +3601,21 @@ export default async function handler(req, res) {
       // Access token alone cannot mint a refresh token server-side.
       const refreshToken = String(body.refreshToken || body.refresh_token || "").trim();
       const expiresAt = body.expiresAt || body.expires_at || "";
+      // Optional invite redeem after companion capability exists (existing boss→companion apply).
+      let inviteRedeem = null;
+      const inviteCode = String(body.inviteCode || body.invite_code || body.code || "").trim();
+      if (inviteCode && (createdNewRow || companion?.id)) {
+        try {
+          const { redeemInviteAfterCompanionReady } = await import("./_boss-invite-links.js");
+          inviteRedeem = await redeemInviteAfterCompanionReady({
+            inviteCode,
+            inviteeId: profile.id,
+          });
+        } catch (inviteErr) {
+          console.warn("[companion/apply] invite redeem soft-fail:", inviteErr?.message || inviteErr);
+          inviteRedeem = { attempted: true, outcome: "error", detail: inviteErr?.message || "redeem_failed" };
+        }
+      }
       return json(res, 200, {
         ok: true,
         message: createdNewRow
@@ -3503,6 +3625,7 @@ export default async function handler(req, res) {
         sameUserId: true,
         createdNewAuthUser: false,
         roles: enriched.roles,
+        inviteRedeem: inviteRedeem || null,
         playerStatus: normalizeProfileReviewStatus(companion || {}),
         applicationStatus: String(companion?.application_status || "draft"),
         companion: companion || null,
@@ -3610,6 +3733,32 @@ export default async function handler(req, res) {
         });
       }
     }
+    if (req.method === "GET" && (action === "my_gifts" || action === "received_gifts" || action === "gifts")) {
+      try {
+        const { listCompanionReceivedGifts, getCompanionGiftWall } = await import("./_gift-orders.js");
+        const companionId = String(auth.profile.id || companion?.user_id || "").trim();
+        const gifts = await listCompanionReceivedGifts(companionId, { limit: 100 });
+        const wall = await getCompanionGiftWall(companionId);
+        return json(res, 200, {
+          ok: true,
+          gifts: (gifts || []).map((g) => ({
+            id: g.id,
+            txNo: g.tx_no,
+            giftId: g.gift_id,
+            giftName: g.gift_name,
+            giftImage: g.gift_image_url || "",
+            quantity: Number(g.quantity || 1),
+            senderBossId: g.sender_boss_id,
+            createdAt: g.created_at,
+            giftOrderId: g.gift_order_id || "",
+          })),
+          wall,
+        });
+      } catch (err) {
+        return json(res, err.status || 500, { ok: false, message: err.message || "礼物加载失败" });
+      }
+    }
+
     if (req.method === "GET" && (action === "thread" || action === "conversation_messages")) {
       const conversationId = String(req.query.conversation_id || req.query.conversationId || "").trim();
       try {
@@ -3739,7 +3888,7 @@ export default async function handler(req, res) {
             assertNotSelfTrade(before.boss_id, auth.profile.id, "抢自己的订单");
           }
         } catch (selfErr) {
-          if (selfErr?.code === "SELF_TRADE_FORBIDDEN") {
+          if ((selfErr?.code === "SELF_ORDER_NOT_ALLOWED" || selfErr?.code === "SELF_TRADE_FORBIDDEN")) {
             return json(res, selfErr.status || 403, {
               ok: false,
               code: selfErr.code,
@@ -3826,6 +3975,26 @@ export default async function handler(req, res) {
         { status: "in_progress", accepted_at: now, started_at: now },
         `陪玩 ${name} 已确认接单，订单进入进行中。`
       );
+
+      try {
+        const { notifyBossOrderEvent } = await import("./_boss-order-notify.js");
+        await notifyBossOrderEvent(order, {
+          title: "陪玩已接单",
+          body: "陪玩已确认接单，订单进行中。",
+          kind: "order_accepted",
+        });
+      } catch (err) {
+        console.warn("[companion/accept_direct] boss push", err?.message || err);
+      }
+      // Multi child accept → refresh parent aggregate; never reset siblings.
+      if (order?.parent_order_id) {
+        try {
+          const partial = await import("./_multi-order-partial.js");
+          await partial.refreshParentWithDeps(order.parent_order_id, { restUrl, supabaseJson, serviceHeaders });
+        } catch (err) {
+          console.warn("[companion/accept_direct] parent refresh", err?.message || err);
+        }
+      }
       return json(res, 200, { ok: true, message: "已确认接单，订单进入进行中", order: viewOrder(order) });
     }
     if (action === "reject_direct_order") {
@@ -3842,8 +4011,41 @@ export default async function handler(req, res) {
       const before = beforeRows?.[0];
       if (!before || before.status !== "claimed") return json(res, 409, { ok: false, message: "当前订单不能拒绝" });
       const name = String(auth.profile.display_name || companion.nickname || "陪玩").trim() || "陪玩";
+
+      // Multi-group child: soft-exit (cancelled + keep companion/parent) — do NOT open public hall.
+      if (before.parent_order_id) {
+        const partial = await import("./_multi-order-partial.js");
+        const { notifyBossOrderEvent } = await import("./_boss-order-notify.js");
+        const result = await partial.softExitMultiChildOrder(before, {
+          reason,
+          companionId: auth.profile.id,
+          companionName: name,
+          deps: {
+            restUrl,
+            supabaseJson,
+            serviceHeaders,
+            writeOrderStatusLog: (payload) =>
+              writeOrderStatusLog({ restUrl, supabaseJson, serviceHeaders }, payload),
+            refreshParent: (parentId) =>
+              partial.refreshParentWithDeps(parentId, { restUrl, supabaseJson, serviceHeaders }),
+            notifyBoss: (order, opts) => notifyBossOrderEvent(order, opts),
+            addSystemMessage,
+          },
+        });
+        scheduleRecomputeSoft();
+        return json(res, 200, {
+          ok: true,
+          message: "已提交无法接单。老板可重新选择陪玩或只保留其余陪玩继续。",
+          softExit: true,
+          code: "MULTI_CHILD_SOFT_EXIT",
+          order: viewOrder(result.order || before),
+          parentRefresh: result.parentRefresh || null,
+          reasons: REJECT_REASONS,
+        });
+      }
+
       const note = `陪玩无法接单|原因:${reason}|原陪玩:${auth.profile.id}|${nowIso()}`;
-      // Reject designated → reopen as public hall for CS re-assign / public grab.
+      // Legacy standalone: Reject designated → reopen as public hall for CS re-assign / public grab.
       // Staging schema may lack cancel_reason / assignment_type / order_type — try progressively.
       const rejectAttempts = [
         {
@@ -3903,6 +4105,19 @@ export default async function handler(req, res) {
         "companion",
         `陪玩 ${name} 无法接单（${reason}）。订单 ${before.order_no || before.id} 状态：陪玩无法接单，等待重新安排。请客服更换陪玩、推送抢单、联系老板或发起退款。`
       );
+      try {
+        const { notifyBossOrderEvent } = await import("./_boss-order-notify.js");
+        await notifyBossOrderEvent(
+          { ...before, ...saved, boss_id: before.boss_id },
+          {
+            title: "当前陪玩无法接单",
+            body: "当前陪玩无法接单，请重新选择陪玩。",
+            kind: "order_companion_unavailable",
+          }
+        );
+      } catch (err) {
+        console.warn("[companion/reject_direct] boss push", err?.message || err);
+      }
       scheduleRecomputeSoft();
       return json(res, 200, {
         ok: true,
@@ -3946,7 +4161,7 @@ export default async function handler(req, res) {
       if (!before) return json(res, 404, { ok: false, message: "订单不存在。" });
       // Already started by accept_direct (claimed → in_progress): idempotent OK.
       if (before.status === "in_progress") {
-        return json(res, 200, {
+return json(res, 200, {
           ok: true,
           message: "订单已在进行中。",
           order: viewOrder(before),
@@ -3979,6 +4194,17 @@ export default async function handler(req, res) {
           { source: "companion_start" }
         );
       } catch (_) {}
+      
+      try {
+        const { notifyBossOrderEvent } = await import("./_boss-order-notify.js");
+        await notifyBossOrderEvent(order, {
+          title: "陪玩已开始服务",
+          body: "陪玩已开始服务。",
+          kind: "order_started",
+        });
+      } catch (err) {
+        console.warn("[companion/start_order] boss push", err?.message || err);
+      }
       return json(res, 200, {
         ok: true,
         message: "已开始服务，订单进入进行中。",
@@ -3998,7 +4224,7 @@ export default async function handler(req, res) {
       );
       if (existingTx) {
         const settlement = parseSettlementNote(existingTx.note) || null;
-        return json(res, 200, {
+return json(res, 200, {
           ok: true,
           message: "订单已结算",
           order: { id: orderId, status: "completed" },
@@ -4040,6 +4266,17 @@ export default async function handler(req, res) {
       );
       const saved = afterRows?.[0] || before;
       await addSystemMessage(saved, auth.profile.id, "companion", "陪玩已完成服务，请确认订单。若老板 24 小时内未确认且无售后/争议，系统将自动确认完成。");
+      
+      try {
+        const { notifyBossOrderEvent } = await import("./_boss-order-notify.js");
+        await notifyBossOrderEvent(saved, {
+          title: "请确认订单",
+          body: "陪玩已完成服务，请确认订单。",
+          kind: "order_complete_requested",
+        });
+      } catch (err) {
+        console.warn("[companion/complete_order] boss push", err?.message || err);
+      }
       return json(res, 200, {
         ok: true,
         message: "已提交完成申请，等待老板确认后结算。",
@@ -5412,18 +5649,7 @@ export default async function handler(req, res) {
 
     if (action === "submit_application") {
       const row = await ensureCompanionRow(auth.profile, companion);
-      // PERMANENT: price required on new application submit only.
-      // Admin edits of already-approved companions are handled separately and must not reuse this as a lock.
-      try {
-        assertHasPositivePrice(body, row, MISSING_PRICE_MESSAGE);
-      } catch (priceErr) {
-        return json(res, 400, {
-          ok: false,
-          code: "MISSING_PRICE",
-          message: priceErr?.message || MISSING_PRICE_MESSAGE,
-          field: "price",
-        });
-      }
+      // Pricing V2 P2: applicant must NOT set sell price. Price is assigned at admin approve via level.base_price.
       const applyGameNames = splitGames(body.main_game || body.game || body.mainGame || "");
       const servicesBundle = await loadPublicServices().catch(() => ({ services: [] }));
       const catalog = Array.isArray(servicesBundle?.services) ? servicesBundle.services : [];
@@ -5441,12 +5667,62 @@ export default async function handler(req, res) {
         fallbackPlayWhenGame: true,
         hasGame: !!applyGame,
       });
-      const authModeRaw = String(body.auth_mode || body.credential_mode || body.authMode || body.credentialMode || "")
+      const authModeRaw = String(body.auth_mode || body.credential_mode || body.certification_method || body.authMode || body.credentialMode || body.certificationMethod || "")
         .trim()
         .toLowerCase();
       const authMode = authModeRaw === "id_card" || authModeRaw === "deposit" ? authModeRaw : "";
-      const rawNote = String(body.note || body.application_note || "").replace(/\[AUTH_MODE:(?:id_card|deposit)\]\s*/gi, "").trim();
-      const applicationNote = authMode ? `[AUTH_MODE:${authMode}]${rawNote ? ` ${rawNote}` : ""}` : rawNote;
+      if (!authMode) {
+        return json(res, 400, {
+          ok: false,
+          error: "certification_method_required",
+          message: "请先选择认证方式（身份证认证或押金认证）后再提交申请。",
+        });
+      }
+      // Applicant must NEVER set level / base_price / sell price via apply API.
+      // Level + base_price are assigned only by admin approve. Strip (do not trust) any such fields.
+      const forbiddenApplicantKeys = [
+        "level",
+        "level_id",
+        "levelId",
+        "companion_level",
+        "companionLevel",
+        "base_price",
+        "basePrice",
+        "price",
+        "service_price",
+        "servicePrice",
+        "unit_price",
+        "unitPrice",
+        "hourly_price",
+        "hourlyPrice",
+        "game_prices",
+        "gamePrices",
+        "custom_price",
+        "customPrice",
+      ];
+      const rejectedApplicantFields = forbiddenApplicantKeys.filter((k) => body[k] != null && String(body[k]).trim() !== "");
+      // Soft-reject path: if client explicitly tries to set level/price, refuse rather than silently apply.
+      if (rejectedApplicantFields.length) {
+        return json(res, 400, {
+          ok: false,
+          error: "applicant_level_price_forbidden",
+          message: "申请端不可自行设置陪玩等级或接单价格；等级与基础价格仅由管理员审核时指定。",
+          rejected_fields: rejectedApplicantFields,
+        });
+      }
+      // Personal intro/signature → public bio (description). Never store intro as application remark.
+      const bioText = String(body.bio || body.description || body.intro || "")
+        .replace(/\[AUTH_MODE:(?:id_card|deposit)\]\s*/gi, "")
+        .trim();
+      // Optional admin-only remark (explicit note/remark only — not intro/bio).
+      const rawRemark = String(body.remark || body.application_remark || body.applicationRemark || body.note || body.application_note || "")
+        .replace(/\[AUTH_MODE:(?:id_card|deposit)\]\s*/gi, "")
+        .trim();
+      // If client still sends intro via legacy `note`, treat it as bio when bio is empty and keep remark empty.
+      const legacyNoteLooksLikeIntro = !bioText && rawRemark && !body.remark && !body.application_remark && !body.applicationRemark;
+      const publicBio = bioText || (legacyNoteLooksLikeIntro ? rawRemark : "");
+      const adminRemark = legacyNoteLooksLikeIntro ? "" : rawRemark;
+      const applicationNote = authMode ? `[AUTH_MODE:${authMode}]${adminRemark ? ` ${adminRemark}` : ""}` : adminRemark;
       let applyVoiceType = "";
       try {
         applyVoiceType = await normalizeSelectedVoiceTypes(body.voice_type || body.voiceType || "", {
@@ -5464,6 +5740,7 @@ export default async function handler(req, res) {
         position: String(body.position || ""),
         voice_type: applyVoiceType,
         schedule: String(body.schedule || ""),
+        description: publicBio,
         application_note: applicationNote,
         tags: String(body.tags || ""),
         application_status: "pending",
@@ -5472,17 +5749,17 @@ export default async function handler(req, res) {
         verification_status: companion.verification_status || "pending",
         updated_at: nowIso(),
       };
-      if (authMode) patch.credential_mode = authMode;
+      // Durable SoT: certification_method (+ legacy alias credential_mode).
+      patch.certification_method = authMode;
+      patch.credential_mode = authMode;
       if (body.nickname) patch.nickname = String(body.nickname).trim();
       if (body.phone || body.contact_phone) patch.contact_phone = String(body.phone || body.contact_phone || "").trim();
-      if (body.price != null && body.price !== "") patch.price = money(body.price);
+      // P2: ignore applicant price on submit_application
       if (body.age != null && body.age !== "") patch.age = Number(body.age) || null;
       if (body.gender) patch.gender = String(body.gender).trim();
       if (body.region) patch.region = String(body.region).trim();
       if (body.contact_public != null) patch.contact_public = String(body.contact_public).trim();
-      if (body.game_prices && typeof body.game_prices === "object") {
-        try { patch.game_prices = body.game_prices; } catch { /* optional column */ }
-      }
+      // P2: ignore applicant game_prices on submit_application
       try {
         await supabaseJson(restUrl("companion_profiles", `?id=eq.${encodeURIComponent(row.id)}`), {
           method: "PATCH",
@@ -5490,9 +5767,14 @@ export default async function handler(req, res) {
           body: JSON.stringify(patch),
         });
       } catch (firstErr) {
-        // Optional credential_mode column may be absent — strip and retry like other optional cols.
+        // Optional certification_method / credential_mode columns may be absent — strip and retry.
         let patched = false;
-        if (patch.credential_mode && /column|schema cache|PGRST|credential_mode/i.test(String(firstErr?.message || firstErr || ""))) {
+        const msg = String(firstErr?.message || firstErr || "");
+        if (
+          (patch.certification_method || patch.credential_mode) &&
+          /column|schema cache|PGRST|certification_method|credential_mode/i.test(msg)
+        ) {
+          delete patch.certification_method;
           delete patch.credential_mode;
           try {
             await supabaseJson(restUrl("companion_profiles", `?id=eq.${encodeURIComponent(row.id)}`), {
@@ -5523,7 +5805,7 @@ export default async function handler(req, res) {
           };
           if (patch.nickname) core.nickname = patch.nickname;
           if (patch.contact_phone) core.contact_phone = patch.contact_phone;
-          if (patch.price != null) core.price = patch.price;
+          // P2: do not copy applicant price into core patch
           try {
             await supabaseJson(restUrl("companion_profiles", `?id=eq.${encodeURIComponent(row.id)}`), {
               method: "PATCH",

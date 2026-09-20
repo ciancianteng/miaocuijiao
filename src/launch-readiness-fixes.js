@@ -143,34 +143,15 @@
   }
 
   function rebuildHomeQuickEntries() {
-    if (!/\/index\.html$|\/$/.test(location.pathname)) return;
-    var firstQuick = document.querySelector(".quick-entry-card");
-    if (!firstQuick) return;
-    var grid = firstQuick.parentElement;
-    if (!grid || grid.dataset.launchQuickReady === "1") return;
-    addQuickEntryStyles();
-    grid.dataset.launchQuickReady = "1";
-    grid.classList.add("launch-entry-grid");
-    grid.innerHTML = [
-      quickButton("陪玩大厅", "浏览已上架陪玩，立即下单", 'data-href="companion-center.html" data-home-entry="companion-hall"'),
-      quickButton("更多玩法", "护航、跑刀、代肝、趣味单", 'data-href="more-gameplays.html" data-home-entry="more-gameplays"'),
-      quickButton("自定义订单", "填写需求，客服匹配陪玩", 'data-href="custom-order.html" data-home-entry="custom-order"'),
-      quickButton("组队大厅", "进入组队社区找队友", 'data-href="team-lobby.html" data-home-entry="team-lobby"')
-    ].join("");
+    // Homepage quick entries removed (PR #214): hall/orders own secondary entries.
+    // Do not reinject the 4 QUICK ACCESS cards.
+    return;
   }
 
   function hideTodayDataWithoutRealData() {
-    if (!/\/index\.html$|\/$/.test(location.pathname)) return;
-    var db = platformDb();
-    var hasOrders = Array.isArray(db.orders) && db.orders.length;
-    var hasPlayers = Array.isArray(db.companions) && db.companions.some(function (p) { return p.auditStatus === "approved" && p.visible !== false; });
-    var title = Array.prototype.find.call(document.querySelectorAll(".section-title h2"), function (el) { return /今日数据/.test(el.textContent || ""); });
-    var section = title && title.closest(".section");
-    if (section) {
-      var show = !!(hasOrders || hasPlayers);
-      section.classList.toggle("launch-hidden", !show);
-      section.style.display = show ? "" : "none";
-    }
+    // Homepage daily KPIs are owned by src/home-daily-stats.js → /api/home/daily-stats.
+    // Do NOT hide [data-home-daily-stats] based on localStorage mcjRealDB — that was fake gating.
+    return;
   }
 
   function bindQuickEntries() {

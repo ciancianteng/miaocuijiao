@@ -10,6 +10,8 @@
     message: "",
     tab: "info",
     data: null,
+    pushTestQuery: "1717",
+    pushTestResult: null,
   };
 
   function esc(v) {
@@ -124,6 +126,13 @@
       area("maintenanceMessage", "网站维护说明", x.maintenanceMessage) +
       field("termsUrl", "用户协议链接", x.termsUrl) +
       field("privacyUrl", "隐私政策链接", x.privacyUrl) +
+      field(
+        "discordInviteUrl",
+        "社区链接 / Discord Community URL",
+        x.discordInviteUrl || x.discordInviteLink || x.teamLobbyLink || "",
+        "url"
+      ) +
+      '<p class="admin-sync-note" style="margin-top:0">客服中心「Discord 社区」卡片读取此链接。仅支持 http:// 或 https://；留空表示暂未配置（前端可展示但不跳转）。保存后无需重新部署前端。</p>' +
       '<button class="primary-btn" type="submit">保存平台信息</button></form>'
     );
   }
@@ -426,12 +435,72 @@
         );
       })
       .join("");
+    var pushRes = state.pushTestResult;
+    var pushRows = "";
+    if (pushRes && Array.isArray(pushRes.results) && pushRes.results.length) {
+      pushRows = pushRes.results
+        .map(function (r) {
+          return (
+            "<tr><td>" +
+            esc(r.deviceLabel || "-") +
+            "</td><td>" +
+            esc(r.endpointPrefix || "-") +
+            "</td><td>" +
+            esc(r.outcome || "-") +
+            "</td><td>" +
+            esc(r.statusCode != null ? String(r.statusCode) : "-") +
+            "</td><td>" +
+            esc(r.message || "-") +
+            "</td></tr>"
+          );
+        })
+        .join("");
+    }
     return (
       '<div class="admin-section-head compact"><div><h3>接入检测</h3><p>一键真实请求检测，不写死绿色状态。</p></div>' +
       '<button class="mini-btn primary-lite" type="button" data-ps-run-diag>一键检测全部服务</button></div>' +
       '<div class="table-wrap"><table><thead><tr><th>检测项</th><th>状态</th><th>错误/说明摘要</th><th>时间</th><th>耗时</th></tr></thead><tbody>' +
       (rows || '<tr><td colspan="5">尚未检测</td></tr>') +
-      "</tbody></table></div>"
+      "</tbody></table></div>" +
+      '<div class="admin-final-form" style="margin-top:16px">' +
+      "<h3>Web Push 单用户测试（Admin）</h3>" +
+      "<p style=\"opacity:.8;font-size:13px;line-height:1.5\">仅发送给解析出的<strong>同一个</strong>用户的 active endpoints。" +
+      "不会创建订单、改余额/积分、生成客服工资或改用户资料。VAPID 私钥只在 Vercel Production 服务端读取，不会回传前端。</p>" +
+      '<label>用户标识（display_name / boss_uid / user_id）' +
+      '<input type="text" data-ps-push-query placeholder="例如 1717 或 MCJ00015" value="' +
+      esc((state.pushTestQuery || "1717") + "") +
+      '"></label>' +
+      '<label>Title<input type="text" data-ps-push-title value="妙脆角测试通知 🐱"></label>' +
+      '<label>Body<input type="text" data-ps-push-body value="如果你看到这条通知，说明妙脆角 Web Push 已成功开启。"></label>' +
+      '<label>URL<input type="text" data-ps-push-url value="/mine.html"></label>' +
+      '<button class="mini-btn primary-lite" type="button" data-ps-send-test-push>发送测试 Web Push</button>' +
+      (pushRes
+        ? '<div class="admin-sync-note" style="margin-top:10px">' +
+          esc(pushRes.message || "") +
+          " · vapidConfigured=" +
+          esc(String(!!pushRes.vapidConfigured)) +
+          " · active=" +
+          esc(String(pushRes.activeCount || 0)) +
+          " · sent=" +
+          esc(String(pushRes.sent || 0)) +
+          " · failed=" +
+          esc(String(pushRes.failed || 0)) +
+          (pushRes.target
+            ? " · target=" +
+              esc(pushRes.target.displayName || "") +
+              "/" +
+              esc(pushRes.target.bossUid || "") +
+              "/" +
+              esc(pushRes.target.userId || "")
+            : "") +
+          "</div>"
+        : "") +
+      (pushRows
+        ? '<div class="table-wrap" style="margin-top:8px"><table><thead><tr><th>设备</th><th>endpoint</th><th>结果</th><th>HTTP</th><th>说明</th></tr></thead><tbody>' +
+          pushRows +
+          "</tbody></table></div>"
+        : "") +
+      "</div>"
     );
   }
 
@@ -634,6 +703,50 @@
         })
         .catch(function (err) {
           alert(err.message || "发送失败");
+        });
+      return;
+    }
+    if (e.target.closest("[data-ps-send-test-push]") && box.contains(e.target.closest("[data-ps-send-test-push]"))) {
+      var qEl = box.querySelector("[data-ps-push-query]");
+      var tEl = box.querySelector("[data-ps-push-title]");
+      var bEl = box.querySelector("[data-ps-push-body]");
+      var uEl = box.querySelector("[data-ps-push-url]");
+      var query = qEl ? qEl.value.trim() : "";
+      if (!query) {
+        alert("请输入 display_name / boss_uid / user_id");
+        return;
+      }
+      state.pushTestQuery = query;
+      var btn = e.target.closest("[data-ps-send-test-push]");
+      if (btn) {
+        btn.disabled = true;
+        btn.textContent = "发送中…";
+      }
+      post("send_test_web_push", {
+        query: query,
+        title: tEl ? tEl.value.trim() : "",
+        body: bEl ? bEl.value.trim() : "",
+        url: uEl ? uEl.value.trim() : "/mine.html",
+      })
+        .then(function (res) {
+          state.pushTestResult = res;
+          state.message = res.message || (res.ok ? "测试 Push 已发送" : "测试 Push 失败");
+          state.tab = "diagnostics";
+          paint();
+        })
+        .catch(function (err) {
+          state.pushTestResult = {
+            ok: false,
+            message: (err && err.message) || "发送失败",
+            vapidConfigured: false,
+            results: (err && err.results) || [],
+            activeCount: (err && err.activeCount) || 0,
+            sent: 0,
+            failed: 0,
+            target: (err && err.target) || null,
+          };
+          alert((err && err.message) || "发送失败");
+          paint();
         });
     }
   });

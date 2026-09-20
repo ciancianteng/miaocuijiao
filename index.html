@@ -2,8 +2,46 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <!-- mcj-pwa-meta:begin -->
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="妙脆角老板">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#0a0610">
+  <meta name="mobile-web-app-capable" content="yes">
+  <script src="/pwa-boot.js" defer></script>
+  <!-- mcj-pwa-meta:end -->
   <title>MEOW CUI JIAO GAMING CLUB</title>
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="妙脆角 MEOW CUI JIAO">
+  <meta property="og:locale" content="zh_CN">
+  <meta property="og:url" content="https://www.meowcuijiao.com/">
+  <meta property="og:title" content="妙脆角 MEOW CUI JIAO｜专业游戏陪玩">
+  <meta property="og:description" content="专业陪玩，每一场游戏认真对待每一位热爱电竞的你。">
+  <meta property="og:image" content="https://www.meowcuijiao.com/og/share-card-square-v2.jpg">
+  <meta property="og:image:secure_url" content="https://www.meowcuijiao.com/og/share-card-square-v2.jpg">
+  <meta property="og:image:type" content="image/jpeg">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="1200">
+  <meta property="og:image:alt" content="妙脆角 MEOW CUI JIAO 品牌形象">
+  <meta property="og:image" content="https://www.meowcuijiao.com/og/share-card-square-v2.jpg">
+  <meta property="og:image:secure_url" content="https://www.meowcuijiao.com/og/share-card-square-v2.jpg">
+  <meta property="og:image:type" content="image/jpeg">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="1200">
+  <meta property="og:image:alt" content="妙脆角 MEOW CUI JIAO｜专业游戏陪玩">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="MEOW CUI JIAO GAMING CLUB">
+  <meta name="twitter:description" content="专业陪玩，每一场游戏认真对待每一位热爱电竞的你。">
+  <meta name="twitter:image" content="https://www.meowcuijiao.com/og/share-card-square-v2.jpg">
+  <link rel="image_src" href="https://www.meowcuijiao.com/og/share-card-square-v2.jpg">
+
+  <!-- Supabase password-recovery callback: #type=recovery → /auth/reset-password/ -->
+  <script src="/src/supabase-recovery-reset.js?v=20260907recoveryReset1"></script>
   <style>
     :root{
       --bg:#050406;
@@ -37,7 +75,7 @@
     .stat-card{min-height:132px;padding:22px;display:flex;align-items:center;justify-content:space-between;gap:16px;cursor:pointer}.stat-copy{position:relative;z-index:1}.stat-card span{display:block;color:var(--muted);font-size:13px;font-weight:950}.stat-card strong{display:block;margin-top:5px;font-size:44px;line-height:1;color:#fff}.stat-card b{display:block;margin-top:8px;color:var(--pink);font-size:13px;letter-spacing:.16em}.stat-icon{position:relative;z-index:1;width:58px;height:58px;border-radius:20px;display:grid;place-items:center;background:rgba(243,168,203,.13);border:1px solid rgba(243,168,203,.28);font-size:28px;box-shadow:inset 0 0 18px rgba(255,220,235,.08)}
     .feature-row{grid-template-columns:repeat(4,1fr)}.feature-card{min-height:190px;padding:26px;display:flex;flex-direction:column;justify-content:space-between}.feature-head{position:relative;z-index:1;display:flex;align-items:flex-start;gap:16px}.feature-icon{width:58px;height:58px;border-radius:20px;display:grid;place-items:center;background:rgba(255,220,235,.12);border:1px solid rgba(243,168,203,.28);font-size:28px}.feature-card h3{margin:0;font-size:25px}.feature-card p{margin:7px 0 0;color:var(--muted);font-weight:850}.feature-card .btn{position:relative;z-index:1;width:max-content;min-height:42px;padding:0 17px;border:0;border-radius:999px;background:linear-gradient(180deg,#ffe2ef,#e9a0c6);color:#1b0712;font-weight:1000;cursor:pointer}
     .section-title{display:flex;align-items:end;justify-content:space-between;gap:16px;margin-bottom:18px}.section-title h2{margin:0;font-size:28px}.section-title p{margin:5px 0 0;color:var(--muted)}
-    .order-strip{display:flex;gap:20px;overflow-x:auto;padding:4px 2px 18px;scroll-snap-type:x mandatory}.order-strip::-webkit-scrollbar{height:8px}.order-strip::-webkit-scrollbar-thumb{background:rgba(243,168,203,.36);border-radius:99px}.companion-card{flex:0 0 238px;scroll-snap-align:start;padding:12px}.avatar{position:relative;height:190px;border-radius:20px;overflow:hidden;border:1px solid rgba(243,168,203,.28);background:#120d15}.avatar img{width:100%;height:100%;object-fit:cover}.online-dot{position:absolute;right:12px;top:12px;width:13px;height:13px;border-radius:50%;background:#72efb4;box-shadow:0 0 12px #72efb4}.companion-info{position:relative;z-index:1;padding:13px 4px 2px}.row{display:flex;align-items:center;justify-content:space-between;gap:8px}.companion-info h3{margin:0;font-size:19px}.price{font-weight:1000;color:var(--pink-soft)}.muted{color:var(--muted)}.mini{margin:8px 0 12px;color:var(--muted);font-size:13px}.order-btn{width:100%;height:40px;border:0;border-radius:999px;background:linear-gradient(180deg,#ffe2ef,#e9a0c6);color:#1b0712;font-weight:1000;cursor:pointer;transition:.2s ease}.order-btn:hover{transform:translateY(-2px);box-shadow:0 0 20px rgba(243,168,203,.24)}
+    .order-strip{display:flex;gap:20px;overflow-x:auto;padding:4px 2px 18px;scroll-snap-type:x mandatory}.order-strip::-webkit-scrollbar{height:8px}.order-strip::-webkit-scrollbar-thumb{background:rgba(243,168,203,.36);border-radius:99px}.companion-card{flex:0 0 238px;scroll-snap-align:start;padding:12px}.avatar{position:relative;height:190px;border-radius:20px;overflow:hidden;border:1px solid rgba(243,168,203,.28);background:#120d15}.avatar img{width:100%;height:100%;object-fit:cover}.online-dot{position:absolute;right:12px;top:12px;width:13px;height:13px;border-radius:50%;background:#64748b;box-shadow:none}.online-dot.is-online{background:#72efb4;box-shadow:0 0 12px #72efb4}.online-dot.is-busy{background:#f59e0b;box-shadow:0 0 8px rgba(245,158,11,.45)}.online-dot.is-paused,.online-dot.is-offline{background:#64748b;box-shadow:none}.companion-info{position:relative;z-index:1;padding:13px 4px 2px}.row{display:flex;align-items:center;justify-content:space-between;gap:8px}.companion-info h3{margin:0;font-size:19px}.price{font-weight:1000;color:var(--pink-soft)}.muted{color:var(--muted)}.mini{margin:8px 0 12px;color:var(--muted);font-size:13px}.order-btn{width:100%;height:40px;border:0;border-radius:999px;background:linear-gradient(180deg,#ffe2ef,#e9a0c6);color:#1b0712;font-weight:1000;cursor:pointer;transition:.2s ease}.order-btn:hover{transform:translateY(-2px);box-shadow:0 0 20px rgba(243,168,203,.24)}
     .modal{position:fixed;inset:0;z-index:99999;display:none;align-items:center;justify-content:center;background:rgba(2,1,4,.76);backdrop-filter:blur(12px);padding:16px;overflow:hidden;width:100vw;height:100dvh;margin:0;transform:none}.modal.open{display:flex}.dialog{position:relative;width:min(680px,100%);max-height:calc(100dvh - 32px);overflow:auto;border:1px solid rgba(243,168,203,.34);border-radius:24px;background:linear-gradient(180deg,rgba(30,24,36,.96),rgba(9,8,13,.98));box-shadow:0 24px 90px rgba(0,0,0,.62);padding:22px;margin:0;transform:none}.close{position:absolute;right:12px;top:12px;z-index:3;float:none;width:36px;height:36px;border-radius:50%;border:1px solid rgba(243,168,203,.28);background:rgba(0,0,0,.25);color:#ffe1ef;font-size:22px;line-height:1;cursor:pointer;display:grid;place-items:center}.dialog:has(.boss-login-modal),.dialog.is-auth-dialog{width:460px;max-width:min(480px,calc(100vw - 32px));height:auto;min-height:560px;max-height:calc(100dvh - 32px);overflow:auto;padding:36px 28px 28px}
     .team-lobby-card .feature-icon{box-shadow:0 0 22px rgba(243,168,203,.22);background:radial-gradient(circle at 50% 40%,rgba(255,220,235,.22),rgba(243,168,203,.09))}.team-lobby-card .btn{box-shadow:0 0 20px rgba(243,168,203,.22)}@media(max-width:980px){.live-stats{grid-template-columns:repeat(2,1fr)}.feature-row{grid-template-columns:1fr}.container{padding:20px}.main-nav{justify-content:flex-start;overflow-x:auto;flex-wrap:nowrap;padding-bottom:4px}.main-nav a,.main-nav button{white-space:nowrap}.brand span{display:block}}
     @media(max-width:560px){.header-inner{padding:0 16px}.top-actions{gap:10px}.top-actions button{padding:0 12px}.container{padding:16px}.notice-bar{margin-bottom:20px}.banner{height:clamp(180px,28vh,220px);margin-bottom:18px}.live-stats{grid-template-columns:1fr}.stat-card{min-height:118px}.stat-card strong{font-size:38px}.feature-card{min-height:168px}.section{margin-bottom:34px}.section-title{align-items:flex-start;flex-direction:column}.companion-card{flex-basis:220px}.avatar{height:176px}}
@@ -52,7 +90,7 @@ body{animation:pageIn .28s ease both}
 .banner{position:relative;animation:bannerBreath 4.8s ease-in-out infinite}.banner:after{content:"";position:absolute;inset:0;border-radius:20px;pointer-events:none;background:linear-gradient(110deg,transparent 0%,transparent 42%,rgba(255,220,235,.20) 49%,transparent 57%,transparent 100%);transform:translateX(-120%);animation:bannerSweep 6s ease-in-out infinite}.banner:before{content:"";position:absolute;inset:-1px;border-radius:21px;pointer-events:none;border:1px solid rgba(255,220,235,.22);box-shadow:0 0 18px rgba(243,168,203,.18);animation:borderBreath 3.8s ease-in-out infinite}.banner:hover{transform:scale(1.01);transition:transform .45s ease}.banner img{transition:filter .45s ease}.banner:hover img{filter:saturate(1.06) contrast(1.03)}@keyframes bannerSweep{0%,64%{transform:translateX(-120%)}86%,100%{transform:translateX(120%)}}@keyframes borderBreath{0%,100%{box-shadow:0 0 14px rgba(243,168,203,.12)}50%{box-shadow:0 0 28px rgba(243,168,203,.24)}}@keyframes bannerBreath{0%,100%{box-shadow:var(--glow)}50%{box-shadow:0 0 32px rgba(243,168,203,.18),0 20px 62px rgba(0,0,0,.44)}}
 .notice-bar{position:relative}.notice-bar.fade-cycle{animation:noticeFade 4s ease-in-out infinite}@keyframes noticeFade{0%,100%{opacity:.76}15%,82%{opacity:1}}
 .neon-card,.main-nav a,.main-nav button,.feature-card .btn,.order-btn,.top-actions button,.top-actions a{will-change:transform}.main-nav a:active,.main-nav button:active,.feature-card .btn:active,.order-btn:active,.top-actions button:active{transform:scale(.97)}.feature-card:hover{transform:scale(1.03);border-color:rgba(255,220,235,.64)}.feature-card:hover .btn{transform:scale(1.04);box-shadow:0 0 24px rgba(243,168,203,.28)}
-.stat-card strong{font-variant-numeric:tabular-nums}.online-dot{animation:onlineBreath 2.1s ease-in-out infinite}@keyframes onlineBreath{0%,100%{box-shadow:0 0 10px rgba(114,239,180,.55);transform:scale(1)}50%{box-shadow:0 0 20px rgba(114,239,180,.85);transform:scale(1.08)}}
+.stat-card strong{font-variant-numeric:tabular-nums}.online-dot.is-online{animation:onlineBreath 2.1s ease-in-out infinite}.online-dot.is-busy,.online-dot.is-paused,.online-dot.is-offline{animation:none}@keyframes onlineBreath{0%,100%{box-shadow:0 0 10px rgba(114,239,180,.55);transform:scale(1)}50%{box-shadow:0 0 20px rgba(114,239,180,.85);transform:scale(1.08)}}
 .order-strip{scrollbar-width:none;-ms-overflow-style:none;cursor:grab}.order-strip::-webkit-scrollbar{display:none}.order-strip.paused{cursor:grab}.companion-card:hover{transform:translateY(-5px) scale(1.02)}
 .recent-orders{padding:20px}.recent-orders h2{margin:0 0 14px;font-size:24px}.order-ticker{height:132px;overflow:hidden;position:relative}.order-ticker-track{display:grid;gap:10px;animation:orderTicker 12s linear infinite}.recent-orders:hover .order-ticker-track{animation-play-state:paused}.recent-order-item{display:grid;grid-template-columns:86px 1fr auto;align-items:center;gap:14px;padding:13px 14px;border-radius:16px;border:1px solid rgba(243,168,203,.15);background:rgba(255,255,255,.035)}.recent-order-item time{color:#ffb6d9;font-weight:900}.recent-order-item strong{color:#fff}.recent-order-item span{color:#bfaebb;font-size:13px}.recent-order-item b{color:#ffdceb}@keyframes orderTicker{from{transform:translateY(0)}to{transform:translateY(-50%)}}
 @media(max-width:720px){.ambient-layer .paw{font-size:42px}.recent-order-item{grid-template-columns:1fr;gap:4px}.order-ticker{height:190px}.banner:hover{transform:none}}
@@ -1256,15 +1294,7 @@ label{
   transform:scale(1.04)!important;
   filter:saturate(1.08) contrast(1.04)!important;
 }
-.companion-track .companion-card .online-dot{
-  right:10px!important;
-  top:10px!important;
-  width:10px!important;
-  height:10px!important;
-  border:2px solid rgba(7,4,10,.9)!important;
-  background:#58efad!important;
-  box-shadow:0 0 10px rgba(88,239,173,.8)!important;
-}
+undefined
 .companion-track .companion-info{
   position:relative!important;
   z-index:2!important;
@@ -3468,32 +3498,38 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!import
   <link rel="stylesheet" href="src/real-data-admin.css">
   <link rel="stylesheet" href="src/gameplay-flow.css">
   <link rel="stylesheet" href="src/design-system.css">
-  <link rel="stylesheet" href="src/home-banner.css?v=20260811bannerUnify1">
-  <link rel="stylesheet" href="src/home-announcements.css?v=20260805annRotate1">
+  <link rel="stylesheet" href="src/home-banner.css?v=20260911bannerWysiwyg3to1">
+  <link rel="stylesheet" href="src/home-brand-hero.css?v=20260910homeFix1">
+  <link rel="stylesheet" href="src/home-banner-promo.css?v=20260911bannerWysiwyg3to1">
+  <link rel="stylesheet" href="src/home-trust-stats.css?v=20260910appProto2">
+  <link rel="stylesheet" href="src/home-announcements.css?v=20260910dataRestore1">
   <link rel="stylesheet" href="src/home-popularity.css">
-  <link rel="stylesheet" href="src/home-desktop.css">
+  <link rel="stylesheet" href="src/home-desktop.css?v=20260910appProto1">
   <link rel="stylesheet" href="src/login-modal.css?v=20260805loginUi1">
   <link rel="stylesheet" href="src/place-order-modal.css">
   <link rel="stylesheet" href="src/notify-system.css">
-  <script type="module" src="src/role-gates.js?v=20260811authUnify1"></script>
+  <script type="module" src="src/otp-cooldown.js?v=20260908otpFix1"></script>
+  <script type="module" src="src/role-gates.js?v=20260908antiBlank1"></script>
   <script type="module" src="src/boss-auth-session.js?v=20260811authUnify2"></script>
-  <script type="module" src="src/forgot-password.js?v=20260806forgotP0"></script>
-  <script type="module" src="src/avatar-fallback.js"></script>
+  <script type="module" src="src/forgot-password.js?v=20260907otpFocus1"></script>
+  <script type="module" src="src/avatar-fallback.js?v=20260911bannerHall2"></script>
   <script type="module" src="src/companion-media.js?v=20260802mediaSync"></script>
   <script type="module" src="src/launch-feature-freeze.js"></script>
   <script type="module" src="src/notify-system.js" defer></script>
   <script type="module" src="src/boss-header.js?v=20260805p0home1" defer></script>
   <script type="module" src="src/boss-forced-ack.js?v=20260805p0home1" defer></script>
-  <link rel="stylesheet" href="src/boss-header.css?v=20260805p0home1">
+  <link rel="stylesheet" href="src/boss-header.css?v=20260910appProto1">
   <link rel="stylesheet" href="/src/mcj-safe-area.css?v=20260802mobileP0c">
-  <link rel="stylesheet" href="src/home-mobile.css?v=20260804annMarquee3">
+  <link rel="stylesheet" href="src/home-mobile.css?v=20260910appProto1">
+  <link rel="stylesheet" href="src/home-app-mobile.css?v=20260911hotLock1">
+  <link rel="stylesheet" href="src/ui-linglu-polish.css?v=20260911hotLock1">
 </head>
-<body>
+<body class="mcj-app-shell">
   <div class="ambient-layer" aria-hidden="true"></div>
   <header class="site-header mcj-boss-header" data-mcj-boss-header="1" aria-label="顶部导航">
     <div class="mcj-boss-header-inner header-inner">
       <a class="mcj-header-brand" href="/" aria-label="MEOW CUI JIAO 妙脆角 首页">
-        <img class="mcj-header-brand-logo" src="/src/assets/meow-cuijiao-brand.jpg" alt="MEOW CUI JIAO" width="40" height="40" decoding="async" data-mcj-brand-logo="1">
+        <img class="mcj-header-brand-logo" src="/assets/meow-cuijiao-brand-96.webp" alt="MEOW CUI JIAO" width="40" height="40" decoding="async" data-mcj-brand-logo="1" onerror="this.onerror=null;this.src='/assets/meow-cuijiao-brand-96.jpg'">
         <span class="mcj-header-brand-text">
           <span class="mcj-header-brand-en">Meow Cui Jiao</span>
           <span class="mcj-header-brand-zh">妙脆角</span>
@@ -3511,42 +3547,61 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!import
       </div>
     </div>
   </header>
-  <main class="container">
-    <section class="mcj-home-hero" data-mcj-home-hero aria-label="MEOW CUI JIAO 首页 Banner"></section>
+  <main class="container mcj-app-home">
+    <section class="home-brand-hero" data-home-brand-hero aria-label="妙脆角 APP 首页顶部">
+      <div class="home-brand-hero-snacks" aria-hidden="true">
+        <img class="mcj-snack mcj-snack--1" data-mcj-decor="1" src="assets/mcj-snack-chip.svg" alt="" width="80" height="80" decoding="async">
+        <img class="mcj-snack mcj-snack--2" data-mcj-decor="1" src="assets/mcj-snack-chip-pink.svg" alt="" width="80" height="80" decoding="async">
+        <img class="mcj-snack mcj-snack--3" data-mcj-decor="1" src="assets/mcj-snack-chip.svg" alt="" width="80" height="80" decoding="async">
+        <img class="mcj-snack mcj-snack--4" data-mcj-decor="1" src="assets/mcj-snack-chip-pink.svg" alt="" width="80" height="80" decoding="async">
+        <img class="mcj-snack mcj-snack--5" data-mcj-decor="1" src="assets/mcj-snack-chip.svg" alt="" width="80" height="80" decoding="async">
+        <img class="mcj-snack mcj-snack--6" data-mcj-decor="1" src="assets/mcj-snack-chip-pink.svg" alt="" width="80" height="80" decoding="async">
+      </div>
+      <div class="home-brand-hero-inner">
+        <div class="home-brand-hero-copy">
+          <p class="home-brand-hero-kicker">MEOW CUI JIAO</p>
+          <h1 class="home-brand-hero-title">妙脆角</h1>
+          <div class="home-brand-hero-stats home-trust-stats" data-home-brand-hero-stats data-home-daily-stats aria-label="平台实时数据" hidden></div>
+          <p class="home-brand-hero-tagline">专业陪玩，每一场游戏认真对待，每一位热爱电竞的你。</p>
+          <div class="home-brand-hero-actions">
+            <a class="home-brand-hero-btn primary" href="companion-center.html">进入陪玩大厅</a>
+            <a class="home-brand-hero-btn" href="support.html?start=1">联系客服</a>
+          </div>
+        </div>
+        <div class="home-brand-hero-visual" aria-hidden="true">
+          <span class="home-brand-hero-aura"></span>
+          <img class="home-brand-hero-mascot" src="assets/meow-cuijiao-hero-ip.webp" alt="" width="1024" height="1024" decoding="async" fetchpriority="high">
+        </div>
+      </div>
+    </section>
 
-    <div class="announcement-strip home-announcement-bar" id="homeAnnouncementBar" role="region" aria-label="官方公告">
+    <section class="mcj-home-hero mcj-home-hero--promo" data-mcj-home-hero aria-label="活动轮播"></section>
+
+<div class="announcement-strip home-announcement-bar" id="homeAnnouncementBar" role="region" aria-label="官方公告">
       <div class="home-announcement-label"><span aria-hidden="true">📢</span><strong>官方公告</strong></div>
       <div class="home-announcement-track-wrap" data-announcement-open data-empty="1" role="button" aria-label="暂无最新公告">
         <span class="home-announcement-static">暂无最新公告。</span>
       </div>
     </div>
 
-    <section class="section home-daily-stats" data-home-daily-stats aria-label="今日平台数据" hidden></section>
 
-    <section class="section quick-entry-section">
-      <div class="section-title compact-title"><div><h2>快速入口</h2><p>QUICK ACCESS</p></div></div>
-            <div class="quick-entry-grid">
-        <a class="neon-card quick-entry-card" href="companion-center.html" data-home-entry="companion-hall"><div><strong>陪玩大厅</strong><span>浏览已上架陪玩，立即下单</span></div></a>
-        <a class="neon-card quick-entry-card" href="more-gameplays.html" data-home-entry="more-gameplays"><div><strong>更多玩法</strong><span>护航、跑刀、代肝、趣味单</span></div></a>
-        <a class="neon-card quick-entry-card" href="custom-order.html" data-home-entry="custom-order"><div><strong>自定义订单</strong><span>填写需求，客服匹配陪玩</span></div></a>
-        <a class="neon-card quick-entry-card" href="team-lobby.html" data-home-entry="team-lobby" data-team-lobby-entry="1"><div><strong>组队大厅</strong><span>进入组队社区找队友</span></div></a>
+
+        <section class="section home-dual-entry companion-apply-guide" data-companion-apply-section aria-label="快捷入口">
+      <div class="home-dual-entry-grid">
+        <a class="home-dual-entry-card home-dual-entry-card--levels club-level-entry-card" href="club-levels.html" data-home-entry="club-levels">
+          <strong class="home-dual-entry-title">俱乐部等级</strong>
+          <span class="home-dual-entry-desc">查看等级与价格权益</span>
+        </a>
+        <a class="home-dual-entry-card home-dual-entry-card--apply companion-apply-guide-card" href="companion-apply.html" data-companion-apply-guide>
+          <strong class="home-dual-entry-title">申请陪玩</strong>
+          <span class="home-dual-entry-desc">提交资料，通过审核后接单</span>
+        </a>
       </div>
-      <a class="neon-card club-level-entry-card" href="club-levels.html" data-home-entry="club-levels" style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:12px;padding:14px 16px;text-decoration:none;min-height:64px;width:100%;box-sizing:border-box">
-        <div><strong style="display:block;font-size:16px;color:#fff">了解俱乐部等级制度</strong><span style="color:rgba(255,228,240,.7);font-size:13px">萌喵到喵皇 · 价格区间与升级权益</span></div>
-        <span style="color:#f9a8d4;font-weight:700;white-space:nowrap">查看说明 →</span>
-      </a>
+      <p class="mcj-guide-home-hint" data-boss-tutorial-entry="1" style="margin:12px 0 0;text-align:center;font-size:13px;color:rgba(255,226,239,.72)">
+        <a href="/guide.html?role=boss" style="color:#ffd9ea;font-weight:850;text-decoration:underline;text-underline-offset:3px">第一次使用？查看老板使用教学</a>
+      </p>
     </section>
 
-    <section class="section companion-apply-guide" data-companion-apply-section>
-      <div class="neon-card companion-apply-guide-card">
-        <div class="companion-apply-guide-icon" aria-hidden="true"><img src="assets/companion-apply-cat-logo.png" alt=""></div>
-        <div>
-          <h2>申请成为陪玩</h2>
-          <p>提交资料，通过审核后即可接单</p>
-        </div>
-        <a class="order-btn" href="companion-apply.html" data-companion-apply-guide>申请成为陪玩</a>
-      </div>
-    </section>
 <section class="section official-ads" aria-label="首页活动" hidden>
       <div class="section-title"><div><h2>首页活动</h2><p>活动内容由后台配置</p></div></div>
       <div class="official-ad-slider" id="officialAdSlider">
@@ -3616,12 +3671,12 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!import
 
     <footer class="site-footer"><strong>MEOW CUI JIAO ENTERPRISE</strong><br><span>✓ Registered Malaysian Enterprise</span><br><small>© MEOW CUI JIAO ENTERPRISE. All rights reserved.</small><br><small class="mcj-footer-ssm" style="display:inline-block;margin-top:4px;font-size:11px;line-height:1.35;opacity:.85">SSM Registration No. 202603181917</small></footer>
   </main>
-  <nav class="mobile-bottom-nav" aria-label="底部导航">
-    <a class="active" href="index.html">首页</a>
-    <a href="companion-center.html">陪玩</a>
-    <a href="companion-center.html?service=voice">语音</a>
-    <a href="more-gameplays.html">玩法</a>
-    <a href="mine.html" data-mobile-mine>我的</a>
+    <nav class="mobile-bottom-nav mcj-app-tabbar" aria-label="底部导航">
+    <a class="active" href="index.html" data-app-tab="home"><span class="mcj-app-tab-ico" aria-hidden="true">⌂</span><span class="mcj-app-tab-label">首页</span></a>
+    <a href="companion-center.html" data-app-tab="hall"><span class="mcj-app-tab-ico" aria-hidden="true">▦</span><span class="mcj-app-tab-label">大厅</span></a>
+    <a href="orders.html" data-app-tab="orders"><span class="mcj-app-tab-ico" aria-hidden="true">☰</span><span class="mcj-app-tab-label">订单</span></a>
+    <a href="support.html?start=1" data-app-tab="support"><span class="mcj-app-tab-ico" aria-hidden="true">💬</span><span class="mcj-app-tab-label">客服</span></a>
+    <a href="mine.html" data-app-tab="mine" data-mobile-mine><span class="mcj-app-tab-ico" aria-hidden="true">☺</span><span class="mcj-app-tab-label">我的</span></a>
   </nav>
 
   <div class="modal" id="modal"><div class="dialog"><button class="close" data-close>×</button><div id="modalBody"></div></div></div>
@@ -3985,14 +4040,14 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!import
     });
     document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModal()});
   </script>
-  <script type="module" src="src/site-data.js?v=20260804profileUuid1"></script>
-  <script src="src/banner-crop.js?v=20260809bannerCropSync1"></script>
-  <script type="module" src="src/home-banner.js?v=20260815bannerMobileSort1"></script>
-  <script type="module" src="src/home-announcements.js?v=20260805annRotate1"></script>
-  <script type="module" src="src/home-daily-stats.js?v=20260802mobileP0c"></script>
+  <script type="module" src="src/site-data.js?v=20260911hotLock1"></script>
+  <script src="src/banner-crop.js?v=20260911bannerWysiwyg3to1"></script>
+  <script type="module" src="src/home-banner.js?v=20260911bannerWysiwyg3to1"></script>
+  <script type="module" src="src/home-announcements.js?v=20260910dataRestore1"></script>
+  <script type="module" src="src/home-daily-stats.js?v=20260910appProto2"></script>
   <script src="src/companion-presence.js?v=20260805profileLock1"></script>
-  <script src="/src/place-order-modal.js?v=20260811authUnify1" defer></script>
-  <script type="module" src="src/home-popularity.js?v=20260805profileLock1"></script>
+  <script src="/src/place-order-modal.js?v=20260920servicePricingDedup" defer></script>
+  <script type="module" src="src/home-popularity.js?v=20260910appProto1"></script>
   <script type="module" src="src/home-services.js"></script>
   <script type="module" src="src/companion-application.js"></script>
   <script>
@@ -4138,73 +4193,13 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!import
   </script>
 
   <script>
-    (function todayDataDetailScript(){/* today-data-detail-script-v1 */
+    (function todayDataDetailScript(){/* today-data-detail-script-v1 — DISABLED: no localStorage fake stats */
+      // Legacy cards ([data-today-detail]/[data-live-stat]) used mcjRealDB.v1 and fell back to
+      // "all orders = today" when empty. Homepage daily KPIs now come only from
+      // /api/gateway?path=home/daily-stats (server/api/home/daily-stats.js) with the same
+      // buildDashboardStats口径 as admin. Do not reintroduce localStorage/mock numbers.
       if (window.__mcjTodayDataDetailReady) return;
       window.__mcjTodayDataDetailReady = true;
-      var fallbackPlayers = [];
-      var fallbackOrders = [];
-      var fallbackReviews = [];
-      function safe(text){return String(text==null?'':text).replace(/[&<>"']/g,function(ch){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]})}
-      function readJson(key,fallback){try{var data=JSON.parse(localStorage.getItem(key)||'null');if(Array.isArray(data)&&data.length)return data;if(data&&typeof data==='object')return data;}catch(e){}return fallback}
-      function firstArray(keys,fallback){for(var i=0;i<keys.length;i++){var data=readJson(keys[i],null);if(Array.isArray(data)&&data.length)return data;}return fallback}
-      function realDB(){try{return JSON.parse(localStorage.getItem('mcjRealDB.v1')||'{}')}catch(e){return {}}}
-      function numFromMoney(value){var n=String(value||'').replace(/,/g,'').match(/[\d.]+/);return n?Number(n[0]):0}
-      function isToday(value){if(!value)return true;var d=new Date(value);if(isNaN(d.getTime()))return true;var now=new Date();return d.getFullYear()===now.getFullYear()&&d.getMonth()===now.getMonth()&&d.getDate()===now.getDate()}
-      function enabled(list){return (list||[]).filter(function(x){return x&&x.enabled!==false})}
-      function orderAmount(order){return numFromMoney(order.amount||order.total||order.price||order.unit_price)}
-      function currentData(){
-        var db=realDB();
-        var players = enabled(Array.isArray(db.companions)?db.companions.filter(function(p){return p.auditStatus==='approved'&&p.visible!==false&&p.visible!=='false'}):[]);
-        var orders = Array.isArray(db.orders)?db.orders:[];
-        var todayOrders = orders.filter(function(order){return isToday(order.created_at||order.time||order.service_time)});
-        if(!todayOrders.length) todayOrders = orders;
-        var reviews = enabled(Array.isArray(db.reviews)?db.reviews.filter(function(r){return r.status==='通过'||r.status==='approved'||r.status==='已发布'}):[]);
-        var online = players.filter(function(p){return String(p.status||p.online||'在线').indexOf('离线')===-1});
-        var revenue = todayOrders.reduce(function(sum,order){return sum + orderAmount(order)},0);
-        var avgRating = reviews.length ? reviews.reduce(function(sum,item){return sum + (parseFloat(item.rating||item.score||5)||5)},0)/reviews.length : 0;
-        var goodRate = Math.min(100, Math.max(0, avgRating/5*100));
-        return {players:players,online:online,orders:todayOrders,reviews:reviews,revenue:revenue,goodRate:goodRate};
-      }
-      function setCounts(){
-        var data=currentData();
-        var map={players:data.online.length||data.players.length,orders:data.orders.length,revenue:data.revenue,reviews:data.goodRate.toFixed(1)};
-        document.querySelectorAll('[data-today-detail], [data-live-stat]').forEach(function(card){
-          var type=card.getAttribute('data-today-detail')||card.getAttribute('data-live-stat');
-          var strong=card.querySelector('strong');
-          if(!strong)return;
-          var value=map[type];
-          if(type==='reviews'){strong.dataset.count=String(value);strong.textContent=value+'%';}
-          else if(type==='revenue'){strong.dataset.count=String(value);strong.textContent=value>0?(Number(value).toFixed(2).replace(/\.00$/,'')+' 猫粮'):'';}
-          else{strong.dataset.count=String(value||0);strong.textContent=String(value||0);}
-        });
-        document.querySelectorAll('[data-live-stat="revenue"] strong').forEach(function(strong){if(!Number(strong.dataset.count||0))strong.textContent='';});
-      }
-      function summary(items){return '<div class="today-detail-summary">'+items.map(function(x){return '<div><span>'+safe(x[0])+'</span><strong>'+safe(x[1])+'</strong></div>'}).join('')+'</div>'}
-      function rows(list,mapper){if(!list.length)return '<div class="today-detail-empty">后台暂时没有更多实质数据，生成订单或在后台新增后会同步显示</div>';return '<div class="today-detail-list">'+list.slice(0,18).map(function(item){var r=mapper(item);return '<div class="today-detail-row"><div><strong>'+safe(r.title)+'</strong><span>'+safe(r.desc)+'</span></div><b>'+safe(r.value)+'</b></div>'}).join('')+'</div>'}
-      function modalHtml(type){
-        var data=currentData();
-        var title='今日数据明细',desc='这里直接读取平台数据，数字和明细保持一致。',actions='';
-        var body='';
-        if(type==='players'){
-          title='在线陪玩明细'; desc='显示当前可预约陪玩列表，可看到名字、游戏、价格、评分和今日单量。'; actions='<a class="primary" href="companion-center.html">查看陪玩大厅</a>';
-          body=summary([['在线陪玩',data.online.length||data.players.length],['全部陪玩',data.players.length],['可派单','实时同步']])+rows(data.online.length?data.online:data.players,function(p){return {title:(p.name||p.title||'未命名陪玩')+' / '+(p.game||'游戏未填'),desc:'价格 '+(p.price||'未填')+' · 评分 '+(p.rating||p.score||'5.0')+' · 标签 '+((Array.isArray(p.tags)?p.tags.join('、'):p.tags)||'后台未填'),value:(p.orders24h||p.orders||0)+' 单'}});
-        } else if(type==='orders'){
-          title='今日订单明细'; desc='显示今天创建的订单，可看到订单号、陪玩、游戏、状态和金额。'; actions='<a class="primary" href="orders.html">查看我的订单</a>';
-          body=summary([['今日订单',data.orders.length],['待处理',data.orders.filter(function(o){return /待|pending|匹配|支付/.test(String(o.status||''))}).length],['今日金额',Math.round(data.revenue)+' 猫粮']])+rows(data.orders,function(o){return {title:(o.order_id||o.id||'未编号订单')+' / '+(o.player_name||o.player||o.boss||'未知'),desc:'游戏 '+(o.game||o.service||'未填')+' · 时间 '+(o.service_time||o.time||o.created_at||'刚刚'),value:(o.status||'待处理')+' · '+(o.amount||o.total||'0 猫粮')}});
-        } else if(type==='revenue'){
-          title='今日营业额明细'; desc='按今日订单金额汇总。'; actions='<a class="primary" href="orders.html">订单列表</a>';
-          body=summary([['今日营业额',Math.round(data.revenue)+' 猫粮'],['订单',data.orders.length],['客单价',Math.round(data.revenue/Math.max(data.orders.length,1))+' 猫粮']])+rows(data.orders,function(o){return {title:(o.order_id||o.id||'未编号订单')+' / '+(o.player_name||o.player||'陪玩未填'),desc:'状态 '+(o.status||'待处理')+' · '+(o.game||o.service||'服务未填'),value:o.amount||o.total||'0 猫粮'}});
-        } else {
-          title='好评明细'; desc='显示已通过评价列表，可看到评分、评价内容和对应游戏。'; actions='<a class="primary" href="companion-center.html">查看陪玩评价</a>';
-          body=summary([['好评率',data.goodRate.toFixed(1)+'%'],['评价',data.reviews.length],['平均分',(data.goodRate/20).toFixed(1)]])+rows(data.reviews,function(r){return {title:(r.name||r.user||'老板')+' / '+(r.game||'游戏未填'),desc:r.comment||r.description||'后台暂无评价内容',value:(r.rating||r.score||'5.0')+' 分'}});
-        }
-        return '<div class="today-detail-head"><div><h2>'+safe(title)+'</h2><p>'+safe(desc)+'</p></div></div><div class="today-detail-actions">'+actions+'<button type="button" data-close>关闭</button></div>'+body;
-      }
-      function show(html){var modal=document.getElementById('modal'),body=document.getElementById('modalBody');if(!modal||!body)return;body.innerHTML=html;modal.classList.add('open');document.body.style.overflow='hidden'}
-      document.addEventListener('click',function(e){var card=e.target.closest&&e.target.closest('[data-today-detail]');if(!card)return;e.preventDefault();e.stopPropagation();if(e.stopImmediatePropagation)e.stopImmediatePropagation();show(modalHtml(card.getAttribute('data-today-detail')));},true);
-      setCounts();
-      setTimeout(setCounts,400);
-      window.addEventListener('mcj:data-updated',setCounts);
     })();
   </script>
 
@@ -4468,7 +4463,8 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!import
   </script>
   <script type="module" src="src/dropdown-system.js" defer></script>
   <script type="module" src="src/real-data-admin.js" defer></script>
-  <script type="module" src="src/footer-system.js?v=20260805ssm1" defer></script>
+  <script type="module" src="src/discord-community-config.js?v=20260910linglu1"></script>
+  <script type="module" src="src/footer-system.js?v=20260911footerNoCommunity1" defer></script>
   <script type="module" src="src/text-guard.js?v=20260730home4" defer></script>
   <script type="module" src="src/design-system.js" defer></script>
 <script id="mcjBossLogoutHandler">
@@ -4701,6 +4697,127 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!import
   height:38px!important;
 }
 </style>
+
+<style id="mcj-hot-recommend-lock-v1">
+/* Hot recommend lock v1 (2026-09-11): status dots + 4:5 cover + controlled info.
+   Overrides freeze min-height floors that stretch cards on narrow viewports. */
+#hotCompanionTrack .companion-card,
+#recentCompanionTrack .companion-card,
+#gameCompanionTrack .companion-card,
+#reviewCompanionTrack .companion-card{
+  min-height:0!important;
+  height:auto!important;
+  display:flex!important;
+  flex-direction:column!important;
+}
+#hotCompanionTrack .hot-cover,
+#recentCompanionTrack .hot-cover,
+#gameCompanionTrack .hot-cover,
+#reviewCompanionTrack .hot-cover{
+  min-height:0!important;
+  max-height:none!important;
+  height:auto!important;
+  aspect-ratio:4 / 5!important;
+  flex:0 0 auto!important;
+}
+#hotCompanionTrack .hot-cover img,
+#recentCompanionTrack .hot-cover img,
+#gameCompanionTrack .hot-cover img,
+#reviewCompanionTrack .hot-cover img{
+  width:100%!important;
+  height:100%!important;
+  object-fit:cover!important;
+}
+#hotCompanionTrack .online-dot,
+#recentCompanionTrack .online-dot,
+#gameCompanionTrack .online-dot,
+#reviewCompanionTrack .online-dot,
+.companion-track .online-dot{
+  background:#64748b!important;
+  box-shadow:none!important;
+  animation:none!important;
+}
+#hotCompanionTrack .online-dot.is-online,
+#recentCompanionTrack .online-dot.is-online,
+#gameCompanionTrack .online-dot.is-online,
+#reviewCompanionTrack .online-dot.is-online,
+.companion-track .online-dot.is-online{
+  background:#58efad!important;
+  box-shadow:0 0 10px rgba(88,239,173,.8)!important;
+  animation:onlineBreath 2.1s ease-in-out infinite!important;
+}
+#hotCompanionTrack .online-dot.is-busy,
+#recentCompanionTrack .online-dot.is-busy,
+#gameCompanionTrack .online-dot.is-busy,
+#reviewCompanionTrack .online-dot.is-busy,
+.companion-track .online-dot.is-busy{
+  background:#f59e0b!important;
+  box-shadow:0 0 8px rgba(245,158,11,.45)!important;
+  animation:none!important;
+}
+#hotCompanionTrack .online-dot.is-paused,
+#recentCompanionTrack .online-dot.is-paused,
+#gameCompanionTrack .online-dot.is-paused,
+#reviewCompanionTrack .online-dot.is-paused,
+#hotCompanionTrack .online-dot.is-offline,
+#recentCompanionTrack .online-dot.is-offline,
+#gameCompanionTrack .online-dot.is-offline,
+#reviewCompanionTrack .online-dot.is-offline,
+.companion-track .online-dot.is-paused,
+.companion-track .online-dot.is-offline{
+  background:#64748b!important;
+  box-shadow:none!important;
+  animation:none!important;
+}
+#hotCompanionTrack .hot-info,
+#recentCompanionTrack .hot-info,
+#gameCompanionTrack .hot-info,
+#reviewCompanionTrack .hot-info{
+  display:flex!important;
+  flex-direction:column!important;
+  flex:1 1 auto!important;
+  min-height:0!important;
+}
+#hotCompanionTrack .hot-tags,
+#recentCompanionTrack .hot-tags,
+#gameCompanionTrack .hot-tags,
+#reviewCompanionTrack .hot-tags{
+  max-height:40px!important;
+  overflow:hidden!important;
+  flex:0 0 auto!important;
+}
+#hotCompanionTrack .mini-order,
+#recentCompanionTrack .mini-order,
+#gameCompanionTrack .mini-order,
+#reviewCompanionTrack .mini-order{
+  margin-top:auto!important;
+  flex:0 0 auto!important;
+}
+@media(max-width:720px){
+  #hotCompanionTrack .companion-card,
+  #recentCompanionTrack .companion-card,
+  #gameCompanionTrack .companion-card,
+  #reviewCompanionTrack .companion-card{
+    min-height:0!important;
+    padding:0!important;
+  }
+  #hotCompanionTrack .hot-cover,
+  #recentCompanionTrack .hot-cover,
+  #gameCompanionTrack .hot-cover,
+  #reviewCompanionTrack .hot-cover{
+    min-height:0!important;
+    aspect-ratio:4 / 5!important;
+    border-radius:0!important;
+  }
+  #hotCompanionTrack .hot-tags,
+  #recentCompanionTrack .hot-tags,
+  #gameCompanionTrack .hot-tags,
+  #reviewCompanionTrack .hot-tags{
+    max-height:38px!important;
+  }
+}
+</style>
+
 </body>
 </html>
 

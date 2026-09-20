@@ -1,0 +1,202 @@
+/* MCJ PWA install — compact bottom sheet (30–40% viewport), low chrome */
+
+.mcj-pwa-root {
+  position: fixed;
+  inset: 0;
+  z-index: 120000;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.22s ease, visibility 0.22s ease;
+}
+
+.mcj-pwa-root.is-open {
+  pointer-events: auto;
+  opacity: 1;
+  visibility: visible;
+}
+
+.mcj-pwa-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.48);
+}
+
+.mcj-pwa-sheet {
+  position: relative;
+  width: min(420px, 100%);
+  max-height: min(38vh, 320px);
+  margin: 0;
+  padding: 14px 16px calc(14px + env(safe-area-inset-bottom, 0px));
+  border-radius: 18px 18px 0 0;
+  border: 1px solid rgba(255, 190, 220, 0.10);
+  border-bottom: 0;
+  background: #120a14;
+  color: #fff5fa;
+  box-shadow: 0 -8px 28px rgba(0, 0, 0, 0.4);
+  transform: translateY(18px);
+  opacity: 0.96;
+  transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.22s ease;
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.mcj-pwa-root.is-open .mcj-pwa-sheet {
+  transform: translateY(0);
+  opacity: 1;
+}
+
+.mcj-pwa-handle {
+  width: 36px;
+  height: 4px;
+  border-radius: 99px;
+  background: rgba(255, 214, 235, 0.22);
+  margin: 0 auto 12px;
+}
+
+.mcj-pwa-close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: rgba(255, 226, 239, 0.72);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+}
+
+.mcj-pwa-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-right: 34px;
+  margin-bottom: 10px;
+}
+
+.mcj-pwa-logo-wrap {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  flex: 0 0 auto;
+  overflow: hidden;
+  background: #0a0610;
+}
+
+.mcj-pwa-logo-wrap.is-empty {
+  display: none;
+}
+
+.mcj-pwa-logo {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border: 0;
+}
+
+.mcj-pwa-logo.is-failed {
+  display: none !important;
+}
+
+.mcj-pwa-brand h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 900;
+  color: #ffe8f3;
+  letter-spacing: 0.01em;
+}
+
+.mcj-pwa-brand p {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: rgba(205, 184, 196, 0.78);
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+.mcj-pwa-steps {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.mcj-pwa-steps[hidden] {
+  display: none !important;
+}
+
+.mcj-pwa-steps li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 13px;
+  line-height: 1.4;
+  color: rgba(255, 236, 246, 0.82);
+  font-weight: 650;
+}
+
+.mcj-pwa-steps .mcj-pwa-ico {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  font-weight: 900;
+  color: #ffd6e8;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 190, 220, 0.14);
+}
+
+.mcj-pwa-actions {
+  display: grid;
+  gap: 8px;
+}
+
+.mcj-pwa-btn {
+  height: 42px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 190, 220, 0.22);
+  background: transparent;
+  color: #ffe2ef;
+  font-weight: 850;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.mcj-pwa-btn.primary {
+  border: 0;
+  background: linear-gradient(180deg, #ffe2ef, #f0a7ca);
+  color: #190812;
+  font-weight: 950;
+}
+
+.mcj-pwa-btn.ghost {
+  border: 0;
+  background: transparent;
+  color: rgba(255, 214, 235, 0.62);
+  height: 36px;
+  font-weight: 700;
+  font-size: 13px;
+}
+
+@media (min-width: 720px) {
+  .mcj-pwa-sheet {
+    width: min(400px, calc(100vw - 24px));
+    margin: 0 12px calc(12px + env(safe-area-inset-bottom, 0px));
+    border-radius: 16px;
+    border-bottom: 1px solid rgba(255, 190, 220, 0.16);
+    max-height: 360px;
+  }
+}

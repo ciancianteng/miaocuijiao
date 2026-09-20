@@ -1,0 +1,111 @@
+{
+  "header": {
+    "top": 0,
+    "bottom": 62,
+    "h": 62,
+    "w": 390,
+    "left": 0
+  },
+  "hero": {
+    "top": 78,
+    "bottom": 379,
+    "h": 301,
+    "w": 390,
+    "left": 0
+  },
+  "title": {
+    "top": 118,
+    "bottom": 154,
+    "h": 36,
+    "w": 224,
+    "left": 16
+  },
+  "stats": {
+    "top": 172,
+    "bottom": 252,
+    "h": 80,
+    "w": 224,
+    "left": 16
+  },
+  "tag": {
+    "top": 270,
+    "bottom": 313,
+    "h": 43,
+    "w": 224,
+    "left": 16
+  },
+  "ctas": {
+    "top": 333,
+    "bottom": 379,
+    "h": 46,
+    "w": 358,
+    "left": 16
+  },
+  "banner": {
+    "top": 403,
+    "bottom": 555,
+    "h": 152,
+    "w": 358,
+    "left": 16
+  },
+  "dots": {
+    "top": 565,
+    "bottom": 570,
+    "h": 5,
+    "w": 358,
+    "left": 16
+  },
+  "ann": {
+    "top": 586,
+    "bottom": 630,
+    "h": 44,
+    "w": 358,
+    "left": 16
+  },
+  "club": {
+    "top": 650,
+    "bottom": 720,
+    "h": 70,
+    "w": 358,
+    "left": 16
+  },
+  "apply": {
+    "top": 740,
+    "bottom": 872,
+    "h": 132,
+    "w": 358,
+    "left": 16
+  },
+  "pop": {
+    "top": 896,
+    "bottom": 1088,
+    "h": 192,
+    "w": 358,
+    "left": 16
+  },
+  "gaps": {
+    "headerToHero": 16,
+    "titleToStats": 18,
+    "statsToTag": 18,
+    "tagToCtas": 20,
+    "ctasToBanner": 24,
+    "bannerToDots": 10,
+    "dotsToAnn": 16,
+    "annToClub": 20,
+    "clubToApply": 20,
+    "applyToPop": 24
+  },
+  "firstScreen": {
+    "heroIn": true,
+    "ctasIn": true,
+    "bannerIn": true,
+    "annIn": true,
+    "clubIn": true
+  },
+  "copyLeft": {
+    "copyW": 224,
+    "visualW": 118,
+    "gap": 16,
+    "pctCopy": 63
+  }
+}

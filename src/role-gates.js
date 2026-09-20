@@ -1,9 +1,9 @@
 (function () {
   var SESSION_VERSION = "v4";
   var routes = {
-    customer: { token: "customerAuthToken", user: "customerUser", login: "/login.html", allowed: [/\/index\.html$/, /\/$/, /\/login\.html$/, /\/mine\.html$/, /\/companion-center\.html$/, /\/profile\.html$/, /\/orders\.html$/, /\/messages\.html$/, /\/custom-order\.html$/, /\/order-confirm\.html$/, /\/payment-confirm\.html$/, /\/recharge\.html$/, /\/gifts\.html$/, /\/support\.html$/, /\/favorites\.html$/, /\/leaderboard\.html$/, /\/ranking\.html$/, /\/more-gameplays\.html$/, /\/gameplay-product\.html$/, /\/fixed-order\.html$/, /\/team-lobby\.html$/, /\/companion-apply\.html$/, /\/activities\.html$/] },
-    boss: { token: "customerAuthToken", user: "customerUser", login: "/login.html", allowed: [/\/index\.html$/, /\/$/, /\/login\.html$/, /\/mine\.html$/, /\/companion-center\.html$/, /\/profile\.html$/, /\/orders\.html$/, /\/messages\.html$/, /\/custom-order\.html$/, /\/order-confirm\.html$/, /\/payment-confirm\.html$/, /\/recharge\.html$/, /\/gifts\.html$/, /\/support\.html$/, /\/favorites\.html$/, /\/leaderboard\.html$/, /\/ranking\.html$/, /\/more-gameplays\.html$/, /\/gameplay-product\.html$/, /\/fixed-order\.html$/, /\/team-lobby\.html$/, /\/companion-apply\.html$/, /\/activities\.html$/] },
-    companion: { token: "companionAuthToken", user: "companionUser", login: "/companion/login", allowed: [/\/companion\//] },
+    customer: { token: "customerAuthToken", user: "customerUser", login: "/login.html", allowed: [/\/index\.html$/, /\/$/, /\/login\.html$/, /\/mine\.html$/, /\/guide\.html$/, /\/companion-center\.html$/, /\/profile\.html$/, /\/orders\.html$/, /\/messages\.html$/, /\/custom-order\.html$/, /\/order-confirm\.html$/, /\/payment-confirm\.html$/, /\/recharge\.html$/, /\/gifts\.html$/, /\/support\.html$/, /\/favorites\.html$/, /\/leaderboard\.html$/, /\/ranking\.html$/, /\/more-gameplays\.html$/, /\/gameplay-product\.html$/, /\/fixed-order\.html$/, /\/team-lobby\.html$/, /\/companion-apply\.html$/, /\/activities\.html$/] },
+    boss: { token: "customerAuthToken", user: "customerUser", login: "/login.html", allowed: [/\/index\.html$/, /\/$/, /\/login\.html$/, /\/mine\.html$/, /\/guide\.html$/, /\/companion-center\.html$/, /\/profile\.html$/, /\/orders\.html$/, /\/messages\.html$/, /\/custom-order\.html$/, /\/order-confirm\.html$/, /\/payment-confirm\.html$/, /\/recharge\.html$/, /\/gifts\.html$/, /\/support\.html$/, /\/favorites\.html$/, /\/leaderboard\.html$/, /\/ranking\.html$/, /\/more-gameplays\.html$/, /\/gameplay-product\.html$/, /\/fixed-order\.html$/, /\/team-lobby\.html$/, /\/companion-apply\.html$/, /\/activities\.html$/] },
+    companion: { token: "companionAuthToken", user: "companionUser", login: "/companion/login", allowed: [/\/companion\//, /\/guide\.html$/] },
     customer_service: { token: "customerServiceAuthToken", user: "customerServiceUser", login: "/customer-service/login", allowed: [/\/customer-service\//] },
     admin: { token: "adminAuthToken", user: "adminUser", login: "/admin/login", allowed: [/\/admin\.html$/, /\/admin\//] }
   };
@@ -45,7 +45,11 @@
   }
   function readToken(role) {
     var cfg = cfgFor(role);
-    return localStorage.getItem(cfg.token) || sessionStorage.getItem(cfg.token) || "";
+    try {
+      return localStorage.getItem(cfg.token) || sessionStorage.getItem(cfg.token) || "";
+    } catch (e) {
+      return "";
+    }
   }
   function isAllowed(role) { var cfg = cfgFor(role); if (!cfg) return true; return cfg.allowed.some(function (rule) { return rule.test(path()); }); }
   function hasAdminSoftSession() {
@@ -92,16 +96,19 @@
   function hasValidBossAccessToken() {
     var access = readAccessToken();
     if (!looksLikeJwt(access)) return false;
-    var expRaw = "";
-    try {
-      expRaw = sessionStorage.getItem("mcjAuthExpiresAt") || localStorage.getItem("mcjAuthExpiresAt") || "";
-    } catch (e) {}
-    var exp = 0;
-    if (expRaw) {
-      var n = Number(expRaw);
-      if (Number.isFinite(n) && n > 0) exp = n < 1e12 ? n * 1000 : n;
+    // JWT exp is source of truth. Stale mcjAuthExpiresAt must not force restore overlay
+    // on every navigation while the access token is still valid.
+    var exp = decodeJwtExpMs(access);
+    if (!exp) {
+      var expRaw = "";
+      try {
+        expRaw = sessionStorage.getItem("mcjAuthExpiresAt") || localStorage.getItem("mcjAuthExpiresAt") || "";
+      } catch (e) {}
+      if (expRaw) {
+        var n = Number(expRaw);
+        if (Number.isFinite(n) && n > 0) exp = n < 1e12 ? n * 1000 : n;
+      }
     }
-    if (!exp) exp = decodeJwtExpMs(access);
     if (exp && Date.now() >= exp) return false;
     return true;
   }
@@ -908,6 +915,11 @@
     if (window.__mcjAfterAuthBusy) return;
     window.__mcjAfterAuthBusy = true;
     showAuthBootOverlay("正在登录…");
+    // Never leave the login overlay stranded across navigations / bfcache.
+    try {
+      window.addEventListener("pagehide", hideAuthBootOverlay, { once: true });
+      window.addEventListener("pageshow", hideAuthBootOverlay, { once: true });
+    } catch (eHide) {}
     // Session must already be saved by caller; re-confirm dual-write before navigate.
     var picked = result && result._pickedRole;
     if (result && result.session) {
@@ -940,14 +952,31 @@
     if (profileRole(role) !== "companion") {
       syncPortalSessions(result.session, options.remember !== false);
     }
-    var pending = sessionStorage.getItem("mcjAfterLoginRedirect") || localStorage.getItem("mcjAfterLoginRedirect");
+    var pending = "";
     try {
+      pending = sessionStorage.getItem("mcjAfterLoginRedirect") || localStorage.getItem("mcjAfterLoginRedirect") || "";
       sessionStorage.removeItem("mcjAfterLoginRedirect");
       localStorage.removeItem("mcjAfterLoginRedirect");
-    } catch (e2) {}
+    } catch (e2) {
+      try {
+        pending = localStorage.getItem("mcjAfterLoginRedirect") || pending || "";
+        localStorage.removeItem("mcjAfterLoginRedirect");
+      } catch (e3) {}
+    }
     var roleHome = result.redirect || routeFor(role);
     // Boss may resume a pending page; other roles always land on their portal.
+    // Critical for per-portal PWAs: companion/CS/admin must never bounce to boss "/".
     var redirect = profileRole(role) === "boss" && pending ? pending : roleHome;
+    try {
+      var roleKey = profileRole(role);
+      if (roleKey === "companion" && !/^\/companion(\/|$)/i.test(String(redirect || ""))) {
+        redirect = "/companion/";
+      } else if (roleKey === "customer_service" && !/^\/customer-service(\/|$)/i.test(String(redirect || ""))) {
+        redirect = "/customer-service/";
+      } else if (roleKey === "admin" && !/^\/admin(\/|\.html|$)/i.test(String(redirect || ""))) {
+        redirect = "/admin/";
+      }
+    } catch (eRoleGuard) {}
     var here = String(location.pathname || "").replace(/\/+$/, "") || "/";
     var dest = String(redirect || "/").replace(/\/+$/, "") || "/";
     // Never reopen login/register after success (clear #login / #register).
@@ -1166,15 +1195,123 @@
     // Companion/CS must not wipe boss JWT when claiming their own portal session.
   }
 
-  function denyUnauthed(loginHref, returnTo) {
+  function denyUnauthed(loginHref, returnTo, reason) {
+    try {
+      if (returnTo) {
+        try {
+          sessionStorage.setItem("mcjAfterLoginRedirect", returnTo);
+        } catch (e1) {
+          try {
+            localStorage.setItem("mcjAfterLoginRedirect", returnTo);
+          } catch (e2) {}
+        }
+      }
+    } catch (eRemember) {}
+
+    var overlayId = "mcjAuthBootOverlay";
+    var href = String(loginHref || "/login.html");
+    var why = String(reason || "unauthenticated");
     try {
       document.documentElement.setAttribute("data-mcj-auth-gate", "1");
-      document.documentElement.style.visibility = "hidden";
-      if (document.body) document.body.innerHTML = "";
-    } catch (e) {}
-    if (returnTo) sessionStorage.setItem("mcjAfterLoginRedirect", returnTo);
-    location.replace(loginHref);
+      document.documentElement.setAttribute("data-mcj-auth-reason", why);
+      // P0: never hide the whole document / never clear body (white-screen root cause).
+      document.documentElement.style.visibility = "";
+    } catch (eGate) {}
+
+    function paint() {
+      var body = document.body;
+      if (!body) {
+        document.addEventListener("DOMContentLoaded", paint, { once: true });
+        return;
+      }
+      var el = document.getElementById(overlayId);
+      if (!el) {
+        el = document.createElement("div");
+        el.id = overlayId;
+        body.appendChild(el);
+      }
+      el.setAttribute("role", "status");
+      el.setAttribute("aria-live", "polite");
+      el.style.cssText =
+        "position:fixed;inset:0;z-index:2147483646;display:flex;align-items:center;justify-content:center;" +
+        "padding:24px;box-sizing:border-box;background:#0f1115;color:#f5f5f5;font-family:system-ui,-apple-system,sans-serif;" +
+        "visibility:visible!important;opacity:1!important;";
+      el.innerHTML =
+        '<div style="max-width:360px;text-align:center;line-height:1.5">' +
+        '<h1 style="margin:0 0 12px;font-size:20px;font-weight:700">需要登录后继续</h1>' +
+        '<p style="margin:0;font-size:15px;opacity:.9">未登录或登录已失效，正在前往登录页…</p>' +
+        '<p style="margin:20px 0 0"><a href="' +
+        href.replace(/"/g, "&quot;") +
+        '" style="color:#7dd3fc;font-size:16px;font-weight:600;text-decoration:underline">点击前往登录</a></p>' +
+        '<p style="margin:12px 0 0;font-size:13px;opacity:.75">若页面未自动跳转，请点上方链接</p>' +
+        "</div>";
+    }
+    paint();
+
+    try {
+      location.replace(href);
+    } catch (eNav) {
+      try {
+        location.href = href;
+      } catch (eHref) {}
+    }
     return false;
+  }
+
+  function showPendingAuthGate(message) {
+    var overlayId = "mcjAuthBootOverlay";
+    try {
+      document.documentElement.setAttribute("data-mcj-auth-gate", "pending");
+      document.documentElement.setAttribute("data-mcj-auth-reason", "pending_restore");
+      document.documentElement.style.visibility = "";
+    } catch (e) {}
+    // Prefer early-gate clear latch reset if present.
+    try {
+      if (window.MCJPortalEarlyGate && typeof window.MCJPortalEarlyGate.hideShell === "function") {
+        // Keep pending_restore as the reason role-gates owns.
+      }
+    } catch (eEg) {}
+    function paint() {
+      var body = document.body;
+      if (!body) {
+        document.addEventListener("DOMContentLoaded", paint, { once: true });
+        return;
+      }
+      var el = document.getElementById(overlayId);
+      if (!el) {
+        el = document.createElement("div");
+        el.id = overlayId;
+        body.appendChild(el);
+      }
+      el.setAttribute("role", "status");
+      el.style.cssText =
+        "position:fixed;inset:0;z-index:2147483646;display:flex;align-items:center;justify-content:center;" +
+        "padding:24px;box-sizing:border-box;background:#0f1115;color:#f5f5f5;font-family:system-ui,-apple-system,sans-serif;" +
+        "visibility:visible!important;opacity:1!important;";
+      el.innerHTML =
+        '<div style="max-width:360px;text-align:center;line-height:1.5">' +
+        '<h1 style="margin:0 0 12px;font-size:20px;font-weight:700">正在验证登录状态</h1>' +
+        '<p style="margin:0;font-size:15px;opacity:.9">' +
+        String(message || "请稍候，正在确认会话…") +
+        "</p></div>";
+    }
+    paint();
+  }
+
+  function clearPendingAuthGate() {
+    try {
+      if (window.MCJPortalEarlyGate && typeof window.MCJPortalEarlyGate.clearAuthGate === "function") {
+        window.MCJPortalEarlyGate.clearAuthGate();
+        return;
+      }
+    } catch (eEg) {}
+    try {
+      document.documentElement.removeAttribute("data-mcj-auth-gate");
+      document.documentElement.removeAttribute("data-mcj-auth-reason");
+      document.documentElement.style.visibility = "";
+      var el = document.getElementById("mcjAuthBootOverlay");
+      if (el && el.parentNode) el.parentNode.removeChild(el);
+    } catch (e) {}
   }
 
   function returnPath() {
@@ -1183,46 +1320,62 @@
 
   function bootRouteProtection() {
     var p = path();
-    if (isAdminLoginPath()) return true;
+    if (isAdminLoginPath()) {
+      clearPendingAuthGate();
+      return true;
+    }
     if (/\/customer-service\/login/i.test(p)) {
       // Login page must not enter redirect races. Only reveal; login script owns submit→dashboard.
       try {
-        document.documentElement.removeAttribute("data-mcj-auth-gate");
-        document.documentElement.style.visibility = "";
+        clearPendingAuthGate();
         document.documentElement.setAttribute("data-mcj-service-auth", "ready");
       } catch (e) {}
       return true;
     }
-    if (/\/companion\/login/i.test(p)) return true;
-    if (/^\/?$|\/index\.html$/i.test(p) || /\/login\.html$/i.test(p)) return true;
+    if (/\/companion\/login/i.test(p)) {
+      clearPendingAuthGate();
+      return true;
+    }
+    if (/^\/?$|\/index\.html$/i.test(p) || /\/login\.html$/i.test(p)) {
+      clearPendingAuthGate();
+      return true;
+    }
 
     if (/\/admin\.html$/i.test(p) || /\/admin-(dashboard|center|audit)\.html$/i.test(p) || (/\/admin(\/|$)/i.test(p) && !isAdminLoginPath())) {
       if (!isLogged("admin")) {
         clearAdminClientSession();
         return denyUnauthed("/admin/login/", returnPath());
       }
+      clearPendingAuthGate();
       return true;
     }
 
     if (/\/customer-service(\/|$)/i.test(p)) {
       // Never sync-redirect before session restore/refresh finishes.
       if (window.MCJServiceAuth && typeof window.MCJServiceAuth.guardCustomerServicePages === "function") {
+        // CS guard owns pending→reveal/clear; do not clear here (restore may still be in flight).
         window.MCJServiceAuth.guardCustomerServicePages();
         return true;
       }
       if (!hasPortalSession("customer_service")) return denyUnauthed("/customer-service/login/", returnPath());
+      clearPendingAuthGate();
       return true;
     }
 
     if (/\/companion(\/|$)/i.test(p)) {
       if (!hasPortalSession("companion")) return denyUnauthed("/companion/login/", returnPath());
+      clearPendingAuthGate();
       return true;
     }
 
-    if (/\/(mine|orders|support|recharge|messages|favorites|payment-confirm|order-confirm|gifts)\.html$/i.test(p)) {
+    if (/\/(mine|orders|recharge|messages|favorites|payment-confirm|order-confirm|gifts)\.html$/i.test(p)) {
       // Soft / refresh alone insufficient for sync deny — wait restoreSession before claiming guest.
       // profile.html is public companion detail and stays ungated.
-      if (hasValidBossAccessToken()) return true;
+      // support.html is a public contact hub — guests may enter (login only for private actions).
+      if (hasValidBossAccessToken()) {
+        clearPendingAuthGate();
+        return true;
+      }
       var canRestore = false;
       try {
         canRestore = !!(
@@ -1235,20 +1388,25 @@
       } catch (eRest) {}
       if (!canRestore) {
         wipeBossGuestArtifacts();
-        return denyUnauthed("/login.html", returnPath());
+        return denyUnauthed("/login.html", returnPath(), "token_missing");
       }
+      // Soft restore: do NOT full-screen lock. Logged-in page switches were stuck on
+      //「正在登录/验证」while ensureSession waited on deferred boss-auth-session.js.
+      // Shell stays usable; private data keeps in-page loading until refresh finishes.
+      clearPendingAuthGate();
       try {
-        document.documentElement.setAttribute("data-mcj-auth-gate", "pending");
-        document.documentElement.style.visibility = "hidden";
-      } catch (eHide) {}
+        document.documentElement.setAttribute("data-mcj-auth-gate", "soft-restore");
+        document.documentElement.setAttribute("data-mcj-auth-reason", "pending_restore");
+      } catch (eSoft) {}
       var finishBossGate = function (ok) {
         try {
           document.documentElement.removeAttribute("data-mcj-auth-gate");
-          document.documentElement.style.visibility = "";
-        } catch (eShow) {}
+          document.documentElement.removeAttribute("data-mcj-auth-reason");
+        } catch (eClr) {}
+        clearPendingAuthGate();
         if (!ok) {
           wipeBossGuestArtifacts();
-          denyUnauthed("/login.html", returnPath());
+          denyUnauthed("/login.html", returnPath(), "token_expired");
         }
       };
       var safety = setTimeout(function () {
@@ -1278,6 +1436,7 @@
       })(0);
       return true;
     }
+    clearPendingAuthGate();
     return true;
   }
 
@@ -1300,8 +1459,11 @@
       return true;
     }
     if (storageRole(role) === "customer" || role === "boss") {
-      if (/\/(mine|orders|support|recharge|messages|favorites|payment-confirm|order-confirm|gifts)\.html$/i.test(path())) {
-        if (hasValidBossAccessToken()) return true;
+      if (/\/(mine|orders|recharge|messages|favorites|payment-confirm|order-confirm|gifts)\.html$/i.test(path())) {
+        if (hasValidBossAccessToken()) {
+          clearPendingAuthGate();
+          return true;
+        }
         var canRestoreGuard = false;
         try {
           canRestoreGuard = !!(
@@ -1328,12 +1490,14 @@
       if (!hasPortalSession("customer_service")) {
         return denyUnauthed("/customer-service/login/", returnPath());
       }
+      clearPendingAuthGate();
       return true;
     }
     if (storageRole(role) === "companion") {
       if (!hasPortalSession("companion")) {
         return denyUnauthed("/companion/login/", returnPath());
       }
+      clearPendingAuthGate();
       return true;
     }
     if (!isAllowed(role)) {
@@ -1407,6 +1571,21 @@
           return;
         }
         var role = sendOtpBtn.getAttribute("data-login-role") || "boss";
+        var Cd = window.MCJOtpCooldown || null;
+        function cdLeft() {
+          if (!Cd) return 0;
+          return Cd.getRemainingSec("send_login_otp", role, otpEmail);
+        }
+        var remain = cdLeft();
+        if (remain > 0) {
+          setLoginMessage(sendOtpBtn, "发送过于频繁，请 " + remain + " 秒后再试。");
+          if (Cd && Cd.bindButtonCountdown) Cd.bindButtonCountdown(sendOtpBtn, "send_login_otp", role, otpEmail, "获取验证码");
+          else {
+            sendOtpBtn.disabled = true;
+            sendOtpBtn.textContent = remain + "s";
+          }
+          return;
+        }
         sendOtpBtn.disabled = true;
         var oldSend = sendOtpBtn.textContent;
         sendOtpBtn.textContent = "发送中…";
@@ -1417,31 +1596,75 @@
         })
           .then(function (r) {
             return r.json().then(function (j) {
-              if (!r.ok || j.ok === false) throw new Error((j && j.message) || "发送失败");
+              if (!r.ok || j.ok === false) {
+                var err = new Error((j && j.message) || "发送失败");
+                err.retryAfterSec = j && j.retryAfterSec;
+                err.status = r.status;
+                err.code = j && j.code;
+                throw err;
+              }
               return j;
             });
           })
           .then(function (j) {
-            var tip = j.message || "验证码已发送";
-            if (j.devCode) tip += "（测试 " + j.devCode + "）";
+            var delivered = j.delivery === "sent";
+            var tip = delivered
+              ? (j.message || "验证码已发送")
+              : (j.message || "如该邮箱已在当前端注册，将收到验证码。请确认入口（老板/陪玩）正确。");
+            if (j.debugCode || j.devCode) tip += "（调试 " + (j.debugCode || j.devCode) + "）";
             setLoginMessage(sendOtpBtn, tip);
-            var left = Number(j.retryAfterSec) || 60;
+            // Cooldown ONLY after provider-accepted send. suppressed/blocked must not fake success.
+            var left = delivered ? Number(j.retryAfterSec || 0) || 0 : 0;
+            if (delivered && left > 0 && Cd) Cd.setCooldown("send_login_otp", role, otpEmail, left);
+            if (!delivered || !left) {
+              sendOtpBtn.disabled = false;
+              sendOtpBtn.textContent = oldSend || "获取验证码";
+              return;
+            }
             sendOtpBtn.textContent = left + "s";
+            var deadline = Date.now() + left * 1000;
             var timer = setInterval(function () {
-              left -= 1;
-              if (left <= 0) {
+              var sec = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
+              if (sec <= 0) {
                 clearInterval(timer);
                 sendOtpBtn.disabled = false;
                 sendOtpBtn.textContent = oldSend || "获取验证码";
               } else {
-                sendOtpBtn.textContent = left + "s";
+                sendOtpBtn.disabled = true;
+                sendOtpBtn.textContent = sec + "s";
               }
-            }, 1000);
+            }, 500);
           })
           .catch(function (err) {
-            sendOtpBtn.disabled = false;
-            sendOtpBtn.textContent = oldSend || "获取验证码";
-            setLoginMessage(sendOtpBtn, humanizeAuthError(err));
+            var retry = Number(err && err.retryAfterSec) || 0;
+            var code = String((err && err.code) || "");
+            var rateLimited = Number(err && err.status) === 429 || code === "OTP_RESEND_COOLDOWN";
+            if (rateLimited && retry > 0 && Cd) Cd.setCooldown("send_login_otp", role, otpEmail, retry);
+            if (rateLimited && retry > 0) {
+              sendOtpBtn.disabled = true;
+              sendOtpBtn.textContent = retry + "s";
+              var deadline = Date.now() + retry * 1000;
+              var timer = setInterval(function () {
+                var sec = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
+                if (sec <= 0) {
+                  clearInterval(timer);
+                  sendOtpBtn.disabled = false;
+                  sendOtpBtn.textContent = oldSend || "获取验证码";
+                } else {
+                  sendOtpBtn.textContent = sec + "s";
+                }
+              }, 500);
+            } else {
+              sendOtpBtn.disabled = false;
+              sendOtpBtn.textContent = oldSend || "获取验证码";
+            }
+            var tip = humanizeAuthError(err);
+            if (code === "BOSS_ROLE_NOT_OPENED") {
+              tip = (err && err.message) || "该账号尚未开通老板身份。请先用陪玩入口登录，再开通老板身份。";
+            } else if (code === "COMPANION_ROLE_NOT_OPENED") {
+              tip = (err && err.message) || "该账号尚未开通陪玩身份。请先用老板入口登录，再申请陪玩。";
+            }
+            setLoginMessage(sendOtpBtn, tip);
           });
         return;
       }
@@ -1457,6 +1680,18 @@
           return;
         }
         var regRole = sendRegOtpBtn.getAttribute("data-register-role") || "boss";
+        var CdReg = window.MCJOtpCooldown || null;
+        function regCdLeft() {
+          if (!CdReg) return 0;
+          return CdReg.getRemainingSec("send_register_otp", regRole, regEmail);
+        }
+        var remainReg = regCdLeft();
+        if (remainReg > 0) {
+          setLoginMessage(sendRegOtpBtn, "发送过于频繁，请 " + remainReg + " 秒后再试。");
+          sendRegOtpBtn.disabled = true;
+          sendRegOtpBtn.textContent = remainReg + "s";
+          return;
+        }
         sendRegOtpBtn.disabled = true;
         var oldRegSend = sendRegOtpBtn.textContent;
         sendRegOtpBtn.textContent = "发送中…";
@@ -1474,30 +1709,67 @@
         })
           .then(function (r) {
             return r.json().then(function (j) {
-              if (!r.ok || j.ok === false) throw new Error((j && j.message) || "发送失败");
+              if (!r.ok || j.ok === false) {
+                var err = new Error((j && j.message) || "发送失败");
+                err.retryAfterSec = j && j.retryAfterSec;
+                err.status = r.status;
+                err.code = j && j.code;
+                throw err;
+              }
               return j;
             });
           })
           .then(function (j) {
-            var tip = j.message || "验证码已发送";
-            if (j.devCode) tip += "（测试 " + j.devCode + "）";
+            var delivered = j.delivery === "sent";
+            var tip = delivered
+              ? (j.message || "验证码已发送")
+              : (j.message || "如该邮箱可用，将收到验证码。");
+            if (j.debugCode || j.devCode) tip += "（调试 " + (j.debugCode || j.devCode) + "）";
             setLoginMessage(sendRegOtpBtn, tip);
-            var left = Number(j.retryAfterSec) || 60;
+            // Cooldown ONLY after provider-accepted send. suppressed/blocked must not fake success.
+            var left = delivered ? Number(j.retryAfterSec || 0) || 0 : 0;
+            if (delivered && left > 0 && CdReg) CdReg.setCooldown("send_register_otp", regRole, regEmail, left);
+            if (!delivered || !left) {
+              sendRegOtpBtn.disabled = false;
+              sendRegOtpBtn.textContent = oldRegSend || "获取验证码";
+              return;
+            }
+            var deadline = Date.now() + left * 1000;
             sendRegOtpBtn.textContent = left + "s";
             var timer = setInterval(function () {
-              left -= 1;
-              if (left <= 0) {
+              var sec = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
+              if (sec <= 0) {
                 clearInterval(timer);
                 sendRegOtpBtn.disabled = false;
                 sendRegOtpBtn.textContent = oldRegSend || "获取验证码";
               } else {
-                sendRegOtpBtn.textContent = left + "s";
+                sendRegOtpBtn.disabled = true;
+                sendRegOtpBtn.textContent = sec + "s";
               }
-            }, 1000);
+            }, 500);
           })
           .catch(function (err) {
-            sendRegOtpBtn.disabled = false;
-            sendRegOtpBtn.textContent = oldRegSend || "获取验证码";
+            var retry = Number(err && err.retryAfterSec) || 0;
+            var rateLimited = Number(err && err.status) === 429 || String((err && err.code) || "") === "OTP_RESEND_COOLDOWN";
+            if (rateLimited && retry > 0 && CdReg) CdReg.setCooldown("send_register_otp", regRole, regEmail, retry);
+            if (rateLimited && retry > 0) {
+              sendRegOtpBtn.disabled = true;
+              var deadline = Date.now() + retry * 1000;
+              sendRegOtpBtn.textContent = retry + "s";
+              var timer = setInterval(function () {
+                var sec = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
+                if (sec <= 0) {
+                  clearInterval(timer);
+                  sendRegOtpBtn.disabled = false;
+                  sendRegOtpBtn.textContent = oldRegSend || "获取验证码";
+                } else {
+                  sendRegOtpBtn.textContent = sec + "s";
+                }
+              }, 500);
+            } else {
+              sendRegOtpBtn.disabled = false;
+              sendRegOtpBtn.textContent = oldRegSend || "获取验证码";
+            }
             setLoginMessage(sendRegOtpBtn, humanizeAuthError(err));
           });
         return;
@@ -1759,15 +2031,28 @@
       var a = event.target && event.target.closest && event.target.closest("a[href]");
       if (!a) return;
       var href = String(a.getAttribute("href") || "");
-      if (!/mine\.html|orders\.html|support\.html|recharge\.html|messages\.html|favorites\.html|profile\.html|gifts\.html/i.test(href)) return;
+      if (!/mine\.html|orders\.html|recharge\.html|messages\.html|favorites\.html|gifts\.html/i.test(href)) return;
       if (hasValidBossAccessToken()) return;
       event.preventDefault();
       wipeBossGuestArtifacts();
       try {
         var abs = new URL(href, location.href);
-        sessionStorage.setItem("mcjAfterLoginRedirect", abs.pathname + abs.search + abs.hash);
+        var returnTo = abs.pathname + abs.search + abs.hash;
+        try {
+          sessionStorage.setItem("mcjAfterLoginRedirect", returnTo);
+        } catch (e1) {
+          try {
+            localStorage.setItem("mcjAfterLoginRedirect", returnTo);
+          } catch (e2) {}
+        }
       } catch (e) {
-        sessionStorage.setItem("mcjAfterLoginRedirect", href);
+        try {
+          sessionStorage.setItem("mcjAfterLoginRedirect", href);
+        } catch (e3) {
+          try {
+            localStorage.setItem("mcjAfterLoginRedirect", href);
+          } catch (e4) {}
+        }
       }
       location.href = "/login.html";
     },

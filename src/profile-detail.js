@@ -23,7 +23,18 @@
   }
   function param() {
     var p = new URLSearchParams(location.search);
-    return p.get("player") || p.get("id") || p.get("uid") || "";
+    return p.get("player") || p.get("id") || p.get("uid") || p.get("code") || p.get("publicId") || "";
+  }
+  function lookupCandidates() {
+    var p = new URLSearchParams(location.search);
+    var primary = param();
+    var extras = [p.get("code"), p.get("publicId"), p.get("player"), p.get("uid"), p.get("id")].filter(Boolean);
+    var out = [];
+    [primary].concat(extras).forEach(function (v) {
+      var s = String(v || "").trim();
+      if (s && out.indexOf(s) < 0) out.push(s);
+    });
+    return out;
   }
   function shell() {
     return document.querySelector(".profile-detail-shell");
@@ -255,28 +266,31 @@
       else if (n > 0) publicId = "PW" + String(n).padStart(5, "0");
     }
     var identityApi = window.MCJCompanionIdentity;
+    // Same badge order as hall: level + verification + voice (game shown in meta line below).
     var tagsHtml = identityApi
       ? identityApi.renderTags({
           levelId: c.levelId || "",
           levelLabel: levelText,
-          gender: c.gender || "",
+          levelColor: c.levelColor || (c.levelConfig && c.levelConfig.color) || "",
+          badgeBorder: c.badgeBorder || (c.levelConfig && c.levelConfig.badgeBorder) || "",
+          badgeText: c.badgeText || (c.levelConfig && c.levelConfig.badgeText) || "",
+          gender: "",
           voiceType: c.voiceType || c.voice_type || "",
           certTags: c.certTags || c.certificationTags || [],
-          tags: c.tags || [],
-          className: "tag-row companion-tags",
+          tags: [],
+          className: "tag-row companion-tags companion-identity-row",
           includeLevel: true,
-          includeGender: true,
-          serviceLimit: 8,
+          includeGender: false,
+          includeVoice: true,
+          serviceLimit: 0,
+          certLimit: 3,
         })
       : (function () {
-          var tags = (c.tags || [])
-            .slice(0, 6)
-            .map(function (t) {
-              return "<span class=\"mcj-service-tag\">" + esc(t) + "</span>";
-            })
-            .join("");
+          var level = levelText && levelText !== "-"
+            ? '<span class="companion-level-pill mcj-level-tag">' + esc(levelText) + "</span>"
+            : "";
           var certTags = (c.certTags || c.certificationTags || [])
-            .slice(0, 6)
+            .slice(0, 3)
             .map(function (t) {
               var name = typeof t === "string" ? t : t.name || t.title || "";
               if (!name) return "";
@@ -285,9 +299,14 @@
             })
             .filter(Boolean)
             .join("");
-          return certTags || tags
-            ? '<div class="mcj-id-tags tag-row companion-tags">' + certTags + tags + "</div>"
-            : "";
+          var voice = String(c.voiceType || c.voice_type || "").trim().replace(/^声线\s*[:：]\s*/, "");
+          var voiceHtml =
+            '<span class="mcj-voice-tag' +
+            (voice ? "" : " is-unset") +
+            '"><span class="mcj-voice-label">声线：</span>' +
+            esc(voice || "未设置") +
+            "</span>";
+          return '<div class="mcj-id-tags tag-row companion-tags companion-identity-row">' + level + certTags + voiceHtml + "</div>";
         })();
     var galleryUrls = galleryList.map(function (g) {
       return g.url;
@@ -425,7 +444,7 @@
       esc(c.name) +
       ' 头像" onerror="this.onerror=null;this.src=\'/default-avatar.png\'">' +
       (popBadges ? '<div class="profile-pop-badges" style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;justify-content:center">' + popBadges + "</div>" : "") +
-      '</div><div class="profile-info-panel"><p class="detail-label">MEOW CUI JIAO COMPANION</p><h1>' +
+      '</div><div class="profile-info-panel"><p class="detail-label">MEOW CUI JIAO</p><h1>' +
       esc(c.name || c.nickname || "陪玩") +
       " " +
       statusHtml(c) +
@@ -439,9 +458,7 @@
       '</p><div class="game-line">' +
       esc(c.game || "未设置游戏") +
       " · " +
-      esc(priceText) +
-      " · ★ " +
-      esc(ratingText) +
+      esc(levelText) +
       "</div>" +
       (tagsHtml || "") +
       '<div class="detail-card price-card pd-voice-card pd-voice-in-hero' +
@@ -458,37 +475,34 @@
         "等级",
         '<span class="companion-level-pill" data-level-id="' + esc(c.levelId || "") + '">' + esc(levelText) + "</span>"
       ) +
-      metaRow("评分", esc(ratingText), !hasRating) +
-      metaRow("好评数", esc(goodText), !(goodCount > 0)) +
-      metaRow("收藏数", esc(favText), !(favCount > 0)) +
-      metaRow("人气值", esc(popScoreText), !(Number(popScore) > 0)) +
       metaRow("在线状态", statusHtml(c)) +
-      metaRow("订单摘要", esc(orderSummaryText), !(completedOrders > 0)) +
       metaRow("价格区间", esc(rangeText), rangeText === "暂无数据") +
-      metaRow("本周排名", esc(weeklyRankText), !(Number(weeklyRank) > 0)) +
-      metaRow("本月排名", esc(monthlyRankText), !(Number(monthlyRank) > 0)) +
-      '</div><div class="pd-stat-grid">' +
-      '<div class="pd-stat-cell"><span>评价</span><strong class="' +
-      (hasRating ? "" : "is-empty") +
-      '">' +
-      esc(ratingText) +
-      "</strong></div>" +
-      '<div class="pd-stat-cell"><span>收藏</span><strong class="' +
-      (favCount > 0 ? "" : "is-empty") +
-      '">' +
-      esc(favText) +
-      "</strong></div>" +
-      '<div class="pd-stat-cell"><span>完成订单</span><strong class="' +
-      (completedOrders > 0 ? "" : "is-empty") +
-      '">' +
-      esc(plainEmptyMetric(completedOrders)) +
-      "</strong></div>" +
-      '<div class="pd-stat-cell"><span>人气值</span><strong class="' +
-      (Number(popScore) > 0 ? "" : "is-empty") +
-      '">' +
-      esc(popScoreText) +
-      "</strong></div>" +
-      "</div>" +
+      metaRow("订单摘要", esc(orderSummaryText), !(completedOrders > 0)) +
+      '</div></section><section class="detail-card info-card pd-info-card pd-info-card--full"><div class="section-head"><h2>数据表现</h2></div>' +
+      (function () {
+        var hasAny =
+          hasRating ||
+          goodCount > 0 ||
+          favCount > 0 ||
+          completedOrders > 0 ||
+          Number(popScore) > 0 ||
+          Number(weeklyRank) > 0 ||
+          Number(monthlyRank) > 0;
+        if (!hasAny) {
+          return '<p class="pd-perf-empty">暂无数据，完成订单后将逐步生成表现数据。</p>';
+        }
+        return (
+          '<div class="pd-meta-list">' +
+          metaRow("评分", esc(ratingText), !hasRating) +
+          metaRow("好评数", esc(goodText), !(goodCount > 0)) +
+          metaRow("收藏", esc(favText), !(favCount > 0)) +
+          metaRow("完成订单", esc(plainEmptyMetric(completedOrders)), !(completedOrders > 0)) +
+          metaRow("人气值", esc(popScoreText), !(Number(popScore) > 0)) +
+          metaRow("本周排名", esc(weeklyRankText), !(Number(weeklyRank) > 0)) +
+          metaRow("本月排名", esc(monthlyRankText), !(Number(monthlyRank) > 0)) +
+          "</div>"
+        );
+      })() +
       giftActions +
       "</section>" +
       (galleryList.length
@@ -496,6 +510,42 @@
           galleryWall +
           "</div></section>"
         : "") +
+      (function () {
+        var wall = Array.isArray(c.giftWall) ? c.giftWall : Array.isArray(c.gift_wall) ? c.gift_wall : [];
+        var chips = wall.length
+          ? wall
+              .map(function (w) {
+                var img = w.giftImage || w.gift_image_url || w.image || "";
+                var name = w.giftName || w.gift_name || "礼物";
+                var qty = w.totalQuantity != null ? w.totalQuantity : w.total_quantity || 0;
+                return (
+                  '<div class="pd-gift-chip">' +
+                  (img
+                    ? '<img src="' + esc(img) + '" alt="" loading="lazy" />'
+                    : '<span class="pd-gift-emoji" aria-hidden="true">🎁</span>') +
+                  "<strong>" +
+                  esc(name) +
+                  "</strong><em>×" +
+                  esc(qty) +
+                  "</em></div>"
+                );
+              })
+              .join("")
+          : '<div class="pd-gift-empty-state">' +
+            "<p><strong>还没有收到礼物</strong></p>" +
+            "<p>成为第一个送 TA 礼物的老板吧</p>" +
+            (giftActions
+              ? '<button type="button" class="mcj-primary pd-gift-cta" data-open-gift>送TA礼物</button>'
+              : '<a class="mcj-primary pd-gift-cta" href="login.html">登录后送TA礼物</a>') +
+            "</div>";
+        return (
+          '<section class="detail-card pd-gift-wall" id="pdGiftWall">' +
+          '<div class="section-head"><h2>礼物墙</h2><span>老板们送给 TA 的心意</span></div>' +
+          '<div class="pd-gift-wall-grid">' +
+          chips +
+          "</div></section>"
+        );
+      })() +
       '<section class="detail-card real-review-wall"><div class="section-head"><h2>真实订单评价</h2><span>' +
       (isNewcomer
         ? "新人陪玩"
@@ -674,12 +724,44 @@
         var selected = gifts[0];
         var qty = 1;
         var rate = Number((cat.companion && cat.companion.giftCommissionRate) || 20);
+        var targetName =
+          (state.companion && (state.companion.nickname || state.companion.name || state.companion.displayName)) ||
+          "当前陪玩";
+        var targetId = state.companion && (state.companion.id || state.companion.uid);
+        var busy = false;
+
+        function giftIconHtml(g) {
+          var url = g.iconUrl || g.icon_url || "";
+          if (url) return '<img class="mcj-gift-icon" src="' + esc(url) + '" alt="" />';
+          return '<div class="mcj-gift-emoji" aria-hidden="true">🎁</div>';
+        }
+
+        function requireBossLogin(thenFn) {
+          if (token()) {
+            thenFn();
+            return;
+          }
+          if (window.MCJAuthContinue && typeof window.MCJAuthContinue.requireLogin === "function") {
+            window.MCJAuthContinue.requireLogin(thenFn);
+            return;
+          }
+          if (window.MCJModal && typeof window.MCJModal.openLogin === "function") {
+            window.MCJModal.openLogin("login");
+            return;
+          }
+          alert("请先登录老板账号");
+        }
+
         function paint() {
-          var gross = Number(selected.catFoodPrice || 0) * qty;
+          var gross = Number(selected.catFoodPrice || selected.cat_food_price || 0) * qty;
           var fee = Math.round(gross * (rate / 100) * 100) / 100;
           var income = Math.round((gross - fee) * 100) / 100;
           openSheet(
-            "<h3>送礼物</h3><div class=\"mcj-gift-grid\">" +
+            "<h3>送礼物</h3>" +
+              '<p class="mcj-gift-target">赠送对象：<strong>' +
+              esc(targetName) +
+              "</strong></p>" +
+              '<div class="mcj-gift-grid">' +
               gifts
                 .map(function (g) {
                   return (
@@ -687,10 +769,12 @@
                     (g.id === selected.id ? " active" : "") +
                     '" data-gift="' +
                     esc(g.id) +
-                    '"><div style="font-size:28px">🎁</div><strong>' +
+                    '">' +
+                    giftIconHtml(g) +
+                    "<strong>" +
                     esc(g.name) +
                     "</strong><span>" +
-                    esc(g.catFoodPrice) +
+                    esc(g.catFoodPrice != null ? g.catFoodPrice : g.cat_food_price) +
                     " 猫粮</span></button>"
                   );
                 })
@@ -700,13 +784,17 @@
               '</strong><button type="button" data-gqty="+">+</button></div>' +
               "<p>总计 <strong>" +
               gross +
-              "</strong> 猫粮 · 平台抽成 " +
-              rate +
-              "%（" +
-              fee +
-              "）· 陪玩所得 " +
-              income +
-              '</p><div class="mcj-actions"><button type="button" class="ghost" data-close-sheet>取消</button><button type="button" class="primary" data-send-gift>确认赠送</button></div>'
+              "</strong> 猫粮</p>" +
+              '<div class="mcj-actions mcj-gift-pay-actions">' +
+              '<button type="button" class="ghost" data-close-sheet>取消</button>' +
+              '<button type="button" class="primary" data-pay-wallet ' +
+              (busy ? "disabled" : "") +
+              ">猫粮余额支付</button>" +
+              '<button type="button" class="primary ghost-outline" data-pay-external ' +
+              (busy ? "disabled" : "") +
+              ">外部支付 / 上传截图</button>" +
+              "</div>" +
+              '<p class="mcj-gift-pay-hint">外部支付需上传付款截图，客服审核通过后礼物才会到账。</p>'
           );
           var sheet = document.querySelector(".mcj-sheet");
           sheet.querySelectorAll("[data-gift]").forEach(function (btn) {
@@ -725,49 +813,82 @@
             };
           });
           sheet.querySelector("[data-close-sheet]").onclick = closeSheet;
-          sheet.querySelector("[data-send-gift]").onclick = function () {
-        if (!token()) {
-          if (window.MCJAuthContinue && typeof window.MCJAuthContinue.requireLogin === "function") {
-            window.MCJAuthContinue.requireLogin(function () {
-              sheet.querySelector("[data-send-gift]").click();
-            });
-            return;
-          }
-          if (window.MCJModal && typeof window.MCJModal.openLogin === "function") {
-            window.MCJModal.openLogin("login");
-            return;
-          }
-          alert("请先登录老板账号");
-          return;
-        }
-            fetch("/api/boss/marketplace", {
-              method: "POST",
-              headers: authHeaders(),
-              body: JSON.stringify({
-                action: "send_gift",
-                companionId: state.companion.id || state.companion.uid,
-                giftId: selected.id,
-                quantity: qty,
-                idempotencyKey: idem(),
-              }),
-            })
-              .then(function (res) {
-                return res.json().then(function (body) {
-                  if (!res.ok || body.ok === false) throw Object.assign(new Error(body.message || "赠送失败"), body);
-                  return body;
+          sheet.querySelector("[data-pay-wallet]").onclick = function () {
+            requireBossLogin(function () {
+              if (busy) return;
+              busy = true;
+              paint();
+              fetch("/api/boss/marketplace", {
+                method: "POST",
+                headers: authHeaders(),
+                body: JSON.stringify({
+                  action: "send_gift",
+                  companionId: targetId,
+                  giftId: selected.id,
+                  quantity: qty,
+                  idempotencyKey: idem(),
+                }),
+              })
+                .then(function (res) {
+                  return res.json().then(function (body) {
+                    if (!res.ok || body.ok === false)
+                      throw Object.assign(new Error(body.message || "赠送失败"), body);
+                    return body;
+                  });
+                })
+                .then(function (body) {
+                  alert(body.message || "礼物已送出");
+                  closeSheet();
+                  load();
+                })
+                .catch(function (err) {
+                  busy = false;
+                  paint();
+                  if (err.code === "INSUFFICIENT_BALANCE" || /余额不足/.test(err.message || "")) {
+                    if (confirm("猫粮余额不足，是否去充值？")) location.href = err.rechargeUrl || "recharge.html";
+                    return;
+                  }
+                  alert(err.message || "赠送失败");
                 });
+            });
+          };
+          sheet.querySelector("[data-pay-external]").onclick = function () {
+            requireBossLogin(function () {
+              if (busy) return;
+              busy = true;
+              paint();
+              fetch("/api/boss/gift-orders", {
+                method: "POST",
+                headers: authHeaders(),
+                body: JSON.stringify({
+                  action: "create",
+                  companionId: targetId,
+                  giftId: selected.id,
+                  quantity: qty,
+                  idempotencyKey: idem(),
+                }),
               })
-              .then(function (body) {
-                alert(body.message || "礼物已送出");
-                closeSheet();
-              })
-              .catch(function (err) {
-                if (err.code === "INSUFFICIENT_BALANCE" || /余额不足/.test(err.message || "")) {
-                  if (confirm("猫粮余额不足，是否去充值？")) location.href = err.rechargeUrl || "recharge.html";
-                  return;
-                }
-                alert(err.message || "赠送失败");
-              });
+                .then(function (res) {
+                  return res.json().then(function (body) {
+                    if (!res.ok || body.ok === false)
+                      throw Object.assign(new Error(body.message || "创建礼物订单失败"), body);
+                    return body;
+                  });
+                })
+                .then(function (body) {
+                  closeSheet();
+                  openProfileGiftPaySheet(body.order, body.payInfo, {
+                    gift: selected,
+                    companionName: targetName,
+                    quantity: qty,
+                  });
+                })
+                .catch(function (err) {
+                  busy = false;
+                  paint();
+                  alert(err.message || "创建礼物订单失败");
+                });
+            });
           };
         }
         paint();
@@ -775,6 +896,102 @@
       .catch(function (err) {
         alert(err.message || "礼物加载失败");
       });
+  }
+
+  function openProfileGiftPaySheet(order, payInfo, meta) {
+    meta = meta || {};
+    var proofDataUrl = "";
+    var uploading = false;
+    var orderId = order && (order.id || order.orderId);
+    function paintPay() {
+      var qr = (payInfo && payInfo.qrUrl) || (order && order.paymentQrUrl) || "";
+      var instructions =
+        (payInfo && payInfo.instructions) ||
+        (order && order.paymentInstructions) ||
+        "请按应付金额完成转账并上传付款截图。";
+      var total =
+        order && order.totalAmount != null
+          ? order.totalAmount
+          : Number((meta.gift && (meta.gift.catFoodPrice || meta.gift.cat_food_price)) || 0) *
+            Number(meta.quantity || 1);
+      openSheet(
+        "<h3>上传付款截图</h3>" +
+          "<p>赠送对象：<strong>" +
+          esc(meta.companionName || "陪玩") +
+          "</strong></p>" +
+          "<p>礼物：<strong>" +
+          esc((meta.gift && meta.gift.name) || (order && order.giftName) || "礼物") +
+          "</strong> ×" +
+          esc(String(meta.quantity || order.quantity || 1)) +
+          "</p>" +
+          "<p>应付：<strong>" +
+          esc(String(total)) +
+          "</strong> 猫粮</p>" +
+          (qr ? '<img class="mcj-gift-pay-qr" src="' + esc(qr) + '" alt="付款二维码" />' : "") +
+          '<p class="muted">' +
+          esc(instructions) +
+          "</p>" +
+          (proofDataUrl
+            ? '<img class="mcj-gift-proof-preview" src="' + esc(proofDataUrl) + '" alt="截图预览" />'
+            : '<p class="muted">尚未选择截图</p>') +
+          '<label class="mcj-gift-upload">选择付款截图<input type="file" accept="image/*" data-gift-proof /></label>' +
+          '<div class="mcj-actions"><button type="button" class="ghost" data-close-sheet>取消</button>' +
+          '<button type="button" class="primary" data-submit-gift-proof ' +
+          (!proofDataUrl || uploading ? "disabled" : "") +
+          ">" +
+          (uploading ? "提交中…" : "提交付款凭证") +
+          "</button></div>" +
+          '<p class="mcj-gift-pay-hint">提交后进入客服审核；通过前不会增加礼物墙。</p>'
+      );
+      var sheet = document.querySelector(".mcj-sheet");
+      sheet.querySelector("[data-close-sheet]").onclick = closeSheet;
+      var file = sheet.querySelector("[data-gift-proof]");
+      if (file) {
+        file.onchange = function () {
+          var f = file.files && file.files[0];
+          if (!f) return;
+          var reader = new FileReader();
+          reader.onload = function () {
+            proofDataUrl = String(reader.result || "");
+            paintPay();
+          };
+          reader.readAsDataURL(f);
+        };
+      }
+      var submit = sheet.querySelector("[data-submit-gift-proof]");
+      if (submit) {
+        submit.onclick = function () {
+          if (!proofDataUrl || uploading || !orderId) return;
+          uploading = true;
+          paintPay();
+          fetch("/api/boss/gift-orders", {
+            method: "POST",
+            headers: authHeaders(),
+            body: JSON.stringify({
+              action: "upload_proof",
+              orderId: orderId,
+              proofDataUrl: proofDataUrl,
+            }),
+          })
+            .then(function (res) {
+              return res.json().then(function (body) {
+                if (!res.ok || body.ok === false) throw new Error(body.message || "提交失败");
+                return body;
+              });
+            })
+            .then(function (body) {
+              alert(body.message || "已提交，等待客服审核");
+              closeSheet();
+            })
+            .catch(function (err) {
+              uploading = false;
+              paintPay();
+              alert(err.message || "提交失败");
+            });
+        };
+      }
+    }
+    paintPay();
   }
 
   function openTipSheet() {
@@ -889,9 +1106,21 @@
     }
   });
 
+  function fetchCompanionById(id) {
+    return fetch("/api/public/companions?id=" + encodeURIComponent(id), {
+      headers: { Accept: "application/json" },
+      cache: "no-store",
+    }).then(function (res) {
+      return res.json().then(function (body) {
+        if (!res.ok || body.ok === false) throw new Error(body.message || "陪玩资料读取失败");
+        return body;
+      });
+    });
+  }
+
   function load() {
-    var id = param();
-    if (!id) {
+    var candidates = lookupCandidates();
+    if (!candidates.length) {
       renderError("缺少陪玩 ID");
       return;
     }
@@ -902,64 +1131,69 @@
       settled = true;
       renderError("陪玩资料读取超时，请点击重新加载");
     }, 12000);
-    fetch("/api/public/companions?id=" + encodeURIComponent(id), {
-      headers: { Accept: "application/json" },
-      cache: "no-store",
-    })
-      .then(function (res) {
-        return res.json().then(function (body) {
-          if (!res.ok || body.ok === false) throw new Error(body.message || "陪玩资料读取失败");
-          return body;
-        });
-      })
-      .then(function (body) {
-        var c = (body.companions || [])[0];
-        if (!c) {
-          if (!settled) {
-            settled = true;
-            clearTimeout(failSafe);
-            renderError("该陪玩资料不存在", { retry: false });
-          }
-          return;
-        }
+
+    function tryNext(index) {
+      if (index >= candidates.length) {
         if (!settled) {
           settled = true;
           clearTimeout(failSafe);
-          render(syncPresence(c));
+          renderError("该陪玩资料不存在", { retry: false });
         }
-        var cid = c.id || c.uid || id;
-        var popCtl = typeof AbortController !== "undefined" ? new AbortController() : null;
-        var popTimer = setTimeout(function () {
-          if (popCtl) popCtl.abort();
-        }, 4000);
-        fetch("/api/popularity?action=companion&id=" + encodeURIComponent(cid), {
-          headers: { Accept: "application/json" },
-          cache: "no-store",
-          signal: popCtl ? popCtl.signal : undefined,
-        })
-          .then(function (res) {
-            return res.json().catch(function () {
-              return {};
+        return;
+      }
+      var id = candidates[index];
+      fetchCompanionById(id)
+        .then(function (body) {
+          var c = (body.companions || [])[0];
+          if (!c) {
+            tryNext(index + 1);
+            return;
+          }
+          if (!settled) {
+            settled = true;
+            clearTimeout(failSafe);
+            render(syncPresence(c));
+          }
+          var cid = c.id || c.uid || id;
+          var popCtl = typeof AbortController !== "undefined" ? new AbortController() : null;
+          var popTimer = setTimeout(function () {
+            if (popCtl) popCtl.abort();
+          }, 4000);
+          fetch("/api/popularity?action=companion&id=" + encodeURIComponent(cid), {
+            headers: { Accept: "application/json" },
+            cache: "no-store",
+            signal: popCtl ? popCtl.signal : undefined,
+          })
+            .then(function (res) {
+              return res.json().catch(function () {
+                return {};
+              });
+            })
+            .then(function (pop) {
+              clearTimeout(popTimer);
+              state.popularity = pop && pop.ok ? pop : null;
+              c.popularity = state.popularity;
+              if (state.companion && (state.companion.id === c.id || state.companion.uid === c.uid)) {
+                render(c);
+              }
+            })
+            .catch(function () {
+              clearTimeout(popTimer);
             });
-          })
-          .then(function (pop) {
-            clearTimeout(popTimer);
-            state.popularity = pop && pop.ok ? pop : null;
-            c.popularity = state.popularity;
-            if (state.companion && (state.companion.id === c.id || state.companion.uid === c.uid)) {
-              render(c);
-            }
-          })
-          .catch(function () {
-            clearTimeout(popTimer);
-          });
-      })
-      .catch(function (err) {
-        if (settled) return;
-        settled = true;
-        clearTimeout(failSafe);
-        renderError(err.message || "该陪玩资料不存在");
-      });
+        })
+        .catch(function (err) {
+          if (index + 1 < candidates.length) {
+            tryNext(index + 1);
+            return;
+          }
+          if (settled) return;
+          settled = true;
+          clearTimeout(failSafe);
+          renderError(err.message || "该陪玩资料不存在");
+        });
+    }
+
+    tryNext(0);
   }
 
   load();

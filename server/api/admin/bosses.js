@@ -439,7 +439,8 @@ async function patchBossDisplayName(id, displayName) {
   const rows = await supabaseJson(restUrl("profiles", `?id=eq.${encodeURIComponent(id)}`), {
     method: "PATCH",
     headers: serviceHeaders(),
-    body: JSON.stringify({ display_name: name, updated_at: new Date().toISOString() }),
+    // Production profiles has no updated_at column.
+    body: JSON.stringify({ display_name: name }),
   });
   try {
     await supabaseJson(`${process.env.SUPABASE_URL}/auth/v1/admin/users/${encodeURIComponent(id)}`, {

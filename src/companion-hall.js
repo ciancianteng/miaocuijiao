@@ -2,7 +2,8 @@
   "use strict";
 
   var PER_PAGE = 12;
-  var state = { page: 1, items: [], taxonomyReady: false };
+  // loading=true until first companions fetch settles — never paint fake empty/0 meanwhile.
+  var state = { page: 1, items: [], taxonomyReady: false, loading: true, loadError: "" };
 
   function esc(value) {
     return String(value || "").replace(/[&<>"']/g, function (ch) {
@@ -105,15 +106,6 @@
     if (window.MCJCurrency) return window.MCJCurrency.formatRate(value, "小时");
     return priceNumber(value) + " 猫粮/小时";
   }
-  function formatHourlyPriceFx(value) {
-    if (window.MCJCurrency && typeof window.MCJCurrency.formatCatFoodWithFx === "function") {
-      return window.MCJCurrency.formatCatFoodWithFx(value);
-    }
-    if (window.MCJCurrency && typeof window.MCJCurrency.formatRmWithFx === "function") {
-      return "≈ " + window.MCJCurrency.formatRmWithFx(value);
-    }
-    return "";
-  }
   function normalizeStatus(value) {
     if (window.MCJCompanionPresence) {
       return window.MCJCompanionPresence.label(value);
@@ -134,11 +126,24 @@
     if (status === "暂停接单") return " is-paused";
     return " is-offline";
   }
+  /** Short UI label for hall cards — still driven by real presence status. */
+  function statusChipText(status) {
+    var s = String(status || "");
+    if (/在线/.test(s) && !/暂停|忙碌/.test(s)) return "在线";
+    if (/忙碌/.test(s)) return "忙碌";
+    if (/暂停/.test(s)) return "暂停";
+    return "离线";
+  }
+  var inflightCompanions = null;
   async function readItems() {
+    if (inflightCompanions) return inflightCompanions;
+    inflightCompanions = (async function () {
     var dataItems = [];
     state.loadError = "";
     try {
-      var response = await fetch("/api/public/companions", { headers: { Accept: "application/json" }, cache: "no-store" });
+      // Allow short CDN/browser cache from API Cache-Control (list is slowly changing).
+      // Detail pages still fetch by id with no-store on the server.
+      var response = await fetch("/api/public/companions", { headers: { Accept: "application/json" }, cache: "default" });
       var body = await response.json().catch(function () { return {}; });
       if (!response.ok || !body.ok) throw new Error(body.message || "陪玩列表读取失败");
       dataItems = Array.isArray(body.companions) ? body.companions : [];
@@ -198,6 +203,7 @@
         status: normalizeStatus(normalized.availabilityStatus || normalized.availabilityText || normalized.status || normalized.onlineStatus),
         availabilityStatus: String(normalized.availabilityStatus || "").toLowerCase() || "",
         publicId: normalized.publicId || "",
+        companionUid: normalized.companionUid != null ? normalized.companionUid : (normalized.companion_uid != null ? normalized.companion_uid : ""),
         avatar: avatarUrl(normalized.avatar || normalized.cover || normalized.image),
         cover: cardImage(normalized),
         image: cardImage(normalized),
@@ -214,7 +220,10 @@
     }).filter(function (item) {
       return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(item.id || ""));
     });
-  }  function setOptions(id, options, allLabel) {
+    })();
+    return inflightCompanions;
+  }
+  function setOptions(id, options, allLabel) {
     var el = document.getElementById(id);
     if (!el) return;
     var current = el.value;
@@ -402,96 +411,81 @@
           .map(function (part) { return String(part || "").trim(); })
           .filter(Boolean);
     if (!list.length) list = ["未设置游戏"];
-    return list.slice(0, 3).map(function (game) {
-      return '<span class="mcj-market-chip mcj-market-chip-game">' + esc(game) + "</span>";
+    return list.slice(0, 4).map(function (game) {
+      return '<span class="mcj-service-tag companion-game-chip">' + esc(game) + "</span>";
     }).join("");
   }
-  function certBadgesHtml(item) {
-    var list = Array.isArray(item.certTags) ? item.certTags : [];
-    var badges = list
-      .slice(0, 3)
-      .map(function (t) {
-        var name = typeof t === "string" ? t : t.name || t.title || "";
-        if (!name) return "";
-        var icon = typeof t === "object" && t.icon ? String(t.icon) : "🏅";
-        var color = typeof t === "object" && t.color ? String(t.color) : "";
-        var style = color
-          ? ' style="--mcj-cert-color:' +
-            esc(color) +
-            ";border-color:" +
-            esc(color) +
-            ";color:" +
-            esc(color) +
-            ';"'
-          : "";
-        return (
-          '<span class="mcj-cert-badge mcj-market-cert"' +
-          style +
-          ' title="' +
-          esc(name) +
-          '"><span class="mcj-cert-icon" aria-hidden="true">' +
-          esc(icon) +
-          "</span>" +
-          esc(name) +
-          "</span>"
-        );
-      })
-      .filter(Boolean)
-      .join("");
-    return (
-      '<section class="mcj-market-verify' +
-      (badges ? "" : " is-empty") +
-      '" aria-label="认证徽章">' +
-        '<div class="mcj-market-verify-head">' +
-          '<span class="mcj-market-verify-mark" aria-hidden="true"></span>' +
-          '<span class="mcj-market-verify-label">平台认证</span>' +
-        "</div>" +
-        '<div class="mcj-market-cert-row">' +
-        (badges || '<span class="mcj-market-cert-empty">暂无认证徽章</span>') +
-        "</div>" +
-      "</section>"
-    );
-  }
-  function styleTagsHtml(item) {
-    var identityApi = window.MCJCompanionIdentity;
-    var tags = item.tags || [];
-    if (identityApi && identityApi.filterServiceTags) {
-      tags = identityApi.filterServiceTags(tags, item.voiceType || "");
-    }
-    var voice = String(item.voiceType || "").trim().replace(/^声线\s*[:：]\s*/, "");
-    var voiceParts = voice
-      ? voice.split(/[,，、|/]+/).map(function (x) { return String(x || "").trim(); }).filter(Boolean)
-      : [];
-    var parts = [];
-    if (voiceParts.length) {
-      parts.push(
-        '<span class="mcj-market-chip mcj-market-chip-voice"><span class="mcj-voice-label">声线</span>' +
-          esc(voiceParts.slice(0, 2).join(" / ")) +
-          "</span>"
-      );
-    }
-    tags.slice(0, 2).forEach(function (tag) {
-      parts.push('<span class="mcj-market-chip">' + esc(tag) + "</span>");
-    });
-    if (!parts.length) return "";
-    return '<div class="mcj-market-style-row">' + parts.join("") + "</div>";
+  /** Hall cards: do not show redundant 已认证 badge (#218). */
+  function verifiedBadgeHtml() {
+    return "";
   }
   function card(item) {
-    var levelColor = item.levelColor || (item.levelConfig && item.levelConfig.color) || "";
-    var badgeBorder = item.badgeBorder || levelColor || "";
-    var badgeText = item.badgeText || levelColor || "";
-    var pillStyle =
-      ' style="' +
-      (badgeBorder ? "border-color:" + esc(badgeBorder) + ";" : "") +
-      (badgeText ? "color:" + esc(badgeText) + ";" : "") +
-      (levelColor ? "background:color-mix(in srgb, " + esc(levelColor) + " 34%, rgba(8,6,12,.55));" : "") +
-      '"';
-    var fx = formatHourlyPriceFx(item.priceValue);
-    var levelRangeText = item.levelPriceRange || item.levelPriceRangeText || "";
-    if (levelRangeText && /猫粮/.test(levelRangeText)) {
-      levelRangeText = String(levelRangeText).replace(/\s*猫粮\s*$/, "");
+    var pillStyle = "";
+    if (item.badgeBorder || item.levelColor || item.badgeText) {
+      pillStyle =
+        ' style="' +
+        (item.badgeBorder ? "border-color:" + esc(item.badgeBorder) + ";" : "") +
+        (item.badgeText ? "color:" + esc(item.badgeText) + ";" : "") +
+        (item.levelColor ? "background:" + esc(item.levelColor) + "33;" : "") +
+        '"';
     }
+    var MAX_VISIBLE_TAGS = 5; /* level separate; ~5 tags then +N */
+    var categoryTags = (function () {
+      var game = String(item.game || "").trim();
+      var seen = {};
+      var out = [];
+      function pushTag(raw) {
+        var t = String(raw || "").trim();
+        if (!t) return;
+        if (/未设置/.test(t)) return;
+        var key = t.toLowerCase();
+        if (seen[key]) return;
+        seen[key] = true;
+        out.push(t);
+      }
+      String(item.game || "")
+        .split(/[,，/|·\s]+/)
+        .forEach(pushTag);
+      function pushExtra(raw) {
+        var t = String(raw || "").trim();
+        if (!t) return;
+        if (game && t === game) return;
+        pushTag(t);
+      }
+      (item.serviceTypes || []).forEach(pushExtra);
+      if (item.serviceType) pushExtra(item.serviceType);
+      (item.tags || []).forEach(pushExtra);
+      return out;
+    })();
+    var levelHtml = item.level
+      ? '<span class="companion-level-pill mcj-level-tag" data-level-id="' +
+        esc(item.levelId || "") +
+        '"' +
+        pillStyle +
+        ">" +
+        esc(item.level) +
+        "</span>"
+      : "";
+    var visibleTags = categoryTags.slice(0, MAX_VISIBLE_TAGS);
+    var hiddenTagCount = Math.max(0, categoryTags.length - visibleTags.length);
+    var tagsHtml =
+      '<div class="companion-identity-row companion-tags companion-capsule-row">' +
+      levelHtml +
+      visibleTags
+        .map(function (t) {
+          return '<span class="mcj-service-tag mcj-category-tag">' + esc(t) + "</span>";
+        })
+        .join("") +
+      (hiddenTagCount > 0
+        ? '<span class="mcj-service-tag mcj-category-tag companion-tag-more" aria-label="另有' +
+          hiddenTagCount +
+          '个标签">+' +
+          hiddenTagCount +
+          "</span>"
+        : "") +
+      "</div>";
     var badgeClass = statusBadgeClass(item.status);
+    var statusText = statusChipText(item.status);
     var publicId =
       (window.MCJCompanionPublicId && window.MCJCompanionPublicId.customerFacingCompanionId
         ? window.MCJCompanionPublicId.customerFacingCompanionId(item)
@@ -501,26 +495,22 @@
       "";
     if (/^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(String(publicId))) publicId = "";
     if (!publicId) publicId = "未生成";
+    var nickname = String(item.name || "").trim() || "未命名陪玩";
     var uuid = String(item.id || "").trim();
-    var detailHref = uuid ? ("profile.html?id=" + encodeURIComponent(uuid)) : "#";
+    var detailHref = uuid
+      ? "profile.html?id=" +
+        encodeURIComponent(uuid) +
+        (publicId && publicId !== "未生成" ? "&code=" + encodeURIComponent(publicId) : "")
+      : publicId && publicId !== "未生成"
+        ? "profile.html?id=" + encodeURIComponent(publicId)
+        : "#";
     var focusX = item.objectPositionX != null ? item.objectPositionX : 50;
     var focusY = item.objectPositionY != null ? item.objectPositionY : 25;
     var pos = Number(focusX) + "% " + Number(focusY) + "%";
-    var inlineStyle = item.cardStyleInline || "";
-    if (levelColor && inlineStyle.indexOf("--mcj-level-color") < 0) {
-      inlineStyle += (inlineStyle && inlineStyle.slice(-1) !== ";" ? ";" : "") + "--mcj-level-color:" + levelColor;
-    }
-    var styleAttr = inlineStyle ? ' style="' + esc(inlineStyle) + '"' : "";
-    var levelLabel = item.level || "未设置等级";
-    var levelIdShort = String(item.levelId || "").replace(/^lv/i, "Lv") || "Lv";
-    var levelNameOnly = String(levelLabel)
-      .replace(/^Lv\s*\d+\s*/i, "")
-      .replace(/^等级\s*/, "")
-      .trim() || levelLabel;
-    var priceNum = String(item.price).replace(/\s*猫粮\/小时\s*$/, "") || item.priceValue || "0";
+    // Compact hall card: name-first, no price, weak brand watermark, unified verified badge.
     return (
-      '<article class="card player-card mcj-market-card" data-player data-public-id="' +
-      esc(String(publicId === "未生成" ? "" : publicId).toUpperCase()) +
+      '<article class="card player-card" data-player data-public-id="' +
+      esc(String(publicId).toUpperCase()) +
       '" data-level-id="' +
       esc(item.levelId || "") +
       '" data-companion-level="' +
@@ -528,11 +518,11 @@
       '" data-card-style="' +
       esc(item.cardBackground || "") +
       '" data-level-color="' +
-      esc(levelColor) +
+      esc(item.levelColor || "") +
       '" data-companion-id="' +
       esc(uuid) +
       '" data-name="' +
-      esc(item.name) +
+      esc(nickname) +
       '" data-game="' +
       esc(item.game) +
       '" data-tags="' +
@@ -549,111 +539,70 @@
       esc(item.rating) +
       '" data-gender="' +
       esc(item.gender) +
-      '"' +
-      styleAttr +
-      ">" +
-      '<div class="mcj-market-level-rail" aria-hidden="true"></div>' +
-      '<div class="mcj-market-media companion-card-media">' +
-        '<img src="' +
-        esc(item.image) +
-        '" alt="' +
-        esc(item.name) +
-        '" loading="lazy" decoding="async" style="object-position:' +
-        esc(pos) +
-        ";--mcj-cover-pos:" +
-        esc(pos) +
-        "\" onerror=\"this.onerror=null;this.src='" +
-        DEFAULT_AVATAR +
-        "'\">" +
-        '<div class="mcj-market-media-shade" aria-hidden="true"></div>' +
-        '<div class="mcj-market-media-frame" aria-hidden="true"></div>' +
-        '<span class="mcj-market-status companion-online-badge' +
-        badgeClass +
-        '">' +
-        esc(item.status) +
-        "</span>" +
-        '<div class="mcj-market-level-banner" data-level-id="' +
-        esc(item.levelId || "") +
-        '">' +
-          '<span class="mcj-market-level-code">' +
-          esc(levelIdShort) +
-          "</span>" +
-          '<span class="mcj-market-level-ribbon companion-level-pill mcj-level-tag" data-level-id="' +
-          esc(item.levelId || "") +
-          '"' +
-          pillStyle +
-          ">" +
-          esc(levelNameOnly) +
-          "</span>" +
-        "</div>" +
-        '<div class="mcj-market-hero-copy">' +
-          "<h3>" +
-          esc(item.name) +
-          "</h3>" +
-          '<span class="mcj-market-status-inline companion-status-inline' +
-          badgeClass +
-          '">' +
-          esc(item.status) +
-          "</span>" +
-        "</div>" +
-      "</div>" +
-      certBadgesHtml(item) +
-      '<div class="mcj-market-body companion-card-body" data-market-body>' +
-        '<p class="mcj-market-id muted companion-id' +
-        (publicId === "未生成" ? " is-hidden" : "") +
-        '"' +
-        (publicId === "未生成" ? " hidden" : "") +
-        ">陪玩 ID：" +
-        esc(publicId) +
-        "</p>" +
-        '<div class="mcj-market-meta-block">' +
-          '<div class="mcj-market-games">' +
-          gameChips(item) +
-          "</div>" +
-          styleTagsHtml(item) +
-        "</div>" +
-        '<div class="mcj-market-price companion-price">' +
-          '<div class="mcj-market-price-accent" aria-hidden="true"></div>' +
-          '<div class="mcj-market-price-main">' +
-            '<span class="companion-selling-price-label">实际售价</span>' +
-            "<strong>" +
-            esc(priceNum) +
-            "</strong>" +
-            '<span class="mcj-market-price-unit">猫粮/小时</span>' +
-          "</div>" +
-          (fx ? '<span class="price-fx-approx">' + esc(fx) + "</span>" : "") +
-          (levelRangeText
-            ? '<div class="companion-level-price-range mcj-market-level-limit" data-level-id="' +
-              esc(item.levelId || "") +
-              '">等级限价 ' +
-              esc(levelRangeText) +
-              " 猫粮</div>"
-            : "") +
-        "</div>" +
-        '<div class="companion-card-actions mcj-market-actions">' +
-          '<a class="companion-card-action" href="' +
-          esc(detailHref) +
-          '">查看详情</a>' +
-          '<button type="button" class="companion-card-action primary" data-hall-order="' +
-          esc(uuid) +
-          '" data-hall-name="' +
-          esc(item.name || "") +
-          '" data-hall-price="' +
-          esc(item.priceValue || "") +
-          '" data-hall-level="' +
-          esc(item.levelId || "") +
-          '" data-hall-game="' +
-          esc(item.game || "") +
-          '" data-hall-avatar="' +
-          esc(item.image || "") +
-          '" data-hall-public-id="' +
-          esc(publicId === "未生成" ? "" : publicId) +
-          '" data-hall-status="' +
-          esc(item.availabilityStatus || "") +
-          '" data-hall-status-text="' +
-          esc(item.status || "") +
-          '">立即下单</button>' +
-        "</div>" +
+      '">' +
+      '<div class="companion-card-media"><img src="' +
+      esc(item.image) +
+      '" alt="' +
+      esc(nickname) +
+      '" loading="lazy" decoding="async" style="object-position:' +
+      esc(pos) +
+      ";--mcj-cover-pos:" +
+      esc(pos) +
+      "\" onerror=\"this.onerror=null;this.src='" +
+      DEFAULT_AVATAR +
+      '\'"></div>' +
+      '<div class="companion-card-body">' +
+      '<p class="companion-brand-watermark" aria-hidden="true">MEOW CUI JIAO</p>' +
+      '<p class="companion-nickname-line">' +
+      esc(nickname) +
+      "</p>" +
+      '<div class="companion-card-head-meta">' +
+      verifiedBadgeHtml(item) +
+      '<span class="companion-status-inline' +
+      badgeClass +
+      '">' +
+      esc(statusText) +
+      "</span></div>" +
+      tagsHtml +
+      '<div class="companion-card-actions"><a class="companion-card-action" href="' +
+      esc(detailHref) +
+      '">查看详情</a><button type="button" class="companion-card-action primary" data-hall-order="' +
+      esc(uuid) +
+      '" data-hall-name="' +
+      esc(nickname) +
+      '" data-hall-price="' +
+      esc(item.priceValue || "") +
+      '" data-hall-level="' +
+      esc(item.levelId || "") +
+      '" data-hall-game="' +
+      esc(item.game || "") +
+      '" data-hall-avatar="' +
+      esc(item.image || "") +
+      '" data-hall-public-id="' +
+      esc(publicId || "") +
+      '" data-hall-status="' +
+      esc(item.availabilityStatus || "") +
+      '" data-hall-status-text="' +
+      esc(item.status || "") +
+      '" data-hall-online="' +
+      esc(item.online === false || /离线|offline/i.test(String(item.status || "")) ? "0" : "1") +
+      '">立即下单</button><button type="button" class="companion-card-action team-add" data-hall-team-add="' +
+      esc(uuid) +
+      '" data-hall-name="' +
+      esc(nickname) +
+      '" data-hall-price="' +
+      esc(item.priceValue || "") +
+      '" data-hall-game="' +
+      esc(item.game || "") +
+      '" data-hall-avatar="' +
+      esc(item.image || "") +
+      '" data-hall-status="' +
+      esc(item.availabilityStatus || "") +
+      '" data-hall-status-text="' +
+      esc(item.status || "") +
+      '" data-hall-online="' +
+      esc(item.online === false || /离线|offline/i.test(String(item.status || "")) ? "0" : "1") +
+      '">加入一起下单</button></div>' +
       "</div>" +
       "</article>"
     );
@@ -661,15 +610,24 @@
   function render() {
     var list = document.getElementById("playerList");
     if (!list) return;
+    var empty = document.getElementById("emptyState");
+    var count = document.getElementById("resultCount");
+    // While the first companions request is in flight: skeleton only — never "共 0" / empty copy.
+    if (state.loading) {
+      list.setAttribute("aria-busy", "true");
+      if (empty) empty.hidden = true;
+      if (count) count.textContent = "正在加载陪玩…";
+      if (!list.querySelector(".hall-skel-card, .player-card")) paintHallSkeleton();
+      return;
+    }
+    list.removeAttribute("aria-busy");
     var items = filtered();
     var pages = Math.max(1, Math.ceil(items.length / PER_PAGE));
     if (state.page > pages) state.page = pages;
     var start = (state.page - 1) * PER_PAGE;
     // Never keep stale cards when the filtered set is empty.
     list.innerHTML = items.length ? items.slice(start, start + PER_PAGE).map(card).join("") : "";
-    var count = document.getElementById("resultCount");
     if (count) count.textContent = "共 " + items.length + " 位陪玩";
-    var empty = document.getElementById("emptyState");
     if (empty) {
       var showEmpty = !items.length;
       empty.hidden = !showEmpty;
@@ -754,16 +712,34 @@
       });
     });
   }
-  async function start() {
+  
+  function paintHallSkeleton() {
+    var list = document.getElementById("playerList");
+    if (!list) return;
+    if (list.querySelector(".player-card, .hall-skel-card")) return;
+    var card = '<article class="player-card hall-skel-card" aria-hidden="true"><div class="companion-card-media hall-skel-media"></div><div class="player-info"><div class="hall-skel-line lg"></div><div class="hall-skel-line"></div><div class="hall-skel-line short"></div></div></article>';
+    list.innerHTML = card + card + card + card;
+    list.setAttribute("aria-busy", "true");
     var count = document.getElementById("resultCount");
     if (count) count.textContent = "正在加载陪玩…";
-    // Fire-and-forget seed; never block the hall list on it.
-    fetch("/api/dev/seed-p03-preview", { method: "POST", headers: { "Content-Type": "application/json" } }).catch(function () {});
+  }
+
+  async function start() {
+    state.loading = true;
+    state.loadError = "";
+    paintHallSkeleton();
+    var count = document.getElementById("resultCount");
+    if (count) count.textContent = "正在加载陪玩…";
+    // Do not auto-seed preview fixtures into the public hall path.
     // Hydrate admin levels before building the level/price dropdowns.
     if (window.MCJCompanionLevels && typeof window.MCJCompanionLevels.hydrateFromApi === "function") {
       try { await window.MCJCompanionLevels.hydrateFromApi(); } catch (e) { /* keep last known */ }
     }
-    state.items = await readItems();
+    try {
+      state.items = await readItems();
+    } finally {
+      state.loading = false;
+    }
     setupFilters();
     await loadGameFilterFromServicesApi();
     bind();
@@ -778,7 +754,10 @@
           setupFilters();
           return loadGameFilterFromServicesApi();
         })
-        .then(function () { render(); })
+        .then(function () {
+          // Taxonomy may finish before companions — render() must not clear loading shell.
+          if (!state.loading) render();
+        })
         .catch(function () {});
     }
   }

@@ -1,4 +1,12 @@
--- Companion tags (separate from levels)
+-- Companion tags (ordinary style tags; separate from companion_cert_tags).
+-- Idempotent / production-safe:
+--   create table if not exists
+--   indexes if not exists
+--   policy create with duplicate_object guard
+--   seed insert on conflict do nothing (never overwrite existing rows)
+-- Does NOT drop, truncate, or update existing tag rows.
+-- Keep in sync with supabase/migrations/20260915_companion_tags.sql
+
 create table if not exists public.companion_tags (
   id text primary key,
   name text not null,
@@ -24,16 +32,21 @@ do $$ begin
     using (is_enabled = true);
 exception when duplicate_object then null; end $$;
 
+grant select on public.companion_tags to anon, authenticated;
+grant select, insert, update, delete on public.companion_tags to service_role;
+
+-- Seed matches historical DEFAULT_TAGS used when the table was missing on Production
+-- (public /api/platform/content fallback). on conflict do nothing preserves any real rows.
 insert into public.companion_tags (id, name, tag_group, sort_order, is_enabled)
 values
-  ('tag-1', '随和', '风格', 1, true),
-  ('tag-2', '技术流', '风格', 2, true),
-  ('tag-3', '话多', '风格', 3, true),
-  ('tag-4', '耐心', '风格', 4, true),
-  ('tag-5', '幽默', '风格', 5, true),
-  ('tag-6', '搞笑', '风格', 6, true),
-  ('tag-7', '娱乐', '风格', 7, true),
-  ('tag-8', '夜猫子', '风格', 8, true),
-  ('tag-9', '连麦', '风格', 9, true),
-  ('tag-10', '猛男', '风格', 10, true)
+  ('tag-1', '甜妹', '风格', 1, true),
+  ('tag-2', '御姐', '风格', 2, true),
+  ('tag-3', '猛男', '风格', 3, true),
+  ('tag-4', '幽默', '风格', 4, true),
+  ('tag-5', '搞笑', '风格', 5, true),
+  ('tag-6', '温柔', '风格', 6, true),
+  ('tag-7', '技术', '风格', 7, true),
+  ('tag-8', '娱乐', '风格', 8, true),
+  ('tag-9', '夜猫子', '风格', 9, true),
+  ('tag-10', '连麦', '风格', 10, true)
 on conflict (id) do nothing;

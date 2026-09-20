@@ -1,24 +1,62 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
+  <!-- mcj-pwa-meta:begin -->
+  <link rel="manifest" href="/manifest-admin.webmanifest">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="妙脆角后台">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#0a0610">
+  <meta name="mobile-web-app-capable" content="yes">
+  <script src="/pwa-boot.js" defer></script>
+  <!-- mcj-pwa-meta:end -->
+
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>超级管理员后台 | MEOW CUI JIAO</title>
+  <!-- mcj-og-meta:begin -->
+  <link rel="canonical" href="https://www.meowcuijiao.com/admin.html">
+  <meta name="description" content="妙脆角后台中心 — 订单、审核、运营。">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="妙脆角 MEOW CUI JIAO">
+  <meta property="og:locale" content="zh_CN">
+  <meta property="og:url" content="https://www.meowcuijiao.com/admin.html">
+  <meta property="og:title" content="超级管理员后台 | MEOW CUI JIAO">
+  <meta property="og:description" content="妙脆角后台中心 — 订单、审核、运营。">
+  <meta property="og:image" content="https://www.meowcuijiao.com/og/share-card-square-v2.jpg">
+  <meta property="og:image:secure_url" content="https://www.meowcuijiao.com/og/share-card-square-v2.jpg">
+  <meta property="og:image:type" content="image/jpeg">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="1200">
+  <meta property="og:image:alt" content="MEOW CUI JIAO 官方猫头像">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="超级管理员后台 | MEOW CUI JIAO">
+  <meta name="twitter:description" content="妙脆角后台中心 — 订单、审核、运营。">
+  <meta name="twitter:image" content="https://www.meowcuijiao.com/og/share-card-square-v2.jpg">
+  <link rel="image_src" href="https://www.meowcuijiao.com/og/share-card-square-v2.jpg">
+  <!-- mcj-og-meta:end -->
   <!-- Sync early gate BEFORE paint: no soft-session-only access; hide shell until JWT+role OK. -->
-  <script src="/portal-early-gate.js?v=20260811authUnify2"></script>
+  <script src="/portal-early-gate.js?v=20260911authPerfP0"></script>
   <style id="mcj-admin-auth-hide">
-    html[data-mcj-auth-gate="1"] body > *:not(#adminAuthLoading):not(#mcjAuthBootOverlay){visibility:hidden!important}
-    html[data-mcj-auth-gate="1"] .admin-shell{display:none!important}
+    /* Cover private shell while gate runs; #mcjAuthBootOverlay stays visible (anti-blank P0). */
+    html[data-mcj-auth-gate="1"] body > *:not(#adminAuthLoading):not(#mcjAuthBootOverlay),
+    html[data-mcj-auth-gate="pending"] body > *:not(#adminAuthLoading):not(#mcjAuthBootOverlay){visibility:hidden!important}
+    html[data-mcj-auth-gate="1"] .admin-shell,
+    html[data-mcj-auth-gate="pending"] .admin-shell{display:none!important}
+    #mcjAuthBootOverlay{visibility:visible!important;opacity:1!important}
   </style>
-  <link rel="stylesheet" href="/src/admin-suite.css?v=20260906levelMobile1">
+  <link rel="stylesheet" href="/src/admin-suite.css?v=20260920priceInputDark">
   <link rel="stylesheet" href="/src/admin-final-v1.css?v=20260811ordersPayout1">
   <link rel="stylesheet" href="/src/admin-layout.css?v=20260811ordersPayout1">
-  <link rel="stylesheet" href="/src/admin-banner-manager.css?v=20260816bannerDirect2">
+  <link rel="stylesheet" href="/src/admin-banner-manager.css?v=20260911bannerWysiwyg3to1">
   <link rel="stylesheet" href="/src/admin-player-management.css?v=20260807playerMoreFix">
-  <link rel="stylesheet" href="/src/admin-form-controls.css?v=20260801acceptFix2">
+  <link rel="stylesheet" href="/src/admin-form-controls.css?v=20260920priceInputDark">
   <link rel="stylesheet" href="/src/admin-gameplay-mall.css">
   <link rel="stylesheet" href="/src/admin-team-lobby.css?v=20260810teamLobbyGate1">
-  <script src="/src/role-gates.js?v=20260811authUnify1"></script>
+  <script src="/src/role-gates.js?v=20260908antiBlank1"></script>
   <script>window.MCJRoleGate && window.MCJRoleGate.guard("admin");</script>
   <script src="/src/companion-levels.js"></script>
 </head>
@@ -44,11 +82,12 @@
         <button type="button" data-section="announcements">公告</button>
         <button type="button" data-section="rules-hub">制度与等级</button>
         <button type="button" data-section="games">服务管理</button>
-        <button type="button" data-section="companion-levels">陪玩等级</button>
         <button type="button" data-section="companion-tags">陪玩标签</button>
+        <button type="button" data-section="companion-cert-tags">认证徽章管理</button>
         <button type="button" data-section="gameplays">更多玩法管理</button>
-        <button type="button" data-section="team-lobby-links">组队大厅管理</button>
+        <button type="button" data-section="team-lobby-links">社区链接 / 组队大厅</button>
         <button type="button" data-section="gifts">礼物管理</button>
+        <button type="button" data-section="gift-orders">礼物订单</button>
         <button type="button" data-section="points-settings">积分设置</button>
         <button type="button" data-section="boss-companion-relations">直属关系管理</button>
         <button type="button" data-section="boss-levels">Boss等级</button>
@@ -94,9 +133,10 @@
         <section class="section" id="section-games"><section class="panel"><h2>服务管理</h2><div id="gameManagement"></div></section></section>
         <section class="section" id="section-service-types"><section class="panel"><h2>服务类型管理</h2><div id="serviceTypeManagement"></div></section></section>
         <section class="section" id="section-companion-tags"><section class="panel"><h2>陪玩标签管理</h2><div id="companionTagManagement"></div></section></section>
+        <section class="section" id="section-companion-cert-tags"><section class="panel"><div id="companionCertTagManagement"></div></section></section>
         <section class="section" id="section-featured-players"><section class="panel"><h2>推荐陪玩管理</h2><div id="featuredPlayerManagement"></div></section></section>
         <section class="section" id="section-hot-games"><section class="panel"><h2>热门游戏管理</h2><div id="hotGameManagement"></div></section></section>
-        <section class="section" id="section-companion-levels"><section class="panel"><div id="companionLevelSettings"></div></section></section>
+        <section class="section" id="section-companion-levels"><section class="panel"><h2>陪玩等级已合并</h2><p class="muted" style="margin:0 0 12px;color:rgba(255,255,255,.62)">等级配置已统一到左侧「制度与等级」。本页仅保留兼容跳转。</p><p><button class="primary-btn" type="button" data-section="rules-hub">前往制度与等级</button></p><div id="companionLevelSettings" hidden></div></section></section>
         <section class="section" id="section-service-accounts"><section class="panel service-account-panel"><div id="serviceAccountManagement"></div></section></section>
         <section class="section" id="section-service-stats"><section class="panel service-account-panel"><div id="serviceWorkStats"></div></section></section>
         <section class="section" id="section-service-reports"><section class="panel service-account-panel"><div id="serviceReportsManagement"></div></section></section>
@@ -138,6 +178,7 @@
         <section class="section" id="section-payment"><section class="panel payment-shell-panel"><div id="paymentSettings"></div></section></section>
         <section class="section" id="section-mail-logs"><section class="panel"><h2>邮件通知记录</h2><div id="mailNotificationLogs"></div></section></section>
         <section class="section" id="section-gifts"><section class="panel"><h2>礼物管理</h2><div id="giftManagement"></div></section></section>
+        <section class="section" id="section-gift-orders"><section class="panel"><h2>礼物订单</h2><div id="giftOrderManagement"></div></section></section>
         <section class="section" id="section-points-settings"><section class="panel"><h2>积分设置</h2><p class="admin-sync-note" style="margin:0 0 12px">Boss 订单积分：按实付金额 × 倍率（与陪玩人气无关）。已完成订单不补发。</p><div id="pointsSettingsMount"></div></section></section>
         <section class="section" id="section-boss-companion-relations"><section class="panel"><h2>直属关系管理</h2><p class="admin-sync-note" style="margin:0 0 12px">Boss ↔ Companion 运营直属关系（独立于邀请/返佣）。管理员绑定/换绑/解绑须填 reason 审计；Boss / Companion 端只读。</p><div id="bossCompanionRelationsMount"></div></section></section>
         <section class="section" id="section-boss-levels"><section class="panel"><h2>Boss 等级</h2><p class="admin-sync-note" style="margin:0 0 12px">可配置升级门槛与平台抽成内分成%；手动钉选支持永久/到期。历史已结算快照不变。</p><div id="bossLevelsMount"></div></section></section>
@@ -157,35 +198,36 @@
     </div>
   </div>
 
-  <script src="/src/admin-auth-fetch.js?v=20260807adminAuthP0"></script>
-  <script src="/src/admin-payment-settings.js?v=20260811depositChain1"></script>
+  <script src="/src/admin-auth-fetch.js?v=20260914webpushTest1"></script>
+  <script src="/src/admin-payment-settings.js?v=20260907prodClean1"></script>
   <script src="/src/admin-form-controls.js?v=20260809csRewardLayout2"></script>
-  <script src="/src/banner-crop.js?v=20260809bannerCropSync1"></script>
-  <script src="/src/admin-banner-manager.js?v=20260816bannerDirect2"></script>
+  <script src="/src/banner-crop.js?v=20260911bannerWysiwyg3to1"></script>
+  <script src="/src/admin-banner-manager.js?v=20260911bannerWysiwyg3to1"></script>
   <script src="/src/admin-service-manager.js"></script>
-  <script src="/src/admin-companion-levels.js?v=20260906levelMobile1"></script>
-  <script src="/src/admin-companion-tags.js?v=20260906tagsSchema1"></script>
+  <script src="/src/admin-companion-levels.js?v=20260907levelHub1"></script>
+  <script src="/src/admin-companion-tags.js?v=20260907prodClean1"></script>
+  <script src="/src/admin-companion-cert-tags.js?v=20260907certBadges2"></script>
   <script src="/src/admin-gameplay-mall.js?v=20260806p0final1"></script>
-  <script src="/src/admin-team-lobby.js?v=20260810teamLobbyGate1"></script>
+  <script src="/src/admin-team-lobby.js?v=20260911community1"></script>
   <script src="/src/admin-profile.js?v=20260809withdrawRevealP0"></script>
-  <script src="/src/admin-player-detail.js?v=20260811depositChain1"></script>
+  <script src="/src/admin-player-detail.js?v=20260920servicePricingDedup"></script>
   <script src="/src/admin-recharge-campaigns.js"></script>
   <script src="/src/admin-recharge-review.js?v=20260810rechargeLoop1"></script>
   <script src="/src/admin-compensation-review.js"></script>
   <script src="/src/admin-finance.js?v=20260811ordersPayout1"></script>
   <script src="/src/admin-gifts.js"></script>
-  <script src="/src/admin-points-settings.js?v=20260831pointsRate1"></script>
-  <script src="/src/admin-boss-companion-relations.js?v=20260903bcrsafeguard1"></script>
-  <script src="/src/admin-boss-levels.js?v=20260903bosslevels1"></script>
+  <script src="/src/admin-gift-orders.js"></script>
+  <script src="/src/admin-points-settings.js?v=20260907prodClean1"></script>
+  <script src="/src/admin-boss-companion-relations.js?v=20260907prodClean1"></script>
+  <script src="/src/admin-boss-levels.js?v=20260907prodClean1"></script>
   <script src="/src/admin-popularity.js?v=20260815adminPopDisabled2"></script>
-  <script src="/src/admin-suite.js?v=20260816applyPolicyUi1"></script>
-  <script src="/src/admin-companion-applications.js?v=20260806p0final1"></script>
-  <script src="/src/admin-service-accounts.js?v=20260809csRewardLayout2"></script>
+  <script src="/src/admin-suite.js?v=20260920perServicePricing"></script>  <script src="/src/admin-companion-applications.js?v=20260907approveHall2"></script>
+  <script src="/src/admin-service-accounts.js?v=20260907prodClean1"></script>
   <script src="/src/admin-cs-rewards.js?v=20260809csRewardLayout2"></script>
-  <script src="/src/admin-rules-hub.js?v=20260816applyPolicyUi1"></script>
+  <script src="/src/admin-rules-hub.js?v=20260907levelHub1"></script>
   <script src="/src/admin-final-v1.js?v=20260811ordersPayout1"></script>
   <script src="/src/admin-service-packages.js"></script>
-  <script src="/src/admin-platform-settings.js"></script>
+  <script src="/src/admin-platform-settings.js?v=20260914webpushTest1"></script>
   <script src="/src/admin-mail-logs.js?v=20260806orderNotify1"></script>
 </body>
 </html>

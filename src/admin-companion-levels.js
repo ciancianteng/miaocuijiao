@@ -31,7 +31,10 @@
   }
 
   function target() {
-    return document.getElementById("companionLevelSettingsHub") || document.getElementById("companionLevelSettings");
+    // Prefer the rules-hub mount (single source of truth). Standalone #companionLevelSettings is hidden/legacy.
+    var hub = document.getElementById("companionLevelSettingsHub");
+    if (hub) return hub;
+    return document.getElementById("companionLevelSettings");
   }
 
   function normalize(row, index) {
@@ -83,11 +86,12 @@
                   esc(level.code) + " " + esc(level.name) +
                 "</span>" +
               "</div>" +
-              '<div class="level-preview-rate" style="color:' + esc(level.displayColor) + '">' + esc(rangeText(level)) + " / 小时</div>" +
+              '<div class="level-preview-rate" style="color:' + esc(level.displayColor) + '">等级限价 ' + esc(rangeText(level)) + " 猫粮</div>" +
             "</div>" +
           "</div>" +
           '<div class="level-preview-meta">' +
             '<div class="level-preview-meta-card"><span>卡片背景</span><strong>' + esc(cardBgLabel(level.cardBackground)) + "</strong></div>" +
+            '<div class="level-preview-meta-card"><span>默认售价</span><strong>' + esc(level.basePrice != null ? level.basePrice : level.min) + "</strong></div>" +
             '<div class="level-preview-meta-card"><span>平台抽成</span><strong>' + esc(level.commissionRate) + "%</strong></div>" +
             '<div class="level-preview-meta-card"><span>状态</span><strong>' + (level.enabled ? "启用" : "停用") + " · " + (level.open ? "开放申请" : "关闭申请") + "</strong></div>" +
             '<div class="level-preview-meta-card"><span>边框色</span><strong>' + esc(border) + "</strong></div>" +
@@ -145,10 +149,11 @@
           '<label><span>图标颜色</span><input name="badgeIcon" type="color" value="' + esc(level.badgeIcon || level.color || "#9CA3AF") + '"></label>' +
           '<label><span>卡片背景</span><select name="cardBackground" data-admin-control="select">' + bgOptions + "</select></label>"
         ) +
-        moduleBlock("③ 接单规则", "价格区间 · 平台抽成（新订单生效）",
-          '<label><span>最低价（猫粮）</span><input name="min" type="number" min="0" step="1" value="' + esc(level.min) + '" required></label>' +
-          '<label><span>最高价（猫粮）</span><input name="max" type="number" min="0" step="1" value="' + esc(level.max) + '" required></label>' +
-          '<label><span>允许超过最高价</span><select name="maxPlus" data-admin-control="switch"><option value="false"' + (!level.maxPlus ? " selected" : "") + '>否</option><option value="true"' + (level.maxPlus ? " selected" : "") + '>是</option></select></label>' +
+        moduleBlock("③ 接单规则", "默认售价 SoT · 自定义限价区间 · 平台抽成",
+          '<label><span>等级默认售价 base_price（猫粮）</span><input name="basePrice" type="number" min="1" step="1" value="' + esc(level.basePrice != null ? level.basePrice : level.min) + '" required><span class="muted" style="font-size:11px;font-weight:600">售卖价 SoT；无自定义价时使用</span></label>' +
+          '<label><span>自定义最低限价（猫粮）</span><input name="min" type="number" min="0" step="1" value="' + esc(level.min) + '" required></label>' +
+          '<label><span>自定义最高限价（猫粮）</span><input name="max" type="number" min="0" step="1" value="' + esc(level.max) + '" required></label>' +
+          '<label><span>允许超过最高限价</span><select name="maxPlus" data-admin-control="switch"><option value="false"' + (!level.maxPlus ? " selected" : "") + '>否</option><option value="true"' + (level.maxPlus ? " selected" : "") + '>是</option></select></label>' +
           '<label><span>平台抽成 %</span><input name="commissionRate" type="number" min="0" max="100" step="0.1" value="' + esc(level.commissionRate) + '"><span class="muted" style="font-size:11px;font-weight:600">发布后同步该等级陪玩；历史已结算订单不变</span></label>'
         ) +
         moduleBlock("④ 升级规则", "升级条件与等级说明",
@@ -209,7 +214,7 @@
     var level = selected();
     var statusText = state.error || state.message || (state.dirty ? "有未发布修改" : "修改后预览 → 保存当前 / 发布到全站");
     var head = (
-      '<div class="content-admin-head"><div><h3>全站等级配置中心</h3><p>陪玩大厅、更多玩法、陪玩详情、老板端、客服端、陪玩端统一读取 <code>companion_levels</code>，禁止各页自写一套。</p></div>' +
+      '<div class="content-admin-head"><div><h3>全站等级配置中心</h3><p>单一数据源 <code>companion_levels</code>：陪玩大厅、详情页、等级徽章、卡片展示与升级规则统一读取。入口仅「制度与等级」。</p></div>' +
         '<div class="content-version-meta"><span>' + esc(state.levels.length) + " 个等级</span><span>" + esc(statusText) + "</span></div></div>"
     );
     var toolbar = (
@@ -300,6 +305,7 @@
       min: Number(fd.get("min") || 0),
       max: Number(fd.get("max") || 0),
       maxPlus: String(fd.get("maxPlus")) === "true",
+      basePrice: Number(fd.get("basePrice") || fd.get("min") || 0),
       commissionRate: Number(fd.get("commissionRate") || 0),
       sort: Number(fd.get("sort") || current.sort || 1),
       open: String(fd.get("open")) !== "false",
@@ -495,6 +501,7 @@
       badgeIcon: "#D1D5DB",
       min: 20,
       max: 30,
+      basePrice: 20,
       commissionRate: 20,
       sort: state.levels.length + 1,
       open: true,
@@ -601,6 +608,16 @@
     bind();
     load();
   }
+
+  document.addEventListener("mcj:admin-section", function (e) {
+    var section = e && e.detail && e.detail.section;
+    if (section === "rules-hub" || section === "companion-levels") {
+      // Remount into hub after rules-hub re-renders the levels tab.
+      setTimeout(function () {
+        if (document.getElementById("companionLevelSettingsHub")) load();
+      }, 60);
+    }
+  });
 
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot);
   else boot();

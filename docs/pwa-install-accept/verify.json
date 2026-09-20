@@ -1,0 +1,189 @@
+{
+  "ok": true,
+  "base": "http://127.0.0.1:5188",
+  "pr": 219,
+  "previewUrl": "https://meow-cuijiao-homepage-git-fe-0957cc-ciancianteng-4581s-projects.vercel.app",
+  "checks": {
+    "manifestStatus": 200,
+    "swStatus": 200,
+    "icon192": 200,
+    "icon512": 200,
+    "appleIcon": 200,
+    "iosHomeTeach": true,
+    "iosHallTeach": true,
+    "iosProfileTeach": true,
+    "dismissNoAutoWithin7d": true,
+    "installedNoAuto": true,
+    "standaloneSetsInstalled": true,
+    "androidHasInstallOrTeach": true,
+    "androidTeachFallback": true
+  },
+  "screenshots": {
+    "ios-home-teach.png": "docs/pwa-install-accept/ios-home-teach.png",
+    "ios-hall-teach.png": "docs/pwa-install-accept/ios-hall-teach.png",
+    "ios-profile-teach.png": "docs/pwa-install-accept/ios-profile-teach.png",
+    "ios-dismiss-no-auto.png": "docs/pwa-install-accept/ios-dismiss-no-auto.png",
+    "ios-installed-no-auto.png": "docs/pwa-install-accept/ios-installed-no-auto.png",
+    "ios-standalone-emulated.png": "docs/pwa-install-accept/ios-standalone-emulated.png",
+    "android-install-ui.png": "docs/pwa-install-accept/android-install-ui.png",
+    "android-teach-fallback.png": "docs/pwa-install-accept/android-teach-fallback.png"
+  },
+  "manifest": {
+    "name": "妙脆角 MEOW CUI JIAO",
+    "short_name": "妙脆角",
+    "description": "专业陪玩，每一场游戏认真对待每一位热爱电竞的你。",
+    "start_url": "/",
+    "scope": "/",
+    "display": "standalone",
+    "orientation": "portrait-primary",
+    "background_color": "#0a0610",
+    "theme_color": "#0a0610",
+    "lang": "zh-CN",
+    "icons": [
+      {
+        "src": "/icons/icon-192.png",
+        "sizes": "192x192",
+        "type": "image/png",
+        "purpose": "any"
+      },
+      {
+        "src": "/icons/icon-512.png",
+        "sizes": "512x512",
+        "type": "image/png",
+        "purpose": "any"
+      },
+      {
+        "src": "/icons/icon-192-maskable.png",
+        "sizes": "192x192",
+        "type": "image/png",
+        "purpose": "maskable"
+      },
+      {
+        "src": "/icons/icon-512-maskable.png",
+        "sizes": "512x512",
+        "type": "image/png",
+        "purpose": "maskable"
+      }
+    ]
+  },
+  "errors": [],
+  "previewVerify": {
+    "preview": "https://meow-cuijiao-homepage-git-fe-0957cc-ciancianteng-4581s-projects.vercel.app",
+    "previewIconStatuses": {
+      "/icons/icon-192.png": {
+        "url": "https://meow-cuijiao-homepage-git-fe-0957cc-ciancianteng-4581s-projects.vercel.app/icons/icon-192.png",
+        "status": 200,
+        "contentType": "image/png",
+        "bytes": 50269,
+        "isPng": true
+      },
+      "/icons/icon-512.png": {
+        "url": "https://meow-cuijiao-homepage-git-fe-0957cc-ciancianteng-4581s-projects.vercel.app/icons/icon-512.png",
+        "status": 200,
+        "contentType": "image/png",
+        "bytes": 269128,
+        "isPng": true
+      },
+      "/icons/icon-192-maskable.png": {
+        "url": "https://meow-cuijiao-homepage-git-fe-0957cc-ciancianteng-4581s-projects.vercel.app/icons/icon-192-maskable.png",
+        "status": 200,
+        "contentType": "image/png",
+        "bytes": 42900,
+        "isPng": true
+      },
+      "/icons/icon-512-maskable.png": {
+        "url": "https://meow-cuijiao-homepage-git-fe-0957cc-ciancianteng-4581s-projects.vercel.app/icons/icon-512-maskable.png",
+        "status": 200,
+        "contentType": "image/png",
+        "bytes": 226485,
+        "isPng": true
+      },
+      "/icons/apple-touch-icon.png": {
+        "url": "https://meow-cuijiao-homepage-git-fe-0957cc-ciancianteng-4581s-projects.vercel.app/icons/apple-touch-icon.png",
+        "status": 200,
+        "contentType": "image/png",
+        "bytes": 45579,
+        "isPng": true
+      },
+      "/apple-touch-icon.png": {
+        "url": "https://meow-cuijiao-homepage-git-fe-0957cc-ciancianteng-4581s-projects.vercel.app/apple-touch-icon.png",
+        "status": 200,
+        "contentType": "image/png",
+        "bytes": 45579,
+        "isPng": true
+      },
+      "/favicon-32.png": {
+        "url": "https://meow-cuijiao-homepage-git-fe-0957cc-ciancianteng-4581s-projects.vercel.app/favicon-32.png",
+        "status": 200,
+        "contentType": "image/png",
+        "bytes": 2364,
+        "isPng": true
+      },
+      "/favicon.ico": {
+        "url": "https://meow-cuijiao-homepage-git-fe-0957cc-ciancianteng-4581s-projects.vercel.app/favicon.ico",
+        "status": 200,
+        "contentType": "image/vnd.microsoft.icon",
+        "bytes": 2386,
+        "isPng": false
+      },
+      "/manifest.webmanifest": {
+        "url": "https://meow-cuijiao-homepage-git-fe-0957cc-ciancianteng-4581s-projects.vercel.app/manifest.webmanifest",
+        "status": 200,
+        "contentType": "application/manifest+json; charset=utf-8",
+        "bytes": 887,
+        "isPng": false
+      },
+      "/sw-mcj.js": {
+        "url": "https://meow-cuijiao-homepage-git-fe-0957cc-ciancianteng-4581s-projects.vercel.app/sw-mcj.js",
+        "status": 200,
+        "contentType": "application/javascript; charset=utf-8",
+        "bytes": 875,
+        "isPng": false
+      }
+    },
+    "productionIconStatuses": {
+      "/icons/icon-192.png": {
+        "url": "https://www.meowcuijiao.com/icons/icon-192.png",
+        "status": 404,
+        "contentType": "text/plain; charset=utf-8",
+        "bytes": 79,
+        "isPng": false
+      },
+      "/icons/icon-512-maskable.png": {
+        "url": "https://www.meowcuijiao.com/icons/icon-512-maskable.png",
+        "status": 404,
+        "contentType": "text/plain; charset=utf-8",
+        "bytes": 79,
+        "isPng": false
+      },
+      "/apple-touch-icon.png": {
+        "url": "https://www.meowcuijiao.com/apple-touch-icon.png",
+        "status": 404,
+        "contentType": "text/plain; charset=utf-8",
+        "bytes": 79,
+        "isPng": false
+      },
+      "/favicon-32.png": {
+        "url": "https://www.meowcuijiao.com/favicon-32.png",
+        "status": 404,
+        "contentType": "text/plain; charset=utf-8",
+        "bytes": 79,
+        "isPng": false
+      },
+      "/manifest.webmanifest": {
+        "url": "https://www.meowcuijiao.com/manifest.webmanifest",
+        "status": 404,
+        "contentType": "text/plain; charset=utf-8",
+        "bytes": 79,
+        "isPng": false
+      }
+    },
+    "previewAllOk": true,
+    "note": "Production 404 expected until merge"
+  },
+  "generatedAt": "2026-09-11T01:05:26.963Z",
+  "passFail": {
+    "Preview_iconUrls200": "PASS",
+    "Production_untilMerge": "EXPECTED_404 (icons not live until merge)"
+  }
+}

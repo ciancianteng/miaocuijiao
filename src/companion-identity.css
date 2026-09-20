@@ -66,6 +66,7 @@
   background:color-mix(in srgb, var(--mcj-level-color, #9CA3AF) 18%, transparent) !important;
   color:var(--mcj-level-badge-text, #ffe8f4) !important;
   font-weight:800 !important;
+  box-shadow:0 0 calc(var(--mcj-level-glow-px, 12px) * 0.4) color-mix(in srgb, var(--mcj-level-color, #9CA3AF) calc(var(--mcj-level-glow-alpha, 0.2) * 50%), transparent) !important;
 }
 
 /* Gender chip */
@@ -138,7 +139,7 @@
   transform:none !important;
 }
 
-/* Voice line — dashed border only; same box metrics */
+/* Voice line — dashed pink capsule (original badge language) */
 .mcj-voice-tag{
   gap:4px !important;
   border-style:dashed !important;
@@ -177,15 +178,19 @@
   font-weight:650 !important;
 }
 
-/* Photo / card border follows level */
+/* Photo / avatar level border + glow (level surfaces only; same vars on hall + detail) */
 [data-companion-level] .profile-avatar-wrap,
 .profile-hero[data-companion-level] .profile-avatar-wrap{
-  border-color:color-mix(in srgb, var(--mcj-level-color, #e89ac4) 70%, transparent) !important;
-  box-shadow:0 0 18px color-mix(in srgb, var(--mcj-level-color, #e178b4) 28%, transparent) !important;
+  border-color:color-mix(in srgb, var(--mcj-level-color, #e89ac4) 72%, transparent) !important;
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--mcj-level-color, #e89ac4) 35%, transparent),
+    0 0 var(--mcj-level-glow-px, 14px) color-mix(in srgb, var(--mcj-level-color, #e178b4) calc(var(--mcj-level-glow-alpha, 0.24) * 100%), transparent) !important;
 }
 .player-card[data-level-id] .companion-card-media,
 .player-card[data-companion-level] .companion-card-media{
-  box-shadow:inset 0 0 0 1.5px color-mix(in srgb, var(--mcj-level-color, transparent) 55%, transparent);
+  box-shadow:
+    inset 0 0 0 var(--mcj-level-media-ring, 1.5px) color-mix(in srgb, var(--mcj-level-color, transparent) 58%, transparent),
+    0 0 calc(var(--mcj-level-glow-px, 12px) * 0.55) color-mix(in srgb, var(--mcj-level-color, transparent) calc(var(--mcj-level-glow-alpha, 0.22) * 70%), transparent);
 }
 
 /* Profile bottom actions — black-pink bordered professional */

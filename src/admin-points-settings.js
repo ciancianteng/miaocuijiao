@@ -85,7 +85,7 @@
     if (state.message) tip += '<p class="admin-sync-note" style="color:#86efac">' + esc(state.message) + "</p>";
     if (!state.tablesReady) {
       tip +=
-        '<p class="admin-sync-note">请确认 Staging 已执行 points_settings 与 points_settings_rate migration。</p>';
+        '<p class="admin-sync-note">积分设置表未就绪。请联系运维完成内部初始化后再调整倍率。</p>';
     }
 
     var examples =
@@ -146,7 +146,7 @@
       "</ul>" +
       "<p style=\"margin:8px 0 0\">公式：rewardPoints = " +
       esc(state.roundingMode) +
-      "(订单猫粮实付 × points_per_cat_food)</p></div>" +
+      "(订单猫粮实付 × 每猫粮积分倍率)</p></div>" +
       '<div style="margin-top:14px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">' +
       '<button class="mini-btn primary-lite" type="submit" data-points-save' +
       (state.saving ? " disabled" : "") +

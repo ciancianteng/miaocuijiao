@@ -130,13 +130,14 @@ export async function insertCompanionNotification({
     notification_type: String(notificationType || category || "system").trim(),
     related_application_id: String(relatedApplicationId || "").trim() || null,
   };
+  let savedKey = null;
   try {
     await supabaseJson(restUrl("companion_notifications", ""), {
       method: "POST",
       headers: serviceHeaders(),
       body: JSON.stringify(rich),
     });
-    return key;
+    savedKey = key;
   } catch (err) {
     const detail = String(err?.message || err || "");
     if (/notification_type|related_application_id|column|schema|PGRST/i.test(detail)) {
@@ -146,15 +147,38 @@ export async function insertCompanionNotification({
           headers: serviceHeaders(),
           body: JSON.stringify(base),
         });
-        return key;
+        savedKey = key;
       } catch (err2) {
         console.warn("[companion-inbox] insertCompanionNotification failed:", err2?.message || err2);
         return null;
       }
+    } else {
+      console.warn("[companion-inbox] insertCompanionNotification failed:", err?.message || err);
+      return null;
     }
-    console.warn("[companion-inbox] insertCompanionNotification failed:", err?.message || err);
-    return null;
   }
+  if (savedKey) {
+    try {
+      const typeKey = String(notificationType || category || "companion");
+      const { mapInboxKindToOrderPushEvent } = await import("./_web-push-business-events.js");
+      // Order P0 business events use idempotent dispatcher — avoid double push.
+      if (mapInboxKindToOrderPushEvent(typeKey)) {
+        return savedKey;
+      }
+      const { fanoutWebPush } = await import("./_web-push.js");
+      fanoutWebPush(uid, {
+        title: base.title,
+        body: base.body,
+        url: base.href || "/companion/messages",
+        notificationType: typeKey,
+        entityId: String(relatedApplicationId || ""),
+        tag: "companion-" + savedKey,
+      });
+    } catch {
+      /* push optional */
+    }
+  }
+  return savedKey;
 }
 
 export async function notifyCompanionReviewResult(
@@ -202,7 +226,7 @@ export async function loadCompanionNotifications(companionUserId) {
   const rows = await supabaseJson(
     restUrl(
       "companion_notifications",
-      `?companion_id=eq.${encodeURIComponent(uid)}&order=created_at.desc&limit=100&select=id,notice_key,category,title,body,href,created_at`
+      `?companion_id=eq.${encodeURIComponent(uid)}&order=created_at.desc&limit=100&select=id,notice_key,category,title,body,href,created_at,notification_type`
     ),
     { headers: serviceHeaders() }
   ).catch(() => []);
@@ -221,6 +245,7 @@ export async function loadCompanionNotifications(companionUserId) {
         body: row.body || "",
         at: row.created_at || "",
         href: row.href || "/companion/account",
+        notificationType: row.notification_type || "",
         fromDb: true,
       };
     })

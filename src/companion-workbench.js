@@ -13,7 +13,7 @@
     '/companion/order-hall':'hall','/companion/orders':'orders',
     '/companion/earnings':'earnings','/companion/wallet':'earnings',
     '/companion/profile':'profile',
-    '/companion/account':'account','/companion/mine':'account','/companion/verification':'account',
+    '/companion/account':'account','/companion/gifts':'gifts','/companion/mine':'account','/companion/verification':'account',
     '/companion/withdraw':'withdraw',
     '/companion/messages':'messages',
     '/companion/settings':'settings',
@@ -29,6 +29,7 @@
     ['earnings','收益中心','/companion/earnings'],
     ['profile','我的资料（公开）','/companion/profile'],
     ['account','账号中心（隐私）','/companion/account'],
+    ['gifts','我的礼物','/companion/gifts'],
     ['messages','消息中心','/companion/messages'],
     ['settings','设置','/companion/settings']
   ];
@@ -54,7 +55,7 @@
   };
   var COMPANION_ISOLATION_MSG='您的陪玩认证尚未通过，目前只能查看审核进度。';
   var HIDDEN_MVP_ROUTES={};
-  var state={route:'dashboard',session:null,data:null,notice:'',loading:false,error:'',walletWarning:'',authTab:'login',loginMethod:'otp',loginError:'',loginBusy:false,registerToken:'',registerVerifiedEmail:'',registerCooldownUntil:0,registerBusy:false,forgotStep:'',forgotAccount:'',forgotBusy:false,forgotMsg:'',forgotResetToken:'',profileServices:[],profileVoiceTypes:[],profileCompanionTags:[],profileErrors:{},profileDraft:null,accountDraft:null,uploadBusy:'',galleryPending:[],statusBusy:false,pendingOnlineStatus:null,settlement:null,orderFilter:'all',pollTimer:null,rulesPollTimer:null,ordersCacheAt:0,msgFilter:'all',settings:null,earningsTab:'overview',chatSession:'cs',chatConversationId:'',chatBusy:false,withdrawBusy:false,inbox:null,inboxError:'',hallOrderType:'all',hallGame:'all',drawerOpen:false,_prevDesignated:null,_prevAuditLocked:null,_toastTimer:null,_ordersRtReady:false,_alertedOrderIds:null,_baseDocTitle:'',_focusOrderId:''};
+  var state={route:'dashboard',session:null,data:null,notice:'',loading:false,error:'',walletWarning:'',authTab:'login',loginMethod:'otp',loginError:'',loginBusy:false,registerToken:'',registerVerifiedEmail:'',registerCooldownUntil:0,registerBusy:false,inviteCode:'',forgotStep:'',forgotAccount:'',forgotBusy:false,forgotMsg:'',forgotResetToken:'',profileServices:[],profileVoiceTypes:[],profileCompanionTags:[],profileErrors:{},profileDraft:null,accountDraft:null,uploadBusy:'',galleryPending:[],statusBusy:false,pendingOnlineStatus:null,settlement:null,orderFilter:'all',pollTimer:null,rulesPollTimer:null,ordersCacheAt:0,msgFilter:'all',settings:null,earningsTab:'overview',chatSession:'cs',chatConversationId:'',chatBusy:false,withdrawBusy:false,inbox:null,inboxError:'',hallOrderType:'all',hallGame:'all',drawerOpen:false,_prevDesignated:null,_prevAuditLocked:null,_toastTimer:null,_ordersRtReady:false,_alertedOrderIds:null,_baseDocTitle:'',_focusOrderId:'',myGifts:null,myGiftsBusy:false,myGiftsError:'',giftWall:[],_giftPopupShown:false};
   var IMAGE_ACCEPT='image/jpeg,image/jpg,image/png,image/webp,image/*';
   /** Companion self-select voice lines — not from admin「声线管理」. */
   var FIXED_VOICE_OPTIONS=['甜妹','御姐','少御','萝莉','温柔','清冷','慵懒','磁性','少年','青叔','大叔','其他'];
@@ -306,11 +307,10 @@
     try{
       if(navigator.vibrate)navigator.vibrate([120,60,120]);
     }catch(e){}
-    try{
+        try{
+      // Web Push only — never auto-prompt system permission here.
       if(typeof Notification==='function'&&Notification.permission==='granted'){
         new Notification('妙脆角陪玩',{body:'你有新的指定订单',tag:id||'designated-order'});
-      }else if(typeof Notification==='function'&&Notification.permission==='default'){
-        Notification.requestPermission().catch(function(){});
       }
     }catch(e){}
     var s=(state.data||{}).summary||{};
@@ -336,6 +336,58 @@
     try{return Object.assign({notify:true,sound:true,theme:'dark'},JSON.parse(localStorage.getItem(SETTINGS_KEY)||'{}'))}catch(e){return {notify:true,sound:true,theme:'dark'}}
   }
   function saveSettings(next){state.settings=next;try{localStorage.setItem(SETTINGS_KEY,JSON.stringify(next))}catch(e){}}
+  function ensureCompanionWebPushScript(){
+    return new Promise(function(resolve){
+      if(window.MCJWebPush){resolve(window.MCJWebPush);return}
+      var existing=document.querySelector('script[data-mcj-webpush-client]');
+      if(existing){
+        existing.addEventListener('load',function(){resolve(window.MCJWebPush)});
+        existing.addEventListener('error',function(){resolve(null)});
+        return;
+      }
+      var s=document.createElement('script');
+      s.src='/src/web-push-client.js?v=20260914webpush5';
+      s.defer=true;
+      s.setAttribute('data-mcj-webpush-client','1');
+      s.onload=function(){resolve(window.MCJWebPush)};
+      s.onerror=function(){resolve(null)};
+      document.head.appendChild(s);
+    });
+  }
+  function openPwaInstallGuide(){
+    function tryOpen(){
+      if(window.MCJPwaInstall&&typeof window.MCJPwaInstall.openGuide==='function'){
+        window.MCJPwaInstall.openGuide();
+        return true;
+      }
+      return false;
+    }
+    if(tryOpen())return;
+    // Ensure shared guide assets (normally loaded by /pwa-boot.js).
+    try{
+      if(!document.querySelector('link[data-mcj-pwa-install-css]')){
+        var css=document.createElement('link');
+        css.rel='stylesheet';
+        css.href='/src/pwa-install-prompt.css?v=20260912pwaGuide1';
+        css.setAttribute('data-mcj-pwa-install-css','1');
+        document.head.appendChild(css);
+      }
+      if(!document.querySelector('script[data-mcj-pwa-install-js]')&&!window.__MCJPwaInstallLoaded){
+        var js=document.createElement('script');
+        js.src='/src/pwa-install-prompt.js?v=20260912pwaGuide1';
+        js.defer=true;
+        js.setAttribute('data-mcj-pwa-install-js','1');
+        js.onload=function(){tryOpen()};
+        document.head.appendChild(js);
+        return;
+      }
+    }catch(e){}
+    var n=0;
+    var t=setInterval(function(){
+      n+=1;
+      if(tryOpen()||n>20)clearInterval(t);
+    },100);
+  }
   function readMsgRead(){try{return JSON.parse(localStorage.getItem(MSG_READ_KEY)||'{}')}catch(e){return {}}}
   function markMsgRead(id){var map=readMsgRead();map[id]=1;try{localStorage.setItem(MSG_READ_KEY,JSON.stringify(map))}catch(e){}}
   function availableGames(){
@@ -1009,6 +1061,7 @@
     state.session=normalized;
   }
   function clearSession(){
+    try{if(window.MCJWebPush&&window.MCJWebPush.disablePush)window.MCJWebPush.disablePush()}catch(e){}
     localStorage.removeItem(SESSION_KEY);
     sessionStorage.removeItem(SESSION_KEY);
     try{
@@ -1293,6 +1346,7 @@
     if(state.data&&state.data.summary&&state.inbox){
       state.data.summary.unreadMessages=num(state.inbox.unreadTotal);
     }
+    try{setTimeout(maybeShowGiftReceivedPopup,0)}catch(e){}
   }
   function cacheThreadMessages(cid,messages){
     if(!cid)return;
@@ -1837,6 +1891,19 @@
     }
     state.route=route();
     applyFocusOrderFromQuery();
+    // Capture Boss invite code for companion register (from /invite.html or ?code=).
+    try{
+      var q=new URLSearchParams(location.search||'');
+      var fromQ=String(q.get('code')||q.get('inviteCode')||q.get('invite_code')||'').trim();
+      if(fromQ){
+        state.inviteCode=fromQ;
+        sessionStorage.setItem('mcj_boss_invite_code',fromQ);
+        state.authTab='register';
+      }else if(!state.inviteCode){
+        state.inviteCode=String(sessionStorage.getItem('mcj_boss_invite_code')||'').trim();
+        if(state.inviteCode)state.authTab='register';
+      }
+    }catch(e){}
     if(!state.session&&state.route!=='login'){go('/companion/login');return}
     if(state.session&&state.route==='login'){
       try{history.replaceState(null,'','/companion/review-status')}catch(e){}
@@ -1850,6 +1917,14 @@
         bindCompanionOrdersRealtime();
         var s=(state.data||{}).summary||{};
         updateTabBadge(s.waitingConfirm||s.designatedPending);
+        try{
+          ensureCompanionWebPushScript().then(function(api){
+            if(api&&typeof api.maybePromptOnFirstVisit==='function'){
+              api.maybePromptOnFirstVisit({role:'companion'});
+            }
+          });
+        }catch(ePush){}
+        try{setTimeout(maybeShowGiftReceivedPopup,300)}catch(e){}
       });
     }else paint();
   }
@@ -1999,6 +2074,16 @@
       preserveScroll:preserveScroll,
       forceFull:!!opts.forceFull
     });
+    if(state.route==='settings'){
+      try{
+        ensureCompanionWebPushScript().then(function(){
+          var mount=document.getElementById('mcjWebPushSettingsMount');
+          if(mount&&window.MCJWebPush&&typeof window.MCJWebPush.mountSettings==='function'){
+            window.MCJWebPush.mountSettings(mount,{role:'companion'});
+          }
+        });
+      }catch(e){}
+    }
   }
   function noticeHtml(){return state.notice?'<div class="pw-toast show">'+esc(state.notice)+'</div>':''}
   function forgotPasswordModalHtml(){
@@ -2008,7 +2093,7 @@
   function renderLogin(){
     var tab=state.authTab==='register'?'register':'login';
     var method=state.loginMethod==='password'?'password':'otp';
-    var header=Auth&&Auth.brandHeader?Auth.brandHeader('陪玩端登录','邮箱注册 / 邮箱验证码登录'):'<h1 class="mcj-auth-title">陪玩端登录</h1><p class="mcj-auth-desc">邮箱注册 / 邮箱验证码登录</p>';
+    var header=Auth&&Auth.brandHeader?Auth.brandHeader('陪玩端',''):'<h1 class="mcj-auth-title">陪玩端</h1>';
     var loginPwd=Auth&&Auth.passwordField?Auth.passwordField('password','密码'):'<label class="mcj-auth-field">密码<input name="password" type="password" autocomplete="current-password" data-auth-sensitive="1" required value=""></label>';
     var regPwd=Auth&&Auth.passwordField?Auth.passwordField('password','密码','autocomplete="new-password" minlength="8"'):'<label class="mcj-auth-field">密码<input name="password" type="password" autocomplete="new-password" data-auth-sensitive="1" minlength="8" required value=""></label>';
     var regConfirm=Auth&&Auth.passwordField?Auth.passwordField('confirm_password','确认密码','autocomplete="new-password" minlength="8"'):'<label class="mcj-auth-field">确认密码<input name="confirm_password" type="password" autocomplete="new-password" data-auth-sensitive="1" minlength="8" required value=""></label>';
@@ -2027,6 +2112,10 @@
           ? '<p class="mcj-auth-note">邮箱已验证 · '+esc(state.registerVerifiedEmail)+'，请设置密码并注册。</p>'
           : '<p class="mcj-auth-note">请先完成邮箱验证，验证成功后才能注册。</p>')+
         '<input type="hidden" name="registerToken" value="'+esc(state.registerToken||'')+'">'+
+        (state.inviteCode
+          ? '<input type="hidden" name="inviteCode" value="'+esc(state.inviteCode)+'">'+
+            '<p class="mcj-auth-note">邀请注册：完成后将自动绑定直属老板（邀请码 '+esc(state.inviteCode.slice(0,8))+'…）</p>'
+          : '')+
         regPwd+regConfirm+
         '<label class="mcj-auth-check"><input name="agree" type="checkbox" required> 我已阅读并同意服务条款</label>'+
         '<label class="mcj-auth-check"><input name="remember" type="checkbox" checked> 注册后保持登录</label>'+
@@ -2035,18 +2124,20 @@
         '</form>';
     }else{
       var methodTabs=
-        '<div class="mcj-auth-tabs mcj-auth-method-tabs" role="tablist">'+
-        '<button class="mcj-auth-btn '+(method==='otp'?'primary active':'ghost')+'" type="button" data-login-method-tab="otp" role="tab" aria-selected="'+(method==='otp'?'true':'false')+'">验证码登录</button>'+
-        '<button class="mcj-auth-btn '+(method==='password'?'primary active':'ghost')+'" type="button" data-login-method-tab="password" role="tab" aria-selected="'+(method==='password'?'true':'false')+'">密码登录</button>'+
-        '</div>';
+        '<div class="mcj-auth-method-block">'+
+        '<p class="mcj-auth-method-label">登录方式</p>'+
+        '<div class="mcj-auth-segment" role="tablist" aria-label="登录方式">'+
+        '<button class="mcj-auth-segment-btn'+(method==='otp'?' is-active':'')+'" type="button" data-login-method-tab="otp" role="tab" aria-selected="'+(method==='otp'?'true':'false')+'">验证码登录</button>'+
+        '<button class="mcj-auth-segment-btn'+(method==='password'?' is-active':'')+'" type="button" data-login-method-tab="password" role="tab" aria-selected="'+(method==='password'?'true':'false')+'">密码登录</button>'+
+        '</div></div>';
       if(method==='password'){
         bodyHtml=methodTabs+
           '<form class="mcj-auth-form" data-login data-login-method="password" data-auth-panel="login-password" autocomplete="on">'+
           '<input type="hidden" name="remember" value="1">'+
           '<label class="mcj-auth-field">邮箱<input name="account" type="email" inputmode="email" autocomplete="email" required placeholder="name@example.com" value=""></label>'+
           loginPwd+
-          '<button class="mcj-auth-btn primary" type="submit"'+(state.loginBusy?' disabled':'')+'>'+(state.loginBusy?'登录中…':'密码登录')+'</button>'+
-          '<button class="mcj-auth-btn ghost" type="button" data-forgot-password data-forgot-role="companion">忘记密码</button>'+
+          '<button class="mcj-auth-btn primary" type="submit"'+(state.loginBusy?' disabled':'')+'>'+(state.loginBusy?'登录中…':'登录')+'</button>'+
+          '<button class="mcj-auth-text-btn" type="button" data-forgot-password data-forgot-role="companion">忘记密码</button>'+
           '<p class="mcj-auth-error" data-auth-error data-login-error>'+esc(state.loginError||'')+'</p>'+
           '</form>';
       }else{
@@ -2055,26 +2146,25 @@
           '<input type="hidden" name="remember" value="1">'+
           '<label class="mcj-auth-field">邮箱<input id="loginOtpEmail" name="account" type="email" inputmode="email" autocomplete="email" required placeholder="name@example.com" value=""></label>'+
           '<label class="mcj-auth-field">验证码<div class="mcj-auth-code-row"><input id="loginOtpCode" name="code" type="text" inputmode="numeric" autocomplete="one-time-code" data-auth-code="1" data-auth-sensitive="1" maxlength="6" placeholder="6 位验证码" required value=""><button class="mcj-auth-btn ghost" type="button" data-send-login-otp data-login-role="companion">获取验证码</button></div></label>'+
-          '<button class="mcj-auth-btn primary" type="submit"'+(state.loginBusy?' disabled':'')+'>'+(state.loginBusy?'登录中…':'验证码登录')+'</button>'+
-          '<button class="mcj-auth-btn ghost" type="button" data-forgot-password data-forgot-role="companion">忘记密码</button>'+
+          '<button class="mcj-auth-btn primary" type="submit"'+(state.loginBusy?' disabled':'')+'>'+(state.loginBusy?'登录中…':'登录')+'</button>'+
           '<p class="mcj-auth-error" data-auth-error data-login-error>'+esc(state.loginError||'')+'</p>'+
           '</form>';
       }
     }
     root.innerHTML=
       '<main class="mcj-auth-page">'+
-      '<section class="mcj-auth-card">'+header+
-      '<div class="mcj-auth-tabs">'+
+      '<section class="mcj-auth-card mcj-auth-card--companion">'+header+
+      '<div class="mcj-auth-tabs mcj-auth-primary-tabs">'+
       '<button class="mcj-auth-btn '+(tab==='login'?'primary active':'ghost')+'" type="button" data-auth-tab="login">登录</button>'+
       '<button class="mcj-auth-btn '+(tab==='register'?'primary active':'ghost')+'" type="button" data-auth-tab="register">注册陪玩</button>'+
       '</div>'+
       bodyHtml+
-      '<p class="mcj-auth-note">MVP 使用邮箱体系（验证码 / 找回密码走邮件）。身份认证、押金与身份证审核流程不变。</p>'+
+      '<p class="mcj-auth-note">使用邮箱登录或注册。身份认证、押金与身份证审核流程不变。</p>'+
       '</section></main>'+forgotPasswordModalHtml();
     if(Auth&&Auth.bindPasswordToggles)Auth.bindPasswordToggles(root);
     if(Auth&&Auth.prepareAuthForm)Auth.prepareAuthForm(root,{clearAccount:!state.loginError&&!state.loginBusy,keepErrors:!!state.loginError});
   }
-  function title(){return ({dashboard:'工作台',hall:'抢单大厅',orders:'我的订单',earnings:'收益中心',wallet:'收益中心',profile:isIsolationMode()?'申请资料':'编辑公开资料',account:isIsolationMode()?'账号资料':'账号中心（隐私）',mine:'账号中心（隐私）',withdraw:'提现',messages:'消息中心',settings:'设置',popularity:'我的人气',rules:'陪玩规则','review-status':'审核状态'})[state.route]||'陪玩端'}
+  function title(){return ({dashboard:'工作台',hall:'抢单大厅',orders:'我的订单',earnings:'收益中心',wallet:'收益中心',profile:isIsolationMode()?'申请资料':'编辑公开资料',account:isIsolationMode()?'账号资料':'账号中心（隐私）',mine:'账号中心（隐私）',gifts:'我的礼物',withdraw:'提现',messages:'消息中心',settings:'设置',popularity:'我的人气',rules:'陪玩规则','review-status':'审核状态'})[state.route]||'陪玩端'}
   function maintenanceHtml(name){return '<div class="pw-page-head"><div><h2>'+esc(name||'模块已合并')+'</h2><p>该模块已合并到工作台其他页面，请从工作台进入相应功能。</p></div><button class="pw-btn primary" type="button" data-route="/companion/dashboard">返回工作台</button></div>'}
   function bottomNavHtml(){
     var items=isIsolationMode()?ISOLATION_BOTTOM_NAV:BOTTOM_NAV;
@@ -2180,6 +2270,7 @@
         restoreAccountFocus();
         mountCompanionAccountSecurity();
         mountDirectBossCard();
+        try{setTimeout(maybeShowGiftReceivedPopup,200)}catch(e){}
       }
       return;
     }
@@ -2305,6 +2396,7 @@
     else if(state.route==='popularity')body=popularityHtml();
     else if(state.route==='profile')body=profileHtml();
     else if(state.route==='account'||state.route==='mine')body=accountHtml();
+    else if(state.route==='gifts')body=giftsHtml();
     else if(state.route==='rules')body=rulesHtml();
     else body=dashboardHtml();
     return softBanner+body;
@@ -2573,6 +2665,25 @@
       }).join('')+
       '</div></div>';
   }
+
+  function pwAccOpenMap(){
+    try{return JSON.parse(sessionStorage.getItem('mcjPwAccOpen.v1')||'{}')||{}}catch(e){return {}}
+  }
+  function pwAccIsOpen(id, fallbackOpen){
+    var map=pwAccOpenMap();
+    if(Object.prototype.hasOwnProperty.call(map,id))return !!map[id];
+    return !!fallbackOpen;
+  }
+  function pwAccHtml(id, title, summary, bodyHtml, fallbackOpen){
+    var open=pwAccIsOpen(id, fallbackOpen);
+    return '<details class="pw-acc" data-pw-acc="'+esc(id)+'"'+(open?' open':'')+'>'+
+      '<summary class="pw-acc-summary-row">'+
+        '<span class="pw-acc-copy"><strong>'+esc(title)+'</strong><small>'+esc(summary||'')+'</small></span>'+
+        '<i class="pw-acc-chevron" aria-hidden="true"></i>'+
+      '</summary>'+
+      '<div class="pw-acc-body">'+bodyHtml+'</div>'+
+      '</details>';
+  }
   function dashboardHtml(){
     var s=(state.data||{}).summary||{};
     var online=currentOnlineStatus()==='online';
@@ -2607,8 +2718,46 @@
       metric('进行中',num(s.runningOrders),'/companion/orders','running')+
       metric('今日完成',num(s.todayCompleted),'/companion/orders','completed')+
       '</section>'+
-      '<section class="pw-card pad" style="margin-top:14px"><h3>待处理事项</h3>'+todoList()+'</section>'+
+      dashboardOverviewAccHtml()+
+      '<section class="pw-acc-stack" style="margin-top:10px">'+pwAccHtml('dash-todos','待处理事项', (function(){var s=(state.data||{}).summary||{};return '待确认 '+(s.waitingConfirm||0)+' · 进行中 '+(s.runningOrders||0);})(), todoList(), false)+'</section>'+
       '<div class="pw-actions" style="margin-top:14px;flex-wrap:wrap"><button class="pw-btn" type="button" data-route="/companion/earnings">收益中心</button><button class="pw-btn" type="button" data-route="/companion/messages">消息中心</button><button class="pw-btn" type="button" data-route="/companion/rules">规则与制度</button></div>';
+  }
+  function dashboardOverviewAccHtml(){
+    var p=(state.data&&state.data.player)||{};
+    var raw=p.raw||{};
+    var level=(state.data&&state.data.levelInfo)||{};
+    var ua=unifiedAccess();
+    var earnings=(state.data&&state.data.earnings)||{};
+    var serviceIds=selectedServiceIdsFromPlayer(p,raw);
+    var gameNames=serviceIds.map(function(id){
+      var hit=(availableServiceOptions()||[]).find(function(s){return s.id===id});
+      return hit?hit.name:id;
+    }).filter(Boolean);
+    if(!gameNames.length){
+      gameNames=String(p.mainGame||raw.game||'').split(/[,，、/|]+/).map(function(x){return x.trim()}).filter(Boolean);
+    }
+    var levelLabel=level.level||p.level||'未设置';
+    var certLabel=ua.identityVerified?'身份证认证 · 已通过':(ua.depositVerified?'押金认证 · 已通过':'认证未完成');
+    var withdrawable=earnings.withdrawable!=null?earnings.withdrawable:(earnings.available!=null?earnings.available:(earnings.balance||0));
+    var head='<div class="pw-dash-hero">'+
+      '<img class="pw-dash-avatar" src="'+esc(p.avatar||'/default-avatar.png')+'" alt="" onerror="this.onerror=null;this.src=\'/default-avatar.png\'">'+
+      '<div class="pw-dash-hero-copy"><strong>'+esc(p.name||p.nickname||'陪玩')+'</strong>'+
+      '<span>编号 '+esc(p.companionCode||p.publicId||p.id||'-')+' · '+esc(levelLabel)+'</span>'+
+      '<span>'+esc(((STATUS_META[currentOnlineStatus()]||STATUS_META.offline||{}).label)||currentOnlineStatus())+' · '+esc(certLabel)+'</span></div></div>';
+    var stack=
+      pwAccHtml('dash-services','我的服务', gameNames.length?('已开启 '+gameNames.length+' 个游戏'):'尚未配置游戏',
+        '<div class="pw-info-list">'+infoRow('可接游戏',gameNames.join('、')||'-')+infoRow('服务类型',(selectedServiceTypesFromPlayer(p,raw)||[]).join('、')||'-')+'</div><div class="pw-actions" style="margin-top:10px"><button class="pw-btn" type="button" data-route="/companion/profile">去编辑服务</button></div>', false)+
+      pwAccHtml('dash-price','我的等级与价格', (function(){var bp=level.basePrice!=null?level.basePrice:(level.base_price!=null?level.base_price:null);return bp!=null?('Lv '+levelLabel+' · 基础价 '+bp):('当前等级 '+levelLabel);})(),
+        '<div class="pw-info-list">'+infoRow('等级',levelLabel)+infoRow('价格区间',level.priceRangeText||'-')+infoRow('说明','价格由等级/后台规则决定，可在公开资料页按游戏调整（若开放）')+'</div><div class="pw-actions" style="margin-top:10px"><button class="pw-btn" type="button" data-route="/companion/profile">查看价格设置</button></div>', false)+
+      pwAccHtml('dash-profile','我的资料', (p.name||p.nickname)?'基本资料已填写':'待完善资料',
+        '<div class="pw-info-list">'+infoRow('昵称',p.name||p.nickname||'-')+infoRow('地区',raw.region||p.region||'-')+infoRow('审核状态',STATUS_CN.verification(ua.profile_review_status))+'</div><div class="pw-actions" style="margin-top:10px"><button class="pw-btn" type="button" data-route="/companion/profile">编辑公开资料</button></div>', false)+
+      pwAccHtml('dash-cert','认证信息', certLabel,
+        '<div class="pw-info-list">'+infoRow('身份证',STATUS_CN.identity(ua.identity_status))+infoRow('押金',STATUS_CN.deposit(ua.deposit_status))+infoRow('接单权限',STATUS_CN.accountAccess(ua.account_access_status))+'</div><div class="pw-actions" style="margin-top:10px"><button class="pw-btn" type="button" data-route="/companion/account">前往账号认证</button></div>', false)+
+      pwAccHtml('dash-earn','收益与提现', '可提现 '+money(withdrawable),
+        '<div class="pw-info-list">'+infoRow('可提现',money(withdrawable))+infoRow('今日完成订单',num(((state.data||{}).summary||{}).todayCompleted))+'</div><div class="pw-actions" style="margin-top:10px"><button class="pw-btn" type="button" data-route="/companion/earnings">打开收益中心</button></div>', false)+
+      pwAccHtml('dash-other','其他资料', '通知 · 规则入口',
+        '<div class="pw-info-list">'+infoRow('规则与制度','可随时查阅')+infoRow('消息中心','订单与系统通知')+'</div><div class="pw-actions" style="margin-top:10px"><button class="pw-btn" type="button" data-route="/companion/rules">规则与制度</button><button class="pw-btn" type="button" data-route="/companion/messages">消息中心</button></div>', false);
+    return '<section class="companion-workbench-accordion pw-acc-stack" style="margin-top:14px">'+head+stack+'</section>';
   }
   function todoList(){var s=(state.data||{}).summary||{},ua=unifiedAccess();var accessLabel=isForcedAckLocked()?'暂不可接单（待确认强制公告）':(isCredentialIncomplete()?'认证未完成':STATUS_CN.accountAccess(ua.account_access_status));var rows=[['待确认订单',s.waitingConfirm||0],['进行中就绪',s.waitingStart||0],['待完成订单',s.waitingComplete||0],['待处理消息',unreadCount()],['资料审核状态',STATUS_CN.verification(ua.profile_review_status)],['身份证认证',STATUS_CN.identity(ua.identity_status)],['押金认证',STATUS_CN.deposit(ua.deposit_status)],['账号接单权限',accessLabel]];return '<div class="pw-info-list">'+rows.map(function(r){return '<div><span>'+esc(r[0])+'</span><strong>'+esc(r[1])+'</strong></div>'}).join('')+'</div>'}
   function orderStatus(o){return o.orderStatus||o.statusText||o.status||'-'}
@@ -2643,13 +2792,33 @@
   function designatedOrderCard(o){
     var banner=o.status==='claimed'?'<div class="pw-order-banner">你有新的指定订单</div>':'';
     var focused=state._focusOrderId&&String(o.id)===String(state._focusOrderId);
-    return '<article id="order-'+esc(o.id)+'" class="pw-order-card'+(o.status==='claimed'?' is-designated':'')+(focused?' is-focus':'')+'"'+(focused?' data-order-focus="1"':'')+'>'+banner+
+    var peers=Array.isArray(o.groupPeers)?o.groupPeers:[];
+    var isGroup=!!(o.isMultiGroupChild||o.parentOrderId||peers.length);
+    var peerCount=Number(o.groupPeerCount||0)||(peers.length?peers.length+1:0);
+    var peerHtml='';
+    if(isGroup){
+      var shown=peers.slice(0,2);
+      var extra=Math.max(0,peers.length-shown.length);
+      var peerChips=shown.map(function(p){
+        return '<span class="pw-peer-chip"><img src="'+esc(p.avatar||'/default-avatar.png')+'" alt="" onerror="this.onerror=null;this.src=\'/default-avatar.png\'">'+esc(p.nickname||'陪玩')+'</span>';
+      }).join('');
+      if(extra>0)peerChips+='<span class="pw-peer-more">+'+extra+'</span>';
+      if(!peerChips)peerChips='暂无';
+      peerHtml='<div class="pw-group-peers" data-group-peers="1">'+
+        '<div class="pw-group-peers-title">联合订单 · 本单共 '+(peerCount||peers.length+1)+' 位陪玩</div>'+
+        '<div class="pw-group-peers-row"><span>同单陪玩</span><strong>'+peerChips+'</strong></div>'+
+        '<p class="pw-note">你只能操作自己的子订单；其他陪玩收入不会显示。</p>'+
+        '</div>';
+    }
+    return '<article id="order-'+esc(o.id)+'" class="pw-order-card'+(o.status==='claimed'?' is-designated':'')+(focused?' is-focus':'')+(isGroup?' is-multi-group':'')+'"'+(focused?' data-order-focus="1"':'')+(isGroup?' data-multi-child="1"':'')+'>'+banner+
+      (isGroup?'<div class="pw-order-banner group">这是多人联合订单</div>':'')+
       '<header><div><h3>'+esc(humanOrderNo(o))+'</h3><p>'+esc(o.game||o.serviceName||'-')+' / '+esc(o.serviceName||o.serviceContent||'-')+'</p></div><span class="pw-status info">'+esc(orderStatus(o))+'</span></header>'+
       '<div class="pw-order-meta">'+
       '<div><span>老板昵称/编号</span><strong>'+esc((o.bossName||'-')+(o.bossUid?' / '+o.bossUid:''))+'</strong></div>'+
+      '<div><span>你的服务</span><strong>'+esc(o.serviceName||o.game||'-')+'</strong></div>'+
       '<div><span>数量/预计时长</span><strong>'+esc(o.duration||(o.hours?o.hours+'小时':'-'))+'</strong></div>'+
       '<div><span>陪玩单价</span><strong>'+money(o.unitPrice||0)+'</strong></div>'+
-      '<div><span>本单总额</span><strong>'+money(o.amount||0)+'</strong></div>'+
+      '<div><span>你的订单金额</span><strong>'+money(o.amount||0)+'</strong></div>'+
       '<div><span>预计到手猫粮</span><strong>'+money(o.playerIncome||0)+'</strong></div>'+
       '<div><span>平台抽成</span><strong>'+money(o.platformFee||0)+'</strong></div>'+
       '<div><span>游戏 ID</span><strong>'+esc(o.gameId||'-')+'</strong></div>'+
@@ -2661,7 +2830,7 @@
           (o.paymentReviewedByName?'<div><span>审核客服</span><strong>'+esc(o.paymentReviewedByName)+'</strong></div>':'')+
           (o.paymentReviewedAt?'<div><span>审核时间</span><strong>'+esc(fmtTime(o.paymentReviewedAt))+'</strong></div>':''))
         :'')+
-      '</div><footer class="pw-actions">'+orderActions(o)+'</footer></article>';
+      '</div>'+peerHtml+'<footer class="pw-actions">'+orderActions(o)+'</footer></article>';
   }
   function ordersHtml(){
     var rows=(state.data&&state.data.myOrders)||[];
@@ -2705,7 +2874,10 @@
     weekStart.setDate(weekStart.getDate()-dow);
     var yesterdayIncome=0,weekIncome=0;
     ledger.forEach(function(r){
+      // Only count valid settled order income — never cancelled-order leftovers or rewards.
       if(r.typeCode!=='companion_income')return;
+      if(r.incomeKind && r.incomeKind!=='order_income')return;
+      if(r.incomeKind==='void' || r.incomeKind==='reward_other')return;
       var day=String(r.createdAt||'').slice(0,10);
       if(!day)return;
       if(day===yesterday)yesterdayIncome+=num(r.amount);
@@ -2744,7 +2916,7 @@
       metric('冻结中',money(num(frozen)))+
       metric('平台抽成',esc(commission)+'%')+
       '</section>'+
-      '<section class="pw-card pad" style="margin-top:14px"><h3>奖励 / 其它</h3><div class="pw-info-list">'+infoRow('奖励猫粮',money(num(e.bonus||e.reward||0)))+infoRow('已提现',money(num(e.withdrawn||summary.withdrawn)))+'</div></section>'+
+      '<section class="pw-card pad" style="margin-top:14px"><h3>奖励 / 其它</h3><div class="pw-info-list">'+infoRow('奖励猫粮',money(num(e.bonus||e.reward||0)))+infoRow('是否可提现',esc(e.rewardWithdrawable?'可提现':'不可提现（默认）'))+infoRow('说明',esc(e.rewardNote||'奖励/其它不计入订单收入'))+infoRow('已提现',money(num(e.withdrawn||summary.withdrawn)))+'</div></section>'+
       '<section class="pw-card pad" style="margin-top:14px"><h3>收入明细</h3>'+(details.length?'<div class="pw-table-wrap"><table class="pw-table"><thead><tr><th>类型</th><th>订单</th><th>订单总额</th><th>平台抽成</th><th>实际到账</th><th>状态</th><th>时间</th></tr></thead><tbody>'+details.map(function(x){
         var s=x.settlement||{};
         var gross=s.totalCatFood!=null?s.totalCatFood:x.amount;
@@ -2849,7 +3021,7 @@
     if(tip)push('act-pop','activity','人气活动',tip,'');
     return items;
   }
-  var CATEGORY_LABEL_CN={system:'系统通知',order:'订单通知',withdraw:'提现通知',audit:'审核通知',activity:'活动通知'};
+  var CATEGORY_LABEL_CN={system:'系统通知',order:'订单通知',withdraw:'提现通知',audit:'审核通知',activity:'活动通知',gift:'礼物通知'};
   function csConvConsultType(){
     var conv=activeCsConversation(state.inbox);
     if(conv&&conv.consultType)return conv.consultType;
@@ -3052,10 +3224,17 @@
   }
   function settingsHtml(){
     var s=state.settings||readSettings();
+    var standalone=!!(window.MCJPwaInstall&&window.MCJPwaInstall.isStandalone&&window.MCJPwaInstall.isStandalone());
+    var installBlock=standalone
+      ? '<p class="pw-note">已从主屏幕打开，当前为 App 模式。</p>'
+      : '<p class="pw-note">添加到主屏幕后打开更快，使用起来更像 App。关闭自动提示后仍可从这里重新查看说明。</p>'+
+        '<button class="pw-btn primary" type="button" data-pwa-install-guide>安装妙脆角 / 添加到主屏幕</button>';
     return '<div class="pw-page-head"><div><h2>设置</h2><p>仅影响本机陪玩端体验。</p></div></div>'+
-      '<section class="pw-card pad"><h3>主题</h3><p class="pw-note">当前为固定黑粉运营主题（上线版不可切换品牌色）。</p><div class="pw-info-list"><div><span>主题</span><strong>暗色粉（默认）</strong></div></div></section>'+
-      '<section class="pw-card pad" style="margin-top:14px"><h3>通知</h3><label class="pw-check"><input type="checkbox" data-setting="notify" '+(s.notify?'checked':'')+'> 接收订单 / 提现 / 审核提醒</label></section>'+
+      '<section class="pw-card pad"><h3>新手教学</h3><p class="pw-note">约 1～2 分钟了解申请、抢单与收入流程（可随时重看）。</p><a class="pw-btn primary" href="/guide.html?role=companion" data-companion-tutorial-entry="1">打开新手教学</a></section>'+
+      '<section class="pw-card pad" style="margin-top:14px"><h3>主题</h3><p class="pw-note">当前为固定黑粉运营主题（上线版不可切换品牌色）。</p><div class="pw-info-list"><div><span>主题</span><strong>暗色粉（默认）</strong></div></div></section>'+
+      '<section class="pw-card pad" style="margin-top:14px"><h3>消息通知</h3><div id="mcjWebPushSettingsMount" class="mcj-webpush-companion-mount"></div><p class="pw-note">关闭开关会取消本机 Web Push 订阅；站内消息仍可在消息中心查看。</p></section>'+
       '<section class="pw-card pad" style="margin-top:14px"><h3>声音</h3><label class="pw-check"><input type="checkbox" data-setting="sound" '+(s.sound?'checked':'')+'> 提示音（新消息 / 订单 / 抢单 / 审核）</label></section>'+
+      '<section class="pw-card pad" style="margin-top:14px"><h3>安装妙脆角</h3>'+installBlock+'</section>'+
       '<section class="pw-card pad" style="margin-top:14px"><h3>账号</h3><button class="pw-btn danger" type="button" data-logout>退出登录</button></section>';
   }
   function fieldErr(name){var msg=state.profileErrors&&state.profileErrors[name];return msg?'<span class="pw-field-error" data-field-error="'+esc(name)+'">'+esc(msg)+'</span>':''}
@@ -3140,14 +3319,57 @@
       '<button type="button" class="pw-media-icon-btn danger" '+delAttr+' title="删除" aria-label="删除">×</button>'+
       '</div></article>';
   }
+  var GALLERY_MAX=6;
+  /** Match backend upload_media gallery count: media_type=gallery, exclude video/*, durable id/storagePath. */
+  function galleryDurableKey(m){
+    if(!m)return '';
+    return String(m.storagePath||m.storage_path||m.path||m.id||'').trim();
+  }
+  function isCountableGalleryMedia(m){
+    if(!m||String(m.mediaType||m.media_type||'')!=='gallery')return false;
+    var ctype=String(m.contentType||m.content_type||'').toLowerCase();
+    if(/^video\//.test(ctype))return false;
+    return !!galleryDurableKey(m);
+  }
   function savedGalleryCount(){
-    return ((state.data&&state.data.media)||[]).filter(function(m){return m.mediaType==='gallery'}).length;
+    var media=(state.data&&state.data.media)||[];
+    var seen=Object.create(null);
+    var n=0;
+    for(var i=0;i<media.length;i++){
+      var m=media[i];
+      if(!isCountableGalleryMedia(m))continue;
+      var key=galleryDurableKey(m);
+      if(seen[key])continue;
+      seen[key]=1;
+      n+=1;
+    }
+    return n;
+  }
+  function galleryFullMessage(remaining){
+    var left=Math.max(0,Number(remaining));
+    if(!isFinite(left))left=Math.max(0,GALLERY_MAX-savedGalleryCount());
+    return '相册最多 '+GALLERY_MAX+' 张，还可上传 '+left+' 张。请先删除后再上传';
+  }
+  /** Soft-refresh media from bootstrap so sequential uploads see latest durable gallery count. */
+  function refreshGalleryMediaCount(){
+    return api('bootstrap',{},'GET').then(function(result){
+      var data=(result&&result.data)||{};
+      if(Array.isArray(data.media)){
+        state.data=Object.assign({},state.data||{},{media:data.media});
+      }else if(data&&typeof data==='object'){
+        state.data=Object.assign({},state.data||{},data);
+      }
+      reconcileProfileMediaFlags();
+      return savedGalleryCount();
+    }).catch(function(){
+      return savedGalleryCount();
+    });
   }
   function reconcileProfileMediaFlags(){
     var p=(state.data&&state.data.player)||{};
     var media=(state.data&&state.data.media)||[];
     var hasAvatar=media.some(function(m){return m.mediaType==='avatar'&&(m.url||m.storagePath||m.storage_path)})||!!(p.hasCustomAvatar&&p.avatar&&p.avatar!=='/default-avatar.png');
-    var hasGallery=media.some(function(m){return m.mediaType==='gallery'&&(m.url||m.storagePath||m.storage_path)})||
+    var hasGallery=media.some(isCountableGalleryMedia)||
       (state.galleryPending||[]).some(function(g){return g&&!g._failed&&(g.url||g._uploading||g._done)});
     var voiceMedia=media.some(function(m){return m.mediaType==='voice'&&(m.url||m.storagePath||m.storage_path)});
     var rawVoice=p.raw&&(p.raw.voice_url||p.raw.voiceUrl);
@@ -3179,7 +3401,7 @@
     return (state.galleryPending||[]).filter(function(p){return p&&(p._uploading||(!p._failed&&!p._done))}).length;
   }
   function galleryRoomLeft(){
-    return Math.max(0,6-savedGalleryCount()-pendingGallerySlots());
+    return Math.max(0,GALLERY_MAX-savedGalleryCount()-pendingGallerySlots());
   }
   function mergeGalleryForPaint(saved){
     var pending=(state.galleryPending||[]).filter(Boolean);
@@ -3188,26 +3410,27 @@
   function pwGalleryUploadHtml(gallery,uploadBusy){
     var busy=uploadBusy==='gallery'||(state.galleryPending||[]).some(function(p){return p&&p._uploading});
     var display=mergeGalleryForPaint(gallery);
-    var full=display.filter(function(x){return x&&!x._failed}).length>=6;
     var room=galleryRoomLeft();
+    var full=room<=0;
     var items=display.map(function(item,idx){return pwGalleryItemHtml(item,idx,display.length)}).join('');
     // Native <label>+<input multiple> — required for iPhone Safari multi-select.
     // Do NOT open album via programmatic input.click() after a source sheet (often becomes single-file).
     var albumLabel='<label class="pw-media-chip primary pw-gallery-pick-label'+(busy?' is-busy':'')+(full?' is-disabled':'')+'" data-pw-gallery-album-label>'+
-      (busy?'上传中…':'从相册选择 / 上传照片')+
+      (busy?'请稍候…':'从相册选择 / 上传照片')+
       '<input type="file" accept="image/*" multiple data-pw-gallery-multi '+
       (busy||full?'disabled ':'')+
       'class="pw-gallery-native-input" tabindex="-1" aria-hidden="true">'+
       '</label>';
     var cameraBtn=
       '<button type="button" class="pw-media-chip pw-gallery-camera-btn'+(busy||full?' is-busy':'')+'" data-pw-pick-gallery-camera '+(busy||full?'disabled':'')+'>拍照</button>';
+    var statusText=state._galleryDeleting?'正在更新相册…':'正在上传相册照片…';
     return '<div class="pw-media-block pw-gallery-block">'+
-      '<p class="pw-field-hint">至少 1 张，最多 6 张。可一次多选（本次最多还能选 '+esc(String(room))+' 张）。手机点「从相册选择」打开系统相册多选。</p>'+
+      '<p class="pw-field-hint">至少 1 张，最多 '+GALLERY_MAX+' 张。可一次多选（本次最多还能选 '+esc(String(room))+' 张）。手机点「从相册选择」打开系统相册多选。</p>'+
       '<div class="pw-gallery-grid" data-gallery-list>'+
       (items||'')+
       '</div>'+
       (full?'':('<div class="pw-gallery-actions">'+albumLabel+cameraBtn+'</div>'))+
-      (busy?'<p class="pw-media-status" data-gallery-status>正在上传相册照片…</p>':'')+
+      (busy?'<p class="pw-media-status" data-gallery-status>'+statusText+'</p>':'')+
       '</div>';
   }
   function isPlayableMediaUrl(u){
@@ -3495,56 +3718,58 @@
       reviewRejectBannerHtml('/companion/profile')+
       '<div class="pw-alert"><strong>隐私提醒</strong><span>以下内容将展示给老板，请勿填写身份证、银行卡、私人联系方式等隐私信息。</span></div>'+
       '<form class="pw-form-narrow pw-profile-form" data-profile-form novalidate>'+
-      '<section class="pw-card pad" style="margin-bottom:14px"><h3>基本展示资料</h3>'+
-      '<div class="pw-field pw-upload-block'+(state.profileErrors&&state.profileErrors.avatar?' is-missing':'')+'" data-field="avatar">'+
-      fieldLabel('头像',true)+
-      pwAvatarUploadHtml(displayAvatar,avatarUrl,uploadBusy)+
-      fieldErr('avatar')+
+      '<div class="pw-acc-stack">'+
+      pwAccHtml('profile-basic','基本展示资料','头像 · 昵称 · 声线 · 标签',
+        '<div class="pw-field pw-upload-block'+(state.profileErrors&&state.profileErrors.avatar?' is-missing':'')+'" data-field="avatar">'+
+        fieldLabel('头像',true)+
+        pwAvatarUploadHtml(displayAvatar,avatarUrl,uploadBusy)+
+        fieldErr('avatar')+
+        '</div>'+
+        '<div class="pw-two-col">'+
+        '<div class="pw-field">'+fieldLabel('昵称',true)+'<input name="nickname" value="'+esc(nickname)+'" placeholder="例如：1717大王" autocomplete="nickname">'+fieldErr('nickname')+'</div>'+
+        '<div class="pw-field">'+fieldLabel('年龄',true)+'<input name="age" type="number" inputmode="numeric" min="18" max="60" value="'+esc(ageVal)+'" placeholder="例如 23">'+fieldErr('age')+'</div>'+
+        '</div>'+
+        '<div class="pw-two-col">'+
+        '<div class="pw-field">'+fieldLabel('性别',true)+'<div class="pw-radio-row">'+genderRadios+'</div>'+fieldErr('gender')+'</div>'+
+        '<div class="pw-field">'+fieldLabel('地区',true)+'<input name="region" value="'+esc(regionVal)+'" placeholder="例如：马来西亚·吉隆坡">'+fieldErr('region')+'</div>'+
+        '</div>'+
+        '<div class="pw-field" data-field="voice_type">'+fieldLabel('声线',true)+
+        '<div class="pw-chip-grid">'+voiceTypeChecks+'</div>'+
+        voiceCustomHtml+
+        '<p class="pw-field-hint">可多选；选择「其他」可填写自定义声线。展示为「声线：甜妹 / 慵懒」</p>'+fieldErr('voice_type')+'</div>'+
+        '<div class="pw-field"><span class="pw-field-label">当前等级</span><p class="pw-field-hint">'+esc(levelLabel)+'（由后台评定，决定可设置的价格区间）</p></div>'+
+        '<div class="pw-field">'+fieldLabel('标签',false)+
+        '<div class="pw-chip-grid">'+tagChecks+'</div>'+
+        '<p class="pw-field-hint">可多选；保存后同步老板端大厅展示</p></div>'+
+        '<div class="pw-field">'+fieldLabel('介绍',false)+'<textarea name="bio" rows="4" placeholder="简单介绍你的技术、声音和陪玩风格">'+esc(bioVal)+'</textarea></div>'
+      , false)+
+      pwAccHtml('profile-games','游戏与价格', (selectedIds&&selectedIds.length?('已选 '+selectedIds.length+' 个游戏 · '+levelLabel):('待选择游戏 · '+levelLabel)),
+        '<div class="pw-field" data-field="service_type">'+fieldLabel('可提供服务',true)+'<div class="pw-chip-grid">'+serviceTypeChecks+'</div>'+'<p class="pw-field-hint">可多选：陪玩服务 / 陪聊服务</p>'+fieldErr('service_type')+'</div>'+
+        '<div class="pw-field" data-field="main_game">'+fieldLabel('可接游戏',true)+'<div class="pw-chip-grid">'+gameChecks+'</div>'+'<p class="pw-field-hint">从后台启用游戏中多选；每个勾选游戏需单独设置价格</p>'+fieldErr('main_game')+'</div>'+
+        '<div class="pw-field" data-field="price">'+fieldLabel('各游戏价格',true)+
+        '<div class="pw-price-meta"><div>当前等级：<strong>'+esc(levelLabel)+'</strong></div><div>可设置范围：<strong>'+esc(rangeText)+'</strong></div>'+
+        (needsReset?'<div class="pw-field-error">有价格超出等级范围，请按游戏重新设置</div>':'')+
+        '</div>'+
+        '<div class="pw-game-price-grid" data-game-price-grid>'+priceRows+'</div>'+fieldErr('price')+'</div>'+
+        '<div class="pw-two-col">'+
+        '<div class="pw-field">'+fieldLabel('游戏 ID',true)+'<input name="game_id" value="'+esc(gameId)+'" placeholder="游戏内昵称或 ID">'+fieldErr('game_id')+'</div>'+
+        '<div class="pw-field">'+fieldLabel('段位',false)+'<input name="rank" value="'+esc(rankVal)+'" placeholder="例如：超凡 2"></div>'+
+        '</div>'+
+        '<div class="pw-field">'+fieldLabel('擅长位置',false)+'<input name="position" value="'+esc(positionVal)+'" placeholder="例如：决斗 / 烟位"></div>'
+      , false)+
+      pwAccHtml('profile-media','展示资料','相册 · 语音试听',
+        '<div class="pw-field pw-upload-block'+(state.profileErrors&&state.profileErrors.gallery?' is-missing':'')+'" data-field="gallery">'+
+        fieldLabel('相册照片',true)+
+        pwGalleryUploadHtml(gallery,uploadBusy)+
+        fieldErr('gallery')+
+        '</div>'+
+        '<div class="pw-field pw-upload-block'+(state.profileErrors&&state.profileErrors.voice?' is-missing':'')+'" data-field="voice">'+
+        fieldLabel('语音试听',true)+
+        pwVoiceUploadHtml(p,raw,uploadBusy)+
+        fieldErr('voice')+
+        '</div>'
+      , false)+
       '</div>'+
-      '<div class="pw-two-col">'+
-      '<div class="pw-field">'+fieldLabel('昵称',true)+'<input name="nickname" value="'+esc(nickname)+'" placeholder="例如：1717大王" autocomplete="nickname">'+fieldErr('nickname')+'</div>'+
-      '<div class="pw-field">'+fieldLabel('年龄',true)+'<input name="age" type="number" inputmode="numeric" min="18" max="60" value="'+esc(ageVal)+'" placeholder="例如 23">'+fieldErr('age')+'</div>'+
-      '</div>'+
-      '<div class="pw-two-col">'+
-      '<div class="pw-field">'+fieldLabel('性别',true)+'<div class="pw-radio-row">'+genderRadios+'</div>'+fieldErr('gender')+'</div>'+
-      '<div class="pw-field">'+fieldLabel('地区',true)+'<input name="region" value="'+esc(regionVal)+'" placeholder="例如：马来西亚·吉隆坡">'+fieldErr('region')+'</div>'+
-      '</div>'+
-      '<div class="pw-field" data-field="voice_type">'+fieldLabel('声线',true)+
-      '<div class="pw-chip-grid">'+voiceTypeChecks+'</div>'+
-      voiceCustomHtml+
-      '<p class="pw-field-hint">可多选；选择「其他」可填写自定义声线。展示为「声线：甜妹 / 慵懒」</p>'+fieldErr('voice_type')+'</div>'+
-      '<div class="pw-field"><span class="pw-field-label">当前等级</span><p class="pw-field-hint">'+esc(levelLabel)+'（由后台评定，决定可设置的价格区间）</p></div>'+
-      '<div class="pw-field">'+fieldLabel('标签',false)+
-      '<div class="pw-chip-grid">'+tagChecks+'</div>'+
-      '<p class="pw-field-hint">可多选；保存后同步老板端大厅展示</p></div>'+
-      '<div class="pw-field">'+fieldLabel('介绍',false)+'<textarea name="bio" rows="4" placeholder="简单介绍你的技术、声音和陪玩风格">'+esc(bioVal)+'</textarea></div>'+
-      '</section>'+
-      '<section class="pw-card pad" style="margin-bottom:14px"><h3>游戏与价格</h3>'+
-      '<div class="pw-field" data-field="service_type">'+fieldLabel('可提供服务',true)+'<div class="pw-chip-grid">'+serviceTypeChecks+'</div>'+'<p class="pw-field-hint">可多选：陪玩服务 / 陪聊服务</p>'+fieldErr('service_type')+'</div>'+
-      '<div class="pw-field" data-field="main_game">'+fieldLabel('可接游戏',true)+'<div class="pw-chip-grid">'+gameChecks+'</div>'+'<p class="pw-field-hint">从后台启用游戏中多选；每个勾选游戏需单独设置价格</p>'+fieldErr('main_game')+'</div>'+
-      '<div class="pw-field" data-field="price">'+fieldLabel('各游戏价格',true)+
-      '<div class="pw-price-meta"><div>当前等级：<strong>'+esc(levelLabel)+'</strong></div><div>可设置范围：<strong>'+esc(rangeText)+'</strong></div>'+
-      (needsReset?'<div class="pw-field-error">有价格超出等级范围，请按游戏重新设置</div>':'')+
-      '</div>'+
-      '<div class="pw-game-price-grid" data-game-price-grid>'+priceRows+'</div>'+fieldErr('price')+'</div>'+
-      '<div class="pw-two-col">'+
-      '<div class="pw-field">'+fieldLabel('游戏 ID',true)+'<input name="game_id" value="'+esc(gameId)+'" placeholder="游戏内昵称或 ID">'+fieldErr('game_id')+'</div>'+
-      '<div class="pw-field">'+fieldLabel('段位',false)+'<input name="rank" value="'+esc(rankVal)+'" placeholder="例如：超凡 2"></div>'+
-      '</div>'+
-      '<div class="pw-field">'+fieldLabel('擅长位置',false)+'<input name="position" value="'+esc(positionVal)+'" placeholder="例如：决斗 / 烟位"></div>'+
-      '</section>'+
-      '<section class="pw-card pad" style="margin-bottom:14px"><h3>展示资料</h3>'+
-      '<div class="pw-field pw-upload-block'+(state.profileErrors&&state.profileErrors.gallery?' is-missing':'')+'" data-field="gallery">'+
-      fieldLabel('相册照片',true)+
-      pwGalleryUploadHtml(gallery,uploadBusy)+
-      fieldErr('gallery')+
-      '</div>'+
-      '<div class="pw-field pw-upload-block'+(state.profileErrors&&state.profileErrors.voice?' is-missing':'')+'" data-field="voice">'+
-      fieldLabel('语音试听',true)+
-      pwVoiceUploadHtml(p,raw,uploadBusy)+
-      fieldErr('voice')+
-      '</div>'+
-      '</section>'+
       '<p class="pw-field-hint" style="margin:0 0 12px">在线状态、收藏、评价与完成订单等公开只读信息请在「预览老板端展示」查看；接单状态请在工作台切换。</p>'+
       '<button class="pw-btn primary" type="submit">保存公开资料</button>'+
       '</form>';
@@ -3657,6 +3882,143 @@
           '<small>支持 jpg / png / webp，单张不超过 10MB；可从相册选择或拍照</small>'+
           '</label>'))+
       '</div>';
+  }
+  function giftsHtml(){
+    var list=(state.giftsData&&state.giftsData.gifts)||state.myGifts||[];
+    var wall=(state.giftsData&&state.giftsData.wall)||state.giftWall||[];
+    if(!state._giftsLoaded&&!state._giftsLoading&&!state.myGiftsBusy){
+      state._giftsLoading=true;
+      state.myGiftsBusy=true;
+      api('my_gifts',{},'GET').then(function(res){
+        state._giftsLoading=false;
+        state.myGiftsBusy=false;
+        state._giftsLoaded=true;
+        state.giftsData=res||{};
+        state.myGifts=Array.isArray(res.gifts)?res.gifts:[];
+        state.giftWall=Array.isArray(res.wall)?res.wall:[];
+        state.giftsError='';
+        state.myGiftsError='';
+        paint();
+      }).catch(function(err){
+        state._giftsLoading=false;
+        state.myGiftsBusy=false;
+        state._giftsLoaded=true;
+        state.giftsError=err.message||'加载失败';
+        state.myGiftsError=state.giftsError;
+        paint();
+      });
+    }
+    if(state._giftsLoading||state.myGiftsBusy){
+      return '<div class="pw-page-head"><div><h2>我的礼物</h2><p>客服审核通过后到账的礼物。</p></div></div><section class="pw-card pad"><p class="pw-note">加载中…</p></section>';
+    }
+    if(state.giftsError||state.myGiftsError){
+      return '<div class="pw-page-head"><div><h2>我的礼物</h2><p>客服审核通过后到账的礼物。</p></div></div><section class="pw-card pad"><p class="pw-note">'+esc(state.giftsError||state.myGiftsError)+'</p><button class="pw-btn" type="button" data-gifts-reload>重试</button></section>';
+    }
+    var hist=list.length?list.map(function(g){
+      return '<div class="pw-gift-row"><div class="pw-gift-ico">'+(g.giftImage?'<img src="'+esc(g.giftImage)+'" alt="">':'🎁')+'</div><div><strong>'+esc(g.giftName||'礼物')+'</strong><span>×'+esc(g.quantity||1)+' · '+esc(String(g.createdAt||'').slice(0,16).replace('T',' '))+'</span></div></div>';
+    }).join(''):'<p class="pw-note">还没有收到礼物</p>';
+    var wallHtml=wall.length?wall.map(function(w){
+      return '<div class="pw-gift-chip">'+(w.giftImage?'<img src="'+esc(w.giftImage)+'" alt="">':'🎁')+'<strong>'+esc(w.giftName||'礼物')+'</strong><em>×'+esc(w.totalQuantity||0)+'</em></div>';
+    }).join(''):'<p class="pw-note">礼物墙为空</p>';
+    return '<div class="pw-page-head"><div><h2>我的礼物</h2><p>仅展示客服审核通过后的真实到账礼物。</p></div><button class="pw-btn" type="button" data-gifts-reload>刷新</button></div>'+
+      '<section class="pw-card pad"><div class="pw-gift-list">'+hist+'</div><h3 class="pw-gift-wall-title">礼物墙汇总</h3><div class="pw-gift-wall">'+wallHtml+'</div></section>';
+  }
+  function giftPopupDismissedKeys(){
+    try{
+      var raw=sessionStorage.getItem('mcj_gift_popup_dismissed')||'[]';
+      var arr=JSON.parse(raw);
+      return Array.isArray(arr)?arr.map(String):[];
+    }catch(e){return []}
+  }
+  function markGiftPopupDismissed(key){
+    if(!key)return;
+    var keys=giftPopupDismissedKeys();
+    if(keys.indexOf(String(key))>=0)return;
+    keys.push(String(key));
+    try{sessionStorage.setItem('mcj_gift_popup_dismissed',JSON.stringify(keys.slice(-40)))}catch(e){}
+  }
+  function isGiftReceivedNotice(n){
+    if(!n)return false;
+    var type=String(n.notificationType||n.notification_type||'').toLowerCase();
+    if(type==='gift_received')return true;
+    var key=String(n.noticeKey||n.key||n.id||'');
+    if(/^gift-order-approved-/i.test(key))return true;
+    return String(n.category||'').toLowerCase()==='gift';
+  }
+  function giftPopupHtml(gift,notice){
+    gift=gift||{};
+    notice=notice||{};
+    var name=gift.giftName||'礼物';
+    var qty=gift.quantity||1;
+    var img=gift.giftImage||'';
+    var body=notice.body||('你收到了「'+name+'」×'+qty);
+    return '<div class="pw-modal pw-gift-popup" data-gift-popup data-gift-notice-key="'+esc(notice.key||notice.id||'')+'">'+
+      '<div class="pw-dialog" role="dialog" aria-modal="true" aria-label="收到新礼物">'+
+      '<div class="pw-dialog-head"><h3>你收到了一份新礼物</h3><button type="button" class="pw-btn" data-close-gift-popup>关闭</button></div>'+
+      '<div class="pw-gift-popup-body">'+
+      '<div class="pw-gift-popup-visual">'+(img?'<img src="'+esc(img)+'" alt="">':'<span aria-hidden="true">🎁</span>')+'</div>'+
+      '<strong>'+esc(name)+'</strong><em>×'+esc(qty)+'</em>'+
+      '<p>'+esc(body)+'</p>'+
+      '</div>'+
+      '<div class="pw-actions" style="margin-top:14px">'+
+      '<button class="pw-btn primary" type="button" data-route="/companion/gifts" data-close-gift-popup>查看我的礼物</button>'+
+      '<button class="pw-btn" type="button" data-close-gift-popup>知道了</button>'+
+      '</div></div></div>';
+  }
+  function maybeShowGiftReceivedPopup(){
+    if(!state.session||state._giftPopupShown)return;
+    if(document.querySelector('[data-gift-popup]'))return;
+    var notices=((state.inbox&&state.inbox.systemNotices)||[]).filter(function(n){return n&&n.unread&&isGiftReceivedNotice(n)});
+    if(!notices.length)return;
+    var dismissed=giftPopupDismissedKeys();
+    var notice=null;
+    for(var i=0;i<notices.length;i++){
+      var k=String(notices[i].key||notices[i].id||'');
+      if(k&&dismissed.indexOf(k)<0){notice=notices[i];break;}
+    }
+    if(!notice)return;
+    state._giftPopupShown=true;
+    var noticeKey=String(notice.key||notice.id||'');
+    var orderId=noticeKey.replace(/^gift-order-approved-/i,'');
+    function showWithGift(gift){
+      if(document.querySelector('[data-gift-popup]'))return;
+      var holder=document.createElement('div');
+      holder.innerHTML=giftPopupHtml(gift,notice);
+      var node=holder.firstChild;
+      if(node)document.body.appendChild(node);
+    }
+    var parsedName='';
+    var parsedQty=1;
+    try{
+      var m=String(notice.body||'').match(/「([^」]+)」\s*×\s*(\d+)/);
+      if(m){parsedName=m[1];parsedQty=Number(m[2])||1;}
+    }catch(e){}
+    var fallback={giftName:parsedName||'礼物',quantity:parsedQty,giftImage:''};
+    api('my_gifts',{},'GET').then(function(res){
+      var gifts=Array.isArray(res.gifts)?res.gifts:[];
+      state.giftsData=res||{};
+      state.myGifts=gifts;
+      state.giftWall=Array.isArray(res.wall)?res.wall:[];
+      var hit=gifts.find(function(g){return orderId&&String(g.giftOrderId||'')===String(orderId);})||gifts[0];
+      showWithGift(hit||fallback);
+    }).catch(function(){
+      showWithGift(fallback);
+    });
+  }
+  function closeGiftPopup(el){
+    var modal=el&&el.closest?el.closest('[data-gift-popup]'):document.querySelector('[data-gift-popup]');
+    if(!modal)return;
+    var key=modal.getAttribute('data-gift-notice-key')||'';
+    markGiftPopupDismissed(key);
+    if(key){
+      api('mark_notices_read',{keys:[key]}).catch(function(){});
+      if(state.inbox&&Array.isArray(state.inbox.systemNotices)){
+        state.inbox.systemNotices.forEach(function(n){
+          if(String(n.key||n.id||'')===String(key))n.unread=false;
+        });
+      }
+    }
+    modal.remove();
   }
   function accountHtml(){
     var v=(state.data&&state.data.verification)||{},d=(state.data&&state.data.deposit)||{},level=(state.data&&state.data.levelInfo)||{},p=(state.data&&state.data.player)||{};
@@ -3852,9 +4214,27 @@
       '<form class="pw-card pad pw-form pw-form-narrow" style="margin-top:14px" data-private-contact-form><h3>联系方式</h3>'+
       '<label>联系方式（WhatsApp / 手机）<input name="contact_phone" value="'+esc(contactPhone)+'" required placeholder="仅后台/客服可见"></label>'+
       '<button class="pw-btn primary" type="submit">保存联系方式</button></form>'+
-      (verifyLocked?verifyView:verifyForm)+
-      depositBlock+
-      '<section class="pw-card pad pw-form-narrow" style="margin-top:14px" id="pwAccountSecurityMount"><h3>账号安全</h3><div class="pw-empty">加载中…</div></section>';
+      '<div class="pw-acc-stack" style="margin-top:14px">'+
+      pwAccHtml('account-id','身份证认证', idStatus, (verifyLocked?verifyView:verifyForm), false)+
+      pwAccHtml('account-deposit','押金认证', depositStatus, depositBlock, false)+
+      pwAccHtml('account-security','账号安全','密码 / 登录安全',
+        '<div id="pwAccountSecurityMount"><div class="pw-empty">加载中…</div></div>', false)+
+      pwAccHtml('account-boss','老板身份','同一账号 · 双身份',
+        '<div id="pwOpenBossMount">'+(function(){
+          var roles=((state.session&&state.session.user&&state.session.user.roles)||(state.data&&state.data.roles)||[]);
+          var hasBoss=!!(state.session&&state.session.user&&(state.session.user.hasBoss||state.session.user.role==='boss'))||
+            (Array.isArray(roles)&&roles.indexOf('boss')>=0);
+          if(hasBoss){
+            return '<p class="pw-note">本账号已开通老板身份。可用同一邮箱从老板入口登录，不会创建第二个账号。</p>';
+          }
+          return '<p class="pw-note">同一邮箱可同时拥有陪玩与老板身份，不会创建第二个账号。开通后可用老板入口登录，钱包/订单仍绑定本账号。</p>'+
+            '<button class="pw-btn primary" type="button" data-open-boss-role>开通老板身份</button>'+
+            '<p class="pw-note" data-open-boss-msg style="margin-top:8px"></p>';
+        })()+'</div>', false)+
+      pwAccHtml('account-install','安装妙脆角','添加到主屏幕',
+        '<p class="pw-note">把妙脆角加到主屏幕，打开更快，使用起来更像 App。</p>'+
+        '<button class="pw-btn" type="button" data-pwa-install-guide>安装妙脆角 / 添加到主屏幕</button>', false)+
+      '</div>';
   }
   function rulesHtml(){
     var rules=state.workRules||[];
@@ -4273,22 +4653,32 @@
       if(!email||!/^\S+@\S+\.\S+$/.test(email)){state.loginError='请输入有效邮箱。';paint();return}
       state.registerBusy=true;state.registerToken='';state.registerVerifiedEmail='';state.loginError='正在发送验证码…';paint();
       fetch('/api/auth',{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify({action:'send_register_otp',email:email,role:'companion'})})
-        .then(function(r){return r.json().then(function(j){if(!r.ok||j.ok===false)throw new Error((j&&j.message)||'发送失败');return j;});})
+        .then(function(r){return r.json().then(function(j){if(!r.ok||j.ok===false){var err=new Error((j&&j.message)||'发送失败');err.retryAfterSec=j&&j.retryAfterSec;err.status=r.status;err.code=j&&j.code;throw err;}return j;});})
         .then(function(j){
           state.registerBusy=false;
           var tip=j.message||'验证码已发送';
-          if(j.devCode)tip+='（测试 '+j.devCode+'）';
+          if(j.debugCode||j.devCode)tip+='（调试 '+(j.debugCode||j.devCode)+'）';
           state.loginError=tip;
           state.registerCooldownUntil=Date.now()+(Number(j.retryAfterSec)||60)*1000;
+          try{sessionStorage.setItem('mcj_otp_cd:send_register_otp:companion:'+email,String(state.registerCooldownUntil));}catch(e){}
           paint();
-          var left=Number(j.retryAfterSec)||60;
           var timer=setInterval(function(){
-            left-=1;
+            var left=Math.max(0,Math.ceil((state.registerCooldownUntil-Date.now())/1000));
             if(left<=0){clearInterval(timer);state.registerCooldownUntil=0;if(state.authTab==='register')paint();}
             else if(state.authTab==='register')paint();
-          },1000);
+          },500);
         })
-        .catch(function(err){state.registerBusy=false;state.loginError=err.message||'发送失败';paint();});
+        .catch(function(err){
+          state.registerBusy=false;
+          var retry=Number(err&&err.retryAfterSec)||0;
+          var rateLimited=Number(err&&err.status)===429||String((err&&err.code)||'')==='OTP_RESEND_COOLDOWN';
+          if(rateLimited&&retry>0){
+            state.registerCooldownUntil=Date.now()+retry*1000;
+            try{sessionStorage.setItem('mcj_otp_cd:send_register_otp:companion:'+email,String(state.registerCooldownUntil));}catch(e){}
+          }
+          state.loginError=err.message||'发送失败';
+          paint();
+        });
       return;
     }
     var verifyRegOtp=e.target.closest('[data-verify-register-otp]');
@@ -4339,6 +4729,23 @@
       loadWorkRules();
       return;
     }
+    if(e.target.closest('[data-close-gift-popup]')||(e.target.matches&&e.target.matches('[data-gift-popup]'))){
+      var giftCloseRoute=e.target.closest('[data-route]');
+      closeGiftPopup(e.target);
+      if(giftCloseRoute){
+        go(giftCloseRoute.getAttribute('data-route')||'/companion/gifts');
+      }
+      return;
+    }
+    if(e.target.closest('[data-gifts-reload]')){
+      state._giftsLoaded=false;
+      state._giftsLoading=false;
+      state.myGiftsBusy=false;
+      state.giftsError='';
+      state.myGiftsError='';
+      paint();
+      return;
+    }
     var r=e.target.closest('[data-route]');
     if(r){
       if(isIsolationMode()){
@@ -4359,7 +4766,14 @@
       if(r.dataset.earningsTab)state.earningsTab=r.dataset.earningsTab;
       go(r.dataset.route);
       if(/\/rules/.test(r.dataset.route||''))loadWorkRules();
-      if(/\/(wallet|earnings|withdraw|account|mine)/.test(r.dataset.route||''))loadData({soft:true});
+      if(/\/(wallet|earnings|withdraw|account|mine)/.test(r.dataset.route||'')){
+        loadData({soft:true}).then(function(){try{setTimeout(maybeShowGiftReceivedPopup,200)}catch(err){}});
+      }
+      if(/\/gifts/.test(r.dataset.route||'')){
+        state._giftsLoaded=false;
+        state._giftsLoading=false;
+        state.myGiftsBusy=false;
+      }
       if(/\/messages/.test(r.dataset.route||'')){
         loadData({soft:true}).then(function(){
           return loadActiveThread({clear:false}).then(function(){
@@ -4437,6 +4851,50 @@
       return;
     }
     if(e.target.closest('[data-logout]')){clearSession();location.replace('/companion/login/');return}
+    if(e.target.closest('[data-pwa-install-guide]')){
+      e.preventDefault();
+      openPwaInstallGuide();
+      return;
+    }
+    if(e.target.closest('[data-open-boss-role]')){
+      e.preventDefault();
+      var btn=e.target.closest('[data-open-boss-role]');
+      var msgEl=document.querySelector('[data-open-boss-msg]');
+      var token=String((state.session&&(state.session.token||state.session.accessToken||state.session.access_token))||'').trim();
+      if(!token){
+        if(msgEl)msgEl.textContent='请先登录陪玩账号。';
+        return;
+      }
+      btn.disabled=true;
+      if(msgEl)msgEl.textContent='正在开通老板身份…';
+      fetch('/api/auth',{
+        method:'POST',
+        headers:{'Content-Type':'application/json',Accept:'application/json',Authorization:'Bearer '+token},
+        body:JSON.stringify({action:'open_boss_role',accessToken:token})
+      }).then(function(r){return r.json().then(function(j){return {r:r,j:j};});})
+        .then(function(x){
+          btn.disabled=false;
+          if(!x.r.ok||x.j.ok===false){
+            if(msgEl)msgEl.textContent=(x.j&&x.j.message)||'开通失败，请稍后重试';
+            return;
+          }
+          try{
+            if(x.j&&x.j.user){
+              state.session=state.session||{};
+              state.session.user=Object.assign({},state.session.user||{},x.j.user,{hasBoss:true,roles:x.j.roles||(x.j.user&&x.j.user.roles)||[]});
+              if(typeof writeSession==='function')writeSession(state.session);
+            }
+          }catch(err){}
+          if(msgEl)msgEl.textContent=(x.j&&x.j.message)||'已开通老板身份。请前往老板入口登录（同一邮箱）。';
+          try{toast((x.j&&x.j.message)||'已开通老板身份');}catch(err){}
+          try{paint();}catch(err){}
+        })
+        .catch(function(){
+          btn.disabled=false;
+          if(msgEl)msgEl.textContent='网络异常，请稍后重试';
+        });
+      return;
+    }
     if(e.target.closest('[data-reload-inbox]')){reloadInbox().then(function(){return loadActiveThread({force:true});});return}
     if(e.target.closest('[data-reload-thread]')){loadActiveThread({force:true,clear:false});return}
     if(e.target.closest('[data-forgot-dialog] [data-forgot-close]')|| (e.target.closest('[data-forgot-close]')&&!e.target.closest('[data-forgot-dialog]'))){
@@ -4444,9 +4902,22 @@
     }
     if(e.target.closest('[data-forgot-password]')){
       e.preventDefault();
+      e.stopPropagation();
+      var emailHint='';
+      try{
+        var form=e.target.closest('form')||root.querySelector('form[data-login]');
+        var input=form&&form.querySelector('input[name="account"],input[name="email"],input[type="email"],#loginOtpEmail');
+        if(input&&input.value)emailHint=String(input.value).trim();
+      }catch(err){}
       function openForgot(){
+        if(!window.MCJForgotPassword||typeof window.MCJForgotPassword.open!=='function'){
+          state.loginError='找回密码组件加载失败，请刷新页面后重试。';
+          paint();
+          return;
+        }
         window.MCJForgotPassword.open({
           role:'companion',
+          email:emailHint,
           onDone:function(){
             state.loginError=window.MCJForgotPassword.SUCCESS_TOAST||'密码修改成功，请重新登录。';
             state.authTab='login';
@@ -4459,17 +4930,17 @@
         return;
       }
       var s=document.createElement('script');
-      s.src='/src/forgot-password.js?v=20260806forgotP0';
-      s.onload=function(){ if(window.MCJForgotPassword) openForgot(); };
+      s.src='/src/forgot-password.js?v=20260907otpFocus1';
+      s.onload=function(){ openForgot(); };
+      s.onerror=function(){
+        state.loginError='找回密码组件加载失败，请刷新页面后重试。';
+        paint();
+      };
       document.head.appendChild(s);
       return;
     }
     if(e.target.closest('[data-forgot-resend]')){
-      if(state.forgotBusy||!state.forgotAccount)return;
-      state.forgotBusy=true;state.forgotMsg='';paint();
-      api('send_reset_code',{account:state.forgotAccount}).then(function(x){
-        state.forgotBusy=false;state.forgotMsg=x.message||'验证码已重新发送';paint();
-      }).catch(function(err){state.forgotBusy=false;state.forgotMsg=err.message||'发送失败';paint();});
+      // Legacy inline dialog removed — MCJForgotPassword owns resend.
       return;
     }
     var accept=e.target.closest('[data-accept-order]');
@@ -4640,8 +5111,22 @@
     }
     var del=e.target.closest('[data-delete-media]');
     if(del){
+      if(state.uploadBusy){toast('请等待当前操作完成');return}
       captureLiveForms(true);
-      api('delete_media',{media_id:del.dataset.deleteMedia}).then(function(x){toast(x.message||'已删除');return loadData({soft:true,forcePaint:true})}).catch(function(err){toast(err.message)});
+      state.uploadBusy='gallery';
+      state._galleryDeleting=true;
+      paint({preserveScroll:true});
+      api('delete_media',{media_id:del.dataset.deleteMedia}).then(function(x){
+        toast(x.message||'已删除');
+        // Reload durable media before re-enabling upload so count matches companion_media.
+        return loadData({soft:true,forcePaint:true,preserveScroll:true});
+      }).catch(function(err){
+        toast(humanizeClientError((err&&err.message)||'删除失败'));
+      }).finally(function(){
+        state._galleryDeleting=false;
+        state.uploadBusy='';
+        paint({preserveScroll:true});
+      });
       return;
     }
     var move=e.target.closest('[data-gallery-move]');
@@ -4759,19 +5244,40 @@
   }
   function uploadOneGalleryFile(pending){
     if(!pending||!pending.file)return Promise.resolve();
+    if(state._galleryUploadStop){
+      pending._uploading=false;
+      pending._failed=true;
+      pending._done=false;
+      pending._skippedFull=true;
+      return Promise.resolve();
+    }
     pending._uploading=true;
     pending._failed=false;
-    return ensureFreshCompanionSession().then(function(){
-      return withTimeout(readFileAsDataUrl(pending.file,'image').then(function(dataUrl){
-        if(dataUrl)pending.url=dataUrl;
+    // Refresh durable gallery count before each sequential upload; stop when no slots remain.
+    return refreshGalleryMediaCount().then(function(saved){
+      if(saved>=GALLERY_MAX){
+        state._galleryUploadStop=true;
+        pending._uploading=false;
+        pending._failed=true;
+        pending._done=false;
+        pending._skippedFull=true;
+        toast(galleryFullMessage(0));
         paint({preserveScroll:true});
-        return api('upload_media',{
-          media_type:'gallery',
-          data_url:dataUrl,
-          filename:pending.file.name||('gallery-'+Date.now()+'.jpg')
-        });
-      }),45000,'上传超时，请检查网络后重试');
+        return null;
+      }
+      return ensureFreshCompanionSession().then(function(){
+        return withTimeout(readFileAsDataUrl(pending.file,'image').then(function(dataUrl){
+          if(dataUrl)pending.url=dataUrl;
+          paint({preserveScroll:true});
+          return api('upload_media',{
+            media_type:'gallery',
+            data_url:dataUrl,
+            filename:pending.file.name||('gallery-'+Date.now()+'.jpg')
+          });
+        }),45000,'上传超时，请检查网络后重试');
+      });
     }).then(function(res){
+      if(!res)return null;
       pending._uploading=false;
       pending._done=true;
       pending._failed=false;
@@ -4782,7 +5288,8 @@
         var row=Object.assign({mediaType:'gallery'},res.media,{
           url:res.url||(res.media&&res.media.url)||pending.url,
           storagePath:res.path||(res.media&&(res.media.path||res.media.storagePath))||'',
-          storageRef:res.storageRef||(res.media&&res.media.storageRef)||''
+          storageRef:res.storageRef||(res.media&&res.media.storageRef)||'',
+          contentType:res.media.contentType||res.media.content_type||(pending.file&&pending.file.type)||'image/jpeg'
         });
         state.data.media=state.data.media.concat([row]);
       }
@@ -4793,66 +5300,94 @@
       pending._uploading=false;
       pending._failed=true;
       pending._done=false;
+      var serverMsg=String((err&&(err.serverMessage||err.message))||'');
+      var isGalleryFull=err&&err.status===400&&/相册最多|请先删除后再上传/.test(serverMsg);
+      if(isGalleryFull){
+        state._galleryUploadStop=true;
+        return refreshGalleryMediaCount().then(function(){
+          toast(galleryFullMessage(Math.max(0,GALLERY_MAX-savedGalleryCount())));
+          paint({preserveScroll:true});
+        });
+      }
       var msg=humanizeClientError((err&&err.message)||'上传失败，请重试');
       toast('上传失败，请重试'+(msg&&msg!=='上传失败，请重试'?('：'+msg):''));
       try{console.error('[companion-media] gallery item failed',err)}catch(e){}
       paint({preserveScroll:true});
-      // Do not rethrow — other selected photos must continue uploading.
+      // Do not rethrow — other selected photos must continue uploading unless gallery is full.
     });
   }
   function uploadGalleryFiles(files){
     var list=Array.isArray(files)?files.filter(Boolean):[];
     if(!list.length)return Promise.resolve();
     captureLiveForms(true);
-    var room=galleryRoomLeft();
-    if(!room){toast('相册最多 6 张');return Promise.resolve()}
-    if(list.length>room)toast('最多还能上传 '+room+' 张，已自动截取');
-    list=list.slice(0,room);
-    var stamp=Date.now();
-    var pending=list.map(function(file,i){
-      return {
-        _localId:'gup-'+stamp+'-'+i,
-        _uploading:true,
-        _failed:false,
-        _done:false,
-        mediaType:'gallery',
-        url:'',
-        file:file,
-        id:''
-      };
-    });
-    state.galleryPending=(state.galleryPending||[]).concat(pending);
-    state.uploadBusy='gallery';
-    paint({preserveScroll:true});
-    // Show local thumbnails immediately, then upload sequentially (independent failures).
-    var previewChain=Promise.resolve();
-    pending.forEach(function(p){
-      previewChain=previewChain.then(function(){
-        return readFileAsDataUrl(p.file,'image').then(function(url){
-          p.url=url;
-          paint({preserveScroll:true});
-        }).catch(function(){ /* keep empty thumb */ });
+    state._galleryUploadStop=false;
+    return refreshGalleryMediaCount().then(function(){
+      var room=galleryRoomLeft();
+      if(!room){toast(galleryFullMessage(0));return null}
+      if(list.length>room)toast('最多还能上传 '+room+' 张，已自动截取');
+      list=list.slice(0,room);
+      var stamp=Date.now();
+      var pending=list.map(function(file,i){
+        return {
+          _localId:'gup-'+stamp+'-'+i,
+          _uploading:true,
+          _failed:false,
+          _done:false,
+          mediaType:'gallery',
+          url:'',
+          file:file,
+          id:''
+        };
       });
-    });
-    return previewChain.then(function(){
-      var uploadChain=Promise.resolve();
+      state.galleryPending=(state.galleryPending||[]).concat(pending);
+      state.uploadBusy='gallery';
+      paint({preserveScroll:true});
+      // Show local thumbnails immediately, then upload sequentially (independent failures).
+      var previewChain=Promise.resolve();
       pending.forEach(function(p){
-        uploadChain=uploadChain.then(function(){return uploadOneGalleryFile(p)});
+        previewChain=previewChain.then(function(){
+          return readFileAsDataUrl(p.file,'image').then(function(url){
+            p.url=url;
+            paint({preserveScroll:true});
+          }).catch(function(){ /* keep empty thumb */ });
+        });
       });
-      return uploadChain;
-    }).then(function(){
+      return previewChain.then(function(){
+        var uploadChain=Promise.resolve();
+        pending.forEach(function(p){
+          uploadChain=uploadChain.then(function(){
+            if(state._galleryUploadStop){
+              if(p&&!p._done&&!p._failed){
+                p._uploading=false;
+                p._failed=true;
+                p._skippedFull=true;
+              }
+              return null;
+            }
+            return uploadOneGalleryFile(p);
+          });
+        });
+        return uploadChain.then(function(){return {list:list,pending:pending}});
+      });
+    }).then(function(meta){
+      if(!meta)return;
+      var list=meta.list||[];
       var stillBusy=(state.galleryPending||[]).some(function(p){return p&&p._uploading});
       if(!stillBusy)state.uploadBusy='';
       return loadData({soft:true,forcePaint:true,preserveScroll:true}).then(function(){
-        var failed=(state.galleryPending||[]).filter(function(p){return p&&p._failed}).length;
-        var okCount=list.length-failed;
-        if(okCount>0&&failed===0)toast('已上传 '+okCount+' 张相册照片');
-        else if(okCount>0&&failed>0)toast('成功 '+okCount+' 张，失败 '+failed+' 张（可删除失败项后重试）');
+        var failed=(state.galleryPending||[]).filter(function(p){return p&&p._failed&&!p._skippedFull}).length;
+        var skipped=(state.galleryPending||[]).filter(function(p){return p&&p._skippedFull}).length;
+        var okCount=list.length-failed-skipped;
+        if(okCount>0&&failed===0&&skipped===0)toast('已上传 '+okCount+' 张相册照片');
+        else if(okCount>0&&(failed>0||skipped>0))toast('成功 '+okCount+' 张'+(failed?('，失败 '+failed+' 张'):'')+(skipped?('，已满跳过 '+skipped+' 张'):'')+'（可删除后重试）');
+        else if(skipped>0&&okCount===0)toast(galleryFullMessage(Math.max(0,GALLERY_MAX-savedGalleryCount())));
       });
     }).catch(function(err){
       state.uploadBusy='';
       paint({preserveScroll:true});
       toast(humanizeClientError((err&&err.message)||'上传失败，请重试'));
+    }).finally(function(){
+      state._galleryUploadStop=false;
     });
   }
   function clearVoiceLocal(){
@@ -5026,7 +5561,7 @@
   function pickCompanionGallery(){
     // Prefer native label+multiple input (iOS multi-select). Fallback: programmatic multiple pick.
     if(state.uploadBusy&&state.uploadBusy!=='gallery'){toast('请等待当前上传完成');return}
-    if(galleryRoomLeft()<=0){toast('相册最多 6 张');return}
+    if(galleryRoomLeft()<=0){toast(galleryFullMessage(0));return}
     var input=document.querySelector('[data-pw-gallery-multi]');
     if(input&&!input.disabled){
       try{input.value='';input.click();return}catch(err){}
@@ -5036,7 +5571,7 @@
   }
   function pickCompanionGalleryCamera(){
     if(state.uploadBusy){toast('请等待当前上传完成');return}
-    if(galleryRoomLeft()<=0){toast('相册最多 6 张');return}
+    if(galleryRoomLeft()<=0){toast(galleryFullMessage(0));return}
     triggerPwHiddenPick('image/*',true,function(file){
       if(file)uploadGalleryFiles([file]);
     },{multiple:false});
@@ -5336,45 +5871,15 @@
       });
       return;
     }
-    if(e.target.matches('[data-forgot-email]')){
+    if(e.target.matches('[data-forgot-email]')||e.target.matches('[data-forgot-code]')||e.target.matches('[data-forgot-reset]')){
       e.preventDefault();
-      if(state.forgotBusy)return;
-      var fde=new FormData(e.target);
-      var faccount=String(fde.get('account')||'').trim();
-      if(!faccount){state.forgotMsg='请输入账号';paint();return}
-      state.forgotBusy=true;state.forgotMsg='';paint();
-      api('send_reset_code',{account:faccount}).then(function(x){
-        state.forgotBusy=false;state.forgotAccount=faccount;state.forgotStep='code';state.forgotMsg=x.message||'验证码已发送';paint();
-      }).catch(function(err){state.forgotBusy=false;state.forgotMsg=err.message||'发送失败';paint();});
-      return;
-    }
-    if(e.target.matches('[data-forgot-code]')){
-      e.preventDefault();
-      if(state.forgotBusy)return;
-      var fdc=new FormData(e.target);
-      var fcode=String(fdc.get('code')||'').trim();
-      if(!/^\d{6}$/.test(fcode)){state.forgotMsg='请输入 6 位验证码';paint();return}
-      state.forgotBusy=true;state.forgotMsg='';paint();
-      api('verify_reset_code',{account:state.forgotAccount,code:fcode}).then(function(x){
-        state.forgotBusy=false;state.forgotResetToken=x.resetToken||'';state.forgotStep='reset';state.forgotMsg=x.message||'验证成功';paint();
-      }).catch(function(err){state.forgotBusy=false;state.forgotMsg=err.message||'验证失败';paint();});
-      return;
-    }
-    if(e.target.matches('[data-forgot-reset]')){
-      e.preventDefault();
-      if(state.forgotBusy)return;
-      var fdr=new FormData(e.target);
-      var fnp=String(fdr.get('new_password')||'');
-      var fcp=String(fdr.get('confirm_password')||'');
-      if(fnp.length<8){state.forgotMsg='新密码至少 8 位';paint();return}
-      if(fnp!==fcp){state.forgotMsg='两次输入的新密码不一致';paint();return}
-      if(!state.forgotResetToken){state.forgotMsg='请先完成验证码校验';paint();return}
-      state.forgotBusy=true;state.forgotMsg='';paint();
-      api('reset_password',{account:state.forgotAccount,newPassword:fnp,confirmPassword:fcp,resetToken:state.forgotResetToken}).then(function(x){
-        state.forgotBusy=false;state.forgotStep='';state.forgotAccount='';state.forgotResetToken='';state.authTab='login';
-        toast(x.message||'密码已重置，请登录');
+      // Legacy inline forgot forms removed — route to shared overlay (/api/auth).
+      if(window.MCJForgotPassword&&typeof window.MCJForgotPassword.open==='function'){
+        window.MCJForgotPassword.open({role:'companion'});
+      }else{
+        state.loginError='请使用登录页「忘记密码」。';
         paint();
-      }).catch(function(err){state.forgotBusy=false;state.forgotMsg=err.message||'重置失败';paint();});
+      }
       return;
     }
     if(e.target.matches('[data-register]')){
@@ -5393,11 +5898,18 @@
         password:password,
         confirmPassword:confirm,
         registerToken:registerToken,
+        inviteCode:String(rd.get('inviteCode')||state.inviteCode||'').trim(),
         remember:!!rd.get('remember')
       }).then(function(res){
         state.registerBusy=false;
         state.registerToken='';
         state.registerVerifiedEmail='';
+        try{
+          if(res&&res.inviteRedeem&&res.inviteRedeem.outcome==='bound'){
+            sessionStorage.removeItem('mcj_boss_invite_code');
+            state.inviteCode='';
+          }
+        }catch(e){}
         saveSession(res.session,!!rd.get('remember'));
         go('/companion/profile');
         return loadData();
@@ -5791,5 +6303,27 @@
     loadData({soft:true,forcePaint:true,preserveScroll:true}).catch(function(){});
   });
   init();
+  document.addEventListener('toggle', function(e){
+    var el=e.target;
+    if(!el || !el.matches || !el.matches('details.pw-acc[data-pw-acc]'))return;
+    try{
+      // Prefer one open section at a time within the same stack.
+      if(el.open){
+        var stack=el.closest('.pw-acc-stack') || el.parentElement;
+        if(stack){
+          stack.querySelectorAll('details.pw-acc[data-pw-acc]').forEach(function(sib){
+            if(sib!==el && sib.open) sib.open=false;
+          });
+        }
+      }
+      var map=pwAccOpenMap();
+      // Persist only currently open ids in this document to avoid stale multi-open.
+      document.querySelectorAll('details.pw-acc[data-pw-acc]').forEach(function(node){
+        map[node.getAttribute('data-pw-acc')]=!!node.open;
+      });
+      sessionStorage.setItem('mcjPwAccOpen.v1', JSON.stringify(map));
+    }catch(err){}
+  }, true);
+
 })();
 

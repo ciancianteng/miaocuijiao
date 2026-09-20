@@ -208,14 +208,17 @@
   }
 
   function section(key, title, html) {
+    var open = key === "basic" || key === "application" || key === "split";
     return (
-      '<section class="player-detail-section" data-player-detail-section="' +
+      '<details class="player-detail-section" data-player-detail-section="' +
       esc(key) +
-      '"><h3>' +
+      '"' +
+      (open ? " open" : "") +
+      "><summary><h3>" +
       esc(title) +
-      "</h3>" +
+      "</h3></summary>" +
       html +
-      "</section>"
+      "</details>"
     );
   }
 
@@ -317,14 +320,22 @@
   }
 
   function levelOptions(selected, levels) {
-    var html = '<option value="">未设置</option>';
+    var html = '<option value="">请选择等级</option>';
     (levels || []).forEach(function (level) {
       var value = level.id || level.code || level.name;
+      var base =
+        level.basePrice != null
+          ? level.basePrice
+          : level.base_price != null
+            ? level.base_price
+            : level.minPrice != null
+              ? level.minPrice
+              : level.min;
       var label =
         (level.code ? level.code + " " : "") +
         (level.name || value) +
-        (level.color ? " · " + level.color : "") +
-        (level.minPrice != null ? " · RM" + level.minPrice + (level.maxPrice != null ? "-" + level.maxPrice : "") : "");
+        (base != null && base !== "" ? " · 等级默认 " + base + " 猫粮" : "") +
+        (level.color ? " · " + level.color : "");
       html +=
         '<option value="' +
         esc(value) +
@@ -335,6 +346,178 @@
         "</option>";
     });
     return html;
+  }
+  function levelBasePriceOf(level) {
+    if (!level) return 0;
+    var n = Number(
+      level.basePrice != null
+        ? level.basePrice
+        : level.base_price != null
+          ? level.base_price
+          : level.minPrice != null
+            ? level.minPrice
+            : level.min
+    );
+    return Number.isFinite(n) ? n : 0;
+  }
+  function findLevelByValue(value, levels) {
+    var key = String(value || "").trim();
+    if (!key) return null;
+    return (levels || []).find(function (level) {
+      return (
+        String(level.id) === key ||
+        String(level.code) === key ||
+        String(level.name) === key
+      );
+    }) || null;
+  }
+  function levelPricePreviewHtml(selected, levels) {
+    var lv = findLevelByValue(selected, levels);
+    if (!lv) {
+      return '<p class="admin-sync-note" data-level-price-preview style="grid-column:1/-1">等级默认价格：未选择。新服务或无独立单价时将 fallback 到等级 base_price。</p>';
+    }
+    var base = levelBasePriceOf(lv);
+    return (
+      '<p class="admin-sync-note" data-level-price-preview style="grid-column:1/-1"><strong>等级默认价格：</strong>' +
+      esc(String(base)) +
+      " 猫粮（" +
+      esc((lv.code || "") + " " + (lv.name || "")) +
+      "）。仅作为新服务默认价 / 无独立价时的 fallback，不会覆盖下方已保存的服务独立价格。</p>"
+    );
+  }
+
+  function servicePricesList(d) {
+    var list = Array.isArray(d.servicePrices) ? d.servicePrices : Array.isArray(d.service_prices) ? d.service_prices : [];
+    if (list.length) return dedupeServicePriceRows(list);
+    // Fallback from game_prices / games when API older
+    var gp = d.game_prices || d.gamePrices || {};
+    if (typeof gp === "string") {
+      try {
+        gp = JSON.parse(gp);
+      } catch (e) {
+        gp = {};
+      }
+    }
+    var games = String(d.game || d.mainGame || d.main_service || "")
+      .split(/[,，、/|]+/)
+      .map(function (x) {
+        return x.trim();
+      })
+      .filter(Boolean);
+    var out = [];
+    var seen = {};
+    function push(name, price) {
+      var n = String(name || "").trim();
+      var key = n.toLowerCase().replace(/\s+/g, " ");
+      if (!n || seen[key]) return;
+      seen[key] = 1;
+      out.push({ serviceName: n, serviceId: "", unitPrice: price });
+    }
+    games.forEach(function (g) {
+      push(g, gp[g] != null ? gp[g] : d.price);
+    });
+    Object.keys(gp || {}).forEach(function (k) {
+      if (/^[0-9a-f-]{36}$/i.test(k)) return;
+      push(k, gp[k]);
+    });
+    if (!out.length && d.price != null) push("默认服务", d.price);
+    return out;
+  }
+
+  /** Client safety net: one row per service_id / normalized name. */
+  function dedupeServicePriceRows(list) {
+    var byKey = {};
+    var nameToKey = {};
+    (list || []).forEach(function (s) {
+      if (!s) return;
+      var name = String(s.serviceName || s.service_name || s.name || "").trim();
+      var sid = String(s.serviceId || s.service_id || "").trim();
+      if (!name && !sid) return;
+      var nkey = name.toLowerCase().replace(/\s+/g, " ");
+      var key = /^[0-9a-f-]{36}$/i.test(sid) ? "id:" + sid.toLowerCase() : nkey ? "name:" + nkey : "";
+      if (!key) return;
+      if (nkey && nameToKey[nkey]) key = nameToKey[nkey];
+      if (byKey[key]) {
+        if (!byKey[key].serviceId && sid) byKey[key].serviceId = sid;
+        return;
+      }
+      byKey[key] = {
+        rowId: s.rowId || s.id || "",
+        serviceId: sid,
+        serviceName: name || sid || "服务",
+        unitPrice: s.unitPrice != null ? s.unitPrice : s.unit_price != null ? s.unit_price : s.price,
+        source: s.source || "",
+        pricingUnit: s.pricingUnit || s.pricing_unit || "小时",
+      };
+      if (nkey) nameToKey[nkey] = key;
+    });
+    return Object.keys(byKey).map(function (k) {
+      return byKey[k];
+    });
+  }
+
+  function servicePricesEditHtml(d, levels) {
+    var list = servicePricesList(d);
+    var lv = findLevelByValue(d.levelId || d.level_id || d.levelName, levels);
+    var base = levelBasePriceOf(lv);
+    var rowsHtml = list.length
+      ? list
+          .map(function (s, idx) {
+            var name = s.serviceName || s.service_name || s.name || "服务";
+            var sid = s.serviceId || s.service_id || "";
+            var price = s.unitPrice != null ? s.unitPrice : s.unit_price != null ? s.unit_price : s.price != null ? s.price : base || "";
+            return (
+              '<label class="admin-service-price-row">' +
+              '<span class="admin-service-price-name"><strong title="' +
+              esc(name) +
+              '">' +
+              esc(name) +
+              "</strong>" +
+              '<input type="hidden" name="servicePrices[' +
+              idx +
+              '][serviceName]" value="' +
+              esc(name) +
+              '"><input type="hidden" name="servicePrices[' +
+              idx +
+              '][serviceId]" value="' +
+              esc(sid) +
+              '"></span>' +
+              '<span class="admin-service-price-input">' +
+              '<input name="servicePrices[' +
+              idx +
+              '][unitPrice]" type="number" min="1" step="1" value="' +
+              esc(price) +
+              '" required>' +
+              '<small>猫粮 / 小时</small></span>' +
+              "</label>"
+            );
+          })
+          .join("")
+      : '<p class="admin-sync-note">该陪玩尚未配置游戏/服务。请先在资料中填写游戏，或通过审核时按等级默认价初始化。</p>';
+    return (
+      '<div class="admin-service-prices" data-service-prices>' +
+      "<h4>游戏/服务独立价格</h4>" +
+      '<p class="muted admin-service-prices-hint">每个服务单独设置单价。老板下单时按所选服务读取；等级默认价格仅作 fallback。</p>' +
+      rowsHtml +
+      "</div>"
+    );
+  }
+
+  function servicePricesViewHtml(d) {
+    var list = servicePricesList(d);
+    if (!list.length) {
+      return rows([
+        ["等级默认价格", d.levelBasePrice != null ? d.levelBasePrice + " 猫粮" : "—"],
+        ["服务独立价格", "尚未配置"],
+      ]);
+    }
+    var pairs = [["等级默认价格", d.levelBasePrice != null ? d.levelBasePrice + " 猫粮（fallback）" : "—"]];
+    list.forEach(function (s) {
+      var name = s.serviceName || s.service_name || s.name || "服务";
+      var price = s.unitPrice != null ? s.unitPrice : s.price;
+      pairs.push([name, (price != null ? price : "—") + " 猫粮/小时"]);
+    });
+    return rows(pairs);
   }
 
   function getLevels() {
@@ -366,9 +549,7 @@
         html: true,
       },
       ["昵称", d.name || d.nickname],
-      ["陪玩 ID", d.companionCode || d.publicId || d.playerId || "未生成"],
-      ["内部 UUID", d.internalUuid || d.id || "—"],
-      ["用户 UUID", d.profileUuid || d.uid || d.user_id || "—"],
+      ["陪玩 ID", d.publicId || d.companionCode || d.companion_code || d.playerId || "未生成"],
       ["邮箱", d.email || "尚未填写邮箱"],
       ["手机号 / 联系方式", d.phone || d.contact_phone || "尚未填写联系方式"],
       ["年龄", d.age || "尚未填写"],
@@ -406,18 +587,40 @@
         "</div>";
     }
 
+    var hallOn = d.hallVisible === true || d.hall_visible === true || d.publishReady === true;
+    var hallHidden =
+      d.approvedButHidden === true ||
+      d.approved_but_hidden === true ||
+      (!!d.adminApproved && !d.isTestAccount && !hallOn);
+    var hallReasons = d.blockReasons || d.block_reasons || [];
+    var hallStatusText = d.isTestAccount
+      ? "测试账号隔离"
+      : hallOn
+        ? "已上大厅"
+        : hallHidden
+          ? "已通过但未上大厅"
+          : d.publishStatusLabel || "未上大厅";
     var applicationHtml = app.empty
       ? emptyText("尚未提交陪玩申请资料")
       : rows([
           ["申请时间", app.submittedAt || "—"],
+          ["认证方式", d.certificationMethodLabel || app.certificationMethodLabel || (String(d.certificationMethod || app.certificationMethod || d.credential_mode || "").toLowerCase() === "deposit" ? "押金认证" : String(d.certificationMethod || app.certificationMethod || d.credential_mode || "").toLowerCase() === "id_card" ? "身份证认证" : "未选择")],
           ["主接服务", app.mainService || "尚未填写"],
           ["主接游戏", app.mainGame || "尚未填写"],
           ["游戏段位", app.gameRank || "尚未填写"],
           ["擅长位置", app.position || "尚未填写"],
           ["声音类型", app.voiceType || "尚未填写"],
           ["可接单时间", app.schedule || "尚未填写"],
-          ["申请备注", app.note || "无"],
+          ["自我介绍（前台展示）", d.description || d.bio || d.intro || "尚未填写"],
+          ["申请备注（仅后台）", app.note || "无"],
           ["当前申请状态", app.statusLabel || app.status],
+          ["大厅可见", hallStatusText + (hallOn ? "（hallVisible=true）" : "（hallVisible=false）")],
+          [
+            "未上大厅原因",
+            Array.isArray(hallReasons) && hallReasons.length
+              ? hallReasons.join("、")
+              : d.listingBlockReason || (hallOn || d.isTestAccount ? "无" : "—"),
+          ],
           ["驳回原因", app.rejectReason || "无"],
         ]);
     if (edit) applicationHtml += reviewBox("application", app.status);
@@ -565,9 +768,9 @@
     if (edit) mediaHtml += reviewBox("media", media.status);
 
     var split =
+      (edit ? "" : servicePricesViewHtml(d)) +
       rows([
         ["当前等级", d.levelName || d.level_name || "未设置"],
-        ["单价", d.price != null ? d.price + " 猫粮/小时" : "—"],
         ["平台抽成", (d.orderCommissionRate != null ? d.orderCommissionRate : d.commission_rate) + "%"],
         ["礼物抽成", (d.giftCommissionRate != null ? d.giftCommissionRate : d.gift_commission_rate || 0) + "%"],
         ["直属陪返点", (d.directRebateRate != null ? d.directRebateRate : d.direct_rebate_rate || 0) + "%"],
@@ -580,14 +783,12 @@
           '<label><span>当前等级</span><select name="levelId">' +
           levelOptions(d.levelId || d.level_id || d.levelName, levels) +
           "</select></label>" +
-          field("单价", "price", d.price) +
           field("订单平台抽成 %", "orderCommissionRate", d.orderCommissionRate != null ? d.orderCommissionRate : d.commission_rate) +
           field("礼物抽成 %", "giftCommissionRate", d.giftCommissionRate != null ? d.giftCommissionRate : d.gift_commission_rate || 0) +
           field("直属陪返点 %", "directRebateRate", d.directRebateRate != null ? d.directRebateRate : d.direct_rebate_rate || 0) +
           field("调整原因", "reason", "") +
-          (playerMissingPrice(d)
-            ? '<p class="admin-sync-note error" style="grid-column:1/-1">未设置接单价格：通过申请前请先填写单价（> 0），否则审核将被拦截。</p>'
-            : "") +
+          levelPricePreviewHtml(d.levelId || d.level_id || d.levelName, levels) +
+          servicePricesEditHtml(d, levels) +
           "</div>"
         : "");
 
@@ -711,14 +912,67 @@
       ]) +
       '<div class="admin-sync-note">在线状态由陪玩端维护；后台可停用账号与禁止接单。</div>';
 
+    var assignedCertIds = Array.isArray(d.certTagIds)
+      ? d.certTagIds.map(String)
+      : Array.isArray(d.certTags)
+        ? d.certTags.map(function (t) {
+            return String(t.id || t);
+          })
+        : [];
+    var certCatalog = Array.isArray(d.certCatalog) ? d.certCatalog : [];
+    var certHtml = !certCatalog.length
+      ? '<div class="admin-sync-note">暂无认证徽章目录。请先在左侧「认证徽章管理」创建并启用徽章（名称 / 颜色 / 图标）。</div>' +
+        '<p style="margin:8px 0 0"><button class="mini-btn" type="button" data-section="companion-cert-tags">前往认证徽章管理</button></p>'
+      : edit
+        ? '<div class="form-grid" style="grid-template-columns:repeat(auto-fill,minmax(160px,1fr))">' +
+          certCatalog
+            .map(function (tag) {
+              var checked = assignedCertIds.indexOf(String(tag.id)) >= 0 ? " checked" : "";
+              return (
+                '<label class="mini-card" style="display:flex;gap:8px;align-items:center;padding:10px 12px">' +
+                '<input type="checkbox" name="certTagIds" value="' +
+                esc(tag.id) +
+                '"' +
+                checked +
+                ">" +
+                '<span style="color:' +
+                esc(tag.color || "#f5c542") +
+                '">' +
+                esc(tag.icon || "🏅") +
+                " " +
+                esc(tag.name) +
+                "</span></label>"
+              );
+            })
+            .join("") +
+          "</div>" +
+          '<div class="admin-sync-note">勾选后保存，前台陪玩卡片会显示对应认证徽章（仅启用中的标签）。徽章名称 / 颜色 / 图标请到「认证徽章管理」编辑。</div>' +
+          '<p style="margin:8px 0 0"><button class="mini-btn" type="button" data-section="companion-cert-tags">编辑徽章样式</button></p>'
+        : assignedCertIds.length
+          ? '<div class="row" style="flex-wrap:wrap;gap:8px">' +
+            (d.certTags || [])
+              .map(function (tag) {
+                return (
+                  '<span class="status ok" style="border-color:' +
+                  esc(tag.color || "#f5c542") +
+                  ";color:" +
+                  esc(tag.color || "#f5c542") +
+                  '">' +
+                  esc((tag.icon || "🏅") + " " + (tag.name || "")) +
+                  "</span>"
+                );
+              })
+              .join("") +
+            "</div>"
+          : emptyText("未分配认证徽章");
+
     return (
       '<div class="player-drawer-head"><div><h2>' +
       esc(edit ? "编辑陪玩" : "陪玩详情") +
       "</h2><p>" +
       esc(d.name || d.nickname || "-") +
       " · " +
-      esc(d.companionCode || d.publicId || d.playerId || "未生成") +
-      (d.internalUuid || d.id ? " · UUID " + esc(String(d.internalUuid || d.id).slice(0, 8)) + "…" : "") +
+      esc(d.playerId || d.id) +
       '</p></div><button class="mini-btn" type="button" data-player-drawer-close>关闭</button></div>' +
       '<form data-player-detail-form data-player-id="' +
       esc(d.id) +
@@ -740,11 +994,20 @@
       "</span></div>" +
       section("basic", "基础资料", basic) +
       section("application", "陪玩申请资料", applicationHtml) +
-      section("identity", "身份认证", identityHtml) +
-      section("payment", "结款账户", paymentHtml) +
+      (function () {
+        var mode = String(d.certificationMethod || d.certification_method || d.credential_mode || (d.application && (d.application.certificationMethod || d.application.credential_mode)) || "").toLowerCase();
+        if (mode === "deposit") {
+          return section("deposit", "押金认证资料", depositHtml) + section("payment", "结款账户", paymentHtml);
+        }
+        if (mode === "id_card") {
+          return section("identity", "身份证认证资料", identityHtml) + section("payment", "结款账户", paymentHtml);
+        }
+        return section("identity", "身份认证", identityHtml) + section("deposit", "押金记录", depositHtml) + section("payment", "结款账户", paymentHtml);
+      })() +
       section("media", "头像 / 相册 / 语音", mediaHtml) +
       section("split", "等级与价格", split) +
-      section("deposit", "押金记录", depositHtml) +
+      section("cert-badges", "认证徽章（前台卡片）", certHtml) +
+      (String(d.certificationMethod || d.certification_method || d.credential_mode || "").toLowerCase() === "id_card" || String(d.certificationMethod || d.certification_method || d.credential_mode || "").toLowerCase() === "deposit" ? "" : section("deposit", "押金记录", depositHtml)) +
       section("income", "订单与收益", income) +
       section("account", "账号管理", account) +
       (edit
@@ -766,14 +1029,27 @@
   function apiPost(body) {
     var Auth = authApi();
     var headers = { "x-mcj-admin-role": (window.MCJAdminRole || localStorage.getItem("mcjAdminRole") || "admin") };
-    if (Auth && Auth.post) return Auth.post("/api/admin/players", body, headers);
+    function attachError(data, status) {
+      var err = new Error((data && data.message) || "请求失败");
+      err.code = (data && data.code) || "";
+      err.blockReasons = (data && (data.blockReasons || data.block_reasons)) || [];
+      err.publish = (data && data.publish) || null;
+      err.status = status;
+      return err;
+    }
+    if (Auth && Auth.post) {
+      return Auth.post("/api/admin/players", body, headers).catch(function (err) {
+        if (err && (err.blockReasons || err.publish || err.code)) throw err;
+        throw err;
+      });
+    }
     return fetch("/api/admin/players", {
       method: "POST",
       headers: Object.assign({ "Content-Type": "application/json", Accept: "application/json" }, headers),
       body: JSON.stringify(body || {}),
     }).then(function (res) {
       return res.json().then(function (data) {
-        if (!res.ok || data.ok === false) throw new Error(data.message || "请求失败");
+        if (!res.ok || data.ok === false) throw attachError(data, res.status);
         return data;
       });
     });
@@ -918,11 +1194,17 @@
         return;
       }
       if (kind2 === "application" && status === "approved") {
-        var priceInput = form3.querySelector('[name="price"]');
-        var formPrice = priceInput ? Number(priceInput.value) : NaN;
-        var hasFormPrice = Number.isFinite(formPrice) && formPrice > 0;
-        if (!hasFormPrice && form3.getAttribute("data-missing-price") === "1") {
-          alert("无法通过：该陪玩尚未设置接单价格（单价 > 0 或至少一个游戏价格 > 0）。请先在「等级与价格」填写单价后再通过。");
+        var levelEl = form3.querySelector('[name="levelId"]');
+        var levelVal = levelEl ? String(levelEl.value || "").trim() : "";
+        if (!levelVal) {
+          alert("无法通过：必须选择陪玩等级。禁止无等级默认 Lv1。");
+          return;
+        }
+        var levelsNow = getLevels();
+        var lv = findLevelByValue(levelVal, levelsNow);
+        var base = levelBasePriceOf(lv);
+        if (!(base > 0)) {
+          alert("无法通过：所选等级缺少有效的基础价格 base_price。");
           return;
         }
       }
@@ -938,10 +1220,16 @@
                 : "review_application";
       var payload = { status: status, rejectReason: reason };
       if (kind2 === "application" && status === "approved") {
-        var priceEl = form3.querySelector('[name="price"]');
-        if (priceEl && String(priceEl.value || "").trim() !== "") {
-          payload.price = priceEl.value;
+        var levelEl2 = form3.querySelector('[name="levelId"]');
+        var levelVal2 = levelEl2 ? String(levelEl2.value || "").trim() : "";
+        payload.levelId = levelVal2;
+        payload.level_id = levelVal2;
+        var lv2 = findLevelByValue(levelVal2, getLevels());
+        if (lv2) {
+          payload.levelName = lv2.name || "";
+          payload.level_name = lv2.name || "";
         }
+        // Do not send applicant/admin free-form price on approve — server seeds from level.base_price.
       }
       apiPost({
         action: action,
@@ -949,13 +1237,26 @@
         payload: payload,
       })
         .then(function (res) {
-          alert(res.message || "审核已保存");
+          var msg = res.message || "审核已保存";
+          if (kind2 === "application" && status === "approved") {
+            if (res.hallVisible) msg = "已通过，已同步进入陪玩大厅";
+            else if (res.approvedButHidden) {
+              msg =
+                "已通过，但未进入大厅：" +
+                ((res.blockReasons && res.blockReasons.join("、")) || "请检查资料完整性");
+            }
+          }
+          alert(msg);
           if (window.MCJAdminPlayerBridge && window.MCJAdminPlayerBridge.reloadDetail) {
             window.MCJAdminPlayerBridge.reloadDetail(form3.getAttribute("data-player-id"), form3.getAttribute("data-player-mode") || "edit");
           }
         })
         .catch(function (err) {
-          alert(err.message || "审核失败");
+          var extra =
+            err && Array.isArray(err.blockReasons) && err.blockReasons.length
+              ? "\n原因：" + err.blockReasons.join("、")
+              : "";
+          alert((err.message || "审核失败") + extra);
         });
       return;
     }

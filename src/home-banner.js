@@ -134,6 +134,26 @@
       var data = list[index] || normalized({});
       if (!img) return;
       function run() {
+        if (!isUsableBannerImage(img)) {
+          useBrandBannerAsset(img, img.naturalWidth ? "tiny-stub" : "empty");
+          return;
+        }
+        // Packaged preview-carousel slides: keep CSS object-fit cover (no crop transform).
+        if (data.previewSlide || /\/preview-carousel\//.test(String(img.getAttribute("src") || ""))) {
+          img.style.removeProperty("width");
+          img.style.removeProperty("height");
+          img.style.removeProperty("max-width");
+          img.style.removeProperty("max-height");
+          img.style.removeProperty("left");
+          img.style.removeProperty("top");
+          img.style.removeProperty("right");
+          img.style.removeProperty("bottom");
+          img.style.removeProperty("transform");
+          img.style.removeProperty("object-fit");
+          img.setAttribute("data-crop-ready", "1");
+          img.setAttribute("data-crop-plain", "1");
+          return;
+        }
         applyCropToImg(img, frame, cropFor(data, device));
       }
       if (img.complete && img.naturalWidth) run();
@@ -238,10 +258,10 @@
       mobileDedicated = String(config.mobileImage || "").trim();
     }
     var link = normalizeHref(config.link || config.href || config.button_link || "");
-    var crop = normalizeCrop(config.crop || config.crop_meta || {}, { ratioW: 1920, ratioH: 700 });
+    var crop = normalizeCrop(config.crop || config.crop_meta || {}, { ratioW: 1920, ratioH: 640 });
     var mobileCrop = normalizeCrop(
       config.mobileCrop || config.mobile_crop || config.mobile_crop_meta || (mobileDedicated ? {} : crop),
-      { ratioW: 1080, ratioH: 1350 }
+      { ratioW: 1080, ratioH: 360 }
     );
     return {
       id: config.id || "",
@@ -267,6 +287,8 @@
       linkTarget: resolveLinkTarget(link, config.linkTarget || config.link_target || ""),
       isMain: isMainBanner(config),
       sort: Number(config.sort ?? config.sort_order ?? 100),
+      previewVerify: !!(config.previewVerify || config.preview_verify),
+      previewSlide: Number(config.previewSlide || config.preview_slide || 0) || 0,
     };
   }
 
@@ -283,20 +305,26 @@
   function cropFor(data, device) {
     var desktop = data.crop || normalizeCrop({});
     if (device === "mobile") {
-      var mobile = data.mobileCrop || normalizeCrop({}, { ratioW: 1080, ratioH: 1350 });
-      // Dedicated mobile image may exist, but unless mobileCrop was explicitly customized,
-      // reuse the same admin framing (zoom/x/y) with responsive container sizing.
-      var useMobile = data.hasDedicatedMobile && isCustomCrop(mobile);
+      var mobile = data.mobileCrop || normalizeCrop({}, { ratioW: 1080, ratioH: 360 });
+      // When a dedicated mobile image exists, always prefer mobile_crop_meta so admin
+      // pan/zoom matches the phone homepage (do not require a "custom" threshold).
+      var useMobile = !!data.hasDedicatedMobile;
       var src = useMobile ? mobile : desktop;
       return {
         zoom: Math.max(1, Number(src.zoom) || 1),
         x: Number(src.x) || 0,
         y: Number.isFinite(Number(src.y)) ? Number(src.y) : 0,
         ratioW: 1080,
-        ratioH: 1350,
+        ratioH: 360,
       };
     }
-    return desktop;
+    return {
+      zoom: Math.max(1, Number(desktop.zoom) || 1),
+      x: Number(desktop.x) || 0,
+      y: Number.isFinite(Number(desktop.y)) ? Number(desktop.y) : 0,
+      ratioW: 1920,
+      ratioH: 640,
+    };
   }
 
   function applyVars(root, data, device) {
@@ -353,14 +381,29 @@
         esc(safeSrc) +
         '" alt="' +
         esc(data.alt) +
-        '" decoding="async">'
+        '" decoding="async"' +
+        (isActive
+          ? ' fetchpriority="high" loading="eager"'
+          : ' loading="lazy" fetchpriority="low"') +
+        ">"
       : '<div class="mcj-hero-image mcj-hero-image-missing" role="img" aria-label="' + esc(data.alt || "Banner") + '"></div>';
+    var previewMark =
+      data.previewVerify || data.previewSlide > 1
+        ? '<div class="mcj-hero-preview-badge" data-preview-badge="1">Preview 验证 · Slide ' +
+          esc(String(data.previewSlide || index + 1)) +
+          "</div>"
+        : data.previewSlide === 1
+          ? '<div class="mcj-hero-preview-badge mcj-hero-preview-badge--brand" data-preview-badge="1">Slide 1 · 妙脆角电竞</div>'
+          : "";
     return (
       '<div class="mcj-hero-slide' +
       (isActive ? " is-active" : "") +
       '" data-hero-slide="' +
       index +
-      '">' +
+      '"' +
+      (data.previewSlide ? ' data-preview-slide="' + esc(String(data.previewSlide)) + '"' : "") +
+      (data.previewVerify ? ' data-preview-verify="1"' : "") +
+      ">" +
       "<" +
       tag +
       ' class="mcj-hero-image-link"' +
@@ -369,6 +412,7 @@
       esc(data.name) +
       '">' +
       imgHtml +
+      previewMark +
       overlayHtml(data) +
       "</" +
       tag +
@@ -391,7 +435,7 @@
     return (
       '<button class="mcj-hero-arrow prev" type="button" data-hero-prev aria-label="上一张"></button>' +
       '<button class="mcj-hero-arrow next" type="button" data-hero-next aria-label="下一张"></button>' +
-      '<div class="mcj-hero-dots">' +
+      '<div class="mcj-hero-dots" role="tablist" aria-label="Banner 轮播状态">' +
       dots +
       "</div>"
     );
@@ -403,18 +447,110 @@
       var data = normalized(banners[i]);
       slides += slideHtml(data, sourceFor(data, device), i, i === index);
     }
-    return '<div class="mcj-hero-slides">' + slides + "</div>" + controlsHtml(index, banners.length);
+    // Viewport owns aspect-ratio; dots sit BELOW (Linglu pagination).
+    // No floating prev/next arrows — autoplay + swipe + dots only.
+    return (
+      '<div class="mcj-hero-viewport" data-hero-viewport="1">' +
+      '<div class="mcj-hero-slides">' +
+      slides +
+      "</div>" +
+      "</div>" +
+      (banners.length >= 1
+        ? '<div class="mcj-hero-dots" role="tablist" aria-label="Banner 轮播状态">' +
+          Array.from({ length: banners.length })
+            .map(function (_, i) {
+              return (
+                '<button type="button" class="mcj-hero-dot' +
+                (i === index ? " active" : "") +
+                '" data-hero-dot="' +
+                i +
+                '" aria-label="切换到 Banner ' +
+                (i + 1) +
+                '"></button>'
+              );
+            })
+            .join("") +
+          "</div>"
+        : "")
+    );
   }
 
   function emptyHeroHtml() {
     /* No packaged default banner — empty frame only when DB has zero active banners. */
     return (
+      '<div class="mcj-hero-viewport">' +
       '<div class="mcj-hero-slides" data-banner-empty="1">' +
       '<div class="mcj-hero-slide is-active" data-hero-slide="0">' +
       '<div class="mcj-hero-image-link" aria-label="暂无 Banner">' +
       '<div class="mcj-hero-image mcj-hero-image-missing" role="img" aria-label="暂无 Banner"></div>' +
-      "</div></div></div>"
+      "</div></div></div></div>"
     );
+  }
+
+  var BRAND_BANNER_ASSET = "/default-home-banner.png";
+  var AUTOPLAY_MS = 4500;
+  var PREVIEW_SLIDE_ASSETS = [
+    "/preview-carousel/slide-1-miaocuijiao.png",
+    "/preview-carousel/slide-2-preview-verify.png",
+    "/preview-carousel/slide-3-preview-verify.png",
+  ];
+
+  function isProductionHost() {
+    try {
+      var h = String((typeof location !== "undefined" && location.hostname) || "");
+      return /(^|\.)meowcuijiao\.com$/i.test(h);
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function buildPreviewVerifySlides() {
+    // Temporary multi-slide pack for Preview/Staging when admin has <2 usable banners.
+    // Assets are copies of the brand banner — labeled Preview 验证, not campaign art.
+    return PREVIEW_SLIDE_ASSETS.map(function (src, i) {
+      var n = i + 1;
+      return {
+        id: "mcj-preview-carousel-" + n,
+        name: n === 1 ? "妙脆角电竞" : "Preview 验证 · Slide " + n,
+        title: "",
+        subtitle: "",
+        image: src,
+        desktopImage: src,
+        mobileImage: src,
+        alt: n === 1 ? "妙脆角电竞" : "Preview 验证 Banner Slide " + n,
+        enabled: true,
+        published: true,
+        sort: n,
+        previewVerify: n > 1,
+        previewSlide: n,
+      };
+    });
+  }
+
+  function resolveHomeBanners() {
+    var remote = activeBanners();
+    // CRITICAL: admin SoT wins whenever any published banner exists.
+    // Never replace real A/B/C with the preview pack (that made every slide look identical).
+    if (remote.length > 0) return remote;
+    // Empty admin list only: local/preview may show labeled demo pack; production stays empty.
+    if (!isProductionHost()) return buildPreviewVerifySlides();
+    return remote;
+  }
+
+  function isUsableBannerImage(img) {
+    if (!img || !img.naturalWidth || !img.naturalHeight) return false;
+    // Staging sometimes publishes a 48×48 pink stub (≈100 bytes) that still HTTP 200s.
+    return img.naturalWidth >= 200 && img.naturalHeight >= 80;
+  }
+
+  function useBrandBannerAsset(img, reason) {
+    if (!img || img.dataset.brandFallback === "1") return;
+    img.dataset.brandFallback = "1";
+    img.classList.remove("mcj-hero-image-missing");
+    img.style.background = "";
+    img.alt = "妙脆角电竞";
+    img.src = BRAND_BANNER_ASSET;
+    if (reason) img.dataset.bannerFallbackReason = reason;
   }
 
   function wireBannerImageFallback(root) {
@@ -422,15 +558,21 @@
     root.querySelectorAll("img.mcj-hero-image").forEach(function (img) {
       if (img.dataset.fallbackBound === "1") return;
       img.dataset.fallbackBound = "1";
+      // Only replace after the image has finished (complete) — never race an in-flight SoT URL.
+      function ensureRealArt() {
+        if (isUsableBannerImage(img)) return;
+        if (!img.complete) return;
+        useBrandBannerAsset(img, img.naturalWidth ? "tiny-stub" : "empty");
+      }
       img.addEventListener("error", function onBannerError() {
         img.removeEventListener("error", onBannerError);
-        // Never swap in /default-home-banner.png — hide broken image, keep CSS frame.
-        img.removeAttribute("src");
-        img.alt = "Banner 加载失败";
-        img.classList.add("mcj-hero-image-missing");
-        img.style.background =
-          "radial-gradient(circle at 30% 30%,rgba(243,168,203,.22),transparent 55%),linear-gradient(135deg,#1a0f18,#050406)";
+        useBrandBannerAsset(img, "load-error");
       });
+      if (img.complete) ensureRealArt();
+      else img.addEventListener("load", ensureRealArt, { once: true });
+      // Late decode / cached stub: re-check only when decode may have finished.
+      setTimeout(ensureRealArt, 400);
+      setTimeout(ensureRealArt, 1200);
     });
   }
 
@@ -484,6 +626,14 @@
     if (!total) return;
     index = ((index % total) + total) % total;
     root.dataset.heroIndex = String(index);
+    root.style.setProperty("--hero-index", String(index));
+    root.style.setProperty("--hero-count", String(total));
+    var track = root.querySelector(".mcj-hero-slides");
+    if (track && (root.classList.contains("mcj-home-hero--promo") || root.querySelector(".mcj-hero-viewport"))) {
+      // Full-width slides (Linglu); peek optional via CSS var default 0.
+      track.style.transform =
+        "translate3d(calc(-1 * var(--hero-index, 0) * (100% - var(--hero-peek, 0px))), 0, 0)";
+    }
     for (var i = 0; i < slides.length; i += 1) {
       var on = i === index;
       slides[i].classList.toggle("is-active", on);
@@ -522,7 +672,7 @@
     var root = typeof target === "string" ? document.querySelector(target) : target;
     if (!root) return null;
     clearGeneratedHeroExtras();
-    var banners = Array.isArray(config) ? config : config ? [config] : activeBanners();
+    var banners = Array.isArray(config) ? config : config ? [config] : resolveHomeBanners();
     if (!banners.length) return renderEmpty(root, normalized({}), "desktop");
     var device =
       (options && options.device) ||
@@ -541,6 +691,8 @@
     root.hidden = false;
     root.classList.add("mcj-home-hero");
     root.classList.remove("is-empty");
+    root.dataset.autoplayMs = String(AUTOPLAY_MS);
+    root.dataset.slideCount = String(banners.length);
     applyVars(root, data, device);
 
     if (cache && cache.signature === signature && root.querySelector(".mcj-hero-slides")) {
@@ -561,6 +713,7 @@
     });
     wireBannerImageFallback(root);
     applyAllCrops(root);
+    setActiveSlide(root, current);
     /* Re-apply after layout (aspect-ratio height) settles */
     requestAnimationFrame(function () {
       applyAllCrops(root);
@@ -573,7 +726,7 @@
         var nextDevice = currentDevice();
         var cached = slideCache.get(root);
         if (cached && cached.device !== nextDevice) {
-          render(root, cached.banners && cached.banners.length ? cached.banners : activeBanners(), {
+          render(root, cached.banners && cached.banners.length ? cached.banners : resolveHomeBanners(), {
             device: nextDevice,
             index: Number(root.dataset.heroIndex || 0),
           });
@@ -612,40 +765,6 @@
   function bindHero(root, banners, device) {
     var oldTimer = timers.get(root);
     if (oldTimer) clearInterval(oldTimer);
-    root.onmouseenter = function () {
-      var timer = timers.get(root);
-      if (timer) clearInterval(timer);
-    };
-    root.onmouseleave = function () {
-      start();
-    };
-    root.onclick = function (event) {
-      var prev = event.target.closest("[data-hero-prev]");
-      var next = event.target.closest("[data-hero-next]");
-      var dot = event.target.closest("[data-hero-dot]");
-      if (!prev && !next && !dot) return;
-      event.preventDefault();
-      var index = Number(root.dataset.heroIndex || 0);
-      if (prev) index -= 1;
-      if (next) index += 1;
-      if (dot) index = Number(dot.dataset.heroDot);
-      goTo(root, banners, device, index);
-      start();
-    };
-    root.ontouchstart = function (event) {
-      var touch = event.touches && event.touches[0];
-      if (touch) touchState.set(root, { x: touch.clientX, y: touch.clientY });
-    };
-    root.ontouchend = function (event) {
-      var startPoint = touchState.get(root);
-      var touch = event.changedTouches && event.changedTouches[0];
-      if (!startPoint || !touch || banners.length <= 1) return;
-      var dx = touch.clientX - startPoint.x;
-      if (Math.abs(dx) < 42 || Math.abs(dx) < Math.abs(touch.clientY - startPoint.y)) return;
-      var index = Number(root.dataset.heroIndex || 0) + (dx < 0 ? 1 : -1);
-      goTo(root, banners, device, index);
-      start();
-    };
 
     function start() {
       var timer = timers.get(root);
@@ -654,9 +773,121 @@
       timer = setInterval(function () {
         var index = Number(root.dataset.heroIndex || 0) + 1;
         goTo(root, banners, device, index);
-      }, 5000);
+      }, AUTOPLAY_MS);
       timers.set(root, timer);
     }
+
+    function pause() {
+      var timer = timers.get(root);
+      if (timer) clearInterval(timer);
+    }
+
+    root.onmouseenter = function () {
+      pause();
+    };
+    root.onmouseleave = function () {
+      start();
+    };
+    root.onclick = function (event) {
+      var dot = event.target.closest("[data-hero-dot]");
+      if (!dot) return;
+      event.preventDefault();
+      goTo(root, banners, device, Number(dot.dataset.heroDot));
+      start();
+    };
+
+    var viewport = root.querySelector("[data-hero-viewport], .mcj-hero-viewport");
+    if (viewport && banners.length > 1) {
+      var track = root.querySelector(".mcj-hero-slides");
+      var drag = touchState.get(root) || {};
+      touchState.set(root, drag);
+
+      function point(event) {
+        if (event.touches && event.touches[0]) return event.touches[0];
+        if (event.changedTouches && event.changedTouches[0]) return event.changedTouches[0];
+        return event;
+      }
+
+      function frameWidth() {
+        return Math.max(1, (viewport && viewport.clientWidth) || root.clientWidth || 1);
+      }
+
+      function onDown(event) {
+        if (event.pointerType === "mouse" && event.button != null && event.button !== 0) return;
+        var pt = point(event);
+        drag.active = true;
+        drag.startX = pt.clientX;
+        drag.startY = pt.clientY;
+        drag.baseIndex = Number(root.dataset.heroIndex || 0);
+        drag.axis = null;
+        drag.moved = false;
+        pause();
+        if (track) {
+          track.classList.add("is-dragging");
+          track.style.transition = "none";
+        }
+        if (viewport.setPointerCapture && event.pointerId != null) {
+          try {
+            viewport.setPointerCapture(event.pointerId);
+          } catch (e) {}
+        }
+      }
+
+      function onMove(event) {
+        if (!drag.active || !track) return;
+        var pt = point(event);
+        var dx = pt.clientX - drag.startX;
+        var dy = pt.clientY - drag.startY;
+        if (drag.axis == null) {
+          if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
+          drag.axis = Math.abs(dx) > Math.abs(dy) ? "h" : "v";
+          if (drag.axis === "v") return;
+        }
+        if (drag.axis !== "h") return;
+        drag.moved = true;
+        if (event.cancelable) event.preventDefault();
+        var offset = -drag.baseIndex * frameWidth() + dx;
+        track.style.transform = "translate3d(" + offset + "px, 0, 0)";
+      }
+
+      function onUp(event) {
+        if (!drag.active) return;
+        drag.active = false;
+        var pt = point(event);
+        var dx = pt.clientX - drag.startX;
+        if (track) {
+          track.classList.remove("is-dragging");
+          track.style.transition = "";
+        }
+        var index = drag.baseIndex;
+        if (drag.axis === "h" && Math.abs(dx) >= Math.min(42, frameWidth() * 0.16)) {
+          index = dx < 0 ? drag.baseIndex + 1 : drag.baseIndex - 1;
+        }
+        goTo(root, banners, device, index);
+        start();
+        drag.axis = null;
+        drag.moved = false;
+      }
+
+      // Prefer pointer events (Safari iOS + desktop Playwright drag).
+      viewport.onpointerdown = onDown;
+      viewport.onpointermove = onMove;
+      viewport.onpointerup = onUp;
+      viewport.onpointercancel = onUp;
+      // Fallback touch path for older WebKit without PointerEvent.
+      if (!window.PointerEvent) {
+        viewport.ontouchstart = onDown;
+        viewport.ontouchmove = onMove;
+        viewport.ontouchend = onUp;
+      } else {
+        viewport.ontouchstart = null;
+        viewport.ontouchmove = null;
+        viewport.ontouchend = null;
+      }
+    }
+
+    root.ontouchstart = null;
+    root.ontouchend = null;
     start();
   }
 
@@ -665,13 +896,13 @@
       document.querySelector("[data-mcj-home-hero]") ||
       document.querySelector(".mcj-home-hero") ||
       document.querySelector(".banner");
-    if (root && remoteLoaded) render(root);
+    if (root && remoteLoaded) render(root, resolveHomeBanners());
     loadRemoteContent(function () {
       var current =
         document.querySelector("[data-mcj-home-hero]") ||
         document.querySelector(".mcj-home-hero") ||
         document.querySelector(".banner");
-      if (current) render(current);
+      if (current) render(current, resolveHomeBanners());
     });
   }
 
@@ -679,10 +910,12 @@
     readStore: readStore,
     publishedBanner: publishedBanner,
     activeBanners: activeBanners,
+    resolveHomeBanners: resolveHomeBanners,
     defaults: normalized,
     render: render,
     applyHome: applyHome,
     reload: applyHome,
+    AUTOPLAY_MS: AUTOPLAY_MS,
   };
 
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", applyHome);

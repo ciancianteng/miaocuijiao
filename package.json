@@ -8,16 +8,35 @@
     "build": "vite build",
     "preview": "vite preview --host 0.0.0.0",
     "verify:dashboard-test-filter": "node scripts/verify-dashboard-test-filter.mjs",
+    "verify:home-daily-stats": "node scripts/verify-home-daily-stats.mjs",
     "verify:companion-credential-or-gate": "node scripts/verify-companion-credential-or-gate.mjs",
     "verify:companion-price-required": "node scripts/verify-companion-price-required.mjs",
-    "verify:settlement-payment-fields": "node scripts/verify-settlement-payment-fields.mjs"
+    "verify:pricing-p1": "node scripts/verify-pricing-p1-offline.mjs",
+    "verify:settlement-payment-fields": "node scripts/verify-settlement-payment-fields.mjs",
+    "verify:profiles-no-updated-at-patch": "node scripts/verify-profiles-no-updated-at-patch.mjs",
+    "verify:otp-fix": "node scripts/verify-otp-fix-offline.mjs",
+    "verify:pricing-p2": "node scripts/verify-pricing-v2-p2-offline.mjs",
+    "verify:order-completion-points": "node scripts/verify-order-completion-points-decoupling.mjs",
+    "verify:settlement-guards": "node scripts/verify-settlement-guards.mjs",
+    "verify:companion-earnings-classification": "node scripts/verify-companion-earnings-classification.mjs",
+    "verify:multi-companion-frontend": "node scripts/verify-multi-companion-frontend.mjs",
+    "verify:og-share-meta": "node scripts/verify-og-share-meta.mjs",
+    "verify:pwa-portal-start-urls": "node scripts/verify-pwa-portal-start-urls.mjs",
+    "verify:multi-companion-order": "node scripts/verify-multi-companion-order.mjs",
+    "verify:gift-system": "node scripts/verify-gift-system-offline.mjs",
+    "verify:boss-order-detail-cancel": "node scripts/verify-boss-order-detail-cancel-offline.mjs",
+    "verify:boss-tutorial": "node scripts/verify-boss-tutorial.mjs",
+    "verify:multi-order-partial-cancel": "node scripts/verify-multi-order-partial-cancel.mjs",
+    "verify:service-pricing": "node scripts/verify-service-pricing-offline.mjs",
+    "verify:service-pricing-dedup": "node scripts/verify-service-pricing-dedup-offline.mjs"
   },
   "dependencies": {
     "@vitejs/plugin-react": "latest",
     "nodemailer": "^6.10.1",
     "react": "latest",
     "react-dom": "latest",
-    "vite": "latest"
+    "vite": "latest",
+    "web-push": "^3.6.7"
   },
   "devDependencies": {
     "pg": "^8.22.0",

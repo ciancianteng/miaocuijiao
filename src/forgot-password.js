@@ -11,6 +11,30 @@
   var SUCCESS_TOAST = "密码修改成功，请重新登录。";
   var COUNTDOWN_SEC = 60;
   var STYLE_ID = "mcj-forgot-password-style";
+  var OTP_ACTION = "forgot_send_otp";
+
+  function otpCd() {
+    if (window.MCJOtpCooldown) return window.MCJOtpCooldown;
+    var PREFIX = "mcj_otp_cd:";
+    function key(action, role, email) {
+      return PREFIX + action + ":" + role + ":" + String(email || "").trim().toLowerCase();
+    }
+    return {
+      getRemainingSec: function (action, role, email) {
+        try {
+          var until = Number(sessionStorage.getItem(key(action, role, email)) || 0);
+          return Math.max(0, Math.ceil((until - Date.now()) / 1000));
+        } catch (e) {
+          return 0;
+        }
+      },
+      setCooldown: function (action, role, email, sec) {
+        try {
+          sessionStorage.setItem(key(action, role, email), String(Date.now() + Math.max(0, Number(sec) || 0) * 1000));
+        } catch (e) {}
+      },
+    };
+  }
 
   var state = {
     open: false,
@@ -23,6 +47,7 @@
     msg: "",
     msgOk: false,
     countdown: 0,
+    countdownUntil: 0,
     countdownTimer: null,
     onDone: null,
     host: null,
@@ -88,7 +113,12 @@
     }).then(function (r) {
       return r.json().then(function (j) {
         if (!r.ok || (j && j.ok === false)) {
-          throw new Error((j && j.message) || "请求失败");
+          var err = new Error((j && j.message) || "请求失败");
+          err.retryAfterSec = j && j.retryAfterSec;
+          err.status = r.status;
+          err.code = j && j.code;
+          err.payload = j;
+          throw err;
         }
         return j || {};
       });
@@ -101,20 +131,47 @@
       state.countdownTimer = null;
     }
     state.countdown = 0;
+    state.countdownUntil = 0;
+  }
+
+  /** Update resend control only — never remount the OTP input (mobile keyboard / focus). */
+  function updateResendUi() {
+    if (!state.open || state.step !== "code" || !state.host) return;
+    var btn = state.host.querySelector("[data-forgot-resend]");
+    if (!btn) return;
+    var left = 0;
+    if (state.countdownUntil) {
+      left = Math.max(0, Math.ceil((state.countdownUntil - Date.now()) / 1000));
+      state.countdown = left;
+    } else {
+      left = Math.max(0, Number(state.countdown) || 0);
+    }
+    var counting = left > 0;
+    btn.textContent = counting ? "重新发送（" + left + "s）" : "重新发送";
+    btn.disabled = !!(state.busy || counting);
   }
 
   function startCountdown(sec) {
     stopCountdown();
-    state.countdown = Math.max(0, Number(sec) || COUNTDOWN_SEC);
-    paint();
+    var seconds = Math.max(0, Number(sec) || COUNTDOWN_SEC);
+    state.countdownUntil = Date.now() + seconds * 1000;
+    state.countdown = seconds;
+    if (state.email) otpCd().setCooldown(OTP_ACTION, state.role, state.email, seconds);
+    updateResendUi();
     state.countdownTimer = setInterval(function () {
-      state.countdown -= 1;
-      if (state.countdown <= 0) {
+      var left = Math.max(0, Math.ceil((state.countdownUntil - Date.now()) / 1000));
+      state.countdown = left;
+      if (left <= 0) {
         stopCountdown();
         state.countdown = 0;
       }
-      paint();
-    }, 1000);
+      updateResendUi();
+    }, 500);
+  }
+
+  function restoreCooldownFromStorage(email) {
+    var left = otpCd().getRemainingSec(OTP_ACTION, state.role, email || state.email);
+    if (left > 0) startCountdown(left);
   }
 
   function toast(msg) {
@@ -166,6 +223,10 @@
       if (e.target.closest("[data-forgot-resend]")) {
         e.preventDefault();
         if (state.busy || state.countdown > 0) return;
+        if (otpCd().getRemainingSec(OTP_ACTION, state.role, state.email) > 0) {
+          restoreCooldownFromStorage(state.email);
+          return;
+        }
         sendOtp(state.email).catch(function () {});
       }
     });
@@ -178,6 +239,22 @@
     host.hidden = false;
     var step = state.step;
     var busy = state.busy;
+    // Preserve OTP DOM state across rare full paints (busy / validation), not countdown ticks.
+    var prevCode = "";
+    var restoreCodeFocus = false;
+    var prevSelStart = null;
+    var prevSelEnd = null;
+    if (step === "code") {
+      var existingCode = host.querySelector('input[name="code"]');
+      if (existingCode) {
+        prevCode = String(existingCode.value || "");
+        restoreCodeFocus = document.activeElement === existingCode;
+        try {
+          prevSelStart = existingCode.selectionStart;
+          prevSelEnd = existingCode.selectionEnd;
+        } catch (e) {}
+      }
+    }
     var body = "";
     if (step === "email" || step === "phone") {
       body =
@@ -198,7 +275,9 @@
         '<p class="mcj-forgot-desc">验证码已发送至 ' +
         esc(state.emailMasked || state.email) +
         "。请输入 6 位验证码。</p>" +
-        '<label>验证码<input name="code" type="text" inputmode="numeric" maxlength="6" autocomplete="one-time-code" data-auth-code="1" data-auth-sensitive="1" placeholder="000000" required value=""></label>' +
+        '<label>验证码<input name="code" type="text" inputmode="numeric" maxlength="6" autocomplete="one-time-code" data-auth-code="1" data-auth-sensitive="1" placeholder="000000" required value="' +
+        esc(prevCode) +
+        '"></label>' +
         '<div class="mcj-forgot-actions">' +
         '<button class="mcj-forgot-btn primary" type="submit" data-forgot-submit' +
         (busy ? " disabled" : "") +
@@ -236,6 +315,23 @@
       esc(state.msg) +
       "</p>" +
       "</form>";
+    if (step === "code" && restoreCodeFocus) {
+      var codeInput = host.querySelector('input[name="code"]');
+      if (codeInput) {
+        try {
+          codeInput.focus({ preventScroll: true });
+        } catch (e2) {
+          try {
+            codeInput.focus();
+          } catch (e3) {}
+        }
+        try {
+          if (prevSelStart != null && prevSelEnd != null) {
+            codeInput.setSelectionRange(prevSelStart, prevSelEnd);
+          }
+        } catch (e4) {}
+      }
+    }
   }
 
   function close(opts) {
@@ -271,7 +367,19 @@
     state.open = true;
     state.role = normalizeRole(opts.role || "boss");
     state.step = "email";
-    state.email = String(opts.email || opts.phone || "").trim();
+    var seeded = String(opts.email || opts.phone || "").trim();
+    if (!seeded) {
+      try {
+        var loginEmail =
+          document.querySelector("#loginOtpEmail") ||
+          document.querySelector('form[data-login] input[name="account"]') ||
+          document.querySelector('form[data-login] input[type="email"]') ||
+          document.querySelector('input[name="authEmail"]') ||
+          document.querySelector('input[autocomplete="email"]');
+        if (loginEmail && loginEmail.value) seeded = String(loginEmail.value).trim();
+      } catch (e) {}
+    }
+    state.email = seeded;
     state.emailMasked = "";
     state.resetToken = "";
     state.busy = false;
@@ -293,6 +401,16 @@
   }
 
   function sendOtp(email) {
+    if (state.busy) return Promise.resolve();
+    var left0 = otpCd().getRemainingSec(OTP_ACTION, state.role, email);
+    if (left0 > 0) {
+      state.email = email;
+      state.step = "code";
+      setMsg("发送过于频繁，请 " + left0 + " 秒后再试。");
+      startCountdown(left0);
+      paint();
+      return Promise.reject(new Error("发送过于频繁"));
+    }
     state.busy = true;
     setMsg("");
     paint();
@@ -304,14 +422,34 @@
         state.channel = res.channel || "email";
         state.step = "code";
         var hint = res.message || "验证码已发送";
-        if (res.devCode) hint += "（测试验证码 " + res.devCode + "）";
+        var debugCode = res.debugCode || res.devCode;
+        if (debugCode) hint += "（调试验证码 " + debugCode + "）";
         setMsg(hint, true);
-        startCountdown(COUNTDOWN_SEC);
+        var sec = Number(res.retryAfterSec) || COUNTDOWN_SEC;
+        if (res.ok === false && res.retryAfterSec) {
+          setMsg(res.message || hint);
+        }
+        startCountdown(sec);
         paint();
+        setTimeout(function () {
+          var codeInput = state.host && state.host.querySelector('input[name="code"]');
+          if (codeInput) {
+            try {
+              codeInput.focus({ preventScroll: true });
+            } catch (e) {
+              try {
+                codeInput.focus();
+              } catch (e2) {}
+            }
+          }
+        }, 40);
         return res;
       })
       .catch(function (err) {
         state.busy = false;
+        var retry = Number(err && err.retryAfterSec) || 0;
+        var rateLimited = Number(err && err.status) === 429 || String((err && err.code) || "") === "OTP_RESEND_COOLDOWN";
+        if (rateLimited && retry > 0) startCountdown(retry);
         setMsg((err && err.message) || "发送失败");
         paint();
         throw err;
@@ -408,8 +546,14 @@
       var btn = e.target && e.target.closest && e.target.closest("[data-forgot-password]");
       if (!btn) return;
       e.preventDefault();
-      e.stopPropagation();
-      open({ role: inferRole(btn) });
+      // Do not stopPropagation — page handlers may attach onDone / role overrides.
+      var emailHint = "";
+      try {
+        var form = btn.closest("form") || document.querySelector("form[data-login]");
+        var input = form && form.querySelector('input[name="account"], input[name="email"], input[type="email"], #loginOtpEmail');
+        if (input && input.value) emailHint = String(input.value).trim();
+      } catch (err) {}
+      open({ role: inferRole(btn), email: emailHint });
     },
     true
   );

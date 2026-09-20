@@ -2782,6 +2782,24 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
             senderName: String(service.profile.display_name || "").trim() || "客服",
           })
         : null;
+      
+      try {
+        const role = String(conversation.customer_role || conversation.user_role || conversation.role || "").toLowerCase();
+        const bossId = conversation.boss_id || conversation.bossId || (role.includes("boss") || role.includes("customer") || !conversation.companion_id ? conversation.user_id || conversation.customer_id : "");
+        if (bossId && messageType !== "system") {
+          const { notifyBossCsReply } = await import("./_boss-order-notify.js");
+          await notifyBossCsReply(
+            { boss_id: bossId, order_id: conversation.order_id || conversation.orderId || "" },
+            {
+              title: "客服重要回复",
+              body: messageType === "image" ? "客服发来一张图片，请及时查看。" : String(content || "").slice(0, 120),
+              orderId: conversation.order_id || conversation.orderId || "",
+            }
+          );
+        }
+      } catch (err) {
+        console.warn("[customer-service/send_message] boss push", err?.message || err);
+      }
       return json(res, 200, { ok: true, message: "消息已发送。", messageRow });
     }
     if (action === "clock_in" || action === "clock_out") {
@@ -3008,7 +3026,7 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
         } catch (selfErr) {
           return json(res, selfErr.status || 403, {
             ok: false,
-            code: selfErr.code || "SELF_TRADE_FORBIDDEN",
+            code: selfErr.code || "SELF_ORDER_NOT_ALLOWED",
             message: selfErr.message || "不能指定订单老板本人为陪玩。",
           });
         }
@@ -3285,6 +3303,70 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
         order: { ...order, paymentReview: false, ...rejectFields },
       });
     }
+    // —— Gift orders (mall payment proof review) ——
+    if (
+      action === "list_gift_orders" ||
+      action === "gift_orders" ||
+      action === "list_gift_order_reviews"
+    ) {
+      const {
+        listReviewGiftOrders,
+        enrichGiftOrders,
+      } = await import("./_gift-orders.js");
+      const status = String(body.status || body.filter || req.query?.status || "under_review").trim();
+      const rows = await listReviewGiftOrders({ status, limit: 200 });
+      const orders = await enrichGiftOrders(rows);
+      return json(res, 200, { ok: true, orders });
+    }
+    if (action === "get_gift_order_proof" || action === "gift_order_proof_url") {
+      const { getGiftOrderById, signedGiftProofUrl, viewGiftOrder } = await import("./_gift-orders.js");
+      const id = String(body.id || body.order_id || body.orderId || "").trim();
+      if (!id) return json(res, 400, { ok: false, message: "缺少礼物订单 ID。" });
+      const row = await getGiftOrderById(id);
+      if (!row) return json(res, 404, { ok: false, message: "礼物订单不存在。" });
+      const proofUrl = await signedGiftProofUrl(row).catch(() => "");
+      if (!proofUrl) return json(res, 404, { ok: false, message: "付款截图不存在或无法访问。" });
+      return json(res, 200, {
+        ok: true,
+        paymentProofUrl: proofUrl,
+        order: viewGiftOrder(row, { paymentProofUrl: proofUrl }),
+      });
+    }
+    if (action === "approve_gift_order" || action === "gift_order_approve") {
+      const { approveGiftOrder } = await import("./_gift-orders.js");
+      const id = String(body.id || body.order_id || body.orderId || "").trim();
+      const result = await approveGiftOrder({
+        orderId: id,
+        staffId: service.profile.id,
+        staffName: staffReviewerNameFromProfile(service.profile) || service.profile.display_name || "",
+      });
+      return json(res, 200, {
+        ok: true,
+        message: result.message || "审核通过",
+        replayed: !!result.replayed,
+        order: result.order,
+        transaction: result.transaction || null,
+      });
+    }
+    if (action === "reject_gift_order" || action === "gift_order_reject") {
+      const { rejectGiftOrder } = await import("./_gift-orders.js");
+      const id = String(body.id || body.order_id || body.orderId || "").trim();
+      const reason = String(body.reason || body.reject_reason || body.rejectReason || "").trim();
+      if (!reason) return json(res, 400, { ok: false, message: "拒绝必须填写原因。" });
+      const result = await rejectGiftOrder({
+        orderId: id,
+        staffId: service.profile.id,
+        staffName: staffReviewerNameFromProfile(service.profile) || service.profile.display_name || "",
+        reason,
+      });
+      return json(res, 200, {
+        ok: true,
+        message: result.message || "已拒绝",
+        replayed: !!result.replayed,
+        order: result.order,
+      });
+    }
+
     if (action === "confirm_payment" || action === "push_to_grab_hall" || action === "send_to_grab_hall") {
       const order = await orderById(String(body.id || body.order_id || ""));
       if (!order) return json(res, 404, { ok: false, message: "订单不存在。" });
@@ -3813,7 +3895,7 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
       if (order && companionInput && String(order.boss_id || "").trim() === companionInput) {
         return json(res, 403, {
           ok: false,
-          code: "SELF_TRADE_FORBIDDEN",
+          code: "SELF_ORDER_NOT_ALLOWED",
           message: "不能把订单指定给订单老板本人的陪玩身份：老板与陪玩属于同一账号（user_id）。",
         });
       }
@@ -3826,7 +3908,7 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
             assertNotSelfTrade(order.boss_id, resolvedPlayer || companionInput, "把订单指定给订单老板本人");
           }
         } catch (selfErr) {
-          if (selfErr?.code === "SELF_TRADE_FORBIDDEN") {
+          if ((selfErr?.code === "SELF_ORDER_NOT_ALLOWED" || selfErr?.code === "SELF_TRADE_FORBIDDEN")) {
             return json(res, selfErr.status || 403, {
               ok: false,
               code: selfErr.code,
@@ -3863,7 +3945,7 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
       } catch (selfErr) {
         return json(res, selfErr.status || 403, {
           ok: false,
-          code: selfErr.code || "SELF_TRADE_FORBIDDEN",
+          code: selfErr.code || "SELF_ORDER_NOT_ALLOWED",
           message: selfErr.message || "不能把订单指定给订单老板本人的陪玩身份。",
         });
       }
@@ -4068,6 +4150,19 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
       } catch (err) {
         return json(res, err.status || 403, { ok: false, message: err.message || CS_LOCK_DENIED, code: err.code || "CS_SESSION_LOCKED" });
       }
+      if (String(status).toLowerCase() === "completed") {
+        const { isMultiGroupParent, ORDER_TYPE_MULTI_GROUP } = await import("./_order-group.js");
+        if (
+          isMultiGroupParent(order) ||
+          String(order.order_type || "").toLowerCase() === ORDER_TYPE_MULTI_GROUP
+        ) {
+          return json(res, 409, {
+            ok: false,
+            message: "多人主订单不能客服直接完成；请完成各子订单。",
+            code: "MULTI_PARENT_NO_DIRECT_FINALIZE",
+          });
+        }
+      }
       const { assertCsStatusTransition, transitionOrderStatus, CS_STATUS_ACTION_LABELS } = await import("./_order-status.js");
       let transition;
       try {
@@ -4075,8 +4170,77 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
       } catch (err) {
         return json(res, err.status || 400, { ok: false, message: err.message || "非法状态跳转。" });
       }
+
+      // Canonical completion: never bare-patch status=completed (misses points/settlement markers).
+      if (transition.to === "completed") {
+        try {
+          if (!order.customer_service_id || order.customer_service_id !== service.profile.id) {
+            await patchOrder(order.id, { customer_service_id: service.profile.id });
+          }
+          const { createOrderCompleteHelpers } = await import("./_order-complete.js");
+          const helpers = createOrderCompleteHelpers({
+            restUrl,
+            supabaseJson,
+            serviceHeaders,
+            addSystemMessage: async (ord, actorId, content) => {
+              const conversation = await ensureConversation({
+                boss_id: ord.boss_id,
+                companion_id: ord.companion_id,
+                customer_service_id: service.profile.id,
+                order_id: ord.id,
+              });
+              await addMessage(conversation, actorId || service.profile.id, "customer_service", content, "system", ord.id);
+            },
+          });
+          let working = (await orderById(id)) || order;
+          if (String(working.status) === "in_progress" && !helpers.orderHasCompletionPending(working)) {
+            await helpers.markCompletionPending(working);
+            working = (await orderById(id)) || working;
+          }
+          const out = await helpers.finalizeOrderCompletion(working, {
+            method: "cs_force",
+            actorId: service.profile.id,
+            message: String(body.note || "客服确认完成订单"),
+          });
+          const patched = out.order || working;
+          const conversation = await ensureConversation({
+            boss_id: patched.boss_id,
+            companion_id: patched.companion_id,
+            customer_service_id: service.profile.id,
+            order_id: patched.id,
+          });
+          await addMessage(
+            conversation,
+            service.profile.id,
+            "customer_service",
+            `订单状态已更新为：${CS_STATUS_ACTION_LABELS.completed || "已完成"}`,
+            "system",
+            id
+          );
+          try {
+            const { notifyCompanionOrderStatusChange } = await import("./_companion-order-notify.js");
+            if (patched.companion_id) {
+              notifyCompanionOrderStatusChange(patched, { status: "completed" }).catch(() => {});
+            }
+          } catch (_) {}
+          return json(res, 200, {
+            ok: true,
+            message: out.message || "订单状态已更新。",
+            order: patched,
+            reward: out.reward || null,
+            bossPoints: out.bossPoints || null,
+            completionMethod: out.completionMethod || "cs_force",
+            settlement: out.settlement || null,
+          });
+        } catch (err) {
+          return json(res, err.status || 500, {
+            ok: false,
+            message: err?.message || "客服确认完成失败。",
+          });
+        }
+      }
+
       const patch = { customer_service_id: service.profile.id };
-      if (transition.to === "completed") patch.completed_at = nowIso();
       if (transition.to === "cancelled") patch.cancelled_at = nowIso();
       if (transition.to === "in_progress") patch.started_at = order.started_at || nowIso();
       const deps = { restUrl, supabaseJson, serviceHeaders };
@@ -4103,6 +4267,19 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
       try {
         const settleApi = await import("./_cs-commission-settle.js");
         if (transition.to === "cancelled" || transition.to === "refunded") {
+          try {
+            const { clawbackCompanionIncomeForOrder } = await import("./_companion-income.js");
+            await clawbackCompanionIncomeForOrder(
+              { supabaseJson, restUrl, serviceHeaders },
+              patched || { ...order, status: transition.to },
+              {
+                reason: transition.to === "refunded" ? "订单退款扣回陪玩收入" : "订单取消扣回陪玩收入",
+                mode: transition.to === "refunded" ? "refund" : "cancel",
+              }
+            );
+          } catch (err) {
+            console.warn("[cs] companion income clawback", err?.message || err);
+          }
           reward = await settleApi.clawbackCsOrderIncome(patched || { ...order, status: transition.to }, {
             reason: transition.to === "refunded" ? "订单退款" : "订单取消",
             mode: transition.to === "refunded" ? "refund" : "cancel",
@@ -4113,7 +4290,16 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
             forceServiceId: service.profile.id,
           });
         }
-      } catch (_) {}
+      } catch (settleErr) {
+        console.warn(
+          "[cs] status_side_effects_failed",
+          JSON.stringify({
+            order_id: order?.id || null,
+            to: transition.to,
+            error: String(settleErr?.message || settleErr || "").slice(0, 200),
+          })
+        );
+      }
       try {
         const { notifyCompanionOrderStatusChange } = await import("./_companion-order-notify.js");
         const out = patched || { ...order, status: transition.to };

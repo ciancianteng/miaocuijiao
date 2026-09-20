@@ -1,36 +1,41 @@
-# Staging-only: apply companion_tags
+# companion_tags apply notes
 
-**Target:** Staging Supabase `cfccwysniduwkjskiqgy`  
-**Do NOT run on Production** `jqfaknpmcnqwqvatrwgo`
+**Table:** `public.companion_tags`  
+**SQL (canonical):** `supabase/migrations/20260915_companion_tags.sql`  
+**Copies:** `supabase/companion-tags.sql`, `server/api/_sql/companion-tags.sql`
 
-## Option A — SQL Editor (recommended if agent has no Staging DB secret)
+Admin UI never runs SQL. Apply with SQL Editor or internal CLI only.
 
-1. Open: https://supabase.com/dashboard/project/cfccwysniduwkjskiqgy/sql/new  
-2. Paste contents of `supabase/companion-tags.sql`  
-3. Run  
-4. Verify:
+## Staging
 
-```sql
-select count(*) from public.companion_tags;
-```
-
-## Option B — Admin UI (after this PR is on Preview/Staging)
-
-1. Open Staging admin → 陪玩标签  
-2. If banner “标签表未就绪” shows, paste **one** of:
-   - Staging DB password
-   - Staging `DATABASE_URL` (must include `cfccwysniduwkjskiqgy`)
-   - Supabase PAT
-3. Click **执行 Staging companion-tags.sql**
-
-## Option C — CLI
+**Target:** Staging Supabase `cfccwysniduwkjskiqgy`
 
 ```bash
 STAGING_DB_PASSWORD='…' node scripts/apply-companion-tags-staging.mjs
 # or
-STAGING_DATABASE_URL='postgresql://postgres.cfccwysniduwkjskiqgy:***@…' node scripts/apply-companion-tags-staging.mjs
+STAGING_DATABASE_URL='postgresql://…cfccwysniduwkjskiqgy…' node scripts/apply-companion-tags-staging.mjs
 ```
 
-## Verify write path
+SQL Editor: https://supabase.com/dashboard/project/cfccwysniduwkjskiqgy/sql/new
 
-After apply, Staging admin tag save should succeed (no “标签表未就绪…” error).
+## Production
+
+**Target:** Production Supabase `jqfaknpmcnqwqvatrwgo`  
+Requires **both** human gates:
+
+```bash
+ALLOW_PROD_SUPABASE_WRITE=1 CONFIRM_PROD_WRITE=I_UNDERSTAND_PROD_RISK \
+  PRODUCTION_DATABASE_URL='postgresql://postgres.jqfaknpmcnqwqvatrwgo:***@…' \
+  node scripts/apply-companion-tags-production.mjs
+```
+
+SQL is idempotent (`IF NOT EXISTS` / `ON CONFLICT DO NOTHING`). No DROP / TRUNCATE.
+
+## Verify
+
+```sql
+select count(*) from public.companion_tags;
+select id, name, sort_order, is_enabled from public.companion_tags order by sort_order;
+```
+
+Admin → 陪玩标签管理 should load from DB (`tableReady: true`) and allow CRUD.

@@ -1,0 +1,15 @@
+{
+  "hasEnterprise": true,
+  "hasRegistered": true,
+  "hasCommunity": true,
+  "hasCoop": true,
+  "hasCopyright": true,
+  "hasSsm": true,
+  "hasApply": false,
+  "hasDiscordBtn": false,
+  "actionLabels": [
+    "MEOW CUI JIAO COMMUNITY加入 Discord 玩家社区即将开放",
+    "商务合作"
+  ],
+  "footerHeight": 282
+}

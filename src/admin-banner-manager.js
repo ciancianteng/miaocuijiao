@@ -3,8 +3,17 @@
   var Auth = window.MCJAdminAuthFetch;
   var TARGET_ID = "crud-banners";
   var ACCEPT = ["image/jpeg", "image/png", "image/webp"];
-  var DESKTOP_RATIO = 1920 / 700;
-  var MOBILE_RATIO = 1080 / 1350;
+  /* Live homepage promo frame is 3:1 — keep admin preview/crop stages identical. */
+  var DESKTOP_FRAME = (window.MCJBannerCrop && window.MCJBannerCrop.DESKTOP_FRAME) || {
+    ratioW: 1920,
+    ratioH: 640,
+  };
+  var MOBILE_FRAME = (window.MCJBannerCrop && window.MCJBannerCrop.MOBILE_FRAME) || {
+    ratioW: 1080,
+    ratioH: 360,
+  };
+  var DESKTOP_RATIO = DESKTOP_FRAME.ratioW / DESKTOP_FRAME.ratioH;
+  var MOBILE_RATIO = MOBILE_FRAME.ratioW / MOBILE_FRAME.ratioH;
   var state = {
     loading: true,
     publishing: false,
@@ -237,7 +246,7 @@
   function normalizeCropState(raw, kind) {
     var api = cropApi();
     var defaults =
-      kind === "mobile" ? { ratioW: 1080, ratioH: 1350 } : { ratioW: 1920, ratioH: 700 };
+      kind === "mobile" ? MOBILE_FRAME : DESKTOP_FRAME;
     var fallback = kind === "mobile" ? state.mobileCrop : state.crop;
     var c = api && api.normalizeCrop ? api.normalizeCrop(raw || fallback, defaults) : raw || fallback;
     return {
@@ -255,9 +264,9 @@
       y: c.y,
       offsetX: c.x,
       offsetY: c.y,
-      ratioW: 1920,
-      ratioH: 700,
-      ratio: "1920:700",
+      ratioW: DESKTOP_FRAME.ratioW,
+      ratioH: DESKTOP_FRAME.ratioH,
+      ratio: DESKTOP_FRAME.ratioW + ":" + DESKTOP_FRAME.ratioH,
     };
   }
   function mobileCropPayload() {
@@ -269,9 +278,9 @@
       y: c.y,
       offsetX: c.x,
       offsetY: c.y,
-      ratioW: 1080,
-      ratioH: 1350,
-      ratio: "1080:1350",
+      ratioW: MOBILE_FRAME.ratioW,
+      ratioH: MOBILE_FRAME.ratioH,
+      ratio: MOBILE_FRAME.ratioW + ":" + MOBILE_FRAME.ratioH,
     };
   }
   function applyCropFrames() {
@@ -309,7 +318,12 @@
     var xAttr = isMobile ? "data-banner-mobile-crop-x" : "data-banner-crop-x";
     var yAttr = isMobile ? "data-banner-mobile-crop-y" : "data-banner-crop-y";
     var title = isMobile ? "手机端 Banner 图片" : "电脑端 Banner 图片";
-    var ratioHint = isMobile ? "比例 1080×1350（竖屏）" : "比例 1920×700（横屏）";
+    var ratioHint = isMobile
+      ? "实际展示 3:1（与手机首页一致）"
+      : "实际展示 3:1（与电脑首页一致）";
+    var uploadHint = isMobile
+      ? "推荐上传尺寸：1080×360 或同比例横图（保留原图，不强制裁成固定像素）"
+      : "推荐上传尺寸：1920×640 或同比例横图（保留原图，不强制裁成固定像素）";
     var reqBadge = isMobile
       ? '<span class="banner-ops-slot-opt">可选</span>'
       : '<span class="banner-ops-slot-req">必填</span>';
@@ -364,10 +378,13 @@
         '"></label>' +
         clearBtn +
         "</div>" +
+        '<p class="banner-ops-ratio-note">' +
+        esc(uploadHint) +
+        "</p>" +
         '<p class="admin-sync-note">' +
         (isMobile
-          ? "缩放 / 左右 / 上下会写入 mobile_crop_meta，手机首页用同一套参数渲染。"
-          : "缩放 / 左右 / 上下会写入 crop_meta，首页用同一套参数渲染。") +
+          ? "缩放 / 左右 / 上下会写入 mobile_crop_meta；Preview 框 = 手机首页真实 3:1，首页用同一套参数渲染。"
+          : "缩放 / 左右 / 上下会写入 crop_meta；Preview 框 = 电脑首页真实 3:1，首页用同一套参数渲染。") +
         "</p>" +
         '<div class="banner-ops-upload banner-ops-upload-replace" ' +
         zoneAttr +
@@ -401,8 +418,11 @@
       '<div class="banner-ops-upload-title">拖拽图片到这里</div>' +
       '<div class="banner-ops-upload-sub">或点击上传</div>' +
       '<div class="banner-ops-upload-hint">支持 JPG / PNG / WEBP · ' +
-      ratioHint +
+      esc(ratioHint) +
       "</div>" +
+      '<p class="banner-ops-ratio-note">' +
+      esc(uploadHint) +
+      "</p>" +
       "</div></div>" +
       (isMobile
         ? '<div class="banner-ops-actions" style="margin-top:8px">' + clearBtn + "</div>"
@@ -428,17 +448,19 @@
     return (
       '<div class="banner-ops-preview-grid">' +
       '<div class="banner-ops-preview-col">' +
-      "<h4>电脑端预览</h4>" +
+      "<h4>电脑端实际效果</h4>" +
+      '<p class="banner-ops-ratio-note">实际展示比例 <strong>3 : 1</strong> · 推荐上传尺寸：1920 × 640</p>' +
       '<div class="banner-ops-preview" data-banner-live-preview>' +
       (desktopUrl
-        ? '<img src="' + esc(desktopUrl) + '" alt="电脑端 Banner">'
+        ? '<img src="' + esc(desktopUrl) + '" alt="电脑端实际效果">'
         : '<div class="banner-ops-preview-empty">暂无电脑端 Banner</div>') +
       "</div></div>" +
       '<div class="banner-ops-preview-col banner-ops-preview-col-mobile">' +
-      "<h4>手机端预览</h4>" +
-      '<div class="banner-ops-preview banner-ops-preview-mobile" data-banner-mobile-preview>' +
+      "<h4>手机端实际效果</h4>" +
+      '<p class="banner-ops-ratio-note">实际展示比例 <strong>3 : 1</strong> · 推荐上传尺寸：1080 × 360</p>' +
+      '<div class="banner-ops-preview banner-ops-preview-mobile" data-banner-live-preview-mobile data-banner-mobile-preview>' +
       (mobileUrl
-        ? '<img src="' + esc(mobileUrl) + '" alt="手机端 Banner">'
+        ? '<img src="' + esc(mobileUrl) + '" alt="手机端实际效果">'
         : '<div class="banner-ops-preview-empty">暂无手机端 Banner</div>') +
       "</div></div></div>"
     );
@@ -546,7 +568,7 @@
       '<div class="banner-ops">' +
       '<section class="banner-ops-section">' +
       "<h3>首页 Banner 实时预览</h3>" +
-      "<p>左侧电脑端（约 1920×700），右侧手机端（约 1080×1350）。保存成功后首页会读取当前启用 Banner。</p>" +
+      "<p>左侧「电脑端实际效果」、右侧「手机端实际效果」均按首页真实 <strong>3:1</strong> 展示（不再使用 4:5 竖图 Preview）。推荐上传尺寸与实际展示比例已分开标注。保存后首页读取同一套 crop_meta。</p>" +
       renderPreviewGrid() +
       "</section>" +
       '<section class="banner-ops-section" data-banner-editor>' +

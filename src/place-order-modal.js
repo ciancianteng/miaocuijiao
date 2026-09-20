@@ -526,10 +526,19 @@
     var seen = Object.create(null);
     function push(item) {
       if (!item || !item.name || LEGACY_SERVICE_NAMES[item.name]) return;
-      var key = String(item.serviceId || item.id || item.name).toLowerCase();
-      if (seen[key] || seen["n:" + item.name]) return;
-      seen[key] = 1;
-      seen["n:" + item.name] = 1;
+      var nkey = String(item.name || "")
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, " ");
+      var sid = String(item.serviceId || "").trim();
+      var idKey = /^[0-9a-f-]{36}$/i.test(sid)
+        ? "id:" + sid.toLowerCase()
+        : /^[0-9a-f-]{36}$/i.test(String(item.id || ""))
+          ? "id:" + String(item.id).toLowerCase()
+          : "";
+      if ((idKey && seen[idKey]) || (nkey && seen["n:" + nkey])) return;
+      if (idKey) seen[idKey] = 1;
+      if (nkey) seen["n:" + nkey] = 1;
       out.push(item);
     }
     if (Array.isArray(companion.services)) {
@@ -993,7 +1002,10 @@
       esc(moneyText(totalAmount())) +
       "</strong></div>" +
       '<p class="mcj-po-error mcj-po-footer-error" data-po-error hidden></p>' +
+      '<div class="mcj-po-footer-actions">' +
+      '<button type="button" class="mcj-po-add-another" data-po-add-another>再加一位陪玩</button>' +
       '<button type="button" class="primary mcj-po-submit" data-po-submit disabled aria-busy="false">支付方式加载中…</button>' +
+      "</div>" +
       "</div></div>";
 
     var dialog = mask.querySelector(".mcj-po-dialog");
@@ -1121,6 +1133,14 @@
         submitOrder();
       });
     }
+    var addAnother = mask.querySelector("[data-po-add-another]");
+    if (addAnother) {
+      addAnother.addEventListener("click", function (ev) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        addAnotherCompanion();
+      });
+    }
     refreshWalletBalance().then(function () {
       if (!state.open || !activeMask()) return;
       paintPayCards();
@@ -1208,6 +1228,41 @@
       return;
     }
     location.href = "orders.html";
+  }
+
+  function addAnotherCompanion() {
+    var c = state.companion;
+    if (!c || !(c.companionId || c.id)) {
+      toast("缺少陪玩信息");
+      return;
+    }
+    if (!window.MCJMultiCompanionTeam || typeof window.MCJMultiCompanionTeam.add !== "function") {
+      toast("多人一起下单组件未加载，请刷新大厅后重试");
+      return;
+    }
+    if (!(money(c.unitPrice) > 0)) {
+      toast("当前单价无效，无法加入队伍");
+      return;
+    }
+    var result = window.MCJMultiCompanionTeam.add({
+      companionId: c.companionId || c.id,
+      companionName: c.companionName || c.name || "陪玩",
+      avatar: c.avatar || c.image || "",
+      unitPrice: money(c.unitPrice),
+      service: currentServiceLabel(),
+      serviceType: currentServiceLabel(),
+      game: c.game || currentServiceLabel(),
+      hours: currentHours(),
+      quantity: currentQuantity(),
+      services: resolveServices(c),
+      online: c.online !== false,
+      status: c.availabilityStatus || "",
+      statusText: c.availabilityText || "",
+    });
+    if (!result || !result.ok) return;
+    // Do NOT create an order — close modal and return to hall browsing.
+    close();
+    toast(result.count >= 2 ? "已加入队伍，可去结算" : "已加入队伍，继续选择下一位陪玩");
   }
 
   function submitOrder() {
@@ -1315,27 +1370,65 @@
       if (schedule) noteParts.push("服务时间：" + schedule);
       if (contact) noteParts.push("联系方式：" + contact);
 
-      var payload = {
-        action: "place_order",
-        companionId: c.companionId,
-        companionName: c.companionName,
-        serviceType: currentServiceLabel(),
-        service: currentServiceLabel(),
-        game: currentServiceLabel(),
-        unitPrice: money(c.unitPrice),
-        hours: hours,
-        quantity: quantity,
-        totalAmount: total,
-        gameId: gameId,
-        region: region,
-        schedule: schedule,
-        couponCode: state.couponCode || "",
-        contact: contact,
-        notes: noteParts.join("；"),
-        paymentMethod: payment,
-        idempotencyKey:
-          "po-" + c.companionId + "-" + Date.now() + "-" + Math.random().toString(36).slice(2, 8),
-      };
+      var replaceSlot = null;
+      try {
+        replaceSlot = JSON.parse(sessionStorage.getItem("mcjReplaceSlot") || "null");
+      } catch (eRep) {
+        replaceSlot = null;
+      }
+      var isReplacement =
+        replaceSlot &&
+        replaceSlot.mode === "replacement" &&
+        replaceSlot.parentOrderId &&
+        replaceSlot.replaceChildId;
+
+      var payload = isReplacement
+        ? {
+            action: "replace_companion",
+            parentOrderId: String(replaceSlot.parentOrderId),
+            replaceChildId: String(replaceSlot.replaceChildId),
+            companionId: c.companionId,
+            companionName: c.companionName,
+            serviceType: currentServiceLabel(),
+            service: currentServiceLabel(),
+            game: currentServiceLabel(),
+            serviceId: state.selectedServiceId || "",
+            unitPrice: money(c.unitPrice),
+            hours: hours,
+            quantity: quantity,
+            totalAmount: total,
+            gameId: gameId,
+            notes: noteParts.join("；"),
+            paymentMethod: "catfood",
+            idempotencyKey:
+              "replace-" +
+              replaceSlot.replaceChildId +
+              "-" +
+              c.companionId +
+              "-" +
+              Date.now(),
+          }
+        : {
+            action: "place_order",
+            companionId: c.companionId,
+            companionName: c.companionName,
+            serviceType: currentServiceLabel(),
+            service: currentServiceLabel(),
+            game: currentServiceLabel(),
+            unitPrice: money(c.unitPrice),
+            hours: hours,
+            quantity: quantity,
+            totalAmount: total,
+            gameId: gameId,
+            region: region,
+            schedule: schedule,
+            couponCode: state.couponCode || "",
+            contact: contact,
+            notes: noteParts.join("；"),
+            paymentMethod: payment,
+            idempotencyKey:
+              "po-" + c.companionId + "-" + Date.now() + "-" + Math.random().toString(36).slice(2, 8),
+          };
 
       fetch("/api/orders", {
         method: "POST",
@@ -1344,6 +1437,21 @@
       })
         .then(parseApiJson)
         .then(function (body) {
+          if (isReplacement) {
+            try {
+              sessionStorage.removeItem("mcjReplaceSlot");
+            } catch (eClear) {}
+            state.submitting = false;
+            state.submitStartedAt = 0;
+            setSubmitLoading(false);
+            close();
+            toast(body.message || "已补位加入原联合订单");
+            var parentId = (body.parentOrderId || replaceSlot.parentOrderId || "").toString();
+            location.href = parentId
+              ? "orders.html?id=" + encodeURIComponent(parentId)
+              : "orders.html";
+            return;
+          }
           var order = body.order || {};
           var oid = order.id || "";
           if (!oid) throw new Error("订单创建失败");

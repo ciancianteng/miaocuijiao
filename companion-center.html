@@ -1,6 +1,19 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
+  <!-- mcj-pwa-meta:begin -->
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="妙脆角老板">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#0a0610">
+  <meta name="mobile-web-app-capable" content="yes">
+  <script src="/pwa-boot.js" defer></script>
+  <!-- mcj-pwa-meta:end -->
+
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>陪玩大厅 | Meow Cui Jiao</title>
@@ -8,10 +21,13 @@
   <link rel="stylesheet" href="src/platform.css">
   <link rel="stylesheet" href="src/notify-system.css">
   <link rel="stylesheet" href="src/design-system.css">
-  <link rel="stylesheet" href="src/companion-hall.css?v=20260907marketCard8">
-  <link rel="stylesheet" href="src/companion-identity.css?v=20260907marketCard8">
+  <link rel="stylesheet" href="src/companion-identity.css?v=20260907capsuleFix1">
   <link rel="stylesheet" href="src/place-order-modal.css">
   <link rel="stylesheet" href="src/boss-header.css?v=20260810hallLevel1">
+  <link rel="stylesheet" href="src/ui-linglu-polish.css?v=20260911hallPhoto45">
+  <link rel="stylesheet" href="src/home-app-mobile.css?v=20260911hallPhoto45">
+  <!-- Hall CSS last: photo 4:5 locked; info area compact -->
+  <link rel="stylesheet" href="src/companion-hall.css?v=20260911hallPhoto45">
 </head>
 <body>
   <header class="topbar companion-market-header">
@@ -28,15 +44,15 @@
     </div>
   </header>
 
-  <main class="page companion-hall-page">
+  <main class="page companion-hall-page" data-hall-channel="companions">
     <section class="hall-intro" aria-labelledby="companionHallTitle">
       <div>
         <h1 id="companionHallTitle">陪玩大厅</h1>
-        <p>找到喜欢的陪玩，立即开始游戏。</p>
+        <p id="companionHallLead">找到喜欢的陪玩，立即开始游戏。</p>
       </div>
     </section>
 
-    <section class="hall-search-panel" aria-label="搜索陪玩">
+    <section class="hall-search-panel" data-hall-search="companions" aria-label="搜索陪玩">
       <div class="hall-search-main">
         <label class="hall-search-field" for="searchInput">
           <span>搜索</span>
@@ -91,60 +107,145 @@
       </div>
     </section>
 
-    <section class="hall-results" aria-labelledby="companionListTitle">
-      <div class="hall-results-head">
-        <div>
-          <h2 id="companionListTitle">陪玩推荐</h2>
-          <p id="resultCount">共 0 位陪玩</p>
-        </div>
-        <label class="hall-sort-field">
+    <section class="hall-search-panel hall-services-search" data-hall-search="services" aria-label="搜索玩法商品" hidden>
+      <div class="hall-search-main hall-services-search-main">
+        <label class="hall-search-field" for="hallGpSearch">
+          <span>搜索</span>
+          <input id="hallGpSearch" type="search" placeholder="搜索玩法商品、分类或游戏" autocomplete="off">
+        </label>
+        <label class="hall-sort-field hall-services-sort">
           <span>排序</span>
-          <select id="sortFilter">
-            <option value="recommend">默认推荐</option>
-            <option value="levelDesc">等级优先</option>
-            <option value="priceAsc">价格低到高</option>
-            <option value="priceDesc">价格高到低</option>
+          <select id="hallGpSort">
+            <option value="recommend">综合</option>
+            <option value="sold">销量</option>
+            <option value="priceAsc">价格从低到高</option>
+            <option value="priceDesc">价格从高到低</option>
+            <option value="newest">最新</option>
           </select>
         </label>
       </div>
+      <div class="hall-gp-cats" id="hallGpCats" aria-label="玩法分类"></div>
+    </section>
 
-      <div class="companion-hall-grid" id="playerList"></div>
-      <div class="empty companion-empty" id="emptyState" hidden>
-        <strong>暂无符合条件的陪玩</strong>
-        <span>试试调整搜索词或筛选条件。</span>
+    <div class="hall-channel-tabs" role="tablist" aria-label="大厅频道">
+      <button type="button" class="hall-channel-tab is-active" role="tab" id="hallTabCompanions" aria-selected="true" aria-controls="hallPanelCompanions" data-hall-tab="companions">陪玩大厅</button>
+      <button type="button" class="hall-channel-tab" role="tab" id="hallTabServices" aria-selected="false" aria-controls="hallPanelServices" data-hall-tab="services">更多玩法</button>
+      <span class="hall-channel-indicator" aria-hidden="true"></span>
+    </div>
+
+    <section class="hall-channel-panel is-active" id="hallPanelCompanions" role="tabpanel" aria-labelledby="hallTabCompanions" data-hall-panel="companions">
+      <div class="hall-results" aria-labelledby="companionListTitle">
+        <div class="hall-results-head">
+          <div>
+            <h2 id="companionListTitle">陪玩推荐</h2>
+            <p id="resultCount">正在加载陪玩…</p>
+          </div>
+          <label class="hall-sort-field">
+            <span>排序</span>
+            <select id="sortFilter">
+              <option value="recommend">默认推荐</option>
+              <option value="levelDesc">等级优先</option>
+              <option value="priceAsc">价格低到高</option>
+              <option value="priceDesc">价格高到低</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="companion-hall-grid" id="playerList"></div>
+        <div class="empty companion-empty" id="emptyState" hidden>
+          <strong>暂无符合条件的陪玩</strong>
+          <span>试试调整搜索词或筛选条件。</span>
+        </div>
+        <div class="companion-pagination" id="companionPagination"></div>
       </div>
-      <div class="companion-pagination" id="companionPagination"></div>
+    </section>
+
+    <section class="hall-channel-panel" id="hallPanelServices" role="tabpanel" aria-labelledby="hallTabServices" data-hall-panel="services" hidden>
+      <div class="hall-results hall-services-results" aria-labelledby="hallServicesTitle">
+        <div class="hall-results-head">
+          <div>
+            <h2 id="hallServicesTitle">更多玩法</h2>
+            <p id="hallGpCount">读取真实商城商品中…</p>
+          </div>
+        </div>
+        <div class="hall-gp-grid" id="hallGpGrid"></div>
+        <div class="empty companion-empty" id="hallGpEmpty" hidden>
+          <strong>暂无玩法商品</strong>
+          <span>后台「更多玩法管理」发布后会显示在这里。</span>
+        </div>
+      </div>
     </section>
   </main>
 
-  <nav class="bottom-nav">
-    <a href="index.html">首页</a>
-    <a class="active" href="companion-center.html">大厅</a>
-    <a href="mine.html">我的</a>
+  <nav class="bottom-nav mcj-app-tabbar" aria-label="底部导航">
+    <a href="index.html" data-app-tab="home">首页</a>
+    <a class="active" href="companion-center.html" data-app-tab="hall">大厅</a>
+    <a href="orders.html" data-app-tab="orders">订单</a>
+    <a href="support.html?start=1" data-app-tab="support">客服</a>
+    <a href="mine.html" data-app-tab="mine">我的</a>
   </nav>
 
   <script src="src/platform-store.js"></script>
   <script src="src/platform-taxonomy.js"></script>
-  <script src="src/companion-levels.js?v=20260810hallLevel1"></script>
-  <script src="src/role-gates.js?v=20260811authUnify1"></script>
+  <script src="src/companion-levels.js?v=20260907capsuleFix1"></script>
+  <script src="src/role-gates.js?v=20260908antiBlank1"></script>
   <script src="src/boss-auth-session.js?v=20260811authUnify2"></script>
-  <script src="src/avatar-fallback.js"></script>
+  <script src="src/avatar-fallback.js?v=20260911hallPhoto45"></script>
   <script src="src/companion-media.js?v=20260802mediaSync"></script>
-  <script src="src/companion-identity.js?v=20260907marketCard9"></script>
-  <script src="src/companion-public-id.js?v=20260907publicId1"></script>
+  <script src="src/companion-identity.js?v=20260907capsuleFix1"></script>
+  <script src="src/companion-public-id.js?v=20260920publicId1"></script>
   <script src="src/boss-header.js?v=20260810hallLevel1" defer></script>
   <script src="src/dropdown-system.js" defer></script>
   <script src="src/design-system.js" defer></script>
   <script src="src/site-data.js?v=20260810hallLevel1" defer></script>
   <script src="src/currency.js"></script>
   <script src="src/companion-presence.js?v=20260810hallLevel1"></script>
-  <script src="/src/place-order-modal.js?v=20260811authUnify1" defer></script>
-  <script src="src/companion-hall.js?v=20260907marketCard8" defer></script>
+  <script src="/src/place-order-modal.js?v=20260920pricingDedupMerge" defer></script>
+  <script src="/src/multi-companion-team.js?v=20260920perServicePricing" defer></script>
+  <script src="src/companion-hall.js?v=20260920publicId1" defer></script>
+  <script src="src/companion-hall-channels.js?v=20260911channels2" defer></script>
   <script src="src/notify-system.js" defer></script>
   <script src="src/launch-readiness-fixes.js" defer></script>
 <script>
     (function () {
-      var panel = document.querySelector('.hall-search-panel');
+      try {
+        var q = new URLSearchParams(location.search);
+        var mode = String(q.get("mode") || "").toLowerCase();
+        var parentOrder = String(q.get("parentOrder") || q.get("parent") || "").trim();
+        var replaceChild = String(q.get("replaceChild") || q.get("slot") || "").trim();
+        if (mode === "replace" && parentOrder && replaceChild) {
+          sessionStorage.setItem(
+            "mcjReplaceSlot",
+            JSON.stringify({
+              mode: "replacement",
+              parentOrderId: parentOrder,
+              replaceChildId: replaceChild,
+              at: Date.now(),
+            })
+          );
+        }
+        var slot = null;
+        try {
+          slot = JSON.parse(sessionStorage.getItem("mcjReplaceSlot") || "null");
+        } catch (e0) {
+          slot = null;
+        }
+        if (slot && slot.mode === "replacement" && slot.parentOrderId) {
+          var bar = document.createElement("div");
+          bar.setAttribute("data-replace-banner", "1");
+          bar.style.cssText =
+            "margin:10px 12px 0;padding:12px 14px;border:1px solid rgba(255,143,197,.45);border-radius:12px;background:rgba(255,143,197,.12);color:#ffeaf4;font-size:13px;line-height:1.45";
+          bar.innerHTML =
+            "<strong style=\"display:block;margin-bottom:4px\">补位选择（replacement）</strong>选择一位陪玩加入原联合订单，不会新建独立订单。已确认 / 仍等待的其他陪玩状态保持不变。";
+          var main = document.querySelector("main") || document.body;
+          main.insertBefore(bar, main.firstChild);
+        }
+      } catch (e) {}
+    })();
+  </script>
+<script>
+    (function () {
+      var panel = document.querySelector('.hall-search-panel[data-hall-search="companions"]');
       var toggle = document.getElementById('filterToggle');
       var close = document.getElementById('filterClose');
       var reset = document.getElementById('resetFilter');

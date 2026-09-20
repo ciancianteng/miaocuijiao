@@ -1,13 +1,50 @@
 <!doctype html>
 <html lang="zh-CN" class="mcj-auth-html mcj-admin-login">
 <head>
+  <!-- mcj-pwa-meta:begin -->
+  <link rel="manifest" href="/manifest-admin.webmanifest">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="妙脆角后台">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#0a0610">
+  <meta name="mobile-web-app-capable" content="yes">
+  <script src="/pwa-boot.js" defer></script>
+  <!-- mcj-pwa-meta:end -->
+
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>后台中心登录 | 妙脆角</title>
+  <!-- mcj-og-meta:begin -->
+  <link rel="canonical" href="https://www.meowcuijiao.com/admin/login/">
+  <meta name="description" content="妙脆角后台中心 — 订单、审核、运营。">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="妙脆角 MEOW CUI JIAO">
+  <meta property="og:locale" content="zh_CN">
+  <meta property="og:url" content="https://www.meowcuijiao.com/admin/login/">
+  <meta property="og:title" content="后台中心登录 | 妙脆角">
+  <meta property="og:description" content="妙脆角后台中心 — 订单、审核、运营。">
+  <meta property="og:image" content="https://www.meowcuijiao.com/og/share-card-square-v2.jpg">
+  <meta property="og:image:secure_url" content="https://www.meowcuijiao.com/og/share-card-square-v2.jpg">
+  <meta property="og:image:type" content="image/jpeg">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="1200">
+  <meta property="og:image:alt" content="MEOW CUI JIAO 官方猫头像">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="后台中心登录 | 妙脆角">
+  <meta name="twitter:description" content="妙脆角后台中心 — 订单、审核、运营。">
+  <meta name="twitter:image" content="https://www.meowcuijiao.com/og/share-card-square-v2.jpg">
+  <link rel="image_src" href="https://www.meowcuijiao.com/og/share-card-square-v2.jpg">
+  <!-- mcj-og-meta:end -->
   <link rel="stylesheet" href="/src/auth-shell.css?v=20260805loginUi1">
+  <!-- Supabase password-recovery callback → /auth/reset-password/ -->
+  <script src="/src/supabase-recovery-reset.js?v=20260907recoveryReset1"></script>
   <!-- Modules are deferred; login form is static so the page never blacks out if JS fails. -->
   <script type="module" src="/src/admin-boot-guard.js?v=20260804adminLoginFix"></script>
-  <script type="module" src="/src/role-gates.js?v=20260811authUnify1"></script>
+  <script type="module" src="/src/otp-cooldown.js?v=20260908otpFix1"></script>
+  <script type="module" src="/src/role-gates.js?v=20260908antiBlank1"></script>
   <script type="module" src="/src/auth-shell.js?v=20260806emailKeyboard1"></script>
 </head>
 <body class="mcj-admin-login">
@@ -37,7 +74,7 @@
       </form>
     </section>
   </main>
-  <script type="module" src="/src/forgot-password.js?v=20260806forgotP0"></script>
+  <script type="module" src="/src/forgot-password.js?v=20260907otpFocus1"></script>
   <script type="module">
     // Runs after deferred head modules; never depends on platform_settings / business APIs.
     function waitFor(getter, tries) {

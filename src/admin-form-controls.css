@@ -234,14 +234,19 @@
   border-radius:10px;
 }
 
-/* Native form controls inside admin shell: dark + pink (no browser defaults) */
+/* Native form controls inside admin shell / player drawer: dark + pink (no browser defaults) */
 .admin-shell,
-.admin-shell *{
+.admin-shell *,
+.player-detail-drawer,
+.player-detail-drawer *{
   color-scheme: dark;
 }
 .admin-shell input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="hidden"]):not([type="range"]):not(.admin-native-hidden),
 .admin-shell textarea,
 .admin-shell select,
+.player-detail-drawer input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="hidden"]):not([type="range"]):not(.admin-native-hidden),
+.player-detail-drawer textarea,
+.player-detail-drawer select,
 .admin-modal input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="hidden"]):not([type="range"]):not(.admin-native-hidden),
 .admin-modal textarea,
 .admin-modal select,
@@ -261,12 +266,14 @@
   outline:none;
 }
 .admin-shell input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="hidden"]):not([type="range"]),
+.player-detail-drawer input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="hidden"]):not([type="range"]),
 .admin-modal input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="hidden"]):not([type="range"]),
 #adminModal input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="hidden"]):not([type="range"]){
   height:42px;
   padding:0 12px;
 }
 .admin-shell textarea,
+.player-detail-drawer textarea,
 .admin-modal textarea,
 #adminModal textarea{
   min-height:88px;
@@ -275,6 +282,7 @@
   resize:vertical;
 }
 .admin-shell select,
+.player-detail-drawer select,
 .admin-modal select,
 #adminModal select{
   height:42px;
@@ -294,6 +302,9 @@
 .admin-shell input:focus,
 .admin-shell textarea:focus,
 .admin-shell select:focus,
+.player-detail-drawer input:focus,
+.player-detail-drawer textarea:focus,
+.player-detail-drawer select:focus,
 .admin-modal input:focus,
 .admin-modal textarea:focus,
 .admin-modal select:focus,
@@ -305,11 +316,56 @@
 }
 .admin-shell input::placeholder,
 .admin-shell textarea::placeholder,
+.player-detail-drawer input::placeholder,
+.player-detail-drawer textarea::placeholder,
 .admin-modal input::placeholder,
 .admin-modal textarea::placeholder,
 #adminModal input::placeholder,
 #adminModal textarea::placeholder{
   color:rgba(255,200,225,.55)!important;
+}
+/* Number inputs: kill WebKit white spin chrome */
+.admin-shell input[type="number"],
+.player-detail-drawer input[type="number"],
+.admin-modal input[type="number"],
+#adminModal input[type="number"]{
+  -moz-appearance:textfield;
+}
+.admin-shell input[type="number"]::-webkit-outer-spin-button,
+.admin-shell input[type="number"]::-webkit-inner-spin-button,
+.player-detail-drawer input[type="number"]::-webkit-outer-spin-button,
+.player-detail-drawer input[type="number"]::-webkit-inner-spin-button,
+.admin-modal input[type="number"]::-webkit-outer-spin-button,
+.admin-modal input[type="number"]::-webkit-inner-spin-button,
+#adminModal input[type="number"]::-webkit-outer-spin-button,
+#adminModal input[type="number"]::-webkit-inner-spin-button{
+  -webkit-appearance:none;
+  margin:0;
+}
+.admin-shell input:disabled,
+.admin-shell input:read-only,
+.admin-shell textarea:disabled,
+.admin-shell textarea:read-only,
+.admin-shell select:disabled,
+.player-detail-drawer input:disabled,
+.player-detail-drawer input:read-only,
+.player-detail-drawer textarea:disabled,
+.player-detail-drawer textarea:read-only,
+.player-detail-drawer select:disabled,
+.admin-modal input:disabled,
+.admin-modal input:read-only,
+.admin-modal textarea:disabled,
+.admin-modal textarea:read-only,
+.admin-modal select:disabled,
+#adminModal input:disabled,
+#adminModal input:read-only,
+#adminModal textarea:disabled,
+#adminModal textarea:read-only,
+#adminModal select:disabled{
+  background:rgba(12,10,16,.78)!important;
+  color:rgba(255,255,255,.72)!important;
+  border-color:rgba(255,145,195,.28)!important;
+  opacity:1;
 }
 .admin-shell input[type="checkbox"],
 .admin-shell input[type="radio"],

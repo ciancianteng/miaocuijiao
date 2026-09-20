@@ -8,6 +8,74 @@
   ],
   "headers": [
     {
+      "source": "/og/(.*)",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=86400, stale-while-revalidate=604800" },
+        { "key": "X-Content-Type-Options", "value": "nosniff" },
+        { "key": "Access-Control-Allow-Origin", "value": "*" }
+      ]
+    },
+    {
+      "source": "/icons/(.*)",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=86400, stale-while-revalidate=604800" },
+        { "key": "X-Content-Type-Options", "value": "nosniff" }
+      ]
+    },
+    {
+      "source": "/apple-touch-icon.png",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=86400, stale-while-revalidate=604800" },
+        { "key": "X-Content-Type-Options", "value": "nosniff" }
+      ]
+    },
+    {
+      "source": "/favicon-32.png",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=86400, stale-while-revalidate=604800" },
+        { "key": "X-Content-Type-Options", "value": "nosniff" }
+      ]
+    },
+    {
+      "source": "/favicon.ico",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=86400, stale-while-revalidate=604800" },
+        { "key": "X-Content-Type-Options", "value": "nosniff" }
+      ]
+    },
+    {
+      "source": "/manifest.webmanifest",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=3600, stale-while-revalidate=86400" },
+        { "key": "X-Content-Type-Options", "value": "nosniff" },
+        { "key": "Content-Type", "value": "application/manifest+json; charset=utf-8" }
+      ]
+    },
+    {
+      "source": "/manifest-companion.webmanifest",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=3600, stale-while-revalidate=86400" },
+        { "key": "X-Content-Type-Options", "value": "nosniff" },
+        { "key": "Content-Type", "value": "application/manifest+json; charset=utf-8" }
+      ]
+    },
+    {
+      "source": "/manifest-cs.webmanifest",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=3600, stale-while-revalidate=86400" },
+        { "key": "X-Content-Type-Options", "value": "nosniff" },
+        { "key": "Content-Type", "value": "application/manifest+json; charset=utf-8" }
+      ]
+    },
+    {
+      "source": "/manifest-admin.webmanifest",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=3600, stale-while-revalidate=86400" },
+        { "key": "X-Content-Type-Options", "value": "nosniff" },
+        { "key": "Content-Type", "value": "application/manifest+json; charset=utf-8" }
+      ]
+    },
+    {
       "source": "/(.*)",
       "headers": [
         { "key": "X-Content-Type-Options", "value": "nosniff" },
@@ -23,8 +91,33 @@
       "source": "/api/(.*)",
       "headers": [
         { "key": "Cache-Control", "value": "no-store" },
-        { "key": "CDN-Cache-Control", "value": "no-store" },
-        { "key": "Vercel-CDN-Cache-Control", "value": "no-store" },
+        { "key": "X-Content-Type-Options", "value": "nosniff" }
+      ]
+    },
+    {
+      "source": "/api/home/daily-stats",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=30, s-maxage=60, stale-while-revalidate=120" },
+        { "key": "CDN-Cache-Control", "value": "public, max-age=30, s-maxage=60, stale-while-revalidate=120" },
+        { "key": "Vercel-CDN-Cache-Control", "value": "public, max-age=30, s-maxage=60, stale-while-revalidate=120" },
+        { "key": "X-Content-Type-Options", "value": "nosniff" }
+      ]
+    },
+    {
+      "source": "/api/public/companions",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=15, s-maxage=30, stale-while-revalidate=60" },
+        { "key": "CDN-Cache-Control", "value": "public, max-age=15, s-maxage=30, stale-while-revalidate=60" },
+        { "key": "Vercel-CDN-Cache-Control", "value": "public, max-age=15, s-maxage=30, stale-while-revalidate=60" },
+        { "key": "X-Content-Type-Options", "value": "nosniff" }
+      ]
+    },
+    {
+      "source": "/api/platform/services",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=30, s-maxage=60, stale-while-revalidate=120" },
+        { "key": "CDN-Cache-Control", "value": "public, max-age=30, s-maxage=60, stale-while-revalidate=120" },
+        { "key": "Vercel-CDN-Cache-Control", "value": "public, max-age=30, s-maxage=60, stale-while-revalidate=120" },
         { "key": "X-Content-Type-Options", "value": "nosniff" }
       ]
     },
@@ -103,10 +196,17 @@
     {
       "source": "/src/(.*)",
       "headers": [
-        { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" },
-        { "key": "CDN-Cache-Control", "value": "no-store" },
-        { "key": "Vercel-CDN-Cache-Control", "value": "no-store" },
-        { "key": "Pragma", "value": "no-cache" }
+        { "key": "Cache-Control", "value": "public, max-age=3600, stale-while-revalidate=86400" },
+        { "key": "CDN-Cache-Control", "value": "public, max-age=3600, stale-while-revalidate=86400" },
+        { "key": "Vercel-CDN-Cache-Control", "value": "public, max-age=3600, stale-while-revalidate=86400" }
+      ]
+    },
+    {
+      "source": "/portal-early-gate.js",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=300, stale-while-revalidate=3600" },
+        { "key": "CDN-Cache-Control", "value": "public, max-age=300, stale-while-revalidate=3600" },
+        { "key": "Vercel-CDN-Cache-Control", "value": "public, max-age=300, stale-while-revalidate=3600" }
       ]
     },
     {
@@ -119,6 +219,7 @@
     }
   ],
   "rewrites": [
+    { "source": "/invite/:code", "destination": "/invite.html?code=:code" },
     { "source": "/ranking", "destination": "/ranking.html" },
     { "source": "/leaderboard", "destination": "/ranking.html" },
     { "source": "/login", "destination": "/login.html" },
@@ -131,6 +232,8 @@
     { "source": "/team-lobby", "destination": "/team-lobby.html" },
     { "source": "/custom-order", "destination": "/custom-order.html" },
     { "source": "/payment-confirm", "destination": "/payment-confirm.html" },
+    { "source": "/guide", "destination": "/guide.html" },
+    { "source": "/guide/", "destination": "/guide.html" },
     { "source": "/support", "destination": "/support.html" },
     { "source": "/support/", "destination": "/support.html" },
     { "source": "/club-levels", "destination": "/club-levels.html" },
@@ -158,5 +261,13 @@
     { "source": "/report", "destination": "/report/index.html" },
     { "source": "/report/:path*", "destination": "/report/index.html" },
     { "source": "/api/:seg/:path+", "destination": "/api/gateway?path=:seg/:path+" }
+  ],
+  "redirects": [
+    {
+      "source": "/:path*",
+      "has": [{ "type": "host", "value": "meowcuijiao.com" }],
+      "destination": "https://www.meowcuijiao.com/:path*",
+      "permanent": true
+    }
   ]
 }

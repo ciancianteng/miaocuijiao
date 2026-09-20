@@ -6,6 +6,7 @@ import { resolveCompanionAvatar, resolveCompanionCover } from "../_companion-pub
 import { debitWallet, getWallet, money as walletMoney, writeAdminLog } from "../_wallet.js";
 import { scheduleRecomputeSoft } from "../_popularity.js";
 import { servicesFromGamePrices, readGamePrices } from "../_game-prices.js";
+import { resolveEffectiveServicePrice } from "../_resolve-effective-service-price.js";
 import { hasBossRole } from "../_account-roles.js";
 import { allocateOrderNo, resolveCompanionPublicCode } from "../_account-codes.js";
 import {
@@ -139,27 +140,50 @@ async function loadCompanionServices(companionUserId, companionRow) {
     if (!isMissingRelation(e)) throw e;
   }
   if (rows?.length) {
-    return rows.map((r) => ({
-      id: r.id,
-      serviceId: r.service_id || "",
-      name: r.service_name || "服务",
-      price: money(r.price),
-      pricingUnit: r.pricing_unit || "小时",
-      specs: Array.isArray(r.specs) && r.specs.length ? r.specs : defaultSpecs(r.pricing_unit),
-      requiresGameId: r.requires_game_id !== false,
-      customFields: Array.isArray(r.custom_fields) ? r.custom_fields : [],
-    }));
+    return rows.map((r) => {
+      const resolved = resolveEffectiveServicePrice({
+        companion: companionRow || {},
+        companionId: companionUserId,
+        serviceId: r.service_id || "",
+        gameName: r.service_name || "",
+        serviceRowId: r.id,
+        serviceRows: rows,
+      });
+      return {
+        id: r.id,
+        serviceId: r.service_id || "",
+        name: r.service_name || "服务",
+        price: money(resolved.price || r.price),
+        pricingSource: resolved.source,
+        pricingUnit: r.pricing_unit || "小时",
+        specs: Array.isArray(r.specs) && r.specs.length ? r.specs : defaultSpecs(r.pricing_unit),
+        requiresGameId: r.requires_game_id !== false,
+        customFields: Array.isArray(r.custom_fields) ? r.custom_fields : [],
+      };
+    });
   }
   // Fallback: one service per game with its own price (boss picks game → auto price)
+  // P1: resolveEffectiveServicePrice keeps legacy equivalence when PRICE_V2 off.
   const fromGames = servicesFromGamePrices(companionRow || {});
   const unit = companionRow?.pricing_unit || "小时";
-  return fromGames.map((s) => ({
-    ...s,
-    pricingUnit: s.pricingUnit || unit,
-    specs: defaultSpecs(unit),
-    requiresGameId: !/语音|陪聊|聊天/i.test(s.name),
-    customFields: [],
-  }));
+  return fromGames.map((s) => {
+    const resolved = resolveEffectiveServicePrice({
+      companion: companionRow || {},
+      companionId: companionUserId,
+      serviceId: s.serviceId || "",
+      gameName: s.name || "",
+      serviceRows: [],
+    });
+    return {
+      ...s,
+      price: money(resolved.price || s.price),
+      pricingSource: resolved.source,
+      pricingUnit: s.pricingUnit || unit,
+      specs: defaultSpecs(unit),
+      requiresGameId: !/语音|陪聊|聊天/i.test(s.name),
+      customFields: [],
+    };
+  });
 }
 
 function defaultSpecs(unit) {
@@ -222,6 +246,29 @@ export default async function handler(req, res) {
   try {
     const body = req.method === "GET" ? {} : await parseBody(req);
     const action = String(req.method === "GET" ? req.query.action || "catalog" : body.action || "").trim();
+
+    // Gift mall catalog: global enabled gifts, no companion required.
+    // Recipient is chosen in the mall UI before send_gift (which still requires companionId).
+    if (req.method === "GET" && (action === "gift_catalog" || action === "gifts")) {
+      let gifts = [];
+      try {
+        gifts = await companionDb("gifts", "?enabled=eq.true&deleted_at=is.null&order=sort_order.asc&limit=100");
+      } catch (e) {
+        if (!isMissingRelation(e)) throw e;
+        gifts = [];
+      }
+      return json(res, 200, {
+        ok: true,
+        gifts: (gifts || []).map((g) => ({
+          id: g.id,
+          name: g.name,
+          iconUrl: g.icon_url || "",
+          catFoodPrice: money(g.cat_food_price),
+          featured: !!g.featured,
+          animationLevel: g.animation_level || "normal",
+        })),
+      });
+    }
 
     if (req.method === "GET" && action === "catalog") {
       const companionId = String(req.query.companionId || req.query.id || "").trim();
@@ -330,6 +377,19 @@ export default async function handler(req, res) {
 
       const companion = await loadCompanion(companionId);
       if (!companion) return json(res, 404, { ok: false, message: "陪玩不存在" });
+      try {
+        const { assertNotSelfTrade } = await import("../_account-roles.js");
+        assertNotSelfTrade(boss.id, companion.user_id || companionId, "给自己下单");
+      } catch (selfErr) {
+        if (selfErr?.code === "SELF_ORDER_NOT_ALLOWED" || selfErr?.code === "SELF_TRADE_FORBIDDEN") {
+          return json(res, 403, {
+            ok: false,
+            code: selfErr.code || "SELF_ORDER_NOT_ALLOWED",
+            message: "不能向自己的陪玩账号下单",
+          });
+        }
+        throw selfErr;
+      }
       if (companion.verification_status && !/approved|verified/.test(companion.verification_status)) {
         return json(res, 400, { ok: false, message: "该陪玩尚未通过审核，暂不可下单" });
       }
@@ -484,6 +544,7 @@ export default async function handler(req, res) {
         throw e;
       }
 
+      const paidAtIso = nowIso();
       let paid;
       try {
         paid = await supabaseJson(rest("orders", `?id=eq.${encodeURIComponent(created.id)}`), {
@@ -492,23 +553,46 @@ export default async function handler(req, res) {
           body: JSON.stringify({
             status: "claimed",
             paid_cat_food: total,
+            paid_at: paidAtIso,
             accepted_at: null,
           }),
         });
       } catch (e) {
-        // Staging schema drift: paid_cat_food / accepted_at may be missing — still mark claimed.
+        // Staging schema drift: paid_cat_food / paid_at / accepted_at may be missing — still mark claimed.
         if (/column|PGRST/i.test(String(e.message || ""))) {
-          paid = await supabaseJson(rest("orders", `?id=eq.${encodeURIComponent(created.id)}`), {
-            method: "PATCH",
-            headers: serviceHeaders(),
-            body: JSON.stringify({ status: "claimed" }),
-          });
+          try {
+            paid = await supabaseJson(rest("orders", `?id=eq.${encodeURIComponent(created.id)}`), {
+              method: "PATCH",
+              headers: serviceHeaders(),
+              body: JSON.stringify({
+                status: "claimed",
+                paid_cat_food: total,
+                accepted_at: null,
+              }),
+            });
+          } catch (e2) {
+            if (/column|PGRST/i.test(String(e2.message || ""))) {
+              paid = await supabaseJson(rest("orders", `?id=eq.${encodeURIComponent(created.id)}`), {
+                method: "PATCH",
+                headers: serviceHeaders(),
+                body: JSON.stringify({ status: "claimed" }),
+              });
+            } else {
+              throw e2;
+            }
+          }
         } else {
           throw e;
         }
       }
 
-      const claimedOrder = paid?.[0] || { ...created, status: "claimed", companion_id: companionId, paid_cat_food: total };
+      const claimedOrder = paid?.[0] || {
+        ...created,
+        status: "claimed",
+        companion_id: companionId,
+        paid_cat_food: total,
+        paid_at: paidAtIso,
+      };
       // Paid + companion bound → same inbox / Realtime / Email path as orders pay_order / want_him.
       // Mail failure must not roll back the already-paid order.
       if (claimedOrder?.companion_id) {
@@ -553,10 +637,24 @@ export default async function handler(req, res) {
 
       const companion = await loadCompanion(companionId);
       if (!companion) return json(res, 404, { ok: false, message: "陪玩不存在" });
+      try {
+        const { assertNotSelfTrade } = await import("../_account-roles.js");
+        assertNotSelfTrade(boss.id, companion.user_id || companionId, "打赏/送礼给自己");
+      } catch (selfErr) {
+        if (selfErr?.code === "SELF_ORDER_NOT_ALLOWED" || selfErr?.code === "SELF_TRADE_FORBIDDEN") {
+          return json(res, 403, {
+            ok: false,
+            code: selfErr.code || "SELF_ORDER_NOT_ALLOWED",
+            message: "不能向自己的陪玩账号送礼或打赏",
+          });
+        }
+        throw selfErr;
+      }
       const rate = await giftCommissionRate(companion);
       let gross = 0;
       let giftName = "打赏";
       let giftId = null;
+      let giftIconUrl = "";
       let quantity = 1;
 
       if (action === "send_gift") {
@@ -569,6 +667,7 @@ export default async function handler(req, res) {
         const gift = gifts?.[0];
         if (!gift) return json(res, 400, { ok: false, message: "礼物不存在或已下架" });
         giftName = gift.name;
+        giftIconUrl = String(gift.icon_url || "");
         gross = money(gift.cat_food_price) * quantity;
       } else {
         gross = money(body.amount || body.catFood || body.cat_food);
@@ -622,7 +721,8 @@ export default async function handler(req, res) {
         }
       }
 
-      await creditCompanionIncome(companionId, companionIncome, `${giftName}收益`, null);
+      // Classify as reward_other (gift), never settlement ledger / companion order income.
+      await creditCompanionIncome(companionId, companionIncome, `礼物收益：${giftName || "礼物"}`, null);
 
       let tx = null;
       try {
@@ -649,6 +749,21 @@ export default async function handler(req, res) {
         tx = rows?.[0] || null;
       } catch (e) {
         if (!isMissingRelation(e)) throw e;
+      }
+
+      if (action === "send_gift") {
+        try {
+          const { recordCompanionGiftWallHit } = await import("../_gift-orders.js");
+          await recordCompanionGiftWallHit({
+            companionId,
+            giftId,
+            giftName,
+            giftImageUrl: giftIconUrl,
+            quantity,
+          });
+        } catch (wallErr) {
+          console.warn("[marketplace/send_gift] gift wall", wallErr?.message || wallErr);
+        }
       }
 
       scheduleRecomputeSoft();

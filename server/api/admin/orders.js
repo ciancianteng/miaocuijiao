@@ -717,6 +717,43 @@ export default async function handler(req, res) {
       });
     } else if (action === "update_status") {
       patch.status = String(body.status || payload.status || "");
+      const { normalizeOrderStatus } = await import("../_order-status.js");
+      if (normalizeOrderStatus(patch.status) === "completed") {
+        try {
+          const { createOrderCompleteHelpers } = await import("../_order-complete.js");
+          const helpers = createOrderCompleteHelpers({
+            restUrl,
+            supabaseJson,
+            serviceHeaders,
+            addSystemMessage: async (order, actorId, content) => addSystem(order, actorId || admin.id, content),
+          });
+          let working = before;
+          if (String(before.status) === "in_progress" && !helpers.orderHasCompletionPending(before)) {
+            await helpers.markCompletionPending(before);
+            working =
+              (
+                await supabaseJson(restUrl("orders", `?id=eq.${encodeURIComponent(id)}&limit=1`), {
+                  headers: serviceHeaders(),
+                })
+              )?.[0] || before;
+          }
+          const out = await helpers.finalizeOrderCompletion(working, {
+            method: "admin_force",
+            actorId: admin.id,
+            message: String(payload.reason || body.reason || "后台改状态确认完成"),
+          });
+          return json(res, 200, {
+            ok: true,
+            message: out.message || "订单已完成。",
+            order: safeOrder(out.order || working, {}),
+            completionMethod: out.completionMethod || "admin_force",
+            bossPoints: out.bossPoints || null,
+            settlement: out.settlement || null,
+          });
+        } catch (err) {
+          return json(res, err.status || 500, { ok: false, message: err.message || "确认完成失败" });
+        }
+      }
     } else if (action === "assign_service") {
       patch.customer_service_id = String(body.customer_service_id || payload.customer_service_id || payload.service_id || "") || null;
     } else if (action === "assign_companion" || action === "confirm_grab_assignment") {
@@ -956,6 +993,17 @@ export default async function handler(req, res) {
       patch.started_at = new Date().toISOString();
     } else if (action === "confirm_complete") {
       try {
+        const { isMultiGroupParent, ORDER_TYPE_MULTI_GROUP } = await import("../_order-group.js");
+        if (
+          isMultiGroupParent(before) ||
+          String(before.order_type || "").toLowerCase() === ORDER_TYPE_MULTI_GROUP
+        ) {
+          return json(res, 409, {
+            ok: false,
+            message: "多人主订单不能后台直接完成结算；请完成各子订单。",
+            code: "MULTI_PARENT_NO_DIRECT_FINALIZE",
+          });
+        }
         const { createOrderCompleteHelpers } = await import("../_order-complete.js");
         const helpers = createOrderCompleteHelpers({
           restUrl,
@@ -1127,6 +1175,18 @@ export default async function handler(req, res) {
       body: JSON.stringify(patch),
     });
     const after = updated[0] || { ...before, ...patch };
+    if ((action === "cancel" || String(after.status || "") === "cancelled" || String(after.status || "") === "refunded") && before.status !== after.status) {
+      try {
+        const { clawbackCompanionIncomeForOrder } = await import("../_companion-income.js");
+        await clawbackCompanionIncomeForOrder(
+          { supabaseJson, restUrl, serviceHeaders },
+          after,
+          { reason: String(payload.reason || body.reason || action), mode: action === "refund" || after.status === "refunded" ? "refund" : "cancel" }
+        );
+      } catch (err) {
+        console.warn("[admin/orders] companion income clawback", err?.message || err);
+      }
+    }
     const ids = [after.boss_id, after.companion_id, after.customer_service_id].filter(Boolean);
     const profiles = ids.length
       ? await supabaseJson(restUrl("profiles", `?id=in.(${ids.map(encodeURIComponent).join(",")})`), { headers: serviceHeaders() }).catch(() => [])

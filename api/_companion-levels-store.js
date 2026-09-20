@@ -27,6 +27,10 @@ function restUrl(query = "") {
 function isMissingTable(error) {
   return /PGRST205|Could not find the table|schema cache|does not exist/i.test(String(error?.message || error || ""));
 }
+function isMissingBasePriceColumn(error) {
+  const text = String(error?.message || error || "");
+  return /PGRST204/i.test(text) && /base_price/i.test(text);
+}
 function rowFromDb(row = {}, index = 0) {
   return normalizeLevelRow(
     {
@@ -44,9 +48,13 @@ function rowFromDb(row = {}, index = 0) {
       min: row.min_price,
       max: row.max_price,
       maxPlus: row.max_plus,
+      basePrice: row.base_price != null ? row.base_price : row.min_price,
       commissionRate: row.commission_rate,
       upgradeCondition: row.upgrade_condition,
       description: row.description,
+      requirements: row.requirements,
+      downgradeCondition: row.downgrade_condition,
+      benefits: row.benefits,
       sort: row.sort_order,
       open: row.is_open,
       enabled: row.is_enabled,
@@ -72,9 +80,13 @@ function rowToDb(row) {
     min_price: item.min,
     max_price: item.max,
     max_plus: item.maxPlus,
+    base_price: item.basePrice,
     commission_rate: item.commissionRate,
     upgrade_condition: item.upgradeCondition,
     description: item.description,
+    requirements: item.requirements || "",
+    downgrade_condition: item.downgradeCondition || "",
+    benefits: item.benefits || "",
     sort_order: item.sort,
     is_open: item.open,
     is_enabled: item.enabled,
@@ -127,6 +139,12 @@ async function writeDbLevels(rows) {
   }
   if (!response.ok) {
     const err = new Error(body?.message || body?.hint || text || `HTTP ${response.status}`);
+    if (isMissingBasePriceColumn(err) || (response.status === 400 && /base_price/i.test(text))) {
+      throw Object.assign(
+        new Error("等级表缺少 base_price 列，禁止静默保存。请先执行 pricing P1 Staging migration。"),
+        { status: 503, code: "MISSING_BASE_PRICE_COLUMN" }
+      );
+    }
     if (isMissingTable(err) || response.status === 404) return null;
     throw err;
   }
@@ -151,6 +169,7 @@ export const DEFAULT_LEVELS = [
     min: 20,
     max: 30,
     maxPlus: false,
+    basePrice: 20,
     commissionRate: 20,
     upgradeCondition: "完成基础资料审核并开始接单。\n订单数：达到后台设置门槛\n好评率：达到后台设置门槛\n认证完成：是",
     description: "新加入平台，需要累积订单与评价。",
@@ -173,6 +192,7 @@ export const DEFAULT_LEVELS = [
     min: 30,
     max: 40,
     maxPlus: false,
+    basePrice: 30,
     commissionRate: 18,
     upgradeCondition: "累计订单与基础好评达到后台设置条件。\n订单数：达标\n好评率：达标\n认证完成：是",
     description: "已有订单与基础好评，稳定接单。",
@@ -195,6 +215,7 @@ export const DEFAULT_LEVELS = [
     min: 40,
     max: 45,
     maxPlus: false,
+    basePrice: 40,
     commissionRate: 16,
     upgradeCondition: "技术表现、评价和在线时长达到后台设置条件。\n订单数：达标\n好评率：达标\n认证完成：是",
     description: "技术表现优秀、评价较高。",
@@ -217,6 +238,7 @@ export const DEFAULT_LEVELS = [
     min: 60,
     max: 75,
     maxPlus: false,
+    basePrice: 60,
     commissionRate: 14,
     upgradeCondition: "热门游戏专精表现通过后台审核。\n订单数：达标\n好评率：达标\n认证完成：是",
     description: "热门游戏专精陪玩。",
@@ -239,6 +261,7 @@ export const DEFAULT_LEVELS = [
     min: 75,
     max: 100,
     maxPlus: true,
+    basePrice: 75,
     commissionRate: 12,
     upgradeCondition: "招牌陪玩、人气主播或大神级资质通过后台审核。\n订单数：达标\n好评率：达标\n认证完成：是",
     description: "俱乐部招牌、人气主播或大神级陪玩。",
@@ -257,6 +280,11 @@ export function normalizeLevelRow(row = {}, index = 0) {
   const fallback = DEFAULT_LEVELS.find((item) => item.level === levelNo) || DEFAULT_LEVELS[0];
   const min = Math.max(0, Number(row.min ?? row.minPrice ?? row.minimum_price ?? fallback.min));
   const max = Math.max(min, Number(row.max ?? row.maxPrice ?? row.maximum_price ?? fallback.max));
+  const baseRaw = row.basePrice ?? row.base_price ?? row.base;
+  const basePrice = Math.max(
+    0,
+    Number(baseRaw != null && baseRaw !== "" ? baseRaw : fallback.basePrice ?? min)
+  );
   return {
     id: String(row.id || `lv${levelNo}`),
     level: levelNo,
@@ -265,8 +293,8 @@ export function normalizeLevelRow(row = {}, index = 0) {
     icon: String(row.icon || fallback.icon || "🩶"),
     color: String(row.color || row.levelColor || fallback.color || "#9CA3AF"),
     displayColor: String(row.displayColor || row.homeColor || row.color || fallback.displayColor || fallback.color || "#9CA3AF"),
-    cardBackground: ["solid", "gradient", "glass"].includes(String(row.cardBackground || row.cardStyle || ""))
-      ? String(row.cardBackground || row.cardStyle)
+    cardBackground: ["solid", "gradient", "glass"].includes(String(row.cardBackground || row.cardStyle || row.card_background || ""))
+      ? String(row.cardBackground || row.cardStyle || row.card_background)
       : fallback.cardBackground || "solid",
     badgeBorder: String(row.badgeBorder || row.badge_border || fallback.badgeBorder || fallback.color),
     badgeText: String(row.badgeText || row.badge_text || fallback.badgeText || "#fff"),
@@ -274,10 +302,14 @@ export function normalizeLevelRow(row = {}, index = 0) {
     min,
     max,
     maxPlus: row.maxPlus === true || row.maxPlus === "true" || row.allowAboveMax === true || row.maximum_price_plus === true,
+    basePrice,
     commissionRate: Math.max(0, Math.min(100, Number(row.commissionRate ?? row.commission ?? fallback.commissionRate ?? 20))),
     upgradeCondition: String(row.upgradeCondition || row.upgrade_condition || fallback.upgradeCondition || ""),
     description: String(row.description || row.desc || fallback.description || ""),
-    sort: Number.isFinite(Number(row.sort)) ? Number(row.sort) : levelNo,
+      requirements: String(row.requirements || row.requirement || ""),
+      downgradeCondition: String(row.downgradeCondition || row.downgrade_condition || ""),
+      benefits: String(row.benefits || row.benefit || ""),
+      sort: Number.isFinite(Number(row.sort)) ? Number(row.sort) : levelNo,
     open: row.open !== false && row.open !== "否" && row.open !== "关闭",
     enabled: row.enabled !== false && row.enabled !== "停用" && row.status !== "disabled",
     updated_at: row.updated_at || row.updatedAt || new Date().toISOString(),
@@ -293,18 +325,22 @@ export async function readLocalLevels() {
   } catch (error) {
     if (!isMissingTable(error)) console.error("[companion-levels] DB read failed, fallback local", error.message || error);
   }
-  await ensureDir();
   try {
+    await ensureDir();
     const text = await fs.readFile(DATA_FILE, "utf8");
     const parsed = JSON.parse(String(text || "[]").replace(/^\uFEFF/, ""));
     const list = (Array.isArray(parsed) ? parsed : []).map((row, index) => normalizeLevelRow(row, index));
     if (list.length) return list.sort((a, b) => a.sort - b.sort || a.level - b.level);
   } catch (error) {
-    if (error.code !== "ENOENT") throw error;
+    if (error.code !== "ENOENT") {
+      /* read-only serverless FS or parse error → defaults */
+    }
   }
-  const seeded = DEFAULT_LEVELS.map((row, index) => normalizeLevelRow(row, index));
-  await writeLocalLevels(seeded);
-  return seeded;
+  return DEFAULT_LEVELS.map((row, index) => normalizeLevelRow(row, index));
+}
+
+function isServerlessFs() {
+  return !!(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.NOW_REGION);
 }
 
 export async function writeLocalLevels(rows) {
@@ -314,10 +350,23 @@ export async function writeLocalLevels(rows) {
     const saved = await writeDbLevels(list);
     if (Array.isArray(saved)) return saved.sort((a, b) => a.sort - b.sort || a.level - b.level);
   } catch (error) {
-    if (!isMissingTable(error)) console.error("[companion-levels] DB write failed, fallback local", error.message || error);
+    if (!isMissingTable(error)) {
+      console.error("[companion-levels] DB write failed", error.message || error);
+      throw Object.assign(new Error(`等级保存失败：${error.message || error}`), { status: 503 });
+    }
   }
-  await ensureDir();
-  await fs.writeFile(DATA_FILE, JSON.stringify(list, null, 2), "utf8");
+  if (isServerlessFs()) {
+    throw Object.assign(
+      new Error("等级表未就绪，无法在 Staging 写入本地文件。请执行 companion_levels 迁移后重试。"),
+      { status: 503 }
+    );
+  }
+  try {
+    await ensureDir();
+    await fs.writeFile(DATA_FILE, JSON.stringify(list, null, 2), "utf8");
+  } catch (error) {
+    throw Object.assign(new Error(`等级本地保存失败：${error.message || error}`), { status: 500 });
+  }
   return list;
 }
 
@@ -428,8 +477,96 @@ export function buildPublishSyncChecklist({ verified = false, commission = null,
   });
 }
 
+const HEX_COLOR_RE = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
+const CARD_BACKGROUNDS = new Set(["solid", "gradient", "glass"]);
+
+/** Validate admin/API level payload before DB write. */
+export function validateLevelConfig(row = {}, { requireId = false } = {}) {
+  const errors = [];
+  const item = normalizeLevelRow(row);
+  if (requireId && !String(row.id || "").trim()) errors.push("缺少等级 id");
+  if (!String(item.code || "").trim()) errors.push("缺少等级编号 code");
+  if (!String(item.name || "").trim()) errors.push("缺少等级名称 name");
+  for (const [key, label] of [
+    ["color", "主色 color"],
+    ["displayColor", "展示色 display_color"],
+    ["badgeBorder", "徽章边框 badge_border"],
+    ["badgeText", "徽章文字 badge_text"],
+    ["badgeIcon", "徽章图标色 badge_icon"],
+  ]) {
+    const value = String(item[key] || "").trim();
+    if (!HEX_COLOR_RE.test(value)) errors.push(`${label} 必须是 #RGB/#RRGGBB 颜色值`);
+  }
+  if (!CARD_BACKGROUNDS.has(String(item.cardBackground || ""))) {
+    errors.push("card_background 必须是 solid / gradient / glass");
+  }
+  if (!(Number(item.min) >= 0)) errors.push("min_price 必须 ≥ 0");
+  if (!(Number(item.max) >= Number(item.min))) errors.push("max_price 必须 ≥ min_price");
+  if (!(Number(item.basePrice) > 0)) errors.push("base_price（等级默认售价）必须 > 0");
+  if (!(Number(item.commissionRate) >= 0 && Number(item.commissionRate) <= 100)) {
+    errors.push("commission_rate 必须在 0–100");
+  }
+  return {
+    ok: !errors.length,
+    errors,
+    message: errors[0] || "",
+    level: item,
+  };
+}
+
+export function validateLevelConfigList(rows = []) {
+  const list = Array.isArray(rows) ? rows : [];
+  if (!list.length) return { ok: false, errors: ["等级列表为空"], message: "等级列表为空", levels: [] };
+  const levels = [];
+  const errors = [];
+  const ids = new Set();
+  list.forEach((row, index) => {
+    const result = validateLevelConfig(row);
+    if (!result.ok) {
+      errors.push(`第 ${index + 1} 项：${result.message}`);
+      return;
+    }
+    if (ids.has(result.level.id)) errors.push(`重复等级 id：${result.level.id}`);
+    ids.add(result.level.id);
+    levels.push(result.level);
+  });
+  return { ok: !errors.length, errors, message: errors[0] || "", levels };
+}
+
+/** Compact visual/pricing payload embedded on public companion cards. */
+export function levelVisualConfig(level) {
+  if (!level) return null;
+  const item = normalizeLevelRow(level);
+  const priceRangeLabel = item.maxPlus ? `${item.min}–${item.max}+` : `${item.min}–${item.max}`;
+  return {
+    id: item.id,
+    level: item.level,
+    code: item.code,
+    name: item.name,
+    title: `${item.code} ${item.name}`.trim(),
+    icon: item.icon,
+    color: item.color,
+    displayColor: item.displayColor,
+    cardBackground: item.cardBackground,
+    cardStyle: item.cardBackground,
+    badgeBorder: item.badgeBorder,
+    badgeText: item.badgeText,
+    badgeIcon: item.badgeIcon,
+    min: item.min,
+    max: item.max,
+    minPrice: item.min,
+    maxPrice: item.max,
+    basePrice: item.basePrice,
+    maxPlus: item.maxPlus,
+    priceRangeLabel,
+    priceRangeText: `${priceRangeLabel} 猫粮`,
+    commissionRate: item.commissionRate,
+  };
+}
+
 export function toPublicLevel(level) {
   const item = normalizeLevelRow(level);
+  const visual = levelVisualConfig(item);
   return {
     id: item.id,
     level: item.level,
@@ -440,6 +577,7 @@ export function toPublicLevel(level) {
     color: item.color,
     displayColor: item.displayColor,
     cardBackground: item.cardBackground,
+    cardStyle: item.cardBackground,
     badgeBorder: item.badgeBorder,
     badgeText: item.badgeText,
     badgeIcon: item.badgeIcon,
@@ -447,10 +585,16 @@ export function toPublicLevel(level) {
     max: item.max,
     minPrice: item.min,
     maxPrice: item.max,
+    basePrice: item.basePrice,
     maxPlus: item.maxPlus,
+    priceRangeLabel: visual.priceRangeLabel,
+    priceRangeText: visual.priceRangeText,
     commissionRate: item.commissionRate,
     upgradeCondition: item.upgradeCondition,
     description: item.description,
+    requirements: item.requirements || "",
+    downgradeCondition: item.downgradeCondition || "",
+    benefits: item.benefits || "",
     sort: item.sort,
     open: item.open,
     enabled: item.enabled,

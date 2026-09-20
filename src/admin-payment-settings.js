@@ -202,7 +202,7 @@
           chip(depositVisible ? "押金可见" : "押金不可见") +
           "<small>" +
           esc(modeLabel(item.mode)) +
-          " · SoT=payment_channels · " +
+          " · " +
           esc(item.updated_at || "-") +
           "</small></div>" +
           '<div class="payment-card-actions">' +
@@ -229,17 +229,17 @@
     var rechargeCodes = (state.bossRechargeMethods || []).join(", ") || "（无）";
     var sotLabel =
       state.channelSource === "platform_settings" || state.tablesReady === false
-        ? "platform_settings.paymentChannelsPublic（payment_channels 表未建，与老板端同源）"
-        : "payment_channels（public mirror 自动同步）";
+        ? "当前使用平台配置兜底（支付渠道表未就绪，与老板端同源）"
+        : "支付渠道正式配置";
     return (
       renderActivePublicQr() +
-      '<div class="admin-sync-note" style="margin:0 0 12px">单一数据源：<code>' +
+      '<div class="admin-sync-note" style="margin:0 0 12px">' +
       esc(sotLabel) +
-      "</code>。老板「立即下单」读取 <code>GET /api/recharge → orderPayMethods</code>（需 enabled + 资料齐全 + 适用于订单）；充值中心读取同接口 <code>methods</code>（需 enabled + 适用于充值）。当前老板订单可见：<strong>" +
+      "。老板「立即下单」与充值中心按启用状态与适用场景自动读取当前收款方式。当前老板订单可见：<strong>" +
       esc(orderCodes) +
       "</strong>；充值可见：<strong>" +
       esc(rechargeCodes) +
-      "</strong>。开关开但订单不可见 = 缺二维码/密钥或未勾选适用场景，不是老板端写死。</div>" +
+      "</strong>。开关开但订单不可见 = 缺二维码/密钥或未勾选适用场景。</div>" +
       (state.message
         ? '<div class="admin-sync-note" style="margin:0 0 12px;color:#a15c00">' + esc(state.message) + "</div>"
         : "") +

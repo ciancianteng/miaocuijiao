@@ -387,7 +387,12 @@
     });
   }
 
-  function refreshChatUnread() {
+  var chatUnreadInflight = null;
+  var chatUnreadFetchedAt = 0;
+  var CHAT_UNREAD_MIN_INTERVAL_MS = 8000;
+
+  function refreshChatUnread(opts) {
+    opts = opts || {};
     if (!isLoggedIn()) {
       setChatUnread(0);
       return Promise.resolve(0);
@@ -400,7 +405,15 @@
       setChatUnread(0);
       return Promise.resolve(0);
     }
-    return fetch("/api/chat?action=conversations", {
+    if (chatUnreadInflight) return chatUnreadInflight;
+    if (
+      !opts.force &&
+      chatUnreadFetchedAt &&
+      Date.now() - chatUnreadFetchedAt < CHAT_UNREAD_MIN_INTERVAL_MS
+    ) {
+      return Promise.resolve(chatUnreadState.unread);
+    }
+    chatUnreadInflight = fetch("/api/chat?action=conversations", {
       headers: { Accept: "application/json", Authorization: "Bearer " + token },
       cache: "no-store",
     })
@@ -410,6 +423,7 @@
         });
       })
       .then(function (body) {
+        chatUnreadFetchedAt = Date.now();
         if (!body || body.ok === false) return chatUnreadState.unread;
         var total =
           body.unreadCount != null
@@ -424,7 +438,11 @@
       })
       .catch(function () {
         return chatUnreadState.unread;
+      })
+      .finally(function () {
+        chatUnreadInflight = null;
       });
+    return chatUnreadInflight;
   }
 
   function unreadLabel(n) {
@@ -473,7 +491,7 @@
   function brandHtml() {
     return (
       '<a class="mcj-header-brand" href="/" aria-label="MEOW CUI JIAO 妙脆角 首页">' +
-      '<img class="mcj-header-brand-logo" src="/src/assets/meow-cuijiao-brand.jpg" alt="MEOW CUI JIAO" width="40" height="40" decoding="async" data-mcj-brand-logo="1">' +
+      '<img class="mcj-header-brand-logo" src="/src/assets/meow-cuijiao-brand-96.webp" alt="MEOW CUI JIAO" width="40" height="40" decoding="async" loading="eager" data-mcj-brand-logo="1" onerror="this.onerror=null;this.src=\'/src/assets/meow-cuijiao-brand-96.jpg\'">' +
       '<span class="mcj-header-brand-text">' +
       '<span class="mcj-header-brand-en">Meow Cui Jiao</span>' +
       '<span class="mcj-header-brand-zh">妙脆角</span>' +
@@ -628,6 +646,10 @@
     return h;
   }
 
+  var notifyInflight = null;
+  var notifyFetchedAt = 0;
+  var NOTIFY_MIN_INTERVAL_MS = 8000;
+
   function loadNotifications(opts) {
     opts = opts || {};
     if (!isLoggedIn() || !hasAuthSession()) {
@@ -638,14 +660,24 @@
       renderNotifyPanel();
       return Promise.resolve();
     }
+    if (notifyInflight) return notifyInflight;
+    if (
+      opts.silent &&
+      !opts.force &&
+      notifyFetchedAt &&
+      Date.now() - notifyFetchedAt < NOTIFY_MIN_INTERVAL_MS
+    ) {
+      return Promise.resolve();
+    }
     if (!opts.silent) notifyState.loading = true;
-    return ensureBossAuthScript()
+    notifyInflight = ensureBossAuthScript()
       .then(function (Auth) {
         return Auth.ensureSession().then(function () {
           return Auth.authFetch("/api/notifications?action=list");
         });
       })
       .then(function (body) {
+        notifyFetchedAt = Date.now();
         notifyState.items = Array.isArray(body.items) ? body.items : [];
         notifyState.unread = Number(body.unread || 0);
         notifyState.error = "";
@@ -656,8 +688,10 @@
       })
       .finally(function () {
         notifyState.loading = false;
+        notifyInflight = null;
         renderNotifyPanel();
       });
+    return notifyInflight;
   }
 
   function markAllRead() {
@@ -724,6 +758,9 @@
     ensureCss("/src/boss-header.css?v=20260815applyBossHeader1", "data-mcj-boss-header-css");
     ensureCss("/src/mcj-safe-area.css?v=20260802mobileP0c", "data-mcj-safe-area-css");
     ensureCss("/src/home-mobile.css?v=20260802mobileP0c", "data-mcj-home-mobile-css");
+    // Shared install guide also loaded by /pwa-boot.js sitewide; keep as boss fallback.
+    ensureCss("/src/pwa-install-prompt.css?v=20260912pwaGuide1", "data-mcj-pwa-install-css");
+    ensureScript("/src/pwa-install-prompt.js?v=20260912pwaGuide1", "data-mcj-pwa-install-js");
     document.body.classList.add("mcj-boss-shell");
     purgeGuestAuthArtifacts();
 
@@ -1052,6 +1089,7 @@
       syncAuthChrome();
       if (!document.hidden && isLoggedIn() && hasAuthSession()) {
         loadNotifications({ silent: true });
+        refreshChatUnread();
       }
     });
 
@@ -1060,6 +1098,7 @@
       syncAuthChrome();
       if (!isLoggedIn() || !hasAuthSession()) return;
       loadNotifications({ silent: true });
+      refreshChatUnread();
       if (!notifyState.pollTimer) startNotifyPoll();
     });
   }
@@ -1147,6 +1186,20 @@
       chatUnreadState.pollTimer = setInterval(function () {
         if (!document.hidden && isLoggedIn()) refreshChatUnread();
       }, 20000);
+      // Idle-prefetch frequent boss shells (static only).
+      try {
+        if (window.MCJBossNavPrefetch && typeof window.MCJBossNavPrefetch.run === "function") {
+          window.MCJBossNavPrefetch.run({ delayMs: 900 });
+        } else {
+          var s = document.createElement("script");
+          s.src = "/src/boss-nav-prefetch.js?v=20260911perfP2";
+          s.async = true;
+          s.onload = function () {
+            if (window.MCJBossNavPrefetch) window.MCJBossNavPrefetch.run({ delayMs: 200 });
+          };
+          document.head.appendChild(s);
+        }
+      } catch (ePrefetch) {}
     });
     ensureMeowButler();
     window.addEventListener("mcj-boss-chat-unread", function (ev) {

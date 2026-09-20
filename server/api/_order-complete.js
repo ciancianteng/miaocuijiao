@@ -12,9 +12,8 @@ import { awardBossPointsForCompletedOrder } from "./_user-points.js";
 import { settleBossCommissionFromPlatformFee } from "./_boss-commission.js";
 import { isSettlementEnabled, settlementDisabledReason } from "./_feature-flags.js";
 import {
-  assertNotTestPartiesForSettlement,
+  companionIncomeTestPartyDecision,
   isProductionRuntime,
-  isTestAccountRecord,
 } from "./_test-accounts.js";
 
 export const COMPLETION_AUTO_CONFIRM_MS = 24 * 60 * 60 * 1000;
@@ -257,16 +256,43 @@ export function createOrderCompleteHelpers({ restUrl, supabaseJson, serviceHeade
 
   async function settleCompanionIncome(saved, completedAt, method) {
     if (!saved?.companion_id) return null;
+    try {
+      const { canSettleCompanionIncomeForOrder, isMultiGroupParent } = await import("./_order-group.js");
+      if (isMultiGroupParent(saved) || !canSettleCompanionIncomeForOrder(saved)) {
+        return { skipped: true, reason: "multi_group_parent_no_companion_income" };
+      }
+    } catch (_) {
+      /* soft */
+    }
 
     // G8: keep Production settlement writes off until flag is explicitly enabled.
     if (!isSettlementEnabled()) {
+      const reason = settlementDisabledReason() || "settlement_flag_disabled";
+      console.warn("[order-complete] settlement skipped", saved?.id || "", reason);
+      try {
+        await patchOrderFields(restUrl, supabaseJson, serviceHeaders, saved.id, {
+          settlement_status: "skipped",
+        });
+      } catch (_) {
+        /* settlement_status column may be missing */
+      }
+      try {
+        const nextNote = upsertMarker(String(saved.note || ""), "[[SETTLEMENT_SKIPPED]]", reason);
+        const nextDesc = upsertMarker(String(saved.description || ""), "[[SETTLEMENT_SKIPPED]]", reason);
+        await dualWriteText(restUrl, supabaseJson, serviceHeaders, saved, nextNote, nextDesc);
+      } catch (_) {
+        /* soft */
+      }
       return {
         skipped: true,
-        reason: settlementDisabledReason() || "settlement_flag_disabled",
+        reason,
+        message: `结算未入账：${reason}（需开启 SETTLEMENT_ENABLED）`,
       };
     }
 
     // G5/G7: never settle smoke/test-touched orders (incl. RM6000 smoke fixtures).
+    // Companion income requires non-test boss + companion. A mis-flagged CS account alone
+    // must NOT starve real companion settlement (P0: MCJO000356/357).
     try {
       const ids = [saved.boss_id, saved.companion_id, saved.customer_service_id].filter(Boolean);
       const profiles = [];
@@ -294,18 +320,21 @@ export function createOrderCompleteHelpers({ restUrl, supabaseJson, serviceHeade
         }
       }
       const byId = new Map(profiles.map((p) => [p.id, p]));
-      const partyGuard = assertNotTestPartiesForSettlement({
+      const decision = companionIncomeTestPartyDecision({
         bossProfile: byId.get(saved.boss_id) || null,
         companionProfile: byId.get(saved.companion_id) || null,
         customerServiceProfile: byId.get(saved.customer_service_id) || null,
         order: saved,
       });
-      if (!partyGuard.ok) {
-        return { skipped: true, reason: partyGuard.reason || "test_party" };
+      if (decision.warnCsTest) {
+        console.warn(
+          "[order-complete] companion_income continuing despite test CS flag",
+          saved?.id || "",
+          saved?.order_no || ""
+        );
       }
-      // Extra: any loaded party flagged test → skip (covers relation mismatches).
-      if (profiles.some((p) => isTestAccountRecord(p))) {
-        return { skipped: true, reason: "test_party" };
+      if (decision.skip) {
+        return { skipped: true, reason: decision.reason || "test_party" };
       }
     } catch (_) {
       if (isProductionRuntime()) {
@@ -352,10 +381,26 @@ export function createOrderCompleteHelpers({ restUrl, supabaseJson, serviceHeade
           String(l.code) === String(cp.level_id || "") ||
           String(l.name) === String(cp.level_name || "")
       ) || null;
-    const { platformRate, companionShareRate } = resolvePlatformCommission(
-      cp.commission_rate,
-      levelMeta?.commissionRate ?? 20
-    );
+
+    // Prefer gameplay product commission snapshot stamped at order create (orders.platform_fee_rate).
+    // Explicit 0% is valid. Non-gameplay orders keep companion/level commission rules unchanged.
+    const isGameplayOrder =
+      String(saved.order_type || "").toLowerCase() === "gameplay_product" ||
+      /更多玩法商品|商品ID：/i.test(blobOf(saved));
+    const hasProductFeeSnapshot =
+      isGameplayOrder && saved.platform_fee_rate != null && saved.platform_fee_rate !== "";
+    let platformRate;
+    let companionShareRate;
+    if (hasProductFeeSnapshot) {
+      const snap = money(saved.platform_fee_rate);
+      platformRate = Math.min(100, Math.max(0, Number.isFinite(snap) ? snap : 0));
+      companionShareRate = Math.round((100 - platformRate) * 100) / 100;
+    } else {
+      ({ platformRate, companionShareRate } = resolvePlatformCommission(
+        cp.commission_rate,
+        levelMeta?.commissionRate ?? 20
+      ));
+    }
     const companionNet = Math.round(((amount * companionShareRate) / 100) * 100) / 100;
     const platformFee = Math.round((amount - companionNet) * 100) / 100;
     const settlement = {
@@ -418,19 +463,95 @@ export function createOrderCompleteHelpers({ restUrl, supabaseJson, serviceHeade
   }
 
   /**
-   * Idempotent complete + settle.
-   * method: boss_manual | system_auto_24h | admin_force
+   * Award boss loyalty points without failing order completion.
+   * Always structured-logs skips/errors — never silent catch.
+   * Independent of companion settlement success/skip/fail.
+   */
+  async function safeAwardBossPoints(order, { method = "boss_manual", operatorId = null } = {}) {
+    const meta = {
+      order_id: order?.id || null,
+      boss_id: order?.boss_id || null,
+      method: String(method || ""),
+    };
+    try {
+      const result = await awardBossPointsForCompletedOrder(order, {
+        method,
+        operatorId,
+      });
+      const payload = {
+        ...meta,
+        ok: !!result?.ok,
+        skipped: !!result?.skipped,
+        duplicate: !!result?.duplicate,
+        points: Number(result?.points) || 0,
+        error: result?.error || null,
+        idempotency_key: result?.idempotency_key || null,
+      };
+      if (result?.ok && !result?.skipped && !result?.duplicate && payload.points > 0) {
+        console.info("[order-complete] boss_points_awarded", JSON.stringify(payload));
+      } else if (result?.duplicate) {
+        console.info("[order-complete] boss_points_duplicate", JSON.stringify(payload));
+      } else if (result?.skipped || result?.error) {
+        console.warn("[order-complete] boss_points_skipped", JSON.stringify(payload));
+      } else if (result && result.ok === false) {
+        console.error("[order-complete] boss_points_failed", JSON.stringify(payload));
+      } else {
+        console.warn("[order-complete] boss_points_result", JSON.stringify(payload));
+      }
+      return result;
+    } catch (err) {
+      console.error(
+        "[order-complete] boss_points_exception",
+        JSON.stringify({
+          ...meta,
+          error: String(err?.message || err || "points_exception").slice(0, 300),
+          code: err?.code || err?.status || null,
+        })
+      );
+      return {
+        ok: false,
+        skipped: true,
+        points: 0,
+        error: String(err?.message || err || "points_exception").slice(0, 300),
+      };
+    }
+  }
+
+  function isForceCompleteMethod(method) {
+    const m = String(method || "");
+    return m === "admin_force" || m === "cs_force";
+  }
+
+  /**
+   * Canonical order completion — sole write path for loyalty points on complete.
+   * method: boss_manual | system_auto_24h | admin_force | cs_force
+   *
+   * Boss points are independent of companion settlement (enabled/disabled/skipped/fail).
    */
   async function finalizeOrderCompletion(before, { method = "boss_manual", actorId = "", message = "" } = {}) {
     if (!before?.id) throw Object.assign(new Error("订单不存在。"), { status: 404 });
+
+    // Multi-group parent is status-aggregated only — never companion finalize / settle.
+    try {
+      const { isMultiGroupParent, ORDER_TYPE_MULTI_GROUP } = await import("./_order-group.js");
+      if (
+        isMultiGroupParent(before) ||
+        String(before.order_type || "").toLowerCase() === ORDER_TYPE_MULTI_GROUP
+      ) {
+        throw Object.assign(
+          new Error("多人主订单不能按陪玩单完成；请完成各子订单，系统将自动聚合主单状态。"),
+          { status: 409, code: "MULTI_PARENT_NO_DIRECT_FINALIZE" }
+        );
+      }
+    } catch (guardErr) {
+      if (guardErr?.status === 409) throw guardErr;
+    }
+
     if (String(before.status) === "completed" || String(before.settlement_status || "") === "settled") {
-      let bossPoints = null;
-      try {
-        bossPoints = await awardBossPointsForCompletedOrder(before, {
-          method,
-          operatorId: actorId || null,
-        });
-      } catch (_) {}
+      const bossPoints = await safeAwardBossPoints(before, {
+        method,
+        operatorId: actorId || null,
+      });
       return {
         ok: true,
         duplicate: true,
@@ -445,7 +566,7 @@ export function createOrderCompleteHelpers({ restUrl, supabaseJson, serviceHeade
     if (isManualConfirmBlocked(before) && method === "boss_manual") {
       throw Object.assign(new Error("订单已冻结或售后中，不能确认完成。"), { status: 409 });
     }
-    if (method !== "admin_force" && !orderHasCompletionPending(before)) {
+    if (!isForceCompleteMethod(method) && !orderHasCompletionPending(before)) {
       throw Object.assign(new Error("陪玩尚未申请完成服务。"), { status: 409 });
     }
     if (method === "system_auto_24h") {
@@ -511,13 +632,10 @@ export function createOrderCompleteHelpers({ restUrl, supabaseJson, serviceHeade
         })
       )?.[0];
       if (fresh?.status === "completed") {
-        let bossPoints = null;
-        try {
-          bossPoints = await awardBossPointsForCompletedOrder(fresh, {
-            method,
-            operatorId: actorId || null,
-          });
-        } catch (_) {}
+        const bossPoints = await safeAwardBossPoints(fresh, {
+          method,
+          operatorId: actorId || null,
+        });
         return { ok: true, duplicate: true, message: "订单已完成。", order: fresh, bossPoints };
       }
     }
@@ -528,7 +646,9 @@ export function createOrderCompleteHelpers({ restUrl, supabaseJson, serviceHeade
         ? "系统已按规则自动确认完成订单（陪玩申请完成满 24 小时）。"
         : method === "admin_force"
           ? "后台已确认完成订单。"
-          : "老板已确认完成订单。");
+          : method === "cs_force"
+            ? "客服已确认完成订单。"
+            : "老板已确认完成订单。");
     if (typeof addSystemMessage === "function") {
       try {
         await addSystemMessage(saved, actorId || saved.boss_id, msg);
@@ -540,18 +660,59 @@ export function createOrderCompleteHelpers({ restUrl, supabaseJson, serviceHeade
     try {
       settlement = await settleCompanionIncome(saved, completedAt, method);
       settlementOk = true;
-    } catch (_) {
+    } catch (settleErr) {
       settlementOk = false;
+      settlement = {
+        skipped: true,
+        reason: "settlement_error",
+        message: String(settleErr?.message || settleErr || "settlement_error").slice(0, 200),
+      };
+      console.warn("[order-complete] settlement error", saved?.id || "", settlement.message);
     }
 
-    let bossPoints = null;
-    if (settlementOk) {
+    // Boss loyalty points: independent of settlement enabled/skipped/fail.
+    // Multi-group children: awardBossPointsForCompletedOrder skips child (parent_order_id).
+    // After child complete: refresh parent aggregate; award once on parent when group completes.
+    const bossPoints = await safeAwardBossPoints(saved, {
+      method,
+      operatorId: actorId || null,
+    });
+
+    let parentRefresh = null;
+    if (saved?.parent_order_id) {
       try {
-        bossPoints = await awardBossPointsForCompletedOrder(saved, {
-          method,
+        const { refreshParentOrderStatus } = await import("./_order-group.js");
+        parentRefresh = await refreshParentOrderStatus(saved.parent_order_id, {
+          loadOrder: async (pid) =>
+            (
+              await supabaseJson(restUrl("orders", `?id=eq.${encodeURIComponent(pid)}&limit=1`), {
+                headers: serviceHeaders(),
+              })
+            )?.[0] || null,
+          loadChildren: async (pid) =>
+            (await supabaseJson(
+              restUrl("orders", `?parent_order_id=eq.${encodeURIComponent(pid)}&select=*&order=created_at.asc`),
+              { headers: serviceHeaders() }
+            ).catch(() => [])) || [],
+          patchOrder: async (pid, patch) => {
+            const rows = await supabaseJson(restUrl("orders", `?id=eq.${encodeURIComponent(pid)}`), {
+              method: "PATCH",
+              headers: serviceHeaders(),
+              body: JSON.stringify(patch),
+            });
+            return rows?.[0] || null;
+          },
+          awardBossPointsForCompletedOrder: async (order, opts = {}) =>
+            safeAwardBossPoints(order, {
+              method: opts.method || method,
+              operatorId: opts.operatorId ?? actorId ?? null,
+            }),
+          awardMethod: method,
           operatorId: actorId || null,
         });
-      } catch (_) {}
+      } catch (e) {
+        parentRefresh = { ok: false, error: String(e?.message || e).slice(0, 160) };
+      }
     }
 
     let reward = null;
@@ -566,18 +727,37 @@ export function createOrderCompleteHelpers({ restUrl, supabaseJson, serviceHeade
               ? "system_auto_complete"
               : method === "admin_force"
                 ? "admin_confirm_complete"
-                : "boss_confirm_complete",
+                : method === "cs_force"
+                  ? "cs_confirm_complete"
+                  : "boss_confirm_complete",
         }
       );
-    } catch (_) {}
+    } catch (csErr) {
+      console.warn(
+        "[order-complete] cs_commission_settle_failed",
+        JSON.stringify({
+          order_id: saved?.id || null,
+          error: String(csErr?.message || csErr || "cs_settle_error").slice(0, 200),
+        })
+      );
+    }
+
+    const settleSkipMsg = settlement?.skipped
+      ? `（结算暂未入账：${settlement.reason || settlement.message || "skipped"}）`
+      : !settlementOk
+        ? "（结算写入失败，请后台核对）"
+        : "";
+    const baseMsg =
+      method === "system_auto_24h"
+        ? "已自动确认完成，订单已完成。"
+        : method === "cs_force"
+          ? "客服已确认完成，订单已完成。"
+          : "已确认完成，订单已完成。";
 
     return {
       ok: true,
       duplicate: false,
-      message:
-        method === "system_auto_24h"
-          ? "已自动确认完成，订单已完成。"
-          : "已确认完成，订单已完成。",
+      message: `${baseMsg}${settleSkipMsg}`,
       order: {
         ...saved,
         note: methodLineNote,
@@ -585,9 +765,16 @@ export function createOrderCompleteHelpers({ restUrl, supabaseJson, serviceHeade
         completion_method: method,
         status: "completed",
         completed_at: completedAt,
+        settlement_status:
+          settlement?.skipped
+            ? "skipped"
+            : settlementOk && settlement && !settlement.duplicate
+              ? saved.settlement_status || "settled"
+              : saved.settlement_status || null,
       },
       settlement,
       bossPoints,
+      parentRefresh,
       reward,
       completionMethod: method,
     };
@@ -662,6 +849,7 @@ export function createOrderCompleteHelpers({ restUrl, supabaseJson, serviceHeade
     stampFrozen,
     clearFrozen,
     finalizeOrderCompletion,
+    settleCompanionIncome,
     expireCompletionAutoConfirms,
     orderHasCompletionPending,
     completionCountdown,

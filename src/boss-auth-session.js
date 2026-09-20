@@ -91,12 +91,32 @@
   }
 
   function getExpiresAtMs() {
+    // Prefer JWT exp — stale mcjAuthExpiresAt previously made every page think the
+    // session was expired and triggered full-screen restore + refresh waterfalls.
+    var jwtExp = decodeJwtExpMs(getAccessToken());
+    if (jwtExp) {
+      try {
+        var rawMirror = readItem("mcjAuthExpiresAt");
+        var stored = 0;
+        if (rawMirror) {
+          var n = Number(rawMirror);
+          if (Number.isFinite(n) && n > 0) stored = n < 1e12 ? n * 1000 : n;
+        }
+        if (!stored || Math.abs(stored - jwtExp) > 2000) {
+          sessionStorage.setItem("mcjAuthExpiresAt", String(jwtExp));
+          if (localStorage.getItem("mcjAuthRefreshToken") || localStorage.getItem("mcjAuthAccessToken")) {
+            localStorage.setItem("mcjAuthExpiresAt", String(jwtExp));
+          }
+        }
+      } catch (eHeal) {}
+      return jwtExp;
+    }
     var raw = readItem("mcjAuthExpiresAt");
     if (raw) {
-      var n = Number(raw);
-      if (Number.isFinite(n) && n > 0) return n < 1e12 ? n * 1000 : n;
+      var n2 = Number(raw);
+      if (Number.isFinite(n2) && n2 > 0) return n2 < 1e12 ? n2 * 1000 : n2;
     }
-    return decodeJwtExpMs(getAccessToken());
+    return 0;
   }
 
   function looksLikeJwt(token) {
@@ -183,12 +203,17 @@
     // Dual-write when remember/persist: current tab (sessionStorage) + durable (localStorage).
     // Tab-only login (persist === false) keeps sessionStorage only.
     var stores = persist === false ? [sessionStorage] : [sessionStorage, localStorage];
+    var expiresAt = session.expiresAt;
+    if ((expiresAt == null || expiresAt === "") && session.accessToken) {
+      var fromJwt = decodeJwtExpMs(session.accessToken);
+      if (fromJwt) expiresAt = fromJwt;
+    }
     stores.forEach(function (store) {
       try {
         if (session.accessToken) store.setItem("mcjAuthAccessToken", session.accessToken);
         if (session.refreshToken) store.setItem("mcjAuthRefreshToken", session.refreshToken);
-        if (session.expiresAt != null && session.expiresAt !== "") {
-          store.setItem("mcjAuthExpiresAt", String(session.expiresAt));
+        if (expiresAt != null && expiresAt !== "") {
+          store.setItem("mcjAuthExpiresAt", String(expiresAt));
         }
       } catch (e) {}
     });
@@ -203,8 +228,8 @@
       try {
         if (session.accessToken) localStorage.setItem("mcjAuthAccessToken", session.accessToken);
         if (session.refreshToken) localStorage.setItem("mcjAuthRefreshToken", session.refreshToken);
-        if (session.expiresAt != null && session.expiresAt !== "") {
-          localStorage.setItem("mcjAuthExpiresAt", String(session.expiresAt));
+        if (expiresAt != null && expiresAt !== "") {
+          localStorage.setItem("mcjAuthExpiresAt", String(expiresAt));
         }
       } catch (e3) {}
     }

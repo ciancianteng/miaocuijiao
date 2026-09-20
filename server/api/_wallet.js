@@ -280,6 +280,40 @@ export async function notifyBoss(bossId, title, body, kind = "wallet", relatedId
   } catch {
     /* optional */
   }
+  // Fan-out Web Push (same event as inbox). Never block wallet/order flows.
+  // Order P0 business events are owned by _web-push-business-events.js (idempotent);
+  // skip duplicate fan-out here for those kinds.
+  try {
+    const kindKey = String(kind || "").toLowerCase();
+    const { mapInboxKindToOrderPushEvent } = await import("./_web-push-business-events.js");
+    if (mapInboxKindToOrderPushEvent(kindKey)) {
+      return;
+    }
+    const { fanoutWebPush } = await import("./_web-push.js");
+    const rid = String(relatedId || "").trim();
+    let deepLink = "/mine.html";
+    if (rid && /order|accept|start|complete|cancel|paid|pay|claim|service|refund/.test(kindKey)) {
+      deepLink = "/orders.html?id=" + encodeURIComponent(rid);
+    } else if (/recharge|compensation|wallet|bonus|cat_food|catfood/.test(kindKey)) {
+      deepLink = "/recharge.html";
+    } else if (/cs|support|message|chat|service_reply/.test(kindKey)) {
+      deepLink = rid ? "/support.html?order=" + encodeURIComponent(rid) : "/support.html";
+    } else if (/gift/.test(kindKey)) {
+      deepLink = "/gifts.html";
+    } else if (rid) {
+      deepLink = "/orders.html?id=" + encodeURIComponent(rid);
+    }
+    fanoutWebPush(bossId, {
+      title: title || "妙脆角通知",
+      body: body || "",
+      url: deepLink,
+      notificationType: String(kind || "boss"),
+      entityId: rid,
+      tag: "boss-" + String(kind || "notice") + "-" + rid,
+    });
+  } catch {
+    /* push optional */
+  }
 }
 
 export function viewCampaign(row = {}) {

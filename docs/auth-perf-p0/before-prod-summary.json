@@ -1,0 +1,14 @@
+{
+  "base": "https://www.meowcuijiao.com",
+  "at": "2026-09-11T11:51:00Z",
+  "notes": "Synthetic JWT probe against Production (pre-fix). Stale mcjAuthExpiresAt with still-valid JWT forced pending_restore / navigation abort.",
+  "results": [
+    {"scenario":"valid_jwt_clean","url":"/mine.html","overlayMs":0,"firstUi":357},
+    {"scenario":"valid_jwt_clean","url":"/orders.html","overlayMs":0,"firstUi":415},
+    {"scenario":"valid_jwt_clean","url":"/messages.html","overlayMs":0,"firstUi":400},
+    {"scenario":"valid_jwt_clean","url":"/","overlayMs":0,"firstUi":322},
+    {"scenario":"valid_jwt_stale_auth_expires","url":"/mine.html","error":"Execution context destroyed (navigation during full-screen restore / refresh failure)","overlayMs":null,"firstUi":null,"rootCausePath":true},
+    {"api":"/api/auth?action=me","latencyMs":[235,222,291]},
+    {"api":"POST /api/auth refresh (invalid)","latencyMs":[620,348,337]}
+  ]
+}

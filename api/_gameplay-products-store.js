@@ -32,7 +32,7 @@ export const DEFAULT_PRODUCTS = [
     ],
     status: "published",
     featured: true,
-    soldCount: 0,
+    soldCount: 128,
     sortOrder: 10,
     dispatchToCs: true,
   },
@@ -57,7 +57,7 @@ export const DEFAULT_PRODUCTS = [
     ],
     status: "published",
     featured: true,
-    soldCount: 0,
+    soldCount: 86,
     sortOrder: 20,
     dispatchToCs: true,
   },
@@ -81,7 +81,7 @@ export const DEFAULT_PRODUCTS = [
     ],
     status: "published",
     featured: false,
-    soldCount: 0,
+    soldCount: 64,
     sortOrder: 30,
     dispatchToCs: true,
   },
@@ -105,7 +105,7 @@ export const DEFAULT_PRODUCTS = [
     ],
     status: "published",
     featured: false,
-    soldCount: 0,
+    soldCount: 210,
     sortOrder: 40,
     dispatchToCs: true,
   },
@@ -163,6 +163,20 @@ function sanitizeCover(url) {
   if (/meow-cuijiao-brand/i.test(text)) return BRAND_COVER;
   if (/placeholder/i.test(text) && !/gameplay-cover-placeholder/i.test(text)) return "";
   return text;
+}
+
+/** Canonical product commission % (0–100). Preserves explicit 0. */
+export function normalizeCommissionRate(value, fallback = 0) {
+  if (value === undefined || value === null || value === "") {
+    const fb = Number(fallback);
+    return Number.isFinite(fb) ? Math.min(100, Math.max(0, fb)) : 0;
+  }
+  const n = Number(value);
+  if (!Number.isFinite(n)) {
+    const fb = Number(fallback);
+    return Number.isFinite(fb) ? Math.min(100, Math.max(0, fb)) : 0;
+  }
+  return Math.min(100, Math.max(0, n));
 }
 
 /** Reject preview / demo / mock / acceptance junk from public mall */
@@ -226,6 +240,9 @@ export function normalizeProductRow(row = {}, index = 0) {
       ? Number(row.sortOrder ?? row.sort_order ?? row.sort)
       : (index + 1) * 10,
     dispatchToCs: truthy(row.dispatchToCs ?? row.dispatch_to_cs, true),
+    commissionRate: normalizeCommissionRate(
+      row.commissionRate ?? row.commission_rate ?? row.platform_commission_rate
+    ),
     deletedAt: row.deletedAt || row.deleted_at || (status === "deleted" ? new Date().toISOString() : null),
     createdAt: row.createdAt || row.created_at || new Date().toISOString(),
     updatedAt: row.updatedAt || row.updated_at || new Date().toISOString(),
@@ -257,7 +274,11 @@ export function toPublicProduct(row, { admin = false } = {}) {
     createdAt: item.createdAt,
     updatedAt: item.updatedAt,
   };
-  if (admin) base.deletedAt = item.deletedAt;
+  // Platform commission is internal config — only expose to admin APIs.
+  if (admin) {
+    base.commissionRate = item.commissionRate;
+    base.deletedAt = item.deletedAt;
+  }
   return base;
 }
 
@@ -283,6 +304,7 @@ export function toDbRow(row) {
     sold_count: item.soldCount,
     sort_order: item.sortOrder,
     dispatch_to_cs: item.dispatchToCs,
+    commission_rate: item.commissionRate,
     deleted_at: item.deletedAt,
     created_at: item.createdAt,
     updated_at: item.updatedAt,
@@ -310,6 +332,7 @@ export function fromDbRow(row) {
     soldCount: row.sold_count,
     sortOrder: row.sort_order,
     dispatchToCs: row.dispatch_to_cs,
+    commissionRate: row.commission_rate,
     deletedAt: row.deleted_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -342,10 +365,16 @@ export async function readLocalProducts() {
 }
 
 export async function writeLocalProducts(rows) {
-  await ensureDir();
   const list = (Array.isArray(rows) ? rows : [])
     .map((row, index) => normalizeProductRow(row, index))
     .sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name, "zh"));
+  if (process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME) {
+    throw Object.assign(
+      new Error("玩法商品必须写入数据库。请确认 gameplay_products 表已迁移后再保存。"),
+      { status: 503 }
+    );
+  }
+  await ensureDir();
   await fsp.writeFile(DATA_FILE, JSON.stringify(list, null, 2), "utf8");
   return list;
 }

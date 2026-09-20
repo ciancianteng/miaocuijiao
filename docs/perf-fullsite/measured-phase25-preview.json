@@ -1,0 +1,233 @@
+{
+  "at": "2026-09-12T21:14:56Z",
+  "before_prod": {
+    "/api/public/companions": {
+      "cold_bust_ms": 4616,
+      "cold_xvc": "MISS",
+      "cold_mem": "",
+      "p50_ms": 3929,
+      "samples": [
+        {
+          "ms": 4045,
+          "http": 200,
+          "bytes": 35613,
+          "x_vercel_cache": "MISS",
+          "age": "0",
+          "mem": ""
+        },
+        {
+          "ms": 3929,
+          "http": 200,
+          "bytes": 35613,
+          "x_vercel_cache": "MISS",
+          "age": "0",
+          "mem": ""
+        },
+        {
+          "ms": 3374,
+          "http": 200,
+          "bytes": 35613,
+          "x_vercel_cache": "MISS",
+          "age": "0",
+          "mem": ""
+        }
+      ],
+      "cache_control": "no-store",
+      "warm_xvc": "MISS",
+      "warm_mem": "",
+      "warm_age": "0",
+      "companions": 8
+    },
+    "/api/home/daily-stats": {
+      "cold_bust_ms": 703,
+      "cold_xvc": "MISS",
+      "cold_mem": "",
+      "p50_ms": 686,
+      "samples": [
+        {
+          "ms": 674,
+          "http": 200,
+          "bytes": 853,
+          "x_vercel_cache": "MISS",
+          "age": "0",
+          "mem": ""
+        },
+        {
+          "ms": 686,
+          "http": 200,
+          "bytes": 853,
+          "x_vercel_cache": "MISS",
+          "age": "0",
+          "mem": ""
+        },
+        {
+          "ms": 723,
+          "http": 200,
+          "bytes": 853,
+          "x_vercel_cache": "MISS",
+          "age": "0",
+          "mem": ""
+        }
+      ],
+      "cache_control": "no-store, no-cache, must-revalidate",
+      "warm_xvc": "MISS",
+      "warm_mem": "",
+      "warm_age": "0",
+      "companions": null
+    },
+    "/api/platform/services": {
+      "cold_bust_ms": 296,
+      "cold_xvc": "MISS",
+      "cold_mem": "",
+      "p50_ms": 324,
+      "samples": [
+        {
+          "ms": 333,
+          "http": 200,
+          "bytes": 4666,
+          "x_vercel_cache": "MISS",
+          "age": "0",
+          "mem": ""
+        },
+        {
+          "ms": 324,
+          "http": 200,
+          "bytes": 4666,
+          "x_vercel_cache": "MISS",
+          "age": "0",
+          "mem": ""
+        },
+        {
+          "ms": 302,
+          "http": 200,
+          "bytes": 4666,
+          "x_vercel_cache": "MISS",
+          "age": "0",
+          "mem": ""
+        }
+      ],
+      "cache_control": "no-store",
+      "warm_xvc": "MISS",
+      "warm_mem": "",
+      "warm_age": "0",
+      "companions": null
+    }
+  },
+  "after_preview_phase25": {
+    "/api/public/companions": {
+      "cold_bust_ms": 1275,
+      "cold_xvc": "MISS",
+      "cold_mem": "",
+      "p50_ms": 186,
+      "samples": [
+        {
+          "ms": 817,
+          "http": 200,
+          "bytes": 7672,
+          "x_vercel_cache": "MISS",
+          "age": "0",
+          "mem": ""
+        },
+        {
+          "ms": 186,
+          "http": 200,
+          "bytes": 7672,
+          "x_vercel_cache": "HIT",
+          "age": "0",
+          "mem": ""
+        },
+        {
+          "ms": 152,
+          "http": 200,
+          "bytes": 7672,
+          "x_vercel_cache": "HIT",
+          "age": "0",
+          "mem": ""
+        }
+      ],
+      "cache_control": "public, max-age=15, s-maxage=30, stale-while-revalidate=60",
+      "warm_xvc": "HIT",
+      "warm_mem": "",
+      "warm_age": "0",
+      "companions": 2
+    },
+    "/api/home/daily-stats": {
+      "cold_bust_ms": 528,
+      "cold_xvc": "MISS",
+      "cold_mem": "MISS",
+      "p50_ms": 180,
+      "samples": [
+        {
+          "ms": 335,
+          "http": 200,
+          "bytes": 853,
+          "x_vercel_cache": "MISS",
+          "age": "0",
+          "mem": "HIT"
+        },
+        {
+          "ms": 76,
+          "http": 200,
+          "bytes": 853,
+          "x_vercel_cache": "HIT",
+          "age": "0",
+          "mem": "HIT"
+        },
+        {
+          "ms": 180,
+          "http": 200,
+          "bytes": 853,
+          "x_vercel_cache": "HIT",
+          "age": "1",
+          "mem": "HIT"
+        }
+      ],
+      "cache_control": "public, max-age=30, s-maxage=60, stale-while-revalidate=120",
+      "warm_xvc": "HIT",
+      "warm_mem": "HIT",
+      "warm_age": "1",
+      "companions": null
+    },
+    "/api/platform/services": {
+      "cold_bust_ms": 268,
+      "cold_xvc": "MISS",
+      "cold_mem": "",
+      "p50_ms": 76,
+      "samples": [
+        {
+          "ms": 269,
+          "http": 200,
+          "bytes": 640,
+          "x_vercel_cache": "MISS",
+          "age": "0",
+          "mem": ""
+        },
+        {
+          "ms": 67,
+          "http": 200,
+          "bytes": 640,
+          "x_vercel_cache": "HIT",
+          "age": "0",
+          "mem": ""
+        },
+        {
+          "ms": 76,
+          "http": 200,
+          "bytes": 640,
+          "x_vercel_cache": "HIT",
+          "age": "0",
+          "mem": ""
+        }
+      ],
+      "cache_control": "public, max-age=30, s-maxage=60, stale-while-revalidate=120",
+      "warm_xvc": "HIT",
+      "warm_mem": "",
+      "warm_age": "0",
+      "companions": null
+    }
+  },
+  "preview_origin": "https://meow-cuijiao-homepage-mm73nvc99-ciancianteng-4581s-projects.vercel.app",
+  "preview_commit": "683e4ae",
+  "merge_gate": "BLOCKED",
+  "ready_for_final_review": false
+}

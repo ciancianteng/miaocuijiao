@@ -627,6 +627,24 @@ export async function awardBossPointsForCompletedOrder(order, { method = "boss_m
     return { ok: false, skipped: true, error: "missing_order_or_boss" };
   }
 
+  // Multi-companion children never award boss points (parent awards once).
+  try {
+    const { isMultiGroupChild } = await import("./_order-group.js");
+    if (isMultiGroupChild(order) || order?.parent_order_id) {
+      return {
+        ok: true,
+        skipped: true,
+        points: 0,
+        error: "multi_group_child_skip_points",
+        idempotency_key: orderPointsIdempotencyKey(orderId),
+      };
+    }
+  } catch (_) {
+    if (order?.parent_order_id) {
+      return { ok: true, skipped: true, points: 0, error: "multi_group_child_skip_points" };
+    }
+  }
+
   // G8: Production points writes stay off until flag explicitly enabled.
   if (!isPointsAwardEnabled()) {
     return {
@@ -653,7 +671,9 @@ export async function awardBossPointsForCompletedOrder(order, { method = "boss_m
       ? "order_complete_auto"
       : method === "admin_force"
         ? "order_complete_admin"
-        : "order_complete_boss";
+        : method === "cs_force"
+          ? "order_complete_cs"
+          : "order_complete_boss";
 
   let settings;
   try {

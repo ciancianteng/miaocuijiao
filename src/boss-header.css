@@ -568,3 +568,19 @@ html.mcj-mnav-open header.mcj-boss-header .mcj-mnav-toggle {
 /* Chat unread badge on 客服 nav */
 .mcj-chat-unread-badge{display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;margin-left:4px;padding:0 5px;border-radius:999px;background:#e11d48;color:#fff;font-size:11px;font-style:normal;font-weight:700;line-height:1;vertical-align:middle}
 .mcj-chat-unread-badge[hidden]{display:none!important}
+
+/* Perf Phase2: instant click feedback on chrome nav (MPA full reload) */
+.mcj-boss-header a,
+.mcj-desk-nav a,
+.mcj-mnav a,
+.mcj-header-brand {
+  touch-action: manipulation;
+  transition: opacity 0.08s linear, transform 0.08s linear;
+}
+.mcj-boss-header a:active,
+.mcj-desk-nav a:active,
+.mcj-mnav a:active,
+.mcj-header-brand:active {
+  opacity: 0.72;
+  transform: scale(0.98);
+}
