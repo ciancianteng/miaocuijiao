@@ -25,7 +25,8 @@
     "verify:multi-companion-order": "node scripts/verify-multi-companion-order.mjs",
     "verify:gift-system": "node scripts/verify-gift-system-offline.mjs",
     "verify:boss-order-detail-cancel": "node scripts/verify-boss-order-detail-cancel-offline.mjs",
-    "verify:service-pricing": "node scripts/verify-service-pricing-offline.mjs"
+    "verify:service-pricing": "node scripts/verify-service-pricing-offline.mjs",
+    "verify:service-pricing-dedup": "node scripts/verify-service-pricing-dedup-offline.mjs"
   },
   "dependencies": {
     "@vitejs/plugin-react": "latest",
