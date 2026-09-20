@@ -25,11 +25,8 @@
     "verify:multi-companion-order": "node scripts/verify-multi-companion-order.mjs",
     "verify:gift-system": "node scripts/verify-gift-system-offline.mjs",
     "verify:boss-order-detail-cancel": "node scripts/verify-boss-order-detail-cancel-offline.mjs",
-<<<<<<< HEAD
     "verify:boss-tutorial": "node scripts/verify-boss-tutorial.mjs",
-=======
     "verify:multi-order-partial-cancel": "node scripts/verify-multi-order-partial-cancel.mjs",
->>>>>>> origin/main
     "verify:service-pricing": "node scripts/verify-service-pricing-offline.mjs"
   },
   "dependencies": {
