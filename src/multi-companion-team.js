@@ -96,7 +96,7 @@
     if (document.querySelector('link[data-mcj-team-css]')) return;
     var link = document.createElement("link");
     link.rel = "stylesheet";
-    link.href = "src/multi-companion-team.css?v=20260919team2";
+    link.href = "src/multi-companion-team.css?v=20260920checkoutEntry";
     link.setAttribute("data-mcj-team-css", "1");
     document.head.appendChild(link);
   }
@@ -262,7 +262,7 @@
     state.lines.push(line);
     persist();
     renderBar();
-    toast(state.lines.length === 1 ? "已加入队伍，可继续选陪玩" : "已加入一起下单");
+    toast(state.lines.length === 1 ? "已保存，可继续选择下一位陪玩" : "已加入联合订单");
     return { ok: true, count: state.lines.length };
   }
 
@@ -348,7 +348,7 @@
       esc(String(total)) +
       "猫粮</strong>" +
       "<span>" +
-      (n >= 2 ? "一次付款，分别结算" : "可继续选陪玩，或去结算（单人走普通下单）") +
+      (n >= 2 ? "一次付款，分别按各人服务价结算" : "可继续选陪玩，或去结算（单人走普通下单）") +
       "</span>" +
       "</div>" +
       '<div class="mcj-team-bar-actions">' +
@@ -401,13 +401,16 @@
 
   function paintSheetTotals() {
     var total = groupTotal();
+    var n = state.lines.length;
     var el = document.querySelector("[data-mcj-team-sheet-total]");
     if (el) el.textContent = String(total) + " 猫粮";
+    var countEl = document.querySelector("[data-mcj-team-sheet-count]");
+    if (countEl) countEl.textContent = "共 " + n + " 位陪玩";
     var btn = document.querySelector("[data-mcj-team-submit]");
     if (btn) {
-      var ok = state.lines.length >= 2;
+      var ok = n >= 2;
       btn.disabled = !ok || state.submitting;
-      btn.textContent = state.submitting ? "提交中…" : "确认并支付 " + total + "猫粮";
+      btn.textContent = state.submitting ? "提交中…" : "确认付款 " + total + "猫粮";
     }
   }
 
@@ -461,25 +464,46 @@
             );
           })
           .join("");
+        var hoursLabel = money(l.hours) + "小时";
+        var qtyLabel = Math.max(1, Math.floor(money(l.quantity) || 1));
+        var meta =
+          esc(l.service || "-") +
+          " · " +
+          esc(hoursLabel) +
+          (qtyLabel > 1 ? " ×" + qtyLabel : "");
         return (
-          '<article class="mcj-team-line" data-line="' +
+          '<article class="mcj-team-member" data-line="' +
           esc(l.companionId) +
           '">' +
-          '<div class="mcj-team-line-head">' +
-          '<img src="' +
+          '<div class="mcj-team-member-main">' +
+          '<img class="mcj-team-member-avatar" src="' +
           esc(l.avatar || DEFAULT_AVATAR) +
-          '" alt="">' +
-          "<div><strong>" +
+          '" alt="" onerror="this.onerror=null;this.src=\'' +
+          DEFAULT_AVATAR +
+          '\'">' +
+          '<div class="mcj-team-member-info">' +
+          "<strong>" +
           esc(l.companionName) +
-          "</strong><span>单价 " +
-          esc(String(l.unitPrice)) +
-          " · 小计 <em data-line-sub>" +
+          "</strong>" +
+          "<span>" +
+          meta +
+          "</span>" +
+          "<em>" +
           esc(String(lineSubtotal(l))) +
-          "</em></span></div>" +
+          " 猫粮</em>" +
+          "</div>" +
+          '<div class="mcj-team-member-actions">' +
+          '<button type="button" class="mcj-team-edit" data-mcj-team-edit="' +
+          esc(l.companionId) +
+          '">修改</button>' +
           '<button type="button" class="mcj-team-remove" data-mcj-team-remove="' +
           esc(l.companionId) +
           '">移除</button>' +
           "</div>" +
+          "</div>" +
+          '<div class="mcj-team-member-edit" data-mcj-team-edit-panel="' +
+          esc(l.companionId) +
+          '" hidden>' +
           '<div class="mcj-team-field"><span>游戏/服务</span><div class="mcj-team-chips">' +
           chips +
           "</div></div>" +
@@ -491,57 +515,43 @@
           '" data-mcj-team-qty="' +
           esc(l.companionId) +
           '"></div>' +
+          "</div>" +
           "</article>"
         );
       })
       .join("");
 
     var total = groupTotal();
-    var summaryRows = state.lines
-      .map(function (l, idx) {
-        return (
-          '<div class="mcj-team-summary-row">' +
-          "<span>陪玩" +
-          (idx + 1) +
-          " · " +
-          esc(l.companionName) +
-          "</span>" +
-          "<span>服务：" +
-          esc(l.service || "-") +
-          "</span>" +
-          "<strong>小计：" +
-          esc(String(lineSubtotal(l))) +
-          "猫粮</strong>" +
-          "</div>"
-        );
-      })
-      .join("");
+    var n = state.lines.length;
     mask.innerHTML =
-      '<div class="mcj-team-sheet" role="dialog" aria-modal="true" aria-label="多人一起下单">' +
+      '<div class="mcj-team-sheet" role="dialog" aria-modal="true" aria-label="联合下单">' +
       '<div class="mcj-team-sheet-head">' +
-      "<h3>多人一起下单</h3>" +
+      "<h3>联合下单</h3>" +
       '<button type="button" class="mcj-team-sheet-close" data-mcj-team-sheet-close aria-label="关闭">×</button>' +
       "</div>" +
       '<div class="mcj-team-sheet-scroll">' +
-      '<div class="mcj-team-summary">' +
-      summaryRows +
-      "</div>" +
+      '<div class="mcj-team-members">' +
       rows +
+      "</div>" +
+      '<button type="button" class="mcj-team-add-more" data-mcj-team-add-more>+ 继续添加陪玩</button>' +
       '<div class="mcj-team-field"><span>游戏 ID（共用）</span><input type="text" data-mcj-team-game-id value="' +
       esc(state.sharedGameId) +
       '" placeholder="请填写游戏 ID"></div>' +
       '<div class="mcj-team-field"><span>备注（可选）</span><input type="text" data-mcj-team-notes value="' +
       esc(state.sharedNotes) +
       '" placeholder="给整组订单的备注"></div>' +
-      '<p class="mcj-team-pay-hint">本订单一次付款，系统会分别为每位陪玩结算。</p>' +
+      '<p class="mcj-team-pay-hint">本订单一次付款，每位陪玩按自己的服务价格分别结算。</p>' +
       "</div>" +
       '<div class="mcj-team-sheet-foot">' +
-      '<div class="mcj-team-sheet-total">合计 <strong data-mcj-team-sheet-total>' +
+      '<div class="mcj-team-sheet-meta"><span data-mcj-team-sheet-count>共 ' +
+      n +
+      " 位陪玩</span>" +
+      '<div class="mcj-team-sheet-total">订单总额 <strong data-mcj-team-sheet-total">' +
       esc(String(total)) +
-      " 猫粮</strong></div>" +
+      " 猫粮</strong></div></div>" +
       '<button type="button" class="mcj-team-submit" data-mcj-team-submit' +
-      (state.lines.length < 2 ? " disabled" : "") +
-      ">确认并支付 " +
+      (n < 2 ? " disabled" : "") +
+      ">确认付款 " +
       esc(String(total)) +
       "猫粮</button>" +
       "</div></div>";
@@ -718,39 +728,35 @@
   }
 
   function onDocClick(e) {
-    var addBtn = e.target.closest("[data-hall-team-add]");
-    if (addBtn) {
-      e.preventDefault();
-      e.stopPropagation();
-      addCompanion({
-        companionId: addBtn.getAttribute("data-hall-team-add") || "",
-        companionName: addBtn.getAttribute("data-hall-name") || "陪玩",
-        unitPrice: Number(addBtn.getAttribute("data-hall-price") || 0),
-        avatar: addBtn.getAttribute("data-hall-avatar") || "",
-        game: addBtn.getAttribute("data-hall-game") || "陪玩",
-        service: addBtn.getAttribute("data-hall-game") || "陪玩",
-        status: addBtn.getAttribute("data-hall-status") || "",
-        statusText: addBtn.getAttribute("data-hall-status-text") || "",
-        online: addBtn.getAttribute("data-hall-online"),
-      });
-      return;
-    }
     if (e.target.closest("[data-mcj-team-checkout]")) {
       e.preventDefault();
       openCheckout();
       return;
     }
-    if (e.target.closest("[data-mcj-team-continue]")) {
+    if (e.target.closest("[data-mcj-team-continue]") || e.target.closest("[data-mcj-team-add-more]")) {
       e.preventDefault();
       state.expanded = false;
+      closeSheet();
       renderBar();
-      toast("继续浏览陪玩大厅，再选一位");
+      toast("请在大厅选择下一位陪玩，点击「立即下单」加入联合订单");
       return;
     }
     if (e.target.closest("[data-mcj-team-expand]")) {
       e.preventDefault();
       state.expanded = !state.expanded;
       renderBar();
+      return;
+    }
+    var editBtn = e.target.closest("[data-mcj-team-edit]");
+    if (editBtn) {
+      e.preventDefault();
+      var eid = editBtn.getAttribute("data-mcj-team-edit");
+      var panel = document.querySelector('[data-mcj-team-edit-panel="' + eid + '"]');
+      if (panel) {
+        var open = panel.hasAttribute("hidden");
+        panel.toggleAttribute("hidden", !open);
+        editBtn.textContent = open ? "收起" : "修改";
+      }
       return;
     }
     var rm = e.target.closest("[data-mcj-team-remove]");
@@ -796,9 +802,21 @@
       });
       var article = qty.closest("[data-line]");
       if (article) {
-        var sub = article.querySelector("[data-line-sub]");
         var line = findLine(qty.getAttribute("data-mcj-team-qty"));
-        if (sub && line) sub.textContent = String(lineSubtotal(line));
+        if (line) {
+          var priceEl = article.querySelector(".mcj-team-member-info em");
+          if (priceEl) priceEl.textContent = String(lineSubtotal(line)) + " 猫粮";
+          var metaEl = article.querySelector(".mcj-team-member-info span");
+          if (metaEl) {
+            var hoursLabel = money(line.hours) + "小时";
+            var qtyLabel = Math.max(1, Math.floor(money(line.quantity) || 1));
+            metaEl.textContent =
+              String(line.service || "-") +
+              " · " +
+              hoursLabel +
+              (qtyLabel > 1 ? " ×" + qtyLabel : "");
+          }
+        }
       }
       paintSheetTotals();
     }

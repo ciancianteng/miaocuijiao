@@ -189,6 +189,20 @@
       return;
     }
     btn.setAttribute("aria-busy", "false");
+    var joinMode = teamDraftCount() > 0 && !currentCompanionInTeam();
+    btn.setAttribute("data-po-join-team", joinMode ? "1" : "0");
+    btn.setAttribute("data-ready", "0");
+    if (joinMode) {
+      // Payment is collected on the joint checkout sheet — only need a valid service line here.
+      var svcOk =
+        !!(state.companion && money(state.companion.unitPrice) > 0) &&
+        !!state.service &&
+        resolveServices(state.companion || {}).length > 0;
+      btn.disabled = !svcOk;
+      btn.textContent = "加入联合订单";
+      if (svcOk) btn.setAttribute("data-ready", "1");
+      return;
+    }
     if (state.payMethodsLoading) {
       btn.disabled = true;
       btn.textContent = "支付方式加载中…";
@@ -205,6 +219,7 @@
       return;
     }
     btn.disabled = false;
+    btn.setAttribute("data-ready", "1");
     btn.textContent = "确认订单并付款";
   }
   function applyOrderPayMethods(body) {
@@ -994,7 +1009,7 @@
       "</strong></div>" +
       '<p class="mcj-po-error mcj-po-footer-error" data-po-error hidden></p>' +
       '<div class="mcj-po-footer-actions">' +
-      '<button type="button" class="mcj-po-add-another" data-po-add-another>再加一位陪玩</button>' +
+      '<button type="button" class="mcj-po-add-another" data-po-add-another>+ 加一位陪玩一起下单</button>' +
       '<button type="button" class="primary mcj-po-submit" data-po-submit disabled aria-busy="false">支付方式加载中…</button>' +
       "</div>" +
       "</div></div>";
@@ -1121,6 +1136,10 @@
       submit.addEventListener("click", function (ev) {
         ev.preventDefault();
         ev.stopPropagation();
+        if (submit.getAttribute("data-po-join-team") === "1") {
+          joinTeamAndCheckout();
+          return;
+        }
         submitOrder();
       });
     }
@@ -1132,6 +1151,7 @@
         addAnotherCompanion();
       });
     }
+    syncSubmitAvailability();
     refreshWalletBalance().then(function () {
       if (!state.open || !activeMask()) return;
       paintPayCards();
@@ -1228,11 +1248,16 @@
       return;
     }
     if (!window.MCJMultiCompanionTeam || typeof window.MCJMultiCompanionTeam.add !== "function") {
-      toast("多人一起下单组件未加载，请刷新大厅后重试");
+      toast("多人一起下单组件未加载，请在陪玩大厅下单后使用");
       return;
     }
     if (!(money(c.unitPrice) > 0)) {
       toast("当前单价无效，无法加入队伍");
+      return;
+    }
+    var svcList = resolveServices(c);
+    if (!svcList.length || !state.service) {
+      toast("请先选择游戏/服务项目");
       return;
     }
     var result = window.MCJMultiCompanionTeam.add({
@@ -1245,15 +1270,80 @@
       game: c.game || currentServiceLabel(),
       hours: currentHours(),
       quantity: currentQuantity(),
-      services: resolveServices(c),
+      services: svcList,
       online: c.online !== false,
       status: c.availabilityStatus || "",
       statusText: c.availabilityText || "",
     });
     if (!result || !result.ok) return;
-    // Do NOT create an order — close modal and return to hall browsing.
+    // Keep draft in team; return to hall to pick the next companion (not a hall-card CTA).
     close();
-    toast(result.count >= 2 ? "已加入队伍，可去结算" : "已加入队伍，继续选择下一位陪玩");
+    toast("已保存当前陪玩，请选择下一位一起下单");
+  }
+
+  /** When a joint draft already exists, join current companion then open member checkout. */
+  function joinTeamAndCheckout() {
+    var c = state.companion;
+    if (!c || !(c.companionId || c.id)) {
+      toast("缺少陪玩信息");
+      return;
+    }
+    if (!window.MCJMultiCompanionTeam || typeof window.MCJMultiCompanionTeam.add !== "function") {
+      toast("多人一起下单组件未加载，请在陪玩大厅下单后使用");
+      return;
+    }
+    var svcList = resolveServices(c);
+    if (!svcList.length || !state.service) {
+      failValidate("请选择游戏/服务项目");
+      return;
+    }
+    if (!(money(c.unitPrice) > 0)) {
+      failValidate("当前单价无效，请刷新页面后重试");
+      return;
+    }
+    var result = window.MCJMultiCompanionTeam.add({
+      companionId: c.companionId || c.id,
+      companionName: c.companionName || c.name || "陪玩",
+      avatar: c.avatar || c.image || "",
+      unitPrice: money(c.unitPrice),
+      service: currentServiceLabel(),
+      serviceType: currentServiceLabel(),
+      game: c.game || currentServiceLabel(),
+      hours: currentHours(),
+      quantity: currentQuantity(),
+      services: svcList,
+      online: c.online !== false,
+      status: c.availabilityStatus || "",
+      statusText: c.availabilityText || "",
+    });
+    if (!result || !result.ok) return;
+    close();
+    if (typeof window.MCJMultiCompanionTeam.openCheckout === "function") {
+      window.MCJMultiCompanionTeam.openCheckout();
+    }
+  }
+
+  function teamDraftCount() {
+    try {
+      if (window.MCJMultiCompanionTeam && typeof window.MCJMultiCompanionTeam.getCount === "function") {
+        return Number(window.MCJMultiCompanionTeam.getCount()) || 0;
+      }
+    } catch (e) {}
+    return 0;
+  }
+
+  function currentCompanionInTeam() {
+    try {
+      var id = String((state.companion && (state.companion.companionId || state.companion.id)) || "");
+      if (!id || !window.MCJMultiCompanionTeam || typeof window.MCJMultiCompanionTeam.getLines !== "function") {
+        return false;
+      }
+      return (window.MCJMultiCompanionTeam.getLines() || []).some(function (l) {
+        return String(l.companionId) === id;
+      });
+    } catch (e) {
+      return false;
+    }
   }
 
   function submitOrder() {

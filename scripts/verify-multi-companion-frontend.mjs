@@ -40,10 +40,11 @@ test("TEST 1 single-order path unchanged (place_order + 立即下单)", () => {
   assert.doesNotMatch(placeSrc, /place_multi_order/);
 });
 
-test("TEST 1b modal has 再加一位陪玩 (no order create)", () => {
-  assert.match(placeSrc, /再加一位陪玩/);
+test("TEST 1b checkout has +加一位陪玩一起下单 (no order create)", () => {
+  assert.match(placeSrc, /加一位陪玩一起下单/);
   assert.match(placeSrc, /data-po-add-another/);
   assert.match(placeSrc, /addAnotherCompanion/);
+  assert.match(placeSrc, /joinTeamAndCheckout/);
   assert.match(placeSrc, /MCJMultiCompanionTeam\.add/);
   assert.doesNotMatch(placeSrc, /addAnotherCompanion[\s\S]{0,400}place_order/);
 });
@@ -180,8 +181,9 @@ test("TEST floating bar + checkout copy", () => {
   assert.match(teamSrc, /继续选/);
   assert.match(teamSrc, /查看队伍/);
   assert.match(teamSrc, /去结算/);
-  assert.match(teamSrc, /确认并支付/);
-  assert.match(teamSrc, /本订单一次付款，系统会分别为每位陪玩结算/);
+  assert.match(teamSrc, /确认付款/);
+  assert.match(teamSrc, /联合下单/);
+  assert.match(teamSrc, /本订单一次付款，每位陪玩按自己的服务价格分别结算/);
   assert.match(teamSrc, /data-mcj-team-continue/);
 });
 
@@ -198,8 +200,8 @@ test("TEST boss list parent-only + child hidden", () => {
 test("TEST companion co-peer visibility (no peer income)", () => {
   assert.match(companionApi, /attachGroupPeers/);
   assert.match(companionApi, /groupPeers/);
-  assert.match(workbenchSrc, /同单陪玩/);
-  assert.match(workbenchSrc, /联合订单/);
+  assert.match(workbenchSrc, /本次联合陪玩/);
+  assert.match(workbenchSrc, /一起接单/);
   assert.match(workbenchSrc, /你的订单金额/);
   assert.match(workbenchSrc, /其他陪玩收入不会显示/);
   assert.doesNotMatch(companionApi, /_groupPeers[\s\S]{0,200}playerIncome/);
@@ -211,10 +213,16 @@ test("TEST payment page multi parent", () => {
   assert.match(paymentSrc, /总付款|一次付款/);
 });
 
-test("TEST hall secondary CTA + center script wired", () => {
-  assert.match(hallSrc, /加入一起下单/);
-  assert.match(hallSrc, /data-hall-team-add/);
+test("TEST hall cards only 查看详情 + 立即下单 (no 加入一起下单)", () => {
+  assert.match(hallSrc, /查看详情/);
+  assert.match(hallSrc, /立即下单/);
+  assert.match(hallSrc, /data-hall-order/);
+  assert.doesNotMatch(hallSrc, /加入一起下单/);
+  assert.doesNotMatch(hallSrc, /data-hall-team-add/);
   assert.match(centerHtml, /multi-companion-team\.js/);
+  assert.match(teamSrc, /联合下单/);
+  assert.match(teamSrc, /继续添加陪玩/);
+  assert.match(teamSrc, /mcj-team-member/);
 });
 
 test("STATIC floating bar safe-area / bottom-nav offset", () => {
