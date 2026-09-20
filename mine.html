@@ -112,16 +112,6 @@
     .boss-stat:hover,.boss-stat:active{background:rgba(232,154,196,.1)}
     .boss-stat-label{display:flex;align-items:center;gap:6px;color:#ffd6e7;font-size:13px;font-weight:700}
     .boss-stat-value{font-size:22px;font-weight:800;line-height:1.1;letter-spacing:.01em}
-    .boss-vip-card{
-      margin:0 0 16px;padding:14px 16px;border-radius:18px;
-      border:1px solid rgba(232,154,196,.34);
-      background:rgba(232,154,196,.06);
-    }
-    .boss-vip-card h2{margin:0 0 10px;font-size:16px;font-weight:800}
-    .boss-vip-row{display:flex;justify-content:space-between;gap:12px;margin:6px 0;font-size:13px;line-height:1.45}
-    .boss-vip-row span{color:#ffd6e7;font-weight:700}
-    .boss-vip-row strong{font-weight:800;text-align:right}
-    .boss-vip-benefits{margin:10px 0 0;color:rgba(255,255,255,.72);font-size:12px;line-height:1.5;white-space:pre-wrap}
 
     /* 4 entry buttons — open modal, never inline expand */
     .entry-stack{display:grid;gap:14px}
@@ -330,11 +320,13 @@
       </div>
     </form>
   </div>
+  <link rel="stylesheet" href="/src/boss-vip-ui.css?v=20260920bossVipUi1">
   <script src="src/boss-auth-session.js?v=20260911authPerfP0"></script>
   <script src="src/boss-profile-cache.js?v=20260911perfP2"></script>
   <script src="src/boss-nav-prefetch.js?v=20260911perfP2"></script>
   <script src="src/role-gates.js?v=20260911authPerfP0"></script>
   <script src="src/account-security.js?v=20260805acctSec1"></script>
+  <script src="src/boss-vip-ui.js?v=20260920bossVipUi1"></script>
   <script src="src/boss-header.js" defer></script>
   <script>
     (function(){
@@ -448,6 +440,9 @@
       }
 
       function bossVipCardHtml(){
+        if(window.MCJBossVipUI&&typeof window.MCJBossVipUI.renderPanel==='function'){
+          return window.MCJBossVipUI.renderPanel(state.vip||{});
+        }
         var v=state.vip||{};
         var name=v.currentLevelName||'普通会员';
         var spend=v.confirmedSpend!=null?v.confirmedSpend:0;
