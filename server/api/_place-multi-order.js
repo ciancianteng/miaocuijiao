@@ -179,9 +179,9 @@ export async function placeMultiOrder(ctx) {
         sharedGame ||
         ""
     ).trim();
-    const levels = readLocalLevels();
+    const levels = await readLocalLevels().catch(() => []);
     const level =
-      (levels || []).find(
+      (Array.isArray(levels) ? levels : []).find(
         (l) =>
           String(l.id) === String(cp.level_id || "") ||
           String(l.code) === String(cp.level_id || "") ||

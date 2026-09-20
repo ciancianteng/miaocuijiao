@@ -1268,9 +1268,9 @@ export default async function handler(req, res) {
         const serviceId = String(order.serviceId || order.service_id || "").trim();
         const gameHint = String(order.gameName || order.game_name || order.mainGame || order.main_game || game || "").trim();
         // Server-authoritative: companion_services → game_prices → level.base_price. Never trust client unit.
-        const levels = readLocalLevels();
+        const levels = await readLocalLevels().catch(() => []);
         const level =
-          (levels || []).find(
+          (Array.isArray(levels) ? levels : []).find(
             (l) =>
               String(l.id) === String(cp.level_id || "") ||
               String(l.code) === String(cp.level_id || "") ||
@@ -2276,9 +2276,9 @@ export default async function handler(req, res) {
       const hours = Math.max(0.5, money(body.hours != null ? body.hours : exited.hours || 1));
       const serviceId = String(body.serviceId || body.service_id || "").trim();
       const gameHint = String(body.game || body.serviceType || exited.game || parent.game || "陪玩").trim();
-      const levels = readLocalLevels();
+      const levels = await readLocalLevels().catch(() => []);
       const level =
-        (levels || []).find(
+        (Array.isArray(levels) ? levels : []).find(
           (l) =>
             String(l.id) === String(cp.level_id || "") ||
             String(l.code) === String(cp.level_id || "") ||
