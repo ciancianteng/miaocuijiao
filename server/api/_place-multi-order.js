@@ -163,7 +163,14 @@ export async function placeMultiOrder(ctx) {
     const hours = Math.round(baseHours * quantity * 100) / 100;
     const serviceId = String(line.serviceId || line.service_id || "").trim();
     const gameHint = String(
-      line.game || line.gameName || line.game_name || sharedGame || ""
+      line.serviceName ||
+        line.serviceType ||
+        line.service ||
+        line.game ||
+        line.gameName ||
+        line.game_name ||
+        sharedGame ||
+        ""
     ).trim();
     const levels = readLocalLevels();
     const level =
@@ -223,18 +230,35 @@ export async function placeMultiOrder(ctx) {
       return { ok: false, status: 400, message: "请填写游戏 ID。" };
     }
     const companionName = String(line.companionName || line.companion_name || cp.display_name || "").trim();
+    const resolvedServiceName = String(
+      resolved.serviceRow?.service_name ||
+        resolved.serviceRow?.serviceName ||
+        resolved.serviceRow?.name ||
+        ""
+    ).trim();
     const serviceType =
-      String(line.serviceType || line.service_type || line.serviceName || "陪玩").trim() || "陪玩";
+      String(
+        resolvedServiceName ||
+          line.serviceType ||
+          line.service_type ||
+          line.serviceName ||
+          line.service ||
+          "陪玩"
+      ).trim() || "陪玩";
+    const resolvedServiceId = String(
+      resolved.serviceRow?.service_id || resolved.serviceRow?.serviceId || serviceId || ""
+    ).trim();
     prepared.push({
       companionId,
       companionName,
       serviceType,
+      serviceId: resolvedServiceId,
       gameId,
       hours,
       quantity,
       unitPrice,
       totalAmount,
-      game: gameHint || serviceType,
+      game: serviceType,
     });
   }
 
