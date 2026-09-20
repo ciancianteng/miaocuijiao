@@ -104,14 +104,14 @@ export default async function handler(req, res) {
         const row = pending || confirmed;
         if (row?.inviter_user_id) {
           const rows = await supabaseJson(
-            `${url()}/rest/v1/profiles?id=eq.${encodeURIComponent(row.inviter_user_id)}&select=id,display_name,nickname,boss_uid&limit=1`,
+            `${url()}/rest/v1/profiles?id=eq.${encodeURIComponent(row.inviter_user_id)}&select=id,display_name,boss_uid&limit=1`,
             { headers: serviceHeaders() }
           );
           const p = rows?.[0];
           if (p) {
             inviter = {
               id: p.id,
-              nickname: p.display_name || p.nickname || "",
+              nickname: p.display_name || "",
               publicCode: p.boss_uid || "",
               role: row.inviter_role,
             };
