@@ -1,0 +1,425 @@
+/* Novice tutorial — mobile-first, matches platform pink/dark tokens */
+.mcj-guide {
+  --g-pink: #efabc9;
+  --g-pink2: #ffd9ea;
+  --g-text: #fff5fa;
+  --g-muted: #bdaab6;
+  --g-line: rgba(239, 171, 201, 0.26);
+  --g-bg: #050406;
+  --g-safe-bottom: env(safe-area-inset-bottom, 0px);
+  color: var(--g-text);
+  min-height: 100vh;
+  padding: 0 0 calc(88px + var(--g-safe-bottom));
+  overflow-x: hidden;
+}
+.mcj-guide * {
+  box-sizing: border-box;
+}
+.mcj-guide-top {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  padding-top: calc(12px + env(safe-area-inset-top, 0px));
+  background: rgba(5, 4, 6, 0.92);
+  backdrop-filter: blur(14px);
+  border-bottom: 1px solid var(--g-line);
+}
+.mcj-guide-top a.back {
+  color: var(--g-pink2);
+  font-weight: 800;
+  font-size: 14px;
+  text-decoration: none;
+  min-height: 40px;
+  display: inline-flex;
+  align-items: center;
+}
+.mcj-guide-top h1 {
+  margin: 0;
+  flex: 1;
+  font-size: 18px;
+  font-weight: 950;
+  text-align: center;
+}
+.mcj-guide-top .skip {
+  border: 0;
+  background: transparent;
+  color: var(--g-muted);
+  font-weight: 800;
+  font-size: 13px;
+  min-height: 40px;
+  cursor: pointer;
+}
+.mcj-guide-body {
+  width: min(520px, calc(100% - 28px));
+  margin: 0 auto;
+  padding: 20px 0 24px;
+}
+.mcj-guide-lead {
+  margin: 0 0 18px;
+  color: var(--g-muted);
+  font-size: 14px;
+  line-height: 1.55;
+  text-align: center;
+}
+.mcj-guide-cards {
+  display: grid;
+  gap: 14px;
+}
+.mcj-guide-card {
+  display: grid;
+  gap: 8px;
+  padding: 22px 18px;
+  border-radius: 22px;
+  border: 1px solid var(--g-line);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02)),
+    rgba(13, 10, 18, 0.88);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.35);
+  cursor: pointer;
+  text-align: left;
+  color: inherit;
+  width: 100%;
+  font: inherit;
+  transition: transform 0.18s ease, border-color 0.18s ease;
+}
+.mcj-guide-card:hover,
+.mcj-guide-card:focus-visible {
+  transform: translateY(-2px);
+  border-color: rgba(239, 171, 201, 0.55);
+  outline: none;
+}
+.mcj-guide-card .emoji {
+  font-size: 32px;
+  line-height: 1;
+}
+.mcj-guide-card strong {
+  font-size: 20px;
+  font-weight: 950;
+}
+.mcj-guide-card span {
+  color: var(--g-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.mcj-guide-progress {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 14px;
+  font-size: 13px;
+  font-weight: 850;
+  color: var(--g-muted);
+}
+.mcj-guide-progress strong {
+  color: var(--g-pink2);
+}
+.mcj-guide-step-title {
+  margin: 0 0 6px;
+  font-size: 22px;
+  font-weight: 950;
+}
+.mcj-guide-step-cap {
+  margin: 0 0 16px;
+  color: #ead7e1;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.mcj-guide-phone {
+  position: relative;
+  width: min(300px, 86vw);
+  margin: 0 auto 16px;
+  border-radius: 28px;
+  border: 1px solid rgba(239, 171, 201, 0.35);
+  background: #120d15;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45), 0 0 24px rgba(239, 171, 201, 0.1);
+  overflow: hidden;
+  aspect-ratio: 9 / 16;
+}
+.mcj-guide-phone img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: top center;
+  display: block;
+}
+.mcj-guide-phone-placeholder {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  padding: 14px 12px 16px;
+  background: radial-gradient(circle at 30% 0%, rgba(239, 171, 201, 0.14), transparent 42%),
+    #0e0a12;
+}
+.mcj-guide-phone-placeholder .slot-badge {
+  align-self: flex-start;
+  border-radius: 999px;
+  padding: 5px 10px;
+  font-size: 11px;
+  font-weight: 900;
+  color: #1b0712;
+  background: linear-gradient(180deg, #ffe2ef, #e7a0c4);
+}
+.mcj-guide-phone-placeholder .slot-stage {
+  flex: 1;
+  margin-top: 12px;
+  border-radius: 16px;
+  border: 1px dashed rgba(239, 171, 201, 0.35);
+  background: rgba(255, 255, 255, 0.03);
+  display: grid;
+  place-items: center;
+  text-align: center;
+  padding: 16px;
+  position: relative;
+}
+.mcj-guide-phone-placeholder .slot-stage strong {
+  display: block;
+  font-size: 14px;
+  margin-bottom: 8px;
+}
+.mcj-guide-phone-placeholder .slot-stage small {
+  color: var(--g-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.mcj-guide-hl {
+  position: absolute;
+  left: 10%;
+  right: 10%;
+  top: 42%;
+  height: 18%;
+  border-radius: 14px;
+  border: 2px solid rgba(255, 217, 234, 0.85);
+  background: rgba(239, 171, 201, 0.12);
+  box-shadow: 0 0 0 999px rgba(0, 0, 0, 0.28);
+  pointer-events: none;
+}
+.mcj-guide-hl::after {
+  content: attr(data-label);
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 8px);
+  transform: translateX(-50%);
+  white-space: nowrap;
+  font-size: 11px;
+  font-weight: 900;
+  color: #1b0712;
+  background: var(--g-pink2);
+  padding: 4px 8px;
+  border-radius: 999px;
+}
+.mcj-guide-arrow {
+  display: flex;
+  justify-content: center;
+  margin: 4px 0 10px;
+  color: var(--g-pink);
+  font-size: 22px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.mcj-guide-footer {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 30;
+  padding: 10px 16px calc(12px + var(--g-safe-bottom));
+  background: rgba(5, 4, 6, 0.94);
+  backdrop-filter: blur(16px);
+  border-top: 1px solid var(--g-line);
+}
+.mcj-guide-footer-inner {
+  width: min(520px, 100%);
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: 1fr 1.4fr;
+  gap: 10px;
+}
+.mcj-guide-btn {
+  min-height: 46px;
+  border-radius: 999px;
+  border: 1px solid rgba(239, 171, 201, 0.34);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--g-text);
+  font-weight: 950;
+  cursor: pointer;
+}
+.mcj-guide-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.mcj-guide-btn.primary {
+  background: linear-gradient(180deg, #ffe2ef, #e7a0c4);
+  color: #1b0712;
+  border-color: transparent;
+}
+.mcj-guide-done {
+  text-align: center;
+  padding: 36px 12px 20px;
+}
+.mcj-guide-done h2 {
+  margin: 0 0 10px;
+  font-size: 28px;
+}
+.mcj-guide-done p {
+  margin: 0 0 22px;
+  color: var(--g-muted);
+}
+.mcj-guide-done .mcj-guide-btn {
+  min-width: 220px;
+  padding: 0 22px;
+}
+.mcj-guide-home-hint {
+  margin: 10px 0 0;
+  text-align: center;
+  font-size: 13px;
+}
+.mcj-guide-home-hint a {
+  color: var(--g-pink2);
+  font-weight: 850;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+@media (min-width: 900px) {
+  .mcj-guide-body {
+    width: min(560px, calc(100% - 40px));
+  }
+}
+
+/* Soft UI mocks for steps without uploaded PNGs (~70% visual) */
+.mcj-guide-mock {
+  position: absolute;
+  inset: 10px 8px 12px;
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+  border-radius: 18px;
+  background: linear-gradient(180deg, #1a1218, #0c090c);
+  padding: 10px;
+  color: #ffeaf4;
+  font-size: 12px;
+}
+.mcj-guide-mock .gm-screen { display: grid; gap: 8px; }
+.mcj-guide-mock .gm-top {
+  font-weight: 900;
+  font-size: 14px;
+  color: #ffd6e7;
+  margin-bottom: 2px;
+}
+.mcj-guide-mock .gm-card,
+.mcj-guide-mock .gm-row,
+.mcj-guide-mock .gm-field,
+.mcj-guide-mock .gm-line,
+.mcj-guide-mock .gm-svc {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  color: inherit;
+  text-align: left;
+  width: 100%;
+  box-sizing: border-box;
+}
+.mcj-guide-mock .gm-svc { justify-content: space-between; }
+.mcj-guide-mock .gm-row { justify-content: space-between; }
+.mcj-guide-mock .gm-row b { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mcj-guide-mock .gm-av {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  background: rgba(255, 143, 197, 0.22);
+  font-weight: 900;
+  flex: 0 0 auto;
+}
+.mcj-guide-mock .gm-av.sm { width: 28px; height: 28px; border-radius: 8px; font-size: 11px; }
+.mcj-guide-mock .gm-meta { display: grid; gap: 2px; min-width: 0; }
+.mcj-guide-mock .gm-meta small,
+.mcj-guide-mock .gm-meta em { color: #9ca3af; font-style: normal; font-size: 11px; }
+.mcj-guide-mock .gm-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.mcj-guide-mock .gm-chips span {
+  border: 1px solid rgba(255, 143, 197, 0.35);
+  border-radius: 999px;
+  padding: 3px 8px;
+  font-size: 11px;
+}
+.mcj-guide-mock .gm-hero {
+  height: 72px;
+  border-radius: 14px;
+  display: grid;
+  place-items: center;
+  font-weight: 900;
+  font-size: 18px;
+  background: linear-gradient(135deg, rgba(255, 143, 197, 0.35), rgba(255, 255, 255, 0.06));
+}
+.mcj-guide-mock .gm-list { margin: 0; padding-left: 18px; color: #d8c8d1; }
+.mcj-guide-mock .gm-sum {
+  padding: 10px;
+  border-radius: 12px;
+  background: rgba(255, 143, 197, 0.12);
+  border: 1px solid rgba(255, 143, 197, 0.28);
+  font-weight: 800;
+}
+.mcj-guide-mock .gm-cta,
+.mcj-guide-mock .gm-slot,
+.mcj-guide-mock .gm-modal button {
+  min-height: 40px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 143, 197, 0.45);
+  background: linear-gradient(180deg, #ffe2ef, #ff9ecf);
+  color: #1b0712;
+  font-weight: 900;
+  cursor: default;
+}
+.mcj-guide-mock .gm-slot {
+  border-style: dashed;
+  background: rgba(255, 143, 197, 0.12);
+  color: #ffeaf4;
+}
+.mcj-guide-mock .gm-modal {
+  margin: 28px 8px 0;
+  padding: 14px;
+  border-radius: 16px;
+  background: #151018;
+  border: 1px solid rgba(255, 143, 197, 0.35);
+  display: grid;
+  gap: 8px;
+}
+.mcj-guide-mock .gm-modal .ghost {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffeaf4;
+  border-color: rgba(255, 255, 255, 0.16);
+}
+.mcj-guide-mock .gm-tip {
+  margin: 4px 0 0;
+  color: #ffd6e7;
+  font-size: 11px;
+  line-height: 1.45;
+}
+.mcj-guide-mock .gm-hl {
+  box-shadow: 0 0 0 2px #ff8fb9, 0 0 18px rgba(255, 143, 197, 0.35);
+  position: relative;
+}
+.mcj-guide-mock .gm-ico {
+  font-style: normal;
+  font-size: 16px;
+  width: 22px;
+  text-align: center;
+  flex: 0 0 auto;
+}
+.mcj-guide-mock .gm-dim { opacity: 0.95; }
+@media (max-width: 420px) {
+  .mcj-guide-mock { font-size: 11px; }
+  .mcj-guide-step-title { font-size: 20px; }
+}
