@@ -592,6 +592,30 @@
     if (m === "none") return "仅平台文字聊天"; // legacy orders only
     return "游戏麦";
   }
+  function isPrePay(order) {
+    var st = String((order && order.status) || "");
+    return st === "awaiting_payment" && !isReviewing(order);
+  }
+  function isPostPay(order) {
+    return !isPrePay(order);
+  }
+  function scheduleText(order) {
+    var raw =
+      (order &&
+        (order.serviceSchedule ||
+          order.schedule ||
+          order.service_schedule ||
+          order.scheduleLabel ||
+          order.schedule_label)) ||
+      "";
+    raw = String(raw || "").trim();
+    if (raw) return raw;
+    // Fallback: parse from notes ("服务时间：…")
+    var notes = String((order && (order.notes || order.note || order.description)) || "");
+    var m = notes.match(/服务时间[：:]\s*([^\n]+)/);
+    if (m) return String(m[1] || "").trim();
+    return "-";
+  }
   function paymentReturnPath(orderId) {
     var oid = orderId || q("order") || q("id") || "";
     return "/payment-confirm.html?order=" + encodeURIComponent(oid) + "&discord=connected";
@@ -615,31 +639,40 @@
         throw new Error("Discord 授权地址缺失");
       });
   }
+  /** Pre-pay: tiny hint only. Post-pay: connect CTA if unbound. Never block payment. */
   function discordPanelHtml(order) {
     var mode = orderVoiceMode(order);
     if (mode !== "discord") return "";
-    var st = String(order.status || "");
-    if (st !== "awaiting_payment") return "";
     var bound = !!(discordStatus.bound || order.discordBound);
     var name = discordStatus.username || order.discordUsername || "";
+
+    if (isPrePay(order)) {
+      return (
+        '<p class="pay-voice-hint">支付成功后可连接 Discord，陪玩接单后将开启私人语音房。</p>'
+      );
+    }
+
     if (bound) {
       return (
         '<div class="pay-discord is-bound" data-discord-panel="1">' +
-        "<h2>Discord 语音</h2>" +
-        '<p class="pay-hint">本单将使用妙脆角私人 Discord 订单语音房。陪玩确认接单后才会开启房间。</p>' +
-        '<div class="pay-row"><span>Discord 账号</span><strong>已连接' +
-        (name ? " · " + esc(name) : "") +
-        "</strong></div></div>"
+        '<p class="pay-discord-title">Discord 已连接' +
+        (name ? "：" + esc(name) : "") +
+        "</p>" +
+        '<p class="pay-discord-desc">陪玩确认接单后将开启私人语音房。</p></div>'
       );
     }
+
     return (
       '<div class="pay-discord" data-discord-panel="1">' +
-      "<h2>连接 Discord</h2>" +
-      '<p class="pay-hint">本单选择了 Discord 语音。请先连接 Discord，再完成付款。连接完成后会回到本页，订单资料不会丢失。</p>' +
-      '<div class="pay-actions" style="margin-top:12px">' +
+      '<p class="pay-discord-title">连接 Discord</p>' +
+      '<p class="pay-discord-desc">你已选择 Discord语音房，请先连接 Discord，以便后续进入私人语音房。</p>' +
+      '<div class="pay-actions pay-discord-actions">' +
       '<button type="button" class="pay-btn primary" data-discord-connect="' +
       esc(order.id) +
-      '">连接 Discord</button></div></div>'
+      '">连接 Discord</button>' +
+      '<a class="pay-btn" href="orders.html?id=' +
+      encodeURIComponent(order.id) +
+      '">稍后再说</a></div></div>'
     );
   }
   async function refreshDiscordStatus(order) {
@@ -999,11 +1032,11 @@
     var serviceCell = multi
       ? "多人陪玩订单 · 共" + (kids.length || "?") + "位 · 一次付款"
       : order.game || order.serviceName || order.title || "-";
-    var title = multi ? "多人陪玩订单 · 支付确认" : "支付确认";
+    var title = multi ? "多人陪玩订单 · 支付确认" : isPrePay(order) ? "支付确认" : "支付成功";
     var multiHint = multi
       ? '<p class="pay-hint">本订单一次付款 ' +
         esc(money(order.totalAmount || order.amount)) +
-        "，系统会分别为每位陪玩结算。请勿分别支付子订单。</p>"
+        "，系统会分别为每位陪玩结算。</p>"
       : "";
     if (isMultiChild(order)) {
       multiHint =
@@ -1014,25 +1047,23 @@
         '">查看联合订单</a><a class="pay-btn" href="orders.html">我的订单</a></div>';
     }
 
+    var statusLead = isPrePay(order)
+      ? ""
+      : '<p class="pay-lead">' +
+        esc(reviewing ? "付款凭证已提交，等待客服审核。" : "订单已付款成功。") +
+        "</p>";
+
     paint(
       '<section class="pay-card" data-order-id="' +
         esc(order.id) +
         '"' +
         (multi ? ' data-multi-parent="1"' : "") +
-        '><h1>' +
+        '><header class="pay-head"><h1>' +
         esc(title) +
         "</h1>" +
-        '<div class="pay-status-box"><strong data-pay-status>' +
-        esc(label) +
-        "</strong><p>" +
-        esc(guide.reason) +
-        "</p><p>" +
-        esc(guide.next) +
-        "</p></div>" +
-        // Mobile-first: show QR immediately after status so it is in the first viewport
-        // (previously it sat below a long order grid and appeared "missing" on phones).
-        qrPanelHtml(order) +
-        '<div class="pay-grid">' +
+        statusLead +
+        "</header>" +
+        '<div class="pay-info-card">' +
         '<div class="pay-row"><span>订单号</span><strong>' +
         esc(order.orderNo || order.order_no || order.id) +
         "</strong></div>" +
@@ -1057,30 +1088,29 @@
               })
               .join("")
           : "") +
-        '<div class="pay-row"><span>时长</span><strong>' +
-        esc(order.hours ? order.hours + " 小时" : order.duration || "-") +
-        "</strong></div>" +
-        '<div class="pay-row"><span>游戏 ID</span><strong>' +
-        esc(parseGameId(order)) +
-        "</strong></div>" +
-        '<div class="pay-row"><span>' +
-        (multi ? "总付款" : "应付金额") +
-        "</span><strong>" +
-        esc(money(order.totalAmount || order.amount)) +
-        "</strong></div>" +
-        '<div class="pay-row"><span>支付方式</span><strong>' +
-        esc(order.paymentMethod || order.payment_method || "-") +
+        '<div class="pay-row"><span>服务时间</span><strong>' +
+        esc(scheduleText(order)) +
         "</strong></div>" +
         '<div class="pay-row"><span>语音方式</span><strong>' +
         esc(voiceModeLabel(orderVoiceMode(order))) +
         "</strong></div>" +
-        '<div class="pay-row"><span>当前状态</span><strong>' +
-        esc(label) +
-        "</strong></div></div>" +
+        '<div class="pay-row pay-row-amount"><span>' +
+        (multi ? "总付款" : "应付金额") +
+        "</span><strong>" +
+        esc(money(order.totalAmount || order.amount)) +
+        "</strong></div>" +
+        (isPrePay(order)
+          ? '<div class="pay-row"><span>支付方式</span><strong>' +
+            esc(order.paymentMethod || order.payment_method || "-") +
+            "</strong></div>"
+          : "") +
+        "</div>" +
         multiHint +
         discordPanelHtml(order) +
+        // Mobile-first: QR after order summary for pre-pay
+        (isPrePay(order) ? qrPanelHtml(order) : "") +
         (reviewing
-          ? '<p class="pay-hint">付款凭证已提交，当前为待人工审核。客服确认收款前不会进入接单流程。</p>'
+          ? '<p class="pay-hint">付款凭证已提交，客服确认收款前不会进入接单流程。</p>'
           : needsManualProof
             ? '<p class="pay-hint">请先按本单支付方式完成付款，再上传截图并点击「我已付款」。</p>'
             : "") +
@@ -1093,15 +1123,6 @@
 
   async function submitPay(orderId, previewTest) {
     if (paying) return;
-    var cachedForVoice = readCache(orderId);
-    if (orderVoiceMode(cachedForVoice) === "discord" && !discordStatus.bound) {
-      await refreshDiscordStatus(cachedForVoice || { id: orderId, voice_mode: "discord" });
-      if (!discordStatus.bound) {
-        failUi("本单选择了 Discord 语音，请先连接 Discord 后再付款。");
-        if (cachedForVoice) renderOrder(cachedForVoice);
-        return;
-      }
-    }
     paying = true;
     try {
       var res = await fetch("/api/orders", {
@@ -1119,13 +1140,6 @@
       });
       if (typeof body.allowTestPay === "boolean") allowTestPay = body.allowTestPay;
       if (!res.ok || body.ok === false) {
-        if (body.code === "DISCORD_BIND_REQUIRED") {
-          discordStatus.bound = false;
-          var cachedDiscord = readCache(orderId);
-          if (cachedDiscord) renderOrder(cachedDiscord);
-          failUi(body.message || "请先连接 Discord 后再付款");
-          return;
-        }
         if (body.code === "USE_TEST_PAY" && canShowTestPay()) {
           allowTestPay = true;
           var cached = readCache(orderId);
@@ -1136,6 +1150,15 @@
         throw new Error(body.message || "支付失败");
       }
       if (body.order) writeCache(orderId, body.order);
+      var paidOrder = body.order || readCache(orderId) || { id: orderId, status: "claimed" };
+      // Post-pay Discord: if Discord voice + unbound, stay on page with connect CTA.
+      if (orderVoiceMode(paidOrder) === "discord") {
+        await refreshDiscordStatus(paidOrder);
+        if (!discordStatus.bound) {
+          renderOrder(paidOrder);
+          return;
+        }
+      }
       var next =
         "orders.html?filter=waiting_companion&id=" +
         encodeURIComponent(orderId) +

@@ -1496,27 +1496,7 @@ export default async function handler(req, res) {
           order: viewOrder(before),
         });
       }
-      // Discord voice orders: Boss must bind Discord before proof/pay.
-      try {
-        const voiceMode = String(before.voice_mode || "game_mic").trim() || "game_mic";
-        if (voiceMode === "discord") {
-          const { getDiscordLink, discordConfigured } = await import("./_discord-voice-orders.js");
-          if (discordConfigured()) {
-            const link = await getDiscordLink(profile.id);
-            if (!link?.discord_user_id) {
-              return json(res, 409, {
-                ok: false,
-                code: "DISCORD_BIND_REQUIRED",
-                message: "本单选择了 Discord 语音，请先连接 Discord 后再上传付款凭证。",
-                oauthStartUrl: "/api/discord/oauth-start",
-                order: viewOrder(before),
-              });
-            }
-          }
-        }
-      } catch (discordGateErr) {
-        console.warn("[orders/submit_payment_proof] discord gate", String(discordGateErr?.message || discordGateErr).slice(0, 160));
-      }
+      // Discord bind is post-payment (Boss connects after pay). Do not block proof upload.
       const result = await uploadProof({
         order: before,
         bossId: profile.id,
@@ -1586,27 +1566,7 @@ export default async function handler(req, res) {
         return json(res, 409, { ok: false, message: payGate.message || "该支付方式暂未开放" });
       }
       const paymentMethod = String(payGate.code || paymentMethodRaw).toLowerCase();
-      // Discord voice orders: Boss must bind Discord before pay completes.
-      try {
-        const voiceMode = String(before.voice_mode || "game_mic").trim() || "game_mic";
-        if (voiceMode === "discord") {
-          const { getDiscordLink, discordConfigured } = await import("./_discord-voice-orders.js");
-          if (discordConfigured()) {
-            const link = await getDiscordLink(profile.id);
-            if (!link?.discord_user_id) {
-              return json(res, 409, {
-                ok: false,
-                code: "DISCORD_BIND_REQUIRED",
-                message: "本单选择了 Discord 语音，请先连接 Discord 后再付款。",
-                oauthStartUrl: "/api/discord/oauth-start",
-                order: viewOrder(before),
-              });
-            }
-          }
-        }
-      } catch (discordGateErr) {
-        console.warn("[orders/pay_order] discord gate", String(discordGateErr?.message || discordGateErr).slice(0, 160));
-      }
+      // Discord bind is post-payment — do not block pay_order.
       const previewTest =
         String(body.preview_test || body.previewTest || "").trim() === "1" ||
         String(body.test_pay || "").trim() === "1";
