@@ -1,6 +1,7 @@
 /**
  * Boss VIP front-end panel (display only).
  * Data SoT remains /api/boss/vip — no business logic here.
+ * Single premium card only — no duplicate detail blocks below.
  */
 (function (global) {
   "use strict";
@@ -41,6 +42,9 @@
   }
 
   function BossVipHeroCard(n) {
+    var progressLabel = n.isMax
+      ? "已达最高等级"
+      : esc(n.progressSpend) + " / " + esc(n.nextTh) + " 猫粮";
     return (
       '<article class="bv-hero-card" aria-label="Boss VIP 会员卡">' +
       '<div class="bv-hero-sheen" aria-hidden="true"></div>' +
@@ -70,28 +74,12 @@
       (n.isMax ? "已满级" : "还差 " + esc(n.remain) + " 猫粮") +
       "</strong></div>" +
       "</div>" +
-      '<p class="bv-hero-perk"><span>Exclusive Benefits</span>' +
-      esc(n.benefits) +
-      "</p>" +
-      '<p class="bv-hero-foot">客服确认的有效消费自动累计 · 达标即升</p>' +
-      "</article>"
-    );
-  }
-
-  function BossVipProgress(n) {
-    var label = n.isMax
-      ? "已达最高等级"
-      : esc(n.progressSpend) + " / " + esc(n.nextTh) + " 猫粮";
-    var remainLine = n.isMax
-      ? "恭喜，您已解锁当前最高 VIP 权益。"
-      : "距离 <strong>" + esc(n.next) + "</strong> 还差 <strong>" + esc(n.remain) + "</strong> 猫粮";
-    return (
-      '<section class="bv-progress" aria-label="升级进度">' +
-      '<div class="bv-progress-head">' +
-      "<h3>升级进度</h3>" +
-      '<span class="bv-progress-meta">' +
-      label +
-      "</span>" +
+      '<div class="bv-hero-progress" aria-label="升级进度">' +
+      '<div class="bv-hero-progress-head">' +
+      "<span>升级进度</span>" +
+      "<strong>" +
+      progressLabel +
+      "</strong>" +
       "</div>" +
       '<div class="bv-progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' +
       esc(n.pct) +
@@ -100,67 +88,21 @@
       esc(n.pct) +
       '%"></div>' +
       "</div>" +
-      '<p class="bv-progress-note">' +
-      remainLine +
-      "</p>" +
-      "</section>"
-    );
-  }
-
-  function BossVipSummary(n) {
-    return (
-      '<section class="bv-summary" aria-label="VIP 概况">' +
-      "<h3>会员概况</h3>" +
-      '<dl class="bv-summary-list">' +
-      "<div><dt>当前等级</dt><dd>" +
-      esc(n.name) +
-      "</dd></div>" +
-      "<div><dt>累计有效消费</dt><dd>" +
-      esc(n.spend) +
-      " 猫粮</dd></div>" +
-      "<div><dt>下一等级</dt><dd>" +
-      esc(n.next) +
-      "</dd></div>" +
-      "<div><dt>升级门槛</dt><dd>" +
-      (n.nextTh != null ? esc(n.nextTh) + " 猫粮" : "—") +
-      "</dd></div>" +
-      "<div><dt>还差</dt><dd>" +
-      (n.isMax ? "—" : esc(n.remain) + " 猫粮") +
-      "</dd></div>" +
-      "</dl>" +
-      "</section>"
-    );
-  }
-
-  function BossVipBenefits(n) {
-    return (
-      '<section class="bv-benefits" aria-label="当前权益">' +
-      "<h3>当前权益</h3>" +
-      '<p class="bv-benefits-body">' +
+      "</div>" +
+      '<p class="bv-hero-perk"><span>Exclusive Benefits</span>' +
       esc(n.benefits) +
       "</p>" +
-      '<p class="bv-benefits-tip">达到下一等级门槛后将自动升级，并解锁该等级配置的福利。升级以客服确认的有效消费为准。</p>' +
-      "</section>"
+      '<p class="bv-hero-foot">客服确认的有效消费自动累计 · 达标即升</p>' +
+      "</article>"
     );
   }
 
   function renderBossVipPanel(vip) {
     var n = normalize(vip);
     return (
-      '<section class="bv-panel" data-boss-vip-panel="1">' +
-      '<div class="bv-panel-grid">' +
-      '<div class="bv-panel-info">' +
-      '<header class="bv-panel-head">' +
-      "<h2>我的 VIP</h2>" +
-      '<p>高级会员身份 · 有效消费自动升级</p>' +
-      "</header>" +
-      BossVipSummary(n) +
-      BossVipProgress(n) +
-      BossVipBenefits(n) +
-      "</div>" +
+      '<section class="bv-panel bv-panel--card-only" data-boss-vip-panel="1">' +
       '<div class="bv-panel-card">' +
       BossVipHeroCard(n) +
-      "</div>" +
       "</div>" +
       "</section>"
     );
@@ -170,15 +112,6 @@
     renderPanel: renderBossVipPanel,
     BossVipHeroCard: function (vip) {
       return BossVipHeroCard(normalize(vip));
-    },
-    BossVipSummary: function (vip) {
-      return BossVipSummary(normalize(vip));
-    },
-    BossVipProgress: function (vip) {
-      return BossVipProgress(normalize(vip));
-    },
-    BossVipBenefits: function (vip) {
-      return BossVipBenefits(normalize(vip));
     },
   };
 })(typeof window !== "undefined" ? window : globalThis);

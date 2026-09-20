@@ -1,115 +1,30 @@
-/* Boss VIP premium membership panel — display only */
+/* Boss VIP premium membership card — display only (card-only, no duplicate detail blocks) */
 
 .bv-panel{
-  --bv-ink:#0a0710;
   --bv-rose:#e89ac4;
   --bv-rose-soft:#ffd6e7;
   --bv-gold:#d4b56a;
-  --bv-line:rgba(232,154,196,.28);
-  margin:0 0 18px;
+  margin:0 0 22px;
 }
 
-.bv-panel-grid{
-  display:grid;
-  gap:16px;
-  align-items:stretch;
+.bv-panel--card-only{
+  display:flex;
+  justify-content:center;
+}
+
+.bv-panel-card{
+  width:100%;
+  max-width:440px;
 }
 
 @media (min-width:900px){
-  .bv-panel-grid{
-    grid-template-columns:minmax(0,1.05fr) minmax(280px,.95fr);
-    gap:20px;
+  .bv-panel-card{
+    max-width:480px;
   }
-  .bv-panel-card{order:2}
-  .bv-panel-info{order:1}
 }
 
-/* Mobile: card first */
-@media (max-width:899px){
-  .bv-panel-card{order:0}
-  .bv-panel-info{order:1}
-}
-
-.bv-panel-head{
-  margin:0 0 12px;
-}
-.bv-panel-head h2{
-  margin:0;
-  font-size:18px;
-  font-weight:800;
-  letter-spacing:.02em;
-  color:#fff;
-}
-.bv-panel-head p{
-  margin:6px 0 0;
-  color:rgba(255,214,231,.72);
-  font-size:12px;
-  line-height:1.45;
-  font-weight:600;
-}
-
-.bv-summary,
-.bv-progress,
-.bv-benefits{
-  margin:0 0 12px;
-  padding:14px 14px 12px;
-  border-radius:16px;
-  border:1px solid rgba(255,255,255,.07);
-  background:linear-gradient(180deg,rgba(255,255,255,.045),rgba(10,8,14,.55));
-}
-.bv-summary h3,
-.bv-progress h3,
-.bv-benefits h3{
-  margin:0 0 10px;
-  font-size:13px;
-  font-weight:800;
-  letter-spacing:.04em;
-  text-transform:uppercase;
-  color:var(--bv-rose-soft);
-}
-
-.bv-summary-list{
-  margin:0;
-  display:grid;
-  gap:8px;
-}
-.bv-summary-list > div{
-  display:flex;
-  justify-content:space-between;
-  gap:12px;
-  align-items:baseline;
-}
-.bv-summary-list dt{
-  margin:0;
-  color:rgba(255,214,231,.78);
-  font-size:13px;
-  font-weight:700;
-}
-.bv-summary-list dd{
-  margin:0;
-  color:#fff;
-  font-size:13px;
-  font-weight:800;
-  text-align:right;
-  word-break:break-word;
-}
-
-.bv-progress-head{
-  display:flex;
-  justify-content:space-between;
-  align-items:center;
-  gap:10px;
-  margin-bottom:10px;
-}
-.bv-progress-head h3{margin:0}
-.bv-progress-meta{
-  color:rgba(255,255,255,.7);
-  font-size:12px;
-  font-weight:700;
-  white-space:nowrap;
-}
 .bv-progress-track{
-  height:10px;
+  height:8px;
   border-radius:999px;
   background:rgba(255,255,255,.08);
   overflow:hidden;
@@ -123,36 +38,13 @@
   transition:width .35s ease;
   max-width:100%;
 }
-.bv-progress-note{
-  margin:10px 0 0;
-  color:rgba(255,255,255,.72);
-  font-size:12px;
-  line-height:1.5;
-}
-.bv-progress-note strong{color:#fff;font-weight:800}
-
-.bv-benefits-body{
-  margin:0;
-  color:#fff;
-  font-size:14px;
-  font-weight:700;
-  line-height:1.5;
-  white-space:pre-wrap;
-  word-break:break-word;
-}
-.bv-benefits-tip{
-  margin:10px 0 0;
-  color:rgba(255,214,231,.62);
-  font-size:12px;
-  line-height:1.5;
-}
 
 /* ===== Premium VIP card ===== */
 .bv-hero-card{
   position:relative;
   isolation:isolate;
-  min-height:220px;
-  padding:20px 20px 18px;
+  min-height:240px;
+  padding:22px 22px 18px;
   border-radius:22px;
   overflow:hidden;
   color:#f8f1e8;
@@ -313,6 +205,32 @@
   word-break:break-word;
 }
 
+.bv-hero-progress{
+  position:relative;
+  z-index:1;
+  margin:0 0 14px;
+  padding:12px 0 2px;
+  border-top:1px solid rgba(255,255,255,.06);
+}
+.bv-hero-progress-head{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:10px;
+  margin-bottom:8px;
+}
+.bv-hero-progress-head span{
+  color:rgba(255,214,231,.72);
+  font-size:12px;
+  font-weight:700;
+}
+.bv-hero-progress-head strong{
+  color:rgba(255,255,255,.88);
+  font-size:12px;
+  font-weight:800;
+  white-space:nowrap;
+}
+
 .bv-hero-perk{
   position:relative;
   z-index:1;
@@ -348,5 +266,5 @@
   letter-spacing:.02em;
 }
 
-/* Legacy class kept as no-op alias if old CSS remnants exist */
+/* Legacy alias */
 .boss-vip-card{display:contents}
