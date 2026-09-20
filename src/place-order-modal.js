@@ -29,6 +29,7 @@
     endTime: "",
     couponCode: "",
     payment: "",
+    voiceMode: "game_mic",
     submitting: false,
     submitStartedAt: 0,
     walletBalance: null,
@@ -49,6 +50,7 @@
     state.endTime = "";
     state.couponCode = "";
     state.payment = "";
+    state.voiceMode = "game_mic";
     state.submitting = false;
     state.submitStartedAt = 0;
     state.walletBalance = null;
@@ -1117,6 +1119,23 @@
       '<label>优惠码<input data-po-coupon placeholder="可选" value="' +
       esc(state.couponCode) +
       '"></label>' +
+      '<div class="mcj-po-field mcj-po-voice-field"><span class="mcj-po-label">本单语音方式</span>' +
+      '<div class="mcj-po-voice-grid" role="radiogroup" aria-label="本单语音方式">' +
+      '<button type="button" class="mcj-po-voice-card' +
+      (state.voiceMode === "discord" ? " active" : "") +
+      '" data-po-voice="discord" aria-pressed="' +
+      (state.voiceMode === "discord" ? "true" : "false") +
+      '"><span class="mcj-po-voice-card-icon" aria-hidden="true">🎧</span>' +
+      '<span class="mcj-po-voice-card-title">Discord语音房</span>' +
+      '<span class="mcj-po-voice-card-desc">下单后使用 Discord 私人语音房沟通</span></button>' +
+      '<button type="button" class="mcj-po-voice-card' +
+      (state.voiceMode !== "discord" ? " active" : "") +
+      '" data-po-voice="game_mic" aria-pressed="' +
+      (state.voiceMode !== "discord" ? "true" : "false") +
+      '"><span class="mcj-po-voice-card-icon" aria-hidden="true">🎮</span>' +
+      '<span class="mcj-po-voice-card-title">游戏麦</span>' +
+      '<span class="mcj-po-voice-card-desc">使用游戏内语音沟通</span></button>' +
+      "</div></div>" +
       '<div class="mcj-po-pay-block"><div class="mcj-po-pay-label">支付方式</div><div class="mcj-po-pay-grid" data-po-pay-grid>' +
       payCards +
       "</div></div>" +
@@ -1272,6 +1291,19 @@
         if (btn.disabled) return;
         state.payment = btn.getAttribute("data-po-pay") || "";
         setExclusiveActive(mask.querySelectorAll("[data-po-pay]"), btn);
+      });
+    });
+    mask.querySelectorAll("[data-po-voice]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var next = btn.getAttribute("data-po-voice") || "game_mic";
+        // New orders: only discord | game_mic (legacy "none" is display-only for old rows).
+        if (next !== "discord" && next !== "game_mic") next = "game_mic";
+        state.voiceMode = next;
+        mask.querySelectorAll("[data-po-voice]").forEach(function (b) {
+          var on = b === btn;
+          b.classList.toggle("active", on);
+          b.setAttribute("aria-pressed", on ? "true" : "false");
+        });
       });
     });
     var submit = mask.querySelector("[data-po-submit]");
@@ -1563,6 +1595,7 @@
             gameId: gameId,
             notes: noteParts.join("；"),
             paymentMethod: "catfood",
+            voiceMode: state.voiceMode || "game_mic",
             idempotencyKey:
               "replace-" +
               replaceSlot.replaceChildId +
@@ -1589,6 +1622,7 @@
             couponCode: state.couponCode || "",
             notes: noteParts.join("；"),
             paymentMethod: payment,
+            voiceMode: state.voiceMode || "game_mic",
             idempotencyKey:
               "po-" + c.companionId + "-" + Date.now() + "-" + Math.random().toString(36).slice(2, 8),
           };

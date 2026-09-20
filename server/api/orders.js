@@ -542,6 +542,17 @@ function viewOrder(row = {}) {
     game_id: gameId,
     paymentMethod: paymentMethod || "线下确认",
     payment_method: paymentMethod || "线下确认",
+    voiceMode: String(row.voice_mode || "game_mic").trim() || "game_mic",
+    voice_mode: String(row.voice_mode || "game_mic").trim() || "game_mic",
+    discordChannelId: row.discord_channel_id || null,
+    discord_channel_id: row.discord_channel_id || null,
+    discordChannelStatus: row.discord_channel_status || null,
+    discord_channel_status: row.discord_channel_status || null,
+    discordChannelCreatedAt: row.discord_channel_created_at || null,
+    discordChannelUrl:
+      row.discord_channel_id && process.env.DISCORD_GUILD_ID
+        ? `https://discord.com/channels/${process.env.DISCORD_GUILD_ID}/${row.discord_channel_id}`
+        : null,
     hours: Number(row.hours || 0),
     unitPrice: money(row.unit_price),
     totalAmount: money(row.total_amount),
@@ -624,8 +635,11 @@ async function loadOrders(profile, id = "") {
   // Core columns always include description (completion-pending marker dual-writes here).
   // note is preferred for markers; cancel_reason is optional — never drop note when cancel_reason is missing.
   // parent_order_id / paid_* required for multi-group child grouping + unpaid cancel guards.
+  const selectVoice =
+    ",voice_mode,discord_channel_id,discord_channel_status,discord_channel_created_at,discord_channel_deleted_at";
   const selectCore =
-    "id,order_no,boss_id,companion_id,customer_service_id,order_type,game,title,description,hours,unit_price,total_amount,status,created_at,accepted_at,started_at,completed_at,cancelled_at,parent_order_id,paid_cat_food,paid_at";
+    "id,order_no,boss_id,companion_id,customer_service_id,order_type,game,title,description,hours,unit_price,total_amount,status,created_at,accepted_at,started_at,completed_at,cancelled_at,parent_order_id,paid_cat_food,paid_at" +
+    selectVoice;
   const selectWithNote = selectCore + ",note";
   const selectRich = selectWithNote + ",cancel_reason";
   const selectCoreLegacy =
@@ -1257,9 +1271,9 @@ export default async function handler(req, res) {
         const serviceId = String(order.serviceId || order.service_id || "").trim();
         const gameHint = String(order.gameName || order.game_name || order.mainGame || order.main_game || game || "").trim();
         // Server-authoritative: companion_services → game_prices → level.base_price. Never trust client unit.
-        const levels = readLocalLevels();
+        const levels = await readLocalLevels().catch(() => []);
         const level =
-          (levels || []).find(
+          (Array.isArray(levels) ? levels : []).find(
             (l) =>
               String(l.id) === String(cp.level_id || "") ||
               String(l.code) === String(cp.level_id || "") ||
@@ -1369,6 +1383,13 @@ export default async function handler(req, res) {
       }
 
       // Optional marketplace columns (ignore if schema missing).
+      let voiceMode = "game_mic";
+      try {
+        const { normalizeVoiceModeForNewOrder } = await import("./_discord-voice-orders.js");
+        voiceMode = normalizeVoiceModeForNewOrder(order.voiceMode || order.voice_mode || body.voiceMode || body.voice_mode);
+      } catch (_) {
+        voiceMode = "game_mic";
+      }
       const enriched = {
         ...row,
         payment_method: paymentMethod,
@@ -1377,6 +1398,7 @@ export default async function handler(req, res) {
         notes: notes || descriptionParts.join("\n"),
         quantity,
         pricing_unit: String(order.pricingUnit || order.pricing_unit || "小时"),
+        voice_mode: voiceMode,
       };
       if (productCommissionSnapshot != null) {
         enriched.platform_fee_rate = productCommissionSnapshot;
@@ -1477,6 +1499,7 @@ export default async function handler(req, res) {
           order: viewOrder(before),
         });
       }
+      // Discord bind is post-payment (Boss connects after pay). Do not block proof upload.
       const result = await uploadProof({
         order: before,
         bossId: profile.id,
@@ -1546,6 +1569,7 @@ export default async function handler(req, res) {
         return json(res, 409, { ok: false, message: payGate.message || "该支付方式暂未开放" });
       }
       const paymentMethod = String(payGate.code || paymentMethodRaw).toLowerCase();
+      // Discord bind is post-payment — do not block pay_order.
       const previewTest =
         String(body.preview_test || body.previewTest || "").trim() === "1" ||
         String(body.test_pay || "").trim() === "1";
@@ -2255,9 +2279,9 @@ export default async function handler(req, res) {
       const hours = Math.max(0.5, money(body.hours != null ? body.hours : exited.hours || 1));
       const serviceId = String(body.serviceId || body.service_id || "").trim();
       const gameHint = String(body.game || body.serviceType || exited.game || parent.game || "陪玩").trim();
-      const levels = readLocalLevels();
+      const levels = await readLocalLevels().catch(() => []);
       const level =
-        (levels || []).find(
+        (Array.isArray(levels) ? levels : []).find(
           (l) =>
             String(l.id) === String(cp.level_id || "") ||
             String(l.code) === String(cp.level_id || "") ||

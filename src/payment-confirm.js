@@ -579,6 +579,131 @@
   };
 
   var platformPayInfo = null;
+  var discordStatus = { loaded: false, bound: false, username: "", configured: true };
+
+  function orderVoiceMode(order) {
+    return String((order && (order.voiceMode || order.voice_mode)) || "game_mic")
+      .trim()
+      .toLowerCase() || "game_mic";
+  }
+  function voiceModeLabel(mode) {
+    var m = String(mode || "game_mic").toLowerCase();
+    if (m === "discord") return "Discord语音房";
+    if (m === "none") return "仅平台文字聊天"; // legacy orders only
+    return "游戏麦";
+  }
+  function isPrePay(order) {
+    var st = String((order && order.status) || "");
+    return st === "awaiting_payment" && !isReviewing(order);
+  }
+  function isPostPay(order) {
+    return !isPrePay(order);
+  }
+  function scheduleText(order) {
+    var raw =
+      (order &&
+        (order.serviceSchedule ||
+          order.schedule ||
+          order.service_schedule ||
+          order.scheduleLabel ||
+          order.schedule_label)) ||
+      "";
+    raw = String(raw || "").trim();
+    if (raw) return raw;
+    // Fallback: parse from notes ("服务时间：…")
+    var notes = String((order && (order.notes || order.note || order.description)) || "");
+    var m = notes.match(/服务时间[：:]\s*([^\n]+)/);
+    if (m) return String(m[1] || "").trim();
+    return "-";
+  }
+  function paymentReturnPath(orderId) {
+    var oid = orderId || q("order") || q("id") || "";
+    return "/payment-confirm.html?order=" + encodeURIComponent(oid) + "&discord=connected";
+  }
+  function startDiscordOAuth(orderId) {
+    var returnTo = paymentReturnPath(orderId);
+    return fetch("/api/discord/oauth-start?format=json&returnTo=" + encodeURIComponent(returnTo), {
+      headers: { Accept: "application/json", Authorization: "Bearer " + token() },
+    })
+      .then(function (r) {
+        return r.json().then(function (j) {
+          if (!r.ok || j.ok === false) throw new Error((j && j.message) || "无法开始 Discord 连接");
+          return j;
+        });
+      })
+      .then(function (j) {
+        if (j.authorizeUrl) {
+          location.href = j.authorizeUrl;
+          return;
+        }
+        throw new Error("Discord 授权地址缺失");
+      });
+  }
+  /** Pre-pay: tiny hint only. Post-pay: connect CTA if unbound. Never block payment. */
+  function discordPanelHtml(order) {
+    var mode = orderVoiceMode(order);
+    if (mode !== "discord") return "";
+    var bound = !!(discordStatus.bound || order.discordBound);
+    var name = discordStatus.username || order.discordUsername || "";
+
+    if (isPrePay(order)) {
+      return (
+        '<p class="pay-voice-hint">支付成功后可连接 Discord，陪玩接单后将开启私人语音房。</p>'
+      );
+    }
+
+    if (bound) {
+      return (
+        '<div class="pay-discord is-bound" data-discord-panel="1">' +
+        '<p class="pay-discord-title">Discord 已连接' +
+        (name ? "：" + esc(name) : "") +
+        "</p>" +
+        '<p class="pay-discord-desc">陪玩确认接单后将开启私人语音房。</p></div>'
+      );
+    }
+
+    return (
+      '<div class="pay-discord" data-discord-panel="1">' +
+      '<p class="pay-discord-title">连接 Discord</p>' +
+      '<p class="pay-discord-desc">你已选择 Discord语音房，请先连接 Discord，以便后续进入私人语音房。</p>' +
+      '<div class="pay-actions pay-discord-actions">' +
+      '<button type="button" class="pay-btn primary" data-discord-connect="' +
+      esc(order.id) +
+      '">连接 Discord</button>' +
+      '<a class="pay-btn" href="orders.html?id=' +
+      encodeURIComponent(order.id) +
+      '">稍后再说</a></div></div>'
+    );
+  }
+  async function refreshDiscordStatus(order) {
+    var mode = orderVoiceMode(order);
+    if (mode !== "discord") {
+      discordStatus = { loaded: true, bound: false, username: "", configured: true };
+      return discordStatus;
+    }
+    try {
+      var res = await fetch(
+        "/api/discord/status?orderId=" + encodeURIComponent(order.id || ""),
+        { headers: { Accept: "application/json", Authorization: "Bearer " + token() }, cache: "no-store" }
+      );
+      var body = await res.json().catch(function () {
+        return {};
+      });
+      if (res.ok && body.ok !== false) {
+        discordStatus = {
+          loaded: true,
+          bound: !!body.bound,
+          username: (body.discord && body.discord.username) || "",
+          configured: body.configured !== false,
+        };
+      } else {
+        discordStatus = { loaded: true, bound: false, username: "", configured: true };
+      }
+    } catch (e) {
+      discordStatus = { loaded: true, bound: false, username: "", configured: true };
+    }
+    return discordStatus;
+  }
 
   function canShowTestPay() {
     if (allowTestPay === true) return true;
@@ -907,11 +1032,11 @@
     var serviceCell = multi
       ? "多人陪玩订单 · 共" + (kids.length || "?") + "位 · 一次付款"
       : order.game || order.serviceName || order.title || "-";
-    var title = multi ? "多人陪玩订单 · 支付确认" : "支付确认";
+    var title = multi ? "多人陪玩订单 · 支付确认" : isPrePay(order) ? "支付确认" : "支付成功";
     var multiHint = multi
       ? '<p class="pay-hint">本订单一次付款 ' +
         esc(money(order.totalAmount || order.amount)) +
-        "，系统会分别为每位陪玩结算。请勿分别支付子订单。</p>"
+        "，系统会分别为每位陪玩结算。</p>"
       : "";
     if (isMultiChild(order)) {
       multiHint =
@@ -922,25 +1047,23 @@
         '">查看联合订单</a><a class="pay-btn" href="orders.html">我的订单</a></div>';
     }
 
+    var statusLead = isPrePay(order)
+      ? ""
+      : '<p class="pay-lead">' +
+        esc(reviewing ? "付款凭证已提交，等待客服审核。" : "订单已付款成功。") +
+        "</p>";
+
     paint(
       '<section class="pay-card" data-order-id="' +
         esc(order.id) +
         '"' +
         (multi ? ' data-multi-parent="1"' : "") +
-        '><h1>' +
+        '><header class="pay-head"><h1>' +
         esc(title) +
         "</h1>" +
-        '<div class="pay-status-box"><strong data-pay-status>' +
-        esc(label) +
-        "</strong><p>" +
-        esc(guide.reason) +
-        "</p><p>" +
-        esc(guide.next) +
-        "</p></div>" +
-        // Mobile-first: show QR immediately after status so it is in the first viewport
-        // (previously it sat below a long order grid and appeared "missing" on phones).
-        qrPanelHtml(order) +
-        '<div class="pay-grid">' +
+        statusLead +
+        "</header>" +
+        '<div class="pay-info-card">' +
         '<div class="pay-row"><span>订单号</span><strong>' +
         esc(order.orderNo || order.order_no || order.id) +
         "</strong></div>" +
@@ -965,26 +1088,29 @@
               })
               .join("")
           : "") +
-        '<div class="pay-row"><span>时长</span><strong>' +
-        esc(order.hours ? order.hours + " 小时" : order.duration || "-") +
+        '<div class="pay-row"><span>服务时间</span><strong>' +
+        esc(scheduleText(order)) +
         "</strong></div>" +
-        '<div class="pay-row"><span>游戏 ID</span><strong>' +
-        esc(parseGameId(order)) +
+        '<div class="pay-row"><span>语音方式</span><strong>' +
+        esc(voiceModeLabel(orderVoiceMode(order))) +
         "</strong></div>" +
-        '<div class="pay-row"><span>' +
+        '<div class="pay-row pay-row-amount"><span>' +
         (multi ? "总付款" : "应付金额") +
         "</span><strong>" +
         esc(money(order.totalAmount || order.amount)) +
         "</strong></div>" +
-        '<div class="pay-row"><span>支付方式</span><strong>' +
-        esc(order.paymentMethod || order.payment_method || "-") +
-        "</strong></div>" +
-        '<div class="pay-row"><span>当前状态</span><strong>' +
-        esc(label) +
-        "</strong></div></div>" +
+        (isPrePay(order)
+          ? '<div class="pay-row"><span>支付方式</span><strong>' +
+            esc(order.paymentMethod || order.payment_method || "-") +
+            "</strong></div>"
+          : "") +
+        "</div>" +
         multiHint +
+        discordPanelHtml(order) +
+        // Mobile-first: QR after order summary for pre-pay
+        (isPrePay(order) ? qrPanelHtml(order) : "") +
         (reviewing
-          ? '<p class="pay-hint">付款凭证已提交，当前为待人工审核。客服确认收款前不会进入接单流程。</p>'
+          ? '<p class="pay-hint">付款凭证已提交，客服确认收款前不会进入接单流程。</p>'
           : needsManualProof
             ? '<p class="pay-hint">请先按本单支付方式完成付款，再上传截图并点击「我已付款」。</p>'
             : "") +
@@ -1024,6 +1150,15 @@
         throw new Error(body.message || "支付失败");
       }
       if (body.order) writeCache(orderId, body.order);
+      var paidOrder = body.order || readCache(orderId) || { id: orderId, status: "claimed" };
+      // Post-pay Discord: if Discord voice + unbound, stay on page with connect CTA.
+      if (orderVoiceMode(paidOrder) === "discord") {
+        await refreshDiscordStatus(paidOrder);
+        if (!discordStatus.bound) {
+          renderOrder(paidOrder);
+          return;
+        }
+      }
       var next =
         "orders.html?filter=waiting_companion&id=" +
         encodeURIComponent(orderId) +
@@ -1236,6 +1371,11 @@
           proofDraft.successTip = proofDraft.successTip || "付款凭证已上传，当前状态：待人工审核";
         }
       }
+      await refreshDiscordStatus(order);
+      if (gen !== loadGen) return;
+      if (q("discord") === "connected") {
+        discordStatus.bound = true;
+      }
       renderOrder(order);
     } catch (err) {
       if (gen !== loadGen) return;
@@ -1300,6 +1440,14 @@
     if (previewBtn) {
       e.preventDefault();
       submitPay(previewBtn.getAttribute("data-preview-pay"), true);
+      return;
+    }
+    var discordBtn = e.target.closest("[data-discord-connect]");
+    if (discordBtn) {
+      e.preventDefault();
+      startDiscordOAuth(discordBtn.getAttribute("data-discord-connect") || q("order") || q("id")).catch(function (err) {
+        failUi(err.message || "连接 Discord 失败");
+      });
     }
   });
   root.addEventListener("change", function (e) {

@@ -335,6 +335,14 @@ export async function softExitMultiChildOrder(child, { reason, companionId, comp
   if (!saved && lastErr) throw lastErr;
   saved = saved || { ...child, ...patch };
 
+  // Discord: remove exited companion channel permission; keep room for others.
+  try {
+    const discordVoice = await import("./_discord-voice-orders.js");
+    await discordVoice.revokeCompanionVoiceAccess(saved, companionId || child.companion_id);
+  } catch (err) {
+    console.warn("[softExit] discord revoke", String(err?.message || err).slice(0, 120));
+  }
+
   if (typeof writeOrderStatusLog === "function") {
     await writeOrderStatusLog({
       orderId: child.id,

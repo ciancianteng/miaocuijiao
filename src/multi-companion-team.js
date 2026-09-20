@@ -23,6 +23,7 @@
     sharedGameId: "",
     sharedNotes: "",
     sharedStartTime: "",
+    sharedVoiceMode: "game_mic",
     paymentMethod: "catfood",
     pendingIdempotencyKey: "",
   };
@@ -256,6 +257,7 @@
         sharedGameId: state.sharedGameId || "",
         sharedNotes: state.sharedNotes || "",
         sharedStartTime: state.sharedStartTime || "",
+        sharedVoiceMode: state.sharedVoiceMode || "game_mic",
       };
       sessionStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
     } catch (e) {}
@@ -274,6 +276,10 @@
       state.sharedGameId = data.sharedGameId || "";
       state.sharedNotes = data.sharedNotes || "";
       state.sharedStartTime = normalizeTimeValue(data.sharedStartTime || "") || "";
+      state.sharedVoiceMode = data.sharedVoiceMode || "game_mic";
+      if (state.sharedVoiceMode !== "discord" && state.sharedVoiceMode !== "game_mic") {
+        state.sharedVoiceMode = "game_mic";
+      }
     } catch (e) {
       state.lines = [];
     }
@@ -284,6 +290,7 @@
     state.sharedGameId = "";
     state.sharedNotes = "";
     state.sharedStartTime = "";
+    state.sharedVoiceMode = "game_mic";
     state.expanded = false;
     state.pendingIdempotencyKey = "";
     try {
@@ -829,6 +836,22 @@
       '<div class="mcj-team-field"><span>订单备注（选填）</span><input type="text" data-mcj-team-notes value="' +
       esc(state.sharedNotes) +
       '" placeholder="选填：特殊要求、开局说明等"></div>' +
+      '<div class="mcj-team-field mcj-team-voice-field"><span>本单语音方式</span><div class="mcj-team-voice-grid" role="radiogroup" aria-label="本单语音方式">' +
+      '<button type="button" class="mcj-team-voice-card' +
+      (state.sharedVoiceMode === "discord" ? " active" : "") +
+      '" data-mcj-team-voice="discord" aria-pressed="' +
+      (state.sharedVoiceMode === "discord" ? "true" : "false") +
+      '"><span class="mcj-team-voice-icon" aria-hidden="true">🎧</span>' +
+      '<span class="mcj-team-voice-title">Discord语音房</span>' +
+      '<span class="mcj-team-voice-desc">下单后使用 Discord 私人语音房沟通</span></button>' +
+      '<button type="button" class="mcj-team-voice-card' +
+      (state.sharedVoiceMode !== "discord" ? " active" : "") +
+      '" data-mcj-team-voice="game_mic" aria-pressed="' +
+      (state.sharedVoiceMode !== "discord" ? "true" : "false") +
+      '"><span class="mcj-team-voice-icon" aria-hidden="true">🎮</span>' +
+      '<span class="mcj-team-voice-title">游戏麦</span>' +
+      '<span class="mcj-team-voice-desc">使用游戏内语音沟通</span></button>' +
+      "</div></div>" +
       '<p class="mcj-team-pay-hint">本订单一次付款，系统会分别为每位陪玩结算。</p>' +
       "</div>" +
       '<div class="mcj-team-sheet-foot">' +
@@ -920,6 +943,7 @@
       schedule: schedule,
       startTime: startTime,
       endTime: endTime,
+      voiceMode: state.sharedVoiceMode || "game_mic",
       idempotencyKey: ensureIdempotencyKey(),
       companions: state.lines.map(function (l) {
         var hours = Math.max(0.5, money(l.hours || 1));
@@ -1224,6 +1248,15 @@
     if (e.target.closest("[data-mcj-team-submit]")) {
       e.preventDefault();
       submitTeam();
+    }
+    var voiceBtn = e.target.closest("[data-mcj-team-voice]");
+    if (voiceBtn) {
+      e.preventDefault();
+      var next = voiceBtn.getAttribute("data-mcj-team-voice") || "game_mic";
+      if (next !== "discord" && next !== "game_mic") next = "game_mic";
+      state.sharedVoiceMode = next;
+      persist();
+      paintSheet();
     }
   }
 

@@ -1359,6 +1359,16 @@ function viewOrder(row = {}, boss = {}, settlement = null) {
     gameId,
     bossNotes: notesLine.remark || "",
     remark: notesLine.remark || "",
+    voiceMode: String(row.voice_mode || "game_mic").trim() || "game_mic",
+    voice_mode: String(row.voice_mode || "game_mic").trim() || "game_mic",
+    discordChannelId: row.discord_channel_id || null,
+    discord_channel_id: row.discord_channel_id || null,
+    discordChannelStatus: row.discord_channel_status || null,
+    discord_channel_status: row.discord_channel_status || null,
+    discordChannelUrl:
+      row.discord_channel_id && process.env.DISCORD_GUILD_ID
+        ? `https://discord.com/channels/${process.env.DISCORD_GUILD_ID}/${row.discord_channel_id}`
+        : null,
     confirmDeadline,
     acceptedAt: row.accepted_at || "",
     startedAt: row.started_at || "",
@@ -1714,6 +1724,24 @@ async function loadOrdersFor(profile, companion, transactions = []) {
       return sanitizeHallOrderView(hallView);
     }),
   };
+}
+
+async function attachDiscordBoundFlag(profileId, myOrders = []) {
+  const list = Array.isArray(myOrders) ? myOrders : [];
+  const needs = list.some((o) => String(o.voiceMode || o.voice_mode || "") === "discord");
+  if (!needs || !profileId) return list;
+  try {
+    const discordVoice = await import("./_discord-voice-orders.js");
+    const link = await discordVoice.getDiscordLink(profileId);
+    const bound = !!(link && link.discord_user_id);
+    return list.map((o) =>
+      String(o.voiceMode || o.voice_mode || "") === "discord"
+        ? { ...o, discordBound: bound, discord_bound: bound, discordUsername: link?.discord_username || "" }
+        : o
+    );
+  } catch {
+    return list;
+  }
 }
 async function transactionsFor(userId) {
   try {
@@ -2123,7 +2151,7 @@ async function bootstrapData(profile, companion) {
         return [];
       });
       const loaded = await loadOrdersFor(profile, companionRow, preTx);
-      myOrders = loaded.myOrders || [];
+      myOrders = await attachDiscordBoundFlag(profile.id, loaded.myOrders || []);
       openOrders = loaded.openOrders || [];
     } catch (error) {
       warnings.push(`orders: ${error.message || error}`);
@@ -3986,6 +4014,27 @@ export default async function handler(req, res) {
       const beforeRows = await supabaseJson(restUrl("orders", `?id=eq.${encodeURIComponent(id)}&companion_id=eq.${encodeURIComponent(auth.profile.id)}&limit=1`), { headers: serviceHeaders() });
       const before = beforeRows?.[0];
       if (!before || before.status !== "claimed") return json(res, 409, { ok: false, message: "当前订单不能确认接单" });
+      // Discord voice orders: companion must bind Discord before accept.
+      try {
+        const voiceMode = String(before.voice_mode || "game_mic").trim() || "game_mic";
+        if (voiceMode === "discord") {
+          const discordVoice = await import("./_discord-voice-orders.js");
+          if (discordVoice.discordConfigured()) {
+            const link = await discordVoice.getDiscordLink(auth.profile.id);
+            if (!link?.discord_user_id) {
+              return json(res, 409, {
+                ok: false,
+                code: "DISCORD_BIND_REQUIRED",
+                message: "本单使用 Discord 私人语音房，请先连接 Discord 后再确认接单。",
+                oauthStartUrl: "/api/discord/oauth-start",
+                order: viewOrder(before),
+              });
+            }
+          }
+        }
+      } catch (discordErr) {
+        console.warn("[companion/accept] discord gate", String(discordErr?.message || discordErr).slice(0, 160));
+      }
       const now = nowIso();
       const order = await patchOwnOrder(
         auth.profile,
@@ -4014,7 +4063,24 @@ export default async function handler(req, res) {
           console.warn("[companion/accept_direct] parent refresh", err?.message || err);
         }
       }
-      return json(res, 200, { ok: true, message: "已确认接单，订单进入进行中", order: viewOrder(order) });
+      // Discord: create/join private voice room after confirm (never fail the accept).
+      let discordVoiceResult = null;
+      try {
+        if (String(order?.voice_mode || before?.voice_mode || "") === "discord") {
+          const discordVoice = await import("./_discord-voice-orders.js");
+          discordVoiceResult = await discordVoice.ensureOrderVoiceChannel(order, {
+            companionUserId: auth.profile.id,
+          });
+        }
+      } catch (err) {
+        console.warn("[companion/accept_direct] discord room", err?.message || err);
+      }
+      return json(res, 200, {
+        ok: true,
+        message: "已确认接单，订单进入进行中",
+        order: viewOrder(order),
+        discordVoice: discordVoiceResult,
+      });
     }
     if (action === "reject_direct_order") {
       try {

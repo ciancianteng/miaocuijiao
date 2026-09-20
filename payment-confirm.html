@@ -21,33 +21,45 @@
   <link rel="stylesheet" href="src/style.css">
   <link rel="stylesheet" href="src/boss-header.css">
   <style>
-    .pay-shell{width:min(720px,calc(100% - 32px));margin:0 auto;padding:28px 0 80px}
-    .pay-card{border:1px solid rgba(255,255,255,.1);border-radius:18px;background:rgba(255,255,255,.045);padding:22px}
-    .pay-card h1{margin:0 0 8px;font-size:26px}
-    .pay-card p{margin:0;color:#9ca3af}
-    .pay-grid{display:grid;gap:10px;margin-top:18px}
-    .pay-row{border:1px solid rgba(255,255,255,.08);border-radius:12px;background:rgba(0,0,0,.18);padding:12px;display:flex;justify-content:space-between;gap:12px}
-    .pay-row span{color:#9ca3af;font-size:13px}.pay-row strong{color:#fff;word-break:break-word;text-align:right}
-    .pay-actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:18px}
-    .pay-btn{border:1px solid rgba(255,158,207,.55);border-radius:12px;background:rgba(255,143,197,.18);color:#ffe6f2;padding:10px 14px;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;font-weight:800;min-height:44px;opacity:1;box-shadow:inset 0 1px 0 rgba(255,255,255,.08)}
-    .pay-btn.primary{border-color:transparent;background:linear-gradient(180deg,#ffe2ef,#ff9ecf);color:#1b0712;box-shadow:0 0 18px rgba(255,158,207,.28),inset 0 1px 0 rgba(255,255,255,.45)}
-    .pay-btn:hover:not(:disabled):not(.is-disabled){border-color:rgba(255,212,230,.8);filter:brightness(1.06)}
-    .pay-btn.primary:hover:not(:disabled):not(.is-disabled){filter:brightness(1.05)}
+    .pay-shell{width:min(480px,calc(100% - 32px));margin:0 auto;padding:28px 0 88px}
+    .pay-card{border:1px solid rgba(255,255,255,.08);border-radius:16px;background:rgba(22,16,28,.96);padding:22px 18px 20px}
+    .pay-head{margin:0 0 16px}
+    .pay-card h1{margin:0;font-size:20px;font-weight:650;color:rgba(255,248,252,.96);letter-spacing:.01em}
+    .pay-lead{margin:8px 0 0;font-size:13px;font-weight:400;line-height:1.5;color:rgba(255,214,231,.55)}
+    .pay-card > p{margin:0;color:rgba(255,214,231,.55);font-size:13px;font-weight:400}
+    .pay-info-card{display:grid;gap:0;border:1px solid rgba(255,255,255,.08);border-radius:12px;background:rgba(255,255,255,.03);overflow:hidden}
+    .pay-grid{display:grid;gap:10px;margin-top:14px}
+    .pay-row{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;padding:11px 14px;border-bottom:1px solid rgba(255,255,255,.06);border-radius:0;background:transparent;border-left:0;border-right:0;border-top:0}
+    .pay-info-card .pay-row:last-child{border-bottom:0}
+    .pay-row span{color:rgba(255,214,231,.45);font-size:12px;font-weight:500;flex:0 0 auto;min-width:4.5em}
+    .pay-row strong{color:rgba(255,248,252,.92);font-size:13px;font-weight:550;word-break:break-word;text-align:right;line-height:1.4}
+    .pay-row-amount strong{font-size:15px;font-weight:650;color:#ffd6e7}
+    .pay-actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:16px}
+    .pay-btn{border:1px solid rgba(255,255,255,.12);border-radius:12px;background:rgba(255,255,255,.05);color:#ffe6f2;padding:10px 14px;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;font-weight:600;font-size:14px;min-height:44px;opacity:1;box-shadow:none}
+    .pay-btn.primary{border-color:transparent;background:rgba(243,168,203,.92);color:#1b0712;font-weight:650;box-shadow:none}
+    .pay-btn:hover:not(:disabled):not(.is-disabled){filter:brightness(1.05)}
+    .pay-btn.primary:hover:not(:disabled):not(.is-disabled){filter:brightness(1.04)}
     .pay-btn:disabled,.pay-btn.is-disabled{opacity:.45;cursor:not-allowed;pointer-events:none;filter:saturate(.5);background:rgba(255,255,255,.06)!important;border-color:rgba(255,255,255,.12)!important;color:#9ca3af!important;box-shadow:none!important}
-    .pay-alert{margin-top:14px;color:#ffb9d6;font-weight:600}
-    .pay-status-box{margin-top:14px;border:1px solid rgba(255,143,197,.35);border-radius:12px;background:rgba(255,143,197,.12);padding:12px 14px}
-    .pay-status-box strong{display:block;color:#ffd6e7;font-size:15px}
-    .pay-status-box p{margin:6px 0 0;color:#f3e6ee;font-size:13px;line-height:1.5}
-    .pay-hint{margin:10px 0 0;color:#ffd6e7;font-size:13px;line-height:1.5}
+    .pay-alert{margin-top:14px;color:#ffb9d6;font-weight:550;font-size:13px}
+    .pay-status-box{margin-top:14px;border:1px solid rgba(255,143,197,.28);border-radius:12px;background:rgba(255,143,197,.08);padding:12px 14px}
+    .pay-status-box strong{display:block;color:#ffd6e7;font-size:14px;font-weight:600}
+    .pay-status-box p{margin:6px 0 0;color:rgba(243,230,238,.85);font-size:13px;line-height:1.5;font-weight:400}
+    .pay-hint{margin:10px 0 0;color:rgba(255,214,231,.48);font-size:12px;line-height:1.5;font-weight:400}
+    .pay-voice-hint{margin:12px 0 0;color:rgba(255,214,231,.42);font-size:12px;line-height:1.45;font-weight:400}
+    .pay-discord{margin-top:14px;border:1px solid rgba(255,255,255,.1);border-radius:12px;background:rgba(255,255,255,.035);padding:14px}
+    .pay-discord.is-bound{border-color:rgba(243,168,203,.28);background:rgba(243,168,203,.08)}
+    .pay-discord-title{margin:0;font-size:14px;font-weight:600;color:rgba(255,248,252,.92)}
+    .pay-discord-desc{margin:6px 0 0;font-size:12px;font-weight:400;line-height:1.45;color:rgba(255,214,231,.5)}
+    .pay-discord-actions{margin-top:12px}
+    .pay-discord h2{margin:0 0 8px;font-size:14px;font-weight:600;color:rgba(255,248,252,.92)}
     .pay-sync{margin-top:8px;color:#9ca3af;font-size:12px}
     .pay-skel{display:grid;gap:10px;margin:16px 0}
     .pay-skel-line{height:14px;border-radius:8px;background:linear-gradient(90deg,rgba(255,255,255,.06),rgba(255,255,255,.14),rgba(255,255,255,.06));background-size:200% 100%;animation:payShimmer 1.2s linear infinite}
     .pay-skel-line.short{width:55%}
-    .pay-proof{margin-top:18px;border:1px solid rgba(255,143,197,.28);border-radius:14px;background:rgba(255,143,197,.08);padding:14px}
-    .pay-proof h2{margin:0 0 8px;font-size:16px;color:#ffd6e7}
-    .pay-qr{margin-top:14px;border:1px solid rgba(255,143,197,.28);border-radius:14px;background:rgba(255,143,197,.08);padding:14px;display:flex;flex-direction:column;align-items:stretch;overflow:visible;min-width:0}
-    .pay-qr h2{margin:0 0 8px;font-size:16px;color:#ffd6e7}
-    .pay-grid{margin-top:14px}
+    .pay-proof{margin-top:16px;border:1px solid rgba(255,255,255,.1);border-radius:12px;background:rgba(255,255,255,.03);padding:14px}
+    .pay-proof h2{margin:0 0 8px;font-size:14px;font-weight:600;color:rgba(255,214,231,.85)}
+    .pay-qr{margin-top:14px;border:1px solid rgba(255,255,255,.1);border-radius:12px;background:rgba(255,255,255,.03);padding:14px;display:flex;flex-direction:column;align-items:stretch;overflow:visible;min-width:0}
+    .pay-qr h2{margin:0 0 8px;font-size:14px;font-weight:600;color:rgba(255,214,231,.85)}
     .pay-qr-load-fail{margin-top:8px;display:grid;gap:8px;justify-items:center;text-align:center;overflow:visible}
     .pay-card,.pay-shell{overflow:visible}
     /* DuitNow QR display: no white plate / white outer frame.
@@ -181,6 +193,6 @@
   <script src="src/currency.js"></script>
   <script src="src/order-status.js"></script>
   <script src="/src/pay-qr-preview.js?v=20260813payQrConfirmZoom5"></script>
-  <script src="/src/payment-confirm.js?v=20260813payQrConfirmZoom5" defer></script>
+  <script src="/src/payment-confirm.js?v=20260920payPostDiscord1" defer></script>
 </body>
 </html>
