@@ -172,6 +172,26 @@ test("TEST 2–3 add companions increments count + group total", () => {
   // TEST 10 clear
   api.clear();
   assert.equal(api.getCount(), 0);
+
+  // P0-4: service-specific price must win over level default unitPrice
+  const priced = api.add({
+    companionId: "33333333-3333-4333-8333-333333333333",
+    companionName: "小宏",
+    unitPrice: 30, // level default
+    service: "三角洲手游 国服",
+    serviceId: "svc-delta",
+    services: [
+      { name: "王者荣耀", price: 30, serviceId: "svc-wz" },
+      { name: "三角洲手游 国服", price: 35, serviceId: "svc-delta" },
+      { name: "三角洲陪跑刀 一千万", price: 30, serviceId: "svc-knife" },
+    ],
+    online: true,
+  });
+  assert.equal(priced.ok, true);
+  assert.equal(api.getLines()[0].unitPrice, 35);
+  assert.equal(api.getLines()[0].serviceId, "svc-delta");
+  assert.equal(api.getTotal(), 35);
+  api.clear();
 });
 
 test("TEST floating bar + checkout copy", () => {
@@ -183,6 +203,26 @@ test("TEST floating bar + checkout copy", () => {
   assert.match(teamSrc, /确认并支付/);
   assert.match(teamSrc, /本订单一次付款，系统会分别为每位陪玩结算/);
   assert.match(teamSrc, /data-mcj-team-continue/);
+  assert.match(teamSrc, /continueToHall/);
+  assert.match(teamSrc, /companion-center\.html/);
+  assert.match(teamSrc, /mcjMultiTeamPicking/);
+});
+
+test("TEST continue选 navigates to hall (not toast-only)", () => {
+  assert.match(teamSrc, /function continueToHall/);
+  assert.match(teamSrc, /location\.href\s*=\s*HALL_HREF/);
+  // Must not only toast without navigation on continue
+  const continueBlock = teamSrc.slice(
+    teamSrc.indexOf("[data-mcj-team-continue]"),
+    teamSrc.indexOf("[data-mcj-team-continue]") + 280
+  );
+  assert.match(continueBlock, /continueToHall/);
+});
+
+test("TEST service price preferred over level unitPrice", () => {
+  assert.match(teamSrc, /selected service price wins|first\.price/);
+  assert.match(teamSrc, /money\(first && first\.price\)\s*>\s*0\s*\?\s*money\(first\.price\)/);
+  assert.match(teamSrc, /serviceId/);
 });
 
 test("TEST boss list parent-only + child hidden", () => {
@@ -219,8 +259,23 @@ test("TEST hall secondary CTA + center script wired", () => {
 
 test("STATIC floating bar safe-area / bottom-nav offset", () => {
   const css = readFileSync(path.join(root, "src/multi-companion-team.css"), "utf8");
-  assert.match(css, /safe-area-inset-bottom/);
-  assert.match(css, /bottom:\s*calc\(64px/);
+  assert.match(css, /--mcj-bottom-actions-h/);
+  assert.match(css, /bottom:\s*calc\(var\(--mcj-bottom-actions-h/);
+  assert.match(teamSrc, /syncBottomStackOffset/);
+});
+
+test("P0-1 submitOrder must not reference undeclared mask", () => {
+  // Extract submitOrder body roughly and ensure readStartTimeFromDom(mask) is gone
+  assert.doesNotMatch(placeSrc, /readStartTimeFromDom\(\s*mask\s*\)/);
+  assert.match(placeSrc, /readStartTimeFromDom\(\s*activeMask\(\)\s*\)/);
+  assert.match(placeSrc, /sanitizeUserError|Can't find variable/);
+});
+
+test("P0-2 iOS input font-size >= 16px in place-order modal", () => {
+  const css = readFileSync(path.join(root, "src/place-order-modal.css"), "utf8");
+  assert.match(css, /\.mcj-po-scroll input[\s\S]*?font-size:\s*16px/);
+  assert.match(css, /text-size-adjust:\s*100%/);
+  assert.doesNotMatch(css, /user-scalable\s*=\s*no/);
 });
 
 const failed = results.filter((r) => !r.ok);
