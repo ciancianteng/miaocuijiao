@@ -16,7 +16,7 @@
 
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>老板邀请 · Meow Cui Jiao</title>
+  <title>邀请绑定 · Meow Cui Jiao</title>
   <link rel="stylesheet" href="src/platform.css">
   <style>
     .invite-wrap{max-width:560px;margin:0 auto;padding:28px 16px 64px}
@@ -30,6 +30,7 @@
     .invite-actions .primary{background:linear-gradient(135deg,#ff8fc5,#ff6aa8);color:#1a0812}
     .invite-actions .ghost{background:transparent;color:#ffdceb;border:1px solid rgba(255,160,200,.35)}
     .invite-error{color:#ff9db7;font-weight:700}
+    .invite-ok{color:#7dffa3;font-weight:700}
   </style>
 </head>
 <body>
@@ -40,7 +41,7 @@
 </header>
 <main class="invite-wrap">
   <article class="invite-card" id="inviteCard">
-    <h1>老板邀请注册陪玩</h1>
+    <h1>直属邀请</h1>
     <p id="inviteStatus">正在校验邀请链接…</p>
     <div class="invite-actions" id="inviteActions" hidden></div>
   </article>
@@ -49,7 +50,6 @@
 (function () {
   var params = new URLSearchParams(location.search || "");
   var code = String(params.get("code") || params.get("inviteCode") || "").trim();
-  // Support /invite/{code} style if rewrite lands as path
   if (!code) {
     var m = String(location.pathname || "").match(/\/invite\/([^/?#]+)/i);
     if (m) code = decodeURIComponent(m[1]);
@@ -57,16 +57,120 @@
   var statusEl = document.getElementById("inviteStatus");
   var actions = document.getElementById("inviteActions");
 
+  function authHeaders() {
+    var t = "";
+    try {
+      t = sessionStorage.getItem("mcjAuthAccessToken") || localStorage.getItem("mcjAuthAccessToken") || "";
+    } catch (e) {}
+    var h = { Accept: "application/json", "Content-Type": "application/json" };
+    if (t) {
+      h.Authorization = "Bearer " + t;
+      h["x-mcj-access-token"] = t;
+    }
+    return h;
+  }
+
   function showError(msg) {
     statusEl.innerHTML = '<span class="invite-error">' + String(msg || "邀请链接无效") + "</span>";
     actions.hidden = false;
     actions.innerHTML =
       '<a class="ghost" href="/companion/login/">前往陪玩登录</a>' +
+      '<a class="ghost" href="login.html">老板登录</a>' +
       '<a class="ghost" href="index.html">返回首页</a>';
   }
 
+  function renderConfirm(inviterName, inviterRole) {
+    var roleLabel = inviterRole === "companion" ? "陪玩" : "老板";
+    statusEl.innerHTML =
+      '<p class="boss">' +
+      String(inviterName || roleLabel) +
+      " 邀请你建立直属关系</p>" +
+      '<p class="muted">确认后关系永久保存；普通用户不能自行换绑/解绑。确认前不会绑定，也不会发放邀请奖励。</p>';
+    actions.hidden = false;
+    actions.innerHTML =
+      '<button type="button" class="primary" id="btnConfirm">确认绑定</button>' +
+      '<button type="button" class="ghost" id="btnReject">暂不确认</button>' +
+      '<a class="ghost" href="index.html">返回首页</a>';
+    document.getElementById("btnConfirm").onclick = function () {
+      fetch("/api/invite/confirm", {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({ action: "confirm" }),
+      })
+        .then(function (r) {
+          return r.json().then(function (b) {
+            return { r: r, b: b || {} };
+          });
+        })
+        .then(function (pack) {
+          if (!pack.r.ok || pack.b.ok === false) {
+            showError(pack.b.message || "确认失败");
+            return;
+          }
+          var reward = pack.b.reward || {};
+          var extra = "";
+          if (reward.granted) {
+            extra =
+              reward.rewardType === "cash"
+                ? "<p class=\"invite-ok\">邀请人已获得现金邀请奖励（可提现余额）。</p>"
+                : "<p class=\"invite-ok\">邀请人已获得喵币邀请奖励（不可提现）。</p>";
+          }
+          statusEl.innerHTML =
+            '<p class="invite-ok">直属关系已确认</p>' +
+            extra +
+            '<p class="muted">关系 ID：' +
+            String(pack.b.relationId || pack.b.attribution?.relationId || "—") +
+            "</p>";
+          actions.innerHTML = '<a class="primary" href="mine.html">回到我的</a>';
+        })
+        .catch(function () {
+          showError("网络异常，请稍后重试");
+        });
+    };
+    document.getElementById("btnReject").onclick = function () {
+      fetch("/api/invite/confirm", {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({ action: "reject" }),
+      })
+        .then(function () {
+          statusEl.innerHTML = '<p class="muted">已取消确认。未建立直属关系，也未发放奖励。</p>';
+          actions.innerHTML = '<a class="ghost" href="index.html">返回首页</a>';
+        })
+        .catch(function () {
+          showError("网络异常");
+        });
+    };
+  }
+
   if (!code) {
-    showError("缺少邀请码");
+    // No code in URL — try pending status for logged-in user
+    fetch("/api/invite/confirm?action=pending", { headers: authHeaders(), cache: "no-store" })
+      .then(function (r) {
+        return r.json().then(function (b) {
+          return { r: r, b: b || {} };
+        });
+      })
+      .then(function (pack) {
+        if (pack.r.status === 401) {
+          showError("缺少邀请码，请从邀请链接进入或先登录");
+          return;
+        }
+        if (pack.b.pending) {
+          renderConfirm(pack.b.pending.inviter?.nickname || "邀请人", pack.b.pending.inviterRole);
+          return;
+        }
+        if (pack.b.confirmed) {
+          statusEl.innerHTML = '<p class="invite-ok">你已有确认的直属关系</p>';
+          actions.hidden = false;
+          actions.innerHTML = '<a class="primary" href="mine.html">回到我的</a>';
+          return;
+        }
+        showError(pack.b.message || "暂无待确认邀请");
+      })
+      .catch(function () {
+        showError("缺少邀请码");
+      });
     return;
   }
 
@@ -88,21 +192,55 @@
       try {
         sessionStorage.setItem("mcj_boss_invite_code", code);
       } catch (e) {}
-      var name = body.bossDisplayName || "老板";
+      var name = body.inviterDisplayName || body.bossDisplayName || "邀请人";
+      var role = body.ownerRole || "boss";
       var pub = body.bossPublicCode ? "（" + body.bossPublicCode + "）" : "";
+      var roleLabel = role === "companion" ? "陪玩" : "老板";
       statusEl.innerHTML =
-        '<p>你正在通过老板邀请注册陪玩身份。</p>' +
-        '<p class="boss">直属老板：' +
+        "<p>" +
+        roleLabel +
+        "邀请你加入妙脆角并建立直属关系。</p>" +
+        '<p class="boss">' +
         name +
         pub +
         "</p>" +
-        '<p class="muted">注册成功后将自动绑定直属关系；之后仅管理员可换绑/解绑。</p>';
+        '<p class="muted">请先注册/登录。登录后需点击「确认绑定」才会生效；未确认不会绑定，也不会发奖励。</p>';
       actions.hidden = false;
       actions.innerHTML =
         '<a class="primary" href="/companion/login/?code=' +
         encodeURIComponent(code) +
-        '#register">去注册陪玩账号</a>' +
+        '#register">注册/登录后确认</a>' +
+        '<a class="ghost" href="login.html?invite=' +
+        encodeURIComponent(code) +
+        '">老板登录后确认</a>' +
+        '<a class="ghost" href="invite.html">我已登录，查看待确认</a>' +
         '<a class="ghost" href="index.html">返回首页</a>';
+
+      // If already logged in, recognize then show confirm
+      fetch("/api/invite/confirm", {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({ action: "recognize", code: code }),
+      })
+        .then(function (r) {
+          if (r.status === 401) return null;
+          return r.json();
+        })
+        .then(function (b) {
+          if (!b) return;
+          if (b.outcome === "pending_confirm" || b.attribution) {
+            return fetch("/api/invite/confirm?action=pending", { headers: authHeaders(), cache: "no-store" }).then(function (r2) {
+              return r2.json();
+            });
+          }
+          return null;
+        })
+        .then(function (b) {
+          if (b && b.pending) {
+            renderConfirm(b.pending.inviter?.nickname || name, b.pending.inviterRole || role);
+          }
+        })
+        .catch(function () {});
     })
     .catch(function () {
       showError("网络异常，请稍后重试");

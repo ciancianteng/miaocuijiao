@@ -1,14 +1,14 @@
 /**
- * Boss open invite links → redeem into existing boss_companion_relations.
- * Does not change bind/rebind/unbind logic; calls bindRelation as-is.
+ * Boss/Companion open invite links → pending attribution (confirm-before-bind).
+ * ACTIVE relation SoT remains boss_companion_relations (#185) after invitee confirms.
  * Does not use boss_companion_invitations.
  */
 import crypto from "node:crypto";
 import {
-  bindRelation,
   getActiveRelationForCompanion,
   isRelationsMissing,
 } from "./_boss-companion-relations.js";
+import { recognizeInviteAttribution } from "./_invite-attribution.js";
 import { isBossInviteLinksEnabled, bossInviteLinksDisabledReason } from "./_feature-flags.js";
 import { isMissingRelation, restUrl, serviceHeaders, supabaseJson } from "./_wallet.js";
 
@@ -56,10 +56,13 @@ export function publicInviteUrl(code, base = "") {
 
 export function viewInviteLink(row = {}) {
   const code = String(row.code || "");
+  const ownerRole = String(row.owner_role || "boss");
   return {
     id: row.id || "",
     code,
     bossId: row.boss_id || "",
+    ownerUserId: row.boss_id || "",
+    ownerRole,
     status: row.status || "",
     maxUses: row.max_uses == null ? null : Number(row.max_uses),
     useCount: Number(row.use_count || 0),
@@ -106,12 +109,14 @@ function linkValidity(link) {
 
 export async function createBossInviteLink({
   bossId,
+  ownerRole = "boss",
   maxUses = null,
   expiresInDays = null,
   label = "",
 } = {}) {
   assertInviteLinksEnabled();
-  if (!bossId) throw httpError("缺少老板账号", 400);
+  if (!bossId) throw httpError("缺少邀请人账号", 400);
+  const role = String(ownerRole || "boss").toLowerCase() === "companion" ? "companion" : "boss";
   const code = generateInviteCode();
   let expiresAt = null;
   const days = Number(expiresInDays);
@@ -126,6 +131,7 @@ export async function createBossInviteLink({
   const payload = {
     code,
     boss_id: bossId,
+    owner_role: role,
     status: "active",
     max_uses: max,
     use_count: 0,
@@ -141,6 +147,17 @@ export async function createBossInviteLink({
     const created = Array.isArray(rows) ? rows[0] : rows;
     return viewInviteLink(created);
   } catch (error) {
+    // Pre-migration DBs may lack owner_role — retry without it (defaults to boss).
+    if (/owner_role|PGRST204|Could not find/i.test(String(error?.message || ""))) {
+      delete payload.owner_role;
+      const rows = await supabaseJson(restUrl(LINK_TABLE), {
+        method: "POST",
+        headers: serviceHeaders(),
+        body: JSON.stringify(payload),
+      });
+      const created = Array.isArray(rows) ? rows[0] : rows;
+      return viewInviteLink({ ...created, owner_role: role });
+    }
     if (isInviteLinksMissing(error)) {
       throw httpError("邀请链接表尚未初始化", 503, { code: "INVITE_TABLES_MISSING" });
     }
@@ -222,11 +239,16 @@ export async function resolveBossInviteLink(code) {
     ok: true,
     code: link.code,
     bossId: link.boss_id,
-    bossDisplayName: bossName || "老板",
+    ownerUserId: link.boss_id,
+    ownerRole: String(link.owner_role || "boss"),
+    bossDisplayName: bossName || (String(link.owner_role) === "companion" ? "陪玩" : "老板"),
+    inviterDisplayName: bossName || (String(link.owner_role) === "companion" ? "陪玩" : "老板"),
     bossPublicCode: bossCode,
     expiresAt: link.expires_at || null,
     remainingUses:
       link.max_uses == null ? null : Math.max(0, Number(link.max_uses) - Number(link.use_count || 0)),
+    needsConfirm: true,
+    confirmHint: "注册/登录后需你确认，才会建立直属关系并发放邀请奖励",
   };
 }
 
@@ -262,7 +284,8 @@ async function bumpUseCount(link) {
 }
 
 /**
- * After companion auth+profile+capability succeed: bind via existing bindRelation.
+ * After invitee auth+profile ready: record PENDING attribution only.
+ * Does NOT create active relation — invitee must confirm.
  * Never throws to fail registration — returns outcome summary.
  */
 export async function redeemInviteAfterCompanionReady({
@@ -315,7 +338,7 @@ export async function redeemInviteAfterCompanionReady({
         outcome: "skipped_already_bound",
         detail:
           existing.boss_id === link.boss_id ? "already_bound_same_boss" : "already_bound_other_boss",
-      });
+      }).catch(() => {});
       return {
         attempted: true,
         outcome: "skipped_already_bound",
@@ -329,54 +352,31 @@ export async function redeemInviteAfterCompanionReady({
     }
   }
 
-  const audit = `invite_link:${link.code}`;
   try {
-    const result = await bindRelation({
-      bossId: link.boss_id,
-      companionId: inviteeId,
-      operatorId: inviteeId,
-      remark: audit,
-      reason: audit,
-      commissionRate: null,
+    const recognized = await recognizeInviteAttribution({
+      inviteCode: code,
+      inviteeUserId: inviteeId,
+      inviteLink: link,
     });
-    const relationId = result?.relation?.id || null;
+    const outcome = recognized?.outcome || "pending_confirm";
     await insertRedemption({
       invite_link_id: link.id,
       code: link.code,
       boss_id: link.boss_id,
       invitee_id: inviteeId,
-      relation_id: relationId,
-      outcome: "bound",
-      detail: null,
-    });
-    await bumpUseCount(link).catch(() => {});
+      relation_id: null,
+      outcome: outcome === "pending_confirm" ? "pending_confirm" : outcome,
+      detail: recognized?.detail || null,
+    }).catch(() => {});
     return {
       attempted: true,
-      outcome: "bound",
-      relationId,
+      outcome: outcome === "pending_confirm" ? "pending_confirm" : outcome,
+      attribution: recognized?.attribution || null,
       bossId: link.boss_id,
+      needsConfirm: outcome === "pending_confirm",
+      detail: recognized?.detail || null,
     };
   } catch (error) {
-    const codeName = error?.code || "";
-    if (codeName === "ALREADY_BOUND" || codeName === "ACTIVE_EXISTS") {
-      let relationId = error.activeRelationId || null;
-      try {
-        const existing = await getActiveRelationForCompanion(inviteeId);
-        relationId = existing?.id || relationId;
-      } catch {
-        /* ignore */
-      }
-      await insertRedemption({
-        invite_link_id: link.id,
-        code: link.code,
-        boss_id: link.boss_id,
-        invitee_id: inviteeId,
-        relation_id: relationId,
-        outcome: "skipped_already_bound",
-        detail: codeName,
-      }).catch(() => {});
-      return { attempted: true, outcome: "skipped_already_bound", relationId };
-    }
     await insertRedemption({
       invite_link_id: link.id,
       code: link.code,
@@ -384,8 +384,8 @@ export async function redeemInviteAfterCompanionReady({
       invitee_id: inviteeId,
       relation_id: null,
       outcome: "error",
-      detail: String(error?.message || codeName || "bind_failed").slice(0, 500),
+      detail: String(error?.message || "recognize_failed").slice(0, 500),
     }).catch(() => {});
-    return { attempted: true, outcome: "error", detail: error?.message || "bind_failed" };
+    return { attempted: true, outcome: "error", detail: error?.message || "recognize_failed" };
   }
 }

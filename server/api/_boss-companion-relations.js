@@ -404,9 +404,37 @@ export async function adminSearchRelations({ q = "", status = "", limit = 100 } 
   return enrichRelations(Array.isArray(rows) ? rows : []);
 }
 
-export async function bindRelation({ bossId, companionId, operatorId, remark = "", commissionRate = null, reason = "" } = {}) {
-  const auditReason = requireAdminReason(reason, "绑定");
-  const caps = await assertBindCapabilities(bossId, companionId);
+export async function bindRelation({
+  bossId,
+  companionId,
+  operatorId,
+  remark = "",
+  commissionRate = null,
+  reason = "",
+  skipCapabilityCheck = false,
+} = {}) {
+  const auditReason = String(reason || "").trim() || String(remark || "").trim();
+  if (!auditReason) {
+    throw httpError("绑定必须填写 reason（审计：谁/何时/原因）", 400, { code: "REASON_REQUIRED" });
+  }
+  // Admin bind keeps strict boss+companion capability checks.
+  // Invite-confirm may bind before full companion capability (skipCapabilityCheck).
+  let caps = { boss: null, companion: null, companionRow: null };
+  if (skipCapabilityCheck) {
+    if (!bossId || !companionId) throw httpError("缺少绑定双方", 400);
+    if (String(bossId) === String(companionId)) throw httpError("不能绑定自己", 400);
+    const [boss, companion, companionRow] = await Promise.all([
+      loadProfile(bossId),
+      loadProfile(companionId),
+      loadCompanionRowForUser(companionId),
+    ]);
+    if (!boss) throw httpError("邀请人账号不存在", 404);
+    if (!companion) throw httpError("被邀请人账号不存在", 404);
+    caps = { boss, companion, companionRow };
+  } else {
+    requireAdminReason(reason, "绑定");
+    caps = await assertBindCapabilities(bossId, companionId);
+  }
   const existing = await getActiveRelationForCompanion(companionId);
   if (existing) {
     if (existing.boss_id === bossId) {

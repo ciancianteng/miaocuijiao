@@ -1,0 +1,398 @@
+{
+  "cases": {
+    "A": {
+      "ok": true,
+      "detail": {
+        "code": "JFJgEMfc…",
+        "inviteUrl": "[set]",
+        "redeemOutcome": "pending_confirm",
+        "pendingBeforeConfirm": {
+          "id": "30ef2a1a-319a-459e-886b-4bed8c1b79eb",
+          "status": "pending",
+          "reward_granted": false
+        },
+        "relationActiveBefore": false,
+        "confirm": {
+          "attributionId": "30ef2a1a-319a-459e-886b-4bed8c1b79eb",
+          "relationId": "78663075-e1ea-425c-88e7-d8f96e078e83",
+          "reward": {
+            "granted": true,
+            "rewardType": "meow_coin",
+            "amount": 10,
+            "withdrawable": false,
+            "currency": "CATFOOD",
+            "ledger": {
+              "id": "22383ded-0207-4524-8e1e-245e439280e7",
+              "attribution_id": "30ef2a1a-319a-459e-886b-4bed8c1b79eb",
+              "inviter_user_id": "8fec08a7-0d9f-4285-bb0d-270bc4656bb1",
+              "invitee_user_id": "7e28617c-972f-4602-8d1d-bcb66c18fa2c",
+              "inviter_role": "boss",
+              "reward_type": "meow_coin",
+              "amount": 10,
+              "currency": "CATFOOD",
+              "withdrawable": false,
+              "idempotency_key": "invite_reward:30ef2a1a-319a-459e-886b-4bed8c1b79eb",
+              "status": "granted",
+              "meta": {
+                "source": "invite_confirm"
+              },
+              "created_at": "2026-09-20T13:53:50.018536+00:00"
+            }
+          }
+        },
+        "relationAfter": {
+          "id": "78663075-e1ea-425c-88e7-d8f96e078e83",
+          "status": "active",
+          "boss_id": "8fec08a7-0d9f-4285-bb0d-270bc4656bb1",
+          "companion_id": "7e28617c-972f-4602-8d1d-bcb66c18fa2c"
+        },
+        "rewardLedger": [
+          {
+            "id": "22383ded-0207-4524-8e1e-245e439280e7",
+            "reward_type": "meow_coin",
+            "amount": 10,
+            "withdrawable": false,
+            "currency": "CATFOOD"
+          }
+        ],
+        "walletInviteTxCount": 1,
+        "relationEventCount": 1,
+        "expectedMeowAmount": 10
+      }
+    },
+    "B": {
+      "ok": true,
+      "detail": {
+        "pendingStatus": "pending",
+        "relation": {
+          "id": "7fb87e2f-9dfd-4de7-b7d7-33924f578128",
+          "status": "active"
+        },
+        "reward": {
+          "reward_type": "cash",
+          "amount": 5,
+          "withdrawable": true,
+          "currency": "CASH"
+        },
+        "cashWallet": {
+          "before": 0,
+          "after": 5,
+          "delta": 5,
+          "expected": 5
+        },
+        "confirmReward": {
+          "granted": true,
+          "rewardType": "cash",
+          "amount": 5,
+          "withdrawable": true,
+          "currency": "CASH",
+          "ledger": {
+            "id": "317f6d56-cd6d-4fd5-bb2f-73d5958aa2b0",
+            "attribution_id": "d71a34c8-98a1-43cc-a947-00512bc5edb3",
+            "inviter_user_id": "2cc29bc2-a0ad-4e4a-ae6b-2e2bc84bafa9",
+            "invitee_user_id": "81080c8e-f3b2-4040-b565-dd9ee117451f",
+            "inviter_role": "companion",
+            "reward_type": "cash",
+            "amount": 5,
+            "currency": "CASH",
+            "withdrawable": true,
+            "idempotency_key": "invite_reward:d71a34c8-98a1-43cc-a947-00512bc5edb3",
+            "status": "granted",
+            "meta": {
+              "source": "invite_confirm"
+            },
+            "created_at": "2026-09-20T13:53:58.176739+00:00"
+          }
+        }
+      }
+    },
+    "C": {
+      "ok": true,
+      "detail": {
+        "pendingBefore": {
+          "id": "f13946c1-8b68-4413-a5bd-4412a87d5c87",
+          "status": "pending"
+        },
+        "after": {
+          "id": "f13946c1-8b68-4413-a5bd-4412a87d5c87",
+          "status": "rejected"
+        },
+        "relationActive": false,
+        "rewardCount": 0
+      }
+    },
+    "D": {
+      "ok": true,
+      "detail": {
+        "confirms": [
+          {
+            "alreadyConfirmed": false,
+            "relationId": "d1d94d9e-88b7-45f4-b176-752fad7fa2bb",
+            "rewardDuplicate": false
+          },
+          {
+            "alreadyConfirmed": true,
+            "relationId": "d1d94d9e-88b7-45f4-b176-752fad7fa2bb",
+            "rewardDuplicate": true
+          },
+          {
+            "alreadyConfirmed": true,
+            "relationId": "d1d94d9e-88b7-45f4-b176-752fad7fa2bb",
+            "rewardDuplicate": true
+          }
+        ],
+        "activeRelationCount": 1,
+        "grantedRewardCount": 1,
+        "bossCashWalletRows": 0
+      }
+    },
+    "E": {
+      "ok": true,
+      "detail": {
+        "bindId": "9f7de2db-764f-4ae4-bd4f-678feef32a27",
+        "rebind": "d5489688-b771-436d-b0b4-78f722fb7b6d",
+        "unbind": "3679b2a6-73da-4e3a-b787-11fe72bb7a89",
+        "listActiveForBoss2": 1,
+        "eventCount": 2,
+        "parallelSoTWrites": 0,
+        "legacyReferralTableMayExist": true,
+        "sameSoT": "boss_companion_relations + boss_companion_relation_events"
+      }
+    },
+    "F": {
+      "ok": true,
+      "detail": {
+        "relationId": "78663075-e1ea-425c-88e7-d8f96e078e83",
+        "orderId": "00000000-0000-4000-8000-789912414093",
+        "settle1": {
+          "skipped": false,
+          "reason": null,
+          "duplicate": false,
+          "earningId": "2fba46d2-eaa2-495d-b0de-c57153aaecd5"
+        },
+        "settle2": {
+          "skipped": false,
+          "reason": null,
+          "duplicate": true,
+          "earningId": "2fba46d2-eaa2-495d-b0de-c57153aaecd5"
+        },
+        "earningsCount": 1,
+        "inviteRewardSeparate": [
+          {
+            "type": "meow_coin",
+            "amount": 10,
+            "table": "invite_reward_ledger"
+          }
+        ],
+        "commissionTable": "boss_commission_earnings"
+      }
+    }
+  },
+  "evidence": {
+    "actors": {
+      "bossA": {
+        "id": "8fec08a7-0d9f-4285-bb0d-270bc4656bb1",
+        "email": "e2***@example.com"
+      },
+      "companionA": {
+        "id": "2cc29bc2-a0ad-4e4a-ae6b-2e2bc84bafa9",
+        "email": "e2***@example.com"
+      }
+    },
+    "caseA": {
+      "code": "JFJgEMfc…",
+      "inviteUrl": "[set]",
+      "redeemOutcome": "pending_confirm",
+      "pendingBeforeConfirm": {
+        "id": "30ef2a1a-319a-459e-886b-4bed8c1b79eb",
+        "status": "pending",
+        "reward_granted": false
+      },
+      "relationActiveBefore": false,
+      "confirm": {
+        "attributionId": "30ef2a1a-319a-459e-886b-4bed8c1b79eb",
+        "relationId": "78663075-e1ea-425c-88e7-d8f96e078e83",
+        "reward": {
+          "granted": true,
+          "rewardType": "meow_coin",
+          "amount": 10,
+          "withdrawable": false,
+          "currency": "CATFOOD",
+          "ledger": {
+            "id": "22383ded-0207-4524-8e1e-245e439280e7",
+            "attribution_id": "30ef2a1a-319a-459e-886b-4bed8c1b79eb",
+            "inviter_user_id": "8fec08a7-0d9f-4285-bb0d-270bc4656bb1",
+            "invitee_user_id": "7e28617c-972f-4602-8d1d-bcb66c18fa2c",
+            "inviter_role": "boss",
+            "reward_type": "meow_coin",
+            "amount": 10,
+            "currency": "CATFOOD",
+            "withdrawable": false,
+            "idempotency_key": "invite_reward:30ef2a1a-319a-459e-886b-4bed8c1b79eb",
+            "status": "granted",
+            "meta": {
+              "source": "invite_confirm"
+            },
+            "created_at": "2026-09-20T13:53:50.018536+00:00"
+          }
+        }
+      },
+      "relationAfter": {
+        "id": "78663075-e1ea-425c-88e7-d8f96e078e83",
+        "status": "active",
+        "boss_id": "8fec08a7-0d9f-4285-bb0d-270bc4656bb1",
+        "companion_id": "7e28617c-972f-4602-8d1d-bcb66c18fa2c"
+      },
+      "rewardLedger": [
+        {
+          "id": "22383ded-0207-4524-8e1e-245e439280e7",
+          "reward_type": "meow_coin",
+          "amount": 10,
+          "withdrawable": false,
+          "currency": "CATFOOD"
+        }
+      ],
+      "walletInviteTxCount": 1,
+      "relationEventCount": 1,
+      "expectedMeowAmount": 10
+    },
+    "caseB": {
+      "pendingStatus": "pending",
+      "relation": {
+        "id": "7fb87e2f-9dfd-4de7-b7d7-33924f578128",
+        "status": "active"
+      },
+      "reward": {
+        "reward_type": "cash",
+        "amount": 5,
+        "withdrawable": true,
+        "currency": "CASH"
+      },
+      "cashWallet": {
+        "before": 0,
+        "after": 5,
+        "delta": 5,
+        "expected": 5
+      },
+      "confirmReward": {
+        "granted": true,
+        "rewardType": "cash",
+        "amount": 5,
+        "withdrawable": true,
+        "currency": "CASH",
+        "ledger": {
+          "id": "317f6d56-cd6d-4fd5-bb2f-73d5958aa2b0",
+          "attribution_id": "d71a34c8-98a1-43cc-a947-00512bc5edb3",
+          "inviter_user_id": "2cc29bc2-a0ad-4e4a-ae6b-2e2bc84bafa9",
+          "invitee_user_id": "81080c8e-f3b2-4040-b565-dd9ee117451f",
+          "inviter_role": "companion",
+          "reward_type": "cash",
+          "amount": 5,
+          "currency": "CASH",
+          "withdrawable": true,
+          "idempotency_key": "invite_reward:d71a34c8-98a1-43cc-a947-00512bc5edb3",
+          "status": "granted",
+          "meta": {
+            "source": "invite_confirm"
+          },
+          "created_at": "2026-09-20T13:53:58.176739+00:00"
+        }
+      }
+    },
+    "caseC": {
+      "pendingBefore": {
+        "id": "f13946c1-8b68-4413-a5bd-4412a87d5c87",
+        "status": "pending"
+      },
+      "after": {
+        "id": "f13946c1-8b68-4413-a5bd-4412a87d5c87",
+        "status": "rejected"
+      },
+      "relationActive": false,
+      "rewardCount": 0
+    },
+    "caseD": {
+      "confirms": [
+        {
+          "alreadyConfirmed": false,
+          "relationId": "d1d94d9e-88b7-45f4-b176-752fad7fa2bb",
+          "rewardDuplicate": false
+        },
+        {
+          "alreadyConfirmed": true,
+          "relationId": "d1d94d9e-88b7-45f4-b176-752fad7fa2bb",
+          "rewardDuplicate": true
+        },
+        {
+          "alreadyConfirmed": true,
+          "relationId": "d1d94d9e-88b7-45f4-b176-752fad7fa2bb",
+          "rewardDuplicate": true
+        }
+      ],
+      "activeRelationCount": 1,
+      "grantedRewardCount": 1,
+      "bossCashWalletRows": 0
+    },
+    "caseE": {
+      "bindId": "9f7de2db-764f-4ae4-bd4f-678feef32a27",
+      "rebind": "d5489688-b771-436d-b0b4-78f722fb7b6d",
+      "unbind": "3679b2a6-73da-4e3a-b787-11fe72bb7a89",
+      "listActiveForBoss2": 1,
+      "eventCount": 2,
+      "parallelSoTWrites": 0,
+      "legacyReferralTableMayExist": true,
+      "sameSoT": "boss_companion_relations + boss_companion_relation_events"
+    },
+    "caseF": {
+      "relationId": "78663075-e1ea-425c-88e7-d8f96e078e83",
+      "orderId": "00000000-0000-4000-8000-789912414093",
+      "settle1": {
+        "skipped": false,
+        "reason": null,
+        "duplicate": false,
+        "earningId": "2fba46d2-eaa2-495d-b0de-c57153aaecd5"
+      },
+      "settle2": {
+        "skipped": false,
+        "reason": null,
+        "duplicate": true,
+        "earningId": "2fba46d2-eaa2-495d-b0de-c57153aaecd5"
+      },
+      "earningsCount": 1,
+      "inviteRewardSeparate": [
+        {
+          "type": "meow_coin",
+          "amount": 10,
+          "table": "invite_reward_ledger"
+        }
+      ],
+      "commissionTable": "boss_commission_earnings"
+    }
+  },
+  "flags": {
+    "stagingBossInvite": "ON",
+    "stagingSettlement": "ON",
+    "productionFlags": "OFF (not modified; fail-closed when unset on Production)",
+    "APP_ENV": "preview",
+    "VERCEL_ENV": "preview"
+  },
+  "migrations": {
+    "14": "APPLIED",
+    "01": "APPLIED",
+    "02": "APPLIED",
+    "03": "APPLIED",
+    "09": "APPLIED"
+  },
+  "meta": {
+    "startedAt": "2026-09-20T13:53:34.094Z",
+    "stagingRef": "cfccwysniduwkjskiqgy",
+    "productionTouched": false,
+    "commitHint": "PR #275 staging E2E",
+    "rewardDefaults": {
+      "bossMeow": 10,
+      "companionCash": 5
+    },
+    "finishedAt": "2026-09-20T13:54:28.349Z",
+    "allPass": true
+  }
+}
