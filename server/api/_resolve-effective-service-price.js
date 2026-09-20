@@ -1,24 +1,23 @@
 /**
  * resolveEffectiveServicePrice — unified companion service sell price (P1).
  *
- * Priority (PRICE_V2 off / P1 default — behavioral equivalence with legacy):
- *   1. enabled + review_status ∈ {approved, active} companion_services row → row.price
- *      (never reads proposed_price)
- *   2. legacy priceForGame / companion.price if > 0 → legacy_profile
- *   3. level.base_price if > 0 → level_base_price
+ * Product SoT (always):
+ *   service-specific price ?? level.base_price
  *
- * Target priority when PRICE_V2 on (P4):
- *   1. approved/active service row
- *   2. level.base_price
- *   3. legacy (migration safety until P5 removes it)
+ * Resolution order:
+ *   1. matched companion_services row
+ *      - admin_set / companion_custom / legacy_import / companion_service → row.price
+ *      - level_default / level_base_price seed → prefer game_prices (priceForGame)
+ *        when present, else row.price (seeded level default)
+ *   2. game_prices / legacy profile price (priceForGame) if > 0
+ *   3. level.base_price if > 0
  *
- * P1 does not delete or silence legacy reads; call sites may keep priceForGame
- * until P4 gray cutover.
+ * Never trusts client-submitted unit amounts — call sites snapshot server result.
  */
 import { priceForGame } from "./_game-prices.js";
-import { isPricingV2Enabled } from "./_feature-flags.js";
 
 const APPROVED_STATUSES = new Set(["approved", "active"]);
+const LEVEL_SEED_SOURCES = new Set(["level_default", "level_base_price"]);
 
 function money(value) {
   const n = Number(String(value ?? "").replace(/[^\d.-]/g, ""));
@@ -76,6 +75,10 @@ function levelBasePrice(level) {
   return 0;
 }
 
+function isLevelSeedSource(source) {
+  return LEVEL_SEED_SOURCES.has(String(source || "").trim().toLowerCase());
+}
+
 /**
  * @param {object} args
  * @param {object} [args.companion] companion_profiles-like row
@@ -85,7 +88,7 @@ function levelBasePrice(level) {
  * @param {string} [args.serviceRowId]
  * @param {object|null} [args.level] companion_levels-like (normalized or db)
  * @param {object[]} [args.serviceRows] preloaded companion_services rows
- * @param {object} [args.env] process.env override for tests
+ * @param {object} [args.env] process.env override for tests (kept for call-site compat)
  * @returns {{ price: number, source: string, serviceRow: object|null, levelId: string|null }}
  */
 export function resolveEffectiveServicePrice({
@@ -98,68 +101,63 @@ export function resolveEffectiveServicePrice({
   serviceRows = null,
   env = process.env,
 } = {}) {
+  void env; // flag no longer flips service-vs-level priority; SoT is always service ?? level
+  const cid = String(companionId || companion?.user_id || companion?.id || "") || null;
+  const lid = String(level?.id || level?.code || "") || null;
+  const legacy = money(priceForGame(companion || {}, gameName, serviceId));
+  const base = levelBasePrice(level);
+
   const row = matchServiceRow(serviceRows, { serviceId, gameName, serviceRowId });
   if (row) {
-    return {
-      price: money(row.price),
-      source: String(row.source || "companion_service").trim() || "companion_service",
-      serviceRow: row,
-      levelId: String(row.level_id_at_price || row.levelIdAtPrice || level?.id || "") || null,
-      companionId: String(companionId || companion?.user_id || companion?.id || "") || null,
-    };
+    const rowSource = String(row.source || "companion_service").trim() || "companion_service";
+    const rowPrice = money(row.price);
+    // Seeded level_default rows must not block a later admin game_prices override.
+    if (isLevelSeedSource(rowSource) && legacy > 0) {
+      return {
+        price: legacy,
+        source: "legacy_profile",
+        serviceRow: row,
+        levelId: String(row.level_id_at_price || row.levelIdAtPrice || lid || "") || null,
+        companionId: cid,
+      };
+    }
+    if (rowPrice > 0) {
+      return {
+        price: rowPrice,
+        source: rowSource,
+        serviceRow: row,
+        levelId: String(row.level_id_at_price || row.levelIdAtPrice || lid || "") || null,
+        companionId: cid,
+      };
+    }
   }
 
-  const v2 = isPricingV2Enabled(env);
-  const base = levelBasePrice(level);
-  const legacy = money(priceForGame(companion || {}, gameName, serviceId));
-
-  if (v2) {
-    if (base > 0) {
-      return {
-        price: base,
-        source: "level_base_price",
-        serviceRow: null,
-        levelId: String(level?.id || level?.code || "") || null,
-        companionId: String(companionId || companion?.user_id || companion?.id || "") || null,
-      };
-    }
-    if (legacy > 0) {
-      return {
-        price: legacy,
-        source: "legacy_profile",
-        serviceRow: null,
-        levelId: String(level?.id || level?.code || "") || null,
-        companionId: String(companionId || companion?.user_id || companion?.id || "") || null,
-      };
-    }
-  } else {
-    // P1 default: preserve pre-migration amounts when no service rows yet
-    if (legacy > 0) {
-      return {
-        price: legacy,
-        source: "legacy_profile",
-        serviceRow: null,
-        levelId: String(level?.id || level?.code || "") || null,
-        companionId: String(companionId || companion?.user_id || companion?.id || "") || null,
-      };
-    }
-    if (base > 0) {
-      return {
-        price: base,
-        source: "level_base_price",
-        serviceRow: null,
-        levelId: String(level?.id || level?.code || "") || null,
-        companionId: String(companionId || companion?.user_id || companion?.id || "") || null,
-      };
-    }
+  // No usable service row (or empty row price): service-specific game_prices, then level.
+  if (legacy > 0) {
+    return {
+      price: legacy,
+      source: "legacy_profile",
+      serviceRow: null,
+      levelId: lid,
+      companionId: cid,
+    };
+  }
+  if (base > 0) {
+    return {
+      price: base,
+      source: "level_base_price",
+      serviceRow: null,
+      levelId: lid,
+      companionId: cid,
+    };
   }
 
   return {
     price: 0,
     source: "none",
     serviceRow: null,
-    levelId: String(level?.id || level?.code || "") || null,
-    companionId: String(companionId || companion?.user_id || companion?.id || "") || null,
+    levelId: lid,
+    companionId: cid,
   };
 }
 

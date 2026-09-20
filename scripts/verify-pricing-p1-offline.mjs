@@ -99,7 +99,7 @@ assert.equal(normalizeLevelRow({ level: 1, min: 20, max: 30 }).basePrice, 20);
   assert.equal(r.source, "legacy_profile");
 }
 
-// --- PRICE_V2 on: level base before legacy ---
+// --- Service-specific game_prices always beats level (PRICE_V2 on or off) ---
 {
   const companion = { price: 18, game_prices: { CS2: 27 } };
   const r = resolveEffectiveServicePrice({
@@ -109,8 +109,35 @@ assert.equal(normalizeLevelRow({ level: 1, min: 20, max: 30 }).basePrice, 20);
     serviceRows: [],
     env: { PRICE_V2: "1" },
   });
-  assert.equal(r.price, 40);
-  assert.equal(r.source, "level_base_price");
+  assert.equal(r.price, 27);
+  assert.equal(r.source, "legacy_profile");
+}
+
+// --- level_default seed row must not block game_prices override (P0-4) ---
+{
+  const companion = {
+    price: 30,
+    game_prices: { "三角洲手游 国服": 35 },
+  };
+  const rows = [
+    {
+      id: "svc-delta",
+      service_name: "三角洲手游 国服",
+      price: 30,
+      enabled: true,
+      review_status: "approved",
+      source: "level_default",
+    },
+  ];
+  const r = resolveEffectiveServicePrice({
+    companion,
+    gameName: "三角洲手游 国服",
+    level: { id: "lv2", basePrice: 30 },
+    serviceRows: rows,
+    env: {},
+  });
+  assert.equal(r.price, 35);
+  assert.equal(r.source, "legacy_profile");
 }
 
 // --- No legacy → level base even when V2 off ---
