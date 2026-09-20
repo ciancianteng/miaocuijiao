@@ -832,6 +832,21 @@
     var actions = '<div class="pay-actions">';
     var needsManualProof = st === "awaiting_payment" && !isWalletMethod(order);
 
+    if (st === "cancelled") {
+      paint(
+        '<section class="pay-card"><h1>支付确认</h1>' +
+          '<p class="pay-alert"><strong>该订单已取消，无法继续付款。</strong></p>' +
+          "<p>" +
+          esc(guide.next || "如需重新下单，请返回陪玩大厅。") +
+          "</p>" +
+          '<div class="pay-actions">' +
+          '<a class="pay-btn primary" href="orders.html">查看我的订单</a>' +
+          '<a class="pay-btn" href="companion-center.html">返回陪玩大厅</a>' +
+          "</div></section>"
+      );
+      return;
+    }
+
     if (guide.primary === "pay" && st === "awaiting_payment" && !reviewing && isWalletMethod(order)) {
       actions +=
         '<button type="button" class="pay-btn primary" data-pay-order="' +
