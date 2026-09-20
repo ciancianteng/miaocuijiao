@@ -200,7 +200,129 @@ test("TEST 2–3 add companions increments count + group total", () => {
   assert.equal(priced.ok, true);
   assert.equal(api.getLines()[0].unitPrice, 35);
   assert.equal(api.getLines()[0].serviceId, "svc-delta");
+  assert.equal(api.getLines()[0].service, "三角洲手游 国服");
   assert.equal(api.getTotal(), 35);
+  api.clear();
+
+  // P0-5: preferId miss must NOT fall back to services[0] (王者荣耀@30)
+  // Name still matches → keep 三角洲@35
+  const missId = api.add({
+    companionId: "44444444-4444-4444-8444-444444444444",
+    companionName: "小宏",
+    unitPrice: 35,
+    service: "三角洲手游 国服",
+    serviceId: "svc-delta-stale-id",
+    services: [
+      { name: "王者荣耀 国服", price: 30, serviceId: "svc-wz" },
+      { name: "三角洲手游 国服", price: 35, serviceId: "svc-delta" },
+    ],
+    online: true,
+  });
+  assert.equal(missId.ok, true);
+  assert.equal(api.getLines()[0].unitPrice, 35);
+  assert.equal(api.getLines()[0].service, "三角洲手游 国服");
+  assert.notEqual(api.getLines()[0].service, "王者荣耀 国服");
+  api.clear();
+
+  // P0-5b: both id+name miss catalog → keep explicit unitPrice/name (no services[0])
+  const missBoth = api.add({
+    companionId: "55555555-5555-4555-8555-555555555555",
+    companionName: "小宏",
+    unitPrice: 35,
+    service: "三角洲手游 国服",
+    serviceId: "svc-orphan",
+    services: [{ name: "王者荣耀 国服", price: 30, serviceId: "svc-wz" }],
+    online: true,
+  });
+  assert.equal(missBoth.ok, true);
+  assert.equal(api.getLines()[0].unitPrice, 35);
+  assert.equal(api.getLines()[0].service, "三角洲手游 国服");
+  assert.equal(api.getLines()[0].serviceId, "svc-orphan");
+  api.clear();
+
+  // CASE A: 35 + 35 = 70
+  api.add({
+    companionId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    companionName: "小灰灰",
+    unitPrice: 30,
+    service: "三角洲手游 国服",
+    serviceId: "svc-delta",
+    services: [
+      { name: "王者荣耀 国服", price: 30, serviceId: "svc-wz" },
+      { name: "三角洲手游 国服", price: 35, serviceId: "svc-delta" },
+    ],
+    online: true,
+  });
+  api.add({
+    companionId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+    companionName: "小宏",
+    unitPrice: 30,
+    service: "三角洲手游 国服",
+    serviceId: "svc-delta",
+    services: [
+      { name: "王者荣耀 国服", price: 30, serviceId: "svc-wz" },
+      { name: "三角洲手游 国服", price: 35, serviceId: "svc-delta" },
+    ],
+    online: true,
+  });
+  assert.equal(api.getLines()[0].unitPrice, 35);
+  assert.equal(api.getLines()[1].unitPrice, 35);
+  assert.equal(api.getTotal(), 70);
+  api.clear();
+
+  // CASE B: 35 + 30 = 65
+  api.add({
+    companionId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+    companionName: "小灰灰",
+    unitPrice: 30,
+    service: "三角洲手游 国服",
+    serviceId: "svc-delta",
+    services: [
+      { name: "王者荣耀 国服", price: 30, serviceId: "svc-wz" },
+      { name: "三角洲手游 国服", price: 35, serviceId: "svc-delta" },
+    ],
+    online: true,
+  });
+  api.add({
+    companionId: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+    companionName: "小宏",
+    unitPrice: 30,
+    service: "王者荣耀 国服",
+    serviceId: "svc-wz",
+    services: [
+      { name: "王者荣耀 国服", price: 30, serviceId: "svc-wz" },
+      { name: "三角洲手游 国服", price: 35, serviceId: "svc-delta" },
+    ],
+    online: true,
+  });
+  assert.equal(api.getTotal(), 65);
+  const payloadCaseB = api.buildPayload();
+  assert.equal(payloadCaseB.companions[0].unitPrice, 35);
+  assert.equal(payloadCaseB.companions[0].totalAmount, 35);
+  assert.equal(payloadCaseB.companions[1].unitPrice, 30);
+  assert.equal(payloadCaseB.companions[1].totalAmount, 30);
+  api.clear();
+
+  // CASE C: both level fallback 30 → 60
+  api.add({
+    companionId: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+    companionName: "A",
+    unitPrice: 30,
+    service: "王者荣耀 国服",
+    serviceId: "svc-wz",
+    services: [{ name: "王者荣耀 国服", price: 30, serviceId: "svc-wz" }],
+    online: true,
+  });
+  api.add({
+    companionId: "ffffffff-ffff-4fff-8fff-ffffffffffff",
+    companionName: "B",
+    unitPrice: 30,
+    service: "王者荣耀 国服",
+    serviceId: "svc-wz",
+    services: [{ name: "王者荣耀 国服", price: 30, serviceId: "svc-wz" }],
+    online: true,
+  });
+  assert.equal(api.getTotal(), 60);
   api.clear();
 });
 
@@ -230,9 +352,11 @@ test("TEST continue选 navigates to hall (not toast-only)", () => {
 });
 
 test("TEST service price preferred over level unitPrice", () => {
-  assert.match(teamSrc, /selected service price wins|first\.price/);
-  assert.match(teamSrc, /money\(first && first\.price\)\s*>\s*0\s*\?\s*money\(first\.price\)/);
+  assert.match(teamSrc, /hasExplicit|preferId miss|never silently rewrite/i);
   assert.match(teamSrc, /serviceId/);
+  assert.match(teamSrc, /addCompanionFromHallButton/);
+  assert.doesNotMatch(teamSrc, /total\s*=\s*companions\.length\s*\*\s*30/);
+  assert.doesNotMatch(teamSrc, /multiPrice\s*=\s*30/);
 });
 
 test("TEST boss list parent-only + child hidden", () => {

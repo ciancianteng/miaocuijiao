@@ -1,0 +1,79 @@
+{
+  "rootCause": "addCompanion fell back to services[0] on serviceId/name mismatch, overwriting explicit 三角洲@35 with 王者荣耀@30; hall team-add used listing level price; catalog soft-update forced services[0]",
+  "usedLevelFallbackBug": true,
+  "lostSelectedService": true,
+  "hardcode30": false,
+  "cases": {
+    "A": {
+      "lines": [
+        {
+          "name": "小灰灰",
+          "service": "三角洲手游 国服",
+          "unit": 35,
+          "sub": 35
+        },
+        {
+          "name": "小宏",
+          "service": "三角洲手游 国服",
+          "unit": 35,
+          "sub": 35
+        }
+      ],
+      "total": 70
+    },
+    "B": {
+      "lines": [
+        {
+          "name": "小灰灰",
+          "service": "三角洲手游 国服",
+          "unit": 35,
+          "sub": 35
+        },
+        {
+          "name": "小宏",
+          "service": "王者荣耀 国服",
+          "unit": 30,
+          "sub": 30
+        }
+      ],
+      "total": 65
+    },
+    "persist": {
+      "ok": true,
+      "line": {
+        "companionId": "c1",
+        "companionName": "小宏",
+        "avatar": "",
+        "unitPrice": 35,
+        "service": "三角洲手游 国服",
+        "serviceType": "三角洲手游 国服",
+        "serviceId": "orphan",
+        "game": "三角洲手游 国服",
+        "hours": 1,
+        "quantity": 1,
+        "services": [
+          {
+            "name": "王者荣耀 国服",
+            "price": 30,
+            "serviceId": "svc-wz",
+            "sort": 0
+          }
+        ],
+        "online": true
+      },
+      "note": "explicit selection kept despite catalog miss / no services[0]"
+    }
+  },
+  "files": [
+    "src/multi-companion-team.js",
+    "src/place-order-modal.js",
+    "src/profile-detail.js",
+    "server/api/_place-multi-order.js",
+    "scripts/verify-multi-companion-frontend.mjs"
+  ],
+  "tests": {
+    "frontend": "PASS",
+    "servicePricing": "20/20",
+    "multiOrder": "16/16"
+  }
+}

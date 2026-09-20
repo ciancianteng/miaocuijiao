@@ -710,11 +710,20 @@
         if (state.open) {
           remountServiceChips();
           var list = resolveServices(state.companion);
+          var sid = String(state.selectedServiceId || "").trim();
           var cur =
+            (sid &&
+              list.find(function (s) {
+                return String(s.serviceId || "") === sid || String(s.id || "") === sid;
+              })) ||
             list.find(function (s) {
               return s.name === state.service;
-            }) || list[0];
+            }) ||
+            null;
+          // Never silently rewrite an existing selection to list[0].
           if (cur) applySelectedService(cur);
+          else if (!state.service && list[0]) applySelectedService(list[0]);
+          else refreshTotals();
         }
         return body;
       })
@@ -1778,10 +1787,26 @@
           pill.textContent = state.companion.level || "未设置等级";
         }
       } catch (e) {}
-      var matched = matchService(extras.service || src.service || src.game || state.companion.service, state.companion);
+      var matched = matchService(
+        extras.service || src.service || state.service || state.companion.service,
+        state.companion
+      );
       if (matched.item) applySelectedService(matched.item);
       else {
-        refreshTotals();
+        // Soft catalog refresh must preserve the user's current chip selection.
+        var keepList = resolveServices(state.companion);
+        var keepSid = String(state.selectedServiceId || "").trim();
+        var keep =
+          (keepSid &&
+            keepList.find(function (s) {
+              return String(s.serviceId || "") === keepSid || String(s.id || "") === keepSid;
+            })) ||
+          keepList.find(function (s) {
+            return s.name === state.service;
+          }) ||
+          null;
+        if (keep) applySelectedService(keep);
+        else refreshTotals();
       }
       // Soft update never clears/reloads payment cards from empty cache — only refresh if already loaded.
       if (state.payMethods.length && !state.payMethodsLoading) paintPayCards();

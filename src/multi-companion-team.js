@@ -436,29 +436,74 @@
       toast("该陪玩暂无可下单服务项目");
       return { ok: false, error: "no_service" };
     }
-    var preferService = String(raw.service || raw.serviceType || raw.game || "").trim();
+    // Prefer explicit selection only — never silently rewrite to services[0]
+    // when the user already chose a service (e.g. 三角洲@35 → 王者荣耀@30).
+    var preferService = String(raw.service || raw.serviceType || "").trim();
+    // game blobs like "A,B,C" are not a single selected service name
+    if (!preferService) {
+      var gameHint = String(raw.game || "").trim();
+      if (gameHint && gameHint.indexOf(",") < 0 && gameHint.indexOf("，") < 0 && gameHint.indexOf("、") < 0) {
+        preferService = gameHint;
+      }
+    }
     var preferId = String(raw.serviceId || raw.service_id || "").trim();
-    var first =
+    var hasExplicit = !!(preferId || preferService);
+    var matched =
       (preferId &&
         services.find(function (s) {
-          return String(s.serviceId || s.id || "") === preferId;
+          return (
+            String(s.serviceId || "") === preferId ||
+            String(s.id || "") === preferId
+          );
         })) ||
       (preferService &&
         services.find(function (s) {
           return String(s.name) === preferService;
         })) ||
-      services[0];
-    // SoT: selected service price wins over companion-level default unitPrice.
-    var lineUnit = money(first && first.price) > 0 ? money(first.price) : unitPrice;
+      (preferService &&
+        services.find(function (s) {
+          var n = String(s.name || "");
+          return n && (preferService.indexOf(n) >= 0 || n.indexOf(preferService) >= 0);
+        })) ||
+      null;
+    var selected = matched;
+    if (!selected && !hasExplicit) {
+      selected = services.find(function (s) {
+        return money(s.price) > 0;
+      }) || services[0];
+    }
+    // SoT: matched service-specific price ?? explicit unitPrice ?? first catalog price.
+    // Explicit selection that missed catalog match MUST keep caller unitPrice/name/id —
+    // do NOT fall back to services[0] (level-default 30 / first game).
+    var lineUnit = 0;
+    var lineService = "";
+    var lineServiceId = "";
+    if (matched) {
+      lineUnit = money(matched.price) > 0 ? money(matched.price) : unitPrice;
+      lineService = matched.name || preferService || companion.service;
+      lineServiceId = String(matched.serviceId || matched.id || preferId || "").trim();
+    } else if (hasExplicit) {
+      lineUnit = unitPrice;
+      lineService = preferService || companion.service || "陪玩";
+      lineServiceId = preferId;
+    } else {
+      lineUnit = money(selected && selected.price) > 0 ? money(selected.price) : unitPrice;
+      lineService = (selected && selected.name) || companion.service;
+      lineServiceId = (selected && (selected.serviceId || selected.id)) || companion.serviceId || "";
+    }
+    if (!(lineUnit > 0)) {
+      toast("该陪玩所选服务暂无有效单价");
+      return { ok: false, error: "no_price" };
+    }
     var line = {
       companionId: companionId,
       companionName: companion.companionName,
       avatar: companion.avatar,
       unitPrice: lineUnit,
-      service: (first && first.name) || companion.service,
-      serviceType: (first && first.name) || companion.service,
-      serviceId: (first && (first.serviceId || first.id)) || companion.serviceId || "",
-      game: (first && first.name) || companion.game,
+      service: lineService,
+      serviceType: lineService,
+      serviceId: lineServiceId,
+      game: lineService,
       hours: Math.max(0.5, money(raw.hours || 1) || 1),
       quantity: Math.max(1, Math.floor(money(raw.quantity || 1) || 1)),
       services: services,
@@ -995,22 +1040,139 @@
       });
   }
 
+  function normalizeCatalogServices(list) {
+    if (!Array.isArray(list)) return [];
+    return list
+      .map(function (s, i) {
+        if (!s) return null;
+        return {
+          name: String(s.name || s.serviceName || s.service_name || "").trim(),
+          price: money(s.price != null ? s.price : s.unitPrice != null ? s.unitPrice : 0),
+          serviceId: String(s.serviceId || s.service_id || s.id || "").trim(),
+          id: String(s.id || s.serviceId || s.service_id || "").trim(),
+          sort: s.sort != null ? Number(s.sort) : i,
+        };
+      })
+      .filter(function (s) {
+        return s && s.name;
+      });
+  }
+
+  function pickHallService(services, btn) {
+    var filterEl = document.getElementById("gameFilter");
+    var filterLabel = "";
+    var filterVal = "";
+    try {
+      if (filterEl && filterEl.value) {
+        filterVal = String(filterEl.value || "").trim();
+        filterLabel = String(
+          (filterEl.selectedOptions && filterEl.selectedOptions[0] && filterEl.selectedOptions[0].text) || ""
+        ).trim();
+      }
+    } catch (e) {}
+    var gameAttr = String(btn.getAttribute("data-hall-game") || "").trim();
+    var firstGame = gameAttr.split(/[,，、\/|]+/).map(function (s) {
+      return String(s || "").trim();
+    }).filter(Boolean)[0] || "";
+    var preferNames = [filterLabel, firstGame].filter(Boolean);
+    var preferIds = [filterVal].filter(function (id) {
+      return id && /^[0-9a-f-]{36}$/i.test(id);
+    });
+    var hit =
+      (preferIds[0] &&
+        services.find(function (s) {
+          return String(s.serviceId || s.id || "") === preferIds[0];
+        })) ||
+      null;
+    for (var i = 0; !hit && i < preferNames.length; i++) {
+      var want = preferNames[i];
+      hit = services.find(function (s) {
+        return String(s.name) === want;
+      });
+      if (!hit) {
+        hit = services.find(function (s) {
+          var n = String(s.name || "");
+          return n && (want.indexOf(n) >= 0 || n.indexOf(want) >= 0);
+        });
+      }
+    }
+    // Prefer a service-specific priced row over pure level-default when no filter.
+    if (!hit) {
+      hit =
+        services.find(function (s) {
+          return money(s.price) > 0;
+        }) || services[0] || null;
+    }
+    return hit;
+  }
+
+  function addCompanionFromHallButton(btn) {
+    var companionId = String(btn.getAttribute("data-hall-team-add") || "").trim();
+    var fallback = {
+      companionId: companionId,
+      companionName: btn.getAttribute("data-hall-name") || "陪玩",
+      unitPrice: Number(btn.getAttribute("data-hall-price") || 0),
+      avatar: btn.getAttribute("data-hall-avatar") || "",
+      game: btn.getAttribute("data-hall-game") || "陪玩",
+      service: "",
+      status: btn.getAttribute("data-hall-status") || "",
+      statusText: btn.getAttribute("data-hall-status-text") || "",
+      online: btn.getAttribute("data-hall-online"),
+    };
+    if (!companionId) {
+      addCompanion(fallback);
+      return;
+    }
+    // Resolve live catalog so hall team-add uses service price, not listing level price.
+    fetch("/api/boss/marketplace?action=catalog&companionId=" + encodeURIComponent(companionId), {
+      headers: authHeaders(),
+      cache: "no-store",
+    })
+      .then(function (res) {
+        return res.json().then(function (body) {
+          if (!res.ok || (body && body.ok === false)) throw new Error("catalog");
+          return body;
+        });
+      })
+      .then(function (body) {
+        var services = normalizeCatalogServices(body && body.services);
+        var picked = pickHallService(services, btn);
+        if (picked && money(picked.price) > 0) {
+          addCompanion(
+            Object.assign({}, fallback, {
+              service: picked.name,
+              serviceType: picked.name,
+              serviceId: picked.serviceId || picked.id || "",
+              unitPrice: money(picked.price),
+              game: picked.name,
+              services: services,
+            })
+          );
+          return;
+        }
+        if (services.length) {
+          addCompanion(
+            Object.assign({}, fallback, {
+              service: (picked && picked.name) || services[0].name,
+              serviceId: (picked && (picked.serviceId || picked.id)) || services[0].serviceId || "",
+              services: services,
+            })
+          );
+          return;
+        }
+        addCompanion(fallback);
+      })
+      .catch(function () {
+        addCompanion(fallback);
+      });
+  }
+
   function onDocClick(e) {
     var addBtn = e.target.closest("[data-hall-team-add]");
     if (addBtn) {
       e.preventDefault();
       e.stopPropagation();
-      addCompanion({
-        companionId: addBtn.getAttribute("data-hall-team-add") || "",
-        companionName: addBtn.getAttribute("data-hall-name") || "陪玩",
-        unitPrice: Number(addBtn.getAttribute("data-hall-price") || 0),
-        avatar: addBtn.getAttribute("data-hall-avatar") || "",
-        game: addBtn.getAttribute("data-hall-game") || "陪玩",
-        service: addBtn.getAttribute("data-hall-game") || "陪玩",
-        status: addBtn.getAttribute("data-hall-status") || "",
-        statusText: addBtn.getAttribute("data-hall-status-text") || "",
-        online: addBtn.getAttribute("data-hall-online"),
-      });
+      addCompanionFromHallButton(addBtn);
       return;
     }
     if (e.target.closest("[data-mcj-team-checkout]")) {

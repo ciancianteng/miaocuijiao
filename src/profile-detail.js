@@ -680,24 +680,24 @@
           }
           var catC = (cat && cat.companion) || {};
           var services = (cat && cat.services) || [];
-          var selected = services[0] || null;
-          var unitPrice = Number(
-            (selected && selected.price) || catC.price || c.priceValue || c.price || 0
-          );
+          // Do NOT force services[0] — that rewrites 三角洲@35 → 王者荣耀@30 on soft update.
+          // Pass catalog services/prices; place-order modal keeps the current selection.
+          var unitPrice = Number(catC.price || c.priceValue || c.price || 0);
+          if (!(unitPrice > 0) && services[0] && Number(services[0].price) > 0) {
+            unitPrice = Number(services[0].price);
+          }
           if (!(unitPrice > 0)) return;
-          var serviceName =
-            (selected && selected.name) || catC.game || c.game || c.mainGame || "";
           window.MCJPlaceOrder.openFromCompanion(c, {
             companionId: c.id || c.uid,
             companionName: catC.name || c.name || c.nickname,
             unitPrice: unitPrice,
-            service: serviceName,
+            // omit service so soft-update preserves the chip the user already picked
             services: services,
             serviceIds: c.serviceIds || c.service_ids || [],
             gamePrices: catC.gamePrices || c.gamePrices || c.game_prices || {},
             avatar: catC.avatar || c.avatar,
             publicId: catC.publicId || c.publicId || "",
-            pricingUnit: (selected && selected.pricingUnit) || catC.pricingUnit || c.pricingUnit || "小时",
+            pricingUnit: catC.pricingUnit || c.pricingUnit || "小时",
             availabilityStatus: c.availabilityStatus || catC.availabilityStatus || "",
             availabilityText: c.availabilityText || c.status || c.onlineStatus || "",
             online: c.online != null ? c.online : c.canOrderNow,
