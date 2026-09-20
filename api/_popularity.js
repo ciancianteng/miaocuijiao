@@ -630,7 +630,7 @@ export async function listBoard({ period = "weekly", gameKey = "", limit, online
       return {
         rank: r.rank,
         companionId: r.companion_id,
-        publicId: c.companion_uid ? `P${c.companion_uid}` : "",
+        publicId: c.companion_uid ? `P${c.companion_uid}` : (c.companion_code || ""),
         nickname: c.nickname || p.display_name || "未命名陪玩",
         avatar: p.avatar_url || c.card_image_url || "assets/meow-cuijiao-brand.jpg",
         level: c.level_name || "未设置等级",

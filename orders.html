@@ -629,7 +629,7 @@
             '</div></div>'+
             '<div class="od-module"><h3>陪玩信息</h3><div class="od-fields">'+
               field('陪玩昵称',esc(isMultiParent(o)?'组合订单（见下方子订单）':companionName(o)))+
-              field('陪玩 ID',esc(isMultiParent(o)?'—':(o.companionId||o.companion_id||'-')))+
+              field('陪玩 ID',esc(isMultiParent(o)?'—':(o.companionPublicId||o.companionCode||o.publicId||((/^[0-9a-f-]{36}$/i.test(String(o.companionId||o.companion_id||'')))?'-':(o.companionId||o.companion_id))||'-')))+
             '</div></div>'+
             (isMultiParent(o)?multiConfirmQueueHtml(o):'')+
             (isMultiParent(o)?('<div class="od-module"><h3>陪玩列表 · 各子订单</h3><div class="od-children">'+childrenOf(o.id).map(function(ch){

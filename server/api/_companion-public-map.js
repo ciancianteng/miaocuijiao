@@ -3,6 +3,8 @@
  * Keeps homepage / hall / detail / admin / CS on one mapping.
  */
 
+import { resolveCompanionPublicCode } from "./_account-codes.js";
+
 export const DEFAULT_COMPANION_AVATAR = "/default-avatar.png";
 export const DEFAULT_COMPANION_COVER = "/default-avatar.png";
 
@@ -121,23 +123,7 @@ export function mapCompanionPublicFields(row = {}, profile = {}, extras = {}) {
   const name = resolveCompanionName(row, profile) || "未命名陪玩";
   const avatar = resolveCompanionAvatar(profile, row, extras);
   const cover = resolveCompanionCover(profile, row, extras);
-  let publicId = "";
-  try {
-    // Dynamic import avoided — inline PW formatting to keep this file dependency-light for browsers if bundled.
-    const code = String(row.companion_code || extras.companionCode || extras.publicId || "").trim();
-    if (/^PW\d+$/i.test(code)) publicId = code.toUpperCase().replace(/^pw/i, "PW");
-    else if (/^P\d+$/i.test(code)) {
-      const n = Number(String(code).replace(/^P/i, ""));
-      const seq = n >= 100001 ? n - 100000 : n;
-      if (seq > 0) publicId = "PW" + String(seq).padStart(5, "0");
-    } else if (row.companion_uid) {
-      const n = Number(row.companion_uid);
-      const seq = n >= 100001 ? n - 100000 : n;
-      if (seq > 0) publicId = "PW" + String(seq).padStart(5, "0");
-    }
-  } catch {
-    publicId = row.companion_code || "";
-  }
+  const publicId = resolveCompanionPublicCode(row, extras) || "";
   return {
     id: row.user_id || row.id || extras.id || "",
     uid: row.user_id || row.id || extras.id || "",

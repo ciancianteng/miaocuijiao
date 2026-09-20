@@ -5,6 +5,8 @@
  */
 import { hasBossRole } from "../_account-roles.js";
 import { envValue, isMissingRelation, serviceHeaders, supabaseJson } from "../_wallet.js";
+import { companionDb } from "../_companion-media-store.js";
+import { ensureCompanionPublicCode, resolveCompanionPublicCode } from "../_account-codes.js";
 
 const REL_TABLE = "boss_companion_relations";
 const ACTIVE = "active";
@@ -63,7 +65,7 @@ async function loadProfilesByIds(ids) {
   const map = new Map();
   if (!unique.length) return map;
   const rows = await supabaseJson(
-    rest("profiles", `?id=in.(${unique.map(encodeURIComponent).join(",")})&select=id,display_name,avatar_url,companion_code,boss_uid`),
+    rest("profiles", `?id=in.(${unique.map(encodeURIComponent).join(",")})&select=id,display_name,avatar_url,boss_uid`),
     { headers: serviceHeaders() }
   );
   (Array.isArray(rows) ? rows : []).forEach((row) => {
@@ -72,16 +74,43 @@ async function loadProfilesByIds(ids) {
   return map;
 }
 
-function viewCompanion(row, profile) {
+async function loadCompanionProfilesByUserIds(ids) {
+  const unique = [...new Set((ids || []).filter(Boolean))];
+  const map = new Map();
+  if (!unique.length) return map;
+  const rows = await supabaseJson(
+    rest(
+      "companion_profiles",
+      `?user_id=in.(${unique.map(encodeURIComponent).join(",")})&select=id,user_id,nickname,companion_code,companion_uid&limit=500`
+    ),
+    { headers: serviceHeaders() }
+  ).catch(() => []);
+  for (const row of Array.isArray(rows) ? rows : []) {
+    if (!row?.user_id) continue;
+    if (!resolveCompanionPublicCode(row)) {
+      try {
+        await ensureCompanionPublicCode(companionDb, row);
+      } catch {
+        /* best effort */
+      }
+    }
+    map.set(row.user_id, row);
+  }
+  return map;
+}
+
+function viewCompanion(row, profile, companionProfile) {
+  const code = resolveCompanionPublicCode(companionProfile || {}) || "";
   return {
     id: row.id || null,
     status: row.status || ACTIVE,
     boundAt: row.bound_at || row.boundAt || null,
     companion: {
       id: profile?.id || row.companion_id || "",
-      displayName: profile?.display_name || "陪玩",
+      displayName: companionProfile?.nickname || profile?.display_name || "陪玩",
       avatarUrl: profile?.avatar_url || "",
-      companionCode: profile?.companion_code || profile?.id || "",
+      companionCode: code,
+      publicId: code,
     },
   };
 }
@@ -106,8 +135,14 @@ export default async function handler(req, res) {
       { headers: serviceHeaders() }
     );
     const list = Array.isArray(rows) ? rows : [];
-    const profiles = await loadProfilesByIds(list.map((r) => r.companion_id));
-    const companions = list.map((row) => viewCompanion(row, profiles.get(row.companion_id) || null));
+    const companionIds = list.map((r) => r.companion_id);
+    const [profiles, companionProfiles] = await Promise.all([
+      loadProfilesByIds(companionIds),
+      loadCompanionProfilesByUserIds(companionIds),
+    ]);
+    const companions = list.map((row) =>
+      viewCompanion(row, profiles.get(row.companion_id) || null, companionProfiles.get(row.companion_id) || null)
+    );
     return json(res, 200, {
       ok: true,
       tablesReady: true,
