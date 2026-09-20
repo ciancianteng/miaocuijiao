@@ -199,12 +199,49 @@
   <script src="src/site-data.js?v=20260810hallLevel1" defer></script>
   <script src="src/currency.js"></script>
   <script src="src/companion-presence.js?v=20260810hallLevel1"></script>
-  <script src="/src/place-order-modal.js?v=20260920perServicePricing" defer></script>
+  <script src="/src/place-order-modal.js?v=20260920replace1" defer></script>
   <script src="/src/multi-companion-team.js?v=20260920perServicePricing" defer></script>
   <script src="src/companion-hall.js?v=20260919team1" defer></script>
   <script src="src/companion-hall-channels.js?v=20260911channels2" defer></script>
   <script src="src/notify-system.js" defer></script>
   <script src="src/launch-readiness-fixes.js" defer></script>
+<script>
+    (function () {
+      try {
+        var q = new URLSearchParams(location.search);
+        var mode = String(q.get("mode") || "").toLowerCase();
+        var parentOrder = String(q.get("parentOrder") || q.get("parent") || "").trim();
+        var replaceChild = String(q.get("replaceChild") || q.get("slot") || "").trim();
+        if (mode === "replace" && parentOrder && replaceChild) {
+          sessionStorage.setItem(
+            "mcjReplaceSlot",
+            JSON.stringify({
+              mode: "replacement",
+              parentOrderId: parentOrder,
+              replaceChildId: replaceChild,
+              at: Date.now(),
+            })
+          );
+        }
+        var slot = null;
+        try {
+          slot = JSON.parse(sessionStorage.getItem("mcjReplaceSlot") || "null");
+        } catch (e0) {
+          slot = null;
+        }
+        if (slot && slot.mode === "replacement" && slot.parentOrderId) {
+          var bar = document.createElement("div");
+          bar.setAttribute("data-replace-banner", "1");
+          bar.style.cssText =
+            "margin:10px 12px 0;padding:12px 14px;border:1px solid rgba(255,143,197,.45);border-radius:12px;background:rgba(255,143,197,.12);color:#ffeaf4;font-size:13px;line-height:1.45";
+          bar.innerHTML =
+            "<strong style=\"display:block;margin-bottom:4px\">补位选择（replacement）</strong>选择一位陪玩加入原联合订单，不会新建独立订单。已确认 / 仍等待的其他陪玩状态保持不变。";
+          var main = document.querySelector("main") || document.body;
+          main.insertBefore(bar, main.firstChild);
+        }
+      } catch (e) {}
+    })();
+  </script>
 <script>
     (function () {
       var panel = document.querySelector('.hall-search-panel[data-hall-search="companions"]');
