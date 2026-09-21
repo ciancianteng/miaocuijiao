@@ -383,6 +383,19 @@ test("TEST payment page multi parent", () => {
   assert.match(paymentSrc, /isMultiParent/);
   assert.match(paymentSrc, /多人陪玩订单/);
   assert.match(paymentSrc, /总付款|一次付款/);
+  assert.match(paymentSrc, /insufficientBalanceUi|INSUFFICIENT_BALANCE/);
+  assert.match(paymentSrc, /余额不足？去充值|去充值/);
+});
+
+test("TEST multi confirm navigates to payment-confirm (not inline debit)", () => {
+  assert.match(teamSrc, /payment-confirm\.html\?order=/);
+  assert.match(teamSrc, /place_multi_order/);
+  assert.doesNotMatch(teamSrc, /action:\s*["']pay_order["']/);
+  // Must not jump straight to orders success after create
+  const submitIdx = teamSrc.indexOf("function submitTeam");
+  const submitChunk = teamSrc.slice(submitIdx, submitIdx + 4500);
+  assert.match(submitChunk, /payment-confirm\.html\?order=/);
+  assert.doesNotMatch(submitChunk, /orders\.html\?id=/);
 });
 
 test("TEST hall secondary CTA + center script wired", () => {

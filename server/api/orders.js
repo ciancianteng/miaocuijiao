@@ -1633,7 +1633,8 @@ export default async function handler(req, res) {
         usedTestPay = true;
       }
 
-      const nextStatus = before.companion_id ? "claimed" : "pending";
+      const nextStatus =
+        before.companion_id || payGuard.cascadeChildren ? "claimed" : "pending";
       // Companion must confirm before accepted_at / start — never pre-stamp on pay.
       const deps = { restUrl, supabaseJson, serviceHeaders };
       const paidAtIso = nowIso();
@@ -1642,10 +1643,13 @@ export default async function handler(req, res) {
         accepted_at: null,
         paid_at: paidAtIso,
         paid_cat_food: paidAmount,
-        assignment_type: before.companion_id ? "assigned" : "public",
+        assignment_type:
+          before.companion_id || payGuard.cascadeChildren ? "assigned" : "public",
         ...(before.companion_id
           ? { order_type: before.order_type || "direct_companion" }
-          : { companion_id: null, order_type: before.order_type || "open_grab" }),
+          : payGuard.cascadeChildren
+            ? { companion_id: null, order_type: before.order_type || "multi_group" }
+            : { companion_id: null, order_type: before.order_type || "open_grab" }),
       };
       let saved;
       try {
@@ -1717,19 +1721,21 @@ export default async function handler(req, res) {
       const companionLabel =
         viewOrder(saved).companionName ||
         saved.companion_id ||
-        (before.companion_id ? "指定陪玩" : "公开抢单");
+        (payGuard.cascadeChildren ? "多人陪玩" : before.companion_id ? "指定陪玩" : "公开抢单");
       try {
         await addSystemMessage(
           saved,
           profile.id,
           nextStatus === "claimed"
-            ? `${usedTestPay ? "[TEST] " : ""}订单已支付，指定陪玩为 ${companionLabel}，等待陪玩确认。`
+            ? payGuard.cascadeChildren
+              ? `${usedTestPay ? "[TEST] " : ""}多人订单已支付 ${paidAmount} 猫粮（一次扣款），等待各位陪玩确认。`
+              : `${usedTestPay ? "[TEST] " : ""}订单已支付，指定陪玩为 ${companionLabel}，等待陪玩确认。`
             : `${usedTestPay ? "[TEST] " : ""}订单已支付，已进入抢单大厅，等待陪玩抢单。`
         );
       } catch (_) {
         /* chat soft-fail — status already persisted */
       }
-      if (nextStatus === "pending" && !before.companion_id) {
+      if (nextStatus === "pending" && !before.companion_id && !payGuard.cascadeChildren) {
         try {
           const { createGrabListingHelpers } = await import("./_order-grab-listings.js");
           const listingsApi = createGrabListingHelpers({ restUrl, supabaseJson, serviceHeaders });
@@ -1764,7 +1770,9 @@ export default async function handler(req, res) {
           title: "付款成功",
           body:
             nextStatus === "claimed"
-              ? "订单已支付，等待陪玩确认接单。"
+              ? payGuard.cascadeChildren
+                ? "多人订单已支付，等待各位陪玩确认接单。"
+                : "订单已支付，等待陪玩确认接单。"
               : "订单已支付，已进入抢单大厅。",
           kind: "order_paid",
         });
@@ -1785,6 +1793,12 @@ export default async function handler(req, res) {
             restUrl(TABLE, `?parent_order_id=eq.${encodeURIComponent(before.id)}&select=*&order=created_at.asc`),
             { headers: serviceHeaders() }
           );
+          let notifyCompanionOrderAssigned = null;
+          try {
+            ({ notifyCompanionOrderAssigned } = await import("./_companion-order-notify.js"));
+          } catch (err) {
+            console.warn("[orders/pay_order] multi companion notify import", err?.message || err);
+          }
           for (const child of kids || []) {
             if (normalizeOrderStatus(child.status) !== "awaiting_payment") {
               children.push(child);
@@ -1811,6 +1825,18 @@ export default async function handler(req, res) {
               }
             }
             children.push(savedChild);
+            if (notifyCompanionOrderAssigned && savedChild?.companion_id) {
+              try {
+                await Promise.race([
+                  notifyCompanionOrderAssigned(savedChild, { eventType: "assign", email: "" }).catch((err) =>
+                    console.warn("[orders/pay_order] multi child notify", err?.message || err)
+                  ),
+                  new Promise((resolve) => setTimeout(resolve, 2500)),
+                ]);
+              } catch (_) {
+                /* soft-fail */
+              }
+            }
           }
         } catch (cascErr) {
           console.warn("[orders/pay_order] multi child cascade", String(cascErr?.message || cascErr).slice(0, 160));
@@ -1821,10 +1847,14 @@ export default async function handler(req, res) {
         testPay: usedTestPay,
         message: usedTestPay
           ? nextStatus === "claimed"
-            ? "测试支付成功（TEST）。订单已进入等待陪玩确认。"
+            ? payGuard.cascadeChildren
+              ? "测试支付成功（TEST）。多人订单已进入等待陪玩确认。"
+              : "测试支付成功（TEST）。订单已进入等待陪玩确认。"
             : "测试支付成功（TEST）。订单已进入抢单大厅。"
           : nextStatus === "claimed"
-            ? "支付成功，订单已进入等待陪玩确认。"
+            ? payGuard.cascadeChildren
+              ? "支付成功，多人订单已进入等待陪玩确认。"
+              : "支付成功，订单已进入等待陪玩确认。"
             : "支付成功，订单已进入抢单大厅。",
         order: viewOrder(saved),
         children: children.map(viewOrder),

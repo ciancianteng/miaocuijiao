@@ -1,7 +1,8 @@
 /**
- * place_multi_order — create 1 parent (multi_group) + N children, wallet debit once.
- * Compensating rollback (no distributed TX across PostgREST): debit only after all rows exist;
- * on debit failure cancel created rows; on mid-create failure cancel partial rows (no debit).
+ * place_multi_order — create 1 parent (multi_group) + N children in awaiting_payment.
+ * Payment is deferred to the shared pay_order / payment-confirm path (same as single-order):
+ * boss pays the parent once; children cascade without a second wallet debit.
+ * On mid-create failure, soft-cancel partial rows (no debit — nothing was charged yet).
  */
 import {
   ORDER_TYPE_MULTI_GROUP,
@@ -111,7 +112,8 @@ async function softCancelOrders(deps, ids, reason) {
  * @param {object} ctx.body
  * @param {object} ctx.deps - restUrl, supabaseJson, serviceHeaders, nextOrderNo, resolveCompanionUserId,
  *   assertCompanionOrderable, priceForGame, loadCompanionPricingRow, assertNotSelfTrade,
- *   assertOrderPaymentMethodAllowed, isWalletMethod, debitWallet, viewOrder, addSystemMessage
+ *   assertOrderPaymentMethodAllowed, isWalletMethod, viewOrder, addSystemMessage
+ *   (debitWallet optional / unused — payment happens via pay_order)
  */
 export async function placeMultiOrder(ctx) {
   const { profile, body, deps } = ctx;
@@ -126,7 +128,6 @@ export async function placeMultiOrder(ctx) {
     assertNotSelfTrade,
     assertOrderPaymentMethodAllowed,
     isWalletMethod,
-    debitWallet,
     viewOrder,
     addSystemMessage,
   } = deps;
@@ -347,23 +348,8 @@ export async function placeMultiOrder(ctx) {
     return { ok: false, status: 400, message: "订单总金额无效。" };
   }
 
-  // Balance check before create (debit still authoritative).
-  try {
-    const walletApi = await import("./_wallet.js");
-    const wallet = await walletApi.getWallet(profile.id);
-    const bal = money(wallet?.balance ?? wallet?.cat_food_balance ?? wallet?.available);
-    if (Number.isFinite(bal) && bal + 1e-9 < groupTotal) {
-      return {
-        ok: false,
-        status: 400,
-        code: "INSUFFICIENT_BALANCE",
-        message: "猫粮余额不足",
-        rechargeUrl: "/recharge.html",
-      };
-    }
-  } catch (_) {
-    /* debit will fail closed if needed */
-  }
+  // Do NOT check balance or debit here — mirror single-order place_order:
+  // create awaiting_payment, then payment-confirm → pay_order debits parent once.
 
   const parentNo = await nextOrderNo();
   const parentTitle = `多人订单 · ${prepared.length} 位陪玩 · ${groupTotal} 猫粮`;
@@ -531,120 +517,29 @@ export async function placeMultiOrder(ctx) {
     };
   }
 
-  // Single wallet debit against parent only.
-  const payKey = `order-pay:${parent.order_no || parent.id}`;
-  try {
-    await debitWallet({
-      bossId: profile.id,
-      amount: groupTotal,
-      transactionType: "order_payment",
-      idempotencyKey: payKey,
-      reason: `多人订单支付 ${parent.order_no || parent.id}`,
-      relatedOrderId: parent.id,
-      operatorId: profile.id,
-    });
-  } catch (e) {
-    await softCancelOrders(deps, createdIds, "wallet_debit_failed");
-    const msg = String(e.message || e);
-    if (/不足|insufficient|balance/i.test(msg)) {
-      return {
-        ok: false,
-        status: 400,
-        code: "INSUFFICIENT_BALANCE",
-        message: e.message || "猫粮余额不足",
-        rechargeUrl: "/recharge.html",
-        rolledBack: true,
-        walletDebited: false,
-      };
-    }
-    return {
-      ok: false,
-      status: 503,
-      code: "WALLET_DEBIT_FAILED",
-      message: `支付失败，已回滚订单：${msg.slice(0, 180)}`,
-      rolledBack: true,
-      walletDebited: false,
-    };
-  }
-
-  const paidAt = nowIso();
-  // Stamp parent paid (payment owner)
-  try {
-    const stamped = await supabaseJson(restUrl("orders", `?id=eq.${encodeURIComponent(parent.id)}`), {
-      method: "PATCH",
-      headers: serviceHeaders(),
-      body: JSON.stringify({
-        status: "claimed",
-        paid_at: paidAt,
-        paid_cat_food: groupTotal,
-      }),
-    });
-    parent = stamped?.[0] || { ...parent, status: "claimed", paid_at: paidAt, paid_cat_food: groupTotal };
-  } catch (e) {
-    // paid_cat_food may be missing — status only
-    try {
-      const stamped = await supabaseJson(restUrl("orders", `?id=eq.${encodeURIComponent(parent.id)}`), {
-        method: "PATCH",
-        headers: serviceHeaders(),
-        body: JSON.stringify({ status: "claimed" }),
-      });
-      parent = stamped?.[0] || { ...parent, status: "claimed" };
-    } catch (_) {
-      /* debit already happened — leave parent; children still need claim */
-    }
-  }
-
-  // Stamp children: allocation snapshot only — NO wallet debit
-  const stampedChildren = [];
-  for (const child of children) {
-    if (isMultiGroupChild(child) === false && child.parent_order_id) {
-      /* ok */
-    }
-    const lineAmt = money(child.total_amount);
-    let savedChild = child;
-    const patches = [
-      { status: "claimed", paid_at: paidAt, paid_cat_food: lineAmt },
-      { status: "claimed", paid_cat_food: lineAmt },
-      { status: "claimed" },
-    ];
-    for (const patch of patches) {
-      try {
-        const rows = await supabaseJson(restUrl("orders", `?id=eq.${encodeURIComponent(child.id)}`), {
-          method: "PATCH",
-          headers: serviceHeaders(),
-          body: JSON.stringify(patch),
-        });
-        savedChild = rows?.[0] || { ...child, ...patch };
-        break;
-      } catch (err) {
-        if (!/paid_at|paid_cat_food|column|schema cache|PGRST/i.test(String(err?.message || ""))) {
-          break;
-        }
-      }
-    }
-    stampedChildren.push(savedChild);
-  }
-
+  // Payment deferred: parent + children stay awaiting_payment until pay_order on parent.
   try {
     await addSystemMessage(
       parent,
       profile.id,
-      `多人订单已支付 ${groupTotal} 猫粮（一次扣款），含 ${stampedChildren.length} 个子订单。`
+      `多人订单已创建，待支付 ${groupTotal} 猫粮（一次付款），含 ${children.length} 个子订单。`
     );
   } catch (_) {}
 
   return {
     ok: true,
     status: 200,
-    message: "多人订单已创建并支付。",
+    message: "多人订单已创建，请完成支付。",
     order: viewOrder(parent),
     parent: viewOrder(parent),
-    children: stampedChildren.map(viewOrder),
-    walletDebited: true,
-    walletDebitAmount: groupTotal,
-    walletDebitCount: 1,
+    children: children.map(viewOrder),
+    walletDebited: false,
+    walletDebitAmount: 0,
+    walletDebitCount: 0,
+    groupTotal,
     idempotencyKey,
     paymentOwnerOrderId: parent.id,
+    next: "payment-confirm",
   };
 }
 

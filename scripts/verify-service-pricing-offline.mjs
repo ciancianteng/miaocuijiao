@@ -195,10 +195,14 @@ test("TEST 13 multi-order per-child service price", () => {
   assert.equal(a + b, 85);
 });
 
-test("TEST 14 parent wallet debit once (existing multi path kept)", () => {
+test("TEST 14 parent wallet debit once via pay_order (create does not debit)", () => {
   const multi = read("server/api/_place-multi-order.js");
-  assert.match(multi, /debitWallet|groupTotal/);
+  assert.match(multi, /groupTotal/);
   assert.match(multi, /place_multi_order|ORDER_TYPE_MULTI_GROUP/);
+  assert.doesNotMatch(multi, /await debitWallet\(/);
+  const orders = read("server/api/orders.js");
+  assert.match(orders, /order-pay:/);
+  assert.match(orders, /cascadeChildren/);
 });
 
 test("TEST 15 historical orders keep unit_price snapshot (no rewrite of old orders)", () => {
