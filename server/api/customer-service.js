@@ -66,6 +66,34 @@ function restUrl(table, query = "") { return `${process.env.SUPABASE_URL}/rest/v
 function authUrl(path) { return `${process.env.SUPABASE_URL}/auth/v1/${path}`; }
 function serviceHeaders(extra = {}) { return { apikey: process.env.SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`, "Content-Type": "application/json", Prefer: "return=representation", ...extra }; }
 function anonHeaders(extra = {}) { return { apikey: process.env.SUPABASE_ANON_KEY, "Content-Type": "application/json", ...extra }; }
+function goTrueErrorText(body, raw = "") {
+  if (body == null) return String(raw || "");
+  if (typeof body === "string") return body;
+  return String(
+    body.message || body.msg || body.error_description || body.hint || body.details || body.error || raw || ""
+  ).trim();
+}
+
+function goTrueErrorCode(body) {
+  if (!body || typeof body !== "object") return "";
+  return String(body.error_code || body.code || "").trim();
+}
+
+/** GoTrue bad/invalid/expired JWT — must surface as AUTH failure (not generic 500). */
+function isAuthJwtFailure(status, body, detail = "") {
+  const code = goTrueErrorCode(body).toLowerCase();
+  const text = `${detail} ${goTrueErrorText(body)} ${code}`.toLowerCase();
+  if (Number(status) === 401) return true;
+  if (/bad_jwt|invalid.?jwt|invalid.?token|malformed.?jwt|jwt.?expired|token.?is.?expired|expired.?token|invalid.?claim/i.test(code)) {
+    return true;
+  }
+  if (/bad_jwt|invalid jwt|invalid token|malformed jwt|jwt expired|token is expired|expired token/i.test(text)) {
+    return true;
+  }
+  if (Number(status) === 403 && /jwt|token/i.test(text)) return true;
+  return false;
+}
+
 async function supabaseJson(url, init = {}) {
   const response = await fetch(url, init);
   const text = await response.text();
@@ -73,9 +101,22 @@ async function supabaseJson(url, init = {}) {
   try { body = text ? JSON.parse(text) : null; } catch { body = text; }
   if (!response.ok) {
     const raw = typeof body === "string" ? body : "";
-    const detail = body?.error_description || body?.message || body?.hint || body?.details || body?.error || raw || "";
-    const code = body?.code ? ` [${body.code}]` : "";
-    throw new Error((detail ? `${detail}${code}` : `Supabase 请求失败 (HTTP ${response.status})`) || `Supabase 请求失败 (HTTP ${response.status})`);
+    const msg = goTrueErrorText(body, raw);
+    const errorCode = goTrueErrorCode(body);
+    const detail = [msg, errorCode ? `[${errorCode}]` : ""].filter(Boolean).join(" ").trim();
+    const err = new Error(detail || `Supabase 请求失败 (HTTP ${response.status})`);
+    err.status = response.status;
+    err.error_code = errorCode || undefined;
+    err.msg = body && typeof body === "object" ? body.msg : undefined;
+    err.body = body;
+    if (isAuthJwtFailure(response.status, body, detail)) {
+      err.status = 401;
+      err.code = "bad_jwt";
+      err.error_code = errorCode || "bad_jwt";
+      err.isAuthFailure = true;
+      err.message = detail || "登录状态已失效，请重新登录";
+    }
+    throw err;
   }
   return body;
 }
@@ -188,8 +229,30 @@ async function resolveCompanion(input) {
   return null;
 }
 async function profileMap(ids) { const uniq = [...new Set((ids || []).filter(isUuid))]; if (!uniq.length) return {}; const rows = await maybeRows("profiles", `?id=in.(${uniq.map(encodeURIComponent).join(",")})&limit=1000`); return rows.reduce((map, row) => { map[row.id] = row; return map; }, {}); }
-async function authUserFromToken(token) { return supabaseJson(authUrl("user"), { headers: anonHeaders({ Authorization: `Bearer ${token}` }) }); }
-async function requireService(req) { const token = tokenFrom(req); if (!token) throw Object.assign(new Error("请先登录客服端。"), { status: 401 }); const authUser = await authUserFromToken(token); const profile = await profileById(authUser.id); if (!profile || !SERVICE_ROLES.has(profile.role)) throw Object.assign(new Error("无权访问客服端。"), { status: 403 }); if (profile.status !== "active") throw Object.assign(new Error("该客服账号已被停用，请联系管理员。"), { status: 403 }); return { token, authUser, profile }; }
+async function authUserFromToken(token) {
+  try {
+    return await supabaseJson(authUrl("user"), { headers: anonHeaders({ Authorization: `Bearer ${token}` }) });
+  } catch (err) {
+    if (err?.isAuthFailure || isAuthJwtFailure(err?.status, err?.body, err?.message || "")) {
+      throw Object.assign(new Error(err.message || "登录状态已失效，请重新登录"), {
+        status: 401,
+        code: "bad_jwt",
+        error_code: err.error_code || "bad_jwt",
+        isAuthFailure: true,
+      });
+    }
+    throw err;
+  }
+}
+async function requireService(req) {
+  const token = tokenFrom(req);
+  if (!token) throw Object.assign(new Error("请先登录客服端。"), { status: 401, code: "unauthorized" });
+  const authUser = await authUserFromToken(token);
+  const profile = await profileById(authUser.id);
+  if (!profile || !SERVICE_ROLES.has(profile.role)) throw Object.assign(new Error("无权访问客服端。"), { status: 403 });
+  if (profile.status !== "active") throw Object.assign(new Error("该客服账号已被停用，请联系管理员。"), { status: 403 });
+  return { token, authUser, profile };
+}
 
 function randomOtpCode() {
   return String(Math.floor(100000 + Math.random() * 900000));
@@ -4935,5 +4998,15 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
         throw error;
       }
     }
-    return json(res, 400, { ok: false, message: "未知客服端操作。" }); } catch (error) { return json(res, error.status || 500, { ok: false, message: error.message || "客服端接口异常。" }); } }
+    return json(res, 400, { ok: false, message: "未知客服端操作。" }); } catch (error) {
+    const status = error?.status || 500;
+    const payload = { ok: false, message: error?.message || "客服端接口异常。" };
+    if (error?.code) payload.code = error.code;
+    if (error?.error_code) payload.error_code = error.error_code;
+    if (error?.isAuthFailure || error?.code === "bad_jwt") {
+      payload.code = payload.code || "bad_jwt";
+      payload.error_code = payload.error_code || "bad_jwt";
+    }
+    return json(res, status, payload);
+  } }
 export default handler;

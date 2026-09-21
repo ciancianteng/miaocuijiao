@@ -5,7 +5,7 @@
 
   var SESSION_KEY = "mcjServiceSession";
   var REFRESH_BUFFER_MS = 90 * 1000;
-  var EXPIRED_MESSAGE = "登录已过期，请重新登录。";
+  var EXPIRED_MESSAGE = "登录状态已失效，请重新登录";
   var refreshPromise = null;
   var sessionReadyPromise = null;
   var guardPromise = null;
@@ -351,11 +351,27 @@
     return headers;
   }
 
-  function isAuthUnauthorized(status, message) {
-    if (Number(status) === 401) return true;
+  function isAuthUnauthorized(status, message, meta) {
+    var st = Number(status);
+    if (st === 401) return true;
+    var code = String(
+      (meta && (meta.error_code || meta.code || meta.errorCode)) || ""
+    ).toLowerCase();
     var text = String(message || "").toLowerCase();
+    var blob = code + " " + text;
+    if (
+      /bad_jwt|invalid.?jwt|invalid.?token|malformed.?jwt|jwt.?expired|token.?is.?expired|expired.?token/i.test(
+        blob
+      )
+    ) {
+      return true;
+    }
+    if (st === 403 && /jwt|token|登录已过期|登录状态已失效|请先登录/i.test(blob)) {
+      return true;
+    }
     return (
       text.indexOf("登录已过期") > -1 ||
+      text.indexOf("登录状态已失效") > -1 ||
       text.indexOf("请先登录") > -1 ||
       text.indexOf("jwt") > -1 ||
       text.indexOf("token is expired") > -1 ||
@@ -379,8 +395,16 @@
           } catch (e) {
             body = { message: text || "请求失败" };
           }
-          var message = body.message || "请求失败";
-          if ((!res.ok || body.ok === false) && !retried && isAuthUnauthorized(res.status, message)) {
+          var message = body.message || body.msg || "请求失败";
+          var authMeta = {
+            code: body.code,
+            error_code: body.error_code || body.errorCode,
+          };
+          if (
+            (!res.ok || body.ok === false) &&
+            !retried &&
+            isAuthUnauthorized(res.status, message, authMeta)
+          ) {
             return refreshSession()
               .then(function () {
                 return authFetch(url, init, true);
@@ -393,6 +417,8 @@
           if (!res.ok || body.ok === false) {
             var err = new Error(message);
             err.status = res.status;
+            err.code = body.code || body.error_code;
+            err.error_code = body.error_code || body.code;
             throw err;
           }
           return body;
@@ -572,6 +598,7 @@
     getAccessToken: getAccessToken,
     authHeaders: authHeaders,
     authFetch: authFetch,
+    isAuthUnauthorized: isAuthUnauthorized,
     onAuthStateChange: onAuthStateChange,
     guardCustomerServicePages: guardCustomerServicePages,
     redirectToLogin: redirectToLogin,

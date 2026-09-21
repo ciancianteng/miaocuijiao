@@ -1384,6 +1384,21 @@ import './mcj-chat-realtime.js';
     },2200);
   }
   function api(action,body,method){
+    var reloginMsg=(window.MCJServiceAuth&&window.MCJServiceAuth.expiredMessage)||'登录状态已失效，请重新登录';
+    function isAuthErr(err){
+      if(window.MCJServiceAuth&&typeof window.MCJServiceAuth.isAuthUnauthorized==='function'){
+        return window.MCJServiceAuth.isAuthUnauthorized(err&&err.status,(err&&err.message)||'',err);
+      }
+      var st=Number(err&&err.status);
+      var msg=String((err&&err.message)||'');
+      var code=String((err&&(err.error_code||err.code))||'');
+      return st===401||/bad_jwt|invalid jwt|invalid token|malformed jwt|jwt|登录已过期|登录状态已失效|请先登录/i.test(code+' '+msg)||(st===403&&/jwt|token/i.test(code+' '+msg));
+    }
+    function forceRelogin(){
+      clearSession();
+      try{alert(reloginMsg);}catch(e){}
+      location.replace('/customer-service/login/');
+    }
     function doFetch(){
       var opts={method:method||'POST',headers:{'Content-Type':'application/json',Accept:'application/json'}};
       if(token())opts.headers['x-mcj-service-token']=token();
@@ -1395,25 +1410,42 @@ import './mcj-chat-realtime.js';
       ?window.MCJServiceAuth.ensureSession().catch(function(){return null;})
       :Promise.resolve();
     return ready.then(doFetch).catch(function(err){
-      var msg=String((err&&err.message)||'');
-      var expired=/登录已过期|请先登录|jwt|token is expired|invalid jwt/i.test(msg)||err&&err.status===401;
-      if(expired&&window.MCJServiceAuth&&window.MCJServiceAuth.refreshSession){
+      if(isAuthErr(err)&&window.MCJServiceAuth&&window.MCJServiceAuth.refreshSession){
         return window.MCJServiceAuth.refreshSession().then(function(){
           state.session=readSession();
-          return doFetch();
-        }).catch(function(){
-          clearSession();
-          location.replace('/customer-service/login/');
-          throw err;
+          return doFetch().catch(function(err2){
+            if(isAuthErr(err2)){
+              forceRelogin();
+              throw Object.assign(new Error(reloginMsg),{status:401,code:'bad_jwt'});
+            }
+            throw err2;
+          });
+        }).catch(function(err3){
+          if(err3&&err3.code==='bad_jwt')throw err3;
+          forceRelogin();
+          throw Object.assign(new Error(reloginMsg),{status:401,code:'bad_jwt'});
         });
       }
       throw err;
     });
   }
-  function parse(res){return res.text().then(function(text){var body={};try{body=text?JSON.parse(text):{}}catch(e){throw new Error('接口返回格式错误')}if(!res.ok||body.ok===false){var err=new Error(body.message||('请求失败：HTTP '+res.status));err.status=res.status;err.locked=body.locked;err.currentServiceName=body.currentServiceName;err.currentServiceId=body.currentServiceId;throw err;}return body})}
+  function parse(res){return res.text().then(function(text){var body={};try{body=text?JSON.parse(text):{}}catch(e){throw new Error('接口返回格式错误')}if(!res.ok||body.ok===false){var err=new Error(body.message||body.msg||('请求失败：HTTP '+res.status));err.status=res.status;err.code=body.code||body.error_code;err.error_code=body.error_code||body.code;err.locked=body.locked;err.currentServiceName=body.currentServiceName;err.currentServiceId=body.currentServiceId;throw err;}return body})}
   function emptyDashboardData(){
     var staff=(state.session&&state.session.user)||{};
-    return {staff:staff,summary:{},conversations:[],messages:[],orders:[],bosses:[],companions:[],payrolls:[],orderStatuses:{}};
+    return {staff:staff,summary:{},conversations:[],messages:[],orders:[],bosses:[],companions:[],payrolls:[],orderStatuses:{},_unavailable:true};
+  }
+  function dataUnavailable(){
+    return !!(state.dataUnavailable||(state.data&&state.data._unavailable));
+  }
+  function dash(v){
+    if(dataUnavailable())return '--';
+    if(v==null||v==='')return '--';
+    return v;
+  }
+  function moneyOrDash(v){
+    if(dataUnavailable())return '--';
+    if(v==null||v==='')return '--';
+    return money(v);
   }
   function loadServices(){
     return fetch('/api/platform/services?scope=cs',{headers:{Accept:'application/json'}}).then(function(res){
@@ -1452,15 +1484,26 @@ import './mcj-chat-realtime.js';
     paint();
     var bootFailed=false;
     var bootMsg='';
-    var boot=api('bootstrap',{},'GET').then(function(res){return res}).catch(function(err){
+    var boot=api('bootstrap',{},'GET').then(function(res){
+      state.dataUnavailable=false;
+      return res;
+    }).catch(function(err){
       bootFailed=true;
       bootMsg=err&&err.message?err.message:'客服端数据读取失败';
       state.error=bootMsg;
-      return {data:state.data||emptyDashboardData(),ok:false};
+      state.dataUnavailable=true;
+      return {data:emptyDashboardData(),ok:false};
     });
     return Promise.all([boot,loadServices()]).then(function(results){
       var res=results[0]||{};
       var next=res.data||emptyDashboardData();
+      if(bootFailed){
+        next=Object.assign({},next,{_unavailable:true});
+        state.dataUnavailable=true;
+      }else{
+        if(next&&next._unavailable)delete next._unavailable;
+        state.dataUnavailable=false;
+      }
       if(!next.staff||!next.staff.name){
         next.staff=Object.assign({},(state.session&&state.session.user)||{},next.staff||{});
       }
@@ -1498,7 +1541,9 @@ import './mcj-chat-realtime.js';
       state.createOrderErrors.services=state.servicesError||'';
     }).catch(function(err){
       state.error=err&&err.message?err.message:'客服端数据读取失败';
+      state.dataUnavailable=true;
       if(!state.data)state.data=emptyDashboardData();
+      else state.data=Object.assign({},state.data,{_unavailable:true});
       if(!state.createOrderErrors)state.createOrderErrors={bosses:'',companions:'',services:''};
       state.createOrderErrors.bosses='老板列表加载失败：'+state.error;
       state.createOrderErrors.companions='陪玩列表加载失败：'+state.error;
@@ -2129,14 +2174,14 @@ import './mcj-chat-realtime.js';
       metric('今日协助付款',s.todayPaid||0)+
       metric('今日退款处理',s.todayRefunds||0)+
       metric('未读消息',s.unreadMessages||0,'unread')+
-      metric('本月出勤天数',s.monthAttendanceDays||0)+
-      metric('本月迟到次数',s.monthLateCount||0)+
-      metric('本月缺勤次数',s.monthAbsenceCount||0)+
-      metric('本月预计工资',money(s.estimatedSalary||0))+
-      metric('今日收入',money(s.incomeToday||0))+
-      metric('本月收入',money(s.incomeMonth||0))+
-      metric('累计收入',money(s.incomeTotal||0))+
-      metric('可申请工资',money(s.withdrawableSalary!=null?s.withdrawableSalary:s.estimatedSalary||0))+
+      metric('本月出勤天数',dash(s.monthAttendanceDays!=null?s.monthAttendanceDays:null))+
+      metric('本月迟到次数',dash(s.monthLateCount!=null?s.monthLateCount:null))+
+      metric('本月缺勤次数',dash(s.monthAbsenceCount!=null?s.monthAbsenceCount:null))+
+      metric('本月预计工资',moneyOrDash(s.estimatedSalary!=null?s.estimatedSalary:null))+
+      metric('今日收入',moneyOrDash(s.incomeToday!=null?s.incomeToday:null))+
+      metric('本月收入',moneyOrDash(s.incomeMonth!=null?s.incomeMonth:null))+
+      metric('累计收入',moneyOrDash(s.incomeTotal!=null?s.incomeTotal:null))+
+      metric('可申请工资',moneyOrDash(s.withdrawableSalary!=null?s.withdrawableSalary:(s.estimatedSalary!=null?s.estimatedSalary:null)))+
       metric('待重新安排',reassign)+
       metric('今日处理订单数',s.todayHandled||0)+
       '</section>';
@@ -3089,7 +3134,7 @@ import './mcj-chat-realtime.js';
   }
   function reportsHtml(){var work=(state.data&&state.data.workData)||{},salary=work.salary||{},cur=salary.current||{},history=salary.history||[],attRows=(work.attendance&&work.attendance.rows)||[],notices=(state.data&&state.data.notifications)||[],payrolls=(state.data&&state.data.payrolls)||[],settlements=(state.data&&state.data.commissionSettlements)||work.commissionSettlements||[],sum=(state.data&&state.data.summary)||{},cfg=work.config||{},withdrawable=sum.withdrawableSalary!=null?sum.withdrawableSalary:(cur.totalSalary||0);var noticeBlock=notices.length?'<section class="cs-card" style="margin-bottom:14px"><h3 style="margin:0 0 8px">工资通知</h3>'+notices.slice(0,8).map(function(n){return '<div style="padding:8px 0;border-bottom:1px solid #eee"><strong>'+esc(n.title||'通知')+'</strong><div style="color:#9ca3af;font-size:12px;margin-top:4px">'+esc(n.body||'')+'</div><div style="color:#6b7280;font-size:11px;margin-top:4px">'+esc(n.at||'')+'</div></div>'}).join('')+'</section>':'';var withdrawBlock='<section class="cs-card" style="margin-bottom:14px"><h3 style="margin:0 0 8px">每周五统一结算</h3><p style="margin:0 0 10px;color:#6b7280;font-size:13px">'+esc(((state.data&&state.data.weeklySettlement)||{}).csBannerBody||'周四 23:59 前 → 本周五；截止后 → 下周五。金额系统自动计算，不可手填。')+'</p><div class="cs-info-list"><div><span>本周可结算工资</span><strong>'+money(((state.data&&state.data.payrollSummary)||{}).settleableAmount!=null?state.data.payrollSummary.settleableAmount:withdrawable)+'</strong></div><div><span>已申请金额</span><strong>'+money(((state.data&&state.data.payrollSummary)||{}).appliedAmount||0)+'</strong></div><div><span>待周五发放金额</span><strong>'+money(((state.data&&state.data.payrollSummary)||{}).pendingFridayAmount||0)+'</strong></div><div><span>预计发放日期</span><strong>'+esc((((state.data&&state.data.weeklySettlement)||{}).nextSettlementDate||((state.data&&state.data.payrollSummary)||{}).nextSettlementDate||'-'))+( ((state.data&&state.data.weeklySettlement)||{}).nextSettlementDate?'（星期五）':'')+'</strong></div><div><span>可申请金额</span><strong>'+money(withdrawable)+'</strong></div></div><div class="cs-actions" style="margin-top:12px"><button class="cs-btn primary" type="button" data-request-salary-withdraw '+(Number(withdrawable)<=0?'disabled':'')+'>申请本周结算（'+money(withdrawable)+'）</button></div></section>';var rewardBlock='<section class="cs-table-wrap" style="margin-top:14px"><h3 style="margin:0 0 10px">奖励记录</h3><table class="cs-table"><thead><tr><th>订单号</th><th>奖励类型</th><th>固定奖励</th><th>提成</th><th>夜班补贴</th><th>全勤奖励</th><th>退款扣回</th><th>最终金额</th><th>状态</th></tr></thead><tbody>'+(settlements.length?settlements.map(function(r){return '<tr><td>'+esc(r.orderNo||'-')+'</td><td>'+esc(r.rewardType||'order_commission')+'</td><td>'+money(r.fixedRewardRm||0)+'</td><td>'+money(r.percentCommissionRm||0)+'</td><td>'+money(r.nightShiftRm||0)+'</td><td>'+money(r.attendanceBonusRm||0)+'</td><td>'+money(r.clawbackRm||0)+'</td><td>'+money(r.finalAmountRm||0)+'</td><td>'+esc(r.status||'-')+'</td></tr>'}).join(''):'<tr><td colspan="9">暂无奖励记录（完成订单后按后台佣金设置自动入账）</td></tr>')+'</tbody></table></section>';var payrollBlock='<section class="cs-table-wrap" style="margin-top:14px"><h3 style="margin:0 0 10px">历史结算记录</h3><table class="cs-table"><thead><tr><th>单号</th><th>周期</th><th>底薪</th><th>奖金</th><th>扣款</th><th>应发</th><th>预计发放</th><th>状态</th><th></th></tr></thead><tbody>'+(payrolls.length?payrolls.map(function(p){return '<tr><td>'+esc(p.payrollNo||'-')+'</td><td>'+esc((p.periodStart||'')+' ~ '+(p.periodEnd||''))+'</td><td>'+money(p.baseSalaryRm||0)+'</td><td>'+money(p.bonusRm||0)+'</td><td>'+money(p.deductionRm||0)+'</td><td>'+money(p.netSalaryRm||0)+'</td><td>'+esc(p.settlementDate||'-')+'</td><td>'+esc(p.statusText||p.status||'-')+'</td><td>'+(p.status!=='completed'?'<button class="cs-btn ghost" type="button" data-payroll-appeal="'+esc(p.id)+'">申诉</button>':'-')+'</td></tr>'}).join(''):'<tr><td colspan="9">暂无发放记录</td></tr>')+'</tbody></table></section>';return '<div class="cs-page-head"><div><h2>工资中心</h2><p>底薪/全勤/夜班/每单奖励/提成等全部实时读取后台佣金设置；订单提成按结算快照入账，改配置不影响历史单。</p></div></div>'+noticeBlock+withdrawBlock+'<section class="cs-grid cs-metrics">'+metric('基础工资',money(cur.baseSalary||0))+metric('全勤奖励',money(cur.attendanceBonus||0))+metric('接待奖励',money(cur.receptionBonus||0))+metric('订单提成',money(cur.orderCommission||0))+metric('夜班补贴',money(cur.nightShiftAllowance||0))+metric('迟到扣款',money(cur.lateDeduction||0))+metric('缺勤扣款',money(cur.absenceDeduction||0))+metric('其他调整',money(cur.otherAdjustment||0))+metric('本月预计工资',money(cur.totalSalary||0))+metric('工资状态',cur.status||'统计中')+'</section><section class="cs-table-wrap" style="margin-top:14px"><h3 style="margin:0 0 10px">本月打卡（工资计算依据）</h3><table class="cs-table"><thead><tr><th>日期</th><th>上班</th><th>下班</th><th>工时</th><th>迟到</th><th>缺勤</th><th>状态</th></tr></thead><tbody>'+(attRows.length?attRows.map(function(r){return '<tr><td>'+esc(r.reportDate||r.date||'-')+'</td><td>'+esc(r.clockInText||'-')+'</td><td>'+esc(r.clockOutText||'-')+'</td><td>'+esc(r.workHours!=null?r.workHours:'-')+'</td><td>'+esc(r.isLate?'是':'否')+'</td><td>'+esc(r.isAbsent?'是':'否')+'</td><td>'+esc(r.attendanceStatus||'-')+'</td></tr>'}).join(''):'<tr><td colspan="7">暂无打卡记录</td></tr>')+'</tbody></table></section>'+rewardBlock+payrollBlock+'<section class="cs-table-wrap" style="margin-top:14px"><table class="cs-table"><thead><tr><th>月份</th><th>基础工资</th><th>全勤奖励</th><th>接待奖励</th><th>订单提成</th><th>扣款合计</th><th>预计工资</th><th>状态</th></tr></thead><tbody>'+(history.length?history.map(function(r){var deductions=(Number(r.lateDeduction||0)+Number(r.absenceDeduction||0)+Number(r.earlyLeaveDeduction||0));return '<tr><td>'+esc(r.salaryMonth||'-')+'</td><td>'+money(r.baseSalary||0)+'</td><td>'+money(r.attendanceBonus||0)+'</td><td>'+money(r.receptionBonus||0)+'</td><td>'+money(r.orderCommission||0)+'</td><td>'+money(deductions)+'</td><td>'+money(r.totalSalary||0)+'</td><td>'+esc(r.status||'统计中')+'</td></tr>'}).join(''):'<tr><td colspan="8">暂无工资记录</td></tr>')+'</tbody></table></section>'}
   function reportStatus(s){return ({pending:'待审核',approved:'已批准',rejected:'已拒绝',paid:'已支付',completed:'已发放'})[s]||s||'-'}
-  function profileHtml(){var s=(state.data&&state.data.staff)||state.session.user||{},work=(state.data&&state.data.workData)||{},cfg=work.config||{},att=work.attendance||{},sum=(state.data&&state.data.summary)||{},csName=String(s.name||s.displayName||'').trim()||'客服',avatar='<div class="cs-avatar" style="width:64px;height:64px;display:grid;place-items:center">'+esc(csName.slice(0,1))+'</div>';return '<section class="cs-card"><h2>我的资料</h2><div class="cs-user-card">'+avatar+'<div><strong>'+esc(csName)+'</strong><div style="color:#9ca3af;margin-top:4px">'+esc(cfg.shiftName||'默认班次')+'</div></div></div><div class="cs-info-list"><div><span>当前班次</span><strong>'+esc((cfg.shiftStart||'09:00')+' - '+(cfg.shiftEnd||'18:00'))+'</strong></div><div><span>入职日期</span><strong>'+esc(cfg.joinDate||'-')+'</strong></div><div><span>在线状态</span><strong>'+esc(sum.currentReceptions>0?'接待中':'在线')+'</strong></div><div><span>今日打卡状态</span><strong>'+esc((work.todayAttendance&&work.todayAttendance.attendanceStatus)||'未打卡')+'</strong></div><div><span>本月出勤</span><strong>'+esc((att.actualDays||0)+' / '+(att.standardDays||0))+'</strong></div><div><span>本月预计工资</span><strong>'+money(sum.estimatedSalary||0)+'</strong></div><div><span>历史工资记录</span><strong>'+esc((work.salary&&work.salary.history&&work.salary.history.length)||0)+' 条</strong></div></div></section><section class="cs-card" style="margin-top:14px"><h3 style="margin:0 0 10px">消息通知</h3><div id="mcjWebPushSettingsMount" class="mcj-webpush-cs-mount"></div><p style="margin:10px 0 0;color:#9ca3af;font-size:12px;line-height:1.45">开启后可及时收到订单与会话相关推送；关闭开关仅取消本机订阅。</p></section>'}
+  function profileHtml(){var s=(state.data&&state.data.staff)||state.session.user||{},work=(state.data&&state.data.workData)||{},cfg=work.config||{},att=work.attendance||{},sum=(state.data&&state.data.summary)||{},csName=String(s.name||s.displayName||'').trim()||'客服',avatar='<div class="cs-avatar" style="width:64px;height:64px;display:grid;place-items:center">'+esc(csName.slice(0,1))+'</div>';var attText=dataUnavailable()?'--':((att.actualDays!=null||att.standardDays!=null)?((att.actualDays!=null?att.actualDays:'--')+' / '+(att.standardDays!=null?att.standardDays:'--')):'--');var histLen=work.salary&&work.salary.history&&work.salary.history.length;var histText=dataUnavailable()?'--':(histLen!=null?histLen+' 条':'--');var joinText=dataUnavailable()?(cfg.joinDate?esc(cfg.joinDate):'--'):esc(cfg.joinDate||'-');return '<section class="cs-card"><h2>我的资料</h2><div class="cs-user-card">'+avatar+'<div><strong>'+esc(csName)+'</strong><div style="color:#9ca3af;margin-top:4px">'+esc(cfg.shiftName||'默认班次')+'</div></div></div><div class="cs-info-list"><div><span>当前班次</span><strong>'+esc((cfg.shiftStart||'09:00')+' - '+(cfg.shiftEnd||'18:00'))+'</strong></div><div><span>入职日期</span><strong>'+joinText+'</strong></div><div><span>在线状态</span><strong>'+esc(sum.currentReceptions>0?'接待中':'在线')+'</strong></div><div><span>今日打卡状态</span><strong>'+esc((work.todayAttendance&&work.todayAttendance.attendanceStatus)||'未打卡')+'</strong></div><div><span>本月出勤</span><strong>'+esc(attText)+'</strong></div><div><span>本月预计工资</span><strong>'+moneyOrDash(sum.estimatedSalary!=null?sum.estimatedSalary:null)+'</strong></div><div><span>历史工资记录</span><strong>'+esc(histText)+'</strong></div></div>'+(dataUnavailable()?'<p style="margin:12px 0 0;color:#f59e0b;font-size:13px">数据暂不可用</p>':'')+'</section><section class="cs-card" style="margin-top:14px"><h3 style="margin:0 0 10px">消息通知</h3><div id="mcjWebPushSettingsMount" class="mcj-webpush-cs-mount"></div><p style="margin:10px 0 0;color:#9ca3af;font-size:12px;line-height:1.45">开启后可及时收到订单与会话相关推送；关闭开关仅取消本机订阅。</p></section>'}
   function ensureCsWebPushScript(){
     return new Promise(function(resolve){
       if(window.MCJWebPush){resolve(window.MCJWebPush);return}
