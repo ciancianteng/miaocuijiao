@@ -100,7 +100,7 @@
     if (document.querySelector('link[data-mcj-team-css]')) return;
     var link = document.createElement("link");
     link.rel = "stylesheet";
-    link.href = "/src/multi-companion-team.css?v=20260921remaining1";
+    link.href = "/src/multi-companion-team.css?v=20260921multiPay1";
     link.setAttribute("data-mcj-team-css", "1");
     document.head.appendChild(link);
   }
@@ -403,10 +403,11 @@
           };
         })
         .filter(function (s) {
-          return s && s.name;
+          return s && isValidServiceLabel(s.name);
         });
     }
     var name = companion.service || companion.game || "陪玩";
+    if (!isValidServiceLabel(name)) name = "陪玩";
     return [{ name: name, price: money(companion.unitPrice || companion.price), serviceId: companion.serviceId || "" }];
   }
 
@@ -731,7 +732,14 @@
     state.sheetOpen = true;
     var rows = state.lines
       .map(function (l) {
-        var services = l.services && l.services.length ? l.services : [{ name: l.service, price: l.unitPrice }];
+        var services = (l.services && l.services.length ? l.services : [{ name: l.service, price: l.unitPrice }]).filter(
+          function (s) {
+            return s && isValidServiceLabel(s.name);
+          }
+        );
+        if (!services.length && isValidServiceLabel(l.service)) {
+          services = [{ name: l.service, price: l.unitPrice }];
+        }
         var chips = services
           .map(function (s) {
             var active = s.name === l.service;
@@ -752,6 +760,9 @@
             );
           })
           .join("");
+        if (!chips) {
+          chips = '<span class="mcj-team-chip-empty">暂无可用服务</span>';
+        }
         var hourOpts = [
           { id: "1", label: "1小时", h: 1 },
           { id: "2", label: "2小时", h: 2 },
@@ -906,6 +917,7 @@
       "</div></div>" +
       '<p class="mcj-team-pay-hint">本订单一次付款，系统会分别为每位陪玩结算。</p>' +
       "</div>" +
+      '<p class="mcj-team-sheet-error" data-mcj-team-error hidden></p>' +
       '<div class="mcj-team-sheet-foot">' +
       '<div class="mcj-team-sheet-total">合计 <strong data-mcj-team-sheet-total>' +
       esc(String(total)) +
@@ -1024,10 +1036,26 @@
     };
   }
 
+  function setSheetError(msg) {
+    var text = String(msg || "").trim();
+    var el = document.querySelector("[data-mcj-team-error]");
+    if (!el) return;
+    el.textContent = text;
+    el.hidden = !text;
+  }
+
+  function closeSheet() {
+    var mask = document.querySelector("[data-mcj-team-sheet]");
+    if (mask && mask.parentNode) mask.parentNode.removeChild(mask);
+    state.sheetOpen = false;
+    setSheetError("");
+  }
+
   function submitTeam() {
     if (state.submitting) return;
     if (state.lines.length < 2) {
       toast("多人下单至少选择 2 位陪玩");
+      setSheetError("多人下单至少选择 2 位陪玩");
       return;
     }
     var gameIdEl = document.querySelector("[data-mcj-team-game-id]");
@@ -1036,16 +1064,20 @@
     if (notesEl) state.sharedNotes = String(notesEl.value || "").trim();
     var startTime = readTeamStartTime(document.querySelector("[data-mcj-team-sheet]"));
     state.sharedStartTime = startTime;
+    setSheetError("");
     if (!state.sharedGameId) {
       toast("请填写游戏ID");
+      setSheetError("请填写游戏ID");
       return;
     }
     if (!ensureSharedStartTime()) {
       toast("请选择开始时间");
+      setSheetError("请选择开始时间");
       return;
     }
     if (!token()) {
       toast("请先登录老板账号");
+      setSheetError("请先登录老板账号");
       return;
     }
     var payload = buildPayload();
@@ -1074,6 +1106,7 @@
         // Keep idempotencyKey until paid so back/retry replays the same parent.
         // Clear team UI draft — awaiting_payment order is now the SoT for fields/price.
         clearTeam();
+        closeSheet();
         toast("订单已创建，请完成支付");
         if (oid) {
           try {
@@ -1141,12 +1174,24 @@
         paintSheetTotals();
         var raw = String((err && err.message) || "");
         console.error("[MCJMultiCompanionTeam] submit failed", err);
+        var msg;
         if (/Can't find variable|is not defined|ReferenceError|TypeError/i.test(raw)) {
-          toast("下单出错了，请刷新页面后重试");
+          msg = "下单出错了，请刷新页面后重试";
         } else {
-          toast(raw || "多人下单失败");
+          msg = raw || "多人下单失败";
         }
+        // Never push payment errors into game/service chips — footer + toast only.
+        setSheetError(msg);
+        toast(msg);
       });
+  }
+
+  function isValidServiceLabel(name) {
+    var n = String(name || "").trim();
+    if (!n) return false;
+    // Never treat payment/wallet errors as selectable game/service options.
+    if (/余额不足|猫粮余额|去充值|支付失败|请先登录|请填写|请求失败|下单失败/i.test(n)) return false;
+    return true;
   }
 
   function normalizeCatalogServices(list) {
@@ -1163,7 +1208,7 @@
         };
       })
       .filter(function (s) {
-        return s && s.name;
+        return s && isValidServiceLabel(s.name);
       });
   }
 

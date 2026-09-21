@@ -436,6 +436,21 @@ body:has(.mcj-team-bar) .companion-hall-page {
   border-color: rgba(255, 214, 235, 0.68);
   background: rgba(243, 168, 203, 0.16);
 }
+.mcj-team-chip-empty {
+  font-size: 12px;
+  color: rgba(255, 214, 231, 0.55);
+}
+.mcj-team-sheet-error {
+  margin: 0 16px 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 120, 140, 0.45);
+  background: rgba(80, 16, 28, 0.55);
+  color: #ffd0d8;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.4;
+}
 .mcj-team-pay-hint {
   margin: 4px 0 0;
   font-size: 12px;
