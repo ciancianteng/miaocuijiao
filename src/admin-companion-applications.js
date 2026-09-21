@@ -2,7 +2,18 @@
   "use strict";
   var Auth = window.MCJAdminAuthFetch;
   var TARGET = "table-companion_applications";
-  var state = { loading: true, error: "", rows: [], filter: "pending", message: "", levels: [], selectedLevelById: {} };
+  var state = {
+    loading: true,
+    error: "",
+    rows: [],
+    filter: "pending",
+    message: "",
+    levels: [],
+    selectedLevelById: {},
+    selectedIds: {},
+    batchLevelId: "",
+    batchBusy: false,
+  };
 
   function certMethodOf(item) {
     var mode = String(
@@ -70,7 +81,7 @@
     return String(code) + (name && name !== (" " + code) ? name : "") + (price > 0 ? (" · 基础价格 " + price + " 猫粮") : "");
   }
   function selectedLevel(id) {
-    var key = String(state.selectedLevelById[id] || "").trim();
+    var key = String(state.selectedLevelById[id] || state.batchLevelId || "").trim();
     if (!key) return null;
     return (state.levels || []).find(function (lv) {
       return String(lv.id) === key || String(lv.code) === key || String(lv.name) === key;
@@ -204,6 +215,42 @@
     if (f === "rejected") return list.filter(function (r) { return /rejected/.test(statusCode(r)); });
     return list;
   }
+  function isBatchEligible(row) {
+    var code = statusCode(row);
+    if (/rejected|approved|verified|passed|resubmit|need_more|^draft$/.test(code)) return false;
+    return /pending|review|submitted/.test(code);
+  }
+  function rowId(row) {
+    return String((row && (row.id || row.playerId)) || "").trim();
+  }
+  function pruneSelectionToVisible() {
+    var visible = {};
+    filteredRows().forEach(function (row) {
+      var id = rowId(row);
+      if (id && state.selectedIds[id]) visible[id] = true;
+    });
+    state.selectedIds = visible;
+  }
+  function visibleSelectedIds() {
+    pruneSelectionToVisible();
+    return Object.keys(state.selectedIds).filter(function (id) {
+      return state.selectedIds[id];
+    });
+  }
+  function eligibleVisibleRows() {
+    return filteredRows().filter(isBatchEligible);
+  }
+  function selectedEligibleIds() {
+    var picked = {};
+    visibleSelectedIds().forEach(function (id) {
+      picked[id] = true;
+    });
+    return eligibleVisibleRows()
+      .map(rowId)
+      .filter(function (id) {
+        return id && picked[id];
+      });
+  }
   function paint() {
     var box = document.getElementById(TARGET);
     if (!box) return;
@@ -219,14 +266,21 @@
       return;
     }
     var rows = filteredRows();
+    pruneSelectionToVisible();
+    var selectedCount = selectedEligibleIds().length;
+    var eligible = eligibleVisibleRows();
+    var allEligibleChecked = eligible.length > 0 && eligible.every(function (row) {
+      return !!state.selectedIds[rowId(row)];
+    });
     var body = rows
       .map(function (item) {
         var code = statusCode(item);
-        var id = item.id || item.playerId || "";
+        var id = rowId(item);
         var noPrice = missingPrice(item);
         var hidden = approvedButHidden(item);
         var hint = publishHint(item);
         var statusText = statusLabel(code);
+        var eligibleRow = isBatchEligible(item);
         if (noPrice) statusText += " · 缺价格";
         if (/approved|verified|passed/.test(code)) {
           if (item.isTestAccount === true || item.is_test_account === true) statusText += " · 测试隔离";
@@ -235,6 +289,14 @@
         }
         return (
           "<tr>" +
+          '<td><input type="checkbox" data-capp-check="' +
+          esc(id) +
+          '"' +
+          (state.selectedIds[id] ? " checked" : "") +
+          (eligibleRow ? "" : " disabled") +
+          ' aria-label="选择 ' +
+          esc(item.nickname || item.name || id) +
+          '"></td>' +
           "<td>" +
           esc(id) +
           "</td><td>" +
@@ -260,7 +322,7 @@
           '<button class="mini-btn" type="button" data-capp-approve="' +
           esc(id) +
           '"' +
-          (selectedLevel(id) ? "" : " disabled") +
+          (selectedLevel(id) || state.batchLevelId ? "" : " disabled") +
           '>通过</button> ' +
           '<button class="mini-btn" type="button" data-capp-resubmit="' +
           esc(id) +
@@ -272,6 +334,22 @@
         );
       })
       .join("");
+    var batchLevelOpts =
+      '<option value="">批量通过使用等级</option>' +
+      (state.levels || [])
+        .map(function (item) {
+          var value = String(item.id || item.code || "");
+          return (
+            '<option value="' +
+            esc(value) +
+            '" ' +
+            (state.batchLevelId === value ? "selected" : "") +
+            ">" +
+            esc(levelOptionLabel(item)) +
+            "</option>"
+          );
+        })
+        .join("");
     box.innerHTML =
       '<div class="admin-section-head compact"><div><h3>陪玩申请审核</h3><p>通过审核前必须选择陪玩等级。系统按等级 base_price 初始化服务价格；真实用户须具备昵称、游戏，且账号 active；测试账号保持隔离不进正式大厅。</p></div>' +
       '<div class="content-admin-toolbar compact"><select data-capp-filter>' +
@@ -296,10 +374,24 @@
           );
         })
         .join("") +
-      '</select><button class="mini-btn" type="button" data-capp-reload>刷新</button></div></div>' +
-      (state.message ? '<div class="admin-sync-note">' + esc(state.message) + "</div>" : "") +
-      '<div class="table-wrap"><table><thead><tr><th>申请ID</th><th>昵称</th><th>联系方式</th><th>游戏</th><th>申请/大厅状态</th><th>认证方式</th><th>押金</th><th>操作</th></tr></thead><tbody>' +
-      (body || '<tr><td colspan="8">暂无陪玩申请</td></tr>') +
+      '</select><button class="mini-btn" type="button" data-capp-reload>刷新</button>' +
+      '<span data-capp-selected-count>已选择 ' +
+      selectedCount +
+      " 人</span>" +
+      '<select data-capp-batch-level>' +
+      batchLevelOpts +
+      "</select>" +
+      '<button class="mini-btn primary-lite" type="button" data-capp-batch-approve' +
+      (selectedCount && !state.batchBusy ? "" : " disabled") +
+      ">" +
+      (state.batchBusy ? "批量通过中…" : "批量通过") +
+      "</button></div></div>" +
+      (state.message ? '<div class="admin-sync-note" data-capp-batch-result>' + esc(state.message) + "</div>" : "") +
+      '<div class="table-wrap"><table><thead><tr><th><input type="checkbox" data-capp-select-all' +
+      (allEligibleChecked ? " checked" : "") +
+      (eligible.length ? "" : " disabled") +
+      ' aria-label="全选当前页待审核"></th><th>申请ID</th><th>昵称</th><th>联系方式</th><th>游戏</th><th>申请/大厅状态</th><th>认证方式</th><th>押金</th><th>操作</th></tr></thead><tbody>' +
+      (body || '<tr><td colspan="9">暂无陪玩申请</td></tr>') +
       "</tbody></table></div>";
   }
   function load() {
@@ -401,6 +493,67 @@
         });
       return;
     }
+    var batchApprove = e.target.closest("[data-capp-batch-approve]");
+    if (batchApprove) {
+      if (state.batchBusy) return;
+      var ids = selectedEligibleIds();
+      if (!ids.length) {
+        alert("请先勾选当前页待审核陪玩。未勾选、其他筛选结果、已拒绝/已通过对象不会被提交。");
+        return;
+      }
+      if (!confirm("确认通过已选择的 " + ids.length + " 位陪玩吗？")) return;
+      var levelById = {};
+      var missingLevel = [];
+      ids.forEach(function (id) {
+        var lv = selectedLevel(id);
+        if (lv && lv.id) levelById[id] = lv.id;
+        else missingLevel.push(id);
+      });
+      if (missingLevel.length && !state.batchLevelId) {
+        alert("已选陪玩中有 " + missingLevel.length + " 位未选择等级。请在行内选择等级，或在工具栏选择「批量通过使用等级」。");
+        return;
+      }
+      state.batchBusy = true;
+      paint();
+      api("/api/admin/players", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "batch_review_application",
+          ids: ids,
+          levelId: state.batchLevelId || "",
+          levelById: levelById,
+        }),
+      })
+        .then(function (res) {
+          var lines = ["成功 " + (res.successCount || 0) + "，失败 " + (res.failCount || 0)];
+          (res.results || []).forEach(function (row) {
+            if (!row.ok) {
+              lines.push((row.nickname || row.id || "") + "：" + (row.message || "失败"));
+            }
+          });
+          state.message = lines.join("；");
+          ids.forEach(function (id) {
+            var hit = (res.results || []).find(function (row) {
+              return String(row.id) === String(id) && row.ok;
+            });
+            if (hit) delete state.selectedIds[id];
+          });
+          if (window.MCJAdminPlayerBridge && window.MCJAdminPlayerBridge.reloadList) {
+            window.MCJAdminPlayerBridge.reloadList();
+          }
+          alert(state.message);
+        })
+        .catch(function (err) {
+          state.message = err.message || "批量通过失败";
+          alert(state.message);
+        })
+        .then(function () {
+          state.batchBusy = false;
+          load();
+        });
+      return;
+    }
     var resubmit = e.target.closest("[data-capp-resubmit]");
     if (resubmit) {
       var reason = prompt("请填写需要补交的资料说明（必填）", "");
@@ -430,6 +583,33 @@
   document.addEventListener("change", function (e) {
     if (e.target.matches("[data-capp-filter]")) {
       state.filter = e.target.value || "pending";
+      pruneSelectionToVisible();
+      paint();
+      return;
+    }
+    if (e.target.matches("[data-capp-batch-level]")) {
+      state.batchLevelId = e.target.value || "";
+      paint();
+      return;
+    }
+    var selectAll = e.target.closest("[data-capp-select-all]");
+    if (selectAll) {
+      var on = !!selectAll.checked;
+      eligibleVisibleRows().forEach(function (row) {
+        var id = rowId(row);
+        if (!id) return;
+        if (on) state.selectedIds[id] = true;
+        else delete state.selectedIds[id];
+      });
+      paint();
+      return;
+    }
+    var check = e.target.closest("[data-capp-check]");
+    if (check) {
+      var cid = check.getAttribute("data-capp-check") || "";
+      if (!cid || check.disabled) return;
+      if (check.checked) state.selectedIds[cid] = true;
+      else delete state.selectedIds[cid];
       paint();
       return;
     }
