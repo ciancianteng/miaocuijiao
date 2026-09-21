@@ -220,6 +220,13 @@
     var duration = maxTeamDurationHours();
     var end = addHoursToTime(start, duration);
     if (endEl) endEl.textContent = end;
+    mask.querySelectorAll("[data-line-start]").forEach(function (el) {
+      el.textContent = start;
+    });
+    mask.querySelectorAll("[data-line-end]").forEach(function (el) {
+      var hours = Number(el.getAttribute("data-line-hours") || 1);
+      el.textContent = addHoursToTime(start, hours);
+    });
     if (hintEl) {
       hintEl.textContent =
         "服务时段：" + scheduleWindowLabel(start, end) + "（按最长 " + duration + " 小时自动计算）";
@@ -774,6 +781,29 @@
           esc(l.companionId) +
           '">移除</button>' +
           "</div>" +
+          '<dl class="mcj-team-line-meta">' +
+          "<div><dt>服务</dt><dd>" +
+          esc(l.service || "未选择") +
+          "</dd></div>" +
+          "<div><dt>开始</dt><dd data-line-start>" +
+          esc(ensureSharedStartTime()) +
+          "</dd></div>" +
+          "<div><dt>结束</dt><dd data-line-end data-line-hours=\"" +
+          esc(String(l.hours || 1)) +
+          "\">" +
+          esc(addHoursToTime(ensureSharedStartTime(), l.hours || 1)) +
+          "</dd></div>" +
+          "<div><dt>时长</dt><dd>" +
+          esc(String(l.hours || 1)) +
+          " 小时</dd></div>" +
+          "<div><dt>单价</dt><dd>" +
+          esc(String(l.unitPrice)) +
+          "</dd></div>" +
+          "<div><dt>小计</dt><dd>" +
+          esc(String(lineSubtotal(l))) +
+          "</dd></div>" +
+          "<div><dt>确认状态</dt><dd>待确认</dd></div>" +
+          "</dl>" +
           '<div class="mcj-team-field"><span>游戏/服务</span><div class="mcj-team-chips">' +
           chips +
           "</div></div>" +

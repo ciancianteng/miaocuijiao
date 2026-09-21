@@ -132,7 +132,164 @@ function line(name, hours = 1) {
   const team = readFileSync(new URL("../src/multi-companion-team.js", import.meta.url), "utf8");
   assert.match(modal, /must not overwrite a selected service price/);
   assert.match(modal, /game: currentServiceLabel\(\)/);
+  assert.match(modal, /Never guess list\[0\]/);
   assert.match(team, /fuzzyTie/);
+}
+
+const { placeMultiOrder } = await import("../server/api/_place-multi-order.js");
+
+function orderHarness(resolveOrderUnitPrice) {
+  const orders = [];
+  let seq = 0;
+  const debits = [];
+  async function supabaseJson(url, opts = {}) {
+    const method = String(opts.method || "GET").toUpperCase();
+    if (method === "GET") return [];
+    if (method === "POST") {
+      const row = JSON.parse(opts.body);
+      row.id = `ord-${++seq}`;
+      orders.push(row);
+      return [row];
+    }
+    if (method === "PATCH") {
+      const id = decodeURIComponent((String(url).match(/id=eq\.([^&]+)/) || [])[1] || "");
+      const patch = JSON.parse(opts.body);
+      const row = orders.find((o) => o.id === id);
+      if (row) Object.assign(row, patch);
+      return row ? [row] : [];
+    }
+    return [];
+  }
+  const deps = {
+    restUrl: (table, q = "") => `${table}${q}`,
+    supabaseJson,
+    serviceHeaders: () => ({}),
+    nextOrderNo: async () => `NO${++seq}`,
+    resolveCompanionUserId: async (id) => id,
+    assertCompanionOrderable: async (id) => ({
+      ok: true,
+      cp: { user_id: id, display_name: id.startsWith("aaa") ? "小灰灰" : "小宏", level_id: "lv2" },
+    }),
+    priceForGame: () => 0,
+    assertNotSelfTrade: () => {},
+    assertOrderPaymentMethodAllowed: async (code) => ({ ok: true, code: code || "catfood" }),
+    isWalletMethod: (method) => String(method).toLowerCase() === "catfood",
+    debitWallet: async (args) => {
+      debits.push(args);
+    },
+    viewOrder: (order) => order,
+    addSystemMessage: async () => {},
+    resolveOrderUnitPrice,
+  };
+  return { orders, debits, deps };
+}
+
+// Test 1b — placeMultiOrder snapshots each service price and debits the group once
+{
+  delete process.env.SUPABASE_URL;
+  delete process.env.VITE_SUPABASE_URL;
+  delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const { orders, debits, deps } = orderHarness(async ({ gameName }) => {
+    if (String(gameName).includes("三角洲 手游")) {
+      return {
+        price: 35,
+        source: "admin_set",
+        serviceRow: { id: "row-delta", service_id: null, service_name: "三角洲 手游 国服" },
+      };
+    }
+    return {
+      price: 30,
+      source: "admin_set",
+      serviceRow: { id: "row-wz", service_id: null, service_name: "王者荣耀 国服" },
+    };
+  });
+  const result = await placeMultiOrder({
+    profile: { id: "boss-test" },
+    body: {
+      idempotencyKey: "multi-price-65",
+      gameId: "boss-gid",
+      paymentMethod: "catfood",
+      companions: [
+        {
+          companionId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          companionName: "小灰灰",
+          service: "三角洲 手游 国服",
+          serviceType: "三角洲 手游 国服",
+          hours: 1,
+          unitPrice: 35,
+          totalAmount: 35,
+          gameId: "boss-gid",
+        },
+        {
+          companionId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+          companionName: "小宏",
+          service: "王者荣耀 国服",
+          serviceType: "王者荣耀 国服",
+          hours: 1,
+          unitPrice: 30,
+          totalAmount: 30,
+          gameId: "boss-gid",
+        },
+      ],
+    },
+    deps,
+  });
+  assert.equal(result.ok, true, result.message);
+  assert.equal(result.walletDebitCount, 1);
+  assert.equal(result.walletDebitAmount, 65);
+  assert.equal(debits.length, 1);
+  assert.equal(debits[0].amount, 65);
+  assert.equal(debits[0].relatedOrderId, orders[0].id);
+  const children = orders.filter((row) => row.parent_order_id);
+  assert.equal(children.length, 2);
+  assert.equal(Number(children[0].unit_price), 35);
+  assert.equal(Number(children[0].total_amount), 35);
+  assert.equal(Number(children[1].unit_price), 30);
+  assert.equal(Number(children[1].total_amount), 30);
+  assert.equal(Number(orders[0].total_amount), 65);
+  assert.match(children[0].description, /service_row_id：row-delta/);
+  assert.match(children[0].description, /单价快照：35/);
+  assert.match(children[1].description, /单价快照：30/);
+  assert.equal(children[0].parent_order_id, orders[0].id);
+}
+
+// Wrong client unit must not debit
+{
+  const { debits, deps } = orderHarness(async () => ({
+    price: 35,
+    source: "admin_set",
+    serviceRow: { id: "row-b", service_name: "Service B" },
+  }));
+  const rejected = await placeMultiOrder({
+    profile: { id: "boss-test" },
+    body: {
+      idempotencyKey: "multi-price-mismatch",
+      gameId: "boss-gid",
+      paymentMethod: "catfood",
+      companions: [
+        {
+          companionId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          service: "Service B",
+          hours: 1,
+          unitPrice: 30,
+          totalAmount: 30,
+          gameId: "boss-gid",
+        },
+        {
+          companionId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+          service: "Service B",
+          hours: 1,
+          unitPrice: 35,
+          totalAmount: 35,
+          gameId: "boss-gid",
+        },
+      ],
+    },
+    deps,
+  });
+  assert.equal(rejected.ok, false);
+  assert.equal(debits.length, 0);
+  assert.match(String(rejected.message), /35/);
 }
 
 console.log("verify-multi-order-service-price: PASS");

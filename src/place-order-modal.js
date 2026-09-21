@@ -756,9 +756,12 @@
           } else if (n.length === bestLen) tie = true;
         }
         if (best && !tie) return { service: best.name, custom: "", item: best };
+      } else {
+        // "A、B、C" is not a selected service. Never guess list[0] (often 陪跑/等级价 30).
+        return { service: "", custom: "", item: null };
       }
     }
-    if (list[0]) return { service: list[0].name, custom: "", item: list[0] };
+    if (list[0] && list.length === 1) return { service: list[0].name, custom: "", item: list[0] };
     return { service: "", custom: "", item: null };
   }
   function currentHours() {
@@ -1837,7 +1840,7 @@
         }
       } catch (e) {}
       var matched = matchService(
-        extras.service || src.service || state.service || state.companion.service,
+        extras.service || state.service || src.service || state.companion.service,
         state.companion
       );
       if (matched.item) applySelectedService(matched.item);

@@ -307,6 +307,27 @@ body.profile-detail-page:has(.mcj-team-bar) {
   border-radius: 50%;
   object-fit: cover;
 }
+.mcj-team-line-meta {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 12px;
+  margin: 0;
+}
+.mcj-team-line-meta div {
+  min-width: 0;
+}
+.mcj-team-line-meta dt {
+  margin: 0;
+  font-size: 11px;
+  color: rgba(255, 214, 235, 0.55);
+}
+.mcj-team-line-meta dd {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: #fff;
+  overflow-wrap: anywhere;
+}
 .mcj-team-line-head strong {
   display: block;
   font-size: 14px;
