@@ -138,7 +138,7 @@
     if (document.querySelector('link[data-mcj-place-order-css]')) return;
     var link = document.createElement("link");
     link.rel = "stylesheet";
-    link.href = "/src/place-order-modal.css?v=20260921availSot1";
+    link.href = "/src/place-order-modal.css?v=20260921priceSot40";
     link.setAttribute("data-mcj-place-order-css", "1");
     document.head.appendChild(link);
   }
@@ -622,9 +622,26 @@
         sort: 0,
       });
     }
+    function priceFromGamePrices(s) {
+      var sid = String((s && (s.serviceId || s.id)) || "").trim();
+      var named = String((s && s.name) || "").trim();
+      if (sid && money(prices[sid]) > 0) return money(prices[sid]);
+      if (named && money(prices[named]) > 0) return money(prices[named]);
+      var compact = compactServiceKey(named);
+      if (compact) {
+        var hits = Object.keys(prices).filter(function (k) {
+          if (!k || /^[0-9a-f-]{36}$/i.test(k)) return false;
+          return compactServiceKey(k) === compact && money(prices[k]) > 0;
+        });
+        if (hits.length === 1) return money(prices[hits[0]]);
+      }
+      return 0;
+    }
     out.forEach(function (s) {
-      if (!(s.price > 0)) {
-        s.price = money(prices[s.name] || prices[s.serviceId] || prices[s.id] || companion.unitPrice || 0);
+      var gp = priceFromGamePrices(s);
+      if (gp > 0) s.price = gp;
+      else if (!(s.price > 0)) {
+        s.price = money(companion.unitPrice || 0);
       }
     });
     return out;

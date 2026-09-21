@@ -118,7 +118,7 @@
     if (document.querySelector('link[data-mcj-team-css]')) return;
     var link = document.createElement("link");
     link.rel = "stylesheet";
-    link.href = "/src/multi-companion-team.css?v=20260921availSot1";
+    link.href = "/src/multi-companion-team.css?v=20260921priceSot40";
     link.setAttribute("data-mcj-team-css", "1");
     document.head.appendChild(link);
   }
@@ -1280,6 +1280,20 @@
       });
   }
 
+  function overlayGamePricesOnServices(list, gamePrices) {
+    var prices = gamePrices && typeof gamePrices === "object" ? gamePrices : {};
+    return (list || []).map(function (s) {
+      if (!s) return s;
+      var sid = String(s.serviceId || s.id || "").trim();
+      var named = String(s.name || "").trim();
+      var gp = 0;
+      if (sid && money(prices[sid]) > 0) gp = money(prices[sid]);
+      else if (named && money(prices[named]) > 0) gp = money(prices[named]);
+      if (gp > 0) return Object.assign({}, s, { price: gp });
+      return s;
+    });
+  }
+
   function pickHallService(services, btn) {
     var filterEl = document.getElementById("gameFilter");
     var filterLabel = "";
@@ -1347,6 +1361,8 @@
           requireServicePick: true,
           unitPrice: fallback.unitPrice,
           services: fallback.services || [],
+          gamePrices: fallback.gamePrices || {},
+          serviceIds: fallback.serviceIds || [],
         }
       );
       return true;
@@ -1356,16 +1372,23 @@
 
   function addCompanionFromHallButton(btn) {
     var companionId = String(btn.getAttribute("data-hall-team-add") || "").trim();
+    var live =
+      (window.MCJHallCompanionById && typeof window.MCJHallCompanionById === "function"
+        ? window.MCJHallCompanionById(companionId)
+        : null) || {};
     var fallback = {
       companionId: companionId,
-      companionName: btn.getAttribute("data-hall-name") || "陪玩",
-      unitPrice: Number(btn.getAttribute("data-hall-price") || 0),
-      avatar: btn.getAttribute("data-hall-avatar") || "",
-      game: btn.getAttribute("data-hall-game") || "陪玩",
+      companionName: btn.getAttribute("data-hall-name") || live.name || "陪玩",
+      unitPrice: Number(btn.getAttribute("data-hall-price") || live.priceValue || 0),
+      avatar: btn.getAttribute("data-hall-avatar") || live.avatar || "",
+      game: btn.getAttribute("data-hall-game") || live.game || "陪玩",
       service: "",
       status: btn.getAttribute("data-hall-status") || "",
       statusText: btn.getAttribute("data-hall-status-text") || "",
       online: btn.getAttribute("data-hall-online"),
+      services: live.services || [],
+      gamePrices: live.gamePrices || live.game_prices || {},
+      serviceIds: live.serviceIds || live.service_ids || [],
     };
     var preferService = String(
       btn.getAttribute("data-hall-service") ||
@@ -1396,7 +1419,12 @@
         });
       })
       .then(function (body) {
-        var services = normalizeCatalogServices(body && body.services);
+        var gp = Object.assign(
+          {},
+          fallback.gamePrices || {},
+          (body && body.companion && (body.companion.gamePrices || body.companion.game_prices)) || {}
+        );
+        var services = overlayGamePricesOnServices(normalizeCatalogServices(body && body.services), gp);
         var picked = pickHallService(services, btn);
         if (picked && money(picked.price) > 0) {
           addCompanion(
@@ -1407,12 +1435,13 @@
               unitPrice: money(picked.price),
               game: picked.name,
               services: services,
+              gamePrices: gp,
             })
           );
           return;
         }
         // Ambiguous catalog without a resolved service → place-order chip select.
-        if (openPlaceOrderForHallCompanion(Object.assign({}, fallback, { services: services }))) return;
+        if (openPlaceOrderForHallCompanion(Object.assign({}, fallback, { services: services, gamePrices: gp }))) return;
         toast("请选择具体服务后再加入队伍");
       })
       .catch(function () {

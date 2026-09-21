@@ -30,7 +30,7 @@ for (const row of DEFAULT_LEVELS) {
 assert.equal(validateLevelConfig({ ...DEFAULT_LEVELS[0], basePrice: 0 }).ok, false);
 assert.equal(normalizeLevelRow({ level: 1, min: 20, max: 30 }).basePrice, 20);
 
-// --- Resolver: approved row wins; ignores proposed_price ---
+// --- Resolver: game_prices service-specific wins over companion_services copy ---
 {
   const companion = { price: 99, game_prices: { VALORANT: 88 } };
   const level = { id: "lv2", basePrice: 30, min: 30, max: 40 };
@@ -53,9 +53,31 @@ assert.equal(normalizeLevelRow({ level: 1, min: 20, max: 30 }).basePrice, 20);
     level,
     serviceRows: rows,
   });
+  assert.equal(r.price, 88);
+  assert.equal(r.source, "legacy_profile");
+  assert.notEqual(r.price, 999);
+  assert.notEqual(r.price, 42);
+}
+
+// --- companion_services used only when game_prices lacks that service ---
+{
+  const r = resolveEffectiveServicePrice({
+    companion: { price: 30, game_prices: {} },
+    gameName: "VALORANT",
+    level: { id: "lv2", basePrice: 30 },
+    serviceRows: [
+      {
+        id: "svc-1",
+        service_name: "VALORANT",
+        price: 42,
+        enabled: true,
+        review_status: "approved",
+        source: "companion_custom",
+      },
+    ],
+  });
   assert.equal(r.price, 42);
   assert.equal(r.source, "companion_custom");
-  assert.notEqual(r.price, 999);
 }
 
 // --- Resolver: pending-only row does not win; proposed ignored ---
@@ -137,6 +159,35 @@ assert.equal(normalizeLevelRow({ level: 1, min: 20, max: 30 }).basePrice, 20);
     env: {},
   });
   assert.equal(r.price, 35);
+  assert.equal(r.source, "legacy_profile");
+}
+
+// --- Production P0: catalog admin_set 30 must not replace game_prices 40 ---
+{
+  const r = resolveEffectiveServicePrice({
+    companion: {
+      price: 30,
+      game_prices: {
+        "三角洲陪跑刀 一千万": 40,
+        "fc96c1d1-9311-4a17-8af1-12447c608dfc": 40,
+      },
+    },
+    serviceId: "fc96c1d1-9311-4a17-8af1-12447c608dfc",
+    gameName: "三角洲陪跑刀 一千万",
+    level: { id: "lv2", basePrice: 30 },
+    serviceRows: [
+      {
+        id: "b3af2130",
+        service_id: "fc96c1d1-9311-4a17-8af1-12447c608dfc",
+        service_name: "三角洲陪跑刀 一千万",
+        price: 30,
+        enabled: true,
+        review_status: "approved",
+        source: "admin_set",
+      },
+    ],
+  });
+  assert.equal(r.price, 40);
   assert.equal(r.source, "legacy_profile");
 }
 

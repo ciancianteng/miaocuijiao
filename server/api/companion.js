@@ -38,6 +38,7 @@ import {
   parseServiceTypes,
 } from "./_game-prices.js";
 import { loadPublicServices } from "./platform/services.js";
+import { syncCompanionServicesFromGamePrices } from "./_admin-service-prices.js";
 import {
   partitionCompanionIncome,
   sumTxAmount,
@@ -4730,6 +4731,19 @@ return json(res, 200, {
           ...(contactProvided ? { phone: contact } : {}),
         }),
       });
+      try {
+        await syncCompanionServicesFromGamePrices({
+          companionId: auth.profile.id,
+          companion: { ...companion, user_id: auth.profile.id, level_id: companion?.level_id },
+          gamePrices: nextGamePrices,
+          selectedServices,
+          source: "companion_custom",
+        });
+      } catch (syncErr) {
+        if (!isMissingRelation(syncErr)) {
+          console.warn("[companion/save] companion_services sync", syncErr?.message || syncErr);
+        }
+      }
       const stayedApproved = /approved|verified|passed/i.test(String(patch.application_status || ""));
       const wasRejected = /reject|resubmit|need_more/i.test(String(companion.application_status || ""));
       return json(res, 200, {
