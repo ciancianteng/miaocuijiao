@@ -219,8 +219,8 @@
   }
   function isBatchEligible(row) {
     var code = statusCode(row);
-    if (/rejected|approved|verified|passed|resubmit|need_more|^draft$/.test(code)) return false;
-    return /pending|review|submitted/.test(code);
+    if (/rejected|已拒绝|已驳回|approved|verified|passed|已通过|resubmit|need_more|待补充|需要补资料|^draft$|草稿/.test(code)) return false;
+    return /pending|review|submitted|审核中|待审核|未审核/.test(code);
   }
   function rowId(row) {
     return String((row && (row.id || row.playerId)) || "").trim();

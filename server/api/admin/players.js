@@ -178,9 +178,9 @@ function isBatchApprovableApplication(companion) {
   if (!companion?.id) return false;
   if (/rejected|已拒绝|已驳回/.test(raw)) return false;
   if (/approved|verified|passed|已通过/.test(raw)) return false;
-  if (/resubmit|need_more|待补充/.test(raw)) return false;
+  if (/resubmit|need_more|待补充|需要补资料/.test(raw)) return false;
   if (/^draft$|草稿/.test(raw)) return false;
-  return /pending|review|submitted|审核中/.test(raw);
+  return /pending|review|submitted|审核中|待审核|未审核/.test(raw);
 }
 
 async function batchReviewApplications(req, body) {

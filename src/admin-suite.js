@@ -862,7 +862,7 @@
       row.style.display=matchedKeyword&&matchedTab&&matchedFilters?'':'none';
     });
   }
-  var playerAdminState={page:1,pageSize:20,rows:[],loaded:false,error:'',configured:true};
+  var playerAdminState={page:1,pageSize:20,rows:[],loaded:false,error:'',configured:true,selectedIds:{},batchLevelId:'',batchBusy:false,confirmCount:0,pendingBatch:null,batchMessage:''};
   function renderPlayerManagement(){
     var target=document.getElementById('playerManagement');
     if(!target)return;
@@ -995,6 +995,68 @@
     if(contact)return esc(contact)+' · '+idLine;
     return idLine;
   }
+  function playerAuditCode(item){
+    var raw=item&&item.raw||{};
+    return String(raw.application_status||raw.verification_status||item.audit||'').toLowerCase();
+  }
+  function isPlayerBatchEligible(item){
+    var code=playerAuditCode(item);
+    if(!item||!item.id)return false;
+    if(/rejected|已拒绝|已驳回/.test(code))return false;
+    if(/approved|verified|passed|已通过/.test(code))return false;
+    if(/resubmit|need_more|待补充|需要补资料/.test(code))return false;
+    if(/^draft$|草稿/.test(code))return false;
+    return /pending|review|submitted|审核中|待审核|未审核/.test(code);
+  }
+  function currentPlayerPageRows(){
+    var rows=visiblePlayerRows();
+    var total=rows.length;
+    var pages=Math.max(1,Math.ceil(total/playerAdminState.pageSize));
+    var page=Math.min(Math.max(1,playerAdminState.page),pages);
+    var start=(page-1)*playerAdminState.pageSize;
+    return rows.slice(start,start+playerAdminState.pageSize);
+  }
+  function prunePlayerSelectionToCurrentPage(){
+    var keep={};
+    currentPlayerPageRows().forEach(function(item){
+      var id=String(item.id||'');
+      if(id&&playerAdminState.selectedIds[id]&&isPlayerBatchEligible(item))keep[id]=true;
+    });
+    playerAdminState.selectedIds=keep;
+  }
+  function selectedPlayerEligibleIds(){
+    prunePlayerSelectionToCurrentPage();
+    return currentPlayerPageRows().filter(function(item){
+      return isPlayerBatchEligible(item)&&playerAdminState.selectedIds[String(item.id)];
+    }).map(function(item){return String(item.id);});
+  }
+  function playerBatchLevelOptions(){
+    var selected=String(playerAdminState.batchLevelId||'');
+    var html='<option value="">批量通过使用等级</option>';
+    getLevels().forEach(function(level){
+      if(!level||level.enabled===false)return;
+      var value=String(level.id||level.code||'');
+      if(!value)return;
+      var label=(level.code||'')+(level.name&&level.name!==level.code?(' '+level.name):'')+(Number(level.basePrice||level.base_price||level.min)>0?(' · 基础价格 '+(level.basePrice||level.base_price||level.min)+' 猫粮'):'');
+      html+='<option value="'+esc(value)+'" '+(value===selected?'selected':'')+'>'+esc(label)+'</option>';
+    });
+    return html;
+  }
+  function playerBatchToolbarHtml(){
+    var selectedCount=selectedPlayerEligibleIds().length;
+    var eligible=currentPlayerPageRows().filter(isPlayerBatchEligible);
+    var allChecked=eligible.length>0&&eligible.every(function(item){return !!playerAdminState.selectedIds[String(item.id)];});
+    var confirm=playerAdminState.confirmCount
+      ?'<div class="admin-sync-note" data-player-batch-confirm role="dialog" aria-modal="true"><strong>确认通过已选择的 '+playerAdminState.confirmCount+' 位陪玩吗？</strong> 仅处理当前页已勾选的审核中对象。<button class="mini-btn primary-lite" type="button" data-player-batch-confirm-yes>确认通过</button> <button class="mini-btn" type="button" data-player-batch-confirm-no>取消</button></div>'
+      :'';
+    var result=playerAdminState.batchMessage?'<div class="admin-sync-note" data-player-batch-result>'+esc(playerAdminState.batchMessage)+'</div>':'';
+    return '<div class="content-admin-toolbar compact" data-player-batch-bar>'+
+      '<span data-player-selected-count>已选择 '+selectedCount+' 人</span>'+
+      '<select data-player-batch-level>'+playerBatchLevelOptions()+'</select>'+
+      '<button class="mini-btn primary-lite" type="button" data-player-batch-approve'+(selectedCount&&!playerAdminState.batchBusy?'':' disabled')+'>'+(playerAdminState.batchBusy?'批量通过中…':'批量通过')+'</button>'+
+      '</div>'+confirm+result+
+      '<input type="hidden" data-player-select-all-state value="'+(allChecked?'1':'0')+'">';
+  }
   function renderPlayerTableRows(){
     closePlayerMoreMenu();
     var box=document.getElementById('playerManagementTable');if(!box)return;
@@ -1014,13 +1076,18 @@
     playerAdminState.page=Math.min(Math.max(1,playerAdminState.page),pages);
     var start=(playerAdminState.page-1)*playerAdminState.pageSize;
     var pageRows=rows.slice(start,start+playerAdminState.pageSize);
-    var headers=['头像','昵称','陪玩ID','主接游戏','等级','实名状态','押金状态','抽成比例','直属陪返点','账号状态','注册时间','操作'];
-    var body=pageRows.map(function(item){return '<tr class="player-list-row" data-player-open="'+esc(item.id)+'">'+
-      '<td data-label="头像" class="avatar-cell"><button class="player-avatar-btn" type="button" data-player-action="view" data-player-id="'+esc(item.id)+'"><img class="avatar player-avatar" src="'+esc(playerAvatarSrc(item))+'" alt="" onerror="this.onerror=null;this.src=\'/assets/meow-cuijiao-brand.jpg\'"></button></td>'+
+    prunePlayerSelectionToCurrentPage();
+    var eligiblePage=pageRows.filter(isPlayerBatchEligible);
+    var allEligibleChecked=eligiblePage.length>0&&eligiblePage.every(function(item){return !!playerAdminState.selectedIds[String(item.id)];});
+    var headers=['选择','头像','昵称','陪玩ID','主接游戏','等级','审核状态','实名状态','押金状态','抽成比例','直属陪返点','账号状态','注册时间','操作'];
+    var body=pageRows.map(function(item){var eligibleRow=isPlayerBatchEligible(item);var id=String(item.id||'');return '<tr class="player-list-row" data-player-open="'+esc(id)+'">'+
+      '<td data-label="选择"><input type="checkbox" data-player-check="'+esc(id)+'" '+(playerAdminState.selectedIds[id]?'checked':'')+(eligibleRow?'':' disabled')+' aria-label="选择 '+esc(item.name||id)+'"></td>'+
+      '<td data-label="头像" class="avatar-cell"><button class="player-avatar-btn" type="button" data-player-action="view" data-player-id="'+esc(id)+'"><img class="avatar player-avatar" src="'+esc(playerAvatarSrc(item))+'" alt="" onerror="this.onerror=null;this.src=\'/assets/meow-cuijiao-brand.jpg\'"></button></td>'+
       '<td data-label="昵称" class="player-name-cell" title="'+esc(item.name)+'"><button class="player-name-link" type="button" data-player-action="view" data-player-id="'+esc(item.id)+'">'+esc(item.name)+'</button><span class="player-name-meta">'+playerContactLine(item)+'</span></td>'+
       playerTableCell('陪玩ID',esc(item.playerId))+
       playerTableCell('主接游戏',esc(item.mainGame))+
       playerTableCell('等级',esc(item.levelText))+
+      '<td data-label="审核状态">'+statusChip(item.audit)+'</td>'+
       '<td data-label="实名状态">'+statusChip(item.identity)+'</td>'+
       '<td data-label="押金状态">'+statusChip(item.deposit)+'</td>'+
       playerTableCell('抽成比例',esc(item.commission))+
@@ -1030,9 +1097,47 @@
       '<td data-label="操作" class="player-action-cell"><div class="player-ops"><button class="mini-btn" type="button" data-player-action="view" data-player-id="'+esc(item.id)+'">查看</button><button class="mini-btn primary-lite" type="button" data-player-action="edit" data-player-id="'+esc(item.id)+'">编辑</button><span class="player-more-wrap"><button class="mini-btn" type="button" data-player-more>更多</button><span class="player-more-menu" hidden><button type="button" data-player-action="edit" data-player-section="split" data-player-id="'+esc(item.id)+'">设置等级</button><button type="button" data-player-action="edit" data-player-section="split" data-player-id="'+esc(item.id)+'">设置抽成</button><button type="button" data-player-action="view" data-player-section="income" data-player-id="'+esc(item.id)+'">查看流水</button></span></span></div></td>'+
     '</tr>';}).join('');
     if(!body)body='<tr><td colspan="'+headers.length+'"><div class="player-table-empty"><strong>暂无陪玩数据</strong><span>当前没有符合条件的陪玩记录。</span></div></td></tr>';
-    box.innerHTML='<div class="table-wrap player-table-wrap"><table class="player-data-table"><thead><tr>'+headers.map(function(h){return '<th>'+esc(h)+'</th>'}).join('')+'</tr></thead><tbody>'+body+'</tbody></table></div><div class="player-pagination compact"><span>共 '+total+' 条 · 第 '+playerAdminState.page+' / '+pages+' 页</span><div><select data-player-page-size><option value="20" '+(playerAdminState.pageSize===20?'selected':'')+'>20 条/页</option><option value="50" '+(playerAdminState.pageSize===50?'selected':'')+'>50 条/页</option><option value="100" '+(playerAdminState.pageSize===100?'selected':'')+'>100 条/页</option></select><button class="mini-btn" type="button" data-player-page="prev" '+(playerAdminState.page<=1?'disabled':'')+'>上一页</button><input data-player-page-jump value="'+playerAdminState.page+'" inputmode="numeric" aria-label="页码"><button class="mini-btn" type="button" data-player-page-go>跳转</button><button class="mini-btn" type="button" data-player-page="next" '+(playerAdminState.page>=pages?'disabled':'')+'>下一页</button></div></div>';
+    var head=headers.map(function(h,i){
+      if(i===0)return '<th><input type="checkbox" data-player-select-all'+(allEligibleChecked?' checked':'')+(eligiblePage.length?'':' disabled')+' aria-label="全选当前页待审核"></th>';
+      return '<th>'+esc(h)+'</th>';
+    }).join('');
+    box.innerHTML=playerBatchToolbarHtml()+'<div class="table-wrap player-table-wrap"><table class="player-data-table"><thead><tr>'+head+'</tr></thead><tbody>'+body+'</tbody></table></div><div class="player-pagination compact"><span>共 '+total+' 条 · 第 '+playerAdminState.page+' / '+pages+' 页</span><div><select data-player-page-size><option value="20" '+(playerAdminState.pageSize===20?'selected':'')+'>20 条/页</option><option value="50" '+(playerAdminState.pageSize===50?'selected':'')+'>50 条/页</option><option value="100" '+(playerAdminState.pageSize===100?'selected':'')+'>100 条/页</option></select><button class="mini-btn" type="button" data-player-page="prev" '+(playerAdminState.page<=1?'disabled':'')+'>上一页</button><input data-player-page-jump value="'+playerAdminState.page+'" inputmode="numeric" aria-label="页码"><button class="mini-btn" type="button" data-player-page-go>跳转</button><button class="mini-btn" type="button" data-player-page="next" '+(playerAdminState.page>=pages?'disabled':'')+'>下一页</button></div></div>';
   }
-  function filterPlayerManagement(){playerAdminState.page=1;renderPlayerTableRows();}
+  function filterPlayerManagement(){playerAdminState.page=1;playerAdminState.confirmCount=0;playerAdminState.pendingBatch=null;renderPlayerTableRows();}
+  function submitPlayerBatchApprove(){
+    var pending=playerAdminState.pendingBatch;
+    playerAdminState.confirmCount=0;
+    playerAdminState.pendingBatch=null;
+    if(!pending||!pending.ids||!pending.ids.length){renderPlayerTableRows();return;}
+    playerAdminState.batchBusy=true;
+    renderPlayerTableRows();
+    adminFetch('/api/admin/players',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','x-mcj-admin-role':getRole(),Accept:'application/json'},
+      body:JSON.stringify({
+        action:'batch_review_application',
+        ids:pending.ids,
+        levelId:playerAdminState.batchLevelId||'',
+        levelById:pending.levelById||{}
+      })
+    }).then(function(res){return res.json().catch(function(){return {ok:false,message:'批量通过接口返回异常'}})}).then(function(result){
+      if(!result||result.ok===false)throw new Error((result&&result.message)||'批量通过失败');
+      var lines=['成功 '+(result.successCount||0)+'，失败 '+(result.failCount||0)];
+      (result.results||[]).forEach(function(row){
+        if(!row.ok)lines.push((row.nickname||row.id||'')+'：'+(row.message||'失败'));
+      });
+      playerAdminState.batchMessage=lines.join('；');
+      (pending.ids||[]).forEach(function(id){
+        var hit=(result.results||[]).find(function(row){return String(row.id)===String(id)&&row.ok;});
+        if(hit)delete playerAdminState.selectedIds[String(id)];
+      });
+    }).catch(function(err){
+      playerAdminState.batchMessage=err.message||'批量通过失败';
+    }).then(function(){
+      playerAdminState.batchBusy=false;
+      loadPlayerAdminRows();
+    });
+  }
   function exportPlayerRows(){
     var rows=visiblePlayerRows();
     var headers=['头像','陪玩名字','陪玩ID','主接游戏','等级','资料审核状态','实名状态','押金状态','当前抽成','直属陪返点','总收入','可提现余额','账号状态'];
@@ -2252,6 +2357,27 @@
         closePlayerMoreMenu();
       }
       var playerJump=e.target.closest('[data-player-jump]');if(playerJump){var nav=document.querySelector('.side-nav [data-section="'+playerJump.dataset.playerJump+'"]');if(nav)nav.click();return;}
+      var playerBatchApprove=e.target.closest('[data-player-batch-approve]');
+      if(playerBatchApprove){
+        if(playerAdminState.batchBusy)return;
+        var ids=selectedPlayerEligibleIds();
+        if(!ids.length){alert('请先勾选当前页待审核陪玩。未勾选、其他筛选结果、已拒绝/已通过对象不会被提交。');return;}
+        if(!String(playerAdminState.batchLevelId||'').trim()){alert('请先选择「批量通过使用等级」。');return;}
+        playerAdminState.pendingBatch={ids:ids,levelById:{}};
+        playerAdminState.confirmCount=ids.length;
+        renderPlayerTableRows();
+        return;
+      }
+      if(e.target.closest('[data-player-batch-confirm-no]')){
+        playerAdminState.confirmCount=0;
+        playerAdminState.pendingBatch=null;
+        renderPlayerTableRows();
+        return;
+      }
+      if(e.target.closest('[data-player-batch-confirm-yes]')){
+        submitPlayerBatchApprove();
+        return;
+      }
       var playerSearchBtn=e.target.closest('[data-player-search-button]');if(playerSearchBtn){filterPlayerManagement();return;}
       var playerExport=e.target.closest('[data-player-export]');if(playerExport){exportPlayerRows();return;}
       var playerClear=e.target.closest('[data-player-clear]');if(playerClear){var search=document.querySelector('[data-player-search]');if(search)search.value='';document.querySelectorAll('[data-player-filter]').forEach(function(select){select.value='';});filterPlayerManagement();return;}
@@ -2271,7 +2397,7 @@
       var whtest=e.target.closest('[data-webhook-test]');if(whtest){alert('Webhook 测试不会修改真实订单或余额。当前支付安全接口未连接，未发送。');return;}
     });
     document.addEventListener('input',function(e){if(e.target.matches('[data-admin-chat-search]'))filterAdminChats();if(e.target.matches('[data-service-record-search]')){serviceRecordState.keyword=e.target.value||'';serviceRecordState.page=1;renderServiceRecordRows();}if(e.target.matches('[data-order-search]'))filterOrders();if(e.target.matches('[data-boss-search]'))filterBossManagement();if(e.target.matches('[data-player-search]'))filterPlayerManagement();if(e.target.matches('[data-coupon-search]')){couponState.keyword=e.target.value||'';var target=document.getElementById('couponManagement');if(target)target.innerHTML=couponPageHtml();}if(e.target.matches('[data-content-search]'))filterPlatformContentRows(e.target);});
-    document.addEventListener('change',function(e){if(e.target.matches('[data-boss-check]'))updateBossBulkState();if(e.target.matches('[data-boss-filter]'))filterBossManagement();if(e.target.matches('[data-boss-page-size]')){bossAdminState.pageSize=Number(e.target.value)||20;bossAdminState.page=1;renderBossTableRows();}if(e.target.matches('[data-order-filter]'))filterOrders();if(e.target.matches('[data-content-upload]'))uploadPlatformContentFile(e.target);if(e.target.matches('[data-player-quick-field]')){var quickPayload={};quickPayload[e.target.dataset.playerQuickField]=e.target.value;savePlayerAdminChanges('quick-edit',e.target.dataset.playerId,quickPayload);return;}if(e.target.matches('[data-player-filter]'))filterPlayerManagement();if(e.target.matches('[data-player-page-size]')){playerAdminState.pageSize=Number(e.target.value)||20;playerAdminState.page=1;renderPlayerTableRows();}if(e.target.matches('[data-coupon-filter]')){couponState.filter=e.target.value||'';var target=document.getElementById('couponManagement');if(target)target.innerHTML=couponPageHtml();}});
+    document.addEventListener('change',function(e){if(e.target.matches('[data-player-check]')){var pid=e.target.getAttribute('data-player-check')||'';if(!pid||e.target.disabled)return;if(e.target.checked)playerAdminState.selectedIds[pid]=true;else delete playerAdminState.selectedIds[pid];renderPlayerTableRows();return;}if(e.target.matches('[data-player-select-all]')){var on=!!e.target.checked;currentPlayerPageRows().forEach(function(item){var id=String(item.id||'');if(!id||!isPlayerBatchEligible(item))return;if(on)playerAdminState.selectedIds[id]=true;else delete playerAdminState.selectedIds[id];});renderPlayerTableRows();return;}if(e.target.matches('[data-player-batch-level]')){playerAdminState.batchLevelId=e.target.value||'';renderPlayerTableRows();return;}if(e.target.matches('[data-boss-check]'))updateBossBulkState();if(e.target.matches('[data-boss-filter]'))filterBossManagement();if(e.target.matches('[data-boss-page-size]')){bossAdminState.pageSize=Number(e.target.value)||20;bossAdminState.page=1;renderBossTableRows();}if(e.target.matches('[data-order-filter]'))filterOrders();if(e.target.matches('[data-content-upload]'))uploadPlatformContentFile(e.target);if(e.target.matches('[data-player-quick-field]')){var quickPayload={};quickPayload[e.target.dataset.playerQuickField]=e.target.value;savePlayerAdminChanges('quick-edit',e.target.dataset.playerId,quickPayload);return;}if(e.target.matches('[data-player-filter]'))filterPlayerManagement();if(e.target.matches('[data-player-page-size]')){playerAdminState.pageSize=Number(e.target.value)||20;playerAdminState.page=1;renderPlayerTableRows();}if(e.target.matches('[data-coupon-filter]')){couponState.filter=e.target.value||'';var target=document.getElementById('couponManagement');if(target)target.innerHTML=couponPageHtml();}});
     document.addEventListener('keydown',function(e){
       if(e.key==='Escape'){
         var adminModal=document.getElementById('adminModal');
