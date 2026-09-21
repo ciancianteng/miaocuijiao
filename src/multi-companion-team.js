@@ -100,7 +100,7 @@
     if (document.querySelector('link[data-mcj-team-css]')) return;
     var link = document.createElement("link");
     link.rel = "stylesheet";
-    link.href = "/src/multi-companion-team.css?v=20260920multiMobileP0";
+    link.href = "/src/multi-companion-team.css?v=20260921multiPrice";
     link.setAttribute("data-mcj-team-css", "1");
     document.head.appendChild(link);
   }
@@ -467,12 +467,23 @@
         services.find(function (s) {
           return String(s.name) === preferService;
         })) ||
-      (preferService &&
-        services.find(function (s) {
-          var n = String(s.name || "");
-          return n && (preferService.indexOf(n) >= 0 || n.indexOf(preferService) >= 0);
-        })) ||
       null;
+    if (!matched && preferService && !/[,，、|/]/.test(preferService)) {
+      var fuzzyBest = null;
+      var fuzzyLen = 0;
+      var fuzzyTie = false;
+      services.forEach(function (s) {
+        var n = String(s.name || "");
+        if (!n) return;
+        if (preferService.indexOf(n) < 0 && n.indexOf(preferService) < 0) return;
+        if (n.length > fuzzyLen) {
+          fuzzyBest = s;
+          fuzzyLen = n.length;
+          fuzzyTie = false;
+        } else if (n.length === fuzzyLen) fuzzyTie = true;
+      });
+      if (fuzzyBest && !fuzzyTie) matched = fuzzyBest;
+    }
     var selected = matched;
     if (!selected && !hasExplicit) {
       selected = services.find(function (s) {

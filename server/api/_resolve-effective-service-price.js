@@ -36,6 +36,10 @@ function isEffectiveServiceRow(row) {
   return APPROVED_STATUSES.has(status);
 }
 
+function serviceRowName(row) {
+  return String(row?.service_name || row?.serviceName || row?.name || "").trim();
+}
+
 function matchServiceRow(rows, { serviceId = "", gameName = "", serviceRowId = "" } = {}) {
   const list = normalizeServiceRows(rows).filter(isEffectiveServiceRow);
   if (!list.length) return null;
@@ -48,16 +52,21 @@ function matchServiceRow(rows, { serviceId = "", gameName = "", serviceRowId = "
   if (sid) {
     const bySid = list.find((r) => String(r.service_id || r.serviceId || "") === sid);
     if (bySid) return bySid;
+    const byRow = list.find((r) => String(r.id) === sid);
+    if (byRow) return byRow;
   }
   const name = String(gameName || "").trim();
   if (name) {
-    const exact = list.find((r) => String(r.service_name || r.serviceName || r.name || "").trim() === name);
+    const exact = list.find((r) => serviceRowName(r) === name);
     if (exact) return exact;
-    const fuzzy = list.find((r) => {
-      const n = String(r.service_name || r.serviceName || r.name || "").trim();
-      return n && (name.includes(n) || n.includes(name));
-    });
-    if (fuzzy) return fuzzy;
+    // Combined labels ("A、B") are not a service. Do not pick the first contained row
+    // (that returned 陪跑@30 / 王者@30 instead of 三角洲手游国服@35).
+    if (/[,，、|/]/.test(name)) return null;
+    const fuzzy = list
+      .map((r) => ({ r, n: serviceRowName(r) }))
+      .filter((x) => x.n && (name.includes(x.n) || x.n.includes(name)))
+      .sort((a, b) => b.n.length - a.n.length);
+    if (fuzzy.length && (fuzzy.length === 1 || fuzzy[0].n.length > fuzzy[1].n.length)) return fuzzy[0].r;
   }
   // Single enabled service → use it when caller did not specify
   if (list.length === 1 && !sid && !name && !rid) return list[0];
@@ -108,6 +117,17 @@ export function resolveEffectiveServicePrice({
   const base = levelBasePrice(level);
 
   const row = matchServiceRow(serviceRows, { serviceId, gameName, serviceRowId });
+  const named = String(gameName || "").trim();
+  const ambiguousBlob = /[,，、|/]/.test(named);
+  if (!row && ambiguousBlob) {
+    return {
+      price: 0,
+      source: "ambiguous_service",
+      serviceRow: null,
+      levelId: lid,
+      companionId: cid,
+    };
+  }
   if (row) {
     const rowSource = String(row.source || "companion_service").trim() || "companion_service";
     const rowPrice = money(row.price);
