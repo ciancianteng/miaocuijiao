@@ -21,23 +21,35 @@
   function normalize(vip) {
     var v = vip && typeof vip === "object" ? vip : {};
     var spend = money(v.confirmedSpend);
+    var curTh = money(v.currentThreshold != null ? v.currentThreshold : 0);
     var nextTh = v.nextThreshold != null && v.nextThreshold !== "" ? money(v.nextThreshold) : null;
     var remain = v.isMaxLevel ? 0 : money(v.remaining != null ? v.remaining : 0);
     var progressSpend = nextTh != null ? Math.max(0, Math.min(spend, nextTh)) : spend;
     var pct = 100;
-    if (!v.isMaxLevel && nextTh != null && nextTh > 0) {
+    // Segment progress: (spend - current) / (next - current), not absolute spend/next.
+    if (!v.isMaxLevel && nextTh != null && nextTh > curTh) {
+      pct = Math.max(0, Math.min(100, Math.round(((spend - curTh) / (nextTh - curTh)) * 1000) / 10));
+    } else if (!v.isMaxLevel && nextTh != null && nextTh > 0) {
       pct = Math.max(0, Math.min(100, Math.round((progressSpend / nextTh) * 1000) / 10));
     }
+    var benefitsRaw = String(v.benefits || "").trim();
+    var benefits =
+      benefitsRaw ||
+      (v.configPending ? "VIP 配置待后台初始化" : "暂无专属福利");
+    benefits = benefits.replace(/\r\n/g, "\n").split(/\n+/).map(function (s) {
+      return s.trim();
+    }).filter(Boolean).join(" · ");
     return {
       name: v.currentLevelName || "普通会员",
       spend: spend,
       next: v.nextLevelName || (v.isMaxLevel ? "已是最高等级" : "—"),
       nextTh: nextTh,
       remain: remain,
-      benefits: v.benefits || "暂无专属福利",
+      benefits: benefits,
       isMax: !!v.isMaxLevel,
       pct: pct,
       progressSpend: progressSpend,
+      configPending: !!v.configPending,
     };
   }
 
@@ -92,7 +104,9 @@
       '<p class="bv-hero-perk"><span>Exclusive Benefits</span>' +
       esc(n.benefits) +
       "</p>" +
-      '<p class="bv-hero-foot">客服确认的有效消费自动累计 · 达标即升</p>' +
+      (n.configPending
+        ? '<p class="bv-hero-foot">后台 VIP 等级尚未初始化 · 初始化后自动按有效消费升级</p>'
+        : '<p class="bv-hero-foot">客服确认的有效消费自动累计 · 达标即升</p>') +
       "</article>"
     );
   }

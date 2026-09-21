@@ -129,6 +129,7 @@ export function viewBossVipSnapshot({ confirmedSpend, resolved, history = [] } =
   return {
     currentLevelName: current?.name || "普通会员",
     currentLevelId: current?.id || "",
+    currentThreshold: current ? money(current.spendThreshold) : 0,
     confirmedSpend: money(confirmedSpend),
     nextLevelName: next?.name || "",
     nextThreshold: next ? next.spendThreshold : null,
@@ -255,6 +256,29 @@ export async function setVipLevelActive(id, isActive) {
   });
   if (!rows?.[0]) throw httpError("等级不存在", 404);
   return rows[0];
+}
+
+/** Soft-delete guard: refuse when any boss currently sits on this level. */
+export async function deleteVipLevel(id) {
+  const levelId = String(id || "").trim();
+  if (!levelId) throw httpError("缺少等级");
+  const existing = await supabaseJson(
+    restUrl(LEVELS_TABLE, `?id=eq.${encodeURIComponent(levelId)}&select=id,name&limit=1`),
+    { headers: serviceHeaders() }
+  );
+  if (!existing?.[0]) throw httpError("等级不存在", 404);
+  const using = await supabaseJson(
+    restUrl(STATUS_TABLE, `?current_level_id=eq.${encodeURIComponent(levelId)}&select=boss_id&limit=1`),
+    { headers: serviceHeaders() }
+  ).catch(() => []);
+  if (Array.isArray(using) && using.length) {
+    throw httpError("该等级仍有老板使用，请先停用或迁移后再删除", 409);
+  }
+  await supabaseJson(restUrl(LEVELS_TABLE, `?id=eq.${encodeURIComponent(levelId)}`), {
+    method: "DELETE",
+    headers: serviceHeaders(),
+  });
+  return { ok: true, id: levelId, name: existing[0].name || "" };
 }
 
 export async function reorderVipLevels(orderedIds = []) {
@@ -484,14 +508,20 @@ export async function applyBossVipBackfill({ notify = false } = {}) {
 export async function getBossVipView(bossId) {
   const ready = await ensureBossVipReady();
   if (!ready.ok) {
+    // Do NOT claim "已是最高等级" when config tables are missing — that misled Production.
+    const vip = viewBossVipSnapshot({
+      confirmedSpend: 0,
+      resolved: { current: { name: "普通会员", benefits: "", spendThreshold: 0 }, next: null, remaining: 0 },
+    });
+    vip.isMaxLevel = false;
+    vip.nextLevelName = "（VIP 配置待初始化）";
+    vip.nextThreshold = null;
+    vip.configPending = true;
     return {
       ok: true,
       tablesReady: false,
       message: ready.message,
-      vip: viewBossVipSnapshot({
-        confirmedSpend: 0,
-        resolved: { current: { name: "普通会员", benefits: "", spendThreshold: 0 }, next: null, remaining: 0 },
-      }),
+      vip,
     };
   }
   const levels = await listVipLevelRows({ includeInactive: true });

@@ -1,6 +1,6 @@
 /**
  * Admin · Boss VIP 等级管理（消费累计自动升级）
- * 塞进现有 admin shell，不改布局壳子。直属关系/分成仍走独立模块。
+ * Extends existing boss_vip_* system — no second membership product.
  */
 (function () {
   "use strict";
@@ -13,20 +13,42 @@
     message: "",
     tablesReady: true,
     levels: [],
-    form: {
-      id: "",
-      name: "",
-      spendThreshold: "0",
-      benefits: "",
-      sortOrder: "100",
-      isActive: true,
-    },
+    form: emptyForm(),
   };
 
   function esc(v) {
     return String(v == null ? "" : v).replace(/[&<>"']/g, function (c) {
       return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
     });
+  }
+
+  function emptyForm() {
+    return {
+      id: "",
+      name: "",
+      spendThreshold: "0",
+      benefits: [""],
+      sortOrder: "100",
+      isActive: true,
+    };
+  }
+
+  function benefitsToList(raw) {
+    var text = String(raw == null ? "" : raw).replace(/\r\n/g, "\n").trim();
+    if (!text) return [""];
+    var parts = text.split(/\n+|；|;|·|\|/).map(function (s) {
+      return s.trim();
+    }).filter(Boolean);
+    return parts.length ? parts : [""];
+  }
+
+  function benefitsToText(list) {
+    return (list || [])
+      .map(function (s) {
+        return String(s || "").trim();
+      })
+      .filter(Boolean)
+      .join("\n");
   }
 
   function role() {
@@ -58,8 +80,37 @@
     return document.getElementById(TARGET);
   }
 
-  function emptyForm() {
-    return { id: "", name: "", spendThreshold: "0", benefits: "", sortOrder: "100", isActive: true };
+  function paintBenefitsEditor() {
+    var list = state.form.benefits && state.form.benefits.length ? state.form.benefits : [""];
+    return (
+      '<div data-vip-benefits-editor style="margin-top:10px">' +
+      '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px">' +
+      "<strong style='font-size:13px'>等级福利（可多条）</strong>" +
+      '<button type="button" class="ghost-btn" data-vip-benefit-add>+ 新增福利</button>' +
+      "</div>" +
+      list
+        .map(function (line, idx) {
+          return (
+            '<div style="display:flex;gap:8px;margin-bottom:6px" data-vip-benefit-row="' +
+            idx +
+            '">' +
+            '<input type="text" data-vip-benefit-input="' +
+            idx +
+            '" value="' +
+            esc(line) +
+            '" placeholder="例如：专属客服 / 优先匹配 / 生日福利" style="flex:1">' +
+            '<button type="button" class="ghost-btn" data-vip-benefit-remove="' +
+            idx +
+            '"' +
+            (list.length <= 1 ? " disabled" : "") +
+            ">删除</button>" +
+            "</div>"
+          );
+        })
+        .join("") +
+      '<p class="admin-sync-note" style="margin:4px 0 0">保存后老板 VIP 卡 Exclusive Benefits 会同步显示。</p>' +
+      "</div>"
+    );
   }
 
   function paint() {
@@ -75,17 +126,25 @@
     if (!state.tablesReady) {
       box.innerHTML =
         tip +
-        '<p class="admin-sync-note">Boss VIP 功能尚未初始化。请联系运维完成数据库初始化后再设置等级、消费门槛与福利。</p>';
+        '<p class="admin-sync-note">Boss VIP 功能尚未初始化。请先在 Production 应用 migration <code>20260915090000_boss_vip_spend.sql</code>（勿在未确认时自动执行），初始化后再设置等级名称、消费门槛与福利。</p>';
       return;
     }
 
     var rows =
       (state.levels || [])
         .map(function (lv, idx) {
+          var perkPreview = String(lv.benefits || "")
+            .replace(/\r\n/g, "\n")
+            .split(/\n+/)
+            .map(function (s) {
+              return s.trim();
+            })
+            .filter(Boolean)
+            .join(" · ");
           return (
             "<tr>" +
-            "<td>VIP" +
-            esc(idx) +
+            "<td>L" +
+            esc(idx + 1) +
             "</td>" +
             "<td>" +
             esc(lv.name) +
@@ -94,7 +153,7 @@
             esc(lv.spendThreshold) +
             " 猫粮</td>" +
             "<td>" +
-            esc(lv.benefits || "-") +
+            esc(perkPreview || "-") +
             "</td>" +
             "<td>" +
             esc(lv.bossCount || 0) +
@@ -122,7 +181,12 @@
             esc(lv.id) +
             '"' +
             (idx === state.levels.length - 1 ? " disabled" : "") +
-            ">下移</button>" +
+            ">下移</button> " +
+            '<button type="button" class="ghost-btn" data-vip-delete="' +
+            esc(lv.id) +
+            '" data-vip-bosses="' +
+            esc(lv.bossCount || 0) +
+            '">删除</button>' +
             "</td>" +
             "</tr>"
           );
@@ -131,7 +195,7 @@
 
     box.innerHTML =
       tip +
-      '<p class="admin-sync-note" style="margin:0 0 12px">老板根据客服确认的累计有效消费自动升级 VIP。管理员可设置各等级消费门槛及福利。直属关系 / 分成请到「直属关系管理」。</p>' +
+      '<p class="admin-sync-note" style="margin:0 0 12px">老板根据<strong>客服确认的累计有效消费</strong>自动升级 VIP。可配置：等级名称、升级门槛（猫粮）、多条福利、排序、启停。直属分成请到「直属关系管理」。</p>' +
       '<div class="admin-toolbar" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px">' +
       '<button type="button" class="primary-btn" data-vip-new' +
       (state.busy ? " disabled" : "") +
@@ -143,7 +207,7 @@
       (state.busy ? " disabled" : "") +
       ">按新门槛重新计算</button>" +
       "</div>" +
-      '<div class="table-wrap"><table class="data-table"><thead><tr><th>等级</th><th>名称</th><th>消费门槛</th><th>福利</th><th>当前老板人数</th><th>状态</th><th>操作</th></tr></thead><tbody>' +
+      '<div class="table-wrap"><table class="data-table"><thead><tr><th>顺序</th><th>名称</th><th>消费门槛</th><th>福利</th><th>当前老板人数</th><th>状态</th><th>操作</th></tr></thead><tbody>' +
       rows +
       "</tbody></table></div>" +
       '<div class="admin-card" style="margin:16px 0;padding:12px;border:1px solid rgba(255,255,255,.08);border-radius:12px">' +
@@ -151,24 +215,22 @@
       (state.form.id ? "编辑 VIP 等级" : "新增 VIP 等级") +
       "</h3>" +
       '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px">' +
-      '<label>名称<input id="vipName" value="' +
+      '<label>等级名称<input id="vipName" value="' +
       esc(state.form.name) +
-      '" placeholder="例如 VIP1 Silver"></label>' +
-      '<label>消费门槛（猫粮）<input id="vipThreshold" type="number" min="0" step="1" value="' +
+      '" placeholder="例如：银卡会员"></label>' +
+      '<label>升级所需累计有效消费（猫粮）<input id="vipThreshold" type="number" min="0" step="1" value="' +
       esc(state.form.spendThreshold) +
       '"></label>' +
-      '<label>排序<input id="vipSort" type="number" value="' +
+      '<label>排序（数字越小越靠前）<input id="vipSort" type="number" value="' +
       esc(state.form.sortOrder) +
       '"></label>' +
       '<label>启用<select id="vipActive"><option value="1"' +
       (state.form.isActive ? " selected" : "") +
-      ">启用</option><option value=\"0\"" +
+      '>启用</option><option value="0"' +
       (!state.form.isActive ? " selected" : "") +
       ">停用</option></select></label>" +
       "</div>" +
-      '<label style="display:block;margin-top:10px">福利说明<textarea id="vipBenefits" rows="3" style="width:100%;margin-top:6px">' +
-      esc(state.form.benefits) +
-      "</textarea></label>" +
+      paintBenefitsEditor() +
       '<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">' +
       '<button type="button" class="primary-btn" data-vip-save' +
       (state.busy ? " disabled" : "") +
@@ -183,9 +245,17 @@
     state.form.name = (document.getElementById("vipName") || {}).value || "";
     state.form.spendThreshold = (document.getElementById("vipThreshold") || {}).value || "0";
     state.form.sortOrder = (document.getElementById("vipSort") || {}).value || "100";
-    state.form.benefits = (document.getElementById("vipBenefits") || {}).value || "";
     var active = document.getElementById("vipActive");
     state.form.isActive = !active || active.value !== "0";
+    var inputs = target() ? target().querySelectorAll("[data-vip-benefit-input]") : [];
+    state.form.benefits = Array.prototype.map.call(inputs, function (el) {
+      return el.value || "";
+    });
+    if (!state.form.benefits.length) state.form.benefits = [""];
+  }
+
+  function syncBenefitInputs() {
+    readForm();
   }
 
   function load() {
@@ -259,11 +329,12 @@
   }
 
   document.addEventListener("click", function (e) {
-    var btn = e.target.closest("[data-section='boss-levels']");
-    if (btn) setTimeout(load, 0);
-    if (!target() || !target().contains(e.target)) {
-      if (!e.target.closest("[data-section='boss-levels']")) return;
-    }
+    var sectionBtn = e.target.closest("[data-section='boss-levels']");
+    if (sectionBtn) setTimeout(load, 0);
+    var box = target();
+    if (!box) return;
+    if (!box.contains(e.target) && !sectionBtn) return;
+
     if (e.target.closest("[data-vip-reload]")) {
       load();
       return;
@@ -278,6 +349,21 @@
       paint();
       return;
     }
+    if (e.target.closest("[data-vip-benefit-add]")) {
+      syncBenefitInputs();
+      state.form.benefits.push("");
+      paint();
+      return;
+    }
+    var removePerk = e.target.closest("[data-vip-benefit-remove]");
+    if (removePerk) {
+      syncBenefitInputs();
+      var ridx = Number(removePerk.getAttribute("data-vip-benefit-remove"));
+      if (state.form.benefits.length <= 1) return;
+      state.form.benefits.splice(ridx, 1);
+      paint();
+      return;
+    }
     var edit = e.target.closest("[data-vip-edit]");
     if (edit) {
       var lv = (state.levels || []).find(function (row) {
@@ -288,7 +374,7 @@
         id: lv.id,
         name: lv.name || "",
         spendThreshold: String(lv.spendThreshold || 0),
-        benefits: lv.benefits || "",
+        benefits: benefitsToList(lv.benefits),
         sortOrder: String(lv.sortOrder || 100),
         isActive: lv.isActive !== false,
       };
@@ -306,7 +392,7 @@
               id: state.form.id,
               name: state.form.name,
               spendThreshold: Number(state.form.spendThreshold || 0),
-              benefits: state.form.benefits,
+              benefits: benefitsToText(state.form.benefits),
               sortOrder: Number(state.form.sortOrder || 100),
               isActive: state.form.isActive,
             },
@@ -329,6 +415,23 @@
           }),
         });
       }, "已更新状态");
+      return;
+    }
+    var del = e.target.closest("[data-vip-delete]");
+    if (del) {
+      var bosses = Number(del.getAttribute("data-vip-bosses") || 0);
+      if (bosses > 0) {
+        state.error = "该等级仍有 " + bosses + " 位老板使用，请先停用或迁移后再删除";
+        paint();
+        return;
+      }
+      if (!confirm("确认删除该未使用等级？历史记录不受影响。")) return;
+      run(function () {
+        return api("/api/admin/boss-vip", {
+          method: "POST",
+          body: JSON.stringify({ action: "delete", id: del.getAttribute("data-vip-delete") }),
+        });
+      }, "已删除等级");
       return;
     }
     var up = e.target.closest("[data-vip-up]");
