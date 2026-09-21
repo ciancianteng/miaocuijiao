@@ -19,9 +19,25 @@
         return;
       }
       var s=res.stats||{};
-      target.innerHTML=(res.message?note(res.message):'')+'<div class="admin-final-grid">'+[
-        ['老板总数',s.bosses||0],['陪玩总数',s.companions||0],['客服总数',s.customerServices||0],['今日有效订单',s.todayOrders||0],['待付款订单',s.awaitingPayment||0],['等待抢单',s.pendingOrders||0],['进行中订单',s.inProgress||0],['已完成订单',s.completed||0],['退款订单',s.refunds||0],['有效营业额',money(s.totalAmount||0)],['今日营业额',money(s.todayAmount||0)],['平台利润',money(s.platformProfit||0)],['提现中/已打款',money(s.withdrawPending||0)+' / '+money(s.withdrawPaid||0)]
-      ].map(function(item){return '<article class="admin-final-stat"><span>'+esc(item[0])+'</span><strong>'+esc(item[1])+'</strong></article>'}).join('')+'</div>';
+      // Cards link to existing admin detail sections (no duplicate pages).
+      var cards=[
+        {label:'老板总数',value:s.bosses||0,href:'#bosses'},
+        {label:'陪玩总数',value:s.companions||0,href:'#players'},
+        {label:'客服总数',value:s.customerServices||0,href:'#service-accounts'},
+        {label:'今日有效订单',value:s.todayOrders||0,href:'#orders'},
+        {label:'待付款订单',value:s.awaitingPayment||0,href:'#orders'},
+        {label:'等待陪玩确认',value:s.pendingOrders||0,href:'#orders'},
+        {label:'进行中订单',value:s.inProgress||0,href:'#orders'},
+        {label:'已完成订单',value:s.completed||0,href:'#orders'},
+        {label:'退款订单',value:s.refunds||0,href:'#orders'},
+        {label:'有效营业额',value:money(s.totalAmount||0),href:'#orders'},
+        {label:'今日营业额',value:money(s.todayAmount||0),href:'#orders'},
+        {label:'平台利润',value:money(s.platformProfit||0),href:'#orders'},
+        {label:'提现中/已打款',value:money(s.withdrawPending||0)+' / '+money(s.withdrawPaid||0),href:'#service-reports'}
+      ];
+      target.innerHTML=(res.message?note(res.message):'')+'<div class="admin-final-grid">'+cards.map(function(item){
+        return '<a class="admin-final-stat" href="'+esc(item.href)+'"><span>'+esc(item.label)+'</span><strong>'+esc(item.value)+'</strong></a>';
+      }).join('')+'</div>';
     }).catch(function(err){
       target.innerHTML=note(err.message||'数据加载失败')+'<button class="mini-btn" type="button" data-admin-final-refresh="dashboard">重试</button>';
     });
