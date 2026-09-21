@@ -292,6 +292,7 @@ body:has(.mcj-team-bar) .companion-hall-page {
   min-height: 0;
   overflow: auto;
   -webkit-overflow-scrolling: touch;
+  /* Foot is a flex sibling outside scroll — modest bottom pad is enough. */
   padding: 12px 16px calc(16px + env(safe-area-inset-bottom, 0px));
   display: grid;
   gap: 12px;
@@ -466,6 +467,7 @@ body:has(.mcj-team-bar) .companion-hall-page {
   bottom: 0;
   z-index: 2;
   background: rgba(9, 8, 13, 0.98);
+  /* 12px + safe-area so sticky CTA never sits under the home indicator. */
   padding: 12px 16px calc(12px + env(safe-area-inset-bottom, 0px));
   border-top: 1px solid rgba(243, 168, 203, 0.18);
 }

@@ -148,10 +148,16 @@ assert.match(guideCfg, /继续选陪玩/);
     deps,
   });
   assert.equal(result.ok, true, result.message);
-  assert.equal(debits.length, 1);
-  assert.equal(debits[0].amount, 65);
+  // #281: place_multi_order is create-only; pay_order debits parent once later.
+  assert.equal(debits.length, 0, "create must not debit; pay_order owns wallet debit");
+  assert.equal(result.walletDebited, false);
+  assert.equal(result.next, "payment-confirm");
+  assert.equal(String(orders[0].status), "awaiting_payment");
+  assert.equal(Number(orders[0].total_amount), 65);
   const children = orders.filter((o) => o.parent_order_id);
   assert.equal(children.length, 2);
+  assert.equal(Number(children[0].unit_price), 35);
+  assert.equal(Number(children[1].unit_price), 30);
   assert.match(children[0].description, /游戏ID：BOSS_GID_99/);
   assert.match(children[0].description, /语音方式：Discord语音房/);
   assert.equal(Object.prototype.hasOwnProperty.call(children[0], "game_id_value"), false);
