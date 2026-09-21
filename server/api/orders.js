@@ -15,6 +15,7 @@ import {
   transitionOrderStatus,
 } from "./_order-status.js";
 import { evaluatePublishGate } from "./_companion-publish-gate.js";
+import { canCompanionAcceptBossOrder, availabilityCode } from "./_companion-public-map.js";
 import { allocateOrderNo, resolveOrderPublicNo, resolveCompanionPublicCode, ensureCompanionPublicCode } from "./_account-codes.js";
 import { companionDb } from "./_companion-media-store.js";
 import { listPendingForCs, latestRejectedForOrders, latestApprovedForOrders, signedProofUrl, uploadProof, receiptReviewerFields } from "./_payment-receipts.js";
@@ -168,12 +169,12 @@ async function assertCompanionOrderable(companionUserId) {
       cp,
     };
   }
-  const online = String(cp.availability_status || cp.online_status || "offline").toLowerCase();
-  if (online === "paused") {
-    return { ok: false, message: "该陪玩已暂停接单，请稍后再试", gate, cp };
-  }
-  if (online === "offline") {
-    return { ok: false, message: "该陪玩当前离线，暂不可下单", gate, cp };
+  const online = availabilityCode(cp);
+  if (!canCompanionAcceptBossOrder(cp)) {
+    if (online === "paused") {
+      return { ok: false, message: "该陪玩已暂停接单，请稍后再试", gate, cp, online };
+    }
+    return { ok: false, message: "该陪玩当前离线，暂不可下单", gate, cp, online };
   }
   return { ok: true, gate, cp, online };
 }

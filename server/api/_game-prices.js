@@ -138,6 +138,11 @@ function isMultiServiceBlob(name) {
   return /[,，、|/]/.test(String(name || ""));
 }
 
+/** "三角洲 手游 国服" and "三角洲手游 国服" must resolve to the same key. */
+export function compactServiceKey(name) {
+  return String(name || "").trim().replace(/\s+/g, "");
+}
+
 /**
  * Service-specific game_prices lookup.
  * Exact service id / exact service name always win.
@@ -152,6 +157,15 @@ export function priceForGame(companion = {}, gameName = "", serviceId = "") {
   if (id && money(prices[id]) > 0) return money(prices[id]);
   const name = String(gameName || "").trim();
   if (name && money(prices[name]) > 0) return money(prices[name]);
+  const compact = compactServiceKey(name);
+  if (compact) {
+    const compactHits = Object.keys(prices).filter((k) => {
+      if (!k || /^[0-9a-f-]{36}$/i.test(k)) return false;
+      if (!(money(prices[k]) > 0)) return false;
+      return compactServiceKey(k) === compact;
+    });
+    if (compactHits.length === 1) return money(prices[compactHits[0]]);
+  }
   if (name && !isMultiServiceBlob(name)) {
     const keys = Object.keys(prices).filter((k) => {
       if (!k || /^[0-9a-f-]{36}$/i.test(k)) return false;

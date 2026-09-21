@@ -17,8 +17,8 @@ const placeMultiSrc = readFileSync(new URL("../server/api/_place-multi-order.js"
 // Draft persistence + continue选
 assert.match(team, /mcjMultiTeamSelection/);
 assert.match(team, /mcjMultiTeamPicking/);
-assert.match(team, /function continueToHall/);
-assert.match(team, /Draft stays in sessionStorage/);
+  assert.match(team, /persist\(\);\r?\n\s*renderBar\(\);/);
+  assert.match(team, /Draft stays in sessionStorage/);
 assert.match(team, /Only clearTeam\(\) wipes it/);
 assert.doesNotMatch(
   team.slice(team.indexOf("function continueToHall"), team.indexOf("function continueToHall") + 280),
@@ -32,6 +32,9 @@ assert.match(profile, /syncBottomStackOffset/);
 
 // Hall padding when team bar present
 assert.match(teamCss, /companion-hall-page/);
+assert.match(readFileSync(new URL("../payment-confirm.html", import.meta.url), "utf8"), /viewport-fit=cover/);
+assert.match(readFileSync(new URL("../profile.html", import.meta.url), "utf8"), /viewport-fit=cover/);
+assert.match(readFileSync(new URL("../companion-center.html", import.meta.url), "utf8"), /viewport-fit=cover/);
 
 // Pre-submit status wording
 assert.match(team, /待提交/);

@@ -27,6 +27,7 @@
     "verify:boss-order-detail-cancel": "node scripts/verify-boss-order-detail-cancel-offline.mjs",
     "verify:boss-tutorial": "node scripts/verify-boss-tutorial.mjs",
     "verify:multi-order-partial-cancel": "node scripts/verify-multi-order-partial-cancel.mjs",
+    "verify:multi-order-availability": "node scripts/verify-multi-order-availability.mjs",
     "verify:service-pricing": "node scripts/verify-service-pricing-offline.mjs",
     "verify:service-pricing-dedup": "node scripts/verify-service-pricing-dedup-offline.mjs",
     "verify:boss-order-form-simplify": "node scripts/verify-boss-order-form-simplify.mjs",

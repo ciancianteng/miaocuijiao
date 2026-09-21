@@ -306,6 +306,7 @@ function publicCompanion(row = {}, profile = {}, levels = [], catalog = [], medi
     onlineStatusLabel: availabilityText(avail),
     status: availabilityText(avail),
     canOrderNow: avail === "online",
+    canAcceptBossOrder: avail === "online" || avail === "busy",
     online: avail === "online" || avail === "busy",
     avatar,
     cover,

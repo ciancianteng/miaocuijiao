@@ -686,8 +686,9 @@
         window.MCJPlaceOrder.openFromCompanion(c, {
           companionId: c.id || c.uid,
           companionName: c.name || c.nickname,
+          service: "",
+          requireServicePick: true,
           unitPrice: Number(c.priceValue != null ? c.priceValue : c.price) || 0,
-          service: (c.services && c.services[0] && c.services[0].name) || c.game || c.mainGame || "",
           services: Array.isArray(c.services) ? c.services : [],
           serviceIds: c.serviceIds || c.service_ids || [],
           gamePrices: c.gamePrices || c.game_prices || {},
