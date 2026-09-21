@@ -1066,9 +1066,15 @@
         var parent = body.parent || body.order || {};
         var oid = parent.id || "";
         var kids = Array.isArray(body.children) ? body.children : [];
-        state.pendingIdempotencyKey = "";
+        var totalAmt =
+          money(parent.totalAmount || parent.total_amount || body.groupTotal) ||
+          kids.reduce(function (n, ch) {
+            return n + money(ch && (ch.totalAmount || ch.total_amount));
+          }, 0);
+        // Keep idempotencyKey until paid so back/retry replays the same parent.
+        // Clear team UI draft — awaiting_payment order is now the SoT for fields/price.
         clearTeam();
-        toast("多人订单创建成功");
+        toast("订单已创建，请完成支付");
         if (oid) {
           try {
             var list = [];
@@ -1080,9 +1086,10 @@
             }
             var row = Object.assign({}, parent, {
               isMultiGroupParent: true,
+              status: parent.status || "awaiting_payment",
+              totalAmount: totalAmt || parent.totalAmount || parent.total_amount,
               children: kids,
             });
-            // Cache parent + children so list can hide child cards and still render peer names.
             var childIds = {};
             kids.forEach(function (ch) {
               if (ch && ch.id) childIds[String(ch.id)] = true;
@@ -1096,8 +1103,34 @@
                 })
               );
             localStorage.setItem("mcjBossOrdersCache", JSON.stringify(list.slice(0, 80)));
+            var cachePayload = JSON.stringify({
+              id: oid,
+              status: "awaiting_payment",
+              paymentMethod: "catfood",
+              payment_method: "catfood",
+              totalAmount: totalAmt,
+              orderTypeKey: "multi_group",
+              order_type: "multi_group",
+              isMultiGroupParent: true,
+              children: kids,
+              title: parent.title || row.title || "",
+              orderNo: parent.orderNo || parent.order_no || "",
+            });
+            try {
+              localStorage.setItem("mcjOrderCache:" + oid, cachePayload);
+            } catch (eCacheLs) {}
+            try {
+              sessionStorage.setItem("mcjOrderCache:" + oid, cachePayload);
+            } catch (eCacheSs) {}
+            try {
+              sessionStorage.setItem(
+                "mcjMultiPendingPay",
+                JSON.stringify({ orderId: oid, totalAmount: totalAmt, at: Date.now() })
+              );
+            } catch (ePend) {}
           } catch (e2) {}
-          location.href = "orders.html?id=" + encodeURIComponent(oid);
+          // Reuse single-order formal payment page (pay_order on parent once).
+          location.href = "payment-confirm.html?order=" + encodeURIComponent(oid);
           return;
         }
         location.href = "orders.html";

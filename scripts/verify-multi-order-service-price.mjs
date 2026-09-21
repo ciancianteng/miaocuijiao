@@ -184,7 +184,7 @@ function orderHarness(resolveOrderUnitPrice) {
   return { orders, debits, deps };
 }
 
-// Test 1b — placeMultiOrder snapshots each service price and debits the group once
+// Test 1b — placeMultiOrder snapshots each service price; NO wallet debit at create
 {
   delete process.env.SUPABASE_URL;
   delete process.env.VITE_SUPABASE_URL;
@@ -235,11 +235,13 @@ function orderHarness(resolveOrderUnitPrice) {
     deps,
   });
   assert.equal(result.ok, true, result.message);
-  assert.equal(result.walletDebitCount, 1);
-  assert.equal(result.walletDebitAmount, 65);
-  assert.equal(debits.length, 1);
-  assert.equal(debits[0].amount, 65);
-  assert.equal(debits[0].relatedOrderId, orders[0].id);
+  assert.equal(result.walletDebited, false);
+  assert.equal(result.walletDebitCount, 0);
+  assert.equal(result.walletDebitAmount, 0);
+  assert.equal(result.groupTotal, 65);
+  assert.equal(debits.length, 0, "create must not debit; pay_order debits parent once");
+  assert.equal(String(orders[0].status), "awaiting_payment");
+  assert.equal(result.next, "payment-confirm");
   const children = orders.filter((row) => row.parent_order_id);
   assert.equal(children.length, 2);
   assert.equal(Number(children[0].unit_price), 35);
@@ -247,13 +249,15 @@ function orderHarness(resolveOrderUnitPrice) {
   assert.equal(Number(children[1].unit_price), 30);
   assert.equal(Number(children[1].total_amount), 30);
   assert.equal(Number(orders[0].total_amount), 65);
+  assert.equal(String(children[0].status), "awaiting_payment");
+  assert.equal(String(children[1].status), "awaiting_payment");
   assert.match(children[0].description, /service_row_id：row-delta/);
   assert.match(children[0].description, /单价快照：35/);
   assert.match(children[1].description, /单价快照：30/);
   assert.equal(children[0].parent_order_id, orders[0].id);
 }
 
-// Wrong client unit must not debit
+// Wrong client unit must not create/debit
 {
   const { debits, deps } = orderHarness(async () => ({
     price: 35,

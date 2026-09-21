@@ -102,8 +102,10 @@ test("TEST 3 idempotency key wiring", () => {
   const placeSrc = readFileSync(path.join(root, "server/api/_place-multi-order.js"), "utf8");
   assert.match(placeSrc, /idempotency_key=eq/);
   assert.match(placeSrc, /deduped:\s*true/);
-  assert.match(placeSrc, /order-pay:/);
   assert.match(placeSrc, /softCancelOrders/);
+  // Single wallet debit key lives on pay_order (parent), not place_multi create
+  const ordersSrc = readFileSync(path.join(root, "server/api/orders.js"), "utf8");
+  assert.match(ordersSrc, /order-pay:/);
 });
 
 test("TEST 4 companion isolation by companion_id", () => {
@@ -303,16 +305,18 @@ test("TEST 13+14 legacy standalone unchanged", () => {
   assert.match(ordersSrc, /place_multi_order/);
 });
 
-test("TEST 15+16 rollback / no debit before children ready (source guards)", () => {
+test("TEST 15+16 create-only / no debit at place_multi (pay_order owns debit)", () => {
   const placeSrc = readFileSync(path.join(root, "server/api/_place-multi-order.js"), "utf8");
   assert.match(placeSrc, /MULTI_ORDER_CHILD_CREATE_FAILED/);
-  assert.match(placeSrc, /wallet_debit_failed/);
-  assert.match(placeSrc, /rolledBack:\s*true/);
   assert.match(placeSrc, /softCancelOrders/);
-  // Debit happens after children loop
-  const createIdx = placeSrc.indexOf("for (let i = 0; i < prepared.length");
-  const debitIdx = placeSrc.indexOf("debitWallet({");
-  assert.ok(createIdx > 0 && debitIdx > createIdx, "debit must follow child creates");
+  assert.match(placeSrc, /awaiting_payment/);
+  assert.match(placeSrc, /payment-confirm/);
+  // place_multi must NOT call debitWallet — pay_order does parent debit once
+  assert.doesNotMatch(placeSrc, /await debitWallet\(/);
+  assert.doesNotMatch(placeSrc, /wallet_debit_failed/);
+  const ordersSrc = readFileSync(path.join(root, "server/api/orders.js"), "utf8");
+  assert.match(ordersSrc, /payGuard\.cascadeChildren/);
+  assert.match(ordersSrc, /order-pay:/);
 });
 
 test("STATIC migration parent_order_id present", () => {

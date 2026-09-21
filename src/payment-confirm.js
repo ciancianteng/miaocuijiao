@@ -842,6 +842,36 @@
     );
   }
 
+  function insufficientBalanceUi(orderId, msg, rechargeUrl) {
+    var oid = String(orderId || "").trim();
+    var payHref = oid ? "payment-confirm.html?order=" + encodeURIComponent(oid) : "orders.html";
+    var rechargeHref = String(rechargeUrl || "/recharge.html").replace(/^\//, "");
+    try {
+      sessionStorage.setItem("mcjPayReturn", payHref);
+    } catch (e) {}
+    paint(
+      '<section class="pay-card" data-order-id="' +
+        esc(oid) +
+        '"><h1>支付确认</h1>' +
+        '<p class="pay-alert" role="alert">' +
+        esc(msg || "猫粮余额不足") +
+        "</p>" +
+        '<p class="pay-hint">充值成功后请返回本页继续支付；订单资料与金额不会丢失。</p>' +
+        '<div class="pay-actions">' +
+        '<a class="pay-btn primary" href="' +
+        esc(rechargeHref) +
+        '">去充值</a>' +
+        '<button type="button" class="pay-btn" data-pay-order="' +
+        esc(oid) +
+        '">余额已到账，重试支付</button>' +
+        '<a class="pay-btn" href="' +
+        esc(payHref) +
+        '">返回支付页</a>' +
+        '<a class="pay-btn" href="orders.html">查看我的订单</a>' +
+        "</div></section>"
+    );
+  }
+
   function empty(title, desc) {
     paint(
       '<section class="pay-card"><h1>' +
@@ -987,6 +1017,7 @@
           esc("测试支付成功（TEST）") +
           "</button>";
       }
+      actions += '<a class="pay-btn" href="recharge.html">余额不足？去充值</a>';
       actions += '<a class="pay-btn" href="' + ordersHref + '">查看我的订单</a>';
     } else if (st === "awaiting_payment" && !needsManualProof && !reviewing) {
       if (canShowTestPay()) {
@@ -1145,6 +1176,10 @@
           var cached = readCache(orderId);
           if (cached) renderOrder(cached);
           failUi(body.message || "请使用测试支付成功（TEST）");
+          return;
+        }
+        if (body.code === "INSUFFICIENT_BALANCE" || /余额不足/.test(String(body.message || ""))) {
+          insufficientBalanceUi(orderId, body.message || "猫粮余额不足", body.rechargeUrl || "/recharge.html");
           return;
         }
         throw new Error(body.message || "支付失败");
