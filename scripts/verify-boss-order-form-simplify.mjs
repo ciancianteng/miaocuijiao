@@ -49,8 +49,11 @@ for (const [name, src] of [
 ]) {
   assert(!/data-po-region|data-mcj-team-region/.test(src), `${name} still has region field`);
   assert(!/data-po-contact|data-mcj-team-contact/.test(src), `${name} still has contact field`);
-  assert(/type="time"/.test(src), `${name} missing time picker`);
-  assert(/服务时段/.test(src), `${name} missing schedule label`);
+  assert(
+    /MCJTimePicker|data-po-start-time|data-mcj-team-start-time|type="time"/.test(src),
+    `${name} missing time picker`
+  );
+  assert(/服务时段|预计结束|开始时间/.test(src), `${name} missing schedule label`);
   assert(/游戏ID/.test(src), `${name} missing 游戏ID`);
 }
 

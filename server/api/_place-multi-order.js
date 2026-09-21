@@ -25,6 +25,67 @@ function childIdempotencyKey(parentKey, companionId, index) {
   return `${parentKey}:child:${companionId || index}`;
 }
 
+/** Columns often missing on older Production schemas. Keep values in description instead. */
+const OPTIONAL_ORDER_COLUMNS = [
+  "payment_method",
+  "notes",
+  "voice_mode",
+  "game_id_value",
+  "service_name",
+  "quantity",
+  "pricing_unit",
+  "paid_at",
+  "paid_cat_food",
+];
+
+function stripOptionalOrderColumns(row) {
+  const next = { ...(row || {}) };
+  for (const key of OPTIONAL_ORDER_COLUMNS) delete next[key];
+  return next;
+}
+
+function isMissingColumnError(err) {
+  return /column|schema cache|PGRST204|PGRST|Could not find/i.test(String(err?.message || err || ""));
+}
+
+/**
+ * Insert an orders row; if optional columns are absent, retry without them.
+ * Does NOT drop parent_order_id — that remains a hard multi-order requirement.
+ */
+async function insertOrderRow(deps, row) {
+  const { restUrl, supabaseJson, serviceHeaders } = deps;
+  try {
+    const rows = await supabaseJson(restUrl("orders"), {
+      method: "POST",
+      headers: serviceHeaders(),
+      body: JSON.stringify(row),
+    });
+    return rows?.[0] || null;
+  } catch (err) {
+    if (!isMissingColumnError(err)) throw err;
+    const core = stripOptionalOrderColumns(row);
+    try {
+      const rows = await supabaseJson(restUrl("orders"), {
+        method: "POST",
+        headers: serviceHeaders(),
+        body: JSON.stringify(core),
+      });
+      return rows?.[0] || null;
+    } catch (err2) {
+      // Last resort: also drop assignment_type if that column is the culprit.
+      if (!isMissingColumnError(err2)) throw err2;
+      const bare = { ...core };
+      delete bare.assignment_type;
+      const rows = await supabaseJson(restUrl("orders"), {
+        method: "POST",
+        headers: serviceHeaders(),
+        body: JSON.stringify(bare),
+      });
+      return rows?.[0] || null;
+    }
+  }
+}
+
 async function softCancelOrders(deps, ids, reason) {
   const { restUrl, supabaseJson, serviceHeaders, table = "orders" } = deps;
   for (const id of ids) {
@@ -309,6 +370,7 @@ export async function placeMultiOrder(ctx) {
   const parentDesc = [
     sharedNotes || "多人订单",
     `付款方式：${paymentMethod}`,
+    `语音方式：${voiceMode === "discord" ? "Discord语音房" : "游戏麦"}`,
     `子单数：${prepared.length}`,
     `总价：${groupTotal}`,
   ]
@@ -339,12 +401,7 @@ export async function placeMultiOrder(ctx) {
 
   let parent;
   try {
-    const rows = await supabaseJson(restUrl("orders"), {
-      method: "POST",
-      headers: serviceHeaders(),
-      body: JSON.stringify(parentRow),
-    });
-    parent = rows?.[0];
+    parent = await insertOrderRow(deps, parentRow);
   } catch (insertErr) {
     const msg = String(insertErr.message || "");
     if (/duplicate|unique|idempotency/i.test(msg)) {
@@ -367,30 +424,15 @@ export async function placeMultiOrder(ctx) {
         };
       }
     }
-    // Schema without parent_order_id / payment_method — retry core
-    if (/parent_order_id|payment_method|assignment_type|column|schema cache|PGRST/i.test(msg)) {
-      const core = { ...parentRow };
-      delete core.parent_order_id;
-      delete core.payment_method;
-      delete core.notes;
-      try {
-        const rows = await supabaseJson(restUrl("orders"), {
-          method: "POST",
-          headers: serviceHeaders(),
-          body: JSON.stringify(core),
-        });
-        parent = rows?.[0];
-      } catch (e2) {
-        return {
-          ok: false,
-          status: 503,
-          message: `多人订单 schema 未就绪（需要 parent_order_id migration）：${String(e2.message || e2).slice(0, 180)}`,
-          code: "MULTI_ORDER_SCHEMA_MISSING",
-        };
-      }
-    } else {
-      throw insertErr;
+    if (/parent_order_id/i.test(msg)) {
+      return {
+        ok: false,
+        status: 503,
+        message: `多人订单 schema 未就绪（需要 parent_order_id migration）：${msg.slice(0, 180)}`,
+        code: "MULTI_ORDER_SCHEMA_MISSING",
+      };
     }
+    throw insertErr;
   }
   if (!parent?.id) {
     return { ok: false, status: 500, message: "主订单创建失败。" };
@@ -417,6 +459,7 @@ export async function placeMultiOrder(ctx) {
         `小计快照：${line.totalAmount}`,
         line.gameId ? `游戏ID：${line.gameId}` : "",
         `付款方式：${paymentMethod}`,
+        `语音方式：${voiceMode === "discord" ? "Discord语音房" : "游戏麦"}`,
         line.companionName ? `指定陪玩：${line.companionName}` : "",
         `[[PARENT_ORDER]]${parent.id}`,
       ]
@@ -448,15 +491,10 @@ export async function placeMultiOrder(ctx) {
       };
       let child;
       try {
-        const rows = await supabaseJson(restUrl("orders"), {
-          method: "POST",
-          headers: serviceHeaders(),
-          body: JSON.stringify(childRow),
-        });
-        child = rows?.[0];
+        child = await insertOrderRow(deps, childRow);
       } catch (cerr) {
         const cmsg = String(cerr.message || "");
-        if (/parent_order_id|column|schema cache|PGRST/i.test(cmsg)) {
+        if (/parent_order_id/i.test(cmsg)) {
           await softCancelOrders(deps, createdIds, "child_schema_missing");
           return {
             ok: false,

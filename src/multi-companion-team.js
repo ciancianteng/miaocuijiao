@@ -100,7 +100,7 @@
     if (document.querySelector('link[data-mcj-team-css]')) return;
     var link = document.createElement("link");
     link.rel = "stylesheet";
-    link.href = "/src/multi-companion-team.css?v=20260921multiPrice";
+    link.href = "/src/multi-companion-team.css?v=20260921remaining1";
     link.setAttribute("data-mcj-team-css", "1");
     document.head.appendChild(link);
   }
@@ -338,28 +338,39 @@
   function syncBottomStackOffset() {
     try {
       var root = document.documentElement;
-      var actions =
-        document.querySelector(".profile-bottom-bar.pd-bottom-bar") ||
-        document.querySelector(".profile-bottom-bar") ||
-        document.querySelector(".mobile-bottom-nav.mcj-app-tabbar") ||
-        document.querySelector(".mcj-app-tabbar");
+      var candidates = [
+        document.querySelector(".profile-bottom-bar.pd-bottom-bar"),
+        document.querySelector(".profile-bottom-bar"),
+        document.querySelector(".mobile-bottom-nav.mcj-app-tabbar"),
+        document.querySelector(".mcj-app-tabbar"),
+      ];
+      var actions = null;
+      for (var i = 0; i < candidates.length; i++) {
+        var el = candidates[i];
+        if (!el) continue;
+        if (el.hidden) continue;
+        var style = window.getComputedStyle(el);
+        if (style.display === "none" || style.visibility === "hidden") continue;
+        var rect = el.getBoundingClientRect();
+        if (!(rect.height > 0)) continue;
+        actions = el;
+        break;
+      }
       var h = 0;
       if (actions) {
-        var rect = actions.getBoundingClientRect();
-        h = Math.max(0, Math.ceil(rect.height || 0));
-        // Include the bar's own bottom offset from the visual viewport edge.
-        var style = window.getComputedStyle(actions);
-        var bottomPx = parseFloat(style.bottom) || 0;
+        var r = actions.getBoundingClientRect();
+        h = Math.max(0, Math.ceil(r.height || 0));
+        var st = window.getComputedStyle(actions);
+        var bottomPx = parseFloat(st.bottom) || 0;
         if (bottomPx > 0) h += Math.ceil(bottomPx);
         else {
-          // fixed bar may use transform; fall back to viewport gap
-          var gap = Math.max(0, window.innerHeight - rect.bottom);
-          h += Math.ceil(gap);
+          var gap = Math.max(0, window.innerHeight - r.bottom);
+          // Ignore absurd gaps from off-screen / not-yet-laid-out bars.
+          if (gap < window.innerHeight * 0.45) h += Math.ceil(gap);
         }
       }
-      if (!(h > 0)) h = 64;
+      if (!(h > 0) || h > window.innerHeight * 0.5) h = 64;
       root.style.setProperty("--mcj-bottom-actions-h", h + "px");
-      // Team bar height for page padding
       var teamBar = document.querySelector("[data-mcj-team-bar]");
       var teamH = teamBar ? Math.ceil(teamBar.getBoundingClientRect().height || 0) : 0;
       root.style.setProperty("--mcj-team-bar-h", (teamH || 64) + "px");
@@ -802,7 +813,7 @@
           "<div><dt>小计</dt><dd>" +
           esc(String(lineSubtotal(l))) +
           "</dd></div>" +
-          "<div><dt>确认状态</dt><dd>待确认</dd></div>" +
+          "<div><dt>确认状态</dt><dd>待提交</dd></div>" +
           "</dl>" +
           '<div class="mcj-team-field"><span>游戏/服务</span><div class="mcj-team-chips">' +
           chips +
@@ -1379,6 +1390,7 @@
     },
     MAX_TEAM: MAX_TEAM,
     buildPayload: buildPayload,
+    syncBottomStackOffset: syncBottomStackOffset,
     _test: {
       lineSubtotal: lineSubtotal,
       isUnavailable: isUnavailable,
