@@ -13,6 +13,8 @@ assert.match(ui, /data-capp-select-all/);
 assert.match(ui, /已选择/);
 assert.match(ui, /批量通过/);
 assert.match(ui, /确认通过已选择的/);
+assert.match(ui, /data-capp-confirm-yes/);
+assert.match(ui, /data-capp-batch-result/);
 assert.match(ui, /batch_review_application/);
 assert.match(ui, /selectedEligibleIds/);
 assert.match(ui, /isBatchEligible/);

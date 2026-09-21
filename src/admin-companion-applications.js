@@ -13,6 +13,8 @@
     selectedIds: {},
     batchLevelId: "",
     batchBusy: false,
+    confirmCount: 0,
+    pendingBatch: null,
   };
 
   function certMethodOf(item) {
@@ -386,6 +388,11 @@
       ">" +
       (state.batchBusy ? "批量通过中…" : "批量通过") +
       "</button></div></div>" +
+      (state.confirmCount
+        ? '<div class="admin-sync-note" data-capp-confirm role="dialog" aria-modal="true"><strong>确认通过已选择的 ' +
+          state.confirmCount +
+          ' 位陪玩吗？</strong> 仅处理当前页已勾选的审核中对象。<button class="mini-btn primary-lite" type="button" data-capp-confirm-yes>确认通过</button> <button class="mini-btn" type="button" data-capp-confirm-no>取消</button></div>'
+        : "") +
       (state.message ? '<div class="admin-sync-note" data-capp-batch-result>' + esc(state.message) + "</div>" : "") +
       '<div class="table-wrap"><table><thead><tr><th><input type="checkbox" data-capp-select-all' +
       (allEligibleChecked ? " checked" : "") +
@@ -501,7 +508,6 @@
         alert("请先勾选当前页待审核陪玩。未勾选、其他筛选结果、已拒绝/已通过对象不会被提交。");
         return;
       }
-      if (!confirm("确认通过已选择的 " + ids.length + " 位陪玩吗？")) return;
       var levelById = {};
       var missingLevel = [];
       ids.forEach(function (id) {
@@ -513,6 +519,25 @@
         alert("已选陪玩中有 " + missingLevel.length + " 位未选择等级。请在行内选择等级，或在工具栏选择「批量通过使用等级」。");
         return;
       }
+      state.pendingBatch = { ids: ids, levelById: levelById };
+      state.confirmCount = ids.length;
+      paint();
+      return;
+    }
+    if (e.target.closest("[data-capp-confirm-no]")) {
+      state.confirmCount = 0;
+      state.pendingBatch = null;
+      paint();
+      return;
+    }
+    if (e.target.closest("[data-capp-confirm-yes]")) {
+      var pending = state.pendingBatch;
+      state.confirmCount = 0;
+      state.pendingBatch = null;
+      if (!pending || !pending.ids || !pending.ids.length) {
+        paint();
+        return;
+      }
       state.batchBusy = true;
       paint();
       api("/api/admin/players", {
@@ -520,9 +545,9 @@
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "batch_review_application",
-          ids: ids,
+          ids: pending.ids,
           levelId: state.batchLevelId || "",
-          levelById: levelById,
+          levelById: pending.levelById || {},
         }),
       })
         .then(function (res) {
@@ -533,7 +558,7 @@
             }
           });
           state.message = lines.join("；");
-          ids.forEach(function (id) {
+          (pending.ids || []).forEach(function (id) {
             var hit = (res.results || []).find(function (row) {
               return String(row.id) === String(id) && row.ok;
             });
@@ -542,11 +567,9 @@
           if (window.MCJAdminPlayerBridge && window.MCJAdminPlayerBridge.reloadList) {
             window.MCJAdminPlayerBridge.reloadList();
           }
-          alert(state.message);
         })
         .catch(function (err) {
           state.message = err.message || "批量通过失败";
-          alert(state.message);
         })
         .then(function () {
           state.batchBusy = false;
