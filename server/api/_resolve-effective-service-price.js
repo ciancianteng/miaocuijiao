@@ -14,7 +14,7 @@
  *
  * Never trusts client-submitted unit amounts — call sites snapshot server result.
  */
-import { priceForGame } from "./_game-prices.js";
+import { compactServiceKey, priceForGame } from "./_game-prices.js";
 
 const APPROVED_STATUSES = new Set(["approved", "active"]);
 const LEVEL_SEED_SOURCES = new Set(["level_default", "level_base_price"]);
@@ -59,6 +59,11 @@ function matchServiceRow(rows, { serviceId = "", gameName = "", serviceRowId = "
   if (name) {
     const exact = list.find((r) => serviceRowName(r) === name);
     if (exact) return exact;
+    const compact = compactServiceKey(name);
+    if (compact) {
+      const compactHits = list.filter((r) => compactServiceKey(serviceRowName(r)) === compact);
+      if (compactHits.length === 1) return compactHits[0];
+    }
     // Combined labels ("A、B") are not a service. Do not pick the first contained row
     // (that returned 陪跑@30 / 王者@30 instead of 三角洲手游国服@35).
     if (/[,，、|/]/.test(name)) return null;

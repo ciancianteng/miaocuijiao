@@ -33,6 +33,24 @@
     return Number.isFinite(n) ? Math.round(n * 100) / 100 : 0;
   }
 
+  function compactServiceKey(name) {
+    return String(name || "").trim().replace(/\s+/g, "");
+  }
+
+  function isServiceBlob(name) {
+    return /[,，、|/]/.test(String(name || ""));
+  }
+
+  function serviceNamesMatch(a, b) {
+    var left = String(a || "").trim();
+    var right = String(b || "").trim();
+    if (!left || !right) return false;
+    if (left === right) return true;
+    var c1 = compactServiceKey(left);
+    var c2 = compactServiceKey(right);
+    return !!(c1 && c2 && c1 === c2);
+  }
+
   function esc(v) {
     return String(v == null ? "" : v).replace(/[&<>"']/g, function (c) {
       return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
@@ -100,7 +118,7 @@
     if (document.querySelector('link[data-mcj-team-css]')) return;
     var link = document.createElement("link");
     link.rel = "stylesheet";
-    link.href = "/src/multi-companion-team.css?v=20260921multiPay1";
+    link.href = "/src/multi-companion-team.css?v=20260921availSot1";
     link.setAttribute("data-mcj-team-css", "1");
     document.head.appendChild(link);
   }
@@ -258,6 +276,9 @@
             hours: money(l.hours || 1),
             quantity: Math.max(1, Math.floor(money(l.quantity || 1) || 1)),
             services: Array.isArray(l.services) ? l.services : [],
+            priceSnapshot: money(l.priceSnapshot != null ? l.priceSnapshot : l.unitPrice),
+            availabilityStatus: l.availabilityStatus || "",
+            availabilityCheckedAt: l.availabilityCheckedAt || "",
             online: !!l.online,
           };
         }),
@@ -279,7 +300,16 @@
         sessionStorage.removeItem(STORAGE_KEY);
         return;
       }
-      state.lines = Array.isArray(data.lines) ? data.lines : [];
+      state.lines = Array.isArray(data.lines)
+        ? data.lines.map(function (l) {
+            var snap = money(l && (l.priceSnapshot != null ? l.priceSnapshot : l.unitPrice));
+            if (l && snap > 0) {
+              l.unitPrice = snap;
+              l.priceSnapshot = snap;
+            }
+            return l;
+          })
+        : [];
       state.sharedGameId = data.sharedGameId || "";
       state.sharedNotes = data.sharedNotes || "";
       state.sharedStartTime = normalizeTimeValue(data.sharedStartTime || "") || "";
@@ -326,6 +356,7 @@
   function continueToHall() {
     setPicking(true);
     state.expanded = false;
+    persist();
     renderBar();
     // Draft stays in sessionStorage (STORAGE_KEY). Only clearTeam() wipes it.
     location.href = HALL_HREF;
@@ -411,12 +442,40 @@
     return [{ name: name, price: money(companion.unitPrice || companion.price), serviceId: companion.serviceId || "" }];
   }
 
+  function companionAvailability(payload) {
+    payload = payload || {};
+    if (window.MCJCompanionPresence && typeof window.MCJCompanionPresence.fromCompanion === "function") {
+      return window.MCJCompanionPresence.fromCompanion(payload);
+    }
+    var st = String(payload.availabilityStatus || payload.status || "").toLowerCase();
+    if (st === "online" || st === "busy") {
+      return { code: st, canAcceptBossOrder: true, label: st };
+    }
+    if (
+      payload.online === true ||
+      payload.online === "1" ||
+      payload.online === 1 ||
+      payload.canOrderNow === true ||
+      payload.canAcceptBossOrder === true
+    ) {
+      return { code: "online", canAcceptBossOrder: true, label: "在线可接单" };
+    }
+    if (payload.online === false || payload.online === "0" || payload.online === 0) {
+      return { code: "offline", canAcceptBossOrder: false, label: "离线" };
+    }
+    return { code: st || "offline", canAcceptBossOrder: false, label: st || "离线" };
+  }
+
   function isUnavailable(payload) {
-    var st = String(payload.status || payload.availabilityStatus || payload.online || "").toLowerCase();
-    var text = String(payload.statusText || payload.availabilityText || "").toLowerCase();
-    if (/offline|离线|休息|不可接|unavailable|busy/.test(st + " " + text)) return true;
-    if (payload.online === false || payload.online === "0" || payload.online === "false") return true;
-    return false;
+    var p = companionAvailability(payload);
+    return !p.canAcceptBossOrder;
+  }
+
+  function unavailableReason(payload) {
+    if (window.MCJCompanionPresence && typeof window.MCJCompanionPresence.unavailableReason === "function") {
+      return window.MCJCompanionPresence.unavailableReason(payload || {});
+    }
+    return isUnavailable(payload) ? "该陪玩当前不可接单" : "";
   }
 
   function addCompanion(raw) {
@@ -429,15 +488,15 @@
       return { ok: false, error: "missing_id" };
     }
     if (findLine(companionId)) {
-      toast("该陪玩已在一起下单列表中");
-      return { ok: false, error: "duplicate" };
+      toast("已加入一起下单");
+      return { ok: false, error: "duplicate", alreadyInTeam: true };
     }
     if (state.lines.length >= MAX_TEAM) {
       toast("一起下单最多 " + MAX_TEAM + " 位陪玩");
       return { ok: false, error: "max" };
     }
     if (isUnavailable(raw || {})) {
-      toast("该陪玩当前不可接单");
+      toast(unavailableReason(raw || {}) || "该陪玩当前不可接单");
       return { ok: false, error: "unavailable" };
     }
     var unitPrice = money(raw.unitPrice || raw.priceValue || raw.price || raw.price_value);
@@ -465,10 +524,11 @@
     // Prefer explicit selection only — never silently rewrite to services[0]
     // when the user already chose a service (e.g. 三角洲@35 → 王者荣耀@30).
     var preferService = String(raw.service || raw.serviceType || "").trim();
+    if (isServiceBlob(preferService) || preferService === "陪玩") preferService = "";
     // game blobs like "A,B,C" are not a single selected service name
     if (!preferService) {
       var gameHint = String(raw.game || "").trim();
-      if (gameHint && gameHint.indexOf(",") < 0 && gameHint.indexOf("，") < 0 && gameHint.indexOf("、") < 0) {
+      if (gameHint && !isServiceBlob(gameHint) && gameHint !== "陪玩") {
         preferService = gameHint;
       }
     }
@@ -484,10 +544,10 @@
         })) ||
       (preferService &&
         services.find(function (s) {
-          return String(s.name) === preferService;
+          return serviceNamesMatch(s.name, preferService);
         })) ||
       null;
-    if (!matched && preferService && !/[,，、|/]/.test(preferService)) {
+    if (!matched && preferService && !isServiceBlob(preferService)) {
       var fuzzyBest = null;
       var fuzzyLen = 0;
       var fuzzyTie = false;
@@ -504,10 +564,13 @@
       if (fuzzyBest && !fuzzyTie) matched = fuzzyBest;
     }
     var selected = matched;
+    // No explicit chip → do NOT auto-pick services[0] (level-default 30).
     if (!selected && !hasExplicit) {
-      selected = services.find(function (s) {
-        return money(s.price) > 0;
-      }) || services[0];
+      if (services.length === 1 && money(services[0].price) > 0) selected = services[0];
+      else {
+        toast("请先选择具体服务后再加入队伍");
+        return { ok: false, error: "need_service" };
+      }
     }
     // SoT: matched service-specific price ?? explicit unitPrice ?? first catalog price.
     // Explicit selection that missed catalog match MUST keep caller unitPrice/name/id —
@@ -532,11 +595,13 @@
       toast("该陪玩所选服务暂无有效单价");
       return { ok: false, error: "no_price" };
     }
+    var avail = companionAvailability(raw || {});
     var line = {
       companionId: companionId,
       companionName: companion.companionName,
       avatar: companion.avatar,
       unitPrice: lineUnit,
+      priceSnapshot: lineUnit,
       service: lineService,
       serviceType: lineService,
       serviceId: lineServiceId,
@@ -545,6 +610,8 @@
       quantity: Math.max(1, Math.floor(money(raw.quantity || 1) || 1)),
       services: services,
       online: companion.online,
+      availabilityStatus: avail.code || "",
+      availabilityCheckedAt: new Date().toISOString(),
     };
     state.lines.push(line);
     persist();
@@ -583,10 +650,11 @@
             return String(s.serviceId || s.id || "") === sid;
           })) ||
         (line.services || []).find(function (s) {
-          return s.name === name;
+          return serviceNamesMatch(s.name, name);
         });
       if (hit && money(hit.price) > 0) line.unitPrice = money(hit.price);
       else if (patch.unitPrice != null && money(patch.unitPrice) > 0) line.unitPrice = money(patch.unitPrice);
+      if (money(line.unitPrice) > 0) line.priceSnapshot = money(line.unitPrice);
       if (hit) {
         line.serviceId = hit.serviceId || hit.id || sid || line.serviceId || "";
         name = hit.name || name;
@@ -742,7 +810,7 @@
         }
         var chips = services
           .map(function (s) {
-            var active = s.name === l.service;
+            var active = serviceNamesMatch(s.name, l.service);
             return (
               '<button type="button" class="mcj-team-chip' +
               (active ? " active" : "") +
@@ -1012,7 +1080,7 @@
       companions: state.lines.map(function (l) {
         var hours = Math.max(0.5, money(l.hours || 1));
         var quantity = Math.max(1, Math.floor(money(l.quantity || 1) || 1));
-        var unitPrice = money(l.unitPrice);
+        var unitPrice = money(l.priceSnapshot != null ? l.priceSnapshot : l.unitPrice);
         var totalAmount = Math.round(unitPrice * hours * quantity * 100) / 100;
         return {
           companionId: l.companionId,
@@ -1241,7 +1309,7 @@
     for (var i = 0; !hit && i < preferNames.length; i++) {
       var want = preferNames[i];
       hit = services.find(function (s) {
-        return String(s.name) === want;
+        return serviceNamesMatch(s.name, want);
       });
       if (!hit) {
         hit = services.find(function (s) {
@@ -1395,6 +1463,7 @@
         service: svc.getAttribute("data-svc"),
         serviceType: svc.getAttribute("data-svc"),
         serviceId: svc.getAttribute("data-svc-id") || "",
+        unitPrice: money(svc.getAttribute("data-svc-price")),
       });
       paintSheet();
       return;
@@ -1504,6 +1573,8 @@
     _test: {
       lineSubtotal: lineSubtotal,
       isUnavailable: isUnavailable,
+      unavailableReason: unavailableReason,
+      companionAvailability: companionAvailability,
       findLine: findLine,
       state: state,
       syncBottomStackOffset: syncBottomStackOffset,

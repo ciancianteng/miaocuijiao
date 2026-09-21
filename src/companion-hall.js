@@ -202,6 +202,17 @@
             : [],
         status: normalizeStatus(normalized.availabilityStatus || normalized.availabilityText || normalized.status || normalized.onlineStatus),
         availabilityStatus: String(normalized.availabilityStatus || "").toLowerCase() || "",
+        canOrderNow: !!normalized.canOrderNow,
+        canAcceptBossOrder: normalized.canAcceptBossOrder != null
+          ? !!normalized.canAcceptBossOrder
+          : (window.MCJCompanionPresence && window.MCJCompanionPresence.canAcceptBossOrder
+              ? window.MCJCompanionPresence.canAcceptBossOrder(normalized)
+              : String(normalized.availabilityStatus || "").toLowerCase() === "online" ||
+                String(normalized.availabilityStatus || "").toLowerCase() === "busy"),
+        online: normalized.online != null
+          ? !!normalized.online
+          : String(normalized.availabilityStatus || "").toLowerCase() === "online" ||
+            String(normalized.availabilityStatus || "").toLowerCase() === "busy",
         publicId: normalized.publicId || "",
         companionUid: normalized.companionUid != null ? normalized.companionUid : (normalized.companion_uid != null ? normalized.companion_uid : ""),
         avatar: avatarUrl(normalized.avatar || normalized.cover || normalized.image),
@@ -585,7 +596,7 @@
       '" data-hall-status-text="' +
       esc(item.status || "") +
       '" data-hall-online="' +
-      esc(item.online === false || /离线|offline/i.test(String(item.status || "")) ? "0" : "1") +
+      esc(item.canAcceptBossOrder ? "1" : "0") +
       '">立即下单</button><button type="button" class="companion-card-action team-add" data-hall-team-add="' +
       esc(uuid) +
       '" data-hall-name="' +
@@ -601,7 +612,7 @@
       '" data-hall-status-text="' +
       esc(item.status || "") +
       '" data-hall-online="' +
-      esc(item.online === false || /离线|offline/i.test(String(item.status || "")) ? "0" : "1") +
+      esc(item.canAcceptBossOrder ? "1" : "0") +
       '">加入一起下单</button></div>' +
       "</div>" +
       "</article>"
@@ -709,6 +720,8 @@
         pricingUnit: "小时",
         availabilityStatus: orderBtn.getAttribute("data-hall-status") || "",
         availabilityText: orderBtn.getAttribute("data-hall-status-text") || "",
+        online: orderBtn.getAttribute("data-hall-online") === "1",
+        canAcceptBossOrder: orderBtn.getAttribute("data-hall-online") === "1",
       });
     });
   }

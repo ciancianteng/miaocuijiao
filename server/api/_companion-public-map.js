@@ -83,7 +83,7 @@ export function resolveCompanionCover(profile = {}, row = {}, extras = {}) {
 }
 
 export function availabilityCode(row = {}) {
-  const raw = String(row.availability_status || row.online_status || "offline").toLowerCase();
+  const raw = String(row.availability_status || row.online_status || row.availabilityStatus || "offline").toLowerCase();
   if (raw === "online") return "online";
   if (raw === "busy") return "busy";
   if (raw === "paused") return "paused";
@@ -92,6 +92,15 @@ export function availabilityCode(row = {}) {
 
 export function availabilityText(code) {
   return ({ online: "在线可接单", busy: "忙碌中", paused: "暂停接单", offline: "离线" })[code] || "离线";
+}
+
+/**
+ * Boss-facing order eligibility. Matches place_order / place_multi_order:
+ * online and busy can receive new boss orders; paused / offline cannot.
+ */
+export function canCompanionAcceptBossOrder(row = {}) {
+  const code = availabilityCode(row);
+  return code === "online" || code === "busy";
 }
 
 export function isGarbledName(value) {
@@ -153,6 +162,9 @@ export function mapCompanionPublicFields(row = {}, profile = {}, extras = {}) {
     availabilityText: availabilityText(avail),
     onlineStatus: availabilityText(avail),
     status: availabilityText(avail),
+    canAcceptBossOrder: avail === "online" || avail === "busy",
+    canOrderNow: avail === "online",
+    online: avail === "online" || avail === "busy",
     verificationStatus: row.verification_status || "",
   };
 }

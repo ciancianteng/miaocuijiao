@@ -68,6 +68,21 @@
     var n = Number(v || 0);
     return Number.isFinite(n) ? n : 0;
   }
+  function compactServiceKey(name) {
+    return String(name || "").trim().replace(/\s+/g, "");
+  }
+  function isServiceBlob(name) {
+    return /[,，、|/]/.test(String(name || ""));
+  }
+  function serviceNamesMatch(a, b) {
+    var left = String(a || "").trim();
+    var right = String(b || "").trim();
+    if (!left || !right) return false;
+    if (left === right) return true;
+    var c1 = compactServiceKey(left);
+    var c2 = compactServiceKey(right);
+    return !!(c1 && c2 && c1 === c2);
+  }
   function moneyText(v) {
     if (window.MCJCurrency) return window.MCJCurrency.formatAmount(v);
     return "🐱 " + money(v).toFixed(2).replace(/\.00$/, "") + " 猫粮";
@@ -123,7 +138,7 @@
     if (document.querySelector('link[data-mcj-place-order-css]')) return;
     var link = document.createElement("link");
     link.rel = "stylesheet";
-    link.href = "/src/place-order-modal.css?v=20260920multiMobileP0";
+    link.href = "/src/place-order-modal.css?v=20260921availSot1";
     link.setAttribute("data-mcj-place-order-css", "1");
     document.head.appendChild(link);
   }
@@ -675,7 +690,7 @@
         var name = btn.getAttribute("data-po-service") || "";
         var list = resolveServices(state.companion);
         var svc = list.find(function (s) {
-          return s.name === name;
+          return serviceNamesMatch(s.name, name);
         });
         if (svc) applySelectedService(svc);
       });
@@ -719,7 +734,7 @@
                 return String(s.serviceId || "") === sid || String(s.id || "") === sid;
               })) ||
             list.find(function (s) {
-              return s.name === state.service;
+              return serviceNamesMatch(s.name, state.service);
             }) ||
             null;
           // Never silently rewrite an existing selection to list[0] (often level-default 30).
@@ -739,9 +754,9 @@
     if (LEGACY_SERVICE_NAMES[s]) s = "";
     if (s) {
       for (var i = 0; i < list.length; i++) {
-        if (list[i].name === s) return { service: list[i].name, custom: "", item: list[i] };
+        if (serviceNamesMatch(list[i].name, s)) return { service: list[i].name, custom: "", item: list[i] };
       }
-      if (!/[,，、|/]/.test(s)) {
+      if (!isServiceBlob(s)) {
         var best = null;
         var bestLen = 0;
         var tie = false;
@@ -1001,7 +1016,7 @@
     if (
       companionServices.length === 1 &&
       !companionServices.some(function (s) {
-        return s.name === state.service;
+        return serviceNamesMatch(s.name, state.service);
       })
     ) {
       state.service = companionServices[0].name;
@@ -1253,7 +1268,7 @@
         var name = btn.getAttribute("data-po-service") || "";
         var list = resolveServices(state.companion);
         var svc = list.find(function (s) {
-          return s.name === name;
+          return serviceNamesMatch(s.name, name);
         }) || {
           name: name,
           serviceId: btn.getAttribute("data-po-service-id") || "",
@@ -1512,7 +1527,7 @@
         failValidate("该陪玩暂无可下单服务项目");
         return;
       }
-      if (!state.service || !svcList.some(function (s) { return s.name === state.service; })) {
+      if (!state.service || !svcList.some(function (s) { return serviceNamesMatch(s.name, state.service); })) {
         failValidate("请选择游戏/服务项目");
         return;
       }
@@ -1748,13 +1763,14 @@
       return;
     }
     var bootServices = resolveServices(companion);
-    if (!(companion.unitPrice > 0) && bootServices[0] && bootServices[0].price > 0) {
+    // Never seed listing/level 30 from services[0] when several catalog rows exist.
+    if (!(companion.unitPrice > 0) && bootServices.length === 1 && bootServices[0].price > 0) {
       companion.unitPrice = bootServices[0].price;
     }
     if (!(companion.unitPrice > 0) && !bootServices.length) {
       // Allow open; hydrateFromCatalog may still bring prices.
       companion.unitPrice = companion.unitPrice || 0;
-    } else if (!(companion.unitPrice > 0)) {
+    } else if (!(companion.unitPrice > 0) && bootServices.length <= 1) {
       failOpen("该陪玩暂无有效单价，暂不可下单");
       console.error("[MCJPlaceOrder] invalid unitPrice", companion);
       return;
@@ -1860,7 +1876,7 @@
             return String(s.serviceId || "") === keepSid || String(s.id || "") === keepSid;
           })) ||
         keepList.find(function (s) {
-          return s.name === state.service;
+          return serviceNamesMatch(s.name, state.service);
         }) ||
         null;
       if (keep) applySelectedService(keep);

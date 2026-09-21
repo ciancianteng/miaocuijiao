@@ -78,10 +78,11 @@ function line(name, hours = 1) {
 
 // Test 2 — same companion, two services; selecting B must be 35 not level 30
 {
-  const picked = line("三角洲 手游 国服");
-  assert.equal(picked.unit, 35);
-  assert.notEqual(picked.unit, level.base_price);
-  assert.equal(picked.source, "admin_set");
+  const exact = line("三角洲 手游 国服");
+  assert.equal(exact.unit, 35);
+  const spaced = line("三角洲手游 国服");
+  assert.equal(spaced.unit, 35);
+  assert.equal(priceForGame(companion, "三角洲手游 国服"), 35);
 }
 
 // Test 3 — snapshot is the resolved number, later catalog mutation does not change it
@@ -137,7 +138,9 @@ function line(name, hours = 1) {
   assert.match(modal, /must not inject services\[0\]/);
   assert.match(modal, /never silently pick services\[0\] among many/);
   assert.match(modal, /请先选择具体服务后再加入队伍/);
-  assert.match(team, /fuzzyTie/);
+  assert.match(team, /compactServiceKey/);
+  assert.match(modal, /compactServiceKey/);
+  assert.match(modal, /requireServicePick/);
   assert.match(team, /do NOT auto-pick services\[0\]/);
   assert.match(team, /openPlaceOrderForHallCompanion/);
   assert.match(team, /requireServicePick:\s*true/);
