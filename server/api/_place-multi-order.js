@@ -187,10 +187,13 @@ export async function placeMultiOrder(ctx) {
           String(l.code) === String(cp.level_id || "") ||
           String(l.name) === String(cp.level_name || "")
       ) || null;
-    const resolved = await resolveOrderUnitPrice({
+    const resolvePrice =
+      typeof deps.resolveOrderUnitPrice === "function" ? deps.resolveOrderUnitPrice : resolveOrderUnitPrice;
+    const resolved = await resolvePrice({
       companion: cp,
       companionId,
       serviceId,
+      serviceRowId: String(line.serviceRowId || line.service_row_id || "").trim(),
       gameName: gameHint,
       level,
     });
@@ -252,14 +255,18 @@ export async function placeMultiOrder(ctx) {
           line.service ||
           "陪玩"
       ).trim() || "陪玩";
+    const serviceRowId = String(
+      resolved.serviceRow?.id || line.serviceRowId || line.service_row_id || ""
+    ).trim();
     const resolvedServiceId = String(
-      resolved.serviceRow?.service_id || resolved.serviceRow?.serviceId || serviceId || ""
+      resolved.serviceRow?.service_id || resolved.serviceRow?.serviceId || serviceId || serviceRowId || ""
     ).trim();
     prepared.push({
       companionId,
       companionName,
       serviceType,
       serviceId: resolvedServiceId,
+      serviceRowId,
       gameId,
       hours,
       quantity,
@@ -402,7 +409,12 @@ export async function placeMultiOrder(ctx) {
       const childNo = await nextOrderNo();
       const title = `${line.serviceType} · ${line.companionName || line.companionId} · ${line.hours}小时`;
       const description = [
-        sharedNotes || `${line.serviceType}订单（多人子单）`,
+        `服务：${line.serviceType}`,
+        line.serviceRowId ? `service_row_id：${line.serviceRowId}` : "",
+        line.serviceId ? `service_id：${line.serviceId}` : "",
+        `单价快照：${line.unitPrice}`,
+        `时长：${line.hours}`,
+        `小计快照：${line.totalAmount}`,
         line.gameId ? `游戏ID：${line.gameId}` : "",
         `付款方式：${paymentMethod}`,
         line.companionName ? `指定陪玩：${line.companionName}` : "",

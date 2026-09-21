@@ -100,7 +100,7 @@
     if (document.querySelector('link[data-mcj-team-css]')) return;
     var link = document.createElement("link");
     link.rel = "stylesheet";
-    link.href = "/src/multi-companion-team.css?v=20260920multiMobileP0";
+    link.href = "/src/multi-companion-team.css?v=20260921multiPrice";
     link.setAttribute("data-mcj-team-css", "1");
     document.head.appendChild(link);
   }
@@ -220,6 +220,13 @@
     var duration = maxTeamDurationHours();
     var end = addHoursToTime(start, duration);
     if (endEl) endEl.textContent = end;
+    mask.querySelectorAll("[data-line-start]").forEach(function (el) {
+      el.textContent = start;
+    });
+    mask.querySelectorAll("[data-line-end]").forEach(function (el) {
+      var hours = Number(el.getAttribute("data-line-hours") || 1);
+      el.textContent = addHoursToTime(start, hours);
+    });
     if (hintEl) {
       hintEl.textContent =
         "服务时段：" + scheduleWindowLabel(start, end) + "（按最长 " + duration + " 小时自动计算）";
@@ -467,12 +474,23 @@
         services.find(function (s) {
           return String(s.name) === preferService;
         })) ||
-      (preferService &&
-        services.find(function (s) {
-          var n = String(s.name || "");
-          return n && (preferService.indexOf(n) >= 0 || n.indexOf(preferService) >= 0);
-        })) ||
       null;
+    if (!matched && preferService && !/[,，、|/]/.test(preferService)) {
+      var fuzzyBest = null;
+      var fuzzyLen = 0;
+      var fuzzyTie = false;
+      services.forEach(function (s) {
+        var n = String(s.name || "");
+        if (!n) return;
+        if (preferService.indexOf(n) < 0 && n.indexOf(preferService) < 0) return;
+        if (n.length > fuzzyLen) {
+          fuzzyBest = s;
+          fuzzyLen = n.length;
+          fuzzyTie = false;
+        } else if (n.length === fuzzyLen) fuzzyTie = true;
+      });
+      if (fuzzyBest && !fuzzyTie) matched = fuzzyBest;
+    }
     var selected = matched;
     if (!selected && !hasExplicit) {
       selected = services.find(function (s) {
@@ -763,6 +781,29 @@
           esc(l.companionId) +
           '">移除</button>' +
           "</div>" +
+          '<dl class="mcj-team-line-meta">' +
+          "<div><dt>服务</dt><dd>" +
+          esc(l.service || "未选择") +
+          "</dd></div>" +
+          "<div><dt>开始</dt><dd data-line-start>" +
+          esc(ensureSharedStartTime()) +
+          "</dd></div>" +
+          "<div><dt>结束</dt><dd data-line-end data-line-hours=\"" +
+          esc(String(l.hours || 1)) +
+          "\">" +
+          esc(addHoursToTime(ensureSharedStartTime(), l.hours || 1)) +
+          "</dd></div>" +
+          "<div><dt>时长</dt><dd>" +
+          esc(String(l.hours || 1)) +
+          " 小时</dd></div>" +
+          "<div><dt>单价</dt><dd>" +
+          esc(String(l.unitPrice)) +
+          "</dd></div>" +
+          "<div><dt>小计</dt><dd>" +
+          esc(String(lineSubtotal(l))) +
+          "</dd></div>" +
+          "<div><dt>确认状态</dt><dd>待确认</dd></div>" +
+          "</dl>" +
           '<div class="mcj-team-field"><span>游戏/服务</span><div class="mcj-team-chips">' +
           chips +
           "</div></div>" +

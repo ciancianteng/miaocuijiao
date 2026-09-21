@@ -739,12 +739,29 @@
     if (LEGACY_SERVICE_NAMES[s]) s = "";
     if (s) {
       for (var i = 0; i < list.length; i++) {
-        if (list[i].name === s || s.indexOf(list[i].name) !== -1 || list[i].name.indexOf(s) !== -1) {
-          return { service: list[i].name, custom: "", item: list[i] };
+        if (list[i].name === s) return { service: list[i].name, custom: "", item: list[i] };
+      }
+      if (!/[,，、|/]/.test(s)) {
+        var best = null;
+        var bestLen = 0;
+        var tie = false;
+        for (var j = 0; j < list.length; j++) {
+          var n = String(list[j].name || "");
+          if (!n) continue;
+          if (s.indexOf(n) === -1 && n.indexOf(s) === -1) continue;
+          if (n.length > bestLen) {
+            best = list[j];
+            bestLen = n.length;
+            tie = false;
+          } else if (n.length === bestLen) tie = true;
         }
+        if (best && !tie) return { service: best.name, custom: "", item: best };
+      } else {
+        // "A、B、C" is not a selected service. Never guess list[0] (often 陪跑/等级价 30).
+        return { service: "", custom: "", item: null };
       }
     }
-    if (list[0]) return { service: list[0].name, custom: "", item: list[0] };
+    if (list[0] && list.length === 1) return { service: list[0].name, custom: "", item: list[0] };
     return { service: "", custom: "", item: null };
   }
   function currentHours() {
@@ -1433,7 +1450,7 @@
       service: currentServiceLabel(),
       serviceType: currentServiceLabel(),
       serviceId: state.selectedServiceId || "",
-      game: c.game || currentServiceLabel(),
+      game: currentServiceLabel(),
       gamePrices: c.gamePrices || c.game_prices || {},
       hours: currentHours(),
       quantity: currentQuantity(),
@@ -1782,8 +1799,9 @@
     // Soft update: catalog refresh must NOT remount and wipe filled fields / kill submit.
     if (state.open && state.companion && String(state.companion.companionId) === companionId) {
       if (state.submitting) return;
+      // Listing/level price (often 30) must not overwrite a selected service price (e.g. 35).
       var nextPrice = money(unitPrice);
-      if (nextPrice > 0) state.companion.unitPrice = nextPrice;
+      if (nextPrice > 0 && !state.service && !state.selectedServiceId) state.companion.unitPrice = nextPrice;
       if (companionName) state.companion.companionName = companionName;
       if (extras.avatar || src.avatar || src.cover) {
         state.companion.avatar = extras.avatar || src.avatar || src.cover || state.companion.avatar;
@@ -1822,7 +1840,7 @@
         }
       } catch (e) {}
       var matched = matchService(
-        extras.service || src.service || state.service || state.companion.service,
+        extras.service || state.service || src.service || state.companion.service,
         state.companion
       );
       if (matched.item) applySelectedService(matched.item);

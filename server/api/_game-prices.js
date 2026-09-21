@@ -134,18 +134,42 @@ export function parseServiceTypes(value, { fallbackPlayWhenGame = false, hasGame
   return types;
 }
 
+function isMultiServiceBlob(name) {
+  return /[,，、|/]/.test(String(name || ""));
+}
+
+/**
+ * Service-specific game_prices lookup.
+ * Exact service id / exact service name always win.
+ * A combined game blob ("王者荣耀、三角洲…") must NOT silently resolve to the
+ * first contained key (often the level/listing price). Fuzzy is longest-unique
+ * only, and only for a single service name.
+ * Listing companion.price is used only when the caller did not name a service.
+ */
 export function priceForGame(companion = {}, gameName = "", serviceId = "") {
   const prices = readGamePrices(companion);
   const id = String(serviceId || "").trim();
-  if (id && prices[id] > 0) return prices[id];
+  if (id && money(prices[id]) > 0) return money(prices[id]);
   const name = String(gameName || "").trim();
-  if (name && prices[name] > 0) return prices[name];
-  // fuzzy match (LOL / 王者 etc.)
-  const key = Object.keys(prices).find((k) => name && (name.includes(k) || k.includes(name)));
-  if (key && prices[key] > 0) return prices[key];
+  if (name && money(prices[name]) > 0) return money(prices[name]);
+  if (name && !isMultiServiceBlob(name)) {
+    const keys = Object.keys(prices).filter((k) => {
+      if (!k || /^[0-9a-f-]{36}$/i.test(k)) return false;
+      if (!(money(prices[k]) > 0)) return false;
+      return name.includes(k) || k.includes(name);
+    });
+    keys.sort((a, b) => b.length - a.length);
+    if (keys.length) {
+      const bestLen = keys[0].length;
+      const tied = keys.filter((k) => k.length === bestLen);
+      if (tied.length === 1) return money(prices[tied[0]]);
+    }
+    return 0;
+  }
+  if (name) return 0;
   const games = splitGames(companion.game || companion.main_service);
   for (const g of games) {
-    if (prices[g] > 0) return prices[g];
+    if (money(prices[g]) > 0) return money(prices[g]);
   }
   return money(companion.price);
 }

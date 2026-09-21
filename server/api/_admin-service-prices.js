@@ -343,6 +343,7 @@ export async function resolveOrderUnitPrice({
   companionId,
   serviceId = "",
   gameName = "",
+  serviceRowId = "",
   level = null,
 } = {}) {
   const rows = await loadCompanionServiceRows(companionId || companion?.user_id);
@@ -351,6 +352,7 @@ export async function resolveOrderUnitPrice({
     companionId: companionId || companion?.user_id,
     serviceId,
     gameName,
+    serviceRowId,
     serviceRows: rows,
     level,
   });
