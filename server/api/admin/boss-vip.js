@@ -5,6 +5,7 @@
 import { requireAdmin } from "../_admin-auth.js";
 import {
   applyBossVipBackfill,
+  deleteVipLevel,
   ensureBossVipReady,
   listVipLevelsForAdmin,
   previewBossVipBackfill,
@@ -85,6 +86,14 @@ export default async function handler(req, res) {
         message: active ? "已启用" : "已停用",
         level: viewVipLevel(row),
       });
+    }
+
+    if (action === "delete" || action === "remove") {
+      const id = String(body.id || "").trim();
+      if (!id) return json(res, 400, { ok: false, message: "缺少等级" });
+      const result = await deleteVipLevel(id);
+      await recastAllBosses({ notify: false, reason: "threshold_change" });
+      return json(res, 200, { ok: true, message: "已删除未使用等级", ...result });
     }
 
     if (action === "reorder") {

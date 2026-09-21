@@ -3,6 +3,9 @@
  * node scripts/verify-boss-vip-offline.mjs
  */
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   applyRefundToTx,
   buildUpgradeNotice,
@@ -15,6 +18,8 @@ import {
   viewBossVipSnapshot,
 } from "../server/api/_boss-vip.js";
 import { indexProfilesForStats } from "../server/api/_test-accounts.js";
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 const levels = [
   { id: "lv0", name: "普通会员", spend_threshold: 0, benefits: "", sort_order: 0, is_active: true },
@@ -186,9 +191,69 @@ check("Boss 前端 snapshot 字段", () => {
   const snap = viewBossVipSnapshot({ confirmedSpend: 760, resolved });
   assert.equal(snap.currentLevelName, "VIP1");
   assert.equal(snap.confirmedSpend, 760);
+  assert.equal(snap.currentThreshold, 500);
   assert.equal(snap.nextLevelName, "VIP2");
   assert.equal(snap.nextThreshold, 1500);
   assert.equal(snap.remaining, 740);
+  assert.equal(snap.isMaxLevel, false);
+});
+
+check("CASE A 无消费 → 普通会员且非最高（有下一等级）", () => {
+  const resolved = resolveVipLevel(0, levels);
+  const snap = viewBossVipSnapshot({ confirmedSpend: 0, resolved });
+  assert.equal(snap.currentLevelName, "普通会员");
+  assert.equal(snap.isMaxLevel, false);
+  assert.equal(snap.nextLevelName, "VIP1");
+});
+
+check("CASE B 达到 Level2 门槛 → 自动升级", () => {
+  const resolved = resolveVipLevel(500, levels);
+  assert.equal(resolved.current.name, "VIP1");
+});
+
+check("CASE C 差 1 猫粮 → 不能提前升级", () => {
+  const resolved = resolveVipLevel(499, levels);
+  assert.equal(resolved.current.name, "普通会员");
+  assert.equal(resolved.next.name, "VIP1");
+  assert.equal(resolved.remaining, 1);
+});
+
+check("CASE D 一次跨两级 → 进入正确最高符合等级", () => {
+  const resolved = resolveVipLevel(1600, levels);
+  assert.equal(resolved.current.name, "VIP2");
+});
+
+check("CASE J 真正最高等级 → isMaxLevel", () => {
+  const resolved = resolveVipLevel(99999, levels);
+  const snap = viewBossVipSnapshot({ confirmedSpend: 99999, resolved });
+  assert.equal(snap.currentLevelName, "VIP3");
+  assert.equal(snap.isMaxLevel, true);
+  assert.equal(snap.nextLevelName, "");
+});
+
+check("进度分段公式 (600-500)/(2000-500)", () => {
+  const custom = [
+    { id: "a", name: "银卡", spend_threshold: 500, benefits: "优先", sort_order: 10, is_active: true },
+    { id: "b", name: "金卡", spend_threshold: 2000, benefits: "专属", sort_order: 20, is_active: true },
+  ];
+  const resolved = resolveVipLevel(600, custom);
+  const snap = viewBossVipSnapshot({ confirmedSpend: 600, resolved });
+  assert.equal(snap.currentThreshold, 500);
+  assert.equal(snap.nextThreshold, 2000);
+  const pct = Math.round(((600 - 500) / (2000 - 500)) * 1000) / 10;
+  assert.equal(pct, 6.7);
+});
+
+check("Admin UI source has multi-benefit + delete guards", () => {
+  const admin = readFileSync(path.join(root, "src/admin-boss-vip.js"), "utf8");
+  const api = readFileSync(path.join(root, "server/api/admin/boss-vip.js"), "utf8");
+  const core = readFileSync(path.join(root, "server/api/_boss-vip.js"), "utf8");
+  assert.match(admin, /data-vip-benefit-add/);
+  assert.match(admin, /data-vip-delete/);
+  assert.match(api, /action === "delete"/);
+  assert.match(core, /deleteVipLevel/);
+  assert.match(core, /该等级仍有老板使用/);
+  assert.match(core, /currentThreshold/);
 });
 
 const failed = results.filter((row) => !row.pass);
