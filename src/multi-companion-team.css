@@ -53,6 +53,14 @@ body.profile-detail-page:has(.mcj-team-bar) {
   ) !important;
 }
 
+/* Hall: team bar sits above the app tabbar — keep last cards scrollable. */
+html.mcj-team-bar-on .companion-hall-page,
+body:has(.mcj-team-bar) .companion-hall-page {
+  padding-bottom: calc(
+    var(--mcj-bottom-actions-h, 64px) + var(--mcj-team-bar-h, 72px) + 28px + env(safe-area-inset-bottom, 0px)
+  ) !important;
+}
+
 .mcj-team-bar-actions {
   display: flex;
   align-items: center;

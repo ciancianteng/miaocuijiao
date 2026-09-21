@@ -597,6 +597,12 @@
       b.innerHTML =
         '<a class="pd-bottom-secondary" href="support.html?start=1">咨询客服</a>' +
         '<button type="button" class="order-now mcj-primary pd-bottom-primary" data-open-order>立即下单</button>';
+      // Team bar may have measured a hidden CTA bar earlier — resync after paint.
+      if (window.MCJMultiCompanionTeam && typeof window.MCJMultiCompanionTeam.syncBottomStackOffset === "function") {
+        requestAnimationFrame(function () {
+          window.MCJMultiCompanionTeam.syncBottomStackOffset();
+        });
+      }
     }
 
     // Empty / corrupt voice files must not leave a dead 0:00/0:00 control.
