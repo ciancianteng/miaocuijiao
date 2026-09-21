@@ -451,9 +451,10 @@
             );
           })
           .join("")
-      : isNewcomer
-        ? '<p class="muted pd-review-empty">⭐ 新人陪玩 · 完成订单后将展示真实评价与排名</p>'
-        : '<p class="muted pd-review-empty">暂无真实订单评价</p>';
+      : '<div class="pd-review-empty" role="status">' +
+        '<p class="pd-review-empty-title">暂无评价</p>' +
+        '<p class="pd-review-empty-sub">完成订单后将展示老板的真实评价与排名</p>' +
+        "</div>";
     var hasRating = c.rating != null && Number(c.rating) > 0;
     var ratingText = hasRating
       ? Number(c.rating).toFixed(1) + "（" + reviewCount + " 条）"
