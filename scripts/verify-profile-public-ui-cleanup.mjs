@@ -60,8 +60,9 @@ test("keeps bottom CTAs 咨询客服 + 立即下单", () => {
 });
 
 test("cache bust updated on profile.html", () => {
-  assert.match(html, /profile-detail\.js\?v=20260920profileAlbum1/);
-  assert.match(html, /profile\.css\?v=20260920profileAlbum1/);
+  assert.match(html, /profile-detail\.js\?v=20260921profileClean2/);
+  assert.match(html, /profile\.css\?v=20260921profileClean2/);
+  assert.match(html, /multi-companion-team\.js/);
 });
 
 test("always renders 陪玩相册 section (not only when gallery has items)", () => {
