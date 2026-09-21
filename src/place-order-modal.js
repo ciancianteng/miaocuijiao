@@ -722,9 +722,9 @@
               return s.name === state.service;
             }) ||
             null;
-          // Never silently rewrite an existing selection to list[0].
+          // Never silently rewrite an existing selection to list[0] (often level-default 30).
           if (cur) applySelectedService(cur);
-          else if (!state.service && list[0]) applySelectedService(list[0]);
+          else if (!state.service && list.length === 1) applySelectedService(list[0]);
           else refreshTotals();
         }
         return body;
@@ -996,7 +996,14 @@
     state.payLoadError = "";
 
     var companionServices = resolveServices(c);
-    if (companionServices.length && !companionServices.some(function (s) { return s.name === state.service; })) {
+    // SoT: never silently pick services[0] among many (level-default 30 vs 三角洲@35).
+    // Only auto-select when exactly one catalog row exists.
+    if (
+      companionServices.length === 1 &&
+      !companionServices.some(function (s) {
+        return s.name === state.service;
+      })
+    ) {
       state.service = companionServices[0].name;
       state.selectedServiceId = companionServices[0].serviceId || companionServices[0].id || "";
       if (companionServices[0].price > 0) c.unitPrice = companionServices[0].price;
@@ -1438,6 +1445,10 @@
       toast("多人一起下单组件未加载，请刷新大厅后重试");
       return;
     }
+    if (!String(state.service || "").trim() || LEGACY_SERVICE_NAMES[String(state.service || "").trim()]) {
+      toast("请先选择具体服务后再加入队伍");
+      return;
+    }
     if (!(money(c.unitPrice) > 0)) {
       toast("当前单价无效，无法加入队伍");
       return;
@@ -1839,27 +1850,21 @@
           pill.textContent = state.companion.level || "未设置等级";
         }
       } catch (e) {}
-      var matched = matchService(
-        extras.service || state.service || src.service || state.companion.service,
-        state.companion
-      );
-      if (matched.item) applySelectedService(matched.item);
-      else {
-        // Soft catalog refresh must preserve the user's current chip selection.
-        var keepList = resolveServices(state.companion);
-        var keepSid = String(state.selectedServiceId || "").trim();
-        var keep =
-          (keepSid &&
-            keepList.find(function (s) {
-              return String(s.serviceId || "") === keepSid || String(s.id || "") === keepSid;
-            })) ||
+      // Soft refresh SoT: NEVER prefer extras.service / listing services[0] over the
+      // user's current chip (e.g. 三角洲手游国服@35 must not snap back to 王者@30).
+      var keepList = resolveServices(state.companion);
+      var keepSid = String(state.selectedServiceId || "").trim();
+      var keep =
+        (keepSid &&
           keepList.find(function (s) {
-            return s.name === state.service;
-          }) ||
-          null;
-        if (keep) applySelectedService(keep);
-        else refreshTotals();
-      }
+            return String(s.serviceId || "") === keepSid || String(s.id || "") === keepSid;
+          })) ||
+        keepList.find(function (s) {
+          return s.name === state.service;
+        }) ||
+        null;
+      if (keep) applySelectedService(keep);
+      else refreshTotals();
       // Soft update never clears/reloads payment cards from empty cache — only refresh if already loaded.
       if (state.payMethods.length && !state.payMethodsLoading) paintPayCards();
       return;
@@ -1874,7 +1879,11 @@
       unitPrice: unitPrice,
       priceValue: unitPrice,
       price: unitPrice,
-      service: extras.service || src.service || src.game || src.mainGame || "",
+      service: Object.prototype.hasOwnProperty.call(extras, "service")
+        ? extras.service || ""
+        : extras.requireServicePick
+          ? ""
+          : extras.service || src.service || src.game || src.mainGame || "",
       game: extras.game || src.game || src.mainGame || extras.service || "",
       mainGame: extras.game || src.game || src.mainGame || "",
       services: extras.services || src.services || [],
@@ -1918,13 +1927,31 @@
         });
       })
       .then(function (row) {
+        var softOpen =
+          state.open &&
+          state.companion &&
+          String(state.companion.companionId) === companionId &&
+          !!(state.service || state.selectedServiceId);
         var merged = Object.assign({}, extras, {
           services: extras.services || row.services || [],
           serviceIds: extras.serviceIds || row.serviceIds || row.service_ids || [],
           gamePrices: extras.gamePrices || row.gamePrices || row.game_prices || {},
           game: extras.game || row.game || row.mainGame || "",
-          service: extras.service || (row.services && row.services[0] && row.services[0].name) || row.game || "",
         });
+        // Soft refresh / hall open must not inject services[0] (often level-default 30).
+        // Keep an explicit empty pick so the boss chooses the service-specific price.
+        if (!softOpen) {
+          if (Object.prototype.hasOwnProperty.call(extras, "service")) {
+            merged.service = extras.service || "";
+          } else if (extras.requireServicePick) {
+            merged.service = "";
+          } else {
+            merged.service =
+              (row.services && row.services.length === 1 && row.services[0].name) ||
+              row.game ||
+              "";
+          }
+        }
         openFromCanonicalCompanion(row, merged);
         hydrateFromCatalog(companionId);
       })

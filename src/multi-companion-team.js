@@ -1250,14 +1250,40 @@
         });
       }
     }
-    // Prefer a service-specific priced row over pure level-default when no filter.
-    if (!hit) {
-      hit =
-        services.find(function (s) {
-          return money(s.price) > 0;
-        }) || services[0] || null;
-    }
+    // No filter / no exact match → do NOT auto-pick services[0] (level-default /
+    // first catalog row, often 30). Caller must open place-order for chip select.
     return hit;
+  }
+
+  function openPlaceOrderForHallCompanion(fallback) {
+    if (window.MCJPlaceOrder && typeof window.MCJPlaceOrder.openFromCompanion === "function") {
+      window.MCJPlaceOrder.openFromCompanion(
+        {
+          id: fallback.companionId,
+          companionId: fallback.companionId,
+          companionName: fallback.companionName,
+          name: fallback.companionName,
+          unitPrice: fallback.unitPrice,
+          priceValue: fallback.unitPrice,
+          price: fallback.unitPrice,
+          avatar: fallback.avatar,
+          game: fallback.game,
+          status: fallback.status,
+          statusText: fallback.statusText,
+          online: fallback.online,
+          services: fallback.services || [],
+        },
+        {
+          // Force chip pick — never seed services[0]/level-default 30.
+          service: "",
+          requireServicePick: true,
+          unitPrice: fallback.unitPrice,
+          services: fallback.services || [],
+        }
+      );
+      return true;
+    }
+    return false;
   }
 
   function addCompanionFromHallButton(btn) {
@@ -1273,9 +1299,22 @@
       statusText: btn.getAttribute("data-hall-status-text") || "",
       online: btn.getAttribute("data-hall-online"),
     };
+    var preferService = String(
+      btn.getAttribute("data-hall-service") ||
+        btn.getAttribute("data-filter-service") ||
+        btn.getAttribute("data-hall-service-name") ||
+        ""
+    ).trim();
     if (!companionId) {
       addCompanion(fallback);
       return;
+    }
+    // Without an explicit service filter, open place-order so the boss picks the
+    // service-specific price (e.g. 三角洲手游国服@35) instead of listing/first row @30.
+    if (!preferService) {
+      var filterEl = document.getElementById("gameFilter");
+      var hasHallFilter = !!(filterEl && String(filterEl.value || "").trim());
+      if (!hasHallFilter && openPlaceOrderForHallCompanion(fallback)) return;
     }
     // Resolve live catalog so hall team-add uses service price, not listing level price.
     fetch("/api/boss/marketplace?action=catalog&companionId=" + encodeURIComponent(companionId), {
@@ -1304,20 +1343,13 @@
           );
           return;
         }
-        if (services.length) {
-          addCompanion(
-            Object.assign({}, fallback, {
-              service: (picked && picked.name) || services[0].name,
-              serviceId: (picked && (picked.serviceId || picked.id)) || services[0].serviceId || "",
-              services: services,
-            })
-          );
-          return;
-        }
-        addCompanion(fallback);
+        // Ambiguous catalog without a resolved service → place-order chip select.
+        if (openPlaceOrderForHallCompanion(Object.assign({}, fallback, { services: services }))) return;
+        toast("请选择具体服务后再加入队伍");
       })
       .catch(function () {
-        addCompanion(fallback);
+        if (openPlaceOrderForHallCompanion(fallback)) return;
+        toast("服务目录读取失败，请打开陪玩资料选择服务");
       });
   }
 

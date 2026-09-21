@@ -133,7 +133,15 @@ function line(name, hours = 1) {
   assert.match(modal, /must not overwrite a selected service price/);
   assert.match(modal, /game: currentServiceLabel\(\)/);
   assert.match(modal, /Never guess list\[0\]/);
+  assert.match(modal, /NEVER prefer extras\.service/);
+  assert.match(modal, /must not inject services\[0\]/);
+  assert.match(modal, /never silently pick services\[0\] among many/);
+  assert.match(modal, /请先选择具体服务后再加入队伍/);
   assert.match(team, /fuzzyTie/);
+  assert.match(team, /do NOT auto-pick services\[0\]/);
+  assert.match(team, /openPlaceOrderForHallCompanion/);
+  assert.match(team, /requireServicePick:\s*true/);
+  assert.doesNotMatch(team, /Prefer a service-specific priced row over pure level-default when no filter/);
 }
 
 const { placeMultiOrder } = await import("../server/api/_place-multi-order.js");
