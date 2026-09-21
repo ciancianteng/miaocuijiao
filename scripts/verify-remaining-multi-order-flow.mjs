@@ -20,10 +20,16 @@ assert.match(team, /mcjMultiTeamPicking/);
   assert.match(team, /persist\(\);\r?\n\s*renderBar\(\);/);
   assert.match(team, /Draft stays in sessionStorage/);
 assert.match(team, /Only clearTeam\(\) wipes it/);
+assert.match(team, /canKeepDraft/);
+assert.match(team, /hasDraft/);
 assert.doesNotMatch(
   team.slice(team.indexOf("function continueToHall"), team.indexOf("function continueToHall") + 280),
   /clearTeam\(\);/
 );
+assert.match(modal, /teamDraftShouldAbsorbCurrentCompanion/);
+assert.match(modal, /absorbCurrentCompanionIntoTeam/);
+assert.match(modal, /Existing multi draft/);
+assert.match(modal, /已选 " \+ result.count \+ " 人，可继续选或确认并支付/);
 
 // Sync skips hidden / zero-size bars
 assert.match(team, /if \(el\.hidden\) continue/);

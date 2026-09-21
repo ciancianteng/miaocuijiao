@@ -330,24 +330,25 @@ test("TEST floating bar + checkout copy", () => {
   assert.match(teamSrc, /已选/);
   assert.match(teamSrc, /人 ·/);
   assert.match(teamSrc, /继续选/);
-  assert.match(teamSrc, /查看队伍/);
-  assert.match(teamSrc, /去结算/);
   assert.match(teamSrc, /确认并支付/);
   assert.match(teamSrc, /本订单一次付款，系统会分别为每位陪玩结算/);
   assert.match(teamSrc, /data-mcj-team-continue/);
   assert.match(teamSrc, /continueToHall/);
   assert.match(teamSrc, /\/companion-center\.html/);
   assert.match(teamSrc, /mcjMultiTeamPicking/);
+  // n>=2 must keep 继续选 (do not replace it with 查看队伍)
+  assert.match(teamSrc, /button type="button" class="mcj-team-secondary" data-mcj-team-continue>继续选/);
+  assert.match(teamSrc, /确认并支付 " \+ total \+ "猫粮"/);
+  assert.doesNotMatch(teamSrc, /n >= 2 \? "查看队伍"/);
 });
 
 test("TEST continue选 navigates to hall (not toast-only)", () => {
   assert.match(teamSrc, /function continueToHall/);
   assert.match(teamSrc, /location\.href\s*=\s*HALL_HREF/);
-  // Must not only toast without navigation on continue
-  const continueBlock = teamSrc.slice(
-    teamSrc.indexOf("[data-mcj-team-continue]"),
-    teamSrc.indexOf("[data-mcj-team-continue]") + 280
-  );
+  const marker = 'e.target.closest("[data-mcj-team-continue]")';
+  const idx = teamSrc.indexOf(marker);
+  assert.ok(idx >= 0, "continue click handler missing");
+  const continueBlock = teamSrc.slice(idx, idx + 280);
   assert.match(continueBlock, /continueToHall/);
 });
 

@@ -138,7 +138,7 @@
     if (document.querySelector('link[data-mcj-place-order-css]')) return;
     var link = document.createElement("link");
     link.rel = "stylesheet";
-    link.href = "/src/place-order-modal.css?v=20260921priceSot40";
+    link.href = "/src/place-order-modal.css?v=20260922pra1";
     link.setAttribute("data-mcj-place-order-css", "1");
     document.head.appendChild(link);
   }
@@ -219,6 +219,11 @@
       return;
     }
     btn.setAttribute("aria-busy", "false");
+    if (teamDraftShouldAbsorbCurrentCompanion()) {
+      btn.disabled = false;
+      btn.textContent = "加入一起下单";
+      return;
+    }
     if (state.payMethodsLoading) {
       btn.disabled = true;
       btn.textContent = "支付方式加载中…";
@@ -1378,6 +1383,7 @@
         addAnotherCompanion();
       });
     }
+    syncSubmitAvailability();
     refreshWalletBalance().then(function () {
       if (!state.open || !activeMask()) return;
       paintPayCards();
@@ -1467,25 +1473,64 @@
     location.href = "orders.html";
   }
 
-  function addAnotherCompanion() {
+  function currentCompanionId() {
+    var c = state.companion || {};
+    return String(c.companionId || c.id || c.uid || "").trim();
+  }
+
+  function teamDraftShouldAbsorbCurrentCompanion() {
+    var team = window.MCJMultiCompanionTeam;
+    if (!team) return false;
+    var cid = currentCompanionId();
+    if (!cid) return false;
+    var count = typeof team.getCount === "function" ? team.getCount() : 0;
+    var lines = typeof team.getLines === "function" ? team.getLines() : [];
+    var already = (lines || []).some(function (l) {
+      return String(l.companionId || "") === cid;
+    });
+    var picking = false;
+    try {
+      picking = sessionStorage.getItem("mcjMultiTeamPicking") === "1";
+    } catch (ePick) {}
+    if (typeof team.hasDraft === "function" && team.hasDraft() && !already) return true;
+    if (count >= 1 && !already) return true;
+    if (picking && !already) return true;
+    if (already && count >= 2) return true;
+    return false;
+  }
+
+  function applyModalSharedToTeam() {
+    var team = window.MCJMultiCompanionTeam;
+    if (!team || typeof team.applyShared !== "function") return;
+    var gameIdEl = qs("[data-po-game-id]");
+    var notesEl = qs("[data-po-notes]");
+    team.applyShared({
+      gameId: gameIdEl ? String(gameIdEl.value || "").trim() : "",
+      notes: notesEl ? String(notesEl.value || "").trim() : "",
+      startTime: readStartTimeFromDom(activeMask()) || state.startTime,
+      voiceMode: state.voiceMode,
+    });
+  }
+
+  function pushCurrentCompanionToTeam() {
     var c = state.companion;
     if (!c || !(c.companionId || c.id)) {
       toast("缺少陪玩信息");
-      return;
+      return { ok: false, error: "missing" };
     }
     if (!window.MCJMultiCompanionTeam || typeof window.MCJMultiCompanionTeam.add !== "function") {
       toast("多人一起下单组件未加载，请刷新大厅后重试");
-      return;
+      return { ok: false, error: "no_team" };
     }
     if (!String(state.service || "").trim() || LEGACY_SERVICE_NAMES[String(state.service || "").trim()]) {
       toast("请先选择具体服务后再加入队伍");
-      return;
+      return { ok: false, error: "need_service" };
     }
     if (!(money(c.unitPrice) > 0)) {
       toast("当前单价无效，无法加入队伍");
-      return;
+      return { ok: false, error: "no_price" };
     }
-    var result = window.MCJMultiCompanionTeam.add({
+    return window.MCJMultiCompanionTeam.add({
       companionId: c.companionId || c.id,
       companionName: c.companionName || c.name || "陪玩",
       avatar: c.avatar || c.image || "",
@@ -1502,14 +1547,44 @@
       status: c.availabilityStatus || "",
       statusText: c.availabilityText || "",
     });
+  }
+
+  function absorbCurrentCompanionIntoTeam() {
+    var team = window.MCJMultiCompanionTeam;
+    var cid = currentCompanionId();
+    var lines = team && typeof team.getLines === "function" ? team.getLines() : [];
+    var already = (lines || []).some(function (l) {
+      return String(l.companionId || "") === cid;
+    });
+    if (already) {
+      close();
+      if (team.getCount() >= 2 && typeof team.openCheckout === "function") {
+        toast("已在队伍中，可确认并支付");
+        team.openCheckout();
+      } else {
+        toast("已在队伍中");
+      }
+      return true;
+    }
+    var result = pushCurrentCompanionToTeam();
+    if (!result || !result.ok) return false;
+    applyModalSharedToTeam();
+    close();
+    toast(
+      result.count >= 2
+        ? "已选 " + result.count + " 人，可继续选或确认并支付"
+        : "已加入队伍，可继续选陪玩"
+    );
+    return true;
+  }
+
+  function addAnotherCompanion() {
+    var result = pushCurrentCompanionToTeam();
     if (!result || !result.ok) return;
-    // Do NOT create an order — close modal and continue multi-pick / checkout.
+    applyModalSharedToTeam();
     close();
     if (result.count >= 2) {
-      toast("已加入队伍，可去结算");
-      if (typeof window.MCJMultiCompanionTeam.openCheckout === "function") {
-        window.MCJMultiCompanionTeam.openCheckout();
-      }
+      toast("已选 " + result.count + " 人，可继续选或确认并支付");
       return;
     }
     try {
@@ -1533,7 +1608,6 @@
         setSubmitLoading(false);
         toast("上次提交已超时，请重试");
       }
-      if (!requireLogin()) return;
       var c = state.companion;
       if (!c || !c.companionId) {
         failValidate("缺少陪玩信息，无法下单");
@@ -1552,6 +1626,15 @@
         failValidate("当前单价无效，请刷新页面后重试");
         return;
       }
+
+      // Existing multi draft / 继续选: never create a standalone single order.
+      // 第2位必须直接加入同一 draft，显示已选2人；老板再选「继续选」或「确认并支付」。
+      if (teamDraftShouldAbsorbCurrentCompanion()) {
+        absorbCurrentCompanionIntoTeam();
+        return;
+      }
+
+      if (!requireLogin()) return;
 
       var gameIdEl = qs("[data-po-game-id]");
       var notesEl = qs("[data-po-notes]");

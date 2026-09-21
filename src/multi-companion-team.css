@@ -149,6 +149,7 @@ body:has(.mcj-team-bar) #playerList.companion-hall-grid {
 .mcj-team-avatars {
   display: flex;
   align-items: center;
+  cursor: pointer;
 }
 .mcj-team-avatar {
   width: 32px;
@@ -206,6 +207,7 @@ body:has(.mcj-team-bar) #playerList.companion-hall-grid {
   font-size: 13px;
   font-weight: 800;
   cursor: pointer;
+  white-space: nowrap;
 }
 
 .mcj-team-bar-panel {
@@ -519,19 +521,32 @@ body:has(.mcj-team-bar) #playerList.companion-hall-grid {
 
 @media (max-width: 430px) {
   .mcj-team-bar {
-    flex-wrap: nowrap;
+    flex-wrap: wrap;
     align-items: center;
     padding: 8px 10px;
     gap: 6px;
   }
   .mcj-team-meta {
     min-width: 0;
+    flex: 1 1 40%;
   }
   .mcj-team-meta strong,
   .mcj-team-meta span {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  .mcj-team-bar-actions {
+    flex: 1 1 100%;
+    margin-left: 0;
+    justify-content: stretch;
+  }
+  .mcj-team-secondary {
+    flex: 0 0 auto;
+  }
+  .mcj-team-checkout {
+    flex: 1 1 auto;
+    min-width: 0;
   }
   .mcj-team-checkout,
   .mcj-team-secondary {

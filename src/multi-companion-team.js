@@ -82,15 +82,32 @@
     return h;
   }
 
-  function bossKey() {
+  function bossIdentity() {
     try {
-      var u = JSON.parse(
+      return JSON.parse(
         localStorage.getItem("customerUser") || sessionStorage.getItem("customerUser") || "{}"
       );
-      return String(u.id || u.uid || u.email || "anon");
     } catch (e) {
-      return "anon";
+      return {};
     }
+  }
+
+  function bossKey() {
+    var u = bossIdentity();
+    return String(u.id || u.uid || u.email || "anon");
+  }
+
+  function bossKeys() {
+    var u = bossIdentity();
+    return [String(u.id || ""), String(u.uid || ""), String(u.email || ""), "anon"].filter(Boolean);
+  }
+
+  function canKeepDraft(storedKey) {
+    var stored = String(storedKey || "anon");
+    var now = bossKey();
+    if (stored === now) return true;
+    if (!stored || stored === "anon" || now === "anon") return true;
+    return bossKeys().indexOf(stored) >= 0;
   }
 
   function toast(msg) {
@@ -118,7 +135,7 @@
     if (document.querySelector('link[data-mcj-team-css]')) return;
     var link = document.createElement("link");
     link.rel = "stylesheet";
-    link.href = "/src/multi-companion-team.css?v=20260921priceSot40";
+    link.href = "/src/multi-companion-team.css?v=20260922pra1";
     link.setAttribute("data-mcj-team-css", "1");
     document.head.appendChild(link);
   }
@@ -276,6 +293,7 @@
             hours: money(l.hours || 1),
             quantity: Math.max(1, Math.floor(money(l.quantity || 1) || 1)),
             services: Array.isArray(l.services) ? l.services : [],
+            gamePrices: l.gamePrices && typeof l.gamePrices === "object" ? l.gamePrices : {},
             priceSnapshot: money(l.priceSnapshot != null ? l.priceSnapshot : l.unitPrice),
             availabilityStatus: l.availabilityStatus || "",
             availabilityCheckedAt: l.availabilityCheckedAt || "",
@@ -296,16 +314,33 @@
       var raw = sessionStorage.getItem(STORAGE_KEY);
       if (!raw) return;
       var data = JSON.parse(raw);
-      if (!data || data.bossKey !== bossKey()) {
+      if (!data || !canKeepDraft(data.bossKey)) {
         sessionStorage.removeItem(STORAGE_KEY);
         return;
       }
       state.lines = Array.isArray(data.lines)
         ? data.lines.map(function (l) {
+            var gp = (l && l.gamePrices && typeof l.gamePrices === "object" ? l.gamePrices : {}) || {};
+            var services = overlayGamePricesOnServices(Array.isArray(l && l.services) ? l.services : [], gp);
+            var matched =
+              (l &&
+                services.find(function (s) {
+                  return (
+                    (l.serviceId && String(s.serviceId || s.id || "") === String(l.serviceId)) ||
+                    serviceNamesMatch(s.name, l.service)
+                  );
+                })) ||
+              null;
+            var gpPrice = matched ? money(matched.price) : 0;
             var snap = money(l && (l.priceSnapshot != null ? l.priceSnapshot : l.unitPrice));
+            if (gpPrice > 0) snap = gpPrice;
             if (l && snap > 0) {
               l.unitPrice = snap;
               l.priceSnapshot = snap;
+            }
+            if (l) {
+              l.services = services;
+              l.gamePrices = gp;
             }
             return l;
           })
@@ -317,6 +352,7 @@
       if (state.sharedVoiceMode !== "discord" && state.sharedVoiceMode !== "game_mic") {
         state.sharedVoiceMode = "game_mic";
       }
+      persist();
     } catch (e) {
       state.lines = [];
     }
@@ -416,14 +452,14 @@
   }
 
   function resolveServicesFor(companion) {
+    var list = [];
     if (window.MCJPlaceOrder && typeof window.MCJPlaceOrder.resolveServices === "function") {
       try {
-        var resolved = window.MCJPlaceOrder.resolveServices(companion) || [];
-        if (resolved.length) return resolved;
+        list = window.MCJPlaceOrder.resolveServices(companion) || [];
       } catch (e) {}
     }
-    if (Array.isArray(companion.services) && companion.services.length) {
-      return companion.services
+    if ((!list || !list.length) && Array.isArray(companion.services) && companion.services.length) {
+      list = companion.services
         .map(function (s, i) {
           if (!s) return null;
           return {
@@ -437,9 +473,12 @@
           return s && isValidServiceLabel(s.name);
         });
     }
-    var name = companion.service || companion.game || "陪玩";
-    if (!isValidServiceLabel(name)) name = "陪玩";
-    return [{ name: name, price: money(companion.unitPrice || companion.price), serviceId: companion.serviceId || "" }];
+    if (!list || !list.length) {
+      var name = companion.service || companion.game || "陪玩";
+      if (!isValidServiceLabel(name)) name = "陪玩";
+      list = [{ name: name, price: money(companion.unitPrice || companion.price), serviceId: companion.serviceId || "" }];
+    }
+    return overlayGamePricesOnServices(list, companion.gamePrices || companion.game_prices || {});
   }
 
   function companionAvailability(payload) {
@@ -609,6 +648,7 @@
       hours: Math.max(0.5, money(raw.hours || 1) || 1),
       quantity: Math.max(1, Math.floor(money(raw.quantity || 1) || 1)),
       services: services,
+      gamePrices: raw.gamePrices && typeof raw.gamePrices === "object" ? raw.gamePrices : {},
       online: companion.online,
       availabilityStatus: avail.code || "",
       availabilityCheckedAt: new Date().toISOString(),
@@ -617,11 +657,8 @@
     persist();
     renderBar();
     syncBottomStackOffset();
-    toast(state.lines.length === 1 ? "已加入队伍，可继续选陪玩" : "已加入一起下单");
-    if (isPicking() && state.lines.length >= 2) {
-      setPicking(false);
-      openCheckout();
-    }
+    toast(state.lines.length === 1 ? "已加入队伍，可继续选陪玩" : "已选 " + state.lines.length + " 人，可继续选或确认并支付");
+    if (state.lines.length >= 2) setPicking(false);
     return { ok: true, count: state.lines.length };
   }
 
@@ -711,10 +748,17 @@
     }
     var n = state.lines.length;
     var total = groupTotal();
-    var secondaryLabel = n >= 2 ? "查看队伍" : "继续选";
-    var secondaryAttr = n >= 2 ? "data-mcj-team-expand" : "data-mcj-team-continue";
+    var priceBits = state.lines
+      .map(function (l) {
+        return esc(l.companionName) + " " + esc(String(lineSubtotal(l)));
+      })
+      .join(" + ");
+    var checkoutLabel =
+      n >= 2 ? "确认并支付 " + total + "猫粮" : "确认并支付";
     bar.innerHTML =
-      '<div class="mcj-team-avatars">' +
+      '<div class="mcj-team-avatars" data-mcj-team-expand aria-expanded="' +
+      (state.expanded ? "true" : "false") +
+      '">' +
       avatarStackHtml() +
       "</div>" +
       '<div class="mcj-team-meta">' +
@@ -724,18 +768,14 @@
       esc(String(total)) +
       "猫粮</strong>" +
       "<span>" +
-      (n >= 2 ? "一次付款，分别结算" : "可继续选陪玩，或去结算（单人走普通下单）") +
+      (n >= 2 ? priceBits + " = " + esc(String(total)) : "可继续选陪玩，或确认并支付（单人走普通下单）") +
       "</span>" +
       "</div>" +
       '<div class="mcj-team-bar-actions">' +
-      '<button type="button" class="mcj-team-secondary" ' +
-      secondaryAttr +
-      ' aria-expanded="' +
-      (state.expanded ? "true" : "false") +
-      '">' +
-      secondaryLabel +
+      '<button type="button" class="mcj-team-secondary" data-mcj-team-continue>继续选</button>' +
+      '<button type="button" class="mcj-team-checkout" data-mcj-team-checkout>' +
+      esc(checkoutLabel) +
       "</button>" +
-      '<button type="button" class="mcj-team-checkout" data-mcj-team-checkout>去结算</button>' +
       "</div>";
     if (state.expanded && n >= 2) {
       bar.classList.add("is-expanded");
@@ -1289,9 +1329,35 @@
       var gp = 0;
       if (sid && money(prices[sid]) > 0) gp = money(prices[sid]);
       else if (named && money(prices[named]) > 0) gp = money(prices[named]);
+      else {
+        var compact = compactServiceKey(named);
+        if (compact) {
+          var hits = Object.keys(prices).filter(function (k) {
+            if (!k || /^[0-9a-f-]{36}$/i.test(k)) return false;
+            return compactServiceKey(k) === compact && money(prices[k]) > 0;
+          });
+          if (hits.length === 1) gp = money(prices[hits[0]]);
+        }
+      }
       if (gp > 0) return Object.assign({}, s, { price: gp });
       return s;
     });
+  }
+
+  function applyShared(patch) {
+    patch = patch || {};
+    if (patch.gameId != null && String(patch.gameId).trim()) {
+      state.sharedGameId = String(patch.gameId).trim();
+    }
+    if (patch.notes != null) state.sharedNotes = String(patch.notes || "");
+    if (patch.startTime) {
+      var t = normalizeTimeValue(patch.startTime);
+      if (t) state.sharedStartTime = t;
+    }
+    if (patch.voiceMode === "discord" || patch.voiceMode === "game_mic") {
+      state.sharedVoiceMode = patch.voiceMode;
+    }
+    persist();
   }
 
   function pickHallService(services, btn) {
@@ -1563,7 +1629,12 @@
       var raw = sessionStorage.getItem(STORAGE_KEY);
       if (!raw) return;
       var data = JSON.parse(raw);
-      if (data && data.bossKey !== bossKey()) clearTeam();
+      if (!data) return;
+      if (!canKeepDraft(data.bossKey)) {
+        clearTeam();
+        return;
+      }
+      persist();
     } catch (e) {}
   }
 
@@ -1589,6 +1660,10 @@
     clear: clearTeam,
     openCheckout: openCheckout,
     continueToHall: continueToHall,
+    applyShared: applyShared,
+    hasDraft: function () {
+      return state.lines.length >= 1 || isPicking();
+    },
     getLines: function () {
       return state.lines.slice();
     },
@@ -1608,6 +1683,7 @@
       state: state,
       syncBottomStackOffset: syncBottomStackOffset,
       isPicking: isPicking,
+      canKeepDraft: canKeepDraft,
     },
   };
 })();
