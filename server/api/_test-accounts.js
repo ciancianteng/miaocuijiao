@@ -16,6 +16,8 @@ const PROD_SMOKE_EMAIL_RE = /@mcj-prod-smoke\.invalid\b/i;
 /** Disposable domains observed on Production smoke fixtures (and common guerrilla aliases). */
 const DISPOSABLE_TEST_EMAIL_RE =
   /@(?:guerrillamailblock\.com|guerrillamail\.com|guerrillamail\.de|guerrillamail\.net|guerrillamail\.org|sharklasers\.com|grr\.la|pokemail\.net|spam4\.me)\b/i;
+/** One-shot Production deploy fixtures (Boss VIP / similar) — never inflate GMV. */
+const VIP_DEPLOY_FIXTURE_EMAIL_RE = /^vip\.deploy\.[^@]+@/i;
 /** Username / display markers used by ProdSmoke* and *Smoke* E2E fixtures */
 const SMOKE_NAME_RE = /prodsmoke|smoke/i;
 /**
@@ -42,7 +44,8 @@ export function isTestEmail(email = "") {
   return (
     MEOW_TEST_EMAIL_RE.test(e) ||
     PROD_SMOKE_EMAIL_RE.test(e) ||
-    DISPOSABLE_TEST_EMAIL_RE.test(e)
+    DISPOSABLE_TEST_EMAIL_RE.test(e) ||
+    VIP_DEPLOY_FIXTURE_EMAIL_RE.test(e)
   );
 }
 
