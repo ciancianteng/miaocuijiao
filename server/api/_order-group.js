@@ -326,6 +326,22 @@ export async function refreshParentOrderStatus(parentOrderId, deps = {}) {
     saved = (await patchOrder(parentOrderId, patch)) || { ...parent, ...patch };
   }
 
+  // Cat-food hold → final debit when the whole multi group completes.
+  let holdFinalize = null;
+  if (nextStatus === "completed") {
+    try {
+      const walletApi = await import("./_wallet.js");
+      holdFinalize = await walletApi.finalizeWalletHold({
+        orderId: parentOrderId,
+        idempotencyKey: `order-finalize:${parent.order_no || parentOrderId}`,
+        reason: `多人订单完成扣款 ${parent.order_no || parentOrderId}`,
+        operatorId,
+      });
+    } catch (e) {
+      holdFinalize = { ok: false, error: String(e?.message || e).slice(0, 160) };
+    }
+  }
+
   let bossPoints = null;
   const shouldAward =
     nextStatus === "completed" &&
@@ -360,6 +376,7 @@ export async function refreshParentOrderStatus(parentOrderId, deps = {}) {
     status: nextStatus,
     amounts,
     bossPoints,
+    holdFinalize,
   };
 }
 

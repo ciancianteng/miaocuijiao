@@ -678,6 +678,22 @@ export function createOrderCompleteHelpers({ restUrl, supabaseJson, serviceHeade
       operatorId: actorId || null,
     });
 
+    // Legacy / single-order cat-food hold → finalize debit on COMPLETE.
+    let holdFinalize = null;
+    if (!saved?.parent_order_id) {
+      try {
+        const walletApi = await import("./_wallet.js");
+        holdFinalize = await walletApi.finalizeWalletHold({
+          orderId: saved.id,
+          idempotencyKey: `order-finalize:${saved.order_no || saved.id}`,
+          reason: `订单完成扣款 ${saved.order_no || saved.id}`,
+          operatorId: actorId || null,
+        });
+      } catch (e) {
+        holdFinalize = { ok: false, error: String(e?.message || e).slice(0, 160) };
+      }
+    }
+
     let parentRefresh = null;
     if (saved?.parent_order_id) {
       try {
@@ -775,6 +791,7 @@ export function createOrderCompleteHelpers({ restUrl, supabaseJson, serviceHeade
       settlement,
       bossPoints,
       parentRefresh,
+      holdFinalize,
       reward,
       completionMethod: method,
     };
