@@ -587,21 +587,29 @@ export function createOrderCompleteHelpers({ restUrl, supabaseJson, serviceHeade
     const cleared = await clearCompletionPending(before);
     const methodLineNote = upsertMarker(cleared.note, COMPLETION_METHOD_MARKER, method);
     const methodLineDesc = upsertMarker(cleared.description, COMPLETION_METHOD_MARKER, method);
+    // Boss manual confirm → close after-sale immediately (separate from companion 24h withdraw lock).
+    let noteForSave = methodLineNote;
+    let descForSave = methodLineDesc;
+    if (method === "boss_manual") {
+      const { AFTER_SALE_CLOSED_MARKER } = await import("./_earnings-windows.js");
+      noteForSave = upsertMarker(methodLineNote, AFTER_SALE_CLOSED_MARKER, "boss_manual");
+      descForSave = upsertMarker(methodLineDesc, AFTER_SALE_CLOSED_MARKER, "boss_manual");
+    }
 
     const patchBodies = [
       {
         status: "completed",
         completed_at: completedAt,
-        note: methodLineNote,
-        description: methodLineDesc,
+        note: noteForSave,
+        description: descForSave,
         completion_method: method,
         settlement_status: "settling",
       },
       {
         status: "completed",
         completed_at: completedAt,
-        note: methodLineNote,
-        description: methodLineDesc,
+        note: noteForSave,
+        description: descForSave,
       },
       { status: "completed", completed_at: completedAt },
     ];
@@ -776,8 +784,8 @@ export function createOrderCompleteHelpers({ restUrl, supabaseJson, serviceHeade
       message: `${baseMsg}${settleSkipMsg}`,
       order: {
         ...saved,
-        note: methodLineNote,
-        description: methodLineDesc,
+        note: saved.note || noteForSave || methodLineNote,
+        description: saved.description || descForSave || methodLineDesc,
         completion_method: method,
         status: "completed",
         completed_at: completedAt,

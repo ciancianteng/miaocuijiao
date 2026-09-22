@@ -27,6 +27,12 @@ import {
   parseCompletionMethod,
   createOrderCompleteHelpers,
 } from "./_order-complete.js";
+import {
+  isBossAfterSaleOpen,
+  bossAfterSaleClosesAtIso,
+  companionWithdrawableAtIso,
+  isCompanionEarningsLocked,
+} from "./_earnings-windows.js";
 
 loadLocalEnv();
 
@@ -576,6 +582,10 @@ function viewOrder(row = {}) {
     autoConfirmPaused: !!countdown.autoConfirmPaused,
     autoConfirmPausedReason: countdown.autoConfirmPausedReason || "",
     completionMethod: parseCompletionMethod(row) || "",
+    afterSaleOpen: isBossAfterSaleOpen({ ...row, status }),
+    afterSaleClosesAt: bossAfterSaleClosesAtIso({ ...row, status }),
+    companionWithdrawableAt: companionWithdrawableAtIso({ ...row, status }),
+    companionEarningsLocked: isCompanionEarningsLocked({ ...row, status }),
     grabs: row.grabs || [],
     grabCount,
     bossIntent,
@@ -2867,7 +2877,19 @@ export default async function handler(req, res) {
           order: viewOrder(before),
         });
       }
-      const order = await patchOwnedOrder(profile, id, ["confirmed", "in_progress", "completed"], { status: "refund_requested" }, "老板已申请退款，等待客服/后台审核。审核通过并确认后，退款将退回猫粮余额（不退现金）。");
+      if (before) {
+        const { isBossAfterSaleOpen } = await import("./_earnings-windows.js");
+        if (!isBossAfterSaleOpen(before)) {
+          return json(res, 409, {
+            ok: false,
+            code: "AFTER_SALE_CLOSED",
+            message:
+              "售后窗口已关闭（订单完成已满 24 小时，或您已手动确认完成并放弃售后权），无法再申请退款。",
+            order: viewOrder(before),
+          });
+        }
+      }
+      const order = await patchOwnedOrder(profile, id, ["confirmed", "in_progress", "completed"], { status: "refund_requested" }, "老板已申请退款，等待后台审核。审核通过并确认后，退款将退回猫粮余额（不退现金）。");
       let refund = null;
       try {
         const refundApi = await import("./_boss-refund-payout.js");

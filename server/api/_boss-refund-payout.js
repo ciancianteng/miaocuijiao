@@ -349,10 +349,12 @@ export async function confirmBossCatFoodRefund(db, {
 
   if (saved.order_id) {
     // orders 表无 refund_amount / updated_at 列；只写 status，避免 PATCH 静默失败导致仍为售后中。
+    const orderGross = money(row.amount_rm || creditAmount);
+    const isFullRefund = creditAmount >= orderGross - 0.001;
     try {
       await db("orders", `?id=eq.${encodeURIComponent(saved.order_id)}`, {
         method: "PATCH",
-        body: JSON.stringify({ status: "refunded" }),
+        body: JSON.stringify({ status: isFullRefund ? "refunded" : "completed" }),
       });
     } catch (e) {
       console.warn("[refund-meow] order status:", e?.message || e);
@@ -363,13 +365,97 @@ export async function confirmBossCatFoodRefund(db, {
           {
             method: "PATCH",
             headers: walletApiForOrder.serviceHeaders({ Prefer: "return=minimal" }),
-            body: JSON.stringify({ status: "refunded" }),
+            body: JSON.stringify({ status: isFullRefund ? "refunded" : "completed" }),
           }
         );
       } catch (e2) {
         console.warn("[refund-meow] order status fallback:", e2?.message || e2);
       }
     }
+
+    // Load order for clawbacks (companion / CS commission / boss commission / points).
+    let orderRow = { id: saved.order_id, boss_id: saved.boss_id || row.boss_id, order_no: saved.order_no || row.order_no };
+    try {
+      const ors = await db("orders", `?id=eq.${encodeURIComponent(saved.order_id)}&select=*&limit=1`);
+      if (ors?.[0]) orderRow = ors[0];
+    } catch {
+      /* keep minimal */
+    }
+
+    const clawResults = { companion: null, cs: null, bossCommission: null, points: null };
+    try {
+      const { clawbackCompanionIncomeForOrder } = await import("./_companion-income.js");
+      const { restUrl, supabaseJson, serviceHeaders } = await import("./_wallet.js");
+      // Map refund cat-food → companion income clawback proportionally by settle ratio when possible.
+      let companionClawAmount = null;
+      if (!isFullRefund) {
+        const incomeRows = await supabaseJson(
+          restUrl(
+            "transactions",
+            `?order_id=eq.${encodeURIComponent(orderRow.id)}&transaction_type=eq.companion_income&status=neq.cancelled&select=amount&limit=20`
+          ),
+          { headers: serviceHeaders() }
+        ).catch(() => []);
+        const incomeSum = money((incomeRows || []).reduce((n, r) => n + money(r.amount), 0));
+        const orderAmt = money(orderRow.total_amount || orderRow.paid_cat_food || orderGross) || orderGross;
+        companionClawAmount =
+          orderAmt > 0 && incomeSum > 0
+            ? money((incomeSum * creditAmount) / orderAmt)
+            : creditAmount;
+      }
+      clawResults.companion = await clawbackCompanionIncomeForOrder(
+        { supabaseJson, restUrl, serviceHeaders },
+        orderRow,
+        {
+          mode: isFullRefund ? "refund" : "partial_refund",
+          reason: `退款批准冲销陪玩收入 ${creditAmount} 猫粮`,
+          amount: companionClawAmount,
+        }
+      );
+    } catch (e) {
+      clawResults.companion = { ok: false, error: String(e?.message || e).slice(0, 160) };
+      console.warn("[refund-meow] companion clawback", clawResults.companion.error);
+    }
+    try {
+      const settleApi = await import("./_cs-commission-settle.js");
+      clawResults.cs = await settleApi.clawbackCsOrderIncome(
+        {
+          ...orderRow,
+          status: isFullRefund ? "refunded" : "completed",
+          refund_amount: creditAmount,
+          refundAmount: creditAmount,
+        },
+        {
+          mode: isFullRefund ? "refund" : "partial_refund",
+          reason: `退款批准冲销客服/平台提成`,
+        }
+      );
+    } catch (e) {
+      clawResults.cs = { ok: false, error: String(e?.message || e).slice(0, 160) };
+      console.warn("[refund-meow] cs clawback", clawResults.cs.error);
+    }
+    try {
+      const { clawbackBossCommissionForOrder } = await import("./_boss-commission.js");
+      clawResults.bossCommission = await clawbackBossCommissionForOrder(orderRow, {
+        reason: `退款批准冲销老板抽成`,
+        amount: isFullRefund ? null : creditAmount,
+      });
+    } catch (e) {
+      clawResults.bossCommission = { ok: false, error: String(e?.message || e).slice(0, 160) };
+      console.warn("[refund-meow] boss commission clawback", clawResults.bossCommission.error);
+    }
+    // Owner rule: ANY successful refund → revoke ALL points for this order (not proportional).
+    try {
+      const { clawbackBossPointsForRefundedOrder } = await import("./_user-points.js");
+      clawResults.points = await clawbackBossPointsForRefundedOrder(orderRow, {
+        operatorId: adminId || null,
+        reason: "订单退款：整单积分全部取消",
+      });
+    } catch (e) {
+      clawResults.points = { ok: false, error: String(e?.message || e).slice(0, 160) };
+      console.warn("[refund-meow] points clawback", clawResults.points.error);
+    }
+
     try {
       const txs = await db(
         "payment_transactions",
@@ -396,6 +482,9 @@ export async function confirmBossCatFoodRefund(db, {
     } catch (e) {
       console.warn("[refund-meow] boss vip recast:", e?.message || e);
     }
+
+    // Attach clawbacks on return below via closure — set on saved
+    saved.__clawbacks = clawResults;
   }
 
   if (saved.batch_id || row.batch_id) {
@@ -436,6 +525,7 @@ export async function confirmBossCatFoodRefund(db, {
     wallet,
     creditedCatFood: creditAmount,
     adminName: adminName || "",
+    clawbacks: saved.__clawbacks || null,
   };
 }
 

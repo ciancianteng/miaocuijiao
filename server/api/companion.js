@@ -45,6 +45,7 @@ import {
   money as incomeMoney,
   clawbackCompanionIncomeForOrder,
 } from "./_companion-income.js";
+import { splitCompanionIncomeByWithdrawLock } from "./_earnings-windows.js";
 import {
   anonymousBossLabel,
   allocateWithdrawalNo,
@@ -1982,6 +1983,7 @@ async function loadWalletBundle(profile, myOrders = []) {
       weekIncome: summary.weekIncome || 0,
       monthIncome: summary.monthIncome || 0,
       totalIncome: summary.totalIncome || 0,
+      earningsLocked: summary.earningsLocked || 0,
       withdrawable: summary.withdrawable || 0,
       available: summary.withdrawable || 0,
       frozen: summary.frozen || 0,
@@ -2005,9 +2007,10 @@ function summaryFrom(myOrders, transactions, withdrawals = [], linkedOrders = []
     d.setUTCDate(d.getUTCDate() - (day - 1));
     return d.toISOString().slice(0, 10);
   })();
-  const { orderIncome, rewardOther } = partitionCompanionIncome(
+  const ordersForMap = linkedOrders && linkedOrders.length ? linkedOrders : myOrders;
+  const { orderIncome, rewardOther, orderMap } = partitionCompanionIncome(
     transactions,
-    linkedOrders && linkedOrders.length ? linkedOrders : myOrders
+    ordersForMap
   );
   const incomeRows = orderIncome;
   const orderIncomeIds = new Set(incomeRows.map((r) => String(r.order_id || "")).filter(Boolean));
@@ -2031,6 +2034,22 @@ function summaryFrom(myOrders, transactions, withdrawals = [], linkedOrders = []
   const netGross = Math.max(0, roundMoney(gross - refundTotal));
   const bonus = sumTxAmount(rewardOther);
   const sumIncomeOn = (pred) => incomeRows.filter(pred).reduce((n, row) => n + money(row.amount), 0);
+
+  // Owner lock: companion income unlocks only at completed_at + 24h (server-side).
+  let earningsLocked = 0;
+  try {
+    const { locked: lockedRows } = splitCompanionIncomeByWithdrawLock(incomeRows, orderMap, Date.now());
+    const lockedGross = lockedRows.reduce((n, row) => n + money(row.amount), 0);
+    const lockedOrderIds = new Set(lockedRows.map((r) => String(r.order_id || "")).filter(Boolean));
+    const lockedRefund = refundRows
+      .filter((r) => lockedOrderIds.has(String(r.order_id || "")))
+      .reduce((n, r) => n + money(r.amount), 0);
+    earningsLocked = Math.max(0, roundMoney(lockedGross - lockedRefund));
+  } catch {
+    earningsLocked = 0;
+  }
+
+  const withdrawable = Math.max(0, roundMoney(netGross - earningsLocked - locked));
   return {
     todayOrders: myOrders.filter((o) => String(o.createdAt || "").slice(0,10) === today).length,
     waitingConfirm: myOrders.filter((o) => o.status === "claimed").length,
@@ -2047,12 +2066,13 @@ function summaryFrom(myOrders, transactions, withdrawals = [], linkedOrders = []
       .reduce((n, o) => n + money(o.playerIncome), 0),
     monthIncome: sumIncomeOn((row) => String(row.created_at || "").slice(0, 7) === month),
     totalIncome: netGross,
+    earningsLocked,
     bonus,
     reward: bonus,
     withdrawn,
     frozen,
     pendingSettlement: frozen,
-    withdrawable: Math.max(0, roundMoney(netGross - locked)),
+    withdrawable,
     unreadMessages: 0,
     monthReviews: 0,
     designatedPending: myOrders.filter((o) => o.status === "claimed").length,
