@@ -21,6 +21,7 @@
     sheetOpen: false,
     submitting: false,
     sharedGameId: "",
+    sharedIdContext: { serviceKey: "", game: "", server: "", platform: "" },
     sharedNotes: "",
     sharedStartTime: "",
     sharedVoiceMode: "game_mic",
@@ -39,6 +40,48 @@
 
   function isServiceBlob(name) {
     return /[,，、|/]/.test(String(name || ""));
+  }
+
+  function idContextFromService(name) {
+    var n = String(name || "").trim();
+    return {
+      serviceKey: compactServiceKey(n),
+      game: n,
+      server: (n.match(/国服|亚服|欧服|美服|国际服|日服|韩服|台服/) || [""])[0],
+      platform: (n.match(/手游|端游|PC|主机/) || [""])[0],
+    };
+  }
+
+  function normalizeIdContext(ctx) {
+    ctx = ctx && typeof ctx === "object" ? ctx : {};
+    var fromName = idContextFromService(ctx.game || ctx.service || ctx.serviceKey || "");
+    return {
+      serviceKey: compactServiceKey(ctx.serviceKey || fromName.serviceKey || ""),
+      game: String(ctx.game || fromName.game || "").trim(),
+      server: String(ctx.server || fromName.server || "").trim(),
+      platform: String(ctx.platform || fromName.platform || "").trim(),
+    };
+  }
+
+  function sameIdContext(a, b) {
+    a = normalizeIdContext(a);
+    b = normalizeIdContext(b);
+    if (!a.serviceKey && !b.serviceKey && !a.game && !b.game) return true;
+    if (a.serviceKey && b.serviceKey && a.serviceKey === b.serviceKey) return true;
+    if (a.game && b.game && compactServiceKey(a.game) === compactServiceKey(b.game)) {
+      if (a.server && b.server && a.server !== b.server) return false;
+      if (a.platform && b.platform && a.platform !== b.platform) return false;
+      return true;
+    }
+    return false;
+  }
+
+  function getSharedAccountId(context) {
+    var saved = String(state.sharedGameId || "").trim();
+    if (!saved) return "";
+    if (!context) return saved;
+    if (!state.sharedIdContext || !state.sharedIdContext.serviceKey) return saved;
+    return sameIdContext(state.sharedIdContext, context) ? saved : "";
   }
 
   function serviceNamesMatch(a, b) {
@@ -135,7 +178,7 @@
     if (document.querySelector('link[data-mcj-team-css]')) return;
     var link = document.createElement("link");
     link.rel = "stylesheet";
-    link.href = "/src/multi-companion-team.css?v=20260922pra1";
+    link.href = "/src/multi-companion-team.css?v=20260922p01b";
     link.setAttribute("data-mcj-team-css", "1");
     document.head.appendChild(link);
   }
@@ -298,9 +341,11 @@
             availabilityStatus: l.availabilityStatus || "",
             availabilityCheckedAt: l.availabilityCheckedAt || "",
             online: !!l.online,
+            gameId: String(l.gameId || l.game_id || state.sharedGameId || "").trim(),
           };
         }),
         sharedGameId: state.sharedGameId || "",
+        sharedIdContext: state.sharedIdContext || { serviceKey: "", game: "", server: "", platform: "" },
         sharedNotes: state.sharedNotes || "",
         sharedStartTime: state.sharedStartTime || "",
         sharedVoiceMode: state.sharedVoiceMode || "game_mic",
@@ -346,11 +391,17 @@
           })
         : [];
       state.sharedGameId = data.sharedGameId || "";
+      state.sharedIdContext = normalizeIdContext(data.sharedIdContext || {});
       state.sharedNotes = data.sharedNotes || "";
       state.sharedStartTime = normalizeTimeValue(data.sharedStartTime || "") || "";
       state.sharedVoiceMode = data.sharedVoiceMode || "game_mic";
       if (state.sharedVoiceMode !== "discord" && state.sharedVoiceMode !== "game_mic") {
         state.sharedVoiceMode = "game_mic";
+      }
+      if (state.sharedGameId) {
+        state.lines.forEach(function (l) {
+          if (!String(l.gameId || l.game_id || "").trim()) l.gameId = state.sharedGameId;
+        });
       }
       persist();
     } catch (e) {
@@ -361,6 +412,7 @@
   function clearTeam() {
     state.lines = [];
     state.sharedGameId = "";
+    state.sharedIdContext = { serviceKey: "", game: "", server: "", platform: "" };
     state.sharedNotes = "";
     state.sharedStartTime = "";
     state.sharedVoiceMode = "game_mic";
@@ -652,7 +704,15 @@
       online: companion.online,
       availabilityStatus: avail.code || "",
       availabilityCheckedAt: new Date().toISOString(),
+      gameId: String(raw.gameId || raw.game_id || state.sharedGameId || "").trim(),
     };
+    var incomingId = String(raw.gameId || raw.game_id || "").trim();
+    if (incomingId) {
+      applyShared({
+        gameId: incomingId,
+        idContext: idContextFromService(lineService),
+      });
+    }
     state.lines.push(line);
     persist();
     renderBar();
@@ -983,7 +1043,13 @@
       rows +
       '<div class="mcj-team-field"><span>游戏ID *（共用）</span><input type="text" data-mcj-team-game-id value="' +
       esc(state.sharedGameId) +
-      '" placeholder="请输入游戏ID" autocomplete="off" inputmode="text"></div>' +
+      '" placeholder="请输入游戏ID" autocomplete="off" inputmode="text">' +
+      (state.sharedGameId
+        ? '<p class="mcj-team-id-hint" data-mcj-team-game-id-hint>当前游戏ID：' +
+          esc(state.sharedGameId) +
+          " · 修改后本单后续陪玩都沿用新ID</p>"
+        : "") +
+      "</div>" +
       '<div class="mcj-team-field mcj-team-schedule-field"><span>服务时间 *</span>' +
       '<div class="mcj-team-time-row">' +
       '<div class="mcj-team-time-col mcj-team-time-start"><span class="mcj-team-time-cap">开始时间</span>' +
@@ -1348,6 +1414,14 @@
     patch = patch || {};
     if (patch.gameId != null && String(patch.gameId).trim()) {
       state.sharedGameId = String(patch.gameId).trim();
+      state.lines.forEach(function (l) {
+        l.gameId = state.sharedGameId;
+      });
+    }
+    if (patch.idContext) {
+      state.sharedIdContext = normalizeIdContext(patch.idContext);
+    } else if (patch.service || patch.game) {
+      state.sharedIdContext = idContextFromService(patch.service || patch.game);
     }
     if (patch.notes != null) state.sharedNotes = String(patch.notes || "");
     if (patch.startTime) {
@@ -1603,6 +1677,9 @@
     }
     if (e.target.matches("[data-mcj-team-game-id]")) {
       state.sharedGameId = String(e.target.value || "").trim();
+      state.lines.forEach(function (l) {
+        l.gameId = state.sharedGameId;
+      });
       persist();
     }
     if (e.target.matches("[data-mcj-team-notes]")) {
@@ -1661,6 +1738,12 @@
     openCheckout: openCheckout,
     continueToHall: continueToHall,
     applyShared: applyShared,
+    getSharedAccountId: getSharedAccountId,
+    getSharedIdContext: function () {
+      return Object.assign({}, state.sharedIdContext || {});
+    },
+    idContextFromService: idContextFromService,
+    sameIdContext: sameIdContext,
     hasDraft: function () {
       return state.lines.length >= 1 || isPicking();
     },

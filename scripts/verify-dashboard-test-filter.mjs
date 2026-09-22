@@ -27,6 +27,19 @@ assert.equal(isTestAccountRecord({ email: "x@gmail.com", display_name: "凝梦",
 assert.equal(isTestAccountRecord({ email: "x@gmail.com", display_name: "凝梦" }), false);
 
 assert.equal(
+  isTestAccountRecord({ email: "a@example.com", display_name: "InviteeBossFlow-1" }, {}, { VERCEL_ENV: "production" }),
+  true
+);
+assert.equal(
+  isTestAccountRecord({ email: "a@example.com", display_name: "InviteeBossFlow-1" }, {}, { VERCEL_ENV: "preview" }),
+  false
+);
+assert.equal(
+  isTestAccountRecord({ email: "real@gmail.com", display_name: "凝梦" }, {}, { VERCEL_ENV: "production" }),
+  false
+);
+
+assert.equal(
   shouldBlockTestIdentityOnProduction({ email: "admin@meow.test" }, { VERCEL_ENV: "production" }),
   true
 );

@@ -36,6 +36,7 @@
     payMethods: [],
     payLoadError: "",
     payMethodsLoading: false,
+    editingGameId: false,
   };
 
   function resetOrderFormState() {
@@ -57,6 +58,7 @@
     state.payMethods = [];
     state.payLoadError = "";
     state.payMethodsLoading = false;
+    state.editingGameId = false;
   }
 
   function esc(v) {
@@ -82,6 +84,88 @@
     var c1 = compactServiceKey(left);
     var c2 = compactServiceKey(right);
     return !!(c1 && c2 && c1 === c2);
+  }
+
+  function currentIdContext() {
+    var n = String(currentServiceLabel() || "").trim();
+    return {
+      serviceKey: compactServiceKey(n),
+      game: n,
+      server: (n.match(/国服|亚服|欧服|美服|国际服|日服|韩服|台服/) || [""])[0],
+      platform: (n.match(/手游|端游|PC|主机/) || [""])[0],
+    };
+  }
+
+  function inheritedAccountId() {
+    var team = window.MCJMultiCompanionTeam;
+    if (!team) return "";
+    if (typeof team.getSharedAccountId === "function") {
+      return String(team.getSharedAccountId(currentIdContext()) || "").trim();
+    }
+    if (team._test && team._test.state) return String(team._test.state.sharedGameId || "").trim();
+    return "";
+  }
+
+  function readModalGameId() {
+    var el = qs("[data-po-game-id]");
+    var typed = el ? String(el.value || "").trim() : "";
+    return typed || inheritedAccountId();
+  }
+
+  function bindGameIdEdit(mask) {
+    if (!mask) return;
+    var edit = mask.querySelector("[data-po-game-id-edit]");
+    var input = mask.querySelector("[data-po-game-id]");
+    if (edit && input) {
+      edit.addEventListener("click", function (ev) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        state.editingGameId = true;
+        input.removeAttribute("readonly");
+        input.focus();
+        var hint = mask.querySelector("[data-po-game-id-hint]");
+        if (hint) hint.textContent = "修改后本单后续陪玩沿用新ID";
+        edit.hidden = true;
+      });
+    }
+    if (input) {
+      input.addEventListener("input", function () {
+        var team = window.MCJMultiCompanionTeam;
+        var val = String(input.value || "").trim();
+        if (team && typeof team.applyShared === "function" && val) {
+          team.applyShared({ gameId: val, idContext: currentIdContext() });
+        }
+      });
+    }
+  }
+
+  function syncInheritedGameIdField() {
+    var mask = activeMask();
+    if (!mask) return;
+    var input = mask.querySelector("[data-po-game-id]");
+    if (!input) return;
+    var inherited = inheritedAccountId();
+    var showInherited = !!(inherited && !state.editingGameId);
+    var wasReadonly = input.hasAttribute("readonly");
+    var hint = mask.querySelector("[data-po-game-id-hint]");
+    var edit = mask.querySelector("[data-po-game-id-edit]");
+    if (showInherited) {
+      input.value = inherited;
+      input.setAttribute("readonly", "readonly");
+      if (hint) {
+        hint.hidden = false;
+        hint.textContent = "已沿用本次一起下单的游戏ID";
+      }
+      if (edit) edit.hidden = false;
+      return;
+    }
+    if (wasReadonly && !state.editingGameId) input.value = "";
+    input.removeAttribute("readonly");
+    if (hint) {
+      hint.hidden = !state.editingGameId;
+      if (state.editingGameId) hint.textContent = "修改后本单后续陪玩沿用新ID";
+    }
+    if (edit) edit.hidden = true;
   }
   function moneyText(v) {
     if (window.MCJCurrency) return window.MCJCurrency.formatAmount(v);
@@ -138,7 +222,7 @@
     if (document.querySelector('link[data-mcj-place-order-css]')) return;
     var link = document.createElement("link");
     link.rel = "stylesheet";
-    link.href = "/src/place-order-modal.css?v=20260922pra1";
+    link.href = "/src/place-order-modal.css?v=20260922p01b";
     link.setAttribute("data-mcj-place-order-css", "1");
     document.head.appendChild(link);
   }
@@ -676,6 +760,7 @@
       if (unitLabel && state.companion) unitLabel.textContent = "/ " + (state.companion.pricingUnit || "小时");
     }
     refreshTotals();
+    syncInheritedGameIdField();
   }
   function remountServiceChips() {
     var mask = activeMask();
@@ -1012,6 +1097,29 @@
     }
   }
 
+  function gameIdFieldHtml() {
+    var inherited = inheritedAccountId();
+    var showInherited = !!(inherited && !state.editingGameId);
+    var val = showInherited ? inherited : "";
+    return (
+      '<div class="mcj-po-field" data-po-game-id-field>' +
+      '<span class="mcj-po-label">游戏ID *</span>' +
+      '<div class="mcj-po-game-id-row" data-po-game-id-row>' +
+      '<input data-po-game-id required placeholder="请输入游戏ID" autocomplete="off" inputmode="text"' +
+      (val ? ' value="' + esc(val) + '"' : "") +
+      (showInherited ? " readonly" : "") +
+      ">" +
+      '<button type="button" class="mcj-po-game-id-edit" data-po-game-id-edit' +
+      (showInherited ? "" : " hidden") +
+      ">修改</button></div>" +
+      '<p class="mcj-po-game-id-hint" data-po-game-id-hint' +
+      (showInherited ? "" : " hidden") +
+      ">" +
+      (showInherited ? "已沿用本次一起下单的游戏ID" : "") +
+      "</p></div>"
+    );
+  }
+
   function paint() {
     var c = state.companion;
     if (!c) {
@@ -1154,8 +1262,7 @@
       '<label>数量<input type="number" min="1" step="1" data-po-quantity value="' +
       esc(state.quantity) +
       '"></label>' +
-      '<div class="mcj-po-field"><span class="mcj-po-label">游戏ID *</span>' +
-      '<input data-po-game-id required placeholder="请输入游戏ID" autocomplete="off" inputmode="text"></div>' +
+      gameIdFieldHtml() +
       '<div class="mcj-po-field mcj-po-schedule-field"><span class="mcj-po-label">服务时间 *</span>' +
       '<div class="mcj-po-time-row">' +
       '<div class="mcj-po-time-col mcj-po-time-start"><span class="mcj-po-time-cap">开始时间</span>' +
@@ -1383,6 +1490,8 @@
         addAnotherCompanion();
       });
     }
+    bindGameIdEdit(mask);
+    syncInheritedGameIdField();
     syncSubmitAvailability();
     refreshWalletBalance().then(function () {
       if (!state.open || !activeMask()) return;
@@ -1502,14 +1611,26 @@
   function applyModalSharedToTeam() {
     var team = window.MCJMultiCompanionTeam;
     if (!team || typeof team.applyShared !== "function") return;
-    var gameIdEl = qs("[data-po-game-id]");
     var notesEl = qs("[data-po-notes]");
     team.applyShared({
-      gameId: gameIdEl ? String(gameIdEl.value || "").trim() : "",
+      gameId: readModalGameId(),
+      idContext: currentIdContext(),
       notes: notesEl ? String(notesEl.value || "").trim() : "",
       startTime: readStartTimeFromDom(activeMask()) || state.startTime,
       voiceMode: state.voiceMode,
     });
+  }
+
+  function requireModalGameId() {
+    var gameId = readModalGameId();
+    var el = qs("[data-po-game-id]");
+    if (el && gameId && !String(el.value || "").trim()) el.value = gameId;
+    if (!gameId) {
+      failValidate("游戏ID不能为空", "[data-po-game-id]");
+      return "";
+    }
+    applyModalSharedToTeam();
+    return gameId;
   }
 
   function pushCurrentCompanionToTeam() {
@@ -1539,6 +1660,7 @@
       serviceType: currentServiceLabel(),
       serviceId: state.selectedServiceId || "",
       game: currentServiceLabel(),
+      gameId: readModalGameId(),
       gamePrices: c.gamePrices || c.game_prices || {},
       hours: currentHours(),
       quantity: currentQuantity(),
@@ -1566,6 +1688,7 @@
       }
       return true;
     }
+    if (!requireModalGameId()) return false;
     var result = pushCurrentCompanionToTeam();
     if (!result || !result.ok) return false;
     applyModalSharedToTeam();
@@ -1579,6 +1702,7 @@
   }
 
   function addAnotherCompanion() {
+    if (!requireModalGameId()) return;
     var result = pushCurrentCompanionToTeam();
     if (!result || !result.ok) return;
     applyModalSharedToTeam();
@@ -1636,7 +1760,6 @@
 
       if (!requireLogin()) return;
 
-      var gameIdEl = qs("[data-po-game-id]");
       var notesEl = qs("[data-po-notes]");
       var couponEl = qs("[data-po-coupon]");
       var qtyEl = qs("[data-po-quantity]");
@@ -1644,7 +1767,7 @@
       // Safari throws "Can't find variable: mask" (commit 6662598 introduced this).
       var startTime =
         readStartTimeFromDom(activeMask()) || normalizeTimeValue(state.startTime);
-      var gameId = gameIdEl ? String(gameIdEl.value || "").trim() : "";
+      var gameId = readModalGameId();
       var payment = String(state.payment || "").trim();
 
       if (!gameId) {

@@ -48,8 +48,11 @@ assert.doesNotMatch(team, /确认状态<\/dt><dd>待确认/);
 
 // Game ID retained in snapshot text
 assert.match(placeMultiSrc, /游戏ID：\$\{line\.gameId\}/);
+assert.match(placeMultiSrc, /sharedGameId \|\| line\.gameId \|\| line\.game_id/);
 assert.match(placeMultiSrc, /stripOptionalOrderColumns|OPTIONAL_ORDER_COLUMNS/);
 assert.match(modal, /游戏ID \*/);
+assert.match(modal, /data-po-game-id-edit/);
+assert.match(modal, /requireModalGameId/);
 assert.doesNotMatch(modal, /联系方式|区服/);
 
 // Time auto end
@@ -171,6 +174,92 @@ assert.match(guideCfg, /继续选陪玩/);
   assert.match(children[0].description, /语音方式：Discord语音房/);
   assert.equal(Object.prototype.hasOwnProperty.call(children[0], "game_id_value"), false);
   assert.equal(Object.prototype.hasOwnProperty.call(children[0], "voice_mode"), false);
+}
+
+// P0-1B: sharedGameId wins over stale per-line IDs when game_id_value column exists
+{
+  delete process.env.SUPABASE_URL;
+  delete process.env.VITE_SUPABASE_URL;
+  delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const orders = [];
+  let seq = 0;
+  async function supabaseJson(url, opts = {}) {
+    const method = String(opts.method || "GET").toUpperCase();
+    if (method === "GET") return [];
+    if (method === "POST") {
+      const row = JSON.parse(opts.body);
+      row.id = `ord-${++seq}`;
+      orders.push(row);
+      return [row];
+    }
+    if (method === "PATCH") {
+      const id = decodeURIComponent((String(url).match(/id=eq\.([^&]+)/) || [])[1] || "");
+      const patch = JSON.parse(opts.body);
+      const row = orders.find((o) => o.id === id);
+      if (row) Object.assign(row, patch);
+      return row ? [row] : [];
+    }
+    return [];
+  }
+  const deps = {
+    restUrl: (table, q = "") => `${table}${q}`,
+    supabaseJson,
+    serviceHeaders: () => ({}),
+    nextOrderNo: async () => `NO${++seq}`,
+    resolveCompanionUserId: async (id) => id,
+    assertCompanionOrderable: async (id) => ({
+      ok: true,
+      cp: { user_id: id, display_name: "陪玩", level_id: "lv2" },
+    }),
+    priceForGame: () => 0,
+    assertNotSelfTrade: () => {},
+    assertOrderPaymentMethodAllowed: async (code) => ({ ok: true, code: code || "catfood" }),
+    isWalletMethod: (m) => String(m).toLowerCase() === "catfood",
+    debitWallet: async () => {},
+    viewOrder: (o) => o,
+    addSystemMessage: async () => {},
+    resolveOrderUnitPrice: async ({ gameName }) => ({
+      price: 30,
+      source: "admin_set",
+      serviceRow: { id: "r1", service_name: gameName },
+    }),
+  };
+  const result = await placeMultiOrder({
+    profile: { id: "boss-1" },
+    body: {
+      idempotencyKey: "p01b-shared-id-wins",
+      gameId: "XYZ888",
+      paymentMethod: "catfood",
+      voiceMode: "game_mic",
+      companions: [
+        {
+          companionId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          service: "三角洲手游 国服",
+          hours: 1,
+          unitPrice: 30,
+          totalAmount: 30,
+          gameId: "ABC123",
+        },
+        {
+          companionId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+          service: "三角洲手游 国服",
+          hours: 1,
+          unitPrice: 30,
+          totalAmount: 30,
+          gameId: "OLD999",
+        },
+      ],
+    },
+    deps,
+  });
+  assert.equal(result.ok, true, result.message);
+  const children = orders.filter((o) => o.parent_order_id);
+  assert.equal(children.length, 2);
+  assert.equal(children[0].game_id_value, "XYZ888");
+  assert.equal(children[1].game_id_value, "XYZ888");
+  assert.match(children[0].description, /游戏ID：XYZ888/);
+  assert.match(children[1].description, /游戏ID：XYZ888/);
+  assert.doesNotMatch(children[0].description, /ABC123|OLD999/);
 }
 
 console.log("verify-remaining-multi-order-flow: PASS");

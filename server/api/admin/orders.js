@@ -19,6 +19,11 @@ import {
   signedProofUrl,
   staffReviewerNameFromProfile,
 } from "../_payment-receipts.js";
+import {
+  excludeTestTouchedOnProduction,
+  isProductionRuntime,
+  isTestAccountRecord,
+} from "../_test-accounts.js";
 const REQUIRED_ENV = ["SUPABASE_URL", "SUPABASE_ANON_KEY", "SUPABASE_SERVICE_ROLE_KEY"];
 const ADMIN_ROLES = new Set(["admin", "super_admin"]);
 const ORDER_STATUS_TEXT = { ...ORDER_STATUS_LABELS };
@@ -511,16 +516,19 @@ export default async function handler(req, res) {
         const reviews = Array.isArray(reviewsRaw) ? reviewsRaw : [];
         const ids = [...new Set(reviews.flatMap((r) => [r.boss_id, r.companion_id]).filter(Boolean))];
         const profiles = ids.length
-          ? await supabaseJson(restUrl("profiles", `?id=in.(${ids.map(encodeURIComponent).join(",")})&select=id,display_name,email,boss_uid`), { headers: serviceHeaders() }).catch(() => [])
+          ? await supabaseJson(restUrl("profiles", `?id=in.(${ids.map(encodeURIComponent).join(",")})&select=id,display_name,email,boss_uid,is_test_account`), { headers: serviceHeaders() }).catch(() => [])
           : [];
         const map = (profiles || []).reduce((m, p) => {
           m[p.id] = p;
           return m;
         }, {});
+        const visibleReviews = isProductionRuntime()
+          ? reviews.filter((r) => !isTestAccountRecord(map[r.boss_id] || {}) && !isTestAccountRecord(map[r.companion_id] || {}))
+          : reviews;
         return json(res, 200, {
           ok: true,
           configured: true,
-          reviews: reviews.map((r) => ({
+          reviews: visibleReviews.map((r) => ({
             id: r.id,
             order_id: r.order_id || "",
             user_id: r.boss_id || "",
@@ -590,13 +598,14 @@ export default async function handler(req, res) {
         viewed.reviews = reviews;
         return json(res, 200, { ok: true, configured: true, order: viewed, reviews });
       }
-      const [orders, profiles] = await Promise.all([
+      const [ordersRaw, profiles] = await Promise.all([
         fetchOrdersActivityDesc(
           { restUrl, supabaseJson, serviceHeaders },
           { limit: 500 }
         ).catch(() => []),
         supabaseJson(restUrl("profiles", "?limit=1000"), { headers: serviceHeaders() }).catch(() => []),
       ]);
+      const orders = excludeTestTouchedOnProduction(ordersRaw || [], profiles || []);
       const map = (profiles || []).reduce((m, p) => {
         m[p.id] = p;
         return m;
