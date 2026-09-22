@@ -153,12 +153,30 @@
     return bossKeys().indexOf(stored) >= 0;
   }
 
+  function hideToast() {
+    var el = document.querySelector("[data-mcj-team-toast]");
+    if (!el) return;
+    el.classList.remove("show");
+    try {
+      el.style.bottom = "";
+    } catch (e) {}
+    clearTimeout(el._t);
+  }
+
   function toast(msg) {
     if (window.MCJPlaceOrder && typeof window.MCJToast === "function") {
       /* fall through */
     }
     var text = String(msg || "").trim();
     if (!text) return;
+    // Checkout sheet already owns the CTA — never cover「确认并支付」.
+    var sheet = document.querySelector("[data-mcj-team-sheet]");
+    if (sheet && !sheet.hidden && sheet.getAttribute("aria-hidden") !== "true") {
+      var sheetStyle = window.getComputedStyle(sheet);
+      if (sheetStyle.display !== "none" && sheetStyle.visibility !== "hidden") {
+        return;
+      }
+    }
     var el = document.querySelector("[data-mcj-team-toast]");
     if (!el) {
       el = document.createElement("div");
@@ -167,10 +185,35 @@
       document.body.appendChild(el);
     }
     el.textContent = text;
+    // Measure live stack so toast sits above team bar + profile CTAs / tabbar
+    // (CSS vars alone can lag on 390px when the expanded team bar resizes).
+    try {
+      syncBottomStackOffset();
+      var teamBar = document.querySelector("[data-mcj-team-bar]");
+      var actions =
+        document.querySelector(".profile-bottom-bar.pd-bottom-bar") ||
+        document.querySelector(".profile-bottom-bar") ||
+        document.querySelector(".mobile-bottom-nav.mcj-app-tabbar") ||
+        document.querySelector(".mcj-app-tabbar");
+      var bottomGap = 12;
+      if (teamBar && !teamBar.hidden) {
+        var tb = teamBar.getBoundingClientRect();
+        if (tb.height > 0) bottomGap = Math.max(bottomGap, Math.ceil(window.innerHeight - tb.top) + 10);
+      }
+      if (actions && !actions.hidden) {
+        var ab = actions.getBoundingClientRect();
+        if (ab.height > 0) bottomGap = Math.max(bottomGap, Math.ceil(window.innerHeight - ab.top) + 10);
+      }
+      el.style.bottom = bottomGap + "px";
+      el.style.top = "auto";
+    } catch (e) {}
     el.classList.add("show");
     clearTimeout(el._t);
     el._t = setTimeout(function () {
       el.classList.remove("show");
+      try {
+        el.style.bottom = "";
+      } catch (e3) {}
     }, 2800);
   }
 
@@ -178,7 +221,7 @@
     if (document.querySelector('link[data-mcj-team-css]')) return;
     var link = document.createElement("link");
     link.rel = "stylesheet";
-    link.href = "/src/multi-companion-team.css?v=20260922p01b";
+    link.href = "/src/multi-companion-team.css?v=20260922p0e1";
     link.setAttribute("data-mcj-team-css", "1");
     document.head.appendChild(link);
   }
@@ -1137,6 +1180,7 @@
       toast("多人下单至少选择 2 位陪玩");
       return;
     }
+    hideToast();
     paintSheet();
   }
 
@@ -1757,6 +1801,8 @@
     MAX_TEAM: MAX_TEAM,
     buildPayload: buildPayload,
     syncBottomStackOffset: syncBottomStackOffset,
+    toast: toast,
+    hideToast: hideToast,
     _test: {
       lineSubtotal: lineSubtotal,
       isUnavailable: isUnavailable,

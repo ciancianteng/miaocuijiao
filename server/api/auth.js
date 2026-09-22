@@ -44,6 +44,7 @@ import {
   PROD_TEST_ACCOUNT_BLOCK_MESSAGE,
   shouldBlockTestIdentityOnProduction,
   stampTestAccountPayload,
+  stampTestUserMetadata,
 } from "./_test-accounts.js";
 
 function opaqueSystemPassword() {
@@ -2216,13 +2217,16 @@ export default async function handler(req, res) {
             email,
             password: authPassword,
             email_confirm: true,
-            user_metadata: {
-              display_name: displayName || email.split("@")[0] || "老板",
-              has_password: true,
-              password_set_at: verifiedAt,
-              email_verified: true,
-              email_verified_at: verifiedAt,
-            },
+            user_metadata: stampTestUserMetadata(
+              {
+                display_name: displayName || email.split("@")[0] || "老板",
+                has_password: true,
+                password_set_at: verifiedAt,
+                email_verified: true,
+                email_verified_at: verifiedAt,
+              },
+              { email, displayName }
+            ),
             app_metadata: { has_password: true, email_verified: true },
           }),
         });
