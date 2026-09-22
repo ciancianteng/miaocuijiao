@@ -25,9 +25,12 @@ const gift = {
   status: "completed",
   note: "礼物/打赏收入",
 };
-assert.equal(classifyCompanionIncomeTx(gift, null), "reward_other");
+assert.equal(classifyCompanionIncomeTx(gift, null), "gift_income");
 assert.equal(
   classifyCompanionIncomeTx(orphanTx, { id: orphanTx.order_id, status: "completed" }),
   "order_income"
 );
+const giftPart = partitionCompanionIncome([gift], []);
+assert.equal(sumTxAmount(giftPart.giftIncome), 10);
+assert.equal(sumTxAmount(giftPart.rewardOther), 0);
 console.log("PASS companion earnings classification");

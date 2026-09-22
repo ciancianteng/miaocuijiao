@@ -2947,7 +2947,7 @@
     ledger.forEach(function(r){
       // Only count valid settled order income — never cancelled-order leftovers or rewards.
       if(r.typeCode!=='companion_income')return;
-      if(r.incomeKind && r.incomeKind!=='order_income')return;
+      if(r.incomeKind && r.incomeKind!=='order_income' && r.incomeKind!=='gift_income' && r.incomeKind!=='invite_income')return;
       if(r.incomeKind==='void' || r.incomeKind==='reward_other')return;
       var day=String(r.createdAt||'').slice(0,10);
       if(!day)return;
@@ -2971,30 +2971,47 @@
   }
   function earningsOverviewTab(){
     var e=(state.data&&state.data.earnings)||{},summary=(state.data&&state.data.summary)||{},details=(state.data&&state.data.earningDetails)||[],level=(state.data&&state.data.levelInfo)||{},warn=state.walletWarning||'';
-    var available=e.available!=null?e.available:e.withdrawable;
-    var frozen=e.frozen!=null?e.frozen:summary.frozen||0;
+    var channels=e.channels||{};
+    var available=e.availableWithdrawable!=null?e.availableWithdrawable:(e.available!=null?e.available:e.withdrawable);
+    var frozen=e.withdrawalLocked!=null?e.withdrawalLocked:(e.frozen!=null?e.frozen:summary.frozen||0);
+    var withdrawn=e.withdrawnTotal!=null?e.withdrawnTotal:(e.withdrawn!=null?e.withdrawn:summary.withdrawn||0);
+    var orderIncome=e.orderIncome!=null?e.orderIncome:channels.orderIncome||0;
+    var giftGross=e.giftGross!=null?e.giftGross:channels.giftGross||0;
+    var giftNet=e.giftNetIncome!=null?e.giftNetIncome:(e.giftIncome!=null?e.giftIncome:channels.giftNetIncome||0);
+    var inviteIncome=e.inviteIncome!=null?e.inviteIncome:channels.inviteCommission||0;
     var commission=level.platformCommissionRate!=null?level.platformCommissionRate:(level.orderCommissionRate||0);
-    var stats=computeIncomeStats();
     var noMap=orderNoLookup();
     return (warn?'<div class="pw-empty" style="margin-bottom:12px"><strong>部分数据读取异常</strong><span>'+esc(warn)+'</span></div>':'')+
       '<section class="pw-grid">'+
-      metric('今日收入',money(num(e.todayIncome)))+
-      metric('昨日收入',money(num(stats.yesterdayIncome)))+
-      metric('本周收入',money(num(stats.weekIncome)))+
-      metric('本月收入',money(num(e.monthIncome||summary.monthIncome)))+
+      metric('订单收入',money(num(orderIncome)))+
+      metric('礼物总额',money(num(giftGross)))+
+      metric('礼物净收入',money(num(giftNet)))+
+      metric('邀请佣金',money(num(inviteIncome)))+
       metric('累计收入',money(num(e.totalIncome||summary.totalIncome)))+
-      metric('可提现猫粮',money(num(available)))+
-      metric('冻结中',money(num(frozen)))+
-      metric('平台抽成',esc(commission)+'%')+
+      metric('提现中',money(num(frozen)))+
+      metric('已提现',money(num(withdrawn)))+
+      metric('当前可提现',money(num(available)))+
       '</section>'+
-      '<section class="pw-card pad" style="margin-top:14px"><h3>奖励 / 其它</h3><div class="pw-info-list">'+infoRow('奖励猫粮',money(num(e.bonus||e.reward||0)))+infoRow('是否可提现',esc(e.rewardWithdrawable?'可提现':'不可提现（默认）'))+infoRow('说明',esc(e.rewardNote||'奖励/其它不计入订单收入'))+infoRow('已提现',money(num(e.withdrawn||summary.withdrawn)))+'</div></section>'+
-      '<section class="pw-card pad" style="margin-top:14px"><h3>收入明细</h3>'+(details.length?'<div class="pw-table-wrap"><table class="pw-table"><thead><tr><th>类型</th><th>订单</th><th>订单总额</th><th>平台抽成</th><th>实际到账</th><th>状态</th><th>时间</th></tr></thead><tbody>'+details.map(function(x){
+      '<section class="pw-card pad" style="margin-top:14px"><h3>收益渠道</h3><div class="pw-info-list">'+
+      infoRow('订单收入',money(num(orderIncome)))+
+      infoRow('礼物总额',money(num(giftGross)))+
+      infoRow('礼物平台抽成',money(num(e.giftCommission||channels.giftCommission||0)))+
+      infoRow('礼物净收入（可提现）',money(num(giftNet)))+
+      infoRow('邀请佣金',money(num(inviteIncome)))+
+      infoRow('订单 24h 锁定',money(num(e.earningsLocked||0)))+
+      infoRow('提现冻结中',money(num(frozen)))+
+      infoRow('已提现合计',money(num(withdrawn)))+
+      infoRow('当前可提现',money(num(available)))+
+      infoRow('平台订单抽成',esc(commission)+'%')+
+      '</div></section>'+
+      '<section class="pw-card pad" style="margin-top:14px"><h3>奖励 / 其它（不可提现）</h3><div class="pw-info-list">'+infoRow('奖励猫粮',money(num(e.bonus||e.reward||0)))+infoRow('说明',esc(e.rewardNote||'奖励/其它不计入订单/礼物提现额度'))+'</div></section>'+
+      '<section class="pw-card pad" style="margin-top:14px"><h3>收入明细</h3>'+(details.length?'<div class="pw-table-wrap"><table class="pw-table"><thead><tr><th>类型</th><th>订单/礼物</th><th>总额</th><th>平台抽成</th><th>实际到账</th><th>状态</th><th>时间</th></tr></thead><tbody>'+details.map(function(x){
         var s=x.settlement||{};
-        var gross=s.totalCatFood!=null?s.totalCatFood:x.amount;
-        var fee=s.platformCommissionCatFood!=null?s.platformCommissionCatFood:0;
-        var net=s.companionNetCatFood!=null?s.companionNetCatFood:x.amount;
-        var no=x.orderId?(noMap[x.orderId]||humanId(x.orderId)):'-';
-        return '<tr><td data-label="类型">'+esc(x.type||'订单收入')+'</td><td data-label="订单">'+esc(no)+'</td><td data-label="订单总额">'+money(num(gross))+'</td><td data-label="平台抽成">'+money(num(fee))+'</td><td data-label="实际到账">'+money(num(net))+'</td><td data-label="状态">'+esc(ledgerStatusCN(x.status))+'</td><td data-label="时间">'+esc(fmtTime(x.createdAt))+'</td></tr>';
+        var gross=x.grossAmount!=null?x.grossAmount:(s.totalCatFood!=null?s.totalCatFood:x.amount);
+        var fee=x.platformFee!=null?x.platformFee:(s.platformCommissionCatFood!=null?s.platformCommissionCatFood:0);
+        var net=x.netIncome!=null?x.netIncome:(s.companionNetCatFood!=null?s.companionNetCatFood:x.amount);
+        var no=x.orderId?(noMap[x.orderId]||humanId(x.orderId)):(x.orderNo||'-');
+        return '<tr><td data-label="类型">'+esc(x.type||'订单收入')+'</td><td data-label="订单/礼物">'+esc(no)+'</td><td data-label="总额">'+money(num(gross))+'</td><td data-label="平台抽成">'+money(num(fee))+'</td><td data-label="实际到账">'+money(num(net))+'</td><td data-label="状态">'+esc(ledgerStatusCN(x.status))+'</td><td data-label="时间">'+esc(fmtTime(x.createdAt))+'</td></tr>';
       }).join('')+'</tbody></table></div>':'<div class="pw-empty">暂无收入明细</div>')+'</section>';
   }
   function earningsWithdrawTab(){

@@ -157,9 +157,9 @@ async function giftCommissionRate(companionRow) {
 }
 
 async function creditCompanionIncome(companionId, amount, note, relatedId) {
-  if (amount <= 0) return;
+  if (amount <= 0) return null;
   try {
-    await companionDb("transactions", "", {
+    const rows = await companionDb("transactions", "", {
       method: "POST",
       body: JSON.stringify({
         user_id: companionId,
@@ -171,8 +171,10 @@ async function creditCompanionIncome(companionId, amount, note, relatedId) {
         created_at: nowIso(),
       }),
     });
+    return rows?.[0] || null;
   } catch (e) {
     if (!isMissingRelation(e)) console.warn("[gift-orders] creditCompanionIncome", e?.message || e);
+    return null;
   }
 }
 
@@ -507,10 +509,12 @@ export async function recordCompanionGiftWallHit({
   });
 }
 
-async function insertFulfilledTransaction(order, rate) {
+async function insertFulfilledTransaction(order, rate, { approvedBy = null } = {}) {
   const gross = money(order.total_amount);
+  const unitPrice = money(order.unit_price) || (order.quantity > 0 ? money(gross / order.quantity) : gross);
   const commissionAmount = Math.round(gross * (rate / 100) * 100) / 100;
   const companionIncome = Math.round((gross - commissionAmount) * 100) / 100;
+  const deliveredAt = nowIso();
   const payload = {
     tx_no: txNo(),
     sender_boss_id: order.sender_boss_id,
@@ -518,10 +522,14 @@ async function insertFulfilledTransaction(order, rate) {
     gift_id: order.gift_id,
     gift_name: order.gift_name_snapshot,
     quantity: order.quantity,
+    unit_price: unitPrice,
     gross_cat_food: gross,
+    gross_amount: gross,
     platform_commission_rate: rate,
     platform_commission_amount: commissionAmount,
+    platform_commission: commissionAmount,
     companion_income: companionIncome,
+    net_companion_income: companionIncome,
     message: "",
     related_order_id: null,
     kind: "gift",
@@ -529,33 +537,48 @@ async function insertFulfilledTransaction(order, rate) {
     gift_order_id: order.id,
     fulfillment_status: "completed",
     gift_image_url: order.gift_image_snapshot || "",
-    created_at: nowIso(),
+    payment_method: order.payment_channel || "external",
+    payment_status: "paid",
+    approval_status: "approved",
+    approved_by: approvedBy || order.reviewed_by || null,
+    delivered_at: deliveredAt,
+    created_at: deliveredAt,
   };
-  try {
-    const rows = await companionDb("gift_transactions", "", {
-      method: "POST",
-      body: JSON.stringify(payload),
-    });
-    return { tx: rows?.[0] || payload, companionIncome, commissionAmount, rate, gross, replayed: false };
-  } catch (e) {
-    if (/duplicate|unique|23505/i.test(String(e.message || e.body || ""))) {
-      const existing = await companionDb(
-        "gift_transactions",
-        `?gift_order_id=eq.${encodeURIComponent(order.id)}&limit=1`
-      ).catch(() => []);
-      if (existing?.[0]) {
-        return {
-          tx: existing[0],
-          companionIncome: money(existing[0].companion_income),
-          commissionAmount: money(existing[0].platform_commission_amount),
-          rate: money(existing[0].platform_commission_rate),
-          gross: money(existing[0].gross_cat_food),
-          replayed: true,
-        };
+  let workingPayload = { ...payload };
+  for (let attempt = 0; attempt < 12; attempt++) {
+    try {
+      const rows = await companionDb("gift_transactions", "", {
+        method: "POST",
+        body: JSON.stringify(workingPayload),
+      });
+      return { tx: rows?.[0] || workingPayload, companionIncome, commissionAmount, rate, gross, replayed: false };
+    } catch (e) {
+      const msg = `${e?.message || ""} ${JSON.stringify(e?.body || "")}`;
+      if (/duplicate|unique|23505/i.test(msg)) {
+        const existing = await companionDb(
+          "gift_transactions",
+          `?gift_order_id=eq.${encodeURIComponent(order.id)}&limit=1`
+        ).catch(() => []);
+        if (existing?.[0]) {
+          return {
+            tx: existing[0],
+            companionIncome: money(existing[0].companion_income ?? existing[0].net_companion_income),
+            commissionAmount: money(existing[0].platform_commission_amount ?? existing[0].platform_commission),
+            rate: money(existing[0].platform_commission_rate),
+            gross: money(existing[0].gross_cat_food ?? existing[0].gross_amount),
+            replayed: true,
+          };
+        }
       }
+      const m = msg.match(/Could not find the '([^']+)' column/i);
+      if (m && m[1] in workingPayload) {
+        delete workingPayload[m[1]];
+        continue;
+      }
+      throw e;
     }
-    throw e;
   }
+  throw httpError("礼物成交写入失败", 500);
 }
 
 export async function approveGiftOrder({ orderId, staffId, staffName = "" }) {
@@ -598,17 +621,35 @@ export async function approveGiftOrder({ orderId, staffId, staffName = "" }) {
 
   const companionRow = await loadCompanionProfile(working.receiver_companion_id);
   const rate = await giftCommissionRate(companionRow || {});
-  const fulfilled = await insertFulfilledTransaction(working, rate);
+  const fulfilled = await insertFulfilledTransaction(working, rate, {
+    approvedBy: staffId || working.reviewed_by || null,
+  });
 
   if (!fulfilled.replayed) {
-    // Note must include 礼物 so earnings classify as reward_other (not order settlement).
+    // Gift net → companion earnings ledger with source=gift (never MCJ_SETTLEMENT / order_income).
     // Do NOT put gift_order id into transactions.order_id — that field is companion order FK.
-    await creditCompanionIncome(
+    const giftNote = `礼物收益：${working.gift_name_snapshot || "礼物"} MCJ_GIFT:${JSON.stringify({
+      source: "gift",
+      giftOrderId: working.id,
+      giftName: working.gift_name_snapshot || "礼物",
+      qty: working.quantity,
+      gross: fulfilled.gross,
+      platformCommission: fulfilled.commissionAmount,
+      net: fulfilled.companionIncome,
+      paymentMethod: working.payment_channel || "external",
+    })}`;
+    const incomeTx = await creditCompanionIncome(
       working.receiver_companion_id,
       fulfilled.companionIncome,
-      `礼物收益：${working.gift_name_snapshot || "礼物"}`,
+      giftNote,
       null
     );
+    if (incomeTx?.id && fulfilled.tx?.id) {
+      await companionDb("gift_transactions", `?id=eq.${encodeURIComponent(fulfilled.tx.id)}`, {
+        method: "PATCH",
+        body: JSON.stringify({ settlement_transaction_id: incomeTx.id }),
+      }).catch(() => null);
+    }
     await upsertGiftWall(working);
     const boss = await loadBossProfile(working.sender_boss_id);
     const bossName = boss?.nickname || boss?.display_name || "一位老板";

@@ -1,0 +1,77 @@
+{
+  "staging": "https://meow-cuijiao-homepage-staging.vercel.app",
+  "staging_ref": "cfccwysniduwkjskiqgy",
+  "generated_at": "2026-09-22T07:37:03.457Z",
+  "steps": [
+    {
+      "name": "CLASSIFY_GIFT_VS_ORDER",
+      "result": "PASS",
+      "detail": "gift=gift_income order=order_income giftSum=80"
+    },
+    {
+      "name": "LOGINS",
+      "result": "PASS",
+      "detail": "companionId=1b50e8c2"
+    },
+    {
+      "name": "GIFT_CATALOG",
+      "result": "PASS",
+      "detail": "n=6"
+    },
+    {
+      "name": "CHANNELS_PRESENT",
+      "result": "PASS",
+      "detail": "{\"withdrawable\":16,\"giftNet\":16,\"orderIncome\":0,\"withdrawalLocked\":0,\"withdrawn\":0}"
+    },
+    {
+      "name": "CATFOOD_GIFT_IDEMPOTENT",
+      "result": "PASS",
+      "detail": "{\"status1\":200,\"status2\":200,\"replayed\":true,\"snapshot\":{\"grossCatFood\":20,\"platformCommissionRate\":20,\"platformCommissionAmount\":4,\"companionIncome\":16,\"giftName\":\"小鱼干\",\"quantity\":1,\"paymentMethod\":\"catfood\"},\"txId\":\"1b2a6288-6e7a-4cbb-9dda-6ab5c3315ae7\",\"paymentMethod\":\"catfood\",\"net\":16,\"gross\":20,\"commission\":4}"
+    },
+    {
+      "name": "GIFT_NET_IN_CHANNELS",
+      "result": "PASS",
+      "detail": "{\"withdrawable\":32,\"giftNet\":32,\"giftGross\":40,\"orderIncome\":0}"
+    },
+    {
+      "name": "WITHDRAW_FREEZE",
+      "result": "PASS",
+      "detail": "SKIP withdrawable=10 canWithdraw=false"
+    }
+  ],
+  "evidence": {
+    "before": {
+      "withdrawable": 16,
+      "giftNet": 16,
+      "orderIncome": 0,
+      "withdrawalLocked": 0,
+      "withdrawn": 0
+    },
+    "giftSend": {
+      "status1": 200,
+      "status2": 200,
+      "replayed": true,
+      "snapshot": {
+        "grossCatFood": 20,
+        "platformCommissionRate": 20,
+        "platformCommissionAmount": 4,
+        "companionIncome": 16,
+        "giftName": "小鱼干",
+        "quantity": 1,
+        "paymentMethod": "catfood"
+      },
+      "txId": "1b2a6288-6e7a-4cbb-9dda-6ab5c3315ae7",
+      "paymentMethod": "catfood",
+      "net": 16,
+      "gross": 20,
+      "commission": 4
+    },
+    "afterGift": {
+      "withdrawable": 32,
+      "giftNet": 32,
+      "giftGross": 40,
+      "orderIncome": 0
+    }
+  },
+  "verdict": "PASS"
+}
