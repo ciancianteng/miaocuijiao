@@ -3,9 +3,14 @@
 .mcj-team-toast {
   position: fixed;
   left: 50%;
-  bottom: calc(var(--mcj-bottom-actions-h, 64px) + var(--mcj-team-bar-h, 64px) + 12px);
+  /* Default: above profile/hall CTA + team bar. JS toast() may override bottom
+     with a live measurement so 390px never covers「咨询客服」「立即下单」. */
+  bottom: calc(
+    var(--mcj-bottom-actions-h, 64px) + var(--mcj-team-bar-h, 64px) + 12px + env(safe-area-inset-bottom, 0px)
+  );
   transform: translateX(-50%) translateY(12px);
-  z-index: 100050;
+  /* Below interactive CTAs / team bar actions (9000+) — visual only, no clicks. */
+  z-index: 8990;
   max-width: min(88vw, 320px);
   padding: 10px 14px;
   border-radius: 14px;

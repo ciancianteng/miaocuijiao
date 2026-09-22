@@ -149,6 +149,15 @@ export function stampTestAccountPayload(payload = {}, identity = {}) {
   return { ...payload, is_test_account: true };
 }
 
+/**
+ * Stamp Auth user_metadata.source for Cursor/E2E acceptance identities.
+ * Safe no-op when identity is not a test/acceptance fixture.
+ */
+export function stampTestUserMetadata(meta = {}, identity = {}) {
+  if (!shouldStampTestAccount(identity)) return meta || {};
+  return { ...(meta || {}), source: TEST_DATA_SOURCE };
+}
+
 export function excludeTestTouchedOnProduction(rows = [], profiles = [], env = process.env) {
   if (!isProductionRuntime(env)) return Array.isArray(rows) ? rows : [];
   const { byId, testIds } = indexProfilesForStats(profiles, env);

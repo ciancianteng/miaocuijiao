@@ -3454,7 +3454,7 @@ export default async function handler(req, res) {
       const body = await parseBody(req); const email=String(body.email || body.account || "").trim().toLowerCase(); const password=String(body.password || ""); const nickname=String(body.nickname || body.name || "").trim();
       const registerToken = String(body.registerToken || body.emailOtpToken || body.otpToken || "").trim();
       if (!email || !/^\S+@\S+\.\S+$/.test(email)) return json(res,400,{ok:false,message:"请输入有效邮箱"});
-      const { shouldBlockTestIdentityOnProduction, stampTestAccountPayload, PROD_TEST_ACCOUNT_BLOCK_MESSAGE } = await import("./_test-accounts.js");
+      const { shouldBlockTestIdentityOnProduction, stampTestAccountPayload, stampTestUserMetadata, PROD_TEST_ACCOUNT_BLOCK_MESSAGE } = await import("./_test-accounts.js");
       if (shouldBlockTestIdentityOnProduction({ email, displayName: nickname })) {
         return json(res, 403, { ok: false, message: PROD_TEST_ACCOUNT_BLOCK_MESSAGE, code: "PROD_TEST_ACCOUNT_BLOCKED" });
       }
@@ -3514,14 +3514,17 @@ export default async function handler(req, res) {
           email,
           password: authPassword,
           email_confirm: true,
-          user_metadata: {
-            display_name: nickname,
-            has_password: wantsPassword,
-            email_verified: true,
-            email_verified_at: nowIso(),
-            roles: ["companion"],
-            ...(wantsPassword ? { password_set_at: nowIso() } : {}),
-          },
+          user_metadata: stampTestUserMetadata(
+            {
+              display_name: nickname,
+              has_password: wantsPassword,
+              email_verified: true,
+              email_verified_at: nowIso(),
+              roles: ["companion"],
+              ...(wantsPassword ? { password_set_at: nowIso() } : {}),
+            },
+            { email, displayName: nickname, nickname }
+          ),
           app_metadata: { has_password: wantsPassword, email_verified: true, roles: ["companion"] },
         }),
       });
