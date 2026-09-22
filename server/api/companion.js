@@ -38,6 +38,7 @@ import {
   parseServiceTypes,
 } from "./_game-prices.js";
 import { loadPublicServices } from "./platform/services.js";
+import { syncCompanionServicesFromGamePrices } from "./_admin-service-prices.js";
 import {
   partitionCompanionIncome,
   sumTxAmount,
@@ -3453,6 +3454,10 @@ export default async function handler(req, res) {
       const body = await parseBody(req); const email=String(body.email || body.account || "").trim().toLowerCase(); const password=String(body.password || ""); const nickname=String(body.nickname || body.name || "").trim();
       const registerToken = String(body.registerToken || body.emailOtpToken || body.otpToken || "").trim();
       if (!email || !/^\S+@\S+\.\S+$/.test(email)) return json(res,400,{ok:false,message:"请输入有效邮箱"});
+      const { shouldBlockTestIdentityOnProduction, stampTestAccountPayload, PROD_TEST_ACCOUNT_BLOCK_MESSAGE } = await import("./_test-accounts.js");
+      if (shouldBlockTestIdentityOnProduction({ email, displayName: nickname })) {
+        return json(res, 403, { ok: false, message: PROD_TEST_ACCOUNT_BLOCK_MESSAGE, code: "PROD_TEST_ACCOUNT_BLOCKED" });
+      }
       if (!registerToken) return json(res,400,{ok:false,message:"请先完成邮箱验证。"});
       if (!nickname) return json(res,400,{ok:false,message:"请输入陪玩昵称"});
       if (!password) return json(res,400,{ok:false,message:"请设置登录密码。"});
@@ -3520,7 +3525,7 @@ export default async function handler(req, res) {
           app_metadata: { has_password: wantsPassword, email_verified: true, roles: ["companion"] },
         }),
       });
-      const companionProfilePayload = {
+      const companionProfilePayload = stampTestAccountPayload({
         id: created.id,
         role: "companion",
         display_name: nickname,
@@ -3530,11 +3535,11 @@ export default async function handler(req, res) {
         created_at: nowIso(),
         email_verified: true,
         email_verified_at: nowIso(),
-      };
+      }, { email, displayName: nickname, nickname });
       try {
         await supabaseJson(restUrl("profiles"), { method:"POST", headers: serviceHeaders(), body: JSON.stringify(companionProfilePayload) });
       } catch (profErr) {
-        if (/email_verified|Could not find|schema cache/i.test(String(profErr?.message || ""))) {
+        if (/email_verified|is_test_account|Could not find|schema cache/i.test(String(profErr?.message || ""))) {
           const { email_verified, email_verified_at, ...fallback } = companionProfilePayload;
           void email_verified;
           void email_verified_at;
@@ -3547,7 +3552,18 @@ export default async function handler(req, res) {
         const { persistRoles } = await import("./_account-roles.js");
         await persistRoles(created.id, ["companion"], { primaryRole: "companion" });
       } catch { /* optional */ }
-      await supabaseJson(restUrl("companion_profiles"), { method:"POST", headers: serviceHeaders(), body: JSON.stringify({ user_id: created.id, nickname, contact_phone: "", verification_status: "pending", deposit_status: "unpaid", application_status: "draft", allow_orders: false, online_status: "offline", created_at: nowIso(), updated_at: nowIso() }) });
+      const cpRow = stampTestAccountPayload({ user_id: created.id, nickname, contact_phone: "", verification_status: "pending", deposit_status: "unpaid", application_status: "draft", allow_orders: false, online_status: "offline", created_at: nowIso(), updated_at: nowIso() }, { email, displayName: nickname, nickname });
+      try {
+        await supabaseJson(restUrl("companion_profiles"), { method:"POST", headers: serviceHeaders(), body: JSON.stringify(cpRow) });
+      } catch (cpErr) {
+        if (/is_test_account|schema cache|Could not find/i.test(String(cpErr?.message || ""))) {
+          const { is_test_account, ...fallbackCp } = cpRow;
+          void is_test_account;
+          await supabaseJson(restUrl("companion_profiles"), { method:"POST", headers: serviceHeaders(), body: JSON.stringify(fallbackCp) });
+        } else {
+          throw cpErr;
+        }
+      }
       try {
         const { stampPasswordSet, stampPasswordUnset } = await import("./_account-security.js");
         if (wantsPassword) await stampPasswordSet(created.id, { mustChangePassword: false });
@@ -4730,6 +4746,19 @@ return json(res, 200, {
           ...(contactProvided ? { phone: contact } : {}),
         }),
       });
+      try {
+        await syncCompanionServicesFromGamePrices({
+          companionId: auth.profile.id,
+          companion: { ...companion, user_id: auth.profile.id, level_id: companion?.level_id },
+          gamePrices: nextGamePrices,
+          selectedServices,
+          source: "companion_custom",
+        });
+      } catch (syncErr) {
+        if (!isMissingRelation(syncErr)) {
+          console.warn("[companion/save] companion_services sync", syncErr?.message || syncErr);
+        }
+      }
       const stayedApproved = /approved|verified|passed/i.test(String(patch.application_status || ""));
       const wasRejected = /reject|resubmit|need_more/i.test(String(companion.application_status || ""));
       return json(res, 200, {

@@ -5,11 +5,12 @@
  *   service-specific price ?? level.base_price
  *
  * Resolution order:
- *   1. matched companion_services row
- *      - admin_set / companion_custom / legacy_import / companion_service → row.price
- *      - level_default / level_base_price seed → prefer game_prices (priceForGame)
- *        when present, else row.price (seeded level default)
- *   2. game_prices / legacy profile price (priceForGame) if > 0
+ *   1. companion_profiles.game_prices for this service id/name (priceForGame)
+ *      Companion workbench save writes this. Public profile / hall also read it.
+ *      A stale companion_services.admin_set row (e.g. level 30) must NOT replace
+ *      a live service price (e.g. 40).
+ *   2. matched companion_services row.price when game_prices has no value
+ *      for that service (admin/custom copy, or table-only rows)
  *   3. level.base_price if > 0
  *
  * Never trusts client-submitted unit amounts — call sites snapshot server result.
@@ -133,37 +134,32 @@ export function resolveEffectiveServicePrice({
       companionId: cid,
     };
   }
-  if (row) {
-    const rowSource = String(row.source || "companion_service").trim() || "companion_service";
-    const rowPrice = money(row.price);
-    // Seeded level_default rows must not block a later admin game_prices override.
-    if (isLevelSeedSource(rowSource) && legacy > 0) {
-      return {
-        price: legacy,
-        source: "legacy_profile",
-        serviceRow: row,
-        levelId: String(row.level_id_at_price || row.levelIdAtPrice || lid || "") || null,
-        companionId: cid,
-      };
-    }
-    if (rowPrice > 0) {
-      return {
-        price: rowPrice,
-        source: rowSource,
-        serviceRow: row,
-        levelId: String(row.level_id_at_price || row.levelIdAtPrice || lid || "") || null,
-        companionId: cid,
-      };
-    }
-  }
+  const rowSource = row
+    ? String(row.source || "companion_service").trim() || "companion_service"
+    : "";
+  const rowPrice = row ? money(row.price) : 0;
+  const rowLevelId = row
+    ? String(row.level_id_at_price || row.levelIdAtPrice || lid || "") || null
+    : lid;
 
-  // No usable service row (or empty row price): service-specific game_prices, then level.
+  // Service-specific game_prices always beat a table copy (including admin_set 30
+  // leftover from level seed while the companion saved 40 on that service).
   if (legacy > 0) {
     return {
       price: legacy,
-      source: "legacy_profile",
-      serviceRow: null,
-      levelId: lid,
+      source:
+        row && rowPrice === legacy && !isLevelSeedSource(rowSource) ? rowSource : "legacy_profile",
+      serviceRow: row,
+      levelId: rowLevelId,
+      companionId: cid,
+    };
+  }
+  if (rowPrice > 0) {
+    return {
+      price: rowPrice,
+      source: rowSource,
+      serviceRow: row,
+      levelId: rowLevelId,
       companionId: cid,
     };
   }

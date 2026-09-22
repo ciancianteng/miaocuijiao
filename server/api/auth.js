@@ -43,6 +43,7 @@ import {
 import {
   PROD_TEST_ACCOUNT_BLOCK_MESSAGE,
   shouldBlockTestIdentityOnProduction,
+  stampTestAccountPayload,
 } from "./_test-accounts.js";
 
 function opaqueSystemPassword() {
@@ -1661,6 +1662,10 @@ async function ensureBossProfileForAuthUser(authUser = {}) {
     email_verified: true,
     email_verified_at: new Date().toISOString(),
   };
+  Object.assign(
+    baseProfile,
+    stampTestAccountPayload({}, { email, displayName })
+  );
   let bossUid = "";
   try {
     bossUid = await allocateBossUid();
@@ -2242,6 +2247,7 @@ export default async function handler(req, res) {
           status: "active",
           created_at: new Date().toISOString(),
         };
+        Object.assign(baseProfile, stampTestAccountPayload({}, { email, displayName }));
         const intlProfile = {
           ...baseProfile,
           country_code: countryCode,

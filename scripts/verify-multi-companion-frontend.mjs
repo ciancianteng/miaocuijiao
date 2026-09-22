@@ -168,7 +168,9 @@ test("TEST 2–3 add companions increments count + group total", () => {
   assert.equal(payload.companions.length, 2);
   assert.equal(payload.companions[0].totalAmount, 30);
   assert.equal(payload.companions[1].totalAmount, 25);
-  assert.equal(payload.paymentMethod, "catfood");
+  assert.equal(payload.gameId, "boss-gid-1");
+  assert.equal(payload.companions[0].gameId, "boss-gid-1");
+  assert.equal(payload.companions[1].gameId, "boss-gid-1");
   assert.ok(payload.idempotencyKey);
 
   // same key while pending
@@ -324,30 +326,95 @@ test("TEST 2–3 add companions increments count + group total", () => {
   });
   assert.equal(api.getTotal(), 60);
   api.clear();
+
+  // P0-1B: first ID persists; continue-select reuses; edit updates all child payloads
+  const idCtx = api.idContextFromService("三角洲手游 国服");
+  const firstId = api.add({
+    companionId: "p01b0001-0001-4001-8001-000000000001",
+    companionName: "一位",
+    unitPrice: 35,
+    service: "三角洲手游 国服",
+    serviceId: "svc-delta",
+    gameId: "ABC123",
+    services: [
+      { name: "王者荣耀 国服", price: 30, serviceId: "svc-wz" },
+      { name: "三角洲手游 国服", price: 35, serviceId: "svc-delta" },
+    ],
+    online: true,
+  });
+  assert.equal(firstId.ok, true);
+  assert.equal(api.getSharedAccountId(idCtx), "ABC123");
+  const draftRaw = store.mcjMultiTeamSelection;
+  assert.match(String(draftRaw || ""), /ABC123/);
+  assert.match(String(draftRaw || ""), /sharedIdContext/);
+  const secondId = api.add({
+    companionId: "p01b0002-0002-4002-8002-000000000002",
+    companionName: "二位",
+    unitPrice: 35,
+    service: "三角洲手游 国服",
+    serviceId: "svc-delta",
+    services: [
+      { name: "王者荣耀 国服", price: 30, serviceId: "svc-wz" },
+      { name: "三角洲手游 国服", price: 35, serviceId: "svc-delta" },
+    ],
+    online: true,
+  });
+  assert.equal(secondId.ok, true);
+  assert.equal(api.getLines()[1].gameId, "ABC123");
+  const thirdId = api.add({
+    companionId: "p01b0003-0003-4003-8003-000000000003",
+    companionName: "三位",
+    unitPrice: 35,
+    service: "三角洲手游 国服",
+    serviceId: "svc-delta",
+    services: [
+      { name: "王者荣耀 国服", price: 30, serviceId: "svc-wz" },
+      { name: "三角洲手游 国服", price: 35, serviceId: "svc-delta" },
+    ],
+    online: true,
+  });
+  assert.equal(thirdId.ok, true);
+  const samePayload = api.buildPayload();
+  assert.equal(samePayload.gameId, "ABC123");
+  assert.equal(samePayload.companions[0].gameId, "ABC123");
+  assert.equal(samePayload.companions[1].gameId, "ABC123");
+  assert.equal(samePayload.companions[2].gameId, "ABC123");
+  api.applyShared({ gameId: "XYZ888", idContext: idCtx });
+  const editedPayload = api.buildPayload();
+  assert.equal(editedPayload.gameId, "XYZ888");
+  assert.equal(editedPayload.companions[0].gameId, "XYZ888");
+  assert.equal(editedPayload.companions[1].gameId, "XYZ888");
+  assert.equal(editedPayload.companions[2].gameId, "XYZ888");
+  assert.equal(api.getLines()[0].gameId, "XYZ888");
+  const otherGame = api.idContextFromService("王者荣耀 国服");
+  assert.equal(api.sameIdContext(idCtx, otherGame), false);
+  assert.equal(api.getSharedAccountId(otherGame), "");
+  api.clear();
 });
 
 test("TEST floating bar + checkout copy", () => {
   assert.match(teamSrc, /已选/);
   assert.match(teamSrc, /人 ·/);
   assert.match(teamSrc, /继续选/);
-  assert.match(teamSrc, /查看队伍/);
-  assert.match(teamSrc, /去结算/);
   assert.match(teamSrc, /确认并支付/);
   assert.match(teamSrc, /本订单一次付款，系统会分别为每位陪玩结算/);
   assert.match(teamSrc, /data-mcj-team-continue/);
   assert.match(teamSrc, /continueToHall/);
   assert.match(teamSrc, /\/companion-center\.html/);
   assert.match(teamSrc, /mcjMultiTeamPicking/);
+  // n>=2 must keep 继续选 (do not replace it with 查看队伍)
+  assert.match(teamSrc, /button type="button" class="mcj-team-secondary" data-mcj-team-continue>继续选/);
+  assert.match(teamSrc, /确认并支付 " \+ total \+ "猫粮"/);
+  assert.doesNotMatch(teamSrc, /n >= 2 \? "查看队伍"/);
 });
 
 test("TEST continue选 navigates to hall (not toast-only)", () => {
   assert.match(teamSrc, /function continueToHall/);
   assert.match(teamSrc, /location\.href\s*=\s*HALL_HREF/);
-  // Must not only toast without navigation on continue
-  const continueBlock = teamSrc.slice(
-    teamSrc.indexOf("[data-mcj-team-continue]"),
-    teamSrc.indexOf("[data-mcj-team-continue]") + 280
-  );
+  const marker = 'e.target.closest("[data-mcj-team-continue]")';
+  const idx = teamSrc.indexOf(marker);
+  assert.ok(idx >= 0, "continue click handler missing");
+  const continueBlock = teamSrc.slice(idx, idx + 280);
   assert.match(continueBlock, /continueToHall/);
 });
 
@@ -423,6 +490,24 @@ test("P0-2 iOS input font-size >= 16px in place-order modal", () => {
   assert.match(css, /\.mcj-po-scroll input[\s\S]*?font-size:\s*16px/);
   assert.match(css, /text-size-adjust:\s*100%/);
   assert.doesNotMatch(css, /user-scalable\s*=\s*no/);
+});
+
+test("P0-1B modal inherits shared game ID and keeps 修改", () => {
+  assert.match(placeSrc, /inheritedAccountId/);
+  assert.match(placeSrc, /data-po-game-id-edit/);
+  assert.match(placeSrc, /requireModalGameId/);
+  assert.match(placeSrc, /已沿用本次一起下单的游戏ID/);
+  const addChunk = placeSrc.slice(placeSrc.indexOf("function addAnotherCompanion"), placeSrc.indexOf("function addAnotherCompanion") + 500);
+  assert.match(addChunk, /requireModalGameId/);
+  const absorbChunk = placeSrc.slice(
+    placeSrc.indexOf("function absorbCurrentCompanionIntoTeam"),
+    placeSrc.indexOf("function absorbCurrentCompanionIntoTeam") + 900
+  );
+  assert.match(absorbChunk, /requireModalGameId/);
+  assert.match(teamSrc, /sharedIdContext/);
+  assert.match(teamSrc, /getSharedAccountId/);
+  const multiSrc = readFileSync(path.join(root, "server/api/_place-multi-order.js"), "utf8");
+  assert.match(multiSrc, /sharedGameId \|\| line\.gameId \|\| line\.game_id/);
 });
 
 const failed = results.filter((r) => !r.ok);

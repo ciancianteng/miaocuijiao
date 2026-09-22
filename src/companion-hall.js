@@ -5,6 +5,17 @@
   // loading=true until first companions fetch settles — never paint fake empty/0 meanwhile.
   var state = { page: 1, items: [], taxonomyReady: false, loading: true, loadError: "" };
 
+  function hallItemById(id) {
+    var key = String(id || "").trim();
+    if (!key) return null;
+    return (
+      (state.items || []).find(function (it) {
+        return String(it.id || "") === key || String(it.uid || "") === key;
+      }) || null
+    );
+  }
+  window.MCJHallCompanionById = hallItemById;
+
   function esc(value) {
     return String(value || "").replace(/[&<>"']/g, function (ch) {
       return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch];
@@ -694,20 +705,25 @@
         location.href = "profile.html?id=" + encodeURIComponent(id) + "&open_order=1";
         return;
       }
+      var live = hallItemById(id) || {};
       window.MCJPlaceOrder.openFromCompanion({
         companionId: id,
         id: id,
         uid: id,
-        companionName: orderBtn.getAttribute("data-hall-name") || "陪玩",
-        name: orderBtn.getAttribute("data-hall-name") || "陪玩",
-        unitPrice: Number(orderBtn.getAttribute("data-hall-price") || 0),
-        priceValue: Number(orderBtn.getAttribute("data-hall-price") || 0),
-        price: Number(orderBtn.getAttribute("data-hall-price") || 0),
-        service: orderBtn.getAttribute("data-hall-game") || "陪玩",
-        game: orderBtn.getAttribute("data-hall-game") || "陪玩",
-        avatar: orderBtn.getAttribute("data-hall-avatar") || "",
-        publicId: orderBtn.getAttribute("data-hall-public-id") || "",
-        levelId: orderBtn.getAttribute("data-hall-level") || "",
+        companionName: orderBtn.getAttribute("data-hall-name") || live.name || "陪玩",
+        name: orderBtn.getAttribute("data-hall-name") || live.name || "陪玩",
+        unitPrice: Number(orderBtn.getAttribute("data-hall-price") || live.priceValue || 0),
+        priceValue: Number(orderBtn.getAttribute("data-hall-price") || live.priceValue || 0),
+        price: Number(orderBtn.getAttribute("data-hall-price") || live.priceValue || 0),
+        service: "",
+        game: orderBtn.getAttribute("data-hall-game") || live.game || "陪玩",
+        avatar: orderBtn.getAttribute("data-hall-avatar") || live.avatar || "",
+        publicId: orderBtn.getAttribute("data-hall-public-id") || live.publicId || "",
+        levelId: orderBtn.getAttribute("data-hall-level") || live.levelId || "",
+        services: live.services || [],
+        serviceIds: live.serviceIds || live.service_ids || [],
+        gamePrices: live.gamePrices || live.game_prices || {},
+        requireServicePick: true,
         level: (function () {
           var lid = orderBtn.getAttribute("data-hall-level") || "";
           if (lid && window.MCJCompanionLevels && window.MCJCompanionLevels.label) {
