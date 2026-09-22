@@ -332,14 +332,25 @@
     if (Array.isArray(order.children) && order.children.length) return order.children;
     try {
       var list = JSON.parse(localStorage.getItem("mcjBossOrdersCache") || "[]");
-      if (!Array.isArray(list)) return [];
+      if (!Array.isArray(list)) list = [];
       var pid = String(order.id || "");
-      return list.filter(function (o) {
+      var fromCache = list.filter(function (o) {
         return String(o.parentOrderId || o.parent_order_id || "") === pid;
       });
+      if (fromCache.length) return fromCache;
     } catch (e) {
-      return [];
+      /* ignore */
     }
+    // Description SoT from place_multi: "子单数：N"
+    var blob = String(order.description || "") + "\n" + String(order.note || "");
+    var m = blob.match(/子单数[:：]\s*(\d+)/);
+    if (m) {
+      var n = Number(m[1]);
+      if (n > 0) return Array.from({ length: n }, function (_, i) {
+        return { id: "placeholder-" + i, parentOrderId: order.id };
+      });
+    }
+    return [];
   }
   function isReviewing(order) {
     return !!(
@@ -1391,6 +1402,29 @@
       if (!order) {
         failUi("订单不存在，请到「我的订单」查看。");
         return;
+      }
+      if (isMultiParent(order)) {
+        try {
+          var listRes = await fetch("/api/orders", {
+            headers: { Accept: "application/json", Authorization: "Bearer " + token() },
+            cache: "no-store",
+            signal: abortCtrl ? abortCtrl.signal : undefined,
+          });
+          var listBody = await listRes.json().catch(function () {
+            return {};
+          });
+          if (listRes.ok && listBody.ok !== false && Array.isArray(listBody.orders)) {
+            try {
+              localStorage.setItem("mcjBossOrdersCache", JSON.stringify(listBody.orders));
+            } catch (eCache) {}
+            var kids = listBody.orders.filter(function (o) {
+              return String(o.parentOrderId || o.parent_order_id || "") === String(order.id);
+            });
+            if (kids.length) order.children = kids;
+          }
+        } catch (eList) {
+          /* keep description fallback */
+        }
       }
       order.platformPayInfo = platformPayInfo;
       writeCache(orderId, order);
