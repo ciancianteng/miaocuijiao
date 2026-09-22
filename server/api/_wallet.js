@@ -81,6 +81,7 @@ export function emptyWallet(bossId = "") {
     boss_id: bossId,
     paid_balance: 0,
     bonus_balance: 0,
+    held_balance: 0,
     total_balance: 0,
     frozen: false,
     total_paid_in: 0,
@@ -93,11 +94,17 @@ export function emptyWallet(bossId = "") {
 
 export function viewWallet(row = {}, bossId = "") {
   const w = row || emptyWallet(bossId);
+  const paid = money(w.paid_balance);
+  const bonus = money(w.bonus_balance);
+  const held = money(w.held_balance);
+  const available = paid + bonus;
   return {
     bossId: w.boss_id || bossId,
-    paidBalance: money(w.paid_balance),
-    bonusBalance: money(w.bonus_balance),
-    totalBalance: money(w.total_balance),
+    paidBalance: paid,
+    bonusBalance: bonus,
+    heldBalance: held,
+    availableBalance: available,
+    totalBalance: money(w.total_balance) || available + held,
     frozen: !!w.frozen,
     totalPaidIn: money(w.total_paid_in),
     totalBonusIn: money(w.total_bonus_in),
@@ -143,6 +150,8 @@ export function txTypeText(type) {
       activity_reward: "活动奖励",
       invite_reward: "邀请奖励",
       order_payment: "订单消费",
+      order_hold: "订单冻结",
+      order_hold_release: "冻结释放",
       refund: "订单退款",
       admin_adjustment: "人工调整",
       admin_deduct: "人工扣减",
@@ -225,6 +234,51 @@ export async function debitWallet(params) {
     method: "POST",
     headers: serviceHeaders(),
     body: JSON.stringify(body),
+  });
+}
+
+/** Reserve cat-food for an order (not final spend). Idempotent per order_id / key. */
+export async function holdWalletForOrder(params) {
+  return supabaseJson(rpcUrl("mcj_wallet_hold"), {
+    method: "POST",
+    headers: serviceHeaders(),
+    body: JSON.stringify({
+      p_boss_id: params.bossId,
+      p_order_id: params.orderId,
+      p_order_no: params.orderNo || "",
+      p_amount: money(params.amount),
+      p_idempotency_key: params.idempotencyKey,
+      p_reason: params.reason || "",
+      p_operator_id: params.operatorId || null,
+    }),
+  });
+}
+
+/** Convert hold → final spend on COMPLETE. No-op if no hold (legacy debit-on-pay). */
+export async function finalizeWalletHold(params) {
+  return supabaseJson(rpcUrl("mcj_wallet_finalize_hold"), {
+    method: "POST",
+    headers: serviceHeaders(),
+    body: JSON.stringify({
+      p_order_id: params.orderId,
+      p_idempotency_key: params.idempotencyKey,
+      p_reason: params.reason || "",
+      p_operator_id: params.operatorId || null,
+    }),
+  });
+}
+
+/** Release hold on cancel/fail. No-op if no hold. */
+export async function releaseWalletHold(params) {
+  return supabaseJson(rpcUrl("mcj_wallet_release_hold"), {
+    method: "POST",
+    headers: serviceHeaders(),
+    body: JSON.stringify({
+      p_order_id: params.orderId,
+      p_idempotency_key: params.idempotencyKey,
+      p_reason: params.reason || "",
+      p_operator_id: params.operatorId || null,
+    }),
   });
 }
 

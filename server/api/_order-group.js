@@ -12,6 +12,15 @@ export const ORDER_TYPE_MULTI_GROUP = "multi_group";
 
 const TERMINAL = new Set(["completed", "cancelled", "refunded"]);
 const CANCELLED_LIKE = new Set(["cancelled", "refunded"]);
+/** Companion has accepted / service active — counts toward ALL_CONFIRMED. */
+const CONFIRMED_LIKE = new Set(["accepted", "confirmed", "in_progress", "completed", "reviewed"]);
+/** Still waiting for companion accept after payment. */
+const WAITING_CONFIRM_LIKE = new Set([
+  "pending",
+  "claimed",
+  "awaiting_payment",
+  "waiting_boss_confirm",
+]);
 
 function money(v) {
   const n = Number(String(v ?? "").replace(/[^\d.-]/g, ""));
@@ -20,6 +29,100 @@ function money(v) {
 
 function statusOf(order) {
   return String(order?.status || "").trim().toLowerCase();
+}
+
+/**
+ * Explicit multi-group UI / machine label (does not invent DB enum values).
+ * Maps onto existing orders.status vocabulary for persistence via aggregateParentStatus.
+ */
+export function deriveMultiGroupState(parent, children = []) {
+  const list = Array.isArray(children) ? children : [];
+  const parentSt = statusOf(parent);
+  const effective = effectiveChildren(list);
+  const confirmed = effective.filter((c) => CONFIRMED_LIKE.has(statusOf(c)));
+  const waiting = effective.filter((c) => WAITING_CONFIRM_LIKE.has(statusOf(c)));
+  const rejected = list.filter((c) => CANCELLED_LIKE.has(statusOf(c)));
+  const total = effective.length;
+  const confirmedCount = confirmed.length;
+
+  if (!list.length) {
+    return {
+      key: parentSt === "awaiting_payment" ? "PAYMENT_PENDING" : "WAITING_CONFIRMATION",
+      parentStatus: parentSt || "awaiting_payment",
+      confirmedCount: 0,
+      totalCount: 0,
+      label: "等待子订单",
+    };
+  }
+  if (list.some((c) => statusOf(c) === "awaiting_payment") || parentSt === "awaiting_payment") {
+    const reviewing = /payment_review|pending_review|待人工|凭证/.test(
+      String(parent?.note || "") + String(parent?.description || "")
+    );
+    return {
+      key: reviewing ? "PAYMENT_REVIEW" : "PAYMENT_PENDING",
+      parentStatus: "awaiting_payment",
+      confirmedCount: 0,
+      totalCount: total || list.length,
+      label: reviewing ? "待人工审核" : "待付款",
+    };
+  }
+  if (rejected.length && waiting.length + confirmed.length > 0) {
+    const needsRep = rejected.some((c) =>
+      /COMPANION_UNAVAILABLE|无法接单|已退出/.test(String(c?.note || "") + String(c?.description || "") + String(c?.cancel_reason || ""))
+    );
+    return {
+      key: needsRep ? "REPLACEMENT_REQUIRED" : "PARTIALLY_CANCELED",
+      parentStatus: aggregateParentStatus(list),
+      confirmedCount,
+      totalCount: total,
+      label: needsRep
+        ? `等待补位（${confirmedCount}/${total} 已确认）`
+        : `部分取消（${confirmedCount}/${total} 进行中）`,
+    };
+  }
+  if (total > 0 && confirmedCount < total) {
+    return {
+      key: confirmedCount > 0 ? "PARTIALLY_CONFIRMED" : "WAITING_CONFIRMATION",
+      parentStatus: "claimed",
+      confirmedCount,
+      totalCount: total,
+      label:
+        confirmedCount > 0
+          ? `等待陪玩确认（${confirmedCount}/${total}）`
+          : `等待陪玩确认（0/${total}）`,
+    };
+  }
+  if (total > 0 && confirmedCount === total) {
+    if (effective.every((c) => statusOf(c) === "completed" || statusOf(c) === "reviewed")) {
+      return {
+        key: "COMPLETED",
+        parentStatus: "completed",
+        confirmedCount,
+        totalCount: total,
+        label: "已完成",
+      };
+    }
+    return {
+      key: "IN_PROGRESS",
+      parentStatus: "in_progress",
+      confirmedCount,
+      totalCount: total,
+      label: `进行中（${confirmedCount}/${total} 已确认）`,
+    };
+  }
+  if (list.every((c) => statusOf(c) === "cancelled")) {
+    return { key: "CANCELED", parentStatus: "cancelled", confirmedCount: 0, totalCount: 0, label: "已取消" };
+  }
+  if (list.every((c) => statusOf(c) === "refunded")) {
+    return { key: "REFUNDED", parentStatus: "refunded", confirmedCount: 0, totalCount: 0, label: "已退款" };
+  }
+  return {
+    key: "PARTIALLY_CONFIRMED",
+    parentStatus: aggregateParentStatus(list),
+    confirmedCount,
+    totalCount: total,
+    label: `等待陪玩确认（${confirmedCount}/${total || list.length}）`,
+  };
 }
 
 export function isMultiGroupParent(order) {
@@ -94,53 +197,54 @@ export function groupCompletedSpendCatFood(children = []) {
 /**
  * Aggregate parent status from children. Reuses existing status enum only.
  *
- * Rules:
- * - Any non-terminal → mirror strongest active child status
- * - All cancelled → cancelled
- * - All refunded → refunded
- * - All terminal + every effective child completed (and ≥1 completed) → completed
- * - All terminal + mix completed + cancelled/refunded → completed iff all effective completed
- * - Else → in_progress (partial progress without full effective completion)
+ * P0 rules (multi-companion):
+ * - No payment success → awaiting_payment
+ * - After pay, until ALL active children confirmed → claimed (WAITING / PARTIAL confirm)
+ * - ONLY when every effective child is confirmed → in_progress
+ * - Never promote parent to in_progress on 1/N confirm
+ * - All cancelled → cancelled; all refunded → refunded
+ * - All effective completed → completed
  */
 export function aggregateParentStatus(children = []) {
   const list = Array.isArray(children) ? children : [];
   if (!list.length) return "awaiting_payment";
 
   const statuses = list.map(statusOf);
+  if (statuses.some((s) => s === "awaiting_payment")) return "awaiting_payment";
+
   const allTerminal = statuses.every((s) => TERMINAL.has(s));
+  if (allTerminal) {
+    if (statuses.every((s) => s === "cancelled")) return "cancelled";
+    if (statuses.every((s) => s === "refunded")) return "refunded";
 
-  if (!allTerminal) {
-    const active = statuses.filter((s) => !TERMINAL.has(s));
-    const rank = {
-      in_progress: 50,
-      accepted: 40,
-      claimed: 30,
-      pending: 20,
-      awaiting_payment: 10,
-      refund_requested: 25,
-    };
-    let best = "pending";
-    let bestScore = -1;
-    for (const s of active) {
-      const score = rank[s] ?? 15;
-      if (score > bestScore) {
-        bestScore = score;
-        best = s;
-      }
+    const effective = effectiveChildren(list);
+    if (effective.length === 0) {
+      if (statuses.some((s) => s === "refunded")) return "refunded";
+      return "cancelled";
     }
-    return best;
+    if (effective.every((c) => statusOf(c) === "completed" || statusOf(c) === "reviewed")) {
+      return "completed";
+    }
+    return "in_progress";
   }
-
-  if (statuses.every((s) => s === "cancelled")) return "cancelled";
-  if (statuses.every((s) => s === "refunded")) return "refunded";
 
   const effective = effectiveChildren(list);
-  if (effective.length === 0) {
-    // All cancelled/refunded mix
-    if (statuses.some((s) => s === "refunded")) return "refunded";
-    return "cancelled";
+  if (!effective.length) {
+    // Only cancelled/refunded siblings left mid-flight — keep cancelled/refunded aggregate
+    if (statuses.every((s) => CANCELLED_LIKE.has(s))) {
+      if (statuses.some((s) => s === "refunded")) return "refunded";
+      return "cancelled";
+    }
+    return "claimed";
   }
-  if (effective.every((c) => statusOf(c) === "completed")) {
+
+  const allConfirmed = effective.every((c) => CONFIRMED_LIKE.has(statusOf(c)));
+  if (!allConfirmed) {
+    // 1/N confirmed must NOT flip parent to in_progress
+    return "claimed";
+  }
+
+  if (effective.every((c) => statusOf(c) === "completed" || statusOf(c) === "reviewed")) {
     return "completed";
   }
   return "in_progress";
@@ -222,6 +326,22 @@ export async function refreshParentOrderStatus(parentOrderId, deps = {}) {
     saved = (await patchOrder(parentOrderId, patch)) || { ...parent, ...patch };
   }
 
+  // Cat-food hold → final debit when the whole multi group completes.
+  let holdFinalize = null;
+  if (nextStatus === "completed") {
+    try {
+      const walletApi = await import("./_wallet.js");
+      holdFinalize = await walletApi.finalizeWalletHold({
+        orderId: parentOrderId,
+        idempotencyKey: `order-finalize:${parent.order_no || parentOrderId}`,
+        reason: `多人订单完成扣款 ${parent.order_no || parentOrderId}`,
+        operatorId,
+      });
+    } catch (e) {
+      holdFinalize = { ok: false, error: String(e?.message || e).slice(0, 160) };
+    }
+  }
+
   let bossPoints = null;
   const shouldAward =
     nextStatus === "completed" &&
@@ -256,6 +376,7 @@ export async function refreshParentOrderStatus(parentOrderId, deps = {}) {
     status: nextStatus,
     amounts,
     bossPoints,
+    holdFinalize,
   };
 }
 

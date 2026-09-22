@@ -509,6 +509,126 @@ export default async function handler(req, res) {
   }
   try {
     const admin = await requireAdmin(req);
+    const bodyEarly = req.method === "GET" ? {} : req.body || {};
+    const actionEarly = String(req.query?.action || bodyEarly.action || "").trim();
+    // Staging-only schema probe for P0-E parent_order_id (never runs on Production).
+    if (actionEarly === "probe_parent_order_id") {
+      const sbUrl = String(process.env.SUPABASE_URL || "");
+      const ref = (() => {
+        try {
+          const host = new URL(sbUrl).hostname || "";
+          const m = host.match(/^([a-z0-9]+)\.supabase\.co$/i);
+          return m ? m[1].toLowerCase() : "";
+        } catch {
+          return "";
+        }
+      })();
+      if (ref === "jqfaknpmcnqwqvatrwgo" || isProductionRuntime()) {
+        return json(res, 403, {
+          ok: false,
+          code: "PROD_PROBE_BLOCKED",
+          message: "拒绝：禁止在 Production 探测/变更 schema。",
+          supabaseRef: ref,
+        });
+      }
+      let columnOk = false;
+      let selectError = "";
+      try {
+        await supabaseJson(restUrl("orders", "?select=id,parent_order_id&limit=1"), {
+          headers: serviceHeaders(),
+        });
+        columnOk = true;
+      } catch (err) {
+        selectError = String(err?.message || err || "").slice(0, 300);
+      }
+      return json(res, 200, {
+        ok: true,
+        stagingOnly: true,
+        supabaseRef: ref,
+        expectedStagingRef: "cfccwysniduwkjskiqgy",
+        refMatchStaging: ref === "cfccwysniduwkjskiqgy",
+        parentOrderIdVisible: columnOk,
+        selectError: columnOk ? "" : selectError,
+        hint: columnOk
+          ? "column visible to PostgREST"
+          : "Run on Staging SQL: NOTIFY pgrst, 'reload schema'; then re-check. Confirm ALTER ran on cfccwysniduwkjskiqgy.",
+      });
+    }
+    if (actionEarly === "probe_acceptance_user") {
+      const sbUrl = String(process.env.SUPABASE_URL || "");
+      const ref = (() => {
+        try {
+          const host = new URL(sbUrl).hostname || "";
+          const m = host.match(/^([a-z0-9]+)\.supabase\.co$/i);
+          return m ? m[1].toLowerCase() : "";
+        } catch {
+          return "";
+        }
+      })();
+      if (ref === "jqfaknpmcnqwqvatrwgo" || isProductionRuntime()) {
+        return json(res, 403, {
+          ok: false,
+          code: "PROD_PROBE_BLOCKED",
+          message: "拒绝：禁止在 Production 探测测试账号。",
+        });
+      }
+      const email = String(bodyEarly.email || req.query?.email || "")
+        .trim()
+        .toLowerCase();
+      if (!email) return json(res, 400, { ok: false, message: "email required" });
+      const listed = await supabaseJson(
+        authUrl(`admin/users?email=${encodeURIComponent(email)}`),
+        { headers: serviceHeaders() }
+      ).catch((e) => ({ __err: String(e?.message || e) }));
+      const users = Array.isArray(listed?.users)
+        ? listed.users
+        : Array.isArray(listed)
+          ? listed
+          : listed?.id
+            ? [listed]
+            : [];
+      const authUser = users.find((u) => String(u.email || "").toLowerCase() === email) || users[0] || null;
+      let profiles = [];
+      if (authUser?.id) {
+        profiles = await supabaseJson(
+          restUrl(
+            "profiles",
+            `?id=eq.${encodeURIComponent(authUser.id)}&select=id,email,display_name,is_test_account,role&limit=1`
+          ),
+          { headers: serviceHeaders() }
+        ).catch((e) => {
+          const msg = String(e?.message || e || "");
+          if (/is_test_account|42703|PGRST204/i.test(msg)) {
+            return supabaseJson(
+              restUrl("profiles", `?id=eq.${encodeURIComponent(authUser.id)}&select=id,email,display_name,role&limit=1`),
+              { headers: serviceHeaders() }
+            ).catch(() => []);
+          }
+          return [];
+        });
+      }
+      if ((!Array.isArray(profiles) || !profiles.length) && email) {
+        profiles = await supabaseJson(
+          restUrl("profiles", `?email=eq.${encodeURIComponent(email)}&select=id,email,display_name,role&limit=3`),
+          { headers: serviceHeaders() }
+        ).catch(() => []);
+      }
+      const profile = Array.isArray(profiles) ? profiles[0] : null;
+      const hasTestCol = profile ? Object.prototype.hasOwnProperty.call(profile, "is_test_account") : false;
+      return json(res, 200, {
+        ok: true,
+        stagingOnly: true,
+        supabaseRef: ref,
+        email,
+        authUserId: authUser?.id || "",
+        user_metadata_source: authUser?.user_metadata?.source || "",
+        user_metadata: authUser?.user_metadata || null,
+        has_is_test_account_column: hasTestCol,
+        is_test_account: profile?.is_test_account === true,
+        profile: profile || null,
+        authLookupError: listed?.__err || "",
+      });
+    }
     if (req.method === "GET") {
       const action = String(req.query?.action || "").trim();
       if (action === "reviews") {
@@ -1078,6 +1198,23 @@ export default async function handler(req, res) {
     } else if (action === "cancel") {
       patch.status = "cancelled";
       patch.cancelled_at = new Date().toISOString();
+      // Cat-food HOLD lives on payment owner (parent / standalone). Never release on child cancel alone.
+      if (!before.parent_order_id) {
+        try {
+          const walletApi = await import("../_wallet.js");
+          await walletApi.releaseWalletHold({
+            orderId: before.id,
+            idempotencyKey: `order-release:${before.order_no || before.id}`,
+            reason: `后台取消释放冻结 ${before.order_no || before.id}`,
+            operatorId: admin.id,
+          });
+        } catch (holdErr) {
+          const msg = String(holdErr?.message || "");
+          if (!/mcj_wallet_release_hold|Could not find the function|schema cache|PGRST|no_hold/i.test(msg)) {
+            console.warn("[admin/orders cancel] release hold", msg.slice(0, 160));
+          }
+        }
+      }
     } else if (action === "refund") {
       // P0：同意退款 = 确认退款猫粮（真实入账），禁止仅改状态
       try {

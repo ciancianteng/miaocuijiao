@@ -258,8 +258,13 @@ function paymentMethodLabel(method) {
 function isWalletMethod(method) {
   return /cat.?food|wallet|猫粮|余额/.test(String(method || "").toLowerCase());
 }
+/** Explicit TEST pay only — never treat real manual rails (duitnow/tng/bank) as test. */
 function isPreviewTestMethod(method) {
-  return /tng|duitnow|bank|银行|card|银行卡|alipay|支付宝|hitpay|stripe|toyyib/.test(String(method || "").toLowerCase());
+  const raw = String(method || "").trim().toLowerCase();
+  return /^(test|preview[_-]?test|test[_-]?pay)$/.test(raw) || /测试支付|test\s*pay/.test(raw);
+}
+function isManualPaymentMethod(method) {
+  return !isWalletMethod(method) && !isPreviewTestMethod(method);
 }
 
 async function assertOrderPaymentMethodAllowed(paymentMethod) {
@@ -635,14 +640,21 @@ async function loadOrders(profile, id = "") {
   })();
   // Core columns always include description (completion-pending marker dual-writes here).
   // note is preferred for markers; cancel_reason is optional — never drop note when cancel_reason is missing.
-  // parent_order_id / paid_* required for multi-group child grouping + unpaid cancel guards.
+  // CRITICAL: parent_order_id must survive schema fallbacks. Production may lack paid_at / paid_cat_food;
+  // dropping parent_order_id with those columns causes "共0位陪玩" + child top-level duplicate cards.
   const selectVoice =
     ",voice_mode,discord_channel_id,discord_channel_status,discord_channel_created_at,discord_channel_deleted_at";
-  const selectCore =
-    "id,order_no,boss_id,companion_id,customer_service_id,order_type,game,title,description,hours,unit_price,total_amount,status,created_at,accepted_at,started_at,completed_at,cancelled_at,parent_order_id,paid_cat_food,paid_at" +
+  const selectBase =
+    "id,order_no,boss_id,companion_id,customer_service_id,order_type,game,title,description,hours,unit_price,total_amount,status,created_at,accepted_at,started_at,completed_at,cancelled_at,parent_order_id" +
     selectVoice;
-  const selectWithNote = selectCore + ",note";
+  const selectWithPaid = selectBase + ",paid_cat_food,paid_at";
+  const selectWithNote = selectWithPaid + ",note";
   const selectRich = selectWithNote + ",cancel_reason";
+  // Same richness without paid_* (Prod pending-prod/07 not applied yet).
+  const selectBaseNoPaid = selectBase;
+  const selectWithNoteNoPaid = selectBaseNoPaid + ",note";
+  const selectRichNoPaid = selectWithNoteNoPaid + ",cancel_reason";
+  // Absolute last resort only if parent_order_id column itself is missing.
   const selectCoreLegacy =
     "id,order_no,boss_id,companion_id,customer_service_id,order_type,game,title,description,hours,unit_price,total_amount,status,created_at,accepted_at,started_at,completed_at,cancelled_at";
   const selectWithNoteLegacy = selectCoreLegacy + ",note";
@@ -670,33 +682,30 @@ async function loadOrders(profile, id = "") {
     id
       ? `?id=eq.${encodeURIComponent(id)}&boss_id=eq.${encodeURIComponent(profile.id)}&select=${sel}&order=created_at.desc&limit=1`
       : `?boss_id=eq.${encodeURIComponent(profile.id)}&select=${sel}&order=created_at.desc&limit=80`;
+  const selectCandidates = [
+    selectRich,
+    selectWithNote,
+    selectWithPaid,
+    selectRichNoPaid,
+    selectWithNoteNoPaid,
+    selectBaseNoPaid,
+    selectRichLegacy,
+    selectWithNoteLegacy,
+    selectCoreLegacy,
+  ];
   let rows;
-  try {
-    rows = await supabaseJson(restUrl(TABLE, queryOf(selectRich)), { headers: serviceHeaders() });
-  } catch (err) {
-    if (!/column|schema cache|PGRST/i.test(String(err?.message || ""))) throw err;
+  let lastSelectErr = null;
+  for (const sel of selectCandidates) {
     try {
-      rows = await supabaseJson(restUrl(TABLE, queryOf(selectWithNote)), { headers: serviceHeaders() });
-    } catch (err2) {
-      if (!/column|schema cache|PGRST/i.test(String(err2?.message || ""))) throw err2;
-      try {
-        rows = await supabaseJson(restUrl(TABLE, queryOf(selectCore)), { headers: serviceHeaders() });
-      } catch (err3) {
-        if (!/column|schema cache|PGRST|parent_order|paid_/i.test(String(err3?.message || ""))) throw err3;
-        try {
-          rows = await supabaseJson(restUrl(TABLE, queryOf(selectRichLegacy)), { headers: serviceHeaders() });
-        } catch (err4) {
-          if (!/column|schema cache|PGRST/i.test(String(err4?.message || ""))) throw err4;
-          try {
-            rows = await supabaseJson(restUrl(TABLE, queryOf(selectWithNoteLegacy)), { headers: serviceHeaders() });
-          } catch (err5) {
-            if (!/column|schema cache|PGRST/i.test(String(err5?.message || ""))) throw err5;
-            rows = await supabaseJson(restUrl(TABLE, queryOf(selectCoreLegacy)), { headers: serviceHeaders() });
-          }
-        }
-      }
+      rows = await supabaseJson(restUrl(TABLE, queryOf(sel)), { headers: serviceHeaders() });
+      lastSelectErr = null;
+      break;
+    } catch (err) {
+      lastSelectErr = err;
+      if (!/column|schema cache|PGRST|parent_order|paid_/i.test(String(err?.message || ""))) throw err;
     }
   }
+  if (lastSelectErr) throw lastSelectErr;
   const orders = Array.isArray(rows) ? rows : [];
   const companionIds = [...new Set(orders.map((row) => row.companion_id).filter(Boolean))];
   const serviceIds = [...new Set(orders.map((row) => row.customer_service_id).filter(Boolean))];
@@ -1586,52 +1595,102 @@ export default async function handler(req, res) {
       }
 
       let usedTestPay = false;
+      let usedCatfoodHold = false;
       if (isWalletMethod(paymentMethod) && !previewTest) {
         try {
           const walletApi = await import("./_wallet.js");
-          await walletApi.debitWallet({
+          // Cat-food: HOLD only (not final debit). Finalize on COMPLETE; release on cancel.
+          await walletApi.holdWalletForOrder({
             bossId: profile.id,
+            orderId: before.id,
+            orderNo: before.order_no || before.id,
             amount: money(before.total_amount),
-            transactionType: "order_payment",
-            idempotencyKey: `order-pay:${before.order_no || before.id}`,
-            reason: `订单支付 ${before.order_no || before.id}`,
-            relatedOrderId: before.id,
+            idempotencyKey: `order-hold:${before.order_no || before.id}`,
+            reason: `订单冻结 ${before.order_no || before.id}`,
             operatorId: profile.id,
           });
+          usedCatfoodHold = true;
         } catch (e) {
-          // Preview: wallet missing / empty → allow explicit TEST pay only (never silent fake).
-          if (previewAllowed && (isMissingWalletRpc(e) || isWalletBalanceError(e))) {
-            return json(res, 400, {
-              ok: false,
-              code: "USE_TEST_PAY",
-              message: "猫粮支付不可用或余额不足。Preview 请点击「测试支付成功（TEST）」完成状态流转。",
-              allowTestPay: true,
-            });
+          // Fallback if hold RPC not migrated yet: legacy immediate debit (Staging/Prod until migration applied).
+          const msg = String(e?.message || e || "");
+          const holdMissing = /mcj_wallet_hold|Could not find the function|schema cache|PGRST/i.test(msg);
+          if (holdMissing) {
+            try {
+              const walletApi = await import("./_wallet.js");
+              await walletApi.debitWallet({
+                bossId: profile.id,
+                amount: money(before.total_amount),
+                transactionType: "order_payment",
+                idempotencyKey: `order-pay:${before.order_no || before.id}`,
+                reason: `订单支付 ${before.order_no || before.id}`,
+                relatedOrderId: before.id,
+                operatorId: profile.id,
+              });
+            } catch (e2) {
+              if (previewAllowed && (isMissingWalletRpc(e2) || isWalletBalanceError(e2))) {
+                return json(res, 400, {
+                  ok: false,
+                  code: "USE_TEST_PAY",
+                  message: "猫粮支付不可用或余额不足。Preview 请点击「测试支付成功（TEST）」完成状态流转。",
+                  allowTestPay: true,
+                });
+              }
+              if (isMissingWalletRpc(e2)) {
+                return json(res, 503, { ok: false, code: "WALLET_UNAVAILABLE", message: "猫粮支付暂不可用" });
+              }
+              if (isWalletBalanceError(e2)) {
+                return json(res, 400, {
+                  ok: false,
+                  code: "INSUFFICIENT_BALANCE",
+                  message: e2.message || "猫粮余额不足",
+                  rechargeUrl: "/recharge.html",
+                });
+              }
+              throw e2;
+            }
+          } else {
+            if (previewAllowed && (isMissingWalletRpc(e) || isWalletBalanceError(e))) {
+              return json(res, 400, {
+                ok: false,
+                code: "USE_TEST_PAY",
+                message: "猫粮支付不可用或余额不足。Preview 请点击「测试支付成功（TEST）」完成状态流转。",
+                allowTestPay: true,
+              });
+            }
+            if (isMissingWalletRpc(e)) {
+              return json(res, 503, { ok: false, code: "WALLET_UNAVAILABLE", message: "猫粮支付暂不可用" });
+            }
+            if (isWalletBalanceError(e)) {
+              return json(res, 400, {
+                ok: false,
+                code: "INSUFFICIENT_BALANCE",
+                message: e.message || "猫粮余额不足",
+                rechargeUrl: "/recharge.html",
+              });
+            }
+            throw e;
           }
-          if (isMissingWalletRpc(e)) {
-            return json(res, 503, { ok: false, code: "WALLET_UNAVAILABLE", message: "猫粮支付暂不可用" });
-          }
-          if (isWalletBalanceError(e)) {
-            return json(res, 400, { ok: false, code: "INSUFFICIENT_BALANCE", message: e.message || "猫粮余额不足", rechargeUrl: "/recharge.html" });
-          }
-          throw e;
         }
       } else if (previewTest && previewAllowed) {
         usedTestPay = true;
-      } else if (!isPreviewTestMethod(paymentMethod)) {
-        if (previewAllowed) {
-          return json(res, 400, {
-            ok: false,
-            code: "USE_TEST_PAY",
-            message: "当前支付方式未接通真实网关。Preview 请使用「测试支付成功（TEST）」。",
-            allowTestPay: true,
-          });
-        }
-        return json(res, 400, { ok: false, message: "当前支付方式不支持自动支付，请联系客服确认。" });
-      } else if (!previewAllowed) {
+      } else if (isManualPaymentMethod(paymentMethod)) {
+        // HARD LOCK: non-catfood never auto-marks paid via pay_order.
+        // Must: upload proof → CS approve (confirm_payment).
+        return json(res, 400, {
+          ok: false,
+          code: "MANUAL_PAYMENT_REQUIRES_PROOF",
+          message: "该支付方式需上传付款凭证，并由客服审核通过后才会记为已支付。请先提交付款凭证。",
+        });
+      } else if (isPreviewTestMethod(paymentMethod) && !previewAllowed) {
         return json(res, 400, { ok: false, message: "正式环境请使用已接通的支付渠道。" });
-      } else {
+      } else if (previewAllowed && isPreviewTestMethod(paymentMethod)) {
         usedTestPay = true;
+      } else {
+        return json(res, 400, {
+          ok: false,
+          code: "MANUAL_PAYMENT_REQUIRES_PROOF",
+          message: "该支付方式需上传付款凭证，并由客服审核通过后才会记为已支付。",
+        });
       }
 
       const nextStatus =
@@ -1662,7 +1721,11 @@ export default async function handler(req, res) {
           patch: payPatch,
           operatorRole: "boss",
           operatorId: profile.id,
-          note: usedTestPay ? "TEST preview pay success" : "boss wallet/gateway pay success",
+          note: usedTestPay
+            ? "TEST preview pay success"
+            : usedCatfoodHold
+              ? "boss catfood HOLD (await finalize on complete)"
+              : "boss wallet/gateway pay success",
         });
       } catch (e) {
         // Retry without optional columns if schema missing.
@@ -1675,7 +1738,11 @@ export default async function handler(req, res) {
           patch: before.companion_id ? {} : { companion_id: null },
           operatorRole: "boss",
           operatorId: profile.id,
-          note: usedTestPay ? "TEST preview pay success" : "boss pay success",
+          note: usedTestPay
+            ? "TEST preview pay success"
+            : usedCatfoodHold
+              ? "boss catfood HOLD"
+              : "boss pay success",
         });
       }
       if (!saved) {
@@ -2658,11 +2725,35 @@ export default async function handler(req, res) {
         });
       }
 
-      // Paid / post-payment rows must use request_refund (wallet already debited).
+      // Paid / post-payment rows must use request_refund (wallet already debited),
+      // EXCEPT active cat-food HOLD: release held funds then cancel.
+      let holdReleased = null;
+      try {
+        const walletApi = await import("./_wallet.js");
+        holdReleased = await walletApi.releaseWalletHold({
+          orderId: before.id,
+          idempotencyKey: `order-release:${before.order_no || before.id}`,
+          reason: `取消释放冻结 ${before.order_no || before.id}`,
+          operatorId: profile.id,
+        });
+      } catch (holdErr) {
+        const msg = String(holdErr?.message || "");
+        if (!/mcj_wallet_release_hold|Could not find the function|schema cache|PGRST|no_hold/i.test(msg)) {
+          console.warn("[orders/cancel_order] release hold", msg.slice(0, 160));
+        }
+        holdReleased = null;
+      }
+      const hadActiveHold =
+        holdReleased &&
+        holdReleased.ok !== false &&
+        !holdReleased.skipped &&
+        (holdReleased.hold?.status === "released" || holdReleased.duplicate);
+
       if (
-        beforeStatus !== "awaiting_payment" ||
-        money(before.paid_cat_food) > 0 ||
-        !!before.paid_at
+        !hadActiveHold &&
+        (beforeStatus !== "awaiting_payment" ||
+          money(before.paid_cat_food) > 0 ||
+          !!before.paid_at)
       ) {
         return json(res, 409, {
           ok: false,
@@ -2674,6 +2765,11 @@ export default async function handler(req, res) {
           order: viewOrder(before),
         });
       }
+
+      // Held cat-food cancel may be claimed/pending — allow those statuses when hold released.
+      const cancelAllowedStatuses = hadActiveHold
+        ? ["awaiting_payment", "claimed", "pending"]
+        : ["awaiting_payment"];
 
       const { isMultiGroupParent } = await import("./_order-group.js");
       const cancelPatchBase = {
@@ -2687,7 +2783,7 @@ export default async function handler(req, res) {
         cancel_reason: cancelReason,
       };
 
-      async function patchCancel(orderId, allowed = ["awaiting_payment"]) {
+      async function patchCancel(orderId, allowed = cancelAllowedStatuses) {
         try {
           return await patchOwnedOrder(profile, orderId, allowed, cancelPatchFull, "老板已取消订单。");
         } catch (err) {
