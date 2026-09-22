@@ -156,13 +156,12 @@ test("TEST 11 Duplicate approve guarded + CS review UI", () => {
 test("TEST 12 Gift income isolated from order settlement + points", () => {
   assert.match(giftOrders, /礼物收益：/);
   assert.match(marketplace, /礼物收益：/);
-  assert.doesNotMatch(giftOrders, /MCJ_SETTLEMENT/);
-  // send_gift credit path must not write settlement ledger notes
-  const creditIdx = marketplace.indexOf("礼物收益：");
-  assert.ok(creditIdx > 0);
-  const creditSnippet = marketplace.slice(Math.max(0, creditIdx - 120), creditIdx + 80);
-  assert.ok(creditSnippet.includes("creditCompanionIncome"));
-  assert.ok(!/MCJ_SETTLEMENT/.test(creditSnippet));
+  assert.match(giftOrders, /MCJ_GIFT:/);
+  assert.match(marketplace, /MCJ_GIFT:/);
+  assert.match(marketplace, /creditCompanionIncome\(companionId,\s*companionIncome/);
+  assert.match(giftOrders, /creditCompanionIncome\(\s*working\.receiver_companion_id/);
+  assert.doesNotMatch(marketplace, /MCJ_SETTLEMENT:\{/);
+  assert.doesNotMatch(giftOrders, /MCJ_SETTLEMENT:\{/);
   // Wallet gift debit must use gift: idempotency prefix (not order settlement keys)
   assert.match(marketplace, /idempotencyKey:\s*`gift:\$\{idempotencyKey\}`/);
   assert.ok(isGiftOrRewardNote("礼物收益：猫爪"));
@@ -176,7 +175,7 @@ test("TEST 12 Gift income isolated from order settlement + points", () => {
       },
       null
     ),
-    "reward_other"
+    "gift_income"
   );
   // Must not classify as order_income when note is gift and no settlement marker
   assert.notEqual(

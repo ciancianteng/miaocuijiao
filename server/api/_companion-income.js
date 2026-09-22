@@ -1,6 +1,11 @@
 /**
  * Companion earnings classification & clawback.
- * Order income ≠ gift/reward ≠ cancelled-order leftovers.
+ * Order income ≠ gift net ≠ invite ≠ reward/other ≠ cancelled-order leftovers.
+ *
+ * Owner lock (§10–12):
+ *   - gift_income is a separate channel and IS withdrawable (source=gift)
+ *   - never merge gift into order_income
+ *   - reward_other stays non-withdrawable (manual/test rewards)
  */
 
 const VOID_ORDER_STATUSES = new Set([
@@ -21,14 +26,23 @@ export function isSettlementIncomeNote(note = "") {
   return /MCJ_SETTLEMENT:/i.test(String(note || ""));
 }
 
+/** Explicit gift / tip settlement (catfood or approved external). */
+export function isGiftIncomeNote(note = "") {
+  const n = String(note || "");
+  if (/MCJ_GIFT:/i.test(n)) return true;
+  // Prefer explicit gift/tip income wording; avoid bare "reward".
+  return /礼物收益|礼物\/打赏|打赏收入|gift\s*income|tip\s*income/i.test(n) || /礼物|打赏|^tip$|kind=gift/i.test(n);
+}
+
 export function isInviteIncomeNote(note = "") {
   const n = String(note || "");
   if (/MCJ_INVITE:/i.test(n)) return true;
   return /邀请佣金|邀请返点|邀请奖励|invite\s*(cash|commission|reward)/i.test(n);
 }
 
+/** Legacy helper: gift OR generic reward wording (used by offline gift tests). */
 export function isGiftOrRewardNote(note = "") {
-  return /打赏|礼物|gift|奖励|reward|tip/i.test(String(note || ""));
+  return isGiftIncomeNote(note) || /奖励|reward/i.test(String(note || ""));
 }
 
 export function normalizeOrderStatus(status) {
@@ -38,7 +52,7 @@ export function normalizeOrderStatus(status) {
 }
 
 /**
- * @returns {'order_income'|'invite_income'|'reward_other'|'void'}
+ * @returns {'order_income'|'gift_income'|'invite_income'|'reward_other'|'void'}
  */
 export function classifyCompanionIncomeTx(tx = {}, order = null) {
   const type = String(tx.transaction_type || tx.typeCode || "");
@@ -53,11 +67,14 @@ export function classifyCompanionIncomeTx(tx = {}, order = null) {
   // Linked to a voided/refunded order → never count as earnings.
   if (orderId && order && VOID_ORDER_STATUSES.has(orderStatus)) return "void";
 
-  // Invite cash commission → withdrawable channel (never order_income).
+  // Gift / tip (must not become order_income).
+  if (isGiftIncomeNote(note) && !isSettlementIncomeNote(note)) return "gift_income";
+
+  // Invite commission (catfood ledger rows if any).
   if (isInviteIncomeNote(note) && !isSettlementIncomeNote(note)) return "invite_income";
 
-  // Explicit gift/tip/reward notes → 奖励/其它 (not order income).
-  if (isGiftOrRewardNote(note) && !isSettlementIncomeNote(note)) return "reward_other";
+  // Explicit non-gift reward wording → reward_other (not withdrawable by default).
+  if (/奖励|reward/i.test(note) && !isSettlementIncomeNote(note)) return "reward_other";
 
   // Settlement ledger: only valid when order is completed.
   if (isSettlementIncomeNote(note)) {
@@ -74,7 +91,7 @@ export function classifyCompanionIncomeTx(tx = {}, order = null) {
     return "void";
   }
 
-  // No order_id → non-order credit (manual/test/reward).
+  // No order_id → non-order credit (manual/test).
   return "reward_other";
 }
 
@@ -89,11 +106,12 @@ export function buildOrderStatusMap(orders = []) {
 }
 
 /**
- * Split companion_income rows into order income vs invite vs reward/other, excluding voided.
+ * Split companion_income rows by channel.
  */
 export function partitionCompanionIncome(transactions = [], orders = []) {
   const orderMap = buildOrderStatusMap(orders);
   const orderIncome = [];
+  const giftIncome = [];
   const inviteIncome = [];
   const rewardOther = [];
   const voided = [];
@@ -102,11 +120,12 @@ export function partitionCompanionIncome(transactions = [], orders = []) {
     const order = tx.order_id ? orderMap.get(String(tx.order_id)) || null : null;
     const kind = classifyCompanionIncomeTx(tx, order);
     if (kind === "order_income") orderIncome.push(tx);
+    else if (kind === "gift_income") giftIncome.push(tx);
     else if (kind === "invite_income") inviteIncome.push(tx);
     else if (kind === "reward_other") rewardOther.push(tx);
     else voided.push({ tx, order, kind });
   }
-  return { orderIncome, inviteIncome, rewardOther, voided, orderMap };
+  return { orderIncome, giftIncome, inviteIncome, rewardOther, voided, orderMap };
 }
 
 export function sumTxAmount(rows = []) {
@@ -155,7 +174,6 @@ export async function clawbackCompanionIncomeForOrder(
     return { ok: true, clawed: 0, message: "zero_claw_target" };
   }
 
-  // Prefer cancelling whole rows when full clawback; otherwise insert proportional refund audit + cancel rows covering target.
   let remaining = targetClaw;
   let clawed = 0;
   for (const row of incomeRows) {
@@ -180,7 +198,6 @@ export async function clawbackCompanionIncomeForOrder(
         }),
       });
     } else {
-      // Partial: keep income row but mark note; add refund tx for the clawed slice.
       await supabaseJson(restUrl("transactions", `?id=eq.${encodeURIComponent(row.id)}`), {
         method: "PATCH",
         headers: serviceHeaders(),
