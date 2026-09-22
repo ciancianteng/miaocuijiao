@@ -21,6 +21,7 @@
     sheetOpen: false,
     submitting: false,
     sharedGameId: "",
+    sharedIdContext: { serviceKey: "", game: "", server: "", platform: "" },
     sharedNotes: "",
     sharedStartTime: "",
     sharedVoiceMode: "game_mic",
@@ -39,6 +40,48 @@
 
   function isServiceBlob(name) {
     return /[,，、|/]/.test(String(name || ""));
+  }
+
+  function idContextFromService(name) {
+    var n = String(name || "").trim();
+    return {
+      serviceKey: compactServiceKey(n),
+      game: n,
+      server: (n.match(/国服|亚服|欧服|美服|国际服|日服|韩服|台服/) || [""])[0],
+      platform: (n.match(/手游|端游|PC|主机/) || [""])[0],
+    };
+  }
+
+  function normalizeIdContext(ctx) {
+    ctx = ctx && typeof ctx === "object" ? ctx : {};
+    var fromName = idContextFromService(ctx.game || ctx.service || ctx.serviceKey || "");
+    return {
+      serviceKey: compactServiceKey(ctx.serviceKey || fromName.serviceKey || ""),
+      game: String(ctx.game || fromName.game || "").trim(),
+      server: String(ctx.server || fromName.server || "").trim(),
+      platform: String(ctx.platform || fromName.platform || "").trim(),
+    };
+  }
+
+  function sameIdContext(a, b) {
+    a = normalizeIdContext(a);
+    b = normalizeIdContext(b);
+    if (!a.serviceKey && !b.serviceKey && !a.game && !b.game) return true;
+    if (a.serviceKey && b.serviceKey && a.serviceKey === b.serviceKey) return true;
+    if (a.game && b.game && compactServiceKey(a.game) === compactServiceKey(b.game)) {
+      if (a.server && b.server && a.server !== b.server) return false;
+      if (a.platform && b.platform && a.platform !== b.platform) return false;
+      return true;
+    }
+    return false;
+  }
+
+  function getSharedAccountId(context) {
+    var saved = String(state.sharedGameId || "").trim();
+    if (!saved) return "";
+    if (!context) return saved;
+    if (!state.sharedIdContext || !state.sharedIdContext.serviceKey) return saved;
+    return sameIdContext(state.sharedIdContext, context) ? saved : "";
   }
 
   function serviceNamesMatch(a, b) {
@@ -82,15 +125,32 @@
     return h;
   }
 
-  function bossKey() {
+  function bossIdentity() {
     try {
-      var u = JSON.parse(
+      return JSON.parse(
         localStorage.getItem("customerUser") || sessionStorage.getItem("customerUser") || "{}"
       );
-      return String(u.id || u.uid || u.email || "anon");
     } catch (e) {
-      return "anon";
+      return {};
     }
+  }
+
+  function bossKey() {
+    var u = bossIdentity();
+    return String(u.id || u.uid || u.email || "anon");
+  }
+
+  function bossKeys() {
+    var u = bossIdentity();
+    return [String(u.id || ""), String(u.uid || ""), String(u.email || ""), "anon"].filter(Boolean);
+  }
+
+  function canKeepDraft(storedKey) {
+    var stored = String(storedKey || "anon");
+    var now = bossKey();
+    if (stored === now) return true;
+    if (!stored || stored === "anon" || now === "anon") return true;
+    return bossKeys().indexOf(stored) >= 0;
   }
 
   function toast(msg) {
@@ -118,7 +178,7 @@
     if (document.querySelector('link[data-mcj-team-css]')) return;
     var link = document.createElement("link");
     link.rel = "stylesheet";
-    link.href = "/src/multi-companion-team.css?v=20260921availSot1";
+    link.href = "/src/multi-companion-team.css?v=20260922p01b";
     link.setAttribute("data-mcj-team-css", "1");
     document.head.appendChild(link);
   }
@@ -276,13 +336,16 @@
             hours: money(l.hours || 1),
             quantity: Math.max(1, Math.floor(money(l.quantity || 1) || 1)),
             services: Array.isArray(l.services) ? l.services : [],
+            gamePrices: l.gamePrices && typeof l.gamePrices === "object" ? l.gamePrices : {},
             priceSnapshot: money(l.priceSnapshot != null ? l.priceSnapshot : l.unitPrice),
             availabilityStatus: l.availabilityStatus || "",
             availabilityCheckedAt: l.availabilityCheckedAt || "",
             online: !!l.online,
+            gameId: String(l.gameId || l.game_id || state.sharedGameId || "").trim(),
           };
         }),
         sharedGameId: state.sharedGameId || "",
+        sharedIdContext: state.sharedIdContext || { serviceKey: "", game: "", server: "", platform: "" },
         sharedNotes: state.sharedNotes || "",
         sharedStartTime: state.sharedStartTime || "",
         sharedVoiceMode: state.sharedVoiceMode || "game_mic",
@@ -296,27 +359,51 @@
       var raw = sessionStorage.getItem(STORAGE_KEY);
       if (!raw) return;
       var data = JSON.parse(raw);
-      if (!data || data.bossKey !== bossKey()) {
+      if (!data || !canKeepDraft(data.bossKey)) {
         sessionStorage.removeItem(STORAGE_KEY);
         return;
       }
       state.lines = Array.isArray(data.lines)
         ? data.lines.map(function (l) {
+            var gp = (l && l.gamePrices && typeof l.gamePrices === "object" ? l.gamePrices : {}) || {};
+            var services = overlayGamePricesOnServices(Array.isArray(l && l.services) ? l.services : [], gp);
+            var matched =
+              (l &&
+                services.find(function (s) {
+                  return (
+                    (l.serviceId && String(s.serviceId || s.id || "") === String(l.serviceId)) ||
+                    serviceNamesMatch(s.name, l.service)
+                  );
+                })) ||
+              null;
+            var gpPrice = matched ? money(matched.price) : 0;
             var snap = money(l && (l.priceSnapshot != null ? l.priceSnapshot : l.unitPrice));
+            if (gpPrice > 0) snap = gpPrice;
             if (l && snap > 0) {
               l.unitPrice = snap;
               l.priceSnapshot = snap;
+            }
+            if (l) {
+              l.services = services;
+              l.gamePrices = gp;
             }
             return l;
           })
         : [];
       state.sharedGameId = data.sharedGameId || "";
+      state.sharedIdContext = normalizeIdContext(data.sharedIdContext || {});
       state.sharedNotes = data.sharedNotes || "";
       state.sharedStartTime = normalizeTimeValue(data.sharedStartTime || "") || "";
       state.sharedVoiceMode = data.sharedVoiceMode || "game_mic";
       if (state.sharedVoiceMode !== "discord" && state.sharedVoiceMode !== "game_mic") {
         state.sharedVoiceMode = "game_mic";
       }
+      if (state.sharedGameId) {
+        state.lines.forEach(function (l) {
+          if (!String(l.gameId || l.game_id || "").trim()) l.gameId = state.sharedGameId;
+        });
+      }
+      persist();
     } catch (e) {
       state.lines = [];
     }
@@ -325,6 +412,7 @@
   function clearTeam() {
     state.lines = [];
     state.sharedGameId = "";
+    state.sharedIdContext = { serviceKey: "", game: "", server: "", platform: "" };
     state.sharedNotes = "";
     state.sharedStartTime = "";
     state.sharedVoiceMode = "game_mic";
@@ -416,14 +504,14 @@
   }
 
   function resolveServicesFor(companion) {
+    var list = [];
     if (window.MCJPlaceOrder && typeof window.MCJPlaceOrder.resolveServices === "function") {
       try {
-        var resolved = window.MCJPlaceOrder.resolveServices(companion) || [];
-        if (resolved.length) return resolved;
+        list = window.MCJPlaceOrder.resolveServices(companion) || [];
       } catch (e) {}
     }
-    if (Array.isArray(companion.services) && companion.services.length) {
-      return companion.services
+    if ((!list || !list.length) && Array.isArray(companion.services) && companion.services.length) {
+      list = companion.services
         .map(function (s, i) {
           if (!s) return null;
           return {
@@ -437,9 +525,12 @@
           return s && isValidServiceLabel(s.name);
         });
     }
-    var name = companion.service || companion.game || "陪玩";
-    if (!isValidServiceLabel(name)) name = "陪玩";
-    return [{ name: name, price: money(companion.unitPrice || companion.price), serviceId: companion.serviceId || "" }];
+    if (!list || !list.length) {
+      var name = companion.service || companion.game || "陪玩";
+      if (!isValidServiceLabel(name)) name = "陪玩";
+      list = [{ name: name, price: money(companion.unitPrice || companion.price), serviceId: companion.serviceId || "" }];
+    }
+    return overlayGamePricesOnServices(list, companion.gamePrices || companion.game_prices || {});
   }
 
   function companionAvailability(payload) {
@@ -609,19 +700,25 @@
       hours: Math.max(0.5, money(raw.hours || 1) || 1),
       quantity: Math.max(1, Math.floor(money(raw.quantity || 1) || 1)),
       services: services,
+      gamePrices: raw.gamePrices && typeof raw.gamePrices === "object" ? raw.gamePrices : {},
       online: companion.online,
       availabilityStatus: avail.code || "",
       availabilityCheckedAt: new Date().toISOString(),
+      gameId: String(raw.gameId || raw.game_id || state.sharedGameId || "").trim(),
     };
+    var incomingId = String(raw.gameId || raw.game_id || "").trim();
+    if (incomingId) {
+      applyShared({
+        gameId: incomingId,
+        idContext: idContextFromService(lineService),
+      });
+    }
     state.lines.push(line);
     persist();
     renderBar();
     syncBottomStackOffset();
-    toast(state.lines.length === 1 ? "已加入队伍，可继续选陪玩" : "已加入一起下单");
-    if (isPicking() && state.lines.length >= 2) {
-      setPicking(false);
-      openCheckout();
-    }
+    toast(state.lines.length === 1 ? "已加入队伍，可继续选陪玩" : "已选 " + state.lines.length + " 人，可继续选或确认并支付");
+    if (state.lines.length >= 2) setPicking(false);
     return { ok: true, count: state.lines.length };
   }
 
@@ -711,10 +808,17 @@
     }
     var n = state.lines.length;
     var total = groupTotal();
-    var secondaryLabel = n >= 2 ? "查看队伍" : "继续选";
-    var secondaryAttr = n >= 2 ? "data-mcj-team-expand" : "data-mcj-team-continue";
+    var priceBits = state.lines
+      .map(function (l) {
+        return esc(l.companionName) + " " + esc(String(lineSubtotal(l)));
+      })
+      .join(" + ");
+    var checkoutLabel =
+      n >= 2 ? "确认并支付 " + total + "猫粮" : "确认并支付";
     bar.innerHTML =
-      '<div class="mcj-team-avatars">' +
+      '<div class="mcj-team-avatars" data-mcj-team-expand aria-expanded="' +
+      (state.expanded ? "true" : "false") +
+      '">' +
       avatarStackHtml() +
       "</div>" +
       '<div class="mcj-team-meta">' +
@@ -724,18 +828,14 @@
       esc(String(total)) +
       "猫粮</strong>" +
       "<span>" +
-      (n >= 2 ? "一次付款，分别结算" : "可继续选陪玩，或去结算（单人走普通下单）") +
+      (n >= 2 ? priceBits + " = " + esc(String(total)) : "可继续选陪玩，或确认并支付（单人走普通下单）") +
       "</span>" +
       "</div>" +
       '<div class="mcj-team-bar-actions">' +
-      '<button type="button" class="mcj-team-secondary" ' +
-      secondaryAttr +
-      ' aria-expanded="' +
-      (state.expanded ? "true" : "false") +
-      '">' +
-      secondaryLabel +
+      '<button type="button" class="mcj-team-secondary" data-mcj-team-continue>继续选</button>' +
+      '<button type="button" class="mcj-team-checkout" data-mcj-team-checkout>' +
+      esc(checkoutLabel) +
       "</button>" +
-      '<button type="button" class="mcj-team-checkout" data-mcj-team-checkout>去结算</button>' +
       "</div>";
     if (state.expanded && n >= 2) {
       bar.classList.add("is-expanded");
@@ -943,7 +1043,13 @@
       rows +
       '<div class="mcj-team-field"><span>游戏ID *（共用）</span><input type="text" data-mcj-team-game-id value="' +
       esc(state.sharedGameId) +
-      '" placeholder="请输入游戏ID" autocomplete="off" inputmode="text"></div>' +
+      '" placeholder="请输入游戏ID" autocomplete="off" inputmode="text">' +
+      (state.sharedGameId
+        ? '<p class="mcj-team-id-hint" data-mcj-team-game-id-hint>当前游戏ID：' +
+          esc(state.sharedGameId) +
+          " · 修改后本单后续陪玩都沿用新ID</p>"
+        : "") +
+      "</div>" +
       '<div class="mcj-team-field mcj-team-schedule-field"><span>服务时间 *</span>' +
       '<div class="mcj-team-time-row">' +
       '<div class="mcj-team-time-col mcj-team-time-start"><span class="mcj-team-time-cap">开始时间</span>' +
@@ -1280,6 +1386,54 @@
       });
   }
 
+  function overlayGamePricesOnServices(list, gamePrices) {
+    var prices = gamePrices && typeof gamePrices === "object" ? gamePrices : {};
+    return (list || []).map(function (s) {
+      if (!s) return s;
+      var sid = String(s.serviceId || s.id || "").trim();
+      var named = String(s.name || "").trim();
+      var gp = 0;
+      if (sid && money(prices[sid]) > 0) gp = money(prices[sid]);
+      else if (named && money(prices[named]) > 0) gp = money(prices[named]);
+      else {
+        var compact = compactServiceKey(named);
+        if (compact) {
+          var hits = Object.keys(prices).filter(function (k) {
+            if (!k || /^[0-9a-f-]{36}$/i.test(k)) return false;
+            return compactServiceKey(k) === compact && money(prices[k]) > 0;
+          });
+          if (hits.length === 1) gp = money(prices[hits[0]]);
+        }
+      }
+      if (gp > 0) return Object.assign({}, s, { price: gp });
+      return s;
+    });
+  }
+
+  function applyShared(patch) {
+    patch = patch || {};
+    if (patch.gameId != null && String(patch.gameId).trim()) {
+      state.sharedGameId = String(patch.gameId).trim();
+      state.lines.forEach(function (l) {
+        l.gameId = state.sharedGameId;
+      });
+    }
+    if (patch.idContext) {
+      state.sharedIdContext = normalizeIdContext(patch.idContext);
+    } else if (patch.service || patch.game) {
+      state.sharedIdContext = idContextFromService(patch.service || patch.game);
+    }
+    if (patch.notes != null) state.sharedNotes = String(patch.notes || "");
+    if (patch.startTime) {
+      var t = normalizeTimeValue(patch.startTime);
+      if (t) state.sharedStartTime = t;
+    }
+    if (patch.voiceMode === "discord" || patch.voiceMode === "game_mic") {
+      state.sharedVoiceMode = patch.voiceMode;
+    }
+    persist();
+  }
+
   function pickHallService(services, btn) {
     var filterEl = document.getElementById("gameFilter");
     var filterLabel = "";
@@ -1347,6 +1501,8 @@
           requireServicePick: true,
           unitPrice: fallback.unitPrice,
           services: fallback.services || [],
+          gamePrices: fallback.gamePrices || {},
+          serviceIds: fallback.serviceIds || [],
         }
       );
       return true;
@@ -1356,16 +1512,23 @@
 
   function addCompanionFromHallButton(btn) {
     var companionId = String(btn.getAttribute("data-hall-team-add") || "").trim();
+    var live =
+      (window.MCJHallCompanionById && typeof window.MCJHallCompanionById === "function"
+        ? window.MCJHallCompanionById(companionId)
+        : null) || {};
     var fallback = {
       companionId: companionId,
-      companionName: btn.getAttribute("data-hall-name") || "陪玩",
-      unitPrice: Number(btn.getAttribute("data-hall-price") || 0),
-      avatar: btn.getAttribute("data-hall-avatar") || "",
-      game: btn.getAttribute("data-hall-game") || "陪玩",
+      companionName: btn.getAttribute("data-hall-name") || live.name || "陪玩",
+      unitPrice: Number(btn.getAttribute("data-hall-price") || live.priceValue || 0),
+      avatar: btn.getAttribute("data-hall-avatar") || live.avatar || "",
+      game: btn.getAttribute("data-hall-game") || live.game || "陪玩",
       service: "",
       status: btn.getAttribute("data-hall-status") || "",
       statusText: btn.getAttribute("data-hall-status-text") || "",
       online: btn.getAttribute("data-hall-online"),
+      services: live.services || [],
+      gamePrices: live.gamePrices || live.game_prices || {},
+      serviceIds: live.serviceIds || live.service_ids || [],
     };
     var preferService = String(
       btn.getAttribute("data-hall-service") ||
@@ -1396,7 +1559,12 @@
         });
       })
       .then(function (body) {
-        var services = normalizeCatalogServices(body && body.services);
+        var gp = Object.assign(
+          {},
+          fallback.gamePrices || {},
+          (body && body.companion && (body.companion.gamePrices || body.companion.game_prices)) || {}
+        );
+        var services = overlayGamePricesOnServices(normalizeCatalogServices(body && body.services), gp);
         var picked = pickHallService(services, btn);
         if (picked && money(picked.price) > 0) {
           addCompanion(
@@ -1407,12 +1575,13 @@
               unitPrice: money(picked.price),
               game: picked.name,
               services: services,
+              gamePrices: gp,
             })
           );
           return;
         }
         // Ambiguous catalog without a resolved service → place-order chip select.
-        if (openPlaceOrderForHallCompanion(Object.assign({}, fallback, { services: services }))) return;
+        if (openPlaceOrderForHallCompanion(Object.assign({}, fallback, { services: services, gamePrices: gp }))) return;
         toast("请选择具体服务后再加入队伍");
       })
       .catch(function () {
@@ -1508,6 +1677,9 @@
     }
     if (e.target.matches("[data-mcj-team-game-id]")) {
       state.sharedGameId = String(e.target.value || "").trim();
+      state.lines.forEach(function (l) {
+        l.gameId = state.sharedGameId;
+      });
       persist();
     }
     if (e.target.matches("[data-mcj-team-notes]")) {
@@ -1534,7 +1706,12 @@
       var raw = sessionStorage.getItem(STORAGE_KEY);
       if (!raw) return;
       var data = JSON.parse(raw);
-      if (data && data.bossKey !== bossKey()) clearTeam();
+      if (!data) return;
+      if (!canKeepDraft(data.bossKey)) {
+        clearTeam();
+        return;
+      }
+      persist();
     } catch (e) {}
   }
 
@@ -1560,6 +1737,16 @@
     clear: clearTeam,
     openCheckout: openCheckout,
     continueToHall: continueToHall,
+    applyShared: applyShared,
+    getSharedAccountId: getSharedAccountId,
+    getSharedIdContext: function () {
+      return Object.assign({}, state.sharedIdContext || {});
+    },
+    idContextFromService: idContextFromService,
+    sameIdContext: sameIdContext,
+    hasDraft: function () {
+      return state.lines.length >= 1 || isPicking();
+    },
     getLines: function () {
       return state.lines.slice();
     },
@@ -1579,6 +1766,7 @@
       state: state,
       syncBottomStackOffset: syncBottomStackOffset,
       isPicking: isPicking,
+      canKeepDraft: canKeepDraft,
     },
   };
 })();

@@ -1271,7 +1271,7 @@ export default async function handler(req, res) {
         const cp = orderable.cp;
         const serviceId = String(order.serviceId || order.service_id || "").trim();
         const gameHint = String(order.gameName || order.game_name || order.mainGame || order.main_game || game || "").trim();
-        // Server-authoritative: companion_services → game_prices → level.base_price. Never trust client unit.
+        // Server-authoritative: game_prices (service-specific) → companion_services → level.base_price. Never trust client unit.
         const levels = await readLocalLevels().catch(() => []);
         const level =
           (Array.isArray(levels) ? levels : []).find(

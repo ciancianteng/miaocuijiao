@@ -231,6 +231,46 @@
   font-weight: 600;
   color: rgba(255, 214, 231, 0.72);
 }
+
+.mcj-po-game-id-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.mcj-po-game-id-edit {
+  height: 44px;
+  padding: 0 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(243, 168, 203, 0.28);
+  background: rgba(255, 255, 255, 0.06);
+  color: #ffe2ef;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.mcj-po-game-id-edit[hidden] {
+  display: none;
+}
+
+.mcj-po-game-id-hint {
+  margin: 6px 0 0;
+  font-size: 12px;
+  font-weight: 500;
+  color: rgba(255, 214, 231, 0.62);
+}
+
+.mcj-po-game-id-hint[hidden] {
+  display: none;
+}
+
+.mcj-po-scroll input[data-po-game-id][readonly] {
+  opacity: 0.92;
+  color: #fff;
+}
 .mcj-po-schedule-field > .mcj-po-label {
   font-weight: 550;
   color: rgba(255, 214, 231, 0.62);

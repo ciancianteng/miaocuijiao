@@ -307,4 +307,43 @@ function orderHarness(resolveOrderUnitPrice) {
   assert.match(String(rejected.message), /35/);
 }
 
+// Production P0: 小宏 陪跑刀 game_prices 40 beats stale companion_services.admin_set 30
+{
+  const r = resolveEffectiveServicePrice({
+    companion: {
+      price: 30,
+      game_prices: {
+        王者荣耀: 30,
+        "三角洲 手游 国服": 35,
+        "三角洲陪跑刀 一千万": 40,
+        "fc96c1d1-9311-4a17-8af1-12447c608dfc": 40,
+      },
+    },
+    serviceId: "fc96c1d1-9311-4a17-8af1-12447c608dfc",
+    gameName: "三角洲陪跑刀 一千万",
+    level: { id: "lv2", basePrice: 30, min: 30, max: 40 },
+    serviceRows: [
+      {
+        id: "b3af2130-da30-4fc4-b3e3-99bbd26bd98d",
+        service_id: "fc96c1d1-9311-4a17-8af1-12447c608dfc",
+        service_name: "三角洲陪跑刀 一千万",
+        price: 30,
+        enabled: true,
+        review_status: "approved",
+        source: "admin_set",
+      },
+    ],
+  });
+  assert.equal(r.price, 40, "catalog must not settle 陪跑刀 at level/admin_set 30");
+}
+
+{
+  const companionJs = readFileSync(new URL("../server/api/companion.js", import.meta.url), "utf8");
+  assert.match(companionJs, /syncCompanionServicesFromGamePrices/);
+  const modalJs = readFileSync(new URL("../src/place-order-modal.js", import.meta.url), "utf8");
+  assert.match(modalJs, /priceFromGamePrices/);
+  const teamJs = readFileSync(new URL("../src/multi-companion-team.js", import.meta.url), "utf8");
+  assert.match(teamJs, /overlayGamePricesOnServices/);
+}
+
 console.log("verify-multi-order-service-price: PASS");

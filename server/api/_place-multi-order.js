@@ -297,7 +297,7 @@ export async function placeMultiOrder(ctx) {
     if (!(totalAmount > 0)) {
       return { ok: false, status: 400, message: `第 ${i + 1} 行金额无效。` };
     }
-    const gameId = String(line.gameId || line.game_id || sharedGameId || "").trim();
+    const gameId = String(sharedGameId || line.gameId || line.game_id || "").trim();
     if (!gameId) {
       return { ok: false, status: 400, message: "请填写游戏 ID。" };
     }

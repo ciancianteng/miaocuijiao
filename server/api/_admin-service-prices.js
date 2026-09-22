@@ -335,8 +335,94 @@ export async function loadCompanionServiceRows(companionUserId) {
 }
 
 /**
+ * After companion workbench saves game_prices, keep companion_services in sync
+ * so catalog / place_order do not keep a stale admin_set/level copy.
+ * Soft-skips when the table is missing.
+ */
+export async function syncCompanionServicesFromGamePrices({
+  companionId = "",
+  companion = {},
+  gamePrices = {},
+  selectedServices = [],
+  source = "companion_custom",
+} = {}) {
+  const cid = String(companionId || companion.user_id || companion.userId || "").trim();
+  if (!cid || !hasCompanionDb()) return { written: [], mode: "noop" };
+  const prices = gamePrices && typeof gamePrices === "object" ? gamePrices : readGamePrices(companion);
+  const items = (Array.isArray(selectedServices) ? selectedServices : [])
+    .map((svc) => {
+      const sid = String(svc?.id || svc?.serviceId || svc?.service_id || "").trim();
+      const name = String(svc?.name || svc?.title || svc?.serviceName || "").trim();
+      const unitPrice = money(prices[sid] != null ? prices[sid] : prices[name]);
+      return { serviceId: sid, serviceName: name, unitPrice };
+    })
+    .filter((x) => x.unitPrice > 0 && (x.serviceId || x.serviceName));
+  if (!items.length) return { written: [], mode: "noop" };
+
+  let existing = [];
+  try {
+    existing =
+      (await companionDb(
+        "companion_services",
+        `?companion_id=eq.${encodeURIComponent(cid)}&select=id,service_id,service_name,price,source,enabled,review_status`
+      )) || [];
+  } catch (e) {
+    if (isMissingRelation(e)) return { written: [], mode: "companion_profiles", skippedTable: true };
+    throw e;
+  }
+
+  const levelId = String(companion.level_id || companion.levelId || "").trim();
+  const written = [];
+  for (const item of items) {
+    const hit = findExisting(existing, item);
+    const body = {
+      companion_id: cid,
+      service_id: item.serviceId || null,
+      service_name: item.serviceName || "服务",
+      price: money(item.unitPrice),
+      pricing_unit: "小时",
+      enabled: true,
+      review_status: "approved",
+      source: source || "companion_custom",
+      level_id_at_price: levelId || null,
+      updated_at: nowIso(),
+    };
+    if (hit) {
+      const patched = await companionDb(`companion_services`, `?id=eq.${encodeURIComponent(hit.id)}`, {
+        method: "PATCH",
+        headers: { Prefer: "return=representation" },
+        body: JSON.stringify({
+          price: body.price,
+          enabled: true,
+          review_status: "approved",
+          source: body.source,
+          service_name: body.service_name,
+          service_id: body.service_id,
+          level_id_at_price: body.level_id_at_price,
+          updated_at: body.updated_at,
+        }),
+      });
+      written.push({ id: hit.id, action: "updated", price: body.price, row: Array.isArray(patched) ? patched[0] : patched });
+    } else {
+      const inserted = await companionDb("companion_services", "", {
+        method: "POST",
+        headers: { Prefer: "return=representation" },
+        body: JSON.stringify(body),
+      });
+      written.push({
+        id: Array.isArray(inserted) ? inserted[0]?.id : inserted?.id,
+        action: "inserted",
+        price: body.price,
+        row: Array.isArray(inserted) ? inserted[0] : inserted,
+      });
+    }
+  }
+  return { written, mode: "companion_services" };
+}
+
+/**
  * Server-authoritative unit price for place_order / place_multi_order.
- * Never trusts client price. Fallback: service row → game_prices → level.base_price.
+ * Never trusts client price. Fallback: game_prices → service row → level.base_price.
  */
 export async function resolveOrderUnitPrice({
   companion,

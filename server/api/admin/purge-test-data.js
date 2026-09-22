@@ -249,6 +249,15 @@ export default async function handler(req, res) {
     if (String(body.confirm || "") !== CONFIRM_TEXT) {
       return json(res, 400, { ok: false, message: `请在 confirm 字段填写 ${CONFIRM_TEXT} 以确认清理。` });
     }
+    const { isProductionRuntime, isProductionSupabaseUrl } = await import("../_test-accounts.js");
+    if (isProductionRuntime() || isProductionSupabaseUrl()) {
+      return json(res, 403, {
+        ok: false,
+        code: "PROD_PURGE_BLOCKED",
+        message:
+          "正式环境禁止 purge_test_data。该接口会删除全部非管理员账号。请改用定点 cleanup SQL，并等老板确认「这些都是假数据，可以删」。",
+      });
+    }
     const result = await purgeTestData();
     return json(res, 200, result);
   } catch (error) {

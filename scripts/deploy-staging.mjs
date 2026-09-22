@@ -34,7 +34,14 @@ function extractUrl(text) {
 }
 
 console.log("[deploy-staging] deploying…");
-const deploy = run("npx", ["vercel", "deploy", "--yes", "--json"]);
+const deploy = run("npx", [
+  "vercel",
+  "deploy",
+  "--yes",
+  "--json",
+  "--project",
+  "meow-cuijiao-homepage",
+]);
 const combined = `${deploy.stdout || ""}\n${deploy.stderr || ""}`;
 process.stdout.write(deploy.stdout || "");
 if (deploy.stderr) process.stderr.write(deploy.stderr);
@@ -58,6 +65,11 @@ if (alias.status !== 0) {
   console.error("[deploy-staging] alias set failed");
   process.exit(alias.status || 1);
 }
+
+console.log(`[deploy-staging] alias → ${MIRROR_ALIAS}`);
+const aliasMirror = run("npx", ["vercel", "alias", "set", host, MIRROR_ALIAS]);
+process.stdout.write(aliasMirror.stdout || "");
+if (aliasMirror.stderr) process.stderr.write(aliasMirror.stderr);
 
 console.log("");
 console.log("READY staging URL (fixed — refresh this only):");
