@@ -2305,25 +2305,30 @@ export default async function handler(req, res) {
           rows = await insertProfile(bossUid ? { ...intlProfile, boss_uid: bossUid } : intlProfile);
         } catch (insertError) {
           const detail = String(insertError.message || "");
-          if (isMissingColumnError(insertError) || /email_verified/i.test(detail)) {
-            const withoutVerified = { ...intlProfile };
-            delete withoutVerified.email_verified;
-            delete withoutVerified.email_verified_at;
+          if (isMissingColumnError(insertError) || /email_verified|is_test_account/i.test(detail)) {
+            const withoutOptional = { ...intlProfile };
+            delete withoutOptional.email_verified;
+            delete withoutOptional.email_verified_at;
+            delete withoutOptional.is_test_account;
             try {
-              rows = await insertProfile(bossUid ? { ...withoutVerified, boss_uid: bossUid } : withoutVerified);
+              rows = await insertProfile(bossUid ? { ...withoutOptional, boss_uid: bossUid } : withoutOptional);
             } catch (retryMissing) {
-              if (isMissingColumnError(retryMissing)) {
+              if (isMissingColumnError(retryMissing) || /is_test_account/i.test(String(retryMissing.message || ""))) {
+                const bare = { ...baseProfile };
+                delete bare.is_test_account;
                 try {
-                  rows = await insertProfile(bossUid ? { ...baseProfile, boss_uid: bossUid } : baseProfile);
+                  rows = await insertProfile(bossUid ? { ...bare, boss_uid: bossUid } : bare);
                 } catch (retryError) {
                   if (/boss_uid|schema cache/i.test(String(retryError.message || "")) && bossUid) {
-                    rows = await insertProfile(baseProfile);
+                    rows = await insertProfile(bare);
                   } else {
                     throw retryError;
                   }
                 }
               } else if (/boss_uid|schema cache/i.test(String(retryMissing.message || "")) && bossUid) {
-                rows = await insertProfile(baseProfile);
+                const bare = { ...baseProfile };
+                delete bare.is_test_account;
+                rows = await insertProfile(bare);
               } else {
                 throw retryMissing;
               }
@@ -2332,8 +2337,10 @@ export default async function handler(req, res) {
             try {
               rows = await insertProfile(intlProfile);
             } catch (retryIntl) {
-              if (isMissingColumnError(retryIntl) || /email_verified/i.test(String(retryIntl.message || ""))) {
-                rows = await insertProfile(baseProfile);
+              if (isMissingColumnError(retryIntl) || /email_verified|is_test_account/i.test(String(retryIntl.message || ""))) {
+                const bare = { ...baseProfile };
+                delete bare.is_test_account;
+                rows = await insertProfile(bare);
               } else {
                 throw retryIntl;
               }
