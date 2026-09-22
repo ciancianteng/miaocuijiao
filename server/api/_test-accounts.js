@@ -14,7 +14,21 @@
  */
 
 export const TEST_DATA_SOURCE = "cursor_acceptance";
+/** Staging-only organic E2E identity — real settlement/points path; blocked on Production. */
+export const STAGING_ORGANIC_SOURCE = "staging_organic";
+export const STAGING_ORGANIC_EMAIL_RE = /@mcj-staging-organic\.invalid\b/i;
 export const PRODUCTION_SUPABASE_REF = "jqfaknpmcnqwqvatrwgo";
+
+export function isStagingOrganicEmail(email = "") {
+  return STAGING_ORGANIC_EMAIL_RE.test(String(email || "").trim());
+}
+
+export function isStagingOrganicSource(meta = {}) {
+  const source = String(meta?.source || meta?.data_source || meta?.test_source || "")
+    .trim()
+    .toLowerCase();
+  return source === STAGING_ORGANIC_SOURCE || source === "staging_organic";
+}
 
 export function isProductionSupabaseUrl(url = process.env.SUPABASE_URL || "") {
   return String(url || "").toLowerCase().includes(PRODUCTION_SUPABASE_REF);
@@ -136,6 +150,7 @@ export function isTestAccountRecord(row = {}, extra = {}, env = process.env) {
 }
 
 export function shouldStampTestAccount({ email = "", displayName = "", nickname = "" } = {}) {
+  if (isStagingOrganicEmail(email)) return false;
   return (
     isTestEmail(email) ||
     isAcceptanceFixtureEmail(email) ||
@@ -144,18 +159,21 @@ export function shouldStampTestAccount({ email = "", displayName = "", nickname 
   );
 }
 
-export function stampTestAccountPayload(payload = {}, identity = {}) {
-  if (!shouldStampTestAccount(identity)) return payload;
-  return { ...payload, is_test_account: true };
-}
-
-/**
- * Stamp Auth user_metadata.source for Cursor/E2E acceptance identities.
- * Safe no-op when identity is not a test/acceptance fixture.
- */
 export function stampTestUserMetadata(meta = {}, identity = {}) {
+  if (isStagingOrganicEmail(identity.email || "")) {
+    return { ...(meta || {}), source: STAGING_ORGANIC_SOURCE, organic: true };
+  }
   if (!shouldStampTestAccount(identity)) return meta || {};
   return { ...(meta || {}), source: TEST_DATA_SOURCE };
+}
+
+/** Organic Staging identities must never be stamped is_test_account=true. */
+export function stampTestAccountPayload(payload = {}, identity = {}) {
+  if (isStagingOrganicEmail(identity.email || "")) {
+    return { ...payload, is_test_account: false };
+  }
+  if (!shouldStampTestAccount(identity)) return payload;
+  return { ...payload, is_test_account: true };
 }
 
 export function excludeTestTouchedOnProduction(rows = [], profiles = [], env = process.env) {
@@ -190,6 +208,10 @@ export function shouldBlockTestIdentityOnProduction(
     {};
   const source = String(meta.source || meta.data_source || meta.test_source || "").trim().toLowerCase();
   if (source === TEST_DATA_SOURCE || source === "cursor_acceptance" || source === "mcj_test_run") {
+    return true;
+  }
+  // Organic Staging acceptance accounts must never authenticate on Production.
+  if (isStagingOrganicEmail(email) || isStagingOrganicSource(meta)) {
     return true;
   }
   return false;

@@ -1,0 +1,78 @@
+{
+  "PROD_TEST_ACCOUNT_BLOCK": {
+    "result": "PASS",
+    "detail": "邮箱或密码错误。"
+  },
+  "STAGING_ORGANIC_E2E": {
+    "result": "PASS",
+    "detail": "is_test_account must be false"
+  },
+  "RECHARGE": {
+    "result": "PASS",
+    "detail": "bal0=465 bal1=570 bal2=570"
+  },
+  "BOSS_CONFIRM_CLOSES_AFTER_SALES": {
+    "result": "PASS",
+    "detail": "已确认完成，订单已完成。"
+  },
+  "ORGANIC_SETTLEMENT": {
+    "result": "PASS",
+    "detail": "locked=64 orderIncome=64"
+  },
+  "24H_WITHDRAWABLE": {
+    "result": "PASS",
+    "detail": "locked=64 unlocked=0 (lock proven organic; unlock clock API-only — see #294 offline)"
+  },
+  "REFUND_CLAWBACK": {
+    "result": "FAIL",
+    "detail": "{}"
+  },
+  "COMMISSION_CLAWBACK": {
+    "result": "NOT PROVEN",
+    "detail": ""
+  },
+  "POINTS_FULL_REVOKE": {
+    "result": "NOT PROVEN",
+    "detail": ""
+  },
+  "WITHDRAWAL_LOCK": {
+    "result": "FAIL",
+    "detail": "frozen=0"
+  },
+  "WITHDRAWAL_PAY": {
+    "result": "NOT PROVEN",
+    "detail": "400"
+  },
+  "WITHDRAWAL_RESTORE": {
+    "result": "NOT PROVEN",
+    "detail": ""
+  },
+  "GIFT_SCHEMA": {
+    "result": "PASS",
+    "detail": ""
+  },
+  "GIFT_GROSS_NET": {
+    "result": "NOT PROVEN",
+    "detail": "giftIncome=0"
+  },
+  "GIFT_WITHDRAWABLE": {
+    "result": "NOT PROVEN",
+    "detail": "wd=0"
+  },
+  "EXTERNAL_GIFT_REVIEW": {
+    "result": "NOT PROVEN",
+    "detail": "400"
+  },
+  "REFERRAL_REWARD": {
+    "result": "NOT PROVEN",
+    "detail": ""
+  },
+  "PROD_TEST_DATA_CLEANUP": {
+    "result": "PASS",
+    "detail": "confirmed=0 committed"
+  },
+  "REAL_PROD_DATA_TOUCHED": {
+    "result": "0",
+    "detail": "cleanup gates REAL_USER_MATCH=0"
+  }
+}

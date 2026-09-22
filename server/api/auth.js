@@ -45,6 +45,7 @@ import {
   shouldBlockTestIdentityOnProduction,
   stampTestAccountPayload,
   stampTestUserMetadata,
+  isStagingOrganicEmail,
 } from "./_test-accounts.js";
 
 function opaqueSystemPassword() {
@@ -845,8 +846,14 @@ async function handleForgotSendOtp(body, res) {
     role,
     requestId,
   };
-  if (payload.ok) responseBody.retryAfterSec = otpRetryAfterSec();
-  return json(res, payload.ok ? 200 : 503, responseBody);
+  if (allowDebugOtp() && isStagingOrganicEmail(email) && (payload.ok || mailOk)) {
+    responseBody.ok = true;
+    responseBody.debugCode = code;
+    responseBody.devCode = code;
+    responseBody.organicDebug = true;
+  }
+  if (payload.ok || responseBody.organicDebug) responseBody.retryAfterSec = otpRetryAfterSec();
+  return json(res, responseBody.ok ? 200 : 503, responseBody);
 }
 
 function rejectProductionTestIdentity(res, { email = "", displayName = "", profile = null, authUser = null } = {}) {
@@ -1426,6 +1433,12 @@ async function handleSendRegisterOtp(body, res) {
     payload.message = "邮件暂不可用，已生成本地调试验证码。";
     payload.debugCode = code;
     payload.devCode = code;
+  }
+  // Staging organic acceptance: always return debug OTP (mail may succeed to .invalid sinks).
+  if (allowDebugOtp() && isStagingOrganicEmail(email) && payload.ok) {
+    payload.debugCode = code;
+    payload.devCode = code;
+    payload.organicDebug = true;
   }
   const responseBody = {
     ...payload,

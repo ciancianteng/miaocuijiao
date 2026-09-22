@@ -1,0 +1,32 @@
+{
+  "staging": "https://meow-cuijiao-homepage-staging.vercel.app",
+  "source": "staging_organic",
+  "accounts": [
+    {
+      "email": "org***@mcj-staging-organic.invalid",
+      "role": "boss",
+      "id": "142ccbf4-95a3-436a-a99a-a4014dc99cb8",
+      "ok": true
+    },
+    {
+      "email": "org***@mcj-staging-organic.invalid",
+      "role": "boss",
+      "id": "e68fd4e1-405c-4800-bb33-1a9bda032695",
+      "ok": true
+    },
+    {
+      "email": "org***@mcj-staging-organic.invalid",
+      "role": "companion",
+      "id": "61c0fb64-0467-4d8c-9c1a-2d4c1a670ec9",
+      "ok": true,
+      "adminHit": true
+    },
+    {
+      "email": "org***@mcj-staging-organic.invalid",
+      "role": "companion",
+      "id": "d9aded34-8ed5-436f-9f43-d654c8cda7f0",
+      "ok": true
+    }
+  ],
+  "provisioned_at": "2026-09-22T09:57:58.669Z"
+}
