@@ -2571,6 +2571,7 @@ export default async function handler(req, res) {
         duplicate: !!result.duplicate,
         alreadyRefunded: !!result.alreadyRefunded || !!result.duplicate,
         creditedCatFood: result.creditedCatFood,
+        clawbacks: result.clawbacks || null,
       });
     }
 

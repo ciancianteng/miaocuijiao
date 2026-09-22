@@ -6432,8 +6432,52 @@ return json(res, 200, {
       };
       let item = null;
       {
-        let payload = { ...withdrawalPayload };
-        for (let attempt = 0; attempt < 8; attempt++) {
+        // Staging/Prod may enforce companion_withdrawals_stream_alloc_sum:
+        // order+gift(+invite) stream columns must equal cat_food_amount.
+        const giftWithdrawable = money(
+          data?.earnings?.giftNetIncome ??
+            data?.earnings?.giftIncome ??
+            data?.summary?.giftIncome ??
+            data?.channels?.giftNetIncome ??
+            0
+        );
+        const orderWithdrawable = money(
+          data?.earnings?.availableOrderIncome ??
+            data?.earnings?.orderUnlocked ??
+            data?.channels?.orderIncome ??
+            0
+        );
+        let giftAlloc = Math.min(amount, Math.max(0, giftWithdrawable));
+        let orderAlloc = Math.min(Math.max(0, amount - giftAlloc), Math.max(0, orderWithdrawable));
+        let inviteAlloc = money(amount - giftAlloc - orderAlloc);
+        if (inviteAlloc < 0) inviteAlloc = 0;
+        // If channel balances unknown/stale, attribute remaining to gift (immediate unlock stream).
+        const allocated = money(giftAlloc + orderAlloc + inviteAlloc);
+        if (allocated < amount) giftAlloc = money(giftAlloc + (amount - allocated));
+        if (money(giftAlloc + orderAlloc + inviteAlloc) !== amount) {
+          giftAlloc = amount;
+          orderAlloc = 0;
+          inviteAlloc = 0;
+        }
+        const streamSets = [
+          {
+            service_income_withdrawn_amount: money(orderAlloc + giftAlloc),
+            referral_rebate_withdrawn_amount: inviteAlloc,
+          },
+          {
+            service_income_withdrawn_amount: amount,
+            referral_rebate_withdrawn_amount: 0,
+          },
+          {
+            service_income_withdrawn_amount: giftAlloc,
+            referral_rebate_withdrawn_amount: money(Math.max(0, amount - giftAlloc)),
+          },
+        ];
+        // Default first attempt includes Staging stream alloc columns (service + referral).
+        let payload = { ...withdrawalPayload, ...streamSets[0] };
+        let streamIdx = 0;
+        let lastErr = "";
+        for (let attempt = 0; attempt < 24; attempt++) {
           try {
             const rows = await companionDb("companion_withdrawals", "", {
               method: "POST",
@@ -6443,15 +6487,37 @@ return json(res, 200, {
             break;
           } catch (error) {
             const msg = `${error?.message || ""} ${JSON.stringify(error?.body || "")}`;
+            lastErr = msg.slice(0, 500);
             if (/companion_withdrawals|schema cache|PGRST/i.test(msg) && /Could not find the table/i.test(msg)) {
               return json(res, 503, {
                 ok: false,
                 message: "提现表未就绪，请稍后重试或联系管理员执行数据库迁移",
               });
             }
+            if (/stream_alloc_sum/i.test(msg)) {
+              streamIdx += 1;
+              if (streamIdx >= streamSets.length) {
+                return json(res, 500, {
+                  ok: false,
+                  message: "提现申请写入失败：stream_alloc 约束未满足",
+                  detail: lastErr.slice(0, 400),
+                });
+              }
+              payload = { ...withdrawalPayload, ...streamSets[streamIdx] };
+              continue;
+            }
             const m = msg.match(/Could not find the '([^']+)' column/i);
-            if (!m || !(m[1] in payload)) throw error;
-            delete payload[m[1]];
+            if (m && m[1] in payload) {
+              delete payload[m[1]];
+              // If this stream set has no remaining alloc keys, advance.
+              const allocLeft = Object.keys(payload).some((k) => /alloc|stream|gift_cat|order_cat|invite_cat/i.test(k));
+              if (!allocLeft && streamIdx + 1 < streamSets.length && streamIdx > 0) {
+                streamIdx += 1;
+                payload = { ...withdrawalPayload, ...streamSets[streamIdx] };
+              }
+              continue;
+            }
+            throw error;
           }
         }
       }
