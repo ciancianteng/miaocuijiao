@@ -171,6 +171,91 @@ function normalizeStatusInput(value, fallback = "pending") {
   return text;
 }
 
+const BATCH_APPROVE_MAX = 40;
+
+function isBatchApprovableApplication(companion) {
+  const raw = String(companion?.application_status || companion?.verification_status || "").toLowerCase();
+  if (!companion?.id) return false;
+  if (/rejected|已拒绝|已驳回/.test(raw)) return false;
+  if (/approved|verified|passed|已通过/.test(raw)) return false;
+  if (/resubmit|need_more|待补充|需要补资料/.test(raw)) return false;
+  if (/^draft$|草稿/.test(raw)) return false;
+  return /pending|review|submitted|审核中|待审核|未审核/.test(raw);
+}
+
+async function batchReviewApplications(req, body) {
+  const rawItems = Array.isArray(body.items) ? body.items : [];
+  const rawIds = Array.isArray(body.ids) ? body.ids : rawItems.map((item) => item && (item.id || item.companionId));
+  const defaultLevelId = String(body.levelId || body.level_id || body.payload?.levelId || "").trim();
+  const levelById = body.levelById && typeof body.levelById === "object" ? body.levelById : {};
+  const seen = new Set();
+  const ids = [];
+  for (const raw of rawIds) {
+    const id = String(raw || "").trim();
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    ids.push(id);
+  }
+  if (!ids.length) {
+    const err = Object.assign(new Error("请先勾选要审核通过的陪玩"), { status: 400, code: "EMPTY_BATCH" });
+    throw err;
+  }
+  if (ids.length > BATCH_APPROVE_MAX) {
+    const err = Object.assign(new Error("单次批量通过最多 " + BATCH_APPROVE_MAX + " 人"), {
+      status: 400,
+      code: "BATCH_TOO_LARGE",
+    });
+    throw err;
+  }
+  const results = [];
+  for (const id of ids) {
+    try {
+      const companion = await getCompanion(id);
+      if (!companion) {
+        results.push({ id, ok: false, message: "陪玩不存在" });
+        continue;
+      }
+      if (!isBatchApprovableApplication(companion)) {
+        results.push({
+          id,
+          ok: false,
+          nickname: companion.nickname || companion.name || "",
+          message: "当前状态不可批量通过（仅审核中可批量通过，已通过/已拒绝/补资料/草稿已跳过）",
+        });
+        continue;
+      }
+      const levelId = String(levelById[id] || levelById[String(id)] || defaultLevelId || "").trim();
+      const payload = {
+        status: "approved",
+        levelId,
+        level_id: levelId,
+      };
+      const result = await reviewApplication(req, companion, payload);
+      results.push({
+        id,
+        ok: true,
+        nickname: companion.nickname || companion.name || "",
+        message: result?.publish?.hallVisible ? "已通过并进入大厅" : "已通过",
+      });
+    } catch (err) {
+      results.push({
+        id,
+        ok: false,
+        message: String(err?.message || err || "审核失败"),
+      });
+    }
+  }
+  const successCount = results.filter((row) => row.ok).length;
+  const failCount = results.length - successCount;
+  return {
+    ok: true,
+    successCount,
+    failCount,
+    results,
+    message: "成功 " + successCount + "，失败 " + failCount,
+  };
+}
+
 function labelStatus(value, fallback = "待审核") {
   const raw = String(value || "").trim();
   if (!raw) return fallback;
@@ -1364,6 +1449,18 @@ export default async function handler(req, res) {
     if (req.method !== "POST") return json(res, 405, { ok: false, message: "Method Not Allowed" });
     const body = await parseBody(req);
     const action = String(body.action || "edit").trim();
+    if (action === "batch_review_application" || action === "bulk_approve_applications") {
+      try {
+        const batch = await batchReviewApplications(req, body);
+        return json(res, 200, batch);
+      } catch (batchErr) {
+        return json(res, batchErr.status || 400, {
+          ok: false,
+          code: batchErr.code || "",
+          message: batchErr.message || "批量通过失败",
+        });
+      }
+    }
     const id = String(body.id || "").trim();
     if (!id && action !== "list") return json(res, 400, { ok: false, message: "缺少陪玩 ID" });
 
