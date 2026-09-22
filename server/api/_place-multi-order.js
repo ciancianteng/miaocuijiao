@@ -53,7 +53,7 @@ function isMissingColumnError(err) {
  * Insert an orders row; if optional columns are absent, retry without them.
  * Does NOT drop parent_order_id — that remains a hard multi-order requirement.
  */
-async function insertOrderRow(deps, row) {
+export async function insertOrderRow(deps, row) {
   const { restUrl, supabaseJson, serviceHeaders } = deps;
   try {
     const rows = await supabaseJson(restUrl("orders"), {
