@@ -425,4 +425,92 @@ export async function listBossCommissionEarnings({
   return (Array.isArray(rows) ? rows : []).map(viewBossCommissionEarning);
 }
 
+/**
+ * Clawback boss commission earnings for a refunded/cancelled order (idempotent).
+ * Marks boss_commission_earnings clawed_back and cancels companion ledger boss_commission tx if present.
+ */
+export async function clawbackBossCommissionForOrder(order, { reason = "订单退款冲销老板抽成", amount = null } = {}) {
+  const orderId = order?.id;
+  if (!orderId) return { ok: false, skipped: true, reason: "missing_order" };
+
+  let earningRows = [];
+  try {
+    earningRows = await supabaseJson(
+      restUrl(EARNINGS_TABLE, `?order_id=eq.${encodeURIComponent(orderId)}&select=*&limit=5`),
+      { headers: serviceHeaders() }
+    );
+  } catch (err) {
+    if (/PGRST|relation|schema cache|does not exist/i.test(String(err?.message || ""))) {
+      return { ok: true, skipped: true, reason: "boss_commission_table_missing" };
+    }
+    throw err;
+  }
+  const active = (Array.isArray(earningRows) ? earningRows : []).filter(
+    (r) => !/clawed|cancelled|canceled|void/i.test(String(r.status || "settled"))
+  );
+  if (!active.length) {
+    return { ok: true, clawed: 0, message: "no_active_boss_commission" };
+  }
+
+  let clawed = 0;
+  for (const row of active) {
+    const full = money(row.boss_commission_amount);
+    const take =
+      amount != null && money(amount) > 0 ? Math.min(full, money(amount)) : full;
+    const status = take >= full - 0.0001 ? "clawed_back" : "settled";
+    try {
+      await supabaseJson(restUrl(EARNINGS_TABLE, `?id=eq.${encodeURIComponent(row.id)}`), {
+        method: "PATCH",
+        headers: serviceHeaders(),
+        body: JSON.stringify({
+          status,
+          boss_commission_amount: status === "clawed_back" ? 0 : money(full - take),
+          clawback_amount: money((row.clawback_amount || 0) + take),
+          clawback_at: new Date().toISOString(),
+          clawback_reason: String(reason || "").slice(0, 240),
+          updated_at: new Date().toISOString(),
+        }),
+      });
+    } catch (err) {
+      // Columns clawback_* may be missing — fallback to status only.
+      if (/column|schema cache|PGRST/i.test(String(err?.message || ""))) {
+        await supabaseJson(restUrl(EARNINGS_TABLE, `?id=eq.${encodeURIComponent(row.id)}`), {
+          method: "PATCH",
+          headers: serviceHeaders(),
+          body: JSON.stringify({
+            status: "clawed_back",
+            boss_commission_amount: 0,
+            updated_at: new Date().toISOString(),
+          }),
+        }).catch(() => null);
+      } else {
+        throw err;
+      }
+    }
+    clawed += take;
+  }
+
+  // Cancel companion-side boss_commission ledger if any (best-effort).
+  try {
+    const txs = await supabaseJson(
+      restUrl(
+        "transactions",
+        `?order_id=eq.${encodeURIComponent(orderId)}&transaction_type=eq.boss_commission&status=neq.cancelled&select=id&limit=10`
+      ),
+      { headers: serviceHeaders() }
+    );
+    for (const tx of Array.isArray(txs) ? txs : []) {
+      await supabaseJson(restUrl("transactions", `?id=eq.${encodeURIComponent(tx.id)}`), {
+        method: "PATCH",
+        headers: serviceHeaders(),
+        body: JSON.stringify({ status: "cancelled", note: `[[CLAWBACK]]${reason}` }),
+      }).catch(() => null);
+    }
+  } catch {
+    /* optional */
+  }
+
+  return { ok: true, clawed: money(clawed), count: active.length };
+}
+
 export { EARNINGS_TABLE };

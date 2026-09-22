@@ -105,6 +105,7 @@ export function sumTxAmount(rows = []) {
 /**
  * Claw back companion_income for an order that was cancelled/refunded after settlement.
  * Marks income txs cancelled and inserts a matching refund row if needed for audit.
+ * @param {{ amount?: number }} opts - when amount set and < full income, only claw that slice (partial refund).
  */
 export async function clawbackCompanionIncomeForOrder(
   {
@@ -113,7 +114,7 @@ export async function clawbackCompanionIncomeForOrder(
     serviceHeaders,
   },
   order,
-  { reason = "订单取消/退款，扣回陪玩收入", mode = "cancel" } = {}
+  { reason = "订单取消/退款，扣回陪玩收入", mode = "cancel", amount = null } = {}
 ) {
   const orderId = order?.id;
   const companionId = order?.companion_id;
@@ -134,32 +135,67 @@ export async function clawbackCompanionIncomeForOrder(
     return { ok: true, clawed: 0, message: "no_active_companion_income" };
   }
 
+  const fullIncome = money(incomeRows.reduce((n, r) => n + money(r.amount), 0));
+  const targetClaw =
+    amount != null && Number.isFinite(Number(amount)) && money(amount) > 0
+      ? Math.min(fullIncome, money(amount))
+      : fullIncome;
+  if (targetClaw <= 0) {
+    return { ok: true, clawed: 0, message: "zero_claw_target" };
+  }
+
+  // Prefer cancelling whole rows when full clawback; otherwise insert proportional refund audit + cancel rows covering target.
+  let remaining = targetClaw;
   let clawed = 0;
   for (const row of incomeRows) {
-    const amount = money(row.amount);
-    await supabaseJson(restUrl("transactions", `?id=eq.${encodeURIComponent(row.id)}`), {
-      method: "PATCH",
-      headers: serviceHeaders(),
-      body: JSON.stringify({
-        status: "cancelled",
-        note: `${row.note || ""}\n[[CLAWBACK]]${JSON.stringify({
-          mode,
-          reason,
-          clawedAt: new Date().toISOString(),
-          orderStatus: order.status || "",
-        })}`.slice(0, 1800),
-      }),
-    });
+    if (remaining <= 0.0001) break;
+    const rowAmt = money(row.amount);
+    const take = Math.min(rowAmt, remaining);
+    const fullRow = take >= rowAmt - 0.0001;
 
-    // Audit refund row (summaryFrom subtracts refund from gross; cancelled income already excluded).
+    if (fullRow) {
+      await supabaseJson(restUrl("transactions", `?id=eq.${encodeURIComponent(row.id)}`), {
+        method: "PATCH",
+        headers: serviceHeaders(),
+        body: JSON.stringify({
+          status: "cancelled",
+          note: `${row.note || ""}\n[[CLAWBACK]]${JSON.stringify({
+            mode,
+            reason,
+            clawedAt: new Date().toISOString(),
+            orderStatus: order.status || "",
+            clawAmount: take,
+          })}`.slice(0, 1800),
+        }),
+      });
+    } else {
+      // Partial: keep income row but mark note; add refund tx for the clawed slice.
+      await supabaseJson(restUrl("transactions", `?id=eq.${encodeURIComponent(row.id)}`), {
+        method: "PATCH",
+        headers: serviceHeaders(),
+        body: JSON.stringify({
+          note: `${row.note || ""}\n[[PARTIAL_CLAWBACK]]${JSON.stringify({
+            mode,
+            reason,
+            clawedAt: new Date().toISOString(),
+            clawAmount: take,
+          })}`.slice(0, 1800),
+        }),
+      });
+    }
+
+    const refundIdem = `companion-clawback:${orderId}:${row.id}:${take}`;
     const refundExists = await supabaseJson(
       restUrl(
         "transactions",
-        `?order_id=eq.${encodeURIComponent(orderId)}&user_id=eq.${encodeURIComponent(companionId)}&transaction_type=eq.refund&select=id&limit=1`
+        `?order_id=eq.${encodeURIComponent(orderId)}&user_id=eq.${encodeURIComponent(companionId)}&transaction_type=eq.refund&note=like.*${encodeURIComponent(row.id)}*&select=id&limit=5`
       ),
       { headers: serviceHeaders() }
     ).catch(() => []);
-    if (!Array.isArray(refundExists) || !refundExists.length) {
+    const already = Array.isArray(refundExists)
+      ? refundExists.find((r) => String(r.note || "").includes(String(row.id)))
+      : null;
+    if (!already) {
       await supabaseJson(restUrl("transactions"), {
         method: "POST",
         headers: serviceHeaders(),
@@ -167,15 +203,16 @@ export async function clawbackCompanionIncomeForOrder(
           user_id: companionId,
           order_id: orderId,
           transaction_type: "refund",
-          amount,
+          amount: take,
           status: "completed",
-          note: `MCJ_CLAWBACK:${JSON.stringify({ mode, reason, sourceIncomeId: row.id })}`,
+          note: `MCJ_CLAWBACK:${JSON.stringify({ mode, reason, sourceIncomeId: row.id, clawAmount: take, idem: refundIdem })}`,
           created_at: new Date().toISOString(),
         }),
-      });
+      }).catch(() => null);
     }
-    clawed += amount;
+    clawed += take;
+    remaining = money(remaining - take);
   }
 
-  return { ok: true, clawed: money(clawed), count: incomeRows.length };
+  return { ok: true, clawed: money(clawed), count: incomeRows.length, target: targetClaw };
 }
