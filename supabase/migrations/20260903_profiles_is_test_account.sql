@@ -16,3 +16,6 @@ comment on column public.companion_profiles.is_test_account is
 create index if not exists idx_profiles_is_test_account
   on public.profiles (is_test_account)
   where is_test_account = true;
+
+-- Refresh PostgREST schema cache (Staging applies should run this after ALTER).
+notify pgrst, 'reload schema';

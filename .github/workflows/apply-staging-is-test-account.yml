@@ -1,0 +1,204 @@
+name: Apply Staging is_test_account migration
+
+# Staging Supabase (cfccwysniduwkjskiqgy) ONLY — never Production.
+on:
+  workflow_dispatch:
+    inputs:
+      staging_database_url:
+        description: "Staging Postgres URI (must contain cfccwysniduwkjskiqgy; never Production)"
+        required: false
+        type: string
+      staging_db_password:
+        description: "Optional Staging DB password — constructs pooler URI for cfccwysniduwkjskiqgy"
+        required: false
+        type: string
+      supabase_access_token:
+        description: "Optional Supabase PAT for Management API database/query on Staging"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install pg + vercel
+        run: |
+          npm install pg@8.22.0 --no-save
+          npm install -g vercel@58.5.1
+
+      - name: Resolve Staging credentials + apply is_test_account
+        env:
+          INPUT_DATABASE_URL: ${{ inputs.staging_database_url }}
+          INPUT_DB_PASSWORD: ${{ inputs.staging_db_password }}
+          INPUT_SUPABASE_ACCESS_TOKEN: ${{ inputs.supabase_access_token }}
+          STAGING_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+          DATABASE_URL_SECRET: ${{ secrets.DATABASE_URL }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          SUPABASE_ACCESS_TOKEN_SECRET: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_MANAGEMENT_TOKEN: ${{ secrets.SUPABASE_MANAGEMENT_TOKEN }}
+          SUPABASE_URL: https://cfccwysniduwkjskiqgy.supabase.co
+          STAGING_REF: cfccwysniduwkjskiqgy
+          PRODUCTION_REF: jqfaknpmcnqwqvatrwgo
+          VERCEL_SCOPE: ciancianteng-4581s-projects
+          VERCEL_PROJECT: meow-cuijiao-homepage
+        run: |
+          set -euo pipefail
+          export DATABASE_URL="${INPUT_DATABASE_URL:-${STAGING_DATABASE_URL:-${DATABASE_URL_SECRET:-}}}"
+          export SUPABASE_ACCESS_TOKEN="${INPUT_SUPABASE_ACCESS_TOKEN:-${SUPABASE_ACCESS_TOKEN_SECRET:-${SUPABASE_MANAGEMENT_TOKEN:-}}}"
+          if [ -z "${DATABASE_URL}" ] && [ -n "${INPUT_DB_PASSWORD:-}" ]; then
+            export DATABASE_URL="$(node -e '
+              const ref=process.env.STAGING_REF;
+              const pass=process.env.INPUT_DB_PASSWORD;
+              const u=new URL("postgresql://x@aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres");
+              u.username="postgres."+ref;
+              u.password=pass;
+              console.log(u.toString());
+            ')"
+            echo "Constructed Staging pooler URI from staging_db_password input"
+          fi
+
+          redact() {
+            node -e "const u=process.argv[1]||''; try{const x=new URL(u); console.log(x.protocol+'//'+x.username+':***@'+x.hostname+':'+x.port+x.pathname)}catch{console.log('(unparseable)')}" "$1"
+          }
+          looks_staging() { echo "$1" | grep -qi "$STAGING_REF"; }
+          looks_production() { echo "$1" | grep -qi "$PRODUCTION_REF"; }
+          strip_quotes() {
+            local val="$1"
+            val="${val%\"}"; val="${val#\"}"
+            val="${val%\'}"; val="${val#\'}"
+            printf '%s' "$val"
+          }
+          parse_env_file() {
+            while IFS= read -r line || [ -n "$line" ]; do
+              case "$line" in ''|\#*) continue ;; esac
+              case "$line" in
+                *=*)
+                  key="${line%%=*}"
+                  val="${line#*=}"
+                  val="$(strip_quotes "$val")"
+                  printf '%s=%s\n' "$key" "$val"
+                  ;;
+              esac
+            done
+          }
+
+          if [ -n "${DATABASE_URL}" ] && looks_production "$DATABASE_URL"; then
+            echo "FAIL: secret DATABASE_URL points at Production — refused"
+            exit 2
+          fi
+
+          if [ -z "${DATABASE_URL}" ] && [ -n "${VERCEL_TOKEN:-}" ]; then
+            echo "No STAGING_DATABASE_URL secret — trying Vercel env pull via VERCEL_TOKEN"
+            mkdir -p /tmp/vercel-envs
+            echo "y" | vercel link --yes --project "$VERCEL_PROJECT" --scope "$VERCEL_SCOPE" --token "$VERCEL_TOKEN" \
+              >/tmp/vercel-envs/link.out 2>/tmp/vercel-envs/link.err || true
+
+            for envname in preview development production; do
+              out="/tmp/vercel-envs/${envname}.env"
+              echo "pull $envname..."
+              vercel env pull "$out" --yes --environment "$envname" --token "$VERCEL_TOKEN" --scope "$VERCEL_SCOPE" \
+                2>"/tmp/vercel-envs/${envname}.err" || true
+              [ -f "$out" ] || continue
+              keys=$(grep -E '^[A-Za-z_][A-Za-z0-9_]*=' "$out" | cut -d= -f1 | sort -u | tr '\n' ' ')
+              echo "pull $envname keys: ${keys:-"(none)"}"
+
+              while IFS= read -r kv; do
+                [ -z "$kv" ] && continue
+                key="${kv%%=*}"
+                val="${kv#*=}"
+                case "$val" in
+                  postgres://*|postgresql://*)
+                    if looks_production "$val"; then
+                      echo "skip $envname $key (Production ref in URI)"
+                      continue
+                    fi
+                    if looks_staging "$val"; then
+                      echo "found Staging URI from vercel $envname $key=$(redact "$val")"
+                      export DATABASE_URL="$val"
+                      break 2
+                    fi
+                    ;;
+                esac
+              done < <(parse_env_file < "$out")
+
+              sb_url=""
+              sb_pass=""
+              while IFS= read -r kv; do
+                [ -z "$kv" ] && continue
+                key="${kv%%=*}"
+                val="${kv#*=}"
+                case "$key" in
+                  SUPABASE_URL|VITE_SUPABASE_URL)
+                    if looks_staging "$val" && ! looks_production "$val"; then
+                      sb_url="$val"
+                    fi
+                    ;;
+                  DATABASE_PASSWORD|SUPABASE_DB_PASSWORD|POSTGRES_PASSWORD|DB_PASSWORD|SUPABASE_DATABASE_PASSWORD|STAGING_DB_PASSWORD)
+                    if [ -n "$val" ] && [ "$val" != "[SENSITIVE]" ]; then
+                      sb_pass="$val"
+                      echo "found password-like key $key in $envname (value redacted)"
+                    fi
+                    ;;
+                esac
+              done < <(parse_env_file < "$out")
+
+              if [ -z "${DATABASE_URL}" ] && [ -n "$sb_pass" ]; then
+                ref="$STAGING_REF"
+                if [ -n "$sb_url" ]; then
+                  ref=$(node -e "try{const h=new URL(process.argv[1]).hostname; const m=h.match(/^([a-z0-9]+)\\.supabase\\.co$/i); console.log(m?m[1].toLowerCase():'')}catch{console.log('')}" "$sb_url")
+                elif [ "$envname" = "production" ]; then
+                  echo "skip constructing pooler URI from production password without Staging SUPABASE_URL"
+                  ref=""
+                fi
+                if [ "$ref" = "$STAGING_REF" ]; then
+                  constructed=$(node -e '
+                    const ref=process.argv[1];
+                    const pass=process.argv[2];
+                    const u=new URL("postgresql://x@aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres");
+                    u.username="postgres."+ref;
+                    u.password=pass;
+                    console.log(u.toString());
+                  ' "$ref" "$sb_pass")
+                  echo "constructed Staging pooler URI from password key: $(redact "$constructed")"
+                  export DATABASE_URL="$constructed"
+                  break
+                fi
+              fi
+            done
+          fi
+
+          if [ -z "${DATABASE_URL}" ] && [ -z "${SUPABASE_ACCESS_TOKEN:-}" ]; then
+            echo "FAIL: could not resolve Staging DATABASE_URL or SUPABASE_ACCESS_TOKEN"
+            echo "Human unlock: paste staging_db_password / staging_database_url in workflow_dispatch,"
+            echo "or run SQL in https://supabase.com/dashboard/project/$STAGING_REF/sql/new"
+            echo "File: supabase/migrations/20260903_profiles_is_test_account.sql"
+            exit 2
+          fi
+
+          if [ -n "${DATABASE_URL}" ]; then
+            if looks_production "$DATABASE_URL"; then
+              echo "FAIL: resolved URI is Production — refused"
+              exit 2
+            fi
+            if ! looks_staging "$DATABASE_URL"; then
+              echo "FAIL: resolved URI does not reference Staging $STAGING_REF — refused"
+              exit 2
+            fi
+            echo "Applying is_test_account with $(redact "$DATABASE_URL")"
+            export STAGING_DATABASE_URL="$DATABASE_URL"
+          else
+            echo "Applying is_test_account via SUPABASE_ACCESS_TOKEN for $STAGING_REF"
+          fi
+
+          node scripts/apply-is-test-account-staging.mjs
