@@ -118,6 +118,10 @@
     .od-replace-slot{display:flex;align-items:center;justify-content:center;gap:8px;min-height:48px;padding:10px 12px;border:1px dashed rgba(255,143,197,.55);border-radius:12px;background:rgba(255,143,197,.1);color:#ffeaf4;font-weight:800;cursor:pointer;text-align:center;width:100%;box-sizing:border-box}
     .od-replace-slot:active{transform:translateY(1px)}
     .od-keep-remaining{margin-top:8px}
+    .order-multi-mini{display:grid;gap:6px;margin-top:4px}
+    .order-multi-mini-row{display:grid;grid-template-columns:28px minmax(0,1fr) auto;gap:8px;align-items:center;font-size:13px;color:#e8d5de}
+    .order-multi-mini-row .od-confirm-avatar{width:28px;height:28px;border-radius:8px;font-size:12px}
+    .order-multi-mini-wrap{grid-column:1/-1}
     .od-history-exit{opacity:.78;border-style:dashed}
     .od-history-exit .od-confirm-name{color:#c4b5be}
     #unavailableModal.modal{
@@ -204,6 +208,7 @@
       <p id="unavailableBody">当前陪玩无法接单，请重新选择陪玩。</p>
       <div class="status-actions">
         <button class="order-btn primary" type="button" data-unavailable-reselect>重新选择陪玩</button>
+        <button class="order-btn" type="button" data-unavailable-giveup>放弃增加该陪玩</button>
         <button class="order-btn" type="button" data-unavailable-later>稍后处理</button>
       </div>
     </div>
@@ -293,9 +298,29 @@
         if(s==='refunded')return '已退款';
         return '请查看详情了解下一步';
       }
+      function recoverParentIdFromBlob(o){
+        var blob=String((o&&(o.description||''))||'')+'\n'+String((o&&(o.note||''))||'');
+        var m=blob.match(/\[\[PARENT_ORDER\]\]([0-9a-f-]{36})/i);
+        return m?String(m[1]):'';
+      }
+      function normalizeOrdersList(rows){
+        return (rows||[]).map(function(o){
+          if(!o||typeof o!=='object')return o;
+          var pid=String(o.parentOrderId||o.parent_order_id||'')||recoverParentIdFromBlob(o);
+          var next=o;
+          if(pid&&!(o.parentOrderId||o.parent_order_id)){
+            next=Object.assign({},o,{parentOrderId:pid,parent_order_id:pid,isMultiGroupChild:true});
+          }else if(pid){
+            next=Object.assign({},o,{isMultiGroupChild:true});
+          }
+          var isParent=!!(next.isMultiGroupParent||(String(next.orderTypeKey||next.order_type||'').toLowerCase()==='multi_group'&&!pid));
+          if(isParent)next=Object.assign({},next,{isMultiGroupParent:true});
+          return next;
+        });
+      }
       function isMultiParent(o){return !!(o&&(o.isMultiGroupParent||(String(o.orderTypeKey||o.order_type||'').toLowerCase()==='multi_group'&&!(o.parentOrderId||o.parent_order_id))))}
-      function isMultiChild(o){return !!(o&&(o.isMultiGroupChild||o.parentOrderId||o.parent_order_id))}
-      function parentIdOf(o){return String((o&&(o.parentOrderId||o.parent_order_id))||'')}
+      function isMultiChild(o){return !!(o&&(o.isMultiGroupChild||o.parentOrderId||o.parent_order_id||recoverParentIdFromBlob(o)))}
+      function parentIdOf(o){return String((o&&(o.parentOrderId||o.parent_order_id))||'')||recoverParentIdFromBlob(o)}
       function childrenOf(parentId){
         var pid=String(parentId||'');
         var fromList=state.orders.filter(function(o){return parentIdOf(o)===pid});
@@ -307,16 +332,20 @@
       function multiParentStatusLabel(o,kids){
         var base=orderLabel(o);
         if(!kids||!kids.length)return base;
+        var effective=kids.filter(function(ch){var k=childConfirmKey(ch);return k!=='exited'&&k!=='exited_kept'});
+        var confirmed=effective.filter(function(ch){return childConfirmKey(ch)==='accepted'}).length;
+        var waiting=effective.filter(function(ch){return childConfirmKey(ch)==='pending'}).length;
+        var total=effective.length||kids.length;
         var completed=kids.filter(function(ch){var s=String(ch.status||'');return s==='completed'||s==='reviewed'||ch.reviewed}).length;
         var refunded=kids.filter(function(ch){var s=String(ch.status||'');return s==='refunded'||s==='refund_requested'}).length;
-        var active=kids.filter(function(ch){var s=String(ch.status||'');return s==='confirmed'||s==='in_progress'||s==='claimed'||s==='pending'}).length;
-        var waiting=kids.filter(function(ch){return childConfirmKey(ch)==='pending'}).length;
         var needsRep=kids.some(function(ch){return childNeedsReplacement(ch)});
-        if(needsRep)return '等待补位';
-        if(waiting&&waiting===kids.filter(function(ch){return childConfirmKey(ch)==='pending'||childConfirmKey(ch)==='accepted'}).length)return '等待陪玩确认';
+        if(needsRep)return '当前陪玩无法接单，请重新选择（'+confirmed+'/'+total+'）';
+        if(String(o.status||'')==='awaiting_payment')return base;
+        if(waiting>0)return '等待陪玩确认（'+confirmed+'/'+total+'）';
+        if(confirmed>0&&confirmed===total&&String(o.status||'')!=='completed')return '进行中（'+confirmed+'/'+total+'）';
         if(refunded&&completed&&completed+refunded===kids.length)return '部分退款';
         if(refunded&&refunded<kids.length)return '部分退款';
-        if(completed&&completed<kids.length&&active)return '部分完成';
+        if(completed&&completed<kids.length)return '部分完成';
         return base;
       }
       function childNoteBlob(ch){return String((ch&&(ch.note||''))||'')+'\n'+String((ch&&(ch.description||''))||'')+'\n'+String((ch&&(ch.cancelReason||ch.cancel_reason||''))||'')}
@@ -328,7 +357,7 @@
         var unavailable=blob.indexOf('[[COMPANION_UNAVAILABLE]]')>=0||/无法接单|已退出/.test(String(ch.cancelReason||ch.cancel_reason||''));
         var keepDone=blob.indexOf('[[KEEP_REMAINING_APPLIED]]')>=0;
         if((s==='cancelled'||s==='refunded')&&(unavailable||keepDone))return keepDone?'exited_kept':'exited';
-        if(s==='confirmed'||s==='in_progress'||s==='completed'||s==='reviewed'||ch.reviewed)return 'accepted';
+        if(s==='confirmed'||s==='accepted'||s==='in_progress'||s==='completed'||s==='reviewed'||ch.reviewed)return 'accepted';
         if(s==='claimed'||s==='pending'||s==='waiting_boss_confirm'||s==='awaiting_payment')return 'pending';
         if(s==='cancelled'||s==='refunded')return 'exited';
         return 'other';
@@ -382,7 +411,7 @@
         if(replaceSlots.length){
           var remainingOk=activeRows.some(function(r){return r.key==='accepted'||r.key==='pending'});
           if(remainingOk){
-            html+='<div class="od-keep-remaining"><button class="order-btn" type="button" data-keep-remaining="1" data-parent-id="'+esc(parent.id)+'" data-child-id="'+esc(replaceSlots[0].id)+'">只保留剩余陪玩继续</button></div>';
+            html+='<div class="od-keep-remaining"><button class="order-btn" type="button" data-keep-remaining="1" data-parent-id="'+esc(parent.id)+'" data-child-id="'+esc(replaceSlots[0].id)+'">放弃增加该陪玩</button></div>';
           }
           html+='<p class="order-hint">有陪玩无法接单时，可补位加入原联合订单，或只保留其余陪玩。其他陪玩确认状态不会被重置。</p>';
         }
@@ -430,7 +459,7 @@
         location.href='companion-center.html?mode=replace&parentOrder='+encodeURIComponent(parentId||'')+'&replaceChild='+encodeURIComponent(childId||'');
       }
       async function submitKeepRemaining(parentId,childId){
-        if(!confirm('确认只保留剩余陪玩继续？退出陪玩的子单费用将退回猫粮，其他陪玩状态不变。'))return;
+        if(!confirm('确认放弃增加该陪玩？该陪玩子单费用将退回猫粮，其余已确认陪玩继续，不会整组取消。'))return;
         try{
           var res=await fetch('/api/orders',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token()},body:JSON.stringify({action:'keep_remaining',parentOrderId:parentId,exitedChildId:childId})});
           var body=await res.json().catch(function(){return{}});
@@ -613,11 +642,17 @@
         var gc=Number(o.grabCount!=null?o.grabCount:(o.grabs&&o.grabs.length)||0)||0;
         var grabHint=(o.status==='pending'||o.status==='waiting_boss_confirm')?('<div><span>抢单人数</span><strong>已有 '+gc+' 位陪玩抢单</strong></div>'):'';
         var kids=isMultiParent(o)?childrenOf(o.id):[];
-        var multiBadge=isMultiParent(o)?('<div class="order-multi-badge">多人陪玩订单 · 共'+(kids.length||'?')+'位陪玩</div>'):'';
-        var serviceLabel=isMultiParent(o)?('共'+(kids.length||0)+'位陪玩 · 一次付款'):(o.serviceType||o.game||'-');
+        var memberCount=kids.length;
+        var multiBadge=isMultiParent(o)?('<div class="order-multi-badge">多人陪玩订单 · 共'+memberCount+'位陪玩</div>'):'';
+        var serviceLabel=isMultiParent(o)?((o.serviceType||o.game||'多人服务')+' · '+memberCount+'位陪玩 · 一次付款'):(o.serviceType||o.game||'-');
         var companionLabel=isMultiParent(o)?multiCompanionLabel(kids):companionName(o);
         var statusShown=isMultiParent(o)?multiParentStatusLabel(o,kids):orderLabel(o);
-        return '<article class="order-card" data-order-id="'+esc(o.id)+'"'+(isMultiParent(o)?' data-multi-parent="1"':'')+(isMultiChild(o)?' data-multi-child="1" hidden':'')+'><header><div><h3>'+esc(isMultiParent(o)?('多人陪玩订单 · '+(o.orderNo||o.order_no||o.id)):(o.orderNo||o.order_no||o.id))+'</h3><p>'+esc(o.createdAt?date(o.createdAt):'-')+'</p>'+multiBadge+'</div><span class="order-status">'+esc(statusShown)+'</span></header><div class="order-grid"><div><span>游戏/服务</span><strong title="'+esc(serviceLabel)+'">'+esc(serviceLabel)+'</strong></div><div><span>'+(isMultiParent(o)?'陪玩':'陪玩昵称')+'</span><strong title="'+esc(companionLabel)+'">'+esc(companionLabel)+'</strong></div><div><span>'+(isMultiParent(o)?'总消费':'消费')+'</span><strong>'+moneyEmoji(o.totalAmount||o.amount)+'</strong></div><div><span>当前状态</span><strong>'+esc(statusShown)+'</strong></div>'+grabHint+'<div><span>创建时间</span><strong>'+esc(date(o.createdAt))+'</strong></div><div class="order-actions">'+actions(o)+'</div></div></article>';
+        var confirmMini=isMultiParent(o)&&kids.length?('<div class="order-multi-mini" data-member-count="'+memberCount+'">'+kids.map(function(ch){
+          var ck=childConfirmKey(ch);
+          var icon=ck==='accepted'?'✅':(ck==='pending'?'⏱':(ck==='exited'||ck==='exited_kept'?'❌':'·'));
+          return '<div class="order-multi-mini-row">'+companionAvatarHtml(ch)+'<span>'+esc(companionName(ch))+'</span><span>'+icon+' '+(ck==='accepted'?'已确认':(ck==='pending'?'等待确认':(ck==='exited'||ck==='exited_kept'?'不可接单':'—')))+'</span></div>';
+        }).join('')+'</div>'):'';
+        return '<article class="order-card" data-order-id="'+esc(o.id)+'"'+(isMultiParent(o)?' data-multi-parent="1" data-member-count="'+memberCount+'"':'')+(isMultiChild(o)?' data-multi-child="1" hidden':'')+'><header><div><h3>'+esc(isMultiParent(o)?('多人陪玩订单 · '+(o.orderNo||o.order_no||o.id)):(o.orderNo||o.order_no||o.id))+'</h3><p>'+esc(o.createdAt?date(o.createdAt):'-')+'</p>'+multiBadge+'</div><span class="order-status">'+esc(statusShown)+'</span></header><div class="order-grid"><div><span>游戏/服务</span><strong title="'+esc(serviceLabel)+'">'+esc(serviceLabel)+'</strong></div><div><span>'+(isMultiParent(o)?'陪玩':'陪玩昵称')+'</span><strong title="'+esc(companionLabel)+'">'+esc(companionLabel)+'</strong></div><div><span>'+(isMultiParent(o)?'总消费':'消费')+'</span><strong>'+moneyEmoji(o.totalAmount||o.amount)+'</strong></div><div><span>当前状态</span><strong>'+esc(statusShown)+'</strong></div>'+grabHint+'<div><span>创建时间</span><strong>'+esc(date(o.createdAt))+'</strong></div>'+(confirmMini?'<div class="order-multi-mini-wrap">'+confirmMini+'</div>':'')+'<div class="order-actions">'+actions(o)+'</div></div></article>';
       }
       function detail(o,openReview){
         var boss=bossProfile();
@@ -815,7 +850,7 @@
         if(abortCtrl)abortCtrl.abort();
         abortCtrl=typeof AbortController!=='undefined'?new AbortController():null;
         var cached=readCache();
-        if(cached&&cached.length&&!state.orders.length){state.orders=cached;state.fromCache=true;state.loading=false;state.syncing=true;state.error='';paint()}
+        if(cached&&cached.length&&!state.orders.length){state.orders=normalizeOrdersList(cached);state.fromCache=true;state.loading=false;state.syncing=true;state.error='';paint()}
         else if(!opts.silent){state.loading=!state.orders.length;state.syncing=!!state.orders.length;state.error='';paint()}
         else{state.syncing=true;state.error=''}
         try{
@@ -823,7 +858,7 @@
           var body=await res.json().catch(function(){return {}});
           if(gen!==loadGen)return;
           if(res.ok&&body.ok!==false){
-            state.orders=Array.isArray(body.orders)?body.orders:[];
+            state.orders=normalizeOrdersList(Array.isArray(body.orders)?body.orders:[]);
             state.fromCache=false;state.error='';state.loading=false;state.syncing=false;
             writeCache(state.orders);
             detectUnavailableTransitions(state.orders);
@@ -975,6 +1010,15 @@
           var ctx=pendingUnavailable||{};
           closeUnavailableModal();
           startReplacementFlow(ctx.parentId,ctx.childId);
+          return;
+        }
+        if(e.target.closest('[data-unavailable-giveup]')){
+          var ctxGive=pendingUnavailable||{};
+          closeUnavailableModal();
+          if(ctxGive.parentId&&ctxGive.childId){
+            submitKeepRemaining(ctxGive.parentId,ctxGive.childId);
+          }
+          pendingUnavailable=null;
           return;
         }
         if(e.target.closest('[data-unavailable-later]')){

@@ -155,6 +155,31 @@ test("TEST 7 A completed B in_progress → parent not completed", () => {
   assert.equal(shouldAwardBossPointsOnFinalize(parent), false);
 });
 
+test("TEST 7b 1/2 confirmed → parent stays claimed (NOT in_progress)", () => {
+  const children = [
+    { status: "in_progress", total_amount: 35 },
+    { status: "claimed", total_amount: 35 },
+  ];
+  assert.equal(aggregateParentStatus(children), "claimed");
+  assert.notEqual(aggregateParentStatus(children), "in_progress");
+});
+
+test("TEST 7c 2/2 confirmed → parent in_progress", () => {
+  const children = [
+    { status: "in_progress", total_amount: 35 },
+    { status: "accepted", total_amount: 35 },
+  ];
+  assert.equal(aggregateParentStatus(children), "in_progress");
+});
+
+test("TEST 7d awaiting_payment any child → parent awaiting_payment", () => {
+  const children = [
+    { status: "awaiting_payment", total_amount: 35 },
+    { status: "awaiting_payment", total_amount: 35 },
+  ];
+  assert.equal(aggregateParentStatus(children), "awaiting_payment");
+});
+
 test("TEST 8 A+B completed → parent completed; points once on 70", () => {
   const children = [
     { status: "completed", total_amount: 30 },
@@ -317,6 +342,15 @@ test("TEST 15+16 create-only / no debit at place_multi (pay_order owns debit)", 
   const ordersSrc = readFileSync(path.join(root, "server/api/orders.js"), "utf8");
   assert.match(ordersSrc, /payGuard\.cascadeChildren/);
   assert.match(ordersSrc, /order-pay:/);
+});
+
+test("TEST 17 boss list select keeps parent_order_id when paid_* missing", () => {
+  const ordersSrc = readFileSync(path.join(root, "server/api/orders.js"), "utf8");
+  assert.match(ordersSrc, /selectBaseNoPaid/);
+  assert.match(ordersSrc, /parent_order_id must survive schema fallbacks/);
+  const noPaidIdx = ordersSrc.indexOf("selectBaseNoPaid");
+  const legacyIdx = ordersSrc.indexOf("selectCoreLegacy");
+  assert.ok(noPaidIdx > 0 && legacyIdx > noPaidIdx, "no-paid parent select must precede legacy strip");
 });
 
 test("STATIC migration parent_order_id present", () => {

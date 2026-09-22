@@ -635,14 +635,21 @@ async function loadOrders(profile, id = "") {
   })();
   // Core columns always include description (completion-pending marker dual-writes here).
   // note is preferred for markers; cancel_reason is optional — never drop note when cancel_reason is missing.
-  // parent_order_id / paid_* required for multi-group child grouping + unpaid cancel guards.
+  // CRITICAL: parent_order_id must survive schema fallbacks. Production may lack paid_at / paid_cat_food;
+  // dropping parent_order_id with those columns causes "共0位陪玩" + child top-level duplicate cards.
   const selectVoice =
     ",voice_mode,discord_channel_id,discord_channel_status,discord_channel_created_at,discord_channel_deleted_at";
-  const selectCore =
-    "id,order_no,boss_id,companion_id,customer_service_id,order_type,game,title,description,hours,unit_price,total_amount,status,created_at,accepted_at,started_at,completed_at,cancelled_at,parent_order_id,paid_cat_food,paid_at" +
+  const selectBase =
+    "id,order_no,boss_id,companion_id,customer_service_id,order_type,game,title,description,hours,unit_price,total_amount,status,created_at,accepted_at,started_at,completed_at,cancelled_at,parent_order_id" +
     selectVoice;
-  const selectWithNote = selectCore + ",note";
+  const selectWithPaid = selectBase + ",paid_cat_food,paid_at";
+  const selectWithNote = selectWithPaid + ",note";
   const selectRich = selectWithNote + ",cancel_reason";
+  // Same richness without paid_* (Prod pending-prod/07 not applied yet).
+  const selectBaseNoPaid = selectBase;
+  const selectWithNoteNoPaid = selectBaseNoPaid + ",note";
+  const selectRichNoPaid = selectWithNoteNoPaid + ",cancel_reason";
+  // Absolute last resort only if parent_order_id column itself is missing.
   const selectCoreLegacy =
     "id,order_no,boss_id,companion_id,customer_service_id,order_type,game,title,description,hours,unit_price,total_amount,status,created_at,accepted_at,started_at,completed_at,cancelled_at";
   const selectWithNoteLegacy = selectCoreLegacy + ",note";
@@ -670,33 +677,30 @@ async function loadOrders(profile, id = "") {
     id
       ? `?id=eq.${encodeURIComponent(id)}&boss_id=eq.${encodeURIComponent(profile.id)}&select=${sel}&order=created_at.desc&limit=1`
       : `?boss_id=eq.${encodeURIComponent(profile.id)}&select=${sel}&order=created_at.desc&limit=80`;
+  const selectCandidates = [
+    selectRich,
+    selectWithNote,
+    selectWithPaid,
+    selectRichNoPaid,
+    selectWithNoteNoPaid,
+    selectBaseNoPaid,
+    selectRichLegacy,
+    selectWithNoteLegacy,
+    selectCoreLegacy,
+  ];
   let rows;
-  try {
-    rows = await supabaseJson(restUrl(TABLE, queryOf(selectRich)), { headers: serviceHeaders() });
-  } catch (err) {
-    if (!/column|schema cache|PGRST/i.test(String(err?.message || ""))) throw err;
+  let lastSelectErr = null;
+  for (const sel of selectCandidates) {
     try {
-      rows = await supabaseJson(restUrl(TABLE, queryOf(selectWithNote)), { headers: serviceHeaders() });
-    } catch (err2) {
-      if (!/column|schema cache|PGRST/i.test(String(err2?.message || ""))) throw err2;
-      try {
-        rows = await supabaseJson(restUrl(TABLE, queryOf(selectCore)), { headers: serviceHeaders() });
-      } catch (err3) {
-        if (!/column|schema cache|PGRST|parent_order|paid_/i.test(String(err3?.message || ""))) throw err3;
-        try {
-          rows = await supabaseJson(restUrl(TABLE, queryOf(selectRichLegacy)), { headers: serviceHeaders() });
-        } catch (err4) {
-          if (!/column|schema cache|PGRST/i.test(String(err4?.message || ""))) throw err4;
-          try {
-            rows = await supabaseJson(restUrl(TABLE, queryOf(selectWithNoteLegacy)), { headers: serviceHeaders() });
-          } catch (err5) {
-            if (!/column|schema cache|PGRST/i.test(String(err5?.message || ""))) throw err5;
-            rows = await supabaseJson(restUrl(TABLE, queryOf(selectCoreLegacy)), { headers: serviceHeaders() });
-          }
-        }
-      }
+      rows = await supabaseJson(restUrl(TABLE, queryOf(sel)), { headers: serviceHeaders() });
+      lastSelectErr = null;
+      break;
+    } catch (err) {
+      lastSelectErr = err;
+      if (!/column|schema cache|PGRST|parent_order|paid_/i.test(String(err?.message || ""))) throw err;
     }
   }
+  if (lastSelectErr) throw lastSelectErr;
   const orders = Array.isArray(rows) ? rows : [];
   const companionIds = [...new Set(orders.map((row) => row.companion_id).filter(Boolean))];
   const serviceIds = [...new Set(orders.map((row) => row.customer_service_id).filter(Boolean))];
