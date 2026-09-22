@@ -1,0 +1,45 @@
+{
+  "ok": true,
+  "mode": "MANIFEST_ONLY",
+  "generated_at": "2026-09-22T09:36:46.284Z",
+  "production_ref": "jqfaknpmcnqwqvatrwgo",
+  "gates": {
+    "REAL_USER_MATCH": 0,
+    "UNPROVEN_ROW": 1,
+    "CONFIRMED_PROFILES": 0,
+    "CONFIRMED_RELATED": 0,
+    "DELETE_ALLOWED": "BLOCKED"
+  },
+  "policy": {
+    "delete_only_confirmed": true,
+    "never_delete_suspected": true,
+    "never_patch_opening_ledger": true,
+    "never_auto_fix_real_wallet_diff": true,
+    "test_data_source": "cursor_acceptance"
+  },
+  "confirmed_rows": [],
+  "suspected_rows": [
+    {
+      "table": "profiles",
+      "row_id": "b9347ea4-3b45-400d-bf8d-ae2fbe05d690",
+      "user_id": "b9347ea4-3b45-400d-bf8d-ae2fbe05d690",
+      "email": "meowcuijiao123@gmail.com",
+      "display_name": "MCJ客服-小喵",
+      "test_reason": "SUSPECTED_ONLY",
+      "marker_evidence": "G2 id hit but email mismatch (listed cs.smoke.1788374831089@meow.test, actual meowcuijiao123@gmail.com)",
+      "delete_eligible": false
+    }
+  ],
+  "protected_rows": [
+    {
+      "id": "6f31b706-11e7-42df-8db1-d2caccd796de",
+      "email": "meowcuijiao@gmail.com",
+      "reason": "protected real owner/admin"
+    },
+    {
+      "id": "458ce9ad-3425-42b1-ab66-24bca342f971",
+      "email": "ciancianteng@gmail.com",
+      "reason": "protected real owner/admin"
+    }
+  ]
+}

@@ -849,8 +849,8 @@ async function handleForgotSendOtp(body, res) {
   return json(res, payload.ok ? 200 : 503, responseBody);
 }
 
-function rejectProductionTestIdentity(res, { email = "", displayName = "" } = {}) {
-  if (!shouldBlockTestIdentityOnProduction({ email, displayName })) return null;
+function rejectProductionTestIdentity(res, { email = "", displayName = "", profile = null, authUser = null } = {}) {
+  if (!shouldBlockTestIdentityOnProduction({ email, displayName, profile, authUser })) return null;
   return json(res, 403, {
     ok: false,
     message: PROD_TEST_ACCOUNT_BLOCK_MESSAGE,
@@ -2552,6 +2552,13 @@ export default async function handler(req, res) {
     const authUser = auth.user;
     let profile = await profileFor(authUser.id);
     if (!profile) return json(res, 403, { ok: false, message: "账号未绑定平台资料，请联系管理员。" });
+    const blockedProfile = rejectProductionTestIdentity(res, {
+      email: profile.email || email,
+      displayName: profile.display_name || "",
+      profile,
+      authUser,
+    });
+    if (blockedProfile) return blockedProfile;
     try {
       assertEmailVerifiedOrThrow(profile, authUser);
     } catch (err) {

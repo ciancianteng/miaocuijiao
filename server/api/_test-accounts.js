@@ -173,13 +173,25 @@ export function isBlockedProductionTestAdmin(email = "") {
  * Production must refuse smoke / @meow.test identities for login & register.
  * Broader than admin-only: any @meow.test or Smoke/ProdSmoke display name.
  */
-export function shouldBlockTestIdentityOnProduction({ email = "", displayName = "" } = {}, env = process.env) {
+export function shouldBlockTestIdentityOnProduction(
+  { email = "", displayName = "", profile = null, authUser = null } = {},
+  env = process.env
+) {
   if (!isProductionRuntime(env)) return false;
   if (isBlockedProductionTestAdmin(email)) return true;
   if (isTestEmail(email)) return true;
   if (isAcceptanceFixtureEmail(email)) return true;
   if (isTestUsername(displayName)) return true;
   if (isAcceptanceFixtureName(displayName)) return true;
+  if (profile && isTestAccountRecord(profile, {}, env)) return true;
+  const meta =
+    (authUser && (authUser.user_metadata || authUser.app_metadata)) ||
+    (profile && (profile.user_metadata || profile.app_metadata)) ||
+    {};
+  const source = String(meta.source || meta.data_source || meta.test_source || "").trim().toLowerCase();
+  if (source === TEST_DATA_SOURCE || source === "cursor_acceptance" || source === "mcj_test_run") {
+    return true;
+  }
   return false;
 }
 

@@ -766,6 +766,28 @@ export function createOrderCompleteHelpers({ restUrl, supabaseJson, serviceHeade
       );
     }
 
+    // Invite antifraud: grant only when after-sale already closed (boss_manual / marker).
+    let inviteReward = null;
+    try {
+      const completedOrder = {
+        ...saved,
+        status: "completed",
+        completed_at: completedAt,
+        note: saved.note || noteForSave || methodLineNote,
+        description: saved.description || descForSave || methodLineDesc,
+        completion_method: method,
+      };
+      const { isBossAfterSaleOpen } = await import("./_earnings-windows.js");
+      if (!isBossAfterSaleOpen(completedOrder)) {
+        const { maybeGrantInviteRewardForOrder } = await import("./_invite-attribution.js");
+        inviteReward = await maybeGrantInviteRewardForOrder(completedOrder);
+      } else {
+        inviteReward = { granted: false, reason: "after_sale_still_open" };
+      }
+    } catch (invErr) {
+      inviteReward = { granted: false, reason: "error", detail: String(invErr?.message || invErr).slice(0, 160) };
+    }
+
     const settleSkipMsg = settlement?.skipped
       ? `（结算暂未入账：${settlement.reason || settlement.message || "skipped"}）`
       : !settlementOk
@@ -801,6 +823,7 @@ export function createOrderCompleteHelpers({ restUrl, supabaseJson, serviceHeade
       parentRefresh,
       holdFinalize,
       reward,
+      inviteReward,
       completionMethod: method,
     };
   }
@@ -861,7 +884,20 @@ export function createOrderCompleteHelpers({ restUrl, supabaseJson, serviceHeade
         results.push({ id: row.id, ok: false, message: err?.message || String(err) });
       }
     }
-    return { scanned: list.length, due: due.length, processed: results.length, results };
+    let inviteSweep = null;
+    try {
+      const { sweepPendingInviteRewards } = await import("./_invite-attribution.js");
+      inviteSweep = await sweepPendingInviteRewards({ limit: 40 });
+    } catch (e) {
+      inviteSweep = { ok: false, error: String(e?.message || e).slice(0, 160) };
+    }
+    return {
+      scanned: list.length,
+      due: due.length,
+      processed: results.length,
+      results,
+      inviteSweep,
+    };
   }
 
   return {

@@ -1,0 +1,147 @@
+{
+  "started_at": "2026-09-22T09:36:27.951Z",
+  "dry_run": false,
+  "manifest_gates": {
+    "REAL_USER_MATCH": 0,
+    "UNPROVEN_ROW": 1,
+    "CONFIRMED_PROFILES": 42,
+    "CONFIRMED_RELATED": 105,
+    "DELETE_ALLOWED": "READY_FOR_AUTHORIZED_EXECUTE"
+  },
+  "suspected_untouched": 1,
+  "result": {
+    "via": "postgres",
+    "deleted": {
+      "companion_withdrawals": {
+        "deleted": 0
+      },
+      "wallet_transactions": {
+        "deleted": 0
+      },
+      "transactions": {
+        "deleted": 1
+      },
+      "orders.children": {
+        "deleted": 0
+      },
+      "orders": {
+        "deleted": 27
+      },
+      "wallets": {
+        "deleted": 29
+      },
+      "companion_profiles": {
+        "deleted": 4
+      },
+      "profiles": {
+        "deleted": 42
+      },
+      "auth.users": {
+        "deleted": 42
+      }
+    },
+    "dependents": {
+      "messages.order_id": 16,
+      "companion_reviews.order_id": 0,
+      "companion_penalties.order_id": 0,
+      "order_grabs.order_id": 0,
+      "payment_receipts.order_id": 0,
+      "payment_transactions.order_id": 1,
+      "service_receptions.order_id": 0,
+      "cs_commission_settlements.order_id": 0,
+      "cs_dock_rewards.order_id": 0,
+      "user_points_ledger.related_order_id": 0,
+      "conversations.order_id": 11,
+      "transactions.order_id": 0,
+      "finance_receipts.payment_id": 1,
+      "messages.sender_id": 0,
+      "boss_notifications.boss_id": 13,
+      "boss_refund_requests.boss_id": 0,
+      "boss_vip_history.boss_id": 1,
+      "boss_vip_status.boss_id": 1,
+      "boss_companion_relation_events.companion_id": 0,
+      "boss_companion_relation_events.from_boss_id": 0,
+      "boss_companion_relation_events.to_boss_id": 0,
+      "boss_companion_relations.boss_id": 0,
+      "boss_companion_relations.companion_id": 0,
+      "companion_deposits.user_id": 4,
+      "companion_identity_verifications.user_id": 0,
+      "companion_media.user_id": 0,
+      "companion_notification_reads.companion_id": 0,
+      "companion_notifications.companion_id": 13,
+      "companion_withdrawals.companion_id": 1,
+      "companion_payment_accounts.user_id": 4,
+      "companion_penalties.companion_id": 0,
+      "companion_reviews.boss_id": 0,
+      "companion_reviews.companion_id": 0,
+      "companion_services.companion_id": 0,
+      "compensation_requests.applicant_id": 0,
+      "compensation_requests.boss_id": 0,
+      "content_ack_records.user_id": 24,
+      "conversations.boss_id": 0,
+      "conversations.companion_id": 0,
+      "conversations.customer_service_id": 0,
+      "cs_attendance_sessions.service_id": 0,
+      "cs_commission_settlements.boss_id": 0,
+      "cs_commission_settlements.service_id": 0,
+      "cs_dock_rewards.boss_id": 0,
+      "cs_dock_rewards.service_id": 0,
+      "customer_service_reports.customer_service_id": 0,
+      "order_grabs.companion_id": 0,
+      "payment_orders.boss_id": 0,
+      "payment_receipts.boss_id": 0,
+      "payment_transactions.boss_id": 0,
+      "payout_requests.applicant_id": 1,
+      "payout_source_locks.applicant_id": 0,
+      "referral_commission_records.invited_user_id": 1,
+      "referral_commission_records.inviter_user_id": 0,
+      "referral_commission_rules.invited_user_id": 0,
+      "referral_commission_rules.inviter_user_id": 0,
+      "referral_relations.invited_user_id": 2,
+      "referral_relations.inviter_user_id": 0,
+      "referral_wallets.user_id": 2,
+      "service_receptions.boss_id": 0,
+      "service_receptions.customer_service_id": 0,
+      "staff_notifications.staff_id": 0,
+      "staff_payrolls.staff_id": 0,
+      "user_points_accounts.user_id": 1,
+      "user_points_ledger.user_id": 0,
+      "wallet_order_holds.boss_id": 0,
+      "wallet_transactions.boss_id": 43,
+      "finance_payments.payee_user_id": 1
+    },
+    "soft_nulls": {
+      "null:boss_companion_relation_events.operator_id": 0,
+      "null:boss_companion_relations.bound_by": 0,
+      "null:companion_deposits.reviewed_by": 0,
+      "null:companion_identity_verifications.reviewed_by": 0,
+      "null:companion_media.reviewed_by": 0,
+      "null:companion_payment_accounts.reviewed_by": 0,
+      "null:companion_penalties.operator_id": 0,
+      "null:companion_withdrawals.approved_by": 0,
+      "null:companion_withdrawals.confirmed_by": 0,
+      "null:companion_withdrawals.paid_by": 0,
+      "null:companion_withdrawals.reviewed_by": 0,
+      "null:compensation_requests.reviewer_id": 0,
+      "null:conversations.closed_by": 0,
+      "null:finance_payments.confirmed_by": 0,
+      "null:finance_payments.created_by": 0,
+      "null:finance_receipts.uploaded_by": 0,
+      "null:orders.customer_service_id": 0,
+      "null:payment_receipts.confirmed_by": 0,
+      "null:payment_receipts.reviewed_by": 0,
+      "null:payment_transactions.confirmed_by": 0,
+      "null:payout_requests.paid_by": 0,
+      "null:payout_requests.reviewed_by": 0,
+      "null:referral_commission_rules.created_by": 0,
+      "null:referral_commission_rules.updated_by": 0,
+      "null:staff_payrolls.approved_by": 0,
+      "null:staff_payrolls.confirmed_by": 0,
+      "null:staff_payrolls.reviewed_by": 0,
+      "null:wallet_transactions.operator_id": 41
+    },
+    "dry": false,
+    "committed": true
+  },
+  "ok": true
+}

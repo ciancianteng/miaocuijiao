@@ -21,6 +21,12 @@ export function isSettlementIncomeNote(note = "") {
   return /MCJ_SETTLEMENT:/i.test(String(note || ""));
 }
 
+export function isInviteIncomeNote(note = "") {
+  const n = String(note || "");
+  if (/MCJ_INVITE:/i.test(n)) return true;
+  return /邀请佣金|邀请返点|邀请奖励|invite\s*(cash|commission|reward)/i.test(n);
+}
+
 export function isGiftOrRewardNote(note = "") {
   return /打赏|礼物|gift|奖励|reward|tip/i.test(String(note || ""));
 }
@@ -32,7 +38,7 @@ export function normalizeOrderStatus(status) {
 }
 
 /**
- * @returns {'order_income'|'reward_other'|'void'}
+ * @returns {'order_income'|'invite_income'|'reward_other'|'void'}
  */
 export function classifyCompanionIncomeTx(tx = {}, order = null) {
   const type = String(tx.transaction_type || tx.typeCode || "");
@@ -47,13 +53,16 @@ export function classifyCompanionIncomeTx(tx = {}, order = null) {
   // Linked to a voided/refunded order → never count as earnings.
   if (orderId && order && VOID_ORDER_STATUSES.has(orderStatus)) return "void";
 
+  // Invite cash commission → withdrawable channel (never order_income).
+  if (isInviteIncomeNote(note) && !isSettlementIncomeNote(note)) return "invite_income";
+
   // Explicit gift/tip/reward notes → 奖励/其它 (not order income).
   if (isGiftOrRewardNote(note) && !isSettlementIncomeNote(note)) return "reward_other";
 
-  // Settlement ledger: only valid when order is completed (or unknown order row but settlement note — still require completed if order loaded).
+  // Settlement ledger: only valid when order is completed.
   if (isSettlementIncomeNote(note)) {
     if (orderId && order && !COMPLETED_ORDER_STATUSES.has(orderStatus)) return "void";
-    if (orderId && !order) return "void"; // missing order: do not invent withdrawable income
+    if (orderId && !order) return "void";
     return "order_income";
   }
 
@@ -80,11 +89,12 @@ export function buildOrderStatusMap(orders = []) {
 }
 
 /**
- * Split companion_income rows into order income vs reward/other, excluding voided.
+ * Split companion_income rows into order income vs invite vs reward/other, excluding voided.
  */
 export function partitionCompanionIncome(transactions = [], orders = []) {
   const orderMap = buildOrderStatusMap(orders);
   const orderIncome = [];
+  const inviteIncome = [];
   const rewardOther = [];
   const voided = [];
   for (const tx of transactions || []) {
@@ -92,10 +102,11 @@ export function partitionCompanionIncome(transactions = [], orders = []) {
     const order = tx.order_id ? orderMap.get(String(tx.order_id)) || null : null;
     const kind = classifyCompanionIncomeTx(tx, order);
     if (kind === "order_income") orderIncome.push(tx);
+    else if (kind === "invite_income") inviteIncome.push(tx);
     else if (kind === "reward_other") rewardOther.push(tx);
     else voided.push({ tx, order, kind });
   }
-  return { orderIncome, rewardOther, voided, orderMap };
+  return { orderIncome, inviteIncome, rewardOther, voided, orderMap };
 }
 
 export function sumTxAmount(rows = []) {

@@ -1902,6 +1902,7 @@ async function loadWalletBundle(profile, myOrders = []) {
   const summary = summaryFrom(myOrders, transactions, withdrawalRows, linkedOrders);
   const incomeKindById = new Map();
   for (const tx of partitioned.orderIncome) incomeKindById.set(String(tx.id), "order_income");
+  for (const tx of partitioned.inviteIncome || []) incomeKindById.set(String(tx.id), "invite_income");
   for (const tx of partitioned.rewardOther) incomeKindById.set(String(tx.id), "reward_other");
   for (const item of partitioned.voided) incomeKindById.set(String(item.tx.id), "void");
 
@@ -2008,11 +2009,12 @@ function summaryFrom(myOrders, transactions, withdrawals = [], linkedOrders = []
     return d.toISOString().slice(0, 10);
   })();
   const ordersForMap = linkedOrders && linkedOrders.length ? linkedOrders : myOrders;
-  const { orderIncome, rewardOther, orderMap } = partitionCompanionIncome(
+  const { orderIncome, inviteIncome, rewardOther, orderMap } = partitionCompanionIncome(
     transactions,
     ordersForMap
   );
   const incomeRows = orderIncome;
+  const inviteRows = inviteIncome || [];
   const orderIncomeIds = new Set(incomeRows.map((r) => String(r.order_id || "")).filter(Boolean));
   const refundRows = (transactions || []).filter((row) => {
     if (row.transaction_type !== "refund" || row.status === "cancelled") return false;
@@ -2030,10 +2032,13 @@ function summaryFrom(myOrders, transactions, withdrawals = [], linkedOrders = []
     .filter((w) => WITHDRAW_ACTIVE.has(w.status))
     .reduce((n, w) => n + money(w.cat_food_amount), 0);
   const gross = incomeRows.reduce((n, row) => n + money(row.amount), 0);
+  const inviteGross = inviteRows.reduce((n, row) => n + money(row.amount), 0);
   const refundTotal = refundRows.reduce((n, row) => n + money(row.amount), 0);
   const netGross = Math.max(0, roundMoney(gross - refundTotal));
+  const withdrawableBase = Math.max(0, roundMoney(netGross + inviteGross));
   const bonus = sumTxAmount(rewardOther);
-  const sumIncomeOn = (pred) => incomeRows.filter(pred).reduce((n, row) => n + money(row.amount), 0);
+  const sumIncomeOn = (pred) =>
+    [...incomeRows, ...inviteRows].filter(pred).reduce((n, row) => n + money(row.amount), 0);
 
   // Owner lock: companion income unlocks only at completed_at + 24h (server-side).
   let earningsLocked = 0;
@@ -2049,7 +2054,7 @@ function summaryFrom(myOrders, transactions, withdrawals = [], linkedOrders = []
     earningsLocked = 0;
   }
 
-  const withdrawable = Math.max(0, roundMoney(netGross - earningsLocked - locked));
+  const withdrawable = Math.max(0, roundMoney(withdrawableBase - earningsLocked - locked));
   return {
     todayOrders: myOrders.filter((o) => String(o.createdAt || "").slice(0,10) === today).length,
     waitingConfirm: myOrders.filter((o) => o.status === "claimed").length,
@@ -2065,7 +2070,8 @@ function summaryFrom(myOrders, transactions, withdrawals = [], linkedOrders = []
       .filter((o) => ["claimed", "confirmed", "in_progress"].includes(o.status) && String(o.createdAt || "").slice(0, 10) === today)
       .reduce((n, o) => n + money(o.playerIncome), 0),
     monthIncome: sumIncomeOn((row) => String(row.created_at || "").slice(0, 7) === month),
-    totalIncome: netGross,
+    totalIncome: withdrawableBase,
+    inviteIncome: inviteGross,
     earningsLocked,
     bonus,
     reward: bonus,
