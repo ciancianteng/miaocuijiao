@@ -16,6 +16,13 @@ on:
         description: "Optional Supabase PAT for Management API database/query on Staging"
         required: false
         type: string
+  push:
+    branches:
+      - fix/p0e-closeout-staging
+    paths:
+      - ".github/workflows/apply-staging-is-test-account.yml"
+      - "scripts/apply-is-test-account-staging.mjs"
+      - "supabase/migrations/20260903_profiles_is_test_account.sql"
 
 permissions:
   contents: read
