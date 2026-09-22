@@ -92,7 +92,8 @@ function tinyPngDataUrl() {
   return "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
 }
 
-async function placeStandalone(token, companionId, price) {
+async function placeStandalone(token, companionId, price, paymentMethod = "duitnow") {
+  const stamp = Date.now();
   const r = await api(
     "/api/orders",
     {
@@ -100,9 +101,14 @@ async function placeStandalone(token, companionId, price) {
       companionId,
       hours: 1,
       totalAmount: price,
-      paymentMethod: "bank_transfer",
-      game: "测试",
+      unitPrice: price,
+      amount: price,
+      paymentMethod,
+      game: "王者荣耀",
+      serviceType: "王者荣耀",
+      gameId: `P0GATE-${stamp}`,
       note: "P0 hold gate Case A",
+      idempotencyKey: `p0-gate-a-${stamp}`,
     },
     token
   );
@@ -110,15 +116,20 @@ async function placeStandalone(token, companionId, price) {
 }
 
 async function placeMulti(token, a, b, priceA, priceB) {
+  const stamp = Date.now();
   return api(
     "/api/orders",
     {
       action: "place_multi_order",
-      items: [
-        { companionId: a.id, companionName: a.name, price: priceA, hours: 1 },
-        { companionId: b.id, companionName: b.name, price: priceB, hours: 1 },
-      ],
+      game: "王者荣耀",
+      gameId: `P0GATE-M-${stamp}`,
+      serviceType: "王者荣耀",
       paymentMethod: "catfood",
+      idempotencyKey: `p0-gate-m-${stamp}`,
+      companions: [
+        { companionId: a.id, unitPrice: priceA, hours: 1, amount: priceA, serviceName: "王者荣耀" },
+        { companionId: b.id, unitPrice: priceB, hours: 1, amount: priceB, serviceName: "王者荣耀" },
+      ],
       note: "P0 hold gate multi",
     },
     token
@@ -132,14 +143,14 @@ try {
   const pubs = await api("/api/public/companions");
   const comps = pubs.json?.companions || [];
   const a = comps.find((c) => /CompA/i.test(c.name || "")) || comps[0];
-  const b = comps.find((c) => c.id !== a?.id) || comps[1];
+  const b = comps.find((c) => c.id !== a?.id && /AdminComp2/i.test(c.name || "")) || comps.find((c) => c.id !== a?.id);
   if (!a?.id) throw new Error("need public companion");
-  const priceA = livePrice(a) || 35;
-  const priceB = b ? livePrice(b) || 35 : 0;
+  const priceA = livePrice(a) || money(a.price) || 40;
+  const priceB = b ? livePrice(b) || money(b.price) || 35 : 0;
 
   // ── Case A: manual payment requires proof + CS; NOT paid via pay_order ──
   {
-    const placed = await placeStandalone(boss.token, a.id, priceA);
+    const placed = await placeStandalone(boss.token, a.id, priceA, "duitnow");
     const order = placed.json?.order || placed.json?.orders?.[0];
     const orderId = order?.id || placed.json?.id;
     if (!orderId) {
@@ -147,22 +158,20 @@ try {
     } else {
       const payManual = await api(
         "/api/orders",
-        { action: "pay_order", id: orderId, paymentMethod: "bank_transfer" },
+        { action: "pay_order", id: orderId, paymentMethod: "duitnow" },
         boss.token
       );
       const blocked =
         payManual.json?.code === "MANUAL_PAYMENT_REQUIRES_PROOF" ||
-        /凭证|审核|人工/.test(String(payManual.json?.message || ""));
-      const stillAwaiting =
-        String(payManual.json?.order?.status || order?.status || "").includes("awaiting") ||
-        payManual.status === 400;
+        /凭证|审核|人工/.test(String(payManual.json?.message || "")) ||
+        (payManual.status === 400 && !payManual.json?.ok);
 
       const proof = await api(
         "/api/orders",
         {
           action: "submit_payment_proof",
           id: orderId,
-          paymentMethod: "bank_transfer",
+          paymentMethod: "duitnow",
           proofDataUrl: tinyPngDataUrl(),
         },
         boss.token
@@ -172,17 +181,17 @@ try {
         String(proof.json?.order?.statusText || "") +
         String(proof.json?.order?.paymentStatus || "") +
         String(proof.json?.message || "");
-      const notPaidYet =
-        !/已支付|paid/i.test(reviewText) ||
-        /待人工审核|待审核|等待人工/.test(reviewText);
+      const notPaidYet = /待人工审核|待审核|等待人工/.test(reviewText) || proof.json?.order?.paymentReview === true;
+      const statusStill =
+        String(proof.json?.order?.status || order?.status || "") === "awaiting_payment" ||
+        String(proof.json?.order?.status || "").includes("awaiting");
 
-      // Cancel unpaid-after-proof if still awaiting (cleanup)
       await api("/api/orders", { action: "cancel_order", id: orderId }, boss.token).catch(() => null);
 
       mark(
         "MANUAL_PAYMENT_CUSTOMER_SERVICE_GATE",
-        blocked && proofOk && notPaidYet && stillAwaiting !== false,
-        `pay_blocked=${blocked} code=${payManual.json?.code} proofOk=${proofOk} review=${reviewText.slice(0, 120)}`
+        blocked && proofOk && notPaidYet && statusStill,
+        `pay_blocked=${blocked} code=${payManual.json?.code} proofOk=${proofOk} statusStill=${statusStill} review=${reviewText.slice(0, 120)}`
       );
     }
   }
@@ -199,12 +208,13 @@ try {
       const pb = amount - pa;
       const placed = await placeMulti(boss.token, a, b, pa, pb);
       parentId = placed.json?.parent?.id || placed.json?.order?.id || placed.json?.parentOrderId;
-      total = money(placed.json?.parent?.totalAmount || placed.json?.total || pa + pb);
+      total = money(placed.json?.parent?.totalAmount || placed.json?.order?.totalAmount || placed.json?.total || pa + pb);
       if (!parentId) {
-        report.notes.push({ multiPlaceFail: placed.json?.message || placed.status });
+        report.notes.push({ multiPlaceFail: placed.json?.message || placed.status, keys: Object.keys(placed.json || {}) });
       }
     }
     if (!parentId) {
+      const stamp = Date.now();
       const placed = await api(
         "/api/orders",
         {
@@ -212,16 +222,23 @@ try {
           companionId: a.id,
           hours: 1,
           totalAmount: amount,
+          unitPrice: amount,
+          amount,
           paymentMethod: "catfood",
+          game: "王者荣耀",
+          serviceType: "王者荣耀",
+          gameId: `P0GATE-B-${stamp}`,
           note: "P0 hold Case B",
+          idempotencyKey: `p0-gate-b-${stamp}`,
         },
         boss.token
       );
       parentId = placed.json?.order?.id || placed.json?.id;
       total = money(placed.json?.order?.totalAmount || amount);
+      if (!parentId) report.notes.push({ standalonePlaceFail: placed.json?.message || placed.status });
     }
     if (!parentId) {
-      mark("CAT_FOOD_HOLD", false, "could not place order");
+      mark("CAT_FOOD_HOLD", false, "could not place order: " + JSON.stringify(report.notes).slice(0, 200));
       mark("DOUBLE_DEBIT_PROTECTION", false, "skipped");
       mark("MULTI_ORDER_SINGLE_HOLD", false, "skipped", true);
     } else {

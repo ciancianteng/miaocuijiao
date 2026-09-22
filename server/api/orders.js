@@ -258,8 +258,13 @@ function paymentMethodLabel(method) {
 function isWalletMethod(method) {
   return /cat.?food|wallet|猫粮|余额/.test(String(method || "").toLowerCase());
 }
+/** Explicit TEST pay only — never treat real manual rails (duitnow/tng/bank) as test. */
 function isPreviewTestMethod(method) {
-  return /tng|duitnow|bank|银行|card|银行卡|alipay|支付宝|hitpay|stripe|toyyib/.test(String(method || "").toLowerCase());
+  const raw = String(method || "").trim().toLowerCase();
+  return /^(test|preview[_-]?test|test[_-]?pay)$/.test(raw) || /测试支付|test\s*pay/.test(raw);
+}
+function isManualPaymentMethod(method) {
+  return !isWalletMethod(method) && !isPreviewTestMethod(method);
 }
 
 async function assertOrderPaymentMethodAllowed(paymentMethod) {
@@ -1668,7 +1673,7 @@ export default async function handler(req, res) {
         }
       } else if (previewTest && previewAllowed) {
         usedTestPay = true;
-      } else if (!isWalletMethod(paymentMethod) && !isPreviewTestMethod(paymentMethod)) {
+      } else if (isManualPaymentMethod(paymentMethod)) {
         // HARD LOCK: non-catfood never auto-marks paid via pay_order.
         // Must: upload proof → CS approve (confirm_payment).
         return json(res, 400, {
