@@ -2512,19 +2512,27 @@ export default async function handler(req, res) {
       };
       let child;
       try {
-        const rows = await supabaseJson(restUrl(TABLE), {
-          method: "POST",
-          headers: serviceHeaders(),
-          body: JSON.stringify(childRow),
-        });
-        child = rows?.[0];
+        const placeMulti = await import("./_place-multi-order.js");
+        child = await placeMulti.insertOrderRow(
+          { restUrl, supabaseJson, serviceHeaders },
+          childRow
+        );
       } catch (cerr) {
-        const cmsg = String(cerr.message || "");
-        if (/parent_order_id|column|schema cache|PGRST/i.test(cmsg)) {
+        const cmsg = String(cerr.message || cerr || "");
+        if (/parent_order_id/i.test(cmsg)) {
           return json(res, 503, {
             ok: false,
             message: "多人订单 schema 未就绪：缺少 parent_order_id",
             code: "MULTI_ORDER_SCHEMA_MISSING",
+            detail: cmsg.slice(0, 200),
+          });
+        }
+        if (/column|schema cache|PGRST/i.test(cmsg)) {
+          return json(res, 503, {
+            ok: false,
+            message: `补位子单写入失败（schema）：${cmsg.slice(0, 180)}`,
+            code: "REPLACE_CHILD_SCHEMA",
+            detail: cmsg.slice(0, 200),
           });
         }
         throw cerr;
