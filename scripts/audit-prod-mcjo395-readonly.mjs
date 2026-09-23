@@ -40,7 +40,7 @@ async function rest(q) {
 }
 
 const baseCols =
-  "id,order_no,order_type,parent_order_id,status,settlement_status,total_amount,unit_price,hours,companion_id,boss_id,payment_method,created_at,accepted_at,started_at,completed_at,description,notes";
+  "id,order_no,order_type,parent_order_id,status,total_amount,unit_price,hours,companion_id,boss_id,created_at,accepted_at,started_at,completed_at,description";
 
 const parentR = await rest(`/rest/v1/orders?order_no=eq.MCJO000395&select=${baseCols}`);
 const parent = Array.isArray(parentR.rows) ? parentR.rows[0] : null;
