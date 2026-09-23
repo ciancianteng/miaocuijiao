@@ -629,6 +629,85 @@ export default async function handler(req, res) {
         authLookupError: listed?.__err || "",
       });
     }
+    // Staging-only: backdate completed_at for organic/acceptance orders to prove 24h unlock.
+    // Hard-blocked on Production. Not a public API — admin auth required.
+    if (actionEarly === "staging_backdate_completed_at") {
+      const sbUrl = String(process.env.SUPABASE_URL || "");
+      const ref = (() => {
+        try {
+          const host = new URL(sbUrl).hostname || "";
+          const m = host.match(/^([a-z0-9]+)\.supabase\.co$/i);
+          return m ? m[1].toLowerCase() : "";
+        } catch {
+          return "";
+        }
+      })();
+      if (ref === "jqfaknpmcnqwqvatrwgo" || isProductionRuntime() || ref !== "cfccwysniduwkjskiqgy") {
+        return json(res, 403, {
+          ok: false,
+          code: "PROD_BACKDATE_BLOCKED",
+          message: "拒绝：仅允许 Staging（cfccwysniduwkjskiqgy）回写 completed_at。",
+          supabaseRef: ref,
+        });
+      }
+      const orderId = String(bodyEarly.orderId || bodyEarly.id || "").trim();
+      const hoursAgo = Number(bodyEarly.hoursAgo ?? bodyEarly.hours_ago ?? 25);
+      if (!orderId) return json(res, 400, { ok: false, message: "缺少 orderId" });
+      if (!(hoursAgo >= 24 && hoursAgo <= 168)) {
+        return json(res, 400, {
+          ok: false,
+          message: "hoursAgo 必须在 24–168 之间（仅用于 Staging 24h unlock 验收）",
+        });
+      }
+      const rows = await supabaseJson(restUrl("orders", `?id=eq.${encodeURIComponent(orderId)}&limit=1`), {
+        headers: serviceHeaders(),
+      }).catch(() => []);
+      const order = Array.isArray(rows) ? rows[0] : null;
+      if (!order) return json(res, 404, { ok: false, message: "订单不存在" });
+      const partyIds = [order.boss_id, order.companion_id].filter(Boolean);
+      const profiles = partyIds.length
+        ? await supabaseJson(
+            restUrl(
+              "profiles",
+              `?id=in.(${partyIds.map(encodeURIComponent).join(",")})&select=id,email,is_test_account,display_name&limit=10`
+            ),
+            { headers: serviceHeaders() }
+          ).catch(() => [])
+        : [];
+      const isAcceptance = (p) => {
+        const em = String(p?.email || "").toLowerCase();
+        if (em.endsWith("@mcj-staging-organic.invalid")) return true;
+        if (p?.is_test_account === true) return true;
+        if (/organic|cursor_acceptance|staging.?organic/i.test(String(p?.display_name || ""))) return true;
+        return false;
+      };
+      const bossOk = isAcceptance((profiles || []).find((p) => p.id === order.boss_id) || {});
+      const compOk = isAcceptance((profiles || []).find((p) => p.id === order.companion_id) || {});
+      if (!bossOk && !compOk) {
+        return json(res, 403, {
+          ok: false,
+          code: "NOT_ACCEPTANCE_ORDER",
+          message: "仅允许 organic / cursor_acceptance / is_test_account 相关订单回写 completed_at",
+        });
+      }
+      const pastIso = new Date(Date.now() - hoursAgo * 3600 * 1000).toISOString();
+      const patched = await supabaseJson(restUrl("orders", `?id=eq.${encodeURIComponent(orderId)}`), {
+        method: "PATCH",
+        headers: serviceHeaders(),
+        body: JSON.stringify({ completed_at: pastIso, updated_at: new Date().toISOString() }),
+      });
+      const after = Array.isArray(patched) ? patched[0] : null;
+      return json(res, 200, {
+        ok: true,
+        stagingOnly: true,
+        supabaseRef: ref,
+        orderId,
+        hoursAgo,
+        completed_at_before: order.completed_at || null,
+        completed_at_after: after?.completed_at || pastIso,
+        message: "Staging acceptance order completed_at backdated",
+      });
+    }
     if (req.method === "GET") {
       const action = String(req.query?.action || "").trim();
       if (action === "reviews") {
