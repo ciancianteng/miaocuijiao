@@ -86,23 +86,23 @@ async function login(email, role, password = PASS) {
 }
 
 async function bossBal(token) {
-  const w = await api("/api/wallet?action=balance", token, null, "GET");
-  const wallet = w.json?.wallet || w.json || {};
+  const w = await api("/api/recharge", token, null, "GET");
+  const summary = w.json?.summary || {};
+  const wallet = w.json?.wallet || {};
   return money(
-    wallet.availableBalance ??
-      wallet.available ??
-      wallet.balance ??
-      w.json?.balance ??
-      w.json?.catFood ??
+    summary.balance ??
+      wallet.totalBalance ??
+      wallet.availableBalance ??
       (money(wallet.paidBalance) + money(wallet.bonusBalance)) ??
       0
   );
 }
 
 async function bossBonus(token) {
-  const w = await api("/api/wallet?action=balance", token, null, "GET");
-  const wallet = w.json?.wallet || w.json || {};
-  return money(wallet.bonusBalance ?? wallet.bonus_balance ?? 0);
+  const w = await api("/api/recharge", token, null, "GET");
+  const wallet = w.json?.wallet || {};
+  const summary = w.json?.summary || {};
+  return money(wallet.bonusBalance ?? summary.bonusBalance ?? wallet.bonus_balance ?? 0);
 }
 
 async function ensureBossBalance(bossT, adminT, adminH, min = 200) {
