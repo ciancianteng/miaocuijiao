@@ -25,7 +25,8 @@
     sharedNotes: "",
     sharedStartTime: "",
     sharedVoiceMode: "game_mic",
-    paymentMethod: "catfood",
+    paymentMethod: "", // chosen on sheet / inherited from place-order modal — never hardcode catfood
+    orderPayMethods: [],
     pendingIdempotencyKey: "",
   };
 
@@ -221,7 +222,7 @@
     if (document.querySelector('link[data-mcj-team-css]')) return;
     var link = document.createElement("link");
     link.rel = "stylesheet";
-    link.href = "/src/multi-companion-team.css?v=20260923p0pay1";
+    link.href = "/src/multi-companion-team.css?v=20260924duitnow1";
     link.setAttribute("data-mcj-team-css", "1");
     document.head.appendChild(link);
   }
@@ -392,6 +393,7 @@
         sharedNotes: state.sharedNotes || "",
         sharedStartTime: state.sharedStartTime || "",
         sharedVoiceMode: state.sharedVoiceMode || "game_mic",
+        paymentMethod: state.paymentMethod || "",
       };
       sessionStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
     } catch (e) {}
@@ -441,6 +443,9 @@
       if (state.sharedVoiceMode !== "discord" && state.sharedVoiceMode !== "game_mic") {
         state.sharedVoiceMode = "game_mic";
       }
+      if (data.paymentMethod != null) {
+        state.paymentMethod = String(data.paymentMethod || "").trim().toLowerCase();
+      }
       if (state.sharedGameId) {
         state.lines.forEach(function (l) {
           if (!String(l.gameId || l.game_id || "").trim()) l.gameId = state.sharedGameId;
@@ -459,6 +464,7 @@
     state.sharedNotes = "";
     state.sharedStartTime = "";
     state.sharedVoiceMode = "game_mic";
+    state.paymentMethod = "";
     state.expanded = false;
     state.pendingIdempotencyKey = "";
     try {
@@ -1132,7 +1138,14 @@
       '<span class="mcj-team-voice-title">游戏麦</span>' +
       '<span class="mcj-team-voice-desc">使用游戏内语音沟通</span></button>' +
       "</div></div>" +
-      '<p class="mcj-team-pay-hint">本订单一次付款，系统会分别为每位陪玩结算。</p>' +
+      '<div class="mcj-team-field mcj-team-pay-field"><span>支付方式 *</span><div class="mcj-team-chips" data-mcj-team-pay-grid role="radiogroup" aria-label="支付方式">' +
+      payChipsHtml() +
+      "</div>" +
+      (state.orderPayMethods && state.orderPayMethods.length
+        ? ""
+        : '<p class="mcj-team-id-hint">正在加载可用支付方式…</p>') +
+      "</div>" +
+      '<p class="mcj-team-pay-hint">本订单一次付款，系统会分别为每位陪玩结算。请选择与老板端一致的支付渠道（如 DuitNow），勿错误默认为猫粮。</p>' +
       "</div>" +
       '<p class="mcj-team-sheet-error" data-mcj-team-error hidden></p>' +
       '<div class="mcj-team-sheet-foot">' +
@@ -1140,12 +1153,76 @@
       esc(String(total)) +
       " 猫粮</strong></div>" +
       '<button type="button" class="mcj-team-submit" data-mcj-team-submit' +
-      (state.lines.length < 2 ? " disabled" : "") +
+      (state.lines.length < 2 || !String(state.paymentMethod || "").trim() ? " disabled" : "") +
       ">确认并支付 " +
       esc(String(total)) +
       "猫粮</button>" +
       "</div></div>";
     refreshTeamSchedulePreview();
+  }
+
+  function payChipsHtml() {
+    var list = Array.isArray(state.orderPayMethods) ? state.orderPayMethods : [];
+    if (!list.length) {
+      return '<span class="mcj-team-chip-empty">暂无可用支付方式</span>';
+    }
+    return list
+      .map(function (p) {
+        var id = String(p.id || p.code || "").trim();
+        if (!id) return "";
+        var active = state.paymentMethod === id;
+        return (
+          '<button type="button" class="mcj-team-chip' +
+          (active ? " active" : "") +
+          '" data-mcj-team-pay="' +
+          esc(id) +
+          '" aria-pressed="' +
+          (active ? "true" : "false") +
+          '">' +
+          esc(p.label || p.name || id) +
+          "</button>"
+        );
+      })
+      .filter(Boolean)
+      .join("");
+  }
+
+  function loadOrderPayMethods() {
+    return fetch("/api/recharge", { headers: authHeaders() })
+      .then(parseApiJson)
+      .then(function (body) {
+        var list = Array.isArray(body && body.orderPayMethods) ? body.orderPayMethods : [];
+        state.orderPayMethods = list
+          .filter(function (m) {
+            return m && (m.id || m.code) && m.open !== false;
+          })
+          .map(function (m) {
+            return {
+              id: String(m.id || m.code || "").trim().toLowerCase(),
+              label: m.label || m.name || m.code || m.id,
+            };
+          })
+          .filter(function (m) {
+            return !!m.id;
+          });
+        if (
+          state.paymentMethod &&
+          !state.orderPayMethods.some(function (p) {
+            return p.id === state.paymentMethod;
+          })
+        ) {
+          state.paymentMethod = "";
+        }
+        if (!state.paymentMethod && state.orderPayMethods.length === 1) {
+          state.paymentMethod = state.orderPayMethods[0].id;
+        }
+        persist();
+        return state.orderPayMethods;
+      })
+      .catch(function () {
+        state.orderPayMethods = state.orderPayMethods || [];
+        return state.orderPayMethods;
+      });
   }
 
   function openSingleLegacyFromTeam() {
@@ -1182,6 +1259,9 @@
     }
     hideToast();
     paintSheet();
+    loadOrderPayMethods().then(function () {
+      if (state.sheetOpen) paintSheet();
+    });
   }
 
   function parseApiJson(res) {
@@ -1219,7 +1299,7 @@
     var notes = noteParts.join("；");
     return {
       action: "place_multi_order",
-      paymentMethod: "catfood",
+      paymentMethod: String(state.paymentMethod || "").trim().toLowerCase(),
       gameId: String(state.sharedGameId || "").trim(),
       notes: notes,
       schedule: schedule,
@@ -1298,10 +1378,20 @@
       setSheetError("请先登录老板账号");
       return;
     }
+    if (!String(state.paymentMethod || "").trim()) {
+      toast("请选择支付方式");
+      setSheetError("请选择支付方式");
+      return;
+    }
     var payload = buildPayload();
     // Guard: never loop place_order
     if (payload.action !== "place_multi_order") {
       toast("提交配置错误");
+      return;
+    }
+    if (!payload.paymentMethod) {
+      toast("请选择支付方式");
+      setSheetError("请选择支付方式");
       return;
     }
     state.submitting = true;
@@ -1354,11 +1444,16 @@
                 })
               );
             localStorage.setItem("mcjBossOrdersCache", JSON.stringify(list.slice(0, 80)));
+            var savedPay = String(
+              parent.paymentMethod || parent.payment_method || state.paymentMethod || payload.paymentMethod || ""
+            )
+              .trim()
+              .toLowerCase();
             var cachePayload = JSON.stringify({
               id: oid,
               status: "awaiting_payment",
-              paymentMethod: "catfood",
-              payment_method: "catfood",
+              paymentMethod: savedPay,
+              payment_method: savedPay,
               totalAmount: totalAmt,
               orderTypeKey: "multi_group",
               order_type: "multi_group",
@@ -1474,6 +1569,9 @@
     }
     if (patch.voiceMode === "discord" || patch.voiceMode === "game_mic") {
       state.sharedVoiceMode = patch.voiceMode;
+    }
+    if (patch.paymentMethod != null) {
+      state.paymentMethod = String(patch.paymentMethod || "").trim().toLowerCase();
     }
     persist();
   }
@@ -1692,6 +1790,17 @@
     if (e.target.closest("[data-mcj-team-submit]")) {
       e.preventDefault();
       submitTeam();
+      return;
+    }
+    var payBtn = e.target.closest("[data-mcj-team-pay]");
+    if (payBtn) {
+      e.preventDefault();
+      state.paymentMethod = String(payBtn.getAttribute("data-mcj-team-pay") || "")
+        .trim()
+        .toLowerCase();
+      persist();
+      paintSheet();
+      return;
     }
     var voiceBtn = e.target.closest("[data-mcj-team-voice]");
     if (voiceBtn) {

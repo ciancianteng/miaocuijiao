@@ -1581,6 +1581,7 @@
       notes: notesEl ? String(notesEl.value || "").trim() : "",
       startTime: readStartTimeFromDom(activeMask()) || state.startTime,
       voiceMode: state.voiceMode,
+      paymentMethod: state.payment,
     });
   }
 

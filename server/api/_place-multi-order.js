@@ -179,19 +179,17 @@ export async function placeMultiOrder(ctx) {
     }
   }
 
-  let paymentMethod = String(body.paymentMethod || body.payment_method || "catfood").trim().toLowerCase();
-  const payGate = await assertOrderPaymentMethodAllowed(paymentMethod || "catfood");
+  let paymentMethod = String(body.paymentMethod || body.payment_method || "").trim().toLowerCase();
+  if (!paymentMethod) {
+    return { ok: false, status: 400, message: "请选择支付方式。" };
+  }
+  const payGate = await assertOrderPaymentMethodAllowed(paymentMethod);
   if (!payGate.ok) {
     return { ok: false, status: 409, message: payGate.message || "该支付方式暂未开放" };
   }
   paymentMethod = String(payGate.code || paymentMethod).toLowerCase();
-  if (!isWalletMethod(paymentMethod)) {
-    return {
-      ok: false,
-      status: 400,
-      message: "多人订单第一阶段仅支持猫粮钱包一次支付。",
-    };
-  }
+  // Multi supports wallet + configured manual rails (DuitNow/TNG/bank/…).
+  // Manual rails → upload proof → CS review (same as single-order). Never rewrite to catfood.
 
   const sharedGameId = String(body.gameId || body.game_id || "").trim();
   const sharedNotes = String(body.notes || body.remark || "").trim();
