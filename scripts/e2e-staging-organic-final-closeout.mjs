@@ -543,7 +543,7 @@ await ensureBossBalance(inviteeT, adminT, adminH, 150);
     note: "final-closeout-refund-24h-closed",
     completion: "admin_force",
   });
-  await api(
+  const bdTimed = await api(
     "/api/admin/orders",
     adminT,
     { action: "staging_backdate_completed_at", orderId: timed.orderId, hoursAgo: 25 },
@@ -558,6 +558,7 @@ await ensureBossBalance(inviteeT, adminT, adminH, 150);
     amount: 20,
   });
   const r10 =
+    (bdTimed.ok || bdTimed.json?.ok) &&
     reqTimed.status >= 400 &&
     (reqTimed.json?.code === "AFTER_SALE_CLOSED" || /售后窗口已关闭/i.test(String(reqTimed.json?.message || "")));
   report.evidence.refund_gates = {
@@ -567,10 +568,19 @@ await ensureBossBalance(inviteeT, adminT, adminH, 150);
     timedOrder: maskId(timed.orderId),
     closedMsg: reqClosed.json?.message,
     timedMsg: reqTimed.json?.message,
+    bdTimed: { ok: bdTimed.json?.ok, completed_at_after: bdTimed.json?.completed_at_after, message: bdTimed.json?.message },
   };
   if (!r9 || !r10) {
+    if (report.modules.REFUND_CLAWBACK?.result === "PASS") {
+      setMod(
+        "REFUND_CLAWBACK",
+        "FAIL",
+        `${report.modules.REFUND_CLAWBACK.detail} | R9=${r9} R10=${r10} bd=${bdTimed.json?.message || bdTimed.status}`,
+        { ...(report.evidence.REFUND_CLAWBACK || {}), gates: report.evidence.refund_gates }
+      );
+    }
     report.fails.push("REFUND_AFTER_SALE_GATES");
-    console.log(`[FAIL] REFUND_AFTER_SALE_GATES :: R9=${r9} R10=${r10}`);
+    console.log(`[FAIL] REFUND_AFTER_SALE_GATES :: R9=${r9} R10=${r10} bd=${bdTimed.json?.message || bdTimed.status}`);
   } else {
     console.log(`[PASS] REFUND_AFTER_SALE_GATES :: R9=${r9} R10=${r10}`);
   }
