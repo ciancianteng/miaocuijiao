@@ -375,7 +375,9 @@ function viewWithdraw(row, profile = {}, account = {}, adminMap = {}, companionE
     status: row.status,
     statusText: WITHDRAW_STATUS[row.status] || row.status,
     rejectReason: row.reject_reason || row.rejection_reason || "",
+    rejectedBy: row.rejected_by || "",
     submittedAt: row.submitted_at || row.created_at,
+    requestedAt: row.submitted_at || row.created_at,
     reviewedAt: row.reviewed_at || row.approved_at || "",
     approvedAt: row.approved_at || row.reviewed_at || "",
     approvedBy: approvedById,
@@ -384,6 +386,8 @@ function viewWithdraw(row, profile = {}, account = {}, adminMap = {}, companionE
     completedAt: row.completed_at || "",
     paidBy: paidById,
     paidByName: publicDisplayName(paidAdmin, ""),
+    transactionId: row.transaction_id || row.freeze_tx_id || "",
+    freezeTxId: row.freeze_tx_id || row.transaction_id || "",
     paymentAccountId: row.payment_account_id || "",
     settlementDate: row.settlement_date || "",
     statusCanonical: normalizePayoutStatus(row.status),
@@ -1090,17 +1094,33 @@ export default async function handler(req, res) {
         return json(res, 400, { ok: false, message: "当前状态不可驳回" });
       }
       const amountCat = money(row.cat_food_amount || row.amount);
-      const patched = await companionDb("companion_withdrawals", `?id=eq.${encodeURIComponent(id)}`, {
-        method: "PATCH",
-        body: JSON.stringify({
-          status: "rejected",
-          reject_reason: reason,
-          rejection_reason: reason,
-          reviewed_at: nowIso(),
-          reviewed_by: body.adminId || null,
-          updated_at: nowIso(),
-        }),
-      });
+      let rejectPayload = {
+        status: "rejected",
+        reject_reason: reason,
+        rejection_reason: reason,
+        reviewed_at: nowIso(),
+        reviewed_by: body.adminId || adminProfile.id || null,
+        rejected_by: body.adminId || adminProfile.id || null,
+        updated_at: nowIso(),
+      };
+      let patched = null;
+      for (let attempt = 0; attempt < 8; attempt++) {
+        try {
+          patched = await companionDb("companion_withdrawals", `?id=eq.${encodeURIComponent(id)}`, {
+            method: "PATCH",
+            body: JSON.stringify(rejectPayload),
+          });
+          break;
+        } catch (patchErr) {
+          const msg = `${patchErr?.message || ""} ${JSON.stringify(patchErr?.body || "")}`;
+          const m = msg.match(/Could not find the '([^']+)' column/i);
+          if (m && m[1] in rejectPayload) {
+            delete rejectPayload[m[1]];
+            continue;
+          }
+          throw patchErr;
+        }
+      }
       // Unfreeze: cancel freeze ledger so amount returns to withdrawable (rejected status unlocks).
       if (row.freeze_tx_id) {
         try {
@@ -1160,6 +1180,101 @@ export default async function handler(req, res) {
         noticeKey: `withdraw-rejected-${id}-${Date.now()}`,
       });
       return json(res, 200, { ok: true, message: "已驳回，冻结余额已退回可用余额", item: patched?.[0] });
+    }
+
+    if (action === "cancel_withdraw") {
+      const id = String(body.id || body.withdrawalId || body.withdrawal_id || "").trim();
+      if (!id || id === "undefined" || id === "null") {
+        return json(res, 400, { ok: false, message: "缺少提现单 id" });
+      }
+      const reason = String(body.reason || body.cancel_reason || "后台撤销").trim();
+      const rows = await companionDb("companion_withdrawals", `?id=eq.${encodeURIComponent(id)}&limit=1`);
+      const row = rows?.[0];
+      if (!row) return json(res, 404, { ok: false, message: "提现单不存在" });
+      if (/^(completed|rejected|cancelled)$/.test(String(row.status || ""))) {
+        return json(res, 400, { ok: false, message: "当前状态不可撤销" });
+      }
+      const amountCat = money(row.cat_food_amount || row.amount);
+      let cancelPayload = {
+        status: "cancelled",
+        cancel_reason: reason,
+        cancelled_at: nowIso(),
+        cancelled_by: body.adminId || adminProfile.id || null,
+        updated_at: nowIso(),
+      };
+      let patched = null;
+      for (let attempt = 0; attempt < 8; attempt++) {
+        try {
+          patched = await companionDb("companion_withdrawals", `?id=eq.${encodeURIComponent(id)}`, {
+            method: "PATCH",
+            body: JSON.stringify(cancelPayload),
+          });
+          break;
+        } catch (patchErr) {
+          const msg = `${patchErr?.message || ""} ${JSON.stringify(patchErr?.body || "")}`;
+          const m = msg.match(/Could not find the '([^']+)' column/i);
+          if (m && m[1] in cancelPayload) {
+            delete cancelPayload[m[1]];
+            continue;
+          }
+          throw patchErr;
+        }
+      }
+      if (row.freeze_tx_id || row.transaction_id) {
+        const freezeId = row.freeze_tx_id || row.transaction_id;
+        try {
+          await companionDb("transactions", `?id=eq.${encodeURIComponent(freezeId)}`, {
+            method: "PATCH",
+            body: JSON.stringify({
+              status: "cancelled",
+              note: `提现撤销解冻 ${row.withdrawal_no || id}：${reason}`,
+            }),
+          });
+        } catch {
+          /* optional */
+        }
+      } else {
+        try {
+          await companionDb("transactions", "", {
+            method: "POST",
+            body: JSON.stringify({
+              user_id: row.companion_id,
+              order_id: null,
+              transaction_type: "withdrawal",
+              amount: amountCat,
+              status: "cancelled",
+              note: `提现撤销退回 ${row.withdrawal_no || id}：${reason}`,
+              created_at: nowIso(),
+            }),
+          });
+        } catch {
+          /* optional */
+        }
+      }
+      await releasePayoutSources(companionDb, {
+        relatedTable: "companion_withdrawals",
+        relatedRecordId: id,
+      }).catch(() => null);
+      await syncPayoutRequestStatus(companionDb, {
+        relatedTable: "companion_withdrawals",
+        relatedRecordId: id,
+        status: "cancelled",
+        patch: { reject_reason: reason, reviewed_at: nowIso() },
+      }).catch(() => null);
+      await writeAdminLog({
+        module: "finance",
+        action: "cancel_withdraw",
+        targetType: "companion_withdrawal",
+        targetId: id,
+        operatorId: body.adminId || adminProfile.id || null,
+        operatorRole: adminRole,
+        reason,
+      });
+      return json(res, 200, {
+        ok: true,
+        message: "已撤销，冻结余额已退回可提现",
+        item: viewWithdraw(patched?.[0] || { ...row, status: "cancelled" }),
+      });
     }
 
     if (action === "mark_withdraw_paid" || action === "complete_withdraw") {
@@ -2456,6 +2571,7 @@ export default async function handler(req, res) {
         duplicate: !!result.duplicate,
         alreadyRefunded: !!result.alreadyRefunded || !!result.duplicate,
         creditedCatFood: result.creditedCatFood,
+        clawbacks: result.clawbacks || null,
       });
     }
 

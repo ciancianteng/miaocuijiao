@@ -1,14 +1,16 @@
 /**
- * Invite attribution + confirm-before-bind + one-time invite rewards.
+ * Invite attribution + confirm-before-bind + deferred antifraud rewards.
  *
  * ACTIVE ops relation SoT remains boss_companion_relations (#185).
- * This module records pending attribution until invitee confirms.
+ * Confirm only binds — rewards wait for a qualifying completed order.
  *
- * Rewards (inviter_role decides — never invitee):
- *   boss inviter     → meow coin / bonus catfood (invite_reward, non-withdrawable)
- *   companion inviter → invite_cash_wallets (withdrawable cash; wallet pattern from #134)
+ * Owner antifraud (§16–17):
+ *   Boss inviter     → invitee (boss) first real paid order completed
+ *                      + after-sale closed + no refund → catfood (bonus) reward
+ *   Companion inviter → invitee companion approved + first real completed order
+ *                      + after-sale closed + no refund → companion_income (withdrawable)
  *
- * Orthogonal to boss_commission_earnings (platform-fee ops commission).
+ * Idempotency: referral_reward:{invitee_id}:{reward_type}
  */
 import {
   bindRelation,
@@ -22,6 +24,8 @@ import {
 } from "./_account-roles.js";
 import { isBossInviteLinksEnabled } from "./_feature-flags.js";
 import { creditWallet, isMissingRelation, money, restUrl, serviceHeaders, supabaseJson } from "./_wallet.js";
+import { isBossAfterSaleOpen } from "./_earnings-windows.js";
+import { isTestAccountRecord } from "./_test-accounts.js";
 
 const ATTR_TABLE = "invite_attributions";
 const ATTR_EVT_TABLE = "invite_attribution_events";
@@ -39,6 +43,10 @@ function nowIso() {
 
 function httpError(message, status = 400, extra = {}) {
   return Object.assign(new Error(message), { status, ...extra });
+}
+
+function referralIdempotencyKey(inviteeId, rewardType) {
+  return `referral_reward:${String(inviteeId || "").trim()}:${String(rewardType || "").trim()}`;
 }
 
 async function loadProfile(id) {
@@ -137,10 +145,88 @@ export async function getConfirmedAttributionForInvitee(inviteeUserId) {
   return Array.isArray(rows) ? rows[0] || null : null;
 }
 
+function normalizeOrderStatus(status) {
+  return String(status || "")
+    .trim()
+    .toLowerCase();
+}
+
+function orderLooksPaid(order = {}) {
+  if (order.paid_at || order.paidAt) return true;
+  if (money(order.paid_cat_food || order.paidCatFood) > 0) return true;
+  const st = normalizeOrderStatus(order.status);
+  if (["awaiting_payment", "pending_payment", "unpaid", "draft"].includes(st)) return false;
+  return ["claimed", "confirmed", "in_progress", "waiting_boss_confirm", "completed", "reviewed"].includes(st);
+}
+
+function orderLooksRefundedOrOpenRefund(order = {}) {
+  const st = normalizeOrderStatus(order.status);
+  if (["refunded", "refund_requested", "cancelled", "canceled"].includes(st)) return true;
+  const blob = `${order.note || ""}\n${order.description || ""}`;
+  if (/\[\[CLAWBACK\]\]|MCJ_CLAWBACK|退款冲减/i.test(blob)) return true;
+  return false;
+}
+
+function companionApproved(companionRow = {}, profile = {}) {
+  const vs = String(companionRow.verification_status || companionRow.audit_status || profile.verification_status || "")
+    .trim()
+    .toLowerCase();
+  if (/approved|verified|passed|active|ok/.test(vs)) return true;
+  const review = String(companionRow.profile_review_status || companionRow.review_status || "")
+    .trim()
+    .toLowerCase();
+  return /approved|verified|passed/.test(review);
+}
+
 /**
- * Record pending attribution from invite code. Does NOT create active relation.
- * Idempotent per invitee pending row.
+ * Pure eligibility helper (also used by offline tests).
+ * @returns {{ ok: boolean, reason?: string }}
  */
+export function evaluateInviteOrderEligibility(order = {}, ctx = {}) {
+  const {
+    attribution = null,
+    inviteeProfile = null,
+    inviteeCompanion = null,
+    bossProfile = null,
+    companionProfile = null,
+    nowMs = Date.now(),
+  } = ctx;
+  if (!attribution || String(attribution.status) !== "confirmed") {
+    return { ok: false, reason: "attribution_not_confirmed" };
+  }
+  if (attribution.reward_granted) return { ok: false, reason: "already_granted" };
+
+  const st = normalizeOrderStatus(order.status);
+  if (orderLooksRefundedOrOpenRefund(order)) return { ok: false, reason: "order_refunded_or_canceled" };
+  if (st !== "completed" && st !== "reviewed") return { ok: false, reason: "order_not_completed" };
+  if (!orderLooksPaid(order)) return { ok: false, reason: "order_unpaid" };
+  if (isBossAfterSaleOpen(order, nowMs)) return { ok: false, reason: "after_sale_open" };
+
+  if (
+    isTestAccountRecord(bossProfile || {}) ||
+    isTestAccountRecord(companionProfile || {}) ||
+    isTestAccountRecord(inviteeProfile || {})
+  ) {
+    return { ok: false, reason: "test_data" };
+  }
+
+  const inviterRole = String(attribution.inviter_role || "");
+  const inviteeId = String(attribution.invitee_user_id || "");
+
+  if (inviterRole === "companion") {
+    if (String(order.companion_id || "") !== inviteeId) {
+      return { ok: false, reason: "invitee_not_order_companion" };
+    }
+    if (!companionApproved(inviteeCompanion || {}, inviteeProfile || {})) {
+      return { ok: false, reason: "companion_not_approved" };
+    }
+  } else if (String(order.boss_id || "") !== inviteeId) {
+    return { ok: false, reason: "invitee_not_order_boss" };
+  }
+
+  return { ok: true, reason: "eligible" };
+}
+
 export async function recognizeInviteAttribution({
   inviteCode,
   inviteeUserId,
@@ -176,10 +262,9 @@ export async function recognizeInviteAttribution({
 
   const inviterId = String(link.boss_id || "").trim();
   if (!inviterId || inviterId === String(inviteeUserId)) {
-    return { attempted: true, outcome: "skipped_invalid", detail: "bad_inviter" };
+    return { attempted: true, outcome: "skipped_invalid", detail: "self_invite_or_bad_inviter" };
   }
 
-  // Already confirmed forever — do not create another pending / active.
   try {
     const confirmed = await getConfirmedAttributionForInvitee(inviteeUserId);
     if (confirmed) {
@@ -197,37 +282,30 @@ export async function recognizeInviteAttribution({
     throw e;
   }
 
-  // Ops relation already active for this invitee-as-companion → block silently.
   try {
     const existingRel = await getActiveRelationForCompanion(inviteeUserId);
     if (existingRel) {
       return {
         attempted: true,
         outcome: "skipped_already_bound",
-        detail:
-          existingRel.boss_id === inviterId ? "already_bound_same" : "already_bound_other",
-        relationId: existingRel.id || null,
+        detail: "active_relation_exists",
       };
     }
   } catch (e) {
     if (!isRelationsMissing(e)) throw e;
   }
 
-  const pending = await getPendingAttributionForInvitee(inviteeUserId);
+  const pending = await getPendingAttributionForInvitee(inviteeUserId).catch((e) => {
+    if (isAttributionMissing(e)) return null;
+    throw e;
+  });
   if (pending) {
-    if (String(pending.inviter_user_id) === inviterId && String(pending.invite_code) === code) {
-      return { attempted: true, outcome: "pending_confirm", attribution: viewAttribution(pending) };
-    }
-    // Supersede older pending from a different link.
-    await supabaseJson(
-      restUrl(ATTR_TABLE, `?id=eq.${encodeURIComponent(pending.id)}`),
-      {
-        method: "PATCH",
-        headers: serviceHeaders({ Prefer: "return=minimal" }),
-        body: JSON.stringify({ status: "superseded", detail: "superseded_by_new_invite", updated_at: nowIso() }),
-      }
-    );
-    await insertAttrEvent(pending.id, "supersede", inviteeUserId, { byCode: code });
+    return {
+      attempted: true,
+      outcome: "pending_confirm",
+      attribution: viewAttribution(pending),
+      detail: "already_pending",
+    };
   }
 
   const [inviterProfile, inviterCompanion, inviteeRole] = await Promise.all([
@@ -253,26 +331,27 @@ export async function recognizeInviteAttribution({
         invitee_user_id: inviteeUserId,
         invitee_role_at_create: inviteeRole,
         status: "pending",
-        detail: null,
+        detail: "awaiting_invitee_confirm",
       }),
     });
     created = Array.isArray(rows) ? rows[0] : rows;
   } catch (e) {
+    if (/duplicate|unique|23505/i.test(String(e?.message || ""))) {
+      const again = await getPendingAttributionForInvitee(inviteeUserId);
+      return {
+        attempted: true,
+        outcome: "pending_confirm",
+        attribution: again ? viewAttribution(again) : null,
+        detail: "duplicate_pending",
+      };
+    }
     if (isAttributionMissing(e)) {
       return { attempted: true, outcome: "error", detail: "tables_missing" };
-    }
-    // Unique pending race — reload
-    const again = await getPendingAttributionForInvitee(inviteeUserId);
-    if (again) {
-      return { attempted: true, outcome: "pending_confirm", attribution: viewAttribution(again) };
     }
     throw e;
   }
 
-  await insertAttrEvent(created.id, "recognized", inviteeUserId, {
-    inviteCode: code,
-    inviterRole,
-  });
+  await insertAttrEvent(created.id, "recognize", inviteeUserId, { inviteCode: code, inviterRole });
 
   return {
     attempted: true,
@@ -308,10 +387,35 @@ async function ensureInviteCashWallet(userId) {
   return Array.isArray(created) ? created[0] : created;
 }
 
+async function creditCompanionInviteIncome(companionId, amount, attribution, orderId) {
+  if (!(amount > 0) || !companionId) return null;
+  const note = `邀请佣金 MCJ_INVITE:${JSON.stringify({
+    source: "invite",
+    attributionId: attribution.id,
+    inviteeId: attribution.invitee_user_id,
+    orderId: orderId || null,
+    amount,
+  })}`;
+  const rows = await supabaseJson(restUrl("transactions"), {
+    method: "POST",
+    headers: serviceHeaders({ Prefer: "return=representation" }),
+    body: JSON.stringify({
+      user_id: companionId,
+      order_id: null,
+      transaction_type: "companion_income",
+      amount,
+      status: "completed",
+      note,
+      created_at: nowIso(),
+    }),
+  });
+  return Array.isArray(rows) ? rows[0] || null : rows;
+}
+
 /**
- * Grant one-time invite reward. Idempotent on attribution_id.
+ * Grant one-time invite reward AFTER eligibility. Idempotent on invitee+reward_type.
  */
-export async function grantInviteRewardForAttribution(attribution) {
+export async function grantInviteRewardForAttribution(attribution, { order = null, force = false } = {}) {
   if (!attribution?.id) return { granted: false, reason: "missing_attribution" };
   if (attribution.reward_granted) {
     return { granted: false, reason: "already_granted", duplicate: true };
@@ -320,10 +424,20 @@ export async function grantInviteRewardForAttribution(attribution) {
   const inviterRole = String(attribution.inviter_role || "");
   const inviterId = attribution.inviter_user_id;
   const inviteeId = attribution.invitee_user_id;
-  const idempotencyKey = `invite_reward:${attribution.id}`;
+  const rewardType = inviterRole === "companion" ? "cash" : "meow_coin";
+  const idempotencyKey = referralIdempotencyKey(inviteeId, rewardType);
 
-  // Existing ledger row?
   try {
+    const byKey = await supabaseJson(
+      restUrl(
+        REWARD_TABLE,
+        `?idempotency_key=eq.${encodeURIComponent(idempotencyKey)}&status=eq.granted&limit=1`
+      ),
+      { headers: serviceHeaders() }
+    );
+    if (byKey?.[0]) {
+      return { granted: false, reason: "already_granted", duplicate: true, ledger: byKey[0] };
+    }
     const existing = await supabaseJson(
       restUrl(
         REWARD_TABLE,
@@ -339,17 +453,32 @@ export async function grantInviteRewardForAttribution(attribution) {
     throw e;
   }
 
-  let rewardType;
+  if (!force) {
+    if (!order) return { granted: false, reason: "missing_qualifying_order" };
+    const [inviteeProfile, inviteeCompanion, bossProfile, companionProfile] = await Promise.all([
+      loadProfile(inviteeId),
+      loadCompanionRowForUser(inviteeId),
+      loadProfile(order.boss_id),
+      loadProfile(order.companion_id),
+    ]);
+    const elig = evaluateInviteOrderEligibility(order, {
+      attribution,
+      inviteeProfile,
+      inviteeCompanion,
+      bossProfile,
+      companionProfile,
+    });
+    if (!elig.ok) return { granted: false, reason: elig.reason };
+  }
+
   let amount;
   let withdrawable;
   let currency;
-  if (inviterRole === "companion") {
-    rewardType = "cash";
+  if (rewardType === "cash") {
     amount = money(DEFAULT_COMPANION_INVITE_CASH);
     withdrawable = true;
     currency = "CASH";
   } else {
-    rewardType = "meow_coin";
     amount = money(DEFAULT_BOSS_INVITE_MEOWCOIN);
     withdrawable = false;
     currency = "CATFOOD";
@@ -372,7 +501,11 @@ export async function grantInviteRewardForAttribution(attribution) {
         withdrawable,
         idempotency_key: idempotencyKey,
         status: "granted",
-        meta: { source: "invite_confirm" },
+        meta: {
+          source: "qualifying_order",
+          orderId: order?.id || null,
+          orderNo: order?.order_no || null,
+        },
       }),
     });
     ledgerRow = Array.isArray(rows) ? rows[0] : rows;
@@ -384,7 +517,6 @@ export async function grantInviteRewardForAttribution(attribution) {
     throw e;
   }
 
-  // Credit destination
   if (rewardType === "meow_coin") {
     await creditWallet({
       bossId: inviterId,
@@ -392,23 +524,28 @@ export async function grantInviteRewardForAttribution(attribution) {
       amount,
       balanceType: "bonus",
       idempotencyKey,
-      reason: "邀请确认奖励（喵币/赠送猫粮，不可提现）",
-      internalNote: `invite_attr:${attribution.id}`,
+      reason: "邀请达标奖励（猫粮/赠送，不可提现）",
+      internalNote: `invite_attr:${attribution.id};order:${order?.id || ""}`,
       operatorId: inviteeId,
     });
   } else {
-    const wallet = await ensureInviteCashWallet(inviterId);
-    const nextAvailable = money(wallet.available_amount) + amount;
-    const nextEarned = money(wallet.total_earned) + amount;
-    await supabaseJson(restUrl(CASH_WALLET_TABLE, `?user_id=eq.${encodeURIComponent(inviterId)}`), {
-      method: "PATCH",
-      headers: serviceHeaders({ Prefer: "return=minimal" }),
-      body: JSON.stringify({
-        available_amount: nextAvailable,
-        total_earned: nextEarned,
-        updated_at: nowIso(),
-      }),
-    });
+    await creditCompanionInviteIncome(inviterId, amount, attribution, order?.id || null);
+    // Mirror earned total on invite_cash_wallets for channel reporting ONLY — do not add
+    // available_amount (withdrawable SoT is companion_income ledger).
+    try {
+      const wallet = await ensureInviteCashWallet(inviterId);
+      const nextEarned = money(wallet.total_earned) + amount;
+      await supabaseJson(restUrl(CASH_WALLET_TABLE, `?user_id=eq.${encodeURIComponent(inviterId)}`), {
+        method: "PATCH",
+        headers: serviceHeaders({ Prefer: "return=minimal" }),
+        body: JSON.stringify({
+          total_earned: nextEarned,
+          updated_at: nowIso(),
+        }),
+      });
+    } catch (e) {
+      if (!isAttributionMissing(e)) console.warn("[invite-attr] cash wallet soft-fail", e?.message || e);
+    }
   }
 
   await supabaseJson(restUrl(ATTR_TABLE, `?id=eq.${encodeURIComponent(attribution.id)}`), {
@@ -418,12 +555,15 @@ export async function grantInviteRewardForAttribution(attribution) {
       reward_granted: true,
       reward_ledger_id: ledgerRow?.id || null,
       updated_at: nowIso(),
+      detail: `rewarded_via_order:${order?.id || ""}`,
     }),
   });
   await insertAttrEvent(attribution.id, "reward_granted", inviterId, {
     rewardType,
     amount,
     withdrawable,
+    orderId: order?.id || null,
+    idempotencyKey,
   });
 
   return {
@@ -433,12 +573,90 @@ export async function grantInviteRewardForAttribution(attribution) {
     withdrawable,
     currency,
     ledger: ledgerRow,
+    idempotencyKey,
   };
 }
 
 /**
- * Invitee confirms pending attribution → active relation + reward.
- * Ordinary users cannot rebind/unbind afterward (admin APIs still can).
+ * Sweep confirmed attributions awaiting reward — used when after-sale closes later.
+ */
+export async function sweepPendingInviteRewards({ limit = 40 } = {}) {
+  try {
+    if (!isBossInviteLinksEnabled()) return { ok: true, scanned: 0, granted: 0 };
+    const rows = await supabaseJson(
+      restUrl(
+        ATTR_TABLE,
+        `?status=eq.confirmed&reward_granted=eq.false&order=confirmed_at.asc&limit=${Math.max(1, Math.min(100, limit))}`
+      ),
+      { headers: serviceHeaders() }
+    ).catch((e) => {
+      if (isAttributionMissing(e)) return [];
+      throw e;
+    });
+    let granted = 0;
+    const details = [];
+    for (const attr of rows || []) {
+      const inviteeId = attr.invitee_user_id;
+      const inviterRole = String(attr.inviter_role || "");
+      let orderQuery =
+        inviterRole === "companion"
+          ? `?companion_id=eq.${encodeURIComponent(inviteeId)}&status=eq.completed&order=completed_at.asc&limit=20`
+          : `?boss_id=eq.${encodeURIComponent(inviteeId)}&status=eq.completed&order=completed_at.asc&limit=20`;
+      const orders = await supabaseJson(restUrl("orders", orderQuery), { headers: serviceHeaders() }).catch(
+        () => []
+      );
+      let hit = null;
+      for (const order of orders || []) {
+        const r = await grantInviteRewardForAttribution(attr, { order });
+        details.push({ attributionId: attr.id, orderId: order.id, ...r });
+        if (r.granted) {
+          granted += 1;
+          hit = r;
+          break;
+        }
+      }
+      if (!hit) details.push({ attributionId: attr.id, granted: false, reason: "no_qualifying_order_yet" });
+    }
+    return { ok: true, scanned: (rows || []).length, granted, details };
+  } catch (e) {
+    return { ok: false, error: String(e?.message || e).slice(0, 200) };
+  }
+}
+
+/**
+ * After order completion / after-sale close: try grant for boss or companion invitee.
+ * Safe NO-OP when ineligible. Never throws into order path.
+ */
+export async function maybeGrantInviteRewardForOrder(order) {
+  if (!order?.id) return { granted: false, reason: "missing_order" };
+  try {
+    if (!isBossInviteLinksEnabled()) return { granted: false, reason: "flag_disabled" };
+
+    const candidates = [];
+    if (order.boss_id) {
+      const a = await getConfirmedAttributionForInvitee(order.boss_id);
+      if (a && !a.reward_granted && String(a.inviter_role) !== "companion") candidates.push(a);
+    }
+    if (order.companion_id) {
+      const a = await getConfirmedAttributionForInvitee(order.companion_id);
+      if (a && !a.reward_granted && String(a.inviter_role) === "companion") candidates.push(a);
+    }
+    if (!candidates.length) return { granted: false, reason: "no_pending_reward_attribution" };
+
+    const results = [];
+    for (const attr of candidates) {
+      results.push(await grantInviteRewardForAttribution(attr, { order }));
+    }
+    const granted = results.find((r) => r.granted);
+    return granted || results[0] || { granted: false, reason: "not_eligible" };
+  } catch (e) {
+    console.warn("[invite-attr] maybeGrant soft-fail", e?.message || e);
+    return { granted: false, reason: "error", detail: String(e?.message || e).slice(0, 200) };
+  }
+}
+
+/**
+ * Invitee confirms pending attribution → active relation ONLY (no reward yet).
  */
 export async function confirmInviteAttribution({
   inviteeUserId,
@@ -458,7 +676,6 @@ export async function confirmInviteAttribution({
     attr = Array.isArray(rows) ? rows[0] : null;
   } else {
     attr = await getPendingAttributionForInvitee(inviteeUserId);
-    // Idempotent retry: no pending left → treat existing confirmed as success (no second reward).
     if (!attr) {
       const confirmedExisting = await getConfirmedAttributionForInvitee(inviteeUserId);
       if (confirmedExisting) {
@@ -466,7 +683,7 @@ export async function confirmInviteAttribution({
           ok: true,
           alreadyConfirmed: true,
           attribution: viewAttribution(confirmedExisting),
-          reward: { granted: false, duplicate: true },
+          reward: { granted: false, pending: "awaiting_qualifying_order", duplicate: true },
         };
       }
     }
@@ -480,14 +697,17 @@ export async function confirmInviteAttribution({
       ok: true,
       alreadyConfirmed: true,
       attribution: viewAttribution(attr),
-      reward: { granted: false, duplicate: true },
+      reward: {
+        granted: false,
+        pending: attr.reward_granted ? null : "awaiting_qualifying_order",
+        duplicate: true,
+      },
     };
   }
   if (String(attr.status) !== "pending") {
     throw httpError("邀请状态不可确认：" + attr.status, 400, { code: "BAD_STATUS" });
   }
 
-  // Create/ensure active relation: beneficiary=inviter, target=invitee (#185 SoT columns).
   let relationId = null;
   let relationResult = null;
   try {
@@ -507,8 +727,6 @@ export async function confirmInviteAttribution({
         remark: `invite_confirm:${attr.invite_code}`,
         reason: `invite_confirm:${attr.invite_code}`,
         commissionRate: null,
-        // Invite confirm may bind before full companion capability; allow when inviter is boss
-        // and invitee will be treated as target. For companion inviter, still write SoT row.
         skipCapabilityCheck: true,
       });
       relationId = relationResult?.relation?.id || null;
@@ -538,14 +756,16 @@ export async function confirmInviteAttribution({
         confirmed_at: nowIso(),
         relation_id: relationId,
         updated_at: nowIso(),
+        detail: "confirmed_awaiting_qualifying_order",
       }),
     }
   );
-  const confirmed = Array.isArray(patched) ? patched[0] : patched || { ...attr, status: "confirmed", relation_id: relationId };
+  const confirmed = Array.isArray(patched)
+    ? patched[0]
+    : patched || { ...attr, status: "confirmed", relation_id: relationId };
 
   await insertAttrEvent(attr.id, "confirm", inviteeUserId, { relationId });
 
-  // Bump invite link use_count once on confirm (not on recognize).
   if (attr.invite_link_id) {
     try {
       const links = await supabaseJson(
@@ -568,14 +788,16 @@ export async function confirmInviteAttribution({
     }
   }
 
-  const reward = await grantInviteRewardForAttribution(confirmed);
-
   return {
     ok: true,
     alreadyConfirmed: false,
     attribution: viewAttribution(confirmed),
     relationId,
-    reward,
+    reward: {
+      granted: false,
+      pending: "awaiting_qualifying_order",
+      message: "绑定成功。邀请奖励将在被邀请方完成首笔真实有效订单且售后关闭、无退款后发放。",
+    },
   };
 }
 
@@ -592,14 +814,21 @@ export async function rejectInviteAttribution({ inviteeUserId, attributionId = "
     attr = await getPendingAttributionForInvitee(inviteeUserId);
   }
   if (!attr) throw httpError("没有待确认的邀请", 404);
-  if (String(attr.invitee_user_id) !== String(inviteeUserId)) throw httpError("禁止", 403);
-  if (String(attr.status) !== "pending") throw httpError("状态不可拒绝", 400);
-
-  await supabaseJson(restUrl(ATTR_TABLE, `?id=eq.${encodeURIComponent(attr.id)}`), {
+  if (String(attr.invitee_user_id) !== String(inviteeUserId)) {
+    throw httpError("只能拒绝自己的邀请关系", 403);
+  }
+  if (String(attr.status) !== "pending") {
+    return { ok: true, attribution: viewAttribution(attr), already: true };
+  }
+  const patched = await supabaseJson(restUrl(ATTR_TABLE, `?id=eq.${encodeURIComponent(attr.id)}`), {
     method: "PATCH",
-    headers: serviceHeaders({ Prefer: "return=minimal" }),
-    body: JSON.stringify({ status: "rejected", rejected_at: nowIso(), updated_at: nowIso() }),
+    headers: serviceHeaders({ Prefer: "return=representation" }),
+    body: JSON.stringify({
+      status: "rejected",
+      rejected_at: nowIso(),
+      updated_at: nowIso(),
+    }),
   });
   await insertAttrEvent(attr.id, "reject", inviteeUserId, {});
-  return { ok: true };
+  return { ok: true, attribution: viewAttribution(Array.isArray(patched) ? patched[0] : patched) };
 }

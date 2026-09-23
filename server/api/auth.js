@@ -45,6 +45,7 @@ import {
   shouldBlockTestIdentityOnProduction,
   stampTestAccountPayload,
   stampTestUserMetadata,
+  isStagingOrganicEmail,
 } from "./_test-accounts.js";
 
 function opaqueSystemPassword() {
@@ -845,12 +846,18 @@ async function handleForgotSendOtp(body, res) {
     role,
     requestId,
   };
-  if (payload.ok) responseBody.retryAfterSec = otpRetryAfterSec();
-  return json(res, payload.ok ? 200 : 503, responseBody);
+  if (allowDebugOtp() && isStagingOrganicEmail(email) && (payload.ok || mailOk)) {
+    responseBody.ok = true;
+    responseBody.debugCode = code;
+    responseBody.devCode = code;
+    responseBody.organicDebug = true;
+  }
+  if (payload.ok || responseBody.organicDebug) responseBody.retryAfterSec = otpRetryAfterSec();
+  return json(res, responseBody.ok ? 200 : 503, responseBody);
 }
 
-function rejectProductionTestIdentity(res, { email = "", displayName = "" } = {}) {
-  if (!shouldBlockTestIdentityOnProduction({ email, displayName })) return null;
+function rejectProductionTestIdentity(res, { email = "", displayName = "", profile = null, authUser = null } = {}) {
+  if (!shouldBlockTestIdentityOnProduction({ email, displayName, profile, authUser })) return null;
   return json(res, 403, {
     ok: false,
     message: PROD_TEST_ACCOUNT_BLOCK_MESSAGE,
@@ -1426,6 +1433,12 @@ async function handleSendRegisterOtp(body, res) {
     payload.message = "邮件暂不可用，已生成本地调试验证码。";
     payload.debugCode = code;
     payload.devCode = code;
+  }
+  // Staging organic acceptance: always return debug OTP (mail may succeed to .invalid sinks).
+  if (allowDebugOtp() && isStagingOrganicEmail(email) && payload.ok) {
+    payload.debugCode = code;
+    payload.devCode = code;
+    payload.organicDebug = true;
   }
   const responseBody = {
     ...payload,
@@ -2552,6 +2565,13 @@ export default async function handler(req, res) {
     const authUser = auth.user;
     let profile = await profileFor(authUser.id);
     if (!profile) return json(res, 403, { ok: false, message: "账号未绑定平台资料，请联系管理员。" });
+    const blockedProfile = rejectProductionTestIdentity(res, {
+      email: profile.email || email,
+      displayName: profile.display_name || "",
+      profile,
+      authUser,
+    });
+    if (blockedProfile) return blockedProfile;
     try {
       assertEmailVerifiedOrThrow(profile, authUser);
     } catch (err) {

@@ -225,8 +225,8 @@ async function giftCommissionRate(companionRow) {
 }
 
 async function creditCompanionIncome(companionId, amount, note, relatedId) {
-  if (amount <= 0) return;
-  await supabaseJson(rest("transactions"), {
+  if (amount <= 0) return null;
+  const rows = await supabaseJson(rest("transactions"), {
     method: "POST",
     headers: serviceHeaders(),
     body: JSON.stringify({
@@ -235,10 +235,11 @@ async function creditCompanionIncome(companionId, amount, note, relatedId) {
       transaction_type: "companion_income",
       amount,
       status: "completed",
-      note: note || "礼物/打赏收益",
+      note: note || "礼物收益",
       created_at: nowIso(),
     }),
   });
+  return Array.isArray(rows) ? rows[0] || null : rows;
 }
 
 export default async function handler(req, res) {
@@ -679,9 +680,11 @@ export default async function handler(req, res) {
       const commissionAmount = Math.round(gross * (rate / 100) * 100) / 100;
       const companionIncome = Math.round((gross - commissionAmount) * 100) / 100;
       const message = String(body.message || "").trim();
+      const unitPrice = quantity > 0 ? money(gross / quantity) : gross;
 
+      let walletDebit = null;
       try {
-        await debitWallet({
+        walletDebit = await debitWallet({
           bossId: boss.id,
           amount: gross,
           transactionType: action === "send_gift" ? "gift" : "tip",
@@ -700,7 +703,7 @@ export default async function handler(req, res) {
         }
         // If transaction type not allowed by wallet RPC, retry as order_payment-like
         try {
-          await debitWallet({
+          walletDebit = await debitWallet({
             bossId: boss.id,
             amount: gross,
             transactionType: "order_payment",
@@ -721,32 +724,72 @@ export default async function handler(req, res) {
         }
       }
 
-      // Classify as reward_other (gift), never settlement ledger / companion order income.
-      await creditCompanionIncome(companionId, companionIncome, `礼物收益：${giftName || "礼物"}`, null);
+      // Gift net → companion earnings (source=gift). Never MCJ_SETTLEMENT / order_income.
+      const giftNote = `礼物收益：${giftName || "礼物"} MCJ_GIFT:${JSON.stringify({
+        source: "gift",
+        giftName: giftName || "礼物",
+        qty: quantity,
+        gross,
+        platformCommission: commissionAmount,
+        net: companionIncome,
+        paymentMethod: "catfood",
+      })}`;
+      const incomeTx = await creditCompanionIncome(companionId, companionIncome, giftNote, null);
+      const walletTxId =
+        walletDebit?.id ||
+        walletDebit?.transaction_id ||
+        (Array.isArray(walletDebit) ? walletDebit[0]?.id : null) ||
+        null;
 
       let tx = null;
       try {
-        const rows = await companionDb("gift_transactions", "", {
-          method: "POST",
-          body: JSON.stringify({
-            tx_no: no("GIFT"),
-            sender_boss_id: boss.id,
-            receiver_companion_id: companionId,
-            gift_id: giftId,
-            gift_name: giftName,
-            quantity,
-            gross_cat_food: gross,
-            platform_commission_rate: rate,
-            platform_commission_amount: commissionAmount,
-            companion_income: companionIncome,
-            message,
-            related_order_id: body.relatedOrderId || null,
-            kind: action === "send_gift" ? "gift" : "tip",
-            idempotency_key: idempotencyKey,
-            created_at: nowIso(),
-          }),
-        });
-        tx = rows?.[0] || null;
+        let payload = {
+          tx_no: no("GIFT"),
+          sender_boss_id: boss.id,
+          receiver_companion_id: companionId,
+          gift_id: giftId,
+          gift_name: giftName,
+          quantity,
+          unit_price: unitPrice,
+          gross_cat_food: gross,
+          gross_amount: gross,
+          platform_commission_rate: rate,
+          platform_commission_amount: commissionAmount,
+          platform_commission: commissionAmount,
+          companion_income: companionIncome,
+          net_companion_income: companionIncome,
+          message,
+          related_order_id: body.relatedOrderId || null,
+          kind: action === "send_gift" ? "gift" : "tip",
+          idempotency_key: idempotencyKey,
+          fulfillment_status: "completed",
+          gift_image_url: giftIconUrl || "",
+          payment_method: "catfood",
+          payment_status: "paid",
+          approval_status: "auto",
+          wallet_transaction_id: walletTxId,
+          settlement_transaction_id: incomeTx?.id || null,
+          delivered_at: nowIso(),
+          created_at: nowIso(),
+        };
+        for (let attempt = 0; attempt < 12; attempt++) {
+          try {
+            const rows = await companionDb("gift_transactions", "", {
+              method: "POST",
+              body: JSON.stringify(payload),
+            });
+            tx = rows?.[0] || null;
+            break;
+          } catch (err) {
+            const msg = `${err?.message || ""} ${JSON.stringify(err?.body || "")}`;
+            const m = msg.match(/Could not find the '([^']+)' column/i);
+            if (m && m[1] in payload) {
+              delete payload[m[1]];
+              continue;
+            }
+            throw err;
+          }
+        }
       } catch (e) {
         if (!isMissingRelation(e)) throw e;
       }
@@ -778,6 +821,7 @@ export default async function handler(req, res) {
           companionIncome,
           giftName,
           quantity,
+          paymentMethod: "catfood",
         },
       });
     }

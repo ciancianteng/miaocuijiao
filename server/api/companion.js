@@ -303,6 +303,19 @@ function parseSettlementNote(note) {
     return null;
   }
 }
+function parseGiftNote(note) {
+  const text = String(note || "");
+  const idx = text.indexOf("MCJ_GIFT:");
+  if (idx === -1) {
+    const m = text.match(/礼物收益[：:]\s*(.+)$/);
+    return m ? { giftName: String(m[1] || "").trim() } : null;
+  }
+  try {
+    return JSON.parse(text.slice(idx + "MCJ_GIFT:".length));
+  } catch {
+    return null;
+  }
+}
 function findLevelForCompanion(levels, companion = {}) {
   const list = Array.isArray(levels) ? levels : [];
   const id = String(companion.level_id || "").trim();
@@ -1852,22 +1865,27 @@ async function ordersForIncomeTransactions(transactions = [], myOrders = []) {
       id: String(id),
       status: o.status || o.orderStatus || "",
       order_no: o.orderNo || o.order_no || "",
+      // Keep unlock SoT fields — missing completed_at forces permanent earnings lock.
+      completed_at: o.completedAt || o.completed_at || "",
+      completion_method: o.completionMethod || o.completion_method || "",
+      cancelled_at: o.cancelledAt || o.cancelled_at || "",
     });
   }
-  const missing = [];
-  for (const tx of transactions || []) {
-    if (String(tx.transaction_type || "") !== "companion_income") continue;
-    const oid = tx.order_id ? String(tx.order_id) : "";
-    if (!oid || byId.has(oid)) continue;
-    missing.push(oid);
-  }
-  const uniq = [...new Set(missing)].slice(0, 80);
-  if (uniq.length) {
+  // Always refresh from DB for companion_income order ids so SoT completed_at wins
+  // (myOrders seed alone previously omitted completed_at → permanent lock).
+  const incomeOids = [
+    ...new Set(
+      (transactions || [])
+        .filter((tx) => String(tx.transaction_type || "") === "companion_income" && tx.order_id)
+        .map((tx) => String(tx.order_id))
+    ),
+  ].slice(0, 120);
+  if (incomeOids.length) {
     try {
       const rows = await supabaseJson(
         restUrl(
           "orders",
-          `?id=in.(${uniq.map(encodeURIComponent).join(",")})&select=id,status,order_no,companion_id,completed_at,cancelled_at`
+          `?id=in.(${incomeOids.map(encodeURIComponent).join(",")})&select=id,status,order_no,companion_id,completed_at,cancelled_at,completion_method`
         ),
         { headers: serviceHeaders() }
       );
@@ -1875,7 +1893,7 @@ async function ordersForIncomeTransactions(transactions = [], myOrders = []) {
         byId.set(String(row.id), row);
       }
     } catch {
-      /* soft-fail: missing order => settlement income treated as void */
+      /* soft-fail: keep myOrders seed */
     }
   }
   return [...byId.values()];
@@ -1902,6 +1920,8 @@ async function loadWalletBundle(profile, myOrders = []) {
   const summary = summaryFrom(myOrders, transactions, withdrawalRows, linkedOrders);
   const incomeKindById = new Map();
   for (const tx of partitioned.orderIncome) incomeKindById.set(String(tx.id), "order_income");
+  for (const tx of partitioned.giftIncome || []) incomeKindById.set(String(tx.id), "gift_income");
+  for (const tx of partitioned.inviteIncome || []) incomeKindById.set(String(tx.id), "invite_income");
   for (const tx of partitioned.rewardOther) incomeKindById.set(String(tx.id), "reward_other");
   for (const item of partitioned.voided) incomeKindById.set(String(item.tx.id), "void");
 
@@ -1958,19 +1978,91 @@ async function loadWalletBundle(profile, myOrders = []) {
     String(b.createdAt || "").localeCompare(String(a.createdAt || ""))
   );
   const earningDetails = ledgerFromTx
-    .filter((row) => row.typeCode === "companion_income" && row.incomeKind === "order_income")
+    .filter(
+      (row) =>
+        row.typeCode === "companion_income" &&
+        (row.incomeKind === "order_income" ||
+          row.incomeKind === "gift_income" ||
+          row.incomeKind === "invite_income")
+    )
     .map((row) => {
       const settlement = row.settlement || parseSettlementNote(row.note) || {};
+      const giftMeta = parseGiftNote(row.note) || {};
+      const kindLabel =
+        row.incomeKind === "gift_income"
+          ? "礼物净收入"
+          : row.incomeKind === "invite_income"
+            ? "邀请佣金"
+            : row.type || "订单收入";
       return {
         ...row,
-        orderNo: settlement.orderNo || settlement.order_no || "",
-        grossAmount: money(settlement.orderAmountCatFood || settlement.gross || row.amount),
-        platformFee: money(settlement.platformCommissionCatFood || settlement.platformFee || 0),
-        netIncome: money(settlement.companionNetCatFood || row.amount),
+        type: kindLabel,
+        orderNo: settlement.orderNo || settlement.order_no || giftMeta.giftName || "",
+        grossAmount: money(
+          settlement.orderAmountCatFood ||
+            settlement.gross ||
+            giftMeta.gross ||
+            row.amount
+        ),
+        platformFee: money(
+          settlement.platformCommissionCatFood ||
+            settlement.platformFee ||
+            giftMeta.platformCommission ||
+            0
+        ),
+        netIncome: money(settlement.companionNetCatFood || giftMeta.net || row.amount),
         statusText: row.status === "completed" ? "已完成" : row.status === "pending" ? "待处理" : row.status || "-",
       };
     });
   const bonus = sumTxAmount(partitioned.rewardOther);
+  let inviteCash = {
+    available: 0,
+    pending: 0,
+    frozen: 0,
+    totalEarned: 0,
+    totalWithdrawn: 0,
+  };
+  try {
+    const cashRows = await companionDb(
+      "invite_cash_wallets",
+      `?user_id=eq.${encodeURIComponent(profile.id)}&limit=1`
+    ).catch(() => []);
+    const cash = cashRows?.[0];
+    if (cash) {
+      inviteCash = {
+        available: money(cash.available_amount),
+        pending: money(cash.pending_amount),
+        frozen: money(cash.frozen_amount),
+        totalEarned: money(cash.total_earned),
+        totalWithdrawn: money(cash.total_withdrawn),
+      };
+    }
+  } catch {
+    /* optional invite cash channel */
+  }
+  let giftGrossTotal = 0;
+  let giftCommissionTotal = 0;
+  let giftNetTotal = money(summary.giftIncome || 0);
+  try {
+    const giftTxRows = await companionDb(
+      "gift_transactions",
+      `?receiver_companion_id=eq.${encodeURIComponent(profile.id)}&order=created_at.desc&limit=500`
+    ).catch(() => []);
+    if (giftTxRows?.length) {
+      giftGrossTotal = 0;
+      giftCommissionTotal = 0;
+      giftNetTotal = 0;
+      for (const g of giftTxRows) {
+        giftGrossTotal = money(giftGrossTotal + money(g.gross_amount ?? g.gross_cat_food));
+        giftCommissionTotal = money(
+          giftCommissionTotal + money(g.platform_commission ?? g.platform_commission_amount)
+        );
+        giftNetTotal = money(giftNetTotal + money(g.net_companion_income ?? g.companion_income));
+      }
+    }
+  } catch {
+    /* gift_transactions optional until migration */
+  }
   return {
     transactions,
     withdrawalRows,
@@ -1983,16 +2075,36 @@ async function loadWalletBundle(profile, myOrders = []) {
       weekIncome: summary.weekIncome || 0,
       monthIncome: summary.monthIncome || 0,
       totalIncome: summary.totalIncome || 0,
+      orderIncome: summary.orderIncome || 0,
+      giftIncome: summary.giftIncome || 0,
+      giftGross: giftGrossTotal,
+      giftCommission: giftCommissionTotal,
+      giftNetIncome: giftNetTotal || summary.giftIncome || 0,
+      inviteIncome: money((summary.inviteIncome || 0) + inviteCash.totalEarned),
+      inviteCash,
       earningsLocked: summary.earningsLocked || 0,
       withdrawable: summary.withdrawable || 0,
       available: summary.withdrawable || 0,
+      availableWithdrawable: summary.withdrawable || 0,
       frozen: summary.frozen || 0,
+      withdrawalLocked: summary.frozen || 0,
       pendingSettlement: summary.pendingSettlement || 0,
       withdrawn: summary.withdrawn || 0,
+      withdrawnTotal: summary.withdrawn || 0,
       bonus,
       reward: bonus,
       rewardWithdrawable: false,
-      rewardNote: "奖励/其它不计入订单收入，默认不可作为陪玩订单提现额度。",
+      rewardNote: "奖励/其它不计入订单/礼物收入，默认不可提现。礼物净收入可提现。",
+      channels: {
+        orderIncome: summary.orderIncome || 0,
+        giftGross: giftGrossTotal,
+        giftCommission: giftCommissionTotal,
+        giftNetIncome: giftNetTotal || summary.giftIncome || 0,
+        inviteCommission: money((summary.inviteIncome || 0) + inviteCash.available),
+        withdrawalLocked: summary.frozen || 0,
+        withdrawn: summary.withdrawn || 0,
+        availableWithdrawable: summary.withdrawable || 0,
+      },
     },
     warnings,
   };
@@ -2008,11 +2120,13 @@ function summaryFrom(myOrders, transactions, withdrawals = [], linkedOrders = []
     return d.toISOString().slice(0, 10);
   })();
   const ordersForMap = linkedOrders && linkedOrders.length ? linkedOrders : myOrders;
-  const { orderIncome, rewardOther, orderMap } = partitionCompanionIncome(
+  const { orderIncome, giftIncome, inviteIncome, rewardOther, orderMap } = partitionCompanionIncome(
     transactions,
     ordersForMap
   );
   const incomeRows = orderIncome;
+  const giftRows = giftIncome || [];
+  const inviteRows = inviteIncome || [];
   const orderIncomeIds = new Set(incomeRows.map((r) => String(r.order_id || "")).filter(Boolean));
   const refundRows = (transactions || []).filter((row) => {
     if (row.transaction_type !== "refund" || row.status === "cancelled") return false;
@@ -2020,22 +2134,30 @@ function summaryFrom(myOrders, transactions, withdrawals = [], linkedOrders = []
     if (!oid) return true;
     return orderIncomeIds.has(oid);
   });
+  // §8 freeze: in-flight withdrawals lock balance until REJECTED / CANCELED / PAID settles.
   const frozen = (withdrawals || [])
     .filter((w) => WITHDRAW_FROZEN.has(w.status))
-    .reduce((n, w) => n + money(w.cat_food_amount), 0);
+    .reduce((n, w) => n + money(w.cat_food_amount || w.amount), 0);
   const withdrawn = (withdrawals || [])
     .filter((w) => w.status === "completed")
-    .reduce((n, w) => n + money(w.cat_food_amount), 0);
+    .reduce((n, w) => n + money(w.cat_food_amount || w.amount), 0);
+  // Withdrawal-locked + already-withdrawn must both reduce available (never double-spend).
   const locked = (withdrawals || [])
     .filter((w) => WITHDRAW_ACTIVE.has(w.status))
-    .reduce((n, w) => n + money(w.cat_food_amount), 0);
-  const gross = incomeRows.reduce((n, row) => n + money(row.amount), 0);
+    .reduce((n, w) => n + money(w.cat_food_amount || w.amount), 0);
+  const orderGross = incomeRows.reduce((n, row) => n + money(row.amount), 0);
+  const giftGross = giftRows.reduce((n, row) => n + money(row.amount), 0);
+  const inviteGross = inviteRows.reduce((n, row) => n + money(row.amount), 0);
   const refundTotal = refundRows.reduce((n, row) => n + money(row.amount), 0);
-  const netGross = Math.max(0, roundMoney(gross - refundTotal));
+  const orderNet = Math.max(0, roundMoney(orderGross - refundTotal));
+  // Gift + invite catfood ledger rows enter withdrawable (source kept via incomeKind).
+  // Order income still subject to #294 completed_at+24h lock below.
+  const withdrawableBase = Math.max(0, roundMoney(orderNet + giftGross + inviteGross));
   const bonus = sumTxAmount(rewardOther);
-  const sumIncomeOn = (pred) => incomeRows.filter(pred).reduce((n, row) => n + money(row.amount), 0);
+  const sumIncomeOn = (pred) =>
+    [...incomeRows, ...giftRows, ...inviteRows].filter(pred).reduce((n, row) => n + money(row.amount), 0);
 
-  // Owner lock: companion income unlocks only at completed_at + 24h (server-side).
+  // Owner lock: order income unlocks only at completed_at + 24h. Gift/invite unlock immediately.
   let earningsLocked = 0;
   try {
     const { locked: lockedRows } = splitCompanionIncomeByWithdrawLock(incomeRows, orderMap, Date.now());
@@ -2049,7 +2171,7 @@ function summaryFrom(myOrders, transactions, withdrawals = [], linkedOrders = []
     earningsLocked = 0;
   }
 
-  const withdrawable = Math.max(0, roundMoney(netGross - earningsLocked - locked));
+  const withdrawable = Math.max(0, roundMoney(withdrawableBase - earningsLocked - locked));
   return {
     todayOrders: myOrders.filter((o) => String(o.createdAt || "").slice(0,10) === today).length,
     waitingConfirm: myOrders.filter((o) => o.status === "claimed").length,
@@ -2065,7 +2187,10 @@ function summaryFrom(myOrders, transactions, withdrawals = [], linkedOrders = []
       .filter((o) => ["claimed", "confirmed", "in_progress"].includes(o.status) && String(o.createdAt || "").slice(0, 10) === today)
       .reduce((n, o) => n + money(o.playerIncome), 0),
     monthIncome: sumIncomeOn((row) => String(row.created_at || "").slice(0, 7) === month),
-    totalIncome: netGross,
+    totalIncome: withdrawableBase,
+    orderIncome: orderNet,
+    giftIncome: giftGross,
+    inviteIncome: inviteGross,
     earningsLocked,
     bonus,
     reward: bonus,
@@ -2665,20 +2790,38 @@ async function bootstrapData(profile, companion) {
     earnings: permissions.isolationMode
       ? emptyWalletBundle().earnings
       : {
+          ...(earnings || {}),
           todayIncome: summary.todayIncome || 0,
-          yesterdayIncome: summary.yesterdayIncome || 0,
-          weekIncome: summary.weekIncome || 0,
+          yesterdayIncome: summary.yesterdayIncome || earnings?.yesterdayIncome || 0,
+          weekIncome: summary.weekIncome || earnings?.weekIncome || 0,
           monthIncome: summary.monthIncome || 0,
           totalIncome: summary.totalIncome || 0,
+          orderIncome: summary.orderIncome ?? earnings?.orderIncome ?? 0,
+          giftIncome: summary.giftIncome ?? earnings?.giftIncome ?? 0,
+          inviteIncome: summary.inviteIncome ?? earnings?.inviteIncome ?? 0,
+          earningsLocked: summary.earningsLocked ?? earnings?.earningsLocked ?? 0,
           withdrawable: summary.withdrawable || 0,
           available: summary.withdrawable || 0,
+          availableWithdrawable: summary.withdrawable || 0,
           frozen: summary.frozen || 0,
+          withdrawalLocked: summary.frozen || 0,
           pendingSettlement: summary.pendingSettlement || 0,
           withdrawn: summary.withdrawn || 0,
+          withdrawnTotal: summary.withdrawn || 0,
           bonus: summary.bonus || earnings?.bonus || 0,
           reward: summary.reward || earnings?.reward || 0,
           rewardWithdrawable: false,
-          rewardNote: earnings?.rewardNote || "奖励/其它不计入订单收入，默认不可作为陪玩订单提现额度。",
+          rewardNote:
+            earnings?.rewardNote ||
+            "奖励/其它不计入订单/礼物收入，默认不可提现。礼物净收入可提现。",
+          channels: earnings?.channels || {
+            orderIncome: summary.orderIncome || 0,
+            giftNetIncome: summary.giftIncome || 0,
+            inviteCommission: summary.inviteIncome || 0,
+            withdrawalLocked: summary.frozen || 0,
+            withdrawn: summary.withdrawn || 0,
+            availableWithdrawable: summary.withdrawable || 0,
+          },
         },
     earningDetails: permissions.isolationMode ? [] : earningDetails,
     walletLedger: permissions.isolationMode ? [] : walletLedger,
@@ -6294,8 +6437,52 @@ return json(res, 200, {
       };
       let item = null;
       {
-        let payload = { ...withdrawalPayload };
-        for (let attempt = 0; attempt < 8; attempt++) {
+        // Staging/Prod may enforce companion_withdrawals_stream_alloc_sum:
+        // order+gift(+invite) stream columns must equal cat_food_amount.
+        const giftWithdrawable = money(
+          data?.earnings?.giftNetIncome ??
+            data?.earnings?.giftIncome ??
+            data?.summary?.giftIncome ??
+            data?.channels?.giftNetIncome ??
+            0
+        );
+        const orderWithdrawable = money(
+          data?.earnings?.availableOrderIncome ??
+            data?.earnings?.orderUnlocked ??
+            data?.channels?.orderIncome ??
+            0
+        );
+        let giftAlloc = Math.min(amount, Math.max(0, giftWithdrawable));
+        let orderAlloc = Math.min(Math.max(0, amount - giftAlloc), Math.max(0, orderWithdrawable));
+        let inviteAlloc = money(amount - giftAlloc - orderAlloc);
+        if (inviteAlloc < 0) inviteAlloc = 0;
+        // If channel balances unknown/stale, attribute remaining to gift (immediate unlock stream).
+        const allocated = money(giftAlloc + orderAlloc + inviteAlloc);
+        if (allocated < amount) giftAlloc = money(giftAlloc + (amount - allocated));
+        if (money(giftAlloc + orderAlloc + inviteAlloc) !== amount) {
+          giftAlloc = amount;
+          orderAlloc = 0;
+          inviteAlloc = 0;
+        }
+        const streamSets = [
+          {
+            service_income_withdrawn_amount: money(orderAlloc + giftAlloc),
+            referral_rebate_withdrawn_amount: inviteAlloc,
+          },
+          {
+            service_income_withdrawn_amount: amount,
+            referral_rebate_withdrawn_amount: 0,
+          },
+          {
+            service_income_withdrawn_amount: giftAlloc,
+            referral_rebate_withdrawn_amount: money(Math.max(0, amount - giftAlloc)),
+          },
+        ];
+        // Default first attempt includes Staging stream alloc columns (service + referral).
+        let payload = { ...withdrawalPayload, ...streamSets[0] };
+        let streamIdx = 0;
+        let lastErr = "";
+        for (let attempt = 0; attempt < 24; attempt++) {
           try {
             const rows = await companionDb("companion_withdrawals", "", {
               method: "POST",
@@ -6305,15 +6492,37 @@ return json(res, 200, {
             break;
           } catch (error) {
             const msg = `${error?.message || ""} ${JSON.stringify(error?.body || "")}`;
+            lastErr = msg.slice(0, 500);
             if (/companion_withdrawals|schema cache|PGRST/i.test(msg) && /Could not find the table/i.test(msg)) {
               return json(res, 503, {
                 ok: false,
                 message: "提现表未就绪，请稍后重试或联系管理员执行数据库迁移",
               });
             }
+            if (/stream_alloc_sum/i.test(msg)) {
+              streamIdx += 1;
+              if (streamIdx >= streamSets.length) {
+                return json(res, 500, {
+                  ok: false,
+                  message: "提现申请写入失败：stream_alloc 约束未满足",
+                  detail: lastErr.slice(0, 400),
+                });
+              }
+              payload = { ...withdrawalPayload, ...streamSets[streamIdx] };
+              continue;
+            }
             const m = msg.match(/Could not find the '([^']+)' column/i);
-            if (!m || !(m[1] in payload)) throw error;
-            delete payload[m[1]];
+            if (m && m[1] in payload) {
+              delete payload[m[1]];
+              // If this stream set has no remaining alloc keys, advance.
+              const allocLeft = Object.keys(payload).some((k) => /alloc|stream|gift_cat|order_cat|invite_cat/i.test(k));
+              if (!allocLeft && streamIdx + 1 < streamSets.length && streamIdx > 0) {
+                streamIdx += 1;
+                payload = { ...withdrawalPayload, ...streamSets[streamIdx] };
+              }
+              continue;
+            }
+            throw error;
           }
         }
       }
@@ -6338,9 +6547,13 @@ return json(res, 200, {
         if (freezeTxId && item?.id) {
           await companionDb("companion_withdrawals", `?id=eq.${encodeURIComponent(item.id)}`, {
             method: "PATCH",
-            body: JSON.stringify({ freeze_tx_id: freezeTxId, updated_at: nowIso() }),
+            body: JSON.stringify({
+              freeze_tx_id: freezeTxId,
+              transaction_id: freezeTxId,
+              updated_at: nowIso(),
+            }),
           }).catch(() => null);
-          item = { ...item, freeze_tx_id: freezeTxId };
+          item = { ...item, freeze_tx_id: freezeTxId, transaction_id: freezeTxId };
         }
       } catch {
         /* ledger marker optional */

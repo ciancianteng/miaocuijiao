@@ -28,12 +28,15 @@ assert.match(attr, /recognizeInviteAttribution/);
 assert.match(attr, /confirmInviteAttribution/);
 assert.match(attr, /grantInviteRewardForAttribution/);
 assert.match(attr, /meow_coin/);
-assert.match(attr, /invite_cash_wallets/);
-assert.match(attr, /invite_reward/);
-assert.match(attr, /inviterRole === "companion"/);
+assert.match(attr, /invite_cash_wallets|MCJ_INVITE/);
+assert.match(attr, /invite_reward|referral_reward/);
+assert.match(attr, /inviterRole === "companion"|inviter_role === "companion"|rewardType === "cash"/);
+assert.match(attr, /awaiting_qualifying_order/);
 // Must NOT invent parallel relation SoT name as primary
 assert.doesNotMatch(attr, /direct_invite_relations/);
 assert.doesNotMatch(attr, /referral_relations/);
+// Confirm must not grant immediately
+assert.doesNotMatch(attr, /const reward = await grantInviteRewardForAttribution\(confirmed\)/);
 
 const links = read("server/api/_boss-invite-links.js");
 assert.match(links, /recognizeInviteAttribution/);
