@@ -375,15 +375,16 @@
     );
   }
   function childLineMeta(ch) {
-    var hours = money(childField(ch, ["hours", "duration"], 0)) || money(parseDescSnapshot(ch, "时长")) || 1;
+    var hoursRaw = childField(ch, ["hours", "duration"], "") || parseDescSnapshot(ch, "时长") || "1";
+    var hours = Number(String(hoursRaw).replace(/[^\d.-]/g, ""));
+    if (!(hours > 0)) hours = 1;
     var unit =
-      money(childField(ch, ["unitPrice", "unit_price"], 0)) ||
-      money(parseDescSnapshot(ch, "单价快照")) ||
-      money(parseDescSnapshot(ch, "单价")) ||
+      Number(childField(ch, ["unitPrice", "unit_price"], 0)) ||
+      Number(String(parseDescSnapshot(ch, "单价快照") || parseDescSnapshot(ch, "单价") || "").replace(/[^\d.-]/g, "")) ||
       0;
     var sub =
-      money(childField(ch, ["totalAmount", "total_amount", "amount"], 0)) ||
-      money(parseDescSnapshot(ch, "小计快照")) ||
+      Number(childField(ch, ["totalAmount", "total_amount", "amount"], 0)) ||
+      Number(String(parseDescSnapshot(ch, "小计快照") || "").replace(/[^\d.-]/g, "")) ||
       (unit > 0 ? Math.round(unit * hours * 100) / 100 : 0);
     var service =
       childField(ch, ["serviceType", "service_type", "serviceName", "service_name", "title"], "") ||
