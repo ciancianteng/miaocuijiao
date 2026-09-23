@@ -520,10 +520,7 @@
     base.isMultiGroupParent = true;
     base.orderTypeKey = base.orderTypeKey || base.order_type || "multi_group";
     base.order_type = base.order_type || base.orderTypeKey || "multi_group";
-    if (!base.paymentMethod && !base.payment_method) {
-      base.paymentMethod = "catfood";
-      base.payment_method = "catfood";
-    }
+    // Never invent catfood — missing method must stay blank until live API fills it.
     return base;
   }
 
@@ -531,12 +528,12 @@
   function multiPayInfoHtml(order) {
     if (!isMultiParent(order) || !isPrePay(order)) return "";
     var method = methodLabel(order);
-    var raw = String(order.paymentMethod || order.payment_method || "catfood");
+    var raw = String(order.paymentMethod || order.payment_method || "").trim();
     var html = '<div class="pay-channel" data-multi-pay-info="1">';
     html += "<h2>支付信息</h2>";
     html +=
       '<div class="pay-row"><span>支付渠道</span><strong>' +
-      esc(method === "该支付方式" ? raw : method) +
+      esc(method === "该支付方式" ? raw || "—" : method) +
       "</strong></div>";
     html +=
       '<p class="pay-hint">多人订单须先完成付款并上传付款凭证。提交后进入「待客服审核」；客服审核通过前不会进入等待陪玩确认，也不会通知陪玩接单。</p>';
