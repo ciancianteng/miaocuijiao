@@ -244,16 +244,33 @@ try {
     {}
   );
 
-  // CS browser UI — real login form (session inject alone redirects to login)
+  // CS browser UI — seed session then open orders (login form click is flaky headless)
   const csPage = await browser.newPage({ viewport: { width: 1280, height: 900 } });
   await csPage.goto(`${STG}/customer-service/login/`, { waitUntil: "domcontentloaded", timeout: 60000 });
-  await csPage.waitForTimeout(1500);
-  await csPage.fill('input[name="account"], input[type="email"], input[name="email"]', "service@meow.test");
-  await csPage.fill('input[name="password"], input[type="password"]', "McjTest@12345678");
-  await csPage.click('button[type="submit"], [data-login] button, form[data-login] button');
-  await csPage.waitForTimeout(3500);
-  await csPage.goto(`${STG}/customer-service/orders/`, { waitUntil: "domcontentloaded", timeout: 60000 });
-  await csPage.waitForTimeout(4500);
+  await csPage.waitForTimeout(1200);
+  await csPage.evaluate((session) => {
+    localStorage.setItem("mcjServiceSession", JSON.stringify(session));
+    sessionStorage.setItem("mcjServiceSession", JSON.stringify(session));
+    localStorage.setItem("customerServiceUser", JSON.stringify(Object.assign({}, session.user || {}, { role: "customer_service" })));
+    sessionStorage.setItem("customerServiceUser", JSON.stringify(Object.assign({}, session.user || {}, { role: "customer_service" })));
+    localStorage.setItem("mcjRole", "customer_service");
+    sessionStorage.setItem("mcjRole", "customer_service");
+    if (session.token) {
+      localStorage.setItem("customerServiceAuthToken", session.token);
+      sessionStorage.setItem("customerServiceAuthToken", session.token);
+    }
+  }, Object.assign({}, cs.session, { token: cs.token, remember: true }));
+  await csPage.goto(`${STG}/customer-service/orders/`, { waitUntil: "networkidle", timeout: 60000 });
+  await csPage.waitForTimeout(5000);
+  // If still on login, try form submit once
+  if (/\/login/i.test(csPage.url())) {
+    await csPage.fill('input[name="account"]', "service@meow.test");
+    await csPage.fill('input[name="password"]', "McjTest@12345678");
+    await csPage.locator('form[data-login]').evaluate((form) => form.requestSubmit());
+    await csPage.waitForTimeout(4000);
+    await csPage.goto(`${STG}/customer-service/orders/`, { waitUntil: "domcontentloaded", timeout: 60000 });
+    await csPage.waitForTimeout(4500);
+  }
 
   // Force bootstrap refresh if needed
   const refresh = csPage.locator("[data-refresh]").first();
