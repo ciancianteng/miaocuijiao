@@ -151,26 +151,6 @@ async function ensureCompanionReady(adminT, adminH, compT, targetId = compId, la
     "POST",
     adminH
   );
-  await api(
-    "/api/admin/players",
-    adminT,
-    {
-      action: "edit",
-      id: rowId,
-      userId: targetId,
-      auditStatus: "approved",
-      levelId: "lv1",
-      price: 20,
-      game: "默认服务",
-      main_service: "默认服务",
-      game_prices: { 默认服务: 20 },
-      allowOrders: true,
-      online_status: "online",
-      availability_status: "available",
-    },
-    "POST",
-    adminH
-  );
   await api("/api/companion", compT, { action: "set_online_status", online_status: "online" });
   await api("/api/companion", compT, {
     action: "submit_verification",
@@ -196,6 +176,30 @@ async function ensureCompanionReady(adminT, adminH, compT, targetId = compId, la
     "POST",
     adminH
   );
+  // Final edit AFTER verification — submit_verification can reset audit to pending.
+  const edit = await api(
+    "/api/admin/players",
+    adminT,
+    {
+      action: "edit",
+      id: rowId,
+      userId: targetId,
+      auditStatus: "approved",
+      levelId: "lv1",
+      price: 20,
+      game: "默认服务",
+      main_service: "默认服务",
+      game_prices: { 默认服务: 20 },
+      allowOrders: true,
+      online_status: "online",
+      availability_status: "available",
+    },
+    "POST",
+    adminH
+  );
+  if (!(edit.ok || edit.json?.ok)) {
+    throw new Error(`companion edit failed ${targetId}: ${edit.json?.message || edit.status}`);
+  }
   return rowId;
 }
 
