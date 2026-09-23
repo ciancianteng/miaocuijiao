@@ -602,7 +602,12 @@ await ensureBossBalance(inviteeT, adminT, adminH, 150);
     catFoodAmount: 50,
     channel: "bank",
   });
-  const wdId = req1.json?.item?.id || req1.json?.data?.withdrawalId || "";
+  const wdId =
+    req1.json?.item?.id ||
+    req1.json?.withdrawal?.id ||
+    req1.json?.data?.withdrawalId ||
+    req1.json?.id ||
+    "";
   const mid = await companionSummary(compT);
   const lockOk = (req1.ok || req1.json?.ok) && !!wdId && mid.frozen >= 50;
   setMod(
@@ -612,10 +617,56 @@ await ensureBossBalance(inviteeT, adminT, adminH, 150);
     { wdId: maskId(wdId), before, mid, req: req1.json }
   );
 
+  // Restore FIRST (reject the locked request) — preserves weekly withdraw quota for PAY path.
+  const beforeRej = await companionSummary(compT);
+  const rej = await api(
+    "/api/admin/finance",
+    adminT,
+    { action: "reject_withdraw", id: wdId, withdrawalId: wdId, reason: "final-closeout restore" },
+    "POST",
+    adminH
+  );
+  const afterRej = await companionSummary(compT);
+  const restoreOk =
+    !!wdId &&
+    (rej.ok || rej.json?.ok) &&
+    (afterRej.withdrawable >= beforeRej.withdrawable + 49.99 || afterRej.frozen <= beforeRej.frozen - 49.99);
+  setMod(
+    "WITHDRAWAL_RESTORE",
+    restoreOk ? "PASS" : "FAIL",
+    `wd ${beforeRej.withdrawable}→${afterRej.withdrawable} frozen ${beforeRej.frozen}→${afterRej.frozen} rej=${rej.json?.message || rej.status}`,
+    { wdId: maskId(wdId), beforeRej, afterRej, rej: rej.json }
+  );
+
+  // Fresh request → approve → pay
+  sum = await companionSummary(compT);
+  for (let i = 0; i < 8 && sum.withdrawable < 50 && gift?.id; i++) {
+    await api("/api/boss/marketplace", bossT, {
+      action: "send_gift",
+      companionId: compId,
+      giftId: gift.id,
+      quantity: 1,
+      payMethod: "wallet",
+      idempotencyKey: `fc-wd-payfund-${Date.now()}-${i}`,
+    });
+    sum = await companionSummary(compT);
+  }
+  const reqPay = await api("/api/companion", compT, {
+    action: "request_withdrawal",
+    amount: 50,
+    catFoodAmount: 50,
+    channel: "bank",
+  });
+  const payWdId =
+    reqPay.json?.item?.id ||
+    reqPay.json?.withdrawal?.id ||
+    reqPay.json?.data?.withdrawalId ||
+    reqPay.json?.id ||
+    "";
   const approve = await api(
     "/api/admin/finance",
     adminT,
-    { action: "approve_withdraw", id: wdId, withdrawalId: wdId },
+    { action: "approve_withdraw", id: payWdId, withdrawalId: payWdId },
     "POST",
     adminH
   );
@@ -624,8 +675,8 @@ await ensureBossBalance(inviteeT, adminT, adminH, 150);
     adminT,
     {
       action: "mark_withdraw_paid",
-      id: wdId,
-      withdrawalId: wdId,
+      id: payWdId,
+      withdrawalId: payWdId,
       bankReference: `FC-WD-${Date.now()}`,
       paymentRemark: "final-closeout",
       receiptDataUrl: PNG,
@@ -635,48 +686,9 @@ await ensureBossBalance(inviteeT, adminT, adminH, 150);
   );
   setMod(
     "WITHDRAWAL_PAY",
-    paid.ok || paid.json?.ok || approve.ok ? "PASS" : "FAIL",
-    `approve=${approve.status} paid=${paid.status} ${paid.json?.message || ""}`,
-    { approve: approve.json, paid: paid.json }
-  );
-
-  // restore via reject path
-  sum = await companionSummary(compT);
-  for (let i = 0; i < 8 && sum.withdrawable < 50 && gift?.id; i++) {
-    await api("/api/boss/marketplace", bossT, {
-      action: "send_gift",
-      companionId: compId,
-      giftId: gift.id,
-      quantity: 1,
-      payMethod: "wallet",
-      idempotencyKey: `fc-wd-restore-${Date.now()}-${i}`,
-    });
-    sum = await companionSummary(compT);
-  }
-  const reqR = await api("/api/companion", compT, {
-    action: "request_withdrawal",
-    amount: 50,
-    catFoodAmount: 50,
-    channel: "bank",
-  });
-  const ridW = reqR.json?.item?.id || reqR.json?.data?.withdrawalId || "";
-  const beforeRej = await companionSummary(compT);
-  const rej = await api(
-    "/api/admin/finance",
-    adminT,
-    { action: "reject_withdraw", id: ridW, withdrawalId: ridW, reason: "final-closeout restore" },
-    "POST",
-    adminH
-  );
-  const afterRej = await companionSummary(compT);
-  const restoreOk =
-    (rej.ok || rej.json?.ok) &&
-    (afterRej.withdrawable > beforeRej.withdrawable - 0.01 || afterRej.frozen < beforeRej.frozen - 0.01);
-  setMod(
-    "WITHDRAWAL_RESTORE",
-    restoreOk ? "PASS" : "FAIL",
-    `wd ${beforeRej.withdrawable}→${afterRej.withdrawable} frozen ${beforeRej.frozen}→${afterRej.frozen}`,
-    { ridW: maskId(ridW), beforeRej, afterRej, rej: rej.json }
+    (paid.ok || paid.json?.ok) && !!payWdId ? "PASS" : "FAIL",
+    `approve=${approve.status} paid=${paid.status} ${paid.json?.message || reqPay.json?.message || ""}`,
+    { payWdId: maskId(payWdId), approve: approve.json, paid: paid.json, reqPay: reqPay.json }
   );
 }
 

@@ -693,8 +693,8 @@ export default async function handler(req, res) {
       const pastIso = new Date(Date.now() - hoursAgo * 3600 * 1000).toISOString();
       const patched = await supabaseJson(restUrl("orders", `?id=eq.${encodeURIComponent(orderId)}`), {
         method: "PATCH",
-        headers: serviceHeaders(),
-        body: JSON.stringify({ completed_at: pastIso, updated_at: new Date().toISOString() }),
+        headers: serviceHeaders({ Prefer: "return=representation" }),
+        body: JSON.stringify({ completed_at: pastIso }),
       });
       const after = Array.isArray(patched) ? patched[0] : null;
       return json(res, 200, {
