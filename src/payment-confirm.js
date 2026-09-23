@@ -472,8 +472,13 @@
   function isReviewing(order) {
     return !!(
       order &&
-      (order.paymentReview || /待审核|待人工审核/.test(String(order.paymentStatus || order.statusText || "")))
+      (order.paymentReview || /待审核|待人工审核|待客服审核/.test(String(order.paymentStatus || order.statusText || "")))
     );
+  }
+  /** Multi orders always require payment-proof upload before CS review — never wallet pay_order shortcut. */
+  function requiresProofUpload(order) {
+    if (isMultiParent(order)) return true;
+    return !isWalletMethod(order);
   }
 
   function fileInputHtml(orderId, labelText, primary) {
@@ -856,20 +861,23 @@
     }
     if (s === "awaiting_payment") {
       var rejectReason = String((order && (order.paymentRejectReason || order.rejectReason)) || "").trim();
+      var needProof = requiresProofUpload(order || {});
       return {
         title: "待付款",
         reason: rejectReason
           ? reviewerName
             ? "付款凭证未通过（审核客服：" + reviewerName + "）：" + rejectReason
             : "付款凭证已驳回：" + rejectReason
-          : "订单已创建，状态为待付款。",
-        next: isWalletMethod(order || {})
-          ? "请使用猫粮余额完成支付，支付成功后订单才会发送给陪玩确认。"
-          : rejectReason
+          : isMultiParent(order || {})
+            ? "多人订单已创建。请先查看支付信息并上传付款凭证，提交后进入客服审核。"
+            : "订单已创建，状态为待付款。",
+        next: needProof
+          ? rejectReason
             ? "请重新按所选支付方式付款并上传截图，点击「我已付款」。"
-            : "请按本单所选支付方式完成付款，上传付款截图后点击「我已付款」。",
+            : "请按本单支付信息完成付款，上传付款截图后点击「我已付款」。提交后进入「待客服审核」。"
+          : "请使用猫粮余额完成支付，支付成功后订单才会发送给陪玩确认。",
         primary: "pay",
-        primaryLabel: isWalletMethod(order || {}) ? "确认支付" : "前往支付",
+        primaryLabel: needProof ? "上传付款凭证" : "确认支付",
         disabledHint: "",
       };
     }
@@ -1016,7 +1024,8 @@
     var localFile = activeProofFile();
     var hasLocal = !!(localFile || proofDraft.previewUrl);
     if (String(order.status || "") !== "awaiting_payment") return "";
-    if (isWalletMethod(order) && !reviewing && !hasLocal) return "";
+    // Multi always shows proof panel; wallet-only singles hide until reviewing/local file.
+    if (!requiresProofUpload(order) && isWalletMethod(order) && !reviewing && !hasLocal) return "";
 
     var info = platformPayInfo || (order && order.platformPayInfo) || null;
     var channelClosed =
@@ -1113,7 +1122,7 @@
         ? "orders.html?filter=payment_review&id=" + encodeURIComponent(order.id)
         : "orders.html?id=" + encodeURIComponent(order.id);
     var actions = '<div class="pay-actions">';
-    var needsManualProof = st === "awaiting_payment" && !isWalletMethod(order);
+    var needsManualProof = st === "awaiting_payment" && requiresProofUpload(order);
 
     if (st === "cancelled") {
       paint(
@@ -1130,7 +1139,7 @@
       return;
     }
 
-    if (guide.primary === "pay" && st === "awaiting_payment" && !reviewing && isWalletMethod(order)) {
+    if (guide.primary === "pay" && st === "awaiting_payment" && !reviewing && isWalletMethod(order) && !requiresProofUpload(order)) {
       actions +=
         '<button type="button" class="pay-btn primary" data-pay-order="' +
         esc(order.id) +
@@ -1198,7 +1207,7 @@
     var multiHint = multi
       ? '<p class="pay-hint">本订单一次付款 ' +
         esc(money(order.totalAmount || order.amount)) +
-        "；提交付款信息后先进入客服审核，审核通过后才会通知陪玩接单。</p>"
+        "；请先上传付款凭证并提交。提交后进入「待客服审核」，客服通过后才会通知陪玩接单。</p>"
       : "";
     if (isMultiChild(order)) {
       multiHint =
@@ -1216,7 +1225,7 @@
         "</p>";
 
     var walletRows = "";
-    if (isPrePay(order) && isWalletMethod(order)) {
+    if (isPrePay(order) && isWalletMethod(order) && !requiresProofUpload(order)) {
       walletRows =
         '<div class="pay-row"><span>当前猫粮余额</span><strong>' +
         esc(walletBalanceLoaded ? (walletBalance == null ? "—" : money(walletBalance)) : "加载中…") +
@@ -1575,7 +1584,7 @@
           proofDraft.successTip = proofDraft.successTip || "付款凭证已上传，当前状态：待人工审核";
         }
       }
-      if (isWalletMethod(order) && isPrePay(order)) {
+      if (isWalletMethod(order) && isPrePay(order) && !requiresProofUpload(order)) {
         await loadWalletBalance();
       }
       await refreshDiscordStatus(order);

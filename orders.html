@@ -278,7 +278,7 @@
       }
       function statusReason(o){
         var s=String(o.status||'');
-        if(isPaymentReview(o)&&s==='awaiting_payment')return '付款凭证已提交，等待人工审核。';
+        if(isPaymentReview(o)&&s==='awaiting_payment')return '付款凭证已提交，等待客服审核。客服通过前不会进入等待陪玩确认。';
         if(o.paymentRejectReason&&s==='awaiting_payment')return '付款凭证已驳回：'+String(o.paymentRejectReason)+'。请重新上传。';
         if(s==='in_progress'&&o.completionPending){
           if(o.autoConfirmPaused)return o.autoConfirmPausedReason||'订单问题处理中，自动确认已暂停，请等待客服或后台处理。';
@@ -288,12 +288,12 @@
             :'陪玩已申请完成，请确认本次服务。';
         }
         if(o.bossHint)return o.bossHint;
-        if(s==='awaiting_payment')return '待付款：请先扫码付款并上传付款截图';
+        if(s==='awaiting_payment')return '待付款：请先查看支付信息并上传付款截图';
         if(s==='pending')return '抢单中：付款已确认，等待陪玩抢单；可查看抢单人数';
         if(s==='waiting_boss_confirm')return '等待老板选择：有陪玩抢单，请查看后点击「我要她」';
         if(s==='confirmed')return '进行中：陪玩已确认接单';
         if(s==='in_progress')return '进行中';
-        if(s==='claimed')return '等待陪玩确认：订单已付款，正在等待陪玩确认接单';
+        if(s==='claimed')return '等待陪玩确认：客服已审核通过，正在等待陪玩确认接单';
         if(s==='completed')return canReview(o)?'服务已完成，可立即评价':'服务已完成';
         if(s==='reviewed'||o.reviewed)return '已评价';
         if(s==='cancelled')return '订单已取消';
@@ -333,18 +333,21 @@
         return [];
       }
       function multiParentStatusLabel(o,kids){
+        // Authoritative payment/review status wins — never show 0/N companion wait while unpaid/reviewing.
+        if(String(o.status||'')==='awaiting_payment'){
+          return isPaymentReview(o)?'待客服审核':'待付款';
+        }
         var base=orderLabel(o);
         if(!kids||!kids.length)return base;
-        var effective=kids.filter(function(ch){var k=childConfirmKey(ch);return k!=='exited'&&k!=='exited_kept'});
+        var effective=kids.filter(function(ch){var k=childConfirmKey(ch);return k!=='exited'&&k!=='exited_kept'&&k!=='awaiting_payment'&&k!=='not_ready'});
         var confirmed=effective.filter(function(ch){return childConfirmKey(ch)==='accepted'}).length;
         var waiting=effective.filter(function(ch){return childConfirmKey(ch)==='pending'}).length;
-        var total=effective.length||kids.length;
+        var total=effective.length||0;
         var completed=kids.filter(function(ch){var s=String(ch.status||'');return s==='completed'||s==='reviewed'||ch.reviewed}).length;
         var refunded=kids.filter(function(ch){var s=String(ch.status||'');return s==='refunded'||s==='refund_requested'}).length;
         var needsRep=kids.some(function(ch){return childNeedsReplacement(ch)});
         if(needsRep)return '当前陪玩无法接单，请重新选择（'+confirmed+'/'+total+'）';
-        if(String(o.status||'')==='awaiting_payment')return base;
-        if(waiting>0)return '等待陪玩确认（'+confirmed+'/'+total+'）';
+        if(String(o.status||'')==='claimed'&&total>0)return '等待陪玩确认（'+confirmed+'/'+total+'）';
         if(confirmed>0&&confirmed===total&&String(o.status||'')!=='completed')return '进行中（'+confirmed+'/'+total+'）';
         if(refunded&&completed&&completed+refunded===kids.length)return '部分退款';
         if(refunded&&refunded<kids.length)return '部分退款';
@@ -354,14 +357,20 @@
       function childNoteBlob(ch){return String((ch&&(ch.note||''))||'')+'\n'+String((ch&&(ch.description||''))||'')+'\n'+String((ch&&(ch.cancelReason||ch.cancel_reason||''))||'')}
       function childConfirmKey(ch){
         if(!ch)return 'other';
-        if(ch.companionConfirm&&ch.companionConfirm.key)return ch.companionConfirm.key;
+        if(ch.companionConfirm&&ch.companionConfirm.key){
+          var ck=String(ch.companionConfirm.key);
+          if(ck==='pending'&&String(ch.status||'')==='awaiting_payment')return 'awaiting_payment';
+          return ck;
+        }
         var s=String(ch.status||'');
         var blob=childNoteBlob(ch);
         var unavailable=blob.indexOf('[[COMPANION_UNAVAILABLE]]')>=0||/无法接单|已退出/.test(String(ch.cancelReason||ch.cancel_reason||''));
         var keepDone=blob.indexOf('[[KEEP_REMAINING_APPLIED]]')>=0;
         if((s==='cancelled'||s==='refunded')&&(unavailable||keepDone))return keepDone?'exited_kept':'exited';
         if(s==='confirmed'||s==='accepted'||s==='in_progress'||s==='completed'||s==='reviewed'||ch.reviewed)return 'accepted';
-        if(s==='claimed'||s==='pending'||s==='waiting_boss_confirm'||s==='awaiting_payment')return 'pending';
+        if(s==='claimed')return 'pending';
+        if(s==='awaiting_payment')return 'awaiting_payment';
+        if(s==='pending'||s==='waiting_boss_confirm')return 'not_ready';
         if(s==='cancelled'||s==='refunded')return 'exited';
         return 'other';
       }
@@ -383,6 +392,9 @@
         return '<span class="od-confirm-icon" aria-hidden="true">·</span>';
       }
       function multiConfirmQueueHtml(parent){
+        // Hide companion confirmation UI until CS approved payment (parent claimed+).
+        if(String(parent.status||'')==='awaiting_payment'||isPaymentReview(parent))return '';
+        if(['claimed','confirmed','in_progress','completed','reviewed'].indexOf(String(parent.status||''))<0)return '';
         var kids=childrenOf(parent.id);
         if(!kids.length)return '';
         var activeRows=[];
@@ -395,7 +407,7 @@
             replaceSlots.push(ch);
             return;
           }
-          if(key==='exited_kept')return;
+          if(key==='exited_kept'||key==='awaiting_payment'||key==='not_ready')return;
           if(key==='pending'||key==='accepted'||key==='other'){
             activeRows.push({ch:ch,key:key});
           }
@@ -651,8 +663,10 @@
         var serviceLabel=isMultiParent(o)?((o.serviceType||o.game||'多人服务')+' · '+memberCount+'位陪玩 · 一次付款'):(o.serviceType||o.game||'-');
         var companionLabel=isMultiParent(o)?multiCompanionLabel(kids):companionName(o);
         var statusShown=isMultiParent(o)?multiParentStatusLabel(o,kids):orderLabel(o);
-        var confirmMini=isMultiParent(o)&&kids.length?('<div class="order-multi-mini" data-member-count="'+memberCount+'">'+kids.map(function(ch){
+        var showConfirmMini=isMultiParent(o)&&kids.length&&['claimed','confirmed','in_progress','completed','reviewed'].indexOf(String(o.status||''))>=0;
+        var confirmMini=showConfirmMini?('<div class="order-multi-mini" data-member-count="'+memberCount+'">'+kids.map(function(ch){
           var ck=childConfirmKey(ch);
+          if(ck==='awaiting_payment'||ck==='not_ready')return '';
           var icon=ck==='accepted'?'✅':(ck==='pending'?'⏱':(ck==='exited'||ck==='exited_kept'?'❌':'·'));
           return '<div class="order-multi-mini-row">'+companionAvatarHtml(ch)+'<span>'+esc(companionName(ch))+'</span><span>'+icon+' '+(ck==='accepted'?'已确认':(ck==='pending'?'等待确认':(ck==='exited'||ck==='exited_kept'?'不可接单':'—')))+'</span></div>';
         }).join('')+'</div>'):'';
@@ -666,8 +680,8 @@
               field('订单编号',esc(o.orderNo||o.order_no||o.id))+
               field('订单类型',esc(isMultiParent(o)?'多人陪玩订单':'普通订单'))+
               field('订单状态',esc(isMultiParent(o)?multiParentStatusLabel(o,childrenOf(o.id)):orderLabel(o)))+
-              field('付款状态',esc(o.paymentStatus||(o.status==='awaiting_payment'?'待付款':'已付款（整组一次）')))+
-              field('接单状态',esc(o.acceptStatus||orderLabel(o)))+
+              field('付款状态',esc(isPaymentReview(o)?'待客服审核':(o.paymentStatus||(o.status==='awaiting_payment'?'待付款':'已付款（整组一次）'))))+
+              field('接单状态',esc(o.status==='awaiting_payment'?(isPaymentReview(o)?'客服审核中，尚未进入陪玩确认':(o.acceptStatus||'尚未付款')):(o.acceptStatus||orderLabel(o))))+
               field('创建时间',esc(date(o.createdAt)))+
               field(isMultiParent(o)?'订单总额':'实付猫粮',esc(money(o.paidCatFood||o.totalAmount||o.amount)))+
               field('当前说明',esc(statusReason(o)),true)+
@@ -750,9 +764,9 @@
       function statusPanelInner(o,openReview){
         var html='';
         if(o.status==='awaiting_payment'&&isPaymentReview(o)){
-          html='<div class="status-panel"><p>付款状态：待人工审核</p><p>订单金额：'+moneyEmoji(o.totalAmount||o.amount)+'</p><p class="order-hint">付款凭证已提交，等待客服确认收款后才会进入接单流程。</p><div class="status-actions"><a class="order-btn primary" href="payment-confirm.html?order='+encodeURIComponent(o.id)+'">查看/重新上传凭证</a><a class="order-btn primary" href="support.html?order='+encodeURIComponent(o.id)+'">联系客服</a></div></div>';
+          html='<div class="status-panel"><p>付款状态：待客服审核</p><p>订单金额：'+moneyEmoji(o.totalAmount||o.amount)+'</p><p class="order-hint">付款凭证已提交，等待客服确认收款后才会进入「等待陪玩确认」。客服审核通过前不会通知陪玩。</p><div class="status-actions"><a class="order-btn primary" href="payment-confirm.html?order='+encodeURIComponent(o.id)+'">查看/重新上传凭证</a><a class="order-btn primary" href="support.html?order='+encodeURIComponent(o.id)+'">联系客服</a></div></div>';
         }else if(o.status==='awaiting_payment'){
-          html='<div class="status-panel"><p>订单金额：'+moneyEmoji(o.totalAmount||o.amount)+'</p><p>支付方式：'+esc(o.paymentMethod||o.payment_method||'待确认')+'</p><p class="order-hint">下一步：进入支付页扫码付款并上传截图，点击「我已付款」后进入“待人工审核”</p><div class="status-actions"><a class="order-btn primary" href="payment-confirm.html?order='+encodeURIComponent(o.id)+'">立即去支付</a></div></div>';
+          html='<div class="status-panel"><p>订单金额：'+moneyEmoji(o.totalAmount||o.amount)+'</p><p>支付方式：'+esc(o.paymentMethod||o.payment_method||'待确认')+'</p><p class="order-hint">下一步：进入支付页查看支付信息并上传付款截图，点击「我已付款」后进入「待客服审核」</p><div class="status-actions"><a class="order-btn primary" href="payment-confirm.html?order='+encodeURIComponent(o.id)+'">立即去支付</a></div></div>';
         }else if(o.status==='claimed'){
           if(isMultiParent(o)){
             html='<div class="status-panel"><p>付款状态：已付款</p><p>接单状态：等待陪玩确认</p><p class="order-hint">请查看左侧每位陪玩的确认状态。有人无法接单时可补位或只保留其余陪玩。</p></div>';

@@ -497,7 +497,7 @@ function viewOrder(row = {}) {
   // Pending receipt only — leftover [[PAYMENT_PROOF]] notes must not keep 待人工审核 after reject.
   const paymentReview = status === "awaiting_payment" && !!row.paymentReceipt;
   if (paymentReview && status === "awaiting_payment") {
-    statusText = "待人工审核";
+    statusText = "待客服审核";
   } else if (status === "awaiting_payment" && row.paymentRejectReason) {
     statusText = "待付款";
   }
@@ -521,8 +521,11 @@ function viewOrder(row = {}) {
       };
     } else if (["confirmed", "in_progress", "completed", "reviewed"].includes(s)) {
       companionConfirm = { key: "accepted", icon: "check", label: "已确认", needsReplacement: false };
-    } else if (["claimed", "pending", "waiting_boss_confirm", "awaiting_payment"].includes(s)) {
+    } else if (s === "claimed") {
+      // Only after CS payment approval may children be "waiting companion confirm".
       companionConfirm = { key: "pending", icon: "clock", label: "等待确认", needsReplacement: false };
+    } else if (s === "awaiting_payment") {
+      companionConfirm = { key: "awaiting_payment", icon: "pay", label: "待付款/审核", needsReplacement: false };
     }
   }
   return {
@@ -1520,6 +1523,46 @@ export default async function handler(req, res) {
         });
       }
       // Discord bind is post-payment (Boss connects after pay). Do not block proof upload.
+      const { isMultiGroupParent, ORDER_TYPE_MULTI_GROUP } = await import("./_order-group.js");
+      const multiParent =
+        isMultiGroupParent(before) ||
+        String(before.order_type || "").toLowerCase() === String(ORDER_TYPE_MULTI_GROUP || "multi_group").toLowerCase();
+      const payMethodRaw = String(
+        body.paymentMethod || body.payment_method || viewOrder(before).paymentMethod || before.payment_method || ""
+      ).toLowerCase();
+      // Multi + catfood: freeze wallet when proof is submitted (CS approve does not re-debit).
+      if (multiParent && /cat.?food|wallet|猫粮|余额/.test(payMethodRaw)) {
+        try {
+          const walletApi = await import("./_wallet.js");
+          await walletApi.holdWalletForOrder({
+            bossId: profile.id,
+            orderId: before.id,
+            orderNo: before.order_no || before.id,
+            amount: money(before.total_amount),
+            idempotencyKey: `order-hold:${before.order_no || before.id}`,
+            reason: `多人订单凭证提交冻结 ${before.order_no || before.id}`,
+            operatorId: profile.id,
+          });
+        } catch (e) {
+          if (isWalletBalanceError(e)) {
+            return json(res, 400, {
+              ok: false,
+              code: "INSUFFICIENT_BALANCE",
+              message: e.message || "猫粮余额不足",
+              rechargeUrl: "/recharge.html",
+            });
+          }
+          const msg = String(e?.message || e || "");
+          if (/mcj_wallet_hold|Could not find the function|schema cache|PGRST/i.test(msg)) {
+            return json(res, 503, {
+              ok: false,
+              code: "MULTI_WALLET_HOLD_REQUIRED",
+              message: "多人订单需先冻结猫粮并上传付款凭证，当前钱包冻结能力不可用，请稍后重试。",
+            });
+          }
+          throw e;
+        }
+      }
       const result = await uploadProof({
         order: before,
         bossId: profile.id,
@@ -1542,19 +1585,47 @@ export default async function handler(req, res) {
         console.warn("[submit_payment_proof] note patch", String(err?.message || err).slice(0, 160));
         saved = { ...before, note, description, paymentReceipt: result.receipt };
       }
-      await addSystemMessage(saved, profile.id, "老板已上传付款凭证，等待人工审核。").catch(() => {});
+      await addSystemMessage(
+        saved,
+        profile.id,
+        multiParent
+          ? "老板已上传多人订单付款凭证，等待客服审核。审核通过前不会通知陪玩、不会进入等待陪玩确认。"
+          : "老板已上传付款凭证，等待人工审核。"
+      ).catch(() => {});
+      if (multiParent) {
+        try {
+          const { notifyBossOrderEvent } = await import("./_boss-order-notify.js");
+          await notifyBossOrderEvent(saved, {
+            title: "待客服审核",
+            body: "付款凭证已提交，等待客服审核通过后才会进入等待陪玩确认。",
+            kind: "payment_review",
+          });
+        } catch (err) {
+          console.warn("[submit_payment_proof] multi review boss push", err?.message || err);
+        }
+      }
       const proofUrl = await signedProofUrl(result.receipt).catch(() => "");
+      const kids = multiParent
+        ? await supabaseJson(
+            restUrl(TABLE, `?parent_order_id=eq.${encodeURIComponent(before.id)}&select=*&order=created_at.asc`),
+            { headers: serviceHeaders() }
+          ).catch(() => [])
+        : [];
       return json(res, 200, {
         ok: true,
-        message: "付款凭证已提交，等待人工审核。",
+        paymentReview: true,
+        message: multiParent
+          ? "付款凭证已提交，等待客服审核。审核通过前不会进入等待陪玩确认。"
+          : "付款凭证已提交，等待人工审核。",
         receipt: { id: result.receipt?.id, receiptNo: result.receipt?.receipt_no },
         order: {
-          ...viewOrder({ ...saved, paymentReceipt: result.receipt, paymentProofUrl: proofUrl || "" }),
+          ...viewOrder({ ...saved, paymentReceipt: result.receipt, paymentProofUrl: proofUrl || "", status: "awaiting_payment" }),
           paymentReview: true,
           paymentProofUrl: proofUrl || result.receipt?.storage_path || "",
           statusText: "待客服审核",
           paymentStatus: "待客服审核",
         },
+        children: (kids || []).map(viewOrder),
       });
     }
     if (action === "pay_order") {
@@ -1568,6 +1639,17 @@ export default async function handler(req, res) {
           ok: false,
           message: payGuard.message,
           code: payGuard.code,
+          order: viewOrder(before),
+        });
+      }
+      // Multi parent: pay_order must never hold/claim/notify — proof upload only.
+      if (payGuard.cascadeChildren) {
+        return json(res, 400, {
+          ok: false,
+          code: "MANUAL_PAYMENT_REQUIRES_PROOF",
+          paymentReview: false,
+          message:
+            "多人订单须先在支付页上传付款凭证并提交。提交后进入「待客服审核」；客服审核通过前不会进入等待陪玩确认。",
           order: viewOrder(before),
         });
       }
@@ -1622,16 +1704,8 @@ export default async function handler(req, res) {
           usedCatfoodHold = true;
         } catch (e) {
           // Fallback if hold RPC not migrated yet: legacy immediate debit (Staging/Prod until migration applied).
-          // Multi-group must NOT legacy-debit+claim — CS review owns approval after hold/submit.
           const msg = String(e?.message || e || "");
           const holdMissing = /mcj_wallet_hold|Could not find the function|schema cache|PGRST/i.test(msg);
-          if (holdMissing && payGuard.cascadeChildren) {
-            return json(res, 503, {
-              ok: false,
-              code: "MULTI_WALLET_HOLD_REQUIRED",
-              message: "多人订单需先冻结猫粮并由客服审核，当前钱包冻结能力不可用，请稍后重试或联系客服。",
-            });
-          }
           if (holdMissing) {
             try {
               const walletApi = await import("./_wallet.js");
@@ -1711,80 +1785,7 @@ export default async function handler(req, res) {
         });
       }
 
-      // —— Multi-group parent: submit for CS review. Never auto-claim / notify companions. ——
-      if (payGuard.cascadeChildren) {
-        const { createPendingWalletReceipt, listPendingForCs } = await import("./_payment-receipts.js");
-        let receipt = null;
-        try {
-          const pending = await listPendingForCs({ orderIds: [before.id] });
-          receipt = pending?.[0] || null;
-          if (!receipt) {
-            const created = await createPendingWalletReceipt({
-              order: before,
-              bossId: profile.id,
-              paymentMethod: usedTestPay ? "test" : paymentMethod || "catfood",
-            });
-            receipt = created?.receipt || null;
-          }
-        } catch (err) {
-          return json(res, err.status || 500, {
-            ok: false,
-            code: err.code || "PAYMENT_REVIEW_SUBMIT_FAILED",
-            message: err.message || "提交付款审核失败，请重试。",
-          });
-        }
-        const marker = `[[PAYMENT_PROOF]] wallet_hold pending_cs_review receipt=${receipt?.id || ""}`;
-        const note = `${String(before.note || "").replace(/\[\[PAYMENT_PROOF\]\][^\n]*/g, "").trim()}\n${marker}`.trim();
-        const description = `${String(before.description || "")
-          .replace(/\[\[PAYMENT_PROOF\]\][^\n]*/g, "")
-          .trim()}\n${marker}`.trim();
-        let saved = before;
-        try {
-          const rows = await supabaseJson(
-            restUrl(TABLE, `?id=eq.${encodeURIComponent(before.id)}&boss_id=eq.${encodeURIComponent(profile.id)}`),
-            {
-              method: "PATCH",
-              headers: serviceHeaders(),
-              body: JSON.stringify({ note, description }),
-            }
-          );
-          saved = rows?.[0] || { ...before, note, description };
-        } catch (_) {
-          saved = { ...before, note, description };
-        }
-        // Hard lock: keep awaiting_payment; children stay awaiting_payment; no companion notify.
-        await addSystemMessage(saved, profile.id, "老板已提交多人订单付款信息，等待客服审核。审核通过前不会通知陪玩。").catch(
-          () => {}
-        );
-        try {
-          const { notifyBossOrderEvent } = await import("./_boss-order-notify.js");
-          await notifyBossOrderEvent(saved, {
-            title: "待客服审核",
-            body: "付款信息已提交，等待客服审核通过后才会进入等待陪玩确认。",
-            kind: "payment_review",
-          });
-        } catch (err) {
-          console.warn("[orders/pay_order] multi review boss push", err?.message || err);
-        }
-        const kids = await supabaseJson(
-          restUrl(TABLE, `?parent_order_id=eq.${encodeURIComponent(before.id)}&select=*&order=created_at.asc`),
-          { headers: serviceHeaders() }
-        ).catch(() => []);
-        return json(res, 200, {
-          ok: true,
-          testPay: usedTestPay,
-          paymentReview: true,
-          message: "付款信息已提交，等待客服审核。审核通过前不会进入等待陪玩确认。",
-          order: {
-            ...viewOrder({ ...saved, paymentReceipt: receipt, status: "awaiting_payment" }),
-            paymentReview: true,
-            statusText: "待客服审核",
-            paymentStatus: "待客服审核",
-          },
-          children: (kids || []).map(viewOrder),
-          allowTestPay: previewAllowed,
-        });
-      }
+      // —— Multi-group parent already rejected above; single-order continues. ——
 
       const nextStatus = before.companion_id ? "claimed" : "pending";
       // Companion must confirm before accepted_at / start — never pre-stamp on pay.
