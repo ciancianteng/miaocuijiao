@@ -320,12 +320,38 @@
     );
   }
   function isMultiParent(order) {
-    return !!(
-      order &&
-      (order.isMultiGroupParent ||
-        (String(order.orderTypeKey || order.order_type || "").toLowerCase() === "multi_group" &&
-          !(order.parentOrderId || order.parent_order_id)))
-    );
+    if (!order) return false;
+    if (order.parentOrderId || order.parent_order_id) return false;
+    if (order.isMultiGroupParent) return true;
+    var typeKey = String(order.orderTypeKey || order.order_type || "").toLowerCase();
+    if (typeKey === "multi_group") return true;
+    if (Array.isArray(order.children) && order.children.length >= 2) return true;
+    var blob =
+      String(order.description || "") +
+      "\n" +
+      String(order.note || "") +
+      "\n" +
+      String(order.title || "") +
+      "\n" +
+      String(order.orderType || "");
+    if (/子单数[:：]\s*[2-9]|多人订单|多人陪玩/.test(blob)) return true;
+    try {
+      var pending = JSON.parse(sessionStorage.getItem("mcjMultiPendingPay") || "null");
+      if (pending && String(pending.orderId || "") === String(order.id || "")) return true;
+    } catch (ePend) {
+      /* ignore */
+    }
+    try {
+      var list = JSON.parse(localStorage.getItem("mcjBossOrdersCache") || "[]");
+      if (!Array.isArray(list)) list = [];
+      var kids = list.filter(function (o) {
+        return String(o.parentOrderId || o.parent_order_id || "") === String(order.id || "");
+      });
+      if (kids.length >= 2) return true;
+    } catch (eKids) {
+      /* ignore */
+    }
+    return false;
   }
   function isMultiChild(order) {
     return !!(order && (order.isMultiGroupChild || order.parentOrderId || order.parent_order_id));
@@ -478,7 +504,51 @@
   /** Multi orders always require payment-proof upload before CS review — never wallet pay_order shortcut. */
   function requiresProofUpload(order) {
     if (isMultiParent(order)) return true;
+    try {
+      var pending = JSON.parse(sessionStorage.getItem("mcjMultiPendingPay") || "null");
+      if (pending && order && String(pending.orderId || "") === String(order.id || "")) return true;
+    } catch (ePend) {
+      /* ignore */
+    }
     return !isWalletMethod(order);
+  }
+
+  function forceMultiProofOrder(order, orderId) {
+    var base = order && typeof order === "object" ? Object.assign({}, order) : {};
+    base.id = base.id || orderId;
+    base.status = base.status || "awaiting_payment";
+    base.isMultiGroupParent = true;
+    base.orderTypeKey = base.orderTypeKey || base.order_type || "multi_group";
+    base.order_type = base.order_type || base.orderTypeKey || "multi_group";
+    if (!base.paymentMethod && !base.payment_method) {
+      base.paymentMethod = "catfood";
+      base.payment_method = "catfood";
+    }
+    return base;
+  }
+
+  /** Always-visible payment info for multi (wallet or manual) — never hide behind empty failUi. */
+  function multiPayInfoHtml(order) {
+    if (!isMultiParent(order) || !isPrePay(order)) return "";
+    var method = methodLabel(order);
+    var raw = String(order.paymentMethod || order.payment_method || "catfood");
+    var html = '<div class="pay-channel" data-multi-pay-info="1">';
+    html += "<h2>支付信息</h2>";
+    html +=
+      '<div class="pay-row"><span>支付渠道</span><strong>' +
+      esc(method === "该支付方式" ? raw : method) +
+      "</strong></div>";
+    html +=
+      '<p class="pay-hint">多人订单须先完成付款并上传付款凭证。提交后进入「待客服审核」；客服审核通过前不会进入等待陪玩确认，也不会通知陪玩接单。</p>';
+    if (isWalletMethod(order)) {
+      html +=
+        '<p class="pay-hint">本单支付方式为猫粮：请确认余额足够后，上传付款截图（或余额支付凭证）并点击「我已付款」提交客服审核。页面不会一键扣款跳过凭证。</p>';
+    } else {
+      html +=
+        '<p class="pay-hint">请先按下方收款信息完成转账，再上传付款截图并提交。</p>';
+    }
+    html += "</div>";
+    return html;
   }
 
   function fileInputHtml(orderId, labelText, primary) {
@@ -965,12 +1035,32 @@
     };
   }
 
-  function failUi(msg) {
+  function failUi(msg, opts) {
+    opts = opts || {};
+    var oid = String(opts.orderId || q("order") || q("id") || "").trim();
+    // Multi pending pay: never strand boss on empty reload-only page.
+    if (oid) {
+      try {
+        var pending = JSON.parse(sessionStorage.getItem("mcjMultiPendingPay") || "null");
+        var cached = readCache(oid);
+        if ((pending && String(pending.orderId) === oid) || isMultiParent(cached || {})) {
+          var forced = forceMultiProofOrder(cached || { id: oid, status: "awaiting_payment", totalAmount: pending && pending.totalAmount }, oid);
+          proofDraft.error = String(msg || "").trim() || "订单状态同步失败，请上传付款凭证或点击下方重新加载。";
+          renderOrder(forced);
+          return;
+        }
+      } catch (eFail) {
+        /* fall through */
+      }
+    }
     paint(
       '<section class="pay-card"><h1>支付确认</h1>' +
-        '<p class="pay-alert">' +
+        '<p class="pay-alert" role="alert">' +
         esc(msg || "订单加载失败，请重试") +
         "</p>" +
+        (oid
+          ? '<p class="pay-hint">订单号参考：' + esc(oid) + "。若刚完成多人下单，请点「重新加载」；仍失败请从「我的订单」进入该单「立即去支付」。</p>"
+          : "") +
         '<div class="pay-actions">' +
         '<button type="button" class="pay-btn primary" data-reload>重新加载</button>' +
         '<a class="pay-btn" href="orders.html">查看我的订单</a>' +
@@ -1027,8 +1117,10 @@
     // Multi always shows proof panel; wallet-only singles hide until reviewing/local file.
     if (!requiresProofUpload(order) && isWalletMethod(order) && !reviewing && !hasLocal) return "";
 
+    // Manual channels with closed QR: still show proof panel for multi; singles may hide QR-only dead end.
     var info = platformPayInfo || (order && order.platformPayInfo) || null;
     var channelClosed =
+      !isMultiParent(order) &&
       !isWalletMethod(order) &&
       !reviewing &&
       !hasLocal &&
@@ -1042,7 +1134,7 @@
     if (reviewing && !hasLocal) {
       html += '<p class="pay-hint">当前状态：待人工审核。可删除后重新上传，或进入「我的订单」查看。</p>';
     } else {
-      html += '<p class="pay-hint">扫码付款后，请上传付款截图（JPG / PNG / WEBP），再点击「我已付款」。选择后将立即显示预览。</p>';
+      html += '<p class="pay-hint">请上传付款截图（JPG / PNG / WEBP），确认预览无误后点击「我已付款」提交客服审核。</p>';
     }
 
     if (preview) {
@@ -1281,8 +1373,9 @@
         "</div>" +
         (multi ? multiCompanionCardsHtml(realKids.length ? realKids : kids) : "") +
         multiHint +
+        multiPayInfoHtml(order) +
         discordPanelHtml(order) +
-        // Mobile-first: QR after order summary for pre-pay
+        // Mobile-first: QR after order summary for pre-pay (non-wallet / or when QR present)
         (isPrePay(order) ? qrPanelHtml(order) : "") +
         (reviewing
           ? '<p class="pay-hint">付款凭证已提交，客服确认收款前不会进入接单流程。</p>'
@@ -1315,6 +1408,20 @@
       });
       if (typeof body.allowTestPay === "boolean") allowTestPay = body.allowTestPay;
       if (!res.ok || body.ok === false) {
+        if (body.code === "MANUAL_PAYMENT_REQUIRES_PROOF") {
+          // Never fall into empty failUi — force proof uploader for multi / manual path.
+          var forced = forceMultiProofOrder(
+            body.order || readCache(orderId) || { id: orderId, status: "awaiting_payment" },
+            orderId
+          );
+          writeCache(orderId, forced);
+          proofDraft.error =
+            body.message ||
+            "多人订单须先上传付款凭证并提交。提交后进入「待客服审核」。";
+          proofDraft.successTip = "";
+          renderOrder(forced);
+          return;
+        }
         if (body.code === "USE_TEST_PAY" && canShowTestPay()) {
           allowTestPay = true;
           var cached = readCache(orderId);
@@ -1596,8 +1703,15 @@
     } catch (err) {
       if (gen !== loadGen) return;
       if (err && err.name === "AbortError") return;
-      if (cached) renderOrder(cached);
-      else failUi(err.message || "订单加载失败，请重试");
+      if (cached) {
+        if (isMultiParent(cached) || requiresProofUpload(cached)) {
+          renderOrder(forceMultiProofOrder(cached, orderId));
+        } else {
+          renderOrder(cached);
+        }
+      } else {
+        failUi(err.message || "订单加载失败，请重试", { orderId: orderId });
+      }
     }
   }
 

@@ -1,0 +1,76 @@
+{
+  "generated_at": "2026-09-23T21:48:03.857Z",
+  "staging": "https://meow-cuijiao-homepage-staging.vercel.app",
+  "source": "cursor_acceptance",
+  "steps": [
+    {
+      "TEST": "01_create_multi",
+      "RESULT": "PASS",
+      "EVIDENCE": "order=MCJO000248 status=awaiting_payment kids=2",
+      "SCREENSHOT": "—",
+      "API": {
+        "paymentReview": false,
+        "isMultiGroupParent": true
+      }
+    },
+    {
+      "TEST": "02_browser_payment_channel_proof_ui",
+      "RESULT": "PASS",
+      "EVIDENCE": "payOrderBtns=0 proofPick=1 proofPanel=1 payInfo=1 review=false",
+      "SCREENSHOT": "screenshots/01-payment-channel-and-proof-ui.png",
+      "API": {
+        "snippet": "MEOW CUI JIAO 妙脆角 ☰ 多人陪玩订单 · 支付确认 请确认以下订单与金额后完成支付。未确认支付前订单保持待付款。 订单号 MCJO000248 订单类型 多人陪玩 人数 2 位陪玩 陪玩 Organic Invitee Comp · Organic Companion 服务 多人陪玩 · 共2位陪玩 服务时间 - 语音方式 游戏麦 订单总额 40 猫粮 支付方式 catfood O Organic Invitee Comp 游戏 王者荣耀 服务 王者荣耀 时长 1 小时 单价 20 猫粮/小时 小计 20 猫粮 O Organic Companion 游戏 王者荣耀 服务 王者荣耀 时长 1 小时 单价 20 猫粮/",
+        "paymentReview": false,
+        "status": "awaiting_payment"
+      }
+    },
+    {
+      "TEST": "03_browser_upload_preview",
+      "RESULT": "PASS",
+      "EVIDENCE": "previewImgs=1",
+      "SCREENSHOT": "screenshots/02-proof-preview-after-pick.png",
+      "API": {}
+    },
+    {
+      "TEST": "04_ui_submit_then_pending_cs",
+      "RESULT": "PASS",
+      "EVIDENCE": "order=MCJO000248 paymentReview=true status=awaiting_payment",
+      "SCREENSHOT": "screenshots/03-boss-pending-cs-after-ui-submit.png",
+      "API": {
+        "paymentReview": true,
+        "status": "awaiting_payment",
+        "paymentStatus": "待客服审核",
+        "uiHasPendingCs": true
+      }
+    },
+    {
+      "TEST": "05_api_companion_blocked_before_cs",
+      "RESULT": "PASS",
+      "EVIDENCE": "accept=409 msg=当前订单不能确认接单",
+      "SCREENSHOT": "—",
+      "API": {
+        "response": {
+          "ok": false,
+          "message": "当前订单不能确认接单"
+        }
+      }
+    },
+    {
+      "TEST": "06_api_cs_then_waiting_0of2",
+      "RESULT": "PASS",
+      "EVIDENCE": "parent=claimed kids=claimed,claimed",
+      "SCREENSHOT": "—",
+      "API": {
+        "response": {
+          "ok": true,
+          "message": "已确认付款，多人订单进入等待陪玩确认。",
+          "path": "multi_confirm"
+        }
+      }
+    }
+  ],
+  "summary": {
+    "PASS": 6,
+    "FAIL": 0
+  }
+}
