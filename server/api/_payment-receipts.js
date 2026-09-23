@@ -373,16 +373,13 @@ async function patchReceiptReview(receiptId, patch) {
   }
 }
 
-export async function uploadProof({ order, bossId, dataUrl, paymentMethod: method }) {
-  const decoded = decodeDataUrl(dataUrl);
-  if (!decoded?.buffer?.length || !IMAGE_TYPES.has(String(decoded.contentType).toLowerCase())) {
-    throw Object.assign(new Error("请上传 JPG、PNG 或 WEBP 格式的付款凭证"), { status: 400 });
-  }
-  if (decoded.buffer.length > 10 * 1024 * 1024) throw Object.assign(new Error("付款凭证不能超过 10MB"), { status: 413 });
-  // Boss re-upload: supersede any pending receipt (do not mark as CS-rejected).
-  const active = await companionDb("payment_receipts", `?order_id=eq.${encodeURIComponent(order.id)}&status=eq.pending&limit=1`).catch(() => []);
-  if (active?.[0]) {
-    await companionDb("payment_receipts", `?id=eq.${encodeURIComponent(active[0].id)}&status=eq.pending`, {
+async function supersedePendingReceipts(orderId) {
+  const active = await companionDb(
+    "payment_receipts",
+    `?order_id=eq.${encodeURIComponent(orderId)}&status=eq.pending&limit=5`
+  ).catch(() => []);
+  for (const row of active || []) {
+    await companionDb("payment_receipts", `?id=eq.${encodeURIComponent(row.id)}&status=eq.pending`, {
       method: "PATCH",
       body: JSON.stringify({
         status: "superseded",
@@ -390,6 +387,79 @@ export async function uploadProof({ order, bossId, dataUrl, paymentMethod: metho
       }),
     }).catch(() => {});
   }
+}
+
+/**
+ * Cat-food / wallet hold submitted for CS review (no screenshot).
+ * Creates a pending payment_receipts row so confirm_payment gates the same way as manual proof.
+ */
+export async function createPendingWalletReceipt({ order, bossId, paymentMethod: method }) {
+  const orderId = String(order?.id || "").trim();
+  if (!orderId || !bossId) {
+    throw Object.assign(new Error("缺少订单或老板信息，无法提交付款审核。"), { status: 400 });
+  }
+  const pending = await listPendingForCs({ orderIds: [orderId] });
+  const existing = (pending || []).find((r) =>
+    /cat.?food|wallet|猫粮|WALLET_HOLD/i.test(String(r.payment_method || "") + String(r.review_remark || ""))
+  );
+  if (existing) return { receipt: existing, duplicate: true };
+
+  await supersedePendingReceipts(orderId);
+  const previous = await companionDb(
+    "payment_receipts",
+    `?order_id=eq.${encodeURIComponent(orderId)}&select=version&order=version.desc&limit=1`
+  ).catch(() => []);
+  const version = Number(previous?.[0]?.version || 0) + 1;
+  const storagePath = buildObjectPath(bossId, `payment-proofs/${orderId}`, `wallet-hold-v${version}.marker`);
+  try {
+    await ensurePrivateBucket(BUCKET, [...IMAGE_TYPES, "text/plain"]);
+    await uploadPrivateObject(BUCKET, storagePath, Buffer.from("WALLET_HOLD_PENDING_REVIEW\n", "utf8"), "text/plain");
+  } catch (err) {
+    console.warn("[createPendingWalletReceipt] marker upload", String(err?.message || err).slice(0, 160));
+  }
+  const basePayload = {
+    receipt_no: receiptNo(),
+    order_id: orderId,
+    boss_id: bossId,
+    storage_bucket: BUCKET,
+    storage_path: storagePath,
+    payment_method: String(method || paymentMethod(order) || "catfood"),
+    amount: money(order.total_amount),
+    status: "pending",
+    version,
+    uploaded_at: nowIso(),
+    created_at: nowIso(),
+  };
+  let rows = null;
+  try {
+    rows = await companionDb("payment_receipts", "", {
+      method: "POST",
+      body: JSON.stringify({ ...basePayload, review_remark: "[[WALLET_HOLD_PENDING_REVIEW]]" }),
+    });
+  } catch (err) {
+    if (!/review_remark|column|schema cache|PGRST/i.test(String(err?.message || err))) throw err;
+    rows = await companionDb("payment_receipts", "", {
+      method: "POST",
+      body: JSON.stringify(basePayload),
+    });
+  }
+  return { receipt: rows?.[0] || null, duplicate: false };
+}
+
+export function isWalletHoldReceipt(receipt = {}) {
+  return /cat.?food|wallet|猫粮|WALLET_HOLD/i.test(
+    String(receipt.payment_method || "") + String(receipt.review_remark || "") + String(receipt.storage_path || "")
+  );
+}
+
+export async function uploadProof({ order, bossId, dataUrl, paymentMethod: method }) {
+  const decoded = decodeDataUrl(dataUrl);
+  if (!decoded?.buffer?.length || !IMAGE_TYPES.has(String(decoded.contentType).toLowerCase())) {
+    throw Object.assign(new Error("请上传 JPG、PNG 或 WEBP 格式的付款凭证"), { status: 400 });
+  }
+  if (decoded.buffer.length > 10 * 1024 * 1024) throw Object.assign(new Error("付款凭证不能超过 10MB"), { status: 413 });
+  // Boss re-upload: supersede any pending receipt (do not mark as CS-rejected).
+  await supersedePendingReceipts(order.id);
   const previous = await companionDb("payment_receipts", `?order_id=eq.${encodeURIComponent(order.id)}&select=version&order=version.desc&limit=1`).catch(() => []);
   const version = Number(previous?.[0]?.version || 0) + 1;
   await ensurePrivateBucket(BUCKET, [...IMAGE_TYPES]);

@@ -14,6 +14,7 @@ import { companionDb } from "./_companion-media-store.js";
 import {
   approveAndLedger,
   hydrateReceiptReviewers,
+  isWalletHoldReceipt,
   latestApprovedForOrders,
   latestReceiptForOrder,
   listPendingForCs,
@@ -3325,6 +3326,19 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
         reviewerName: staffReviewerNameFromProfile(service.profile),
         reason,
       });
+      if (isWalletHoldReceipt(receipt)) {
+        try {
+          const walletApi = await import("./_wallet.js");
+          await walletApi.releaseWalletHold({
+            orderId: order.id,
+            idempotencyKey: `order-hold-release:${order.order_no || order.id}:${receipt.id || "reject"}`,
+            reason: `客服驳回付款审核：${reason}`.slice(0, 200),
+            operatorId: service.profile.id,
+          });
+        } catch (err) {
+          console.warn("[cs/reject_payment_proof] releaseWalletHold", err?.message || err);
+        }
+      }
       const rejectedRows = await companionDb(
         "payment_receipts",
         `?id=eq.${encodeURIComponent(receipt.id)}&limit=1`
@@ -3441,10 +3455,15 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
 
       const { createGrabListingHelpers } = await import("./_order-grab-listings.js");
       const listingsApi = createGrabListingHelpers({ restUrl, supabaseJson, serviceHeaders });
+      const { isMultiGroupParent, ORDER_TYPE_MULTI_GROUP } = await import("./_order-group.js");
+      const isMultiParent =
+        isMultiGroupParent(order) || String(order.order_type || "").toLowerCase() === ORDER_TYPE_MULTI_GROUP;
       const assignedCompanionId = String(order.companion_id || "").trim() || "";
-      const isAssignedPath = !!assignedCompanionId;
+      // Multi parent has no single companion_id — must NOT fall through to grab hall.
+      const isAssignedPath = isMultiParent ? true : !!assignedCompanionId;
       const hallOpenAlready =
         !isAssignedPath &&
+        !isMultiParent &&
         ["pending", "waiting_boss_confirm"].includes(String(order.status || "")) &&
         String(order.assignment_type || "public").toLowerCase() !== "assigned";
 
@@ -3555,15 +3574,17 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
         walletSkipped = true;
       }
 
-      /* A 指定陪玩 → claimed（待陪玩确认，永不进大厅）；B 公开抢单 → pending + listing */
-      const next = isAssignedPath ? "claimed" : "pending";
+      /* A 指定陪玩 / 多人主单 → claimed；B 公开抢单 → pending + listing */
+      const next = isAssignedPath || isMultiParent ? "claimed" : "pending";
       const { transitionOrderStatus } = await import("./_order-status.js");
       const basePatch = {
         customer_service_id: service.profile.id,
-        assignment_type: isAssignedPath ? "assigned" : "public",
-        ...(isAssignedPath
-          ? { order_type: order.order_type || "direct_companion", companion_id: assignedCompanionId }
-          : { order_type: order.order_type || "open_grab", companion_id: null }),
+        assignment_type: isMultiParent ? "assigned" : isAssignedPath ? "assigned" : "public",
+        ...(isMultiParent
+          ? { order_type: order.order_type || ORDER_TYPE_MULTI_GROUP, companion_id: null }
+          : isAssignedPath
+            ? { order_type: order.order_type || "direct_companion", companion_id: assignedCompanionId }
+            : { order_type: order.order_type || "open_grab", companion_id: null }),
       };
 
       async function transitionWithOptionalPaidAt() {
@@ -3597,7 +3618,7 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
               if (/assignment_type|order_type|PGRST204|schema cache|column/i.test(String(err2?.message || err2))) {
                 const soft = {
                   customer_service_id: service.profile.id,
-                  companion_id: isAssignedPath ? assignedCompanionId : null,
+                  companion_id: isMultiParent ? null : isAssignedPath ? assignedCompanionId : null,
                 };
                 return tryPatch(soft);
               }
@@ -3619,7 +3640,7 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
             patched = await patchOrder(order.id, {
               status: next,
               customer_service_id: service.profile.id,
-              companion_id: isAssignedPath ? assignedCompanionId : null,
+              companion_id: isMultiParent ? null : isAssignedPath ? assignedCompanionId : null,
             });
           } else {
             throw err;
@@ -3631,7 +3652,7 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
       }
 
       // Harden routing fields if soft path dropped them.
-      if (!isAssignedPath) {
+      if (!isAssignedPath && !isMultiParent) {
         const needFix =
           String(patched.assignment_type || "").toLowerCase() !== "public" ||
           patched.companion_id != null;
@@ -3659,7 +3680,7 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
       }
 
       let listingResult = null;
-      if (!isAssignedPath) {
+      if (!isAssignedPath && !isMultiParent) {
         listingResult = await listingsApi.upsertListing(
           {
             ...order,
@@ -3672,22 +3693,24 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
           { publishedByCsId: service.profile.id, publishedAt: nowIso() }
         );
       } else {
-        await listingsApi.closeListing(order.id, "assigned_direct").catch(() => null);
+        await listingsApi.closeListing(order.id, isMultiParent ? "multi_group_confirmed" : "assigned_direct").catch(() => null);
       }
 
       const conversation = await ensureConversation({
         boss_id: order.boss_id,
-        companion_id: isAssignedPath ? assignedCompanionId : null,
+        companion_id: isAssignedPath && !isMultiParent ? assignedCompanionId : null,
         customer_service_id: service.profile.id,
         order_id: order.id,
       });
-      const sysMsg = isAssignedPath
-        ? walletSkipped
-          ? "客服已确认线下付款（未扣钱包余额），订单已支付，正在等待陪玩确认接单。"
-          : "客服已确认付款，订单已支付，正在等待陪玩确认接单。"
-        : walletSkipped
-          ? "客服已确认线下付款（未扣钱包余额），订单已发布到抢单大厅。"
-          : "客服已确认付款，订单已发布到抢单大厅。";
+      const sysMsg = isMultiParent
+        ? "客服已确认付款，多人订单已进入等待陪玩确认。"
+        : isAssignedPath
+          ? walletSkipped
+            ? "客服已确认线下付款（未扣钱包余额），订单已支付，正在等待陪玩确认接单。"
+            : "客服已确认付款，订单已支付，正在等待陪玩确认接单。"
+          : walletSkipped
+            ? "客服已确认线下付款（未扣钱包余额），订单已发布到抢单大厅。"
+            : "客服已确认付款，订单已发布到抢单大厅。";
       await addMessage(conversation, service.profile.id, "customer_service", sysMsg, "system", order.id);
 
       let reward = null;
@@ -3698,17 +3721,39 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
         );
       } catch (_) {}
 
+      const paidAtIso = patched.paid_at || nowIso();
+      let cascadedChildren = [];
+      if (isMultiParent) {
+        try {
+          const { cascadeMultiChildrenToClaimed } = await import("./_place-multi-order.js");
+          const { normalizeOrderStatus } = await import("./_order-status.js");
+          cascadedChildren = await cascadeMultiChildrenToClaimed(
+            {
+              restUrl,
+              supabaseJson,
+              serviceHeaders,
+              normalizeOrderStatus,
+              money,
+            },
+            { ...order, ...patched, status: next },
+            { paidAtIso, notify: true }
+          );
+        } catch (err) {
+          console.warn("[cs/confirm_payment] multi cascade", err?.message || err);
+        }
+      }
+
       const profiles = await profileMap([
         order.boss_id,
-        isAssignedPath ? assignedCompanionId : null,
+        isAssignedPath && !isMultiParent ? assignedCompanionId : null,
         service.profile.id,
+        ...(cascadedChildren || []).map((c) => c.companion_id).filter(Boolean),
       ]);
       const { createOrderGrabHelpers } = await import("./_order-grabs.js");
       const grabsApi = createOrderGrabHelpers({ restUrl, supabaseJson, serviceHeaders });
-      const grabs = isAssignedPath
+      const grabs = isAssignedPath || isMultiParent
         ? []
         : await grabsApi.listGrabs(order.id, patched.note || order.note || order.description || "");
-      const paidAtIso = patched.paid_at || nowIso();
       const reviewedReceipt = approvedReceiptSnapshot || pendingReceipt || null;
       const reviewFields = reviewedReceipt
         ? receiptReviewerFields({
@@ -3734,8 +3779,8 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
           ...patched,
           status: next,
           paid_at: paidAtIso,
-          assignment_type: isAssignedPath ? "assigned" : "public",
-          companion_id: isAssignedPath ? assignedCompanionId : null,
+          assignment_type: isMultiParent || isAssignedPath ? "assigned" : "public",
+          companion_id: isMultiParent ? null : isAssignedPath ? assignedCompanionId : null,
           customer_service_id: service.profile.id,
         },
         profiles,
@@ -3745,10 +3790,11 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
           paidAt: paidAtIso,
           ...reviewFields,
           paymentProofUrl: reviewedReceipt ? (await signedProofUrl(reviewedReceipt).catch(() => "")) || "" : "",
+          children: cascadedChildren,
         }
       );
 
-      if (isAssignedPath && assignedCompanionId) {
+      if (isAssignedPath && !isMultiParent && assignedCompanionId) {
         try {
           const { notifyCompanionOrderAssigned } = await import("./_companion-order-notify.js");
           const notifyOrder = {
@@ -3779,14 +3825,17 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
 
       return json(res, 200, {
         ok: true,
-        message: isAssignedPath
-          ? "已确认付款，订单进入待陪玩确认。"
-          : "订单已发布到抢单大厅",
+        message: isMultiParent
+          ? "已确认付款，多人订单进入等待陪玩确认。"
+          : isAssignedPath
+            ? "已确认付款，订单进入待陪玩确认。"
+            : "订单已发布到抢单大厅",
         order: finalOrder,
+        children: cascadedChildren,
         reward,
         listing: listingResult?.listing || null,
-        sentToGrabHall: !isAssignedPath,
-        path: isAssignedPath ? "assigned_confirm" : "grab_hall",
+        sentToGrabHall: !isAssignedPath && !isMultiParent,
+        path: isMultiParent ? "multi_confirm" : isAssignedPath ? "assigned_confirm" : "grab_hall",
       });
     }
     if (action === "cancel_grab_hall" || action === "cancel_open_grab") {

@@ -1,7 +1,7 @@
 /**
  * place_multi_order — create 1 parent (multi_group) + N children in awaiting_payment.
- * Payment is deferred to the shared pay_order / payment-confirm path (same as single-order):
- * boss pays the parent once; children cascade without a second wallet debit.
+ * Boss submits payment on parent via payment-confirm / pay_order → pending CS review.
+ * Only after CS confirm_payment do children cascade to claimed + companion notify.
  * On mid-create failure, soft-cancel partial rows (no debit — nothing was charged yet).
  */
 import {
@@ -557,4 +557,73 @@ export function assertPayOrderAllowed(order) {
     return { ok: true, cascadeChildren: true };
   }
   return { ok: true, cascadeChildren: false };
+}
+
+/**
+ * After CS (or legacy) payment approval on multi parent: cascade children → claimed.
+ * Does not debit wallet (parent already paid / held once).
+ */
+export async function cascadeMultiChildrenToClaimed(deps, parent, { paidAtIso, notify = true } = {}) {
+  const { restUrl, supabaseJson, serviceHeaders, normalizeOrderStatus, money } = deps;
+  const kids = await supabaseJson(
+    restUrl("orders", `?parent_order_id=eq.${encodeURIComponent(parent.id)}&select=*&order=created_at.asc`),
+    { headers: serviceHeaders() }
+  );
+  let notifyCompanionOrderAssigned = null;
+  if (notify) {
+    try {
+      ({ notifyCompanionOrderAssigned } = await import("./_companion-order-notify.js"));
+    } catch (err) {
+      console.warn("[cascadeMultiChildrenToClaimed] notify import", err?.message || err);
+    }
+  }
+  const at = paidAtIso || new Date().toISOString();
+  const children = [];
+  for (const child of kids || []) {
+    const st = normalizeOrderStatus
+      ? normalizeOrderStatus(child.status)
+      : String(child.status || "").toLowerCase();
+    if (st !== "awaiting_payment" && st !== "claimed") {
+      children.push(child);
+      continue;
+    }
+    if (st === "claimed") {
+      children.push(child);
+      continue;
+    }
+    const lineAmt = money ? money(child.total_amount) : Number(child.total_amount) || 0;
+    const childPatches = [
+      { status: "claimed", paid_at: at, paid_cat_food: lineAmt },
+      { status: "claimed", paid_cat_food: lineAmt },
+      { status: "claimed" },
+    ];
+    let savedChild = child;
+    for (const patch of childPatches) {
+      try {
+        const rows = await supabaseJson(restUrl("orders", `?id=eq.${encodeURIComponent(child.id)}`), {
+          method: "PATCH",
+          headers: serviceHeaders(),
+          body: JSON.stringify(patch),
+        });
+        savedChild = rows?.[0] || { ...child, ...patch };
+        break;
+      } catch (err) {
+        if (!/paid_at|paid_cat_food|column|schema cache|PGRST/i.test(String(err?.message || ""))) break;
+      }
+    }
+    children.push(savedChild);
+    if (notifyCompanionOrderAssigned && savedChild?.companion_id) {
+      try {
+        await Promise.race([
+          notifyCompanionOrderAssigned(savedChild, { eventType: "assign", email: "" }).catch((err) =>
+            console.warn("[cascadeMultiChildrenToClaimed] notify", err?.message || err)
+          ),
+          new Promise((resolve) => setTimeout(resolve, 2500)),
+        ]);
+      } catch (_) {
+        /* soft-fail */
+      }
+    }
+  }
+  return children;
 }

@@ -241,8 +241,8 @@
       var prevChildSnap={};
       var pendingOpenReviewId=(function(){try{return String(new URLSearchParams(location.search).get('openReview')||'').trim()}catch(e){return ''}})();
       var state={loading:true,error:'',orders:[],filter:(function(){var f=new URLSearchParams(location.search).get('filter')||'all';var ok=['all','awaiting_payment','payment_review','arranging','waiting_companion','boss_confirm','active','completed','after_sale','cancelled'];return ok.indexOf(f)>=0?f:'all'})(),fromCache:false,syncing:false};
-      var tabs=[['all','全部'],['awaiting_payment','待付款'],['payment_review','待人工审核'],['arranging','待客服处理'],['waiting_companion','等待陪玩确认'],['boss_confirm','等待老板选择'],['active','进行中'],['completed','已完成'],['after_sale','售后'],['cancelled','已取消']];
-      var statusText=(window.MCJOrderStatus&&window.MCJOrderStatus.LABELS)||{awaiting_payment:'待付款',payment_review:'待人工审核',pending:'待客服处理',claimed:'等待陪玩确认',waiting_boss_confirm:'等待老板选择',confirmed:'进行中',in_progress:'进行中',completed:'已完成',reviewed:'已评价',cancelled:'已取消',refund_requested:'售后',refunded:'已退款'};
+      var tabs=[['all','全部'],['awaiting_payment','待付款'],['payment_review','待客服审核'],['arranging','待客服处理'],['waiting_companion','等待陪玩确认'],['boss_confirm','等待老板选择'],['active','进行中'],['completed','已完成'],['after_sale','售后'],['cancelled','已取消']];
+      var statusText=(window.MCJOrderStatus&&window.MCJOrderStatus.LABELS)||{awaiting_payment:'待付款',payment_review:'待客服审核',pending:'待客服处理',claimed:'等待陪玩确认',waiting_boss_confirm:'等待老板选择',confirmed:'进行中',in_progress:'进行中',completed:'已完成',reviewed:'已评价',cancelled:'已取消',refund_requested:'售后',refunded:'已退款'};
       function token(){return localStorage.getItem('mcjAuthAccessToken')||sessionStorage.getItem('mcjAuthAccessToken')||''}
       function esc(v){return String(v==null?'':v).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
       function money(v){if(window.MCJCurrency)return window.MCJCurrency.formatPlain(v);var n=Number(v||0);return (Number.isFinite(n)?n:0).toFixed(2).replace(/\.00$/,'')+' 猫粮'}
@@ -260,11 +260,11 @@
         }).then(function(r){return r.json().then(function(j){if(!r.ok||j.ok===false)throw new Error((j&&j.message)||'无法开始 Discord 连接');return j;});})
           .then(function(j){if(j.authorizeUrl)location.href=j.authorizeUrl;else throw new Error('Discord 授权地址缺失');});
       }
-      function isPaymentReview(o){return !!(o&&(o.paymentReview||o.paymentStatus==='待审核'||o.paymentStatus==='待人工审核'||/待审核|待人工审核/.test(String(o.statusText||o.paymentStatus||''))))}
+      function isPaymentReview(o){return !!(o&&(o.paymentReview||o.paymentStatus==='待审核'||o.paymentStatus==='待人工审核'||o.paymentStatus==='待客服审核'||/待审核|待人工审核|待客服审核/.test(String(o.statusText||o.paymentStatus||''))))}
       function orderLabel(o){
         if(o.reviewed||o.status==='reviewed')return '已评价';
         if(o.status==='in_progress'&&o.completionPending)return o.autoConfirmPaused?'等待处理订单问题':'等待您确认完成';
-        if(isPaymentReview(o)&&o.status==='awaiting_payment')return '待人工审核';
+        if(isPaymentReview(o)&&o.status==='awaiting_payment')return '待客服审核';
         return o.statusText||statusText[o.status]||o.status||'-';
       }
       function canReview(o){return !!(o.canReview||(o.status==='completed'&&!o.reviewed&&(o.companionId||(o.companion&&o.companion.id))))}

@@ -402,9 +402,9 @@ function bossHint(row = {}) {
 }
 function paymentStatusLabel(row = {}) {
   const s = row.status || "";
-  if (s === "awaiting_payment") {
-    return row.paymentReceipt ? "待人工审核" : "待付款";
-  }
+    if (s === "awaiting_payment") {
+      return row.paymentReceipt ? "待客服审核" : "待付款";
+    }
   if (s === "cancelled") return "已取消";
   return "已付款";
 }
@@ -1552,8 +1552,8 @@ export default async function handler(req, res) {
           ...viewOrder({ ...saved, paymentReceipt: result.receipt, paymentProofUrl: proofUrl || "" }),
           paymentReview: true,
           paymentProofUrl: proofUrl || result.receipt?.storage_path || "",
-          statusText: "待人工审核",
-          paymentStatus: "待人工审核",
+          statusText: "待客服审核",
+          paymentStatus: "待客服审核",
         },
       });
     }
@@ -1622,8 +1622,16 @@ export default async function handler(req, res) {
           usedCatfoodHold = true;
         } catch (e) {
           // Fallback if hold RPC not migrated yet: legacy immediate debit (Staging/Prod until migration applied).
+          // Multi-group must NOT legacy-debit+claim — CS review owns approval after hold/submit.
           const msg = String(e?.message || e || "");
           const holdMissing = /mcj_wallet_hold|Could not find the function|schema cache|PGRST/i.test(msg);
+          if (holdMissing && payGuard.cascadeChildren) {
+            return json(res, 503, {
+              ok: false,
+              code: "MULTI_WALLET_HOLD_REQUIRED",
+              message: "多人订单需先冻结猫粮并由客服审核，当前钱包冻结能力不可用，请稍后重试或联系客服。",
+            });
+          }
           if (holdMissing) {
             try {
               const walletApi = await import("./_wallet.js");
@@ -1703,8 +1711,82 @@ export default async function handler(req, res) {
         });
       }
 
-      const nextStatus =
-        before.companion_id || payGuard.cascadeChildren ? "claimed" : "pending";
+      // —— Multi-group parent: submit for CS review. Never auto-claim / notify companions. ——
+      if (payGuard.cascadeChildren) {
+        const { createPendingWalletReceipt, listPendingForCs } = await import("./_payment-receipts.js");
+        let receipt = null;
+        try {
+          const pending = await listPendingForCs({ orderIds: [before.id] });
+          receipt = pending?.[0] || null;
+          if (!receipt) {
+            const created = await createPendingWalletReceipt({
+              order: before,
+              bossId: profile.id,
+              paymentMethod: usedTestPay ? "test" : paymentMethod || "catfood",
+            });
+            receipt = created?.receipt || null;
+          }
+        } catch (err) {
+          return json(res, err.status || 500, {
+            ok: false,
+            code: err.code || "PAYMENT_REVIEW_SUBMIT_FAILED",
+            message: err.message || "提交付款审核失败，请重试。",
+          });
+        }
+        const marker = `[[PAYMENT_PROOF]] wallet_hold pending_cs_review receipt=${receipt?.id || ""}`;
+        const note = `${String(before.note || "").replace(/\[\[PAYMENT_PROOF\]\][^\n]*/g, "").trim()}\n${marker}`.trim();
+        const description = `${String(before.description || "")
+          .replace(/\[\[PAYMENT_PROOF\]\][^\n]*/g, "")
+          .trim()}\n${marker}`.trim();
+        let saved = before;
+        try {
+          const rows = await supabaseJson(
+            restUrl(TABLE, `?id=eq.${encodeURIComponent(before.id)}&boss_id=eq.${encodeURIComponent(profile.id)}`),
+            {
+              method: "PATCH",
+              headers: serviceHeaders(),
+              body: JSON.stringify({ note, description }),
+            }
+          );
+          saved = rows?.[0] || { ...before, note, description };
+        } catch (_) {
+          saved = { ...before, note, description };
+        }
+        // Hard lock: keep awaiting_payment; children stay awaiting_payment; no companion notify.
+        await addSystemMessage(saved, profile.id, "老板已提交多人订单付款信息，等待客服审核。审核通过前不会通知陪玩。").catch(
+          () => {}
+        );
+        try {
+          const { notifyBossOrderEvent } = await import("./_boss-order-notify.js");
+          await notifyBossOrderEvent(saved, {
+            title: "待客服审核",
+            body: "付款信息已提交，等待客服审核通过后才会进入等待陪玩确认。",
+            kind: "payment_review",
+          });
+        } catch (err) {
+          console.warn("[orders/pay_order] multi review boss push", err?.message || err);
+        }
+        const kids = await supabaseJson(
+          restUrl(TABLE, `?parent_order_id=eq.${encodeURIComponent(before.id)}&select=*&order=created_at.asc`),
+          { headers: serviceHeaders() }
+        ).catch(() => []);
+        return json(res, 200, {
+          ok: true,
+          testPay: usedTestPay,
+          paymentReview: true,
+          message: "付款信息已提交，等待客服审核。审核通过前不会进入等待陪玩确认。",
+          order: {
+            ...viewOrder({ ...saved, paymentReceipt: receipt, status: "awaiting_payment" }),
+            paymentReview: true,
+            statusText: "待客服审核",
+            paymentStatus: "待客服审核",
+          },
+          children: (kids || []).map(viewOrder),
+          allowTestPay: previewAllowed,
+        });
+      }
+
+      const nextStatus = before.companion_id ? "claimed" : "pending";
       // Companion must confirm before accepted_at / start — never pre-stamp on pay.
       const deps = { restUrl, supabaseJson, serviceHeaders };
       const paidAtIso = nowIso();
@@ -1713,13 +1795,10 @@ export default async function handler(req, res) {
         accepted_at: null,
         paid_at: paidAtIso,
         paid_cat_food: paidAmount,
-        assignment_type:
-          before.companion_id || payGuard.cascadeChildren ? "assigned" : "public",
+        assignment_type: before.companion_id ? "assigned" : "public",
         ...(before.companion_id
           ? { order_type: before.order_type || "direct_companion" }
-          : payGuard.cascadeChildren
-            ? { companion_id: null, order_type: before.order_type || "multi_group" }
-            : { companion_id: null, order_type: before.order_type || "open_grab" }),
+          : { companion_id: null, order_type: before.order_type || "open_grab" }),
       };
       let saved;
       try {
@@ -1799,21 +1878,19 @@ export default async function handler(req, res) {
       const companionLabel =
         viewOrder(saved).companionName ||
         saved.companion_id ||
-        (payGuard.cascadeChildren ? "多人陪玩" : before.companion_id ? "指定陪玩" : "公开抢单");
+        (before.companion_id ? "指定陪玩" : "公开抢单");
       try {
         await addSystemMessage(
           saved,
           profile.id,
           nextStatus === "claimed"
-            ? payGuard.cascadeChildren
-              ? `${usedTestPay ? "[TEST] " : ""}多人订单已支付 ${paidAmount} 猫粮（一次扣款），等待各位陪玩确认。`
-              : `${usedTestPay ? "[TEST] " : ""}订单已支付，指定陪玩为 ${companionLabel}，等待陪玩确认。`
+            ? `${usedTestPay ? "[TEST] " : ""}订单已支付，指定陪玩为 ${companionLabel}，等待陪玩确认。`
             : `${usedTestPay ? "[TEST] " : ""}订单已支付，已进入抢单大厅，等待陪玩抢单。`
         );
       } catch (_) {
         /* chat soft-fail — status already persisted */
       }
-      if (nextStatus === "pending" && !before.companion_id && !payGuard.cascadeChildren) {
+      if (nextStatus === "pending" && !before.companion_id) {
         try {
           const { createGrabListingHelpers } = await import("./_order-grab-listings.js");
           const listingsApi = createGrabListingHelpers({ restUrl, supabaseJson, serviceHeaders });
@@ -1839,18 +1916,14 @@ export default async function handler(req, res) {
           console.warn("[orders/pay_order] companion notify import", err?.message || err);
         }
       }
-      
-      
-      
+
       try {
         const { notifyBossOrderEvent } = await import("./_boss-order-notify.js");
         await notifyBossOrderEvent(saved || { ...before, status: nextStatus }, {
           title: "付款成功",
           body:
             nextStatus === "claimed"
-              ? payGuard.cascadeChildren
-                ? "多人订单已支付，等待各位陪玩确认接单。"
-                : "订单已支付，等待陪玩确认接单。"
+              ? "订单已支付，等待陪玩确认接单。"
               : "订单已支付，已进入抢单大厅。",
           kind: "order_paid",
         });
@@ -1863,76 +1936,16 @@ export default async function handler(req, res) {
           source: usedTestPay ? "boss_test_pay" : "boss_pay",
         });
       } catch (_) {}
-      // Multi-group parent: cascade children to claimed with line paid snapshot (no second debit).
-      let children = [];
-      if (payGuard.cascadeChildren) {
-        try {
-          const kids = await supabaseJson(
-            restUrl(TABLE, `?parent_order_id=eq.${encodeURIComponent(before.id)}&select=*&order=created_at.asc`),
-            { headers: serviceHeaders() }
-          );
-          let notifyCompanionOrderAssigned = null;
-          try {
-            ({ notifyCompanionOrderAssigned } = await import("./_companion-order-notify.js"));
-          } catch (err) {
-            console.warn("[orders/pay_order] multi companion notify import", err?.message || err);
-          }
-          for (const child of kids || []) {
-            if (normalizeOrderStatus(child.status) !== "awaiting_payment") {
-              children.push(child);
-              continue;
-            }
-            const lineAmt = money(child.total_amount);
-            const childPatches = [
-              { status: "claimed", paid_at: paidAtIso, paid_cat_food: lineAmt },
-              { status: "claimed", paid_cat_food: lineAmt },
-              { status: "claimed" },
-            ];
-            let savedChild = child;
-            for (const patch of childPatches) {
-              try {
-                const rows = await supabaseJson(restUrl(TABLE, `?id=eq.${encodeURIComponent(child.id)}`), {
-                  method: "PATCH",
-                  headers: serviceHeaders(),
-                  body: JSON.stringify(patch),
-                });
-                savedChild = rows?.[0] || { ...child, ...patch };
-                break;
-              } catch (err) {
-                if (!/paid_at|paid_cat_food|column|schema cache|PGRST/i.test(String(err?.message || ""))) break;
-              }
-            }
-            children.push(savedChild);
-            if (notifyCompanionOrderAssigned && savedChild?.companion_id) {
-              try {
-                await Promise.race([
-                  notifyCompanionOrderAssigned(savedChild, { eventType: "assign", email: "" }).catch((err) =>
-                    console.warn("[orders/pay_order] multi child notify", err?.message || err)
-                  ),
-                  new Promise((resolve) => setTimeout(resolve, 2500)),
-                ]);
-              } catch (_) {
-                /* soft-fail */
-              }
-            }
-          }
-        } catch (cascErr) {
-          console.warn("[orders/pay_order] multi child cascade", String(cascErr?.message || cascErr).slice(0, 160));
-        }
-      }
+      const children = [];
       return json(res, 200, {
         ok: true,
         testPay: usedTestPay,
         message: usedTestPay
           ? nextStatus === "claimed"
-            ? payGuard.cascadeChildren
-              ? "测试支付成功（TEST）。多人订单已进入等待陪玩确认。"
-              : "测试支付成功（TEST）。订单已进入等待陪玩确认。"
+            ? "测试支付成功（TEST）。订单已进入等待陪玩确认。"
             : "测试支付成功（TEST）。订单已进入抢单大厅。"
           : nextStatus === "claimed"
-            ? payGuard.cascadeChildren
-              ? "支付成功，多人订单已进入等待陪玩确认。"
-              : "支付成功，订单已进入等待陪玩确认。"
+            ? "支付成功，订单已进入等待陪玩确认。"
             : "支付成功，订单已进入抢单大厅。",
         order: viewOrder(saved),
         children: children.map(viewOrder),
