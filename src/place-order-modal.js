@@ -1529,6 +1529,10 @@
           status: "awaiting_payment",
           paymentMethod: state.payment,
           totalAmount: order.totalAmount || totalAmount(),
+          // Preserve multi markers when present so payment-confirm never shows wallet shortcut.
+          isMultiGroupParent: !!(order.isMultiGroupParent || order.orderTypeKey === "multi_group"),
+          orderTypeKey: order.orderTypeKey || order.order_type || "",
+          order_type: order.order_type || order.orderTypeKey || "",
         });
         try {
           localStorage.setItem("mcjOrderCache:" + oid, cachePayload);
