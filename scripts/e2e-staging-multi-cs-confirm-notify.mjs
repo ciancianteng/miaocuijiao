@@ -244,15 +244,14 @@ try {
     {}
   );
 
-  // CS browser UI
+  // CS browser UI — real login form (session inject alone redirects to login)
   const csPage = await browser.newPage({ viewport: { width: 1280, height: 900 } });
-  await csPage.addInitScript(
-    ({ session }) => {
-      localStorage.setItem("mcjServiceSession", JSON.stringify(session));
-      sessionStorage.setItem("mcjServiceSession", JSON.stringify(session));
-    },
-    { session: Object.assign({}, cs.session, { token: cs.token }) }
-  );
+  await csPage.goto(`${STG}/customer-service/login/`, { waitUntil: "domcontentloaded", timeout: 60000 });
+  await csPage.waitForTimeout(1500);
+  await csPage.fill('input[name="account"], input[type="email"], input[name="email"]', "service@meow.test");
+  await csPage.fill('input[name="password"], input[type="password"]', "McjTest@12345678");
+  await csPage.click('button[type="submit"], [data-login] button, form[data-login] button');
+  await csPage.waitForTimeout(3500);
   await csPage.goto(`${STG}/customer-service/orders/`, { waitUntil: "domcontentloaded", timeout: 60000 });
   await csPage.waitForTimeout(4500);
 
