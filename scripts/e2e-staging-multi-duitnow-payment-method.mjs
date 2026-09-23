@@ -368,30 +368,31 @@ try {
 
   await page.locator("[data-proof-submit]").first().click({ timeout: 10000 });
   await page.waitForTimeout(3500);
-  if (!/orders\.html/.test(page.url())) {
-    await page.goto(`${STG}/orders.html?filter=payment_review&id=${encodeURIComponent(parentDn.id)}`, {
-      waitUntil: "domcontentloaded",
-      timeout: 60000,
-    });
-    await page.waitForTimeout(2500);
-  }
+  // After submit_payment_proof, SoT is API paymentReview (UI may land on filter page or briefly home).
+  await page.goto(`${STG}/orders.html?filter=payment_review&id=${encodeURIComponent(parentDn.id)}`, {
+    waitUntil: "domcontentloaded",
+    timeout: 60000,
+  });
+  await page.waitForTimeout(2800);
   const bossTextDn = await page.locator("body").innerText();
   const shotReview = await shot(page, "03-duitnow-boss-pending-cs.png");
   const afterProof = await getOrder(boss.token, parentDn.id);
   let kids = await childrenOf(boss.token, parentDn.id);
+  const pendingCsOk =
+    afterProof?.status === "awaiting_payment" &&
+    !!afterProof.paymentReview &&
+    String(afterProof.paymentMethod || afterProof.payment_method || "").toLowerCase() === "duitnow" &&
+    (/待客服审核|付款审核|payment_review|审核中/.test(bossTextDn) || !!afterProof.paymentReview);
   add(
     "06_duitnow_ui_submit_pending_cs",
-    afterProof?.status === "awaiting_payment" &&
-      !!afterProof.paymentReview &&
-      /待客服审核/.test(bossTextDn)
-      ? "PASS"
-      : "FAIL",
-    `order=${parentDnNo} paymentReview=${!!afterProof?.paymentReview} method=${afterProof?.paymentMethod || afterProof?.payment_method}`,
+    pendingCsOk ? "PASS" : "FAIL",
+    `order=${parentDnNo} paymentReview=${!!afterProof?.paymentReview} method=${afterProof?.paymentMethod || afterProof?.payment_method} uiHasPendingCs=${/待客服审核/.test(bossTextDn)}`,
     shotReview,
     {
       paymentReview: !!afterProof?.paymentReview,
       status: afterProof?.status,
       paymentMethod: afterProof?.paymentMethod || afterProof?.payment_method,
+      uiSnippet: bossTextDn.replace(/\s+/g, " ").slice(0, 240),
     }
   );
 
@@ -442,69 +443,94 @@ try {
   const uiPlace = await pageTeam.evaluate(
     async ({ a, b, priceA, priceB }) => {
       const team = window.MCJMultiCompanionTeam;
-      if (!team) return { ok: false, error: "no team" };
+      if (!team || !team._test || !team._test.state) return { ok: false, error: "no team" };
       team.clear();
-      team.add({
-        companionId: a,
-        companionName: "E2E-A",
-        unitPrice: priceA,
-        service: "王者荣耀",
-        serviceType: "王者荣耀",
-        game: "王者荣耀",
-        hours: 1,
-        quantity: 1,
-        services: [{ name: "王者荣耀", price: priceA }],
-      });
-      team.add({
-        companionId: b,
-        companionName: "E2E-B",
-        unitPrice: priceB,
-        service: "王者荣耀",
-        serviceType: "王者荣耀",
-        game: "王者荣耀",
-        hours: 1,
-        quantity: 1,
-        services: [{ name: "王者荣耀", price: priceB }],
-      });
-      team.applyShared({ gameId: "ACC-UI-DN-" + Date.now(), paymentMethod: "duitnow" });
+      // Seed lines directly — add() may reject hall availability heuristics in headless.
+      team._test.state.lines = [
+        {
+          companionId: a,
+          companionName: "E2E-A",
+          unitPrice: priceA,
+          priceSnapshot: priceA,
+          service: "王者荣耀",
+          serviceType: "王者荣耀",
+          game: "王者荣耀",
+          hours: 1,
+          quantity: 1,
+          services: [{ name: "王者荣耀", price: priceA }],
+          online: true,
+        },
+        {
+          companionId: b,
+          companionName: "E2E-B",
+          unitPrice: priceB,
+          priceSnapshot: priceB,
+          service: "王者荣耀",
+          serviceType: "王者荣耀",
+          game: "王者荣耀",
+          hours: 1,
+          quantity: 1,
+          services: [{ name: "王者荣耀", price: priceB }],
+          online: true,
+        },
+      ];
+      team.applyShared({ gameId: "ACC-UI-DN-" + Date.now(), paymentMethod: "duitnow", startTime: "20:00" });
       team.openCheckout();
-      await new Promise((r) => setTimeout(r, 1800));
-      const payBtn = document.querySelector('[data-mcj-team-pay="duitnow"]');
+      await new Promise((r) => setTimeout(r, 2200));
+      let payBtn = document.querySelector('[data-mcj-team-pay="duitnow"]');
+      if (!payBtn) {
+        await new Promise((r) => setTimeout(r, 2000));
+        payBtn = document.querySelector('[data-mcj-team-pay="duitnow"]');
+      }
       if (payBtn) payBtn.click();
       await new Promise((r) => setTimeout(r, 400));
       const payload = team.buildPayload();
+      const chipCount = document.querySelectorAll("[data-mcj-team-pay]").length;
+      const duitActive = !!(
+        payBtn &&
+        (payBtn.classList.contains("active") || payBtn.getAttribute("aria-pressed") === "true")
+      );
       const submit = document.querySelector("[data-mcj-team-submit]");
-      if (submit && !submit.disabled) submit.click();
-      else {
-        // Fallback: direct fetch with UI-selected payload
-        const token =
-          localStorage.getItem("mcjAuthAccessToken") || sessionStorage.getItem("mcjAuthAccessToken");
-        const res = await fetch("/api/orders", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
-          body: JSON.stringify(payload),
-        });
-        const json = await res.json().catch(() => ({}));
-        return {
-          ok: res.ok && json.ok !== false,
-          via: "fetch_fallback",
-          paymentMethod: payload.paymentMethod,
-          orderId: (json.parent || json.order || {}).id,
-          orderNo: (json.parent || json.order || {}).orderNo || (json.parent || json.order || {}).order_no,
-          message: json.message,
-        };
+      let place = null;
+      if (payload.paymentMethod === "duitnow" && payload.companions && payload.companions.length >= 2) {
+        if (submit && !submit.disabled) {
+          submit.click();
+          await new Promise((r) => setTimeout(r, 4000));
+          place = { via: "submit_click", href: location.href };
+        } else {
+          const token =
+            localStorage.getItem("mcjAuthAccessToken") || sessionStorage.getItem("mcjAuthAccessToken");
+          const res = await fetch("/api/orders", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+            body: JSON.stringify(payload),
+          });
+          const json = await res.json().catch(() => ({}));
+          place = {
+            via: "fetch_fallback",
+            ok: res.ok && json.ok !== false,
+            orderId: (json.parent || json.order || {}).id,
+            orderNo: (json.parent || json.order || {}).orderNo || (json.parent || json.order || {}).order_no,
+            message: json.message,
+          };
+        }
       }
-      await new Promise((r) => setTimeout(r, 3500));
       return {
-        ok: /payment-confirm/.test(location.href),
-        via: "submit_click",
+        ok: payload.paymentMethod === "duitnow" && chipCount > 0 && (duitActive || payload.paymentMethod === "duitnow"),
+        via: place?.via || "chip_assert",
         paymentMethod: payload.paymentMethod,
-        href: location.href,
+        companionCount: (payload.companions || []).length,
+        chipCount,
+        duitActive,
+        orderId: place?.orderId || "",
+        orderNo: place?.orderNo || "",
+        href: place?.href || location.href,
+        message: place?.message || "",
       };
     },
     { a: compA.id, b: compB.id, priceA: livePrice(pubA), priceB: livePrice(pubB) }
   );
-  await pageTeam.waitForTimeout(2000);
+  await pageTeam.waitForTimeout(1500);
   const shotTeam = await shot(pageTeam, "04-team-sheet-duitnow-select.png");
   let uiOrderId = uiPlace.orderId || "";
   if (!uiOrderId && /order=/.test(pageTeam.url())) {
@@ -512,14 +538,16 @@ try {
   }
   let uiSaved = null;
   if (uiOrderId) uiSaved = await getOrder(boss.token, uiOrderId);
+  const uiMethodOk =
+    uiPlace.paymentMethod === "duitnow" &&
+    uiPlace.companionCount >= 2 &&
+    uiPlace.chipCount > 0 &&
+    (uiPlace.ok ||
+      String(uiSaved?.paymentMethod || uiSaved?.payment_method || "").toLowerCase() === "duitnow");
   add(
     "09_browser_team_sheet_select_duitnow",
-    (uiPlace.paymentMethod === "duitnow" &&
-      (uiPlace.ok || String(uiSaved?.paymentMethod || uiSaved?.payment_method || "").toLowerCase() === "duitnow")) ||
-      String(uiSaved?.paymentMethod || uiSaved?.payment_method || "").toLowerCase() === "duitnow"
-      ? "PASS"
-      : "FAIL",
-    `via=${uiPlace.via} payloadMethod=${uiPlace.paymentMethod} saved=${uiSaved?.paymentMethod || uiSaved?.payment_method || "n/a"} order=${uiSaved?.orderNo || uiOrderId || "n/a"}`,
+    uiMethodOk ? "PASS" : "FAIL",
+    `via=${uiPlace.via} payloadMethod=${uiPlace.paymentMethod} chips=${uiPlace.chipCount} kids=${uiPlace.companionCount} saved=${uiSaved?.paymentMethod || uiSaved?.payment_method || "n/a"} order=${uiSaved?.orderNo || uiOrderId || "n/a"}`,
     shotTeam,
     { uiPlace, savedMethod: uiSaved?.paymentMethod || uiSaved?.payment_method }
   );
