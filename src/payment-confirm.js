@@ -846,8 +846,8 @@
     var bossHint = String((order && order.bossHint) || "").trim();
     if (s === "awaiting_payment" && reviewing) {
       return {
-        title: "待人工审核",
-        reason: "付款凭证已提交，正在等待客服人工审核。",
+        title: "待客服审核",
+        reason: "付款信息已提交，正在等待客服人工审核。审核通过前不会通知陪玩。",
         next: "客服确认收款后订单才会进入接单流程；驳回后可重新上传凭证。",
         primary: "orders",
         primaryLabel: "查看我的订单",
@@ -1106,7 +1106,7 @@
     var st = String(order.status || "");
     var guide = statusGuide(st, order);
     var reviewing = isReviewing(order);
-    var label = reviewing && st === "awaiting_payment" ? "待人工审核" : STATUS_LABEL[st] || order.statusText || st;
+    var label = reviewing && st === "awaiting_payment" ? "待客服审核" : STATUS_LABEL[st] || order.statusText || st;
     var csHref = "support.html?order=" + encodeURIComponent(order.id);
     var ordersHref =
       reviewing && st === "awaiting_payment"
@@ -1198,7 +1198,7 @@
     var multiHint = multi
       ? '<p class="pay-hint">本订单一次付款 ' +
         esc(money(order.totalAmount || order.amount)) +
-        "；确认支付成功后才会通知陪玩接单。</p>"
+        "；提交付款信息后先进入客服审核，审核通过后才会通知陪玩接单。</p>"
       : "";
     if (isMultiChild(order)) {
       multiHint =
@@ -1321,6 +1321,17 @@
       }
       if (body.order) writeCache(orderId, body.order);
       var paidOrder = body.order || readCache(orderId) || { id: orderId, status: "claimed" };
+      // Multi / CS-review path: boss submitted payment info — stay awaiting CS, never jump to waiting_companion.
+      if (
+        body.paymentReview ||
+        paidOrder.paymentReview ||
+        String(paidOrder.status || "") === "awaiting_payment" ||
+        /待客服审核|待人工审核/.test(String(paidOrder.statusText || paidOrder.paymentStatus || ""))
+      ) {
+        writeCache(orderId, Object.assign({}, paidOrder, { paymentReview: true, status: "awaiting_payment" }));
+        goMyOrdersReview(orderId);
+        return;
+      }
       // Post-pay Discord: if Discord voice + unbound, stay on page with connect CTA.
       if (orderVoiceMode(paidOrder) === "discord") {
         await refreshDiscordStatus(paidOrder);
@@ -1414,8 +1425,8 @@
       var nextOrder = body.order || current;
       nextOrder.paymentReview = true;
       nextOrder.status = nextOrder.status || "awaiting_payment";
-      nextOrder.statusText = "待人工审核";
-      nextOrder.paymentStatus = "待人工审核";
+      nextOrder.statusText = "待客服审核";
+      nextOrder.paymentStatus = "待客服审核";
       nextOrder.paymentProofUrl = body.order.paymentProofUrl || body.order.payment_proof_url || "";
       proofDraft.serverProofUrl = nextOrder.paymentProofUrl;
       proofDraft.previewUrl = nextOrder.paymentProofUrl;

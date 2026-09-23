@@ -1,0 +1,109 @@
+{
+  "generated_at": "2026-09-23T10:57:01.206Z",
+  "staging": "https://meow-cuijiao-homepage-staging.vercel.app",
+  "source": "cursor_acceptance",
+  "root_cause": "Multi pay_order reused wallet instant-success → claimed + companion notify, skipping CS review.",
+  "files": [
+    "server/api/orders.js",
+    "server/api/customer-service.js",
+    "server/api/_payment-receipts.js",
+    "server/api/_place-multi-order.js",
+    "src/payment-confirm.js",
+    "orders.html"
+  ],
+  "cases": [
+    {
+      "TEST": "CS_login",
+      "RESULT": "PASS",
+      "EVIDENCE": "logged in as service@meow.test",
+      "SCREENSHOT": "—",
+      "DB/API": "{\"account\":\"service@meow.test\"}",
+      "NOTES": ""
+    },
+    {
+      "TEST": "BOSS_TOPUP",
+      "RESULT": "PASS",
+      "EVIDENCE": "avail0=30 grant=已发放猫粮",
+      "SCREENSHOT": "—",
+      "DB/API": "{\"bal0\":{\"total\":470,\"available\":30,\"held\":440},\"topped\":{\"ok\":true,\"message\":\"已发放猫粮\",\"status\":200}}",
+      "NOTES": ""
+    },
+    {
+      "TEST": "CASE1_submit_then_pending_cs_review",
+      "RESULT": "PASS",
+      "EVIDENCE": "payReview=true parent=awaiting_payment kids=awaiting_payment,awaiting_payment",
+      "SCREENSHOT": "screenshots/01-boss-pending-cs-review.png",
+      "DB/API": "{\"parentBeforeApproval\":{\"id\":\"2d3c5513-3199-4623-a91c-4bee32bb7915\",\"orderNo\":\"MCJO000233\",\"status\":\"awaiting_payment\",\"paymentReview\":true,\"paidAt\":null},\"childrenBeforeApproval\":[{\"id\":\"2a79f32a-1701-4968-9e71-c46ebf3c0c69\",\"orderNo\":\"MCJO000235\",\"status\":\"awaiting_payment\",\"companionId\":\"d9aded34-8ed5-436f-9f43-d654c8cda7f0\"},{\"id\":\"9b1738ec-cfaa-4c2a-92b1-c9a9a6c26df6\",\"orderNo\":\"MCJO000234\",\"status\":\"awaiting_payment\",\"companionId\":\"61c0fb64-0467-4d8c-9c1a-2d4c1a670ec9\"}],\"payMessage\":\"付款信息已提交，等待客服审核。审核通过前不会进入等待陪玩确认。\",\"companionInboxHasOrder\":false,\"bossUiSnippet\":\"MEOW CUI JIAO 妙脆角 ☰ 创建自定义订单 填写需求，客服匹配陪玩 → 我的订单 只显示当前老板账号的真实订单。 刷新 全部 待付款 待客服审核 待客服处理 等待陪玩确认 等待老板选择 进行中 已完成 售后 已取消 多人陪玩订单 · MCJO000233 2026/9/23 18:57:13 多人陪玩订单 · 共2位陪玩 待客服审核 游戏/服务 王者荣耀 · 2位陪玩 · 一次付款 陪玩 Organic Invitee Comp + Organic Companion 总消费 🐱 40 猫粮 当前状态 待客服审核 创建时间 2026/9/2\"}",
+      "NOTES": ""
+    },
+    {
+      "TEST": "CASE1_boss_ui_pending_cs",
+      "RESULT": "PASS",
+      "EVIDENCE": "Boss order detail shows 待客服审核",
+      "SCREENSHOT": "screenshots/01-boss-pending-cs-review.png",
+      "DB/API": "MEOW CUI JIAO 妙脆角 ☰ 创建自定义订单 填写需求，客服匹配陪玩 → 我的订单 只显示当前老板账号的真实订单。 刷新 全部 待付款 待客服审核 待客服处理 等待陪玩确认 等待老板选择 进行中 已完成 售后 已取消 多人陪玩订单 · MCJO000233 2026/9/23 18:57:13 多人陪玩订单 · 共2位陪玩 待客服审核 游戏/服务 王者荣耀 · 2位陪玩 · 一次付款 陪玩 Organic Invitee Comp + Organic Companion 总消费 🐱 40 猫粮 当前状态 待客服审核 创建时间 2026/9/23 18:57:13 O Organic Invitee Comp ⏱ 等待确认 O Organic Companion ⏱ 等待确认 查看详情 查看审核进度 取消订单 联系客服 付款凭证已提交，等待人工审核。 订单详情 × 订单信息 订单",
+      "NOTES": ""
+    },
+    {
+      "TEST": "CASE1_companion_no_order_before_approve",
+      "RESULT": "PASS",
+      "EVIDENCE": "inbox=false kidsClaimable=false",
+      "SCREENSHOT": "screenshots/02-companion-no-claimable-before-cs.png",
+      "DB/API": "{\"kids\":[\"awaiting_payment\",\"awaiting_payment\"]}",
+      "NOTES": ""
+    },
+    {
+      "TEST": "CASE4_refresh_still_pending_cs",
+      "RESULT": "PASS",
+      "EVIDENCE": "status=awaiting_payment review=true",
+      "SCREENSHOT": "screenshots/04-boss-refresh-still-pending-cs.png",
+      "DB/API": "{\"parent\":\"awaiting_payment\",\"paymentStatus\":\"待客服审核\"}",
+      "NOTES": ""
+    },
+    {
+      "TEST": "CASE5_repeat_submit_no_bypass",
+      "RESULT": "PASS",
+      "EVIDENCE": "retry status=awaiting_payment msg=付款信息已提交，等待客服审核。审核通过前不会进入等待陪玩确认。",
+      "SCREENSHOT": "—",
+      "DB/API": "{\"payRetry\":\"付款信息已提交，等待客服审核。审核通过前不会进入等待陪玩确认。\",\"kids\":[\"awaiting_payment\",\"awaiting_payment\"]}",
+      "NOTES": ""
+    },
+    {
+      "TEST": "CASE2_cs_approve_then_waiting_0of2",
+      "RESULT": "PASS",
+      "EVIDENCE": "approve=200 parent=claimed kids=claimed,claimed",
+      "SCREENSHOT": "screenshots/05-boss-waiting-0of2-after-cs-approve.png",
+      "DB/API": "{\"approveMessage\":\"已确认付款，多人订单进入等待陪玩确认。\",\"parentAfterApproval\":{\"id\":\"2d3c5513-3199-4623-a91c-4bee32bb7915\",\"status\":\"claimed\"},\"childrenAfterApproval\":[{\"id\":\"2a79f32a-1701-4968-9e71-c46ebf3c0c69\",\"status\":\"claimed\",\"companionId\":\"d9aded34-8ed5-436f-9f43-d654c8cda7f0\"},{\"id\":\"9b1738ec-cfaa-4c2a-92b1-c9a9a6c26df6\",\"status\":\"claimed\",\"companionId\":\"61c0fb64-0467-4d8c-9c1a-2d4c1a670ec9\"}],\"path\":\"multi_confirm\",\"csShot\":\"screenshots/03-cs-dashboard-before-approve.png\",\"apiShot\":\"screenshots/04b-cs-after-approve-api.png\"}",
+      "NOTES": "已确认付款，多人订单进入等待陪玩确认。"
+    },
+    {
+      "TEST": "CASE2_companion_receives_after_approve",
+      "RESULT": "PASS",
+      "EVIDENCE": "inboxAfter=false",
+      "SCREENSHOT": "screenshots/06-companion-sees-order-after-cs-approve.png",
+      "DB/API": "{\"kidsApproved\":[{\"id\":\"2a79f32a-1701-4968-9e71-c46ebf3c0c69\",\"st\":\"claimed\",\"cid\":\"d9aded34-8ed5-436f-9f43-d654c8cda7f0\"},{\"id\":\"9b1738ec-cfaa-4c2a-92b1-c9a9a6c26df6\",\"st\":\"claimed\",\"cid\":\"61c0fb64-0467-4d8c-9c1a-2d4c1a670ec9\"}]}",
+      "NOTES": ""
+    },
+    {
+      "TEST": "CASE3_cs_reject_no_waiting_companion",
+      "RESULT": "PASS",
+      "EVIDENCE": "reject=200 parent=awaiting_payment msg=已驳回付款凭证，老板可重新上传。",
+      "SCREENSHOT": "screenshots/07-boss-after-cs-reject.png",
+      "DB/API": "{\"pay3\":true,\"parent\":\"awaiting_payment\",\"kids\":[\"awaiting_payment\",\"awaiting_payment\"],\"inboxRej\":false,\"rejectMessage\":\"已驳回付款凭证，老板可重新上传。\"}",
+      "NOTES": ""
+    },
+    {
+      "TEST": "CASE3_resubmit_after_reject",
+      "RESULT": "PASS",
+      "EVIDENCE": "resubmit=200 review=true",
+      "SCREENSHOT": "—",
+      "DB/API": "{\"message\":\"付款信息已提交，等待客服审核。审核通过前不会进入等待陪玩确认。\",\"status\":\"awaiting_payment\"}",
+      "NOTES": ""
+    }
+  ],
+  "summary": {
+    "PASS": 11,
+    "FAIL": 0,
+    "BLOCKED": 0
+  }
+}
