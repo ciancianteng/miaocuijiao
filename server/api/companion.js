@@ -1865,22 +1865,27 @@ async function ordersForIncomeTransactions(transactions = [], myOrders = []) {
       id: String(id),
       status: o.status || o.orderStatus || "",
       order_no: o.orderNo || o.order_no || "",
+      // Keep unlock SoT fields — missing completed_at forces permanent earnings lock.
+      completed_at: o.completedAt || o.completed_at || "",
+      completion_method: o.completionMethod || o.completion_method || "",
+      cancelled_at: o.cancelledAt || o.cancelled_at || "",
     });
   }
-  const missing = [];
-  for (const tx of transactions || []) {
-    if (String(tx.transaction_type || "") !== "companion_income") continue;
-    const oid = tx.order_id ? String(tx.order_id) : "";
-    if (!oid || byId.has(oid)) continue;
-    missing.push(oid);
-  }
-  const uniq = [...new Set(missing)].slice(0, 80);
-  if (uniq.length) {
+  // Always refresh from DB for companion_income order ids so SoT completed_at wins
+  // (myOrders seed alone previously omitted completed_at → permanent lock).
+  const incomeOids = [
+    ...new Set(
+      (transactions || [])
+        .filter((tx) => String(tx.transaction_type || "") === "companion_income" && tx.order_id)
+        .map((tx) => String(tx.order_id))
+    ),
+  ].slice(0, 120);
+  if (incomeOids.length) {
     try {
       const rows = await supabaseJson(
         restUrl(
           "orders",
-          `?id=in.(${uniq.map(encodeURIComponent).join(",")})&select=id,status,order_no,companion_id,completed_at,cancelled_at`
+          `?id=in.(${incomeOids.map(encodeURIComponent).join(",")})&select=id,status,order_no,companion_id,completed_at,cancelled_at,completion_method`
         ),
         { headers: serviceHeaders() }
       );
@@ -1888,7 +1893,7 @@ async function ordersForIncomeTransactions(transactions = [], myOrders = []) {
         byId.set(String(row.id), row);
       }
     } catch {
-      /* soft-fail: missing order => settlement income treated as void */
+      /* soft-fail: keep myOrders seed */
     }
   }
   return [...byId.values()];

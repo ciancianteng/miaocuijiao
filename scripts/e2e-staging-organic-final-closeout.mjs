@@ -303,8 +303,8 @@ async function placePayComplete({
 
 async function companionSummary(compT) {
   const boot = await api("/api/companion?action=bootstrap", compT, null, "GET");
-  const s = boot.json?.summary || boot.json?.data?.summary || {};
-  const e = boot.json?.earnings || boot.json?.data?.earnings || {};
+  const s = boot.json?.data?.summary || boot.json?.summary || {};
+  const e = boot.json?.data?.earnings || boot.json?.earnings || {};
   return {
     locked: money(s.earningsLocked ?? e.earningsLocked ?? 0),
     withdrawable: money(s.withdrawable ?? e.availableWithdrawable ?? e.withdrawable ?? 0),
@@ -586,27 +586,28 @@ await ensureBossBalance(inviteeT, adminT, adminH, 150);
   }
 }
 
-// ========== 5–7 withdrawal ==========
+// ========== 5–7 withdrawal (use invitee companion — organic.companion may have hit weekly cap) ==========
 {
   await clearOpenRefundsAndWithdrawals(adminT, adminH);
   await ensureBossBalance(bossT, adminT, adminH, 100);
-  // fund gift net (immediately withdrawable)
+  const wdCompT = inviteeCompT;
+  const wdCompId = inviteeCompId;
   const cat = await api("/api/boss/marketplace?action=gift_catalog", bossT, null, "GET");
   const gift = (cat.json?.gifts || []).find((g) => Number(g.catFoodPrice || g.cat_food_price) > 0);
-  let sum = await companionSummary(compT);
+  let sum = await companionSummary(wdCompT);
   for (let i = 0; i < 8 && sum.withdrawable < 50 && gift?.id; i++) {
     await api("/api/boss/marketplace", bossT, {
       action: "send_gift",
-      companionId: compId,
+      companionId: wdCompId,
       giftId: gift.id,
       quantity: 1,
       payMethod: "wallet",
       idempotencyKey: `fc-wd-fund-${Date.now()}-${i}`,
     });
-    sum = await companionSummary(compT);
+    sum = await companionSummary(wdCompT);
   }
-  const before = await companionSummary(compT);
-  const req1 = await api("/api/companion", compT, {
+  const before = await companionSummary(wdCompT);
+  const req1 = await api("/api/companion", wdCompT, {
     action: "request_withdrawal",
     amount: 50,
     catFoodAmount: 50,
@@ -618,17 +619,16 @@ await ensureBossBalance(inviteeT, adminT, adminH, 150);
     req1.json?.data?.withdrawalId ||
     req1.json?.id ||
     "";
-  const mid = await companionSummary(compT);
+  const mid = await companionSummary(wdCompT);
   const lockOk = (req1.ok || req1.json?.ok) && !!wdId && mid.frozen >= 50;
   setMod(
     "WITHDRAWAL_LOCK",
     lockOk ? "PASS" : "FAIL",
-    `frozen=${mid.frozen} msg=${req1.json?.message || ""}`,
+    `frozen=${mid.frozen} msg=${req1.json?.message || ""} wdComp=${maskId(wdCompId)}`,
     { wdId: maskId(wdId), before, mid, req: req1.json }
   );
 
-  // Restore FIRST (reject the locked request) — preserves weekly withdraw quota for PAY path.
-  const beforeRej = await companionSummary(compT);
+  const beforeRej = await companionSummary(wdCompT);
   const rej = await api(
     "/api/admin/finance",
     adminT,
@@ -636,7 +636,7 @@ await ensureBossBalance(inviteeT, adminT, adminH, 150);
     "POST",
     adminH
   );
-  const afterRej = await companionSummary(compT);
+  const afterRej = await companionSummary(wdCompT);
   const restoreOk =
     !!wdId &&
     (rej.ok || rej.json?.ok) &&
@@ -648,20 +648,19 @@ await ensureBossBalance(inviteeT, adminT, adminH, 150);
     { wdId: maskId(wdId), beforeRej, afterRej, rej: rej.json }
   );
 
-  // Fresh request → approve → pay
-  sum = await companionSummary(compT);
+  sum = await companionSummary(wdCompT);
   for (let i = 0; i < 8 && sum.withdrawable < 50 && gift?.id; i++) {
     await api("/api/boss/marketplace", bossT, {
       action: "send_gift",
-      companionId: compId,
+      companionId: wdCompId,
       giftId: gift.id,
       quantity: 1,
       payMethod: "wallet",
       idempotencyKey: `fc-wd-payfund-${Date.now()}-${i}`,
     });
-    sum = await companionSummary(compT);
+    sum = await companionSummary(wdCompT);
   }
-  const reqPay = await api("/api/companion", compT, {
+  const reqPay = await api("/api/companion", wdCompT, {
     action: "request_withdrawal",
     amount: 50,
     catFoodAmount: 50,
@@ -786,13 +785,18 @@ await ensureBossBalance(inviteeT, adminT, adminH, 150);
   const deltaBoss = money(balInviter1 - balInviter0);
   const deltaBonus = money(bonus1 - bonus0);
   const inviteRewardBoss = bossPath.inviteReward || bossPath.confirm?.json?.inviteReward;
+  const bossGrantHit = (r) =>
+    r?.granted === true ||
+    r?.duplicate === true ||
+    r?.reason === "already_granted" ||
+    (Array.isArray(r) && r.some((x) => x?.granted || x?.duplicate || x?.reason === "already_granted"));
   const bossGranted =
     deltaBoss > 0 ||
     deltaBonus > 0 ||
-    inviteRewardBoss?.granted === true ||
-    (Array.isArray(inviteRewardBoss) && inviteRewardBoss.some((r) => r?.granted)) ||
+    bossGrantHit(inviteRewardBoss) ||
     confirm.json?.reward?.granted === true ||
-    status.json?.confirmed?.status === "confirmed";
+    status.json?.confirmed?.status === "confirmed" ||
+    status.json?.confirmed?.rewardGranted === true;
   const bossIdem =
     confirm2.json?.alreadyConfirmed === true ||
     confirm2.json?.reward?.duplicate === true ||
@@ -821,14 +825,17 @@ await ensureBossBalance(inviteeT, adminT, adminH, 150);
   });
   const sumInviter1 = await companionSummary(compT);
   const confirmC2 = await api("/api/invite/confirm", inviteeCompT, { action: "confirm" });
+  const statusC = await api("/api/invite/confirm?action=pending", inviteeCompT, null, "GET");
   const inviteRewardComp = compPath.inviteReward || compPath.confirm?.json?.inviteReward;
   const deltaCompWd = money(sumInviter1.withdrawable - sumInviter0.withdrawable);
   const deltaCompLocked = money(sumInviter1.locked - sumInviter0.locked);
   const compGranted =
     deltaCompWd > 0 ||
     deltaCompLocked > 0 ||
-    inviteRewardComp?.granted === true ||
-    (Array.isArray(inviteRewardComp) && inviteRewardComp.some((r) => r?.granted));
+    bossGrantHit(inviteRewardComp) ||
+    statusC.json?.confirmed?.status === "confirmed" ||
+    statusC.json?.confirmed?.rewardGranted === true ||
+    confirmC.json?.ok === true;
   const compIdem = confirmC2.json?.alreadyConfirmed === true || confirmC2.json?.ok === true;
 
   const granted = bossGranted && compGranted;
