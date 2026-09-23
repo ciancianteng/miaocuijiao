@@ -490,33 +490,36 @@ try {
         payBtn &&
         (payBtn.classList.contains("active") || payBtn.getAttribute("aria-pressed") === "true")
       );
-      const submit = document.querySelector("[data-mcj-team-submit]");
+      // Do not click submit here — navigation destroys the evaluate context.
+      // Persist method via fetch so we still prove place_multi accepts UI payload.
       let place = null;
       if (payload.paymentMethod === "duitnow" && payload.companions && payload.companions.length >= 2) {
-        if (submit && !submit.disabled) {
-          submit.click();
-          await new Promise((r) => setTimeout(r, 4000));
-          place = { via: "submit_click", href: location.href };
-        } else {
-          const token =
-            localStorage.getItem("mcjAuthAccessToken") || sessionStorage.getItem("mcjAuthAccessToken");
-          const res = await fetch("/api/orders", {
-            method: "POST",
-            headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
-            body: JSON.stringify(payload),
-          });
-          const json = await res.json().catch(() => ({}));
-          place = {
-            via: "fetch_fallback",
-            ok: res.ok && json.ok !== false,
-            orderId: (json.parent || json.order || {}).id,
-            orderNo: (json.parent || json.order || {}).orderNo || (json.parent || json.order || {}).order_no,
-            message: json.message,
-          };
-        }
+        const token =
+          localStorage.getItem("mcjAuthAccessToken") || sessionStorage.getItem("mcjAuthAccessToken");
+        const res = await fetch("/api/orders", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+          body: JSON.stringify(payload),
+        });
+        const json = await res.json().catch(() => ({}));
+        place = {
+          via: "ui_payload_fetch",
+          ok: res.ok && json.ok !== false,
+          orderId: (json.parent || json.order || {}).id || "",
+          orderNo: (json.parent || json.order || {}).orderNo || (json.parent || json.order || {}).order_no || "",
+          message: json.message || "",
+          savedMethod:
+            (json.parent || json.order || {}).paymentMethod ||
+            (json.parent || json.order || {}).payment_method ||
+            "",
+        };
       }
       return {
-        ok: payload.paymentMethod === "duitnow" && chipCount > 0 && (duitActive || payload.paymentMethod === "duitnow"),
+        ok:
+          payload.paymentMethod === "duitnow" &&
+          chipCount > 0 &&
+          (duitActive || payload.paymentMethod === "duitnow") &&
+          (!place || place.ok !== false),
         via: place?.via || "chip_assert",
         paymentMethod: payload.paymentMethod,
         companionCount: (payload.companions || []).length,
@@ -524,7 +527,7 @@ try {
         duitActive,
         orderId: place?.orderId || "",
         orderNo: place?.orderNo || "",
-        href: place?.href || location.href,
+        savedMethod: place?.savedMethod || "",
         message: place?.message || "",
       };
     },
