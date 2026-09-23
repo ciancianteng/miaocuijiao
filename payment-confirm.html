@@ -181,6 +181,14 @@
         flex-shrink:0;
       }
     }
+    .pay-multi-lines{display:grid;gap:10px;margin-top:14px}
+    .pay-multi-line{display:grid;grid-template-columns:44px minmax(0,1fr);gap:12px;align-items:start;padding:12px;border:1px solid rgba(255,255,255,.08);border-radius:12px;background:rgba(0,0,0,.22);min-width:0;overflow:hidden}
+    .pay-multi-avatar{width:44px!important;height:44px!important;min-width:44px!important;min-height:44px!important;max-width:44px!important;max-height:44px!important;border-radius:12px;object-fit:cover!important;display:grid;place-items:center;background:rgba(255,255,255,.08);color:#ffd6e7;font-weight:800;overflow:hidden!important;box-sizing:border-box}
+    img.pay-multi-avatar{display:block!important}
+    .pay-multi-line-body{min-width:0}
+    .pay-multi-line-body strong{display:block;font-size:14px;color:#ffeaf4;margin:0 0 6px}
+    .pay-multi-line-body p{margin:0 0 4px;font-size:12px;color:rgba(255,214,231,.72);line-height:1.4}
+    .pay-multi-line-body p span{color:rgba(255,214,231,.45);margin-right:4px}
   </style>
 </head>
 <body style="background:#08070a;color:#fff">
@@ -193,6 +201,6 @@
   <script src="src/currency.js"></script>
   <script src="src/order-status.js"></script>
   <script src="/src/pay-qr-preview.js?v=20260813payQrConfirmZoom5"></script>
-  <script src="/src/payment-confirm.js?v=20260920payPostDiscord1" defer></script>
+  <script src="/src/payment-confirm.js?v=20260923p0pay1" defer></script>
 </body>
 </html>

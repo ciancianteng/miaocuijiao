@@ -222,7 +222,7 @@
     if (document.querySelector('link[data-mcj-place-order-css]')) return;
     var link = document.createElement("link");
     link.rel = "stylesheet";
-    link.href = "/src/place-order-modal.css?v=20260922p01b";
+    link.href = "/src/place-order-modal.css?v=20260923p0pay1";
     link.setAttribute("data-mcj-place-order-css", "1");
     document.head.appendChild(link);
   }
@@ -1519,47 +1519,6 @@
     });
   }
 
-  function payCreatedOrder(orderId, paymentMethod) {
-    return fetch("/api/orders", {
-      method: "POST",
-      headers: authHeaders(),
-      body: JSON.stringify({
-        action: "pay_order",
-        id: orderId,
-        paymentMethod: paymentMethod,
-        preview_test: isWalletPayment(paymentMethod) ? "" : "1",
-      }),
-    }).then(parseApiJson);
-  }
-
-  function goOrderSuccess(order) {
-    var oid = order && order.id ? order.id : "";
-    close();
-    toast("下单成功");
-    if (oid) {
-      try {
-        var list = [];
-        try {
-          list = JSON.parse(localStorage.getItem("mcjBossOrdersCache") || "[]");
-          if (!Array.isArray(list)) list = [];
-        } catch (eList) {
-          list = [];
-        }
-        var row = Object.assign({}, order || {}, {
-          id: oid,
-          status: order && order.status ? order.status : "awaiting_payment",
-          statusText: (order && order.statusText) || "待付款",
-          createdAt: (order && (order.createdAt || order.created_at)) || new Date().toISOString(),
-        });
-        list = [row].concat(list.filter(function (x) { return String(x.id) !== String(oid); }));
-        localStorage.setItem("mcjBossOrdersCache", JSON.stringify(list.slice(0, 80)));
-      } catch (eCache) {}
-      location.href = "orders.html?id=" + encodeURIComponent(oid);
-      return;
-    }
-    location.href = "orders.html";
-  }
-
   function goPaymentPage(order) {
     var oid = order && order.id ? order.id : "";
     close();
@@ -1808,12 +1767,8 @@
         failValidate("订单金额无效");
         return;
       }
-      if (isWalletPayment(payment)) {
-        if (state.walletBalance != null && !(state.walletBalance + 1e-9 >= total)) {
-          failValidate("猫粮余额不足，请改用其他支付方式或先充值");
-          return;
-        }
-      }
+      // Do not block create on wallet balance — payment-confirm owns debit + insufficient UI.
+      // Never call pay_order here (wallet shortcut removed); always open payment-confirm.
 
       state.submitting = true;
       state.submitStartedAt = Date.now();
@@ -1918,12 +1873,8 @@
           var order = body.order || {};
           var oid = order.id || "";
           if (!oid) throw new Error("订单创建失败");
-          if (isWalletPayment(payment)) {
-            setSubmitLoading(true);
-            return payCreatedOrder(oid, payment).then(function (paid) {
-              goOrderSuccess(paid.order || order);
-            });
-          }
+          // Single-order must reuse the same payment-confirm path as multi-order.
+          // pay_order only runs after boss confirms payment on that page.
           goPaymentPage(order);
         })
         .catch(function (err) {
@@ -1932,18 +1883,8 @@
           setSubmitLoading(false);
           console.error("[MCJPlaceOrder] submit failed", err);
           var msg = String((err && err.message) || "");
-          if (err && (err.code === "INSUFFICIENT_BALANCE" || /余额不足|猫粮/.test(msg))) {
-            failValidate(msg || "猫粮余额不足");
-            toast((msg || "猫粮余额不足") + "，可前往充值页");
-            return;
-          }
           if (/登录|401|未登录|老板账号/.test(msg)) {
             requireLogin();
-            return;
-          }
-          if (/支付/.test(msg)) {
-            failValidate(msg || "支付失败");
-            toast(msg || "支付失败");
             return;
           }
           failValidate(msg || "订单创建失败");
