@@ -109,8 +109,9 @@
     .od-extra{margin-top:4px}
     .od-confirm-list{display:grid;gap:8px}
     .od-confirm-row{display:grid;grid-template-columns:40px minmax(0,1fr) 28px;gap:10px;align-items:center;min-width:0;padding:8px 10px;border:1px solid rgba(255,255,255,.08);border-radius:12px;background:rgba(0,0,0,.18)}
-    .od-confirm-row .od-confirm-avatar{width:40px;height:40px;border-radius:12px;object-fit:cover;background:rgba(255,255,255,.08);display:grid;place-items:center;font-weight:800;color:#ffd6e7;overflow:hidden;flex:0 0 auto}
-    .od-confirm-row .od-confirm-avatar img{width:100%;height:100%;object-fit:cover;display:block}
+    .od-confirm-avatar{width:40px;height:40px;min-width:40px;min-height:40px;max-width:40px;max-height:40px;border-radius:12px;object-fit:cover;background:rgba(255,255,255,.08);display:grid;place-items:center;font-weight:800;color:#ffd6e7;overflow:hidden!important;flex:0 0 auto;box-sizing:border-box}
+    .od-confirm-row .od-confirm-avatar{width:40px;height:40px;min-width:40px;min-height:40px;max-width:40px;max-height:40px}
+    .od-confirm-avatar img,.od-confirm-row .od-confirm-avatar img,.order-multi-mini-row .od-confirm-avatar img{width:100%!important;height:100%!important;max-width:100%!important;max-height:100%!important;object-fit:cover!important;display:block!important;border-radius:inherit}
     .od-confirm-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:700;font-size:14px}
     .od-confirm-icon{width:28px;height:28px;display:grid;place-items:center;font-size:18px;line-height:1;flex:0 0 auto;user-select:none}
     .od-confirm-icon.clock{color:#ffd6a0}
@@ -119,9 +120,10 @@
     .od-replace-slot:active{transform:translateY(1px)}
     .od-keep-remaining{margin-top:8px}
     .order-multi-mini{display:grid;gap:6px;margin-top:4px}
-    .order-multi-mini-row{display:grid;grid-template-columns:28px minmax(0,1fr) auto;gap:8px;align-items:center;font-size:13px;color:#e8d5de}
-    .order-multi-mini-row .od-confirm-avatar{width:28px;height:28px;border-radius:8px;font-size:12px}
-    .order-multi-mini-wrap{grid-column:1/-1}
+    .order-multi-mini-row{display:grid;grid-template-columns:28px minmax(0,1fr) auto;gap:8px;align-items:center;font-size:13px;color:#e8d5de;min-width:0}
+    .order-multi-mini-row .od-confirm-avatar{width:28px;height:28px;min-width:28px;min-height:28px;max-width:28px;max-height:28px;border-radius:8px;font-size:12px;overflow:hidden!important}
+    .order-multi-mini-wrap{grid-column:1/-1;min-width:0;overflow:hidden}
+    .order-card .order-multi-mini-wrap,.order-card .od-confirm-list,.order-detail-modal .od-confirm-list{position:relative;overflow:hidden}
     .od-history-exit{opacity:.78;border-style:dashed}
     .od-history-exit .od-confirm-name{color:#c4b5be}
     #unavailableModal.modal{
@@ -148,7 +150,8 @@
     .status-panel p{margin:0;color:#d8c8d1}
     .status-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
     .companion-pick{display:grid;grid-template-columns:56px 1fr;gap:12px;align-items:center}
-    .companion-avatar{width:56px;height:56px;border-radius:14px;background:rgba(255,255,255,.08);object-fit:cover;display:grid;place-items:center;color:#ffd6e7;font-weight:900}
+    .companion-avatar,.companion-pick .companion-avatar,img.companion-avatar{width:56px!important;height:56px!important;min-width:56px!important;min-height:56px!important;max-width:56px!important;max-height:56px!important;border-radius:14px;background:rgba(255,255,255,.08);object-fit:cover!important;display:block;color:#ffd6e7;font-weight:900;overflow:hidden;flex:0 0 auto;box-sizing:border-box}
+    .companion-pick div.companion-avatar{display:grid;place-items:center}
     .companion-pick p{margin:4px 0 0;color:#9ca3af}
     .modal-box.review-modal{width:min(440px,100%);border:1px solid rgba(255,143,197,.26);border-radius:18px;background:#111014;padding:20px}
     .review-modal .modal-head{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:12px}
@@ -169,7 +172,7 @@
   </style>
   <link rel="stylesheet" crossorigin href="/src/boss-header.css">
   <link rel="stylesheet" crossorigin href="/src/style.css">
-  <link rel="stylesheet" href="/src/multi-companion-team.css?v=20260922p01b">
+  <link rel="stylesheet" href="/src/multi-companion-team.css?v=20260923p0pay1">
 </head>
 <body>
   <header class="topbar"><a class="brand" href="index.html"><img src="/assets/meow-cuijiao-brand-96.webp" alt="MEOW CUI JIAO" width="32" height="32" decoding="async" onerror="this.onerror=null;this.src='/assets/meow-cuijiao-brand-96.jpg'"><span>MEOW CUI JIAO</span></a><nav class="boss-nav"><a href="index.html">首页</a><a href="companion-center.html">陪玩大厅</a><a href="orders.html">我的订单</a><a href="support.html?start=1">在线客服</a></nav></header>
@@ -370,7 +373,8 @@
       function companionAvatarHtml(ch){
         var name=companionName(ch);
         var url=(ch.companion&&(ch.companion.avatar_url||ch.companion.avatarUrl))||ch.avatarUrl||ch.avatar_url||'';
-        if(url)return '<span class="od-confirm-avatar"><img src="'+esc(url)+'" alt=""></span>';
+        // Prefer real avatar; never fall back to card/cover (full-bleed photos blow mobile cards).
+        if(url)return '<span class="od-confirm-avatar"><img src="'+esc(url)+'" alt="" width="40" height="40" loading="lazy" decoding="async"></span>';
         return '<span class="od-confirm-avatar" aria-hidden="true">'+esc((name||'?').slice(0,1))+'</span>';
       }
       function confirmIconHtml(key){
@@ -763,7 +767,7 @@
             var c=g.companion||{};
             var name=c.nickname||'陪玩';
             var preferred=!!(g.bossPreferred||(intentId&&intentId===(g.companionId||c.id)));
-            var avatar=c.avatarUrl||c.cardImageUrl?'<img class="companion-avatar" src="'+esc(c.avatarUrl||c.cardImageUrl)+'" alt="">':'<div class="companion-avatar">'+esc(name.slice(0,1))+'</div>';
+            var avatar=c.avatarUrl?'<img class="companion-avatar" src="'+esc(c.avatarUrl)+'" alt="" width="56" height="56" loading="lazy" decoding="async">':'<div class="companion-avatar">'+esc(name.slice(0,1))+'</div>';
             return '<div class="companion-pick" style="margin-bottom:10px">'+avatar+'<div><strong>'+esc(name)+(preferred?' · 已提交意向':'')+'</strong>'+
               '<p>等级：'+esc(c.level||'-')+' · 标签：'+esc(c.tags||'-')+' · 声线：'+esc(c.voiceType||c.voice_type||'-')+'</p>'+
               '<p>单价：'+money(c.unitPrice!=null?c.unitPrice:c.price||o.unitPrice)+' · 游戏段位：'+esc(c.gameRank||c.rank||c.mainGame||c.game||o.game||'-')+' · 在线：'+esc(c.onlineStatusLabel||c.onlineStatus||'-')+'</p>'+

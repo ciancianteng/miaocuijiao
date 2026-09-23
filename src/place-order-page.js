@@ -741,22 +741,7 @@
         var order = body.order || {};
         var oid = order.id || "";
         if (!oid) throw new Error("订单创建失败");
-        if (/cat.?food|wallet|猫粮|余额/.test(String(state.payment || ""))) {
-          return fetch("/api/orders", {
-            method: "POST",
-            headers: authHeaders(),
-            body: JSON.stringify({ action: "pay_order", id: oid, paymentMethod: state.payment }),
-          })
-            .then(function (res) {
-              return res.json().then(function (paid) {
-                if (!res.ok || paid.ok === false) throw Object.assign(new Error(paid.message || "支付失败"), paid);
-                return paid;
-              });
-            })
-            .then(function () {
-              location.href = "orders.html?id=" + encodeURIComponent(oid);
-            });
-        }
+        // Never auto-pay after create — shared payment-confirm owns pay_order.
         location.href = "payment-confirm.html?order=" + encodeURIComponent(oid);
       })
       .catch(function (err) {

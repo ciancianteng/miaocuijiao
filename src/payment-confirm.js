@@ -12,6 +12,8 @@
   var loadGen = 0;
   var paying = false;
   var allowTestPay = null;
+  var walletBalance = null;
+  var walletBalanceLoaded = false;
   var redirectTimer = null;
   var pickingProof = false;
   var pickWatchTimer = null;
@@ -351,6 +353,120 @@
       });
     }
     return [];
+  }
+  function childField(ch, keys, fallback) {
+    for (var i = 0; i < keys.length; i++) {
+      var v = ch && ch[keys[i]];
+      if (v != null && String(v).trim() !== "") return v;
+    }
+    return fallback;
+  }
+  function parseDescSnapshot(ch, label) {
+    var blob = String((ch && (ch.description || ch.notes || ch.note)) || "");
+    var re = new RegExp(label + "[：:]\\s*([^\\n；;]+)", "i");
+    var m = blob.match(re);
+    return m ? String(m[1]).trim() : "";
+  }
+  function childAvatarUrl(ch) {
+    return (
+      (ch && ch.companion && (ch.companion.avatar_url || ch.companion.avatarUrl)) ||
+      childField(ch, ["avatarUrl", "avatar_url"], "") ||
+      ""
+    );
+  }
+  function childLineMeta(ch) {
+    var hours = money(childField(ch, ["hours", "duration"], 0)) || money(parseDescSnapshot(ch, "时长")) || 1;
+    var unit =
+      money(childField(ch, ["unitPrice", "unit_price"], 0)) ||
+      money(parseDescSnapshot(ch, "单价快照")) ||
+      money(parseDescSnapshot(ch, "单价")) ||
+      0;
+    var sub =
+      money(childField(ch, ["totalAmount", "total_amount", "amount"], 0)) ||
+      money(parseDescSnapshot(ch, "小计快照")) ||
+      (unit > 0 ? Math.round(unit * hours * 100) / 100 : 0);
+    var service =
+      childField(ch, ["serviceType", "service_type", "serviceName", "service_name", "title"], "") ||
+      parseDescSnapshot(ch, "服务") ||
+      "-";
+    var game = childField(ch, ["game", "mainGame", "main_game"], "") || "-";
+    return {
+      name: companionName(ch),
+      avatar: childAvatarUrl(ch),
+      game: game,
+      service: service,
+      hours: hours,
+      unitPrice: unit,
+      subtotal: sub,
+    };
+  }
+  function multiCompanionCardsHtml(kids) {
+    if (!kids || !kids.length) return "";
+    return (
+      '<div class="pay-multi-lines">' +
+      kids
+        .map(function (ch) {
+          var meta = childLineMeta(ch);
+          var avatar = meta.avatar
+            ? '<img class="pay-multi-avatar" src="' +
+              esc(meta.avatar) +
+              '" alt="" width="44" height="44" loading="lazy" decoding="async">'
+            : '<span class="pay-multi-avatar" aria-hidden="true">' + esc((meta.name || "?").slice(0, 1)) + "</span>";
+          return (
+            '<article class="pay-multi-line">' +
+            avatar +
+            '<div class="pay-multi-line-body">' +
+            "<strong>" +
+            esc(meta.name) +
+            "</strong>" +
+            '<p><span>游戏</span> ' +
+            esc(meta.game) +
+            "</p>" +
+            "<p><span>服务</span> " +
+            esc(meta.service) +
+            "</p>" +
+            "<p><span>时长</span> " +
+            esc(meta.hours) +
+            " 小时</p>" +
+            "<p><span>单价</span> " +
+            esc(money(meta.unitPrice)) +
+            "/小时</p>" +
+            "<p><span>小计</span> " +
+            esc(money(meta.subtotal)) +
+            "</p>" +
+            "</div></article>"
+          );
+        })
+        .join("") +
+      "</div>"
+    );
+  }
+  function loadWalletBalance() {
+    return fetch("/api/recharge", {
+      method: "GET",
+      headers: { Accept: "application/json", Authorization: "Bearer " + token() },
+      cache: "no-store",
+    })
+      .then(function (res) {
+        return res.json().catch(function () {
+          return {};
+        });
+      })
+      .then(function (body) {
+        var bal =
+          body && body.summary && body.summary.balance != null
+            ? body.summary.balance
+            : body && body.wallet && body.wallet.totalBalance != null
+              ? body.wallet.totalBalance
+              : null;
+        walletBalance = bal == null ? null : money(bal);
+        walletBalanceLoaded = true;
+        return walletBalance;
+      })
+      .catch(function () {
+        walletBalanceLoaded = true;
+        return walletBalance;
+      });
   }
   function isReviewing(order) {
     return !!(
@@ -752,7 +868,7 @@
             ? "请重新按所选支付方式付款并上传截图，点击「我已付款」。"
             : "请按本单所选支付方式完成付款，上传付款截图后点击「我已付款」。",
         primary: "pay",
-        primaryLabel: isWalletMethod(order || {}) ? "立即支付" : "前往支付",
+        primaryLabel: isWalletMethod(order || {}) ? "确认支付" : "前往支付",
         disabledHint: "",
       };
     }
@@ -1062,23 +1178,26 @@
 
     var multi = isMultiParent(order);
     var kids = multi ? multiChildren(order) : [];
+    var realKids = kids.filter(function (ch) {
+      return ch && !/^placeholder-/.test(String(ch.id || ""));
+    });
     var companionCell = multi
-      ? kids.length
-        ? kids
+      ? realKids.length
+        ? realKids
             .map(function (ch) {
-              return companionName(ch) + " " + money(ch.totalAmount || ch.amount);
+              return companionName(ch);
             })
             .join(" · ")
         : "多人陪玩订单"
       : companionName(order);
     var serviceCell = multi
-      ? "多人陪玩订单 · 共" + (kids.length || "?") + "位 · 一次付款"
+      ? "多人陪玩 · 共" + (realKids.length || kids.length || "?") + "位陪玩"
       : order.game || order.serviceName || order.title || "-";
     var title = multi ? "多人陪玩订单 · 支付确认" : isPrePay(order) ? "支付确认" : "支付成功";
     var multiHint = multi
       ? '<p class="pay-hint">本订单一次付款 ' +
         esc(money(order.totalAmount || order.amount)) +
-        "，系统会分别为每位陪玩结算。</p>"
+        "；确认支付成功后才会通知陪玩接单。</p>"
       : "";
     if (isMultiChild(order)) {
       multiHint =
@@ -1090,10 +1209,21 @@
     }
 
     var statusLead = isPrePay(order)
-      ? ""
+      ? '<p class="pay-lead">请确认以下订单与金额后完成支付。未确认支付前订单保持待付款。</p>'
       : '<p class="pay-lead">' +
         esc(reviewing ? "付款凭证已提交，等待客服审核。" : "订单已付款成功。") +
         "</p>";
+
+    var walletRows = "";
+    if (isPrePay(order) && isWalletMethod(order)) {
+      walletRows =
+        '<div class="pay-row"><span>当前猫粮余额</span><strong>' +
+        esc(walletBalanceLoaded ? (walletBalance == null ? "—" : money(walletBalance)) : "加载中…") +
+        "</strong></div>" +
+        '<div class="pay-row"><span>支付金额</span><strong>' +
+        esc(money(order.totalAmount || order.amount)) +
+        "</strong></div>";
+    }
 
     paint(
       '<section class="pay-card" data-order-id="' +
@@ -1109,35 +1239,27 @@
         '<div class="pay-row"><span>订单号</span><strong>' +
         esc(order.orderNo || order.order_no || order.id) +
         "</strong></div>" +
-        '<div class="pay-row"><span>' +
-        (multi ? "陪玩组合" : "陪玩") +
-        "</span><strong>" +
+        (multi
+          ? '<div class="pay-row"><span>订单类型</span><strong>多人陪玩</strong></div>' +
+            '<div class="pay-row"><span>人数</span><strong>' +
+            esc(String(realKids.length || kids.length || 0)) +
+            " 位陪玩</strong></div>"
+          : "") +
+        '<div class="pay-row"><span>陪玩</span><strong>' +
         esc(companionCell) +
         "</strong></div>" +
         '<div class="pay-row"><span>服务</span><strong>' +
         esc(serviceCell) +
         "</strong></div>" +
-        (multi
-          ? kids
-              .map(function (ch) {
-                return (
-                  '<div class="pay-row"><span>' +
-                  esc(companionName(ch)) +
-                  "</span><strong>" +
-                  esc(money(ch.totalAmount || ch.amount)) +
-                  "</strong></div>"
-                );
-              })
-              .join("")
-          : "") +
         '<div class="pay-row"><span>服务时间</span><strong>' +
         esc(scheduleText(order)) +
         "</strong></div>" +
         '<div class="pay-row"><span>语音方式</span><strong>' +
         esc(voiceModeLabel(orderVoiceMode(order))) +
         "</strong></div>" +
+        walletRows +
         '<div class="pay-row pay-row-amount"><span>' +
-        (multi ? "总付款" : "应付金额") +
+        (multi ? "订单总额" : "应付金额") +
         "</span><strong>" +
         esc(money(order.totalAmount || order.amount)) +
         "</strong></div>" +
@@ -1147,6 +1269,7 @@
             "</strong></div>"
           : "") +
         "</div>" +
+        (multi ? multiCompanionCardsHtml(realKids.length ? realKids : kids) : "") +
         multiHint +
         discordPanelHtml(order) +
         // Mobile-first: QR after order summary for pre-pay
@@ -1439,6 +1562,9 @@
           proofDraft.uploaded = true;
           proofDraft.successTip = proofDraft.successTip || "付款凭证已上传，当前状态：待人工审核";
         }
+      }
+      if (isWalletMethod(order) && isPrePay(order)) {
+        await loadWalletBalance();
       }
       await refreshDiscordStatus(order);
       if (gen !== loadGen) return;
