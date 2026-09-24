@@ -2962,12 +2962,17 @@ import './mcj-chat-realtime.js';
       '<div class="cs-actions" style="margin-bottom:12px">'+tabs+'<button class="cs-btn" data-gift-reload>刷新</button></div>'+body;
   }
   function ordersHtml(){
-    var rows=((state.data&&state.data.orders)||[]).slice().filter(function(o){return !state.orderFilter||o.status===state.orderFilter});
+    var rows=((state.data&&state.data.orders)||[]).slice().filter(function(o){
+      if(state.orderFilter&&o.status!==state.orderFilter)return false;
+      // Multi child rows stay in DB but must not appear as independent CS work items.
+      if(o.isMultiGroupChild||o.parentOrderId||o.parent_order_id)return false;
+      return true;
+    });
     rows.sort(function(a,b){
       return String(b.createdAt||b.updatedAt||'').localeCompare(String(a.createdAt||a.updatedAt||''));
     });
     var statuses=(state.data&&state.data.orderStatuses)||{};
-    return '<div class="cs-page-head"><div><h2>订单处理</h2><p>确认付款、指派陪玩、处理退款，所有操作写入真实订单表。</p></div><div class="cs-actions"><button class="cs-btn primary" data-route="/customer-service/create-order">客服代下单</button></div></div><div class="cs-toolbar"><select data-order-filter><option value="">全部状态</option>'+Object.keys(statuses).map(function(k){return '<option value="'+esc(k)+'" '+(state.orderFilter===k?'selected':'')+'>'+esc(statuses[k])+'</option>'}).join('')+'</select><button class="cs-btn" data-refresh>刷新</button></div><section class="cs-table-wrap cs-orders-table-wrap"><table class="cs-table cs-orders-table"><thead><tr><th class="cs-col-no">订单编号</th><th class="cs-col-boss">老板</th><th class="cs-col-companion">陪玩</th><th class="cs-col-game">游戏</th><th class="cs-col-amount">金额</th><th class="cs-col-status">状态</th><th class="cs-col-time">创建时间</th><th class="cs-col-actions">操作</th></tr></thead><tbody>'+(rows.length?rows.map(orderRow).join(''):'<tr><td colspan="8"><div class="cs-empty">暂无订单</div></td></tr>')+'</tbody></table></section>';
+    return '<div class="cs-page-head"><div><h2>订单处理</h2><p>确认付款、指派陪玩、处理退款，所有操作写入真实订单表。多人订单仅显示主订单；子订单在详情中查看。</p></div><div class="cs-actions"><button class="cs-btn primary" data-route="/customer-service/create-order">客服代下单</button></div></div><div class="cs-toolbar"><select data-order-filter><option value="">全部状态</option>'+Object.keys(statuses).map(function(k){return '<option value="'+esc(k)+'" '+(state.orderFilter===k?'selected':'')+'>'+esc(statuses[k])+'</option>'}).join('')+'</select><button class="cs-btn" data-refresh>刷新</button></div><section class="cs-table-wrap cs-orders-table-wrap"><table class="cs-table cs-orders-table"><thead><tr><th class="cs-col-no">订单编号</th><th class="cs-col-boss">老板</th><th class="cs-col-companion">陪玩</th><th class="cs-col-game">游戏</th><th class="cs-col-amount">金额</th><th class="cs-col-status">状态</th><th class="cs-col-time">创建时间</th><th class="cs-col-actions">操作</th></tr></thead><tbody>'+(rows.length?rows.map(orderRow).join(''):'<tr><td colspan="8"><div class="cs-empty">暂无订单</div></td></tr>')+'</tbody></table></section>';
   }
   function compensationHtml(){
     var bosses=(state.data&&state.data.bosses)||[];
@@ -3049,8 +3054,10 @@ import './mcj-chat-realtime.js';
 
     if(st==='awaiting_payment'){
       if(o.paymentReview){
-        if(o.companionId){
-          actions.push('<button class="cs-btn primary" data-confirm-payment="'+esc(o.id)+'">确认收款</button>');
+        var isMultiParent=!!(o.isMultiGroupParent||(String(o.orderType||'').toLowerCase()==='multi_group'&&!o.parentOrderId&&!o.parent_order_id));
+        if(isMultiParent||o.companionId){
+          // Multi parent has no companionId but MUST call confirm_payment (not grab hall).
+          actions.push('<button class="cs-btn primary" data-confirm-payment="'+esc(o.id)+'"'+(isMultiParent?' data-multi-confirm="1"':'')+'>'+(isMultiParent?'确认收款并通知陪玩':'确认收款')+'</button>');
         }else{
           actions.push('<button class="cs-btn primary" data-confirm-payment="'+esc(o.id)+'" data-send-hall="1">确认收款</button>');
         }
@@ -3103,8 +3110,12 @@ import './mcj-chat-realtime.js';
     }
 
     var statusLabel=o.paymentReview?'待人工审核':(inGrabHall?'抢单中':(st==='claimed'?'待陪玩确认':(o.statusText||st)));
-    var statusCell=esc(statusLabel)+(o.needsReassign?'<br><small style="color:#f59e0b">'+(esc(o.reassignHint||'待重新安排'))+'</small>':'')+(inGrabHall?'<br><small>抢单 '+(o.grabCount||0)+' 人</small>':'')+(o.preferredCompanionId?'<br><small style="color:#60a5fa">老板意向已提交</small>':'')+proofBlock;
-    return '<tr'+(o.needsReassign?' style="background:rgba(245,158,11,.08)"':'')+(inGrabHall?' data-grab-hall="1"':'')+' data-order-status="'+esc(st)+'"><td class="cs-col-no">'+esc(o.orderNo)+'</td><td class="cs-col-boss">'+esc(sanitizeBossLabel(o.bossName,publicBossCode(o)))+(publicBossCode(o)?'<br><small>'+esc(publicBossCode(o))+'</small>':'')+'</td><td class="cs-col-companion">'+esc(o.companionName||'-')+'</td><td class="cs-col-game">'+esc(o.game||'-')+'</td><td class="cs-col-amount">'+money(o.totalAmount)+'</td><td class="cs-col-status">'+statusCell+'</td><td class="cs-col-time">'+esc(fmtOrderDateTime(o.createdAt))+'</td><td class="cs-col-actions"><div class="cs-actions">'+actions.join('')+'</div></td></tr>';
+    var isMultiParentRow=!!(o.isMultiGroupParent||(String(o.orderType||'').toLowerCase()==='multi_group'&&!o.parentOrderId&&!o.parent_order_id));
+    var companionCell=isMultiParentRow
+      ?('多人主订单'+(o.title||o.description?'<br><small>'+esc(String(o.title||o.description||'').slice(0,36))+'</small>':''))
+      :esc(o.companionName||'-');
+    var statusCell=esc(statusLabel)+(o.needsReassign?'<br><small style="color:#f59e0b">'+(esc(o.reassignHint||'待重新安排'))+'</small>':'')+(inGrabHall?'<br><small>抢单 '+(o.grabCount||0)+' 人</small>':'')+(o.preferredCompanionId?'<br><small style="color:#60a5fa">老板意向已提交</small>':'')+(isMultiParentRow?'<br><small>子订单见详情</small>':'')+proofBlock;
+    return '<tr'+(o.needsReassign?' style="background:rgba(245,158,11,.08)"':'')+(inGrabHall?' data-grab-hall="1"':'')+(isMultiParentRow?' data-multi-parent="1"':'')+' data-order-status="'+esc(st)+'"><td class="cs-col-no">'+esc(o.orderNo)+(isMultiParentRow?'<br><small>多人</small>':'')+'</td><td class="cs-col-boss">'+esc(sanitizeBossLabel(o.bossName,publicBossCode(o)))+(publicBossCode(o)?'<br><small>'+esc(publicBossCode(o))+'</small>':'')+'</td><td class="cs-col-companion">'+companionCell+'</td><td class="cs-col-game">'+esc(o.game||'-')+'</td><td class="cs-col-amount">'+money(o.totalAmount)+'</td><td class="cs-col-status">'+statusCell+'</td><td class="cs-col-time">'+esc(fmtOrderDateTime(o.createdAt))+'</td><td class="cs-col-actions"><div class="cs-actions">'+actions.join('')+'</div></td></tr>';
   }
   function createOrderHtml(){
     var bosses=(state.data&&state.data.bosses)||[];
@@ -3704,13 +3715,15 @@ import './mcj-chat-realtime.js';
       return;
     }var pay=e.target.closest('[data-confirm-payment]');if(pay){
       var sendHall=pay.getAttribute('data-send-hall')==='1';
+      // Multi parent never goes to grab hall — always confirm_payment → claimed 0/N.
+      if(pay.getAttribute('data-multi-confirm')==='1')sendHall=false;
       var payId=pay.dataset.confirmPayment||'';
       if(pay.disabled)return;
       pay.disabled=true;
       var oldPayText=pay.textContent;
       pay.textContent='处理中…';
       api(sendHall?'push_to_grab_hall':'confirm_payment',{id:payId}).then(function(res){
-        var msg=res.message||(sendHall?'订单已发布到抢单大厅':'已确认付款');
+        var msg=res.message||(sendHall?'订单已发布到抢单大厅':(pay.getAttribute('data-multi-confirm')==='1'?'已确认收款并通知陪玩':'已确认付款'));
         toast(msg);
         if(res.order&&state.data&&Array.isArray(state.data.orders)){
           var idx=state.data.orders.findIndex(function(o){return o.id===payId});

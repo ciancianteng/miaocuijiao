@@ -524,6 +524,10 @@ function safeOrder(row, profiles = {}, extras = {}) {
     paymentReviewedAt: extras.paymentReviewedAt || "",
     paymentReviewStatus: extras.paymentReviewStatus || "",
     paidAt: row.paid_at || extras.paidAt || "",
+    parentOrderId: row.parent_order_id || "",
+    isMultiGroupParent:
+      String(row.order_type || "").toLowerCase() === "multi_group" && !row.parent_order_id,
+    isMultiGroupChild: !!row.parent_order_id,
     cancelReason: row.cancel_reason || "",
     needsReassign,
     reassignHint: needsReassign

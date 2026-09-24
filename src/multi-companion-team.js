@@ -8,6 +8,7 @@
   var MAX_TEAM = 4; // product default; backend allows up to 20
   var STORAGE_KEY = "mcjMultiTeamSelection";
   var PICKING_KEY = "mcjMultiTeamPicking";
+  var IDEM_KEY = "mcjMultiPendingIdempotencyKey";
   var HALL_HREF = "/companion-center.html";
   var DEFAULT_AVATAR =
     "data:image/svg+xml," +
@@ -222,7 +223,7 @@
     if (document.querySelector('link[data-mcj-team-css]')) return;
     var link = document.createElement("link");
     link.rel = "stylesheet";
-    link.href = "/src/multi-companion-team.css?v=20260924duitnow1";
+    link.href = "/src/multi-companion-team.css?v=20260924csMultiConfirm1";
     link.setAttribute("data-mcj-team-css", "1");
     document.head.appendChild(link);
   }
@@ -466,13 +467,20 @@
     state.sharedVoiceMode = "game_mic";
     state.paymentMethod = "";
     state.expanded = false;
-    state.pendingIdempotencyKey = "";
+    // Keep pendingIdempotencyKey so back/retry cannot mint a second parent.
     try {
       sessionStorage.removeItem(STORAGE_KEY);
       sessionStorage.removeItem(PICKING_KEY);
     } catch (e) {}
     renderBar();
     closeSheet();
+  }
+
+  function clearIdempotencyKey() {
+    state.pendingIdempotencyKey = "";
+    try {
+      sessionStorage.removeItem(IDEM_KEY);
+    } catch (e) {}
   }
 
   function isPicking() {
@@ -1279,6 +1287,13 @@
 
   function ensureIdempotencyKey() {
     if (state.pendingIdempotencyKey) return state.pendingIdempotencyKey;
+    try {
+      var stored = sessionStorage.getItem(IDEM_KEY);
+      if (stored) {
+        state.pendingIdempotencyKey = stored;
+        return stored;
+      }
+    } catch (e) {}
     state.pendingIdempotencyKey =
       "pom-" +
       bossKey().slice(0, 8) +
@@ -1286,6 +1301,9 @@
       Date.now() +
       "-" +
       Math.random().toString(36).slice(2, 8);
+    try {
+      sessionStorage.setItem(IDEM_KEY, state.pendingIdempotencyKey);
+    } catch (e2) {}
     return state.pendingIdempotencyKey;
   }
 
