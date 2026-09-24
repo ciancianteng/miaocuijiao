@@ -713,7 +713,7 @@
       });
       if (!hasDurableUpload(uploads.avatar)) missing.push("头像");
       if (!(voice.confirmed && (hasDurableUpload(voice) || hasDurableUpload(voice.url) || voice.storagePath || voice.path))) {
-        missing.push("试音并确认使用");
+        missing.push("语音介绍（需确认录音并上传成功）");
       }
       return missing;
     }
@@ -2083,14 +2083,11 @@
       voicePhase === VOICE_PHASE.STOPPING ||
       voicePhase === VOICE_PHASE.REQUESTING ||
       !!(v.recording || (document.body && document.body.classList.contains("voice-recording-active")));
+    // Confirm only needs a live ≥10s take. Quality tips are advisory; listen is optional.
+    var durationOk =
+      Number(v.duration || 0) >= MIN_VOICE_SECONDS || !!(q && q.durationOk);
     var canConfirm =
-      hasLiveLocal &&
-      !uploadedOk &&
-      !!v.listened &&
-      !!q.volumeOk &&
-      !!q.durationOk &&
-      !!q.notBlank &&
-      !uploadBusy.voice;
+      hasLiveLocal && !uploadedOk && durationOk && !uploadBusy.voice;
     var reasons = Array.isArray(q.reasons) ? q.reasons : [];
     var template =
       "大家好，我是" +
@@ -2127,7 +2124,7 @@
 
     var statusLabel =
       phase === "uploading"
-        ? "上传中…"
+        ? "保存中…"
         : phase === "requesting"
           ? "请求麦克风…"
           : phase === "stopping"
@@ -2135,7 +2132,7 @@
             : phase === "recording"
               ? "录音中"
               : phase === "done"
-                ? "已完成"
+                ? "已录制 ✓"
                 : phase === "ready"
                   ? "待确认"
                   : phase === "stale"
@@ -2152,23 +2149,23 @@
 
     var topRight =
       phase === "done"
-        ? '<span class="voice-card-status is-done" role="status">已完成 ✓</span>'
+        ? '<span class="voice-card-status is-done" role="status" data-voice-status>已录制 ✓</span>'
         : phase === "recording" || phase === "stopping" || phase === "requesting"
-          ? '<span class="voice-card-status is-live" role="status">' + esc(statusLabel) + "</span>"
+          ? '<span class="voice-card-status is-live" role="status" data-voice-status>' + esc(statusLabel) + "</span>"
           : phase === "uploading"
-            ? '<span class="voice-card-status is-busy" role="status">上传中…</span>'
-            : '<span class="voice-card-status is-muted">' + esc(statusLabel) + "</span>";
+            ? '<span class="voice-card-status is-busy" role="status" data-voice-status>保存中…</span>'
+            : '<span class="voice-card-status is-muted" data-voice-status>' + esc(statusLabel) + "</span>";
 
     var playerHtml = "";
     if (phase === "done" || phase === "ready") {
       playerHtml =
         '<div class="voice-card-player" data-voice-player>' +
-        '<button type="button" class="voice-card-play" data-record-play aria-label="播放或暂停">' +
-        '<span data-voice-play-icon>▶</span></button>' +
-        '<div class="voice-card-track" data-voice-seek>' +
+        '<button type="button" class="apply-btn apply-btn-ghost-soft voice-card-play-cta" data-record-play aria-label="播放试听">' +
+        '<span data-voice-play-icon>▶</span> 播放试听</button>' +
+        '<div class="voice-card-track" data-voice-seek hidden>' +
         '<div class="voice-card-track-fill" data-voice-progress style="width:0%"></div>' +
         "</div>" +
-        '<div class="voice-card-times"><span data-voice-current>' +
+        '<div class="voice-card-times" hidden><span data-voice-current>' +
         esc(currentLabel) +
         '</span><span data-voice-duration>' +
         esc(timerLabel) +
@@ -2199,49 +2196,38 @@
         '<button class="apply-btn primary" type="button" disabled aria-busy="true">请求权限中…</button>';
     } else if (phase === "recording") {
       actionsHtml =
-        '<button class="apply-btn primary" type="button" data-record-stop>■ 停止录音</button>';
+        '<button class="apply-btn primary" type="button" data-record-stop>停止录音</button>';
     } else if (phase === "stopping") {
       actionsHtml =
         '<button class="apply-btn primary" type="button" data-record-stop disabled aria-busy="true">停止中…</button>';
     } else if (phase === "ready") {
       actionsHtml =
+        '<button class="apply-btn apply-btn-ghost-soft" type="button" data-record-reset>重新录制</button>' +
         '<button class="apply-btn primary" type="button" data-record-confirm ' +
         (!canConfirm ? "disabled" : "") +
         ' aria-busy="' +
         (uploadBusy.voice ? "true" : "false") +
         '">' +
-        (uploadBusy.voice ? "上传中…" : "确认上传") +
-        "</button>" +
-        '<button class="apply-btn apply-btn-ghost-soft" type="button" data-record-reset>重新录制</button>';
+        (uploadBusy.voice ? "保存中..." : "确认录音") +
+        "</button>";
     } else if (phase === "uploading") {
       actionsHtml =
-        '<button class="apply-btn primary" type="button" disabled aria-busy="true">上传中…</button>';
+        '<button class="apply-btn primary" type="button" disabled aria-busy="true">保存中...</button>';
     } else if (phase === "done") {
       actionsHtml =
         '<button class="apply-btn apply-btn-ghost-soft" type="button" data-record-reset>重新录制</button>';
     }
 
     var qualityHtml = "";
-    if ((phase === "ready" || phase === "stale") && (reasons.length || !canConfirm)) {
+    if ((phase === "ready" || phase === "stale") && reasons.length) {
       qualityHtml =
         '<div class="voice-card-quality">' +
-        '<span class="' +
-        (q.durationOk ? "ok" : "bad") +
-        '">时长' +
-        (q.durationOk ? "✓" : " 10–60s") +
-        '</span><span class="' +
-        (q.humanVoice || q.volumeOk ? "ok" : "bad") +
-        '">' +
-        (q.humanVoice || q.volumeOk ? "音质✓" : "音质待改善") +
-        "</span>" +
-        (reasons.length
-          ? reasons
-              .slice(0, 2)
-              .map(function (r) {
-                return '<span class="bad">' + esc(r) + "</span>";
-              })
-              .join("")
-          : "") +
+        reasons
+          .slice(0, 2)
+          .map(function (r) {
+            return '<span class="bad">' + esc(r) + "</span>";
+          })
+          .join("") +
         "</div>";
     }
 
@@ -3150,10 +3136,22 @@
   function setVoiceState(text, seconds) {
     var state = document.getElementById("voiceState");
     var timer = document.getElementById("voiceTimer");
-    if (state) state.textContent = text;
-    if (timer && seconds != null) {
-      timer.textContent =
-        String(Math.floor(seconds / 60)).padStart(2, "0") + ":" + String(seconds % 60).padStart(2, "0");
+    var status = document.querySelector("[data-voice-status]");
+    var clock =
+      seconds != null
+        ? String(Math.floor(seconds / 60)).padStart(2, "0") +
+          ":" +
+          String(Math.floor(seconds % 60)).padStart(2, "0")
+        : "";
+    // Left clock always shows elapsed time while recording.
+    if (state && clock) state.textContent = clock;
+    else if (state && text) state.textContent = text;
+    if (timer && clock) timer.textContent = clock;
+    if (status && text && /录音|请求|停止|保存|未录|待确认|已录/.test(String(text))) {
+      status.textContent = text;
+      if (/录音中|请求|停止/.test(String(text))) {
+        status.className = "voice-card-status is-live";
+      }
     }
   }
   function releaseMicTracks() {
@@ -3385,6 +3383,9 @@
       }
 
       var quality = await analyzeVoiceBlob(blob, duration);
+      // Duration is the hard gate. Volume heuristics are advisory only (Safari decode often false-negatives).
+      quality.durationOk = duration >= MIN_VOICE_SECONDS && duration <= MAX_VOICE_SECONDS;
+      quality.passed = !!quality.durationOk;
       if (liveVoiceObjectUrl) {
         try {
           URL.revokeObjectURL(liveVoiceObjectUrl);
@@ -3395,12 +3396,12 @@
       voicePhase = VOICE_PHASE.RECORDED;
       var draftAfterRec = readDraft();
       draftAfterRec.voice = {
-        status: quality.passed ? "已录制，请先试听" : "检测未通过，请重新录制",
+        status: "待确认",
         url: "",
         path: "",
         bucket: "",
         hasLocal: true,
-        duration: quality.duration,
+        duration: Math.max(duration, Number(quality.duration) || 0),
         confirmed: false,
         listened: false,
         uploaded: false,
@@ -3410,10 +3411,7 @@
         quality: quality,
       };
       writeDraftRecord(draftAfterRec);
-      setVoiceState(quality.passed ? "已录制，待试听确认" : "检测未通过", quality.duration);
-      if (!quality.passed && quality.reasons && quality.reasons[0]) {
-        showApplyTip(quality.reasons[0]);
-      }
+      setVoiceState("待确认", draftAfterRec.voice.duration);
       refreshVoiceUi({ scrollVoice: true });
     };
 
@@ -3441,7 +3439,7 @@
     document.body.classList.add("voice-recording-active");
     // CRITICAL: re-render so [data-record-stop] exists (previously missing →无法停止).
     refreshVoiceUi({ scrollVoice: true });
-    setVoiceState("正在录音", 0);
+    setVoiceState("录音中", 0);
     clearRecordTimer();
     recordTimer = setInterval(function () {
       if (voicePhase !== VOICE_PHASE.RECORDING) {
@@ -3449,7 +3447,7 @@
         return;
       }
       var sec = Math.round((Date.now() - recordStartedAt) / 1000);
-      setVoiceState("正在录音", sec);
+      setVoiceState("录音中", sec);
       if (sec >= MAX_VOICE_SECONDS) stopRecording();
     }, 250);
   }
@@ -3594,27 +3592,24 @@
   function confirmVoice() {
     try {
       if (uploadBusy.voice) {
-        showApplyTip("试音正在上传中，请稍候…", "ok");
+        showApplyTip("录音正在保存中，请稍候…", "ok");
         return;
       }
       var d = readDraft();
       d.voice = d.voice || {};
       var duration = Number((d.voice || {}).duration || 0);
+      if (duration < MIN_VOICE_SECONDS && !(liveVoiceBlob && duration >= MIN_VOICE_SECONDS)) {
+        // Prefer live blob duration if draft lagging.
+        if (liveVoiceBlob && recordStartedAt) {
+          duration = Math.max(duration, Math.round((Date.now() - recordStartedAt) / 1000));
+        }
+      }
       if (duration < MIN_VOICE_SECONDS) {
-        showApplyTip("试音不能少于 10 秒，请重新录制。");
-        return;
-      }
-      if (!((d.voice || {}).listened)) {
-        showApplyTip("请先播放完整试听，再确认使用。");
-        return;
-      }
-      var q = (d.voice || {}).quality || {};
-      if (!q.volumeOk || !q.durationOk || !q.notBlank) {
-        showApplyTip("录音质量检测未通过，请重新录制。");
+        showApplyTip("语音介绍至少需要录制 " + MIN_VOICE_SECONDS + " 秒，请重新录制。");
         return;
       }
       if (!companionToken()) {
-        showApplyTip("请先登录陪玩账号后再上传试音。");
+        showApplyTip("请先登录陪玩账号后再确认录音。");
         return;
       }
 
@@ -3623,7 +3618,7 @@
 
       // Only skip network upload when cloud asset already exists AND there is no new local blob to push.
       if (alreadyDurable && !hasLive) {
-        d.voice.status = "上传成功 / 已保存";
+        d.voice.status = "已录制 ✓";
         d.voice.confirmed = true;
         d.voice.confirmedAt = now();
         d.voice.uploaded = true;
@@ -3631,7 +3626,8 @@
         d.voice.hasLocal = false;
         writeDraftRecord(d);
         delete uploadErrors.voice;
-        showApplyTip("上传成功 / 已保存", "ok");
+        voicePhase = VOICE_PHASE.IDLE;
+        showApplyTip("录音已保存", "ok");
         refreshVoiceUi();
         return;
       }
@@ -3646,12 +3642,13 @@
           status: "本地录音已失效，请重新录制",
         });
         writeDraftRecord(d);
-        showApplyTip("本地录音已失效（刷新后需重录）。请重新录制后再点「确认上传」。");
+        showApplyTip("本地录音已失效（刷新后需重录）。请重新录制后再点「确认录音」。");
         refreshVoiceUi();
         return;
       }
 
       uploadBusy.voice = true;
+      voicePhase = VOICE_PHASE.UPLOADING;
       delete uploadErrors.voice;
       refreshVoiceUi();
 
@@ -3752,7 +3749,7 @@
             throw new Error("上传成功但未返回云端地址，请重试");
           }
           next.voice = Object.assign({}, next.voice || {}, {
-            status: "上传成功 / 已保存",
+            status: "已录制 ✓",
             confirmed: true,
             confirmedAt: now(),
             uploaded: true,
@@ -3765,12 +3762,14 @@
             id: (res && res.media && res.media.id) || next.voice.id || "",
           });
           writeDraftRecord(next);
-          showApplyTip("上传成功 / 已保存", "ok");
+          voicePhase = VOICE_PHASE.IDLE;
+          showApplyTip("录音已保存", "ok");
           refreshVoiceUi();
         })
         .catch(function (err) {
           uploadBusy.voice = false;
-          var msg = (err && err.message) || "上传失败，请重试";
+          voicePhase = VOICE_PHASE.RECORDED;
+          var msg = (err && err.message) || "保存失败，请重试";
           if (err && err.status && !/HTTP\s*\d+/.test(msg)) {
             msg = "HTTP " + err.status + " · " + msg;
           }
@@ -3787,22 +3786,24 @@
           } catch (e2) {}
           var next = readDraft();
           next.voice = Object.assign({}, next.voice || {}, {
-            status: "上传失败，请重试",
+            status: "保存失败，请重试确认",
             confirmed: false,
             uploaded: false,
+            hasLocal: !!(liveVoiceBlob || liveVoiceObjectUrl),
           });
           writeDraftRecord(next);
-          showApplyTip("上传失败，请重试：" + msg);
+          showApplyTip("保存失败，录音仍在，可重新点击确认：" + msg);
           refreshVoiceUi();
         });
     } catch (err) {
       uploadBusy.voice = false;
-      var failMsg = (err && err.message) || "上传失败，请重试";
+      voicePhase = VOICE_PHASE.RECORDED;
+      var failMsg = (err && err.message) || "保存失败，请重试";
       uploadErrors.voice = failMsg;
       try {
         console.error("[apply-voice] confirmVoice threw", err);
       } catch (e3) {}
-      showApplyTip("上传失败，请重试：" + failMsg);
+      showApplyTip("保存失败，请重试：" + failMsg);
       try {
         refreshVoiceUi();
       } catch (e4) {}
@@ -4818,8 +4819,8 @@
         e.preventDefault();
         var confirmBtn = e.target.closest("[data-record-confirm]");
         if (confirmBtn && confirmBtn.disabled) {
-          if (uploadBusy.voice) showApplyTip("试音正在上传中，请稍候…", "ok");
-          else showApplyTip("请先完成录音并试听后，再确认上传。");
+          if (uploadBusy.voice) showApplyTip("录音正在保存中，请稍候…", "ok");
+          else showApplyTip("请先录满 10 秒并停止，再点击「确认录音」。");
           return;
         }
         confirmVoice();
