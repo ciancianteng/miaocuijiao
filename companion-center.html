@@ -36,7 +36,7 @@
     <div class="topbar-inner companion-market-header-inner">
       <a class="brand companion-market-brand" href="index.html">
         <img src="/default-avatar.png" alt="MEOW CUI JIAO" onerror="this.onerror=null;this.src='/default-avatar.png'">
-        <span>MEOW CUI JIAO<small>妙脆角电�?/small></span>
+        <span>MEOW CUI JIAO<small>妙脆角电竞</small></span>
       </a>
       <nav class="nav companion-market-nav" aria-label="页面导航">
         <a href="index.html">首页</a>
@@ -50,7 +50,7 @@
     <section class="hall-intro" aria-labelledby="companionHallTitle">
       <div>
         <h1 id="companionHallTitle">陪玩大厅</h1>
-        <p id="companionHallLead">找到喜欢的陪玩，立即开始游戏�?/p>
+        <p id="companionHallLead">找到喜欢的陪玩，立即开始游戏。</p>
       </div>
     </section>
 
@@ -62,12 +62,12 @@
         </label>
         <button class="hall-search-btn" id="applyFilter" type="button">搜索</button>
         <button class="hall-clear-btn" id="resetFilter" type="button">清除</button>
-        <button class="hall-filter-toggle" id="filterToggle" type="button" aria-expanded="false" aria-controls="searchFilters">筛�?/button>
+        <button class="hall-filter-toggle" id="filterToggle" type="button" aria-expanded="false" aria-controls="searchFilters">筛选</button>
       </div>
 
       <div class="hall-filter-drawer" id="searchFilters" aria-label="筛选工具栏">
         <div class="hall-filter-head">
-          <strong>筛�?/strong>
+          <strong>筛选</strong>
           <button class="hall-drawer-close" id="filterClose" type="button">完成</button>
         </div>
         <div class="hall-filter-row">
@@ -95,16 +95,16 @@
             </select>
           </label>
           <label class="hall-filter-field">
-            <span>在线状�?/span>
+            <span>在线状态</span>
             <select id="onlineFilter">
-              <option value="">全部状�?/option>
-              <option value="在线可接�?>在线可接�?/option>
-              <option value="忙碌�?>忙碌�?/option>
+              <option value="">全部状态</option>
+              <option value="在线可接单">在线可接单</option>
+              <option value="忙碌中">忙碌中</option>
               <option value="暂停接单">暂停接单</option>
               <option value="离线">离线</option>
             </select>
           </label>
-          <button class="hall-reset-text" id="resetFilterDrawer" type="button">重置筛�?/button>
+          <button class="hall-reset-text" id="resetFilterDrawer" type="button">重置筛选</button>
         </div>
       </div>
     </section>
@@ -119,10 +119,10 @@
           <span>排序</span>
           <select id="hallGpSort">
             <option value="recommend">综合</option>
-            <option value="sold">销�?/option>
+            <option value="sold">销量</option>
             <option value="priceAsc">价格从低到高</option>
             <option value="priceDesc">价格从高到低</option>
-            <option value="newest">最�?/option>
+            <option value="newest">最新</option>
           </select>
         </label>
       </div>
@@ -140,23 +140,23 @@
         <div class="hall-results-head">
           <div>
             <h2 id="companionListTitle">陪玩推荐</h2>
-            <p id="resultCount">正在加载陪玩�?/p>
+            <p id="resultCount">正在加载陪玩…</p>
           </div>
           <label class="hall-sort-field">
             <span>排序</span>
             <select id="sortFilter">
               <option value="recommend">默认推荐</option>
               <option value="levelDesc">等级优先</option>
-              <option value="priceAsc">价格低到�?/option>
-              <option value="priceDesc">价格高到�?/option>
+              <option value="priceAsc">价格低到高</option>
+              <option value="priceDesc">价格高到低</option>
             </select>
           </label>
         </div>
 
         <div class="companion-hall-grid" id="playerList"></div>
         <div class="empty companion-empty" id="emptyState" hidden>
-          <strong>暂无符合条件的陪�?/strong>
-          <span>试试调整搜索词或筛选条件�?/span>
+          <strong>暂无符合条件的陪玩</strong>
+          <span>试试调整搜索词或筛选条件。</span>
         </div>
         <div class="companion-pagination" id="companionPagination"></div>
       </div>
@@ -167,13 +167,13 @@
         <div class="hall-results-head">
           <div>
             <h2 id="hallServicesTitle">更多玩法</h2>
-            <p id="hallGpCount">读取真实商城商品中�?/p>
+            <p id="hallGpCount">读取真实商城商品中…</p>
           </div>
         </div>
         <div class="hall-gp-grid" id="hallGpGrid"></div>
         <div class="empty companion-empty" id="hallGpEmpty" hidden>
           <strong>暂无玩法商品</strong>
-          <span>后台「更多玩法管理」发布后会显示在这里�?/span>
+          <span>后台「更多玩法管理」发布后会显示在这里。</span>
         </div>
       </div>
     </section>
@@ -239,7 +239,7 @@
           bar.style.cssText =
             "margin:10px 12px 0;padding:12px 14px;border:1px solid rgba(255,143,197,.45);border-radius:12px;background:rgba(255,143,197,.12);color:#ffeaf4;font-size:13px;line-height:1.45";
           bar.innerHTML =
-            "<strong style=\"display:block;margin-bottom:4px\">补位选择（replacement�?/strong>选择一位陪玩加入原联合订单，不会新建独立订单。已确认 / 仍等待的其他陪玩状态保持不变�?;
+            "<strong style=\"display:block;margin-bottom:4px\">补位选择（replacement）</strong>选择一位陪玩加入原联合订单，不会新建独立订单。已确认 / 仍等待的其他陪玩状态保持不变。";
           var main = document.querySelector("main") || document.body;
           main.insertBefore(bar, main.firstChild);
         }
