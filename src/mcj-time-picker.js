@@ -159,15 +159,6 @@
       '<button type="button" class="mcj-tp-btn primary" data-tp-confirm>确认</button>' +
       "</div></div>";
 
-    function readScrollValue(kind) {
-      var sc = mask.querySelector('[data-tp-scroll="' + kind + '"]');
-      if (!sc) return kind === "hour" ? hour : minute;
-      var values = kind === "hour" ? hours : mins;
-      var idx = Math.round(sc.scrollTop / ITEM_H);
-      idx = Math.max(0, Math.min(values.length - 1, idx));
-      return values[idx];
-    }
-
     function syncActive(kind) {
       var sc = mask.querySelector('[data-tp-scroll="' + kind + '"]');
       if (!sc) return;
@@ -185,12 +176,27 @@
       var values = kind === "hour" ? hours : mins;
       var idx = values.indexOf(value);
       if (idx < 0) idx = 0;
-      var top = idx * ITEM_H;
+      var item = sc.querySelector('[data-tp-value="' + value + '"]');
+      var itemH = ITEM_H;
+      try {
+        var probe = sc.querySelector(".mcj-tp-item[data-tp-value]");
+        if (probe && probe.offsetHeight) itemH = probe.offsetHeight;
+      } catch (e) {}
+      var top = idx * itemH;
+      var prevSnap = sc.style.scrollSnapType;
+      sc.style.scrollSnapType = "none";
       if (smooth && typeof sc.scrollTo === "function") {
         sc.scrollTo({ top: top, behavior: "smooth" });
+      } else if (item && typeof item.scrollIntoView === "function") {
+        item.scrollIntoView({ block: "center", inline: "nearest", behavior: "auto" });
       } else {
         sc.scrollTop = top;
       }
+      // hard enforce after scrollIntoView (which can be approximate)
+      sc.scrollTop = top;
+      sc.style.scrollSnapType = prevSnap || "";
+      if (kind === "hour") hour = values[idx];
+      else minute = values[idx];
       syncActive(kind);
     }
 
@@ -198,12 +204,34 @@
       var sc = mask.querySelector('[data-tp-scroll="' + kind + '"]');
       if (!sc) return;
       var values = kind === "hour" ? hours : mins;
-      var idx = Math.round(sc.scrollTop / ITEM_H);
+      var itemH = ITEM_H;
+      try {
+        var probe = sc.querySelector(".mcj-tp-item[data-tp-value]");
+        if (probe && probe.offsetHeight) itemH = probe.offsetHeight;
+      } catch (e2) {}
+      var idx = Math.round(sc.scrollTop / itemH);
       idx = Math.max(0, Math.min(values.length - 1, idx));
       if (kind === "hour") hour = values[idx];
       else minute = values[idx];
-      sc.scrollTop = idx * ITEM_H;
+      var prevSnap = sc.style.scrollSnapType;
+      sc.style.scrollSnapType = "none";
+      sc.scrollTop = idx * itemH;
+      sc.style.scrollSnapType = prevSnap || "";
       syncActive(kind);
+    }
+
+    function readScrollValue(kind) {
+      var sc = mask.querySelector('[data-tp-scroll="' + kind + '"]');
+      if (!sc) return kind === "hour" ? hour : minute;
+      var values = kind === "hour" ? hours : mins;
+      var itemH = ITEM_H;
+      try {
+        var probe = sc.querySelector(".mcj-tp-item[data-tp-value]");
+        if (probe && probe.offsetHeight) itemH = probe.offsetHeight;
+      } catch (e3) {}
+      var idx = Math.round(sc.scrollTop / itemH);
+      idx = Math.max(0, Math.min(values.length - 1, idx));
+      return values[idx];
     }
 
     function bindScroll(kind) {
@@ -214,7 +242,12 @@
         "scroll",
         function () {
           var values = kind === "hour" ? hours : mins;
-          var idx = Math.round(sc.scrollTop / ITEM_H);
+          var itemH = ITEM_H;
+          try {
+            var probe = sc.querySelector(".mcj-tp-item[data-tp-value]");
+            if (probe && probe.offsetHeight) itemH = probe.offsetHeight;
+          } catch (e4) {}
+          var idx = Math.round(sc.scrollTop / itemH);
           idx = Math.max(0, Math.min(values.length - 1, idx));
           if (kind === "hour") hour = values[idx];
           else minute = values[idx];
@@ -266,8 +299,12 @@
       e.preventDefault();
       snapScroll("hour");
       snapScroll("minute");
-      hour = readScrollValue("hour");
-      minute = readScrollValue("minute");
+      var ah = mask.querySelector('[data-tp-scroll="hour"] .mcj-tp-item.is-active');
+      var am = mask.querySelector('[data-tp-scroll="minute"] .mcj-tp-item.is-active');
+      if (ah && ah.getAttribute("data-tp-value")) hour = ah.getAttribute("data-tp-value");
+      else hour = readScrollValue("hour");
+      if (am && am.getAttribute("data-tp-value")) minute = am.getAttribute("data-tp-value");
+      else minute = readScrollValue("minute");
       close("confirm");
     });
     document.addEventListener("keydown", onKey, true);

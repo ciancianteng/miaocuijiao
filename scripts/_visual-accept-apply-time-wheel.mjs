@@ -110,23 +110,29 @@ html,body{margin:0;min-height:100%;background:#0a0610;color:#ffe6f2;font-family:
 }
 
 async function scrollWheelTo(page, kind, value) {
-  // Prefer click on option (updates state + smooth scroll), then hard-snap scrollTop.
-  const item = page.locator(`[data-tp-scroll="${kind}"] [data-tp-value="${value}"]`);
-  await item.click({ force: true });
-  await page.waitForTimeout(200);
   await page.evaluate(
-    ({ kind, value, itemH }) => {
+    ({ kind, value }) => {
       const sc = document.querySelector(`[data-tp-scroll="${kind}"]`);
       if (!sc) throw new Error("no scroll " + kind);
+      const item = sc.querySelector(`[data-tp-value="${value}"]`);
+      if (!item) throw new Error("missing value " + value);
+      const probe = sc.querySelector(".mcj-tp-item[data-tp-value]");
+      const itemH = (probe && probe.offsetHeight) || 44;
       const items = [...sc.querySelectorAll("[data-tp-value]")];
-      const idx = items.findIndex((el) => el.getAttribute("data-tp-value") === value);
-      if (idx < 0) throw new Error("missing value " + value);
+      const idx = items.indexOf(item);
+      sc.style.scrollSnapType = "none";
       sc.scrollTop = idx * itemH;
+      item.classList.add("is-active");
+      items.forEach((el) => {
+        const on = el === item;
+        el.classList.toggle("is-active", on);
+        el.setAttribute("aria-selected", on ? "true" : "false");
+      });
       sc.dispatchEvent(new Event("scroll"));
     },
-    { kind, value, itemH: 44 }
+    { kind, value }
   );
-  await page.waitForTimeout(220);
+  await page.waitForTimeout(300);
 }
 
 await withPage({ width: 390, height: 844 }, async (page) => {
