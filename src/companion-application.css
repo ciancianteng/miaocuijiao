@@ -2129,6 +2129,15 @@ body.companion-apply-page .apply-success{
 #companionApplyRoot .voice-card-idle p{margin:0;padding:6px 2px;color:rgba(217,191,205,.7);font-size:13px;font-weight:750;line-height:1.45}
 #companionApplyRoot .voice-card-actions{display:flex;flex-wrap:wrap;gap:8px}
 #companionApplyRoot .voice-card-actions .apply-btn{min-width:0;flex:1 1 auto;height:42px;border-radius:12px}
+#companionApplyRoot .voice-card-play-cta{
+  width:100%;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap:8px;
+  min-height:42px;
+  margin:0 0 8px;
+}
 #companionApplyRoot .apply-btn-ghost-soft,
 #companionApplyRoot .apply-btn.apply-btn-ghost-soft{
   border-color:rgba(255,255,255,.10);background:transparent;color:rgba(217,191,205,.82);
@@ -2282,4 +2291,16 @@ html body.companion-apply-page .apply-steps{
 }
 html body.companion-apply-page .apply-shell{
   padding-top:0 !important;
+}
+
+/* Voice confirm UX: full-width play CTA above re-record / confirm */
+#companionApplyRoot .voice-card-play-cta{
+  width:100%;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap:8px;
+  min-height:42px;
+  margin:0 0 8px;
+  box-sizing:border-box;
 }
