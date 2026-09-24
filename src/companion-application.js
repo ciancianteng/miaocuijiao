@@ -1518,6 +1518,39 @@
     if (type === "textarea") return '<label class="form-field full">' + esc(label) + '<textarea name="' + esc(name) + '" data-apply-field ' + attrs + '>' + esc(value || "") + '</textarea></label>';
     return '<label class="form-field">' + esc(label) + '<input name="' + esc(name) + '" data-apply-field type="' + esc(type) + '" value="' + esc(value || "") + '" ' + attrs + '></label>';
   }
+  function onlineTimeFieldsHtml(data) {
+    data = data || {};
+    var TP = window.MCJTimePicker;
+    if (TP && typeof TP.applyFieldHtml === "function") {
+      return (
+        '<div class="mcj-apply-time-stack">' +
+        '<p class="mcj-apply-time-heading">常在线时间</p>' +
+        TP.applyFieldHtml({
+          name: "onlineStart",
+          label: "开始时间",
+          icon: "🕐",
+          value: data.onlineStart,
+          pickerTitle: "选择开始时间",
+        }) +
+        '<div class="mcj-apply-time-to">至</div>' +
+        TP.applyFieldHtml({
+          name: "onlineEnd",
+          label: "结束时间",
+          icon: "🌙",
+          value: data.onlineEnd,
+          pickerTitle: "选择结束时间",
+        }) +
+        '<p class="apply-section-note">支持跨午夜，例如 23:00 至次日 04:00。</p>' +
+        "</div>"
+      );
+    }
+    return (
+      '<div class="mcj-apply-time-stack">' +
+      field("onlineStart", "常在线开始", "text", data.onlineStart, 'placeholder="23:00" inputmode="numeric"') +
+      field("onlineEnd", "常在线结束", "text", data.onlineEnd, 'placeholder="04:00" inputmode="numeric"') +
+      "</div>"
+    );
+  }
   function selectField(name, label, value, options, opts) {
     opts = opts || {};
     var placeholder = opts.placeholder ? String(opts.placeholder) : "";
@@ -1958,10 +1991,7 @@
       tagPicker("modes", "可提供服务（多选）", data.modes, tagGroups.modes, 2) +
       selectField("rank", "游戏段位", data.rank, rankOptions) +
       selectField("voiceType", "声线", data.voiceType, voiceTypeOptions()) +
-      '<div class="apply-fields-row">' +
-      field("onlineStart", "常在线开始", "time", data.onlineStart) +
-      field("onlineEnd", "常在线结束", "time", data.onlineEnd) +
-      "</div>" +
+      onlineTimeFieldsHtml(data) +
       fileField("records", "游戏截图 / 证明（选填）", {
         value: uploads.records || null,
         accept: "image/*",
@@ -4007,6 +4037,35 @@
     root.__mcjApplyBound = true;
     document.addEventListener("click", async function (e) {
       if (!document.getElementById("companionApplyRoot")) return;
+      var timeOpen = e.target.closest("[data-apply-time-open]");
+      if (timeOpen) {
+        e.preventDefault();
+        var fieldName = timeOpen.getAttribute("data-apply-time-open");
+        var title = timeOpen.getAttribute("data-apply-time-title") || "选择时间";
+        var wrap = timeOpen.closest("[data-apply-time-field]");
+        var hidden = wrap && wrap.querySelector('input[name="' + fieldName + '"]');
+        var display = wrap && wrap.querySelector('[data-apply-time-display="' + fieldName + '"]');
+        var current = hidden ? hidden.value : "";
+        if (!window.MCJTimePicker || typeof window.MCJTimePicker.open !== "function") {
+          showApplyTip("时间选择器加载失败，请刷新后重试");
+          return;
+        }
+        window.MCJTimePicker.open({
+          title: title,
+          value: current,
+          minuteStep: 1,
+          onConfirm: function (value) {
+            if (hidden) hidden.value = value;
+            if (display) {
+              display.textContent = value;
+              display.classList.remove("is-empty");
+            }
+            timeOpen.setAttribute("aria-label", (fieldName === "onlineEnd" ? "结束时间 " : "开始时间 ") + value);
+            collect(root).catch(function () {});
+          },
+        });
+        return;
+      }
       if (e.target.closest("[data-apply-retry]")) {
         e.preventDefault();
         initStarted = false;

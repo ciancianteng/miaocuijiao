@@ -1590,6 +1590,7 @@ body.companion-apply-page .apply-success{
   #companionApplyRoot .apply-fields .mcj-upload-card,
   #companionApplyRoot .apply-fields .apply-pricing-note,
   #companionApplyRoot .apply-fields .apply-section-note,
+  #companionApplyRoot .apply-fields .mcj-apply-time-stack,
   #companionApplyRoot .apply-media-fields{
     grid-column:1/-1;
   }

@@ -46,10 +46,11 @@ test("mcj-time-picker script is included", () => {
 });
 
 test("picker CSS has 24h wheel + time card", () => {
-  const css = read("src/place-order-modal.css");
-  assert.match(css, /\.mcj-tp-item\.is-active/);
-  assert.match(css, /\.mcj-po-time-card/);
-  assert.doesNotMatch(css, /\bAM\b|\bPM\b/);
+  const wheel = read("src/mcj-time-picker.css");
+  assert.match(wheel, /\.mcj-tp-item\.is-active/);
+  assert.doesNotMatch(wheel, /\bAM\b|\bPM\b/);
+  const po = read("src/place-order-modal.css");
+  assert.match(po, /\.mcj-po-time-card/);
 });
 
 test("normalize strips AM/PM to 24h", () => {
