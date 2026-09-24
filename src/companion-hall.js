@@ -442,16 +442,24 @@
     return "";
   }
   function card(item) {
-    var pillStyle = "";
-    if (item.badgeBorder || item.levelColor || item.badgeText) {
-      pillStyle =
-        ' style="' +
-        (item.badgeBorder ? "border-color:" + esc(item.badgeBorder) + ";" : "") +
-        (item.badgeText ? "color:" + esc(item.badgeText) + ";" : "") +
-        (item.levelColor ? "background:" + esc(item.levelColor) + "33;" : "") +
-        '"';
-    }
-    var MAX_VISIBLE_TAGS = 5; /* level separate; ~5 tags then +N */
+    var publicId =
+      (window.MCJCompanionPublicId && window.MCJCompanionPublicId.customerFacingCompanionId
+        ? window.MCJCompanionPublicId.customerFacingCompanionId(item)
+        : "") ||
+      item.publicId ||
+      item.companionCode ||
+      "";
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(String(publicId))) publicId = "";
+    if (!publicId) publicId = "未生成";
+    var nickname = String(item.name || "").trim() || "未命名陪玩";
+    var uuid = String(item.id || "").trim();
+    var detailHref = uuid
+      ? "profile.html?id=" +
+        encodeURIComponent(uuid) +
+        (publicId && publicId !== "未生成" ? "&code=" + encodeURIComponent(publicId) : "")
+      : publicId && publicId !== "未生成"
+        ? "profile.html?id=" + encodeURIComponent(publicId)
+        : "#";
     var categoryTags = (function () {
       var game = String(item.game || "").trim();
       var seen = {};
@@ -479,116 +487,12 @@
       (item.tags || []).forEach(pushExtra);
       return out;
     })();
-    var levelHtml = item.level
-      ? '<span class="companion-level-pill mcj-level-tag" data-level-id="' +
-        esc(item.levelId || "") +
-        '"' +
-        pillStyle +
-        ">" +
-        esc(item.level) +
-        "</span>"
-      : "";
-    var visibleTags = categoryTags.slice(0, MAX_VISIBLE_TAGS);
-    var hiddenTagCount = Math.max(0, categoryTags.length - visibleTags.length);
-    var tagsHtml =
-      '<div class="companion-identity-row companion-tags companion-capsule-row">' +
-      levelHtml +
-      visibleTags
-        .map(function (t) {
-          return '<span class="mcj-service-tag mcj-category-tag">' + esc(t) + "</span>";
-        })
-        .join("") +
-      (hiddenTagCount > 0
-        ? '<span class="mcj-service-tag mcj-category-tag companion-tag-more" aria-label="另有' +
-          hiddenTagCount +
-          '个标签">+' +
-          hiddenTagCount +
-          "</span>"
-        : "") +
-      "</div>";
-    var badgeClass = statusBadgeClass(item.status);
-    var statusText = statusChipText(item.status);
-    var publicId =
-      (window.MCJCompanionPublicId && window.MCJCompanionPublicId.customerFacingCompanionId
-        ? window.MCJCompanionPublicId.customerFacingCompanionId(item)
-        : "") ||
-      item.publicId ||
-      item.companionCode ||
-      "";
-    if (/^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(String(publicId))) publicId = "";
-    if (!publicId) publicId = "未生成";
-    var nickname = String(item.name || "").trim() || "未命名陪玩";
-    var uuid = String(item.id || "").trim();
-    var detailHref = uuid
-      ? "profile.html?id=" +
-        encodeURIComponent(uuid) +
-        (publicId && publicId !== "未生成" ? "&code=" + encodeURIComponent(publicId) : "")
-      : publicId && publicId !== "未生成"
-        ? "profile.html?id=" + encodeURIComponent(publicId)
-        : "#";
-    var focusX = item.objectPositionX != null ? item.objectPositionX : 50;
-    var focusY = item.objectPositionY != null ? item.objectPositionY : 25;
-    var pos = Number(focusX) + "% " + Number(focusY) + "%";
-    // Compact hall card: name-first, no price, weak brand watermark, unified verified badge.
-    return (
-      '<article class="card player-card" data-player data-public-id="' +
-      esc(String(publicId).toUpperCase()) +
-      '" data-level-id="' +
-      esc(item.levelId || "") +
-      '" data-companion-level="' +
-      esc(item.levelId || "") +
-      '" data-card-style="' +
-      esc(item.cardBackground || "") +
-      '" data-level-color="' +
-      esc(item.levelColor || "") +
-      '" data-companion-id="' +
-      esc(uuid) +
-      '" data-name="' +
-      esc(nickname) +
-      '" data-game="' +
-      esc(item.game) +
-      '" data-tags="' +
-      esc(item.tags.join(",")) +
-      '" data-price="' +
-      esc(item.priceValue) +
-      '" data-level-min="' +
-      esc(item.levelMinPrice != null ? item.levelMinPrice : "") +
-      '" data-level-max="' +
-      esc(item.levelMaxPrice != null ? item.levelMaxPrice : "") +
-      '" data-online="' +
-      esc(item.status) +
-      '" data-score="' +
-      esc(item.rating) +
-      '" data-gender="' +
-      esc(item.gender) +
-      '">' +
-      '<div class="companion-card-media"><img src="' +
-      esc(item.image) +
-      '" alt="' +
-      esc(nickname) +
-      '" loading="lazy" decoding="async" style="object-position:' +
-      esc(pos) +
-      ";--mcj-cover-pos:" +
-      esc(pos) +
-      "\" onerror=\"this.onerror=null;this.src='" +
-      DEFAULT_AVATAR +
-      '\'"></div>' +
-      '<div class="companion-card-body">' +
-      '<p class="companion-brand-watermark" aria-hidden="true">MEOW CUI JIAO</p>' +
-      '<p class="companion-nickname-line">' +
-      esc(nickname) +
-      "</p>" +
-      '<div class="companion-card-head-meta">' +
-      verifiedBadgeHtml(item) +
-      '<span class="companion-status-inline' +
-      badgeClass +
-      '">' +
-      esc(statusText) +
-      "</span></div>" +
-      tagsHtml +
-      '<div class="companion-card-actions"><a class="companion-card-action" href="' +
+    var hallActions =
+      '<div class="companion-card-actions mcj-hall-card-actions">' +
+      '<a class="companion-card-action" href="' +
       esc(detailHref) +
-      '">查看详情</a><button type="button" class="companion-card-action primary" data-hall-order="' +
+      '">查看详情</a>' +
+      '<button type="button" class="companion-card-action primary" data-hall-order="' +
       esc(uuid) +
       '" data-hall-name="' +
       esc(nickname) +
@@ -608,7 +512,8 @@
       esc(item.status || "") +
       '" data-hall-online="' +
       esc(item.canAcceptBossOrder ? "1" : "0") +
-      '">立即下单</button><button type="button" class="companion-card-action team-add" data-hall-team-add="' +
+      '">立即下单</button>' +
+      '<button type="button" class="companion-card-action team-add" data-hall-team-add="' +
       esc(uuid) +
       '" data-hall-name="' +
       esc(nickname) +
@@ -624,9 +529,78 @@
       esc(item.status || "") +
       '" data-hall-online="' +
       esc(item.canAcceptBossOrder ? "1" : "0") +
-      '">加入一起下单</button></div>' +
-      "</div>" +
-      "</article>"
+      '">加入一起下单</button>' +
+      "</div>";
+    var extraAttrs =
+      'data-player data-name="' +
+      esc(nickname) +
+      '" data-game="' +
+      esc(item.game) +
+      '" data-tags="' +
+      esc((item.tags || []).join(",")) +
+      '" data-price="' +
+      esc(item.priceValue) +
+      '" data-level-min="' +
+      esc(item.levelMinPrice != null ? item.levelMinPrice : "") +
+      '" data-level-max="' +
+      esc(item.levelMaxPrice != null ? item.levelMaxPrice : "") +
+      '" data-online="' +
+      esc(item.status) +
+      '" data-score="' +
+      esc(item.rating) +
+      '" data-gender="' +
+      esc(item.gender) +
+      '"';
+    var sharedPayload = {
+      id: uuid,
+      uid: uuid,
+      companionId: uuid,
+      name: nickname,
+      publicId: publicId !== "未生成" ? publicId : "",
+      companionCode: publicId !== "未生成" ? publicId : "",
+      level: item.level,
+      levelId: item.levelId,
+      levelColor: item.levelColor,
+      cardBackground: item.cardBackground,
+      game: item.game,
+      tags: categoryTags,
+      serviceTags: categoryTags,
+      image: item.image || cardImage(item),
+      cover: item.image || cardImage(item),
+      avatar: item.image || cardImage(item),
+      objectPositionX: item.objectPositionX,
+      objectPositionY: item.objectPositionY,
+      status: item.status,
+      availabilityStatus: item.availabilityStatus,
+      onlineStatus: item.availabilityStatus || item.status,
+    };
+    if (window.MCJRealData && typeof window.MCJRealData.companionCardHtml === "function") {
+      return window.MCJRealData.companionCardHtml(sharedPayload, {
+        variant: "hall",
+        maxTags: 4,
+        actionsHtml: hallActions,
+        extraAttrs: extraAttrs,
+      });
+    }
+    // Fallback if site-data not loaded — still emit shared hot-card structure.
+    return (
+      '<article class="neon-card companion-card hot-card player-card mcj-card-variant-hall" data-companion-id="' +
+      esc(uuid) +
+      '" ' +
+      extraAttrs +
+      ">" +
+      '<div class="hot-cover"><img src="' +
+      esc(item.image || DEFAULT_AVATAR) +
+      '" alt="' +
+      esc(nickname) +
+      '" loading="lazy" onerror="this.onerror=null;this.src=\'' +
+      DEFAULT_AVATAR +
+      '\'"></div>' +
+      '<div class="hot-info"><div class="hot-name-row"><h3>' +
+      esc(nickname) +
+      "</h3></div>" +
+      hallActions +
+      "</div></article>"
     );
   }
   function render() {
@@ -746,7 +720,10 @@
     var list = document.getElementById("playerList");
     if (!list) return;
     if (list.querySelector(".player-card, .hall-skel-card")) return;
-    var card = '<article class="player-card hall-skel-card" aria-hidden="true"><div class="companion-card-media hall-skel-media"></div><div class="player-info"><div class="hall-skel-line lg"></div><div class="hall-skel-line"></div><div class="hall-skel-line short"></div></div></article>';
+    var card =
+      '<article class="neon-card companion-card hot-card player-card hall-skel-card mcj-card-variant-hall" aria-hidden="true">' +
+      '<div class="hot-cover hall-skel-media"></div>' +
+      '<div class="hot-info"><div class="hall-skel-line lg"></div><div class="hall-skel-line"></div><div class="hall-skel-line short"></div></div></article>';
     list.innerHTML = card + card + card + card;
     list.setAttribute("aria-busy", "true");
     var count = document.getElementById("resultCount");

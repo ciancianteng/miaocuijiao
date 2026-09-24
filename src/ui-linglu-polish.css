@@ -30,10 +30,11 @@
   color: #ff9ecf;
 }
 
-/* —— Home recommend cards: 4:5 photo + controlled info (no stretch-tall) —— */
+/* —— Home + Hall shared CompanionCard: 4:5 photo + controlled info —— */
 .mcj-app-home .hot-card.companion-card,
 .hot-recommend-section .hot-card.companion-card,
-.companion-track .hot-card.companion-card {
+.companion-track .hot-card.companion-card,
+.companion-hall-grid .hot-card.companion-card {
   padding: 0 !important;
   overflow: hidden !important;
   display: flex !important;
@@ -47,7 +48,8 @@
 #hotCompanionTrack .hot-cover,
 #recentCompanionTrack .hot-cover,
 #gameCompanionTrack .hot-cover,
-#reviewCompanionTrack .hot-cover {
+#reviewCompanionTrack .hot-cover,
+.companion-hall-grid .hot-cover {
   aspect-ratio: 4 / 5 !important;
   width: 100% !important;
   height: auto !important;
@@ -63,7 +65,8 @@
 #hotCompanionTrack .hot-cover img,
 #recentCompanionTrack .hot-cover img,
 #gameCompanionTrack .hot-cover img,
-#reviewCompanionTrack .hot-cover img {
+#reviewCompanionTrack .hot-cover img,
+.companion-hall-grid .hot-cover img {
   width: 100% !important;
   height: 100% !important;
   object-fit: cover !important;

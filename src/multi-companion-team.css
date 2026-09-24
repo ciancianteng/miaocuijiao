@@ -567,10 +567,11 @@ body:has(.mcj-team-bar) #playerList.companion-hall-grid {
 }
 
 @media (max-width: 420px) {
-  .companion-card-actions {
+  /* Legacy row actions only — shared hot-card hall keeps column stack compact */
+  .companion-card-actions:not(.mcj-hall-card-actions) {
     flex-wrap: wrap;
   }
-  .companion-card-action.team-add {
+  .companion-card-actions:not(.mcj-hall-card-actions) .companion-card-action.team-add {
     flex: 1 1 100%;
   }
 }
