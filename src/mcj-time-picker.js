@@ -135,6 +135,7 @@
     var hour = pad2(Math.min(23, Math.max(0, Number(parts[0]) || 0)));
     var minute = snapMinute(parts[1], step);
     var confirmed = false;
+    var programmaticScroll = 0;
 
     var mask = document.createElement("div");
     mask.className = "mcj-tp-mask";
@@ -176,28 +177,32 @@
       var values = kind === "hour" ? hours : mins;
       var idx = values.indexOf(value);
       if (idx < 0) idx = 0;
-      var item = sc.querySelector('[data-tp-value="' + value + '"]');
       var itemH = ITEM_H;
       try {
         var probe = sc.querySelector(".mcj-tp-item[data-tp-value]");
         if (probe && probe.offsetHeight) itemH = probe.offsetHeight;
       } catch (e) {}
       var top = idx * itemH;
-      var prevSnap = sc.style.scrollSnapType;
+      programmaticScroll += 1;
       sc.style.scrollSnapType = "none";
       if (smooth && typeof sc.scrollTo === "function") {
         sc.scrollTo({ top: top, behavior: "smooth" });
-      } else if (item && typeof item.scrollIntoView === "function") {
-        item.scrollIntoView({ block: "center", inline: "nearest", behavior: "auto" });
       } else {
         sc.scrollTop = top;
       }
-      // hard enforce after scrollIntoView (which can be approximate)
-      sc.scrollTop = top;
-      sc.style.scrollSnapType = prevSnap || "";
       if (kind === "hour") hour = values[idx];
       else minute = values[idx];
       syncActive(kind);
+      requestAnimationFrame(function () {
+        sc.scrollTop = top;
+        syncActive(kind);
+        requestAnimationFrame(function () {
+          sc.style.scrollSnapType = "y mandatory";
+          sc.scrollTop = top;
+          syncActive(kind);
+          programmaticScroll = Math.max(0, programmaticScroll - 1);
+        });
+      });
     }
 
     function snapScroll(kind) {
@@ -213,11 +218,14 @@
       idx = Math.max(0, Math.min(values.length - 1, idx));
       if (kind === "hour") hour = values[idx];
       else minute = values[idx];
-      var prevSnap = sc.style.scrollSnapType;
       sc.style.scrollSnapType = "none";
       sc.scrollTop = idx * itemH;
-      sc.style.scrollSnapType = prevSnap || "";
       syncActive(kind);
+      requestAnimationFrame(function () {
+        sc.scrollTop = idx * itemH;
+        sc.style.scrollSnapType = "y mandatory";
+        syncActive(kind);
+      });
     }
 
     function readScrollValue(kind) {
@@ -241,6 +249,10 @@
       sc.addEventListener(
         "scroll",
         function () {
+          if (programmaticScroll > 0) {
+            syncActive(kind);
+            return;
+          }
           var values = kind === "hour" ? hours : mins;
           var itemH = ITEM_H;
           try {
@@ -297,14 +309,11 @@
     });
     mask.querySelector("[data-tp-confirm]").addEventListener("click", function (e) {
       e.preventDefault();
-      snapScroll("hour");
-      snapScroll("minute");
+      // Prefer in-memory selection (updated by scroll/click); scrollTop can be flaky with snap.
       var ah = mask.querySelector('[data-tp-scroll="hour"] .mcj-tp-item.is-active');
       var am = mask.querySelector('[data-tp-scroll="minute"] .mcj-tp-item.is-active');
       if (ah && ah.getAttribute("data-tp-value")) hour = ah.getAttribute("data-tp-value");
-      else hour = readScrollValue("hour");
       if (am && am.getAttribute("data-tp-value")) minute = am.getAttribute("data-tp-value");
-      else minute = readScrollValue("minute");
       close("confirm");
     });
     document.addEventListener("keydown", onKey, true);

@@ -49,7 +49,7 @@ async function bootHarness(page) {
   await page.setContent(
     `<!doctype html><html lang="zh-CN"><head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="stylesheet" href="${BASE}/src/mcj-time-picker.css?v=20260924timeWheel1">
+<link rel="stylesheet" href="${BASE}/src/mcj-time-picker.css?v=20260924timeWheel2">
 <style>
 html,body{margin:0;min-height:100%;background:#0a0610;color:#ffe6f2;font-family:system-ui,sans-serif}
 .wrap{max-width:420px;margin:0 auto;padding:24px 16px 48px}
@@ -57,9 +57,9 @@ html,body{margin:0;min-height:100%;background:#0a0610;color:#ffe6f2;font-family:
 .apply-section-note{margin:0;color:rgba(255,214,231,.55);font-size:12px}
 #status{margin-top:14px;font-size:13px;color:rgba(255,214,231,.7)}
 </style></head><body>
-<div class="wrap"><h1 style="font-size:18px">常在线时间</h1>
+<div class="wrap"><h1 style="font-size:18px">常在线时�?/h1>
 <div class="panel"><div id="root" class="apply-fields"></div><p id="status">loading</p></div></div>
-<script src="${BASE}/src/mcj-time-picker.js?v=20260924timeWheel1"></script>
+<script src="${BASE}/src/mcj-time-picker.js?v=20260924timeWheel2"></script>
 <script>
 (function(){
   function ready(){
@@ -69,11 +69,11 @@ html,body{margin:0;min-height:100%;background:#0a0610;color:#ffe6f2;font-family:
     function paint(start,end){
       var stack=document.createElement('div');
       stack.className='mcj-apply-time-stack';
-      stack.innerHTML='<p class="mcj-apply-time-heading">常在线时间</p>'+
-        TP.applyFieldHtml({name:'onlineStart',label:'开始时间',icon:'🕐',value:start,pickerTitle:'选择开始时间'})+
-        '<div class="mcj-apply-time-to">至</div>'+
+      stack.innerHTML='<p class="mcj-apply-time-heading">常在线时�?/p>'+
+        TP.applyFieldHtml({name:'onlineStart',label:'开始时�?,icon:'🕐',value:start,pickerTitle:'选择开始时�?})+
+        '<div class="mcj-apply-time-to">�?/div>'+
         TP.applyFieldHtml({name:'onlineEnd',label:'结束时间',icon:'🌙',value:end,pickerTitle:'选择结束时间'})+
-        '<p class="apply-section-note">支持跨午夜，例如 23:00 至次日 04:00。</p>';
+        '<p class="apply-section-note">支持跨午夜，例如 23:00 至次�?04:00�?/p>';
       root.innerHTML=''; root.appendChild(stack);
       status.textContent='start='+(root.querySelector('[name=onlineStart]').value||'')+' end='+(root.querySelector('[name=onlineEnd]').value||'');
     }
@@ -116,23 +116,18 @@ async function scrollWheelTo(page, kind, value) {
       if (!sc) throw new Error("no scroll " + kind);
       const item = sc.querySelector(`[data-tp-value="${value}"]`);
       if (!item) throw new Error("missing value " + value);
-      const probe = sc.querySelector(".mcj-tp-item[data-tp-value]");
-      const itemH = (probe && probe.offsetHeight) || 44;
+      // Drive selection via click path (updates in-memory hour/minute).
+      item.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
       const items = [...sc.querySelectorAll("[data-tp-value]")];
-      const idx = items.indexOf(item);
-      sc.style.scrollSnapType = "none";
-      sc.scrollTop = idx * itemH;
-      item.classList.add("is-active");
       items.forEach((el) => {
-        const on = el === item;
+        const on = el.getAttribute("data-tp-value") === value;
         el.classList.toggle("is-active", on);
         el.setAttribute("aria-selected", on ? "true" : "false");
       });
-      sc.dispatchEvent(new Event("scroll"));
     },
     { kind, value }
   );
-  await page.waitForTimeout(300);
+  await page.waitForTimeout(350);
 }
 
 await withPage({ width: 390, height: 844 }, async (page) => {
@@ -254,15 +249,15 @@ await withPage({ width: 390, height: 844 }, async (page) => {
     const TP = window.MCJTimePicker;
     host.innerHTML =
       '<div class="mcj-apply-time-stack" style="max-width:420px;margin:0 auto">' +
-      '<p class="mcj-apply-time-heading">常在线时间</p>' +
+      '<p class="mcj-apply-time-heading">常在线时�?/p>' +
       TP.applyFieldHtml({
         name: "onlineStart",
-        label: "开始时间",
+        label: "开始时�?,
         icon: "🕐",
         value: "23:00",
-        pickerTitle: "选择开始时间",
+        pickerTitle: "选择开始时�?,
       }) +
-      '<div class="mcj-apply-time-to">至</div>' +
+      '<div class="mcj-apply-time-to">�?/div>' +
       TP.applyFieldHtml({
         name: "onlineEnd",
         label: "结束时间",
