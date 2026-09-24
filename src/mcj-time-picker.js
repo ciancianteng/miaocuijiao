@@ -266,19 +266,32 @@
       e.preventDefault();
       snapScroll("hour");
       snapScroll("minute");
+      hour = readScrollValue("hour");
+      minute = readScrollValue("minute");
       close("confirm");
     });
     document.addEventListener("keydown", onKey, true);
 
     lockScroll();
     document.body.appendChild(mask);
-    // next frame: position wheels then animate sheet
-    requestAnimationFrame(function () {
+
+    function positionWheels() {
       scrollToValue("hour", hour, false);
       scrollToValue("minute", minute, false);
-      bindScroll("hour");
-      bindScroll("minute");
+    }
+
+    // Open sheet first, then position wheels after layout, then bind scroll.
+    // Binding before position (or positioning before layout) left scrollTop at 0
+    // so the highlight looked like 00:00 while is-active still said 23.
+    requestAnimationFrame(function () {
       mask.classList.add("is-open");
+      requestAnimationFrame(function () {
+        positionWheels();
+        bindScroll("hour");
+        bindScroll("minute");
+        setTimeout(positionWheels, 40);
+        setTimeout(positionWheels, 120);
+      });
     });
 
     return { close: function () { close("cancel"); } };

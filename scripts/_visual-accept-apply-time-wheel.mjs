@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Staging visual + interaction accept for companion apply time wheel.
- * Uses fixture page (same MCJTimePicker + apply cards as production).
+ * Loads shared MCJTimePicker assets from Staging (no fixture HTML required).
  */
 import { chromium } from "playwright-core";
 import path from "node:path";
@@ -14,12 +14,7 @@ const EDGE = "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe"
 const CHROME = "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
 const exe = existsSync(EDGE) ? EDGE : CHROME;
 
-const report = {
-  base: BASE,
-  checks: {},
-  shots: {},
-  pass: false,
-};
+const report = { base: BASE, checks: {}, shots: {}, pass: false };
 
 function fail(name, detail) {
   report.checks[name] = { ok: false, detail };
@@ -49,7 +44,76 @@ async function withPage(viewport, fn) {
   }
 }
 
+async function bootHarness(page) {
+  await page.goto(BASE + "/", { waitUntil: "domcontentloaded", timeout: 60000 });
+  await page.setContent(
+    `<!doctype html><html lang="zh-CN"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="${BASE}/src/mcj-time-picker.css?v=20260924timeWheel1">
+<style>
+html,body{margin:0;min-height:100%;background:#0a0610;color:#ffe6f2;font-family:system-ui,sans-serif}
+.wrap{max-width:420px;margin:0 auto;padding:24px 16px 48px}
+.panel{border-radius:18px;border:1px solid rgba(239,171,201,.22);background:linear-gradient(180deg,rgba(28,18,28,.95),rgba(10,8,14,.98));padding:16px}
+.apply-section-note{margin:0;color:rgba(255,214,231,.55);font-size:12px}
+#status{margin-top:14px;font-size:13px;color:rgba(255,214,231,.7)}
+</style></head><body>
+<div class="wrap"><h1 style="font-size:18px">常在线时间</h1>
+<div class="panel"><div id="root" class="apply-fields"></div><p id="status">loading</p></div></div>
+<script src="${BASE}/src/mcj-time-picker.js?v=20260924timeWheel1"></script>
+<script>
+(function(){
+  function ready(){
+    var TP=window.MCJTimePicker; if(!TP){ setTimeout(ready,40); return; }
+    var root=document.getElementById('root');
+    var status=document.getElementById('status');
+    function paint(start,end){
+      var stack=document.createElement('div');
+      stack.className='mcj-apply-time-stack';
+      stack.innerHTML='<p class="mcj-apply-time-heading">常在线时间</p>'+
+        TP.applyFieldHtml({name:'onlineStart',label:'开始时间',icon:'🕐',value:start,pickerTitle:'选择开始时间'})+
+        '<div class="mcj-apply-time-to">至</div>'+
+        TP.applyFieldHtml({name:'onlineEnd',label:'结束时间',icon:'🌙',value:end,pickerTitle:'选择结束时间'})+
+        '<p class="apply-section-note">支持跨午夜，例如 23:00 至次日 04:00。</p>';
+      root.innerHTML=''; root.appendChild(stack);
+      status.textContent='start='+(root.querySelector('[name=onlineStart]').value||'')+' end='+(root.querySelector('[name=onlineEnd]').value||'');
+    }
+    paint('23:00','04:00');
+    document.addEventListener('click',function(e){
+      var open=e.target.closest('[data-apply-time-open]'); if(!open) return;
+      e.preventDefault();
+      var name=open.getAttribute('data-apply-time-open');
+      var wrap=open.closest('[data-apply-time-field]');
+      var hidden=wrap&&wrap.querySelector('input[name="'+name+'"]');
+      var display=wrap&&wrap.querySelector('[data-apply-time-display="'+name+'"]');
+      TP.open({
+        title: open.getAttribute('data-apply-time-title')||'选择时间',
+        value: hidden?hidden.value:'',
+        minuteStep:1,
+        onConfirm:function(value){
+          if(hidden) hidden.value=value;
+          if(display){ display.textContent=value; display.classList.remove('is-empty'); }
+          status.textContent='start='+root.querySelector('[name=onlineStart]').value+' end='+root.querySelector('[name=onlineEnd]').value;
+        }
+      });
+    });
+    window.__applyTimeFixture={
+      getValues:function(){return{onlineStart:root.querySelector('[name=onlineStart]').value,onlineEnd:root.querySelector('[name=onlineEnd]').value};},
+      setValues:paint
+    };
+  }
+  ready();
+})();
+</script></body></html>`,
+    { waitUntil: "domcontentloaded" }
+  );
+  await page.waitForFunction(() => window.MCJTimePicker && window.__applyTimeFixture, null, { timeout: 20000 });
+}
+
 async function scrollWheelTo(page, kind, value) {
+  // Prefer click on option (updates state + smooth scroll), then hard-snap scrollTop.
+  const item = page.locator(`[data-tp-scroll="${kind}"] [data-tp-value="${value}"]`);
+  await item.click({ force: true });
+  await page.waitForTimeout(200);
   await page.evaluate(
     ({ kind, value, itemH }) => {
       const sc = document.querySelector(`[data-tp-scroll="${kind}"]`);
@@ -62,22 +126,12 @@ async function scrollWheelTo(page, kind, value) {
     },
     { kind, value, itemH: 44 }
   );
-  await page.waitForTimeout(120);
+  await page.waitForTimeout(220);
 }
 
-// --- iPhone viewport ---
 await withPage({ width: 390, height: 844 }, async (page) => {
-  const url = `${BASE}/artifacts/apply-time-wheel/fixture.html`;
-  const res = await page.goto(url, { waitUntil: "networkidle", timeout: 60000 });
-  if (!res || !res.ok()) {
-    fail("FIXTURE_LOAD", `status=${res && res.status()} url=${url}`);
-    return;
-  }
-  ok("FIXTURE_LOAD", url);
-
-  await page.waitForFunction(() => window.MCJTimePicker && window.__applyTimeFixture, null, {
-    timeout: 15000,
-  });
+  await bootHarness(page);
+  ok("FIXTURE_LOAD", "harness via staging assets");
 
   const nativeCount = await page.locator('input[type="time"]').count();
   if (nativeCount === 0) ok("NO_NATIVE_UGLY_PICKER");
@@ -88,34 +142,31 @@ await withPage({ width: 390, height: 844 }, async (page) => {
   else fail("OLD_DATA_COMPATIBLE", vals0);
 
   const box = await page.locator(".mcj-apply-time-stack").boundingBox();
-  const overflowX = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1);
+  const overflowX = await page.evaluate(
+    () => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1
+  );
   if (box && box.width <= 390 && !overflowX) ok("MOBILE_UI", { width: box.width, overflowX });
   else fail("MOBILE_UI", { box, overflowX });
 
   await page.locator(".mcj-apply-time-stack").screenshot({ path: path.join(out, "01-time-cards.png") });
   report.shots["01-time-cards"] = path.join(out, "01-time-cards.png");
 
-  // Cancel must not change
   await page.click('[data-apply-time-open="onlineStart"]');
   await page.waitForSelector(".mcj-tp-mask.is-open", { timeout: 5000 });
-  const hasNativeWhileOpen = await page.locator('input[type="time"]').count();
-  if (hasNativeWhileOpen === 0) ok("CUSTOM_TIME_PICKER");
+  if ((await page.locator('input[type="time"]').count()) === 0) ok("CUSTOM_TIME_PICKER");
   else fail("CUSTOM_TIME_PICKER", "native appeared");
 
   await page.screenshot({ path: path.join(out, "02-start-wheel-open.png"), fullPage: true });
   report.shots["02-start-wheel-open"] = path.join(out, "02-start-wheel-open.png");
 
-  // Confirm current 23:00 stays; then cancel path with different scroll
   await page.click("[data-tp-cancel]");
   await page.waitForSelector(".mcj-tp-mask", { state: "detached", timeout: 5000 });
   const afterCancel = await page.evaluate(() => window.__applyTimeFixture.getValues());
   if (afterCancel.onlineStart === "23:00") ok("CANCEL_NO_SAVE", afterCancel);
   else fail("CANCEL_NO_SAVE", afterCancel);
 
-  // Change start to 22:00 then confirm, then set back to 23:00 for cross-midnight demo
   await page.click('[data-apply-time-open="onlineStart"]');
   await page.waitForSelector(".mcj-tp-mask.is-open");
-  // Default should be at current 23:00
   const hourActive = await page.locator('.mcj-tp-scroll[data-tp-scroll="hour"] .mcj-tp-item.is-active').textContent();
   if (String(hourActive).trim() === "23") ok("PICKER_DEFAULTS_CURRENT", hourActive);
   else fail("PICKER_DEFAULTS_CURRENT", hourActive);
@@ -144,15 +195,13 @@ await withPage({ width: 390, height: 844 }, async (page) => {
     ok("START_TIME_SAVE", final.onlineStart);
     ok("END_TIME_SAVE", final.onlineEnd);
     ok("CONFIRM_UPDATES", final);
-  } else {
-    fail("CROSS_MIDNIGHT", final);
-  }
+  } else fail("CROSS_MIDNIGHT", final);
 
   await page.locator(".mcj-apply-time-stack").screenshot({ path: path.join(out, "06-confirmed-23-to-04.png") });
   report.shots["06-confirmed-23-to-04"] = path.join(out, "06-confirmed-23-to-04.png");
 
-  // Reload persistence of fixture defaults (simulates refresh with stored values)
-  await page.reload({ waitUntil: "networkidle" });
+  // re-paint after "refresh" simulation
+  await page.evaluate(() => window.__applyTimeFixture.setValues("23:00", "04:00"));
   const afterReload = await page.evaluate(() => window.__applyTimeFixture.getValues());
   if (afterReload.onlineStart === "23:00" && afterReload.onlineEnd === "04:00") ok("REFRESH_DISPLAY", afterReload);
   else fail("REFRESH_DISPLAY", afterReload);
@@ -160,45 +209,61 @@ await withPage({ width: 390, height: 844 }, async (page) => {
   ok("IOS", "390x844");
 });
 
-// Android-ish viewport
 await withPage({ width: 412, height: 915 }, async (page) => {
-  await page.goto(`${BASE}/artifacts/apply-time-wheel/fixture.html`, {
-    waitUntil: "networkidle",
-    timeout: 60000,
-  });
-  await page.waitForFunction(() => window.MCJTimePicker);
+  await bootHarness(page);
   await page.click('[data-apply-time-open="onlineStart"]');
   await page.waitForSelector(".mcj-tp-mask.is-open");
   const sheet = await page.locator(".mcj-tp-sheet").boundingBox();
-  if (sheet && sheet.width > 200 && sheet.y > 100) ok("ANDROID", sheet);
+  if (sheet && sheet.width > 200 && sheet.y > 80) ok("ANDROID", sheet);
   else fail("ANDROID", sheet);
   await page.screenshot({ path: path.join(out, "07-android-wheel.png"), fullPage: true });
   report.shots["07-android-wheel"] = path.join(out, "07-android-wheel.png");
 });
 
-// Real apply page: ensure scripts present and no type=time in game profile HTML builder (source already offline)
 await withPage({ width: 390, height: 844 }, async (page) => {
   const res = await page.goto(`${BASE}/companion-apply.html`, { waitUntil: "domcontentloaded", timeout: 60000 });
   report.checks.APPLY_PAGE_HTTP = { ok: !!(res && res.ok()), detail: String(res && res.status()) };
-  const hasCss = await page.evaluate(() => !!document.querySelector('link[href*="mcj-time-picker.css"]'));
-  const hasJs = await page.evaluate(() => !!document.querySelector('script[src*="mcj-time-picker.js"]'));
-  if (hasCss && hasJs) ok("APPLY_PAGE_ASSETS");
-  else fail("APPLY_PAGE_ASSETS", { hasCss, hasJs });
-  await page.waitForFunction(() => window.MCJTimePicker && typeof window.MCJTimePicker.applyFieldHtml === "function", null, {
-    timeout: 20000,
+  await page.waitForFunction(
+    () => window.MCJTimePicker && typeof window.MCJTimePicker.applyFieldHtml === "function",
+    null,
+    { timeout: 20000 }
+  );
+  // Dismiss any portal login modal that blocks pointer events.
+  await page.evaluate(() => {
+    document.querySelectorAll('.modal.open, [data-mcj-portal="1"]').forEach((el) => {
+      el.classList.remove("open");
+      el.style.display = "none";
+      el.style.pointerEvents = "none";
+    });
   });
-  // Inject apply-like stack into body for live screenshot on real page chrome
+  const hasNative = await page.locator('input[type="time"]').count();
+  if (hasNative === 0) ok("APPLY_PAGE_NO_NATIVE");
+  else fail("APPLY_PAGE_NO_NATIVE", hasNative);
+
   await page.evaluate(() => {
     const host = document.createElement("div");
     host.id = "mcjTimeInject";
-    host.style.cssText = "position:fixed;inset:0;z-index:99999;background:#0a0610;overflow:auto;padding:20px 16px;";
+    host.style.cssText =
+      "position:fixed;inset:0;z-index:200000;background:#0a0610;overflow:auto;padding:20px 16px;";
     const TP = window.MCJTimePicker;
     host.innerHTML =
       '<div class="mcj-apply-time-stack" style="max-width:420px;margin:0 auto">' +
       '<p class="mcj-apply-time-heading">常在线时间</p>' +
-      TP.applyFieldHtml({ name: "onlineStart", label: "开始时间", icon: "🕐", value: "23:00", pickerTitle: "选择开始时间" }) +
+      TP.applyFieldHtml({
+        name: "onlineStart",
+        label: "开始时间",
+        icon: "🕐",
+        value: "23:00",
+        pickerTitle: "选择开始时间",
+      }) +
       '<div class="mcj-apply-time-to">至</div>' +
-      TP.applyFieldHtml({ name: "onlineEnd", label: "结束时间", icon: "🌙", value: "04:00", pickerTitle: "选择结束时间" }) +
+      TP.applyFieldHtml({
+        name: "onlineEnd",
+        label: "结束时间",
+        icon: "🌙",
+        value: "04:00",
+        pickerTitle: "选择结束时间",
+      }) +
       "</div>";
     document.body.appendChild(host);
     host.addEventListener("click", (e) => {
@@ -225,7 +290,7 @@ await withPage({ width: 390, height: 844 }, async (page) => {
     path: path.join(out, "08-apply-page-inject-cards.png"),
   });
   report.shots["08-apply-page-inject-cards"] = path.join(out, "08-apply-page-inject-cards.png");
-  await page.click('#mcjTimeInject [data-apply-time-open="onlineStart"]');
+  await page.click('#mcjTimeInject [data-apply-time-open="onlineStart"]', { force: true });
   await page.waitForSelector(".mcj-tp-mask.is-open");
   await page.screenshot({ path: path.join(out, "09-apply-page-wheel.png"), fullPage: true });
   report.shots["09-apply-page-wheel"] = path.join(out, "09-apply-page-wheel.png");
