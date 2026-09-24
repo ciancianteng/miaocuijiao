@@ -123,7 +123,15 @@
       publicId: pub,
     };
   }
-  function companionCardHtml(item, rank) {
+  /**
+   * Shared Companion Card (Home + Hall).
+   * @param {object} item
+   * @param {number|object} [opts] legacy rank number, or { variant:'home'|'hall', actionsHtml, extraAttrs, extraClass, maxTags }
+   */
+  function companionCardHtml(item, opts) {
+    if (typeof opts === "number") opts = { rank: opts };
+    opts = opts || {};
+    var variant = String(opts.variant || "home").toLowerCase() === "hall" ? "hall" : "home";
     var cover = item.cover || item.cardCover || item.image || "";
     var avatar = item.avatar || cover || "/default-avatar.png";
     if (window.MCJAvatar && window.MCJAvatar.resolve) {
@@ -144,10 +152,12 @@
     var detail = isUuid ? ("profile.html?id=" + encodeURIComponent(uuid)) : "";
     var focus = resolveCoverFocus(item);
     var pos = focus.x + "% " + focus.y + "%";
-    var verified = ""; // home cards: no verified badge clutter (hall keeps it)
-    var actionHtml = detail
-      ? '<a class="mini-order" href="' + esc(detail) + '">查看详情</a>'
-      : '<span class="mini-order" aria-disabled="true" style="opacity:.55;pointer-events:none">资料不可用</span>';
+    var actionHtml =
+      opts.actionsHtml != null
+        ? String(opts.actionsHtml)
+        : detail
+          ? '<a class="mini-order" href="' + esc(detail) + '">查看详情</a>'
+          : '<span class="mini-order" aria-disabled="true" style="opacity:.55;pointer-events:none">资料不可用</span>';
     var levelId = item.levelId || (item.levelConfig && item.levelConfig.id) || "";
     var levelCfg = item.levelConfig || null;
     var inlineStyle = "";
@@ -164,6 +174,13 @@
       presence && presence.code && /^(online|busy|paused|offline)$/.test(presence.code)
         ? presence.code
         : "offline";
+    if (presenceCode === "offline") {
+      var rawStatus = String(item.onlineStatus || item.availabilityStatus || item.status || "").toLowerCase();
+      if (/online/.test(rawStatus) && !/offline/.test(rawStatus)) presenceCode = "online";
+      else if (/busy/.test(rawStatus)) presenceCode = "busy";
+      else if (/paused|pause/.test(rawStatus)) presenceCode = "paused";
+      else if (/offline/.test(rawStatus)) presenceCode = "offline";
+    }
     var onlineClass = " is-" + presenceCode;
     var gameLine = String(item.game || item.mainGame || item.serviceType || "").trim();
     if (isGarbledName(gameLine)) gameLine = "";
@@ -172,13 +189,27 @@
         ? String(presence.label).trim()
         : presenceCode === "offline"
           ? "离线"
-          : "";
-    // Home cards: real fields only — name + level + game + status + tags + detail (no price).
+          : presenceCode === "online"
+            ? "在线"
+            : presenceCode === "busy"
+              ? "忙碌"
+              : presenceCode === "paused"
+                ? "暂停"
+                : "";
+    var maxTags = Number(opts.maxTags);
+    if (!Number.isFinite(maxTags) || maxTags < 1) maxTags = 4;
+    var variantClass = variant === "hall" ? " player-card mcj-card-variant-hall" : "";
+    var extraClass = opts.extraClass ? " " + String(opts.extraClass).trim() : "";
+    var extraAttrs = opts.extraAttrs ? " " + String(opts.extraAttrs).trim() : "";
+    // Shared card body — Home & Hall: same cover / typography / tags. Hall injects compact actions.
     return (
-      '<article class="neon-card companion-card hot-card" data-companion-id="' +
+      '<article class="neon-card companion-card hot-card' +
+      variantClass +
+      extraClass +
+      '" data-companion-id="' +
       esc(isUuid ? uuid : "") +
       '" data-public-id="' +
-      esc(focus.publicId || item.publicId || "") +
+      esc(focus.publicId || item.publicId || item.companionCode || "") +
       '" data-level-id="' +
       esc(levelId) +
       '" data-companion-level="' +
@@ -191,6 +222,7 @@
       esc(item.levelColor || (levelCfg && levelCfg.color) || "") +
       '"' +
       styleAttr +
+      extraAttrs +
       ">" +
       '<div class="hot-cover"><img src="' +
       esc(cover || avatar || "/default-avatar.png") +
@@ -204,7 +236,7 @@
       esc(pos) +
       ";--mcj-cover-pos:" +
       esc(pos) +
-      "\" onerror=\"this.onerror=null;this.src='/default-avatar.png'\"><span class=\"online-dot" +
+      "\" onerror=\"this.onerror=null;this.src='/default-avatar.png'\" loading=\"lazy\" decoding=\"async\"><span class=\"online-dot" +
       onlineClass +
       '" data-online-status="' +
       esc(presenceCode) +
@@ -222,7 +254,7 @@
       "</div>" +
       (gameLine ? '<p class="hot-game">' + esc(gameLine) + "</p>" : "") +
       '<div class="hot-tags">' +
-      tagsHtml(item.tags || item.serviceTags, 4) +
+      tagsHtml(item.tags || item.serviceTags || item.categoryTags, maxTags) +
       "</div>" +
       actionHtml +
       "</div>" +
