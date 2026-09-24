@@ -8,7 +8,18 @@
   var APPLICANT_KEY = "mcjCompanionApplicantId.v1";
   var MIN_VOICE_SECONDS = 10;
   var MAX_VOICE_SECONDS = 60;
+  var VOICE_PHASE = {
+    IDLE: "idle",
+    REQUESTING: "requesting_permission",
+    RECORDING: "recording",
+    STOPPING: "stopping",
+    RECORDED: "recorded",
+    UPLOADING: "uploading",
+    ERROR: "error",
+  };
+  var voicePhase = VOICE_PHASE.IDLE;
   var recorder = null;
+  var activeMediaStream = null;
   var chunks = [];
   var recordTimer = null;
   var recordStartedAt = 0;
@@ -19,6 +30,7 @@
   var livePreviews = {};
   var liveVoiceBlob = null;
   var liveVoiceObjectUrl = "";
+  var voiceReleaseBound = false;
 
   var steps = [
     "认证",
@@ -2066,7 +2078,11 @@
     var staleLocal = !!(v.hasLocal && !hasLiveLocal && !hasDurableUpload(v) && !hasDurableUpload(v.url) && !hasDurableUpload(v.fileUpload));
     var hasVoice = !!(voiceSrc || hasLiveLocal || hasDurableUpload(v) || hasDurableUpload(v.url) || hasDurableUpload(v.fileUpload));
     var uploadedOk = !!(v.uploaded && (hasDurableUpload(v) || hasDurableUpload(v.url) || hasDurableUpload(v.fileUpload)));
-    var recording = !!(v.recording || (document.body && document.body.classList.contains("voice-recording-active")));
+    var isLiveRec =
+      voicePhase === VOICE_PHASE.RECORDING ||
+      voicePhase === VOICE_PHASE.STOPPING ||
+      voicePhase === VOICE_PHASE.REQUESTING ||
+      !!(v.recording || (document.body && document.body.classList.contains("voice-recording-active")));
     var canConfirm =
       hasLiveLocal &&
       !uploadedOk &&
@@ -2085,16 +2101,26 @@
       (draft.data.personalTags || ["温柔", "娱乐"]).slice(0, 3).join("、") +
       "。我可以陪你上分、娱乐或者聊天，希望能给你带来轻松开心的游戏体验。";
 
-    var timerLabel = v.duration
-      ? String(Math.floor(Number(v.duration) / 60)).padStart(2, "0") +
+    var liveSec = 0;
+    if (isLiveRec && recordStartedAt) {
+      liveSec = Math.max(0, Math.round((Date.now() - recordStartedAt) / 1000));
+    }
+    var timerLabel = isLiveRec
+      ? String(Math.floor(liveSec / 60)).padStart(2, "0") +
         ":" +
-        String(Math.floor(Number(v.duration) % 60)).padStart(2, "0")
-      : "00:00";
+        String(Math.floor(liveSec % 60)).padStart(2, "0")
+      : v.duration
+        ? String(Math.floor(Number(v.duration) / 60)).padStart(2, "0") +
+          ":" +
+          String(Math.floor(Number(v.duration) % 60)).padStart(2, "0")
+        : "00:00";
     var currentLabel = "00:00";
 
     var phase = "idle";
-    if (uploadBusy.voice) phase = "uploading";
-    else if (recording) phase = "recording";
+    if (uploadBusy.voice || voicePhase === VOICE_PHASE.UPLOADING) phase = "uploading";
+    else if (voicePhase === VOICE_PHASE.REQUESTING) phase = "requesting";
+    else if (voicePhase === VOICE_PHASE.STOPPING) phase = "stopping";
+    else if (voicePhase === VOICE_PHASE.RECORDING || isLiveRec) phase = "recording";
     else if (uploadedOk) phase = "done";
     else if (hasVoice) phase = "ready";
     else if (staleLocal) phase = "stale";
@@ -2102,15 +2128,19 @@
     var statusLabel =
       phase === "uploading"
         ? "上传中…"
-        : phase === "recording"
-          ? "录音中"
-          : phase === "done"
-            ? "已完成"
-            : phase === "ready"
-              ? "待确认"
-              : phase === "stale"
-                ? "需重录"
-                : "未录制";
+        : phase === "requesting"
+          ? "请求麦克风…"
+          : phase === "stopping"
+            ? "停止中…"
+            : phase === "recording"
+              ? "录音中"
+              : phase === "done"
+                ? "已完成"
+                : phase === "ready"
+                  ? "待确认"
+                  : phase === "stale"
+                    ? "需重录"
+                    : "未录制";
 
     var fileUploadCard = fileField("voiceFile", "上传已有音频（备用）", {
       kind: "audio",
@@ -2123,8 +2153,8 @@
     var topRight =
       phase === "done"
         ? '<span class="voice-card-status is-done" role="status">已完成 ✓</span>'
-        : phase === "recording"
-          ? '<span class="voice-card-status is-live" role="status">录音中</span>'
+        : phase === "recording" || phase === "stopping" || phase === "requesting"
+          ? '<span class="voice-card-status is-live" role="status">' + esc(statusLabel) + "</span>"
           : phase === "uploading"
             ? '<span class="voice-card-status is-busy" role="status">上传中…</span>'
             : '<span class="voice-card-status is-muted">' + esc(statusLabel) + "</span>";
@@ -2143,14 +2173,16 @@
         '</span><span data-voice-duration>' +
         esc(timerLabel) +
         "</span></div></div>";
-    } else if (phase === "recording") {
+    } else if (phase === "recording" || phase === "stopping" || phase === "requesting") {
       playerHtml =
         '<div class="voice-card-live" aria-live="polite">' +
         '<span class="voice-card-live-dot"></span>' +
         '<strong id="voiceTimer">' +
         esc(timerLabel) +
         "</strong>" +
-        "<span>正在录音…</span></div>";
+        "<span>" +
+        (phase === "requesting" ? "正在请求麦克风…" : phase === "stopping" ? "正在停止…" : "正在录音…") +
+        "</span></div>";
     } else {
       playerHtml =
         '<div class="voice-card-idle">' +
@@ -2162,9 +2194,15 @@
     if (phase === "idle" || phase === "stale") {
       actionsHtml =
         '<button class="apply-btn primary" type="button" data-record-start>开始录音</button>';
+    } else if (phase === "requesting") {
+      actionsHtml =
+        '<button class="apply-btn primary" type="button" disabled aria-busy="true">请求权限中…</button>';
     } else if (phase === "recording") {
       actionsHtml =
-        '<button class="apply-btn primary" type="button" data-record-stop>停止</button>';
+        '<button class="apply-btn primary" type="button" data-record-stop>■ 停止录音</button>';
+    } else if (phase === "stopping") {
+      actionsHtml =
+        '<button class="apply-btn primary" type="button" data-record-stop disabled aria-busy="true">停止中…</button>';
     } else if (phase === "ready") {
       actionsHtml =
         '<button class="apply-btn primary" type="button" data-record-confirm ' +
@@ -3093,91 +3131,268 @@
     var v = readDraft().voice || {};
     return !!(liveVoiceObjectUrl || liveVoiceBlob || hasDurableUpload(v) || hasDurableUpload(v.url) || hasDurableUpload(v.fileUpload));
   }
+  function currentApplyStep() {
+    var root = document.getElementById("companionApplyRoot");
+    if (root && root.dataset && root.dataset.step != null && root.dataset.step !== "") {
+      return Number(root.dataset.step);
+    }
+    return Number((readDraft().step != null ? readDraft().step : 2) || 2);
+  }
+  function refreshVoiceUi(opts) {
+    opts = opts || {};
+    render(currentApplyStep(), opts);
+    if (opts.scrollVoice) {
+      try {
+        document.getElementById("applyVoicePanel")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      } catch (e) {}
+    }
+  }
   function setVoiceState(text, seconds) {
     var state = document.getElementById("voiceState");
     var timer = document.getElementById("voiceTimer");
     if (state) state.textContent = text;
-    if (timer) timer.textContent = seconds == null ? timer.textContent : String(Math.floor(seconds / 60)).padStart(2, "0") + ":" + String(seconds % 60).padStart(2, "0");
+    if (timer && seconds != null) {
+      timer.textContent =
+        String(Math.floor(seconds / 60)).padStart(2, "0") + ":" + String(seconds % 60).padStart(2, "0");
+    }
   }
-  function setRecordingUi(isRecording) {
-    var start = document.querySelector("[data-record-start]");
-    var stop = document.querySelector("[data-record-stop]");
-    var play = document.querySelector("[data-record-play]");
-    var reset = document.querySelector("[data-record-reset]");
-    var confirm = document.querySelector("[data-record-confirm]");
-    var del = document.querySelector("[data-record-delete]");
-    var hasVoice = hasPlayableVoiceDraft();
-    if (start) start.disabled = !!isRecording;
-    if (stop) stop.disabled = !isRecording;
-    if (play) play.disabled = !!isRecording || !hasVoice;
-    if (reset) reset.disabled = !!isRecording || !hasVoice;
-    if (del) del.disabled = !!isRecording || !hasVoice;
-    if (confirm && isRecording) confirm.disabled = true;
-    document.body.classList.toggle("voice-recording-active", !!isRecording);
+  function releaseMicTracks() {
+    try {
+      if (activeMediaStream) {
+        activeMediaStream.getTracks().forEach(function (t) {
+          try {
+            t.stop();
+          } catch (e) {}
+        });
+      }
+    } catch (e2) {}
+    activeMediaStream = null;
+    try {
+      if (recorder && recorder.stream) {
+        recorder.stream.getTracks().forEach(function (t) {
+          try {
+            t.stop();
+          } catch (e3) {}
+        });
+      }
+    } catch (e4) {}
+  }
+  function clearRecordTimer() {
+    if (recordTimer) {
+      clearInterval(recordTimer);
+      recordTimer = null;
+    }
+  }
+  function pickRecorderMime() {
+    var ua = String(navigator.userAgent || "");
+    var isApple =
+      /iPhone|iPad|iPod|Macintosh/i.test(ua) &&
+      /Safari/i.test(ua) &&
+      !/Chrom(e|ium)|CriOS|Edg|Android/i.test(ua);
+    var candidates = isApple
+      ? ["audio/mp4", "audio/aac", "audio/wav"]
+      : ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus", "audio/mp4", "audio/aac"];
+    for (var i = 0; i < candidates.length; i += 1) {
+      try {
+        if (window.MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(candidates[i])) {
+          return candidates[i];
+        }
+      } catch (err) {}
+    }
+    return "";
+  }
+  function friendlyMicError(err) {
+    var name = String((err && err.name) || "");
+    var msg = String((err && err.message) || "");
+    if (/NotAllowed|PermissionDenied|SecurityError/i.test(name) || /permission|denied|NotAllowed/i.test(msg)) {
+      return "无法使用麦克风，请在浏览器设置中允许妙脆角访问麦克风。";
+    }
+    if (/NotFound|DevicesNotFound/i.test(name)) {
+      return "未检测到麦克风。请检查设备，或改用下方「上传已有音频」。";
+    }
+    if (/NotReadable|TrackStart|AbortError/i.test(name)) {
+      return "麦克风被占用或暂时无法使用，请关闭其他录音应用后重试。";
+    }
+    if (/NotSupported|TypeError/i.test(name)) {
+      return "当前浏览器不支持网页录音。请改用下方「上传已有音频」，或更换 Safari / Chrome。";
+    }
+    return "无法开启麦克风，请允许权限后重试，或改用「上传已有音频」。";
+  }
+  function ensureVoiceReleaseHooks() {
+    if (voiceReleaseBound) return;
+    voiceReleaseBound = true;
+    window.addEventListener("pagehide", function () {
+      abortVoiceRecording({ silent: true });
+    });
+    document.addEventListener("visibilitychange", function () {
+      // Keep recording if user briefly switches apps; only hard-release on pagehide/unmount.
+    });
+  }
+  /** Hard abort: stop recorder + mic + timer. Used on leave / reset. */
+  function abortVoiceRecording(opts) {
+    opts = opts || {};
+    clearRecordTimer();
+    suppressVoiceSave = true;
+    voicePhase = VOICE_PHASE.IDLE;
+    document.body.classList.remove("voice-recording-active");
+    var rec = recorder;
+    recorder = null;
+    if (rec && rec.state && rec.state !== "inactive") {
+      try {
+        rec.stop();
+      } catch (e) {}
+    }
+    releaseMicTracks();
+    if (!opts.silent) refreshVoiceUi();
   }
   async function startRecording() {
+    ensureVoiceReleaseHooks();
+    if (
+      voicePhase === VOICE_PHASE.RECORDING ||
+      voicePhase === VOICE_PHASE.STOPPING ||
+      voicePhase === VOICE_PHASE.REQUESTING
+    ) {
+      return;
+    }
+    if (recorder && recorder.state && recorder.state !== "inactive") {
+      return;
+    }
     if (!navigator.mediaDevices || !window.MediaRecorder) {
+      voicePhase = VOICE_PHASE.ERROR;
       showApplyTip("当前浏览器不支持网页录音。请改用下方「上传已有音频」，或更换手机 Chrome / Safari 后重试。");
       try {
         document.getElementById("applyVoicePanel")?.scrollIntoView({ behavior: "smooth", block: "start" });
       } catch (e) {}
       return;
     }
-    if (recorder && recorder.state === "recording") return;
+
+    voicePhase = VOICE_PHASE.REQUESTING;
     chunks = [];
     suppressVoiceSave = false;
+    refreshVoiceUi({ scrollVoice: true });
+
     var stream;
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     } catch (e) {
-      var name = String((e && e.name) || "");
-      if (/NotAllowed|PermissionDenied/i.test(name) || /permission|denied|NotAllowed/i.test(String(e && e.message || ""))) {
-        showApplyTip("请允许麦克风权限后再录音。可在系统设置 → Safari/Chrome → 麦克风中开启，然后返回本页重试。");
-      } else if (/NotFound|DevicesNotFound/i.test(name)) {
-        showApplyTip("未检测到麦克风设备。请检查手机麦克风，或改用下方「上传已有音频」。");
-      } else {
-        showApplyTip("无法开启麦克风：" + (e.message || "请允许麦克风权限后再录音"));
-      }
+      voicePhase = VOICE_PHASE.ERROR;
+      releaseMicTracks();
+      showApplyTip(friendlyMicError(e));
+      refreshVoiceUi({ scrollVoice: true });
       return;
     }
-    recorder = new MediaRecorder(stream, (function () {
-      var candidates = ["audio/mp4", "audio/aac", "audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus"];
-      for (var i = 0; i < candidates.length; i += 1) {
-        try {
-          if (window.MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(candidates[i])) {
-            return { mimeType: candidates[i] };
-          }
-        } catch (err) {}
+
+    // User may have navigated away while permission dialog was open.
+    if (!document.getElementById("companionApplyRoot")) {
+      try {
+        stream.getTracks().forEach(function (t) {
+          t.stop();
+        });
+      } catch (eLeave) {}
+      voicePhase = VOICE_PHASE.IDLE;
+      return;
+    }
+
+    activeMediaStream = stream;
+    var mime = pickRecorderMime();
+    try {
+      recorder = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
+    } catch (errCreate) {
+      try {
+        recorder = new MediaRecorder(stream);
+      } catch (errCreate2) {
+        voicePhase = VOICE_PHASE.ERROR;
+        releaseMicTracks();
+        showApplyTip(friendlyMicError(errCreate2));
+        refreshVoiceUi({ scrollVoice: true });
+        return;
       }
-      return undefined;
-    })());
-    recorder.ondataavailable = function (e) { if (e.data && e.data.size) chunks.push(e.data); };
+    }
+
+    recorder.ondataavailable = function (e) {
+      if (e.data && e.data.size) chunks.push(e.data);
+    };
+    recorder.onerror = function () {
+      showApplyTip("录音出错，请重试。");
+      abortVoiceRecording({ silent: false });
+    };
     recorder.onstop = async function () {
-      stream.getTracks().forEach(function (t) { t.stop(); });
+      clearRecordTimer();
+      releaseMicTracks();
+      var stoppedRec = recorder;
+      recorder = null;
+      document.body.classList.remove("voice-recording-active");
+
       if (suppressVoiceSave) {
         suppressVoiceSave = false;
         chunks = [];
+        voicePhase = VOICE_PHASE.IDLE;
+        refreshVoiceUi();
         return;
       }
-      var duration = Math.round((Date.now() - recordStartedAt) / 1000);
-      var mime = (recorder && recorder.mimeType) || (chunks[0] && chunks[0].type) || "audio/webm";
-      var blob = new Blob(chunks, { type: mime });
+
+      var duration = Math.max(0, Math.round((Date.now() - recordStartedAt) / 1000));
+      var mimeType =
+        (stoppedRec && stoppedRec.mimeType) ||
+        (chunks[0] && chunks[0].type) ||
+        mime ||
+        "audio/webm";
+      var blob = new Blob(chunks, { type: mimeType });
+      chunks = [];
+
       if (!blob.size) {
-        saveDraft({ voice: { status: "录音失败（无声音数据），请重录", url: "", duration: duration, confirmed: false, listened: false, uploaded: false, hasLocal: false } });
+        voicePhase = VOICE_PHASE.ERROR;
+        saveDraft({
+          voice: {
+            status: "录音失败（无声音数据），请重录",
+            url: "",
+            duration: duration,
+            confirmed: false,
+            listened: false,
+            uploaded: false,
+            hasLocal: false,
+          },
+        });
         setVoiceState("录音失败，请重录", duration);
-        document.body.classList.remove("voice-recording-active");
-        render(3);
+        showApplyTip("录音失败（无声音数据），请重新录制。");
+        refreshVoiceUi({ scrollVoice: true });
         return;
       }
+
+      if (duration < MIN_VOICE_SECONDS) {
+        voicePhase = VOICE_PHASE.IDLE;
+        if (liveVoiceObjectUrl) {
+          try {
+            URL.revokeObjectURL(liveVoiceObjectUrl);
+          } catch (eRev) {}
+        }
+        liveVoiceBlob = null;
+        liveVoiceObjectUrl = "";
+        saveDraft({
+          voice: {
+            status: "时长不足，请重录",
+            url: "",
+            duration: duration,
+            confirmed: false,
+            listened: false,
+            uploaded: false,
+            hasLocal: false,
+          },
+        });
+        showApplyTip("语音介绍至少需要录制 " + MIN_VOICE_SECONDS + " 秒，请重新录制。");
+        refreshVoiceUi({ scrollVoice: true });
+        return;
+      }
+
       var quality = await analyzeVoiceBlob(blob, duration);
       if (liveVoiceObjectUrl) {
-        try { URL.revokeObjectURL(liveVoiceObjectUrl); } catch (e) {}
+        try {
+          URL.revokeObjectURL(liveVoiceObjectUrl);
+        } catch (e) {}
       }
       liveVoiceBlob = blob;
       liveVoiceObjectUrl = URL.createObjectURL(blob);
-      // Never persist base64 voice into localStorage (QuotaExceeded on mobile).
-      // Replace voice object entirely so stale path/url/bucket from a prior upload cannot
-      // short-circuit「确认上传」into a fake local-only success.
+      voicePhase = VOICE_PHASE.RECORDED;
       var draftAfterRec = readDraft();
       draftAfterRec.voice = {
         status: quality.passed ? "已录制，请先试听" : "检测未通过，请重新录制",
@@ -3196,28 +3411,54 @@
       };
       writeDraftRecord(draftAfterRec);
       setVoiceState(quality.passed ? "已录制，待试听确认" : "检测未通过", quality.duration);
-      document.body.classList.remove("voice-recording-active");
-      render(3);
-      try {
-        document.getElementById("applyVoicePanel")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-      } catch (e2) {}
+      if (!quality.passed && quality.reasons && quality.reasons[0]) {
+        showApplyTip(quality.reasons[0]);
+      }
+      refreshVoiceUi({ scrollVoice: true });
     };
+
     recordStartedAt = Date.now();
-    try { recorder.start(250); } catch (eStart) { recorder.start(); }
+    try {
+      // timeslice can break Safari/iOS MediaRecorder; start without it on Apple.
+      var ua = String(navigator.userAgent || "");
+      var isAppleMobile = /iPhone|iPad|iPod/i.test(ua);
+      if (isAppleMobile) recorder.start();
+      else recorder.start(250);
+    } catch (eStart) {
+      try {
+        recorder.start();
+      } catch (eStart2) {
+        voicePhase = VOICE_PHASE.ERROR;
+        releaseMicTracks();
+        recorder = null;
+        showApplyTip(friendlyMicError(eStart2));
+        refreshVoiceUi({ scrollVoice: true });
+        return;
+      }
+    }
+
+    voicePhase = VOICE_PHASE.RECORDING;
     document.body.classList.add("voice-recording-active");
-    setRecordingUi(true);
+    // CRITICAL: re-render so [data-record-stop] exists (previously missing →无法停止).
+    refreshVoiceUi({ scrollVoice: true });
     setVoiceState("正在录音", 0);
-    clearInterval(recordTimer);
+    clearRecordTimer();
     recordTimer = setInterval(function () {
+      if (voicePhase !== VOICE_PHASE.RECORDING) {
+        clearRecordTimer();
+        return;
+      }
       var sec = Math.round((Date.now() - recordStartedAt) / 1000);
       setVoiceState("正在录音", sec);
-      if (sec >= MAX_VOICE_SECONDS && recorder && recorder.state === "recording") stopRecording();
-    }, 500);
+      if (sec >= MAX_VOICE_SECONDS) stopRecording();
+    }, 250);
   }
   function blobToDataURL(blob) {
     return new Promise(function (resolve) {
       var reader = new FileReader();
-      reader.onload = function () { resolve(String(reader.result || "")); };
+      reader.onload = function () {
+        resolve(String(reader.result || ""));
+      };
       reader.readAsDataURL(blob);
     });
   }
@@ -3232,7 +3473,7 @@
       peak: 0,
       silenceRatio: 1,
       waveform: [],
-      reasons: []
+      reasons: [],
     };
     try {
       var audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -3283,36 +3524,72 @@
     return result;
   }
   function stopRecording() {
-    clearInterval(recordTimer);
+    // Always allow stop — never block for min duration (validate after stop).
+    if (voicePhase === VOICE_PHASE.STOPPING) return;
+    if (
+      voicePhase !== VOICE_PHASE.RECORDING &&
+      !(recorder && recorder.state && recorder.state !== "inactive")
+    ) {
+      clearRecordTimer();
+      releaseMicTracks();
+      voicePhase = VOICE_PHASE.IDLE;
+      document.body.classList.remove("voice-recording-active");
+      refreshVoiceUi();
+      return;
+    }
+
+    voicePhase = VOICE_PHASE.STOPPING;
+    clearRecordTimer();
     document.body.classList.remove("voice-recording-active");
-    if (recorder && recorder.state === "recording") recorder.stop();
-    else setRecordingUi(false);
+    refreshVoiceUi();
+
+    var rec = recorder;
+    if (rec && rec.state && rec.state !== "inactive") {
+      try {
+        if (typeof rec.requestData === "function" && rec.state === "recording") {
+          try {
+            rec.requestData();
+          } catch (eReq) {}
+        }
+        rec.stop();
+      } catch (eStop) {
+        releaseMicTracks();
+        recorder = null;
+        voicePhase = VOICE_PHASE.IDLE;
+        showApplyTip("停止录音失败，请重试。");
+        refreshVoiceUi();
+      }
+    } else {
+      releaseMicTracks();
+      recorder = null;
+      voicePhase = VOICE_PHASE.IDLE;
+      refreshVoiceUi();
+    }
   }
   function clearVoiceRecording() {
-    clearInterval(recordTimer);
-    document.body.classList.remove("voice-recording-active");
-    if (recorder && recorder.state === "recording") {
-      suppressVoiceSave = true;
-      recorder.stop();
-    }
+    abortVoiceRecording({ silent: true });
     chunks = [];
     liveVoiceBlob = null;
     if (liveVoiceObjectUrl) {
-      try { URL.revokeObjectURL(liveVoiceObjectUrl); } catch (e) {}
+      try {
+        URL.revokeObjectURL(liveVoiceObjectUrl);
+      } catch (e) {}
       liveVoiceObjectUrl = "";
     }
     var draft = readDraft();
     draft.voice = { status: "尚未录制" };
     writeDraftRecord(draft);
     var db = readDB();
-    var app = (db.companionApplications || []).find(function (a) { return a.applicantId === applicantId(); });
+    var app = (db.companionApplications || []).find(function (a) {
+      return a.applicantId === applicantId();
+    });
     if (app && app.status !== "approved") {
       app.voice = { status: "尚未录制" };
       writeDB(db);
       syncPlatform(db);
     }
-    recorder = null;
-    render(3);
+    voicePhase = VOICE_PHASE.IDLE;
+    refreshVoiceUi({ scrollVoice: true });
   }
   function confirmVoice() {
     try {
@@ -3355,7 +3632,7 @@
         writeDraftRecord(d);
         delete uploadErrors.voice;
         showApplyTip("上传成功 / 已保存", "ok");
-        render(3);
+        refreshVoiceUi();
         return;
       }
 
@@ -3370,13 +3647,13 @@
         });
         writeDraftRecord(d);
         showApplyTip("本地录音已失效（刷新后需重录）。请重新录制后再点「确认上传」。");
-        render(3);
+        refreshVoiceUi();
         return;
       }
 
       uploadBusy.voice = true;
       delete uploadErrors.voice;
-      render(3);
+      refreshVoiceUi();
 
       var mime = String((d.voice && d.voice.mimeType) || (liveVoiceBlob && liveVoiceBlob.type) || "");
       var baseMime = mime.split(";")[0].trim() || "audio/webm";
@@ -3489,7 +3766,7 @@
           });
           writeDraftRecord(next);
           showApplyTip("上传成功 / 已保存", "ok");
-          render(3);
+          refreshVoiceUi();
         })
         .catch(function (err) {
           uploadBusy.voice = false;
@@ -3516,7 +3793,7 @@
           });
           writeDraftRecord(next);
           showApplyTip("上传失败，请重试：" + msg);
-          render(3);
+          refreshVoiceUi();
         });
     } catch (err) {
       uploadBusy.voice = false;
@@ -3527,7 +3804,7 @@
       } catch (e3) {}
       showApplyTip("上传失败，请重试：" + failMsg);
       try {
-        render(3);
+        refreshVoiceUi();
       } catch (e4) {}
     }
   }
@@ -4446,8 +4723,31 @@
         render(targetStep, { alignStepNav: true });
         return;
       }
-      if (e.target.closest("[data-apply-next]")) { e.preventDefault(); await collect(root); var idx = Number(root.dataset.step || 0); var missing = missingForStep(idx, readDraft()); if (missing.length) { showMissing(missing); return; } if (idx === 2) submitApplication(); else if (idx < 2) render(idx + 1, { alignStepNav: true }); return; }
-      if (e.target.closest("[data-apply-prev]")) { e.preventDefault(); await collect(root); render(Math.max(0, Number(root.dataset.step || 0) - 1), { alignStepNav: true }); return; }
+      if (e.target.closest("[data-apply-next]")) {
+        e.preventDefault();
+        if (voicePhase === VOICE_PHASE.RECORDING || voicePhase === VOICE_PHASE.STOPPING || voicePhase === VOICE_PHASE.REQUESTING) {
+          abortVoiceRecording({ silent: true });
+        }
+        await collect(root);
+        var idx = Number(root.dataset.step || 0);
+        var missing = missingForStep(idx, readDraft());
+        if (missing.length) {
+          showMissing(missing);
+          return;
+        }
+        if (idx === 2) submitApplication();
+        else if (idx < 2) render(idx + 1, { alignStepNav: true });
+        return;
+      }
+      if (e.target.closest("[data-apply-prev]")) {
+        e.preventDefault();
+        if (voicePhase === VOICE_PHASE.RECORDING || voicePhase === VOICE_PHASE.STOPPING || voicePhase === VOICE_PHASE.REQUESTING) {
+          abortVoiceRecording({ silent: true });
+        }
+        await collect(root);
+        render(Math.max(0, Number(root.dataset.step || 0) - 1), { alignStepNav: true });
+        return;
+      }
       if (e.target.closest("[data-rule-agree]")) {
         var rule = publishedRule();
         if (!rule) return;
@@ -4458,8 +4758,16 @@
         if (nextCta) nextCta.disabled = !e.target.checked;
         return;
       }
-      if (e.target.closest("[data-record-start]")) startRecording();
-      if (e.target.closest("[data-record-stop]")) stopRecording();
+      if (e.target.closest("[data-record-start]")) {
+        e.preventDefault();
+        startRecording();
+        return;
+      }
+      if (e.target.closest("[data-record-stop]")) {
+        e.preventDefault();
+        stopRecording();
+        return;
+      }
       if (e.target.closest("[data-record-play]")) {
         var audio = document.getElementById("voicePreview");
         var playSrc = (audio && audio.getAttribute("src")) || (audio && audio.src) || liveVoiceObjectUrl || ((readDraft().voice || {}).url || "");
