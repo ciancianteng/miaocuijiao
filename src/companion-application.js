@@ -4819,8 +4819,8 @@
         e.preventDefault();
         var confirmBtn = e.target.closest("[data-record-confirm]");
         if (confirmBtn && confirmBtn.disabled) {
-          if (uploadBusy.voice) showApplyTip("试音正在上传中，请稍候…", "ok");
-          else showApplyTip("请先完成录音并试听后，再确认上传。");
+          if (uploadBusy.voice) showApplyTip("录音正在保存中，请稍候…", "ok");
+          else showApplyTip("请先录满 10 秒并停止，再点击「确认录音」。");
           return;
         }
         confirmVoice();
