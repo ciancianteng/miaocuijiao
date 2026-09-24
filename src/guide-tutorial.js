@@ -1,275 +1,352 @@
+/**
+ * 使用教学：老板 / 陪玩 Accordion（默认折叠，点击展开）
+ * 保留现有深色粉卡片风格；?mode=walkthrough 仍可逐步翻页
+ */
 (function () {
   "use strict";
 
-  var cfg = window.MCJGuideTutorialConfig;
-  if (!cfg || !cfg.roles) return;
-
-  var root = document.getElementById("mcjGuideRoot");
+  var CFG = window.MCJ_GUIDE_TUTORIAL || {};
+  var root =
+    document.getElementById("mcjGuideRoot") ||
+    document.getElementById("guide-tutorial-root");
   if (!root) return;
 
-  var params = new URLSearchParams(location.search);
-  var state = {
-    view: "picker", // picker | step | done
-    role: "",
-    index: 0,
-  };
+  var params = new URLSearchParams(window.location.search || "");
+  var roleParam = String(params.get("role") || "").toLowerCase();
+  var mode = String(params.get("mode") || "accordion").toLowerCase();
+  var activeTab = roleParam === "companion" ? "companion" : "boss";
+  var openId = null;
 
-  var bootRole = String(params.get("role") || "").toLowerCase();
-  if (bootRole === "boss" || bootRole === "companion") {
-    state.role = bootRole;
-    state.view = "step";
-    state.index = Math.max(0, Number(params.get("step") || 1) - 1);
-  }
-
-  function esc(v) {
-    return String(v == null ? "" : v)
+  function esc(s) {
+    return String(s == null ? "" : s)
       .replace(/&/g, "&amp;")
       .replace(/</g, "&lt;")
       .replace(/>/g, "&gt;")
       .replace(/"/g, "&quot;");
   }
 
-  function roleCfg() {
-    return cfg.roles[state.role] || null;
-  }
-
-  function steps() {
-    var r = roleCfg();
-    return (r && r.steps) || [];
-  }
-
-  function syncUrl() {
-    var u = new URL(location.href);
-    if (state.view === "picker") {
-      u.searchParams.delete("role");
-      u.searchParams.delete("step");
-    } else {
-      u.searchParams.set("role", state.role);
-      if (state.view === "step") u.searchParams.set("step", String(state.index + 1));
-      else u.searchParams.delete("step");
-    }
-    history.replaceState(null, "", u.pathname + u.search + u.hash);
-  }
-
-  function assetUrl(slot) {
-    return "/assets/guide/" + encodeURIComponent(slot) + ".png";
-  }
-
-  function phoneVisual(step) {
-    var slot = step.visualSlot || "slot";
-    var label = step.visualLabel || slot;
-    var hl = step.highlight || "";
-    var mock = step.visualMock || "";
-    if (mock) {
-      return (
-        '<div class="mcj-guide-phone has-mock" data-slot="' +
-        esc(slot) +
-        '">' +
-        '<div class="mcj-guide-mock" data-guide-mock>' +
-        mock +
-        "</div>" +
-        '<p class="mcj-guide-mock-hl-label">高亮：' +
-        esc(hl) +
-        "</p>" +
-        "</div>"
-      );
-    }
+  function renderFlow(flow) {
+    if (!flow || !flow.length) return "";
     return (
-      '<div class="mcj-guide-phone" data-slot="' +
-      esc(slot) +
+      '<ol class="mcj-guide-flow">' +
+      flow
+        .map(function (step, i) {
+          return (
+            '<li class="mcj-guide-flow-item">' +
+            '<span class="mcj-guide-flow-n">' +
+            (i + 1) +
+            "</span>" +
+            '<span class="mcj-guide-flow-t">' +
+            esc(step) +
+            "</span></li>"
+          );
+        })
+        .join("") +
+      "</ol>"
+    );
+  }
+
+  function renderBody(body) {
+    if (!body || !body.length) return "";
+    return (
+      '<ul class="mcj-guide-bullets">' +
+      body
+        .map(function (line) {
+          return "<li>" + esc(line) + "</li>";
+        })
+        .join("") +
+      "</ul>"
+    );
+  }
+
+  function renderLoginCta(opts) {
+    opts = opts || {};
+    var id = opts.id || "guide-companion-login";
+    var href = CFG.companionLoginHref || "/companion/login/";
+    return (
+      '<section class="mcj-guide-login-cta" id="' +
+      esc(id) +
+      '" data-guide-companion-login="1">' +
+      "<h2>" +
+      esc(CFG.companionLoginLabel || "陪玩登录入口") +
+      "</h2>" +
+      (CFG.companionLoginHint ? "<p>" + esc(CFG.companionLoginHint) + "</p>" : "") +
+      '<a class="mcj-guide-login-btn" href="' +
+      esc(href) +
+      '" data-guide-companion-login-link="1">' +
+      esc(CFG.companionLoginLabel || "陪玩登录入口") +
+      "</a>" +
+      '<p class="mcj-guide-login-path">入口地址：' +
+      esc(href) +
+      "</p></section>"
+    );
+  }
+
+  function renderAccordionItem(step, sectionKey) {
+    var isOpen = openId === step.id;
+    return (
+      '<div class="mcj-guide-acc-item' +
+      (isOpen ? " is-open" : "") +
+      '" id="guide-' +
+      esc(step.id) +
+      '" data-section="' +
+      esc(sectionKey) +
+      '" data-step-id="' +
+      esc(step.id) +
       '">' +
-      '<img alt="" hidden data-guide-shot src="' +
-      esc(assetUrl(slot)) +
+      '<button type="button" class="mcj-guide-acc-trigger" aria-expanded="' +
+      (isOpen ? "true" : "false") +
+      '" data-acc-toggle="' +
+      esc(step.id) +
       '">' +
-      '<div class="mcj-guide-phone-placeholder" data-guide-ph>' +
-      '<span class="slot-badge">待补真实截图</span>' +
-      '<div class="slot-stage">' +
-      "<strong>" +
-      esc(label) +
-      "</strong>" +
-      "<small>请放入手机比例真实截图<br><code>assets/guide/" +
-      esc(slot) +
-      ".png</code></small>" +
-      '<div class="mcj-guide-hl" data-label="' +
-      esc(hl) +
-      '"></div>' +
+      '<span class="mcj-guide-doc-no" aria-hidden="true">' +
+      esc(step.no) +
+      "</span>" +
+      '<span class="mcj-guide-doc-icon" aria-hidden="true">' +
+      esc(step.icon || "•") +
+      "</span>" +
+      '<span class="mcj-guide-acc-text">' +
+      '<span class="mcj-guide-doc-card-title">' +
+      esc(step.title) +
+      "</span>" +
+      (step.caption
+        ? '<span class="mcj-guide-doc-card-cap">' + esc(step.caption) + "</span>"
+        : "") +
+      "</span>" +
+      '<span class="mcj-guide-acc-chevron" aria-hidden="true"></span>' +
+      "</button>" +
+      '<div class="mcj-guide-acc-panel" role="region"' +
+      (isOpen ? "" : " hidden") +
+      ">" +
+      '<div class="mcj-guide-acc-panel-inner">' +
+      renderFlow(step.flow) +
+      renderBody(step.body) +
+      (step.tip
+        ? '<p class="mcj-guide-doc-tip"><strong>提醒：</strong>' +
+          esc(step.tip) +
+          "</p>"
+        : "") +
       "</div></div></div>"
     );
   }
 
-  function bindShot(el) {
-    var img = el.querySelector("[data-guide-shot]");
-    var ph = el.querySelector("[data-guide-ph]");
-    if (!img || !ph) return;
-    img.addEventListener("load", function () {
-      img.hidden = false;
-      ph.hidden = true;
-    });
-    img.addEventListener("error", function () {
-      img.hidden = true;
-      ph.hidden = false;
-    });
-  }
+  function paintAccordion() {
+    var boss = CFG.boss || {};
+    var companion = CFG.companion || {};
+    var section = activeTab === "companion" ? companion : boss;
+    var key = activeTab === "companion" ? "companion" : "boss";
+    var steps = (section && section.steps) || [];
+    var items = steps
+      .map(function (s) {
+        return renderAccordionItem(s, key);
+      })
+      .join("");
 
-  function paintPicker() {
-    return (
-      '<p class="mcj-guide-lead">请选择你想了解：约 1～2 分钟走完真实流程示意。</p>' +
-      '<div class="mcj-guide-cards">' +
-      Object.keys(cfg.roles)
-        .map(function (key) {
-          var r = cfg.roles[key];
-          return (
-            '<button type="button" class="mcj-guide-card" data-pick-role="' +
-            esc(key) +
-            '">' +
-            '<span class="emoji" aria-hidden="true">' +
-            esc(r.cardEmoji) +
-            "</span>" +
-            "<strong>" +
-            esc(r.cardTitle) +
-            "</strong>" +
-            "<span>" +
-            esc(r.cardDesc) +
-            "</span></button>"
-          );
-        })
-        .join("") +
-      "</div>"
-    );
-  }
-
-  function paintStep() {
-    var r = roleCfg();
-    var list = steps();
-    if (!r || !list.length) return paintPicker();
-    if (state.index >= list.length) {
-      state.view = "done";
-      return paintDone();
-    }
-    var step = list[state.index];
-    var n = list.length;
-    var i = state.index + 1;
-    return (
-      '<div class="mcj-guide-progress"><span>' +
-      esc(r.flowTitle) +
-      '</span><strong>' +
-      i +
-      " / " +
-      n +
-      "</strong></div>" +
-      '<h2 class="mcj-guide-step-title">' +
-      esc(step.title) +
-      "</h2>" +
-      '<p class="mcj-guide-step-cap">' +
-      esc(step.caption) +
-      "</p>" +
-      phoneVisual(step) +
-      '<div class="mcj-guide-arrow" aria-hidden="true">↓</div>' +
-      '<p class="mcj-guide-step-cap" style="text-align:center;margin-bottom:0">① 对照高亮区域　② 按说明操作</p>'
-    );
-  }
-
-  function paintDone() {
-    var r = roleCfg();
-    if (!r) return paintPicker();
-    return (
-      '<div class="mcj-guide-done">' +
-      "<h2>" +
-      esc(r.doneTitle) +
-      "</h2>" +
-      "<p>" +
-      esc(r.doneBody) +
-      "</p>" +
-      '<a class="mcj-guide-btn primary" href="' +
-      esc(r.doneHref) +
-      '">' +
-      esc(r.doneCta) +
-      "</a>" +
-      '<p class="mcj-guide-home-hint"><a href="/guide.html">返回角色选择</a></p>' +
-      "</div>"
-    );
-  }
-
-  function footerHtml() {
-    if (state.view !== "step") return "";
-    var list = steps();
-    var atStart = state.index <= 0;
-    var atEnd = state.index >= list.length - 1;
-    return (
-      '<div class="mcj-guide-footer"><div class="mcj-guide-footer-inner">' +
-      '<button type="button" class="mcj-guide-btn" data-prev' +
-      (atStart ? " disabled" : "") +
-      ">上一页</button>" +
-      '<button type="button" class="mcj-guide-btn primary" data-next>' +
-      (atEnd ? "完成" : "下一步") +
-      "</button>" +
-      "</div></div>"
-    );
-  }
-
-  function paint() {
-    syncUrl();
-    var title = "新手教学";
-    if (state.view === "step" && roleCfg()) title = roleCfg().flowTitle;
-    if (state.view === "done" && roleCfg()) title = "教学完成";
-    var backHref = state.view === "picker" ? "/mine.html" : "/guide.html";
-    var backLabel = state.view === "picker" ? "返回" : "角色";
-    var body =
-      state.view === "picker" ? paintPicker() : state.view === "done" ? paintDone() : paintStep();
     root.innerHTML =
-      '<div class="mcj-guide">' +
-      '<header class="mcj-guide-top">' +
-      '<a class="back" href="' +
-      esc(backHref) +
-      '">' +
-      esc(backLabel) +
-      "</a>" +
+      '<div class="mcj-guide" data-guide-accordion="1">' +
+      '<div class="mcj-guide-doc">' +
+      '<header class="mcj-guide-doc-hero">' +
+      '<p class="mcj-guide-kicker">妙脆角 · 使用教学</p>' +
       "<h1>" +
-      esc(title) +
+      esc(CFG.pageTitle || "使用教学") +
       "</h1>" +
-      '<button type="button" class="skip" data-skip>跳过</button>' +
+      '<p class="mcj-guide-doc-lead">' +
+      esc(CFG.pageSubtitle || "") +
+      "</p>" +
       "</header>" +
-      '<main class="mcj-guide-body">' +
-      body +
-      "</main>" +
-      footerHtml() +
-      "</div>";
-    root.querySelectorAll(".mcj-guide-phone").forEach(bindShot);
+      '<div class="mcj-guide-tabs" role="tablist" aria-label="教学角色">' +
+      '<button type="button" class="mcj-guide-tab' +
+      (activeTab === "boss" ? " is-active" : "") +
+      '" role="tab" aria-selected="' +
+      (activeTab === "boss" ? "true" : "false") +
+      '" data-guide-tab="boss">老板教学</button>' +
+      '<button type="button" class="mcj-guide-tab' +
+      (activeTab === "companion" ? " is-active" : "") +
+      '" role="tab" aria-selected="' +
+      (activeTab === "companion" ? "true" : "false") +
+      '" data-guide-tab="companion">陪玩教学</button>' +
+      "</div>" +
+      '<div class="mcj-guide-acc-toolbar">' +
+      '<p class="mcj-guide-acc-hint">点标题展开步骤，再次点击可收起。建议一次只看一步。</p>' +
+      '<div class="mcj-guide-acc-actions">' +
+      '<button type="button" class="mcj-guide-acc-tool" data-acc-expand-all>展开全部</button>' +
+      '<button type="button" class="mcj-guide-acc-tool" data-acc-collapse-all>收起全部</button>' +
+      "</div></div>" +
+      '<section class="mcj-guide-doc-section" data-guide-section="' +
+      esc(key) +
+      '" id="guide-section-' +
+      esc(key) +
+      '">' +
+      '<div class="mcj-guide-doc-section-head">' +
+      '<span class="mcj-guide-doc-badge">' +
+      esc(section.badge || "") +
+      "</span>" +
+      "<h2>" +
+      esc(section.title || "") +
+      "</h2>" +
+      (section.subtitle
+        ? '<p class="mcj-guide-doc-section-sub">' + esc(section.subtitle) + "</p>"
+        : "") +
+      "</div>" +
+      (activeTab === "companion" ? renderLoginCta({ id: "guide-companion-login" }) : "") +
+      '<div class="mcj-guide-acc" data-acc-root="' +
+      esc(key) +
+      '">' +
+      items +
+      "</div>" +
+      (activeTab === "companion"
+        ? '<div class="mcj-guide-login-cta-foot">' +
+          renderLoginCta({ id: "guide-companion-login-foot" }) +
+          "</div>"
+        : "") +
+      "</section>" +
+      (activeTab === "boss"
+        ? '<p class="mcj-guide-switch-hint">想接单？切换到上方「陪玩教学」，顶部有陪玩登录入口。</p>'
+        : "") +
+      "</div></div>";
+
+    root.setAttribute("data-guide-mode", "accordion");
+    root.setAttribute("data-guide-ready", "1");
+    root.setAttribute("data-guide-tab", activeTab);
+    document.title = (CFG.pageTitle || "使用教学") + " · 妙脆角";
+    bindAccordion();
   }
 
-  root.addEventListener("click", function (e) {
-    var pick = e.target.closest("[data-pick-role]");
-    if (pick) {
-      state.role = pick.getAttribute("data-pick-role") || "boss";
-      state.index = 0;
-      state.view = "step";
-      paint();
-      return;
-    }
-    if (e.target.closest("[data-skip]")) {
-      var r = roleCfg();
-      if (r && r.doneHref) location.assign(r.doneHref);
-      else location.assign("/mine.html");
-      return;
-    }
-    if (e.target.closest("[data-prev]")) {
-      if (state.index > 0) {
-        state.index -= 1;
-        paint();
+  function setOpen(id, exclusive) {
+    if (exclusive !== false) {
+      openId = id;
+      var items = root.querySelectorAll(".mcj-guide-acc-item");
+      for (var i = 0; i < items.length; i++) {
+        var el = items[i];
+        var sid = el.getAttribute("data-step-id");
+        var on = sid === openId;
+        el.classList.toggle("is-open", on);
+        var btn = el.querySelector(".mcj-guide-acc-trigger");
+        var panel = el.querySelector(".mcj-guide-acc-panel");
+        if (btn) btn.setAttribute("aria-expanded", on ? "true" : "false");
+        if (panel) {
+          if (on) panel.removeAttribute("hidden");
+          else panel.setAttribute("hidden", "");
+        }
       }
       return;
     }
-    if (e.target.closest("[data-next]")) {
-      var list = steps();
-      if (state.index >= list.length - 1) {
-        state.view = "done";
-        paint();
-      } else {
-        state.index += 1;
-        paint();
-      }
-    }
-  });
+    // expand all mode: openId ignored; toggle class on each
+  }
 
-  paint();
+  function bindAccordion() {
+    root.querySelectorAll("[data-guide-tab]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var tab = btn.getAttribute("data-guide-tab");
+        if (!tab || tab === activeTab) return;
+        activeTab = tab;
+        openId = null;
+        try {
+          var u = new URL(window.location.href);
+          if (tab === "companion") u.searchParams.set("role", "companion");
+          else u.searchParams.set("role", "boss");
+          history.replaceState({}, "", u.pathname + u.search);
+        } catch (_) {}
+        paintAccordion();
+      });
+    });
+
+    root.querySelectorAll("[data-acc-toggle]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var id = btn.getAttribute("data-acc-toggle");
+        if (openId === id) {
+          openId = null;
+          setOpen(null);
+        } else {
+          setOpen(id);
+          try {
+            var item = root.querySelector('[data-step-id="' + id + '"]');
+            if (item)
+              item.scrollIntoView({ behavior: "smooth", block: "nearest" });
+          } catch (_) {}
+        }
+      });
+    });
+
+    var expandAll = root.querySelector("[data-acc-expand-all]");
+    var collapseAll = root.querySelector("[data-acc-collapse-all]");
+    if (expandAll) {
+      expandAll.addEventListener("click", function () {
+        openId = "__ALL__";
+        root.querySelectorAll(".mcj-guide-acc-item").forEach(function (el) {
+          el.classList.add("is-open");
+          var b = el.querySelector(".mcj-guide-acc-trigger");
+          var p = el.querySelector(".mcj-guide-acc-panel");
+          if (b) b.setAttribute("aria-expanded", "true");
+          if (p) p.removeAttribute("hidden");
+        });
+      });
+    }
+    if (collapseAll) {
+      collapseAll.addEventListener("click", function () {
+        openId = null;
+        setOpen(null);
+      });
+    }
+  }
+
+  /* walkthrough kept for ?mode=walkthrough */
+  function paintWalkthrough() {
+    var section = activeTab === "companion" ? CFG.companion : CFG.boss;
+    var steps = (section && section.steps) || [];
+    var idx = 0;
+    function paint() {
+      var step = steps[idx] || {};
+      root.innerHTML =
+        '<div class="mcj-guide"><div class="mcj-guide-shell">' +
+        '<div class="mcj-guide-top"><a class="mcj-guide-back back" href="/guide.html">← 抽屉教学</a>' +
+        '<span class="mcj-guide-progress">' +
+        (idx + 1) +
+        " / " +
+        steps.length +
+        "</span></div>" +
+        '<div class="mcj-guide-body"><div class="mcj-guide-step">' +
+        '<h2 class="mcj-guide-step-title">' +
+        esc(step.no) +
+        " · " +
+        esc(step.title) +
+        "</h2>" +
+        (step.caption
+          ? '<p class="mcj-guide-step-cap">' + esc(step.caption) + "</p>"
+          : "") +
+        renderFlow(step.flow) +
+        renderBody(step.body) +
+        "</div>" +
+        '<div class="mcj-guide-nav" style="display:grid;grid-template-columns:1fr 1.4fr;gap:10px;margin-top:20px">' +
+        '<button type="button" class="mcj-guide-btn" data-prev ' +
+        (idx === 0 ? "disabled" : "") +
+        ">上一步</button>" +
+        '<button type="button" class="mcj-guide-btn primary" data-next>' +
+        (idx >= steps.length - 1 ? "完成" : "下一步") +
+        "</button></div></div></div></div>";
+      var prev = root.querySelector("[data-prev]");
+      var next = root.querySelector("[data-next]");
+      if (prev)
+        prev.addEventListener("click", function () {
+          idx = Math.max(0, idx - 1);
+          paint();
+        });
+      if (next)
+        next.addEventListener("click", function () {
+          if (idx >= steps.length - 1) {
+            location.href = "/guide.html";
+            return;
+          }
+          idx += 1;
+          paint();
+        });
+    }
+    paint();
+  }
+
+  if (mode === "walkthrough") {
+    paintWalkthrough();
+  } else {
+    paintAccordion();
+  }
 })();

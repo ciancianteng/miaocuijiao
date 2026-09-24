@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
- * Offline verification: boss tutorial v2.
- * Does NOT touch Production / Staging DB. Tutorial must be display-only.
+ * Offline verification: guide document (boss 01-12 + companion + login CTA).
+ * Display-only — must not create orders / debit wallet.
  */
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -33,7 +33,7 @@ function loadConfig() {
   sandbox.globalThis = sandbox;
   sandbox.window = sandbox;
   vm.runInNewContext(code, sandbox);
-  return sandbox.MCJGuideTutorialConfig || sandbox.window.MCJGuideTutorialConfig;
+  return sandbox.MCJ_GUIDE_TUTORIAL || sandbox.window.MCJ_GUIDE_TUTORIAL;
 }
 
 const cfg = loadConfig();
@@ -45,121 +45,89 @@ const indexHtml = read("index.html");
 const roleGates = read("src/role-gates.js");
 const packageJson = read("package.json");
 
-test("TEST 1 first-visit / home entry exists", () => {
-  assert.match(indexHtml, /data-boss-tutorial-entry/);
+test("TEST 1 home / mine entry exists", () => {
   assert.match(indexHtml, /guide\.html\?role=boss/);
-  assert.match(indexHtml, /第一次使用？查看老板使用教学|老板使用教学/);
-});
-
-test("TEST 2 mine replay entry exists", () => {
-  assert.match(mineHtml, /data-boss-tutorial-entry/);
-  assert.match(mineHtml, /老板使用教学/);
   assert.match(mineHtml, /guide\.html\?role=boss/);
+  assert.match(mineHtml, /老板使用教学|使用教学/);
 });
 
-test("TEST 3 tutorial does not create orders", () => {
+test("TEST 2 config has boss + companion sections", () => {
+  assert.ok(cfg && cfg.boss && cfg.companion);
+  assert.equal(cfg.boss.title, "老板使用教学");
+  assert.equal(cfg.companion.title, "陪玩教学");
+  assert.ok(cfg.boss.steps.length >= 12);
+  assert.ok(cfg.companion.steps.length >= 5);
+});
+
+test("TEST 3 boss required chapters present", () => {
+  const titles = cfg.boss.steps.map((s) => s.title).join("|");
+  assert.match(titles, /注册/);
+  assert.match(titles, /充值猫粮/);
+  assert.match(titles, /选择陪玩/);
+  assert.match(titles, /单人立即下单/);
+  assert.match(titles, /多陪玩一起下单/);
+  assert.match(titles, /离线陪玩|预约/);
+  assert.match(titles, /支付流程/);
+  assert.match(titles, /客服审核/);
+  assert.match(titles, /陪玩确认/);
+  assert.match(titles, /开始服务/);
+  assert.match(titles, /完成订单/);
+  assert.match(titles, /评价陪玩/);
+});
+
+test("TEST 4 multi + CS review wording", () => {
+  const multi = cfg.boss.steps.find((s) => s.id === "b05");
+  const pay = cfg.boss.steps.find((s) => s.id === "b04");
+  const cs = cfg.boss.steps.find((s) => s.id === "b08");
+  assert.ok(multi && pay && cs);
+  assert.match(JSON.stringify(multi), /加入一起下单|更换陪玩|放弃增加/);
+  assert.match(JSON.stringify(pay), /等待客服审核|不会立刻进入/);
+  assert.match(JSON.stringify(cs), /等待客服审核/);
+});
+
+test("TEST 5 companion login CTA reuses /companion/login/", () => {
+  assert.equal(cfg.companionLoginHref, "/companion/login/");
+  assert.match(guideJs, /companionLoginHref|\/companion\/login\//);
+  assert.match(guideJs, /data-guide-companion-login/);
+  assert.match(guideJs, /mcj-guide-login-btn/);
+});
+
+test("TEST 6 tutorial display-only (no order/wallet writes)", () => {
   assert.doesNotMatch(guideJs, /place_order|place_multi_order|fetch\(['\"]\/api\/orders/);
   assert.doesNotMatch(guideJs, /debitWallet|creditWallet|\/api\/wallet/);
-  const bossSteps = cfg.roles.boss.steps;
-  assert.ok(bossSteps.length >= 10);
-});
-
-test("TEST 4 tutorial does not debit wallet / mutate live data", () => {
-  assert.doesNotMatch(guideJs, /localStorage\.setItem\(['\"]mcjAuth/);
-  assert.doesNotMatch(guideJs, /POST['\"]?\s*,/);
-  assert.match(guideJs, /mcjGuideRoot/);
-});
-
-test("TEST 5 tutorial display-only (no payment writes)", () => {
   assert.doesNotMatch(guideJs, /submit_payment_proof|pay_order/);
+  assert.doesNotMatch(guideJs, /localStorage\.setItem\(['\"]mcjAuth/);
+  assert.match(guideJs, /mcjGuideRoot/);
   assert.match(guideHtml, /mcjGuideRoot/);
 });
 
-test("TEST 6 single-order tutorial present", () => {
-  const ids = cfg.roles.boss.steps.map((s) => s.id);
-  assert.ok(ids.includes("boss-single"));
-  const step = cfg.roles.boss.steps.find((s) => s.id === "boss-single");
-  assert.match(step.caption, /立即下单|游戏 ID|时长/);
-  assert.ok(step.visualMock);
-});
-
-test("TEST 7 per-service pricing tutorial present", () => {
-  assert.equal(cfg.flags.perServicePricingEnabled, true);
-  const step = cfg.roles.boss.steps.find((s) => s.id === "boss-pricing");
-  assert.ok(step);
-  assert.match(step.caption, /单价|小计|总价|不同/);
-  assert.match(step.visualMock, /王者荣耀|三角洲|40/);
-  assert.doesNotMatch(JSON.stringify(cfg.roles.boss.steps), /每个陪玩只有一个固定价格/);
-});
-
-test("TEST 8 multi-companion tutorial present", () => {
-  assert.equal(cfg.flags.multiCompanionEnabled, true);
-  const add = cfg.roles.boss.steps.find((s) => s.id === "boss-multi-add");
-  const team = cfg.roles.boss.steps.find((s) => s.id === "boss-multi-team");
-  assert.ok(add && team);
-  assert.match(add.caption + add.visualMock, /再加一位陪玩/);
-  assert.match(team.caption, /联合订单|85|不用分开/);
-});
-
-test("TEST 9 clock/check confirmation tutorial", () => {
-  const step = cfg.roles.boss.steps.find((s) => s.id === "boss-confirm");
-  assert.ok(step);
-  assert.match(step.visualMock, /🕐/);
-  assert.match(step.visualMock, /✅/);
-});
-
-test("TEST 10 partial companion cancel tutorial", () => {
-  const step = cfg.roles.boss.steps.find((s) => s.id === "boss-unavailable");
-  assert.ok(step);
-  assert.match(step.caption + step.visualMock, /当前陪玩无法接单，请重新选择陪玩/);
-  assert.doesNotMatch(step.caption, /整个订单取消/);
-});
-
-test("TEST 11 replacement + keep-remaining tutorial", () => {
-  const slot = cfg.roles.boss.steps.find((s) => s.id === "boss-replace-slot");
-  const rep = cfg.roles.boss.steps.find((s) => s.id === "boss-replace");
-  const keep = cfg.roles.boss.steps.find((s) => s.id === "boss-keep");
-  assert.ok(slot && rep && keep);
-  assert.match(slot.visualMock, /\+ 重新选择陪玩/);
-  assert.match(rep.caption, /原联合订单|不用再确认/);
-  assert.match(keep.visualMock + keep.caption, /只保留剩余陪玩继续/);
-});
-
-test("TEST 12 close tutorial returns to normal pages", () => {
-  assert.match(guideJs, /data-skip/);
-  assert.match(guideJs, /doneHref|location\.assign/);
-  assert.match(cfg.roles.boss.doneHref, /companion-center/);
-});
-
-test("TEST 13 mobile layout CSS present", () => {
-  assert.match(guideCss, /max-width:\s*420px|viewport-fit/);
-  assert.match(guideCss, /mcj-guide-mock/);
-  assert.match(guideCss, /gm-hl/);
+test("TEST 7 document CSS + mobile", () => {
+  assert.match(guideCss, /mcj-guide-doc-card/);
+  assert.match(guideCss, /mcj-guide-login-cta/);
+  assert.match(guideCss, /max-width:\s*420px/);
   assert.match(guideHtml, /viewport-fit=cover/);
+  assert.match(guideHtml, /20260924guideAcc2/);
+  assert.match(guideJs, /data-guide-accordion|mcj-guide-acc/);
+  assert.match(guideCss, /mcj-guide-acc-item/);
 });
 
-test("TEST 14 reservation hidden when not Production", () => {
-  assert.equal(cfg.flags.reservationTutorialEnabled, false);
-  const ids = cfg.roles.boss.steps.map((s) => s.id);
-  assert.ok(!ids.includes("boss-reservation"));
-  const reserved = (cfg.roles.boss.allSteps || []).find((s) => s.id === "boss-reservation");
-  assert.ok(reserved);
-  assert.equal(reserved.enabled, false);
-  assert.equal(reserved.hiddenReason, "NOT_PRODUCTION");
-});
-
-test("TEST 15 role-gates allow guide + cancel step enabled", () => {
+test("TEST 8 role-gates allow guide", () => {
   assert.match(roleGates, /\\\/guide\\\.html\$/);
-  assert.equal(cfg.flags.unpaidCancelTutorialEnabled, true);
-  assert.ok(cfg.roles.boss.steps.some((s) => s.id === "boss-cancel"));
   assert.match(packageJson, /verify:boss-tutorial/);
-  assert.match(guideHtml, /20260920bossV2/);
 });
 
-test("TEST 16 vite build includes guide.html (prevents Production 404)", () => {
+test("TEST 9 vite build includes guide.html", () => {
   const viteConfig = read("vite.config.js");
   assert.match(viteConfig, /["']guide\.html["']/);
   assert.match(viteConfig, /\["\/guide",\s*"\/guide\.html"\]/);
+});
+
+test("TEST 10 accordion mode + companion login CTA", () => {
+  assert.match(guideJs, /data-guide-accordion/);
+  assert.match(guideJs, /data-acc-toggle/);
+  assert.match(guideJs, /data-guide-tab/);
+  assert.match(guideJs, /data-guide-companion-login/);
+  assert.ok(cfg.companion.steps.length >= 12);
 });
 
 const failed = results.filter((r) => !r.ok);
