@@ -1,5 +1,6 @@
 /**
  * Meow custom 24h time wheel picker (no native <input type="time">).
+ * Transform-based wheels (reliable on mobile + headless).
  * Exposes window.MCJTimePicker.open({ value, minuteStep, title, onConfirm, onCancel }).
  */
 (function () {
@@ -8,7 +9,7 @@
   var MINUTE_STEP_DEFAULT = 60;
   var ITEM_H = 44;
   var VISIBLE = 5;
-  var PAD_COUNT = Math.floor(VISIBLE / 2);
+  var PAD = Math.floor(VISIBLE / 2);
   var scrollLockCount = 0;
   var prevBodyOverflow = "";
   var prevHtmlOverflow = "";
@@ -90,11 +91,7 @@
     while (scrollLockCount > 0) unlockScroll();
   }
 
-  function buildScrollCol(kind, values, selected) {
-    var pads = "";
-    for (var p = 0; p < PAD_COUNT; p++) {
-      pads += '<div class="mcj-tp-item is-pad" aria-hidden="true"></div>';
-    }
+  function buildCol(kind, values, selected) {
     var items = values
       .map(function (v) {
         return (
@@ -109,16 +106,21 @@
       })
       .join("");
     return (
-      '<div class="mcj-tp-col">' +
-      '<div class="mcj-tp-scroll" data-tp-scroll="' +
+      '<div class="mcj-tp-col" data-tp-col="' +
+      kind +
+      '">' +
+      '<div class="mcj-tp-viewport" data-tp-viewport="' +
+      kind +
+      '">' +
+      '<div class="mcj-tp-track" data-tp-track="' +
+      kind +
+      '" data-tp-scroll="' +
       kind +
       '" role="listbox" aria-label="' +
       (kind === "hour" ? "小时" : "分钟") +
       '">' +
-      pads +
       items +
-      pads +
-      "</div></div>"
+      "</div></div></div>"
     );
   }
 
@@ -135,7 +137,8 @@
     var hour = pad2(Math.min(23, Math.max(0, Number(parts[0]) || 0)));
     var minute = snapMinute(parts[1], step);
     var confirmed = false;
-    var programmaticScroll = 0;
+    var hourIdx = Math.max(0, hours.indexOf(hour));
+    var minuteIdx = Math.max(0, mins.indexOf(minute));
 
     var mask = document.createElement("div");
     mask.className = "mcj-tp-mask";
@@ -151,134 +154,173 @@
       "</strong></div>" +
       '<div class="mcj-tp-body">' +
       '<div class="mcj-tp-highlight" aria-hidden="true"></div>' +
-      buildScrollCol("hour", hours, hour) +
+      buildCol("hour", hours, hour) +
       '<div class="mcj-tp-colon">:</div>' +
-      buildScrollCol("minute", mins, minute) +
+      buildCol("minute", mins, minute) +
       "</div>" +
       '<div class="mcj-tp-actions">' +
       '<button type="button" class="mcj-tp-btn ghost" data-tp-cancel>取消</button>' +
       '<button type="button" class="mcj-tp-btn primary" data-tp-confirm>确认</button>' +
       "</div></div>";
 
+    function valuesOf(kind) {
+      return kind === "hour" ? hours : mins;
+    }
+
+    function idxOf(kind) {
+      return kind === "hour" ? hourIdx : minuteIdx;
+    }
+
+    function setIdx(kind, idx) {
+      var values = valuesOf(kind);
+      idx = Math.max(0, Math.min(values.length - 1, idx));
+      if (kind === "hour") {
+        hourIdx = idx;
+        hour = values[idx];
+      } else {
+        minuteIdx = idx;
+        minute = values[idx];
+      }
+    }
+
     function syncActive(kind) {
-      var sc = mask.querySelector('[data-tp-scroll="' + kind + '"]');
-      if (!sc) return;
+      var track = mask.querySelector('[data-tp-track="' + kind + '"]');
+      if (!track) return;
       var selected = kind === "hour" ? hour : minute;
-      sc.querySelectorAll(".mcj-tp-item[data-tp-value]").forEach(function (el) {
+      track.querySelectorAll(".mcj-tp-item[data-tp-value]").forEach(function (el) {
         var on = el.getAttribute("data-tp-value") === selected;
         el.classList.toggle("is-active", on);
         el.setAttribute("aria-selected", on ? "true" : "false");
       });
     }
 
-    function scrollToValue(kind, value, smooth) {
-      var sc = mask.querySelector('[data-tp-scroll="' + kind + '"]');
-      if (!sc) return;
-      var values = kind === "hour" ? hours : mins;
+    function renderTrack(kind, animate) {
+      var track = mask.querySelector('[data-tp-track="' + kind + '"]');
+      if (!track) return;
+      var idx = idxOf(kind);
+      track.style.transition = animate ? "transform 0.18s cubic-bezier(0.22, 1, 0.36, 1)" : "none";
+      track.style.transform = "translate3d(0, " + (-idx * ITEM_H) + "px, 0)";
+      syncActive(kind);
+    }
+
+    function goToValue(kind, value, animate) {
+      var values = valuesOf(kind);
       var idx = values.indexOf(value);
       if (idx < 0) idx = 0;
-      var itemH = ITEM_H;
-      try {
-        var probe = sc.querySelector(".mcj-tp-item[data-tp-value]");
-        if (probe && probe.offsetHeight) itemH = probe.offsetHeight;
-      } catch (e) {}
-      var top = idx * itemH;
-      programmaticScroll += 1;
-      sc.style.scrollSnapType = "none";
-      if (smooth && typeof sc.scrollTo === "function") {
-        sc.scrollTo({ top: top, behavior: "smooth" });
-      } else {
-        sc.scrollTop = top;
+      setIdx(kind, idx);
+      renderTrack(kind, !!animate);
+    }
+
+    function bindWheel(kind) {
+      var viewport = mask.querySelector('[data-tp-viewport="' + kind + '"]');
+      var track = mask.querySelector('[data-tp-track="' + kind + '"]');
+      if (!viewport || !track) return;
+
+      var dragging = false;
+      var startY = 0;
+      var startIdx = 0;
+      var lastY = 0;
+      var lastT = 0;
+      var velocity = 0;
+
+      function onPointerDown(y) {
+        dragging = true;
+        startY = y;
+        lastY = y;
+        lastT = Date.now();
+        startIdx = idxOf(kind);
+        velocity = 0;
+        track.style.transition = "none";
       }
-      if (kind === "hour") hour = values[idx];
-      else minute = values[idx];
-      syncActive(kind);
-      requestAnimationFrame(function () {
-        sc.scrollTop = top;
+
+      function onPointerMove(y) {
+        if (!dragging) return;
+        var dy = y - startY;
+        var now = Date.now();
+        var dt = Math.max(1, now - lastT);
+        velocity = (y - lastY) / dt;
+        lastY = y;
+        lastT = now;
+        var offset = startIdx * ITEM_H - dy;
+        track.style.transform = "translate3d(0, " + -offset + "px, 0)";
+        var live = Math.round(offset / ITEM_H);
+        var values = valuesOf(kind);
+        live = Math.max(0, Math.min(values.length - 1, live));
+        if (kind === "hour") {
+          hour = values[live];
+        } else {
+          minute = values[live];
+        }
         syncActive(kind);
-        requestAnimationFrame(function () {
-          sc.style.scrollSnapType = "y mandatory";
-          sc.scrollTop = top;
-          syncActive(kind);
-          programmaticScroll = Math.max(0, programmaticScroll - 1);
-        });
-      });
-    }
+      }
 
-    function snapScroll(kind) {
-      var sc = mask.querySelector('[data-tp-scroll="' + kind + '"]');
-      if (!sc) return;
-      var values = kind === "hour" ? hours : mins;
-      var itemH = ITEM_H;
-      try {
-        var probe = sc.querySelector(".mcj-tp-item[data-tp-value]");
-        if (probe && probe.offsetHeight) itemH = probe.offsetHeight;
-      } catch (e2) {}
-      var idx = Math.round(sc.scrollTop / itemH);
-      idx = Math.max(0, Math.min(values.length - 1, idx));
-      if (kind === "hour") hour = values[idx];
-      else minute = values[idx];
-      sc.style.scrollSnapType = "none";
-      sc.scrollTop = idx * itemH;
-      syncActive(kind);
-      requestAnimationFrame(function () {
-        sc.scrollTop = idx * itemH;
-        sc.style.scrollSnapType = "y mandatory";
-        syncActive(kind);
-      });
-    }
+      function onPointerUp(y) {
+        if (!dragging) return;
+        dragging = false;
+        var dy = y - startY;
+        var projected = startIdx * ITEM_H - dy - velocity * 120;
+        var idx = Math.round(projected / ITEM_H);
+        setIdx(kind, idx);
+        renderTrack(kind, true);
+      }
 
-    function readScrollValue(kind) {
-      var sc = mask.querySelector('[data-tp-scroll="' + kind + '"]');
-      if (!sc) return kind === "hour" ? hour : minute;
-      var values = kind === "hour" ? hours : mins;
-      var itemH = ITEM_H;
-      try {
-        var probe = sc.querySelector(".mcj-tp-item[data-tp-value]");
-        if (probe && probe.offsetHeight) itemH = probe.offsetHeight;
-      } catch (e3) {}
-      var idx = Math.round(sc.scrollTop / itemH);
-      idx = Math.max(0, Math.min(values.length - 1, idx));
-      return values[idx];
-    }
-
-    function bindScroll(kind) {
-      var sc = mask.querySelector('[data-tp-scroll="' + kind + '"]');
-      if (!sc) return;
-      var timer = null;
-      sc.addEventListener(
-        "scroll",
-        function () {
-          if (programmaticScroll > 0) {
-            syncActive(kind);
-            return;
-          }
-          var values = kind === "hour" ? hours : mins;
-          var itemH = ITEM_H;
-          try {
-            var probe = sc.querySelector(".mcj-tp-item[data-tp-value]");
-            if (probe && probe.offsetHeight) itemH = probe.offsetHeight;
-          } catch (e4) {}
-          var idx = Math.round(sc.scrollTop / itemH);
-          idx = Math.max(0, Math.min(values.length - 1, idx));
-          if (kind === "hour") hour = values[idx];
-          else minute = values[idx];
-          syncActive(kind);
-          if (timer) clearTimeout(timer);
-          timer = setTimeout(function () {
-            snapScroll(kind);
-          }, 80);
+      viewport.addEventListener(
+        "touchstart",
+        function (e) {
+          if (!e.touches || !e.touches[0]) return;
+          onPointerDown(e.touches[0].clientY);
         },
         { passive: true }
       );
-      sc.addEventListener("click", function (e) {
-        var item = e.target.closest("[data-tp-value]");
-        if (!item || !sc.contains(item)) return;
-        var v = item.getAttribute("data-tp-value");
-        if (kind === "hour") hour = v;
-        else minute = v;
-        scrollToValue(kind, v, true);
+      viewport.addEventListener(
+        "touchmove",
+        function (e) {
+          if (!dragging || !e.touches || !e.touches[0]) return;
+          e.preventDefault();
+          onPointerMove(e.touches[0].clientY);
+        },
+        { passive: false }
+      );
+      viewport.addEventListener(
+        "touchend",
+        function (e) {
+          var y = e.changedTouches && e.changedTouches[0] ? e.changedTouches[0].clientY : lastY;
+          onPointerUp(y);
+        },
+        { passive: true }
+      );
+
+      viewport.addEventListener("mousedown", function (e) {
+        e.preventDefault();
+        onPointerDown(e.clientY);
+        function move(ev) {
+          onPointerMove(ev.clientY);
+        }
+        function up(ev) {
+          onPointerUp(ev.clientY);
+          document.removeEventListener("mousemove", move);
+          document.removeEventListener("mouseup", up);
+        }
+        document.addEventListener("mousemove", move);
+        document.addEventListener("mouseup", up);
       });
+
+      track.addEventListener("click", function (e) {
+        var item = e.target.closest("[data-tp-value]");
+        if (!item || !track.contains(item)) return;
+        goToValue(kind, item.getAttribute("data-tp-value"), true);
+      });
+
+      viewport.addEventListener(
+        "wheel",
+        function (e) {
+          e.preventDefault();
+          var dir = e.deltaY > 0 ? 1 : -1;
+          setIdx(kind, idxOf(kind) + dir);
+          renderTrack(kind, true);
+        },
+        { passive: false }
+      );
     }
 
     function close(reason) {
@@ -309,35 +351,18 @@
     });
     mask.querySelector("[data-tp-confirm]").addEventListener("click", function (e) {
       e.preventDefault();
-      // Prefer in-memory selection (updated by scroll/click); scrollTop can be flaky with snap.
-      var ah = mask.querySelector('[data-tp-scroll="hour"] .mcj-tp-item.is-active');
-      var am = mask.querySelector('[data-tp-scroll="minute"] .mcj-tp-item.is-active');
-      if (ah && ah.getAttribute("data-tp-value")) hour = ah.getAttribute("data-tp-value");
-      if (am && am.getAttribute("data-tp-value")) minute = am.getAttribute("data-tp-value");
       close("confirm");
     });
     document.addEventListener("keydown", onKey, true);
 
     lockScroll();
     document.body.appendChild(mask);
-
-    function positionWheels() {
-      scrollToValue("hour", hour, false);
-      scrollToValue("minute", minute, false);
-    }
-
-    // Open sheet first, then position wheels after layout, then bind scroll.
-    // Binding before position (or positioning before layout) left scrollTop at 0
-    // so the highlight looked like 00:00 while is-active still said 23.
+    bindWheel("hour");
+    bindWheel("minute");
     requestAnimationFrame(function () {
+      renderTrack("hour", false);
+      renderTrack("minute", false);
       mask.classList.add("is-open");
-      requestAnimationFrame(function () {
-        positionWheels();
-        bindScroll("hour");
-        bindScroll("minute");
-        setTimeout(positionWheels, 40);
-        setTimeout(positionWheels, 120);
-      });
     });
 
     return { close: function () { close("cancel"); } };

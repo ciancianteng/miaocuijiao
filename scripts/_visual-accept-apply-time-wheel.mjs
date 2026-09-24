@@ -49,7 +49,7 @@ async function bootHarness(page) {
   await page.setContent(
     `<!doctype html><html lang="zh-CN"><head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="stylesheet" href="${BASE}/src/mcj-time-picker.css?v=20260924timeWheel2">
+<link rel="stylesheet" href="${BASE}/src/mcj-time-picker.css?v=20260924timeWheel3">
 <style>
 html,body{margin:0;min-height:100%;background:#0a0610;color:#ffe6f2;font-family:system-ui,sans-serif}
 .wrap{max-width:420px;margin:0 auto;padding:24px 16px 48px}
@@ -59,7 +59,7 @@ html,body{margin:0;min-height:100%;background:#0a0610;color:#ffe6f2;font-family:
 </style></head><body>
 <div class="wrap"><h1 style="font-size:18px">常在线时间</h1>
 <div class="panel"><div id="root" class="apply-fields"></div><p id="status">loading</p></div></div>
-<script src="${BASE}/src/mcj-time-picker.js?v=20260924timeWheel2"></script>
+<script src="${BASE}/src/mcj-time-picker.js?v=20260924timeWheel3"></script>
 <script>
 (function(){
   function ready(){
@@ -112,27 +112,17 @@ html,body{margin:0;min-height:100%;background:#0a0610;color:#ffe6f2;font-family:
 async function scrollWheelTo(page, kind, value) {
   await page.evaluate(
     ({ kind, value }) => {
-      const sc = document.querySelector(`[data-tp-scroll="${kind}"]`);
-      if (!sc) throw new Error("no scroll " + kind);
-      const item = sc.querySelector(`[data-tp-value="${value}"]`);
+      const item = document.querySelector(`[data-tp-track="${kind}"] [data-tp-value="${value}"]`);
       if (!item) throw new Error("missing value " + value);
-      const probe = sc.querySelector(".mcj-tp-item[data-tp-value]");
-      const itemH = (probe && probe.offsetHeight) || 44;
-      const items = [...sc.querySelectorAll("[data-tp-value]")];
-      const idx = items.indexOf(item);
-      sc.style.scrollSnapType = "none";
-      sc.scrollTop = idx * itemH;
-      item.classList.add("is-active");
-      items.forEach((el) => {
-        const on = el === item;
-        el.classList.toggle("is-active", on);
-        el.setAttribute("aria-selected", on ? "true" : "false");
-      });
-      sc.dispatchEvent(new Event("scroll"));
+      item.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
     },
     { kind, value }
   );
-  await page.waitForTimeout(300);
+  await page.waitForTimeout(220);
+  const active = await page.locator(`[data-tp-track="${kind}"] .mcj-tp-item.is-active`).textContent();
+  if (String(active).trim() !== value) {
+    throw new Error(`wheel ${kind} expected ${value} got ${active}`);
+  }
 }
 
 await withPage({ width: 390, height: 844 }, async (page) => {
@@ -173,7 +163,7 @@ await withPage({ width: 390, height: 844 }, async (page) => {
 
   await page.click('[data-apply-time-open="onlineStart"]');
   await page.waitForSelector(".mcj-tp-mask.is-open");
-  const hourActive = await page.locator('.mcj-tp-scroll[data-tp-scroll="hour"] .mcj-tp-item.is-active').textContent();
+  const hourActive = await page.locator('.mcj-tp-track[data-tp-track="hour"] .mcj-tp-item.is-active').textContent();
   if (String(hourActive).trim() === "23") ok("PICKER_DEFAULTS_CURRENT", hourActive);
   else fail("PICKER_DEFAULTS_CURRENT", hourActive);
 
