@@ -947,6 +947,43 @@ function companionEditablePatch(payload = {}) {
     patch.game = String(payload.mainGame || payload.game || "").trim();
   }
   if (payload.tags != null) patch.tags = String(payload.tags || "").trim();
+  if (
+    payload.voiceType != null ||
+    payload.voice_type != null ||
+    payload.voiceTypeOpts != null ||
+    payload.voice_type_opt != null ||
+    payload.voiceTypeCustom != null
+  ) {
+    const parts = [];
+    const opts = payload.voiceTypeOpts || payload.voice_type_opt;
+    if (Array.isArray(opts)) {
+      opts.forEach((n) => {
+        const s = String(n || "").trim();
+        if (s && s !== "其他") parts.push(s);
+      });
+    } else if (opts != null && opts !== "") {
+      String(opts)
+        .split(/[,，、|/]+/)
+        .forEach((n) => {
+          const s = String(n || "").trim();
+          if (s && s !== "其他") parts.push(s);
+        });
+    }
+    const custom = String(payload.voiceTypeCustom || payload.voice_type_custom || "").trim();
+    if (custom) parts.push(custom);
+    const raw =
+      parts.length > 0
+        ? parts.join("、")
+        : String(payload.voiceType ?? payload.voice_type ?? "").trim();
+    patch.voice_type = raw
+      .replace(/^声线\s*[:：]\s*/, "")
+      .split(/[,，、|/]+/)
+      .map((t) => String(t || "").trim())
+      .filter((t) => t && t !== "其他")
+      .filter((t, i, arr) => arr.findIndex((x) => x.toLowerCase() === t.toLowerCase()) === i)
+      .slice(0, 12)
+      .join("、");
+  }
   if (payload.levelId != null || payload.level_id != null) {
     patch.level_id = String(payload.levelId || payload.level_id || "").trim();
   }
