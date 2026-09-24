@@ -1,413 +1,481 @@
 /**
- * Boss / Companion novice tutorial — config only.
- * v2: aligned with Production multi-companion, per-service pricing,
- * unpaid cancel (#264), and multi confirmation / soft-exit UX.
- * Reservation (立即预约) stays hidden until Production deploy.
- *
- * Tutorial never creates orders, debits wallet, or mutates live data.
+ * 使用教学 / 新手教学 — 单一配置源
+ * 老板详细步骤 + 陪玩教学 + 陪玩登录入口（复用 /companion/login/）
  */
 (function (global) {
   "use strict";
 
-  var ROUTES = {
-    hall: "/companion-center.html",
-    profileExample: "/profile.html",
-    orders: "/orders.html",
-    paymentConfirm: "/payment-confirm.html",
-    companionApply: "/companion-apply.html",
-    companionDashboard: "/companion/dashboard",
-    companionHall: "/companion/order-hall",
-    companionEarnings: "/companion/earnings",
-    companionRules: "/companion/rules",
-    home: "/index.html",
-    mine: "/mine.html",
-    guide: "/guide.html",
+  var GUIDE = {
+    pageTitle: "使用教学",
+    pageSubtitle: "第一次使用妙脆角？跟着下面步骤，很快就能顺利下单或接单。",
+    companionLoginHref: "/companion/login/",
+    companionLoginLabel: "陪玩登录入口",
+    companionLoginHint:
+      "已有陪玩账号？点这里进入陪玩端登录。登录后会进入陪玩工作台，不会进老板端。",
+
+    boss: {
+      badge: "老板端",
+      title: "老板使用教学",
+      subtitle: "第一次使用妙脆角？跟着下面步骤，很快就可以找到适合你的陪玩。",
+      steps: [
+        {
+          id: "b01",
+          no: "01",
+          icon: "🔑",
+          title: "注册 / 登录",
+          caption: "先拥有老板账号，才能充值和下单。",
+          body: [
+            "打开官网首页，点右上角或「我的」里的登录 / 注册。",
+            "用手机号或邮箱注册老板账号，按提示收取验证码并完成登录。",
+            "验证码一般发到你填写的手机短信或注册邮箱，请留意垃圾邮件箱。",
+            "找不到入口时：打开底部「我的」→ 未登录会提示登录；也可从首页右上角进入。",
+            "登录成功后进入老板端（首页 / 大厅 / 我的订单），就可以开始充值和下单。"
+          ],
+          tip: "一个账号登录后，系统会按身份进入对应端。老板账号进老板端，陪玩请用下方「陪玩登录入口」。"
+        },
+        {
+          id: "b02",
+          no: "02",
+          icon: "🪙",
+          title: "充值猫粮",
+          caption: "下单前请确保猫粮余额足够。",
+          flow: [
+            "我的",
+            "钱包 / 充值",
+            "选择充值金额",
+            "选择付款方式",
+            "查看付款资料",
+            "完成付款",
+            "上传付款证明（如当前流程需要）",
+            "等待客服审核",
+            "审核通过",
+            "猫粮到账"
+          ],
+          body: [
+            "猫粮是平台余额，用来支付订单、送礼物等。余额不足时请先充值再下单。",
+            "付款后如果还显示「等待审核」，不代表充值失败，请耐心等待客服处理。",
+            "不要因为还在审核中就重复付款，以免造成重复到账或对账困难。"
+          ],
+          tip: "审核通过后，可在「我的 → 钱包」看到猫粮余额更新。"
+        },
+        {
+          id: "b03",
+          no: "03",
+          icon: "🧭",
+          title: "如何选择陪玩",
+          caption: "从首页或大厅找到适合你的陪玩。",
+          body: [
+            "可以从「首页热门推荐」或「大厅」浏览陪玩。",
+            "建议查看：头像、等级、擅长游戏、标签、在线/离线、评价、礼物墙、个人资料。",
+            "点进陪玩主页可以看更完整的介绍与评价。"
+          ],
+          tip: "平台不会替你决定哪一位最适合。先看资料和评价，再自行选择。"
+        },
+        {
+          id: "b04",
+          no: "04",
+          icon: "🛒",
+          title: "单人立即下单",
+          caption: "找一位陪玩，按步骤完成下单与支付。",
+          flow: [
+            "选择陪玩",
+            "查看详情",
+            "立即下单",
+            "填写游戏 ID / 必要资料",
+            "选择服务",
+            "确认订单",
+            "进入支付流程",
+            "选择支付方式",
+            "上传付款凭证（如需要）",
+            "等待客服审核",
+            "客服审核通过",
+            "等待陪玩确认",
+            "陪玩接受",
+            "开始服务"
+          ],
+          body: [
+            "请按上面流程一步步完成，不要跳过确认页。",
+            "游戏 ID 填写一次后，同次下单或多人一起下单时系统会尽量复用，不用反复输入。",
+            "重要：你点击支付并提交后，不会立刻进入「陪玩确认」。",
+            "订单会先进入「等待客服审核」；客服通过后，才会发给陪玩确认。"
+          ],
+          tip: "支付提交 ≠ 已经开始服务。先过客服审核，再等陪玩接受。"
+        },
+        {
+          id: "b05",
+          no: "05",
+          icon: "👥",
+          title: "多陪玩一起下单",
+          caption: "一次选多位陪玩，统一付款，各自确认。",
+          flow: [
+            "选择第 1 位陪玩",
+            "点击「加入一起下单」",
+            "返回大厅继续选择",
+            "选择第 2 位陪玩",
+            "再次加入一起下单",
+            "检查已选择陪玩（游戏 ID 尽量复用）",
+            "确定并付款",
+            "一次完成支付 / 上传凭证",
+            "等待客服审核",
+            "审核通过",
+            "两位（或多位）陪玩分别确认",
+            "全部确认后才开始"
+          ],
+          body: [
+            "第一次已经填写过的游戏 ID，系统会尽量复用，一般不用反复填写。",
+            "付款是一次完成；客服审核通过后，每位陪玩分别收到确认请求。",
+            "两位陪玩都确认后，订单才能正常开始；缺一位确认则还不能开始。",
+            "如果其中一位陪玩取消：你可以更换陪玩，或放弃增加人数。",
+            "若选择放弃增加，原订单会继续，并调整为剩余陪玩人数——不会再生成一张无关的单人新订单。"
+          ],
+          tip: "多人单要等需要确认的陪玩都接受后，订单才会正常进入服务。"
+        },
+        {
+          id: "b06",
+          no: "06",
+          icon: "📅",
+          title: "离线陪玩 / 预约",
+          caption: "离线不代表不能下单，可以预约。",
+          flow: [
+            "选择陪玩（显示离线）",
+            "立即预约",
+            "填写游戏 ID",
+            "选择预约日期 / 时间",
+            "确认订单",
+            "完成付款 / 上传凭证",
+            "客服审核",
+            "陪玩收到预约通知",
+            "陪玩接受或拒绝"
+          ],
+          body: [
+            "当陪玩显示离线时，按钮通常类似「立即预约」。",
+            "预约同样需要付款与客服审核；通过后陪玩会收到通知并决定接受或拒绝。"
+          ],
+          tip: "离线只代表此刻不在线，不等于不能预约。"
+        },
+        {
+          id: "b07",
+          no: "07",
+          icon: "💳",
+          title: "支付流程",
+          caption: "看清付款资料，付完再上传证明。",
+          flow: [
+            "订单确认后",
+            "选择付款方式",
+            "查看正确付款资料（如 DuitNow QR）",
+            "完成付款",
+            "上传付款凭证",
+            "等待客服审核"
+          ],
+          body: [
+            "请务必使用页面上显示的正确付款资料（例如 DuitNow 必须核对当前 QR / 账号）。",
+            "点击「立即支付」或提交证明，不代表已经支付成功。",
+            "只有客服审核通过后，订单才会继续往下走。"
+          ],
+          tip: "付款金额、付款方式、证明截图请一次弄对，可加快审核。"
+        },
+        {
+          id: "b08",
+          no: "08",
+          icon: "🧑‍💼",
+          title: "客服审核",
+          caption: "付款提交后，先等客服，再等陪玩。",
+          body: [
+            "付款提交后，订单会先进入「等待客服审核」。",
+            "客服审核通过以后，才会发送给陪玩确认。",
+            "如果付款资料有问题，客服会处理或联系你补充，请留意订单状态与通知。",
+            "审核期间请不要重复付款。"
+          ],
+          tip: "订单里看到「等待客服审核」是正常阶段，不是卡住。"
+        },
+        {
+          id: "b09",
+          no: "09",
+          icon: "✅",
+          title: "陪玩确认",
+          caption: "客服通过后，陪玩才会看到并确认订单。",
+          flow: [
+            "客服审核通过",
+            "陪玩收到订单",
+            "陪玩接受或拒绝",
+            "多人：全部需要确认的陪玩都接受",
+            "订单进入可开始状态"
+          ],
+          body: [
+            "单人订单：该陪玩接受后即可进入下一步。",
+            "多人订单：所有需要确认的陪玩都接受后，订单才能正常开始。"
+          ],
+          tip: "「陪玩接受」不等于「订单完成」，只是服务可以开始。"
+        },
+        {
+          id: "b10",
+          no: "10",
+          icon: "🎮",
+          title: "开始服务",
+          caption: "进入服务阶段后，按约定语音方式沟通。",
+          body: [
+            "订单进入服务阶段后，请按订单约定的语音方式进入，例如 Discord、游戏麦，或其他平台当前支持的方式。",
+            "若订单提供 Discord 加入链接：通常在付款、客服审核通过、订单进入正确状态后，可在订单详情里看到加入入口。",
+            "开始前请再确认游戏 ID、时间与沟通方式，避免对不上号。"
+          ],
+          tip: "找不到加入入口时，先刷新订单详情；仍没有可联系客服协助。"
+        },
+        {
+          id: "b11",
+          no: "11",
+          icon: "🏁",
+          title: "完成订单",
+          caption: "服务结束后再确认完成，才会进入结算。",
+          body: [
+            "服务结束后，老板可以在订单里确认完成。",
+            "确认完成以后，订单进入结算流程。",
+            "请不要混淆：「陪玩接受」只是开始服务；「确认完成」才是服务结束并进入结算。"
+          ],
+          tip: "未实际完成服务前，请勿提前点完成。"
+        },
+        {
+          id: "b12",
+          no: "12",
+          icon: "⭐",
+          title: "评价陪玩",
+          caption: "完成后可根据真实体验评价。",
+          body: [
+            "订单完成后，你可以根据真实体验评价陪玩。",
+            "建议从这些方面评价：服务态度、沟通、游戏体验、是否符合订单约定。",
+            "请客观、真实填写，帮助其他老板参考，也帮助优质陪玩被看见。"
+          ],
+          tip: "评价应基于本次真实服务体验，避免与订单无关的人身攻击。"
+        },
+        {
+          id: "b13",
+          no: "13",
+          icon: "🛟",
+          title: "售后 / 退款",
+          caption: "服务有问题，可通过客服申请售后或退款。",
+          body: [
+            "若未开始服务、陪玩无法履约，或服务与约定严重不符，可在订单详情联系客服申请售后。",
+            "退款是否成立、退回猫粮还是原路退款，以客服审核结果与订单规则为准。",
+            "请保留聊天记录、截图等证据，方便客服尽快处理。",
+            "已正常完成并确认的订单，一般不再按「未服务」退款；有争议请先找客服。"
+          ],
+          tip: "售后请走平台客服，不要私下转账解决，以免无法保障。"
+        },
+        {
+          id: "b14",
+          no: "14",
+          icon: "🎁",
+          title: "送礼物",
+          caption: "可以给喜欢的陪玩送礼物，展示在礼物墙。",
+          body: [
+            "在陪玩主页或礼物相关入口，选择礼物并确认支付（通常使用猫粮余额）。",
+            "礼物送出后，可在陪玩的礼物墙看到记录。",
+            "礼物与陪玩订单是不同流程：送礼不替代下单服务。"
+          ],
+          tip: "送礼前请确认猫粮余额足够；送出后一般不可撤销。"
+        },
+        {
+          id: "b15",
+          no: "15",
+          icon: "🔗",
+          title: "邀请 / 绑定",
+          caption: "邀请好友或绑定陪玩关系，按平台规则享受权益。",
+          body: [
+            "在「我的」或相关活动页，可查看邀请码 / 邀请链接，分享给好友注册。",
+            "部分场景支持老板与陪玩建立绑定 / 直属关系（以页面显示为准）。",
+            "邀请奖励、返利或权益以平台当期规则与后台设置为准，请以页面说明为准。"
+          ],
+          tip: "不要使用违规刷邀请等行为，违者可能被取消奖励或限制账号。"
+        }
+      ]
+    },
+
+    companion: {
+      badge: "陪玩端",
+      title: "陪玩教学",
+      subtitle: "想成为陪玩或已有账号？点开下面步骤，了解登录、接单与收入。",
+      steps: [
+        {
+          id: "c01",
+          no: "01",
+          icon: "🚪",
+          title: "陪玩登录入口",
+          caption: "请用本页入口进入陪玩端，不要用老板登录页。",
+          body: [
+            "点击本页「陪玩登录入口」按钮，进入 /companion/login/ 。",
+            "使用陪玩账号登录后，会进入陪玩端工作台。",
+            "老板与陪玩身份不同，系统会按身份进入对应端。"
+          ],
+          tip: "登录入口在陪玩教学区域底部，粉色大按钮很明显。"
+        },
+        {
+          id: "c02",
+          no: "02",
+          icon: "📝",
+          title: "注册申请",
+          caption: "新陪玩需注册并提交申请资料。",
+          body: [
+            "在陪玩登录页切换「注册陪玩」，用邮箱验证码完成注册。",
+            "注册后填写头像、游戏、简介等申请资料。"
+          ],
+          tip: "注册成功不等于立刻能接单，还需审核通过。"
+        },
+        {
+          id: "c03",
+          no: "03",
+          icon: "🔎",
+          title: "资料与认证审核",
+          caption: "审核通过后才会对外展示并接单。",
+          body: [
+            "状态可能是：草稿、待审核、驳回、通过。",
+            "身份 / 押金认证：上传不等于通过。",
+            "审核未通过前可登录看进度，但不可正式接单。"
+          ],
+          tip: "被驳回时，按原因修改后重新提交。"
+        },
+        {
+          id: "c04",
+          no: "04",
+          icon: "🟢",
+          title: "上线 / 离线状态",
+          caption: "状态影响老板立即下单还是预约。",
+          body: [
+            "在线：老板更容易立即下单。",
+            "离线：老板通常走「立即预约」。",
+            "请保持可接单时间真实。"
+          ]
+        },
+        {
+          id: "c05",
+          no: "05",
+          icon: "📬",
+          title: "接收普通订单",
+          caption: "单人订单会在客服审核通过后出现。",
+          body: [
+            "老板付款后先经客服审核。",
+            "通过后你才会在「订单」看到待确认的普通单。",
+            "请核对游戏、时长、时间、语音方式。"
+          ]
+        },
+        {
+          id: "c06",
+          no: "06",
+          icon: "👥",
+          title: "接收多人订单",
+          caption: "多人单里你只确认自己那一份。",
+          body: [
+            "多人一起下单时，每位陪玩分别收到确认请求。",
+            "全部需要确认的陪玩都接受后，订单才会正常开始。"
+          ]
+        },
+        {
+          id: "c07",
+          no: "07",
+          icon: "📅",
+          title: "接收预约订单",
+          caption: "离线时老板可预约，你仍需接受或拒绝。",
+          body: [
+            "预约单同样先过客服审核，再发给你。",
+            "请按预约时间履约；无法服务请及时拒绝。"
+          ]
+        },
+        {
+          id: "c08",
+          no: "08",
+          icon: "🤝",
+          title: "接受 / 拒绝订单",
+          caption: "确认前先看清订单内容。",
+          body: [
+            "可以服务就点接受；无法服务请及时拒绝。",
+            "拒绝后方便老板更换陪玩或调整人数。"
+          ]
+        },
+        {
+          id: "c09",
+          no: "09",
+          icon: "🧑‍💼",
+          title: "客服审核通过后再确认",
+          caption: "客服通过前，你不能提前确认订单。",
+          body: [
+            "付款提交后订单先进入「等待客服审核」。",
+            "客服通过前，陪玩端通常看不到可确认的单。",
+            "不要以为「老板已付款」就等于你可以立刻点接受。"
+          ],
+          tip: "还没过客服审核时看不到可确认单，属于正常。"
+        },
+        {
+          id: "c10",
+          no: "10",
+          icon: "🎧",
+          title: "开始服务",
+          caption: "按订单约定的语音方式与老板会合。",
+          body: [
+            "接受后按 Discord / 游戏麦等方式会合。",
+            "请准时、礼貌，按约定内容完成。"
+          ]
+        },
+        {
+          id: "c11",
+          no: "11",
+          icon: "🏁",
+          title: "完成订单",
+          caption: "服务结束后再确认完成。",
+          body: [
+            "按页面提示完成确认。",
+            "未实际服务请勿提前点完成。"
+          ]
+        },
+        {
+          id: "c12",
+          no: "12",
+          icon: "💰",
+          title: "收入说明",
+          caption: "完成后可在陪玩端查看收入与流水。",
+          body: [
+            "订单收入会进入陪玩侧结算记录。",
+            "具体金额以钱包 / 流水页面为准。"
+          ]
+        },
+        {
+          id: "c13",
+          no: "13",
+          icon: "🏦",
+          title: "提现规则（满 24 小时）",
+          caption: "订单收入一般需满 24 小时才可提现。",
+          body: [
+            "陪玩订单收入通常有 24 小时锁定期。",
+            "还需满足最低提现金额等平台规则。"
+          ],
+          tip: "可提现时间以钱包页面显示为准。"
+        },
+        {
+          id: "c14",
+          no: "14",
+          icon: "🎁",
+          title: "礼物收入",
+          caption: "老板送礼后会出现在礼物墙 / 收入记录。",
+          body: [
+            "礼物收入可能与订单工资分开展示。",
+            "是否可提现、何时可提现以钱包规则为准。"
+          ]
+        },
+        {
+          id: "c15",
+          no: "15",
+          icon: "🔔",
+          title: "通知说明",
+          caption: "新订单、审核、预约等会通过通知提醒。",
+          body: [
+            "请留意消息 / 系统通知，避免漏单。",
+            "建议开启浏览器通知（若有开关），并定期打开工作台。"
+          ],
+          tip: "长时间不登入容易漏单。"
+        }
+      ]
+    }
   };
 
-  /** Soft visual mocks (~70% UI) when PNG screenshots are not yet uploaded. */
-  var MOCK = {
-    hall:
-      '<div class="gm-screen">' +
-      '<div class="gm-top">陪玩大厅</div>' +
-      '<div class="gm-card gm-hl"><div class="gm-av">晴</div><div class="gm-meta"><b>晴子</b><small>在线 · 金牌 · 已认证</small><em>王者荣耀起 35 猫粮</em></div></div>' +
-      '<div class="gm-card"><div class="gm-av">灰</div><div class="gm-meta"><b>小灰灰</b><small>在线 · 银牌</small><em>三角洲起 30 猫粮</em></div></div>' +
-      '<p class="gm-tip">点卡片进入陪玩详情</p></div>',
-    profile:
-      '<div class="gm-screen">' +
-      '<div class="gm-hero">晴子</div>' +
-      '<div class="gm-chips"><span class="gm-hl">在线</span><span>金牌</span><span>已认证</span></div>' +
-      '<ul class="gm-list"><li>王者荣耀</li><li>三角洲手游国服</li><li>陪聊</li></ul>' +
-      '<p class="gm-tip">先看在线 / 等级 / 认证 / 可接服务</p></div>',
-    pricing:
-      '<div class="gm-screen">' +
-      '<div class="gm-top">选择服务</div>' +
-      '<button class="gm-svc gm-hl" type="button">王者荣耀 · <b>35</b> 猫粮/时</button>' +
-      '<button class="gm-svc" type="button">三角洲手游国服 · <b>30</b> 猫粮/时</button>' +
-      '<button class="gm-svc" type="button">其他服务 · <b>40</b> 猫粮/时</button>' +
-      '<div class="gm-sum">单价 <b>35</b> · 小计 <b>35</b> · 总价 <b>35</b></div>' +
-      '<p class="gm-tip">同一陪玩，不同服务单价不同；切换服务后金额会变</p></div>',
-    singleOrder:
-      '<div class="gm-screen">' +
-      '<div class="gm-top">立即下单</div>' +
-      '<div class="gm-field">服务：王者荣耀</div>' +
-      '<div class="gm-field gm-hl">游戏 ID：______</div>' +
-      '<div class="gm-field">时长：1 小时</div>' +
-      '<div class="gm-sum">单价 35 · 小计 35 · 总价 <b>35</b></div>' +
-      '<button class="gm-cta" type="button">确认订单</button></div>',
-    multiAdd:
-      '<div class="gm-screen">' +
-      '<div class="gm-top">下单中</div>' +
-      '<div class="gm-line">已选：晴子 · 35</div>' +
-      '<button class="gm-cta gm-hl" type="button">+ 再加一位陪玩</button>' +
-      '<p class="gm-tip">继续选陪玩 B，合成一个联合订单</p></div>',
-    multiTeam:
-      '<div class="gm-screen">' +
-      '<div class="gm-top">联合订单</div>' +
-      '<div class="gm-line gm-hl">陪玩 A 晴子 · 35</div>' +
-      '<div class="gm-line gm-hl">陪玩 B 瑞秋 · 50</div>' +
-      '<div class="gm-sum">总价 <b>85</b> 猫粮</div>' +
-      '<p class="gm-tip">一次联合下单，不是分开下两次</p></div>',
-    confirmStatus:
-      '<div class="gm-screen">' +
-      '<div class="gm-top">陪玩确认状态</div>' +
-      '<div class="gm-row"><span class="gm-av sm">灰</span><b>小灰灰</b><i class="gm-ico">🕐</i></div>' +
-      '<div class="gm-row gm-hl"><span class="gm-av sm">晴</span><b>晴子</b><i class="gm-ico">✅</i></div>' +
-      '<div class="gm-row"><span class="gm-av sm">瑞</span><b>瑞秋</b><i class="gm-ico">🕐</i></div>' +
-      '<p class="gm-tip">逐个看谁已确认，不用猜整单</p></div>',
-    unavailable:
-      '<div class="gm-screen gm-dim">' +
-      '<div class="gm-modal gm-hl"><strong>当前陪玩无法接单</strong><p>当前陪玩无法接单，请重新选择陪玩。</p>' +
-      '<button type="button">重新选择陪玩</button><button type="button" class="ghost">稍后处理</button></div>' +
-      '<p class="gm-tip">其他陪玩继续保留，整单不会自动取消</p></div>',
-    replaceSlot:
-      '<div class="gm-screen">' +
-      '<div class="gm-top">陪玩确认状态</div>' +
-      '<div class="gm-row"><span class="gm-av sm">晴</span><b>晴子</b><i class="gm-ico">✅</i></div>' +
-      '<div class="gm-row"><span class="gm-av sm">瑞</span><b>瑞秋</b><i class="gm-ico">🕐</i></div>' +
-      '<button class="gm-slot gm-hl" type="button">+ 重新选择陪玩</button>' +
-      '<p class="gm-tip">退出位置变成补位入口</p></div>',
-    afterReplace:
-      '<div class="gm-screen">' +
-      '<div class="gm-top">补位后</div>' +
-      '<div class="gm-row"><span class="gm-av sm">晴</span><b>晴子</b><i class="gm-ico">✅</i></div>' +
-      '<div class="gm-row"><span class="gm-av sm">瑞</span><b>瑞秋</b><i class="gm-ico">✅</i></div>' +
-      '<div class="gm-row gm-hl"><span class="gm-av sm">D</span><b>新陪玩 D</b><i class="gm-ico">🕐</i></div>' +
-      '<p class="gm-tip">仍属原联合订单；已确认的不用再确认</p></div>',
-    keepRemaining:
-      '<div class="gm-screen">' +
-      '<div class="gm-top">补位区域</div>' +
-      '<button class="gm-slot" type="button">+ 重新选择陪玩</button>' +
-      '<button class="gm-cta gm-hl" type="button">只保留剩余陪玩继续</button>' +
-      '<p class="gm-tip">也可以不补人，只用剩下的陪玩继续</p></div>',
-    payment:
-      '<div class="gm-screen">' +
-      '<div class="gm-top">确认付款</div>' +
-      '<div class="gm-line">有效陪玩合计</div>' +
-      '<div class="gm-sum gm-hl">应付总价 <b>85</b> 猫粮</div>' +
-      '<p class="gm-tip">平台自动算总价，并分别记录每位陪玩的服务</p>' +
-      '<button class="gm-cta" type="button">确认支付</button></div>',
-    orderDetail:
-      '<div class="gm-screen">' +
-      '<div class="gm-top">订单详情</div>' +
-      '<div class="gm-field">订单编号 · 付款状态</div>' +
-      '<div class="gm-row"><span class="gm-av sm">晴</span><b>晴子</b><i class="gm-ico">✅</i></div>' +
-      '<div class="gm-row"><span class="gm-av sm">瑞</span><b>瑞秋</b><i class="gm-ico">🕐</i></div>' +
-      '<p class="gm-tip gm-hl">多人订单：每位陪玩状态都看得清</p></div>',
-    cancelUnpaid:
-      '<div class="gm-screen">' +
-      '<div class="gm-top">我的订单</div>' +
-      '<div class="gm-card"><b>待付款订单</b><small>尚未扣款</small>' +
-      '<button class="gm-cta gm-hl" type="button">取消订单</button></div>' +
-      '<p class="gm-tip">未付款可取消。已付款请走售后/客服，不可随意取消。多人里仅一位无法服务时，只处理该陪玩。</p></div>',
-  };
-
-  var bossSteps = [
-    {
-      id: "boss-hall",
-      module: 1,
-      title: "进入大厅选陪玩",
-      caption: "从首页进陪玩大厅，点陪玩卡片进入详情。",
-      highlight: "陪玩卡片",
-      visualSlot: "boss-01-hall",
-      visualLabel: "陪玩大厅",
-      visualMock: MOCK.hall,
-    },
-    {
-      id: "boss-profile",
-      module: 1,
-      title: "查看陪玩详情",
-      caption: "看清在线状态、等级、认证，以及支持的游戏/服务。",
-      highlight: "在线 / 等级 / 认证",
-      visualSlot: "boss-02-profile",
-      visualLabel: "陪玩详情",
-      visualMock: MOCK.profile,
-    },
-    {
-      id: "boss-pricing",
-      module: 2,
-      title: "不同服务不同价格",
-      caption: "同一陪玩可有多种单价。切换服务后，单价、小计、总价都会跟着变。",
-      highlight: "服务单价",
-      visualSlot: "boss-03-pricing",
-      visualLabel: "按服务计价",
-      visualMock: MOCK.pricing,
-    },
-    {
-      id: "boss-single",
-      module: 3,
-      title: "单人立即下单",
-      caption: "在线陪玩点「立即下单」→ 选服务 → 填游戏 ID → 选开始时间（结束时间自动算）→ 选 Discord/游戏麦 → 确认金额。",
-      highlight: "立即下单",
-      visualSlot: "boss-04-single-order",
-      visualLabel: "单人下单",
-      visualMock: MOCK.singleOrder,
-    },
-    {
-      id: "boss-game-id-time",
-      module: 3,
-      title: "游戏 ID 与服务时间",
-      caption: "只需填写游戏 ID，并用滚轮选开始时间。时长选定后自动显示结束时间，不用自己算。",
-      highlight: "游戏 ID",
-      visualSlot: "boss-04b-game-time",
-      visualLabel: "游戏ID + 时间",
-      visualMock: MOCK.singleOrder,
-    },
-    {
-      id: "boss-voice",
-      module: 3,
-      title: "Discord 或游戏麦",
-      caption: "下单时明确选择语音方式。选 Discord 后，老板与陪玩订单里都能点进同一语音房链接。",
-      highlight: "本单语音方式",
-      visualSlot: "boss-04c-voice",
-      visualLabel: "语音方式",
-      visualMock: MOCK.singleOrder,
-    },
-    {
-      id: "boss-multi-add",
-      module: 4,
-      title: "再加一位陪玩",
-      caption: "下单流程里点「再加一位陪玩」或「继续选陪玩」，会回大厅；已选陪玩草稿不会丢。",
-      highlight: "再加一位陪玩",
-      visualSlot: "boss-05-multi-add",
-      visualLabel: "多人加陪玩",
-      visualMock: MOCK.multiAdd,
-    },
-    {
-      id: "boss-multi-team",
-      module: 4,
-      title: "一个联合订单",
-      caption: "A + B 合成一单，各自可有不同价格（例如 35 + 50 = 85）。不用分开下两次。",
-      highlight: "联合订单总价",
-      visualSlot: "boss-06-multi-team",
-      visualLabel: "联合订单 A+B",
-      visualMock: MOCK.multiTeam,
-    },
-    {
-      id: "boss-confirm",
-      module: 5,
-      title: "等待陪玩确认",
-      caption: "下单后逐个显示陪玩：🕐 等待确认，✅ 已确认。",
-      highlight: "确认状态",
-      visualSlot: "boss-07-confirm-status",
-      visualLabel: "🕐 / ✅ 状态",
-      visualMock: MOCK.confirmStatus,
-    },
-    {
-      id: "boss-unavailable",
-      module: 6,
-      title: "有人无法接单",
-      caption: "某位陪玩拒绝/取消时，其他陪玩继续保留。你会看到「当前陪玩无法接单，请重新选择陪玩。」",
-      highlight: "无法接单提示",
-      visualSlot: "boss-08-unavailable",
-      visualLabel: "无法接单弹窗",
-      visualMock: MOCK.unavailable,
-    },
-    {
-      id: "boss-replace-slot",
-      module: 6,
-      title: "重新选择入口",
-      caption: "原位置出现「+ 重新选择陪玩」。也可稍后处理，随时回来补人。",
-      highlight: "+ 重新选择陪玩",
-      visualSlot: "boss-09-replace-slot",
-      visualLabel: "补位入口",
-      visualMock: MOCK.replaceSlot,
-    },
-    {
-      id: "boss-replace",
-      module: 7,
-      title: "补位加入原订单",
-      caption: "选新陪玩 D 后仍属原联合订单。已确认的陪玩保持 ✅，不用重新确认。",
-      highlight: "补位后状态",
-      visualSlot: "boss-10-after-replace",
-      visualLabel: "补位后 A✅ C✅ D🕐",
-      visualMock: MOCK.afterReplace,
-    },
-    {
-      id: "boss-keep",
-      module: 7,
-      title: "只保留剩余陪玩",
-      caption: "也可以点「只保留剩余陪玩继续」，不补人。",
-      highlight: "只保留剩余陪玩继续",
-      visualSlot: "boss-11-keep-remaining",
-      visualLabel: "只保留其余",
-      visualMock: MOCK.keepRemaining,
-    },
-    {
-      id: "boss-pay",
-      module: 8,
-      title: "付款",
-      caption: "确认有效陪玩后支付总金额。平台自动合计，并分别记录每位陪玩的服务。",
-      highlight: "应付总价",
-      visualSlot: "boss-12-payment",
-      visualLabel: "付款确认",
-      visualMock: MOCK.payment,
-    },
-    {
-      id: "boss-orders",
-      module: 9,
-      title: "我的订单 / 详情",
-      caption: "个人中心 → 我的订单 → 查看详情。多人订单可看清每位陪玩状态。",
-      highlight: "订单详情",
-      visualSlot: "boss-13-order-detail",
-      visualLabel: "订单详情",
-      visualMock: MOCK.orderDetail,
-    },
-    {
-      id: "boss-cancel",
-      module: 10,
-      title: "取消订单",
-      caption: "未付款可直接取消。已付款请走售后/客服。多人里仅一位无法服务时，只处理该陪玩。",
-      highlight: "取消订单",
-      visualSlot: "boss-14-cancel-unpaid",
-      visualLabel: "未付款取消",
-      visualMock: MOCK.cancelUnpaid,
-      requiresProduction: "boss-order-cancel-264",
-    },
-    // Module 11 reservation — code reserved, default hidden until Production.
-    {
-      id: "boss-reservation",
-      module: 11,
-      title: "离线立即预约",
-      caption: "离线陪玩可预约档期；当前未正式上线，教学暂不展示。",
-      highlight: "立即预约",
-      visualSlot: "boss-15-reservation",
-      visualLabel: "立即预约（未上线）",
-      visualMock: "",
-      enabled: false,
-      hiddenReason: "NOT_PRODUCTION",
-    },
-  ];
-
-  var companionSteps = [
-    {
-      id: "pw-1",
-      title: "申请成为陪玩",
-      caption: "从首页「申请陪玩」或「我的 → 申请成为陪玩」进入申请页。",
-      highlight: "申请入口",
-      visualSlot: "pw-01-apply-entry",
-      visualLabel: "申请入口",
-    },
-    {
-      id: "pw-2",
-      title: "阅读陪玩制度",
-      caption: "第一步必须阅读并勾选同意平台陪玩制度，才能继续。",
-      highlight: "我已阅读并同意",
-      visualSlot: "pw-02-rules",
-      visualLabel: "陪玩制度",
-    },
-    {
-      id: "pw-3",
-      title: "填写基本与游戏资料",
-      caption: "填写昵称、联系方式，以及可接游戏、服务、段位等真实字段。",
-      highlight: "基本资料 / 游戏资料",
-      visualSlot: "pw-03-profile-fields",
-      visualLabel: "资料表单",
-    },
-    {
-      id: "pw-4",
-      title: "上传头像与展示内容",
-      caption: "头像与试音为必填；相册、战绩图按页面说明选填。",
-      highlight: "头像 / 试音",
-      visualSlot: "pw-04-media",
-      visualLabel: "媒体上传",
-    },
-    {
-      id: "pw-5",
-      title: "身份验证（二选一）",
-      caption: "身份证认证或押金认证二选一。另需填写结款资料。",
-      highlight: "身份证 或 押金",
-      visualSlot: "pw-05-credential",
-      visualLabel: "认证方式",
-    },
-    {
-      id: "pw-6",
-      title: "提交审核",
-      caption: "提交后等待管理员审核。提交申请 ≠ 自动成为陪玩。",
-      highlight: "提交申请",
-      visualSlot: "pw-06-submit",
-      visualLabel: "审核状态",
-    },
-    {
-      id: "pw-7",
-      title: "审核通过 · 进入工作台",
-      caption: "审核通过后进入陪玩工作台。",
-      highlight: "工作台",
-      visualSlot: "pw-07-dashboard",
-      visualLabel: "陪玩工作台",
-    },
-    {
-      id: "pw-8",
-      title: "抢单、完成与收入",
-      caption: "在抢单大厅接单；完成后到收益中心查看收入并申请提现。",
-      highlight: "抢单大厅 / 收益中心",
-      visualSlot: "pw-08-earn",
-      visualLabel: "抢单与收益",
-    },
-  ];
-
-  function enabledSteps(list) {
-    return (list || []).filter(function (s) {
-      return s && s.enabled !== false;
-    });
+  if (typeof module !== "undefined" && module.exports) {
+    module.exports = GUIDE;
   }
-
-  global.MCJGuideTutorialConfig = {
-    version: "20260920-boss-v2",
-    routes: ROUTES,
-    flags: {
-      // Flip to true only after offline reservation is Production-deployed.
-      reservationTutorialEnabled: false,
-      unpaidCancelTutorialEnabled: true, // #264 merged
-      perServicePricingEnabled: true, // #265 merged
-      multiCompanionEnabled: true, // #262 merged
-    },
-    roles: {
-      boss: {
-        id: "boss",
-        cardTitle: "我是老板",
-        cardEmoji: "🐱",
-        cardDesc: "大厅 / 计价 / 单人·多人下单 / 确认与补位",
-        flowTitle: "老板使用教学",
-        doneTitle: "完成 🎉",
-        doneBody: "可随时在「我的 → 老板使用教学」重看。现在去大厅找陪玩吧。",
-        doneCta: "前往陪玩大厅",
-        doneHref: ROUTES.hall,
-        steps: enabledSteps(bossSteps),
-        allSteps: bossSteps,
-      },
-      companion: {
-        id: "companion",
-        cardTitle: "我是陪玩",
-        cardEmoji: "🎮",
-        cardDesc: "申请入职 / 抢单 / 完成订单 / 收入",
-        flowTitle: "如何成为陪玩并开始接单",
-        doneTitle: "完成 🎉",
-        doneBody: "准备开始你的陪玩之旅",
-        doneCta: "前往陪玩工作台",
-        doneHref: ROUTES.companionDashboard,
-        steps: companionSteps,
-        allSteps: companionSteps,
-      },
-    },
-  };
+  global.MCJ_GUIDE_TUTORIAL = GUIDE;
 })(typeof window !== "undefined" ? window : globalThis);
