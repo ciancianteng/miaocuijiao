@@ -6,11 +6,103 @@
   }
 
   var saving = false;
+  var voiceCatalogCache = null;
+  var voiceCatalogLoading = null;
 
   function esc(v) {
     return String(v == null ? "" : v).replace(/[&<>"']/g, function (c) {
       return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
     });
+  }
+
+  function loadVoiceCatalog() {
+    if (Array.isArray(voiceCatalogCache)) return Promise.resolve(voiceCatalogCache);
+    if (voiceCatalogLoading) return voiceCatalogLoading;
+    var Auth = authApi();
+    voiceCatalogLoading = (Auth && Auth.get
+      ? Auth.get("/api/admin/companion-voice-types")
+      : fetch("/api/admin/companion-voice-types", {
+          headers: { Accept: "application/json", "x-mcj-admin-role": "admin" },
+        }).then(function (res) {
+          return res.json().then(function (body) {
+            if (!res.ok || body.ok === false) throw new Error(body.message || "读取声线失败");
+            return body;
+          });
+        })
+    )
+      .then(function (body) {
+        voiceCatalogCache = (body.items || body.voiceTypes || []).map(function (item) {
+          return {
+            id: String(item.id || ""),
+            name: String(item.name || item.title || "").trim(),
+            enabled: item.enabled !== false,
+          };
+        }).filter(function (item) { return item.name; });
+        return voiceCatalogCache;
+      })
+      .catch(function () {
+        voiceCatalogCache = [];
+        return voiceCatalogCache;
+      })
+      .finally(function () {
+        voiceCatalogLoading = null;
+      });
+    return voiceCatalogLoading;
+  }
+
+  function splitVoiceNames(raw) {
+    return String(raw == null ? "" : raw)
+      .replace(/^声线\s*[:：]\s*/, "")
+      .split(/[,，、|/]+/)
+      .map(function (x) { return String(x || "").trim(); })
+      .filter(Boolean);
+  }
+
+  function voiceEditHtml(currentRaw) {
+    var selected = splitVoiceNames(currentRaw);
+    var selectedSet = {};
+    selected.forEach(function (n) { selectedSet[n] = true; });
+    var catalog = Array.isArray(voiceCatalogCache) ? voiceCatalogCache.slice() : [];
+    var catalogNames = {};
+    catalog.forEach(function (item) { catalogNames[item.name] = true; });
+    selected.forEach(function (name) {
+      if (name !== "其他" && !catalogNames[name]) {
+        catalog.push({ id: "legacy-" + name, name: name, enabled: false });
+        catalogNames[name] = true;
+      }
+    });
+    var otherCustom = selected.filter(function (n) {
+      return n !== "其他" && !catalogNames[n];
+    });
+    var chips = catalog
+      .map(function (item) {
+        var on = !!selectedSet[item.name];
+        var disabledNote = item.enabled === false ? ' <small style="opacity:.65">(已停用)</small>' : "";
+        return (
+          '<label class="pw-check-chip" style="display:inline-flex;align-items:center;gap:6px;margin:0 8px 8px 0;padding:8px 12px;border-radius:999px;border:1px solid rgba(239,171,201,.35);background:rgba(255,255,255,.04);font-size:13px">' +
+          '<input type="checkbox" name="voice_type_opt" value="' +
+          esc(item.name) +
+          '"' +
+          (on ? " checked" : "") +
+          "> " +
+          esc(item.name) +
+          disabledNote +
+          "</label>"
+        );
+      })
+      .join("");
+    return (
+      '<div class="player-edit-grid" style="grid-column:1/-1">' +
+      '<label style="display:grid;gap:8px"><span>声线（可多选）</span>' +
+      '<div data-admin-voice-opts style="display:flex;flex-wrap:wrap">' +
+      (chips || '<span class="muted">暂无声线目录，请先到「声线管理」新增</span>') +
+      "</div>" +
+      '<input name="voiceTypeCustom" type="text" maxlength="40" value="' +
+      esc(otherCustom.join("、")) +
+      '" placeholder="自定义声线（可选，多个用顿号分隔）">' +
+      '<small class="muted">选项来自后台「声线管理」；停用项仅对已绑定陪玩保留显示。与语音录音无关。</small>' +
+      "</label></div>"
+    );
   }
 
   function emptyText(msg) {
@@ -563,6 +655,7 @@
       ["最近登录 IP", d.lastLoginIp || d.last_login_ip || "—"],
     ]);
     if (edit) {
+      var voiceCurrent = d.voiceType || d.voice_type || (d.application && d.application.voiceType) || "";
       basic +=
         '<div class="player-edit-grid">' +
         field("昵称", "nickname", d.name || d.nickname) +
@@ -584,7 +677,8 @@
           { value: "false", label: "否" },
           { value: "true", label: "是" },
         ], d.featured ? "true" : "false") +
-        "</div>";
+        "</div>" +
+        voiceEditHtml(voiceCurrent);
     }
 
     var hallOn = d.hallVisible === true || d.hall_visible === true || d.publishReady === true;
@@ -1103,6 +1197,7 @@
     render: render,
     fetchDetail: apiGetDetail,
     apiPost: apiPost,
+    ensureVoiceCatalog: loadVoiceCatalog,
     openPreview: openPreview,
     closePreview: closePreview,
     setSaving: function (v) {
@@ -1112,6 +1207,9 @@
       return saving;
     },
   };
+
+  // Warm voice catalog for admin companion edit.
+  loadVoiceCatalog();
 
   document.addEventListener("click", function (e) {
     var preview = e.target.closest("[data-player-preview-src]");

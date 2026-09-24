@@ -57,10 +57,21 @@
   var HIDDEN_MVP_ROUTES={};
   var state={route:'dashboard',session:null,data:null,notice:'',loading:false,error:'',walletWarning:'',authTab:'login',loginMethod:'otp',loginError:'',loginBusy:false,registerToken:'',registerVerifiedEmail:'',registerCooldownUntil:0,registerBusy:false,inviteCode:'',forgotStep:'',forgotAccount:'',forgotBusy:false,forgotMsg:'',forgotResetToken:'',profileServices:[],profileVoiceTypes:[],profileCompanionTags:[],profileErrors:{},profileDraft:null,accountDraft:null,uploadBusy:'',galleryPending:[],statusBusy:false,pendingOnlineStatus:null,settlement:null,orderFilter:'all',pollTimer:null,rulesPollTimer:null,ordersCacheAt:0,msgFilter:'all',settings:null,earningsTab:'overview',chatSession:'cs',chatConversationId:'',chatBusy:false,withdrawBusy:false,inbox:null,inboxError:'',hallOrderType:'all',hallGame:'all',drawerOpen:false,_prevDesignated:null,_prevAuditLocked:null,_toastTimer:null,_ordersRtReady:false,_alertedOrderIds:null,_baseDocTitle:'',_focusOrderId:'',myGifts:null,myGiftsBusy:false,myGiftsError:'',giftWall:[],_giftPopupShown:false};
   var IMAGE_ACCEPT='image/jpeg,image/jpg,image/png,image/webp,image/*';
-  /** Companion self-select voice lines — not from admin「声线管理」. */
+  /** Fallback only when platform voice_types empty — admin「声线管理」is SoT. */
   var FIXED_VOICE_OPTIONS=['甜妹','御姐','少御','萝莉','温柔','清冷','慵懒','磁性','少年','青叔','大叔','其他'];
   var FIXED_VOICE_SET={};
   FIXED_VOICE_OPTIONS.forEach(function(n){if(n!=='其他')FIXED_VOICE_SET[n]=1});
+  function activeVoiceOptionNames(){
+    var rows=Array.isArray(state.profileVoiceTypes)?state.profileVoiceTypes:[];
+    var names=rows.map(function(item){return String(item.name||'').trim()}).filter(Boolean);
+    if(!names.length)names=FIXED_VOICE_OPTIONS.slice();
+    if(names.indexOf('其他')===-1)names=names.concat(['其他']);
+    return names;
+  }
+  function rebuildVoiceSet(names){
+    Object.keys(FIXED_VOICE_SET).forEach(function(k){delete FIXED_VOICE_SET[k]});
+    (names||[]).forEach(function(n){if(n&&n!=='其他')FIXED_VOICE_SET[n]=1});
+  }
   var AUDIO_ACCEPT='audio/*,.mp3,.wav,.m4a,.webm,.ogg,audio/mpeg,audio/mp4,audio/wav,audio/webm,audio/aac';
   var voiceRec={
     recorder:null,
@@ -1258,13 +1269,26 @@
       .catch(function(){state.profileServices=[];});
   }
   function loadProfileVoiceTypes(){
-    // Tags still come from admin tag library / defaults. Voice options are fixed client-side.
-    return fetch('/api/platform/content?types=companion_tags',{headers:{Accept:'application/json'},cache:'no-store'})
+    return fetch('/api/platform/content?types=companion_tags,voice_types',{headers:{Accept:'application/json'},cache:'no-store'})
       .then(function(res){return res.json().catch(function(){return {ok:false,byType:{}}})})
       .then(function(body){
-        state.profileVoiceTypes=FIXED_VOICE_OPTIONS.map(function(name,idx){
-          return {id:'voice-fixed-'+idx,name:name,enabled:true};
-        });
+        var voices=(body&&body.byType&&body.byType.voice_types)||[];
+        var fromAdmin=(voices||[]).map(function(item,idx){
+          var d=Object.assign({},item.published||{},item.draft||{},item);
+          return {
+            id:String(item.id||('voice-'+idx)),
+            name:String(d.name||d.title||'').trim(),
+            enabled:item.enabled!==false
+          };
+        }).filter(function(item){return item.name&&item.enabled!==false;});
+        if(fromAdmin.length){
+          state.profileVoiceTypes=fromAdmin;
+        }else{
+          state.profileVoiceTypes=FIXED_VOICE_OPTIONS.map(function(name,idx){
+            return {id:'voice-fixed-'+idx,name:name,enabled:true};
+          });
+        }
+        rebuildVoiceSet(activeVoiceOptionNames());
         var tags=(body&&body.byType&&body.byType.companion_tags)||[];
         state.profileCompanionTags=(tags||[]).map(function(item){
           return {
@@ -1278,6 +1302,7 @@
         state.profileVoiceTypes=FIXED_VOICE_OPTIONS.map(function(name,idx){
           return {id:'voice-fixed-'+idx,name:name,enabled:true};
         });
+        rebuildVoiceSet(activeVoiceOptionNames());
         state.profileCompanionTags=[];
       });
   }
@@ -3772,7 +3797,7 @@
     var voiceSel=splitCompanionVoiceSelection(draft&&Array.isArray(draft.voiceTypes)?draft.voiceTypes:selectedVoiceTypesFromPlayer(p,raw));
     if(draft&&draft.voiceCustom!=null)voiceSel.custom=String(draft.voiceCustom||'');
     if(draft&&draft.voiceOtherOn!=null)voiceSel.otherOn=!!draft.voiceOtherOn;
-    var voiceTypeChecks=FIXED_VOICE_OPTIONS.map(function(name){
+    var voiceTypeChecks=activeVoiceOptionNames().map(function(name){
       var on=name==='其他'?voiceSel.otherOn:(voiceSel.selectedFixed.indexOf(name)!==-1);
       return '<label class="pw-check-chip"><input type="checkbox" name="voice_type_opt" value="'+esc(name)+'" data-voice-opt="'+esc(name)+'" '+(on?'checked':'')+'> '+esc(name)+'</label>';
     }).join('');

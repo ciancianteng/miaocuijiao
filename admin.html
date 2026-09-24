@@ -85,6 +85,7 @@
         <button type="button" data-section="rules-hub">制度与等级</button>
         <button type="button" data-section="games">服务管理</button>
         <button type="button" data-section="companion-tags">陪玩标签</button>
+        <button type="button" data-section="voice-types">声线管理</button>
         <button type="button" data-section="companion-cert-tags">认证徽章管理</button>
         <button type="button" data-section="gameplays">更多玩法管理</button>
         <button type="button" data-section="team-lobby-links">社区链接 / 组队大厅</button>
@@ -134,6 +135,7 @@
         <section class="section" id="section-games"><section class="panel"><h2>服务管理</h2><div id="gameManagement"></div></section></section>
         <section class="section" id="section-service-types"><section class="panel"><h2>服务类型管理</h2><div id="serviceTypeManagement"></div></section></section>
         <section class="section" id="section-companion-tags"><section class="panel"><h2>陪玩标签管理</h2><div id="companionTagManagement"></div></section></section>
+        <section class="section" id="section-voice-types"><section class="panel"><h2>声线管理</h2><div id="companionVoiceTypeManagement"></div><div id="table-voice_types" hidden></div></section></section>
         <section class="section" id="section-companion-cert-tags"><section class="panel"><div id="companionCertTagManagement"></div></section></section>
         <section class="section" id="section-featured-players"><section class="panel"><h2>推荐陪玩管理</h2><div id="featuredPlayerManagement"></div></section></section>
         <section class="section" id="section-hot-games"><section class="panel"><h2>热门游戏管理</h2><div id="hotGameManagement"></div></section></section>
@@ -164,7 +166,6 @@
         <section class="section" id="section-gameplay-qualifications"><section class="panel"><h2>玩法资格审核</h2><div id="table-gameplay_qualifications"></div></section></section>
         <section class="section" id="section-rules-hub"><section class="panel"><div id="rulesHubMount"></div></section></section>
         <section class="section" id="section-companion-rules"><section class="panel"><h2>制度管理 · 陪玩申请制度</h2><p class="muted" style="margin:0 0 12px;color:rgba(255,255,255,.62)">请改用左侧「制度与等级」。本页保留兼容。</p><div id="table-companion_rules_legacy"></div></section></section>
-        <section class="section" id="section-voice-types"><section class="panel"><h2>声音类型管理</h2><div id="table-voice_types"></div></section></section>
         <section class="section" id="section-companion-deposit"><section class="panel"><h2>陪玩押金设置</h2><div id="table-companion_deposit"></div></section></section>
         <section class="section" id="section-companion-applications"><section class="panel"><h2>陪玩申请审核</h2><div id="table-companion_applications"></div></section></section>
         <section class="section" id="section-statistics"><section class="panel"><h2>统计中心</h2><div id="statisticsPanel"></div></section></section>
@@ -207,11 +208,12 @@
   <script src="/src/admin-service-manager.js"></script>
   <script src="/src/admin-companion-levels.js?v=20260907levelHub1"></script>
   <script src="/src/admin-companion-tags.js?v=20260907prodClean1"></script>
+  <script src="/src/admin-companion-voice-types.js?v=20260924voiceAdmin1"></script>
   <script src="/src/admin-companion-cert-tags.js?v=20260907certBadges2"></script>
   <script src="/src/admin-gameplay-mall.js?v=20260806p0final1"></script>
   <script src="/src/admin-team-lobby.js?v=20260911community1"></script>
   <script src="/src/admin-profile.js?v=20260809withdrawRevealP0"></script>
-  <script src="/src/admin-player-detail.js?v=20260920servicePricingDedup"></script>
+  <script src="/src/admin-player-detail.js?v=20260924voiceAdmin1"></script>
   <script src="/src/admin-recharge-campaigns.js"></script>
   <script src="/src/admin-recharge-review.js?v=20260810rechargeLoop1"></script>
   <script src="/src/admin-compensation-review.js"></script>
@@ -222,7 +224,7 @@
   <script src="/src/admin-boss-companion-relations.js?v=20260907prodClean1"></script>
   <script src="/src/admin-boss-vip.js?v=20260921bossVipAdmin2"></script>
   <script src="/src/admin-popularity.js?v=20260815adminPopDisabled2"></script>
-  <script src="/src/admin-suite.js?v=20260922batchApprove2"></script>  <script src="/src/admin-companion-applications.js?v=20260922batchApprove2"></script>
+  <script src="/src/admin-suite.js?v=20260924voiceAdmin1"></script>  <script src="/src/admin-companion-applications.js?v=20260922batchApprove2"></script>
   <script src="/src/admin-service-accounts.js?v=20260907prodClean1"></script>
   <script src="/src/admin-cs-rewards.js?v=20260809csRewardLayout2"></script>
   <script src="/src/admin-rules-hub.js?v=20260907levelHub1"></script>

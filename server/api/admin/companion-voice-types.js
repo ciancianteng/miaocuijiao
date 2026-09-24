@@ -4,13 +4,51 @@ import {
   updateVoiceTypes,
   normalizeVoiceType,
   toPublicVoiceType,
+  splitVoiceTypeNames,
 } from "../_companion-voice-types-store.js";
 import { requireAdmin as requireAdminJwt } from "../_admin-auth.js";
 
 const ADMIN_ROLES = new Set(["admin", "super_admin"]);
 
+function env(key) {
+  if (key === "SUPABASE_URL") return process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "";
+  return process.env[key] || "";
+}
+
 function json(res, status, data) {
   res.status(status).json(data);
+}
+
+async function countCompanionsUsingVoiceName(name) {
+  const label = String(name || "").trim();
+  if (!label) return 0;
+  const url = env("SUPABASE_URL");
+  const key = env("SUPABASE_SERVICE_ROLE_KEY");
+  if (!url || !key) return 0;
+  try {
+    const endpoint =
+      url.replace(/\/$/, "") +
+      "/rest/v1/companion_profiles?select=id,voice_type&voice_type=not.is.null&voice_type=neq.&limit=2000";
+    const response = await fetch(endpoint, {
+      headers: {
+        apikey: key,
+        Authorization: "Bearer " + key,
+        Accept: "application/json",
+      },
+    });
+    if (!response.ok) {
+      console.warn("[voice-types] usage scan HTTP", response.status);
+      return 0;
+    }
+    const data = await response.json().catch(() => []);
+    const needle = label.toLowerCase();
+    return (Array.isArray(data) ? data : []).filter((row) =>
+      splitVoiceTypeNames(row.voice_type).some((n) => String(n).toLowerCase() === needle)
+    ).length;
+  } catch (err) {
+    console.warn("[voice-types] usage scan exception", err?.message || err);
+    return 0;
+  }
 }
 
 async function parseBody(req) {
@@ -98,6 +136,21 @@ export default async function handler(req, res) {
     if (action === "delete") {
       const id = String(body.id || "").trim();
       if (!id) return json(res, 400, { ok: false, message: "缺少声线 ID。" });
+      const items = await readVoiceTypes();
+      const target = items.find((item) => String(item.id) === id);
+      if (!target) return json(res, 404, { ok: false, message: "声线不存在。" });
+      const usage = await countCompanionsUsingVoiceName(target.name);
+      if (usage > 0) {
+        return json(res, 409, {
+          ok: false,
+          code: "VOICE_TYPE_IN_USE",
+          usageCount: usage,
+          message:
+            "已有 " +
+            usage +
+            " 位陪玩使用该声线，不能直接删除。请先在陪玩资料中迁移/改掉该声线，或改为「停用」。",
+        });
+      }
       await updateVoiceTypes(async (list) => {
         const next = list.filter((item) => String(item.id) !== id);
         list.splice(0, list.length, ...next);

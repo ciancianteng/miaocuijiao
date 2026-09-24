@@ -761,16 +761,24 @@
   }
   function orderSummary(orders,apiSummary){
     if(apiSummary)return apiSummary;
+    var roots=(orders||[]).filter(function(x){
+      return !(x.parentOrderId||x.parent_order_id||x.isMultiGroupChild);
+    });
     return {
-      total:orders.length,
+      total:roots.length,
       todayOrders:0,
-      pendingPayment:orders.filter(function(x){return x.orderStatus==='待支付'}).length,
-      pendingAccept:orders.filter(function(x){return x.orderStatus==='待接单'}).length,
-      inProgress:orders.filter(function(x){return x.orderStatus==='进行中'}).length,
-      completed:orders.filter(function(x){return x.orderStatus==='已完成'}).length,
-      afterSale:orders.filter(function(x){return /售后/.test(x.orderStatus)}).length,
-      revenue:orders.reduce(function(n,x){return n+x.amount},0),
-      profit:orders.reduce(function(n,x){return n+x.platformProfit},0)
+      pendingPayment:roots.filter(function(x){return x.orderStatus==='待支付'||x.status==='awaiting_payment'}).length,
+      pendingAccept:roots.filter(function(x){return x.orderStatus==='待接单'||x.status==='pending'||x.status==='claimed'}).length,
+      inProgress:roots.filter(function(x){return x.orderStatus==='进行中'||x.status==='in_progress'}).length,
+      completed:roots.filter(function(x){return x.orderStatus==='已完成'||x.status==='completed'}).length,
+      afterSale:roots.filter(function(x){return /售后/.test(x.orderStatus)||x.status==='refund_requested'}).length,
+      revenue:roots.reduce(function(n,x){
+        if(x.status==='awaiting_payment'||x.status==='cancelled'||x.status==='refunded')return n;
+        if(/待付款|已取消|已退款/.test(String(x.orderStatus||'')))return n;
+        return n+Number(x.amount||0);
+      },0),
+      profit:roots.reduce(function(n,x){return n+Number(x.platformProfit||0)},0),
+      gmvScope:'parent_order_id IS NULL only'
     };
   }
   function orderManagementHtml(orders,summary,configured){
@@ -1180,13 +1188,20 @@
         drawer.innerHTML='<div class="player-drawer-head"><div><h2>陪玩详情</h2><p>资料加载失败</p></div><button class="mini-btn" type="button" data-player-drawer-close>关闭</button></div><div class="admin-sync-note">资料加载失败，请重试：'+esc(err.message||err)+'</div><div class="player-drawer-actions"><button class="btn" type="button" data-player-action="view" data-player-id="'+esc(playerId)+'">重试</button><button class="btn" type="button" data-player-drawer-close>关闭</button></div>';
         return;
       }
-      if(Detail&&Detail.render){
-        drawer.innerHTML=Detail.render(detail,mode||'view',focus||'');
-      }else{
-        var item=normalizePlayerAdmin(detail);
-        drawer.innerHTML=playerDetailHtml(item,mode||'view',focus||'');
+      var paint=function(){
+        if(Detail&&Detail.render){
+          drawer.innerHTML=Detail.render(detail,mode||'view',focus||'');
+        }else{
+          var item=normalizePlayerAdmin(detail);
+          drawer.innerHTML=playerDetailHtml(item,mode||'view',focus||'');
+        }
+        if(focus){var section=drawer.querySelector('[data-player-detail-section="'+focus+'"]');if(section)section.scrollIntoView({block:'start'});}
+      };
+      if((mode||'view')==='edit'&&Detail&&Detail.ensureVoiceCatalog){
+        Detail.ensureVoiceCatalog().then(paint).catch(paint);
+        return;
       }
-      if(focus){var section=drawer.querySelector('[data-player-detail-section="'+focus+'"]');if(section)section.scrollIntoView({block:'start'});}
+      paint();
     };
     if(Detail&&Detail.fetchDetail){
       Detail.fetchDetail(playerId).then(function(res){
@@ -1309,6 +1324,11 @@
         data.certTagIds.push(value);
         return;
       }
+      if(key==='voice_type_opt'||key==='voiceTypeOpt'){
+        if(!Array.isArray(data.voiceTypeOpts))data.voiceTypeOpts=[];
+        data.voiceTypeOpts.push(value);
+        return;
+      }
       var m=String(key).match(/^servicePrices\[(\d+)\]\[(\w+)\]$/);
       if(m){
         var idx=Number(m[1]);
@@ -1328,6 +1348,7 @@
       }
     }
     if(form.querySelector('[name="certTagIds"]')&&!Object.prototype.hasOwnProperty.call(data,'certTagIds'))data.certTagIds=[];
+    if(form.querySelector('[name="voice_type_opt"]')&&!Object.prototype.hasOwnProperty.call(data,'voiceTypeOpts'))data.voiceTypeOpts=[];
     return data;
   }
   function updatePlayerRowInMemory(id,payload){
@@ -1643,7 +1664,7 @@
     'custom-order-settings':{target:'table-custom_orders',title:'自定义订单设置',type:'custom_order_fields',desc:'配置老板自定义订单页面字段，发布后前台表单同步。',fields:['fieldKey','fieldName','placeholder','fieldType','required','visible','options','min','max','sort']},
     'gameplay-qualifications':{target:'table-gameplay_qualifications',title:'玩法资格审核',type:'gameplay_qualifications',desc:'管理陪玩固定玩法服务资格，审核后同步抢单和建单权限。',fields:['applicationId','uid','nickname','gameplay','materials','auditStatus','reviewer','remark']},
     'companion-rules':{target:'table-companion_rules',title:'陪玩申请制度',type:'player_rules',desc:'编辑标题、正文后保存并应用，陪玩申请第 1 步立即读取最新内容。',fields:['title','body','versionNote','notes','penaltyRules','depositRules','sort']},
-    'voice-types':{target:'table-voice_types',title:'声音类型管理',type:'voice_types',desc:'同步陪玩申请、陪玩资料编辑、陪玩大厅筛选和陪玩详情。',fields:['name','description','sort']},
+    'voice-types':{target:'companionVoiceTypeManagement',title:'声线管理',type:'voice_types',desc:'已迁移至专用声线管理模块。',fields:['name','description','sort'],disabled:true},
     'availability-times':{target:'availabilityTimeManagement',title:'可接单时间配置',type:'availability_times',desc:'配置上午、下午、晚上、深夜和自定义时间段，陪玩申请和资料编辑同步读取。',fields:['name','weekdays','startTime','endTime','sort']},
     'vip-levels':{target:'vipLevelManagement',title:'VIP等级管理',type:'vip_levels',desc:'管理老板 VIP 等级、累计消费门槛、权益、优惠券权益和客服优先级。',fields:['code','name','spendThreshold','icon','description','benefits','couponBenefits','servicePriority','sort']},
     badges:{target:'badgeManagement',title:'徽章 / 身份组管理',type:'badges',desc:'管理老板、陪玩、客服、管理员身份组和前台徽章展示。',fields:['icon','name','description','condition','role','showPublic','sort']},
@@ -2111,7 +2132,7 @@
     'gameplay-qualifications':['玩法资格审核','陪玩固定玩法服务资格审核'],
     'companion-rules':['制度管理 · 陪玩申请制度','编辑陪玩申请第 1 步制度标题、正文与启用状态'],
     'rules-hub':['制度与等级','唯一等级配置入口：俱乐部等级说明、陪玩等级、升级规则、强制公告与阅读记录'],
-    'voice-types':['声音类型管理','声音标签、分类和筛选项'],
+    'voice-types':['声线管理','维护陪玩声线选项：新增、改名、排序、启用/停用'],
     'companion-deposit':['陪玩押金设置','押金金额、审核规则和状态'],
     'companion-applications':['陪玩申请审核','陪玩入驻申请、资料和认证审核'],
     'service-accounts':['客服管理','创建、启用和停用客服登录账号'],

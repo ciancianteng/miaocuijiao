@@ -1,11 +1,5 @@
--- Companion voice types (声线 catalog; separate from companion_tags and audio samples).
--- Idempotent / production-safe:
---   create table if not exists
---   indexes if not exists
---   policy create with duplicate_object guard
---   seed insert on conflict do nothing (never overwrite existing rows)
--- Does NOT drop, truncate, or update existing voice rows.
--- Does NOT touch companion_profiles.voice_type historical values.
+-- Mirror of migrations/20260804_companion_voice_types.sql for pending-prod apply pipeline.
+-- Safe / idempotent. Does not touch companion_profiles.voice_type.
 
 create table if not exists public.companion_voice_types (
   id text primary key,
@@ -33,7 +27,6 @@ exception when duplicate_object then null; end $$;
 grant select on public.companion_voice_types to anon, authenticated;
 grant select, insert, update, delete on public.companion_voice_types to service_role;
 
--- Seed matches DEFAULT_VOICE_TYPES in server/api/_companion-voice-types-store.js
 insert into public.companion_voice_types (id, name, description, sort_order, is_enabled)
 values
   ('voice-tianmei', '甜妹', '甜美可爱', 1, true),
