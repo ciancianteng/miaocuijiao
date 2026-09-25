@@ -2295,12 +2295,22 @@ export default async function handler(req, res) {
         addSystemMessage: async (order, actorId, content) => addSystemMessage(order, actorId || profile.id, content),
       });
       try {
-        const out = await helpers.finalizeOrderCompletion(before, {
-          method: "boss_manual",
-          actorId: profile.id,
-          message: "老板已确认完成订单。",
-        });
-        
+        const { isMultiGroupParent, ORDER_TYPE_MULTI_GROUP } = await import("./_order-group.js");
+        const isMultiParent =
+          (isMultiGroupParent(before) ||
+            String(before.order_type || "").toLowerCase() === ORDER_TYPE_MULTI_GROUP) &&
+          !before.parent_order_id;
+        const out = isMultiParent
+          ? await helpers.finalizeMultiParentBossConfirm(before, {
+              actorId: profile.id,
+              message: "老板已确认完成订单。",
+            })
+          : await helpers.finalizeOrderCompletion(before, {
+              method: "boss_manual",
+              actorId: profile.id,
+              message: "老板已确认完成订单。",
+            });
+
         try {
           const { notifyBossOrderEvent } = await import("./_boss-order-notify.js");
           await notifyBossOrderEvent(out.order || before, {
@@ -2311,7 +2321,7 @@ export default async function handler(req, res) {
         } catch (err) {
           console.warn("[orders/confirm_completion] boss push", err?.message || err);
         }
-      return json(res, 200, {
+        return json(res, 200, {
           ok: true,
           message: out.message || "已确认完成，订单已完成。",
           order: viewOrder(out.order || before),
@@ -2319,12 +2329,18 @@ export default async function handler(req, res) {
           settlement: out.settlement || null,
           completionMethod: out.completionMethod || "boss_manual",
           duplicate: !!out.duplicate,
+          children: Array.isArray(out.children)
+            ? out.children.map((c) => (c?.order ? viewOrder(c.order) : c))
+            : undefined,
         });
       } catch (err) {
         const status = Number(err?.status) || 500;
         return json(res, status >= 400 && status < 600 ? status : 500, {
           ok: false,
           message: err?.message || "确认完成失败。",
+          code: err?.code || undefined,
+          readyCount: err?.readyCount,
+          totalCount: err?.totalCount,
         });
       }
     }

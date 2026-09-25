@@ -305,6 +305,8 @@ function safeOrder(row, profiles, extras = {}) {
     paymentReviewedAt: review.paymentReviewedAt || "",
     paymentReviewStatus: reviewStatus,
     paymentReviewResult: reviewResultLabel(reviewStatus),
+    paymentReviewerRole: review.paymentReviewerRole || review.reviewerRole || "",
+    reviewerRole: review.paymentReviewerRole || review.reviewerRole || "",
     paymentRejectReason: review.paymentRejectReason || "",
     orderStatus,
     status,
