@@ -466,7 +466,6 @@ export async function placeMultiOrder(ctx) {
         status: "awaiting_payment",
         created_at: nowIso(),
         idempotency_key: childIdempotencyKey(idempotencyKey, line.companionId, i),
-        payment_method: paymentMethod,
         service_name: line.serviceType,
         game_id_value: line.gameId,
         notes: description,
@@ -590,9 +589,8 @@ export async function cascadeMultiChildrenToClaimed(deps, parent, { paidAtIso, n
       continue;
     }
     const lineAmt = money ? money(child.total_amount) : Number(child.total_amount) || 0;
+    // Allocation only — never stamp paid_cat_food (Boss payment SoT = parent once).
     const childPatches = [
-      { status: "claimed", paid_at: at, paid_cat_food: lineAmt },
-      { status: "claimed", paid_cat_food: lineAmt },
       { status: "claimed" },
     ];
     let savedChild = child;

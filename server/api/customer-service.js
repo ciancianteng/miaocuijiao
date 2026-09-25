@@ -1195,6 +1195,12 @@ async function loadBootstrap(serviceProfile) {
     orders = sortOrdersByActivityDesc(ordersUnsorted);
   } catch {
     orders = ordersUnsorted;
+  }
+  try {
+    const { nestParentOnlyOrders } = await import("./_order-group.js");
+    orders = nestParentOnlyOrders(orders);
+  } catch (_) {
+    orders = (orders || []).filter((o) => !o.isMultiGroupChild && !o.parentOrderId);
   } const msgByConv = messagesRaw.reduce((map, msg) => { (map[msg.conversation_id] = map[msg.conversation_id] || []).push(msg); return map; }, {}); const conversationsMapped = conversationsRaw.map((row) => { const boss = profiles[row.boss_id] || {}; const companionProf = profiles[row.companion_id] || {}; const service = profiles[row.customer_service_id] || {}; const msgs = msgByConv[row.id] || []; const last = msgs[msgs.length - 1] || {}; const bossUid = bossForCs(boss).bossUid; const isCompanionSupport = String(row.conversation_type || "") === "companion_support" || (!row.boss_id && row.companion_id); const isClosed = row.status === "closed" || row.status === "ended"; const convStatus = isClosed ? "已结束" : (row.customer_service_id ? "正在接待" : "待接待"); const lastReadAt = row.last_read_at || ""; const unreadRoles = isCompanionSupport ? ["companion"] : ["boss"];   const unreadBoss = isClosed ? [] : msgs.filter((m) => {
     if (!unreadRoles.includes(m.sender_role) || m.read_at) return false;
     if (lastReadAt && String(m.created_at || "") <= String(lastReadAt)) return false;

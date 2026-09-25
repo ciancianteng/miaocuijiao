@@ -271,7 +271,7 @@
         ['老板编号',o.bossUid||'-']
       ])+
       detailSection('③ 陪玩信息',[
-        ['陪玩昵称',o.companionName||o.playerName||'-'],
+        ['陪玩昵称',o.companionsLabel||o.companionName||o.playerName||'-'],
         ['陪玩编号',o.companionCode||o.playerUid||'-'],
         ['服务项目',o.serviceContent||o.game||'-']
       ])+
@@ -369,7 +369,7 @@
           return '<tr data-order-row="'+esc(o.id)+'"'+(hasProof?' data-has-proof="1"':'')+'>'+
             '<td class="admin-orders-col-no" title="'+esc(displayOrderNo(o))+'"><strong>'+esc(displayOrderNo(o))+'</strong></td>'+
             '<td class="admin-orders-col-party">'+displayParty(o.bossName,o.bossUid)+'</td>'+
-            '<td class="admin-orders-col-party">'+displayParty(o.companionName||o.playerName,o.companionCode||o.playerUid)+'</td>'+
+            '<td class="admin-orders-col-party">'+displayParty(o.companionsLabel||o.companionName||o.playerName,o.companionCode||o.playerUid)+'</td>'+
             '<td class="admin-orders-col-amount">'+money(o.totalAmount)+'</td>'+
             '<td class="admin-orders-col-pay">'+esc(o.paymentMethod||'-')+'</td>'+
             '<td class="admin-orders-col-status">'+statusPill(o.paymentStatus||'-')+'</td>'+

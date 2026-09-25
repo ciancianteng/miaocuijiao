@@ -401,10 +401,17 @@ function bossHint(row = {}) {
   return "";
 }
 function paymentStatusLabel(row = {}) {
+  // Multi child = allocation only — never an independent Boss payment.
+  if (row.parent_order_id) {
+    const s = String(row.status || "");
+    if (s === "awaiting_payment") return "待主单付款";
+    if (s === "cancelled" || s === "refunded") return "已取消";
+    return "主单已付·分配";
+  }
   const s = row.status || "";
-    if (s === "awaiting_payment") {
-      return row.paymentReceipt ? "待客服审核" : "待付款";
-    }
+  if (s === "awaiting_payment") {
+    return row.paymentReceipt ? "待客服审核" : "待付款";
+  }
   if (s === "cancelled") return "已取消";
   return "已付款";
 }
@@ -434,17 +441,18 @@ function viewOrder(row = {}) {
   const serviceName = String(row.service_name || row.serviceName || row.game || row.title || "").trim();
   const gameId = String(row.game_id_value || row.game_id || row.gameId || gameIdFromDesc || "").trim();
   const paymentMethodRaw = String(row.payment_method || row.paymentMethod || payFromDesc || "").trim();
-  const paymentMethod =
-    normalizePaymentChannelId(paymentMethodRaw) ||
-    (/duitnow/i.test(paymentMethodRaw)
-      ? "duitnow"
-      : /tng/i.test(paymentMethodRaw)
-        ? "tng"
-        : /alipay|支付宝/i.test(paymentMethodRaw)
-          ? "alipay"
-          : /bank|银行/i.test(paymentMethodRaw)
-            ? "bank-transfer"
-            : paymentMethodRaw);
+  const paymentMethod = row.parent_order_id
+    ? "主单分配"
+    : normalizePaymentChannelId(paymentMethodRaw) ||
+      (/duitnow/i.test(paymentMethodRaw)
+        ? "duitnow"
+        : /tng/i.test(paymentMethodRaw)
+          ? "tng"
+          : /alipay|支付宝/i.test(paymentMethodRaw)
+            ? "alipay"
+            : /bank|银行/i.test(paymentMethodRaw)
+              ? "bank-transfer"
+              : paymentMethodRaw);
   const companionName =
     (row.companion && (row.companion.display_name || row.companion.nickname || row.companion.email)) ||
     row.companion_name ||
@@ -572,7 +580,13 @@ function viewOrder(row = {}) {
     unitPrice: money(row.unit_price),
     totalAmount: money(row.total_amount),
     amount: money(row.total_amount),
-    paidCatFood: money(row.paid_cat_food || (status !== "awaiting_payment" && status !== "cancelled" ? row.total_amount : 0)),
+    allocatedAmount: row.parent_order_id ? money(row.total_amount) : null,
+    amountKind: row.parent_order_id ? "allocation" : "payment",
+    amountLabel: row.parent_order_id ? "分配金额" : "订单金额",
+    // Child rows must never surface as Boss paidCatFood / independent payment.
+    paidCatFood: row.parent_order_id
+      ? 0
+      : money(row.paid_cat_food || (status !== "awaiting_payment" && status !== "cancelled" ? row.total_amount : 0)),
     status,
     dbStatus: row.status || "awaiting_payment",
     flowStatus,
@@ -866,7 +880,7 @@ async function loadOrders(profile, id = "") {
       approvedByOrder = {};
     }
   }
-  return orders.map((row, index) => {
+  const viewedList = orders.map((row, index) => {
     const rev = reviewByOrder[row.id];
     const grabs = grabLists[index] || [];
     const intent = parseBossIntent(row);
@@ -908,6 +922,13 @@ async function loadOrders(profile, id = "") {
     }
     return viewed;
   });
+  // Boss list: parent/standalone only; nest child allocations under parent (never show as paid 35).
+  try {
+    const { nestParentOnlyOrders } = await import("./_order-group.js");
+    return nestParentOnlyOrders(viewedList);
+  } catch {
+    return viewedList.filter((o) => !o.isMultiGroupChild && !o.parentOrderId);
+  }
 }
 async function ensureConversation(order, bossId) {
   // Boss↔CS order_support only. Never stamp companion_id; never reuse companion_support by order_id.
