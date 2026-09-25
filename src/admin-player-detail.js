@@ -1014,6 +1014,39 @@
           );
         })
         .join("") || emptyText("尚未上传展示视频");
+    var achievementItems = media.achievements || media.records || [];
+    var achievementUrls = achievementItems
+      .filter(function (item) {
+        return item && item.url;
+      })
+      .map(function (item) {
+        return { src: item.url, title: "游戏战绩" };
+      });
+    var achievementJson = JSON.stringify(achievementUrls);
+    var achievementHtml =
+      achievementUrls.length
+        ? '<div class="player-gallery-grid">' +
+          achievementItems
+            .map(function (item, idx) {
+              if (!item || !item.url) return "";
+              var isVid = /^video\//i.test(String(item.contentType || item.content_type || "")) || /\.(mp4|webm|mov)(\?|$)/i.test(item.url);
+              if (isVid) {
+                return (
+                  '<div class="player-gallery-cell player-video-card">' +
+                  '<video controls playsinline preload="metadata" src="' +
+                  esc(item.url) +
+                  '" style="width:100%;border-radius:10px;background:#000"></video></div>'
+                );
+              }
+              return (
+                '<div class="player-gallery-cell">' +
+                galleryThumb(item.url, "游戏战绩", idx, achievementJson, item.statusLabel) +
+                "</div>"
+              );
+            })
+            .join("") +
+          "</div>"
+        : emptyText("尚未上传游戏战绩");
     var mediaHtml =
       rows([
         {
@@ -1026,14 +1059,17 @@
         ["驳回原因", media.rejectReason || "无"],
         ["照片", String((media.gallery || []).length) + " 张"],
         ["视频", String((media.videos || []).length) + " 个"],
+        ["游戏战绩", String(achievementItems.length) + " 个"],
         ["声线", String((media.voices || []).length) + " 条"],
       ]) +
       "<h4 class=\"player-media-h\">相册</h4>" +
       galleryHtml +
-      "<h4 class=\"player-media-h\">语音</h4>" +
-      voiceHtml +
       "<h4 class=\"player-media-h\">展示视频</h4>" +
-      videoHtml;
+      videoHtml +
+      "<h4 class=\"player-media-h\">游戏战绩</h4>" +
+      achievementHtml +
+      "<h4 class=\"player-media-h\">语音</h4>" +
+      voiceHtml;
 
     var split =
       (edit ? "" : servicePricesViewHtml(d)) +

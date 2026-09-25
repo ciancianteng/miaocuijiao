@@ -233,12 +233,34 @@
       : '<p class="pd-voice-empty">暂未上传语音介绍</p>';
     var videoUrl = String(c.videoUrl || c.showcaseVideoUrl || "").trim();
     var hasVideo = !!(videoUrl && /^https?:\/\//i.test(videoUrl));
-    var videoHtml = hasVideo
-      ? '<div class="pd-video-player"><video controls playsinline preload="metadata" src="' +
-        esc(videoUrl) +
-        '"></video></div>'
+    var videoList = Array.isArray(c.videos)
+      ? c.videos.filter(function (v) {
+          return v && v.url && /^https?:\/\//i.test(String(v.url));
+        })
+      : [];
+    if (!videoList.length && hasVideo) videoList = [{ url: videoUrl }];
+    var videoHtml = videoList.length
+      ? '<div class="pd-video-rail" data-pd-video-rail>' +
+        videoList
+          .slice(0, 20)
+          .map(function (v, i) {
+            return (
+              '<div class="pd-video-player"><video controls playsinline preload="none" src="' +
+              esc(v.url) +
+              '" data-pd-video-index="' +
+              i +
+              '"></video></div>'
+            );
+          })
+          .join("") +
+        "</div>"
       : "";
     var galleryList = Array.isArray(c.gallery) ? c.gallery.filter(function (g) { return g && g.url; }) : [];
+    var achievementList = Array.isArray(c.achievements)
+      ? c.achievements.filter(function (a) {
+          return a && a.url;
+        })
+      : [];
     var levelText = c.levelLabel || c.level || c.levelName || "-";
     var priceText = displayCurrency(
       (window.MCJCurrency && c.priceDisplay ? window.MCJCurrency.rewriteLegacy(c.priceDisplay) : "") ||
@@ -368,13 +390,67 @@
         : '<p class="pd-album-empty">暂无相册内容</p>';
     var albumSectionHtml =
       '<section class="detail-card game-wall pd-album-card" data-pd-album-section>' +
-      '<div class="section-head"><h2>陪玩相册</h2>' +
+      '<div class="section-head"><h2>照片</h2>' +
       (galleryList.length ? "<span>" + galleryList.length + " 张</span>" : "") +
       "</div>" +
       (galleryList.length
-        ? '<div class="wall-grid" data-profile-album>' + galleryWall + "</div>"
+        ? '<div class="wall-grid pd-media-rail" data-profile-album>' + galleryWall + "</div>" +
+          (galleryList.length > 12
+            ? '<button type="button" class="pd-album-more" data-pd-album-more>查看更多（' +
+              galleryList.length +
+              "）</button>"
+            : "")
         : '<div class="pd-album-empty-wrap">' + galleryWall + "</div>") +
       "</section>";
+    var achievementWall =
+      achievementList.length > 0
+        ? achievementList
+            .slice(0, 12)
+            .map(function (g, idx) {
+              var url = String(g.url || "");
+              var isVideo =
+                /\.(mp4|webm|mov)(\?|$)/i.test(url) ||
+                /^video\//i.test(String(g.contentType || g.content_type || "")) ||
+                /video/i.test(String(g.mediaType || g.media_type || ""));
+              if (isVideo) {
+                return (
+                  '<button type="button" class="mcj-album-thumb mcj-album-thumb--video" data-achieve-index="' +
+                  idx +
+                  '" data-album-url="' +
+                  esc(url) +
+                  '" aria-label="播放战绩视频">' +
+                  '<video src="' +
+                  esc(url) +
+                  '" muted playsinline preload="metadata"></video>' +
+                  '<span class="mcj-album-play" aria-hidden="true">▶</span></button>'
+                );
+              }
+              return (
+                '<img class="mcj-album-thumb" data-achieve-index="' +
+                idx +
+                '" src="' +
+                esc(url) +
+                '" alt="游戏战绩" loading="lazy" onerror="this.onerror=null;this.src=\'/default-avatar.png\'">'
+              );
+            })
+            .join("")
+        : '<p class="pd-album-empty">暂无游戏战绩</p>';
+    var achievementSectionHtml =
+      '<section class="detail-card game-wall pd-album-card" data-pd-achieve-section>' +
+      '<div class="section-head"><h2>游戏战绩</h2>' +
+      (achievementList.length ? "<span>" + achievementList.length + " 个</span>" : "") +
+      "</div>" +
+      (achievementList.length
+        ? '<div class="wall-grid pd-media-rail" data-profile-achieve>' + achievementWall + "</div>"
+        : '<div class="pd-album-empty-wrap">' + achievementWall + "</div>") +
+      "</section>";
+    var videoSectionHtml = videoList.length
+      ? '<section class="detail-card pd-video-card"><div class="section-head"><h2>视频</h2><span>' +
+        videoList.length +
+        " 个</span></div>" +
+        videoHtml +
+        "</section>"
+      : "";
     var pop = c.popularity || state.popularity || null;
     var weeklyRank = pop && pop.weekly ? pop.weekly.rank : 0;
     var monthlyRank = pop && pop.monthly ? pop.monthly.rank : 0;
@@ -509,11 +585,10 @@
       '"><div class="section-head"><h2>语音介绍</h2></div><div class="pd-voice-body">' +
       voiceBody +
       "</div></div>" +
-      (hasVideo
-        ? '<div class="detail-card pd-video-card"><div class="section-head"><h2>个人展示视频</h2></div>' + videoHtml + "</div>"
-        : "") +
       "</div></section>" +
       albumSectionHtml +
+      videoSectionHtml +
+      achievementSectionHtml +
       '<section class="detail-card info-card pd-info-card pd-info-card--full"><div class="section-head"><h2>数据表现</h2></div>' +
       (function () {
         var hasAny =
