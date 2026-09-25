@@ -1969,19 +1969,19 @@ body[data-admin-section="players"] .player-data-table th:nth-child(14){z-index:8
 .sa-cell-wrap{display:inline-block;max-width:100%;overflow-wrap:anywhere;word-break:break-word;white-space:normal;}
 .sa-mobile-only{display:none;}
 .sa-desktop-only{display:block;}
-.sa-mobile-cards{display:none;gap:10px;min-width:0;max-width:100%;}
-.sa-card{min-width:0;max-width:100%;box-sizing:border-box;padding:12px;border:1px solid rgba(255,255,255,.1);border-radius:12px;background:rgba(255,255,255,.03);overflow:hidden;}
+.sa-mobile-cards{display:none;gap:10px;min-width:0;max-width:100%;width:100%;box-sizing:border-box;}
+.sa-card{min-width:0;max-width:100%;width:100%;box-sizing:border-box;padding:12px;border:1px solid rgba(255,255,255,.1);border-radius:12px;background:rgba(255,255,255,.03);overflow:hidden;}
 .sa-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:10px;min-width:0;}
 .sa-card-name{color:#fff;font-size:16px;font-weight:820;overflow-wrap:anywhere;word-break:break-word;min-width:0;}
 .sa-card-status{flex:0 0 auto;}
 .sa-card-meta{display:grid;gap:8px;min-width:0;}
-.sa-card-meta > div{display:grid;grid-template-columns:72px minmax(0,1fr);gap:8px;align-items:start;min-width:0;}
+.sa-card-meta > div{display:grid;grid-template-columns:minmax(64px,72px) minmax(0,1fr);gap:8px;align-items:start;min-width:0;}
 .sa-card-meta span{color:#9f949c;font-size:12px;}
 .sa-card-meta strong{color:#f4eaf0;font-size:13px;font-weight:700;overflow-wrap:anywhere;word-break:break-word;min-width:0;}
 .sa-card-dev{margin:10px 0;color:#9f949c;font-size:12px;}
 .sa-card-dev summary{cursor:pointer;user-select:none;}
-.sa-card-actions{flex-wrap:wrap!important;white-space:normal!important;min-width:0!important;margin-top:10px;}
-.sa-card-actions .mini-btn{flex:1 1 calc(50% - 6px);min-width:0;justify-content:center;}
+.sa-card-actions{display:flex!important;flex-wrap:wrap!important;white-space:normal!important;min-width:0!important;max-width:100%!important;margin-top:10px;gap:8px!important;}
+.sa-card-actions .mini-btn{flex:1 1 calc(50% - 6px);min-width:0;max-width:100%;justify-content:center;box-sizing:border-box;}
 .player-commission-share{margin-top:12px;padding:12px;border:1px solid rgba(255,255,255,.1);border-radius:12px;background:rgba(0,0,0,.18);min-width:0;max-width:100%;box-sizing:border-box;}
 .player-commission-share h4{margin:0 0 6px;color:#ffd6e7;font-size:13px;}
 .player-commission-share .muted{margin:0 0 10px;font-size:12px;line-height:1.45;color:#9f949c;}
@@ -2006,6 +2006,52 @@ body[data-admin-section="service-reports"] #section-service-reports > .panel{
   .service-account-form .form-grid{grid-template-columns:1fr}
   .service-account-form-shell{padding:12px;max-width:100%;box-sizing:border-box;overflow-x:hidden;}
   .service-account-form input,.service-account-form select,.service-account-form textarea{max-width:100%;box-sizing:border-box;}
+  /* Hard hide desktop CS account table — sticky action col was leaking on iPhone */
+  body[data-admin-section="service-accounts"] .sa-desktop-only,
+  body[data-admin-section="service-accounts"] .service-account-table-wrap.sa-desktop-only,
+  .sa-desktop-only.service-account-table-wrap,
+  .service-account-table-wrap.sa-desktop-only{
+    display:none!important;
+    visibility:hidden!important;
+    height:0!important;
+    max-height:0!important;
+    overflow:hidden!important;
+    margin:0!important;
+    padding:0!important;
+    border:0!important;
+    pointer-events:none!important;
+  }
+  body[data-admin-section="service-accounts"] .sa-mobile-only,
+  body[data-admin-section="service-accounts"] .sa-mobile-cards,
+  .sa-mobile-only.sa-mobile-cards,
+  .sa-mobile-cards{
+    display:grid!important;
+    visibility:visible!important;
+    height:auto!important;
+    max-height:none!important;
+    overflow:visible!important;
+    pointer-events:auto!important;
+  }
+  body[data-admin-section="service-accounts"] #section-service-accounts,
+  body[data-admin-section="service-accounts"] #section-service-accounts > .panel,
+  body[data-admin-section="service-accounts"] .service-account-admin,
+  body[data-admin-section="service-accounts"] .cs-acc-body,
+  body[data-admin-section="service-accounts"] .service-account-form-shell{
+    overflow-x:hidden!important;
+    max-width:100%;
+    min-width:0;
+    box-sizing:border-box;
+  }
+  body[data-admin-section="service-accounts"] .service-account-form .form-grid{
+    grid-template-columns:1fr!important;
+  }
+  body[data-admin-section="service-accounts"] .service-account-form input,
+  body[data-admin-section="service-accounts"] .service-account-form select,
+  body[data-admin-section="service-accounts"] .service-account-form textarea{
+    width:100%!important;
+    max-width:100%!important;
+    box-sizing:border-box!important;
+  }
 }
 @media(max-width:768px){
   .sa-desktop-only,.service-account-table-wrap.sa-desktop-only{display:none!important;}

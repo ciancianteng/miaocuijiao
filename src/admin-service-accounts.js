@@ -316,6 +316,22 @@
       '<div id="csDockRewardMount" class="cs-reward-mount"></div>'
     );
   }
+  function enforceMobileCsLayout() {
+    try {
+      var narrow = typeof window.matchMedia === "function" && window.matchMedia("(max-width: 900px)").matches;
+      if (!narrow) return;
+      document.querySelectorAll(".service-account-table-wrap.sa-desktop-only, .sa-desktop-only.service-account-table-wrap").forEach(function (el) {
+        el.style.setProperty("display", "none", "important");
+        el.setAttribute("hidden", "");
+        el.setAttribute("aria-hidden", "true");
+      });
+      document.querySelectorAll(".sa-mobile-cards").forEach(function (el) {
+        el.style.setProperty("display", "grid", "important");
+        el.removeAttribute("hidden");
+        el.setAttribute("aria-hidden", "false");
+      });
+    } catch (e) {}
+  }
   function commissionBodyHtml() {
     return '<div id="csCommissionMount"><div class="empty">Loading… 正在加载佣金设置...</div></div>';
   }
@@ -571,6 +587,7 @@
     if (!state.loaded && !state.loading) load();
     // Remount panel widgets after innerHTML wipe (no attendance refetch here).
     afterPanelOpen(state.openPanel);
+    enforceMobileCsLayout();
   }
   function rowsHtml() {
     if (state.loading) return '<tr><td colspan="9"><div class="empty">正在读取客服账号...</div></td></tr>';
