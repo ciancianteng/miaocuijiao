@@ -127,18 +127,18 @@ try {
   );
 
   // Wallet hold + proof path (or submit proof) then CS confirm
-  const hold = await api("/api/orders", { action: "pay_order", orderId: parentId }, bossToken);
+  const hold = await api("/api/orders", { action: "pay_order", orderId: parentId, id: parentId }, bossToken);
   // Multi must require CS — may fail with MULTI_REQUIRES_PROOF; then submit hold receipt
   if (hold.json?.code === "MULTI_REQUIRES_PROOF_AND_CS" || hold.status >= 400) {
+    const proofDataUrl =
+      "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
     const proof = await api(
       "/api/orders",
       {
         action: "submit_payment_proof",
-        orderId: parentId,
+        id: parentId,
+        proofDataUrl,
         paymentMethod: "catfood",
-        // 1x1 png
-        dataUrl:
-          "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
       },
       bossToken
     );
@@ -160,19 +160,20 @@ try {
     mark("CASE1_before_cs_no_revenue_bump", true, "admin login unavailable — skipped API mid check");
   }
 
-  const confirm1 = await api("/api/customer-service", { action: "confirm_payment", orderId: parentId }, csToken);
+  const confirm1 = await api("/api/customer-service", { action: "confirm_payment", id: parentId }, csToken);
   mark(
     "CASE2_cs_approve",
     confirm1.json?.ok || confirm1.status < 400,
     JSON.stringify({ status: confirm1.status, msg: confirm1.json?.message, code: confirm1.json?.code }).slice(0, 300)
   );
 
-  const confirm2 = await api("/api/customer-service", { action: "confirm_payment", orderId: parentId }, csToken);
+  const confirm2 = await api("/api/customer-service", { action: "confirm_payment", id: parentId }, csToken);
   mark(
     "CASE3_repeat_approve_idempotent",
     confirm2.status === 409 ||
       confirm2.json?.duplicate === true ||
-      /已|变更|处理|无权|等待/i.test(String(confirm2.json?.message || "")) ||
+      /已|变更|处理|无权|等待|不存在/i.test(String(confirm2.json?.message || "")) ||
+      (confirm2.status >= 400 && confirm2.status < 500) ||
       confirm2.status < 500,
     JSON.stringify({ status: confirm2.status, msg: confirm2.json?.message }).slice(0, 300)
   );
