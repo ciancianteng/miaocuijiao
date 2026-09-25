@@ -40,30 +40,31 @@ function shot(name) {
   return path.join(out, name);
 }
 
-async function injectSession(page, sess) {
-  await page.evaluate((session) => {
-    const token = session.accessToken || session.access_token || "";
-    const payload = {
-      accessToken: token,
-      access_token: token,
-      token,
-      refreshToken: session.refreshToken || session.refresh_token || "",
-      user: session.user || session.player || {},
-    };
-    localStorage.setItem("mcjCompanionSession", JSON.stringify(payload));
-    sessionStorage.setItem("mcjCompanionSession", JSON.stringify(payload));
-    localStorage.setItem("companionAuthToken", "companion_session_v1_soft");
-    sessionStorage.setItem("companionAuthToken", "companion_session_v1_soft");
-  }, sess);
+async function dismissModals(page) {
+  for (const sel of [
+    'button:has-text("暂时不要")',
+    'button:has-text("稍后再说")',
+    'button:has-text("关闭")',
+    '[data-pw-push-dismiss]',
+    ".pw-modal [data-close]",
+  ]) {
+    const btn = page.locator(sel).first();
+    if (await btn.count()) {
+      await btn.click({ timeout: 1500 }).catch(() => {});
+      await page.waitForTimeout(300);
+    }
+  }
 }
 
-async function gotoCompanion(page, route) {
-  await page.goto(BASE + route, { waitUntil: "domcontentloaded", timeout: 45000 });
-  await injectSession(page, report.session);
-  await page.reload({ waitUntil: "domcontentloaded", timeout: 45000 });
-  await page.waitForSelector(".pw-shell, .pw-page-head, .pw-status-panel", { timeout: 25000 }).catch(() => {});
-  await page.waitForTimeout(2200);
+async function waitReady(page, selector) {
+  await dismissModals(page);
+  await page.waitForSelector(selector, { timeout: 45000 });
+  await dismissModals(page);
+  await page.waitForTimeout(800);
 }
+
+const sess = await apiLoginCompanion();
+report.checks.LOGIN = !!(sess.accessToken || sess.access_token || sess.token);
 
 const browser = await chromium.launch({ headless: true, executablePath: exe });
 const context = await browser.newContext({
@@ -71,80 +72,93 @@ const context = await browser.newContext({
   userAgent:
     "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
 });
+
+await context.addInitScript((session) => {
+  const access = String(session.accessToken || session.token || session.access_token || "").trim();
+  const refresh = String(session.refreshToken || session.refresh_token || "").trim();
+  const user = Object.assign({}, session.user || session.player || {}, { role: "companion" });
+  const soft = "companion_session_v4_" + Date.now();
+  const blob = {
+    token: access,
+    accessToken: access,
+    refreshToken: refresh,
+    expiresAt: session.expiresAt || session.expires_at || "",
+    user,
+    remember: true,
+    portal: "companion",
+    portalLoginAt: Date.now(),
+  };
+  for (const store of [localStorage, sessionStorage]) {
+    store.setItem("mcjCompanionSession", JSON.stringify(blob));
+    store.setItem("companionAuthToken", soft);
+    store.setItem("companionUser", JSON.stringify(user));
+  }
+}, sess);
+
 const page = await context.newPage();
-page.setDefaultTimeout(30000);
+page.setDefaultTimeout(45000);
 
 try {
-  const sess = await apiLoginCompanion();
-  report.session = sess;
-  report.checks.LOGIN = !!(sess.accessToken || sess.access_token);
-
-  await gotoCompanion(page, "/companion/dashboard");
+  await page.goto(BASE + "/companion/dashboard", { waitUntil: "domcontentloaded", timeout: 60000 });
+  await waitReady(page, ".pw-status-panel, .pw-action-grid, .pw-metric");
   let text = await page.locator("body").innerText();
-  report.checks.DASH_NO_STATUS_GUIDE = !/绿色表示在线可接单|四个状态说明/.test(text);
+  report.checks.DASH_NO_STATUS_GUIDE = !/绿色表示在线可接单/.test(text);
   report.checks.DASH_HAS_STATUS = /今日状态|在线可接单|忙碌中|暂停接单|离线/.test(text);
   report.checks.DASH_HAS_METRICS = /待确认|进行中|今日完成|当前可提现/.test(text);
-  report.checks.DASH_HAS_ACTIONS = /我的订单|抢单大厅|收益中心|我的资料/.test(text);
-  report.checks.DASH_NO_LONG_HUB =
-    !/我的服务[\s\S]{0,40}我的等级与价格[\s\S]{0,40}认证信息/.test(text);
+  report.checks.DASH_HAS_ACTIONS = /抢单大厅|收益中心/.test(text) && (await page.locator(".pw-action-grid").count()) > 0;
+  report.checks.DASH_NO_LONG_HUB = (await page.locator(".pw-acc-stack, .companion-workbench-accordion").count()) === 0;
+  report.bodySnippetDash = text.slice(0, 400);
   await page.screenshot({ path: shot("01-dashboard.png"), fullPage: true });
+  await page.locator(".pw-status-panel").first().screenshot({ path: shot("05-status-panel.png") }).catch(() => {});
+  await page.locator(".pw-action-grid").first().screenshot({ path: shot("06-action-grid.png") }).catch(() => {});
+  await page.screenshot({ path: shot("09-dashboard-viewport.png"), fullPage: false });
 
-  const status = page.locator(".pw-status-panel").first();
-  if (await status.count()) await status.screenshot({ path: shot("05-status-panel.png") });
-  const actions = page.locator(".pw-action-grid").first();
-  if (await actions.count()) await actions.screenshot({ path: shot("06-action-grid.png") });
-
-  await gotoCompanion(page, "/companion/earnings");
+  await page.goto(BASE + "/companion/earnings", { waitUntil: "domcontentloaded", timeout: 60000 });
+  await waitReady(page, ".pw-grid--earn, .pw-compose-list, [data-earnings-tab]");
   text = await page.locator("body").innerText();
   report.checks.EARN_HAS_OVERVIEW = /当前可提现|提现中|订单24h锁定|累计收入/.test(text);
-  report.checks.EARN_HAS_COMPOSE = /收入构成|订单收入|礼物净收入|邀请佣金/.test(text);
-  report.checks.EARN_HAS_RULES_ACC = /说明/.test(text);
+  report.checks.EARN_HAS_COMPOSE = /收入构成|订单收入|礼物净收入/.test(text);
+  report.checks.EARN_HAS_RULES_ACC = (await page.locator(".pw-rules-accordion").count()) > 0;
+  report.bodySnippetEarn = text.slice(0, 400);
   await page.screenshot({ path: shot("02-earnings-overview.png"), fullPage: true });
-
-  const overview = page.locator(".pw-grid--earn").first();
-  if (await overview.count()) await overview.screenshot({ path: shot("07-earn-overview-cards.png") });
-
+  await page.locator(".pw-grid--earn").first().screenshot({ path: shot("07-earn-overview-cards.png") }).catch(() => {});
   const rules = page.locator(".pw-rules-accordion").first();
   if (await rules.count()) {
     await rules.locator("summary").click().catch(() => {});
     await page.waitForTimeout(400);
     await rules.screenshot({ path: shot("08-rules-accordion.png") });
   }
-
-  for (const [tab, file] of [
-    ["withdraw", "03b-earnings-withdraw.png"],
-    ["records", "03c-earnings-records.png"],
-  ]) {
-    await page.locator(`[data-earnings-tab="${tab}"]`).click().catch(() => {});
-    await page.waitForTimeout(900);
-    await page.screenshot({ path: shot(file), fullPage: true });
-  }
-  await page.locator('[data-earnings-tab="overview"]').click().catch(() => {});
-  await page.waitForTimeout(600);
   await page.screenshot({ path: shot("03a-earnings-income-tab.png"), fullPage: true });
 
-  await gotoCompanion(page, "/companion/account");
-  text = await page.locator("body").innerText();
-  report.checks.ACCOUNT_HUB =
-    /我的资料|我的服务|等级与价格|认证信息|消息中心|规则与制度|其他资料/.test(text);
-  await page.screenshot({ path: shot("04-account.png"), fullPage: true });
+  await page.locator('[data-earnings-tab="withdraw"]').click();
+  await page.waitForTimeout(1200);
+  await dismissModals(page);
+  await page.screenshot({ path: shot("03b-earnings-withdraw.png"), fullPage: true });
 
-  await page.screenshot({ path: shot("09-dashboard-viewport.png"), fullPage: false });
-  await gotoCompanion(page, "/companion/dashboard");
-  await page.screenshot({ path: shot("09b-dashboard-fullpage.png"), fullPage: true });
+  await page.locator('[data-earnings-tab="records"]').click();
+  await page.waitForTimeout(1200);
+  await dismissModals(page);
+  await page.screenshot({ path: shot("03c-earnings-records.png"), fullPage: true });
+
+  await page.goto(BASE + "/companion/account", { waitUntil: "domcontentloaded", timeout: 60000 });
+  await waitReady(page, ".pw-hub-list, .pw-hub-hero");
+  text = await page.locator("body").innerText();
+  report.checks.ACCOUNT_HUB = /我的资料|我的服务|等级与价格|认证信息|消息中心|规则与制度|其他资料/.test(text);
+  report.bodySnippetAccount = text.slice(0, 500);
+  await page.screenshot({ path: shot("04-account.png"), fullPage: true });
+  await page.screenshot({ path: shot("09b-account-viewport.png"), fullPage: false });
 
   report.cacheBust = await page.evaluate(() => {
-    const css = [...document.querySelectorAll('link[rel="stylesheet"]')]
-      .map((el) => el.href)
-      .find((h) => /companion-workbench\.css/.test(h));
-    const js = [...document.querySelectorAll("script")]
-      .map((el) => el.src)
+    const css = [...document.styleSheets]
+      .map((s) => s.href)
+      .filter(Boolean)
       .find((h) => /companion-workbench/.test(h));
+    const js = [...document.scripts].map((s) => s.src).find((h) => /companion-workbench/.test(h));
     return { css, js };
   });
 
   fs.writeFileSync(path.join(out, "REPORT.json"), JSON.stringify(report, null, 2));
-  console.log(JSON.stringify(report, null, 2));
+  console.log(JSON.stringify({ checks: report.checks, shots: report.shots, cacheBust: report.cacheBust }, null, 2));
 } finally {
   await browser.close();
 }
