@@ -18,12 +18,62 @@
 }
 .club-levels-back{color:#f9a8d4;text-decoration:none;font-size:14px}
 .club-levels-top strong{font-size:16px;letter-spacing:.02em}
-.club-levels-main{max-width:980px;margin:0 auto;padding:18px 16px 48px}
+.club-levels-main{max-width:980px;margin:0 auto;padding:18px 16px 48px;overflow-x:hidden}
 .club-levels-loading,.club-levels-empty{padding:28px;text-align:center;color:rgba(255,228,240,.62)}
 .club-levels-hero{margin-bottom:18px}
 .club-levels-hero h1{margin:0 0 8px;font-size:clamp(22px,4vw,32px);color:#fff}
 .club-levels-hero p{margin:0;line-height:1.65;color:rgba(255,228,240,.78);font-size:15px}
 .club-levels-hero small{display:block;margin-top:8px;color:rgba(255,228,240,.45)}
+.club-levels-note{margin:0 0 16px;max-width:100%}
+.club-levels-note-card{
+  border:1px solid rgba(244,114,182,.28);
+  border-radius:16px;
+  padding:16px;
+  background:rgba(18,12,20,.88);
+  box-shadow:0 10px 28px rgba(0,0,0,.24);
+  display:grid;
+  gap:12px;
+  box-sizing:border-box;
+  max-width:100%;
+}
+.club-levels-note-card header h2{
+  margin:0 0 6px;
+  font-size:17px;
+  color:#fff;
+  letter-spacing:.02em;
+  font-weight:750;
+}
+.club-levels-note-sub{
+  margin:0;
+  font-size:14px;
+  line-height:1.5;
+  color:#fda4af;
+  font-weight:650;
+}
+.club-levels-note-body{min-width:0}
+.club-levels-note-body p{
+  margin:0 0 10px;
+  font-size:14px;
+  line-height:1.7;
+  color:rgba(255,228,240,.82);
+  overflow-wrap:anywhere;
+  word-break:break-word;
+}
+.club-levels-note-body p:last-child{margin-bottom:0}
+.club-levels-note-toggle{
+  justify-self:start;
+  min-height:36px;
+  padding:0 14px;
+  border-radius:999px;
+  border:1px solid rgba(249,168,212,.42);
+  background:rgba(244,114,182,.14);
+  color:#ffe4f0;
+  font-size:13px;
+  font-weight:700;
+  cursor:pointer;
+}
+.club-levels-note-toggle:hover{background:rgba(244,114,182,.2)}
+.club-levels-note-toggle:active{transform:scale(.98)}
 .club-levels-grid{display:grid;gap:12px;grid-template-columns:1fr}
 .club-level-card{
   border:1px solid color-mix(in srgb,var(--lvl,#f472b6) 45%,transparent);
@@ -54,4 +104,7 @@
 @media(max-width:430px){
   .club-levels-main{padding:14px 12px 40px}
   .club-level-card{border-radius:14px;padding:14px}
+  .club-levels-note-card{border-radius:14px;padding:14px}
+  .club-levels-note-card header h2{font-size:16px}
+  .club-levels-note-body p{font-size:13.5px;line-height:1.68}
 }
