@@ -484,6 +484,45 @@
     );
   }
 
+  /** 订单佣金：陪玩实际分成比例（与平台抽成互为补数）。 */
+  function commissionShareSectionHtml(d, edit) {
+    var share =
+      d.commissionEffectiveShareRate != null
+        ? d.commissionEffectiveShareRate
+        : d.companionShareRate != null
+          ? d.companionShareRate
+          : "";
+    var sourceLabel = d.commissionSourceLabel || (d.commissionSource === "override" ? "个人自定义" : d.commissionSource === "club" ? "俱乐部设置" : "平台默认");
+    var overrideVal =
+      d.commissionRateOverride != null
+        ? d.commissionRateOverride
+        : d.commission_rate_override != null
+          ? d.commission_rate_override
+          : "";
+    var hasOverride = overrideVal !== "" && overrideVal != null;
+    return (
+      '<div class="player-commission-share" data-player-commission-share>' +
+      "<h4>订单佣金设置</h4>" +
+      '<p class="muted">定义：陪玩实际可获得的订单分成比例。例：订单 RM100 × 80% = 陪玩 RM80。</p>' +
+      rows([
+        ["当前生效比例", share !== "" ? share + "%" : "—"],
+        ["佣金来源", sourceLabel],
+        ["个人自定义", hasOverride ? overrideVal + "%" : "未设置（继承上级）"],
+      ]) +
+      (edit
+        ? '<div class="player-edit-grid" style="margin-top:10px">' +
+          '<label><span>个人佣金比例 %</span><input name="commissionRateOverride" type="number" min="0" max="100" step="0.01" placeholder="留空=继承" value="' +
+          esc(hasOverride ? overrideVal : "") +
+          '"></label>' +
+          '<div class="form-actions" style="grid-column:1/-1;display:flex;flex-wrap:wrap;gap:8px">' +
+          '<button class="mini-btn primary-lite" type="button" data-player-commission-save>保存佣金比例</button>' +
+          '<button class="mini-btn" type="button" data-player-commission-inherit>恢复继承默认佣金</button>' +
+          "</div></div>"
+        : "") +
+      "</div>"
+    );
+  }
+
   function playerMissingPrice(d) {
     d = d || {};
     if (d.missingPrice === true || d.missing_price === true) return true;
@@ -1000,19 +1039,20 @@
       (edit ? "" : servicePricesViewHtml(d)) +
       rows([
         ["当前等级", d.levelName || d.level_name || "未设置"],
-        ["平台抽成", (d.orderCommissionRate != null ? d.orderCommissionRate : d.commission_rate) + "%"],
+        ["平台抽成（继承基数）", (d.orderCommissionRate != null ? d.orderCommissionRate : d.commission_rate) + "%"],
         ["礼物抽成", (d.giftCommissionRate != null ? d.giftCommissionRate : d.gift_commission_rate || 0) + "%"],
         ["直属陪返点", (d.directRebateRate != null ? d.directRebateRate : d.direct_rebate_rate || 0) + "%"],
-        ["等级生效时间", d.level_effective_at || "—"],
-        ["抽成生效时间", d.commission_effective_at || "—"],
+        ["等级生效时间", formatMYT(d.level_effective_at)],
+        ["抽成生效时间", formatMYT(d.commission_effective_at)],
         ["价格完整性", playerMissingPrice(d) ? "缺少接单价格（无法公开上架）" : "已设置"],
       ]) +
+      commissionShareSectionHtml(d, edit) +
       (edit
         ? '<div class="player-edit-grid" data-player-section-split>' +
           '<label><span>当前等级</span><select name="levelId">' +
           levelOptions(d.levelId || d.level_id || d.levelName, levels) +
           "</select></label>" +
-          field("订单平台抽成 %", "orderCommissionRate", d.orderCommissionRate != null ? d.orderCommissionRate : d.commission_rate) +
+          field("订单平台抽成 %（继承基数）", "orderCommissionRate", d.orderCommissionRate != null ? d.orderCommissionRate : d.commission_rate) +
           field("礼物抽成 %", "giftCommissionRate", d.giftCommissionRate != null ? d.giftCommissionRate : d.gift_commission_rate || 0) +
           field("直属陪返点 %", "directRebateRate", d.directRebateRate != null ? d.directRebateRate : d.direct_rebate_rate || 0) +
           field("调整原因", "reason", "") +
@@ -1789,6 +1829,69 @@
         })
         .catch(function (err) {
           alert(err.message || "复制失败");
+        });
+      return;
+    }
+    var commissionSave = e.target.closest("[data-player-commission-save]");
+    if (commissionSave) {
+      var formC = commissionSave.closest("[data-player-detail-form]");
+      if (!formC) return;
+      var inputC = formC.querySelector('[name="commissionRateOverride"]');
+      var rawC = inputC ? String(inputC.value || "").trim() : "";
+      var payloadC = {};
+      if (!rawC) {
+        payloadC.restoreCommissionInherit = true;
+        payloadC.commissionRateOverride = null;
+      } else {
+        var nC = Number(rawC);
+        if (!Number.isFinite(nC) || nC < 0 || nC > 100) {
+          alert("个人佣金比例须为 0–100");
+          return;
+        }
+        payloadC.commissionRateOverride = nC;
+      }
+      commissionSave.disabled = true;
+      apiPost({
+        action: "edit",
+        id: formC.getAttribute("data-player-id"),
+        payload: payloadC,
+      })
+        .then(function (res) {
+          alert(res.message || "佣金比例已保存");
+          if (window.MCJAdminPlayerBridge && window.MCJAdminPlayerBridge.reloadDetail) {
+            window.MCJAdminPlayerBridge.reloadDetail(formC.getAttribute("data-player-id"), "edit");
+          }
+        })
+        .catch(function (err) {
+          alert(err.message || "保存失败");
+        })
+        .finally(function () {
+          commissionSave.disabled = false;
+        });
+      return;
+    }
+    var commissionInherit = e.target.closest("[data-player-commission-inherit]");
+    if (commissionInherit) {
+      var formI = commissionInherit.closest("[data-player-detail-form]");
+      if (!formI) return;
+      if (!window.confirm("确认清除个人佣金比例，恢复继承俱乐部/平台默认？")) return;
+      commissionInherit.disabled = true;
+      apiPost({
+        action: "edit",
+        id: formI.getAttribute("data-player-id"),
+        payload: { restoreCommissionInherit: true, commissionRateOverride: null },
+      })
+        .then(function (res) {
+          alert(res.message || "已恢复继承默认佣金");
+          if (window.MCJAdminPlayerBridge && window.MCJAdminPlayerBridge.reloadDetail) {
+            window.MCJAdminPlayerBridge.reloadDetail(formI.getAttribute("data-player-id"), "edit");
+          }
+        })
+        .catch(function (err) {
+          alert(err.message || "操作失败");
+        })
+        .finally(function () {
+          commissionInherit.disabled = false;
         });
       return;
     }

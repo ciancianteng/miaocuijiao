@@ -307,9 +307,12 @@
       '<div style="display:flex;justify-content:flex-end;margin:0 0 12px"><button class="primary-btn" type="button" data-service-account-new>+ 新建客服账号</button></div>' +
       '<div class="service-account-form-shell" data-service-account-editor hidden></div>' +
       (state.loading ? '<div class="empty">Loading… 正在读取客服账号...</div>' : "") +
-      '<div class="table-wrap service-account-table-wrap"><table class="service-account-table"><thead><tr><th>客服姓名</th><th>客服编号</th><th>登录邮箱</th><th>当前状态</th><th>在线状态</th><th>今日订单</th><th>今日接待</th><th>今日工作时长</th><th>操作</th></tr></thead><tbody>' +
+      '<div class="table-wrap service-account-table-wrap sa-desktop-only"><table class="service-account-table"><thead><tr><th>客服姓名</th><th>客服编号</th><th>登录邮箱</th><th>当前状态</th><th>在线状态</th><th>今日订单</th><th>今日接待</th><th>今日工作时长</th><th>操作</th></tr></thead><tbody>' +
       rowsHtml() +
-      "</tbody></table></div>" +
+      '</tbody></table></div>' +
+      '<div class="sa-mobile-cards sa-mobile-only" aria-label="客服账号列表">' +
+      cardsHtml() +
+      "</div>" +
       '<div id="csDockRewardMount" class="cs-reward-mount"></div>'
     );
   }
@@ -579,26 +582,36 @@
         var loginEmail = publicEmailLabel(row.loginEmail != null ? row.loginEmail : row.email);
         var csCode = row.csCode || formatCsCode(row);
         var online = onlineStatusLabel(row);
+        var phone = row.phone || row.mobile || row.contactPhone || row.contact_phone || "";
         return (
           '<tr data-service-account-row="' +
           esc(row.id) +
-          '"><td>' +
+          '">' +
+          '<td data-label="客服姓名">' +
           esc(row.name || "-") +
-          "</td><td>" +
+          "</td>" +
+          '<td data-label="客服编号">' +
           esc(csCode) +
-          "</td><td>" +
+          "</td>" +
+          '<td data-label="登录邮箱"><span class="sa-cell-wrap">' +
           esc(loginEmail) +
-          "</td><td>" +
+          "</span></td>" +
+          '<td data-label="当前状态">' +
           statusChip(row.status) +
-          "</td><td>" +
+          "</td>" +
+          '<td data-label="在线状态">' +
           statusChip(online) +
-          "</td><td>" +
+          "</td>" +
+          '<td data-label="今日订单">' +
           esc(row.todayOrders || 0) +
-          "</td><td>" +
+          "</td>" +
+          '<td data-label="今日接待">' +
           esc(row.todayReceptions || 0) +
-          "</td><td>" +
+          "</td>" +
+          '<td data-label="今日工作时长">' +
           esc(workHoursLabel(row)) +
-          '</td><td><div class="service-account-actions"><button class="mini-btn" type="button" data-service-account-view="' +
+          "</td>" +
+          '<td data-label="操作"><div class="service-account-actions"><button class="mini-btn" type="button" data-service-account-view="' +
           esc(row.id) +
           '">查看</button><button class="mini-btn" type="button" data-service-account-edit="' +
           esc(row.id) +
@@ -618,8 +631,86 @@
             ["Auth UID", row.id],
             ["开发登录账号", isDevLogin(rawEmail) || isDbUuid(rawEmail) ? rawEmail : ""],
             ["开发邮箱", isDevLogin(rawEmail) ? rawEmail : ""],
+            ["手机号", phone],
           ]) +
           "</td></tr>"
+        );
+      })
+      .join("");
+  }
+
+  function cardsHtml() {
+    if (state.loading) return '<div class="empty">正在读取客服账号...</div>';
+    if (!state.rows.length) return '<div class="empty">暂无客服账号，点击右上角“新建客服账号”创建。</div>';
+    return state.rows
+      .map(function (row) {
+        var rawEmail = row.rawEmail || row.email || row.account || "";
+        var loginEmail = publicEmailLabel(row.loginEmail != null ? row.loginEmail : row.email);
+        var csCode = row.csCode || formatCsCode(row);
+        var online = onlineStatusLabel(row);
+        var phone = row.phone || row.mobile || row.contactPhone || row.contact_phone || "";
+        return (
+          '<article class="sa-card" data-service-account-row="' +
+          esc(row.id) +
+          '">' +
+          '<div class="sa-card-head"><strong class="sa-card-name">' +
+          esc(row.name || "-") +
+          '</strong><span class="sa-card-status">' +
+          statusChip(row.status) +
+          "</span></div>" +
+          '<div class="sa-card-meta">' +
+          '<div><span>账号</span><strong class="sa-cell-wrap">' +
+          esc(loginEmail) +
+          "</strong></div>" +
+          "<div><span>编号</span><strong>" +
+          esc(csCode) +
+          "</strong></div>" +
+          (phone
+            ? "<div><span>手机</span><strong class=\"sa-cell-wrap\">" + esc(phone) + "</strong></div>"
+            : "") +
+          "<div><span>在线</span><strong>" +
+          esc(online) +
+          "</strong></div>" +
+          "<div><span>今日订单</span><strong>" +
+          esc(row.todayOrders || 0) +
+          "</strong></div>" +
+          "<div><span>今日接待</span><strong>" +
+          esc(row.todayReceptions || 0) +
+          "</strong></div>" +
+          "<div><span>工作时长</span><strong>" +
+          esc(workHoursLabel(row)) +
+          "</strong></div>" +
+          '<div><span>角色</span><strong>客服</strong></div>' +
+          "</div>" +
+          '<details class="sa-card-dev"><summary>账号内部标识</summary>' +
+          adminDevInfoHtml([
+            ["Internal ID", row.id],
+            ["Auth UID", row.id],
+            ["开发登录账号", isDevLogin(rawEmail) || isDbUuid(rawEmail) ? rawEmail : ""],
+            ["开发邮箱", isDevLogin(rawEmail) ? rawEmail : ""],
+          ]) +
+          "</details>" +
+          '<div class="service-account-actions sa-card-actions">' +
+          '<button class="mini-btn" type="button" data-service-account-view="' +
+          esc(row.id) +
+          '">查看</button>' +
+          '<button class="mini-btn" type="button" data-service-account-edit="' +
+          esc(row.id) +
+          '">编辑</button>' +
+          '<button class="mini-btn" type="button" data-service-account-reset="' +
+          esc(row.id) +
+          '">重置密码</button>' +
+          '<button class="mini-btn" type="button" data-service-account-toggle="' +
+          esc(row.id) +
+          '" data-next-status="' +
+          (row.status === "启用" ? "停用" : "启用") +
+          '">' +
+          (row.status === "启用" ? "停用" : "启用") +
+          "</button>" +
+          '<button class="mini-btn danger" type="button" data-service-account-delete="' +
+          esc(row.id) +
+          '">删除</button>' +
+          "</div></article>"
         );
       })
       .join("");

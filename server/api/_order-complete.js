@@ -2,7 +2,7 @@
  * Order completion handshake:
  * companion apply → wait boss confirm (24h auto) → completed + settle once.
  */
-import { resolvePlatformCommission } from "./_commission-rates.js";
+import { resolveEffectiveCompanionCommission } from "./_commission-rates.js";
 import { readLocalLevels } from "./_companion-levels-store.js";
 import {
   createOrderGrabHelpers,
@@ -383,7 +383,8 @@ export function createOrderCompleteHelpers({ restUrl, supabaseJson, serviceHeade
       ) || null;
 
     // Prefer gameplay product commission snapshot stamped at order create (orders.platform_fee_rate).
-    // Explicit 0% is valid. Non-gameplay orders keep companion/level commission rules unchanged.
+    // Explicit 0% is valid. Non-gameplay orders use effective companion share
+    // (override → club → system/level). Settled amounts are snapshotted and never rewrite.
     const isGameplayOrder =
       String(saved.order_type || "").toLowerCase() === "gameplay_product" ||
       /更多玩法商品|商品ID：/i.test(blobOf(saved));
@@ -391,15 +392,21 @@ export function createOrderCompleteHelpers({ restUrl, supabaseJson, serviceHeade
       isGameplayOrder && saved.platform_fee_rate != null && saved.platform_fee_rate !== "";
     let platformRate;
     let companionShareRate;
+    let commissionSource = "system";
     if (hasProductFeeSnapshot) {
       const snap = money(saved.platform_fee_rate);
       platformRate = Math.min(100, Math.max(0, Number.isFinite(snap) ? snap : 0));
       companionShareRate = Math.round((100 - platformRate) * 100) / 100;
+      commissionSource = "order_snapshot";
     } else {
-      ({ platformRate, companionShareRate } = resolvePlatformCommission(
-        cp.commission_rate,
-        levelMeta?.commissionRate ?? 20
-      ));
+      const effective = resolveEffectiveCompanionCommission({
+        companionProfile: cp,
+        levelPlatformRate: levelMeta?.commissionRate ?? 20,
+        fallbackPlatform: 20,
+      });
+      platformRate = effective.platformRate;
+      companionShareRate = effective.companionShareRate;
+      commissionSource = effective.source || "system";
     }
     const companionNet = Math.round(((amount * companionShareRate) / 100) * 100) / 100;
     const platformFee = Math.round((amount - companionNet) * 100) / 100;
@@ -410,6 +417,9 @@ export function createOrderCompleteHelpers({ restUrl, supabaseJson, serviceHeade
       platformCommissionCatFood: platformFee,
       platformCommissionRate: platformRate,
       companionShareRate,
+      commissionRateSnapshot: companionShareRate,
+      commissionAmountSnapshot: companionNet,
+      commissionSource,
       completedAt,
       completionMethod: method,
       bossCommissionTransparencyNote: "老板直属分成由平台抽成支付，不扣陪玩收入",
@@ -434,9 +444,21 @@ export function createOrderCompleteHelpers({ restUrl, supabaseJson, serviceHeade
         companion_income: companionNet,
         platform_fee: platformFee,
         platform_fee_rate: platformRate,
+        companion_commission_rate_snapshot: companionShareRate,
+        companion_commission_amount_snapshot: companionNet,
         settlement_status: "settled",
       });
-    } catch (_) {}
+    } catch (_) {
+      try {
+        await patchOrderFields(restUrl, supabaseJson, serviceHeaders, saved.id, {
+          settlement_note: `MCJ_SETTLEMENT:${JSON.stringify(settlement)}`,
+          companion_income: companionNet,
+          platform_fee: platformFee,
+          platform_fee_rate: platformRate,
+          settlement_status: "settled",
+        });
+      } catch (__) {}
+    }
 
     // Boss commission from platform fee — does NOT reduce companionNet.
     // boss_commission = platform_fee * boss_commission_rate / 100
