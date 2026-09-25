@@ -19,7 +19,7 @@ const checks = [
   ["no 40px player grid", !/voice-card-player\{[^}]*grid-template-columns:\s*40px/.test(css.replace(/\s+/g, ""))],
   ["play-cta nowrap", /voice-card-play-cta[\s\S]{0,500}white-space:\s*nowrap/.test(css)],
   ["play-cta row", /voice-card-play-cta[\s\S]{0,300}flex-direction:\s*row/.test(css)],
-  ["cache bust", /voicePlayLayout1/.test(html)],
+  ["cache bust", /voiceConfirmUx2/.test(html)],
 ];
 
 let fail = 0;
