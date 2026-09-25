@@ -272,6 +272,13 @@ export async function transitionOrderStatus(
   if (!isCanonicalOrderStatus(next) || next === "reviewed") {
     throw Object.assign(new Error(`无效订单状态：${toStatus}`), { status: 400 });
   }
+  // Hard-block illegal skips (awaiting_payment → confirmed/in_progress/…).
+  try {
+    const { assertLegalStatusJump } = await import("./_payment-gates.js");
+    assertLegalStatusJump(fromStatus || "", next);
+  } catch (gateErr) {
+    if (gateErr?.code === "ILLEGAL_STATUS_TRANSITION" || gateErr?.status === 409) throw gateErr;
+  }
   const nowIso = new Date().toISOString();
   const body = { ...patch, status: next, updated_at: patch.updated_at || nowIso };
   let q = filterQuery || `?id=eq.${encodeURIComponent(orderId)}`;

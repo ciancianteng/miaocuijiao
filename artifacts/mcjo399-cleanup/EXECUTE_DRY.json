@@ -1,0 +1,305 @@
+{
+  "dry": true,
+  "started_at": "2026-09-25T00:52:38.399Z",
+  "ORDER_IDS": [
+    "ef2112e7-7dd1-4395-b39e-d9b2fba918ec",
+    "570eb756-fe1a-4d26-ab4c-5abc30ff6176",
+    "2f4edc0e-a9a2-4777-b78f-d755e7b50e2f"
+  ],
+  "ORDER_NOS": [
+    "MCJO000399",
+    "MCJO000400",
+    "MCJO000401"
+  ],
+  "BEFORE": {
+    "wallet": {
+      "total_balance": 550,
+      "held_balance": 140,
+      "paid_balance": 410,
+      "frozen": 0
+    },
+    "holds": [
+      {
+        "id": "4826130d-b713-4f26-8446-95d261be671d",
+        "boss_id": "458ce9ad-3425-42b1-ab66-24bca342f971",
+        "order_id": "ef2112e7-7dd1-4395-b39e-d9b2fba918ec",
+        "order_no": "MCJO000399",
+        "amount": 70,
+        "status": "held",
+        "hold_idempotency_key": "order-hold:MCJO000399",
+        "finalize_idempotency_key": null,
+        "release_idempotency_key": null,
+        "paid_taken": 70,
+        "bonus_taken": 0,
+        "created_at": "2026-09-23T10:11:55.888727+00:00",
+        "updated_at": "2026-09-23T10:11:55.888727+00:00",
+        "finalized_at": null,
+        "released_at": null
+      }
+    ],
+    "ledger": [
+      {
+        "id": "f0377cad-49c0-415b-9a3e-20b64ac1c2ee",
+        "boss_id": "458ce9ad-3425-42b1-ab66-24bca342f971",
+        "transaction_type": "order_hold",
+        "amount": 70,
+        "balance_type": "paid",
+        "direction": "debit",
+        "related_order_id": "ef2112e7-7dd1-4395-b39e-d9b2fba918ec",
+        "related_recharge_id": null,
+        "campaign_id": null,
+        "compensation_id": null,
+        "reason": "订单冻结 MCJO000399",
+        "internal_note": "catfood hold reserve",
+        "operator_id": "458ce9ad-3425-42b1-ab66-24bca342f971",
+        "idempotency_key": "order-hold:MCJO000399",
+        "paid_balance_after": 410,
+        "bonus_balance_after": 0,
+        "total_balance_after": 550,
+        "expires_at": null,
+        "created_at": "2026-09-23T10:11:55.888727+00:00"
+      }
+    ],
+    "gmv": {
+      "root_amount": 70,
+      "root_status": "in_progress",
+      "counts_as_revenue": true
+    },
+    "messages": 6
+  },
+  "actions": [
+    {
+      "op": "RELEASE_HOLD_PLAN",
+      "hold_id": "4826130d-b713-4f26-8446-95d261be671d",
+      "order_id": "ef2112e7-7dd1-4395-b39e-d9b2fba918ec",
+      "amount": 70
+    },
+    {
+      "op": "DELETE_PLAN",
+      "table": "messages",
+      "filter": "order_id=in.(ef2112e7-7dd1-4395-b39e-d9b2fba918ec,570eb756-fe1a-4d26-ab4c-5abc30ff6176,2f4edc0e-a9a2-4777-b78f-d755e7b50e2f)",
+      "count": 6
+    },
+    {
+      "op": "DELETE_PLAN",
+      "table": "companion_reviews",
+      "filter": "order_id=in.(ef2112e7-7dd1-4395-b39e-d9b2fba918ec,570eb756-fe1a-4d26-ab4c-5abc30ff6176,2f4edc0e-a9a2-4777-b78f-d755e7b50e2f)",
+      "count": 0
+    },
+    {
+      "op": "DELETE_PLAN",
+      "table": "companion_penalties",
+      "filter": "order_id=in.(ef2112e7-7dd1-4395-b39e-d9b2fba918ec,570eb756-fe1a-4d26-ab4c-5abc30ff6176,2f4edc0e-a9a2-4777-b78f-d755e7b50e2f)",
+      "count": 0
+    },
+    {
+      "op": "DELETE_PLAN",
+      "table": "order_grabs",
+      "filter": "order_id=in.(ef2112e7-7dd1-4395-b39e-d9b2fba918ec,570eb756-fe1a-4d26-ab4c-5abc30ff6176,2f4edc0e-a9a2-4777-b78f-d755e7b50e2f)",
+      "count": 0
+    },
+    {
+      "op": "DELETE_PLAN",
+      "table": "payment_receipts",
+      "filter": "order_id=in.(ef2112e7-7dd1-4395-b39e-d9b2fba918ec,570eb756-fe1a-4d26-ab4c-5abc30ff6176,2f4edc0e-a9a2-4777-b78f-d755e7b50e2f)",
+      "count": 0
+    },
+    {
+      "op": "DELETE_PLAN",
+      "table": "payment_transactions",
+      "filter": "order_id=in.(ef2112e7-7dd1-4395-b39e-d9b2fba918ec,570eb756-fe1a-4d26-ab4c-5abc30ff6176,2f4edc0e-a9a2-4777-b78f-d755e7b50e2f)",
+      "count": 0
+    },
+    {
+      "op": "DELETE_PLAN",
+      "table": "service_receptions",
+      "filter": "order_id=in.(ef2112e7-7dd1-4395-b39e-d9b2fba918ec,570eb756-fe1a-4d26-ab4c-5abc30ff6176,2f4edc0e-a9a2-4777-b78f-d755e7b50e2f)",
+      "count": 0
+    },
+    {
+      "op": "DELETE_PLAN",
+      "table": "cs_commission_settlements",
+      "filter": "order_id=in.(ef2112e7-7dd1-4395-b39e-d9b2fba918ec,570eb756-fe1a-4d26-ab4c-5abc30ff6176,2f4edc0e-a9a2-4777-b78f-d755e7b50e2f)",
+      "count": 0
+    },
+    {
+      "op": "DELETE_PLAN",
+      "table": "cs_dock_rewards",
+      "filter": "order_id=in.(ef2112e7-7dd1-4395-b39e-d9b2fba918ec,570eb756-fe1a-4d26-ab4c-5abc30ff6176,2f4edc0e-a9a2-4777-b78f-d755e7b50e2f)",
+      "count": 0
+    },
+    {
+      "op": "DELETE_PLAN",
+      "table": "user_points_ledger",
+      "filter": "related_order_id=in.(ef2112e7-7dd1-4395-b39e-d9b2fba918ec,570eb756-fe1a-4d26-ab4c-5abc30ff6176,2f4edc0e-a9a2-4777-b78f-d755e7b50e2f)",
+      "count": 0
+    },
+    {
+      "op": "DELETE_PLAN",
+      "table": "referral_commission_records",
+      "filter": "order_id=in.(ef2112e7-7dd1-4395-b39e-d9b2fba918ec,570eb756-fe1a-4d26-ab4c-5abc30ff6176,2f4edc0e-a9a2-4777-b78f-d755e7b50e2f)",
+      "count": 0
+    },
+    {
+      "op": "DELETE_PLAN",
+      "table": "transactions",
+      "filter": "order_id=in.(ef2112e7-7dd1-4395-b39e-d9b2fba918ec,570eb756-fe1a-4d26-ab4c-5abc30ff6176,2f4edc0e-a9a2-4777-b78f-d755e7b50e2f)",
+      "count": 0
+    },
+    {
+      "op": "DELETE_PLAN",
+      "table": "boss_refund_requests",
+      "filter": "order_id=in.(ef2112e7-7dd1-4395-b39e-d9b2fba918ec,570eb756-fe1a-4d26-ab4c-5abc30ff6176,2f4edc0e-a9a2-4777-b78f-d755e7b50e2f)",
+      "count": 0
+    },
+    {
+      "op": "DELETE_PLAN",
+      "table": "wallet_order_holds",
+      "filter": "order_id=in.(ef2112e7-7dd1-4395-b39e-d9b2fba918ec,570eb756-fe1a-4d26-ab4c-5abc30ff6176,2f4edc0e-a9a2-4777-b78f-d755e7b50e2f)",
+      "count": 1
+    },
+    {
+      "op": "DELETE_PLAN",
+      "table": "wallet_transactions",
+      "filter": "related_order_id=in.(ef2112e7-7dd1-4395-b39e-d9b2fba918ec,570eb756-fe1a-4d26-ab4c-5abc30ff6176,2f4edc0e-a9a2-4777-b78f-d755e7b50e2f)",
+      "count": 1
+    },
+    {
+      "op": "DELETE_PLAN",
+      "table": "orders",
+      "filter": "id=in.(570eb756-fe1a-4d26-ab4c-5abc30ff6176,2f4edc0e-a9a2-4777-b78f-d755e7b50e2f)",
+      "count": 2
+    },
+    {
+      "op": "DELETE_PLAN",
+      "table": "orders",
+      "filter": "id=eq.ef2112e7-7dd1-4395-b39e-d9b2fba918ec",
+      "count": 1
+    }
+  ],
+  "deleted": {
+    "messages": {
+      "planned": 6
+    },
+    "companion_reviews": {
+      "planned": 0
+    },
+    "companion_penalties": {
+      "planned": 0
+    },
+    "order_grabs": {
+      "planned": 0
+    },
+    "payment_receipts": {
+      "planned": 0
+    },
+    "payment_transactions": {
+      "planned": 0
+    },
+    "service_receptions": {
+      "planned": 0
+    },
+    "cs_commission_settlements": {
+      "planned": 0
+    },
+    "cs_dock_rewards": {
+      "planned": 0
+    },
+    "user_points_ledger": {
+      "planned": 0
+    },
+    "referral_commission_records": {
+      "planned": 0
+    },
+    "transactions": {
+      "planned": 0
+    },
+    "boss_refund_requests": {
+      "planned": 0
+    },
+    "wallet_order_holds": {
+      "planned": 1
+    },
+    "wallet_transactions": {
+      "planned": 1
+    },
+    "orders": {
+      "planned": 1
+    }
+  },
+  "AFTER": {
+    "remaining_orders": [
+      {
+        "id": "ef2112e7-7dd1-4395-b39e-d9b2fba918ec",
+        "order_no": "MCJO000399",
+        "status": "in_progress"
+      },
+      {
+        "id": "570eb756-fe1a-4d26-ab4c-5abc30ff6176",
+        "order_no": "MCJO000400",
+        "status": "in_progress"
+      },
+      {
+        "id": "2f4edc0e-a9a2-4777-b78f-d755e7b50e2f",
+        "order_no": "MCJO000401",
+        "status": "in_progress"
+      }
+    ],
+    "wallet": {
+      "total_balance": 550,
+      "held_balance": 140,
+      "paid_balance": 410,
+      "frozen": 0
+    },
+    "holds": [
+      {
+        "id": "4826130d-b713-4f26-8446-95d261be671d",
+        "boss_id": "458ce9ad-3425-42b1-ab66-24bca342f971",
+        "order_id": "ef2112e7-7dd1-4395-b39e-d9b2fba918ec",
+        "order_no": "MCJO000399",
+        "amount": 70,
+        "status": "held",
+        "hold_idempotency_key": "order-hold:MCJO000399",
+        "finalize_idempotency_key": null,
+        "release_idempotency_key": null,
+        "paid_taken": 70,
+        "bonus_taken": 0,
+        "created_at": "2026-09-23T10:11:55.888727+00:00",
+        "updated_at": "2026-09-23T10:11:55.888727+00:00",
+        "finalized_at": null,
+        "released_at": null
+      }
+    ],
+    "ledger": [
+      {
+        "id": "f0377cad-49c0-415b-9a3e-20b64ac1c2ee",
+        "boss_id": "458ce9ad-3425-42b1-ab66-24bca342f971",
+        "transaction_type": "order_hold",
+        "amount": 70,
+        "balance_type": "paid",
+        "direction": "debit",
+        "related_order_id": "ef2112e7-7dd1-4395-b39e-d9b2fba918ec",
+        "related_recharge_id": null,
+        "campaign_id": null,
+        "compensation_id": null,
+        "reason": "订单冻结 MCJO000399",
+        "internal_note": "catfood hold reserve",
+        "operator_id": "458ce9ad-3425-42b1-ab66-24bca342f971",
+        "idempotency_key": "order-hold:MCJO000399",
+        "paid_balance_after": 410,
+        "bonus_balance_after": 0,
+        "total_balance_after": 550,
+        "expires_at": null,
+        "created_at": "2026-09-23T10:11:55.888727+00:00"
+      }
+    ]
+  },
+  "CHECKS": {
+    "ORDERS_GONE": false,
+    "HOLDS_CLEAR": false,
+    "GMV_ROLLBACK_EXPECTED": 70,
+    "WALLET_HELD_DELTA": 0
+  },
+  "finished_at": "2026-09-25T00:52:40.759Z",
+  "ok": false
+}

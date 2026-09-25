@@ -3525,6 +3525,25 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
             `?order_id=eq.${encodeURIComponent(order.id)}&payment_status=eq.paid&limit=1`
           ).catch(() => [])
         )?.[0] || null;
+      // Manual rails: refuse CS approve without proof record (server-side).
+      try {
+        const { assertManualProofBeforeCsApprove } = await import("./_payment-gates.js");
+        const allReceipts = pendingReceipt
+          ? [pendingReceipt]
+          : await companionDb(
+              "payment_receipts",
+              `?order_id=eq.${encodeURIComponent(order.id)}&select=*&limit=20`
+            ).catch(() => []);
+        assertManualProofBeforeCsApprove(order, allReceipts);
+      } catch (gateErr) {
+        if (gateErr?.code === "PAYMENT_PROOF_REQUIRED") {
+          return json(res, gateErr.status || 409, {
+            ok: false,
+            message: gateErr.message,
+            code: gateErr.code,
+          });
+        }
+      }
       // Manual order flow: boss must upload payment screenshot before CS can confirm / dispatch.
       // Do not debit wallet or enter grab/assign until proof is approved.
       if (!pendingReceipt && !existingManualPayment) {

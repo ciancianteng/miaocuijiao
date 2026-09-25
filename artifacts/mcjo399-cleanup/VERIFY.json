@@ -1,0 +1,32 @@
+{
+  "verified_at": "2026-09-25T00:53:38.323Z",
+  "remaining_orders": [],
+  "holds": [],
+  "ledger": [],
+  "wallet": {
+    "total_balance": 550,
+    "held_balance": 70,
+    "paid_balance": 480
+  },
+  "BEFORE_WALLET": {
+    "total_balance": 550,
+    "held_balance": 140,
+    "paid_balance": 410,
+    "frozen": 0
+  },
+  "AFTER_WALLET": {
+    "total_balance": 550,
+    "held_balance": 70,
+    "paid_balance": 480,
+    "frozen": 0
+  },
+  "GMV_BEFORE_CONTRIBUTION": 70,
+  "GMV_BOSS1717_ACTIVE_ROOTS_NOW": 130,
+  "CHECKS": {
+    "DELETE_INVALID_MCJO000399": "PASS",
+    "RELATED_TEST_DATA_CLEANED": "PASS",
+    "WALLET_ROLLBACK": "PASS",
+    "EARNINGS_ROLLBACK": "PASS",
+    "GMV_ROLLBACK": "PASS"
+  }
+}

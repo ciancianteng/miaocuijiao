@@ -1644,6 +1644,20 @@ export default async function handler(req, res) {
       }
       // Multi parent: pay_order must never hold/claim/notify — proof upload only.
       if (payGuard.cascadeChildren) {
+        try {
+          const { assertMultiPayOrderRequiresCsPath } = await import("./_payment-gates.js");
+          assertMultiPayOrderRequiresCsPath(before);
+        } catch (gateErr) {
+          return json(res, gateErr.status || 409, {
+            ok: false,
+            code: gateErr.code || "MULTI_REQUIRES_PROOF_AND_CS",
+            paymentReview: false,
+            message:
+              gateErr.message ||
+              "多人订单须先在支付页上传付款凭证并提交。提交后进入「待客服审核」；客服审核通过前不会进入等待陪玩确认。",
+            order: viewOrder(before),
+          });
+        }
         return json(res, 400, {
           ok: false,
           code: "MANUAL_PAYMENT_REQUIRES_PROOF",

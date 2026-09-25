@@ -4196,6 +4196,35 @@ export default async function handler(req, res) {
       const beforeRows = await supabaseJson(restUrl("orders", `?id=eq.${encodeURIComponent(id)}&companion_id=eq.${encodeURIComponent(auth.profile.id)}&limit=1`), { headers: serviceHeaders() });
       const before = beforeRows?.[0];
       if (!before || before.status !== "claimed") return json(res, 409, { ok: false, message: "当前订单不能确认接单" });
+      // Multi / manual rails: refuse companion confirm if CS never approved payment.
+      try {
+        const gates = await import("./_payment-gates.js");
+        let gateOrder = before;
+        if (before.parent_order_id) {
+          const parents = await supabaseJson(
+            restUrl("orders", `?id=eq.${encodeURIComponent(before.parent_order_id)}&select=*&limit=1`),
+            { headers: serviceHeaders() }
+          );
+          if (parents?.[0]) gateOrder = parents[0];
+        }
+        const receiptIds = [gateOrder.id, before.id].filter(Boolean);
+        const receipts = await supabaseJson(
+          restUrl(
+            "payment_receipts",
+            `?order_id=in.(${receiptIds.map(encodeURIComponent).join(",")})&select=*&limit=40`
+          ),
+          { headers: serviceHeaders() }
+        ).catch(() => []);
+        gates.assertCsApprovedBeforeCompanionStage(gateOrder, receipts || [], { toStatus: "in_progress" });
+      } catch (gateErr) {
+        if (gateErr?.code === "CS_APPROVAL_REQUIRED") {
+          return json(res, gateErr.status || 409, {
+            ok: false,
+            message: gateErr.message,
+            code: gateErr.code,
+          });
+        }
+      }
       // Discord voice orders: companion must bind Discord before accept.
       try {
         const voiceMode = String(before.voice_mode || "game_mic").trim() || "game_mic";
