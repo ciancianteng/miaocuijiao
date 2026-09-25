@@ -647,9 +647,13 @@ async function buildDetail(row, profile, opts = {}) {
     null;
   const gallery = mediaSigned.filter((m) => {
     if (m.mediaType === "cover") return true;
+    if (m.mediaType === "achievement") return false;
     if (m.mediaType !== "gallery") return false;
     const ctype = String(m.contentType || "").toLowerCase();
-    return !/^video\//.test(ctype);
+    if (/^video\//.test(ctype)) return false;
+    // Exclude legacy achievement fallbacks (sort_order >= 500) from personal gallery.
+    if (Number(m.sortOrder || 0) >= 500) return false;
+    return true;
   });
   const voices = mediaSigned.filter((m) => m.mediaType === "voice");
   const videos = mediaSigned.filter((m) => {
@@ -657,6 +661,12 @@ async function buildDetail(row, profile, opts = {}) {
     if (m.mediaType === "gallery" && /^video\//i.test(String(m.contentType || ""))) return true;
     return false;
   });
+  const achievements = mediaSigned.filter((m) => m.mediaType === "achievement");
+  // Legacy: high sort_order gallery rows saved as achievement fallback when constraint lacked achievement.
+  const legacyAchievements = mediaSigned.filter(
+    (m) => m.mediaType === "gallery" && Number(m.sortOrder || 0) >= 500 && !/^video\//i.test(String(m.contentType || ""))
+  );
+  const achievementList = achievements.length ? achievements : legacyAchievements;
 
   const appReviewerId = String(row.application_reviewed_by || "").trim();
   let appReviewerName = "";
@@ -867,6 +877,7 @@ async function buildDetail(row, profile, opts = {}) {
       gallery,
       voices,
       videos,
+      achievements: achievementList,
       status: row.media_status || "pending",
       statusLabel: labelStatus(row.media_status || "pending"),
       rejectReason: row.media_reject_reason || "",
@@ -876,6 +887,7 @@ async function buildDetail(row, profile, opts = {}) {
         !gallery.length &&
         !voices.length &&
         !videos.length &&
+        !achievementList.length &&
         !row.card_image_url &&
         !row.voice_url,
     },

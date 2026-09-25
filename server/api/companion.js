@@ -794,7 +794,7 @@ async function synthesizeMediaFallback(profile, companion, opts = {}) {
     let sort = 100;
     for (const bucket of buckets) {
       const files = await listStoragePrefix(bucket, `${profile.id}/gallery`);
-      for (const file of files.slice(0, 6)) {
+      for (const file of files) {
         const objectPath = `${profile.id}/gallery/${file.name}`;
         let gUrl = "";
         try {
@@ -2605,7 +2605,14 @@ async function bootstrapData(profile, companion) {
     }));
 
   const signedMediaRaw = [];
-  const seenTypes = { avatar: false, cover: false, gallery: false, voice: false, video: false };
+  const seenTypes = {
+    avatar: false,
+    cover: false,
+    gallery: false,
+    voice: false,
+    video: false,
+    achievement: false,
+  };
   for (const item of media) {
     let url = "";
     try {
@@ -2633,6 +2640,9 @@ async function bootstrapData(profile, companion) {
   // Keep current review set only: 1 avatar, unique gallery, 1 latest voice.
   const byUploadedDesc = (a, b) =>
     new Date(b.uploadedAt || 0).getTime() - new Date(a.uploadedAt || 0).getTime();
+  const bySortOrderAsc = (a, b) =>
+    Number(a.sortOrder ?? 100) - Number(b.sortOrder ?? 100) ||
+    new Date(a.uploadedAt || 0).getTime() - new Date(b.uploadedAt || 0).getTime();
   const avatars = signedMediaRaw.filter((m) => m.mediaType === "avatar").sort(byUploadedDesc);
   const voicesOnly = signedMediaRaw.filter((m) => m.mediaType === "voice").sort(byUploadedDesc);
   const gallerySeen = new Set();
@@ -2674,10 +2684,23 @@ async function bootstrapData(profile, companion) {
       const ctype = String(m.contentType || m.content_type || "").toLowerCase();
       return m.mediaType === "gallery" && /^video\//.test(ctype);
     })
-    .sort(byUploadedDesc);
-  if (videosOnly[0]) {
-    signedMedia.push({ ...videosOnly[0], mediaType: "video" });
+    .sort(bySortOrderAsc);
+  // Videos and achievements are append-only (no cap): return every row, in upload order.
+  const videoSeen = new Set();
+  for (const v of videosOnly) {
+    const key = String(v.storagePath || v.url || v.id || "").trim();
+    if (key && videoSeen.has(key)) continue;
+    if (key) videoSeen.add(key);
+    signedMedia.push({ ...v, mediaType: "video" });
     seenTypes.video = true;
+  }
+  const achievementSeen = new Set();
+  for (const a of signedMediaRaw.filter((m) => m.mediaType === "achievement").sort(bySortOrderAsc)) {
+    const key = String(a.storagePath || a.url || a.id || "").trim();
+    if (key && achievementSeen.has(key)) continue;
+    if (key) achievementSeen.add(key);
+    signedMedia.push(a);
+    seenTypes.achievement = true;
   }
   // Merge synthesized fallbacks for missing single-slot types.
   // Gallery: companion_media is canonical when the table exists — never mix storage listing
@@ -5566,30 +5589,39 @@ return json(res, 200, {
       await ensureCompanionBuckets();
       let mediaType = String(body.media_type || body.mediaType || "gallery");
       if (mediaType === "card" || mediaType === "card_image") mediaType = "cover";
-      if (!["avatar", "cover", "gallery", "voice", "video"].includes(mediaType)) {
+      if (
+        mediaType === "achievement_image" ||
+        mediaType === "achievement_video" ||
+        mediaType === "records" ||
+        mediaType === "record"
+      ) {
+        mediaType = "achievement";
+      }
+      if (!["avatar", "cover", "gallery", "voice", "video", "achievement"].includes(mediaType)) {
         return json(res, 400, { ok: false, message: "不支持的媒体类型" });
       }
       const dataUrl = body.data_url || body.dataUrl || body.file;
       const directPath = String(body.storage_path || body.storagePath || body.path || "").trim();
       const directBucket = String(body.storage_bucket || body.storageBucket || body.bucket || "").trim();
-      if (!dataUrl && !(mediaType === "video" && directPath)) {
+      // Achievements accept both images (data_url) and videos (direct upload), same as showcase video.
+      const isDirectVideo = Boolean(directPath) && (mediaType === "video" || mediaType === "achievement");
+      if (!dataUrl && !isDirectVideo) {
         return json(res, 400, { ok: false, message: "请选择要上传的文件" });
       }
 
       const galleryFallback = readGalleryFallback(row.tags || companion.tags || "");
-      if (mediaType === "gallery") {
+      if (mediaType === "gallery" || mediaType === "video" || mediaType === "achievement") {
+        // Append semantics: no count cap. Next sort_order = max + 10 (never overwrite prior rows).
         const existing = await companionDb(
           "companion_media",
-          `?companion_profile_id=eq.${encodeURIComponent(row.id)}&media_type=eq.gallery&select=id,sort_order,content_type,storage_path`
+          `?companion_profile_id=eq.${encodeURIComponent(row.id)}&media_type=eq.${encodeURIComponent(mediaType)}&select=id,sort_order,content_type,storage_path`
         ).catch((e) => (isMissingRelation(e) ? null : Promise.reject(e)));
-        const galleryRows = (existing || []).filter((g) => !/^video\//i.test(String(g.content_type || "")));
-        const galleryCount = existing == null ? galleryFallback.items.length : galleryRows.length;
-        if (galleryCount >= 6) {
-          return json(res, 400, { ok: false, message: "相册最多上传 6 张，请先删除后再上传" });
-        }
-        // Append semantics: next sort_order = max + 10 (never overwrite prior rows).
         if (existing != null && body.sort_order == null) {
-          const maxSort = galleryRows.reduce((acc, g) => Math.max(acc, Number(g.sort_order) || 0), 0);
+          const rowsForSort =
+            mediaType === "gallery"
+              ? (existing || []).filter((g) => !/^video\//i.test(String(g.content_type || "")))
+              : existing || [];
+          const maxSort = rowsForSort.reduce((acc, g) => Math.max(acc, Number(g.sort_order) || 0), 0);
           body.sort_order = maxSort + 10;
         }
       }
@@ -5609,7 +5641,7 @@ return json(res, 200, {
         const objectPath = buildObjectPath(auth.profile.id, "voice", body.filename || "voice.webm");
         await uploadPrivateObject(PRIVATE_BUCKETS.audio, objectPath, checked.buffer, checked.contentType);
         uploaded = { bucket: PRIVATE_BUCKETS.audio, path: objectPath, contentType: checked.contentType };
-      } else if (mediaType === "video") {
+      } else if (mediaType === "video" || isDirectVideo) {
         const dur = body.duration_seconds != null ? Number(body.duration_seconds) : null;
         if (dur && dur > 30.5) return json(res, 400, { ok: false, message: "视频最长 30 秒" });
         if (directPath) {
@@ -5641,7 +5673,11 @@ return json(res, 200, {
             });
           }
           const checked = assertVideoUpload(decoded);
-          const objectPath = buildObjectPath(auth.profile.id, "video", body.filename || "showcase.mp4");
+          const objectPath = buildObjectPath(
+            auth.profile.id,
+            mediaType === "achievement" ? "achievement" : "video",
+            body.filename || "showcase.mp4"
+          );
           const bucket = PRIVATE_BUCKETS.video;
           await uploadPrivateObject(bucket, objectPath, checked.buffer, checked.contentType);
           uploaded = { bucket, path: objectPath, contentType: checked.contentType };
@@ -5667,26 +5703,13 @@ return json(res, 200, {
       }
       if (!uploaded.path) return json(res, 400, { ok: false, message: "缺少上传文件" });
 
-      if (mediaType === "avatar" || mediaType === "cover" || mediaType === "voice" || mediaType === "video") {
+      // Single-slot types replace the previous row. gallery / video / achievement append.
+      if (mediaType === "avatar" || mediaType === "cover" || mediaType === "voice") {
         const oldRows = await companionDb(
           "companion_media",
           `?companion_profile_id=eq.${encodeURIComponent(row.id)}&media_type=eq.${encodeURIComponent(mediaType)}`
         ).catch(() => []);
-        let legacyVideoRows = [];
-        if (mediaType === "video") {
-          // Older DBs may store showcase video as gallery + video/* content_type.
-          const galleryRows = await companionDb(
-            "companion_media",
-            `?companion_profile_id=eq.${encodeURIComponent(row.id)}&media_type=eq.gallery&select=*`
-          ).catch(() => []);
-          legacyVideoRows = (galleryRows || []).filter(
-            (g) =>
-              /^video\//i.test(String(g.content_type || "")) ||
-              /\/video\//i.test(String(g.storage_path || "")) ||
-              String(g.storage_bucket || "") === PRIVATE_BUCKETS.video
-          );
-        }
-        for (const old of [...(oldRows || []), ...legacyVideoRows]) {
+        for (const old of oldRows || []) {
           try {
             await deleteStorageObject(old.storage_bucket, old.storage_path);
           } catch {
@@ -5736,14 +5759,15 @@ return json(res, 200, {
           // Legacy DB check only allows avatar|gallery|voice — store cover as gallery sort 1 so admin still sees it.
           const insertMsg = `${insertErr?.message || ""} ${JSON.stringify(insertErr?.body || "")}`;
           if (
-            (mediaType === "cover" || mediaType === "video") &&
+            (mediaType === "cover" || mediaType === "video" || mediaType === "achievement") &&
             /media_type|check|23514|violates/i.test(insertMsg)
           ) {
             persistedMediaType = "gallery";
             const fallbackPayload = {
               ...mediaPayload,
               media_type: "gallery",
-              sort_order: mediaType === "cover" ? 1 : 2,
+              sort_order:
+                mediaType === "cover" ? 1 : mediaType === "achievement" ? 500 + (Number(sortOrder) || 0) : sortOrder,
             };
             const mediaRows = await companionDb("companion_media", "", {
               method: "POST",
@@ -5848,6 +5872,8 @@ return json(res, 200, {
                 ? "录音上传成功"
                 : mediaType === "video"
                   ? "展示视频上传成功"
+                : mediaType === "achievement"
+                  ? "战绩上传成功"
                 : "媒体上传成功",
         url: publicUrl,
         path: uploaded.path,

@@ -118,6 +118,8 @@
       if (hasDurableUpload(identity.idFront) || hasDurableUpload(identity.idBack) || hasDurableUpload(identity.depositProof)) return false;
     }
     if (typeof photoListOf === "function" && photoListOf(uploads).length) return false;
+    if (typeof videoListOf === "function" && videoListOf(uploads).length) return false;
+    if (typeof recordsListOf === "function" && recordsListOf(uploads).length) return false;
     if (voice.hasLocal || liveVoiceBlob) return false;
     if (String(identity.settlementAccount || identity.tngAccount || identity.alipayAccount || identity.realName || "").trim()) return false;
     return true;
@@ -783,6 +785,68 @@
     if (Array.isArray(uploads.album)) return uploads.album.filter(Boolean);
     if (uploads.photos) return [uploads.photos];
     return [];
+  }
+  function mediaListOf(uploads, key) {
+    uploads = uploads || {};
+    var v = uploads[key];
+    if (Array.isArray(v)) return v.filter(Boolean);
+    if (v) return [v];
+    return [];
+  }
+  function videoListOf(uploads) {
+    var list = mediaListOf(uploads, "videos");
+    if (list.length) return list;
+    // legacy single showcaseVideo
+    if (uploads && uploads.showcaseVideo) return [uploads.showcaseVideo].filter(Boolean);
+    return [];
+  }
+  function recordsListOf(uploads) {
+    return mediaListOf(uploads, "records");
+  }
+  /** Merge a server media list into the local draft list by id/url/path, keeping local durable items. */
+  function mergeServerMediaList(localList, serverList) {
+    var out = (localList || []).filter(Boolean);
+    var seen = {};
+    function mark(item) {
+      if (item.id) seen["id:" + item.id] = true;
+      if (item.url) seen["url:" + item.url] = true;
+      if (item.path) seen["path:" + item.path] = true;
+    }
+    out.forEach(function (item) {
+      if (item) mark(item);
+    });
+    (serverList || []).forEach(function (item) {
+      if (!item) return;
+      var norm = typeof item === "string" ? { url: item, status: "ok" } : item;
+      if (!norm.url && !norm.path && !norm.id) return;
+      if (
+        (norm.id && seen["id:" + norm.id]) ||
+        (norm.url && seen["url:" + norm.url]) ||
+        (norm.path && seen["path:" + norm.path])
+      ) {
+        return;
+      }
+      mark(norm);
+      out.push(norm);
+    });
+    return out;
+  }
+  /** Keys whose uploads append into a list — never overwrite, never count-capped. */
+  function isMultiUploadKey(key) {
+    return key === "photos" || key === "videos" || key === "showcaseVideo" || key === "records";
+  }
+  function isVideoAsset(item) {
+    if (!item) return false;
+    var ctype = String(item.contentType || item.content_type || item.mime || "").toLowerCase();
+    if (/^video\//.test(ctype)) return true;
+    if (String(item.kind || item.mediaType || item.media_type || "").toLowerCase() === "video") return true;
+    var src = String(item.url || item.path || item || "");
+    return /\.(mp4|mov|webm|m4v)(\?|#|$)/i.test(src);
+  }
+  function isVideoFile(file) {
+    if (!file) return false;
+    if (/^video\//i.test(String(file.type || ""))) return true;
+    return /\.(mp4|mov|webm|m4v)$/i.test(String(file.name || ""));
   }
   function missingForStep(index, draft) {
     draft = draft || readDraft();
@@ -1906,17 +1970,113 @@
         '<button type="button" class="mcj-upload-remove" data-clear-gallery="' + esc(String(idx)) + '" aria-label="删除">×</button>' +
         "</div>";
     }).join("");
-    var addCard = list.length >= 6
-      ? '<p class="apply-note full">个人照片已达 6 张上限</p>'
-      : fileField("photos", "添加照片", {
-          multiple: true,
-          accept: "image/*",
-          hint: "jpg / png / webp · 最多 6 张 · 可多选",
-          value: null,
-        });
+    // No count cap — the add card always stays available.
+    var addCard = fileField("photos", "＋ 添加照片", {
+      multiple: true,
+      accept: "image/*",
+      hint: "jpg / png / webp · 数量不限 · 可多选",
+      value: null,
+    });
     return (
       '<div class="form-field full apply-gallery-block">' +
-      '<span class="mcj-upload-label">个人照片</span>' +
+      '<span class="mcj-upload-label">个人展示照片</span>' +
+      '<div class="apply-gallery-grid">' +
+      cards +
+      "</div>" +
+      addCard +
+      "</div>"
+    );
+  }
+  // companion-application.css has no rule for the video overlay yet — keep it inline.
+  var PLAY_BADGE_HTML =
+    '<span class="apply-gallery-play" aria-hidden="true" style="position:absolute;left:50%;top:50%;' +
+    "transform:translate(-50%,-50%);width:34px;height:34px;border-radius:50%;display:flex;" +
+    'align-items:center;justify-content:center;background:rgba(0,0,0,.52);color:#fff;font-size:14px;pointer-events:none">▶</span>';
+  function videoGalleryHtml(uploads) {
+    var list = videoListOf(uploads);
+    var cards = list.map(function (item, idx) {
+      var liveKey = "videos:" + ((item && item.id) || idx);
+      var preview = assetPreview(item, liveKey) || assetPreview(item);
+      var id = (item && item.id) || idx;
+      var uploading = !!(item && (item.status === "uploading" || item.status === "pending"));
+      var failed = !!(item && (item.status === "error" || item.status === "failed"));
+      var badge = uploading
+        ? '<span class="mcj-upload-badge is-uploading">上传中</span>'
+        : failed
+          ? '<span class="mcj-upload-badge is-error">失败 · 重试</span>'
+          : "";
+      return '<div class="mcj-upload-preview-wrap apply-gallery-item apply-gallery-video' +
+        (preview ? " has-preview" : "") +
+        (uploading ? " is-uploading" : "") +
+        (failed ? " is-error" : "") +
+        '" data-video-item="' + esc(String(id)) + '">' +
+        (preview
+          ? '<video class="mcj-upload-preview" src="' + esc(preview) + '" preload="metadata" muted playsinline></video>' + PLAY_BADGE_HTML
+          : uploading
+            ? '<div class="mcj-upload-skeleton" aria-hidden="true"></div>'
+            : PLAY_BADGE_HTML) +
+        badge +
+        '<button type="button" class="mcj-upload-remove" data-clear-video="' + esc(String(idx)) + '" aria-label="删除">×</button>' +
+        "</div>";
+    }).join("");
+    var addCard = fileField("videos", "＋ 添加视频", {
+      kind: "video",
+      multiple: true,
+      accept: U() && U().VIDEO_ACCEPT ? U().VIDEO_ACCEPT : "video/mp4,video/quicktime,.mp4,.mov",
+      capture: false,
+      hint: "mp4 / mov，单条最长约 30 秒 · 数量不限 · 可多选",
+      value: null,
+    });
+    return (
+      '<div class="form-field full apply-gallery-block apply-video-block">' +
+      '<span class="mcj-upload-label">个人展示视频</span>' +
+      '<div class="apply-gallery-grid">' +
+      cards +
+      "</div>" +
+      addCard +
+      "</div>"
+    );
+  }
+  function recordsGalleryHtml(uploads) {
+    var list = recordsListOf(uploads);
+    var cards = list.map(function (item, idx) {
+      var liveKey = "records:" + ((item && item.id) || idx);
+      var preview = assetPreview(item, liveKey) || assetPreview(item);
+      var id = (item && item.id) || idx;
+      var uploading = !!(item && (item.status === "uploading" || item.status === "pending"));
+      var failed = !!(item && (item.status === "error" || item.status === "failed"));
+      var video = isVideoAsset(item);
+      var badge = uploading
+        ? '<span class="mcj-upload-badge is-uploading">上传中</span>'
+        : failed
+          ? '<span class="mcj-upload-badge is-error">失败 · 重试</span>'
+          : "";
+      return '<div class="mcj-upload-preview-wrap apply-gallery-item' +
+        (video ? " apply-gallery-video" : "") +
+        (preview ? " has-preview" : "") +
+        (uploading ? " is-uploading" : "") +
+        (failed ? " is-error" : "") +
+        '" data-records-item="' + esc(String(id)) + '">' +
+        (preview
+          ? video
+            ? '<video class="mcj-upload-preview" src="' + esc(preview) + '" preload="metadata" muted playsinline></video>' + PLAY_BADGE_HTML
+            : '<img class="mcj-upload-preview" src="' + esc(preview) + '" alt="游戏战绩">'
+          : uploading
+            ? '<div class="mcj-upload-skeleton" aria-hidden="true"></div>'
+            : "") +
+        badge +
+        '<button type="button" class="mcj-upload-remove" data-clear-records="' + esc(String(idx)) + '" aria-label="删除">×</button>' +
+        "</div>";
+    }).join("");
+    var addCard = fileField("records", "＋ 添加战绩截图 / 视频", {
+      multiple: true,
+      accept: "image/*,video/*",
+      hint: "图片或视频均可 · 数量不限 · 可多选",
+      value: null,
+    });
+    return (
+      '<div class="form-field full apply-gallery-block apply-records-block">' +
+      '<span class="mcj-upload-label">游戏截图 / 证明（选填）</span>' +
       '<div class="apply-gallery-grid">' +
       cards +
       "</div>" +
@@ -2136,7 +2296,8 @@
         hint: "jpg / png / webp · 可相册选择或拍照 · 上传后可替换",
       }) +
       galleryUploadHtml(u) +
-      '<p class="apply-section-note">个人照片最多 6 张，会同步到后台审核与老板大厅展示。</p>' +
+      videoGalleryHtml(u) +
+      '<p class="apply-section-note">照片与视频数量不限，可继续添加；全部同步到后台审核与老板大厅展示。</p>' +
       "</form>";
     return sectionShell("photos", "展示资料", "让老板更了解你", body);
   }
@@ -2154,29 +2315,14 @@
       selectField("rank", "游戏段位", data.rank, rankOptions) +
       selectField("voiceType", "声线", data.voiceType, voiceTypeOptions()) +
       onlineTimeFieldsHtml(data) +
-      fileField("records", "游戏截图 / 证明（选填）", {
-        value: uploads.records || null,
-        accept: "image/*",
-        hint: "选填；支持 jpg / png / webp",
-      }) +
+      recordsGalleryHtml(uploads) +
       pricingNoticeHtml() +
       "</form>";
     return sectionShell("games", "游戏资料", "帮助匹配更合适的老板订单", body);
   }
-  function videoIntroHtml(draft) {
-    var u = (draft && draft.uploads) || {};
-    var body =
-      '<form class="apply-fields">' +
-      fileField("showcaseVideo", "上传视频（选填）", {
-        kind: "video",
-        value: u.showcaseVideo || null,
-        accept: U() && U().VIDEO_ACCEPT ? U().VIDEO_ACCEPT : "video/mp4,video/quicktime,.mp4,.mov",
-        capture: false,
-        hint: "mp4 / mov，最长约 30 秒；直传云端，选填",
-      }) +
-      '<p class="apply-section-note">视频会进入同一套 Storage 与后台审核，不会只存在前端。</p>' +
-      "</form>";
-    return sectionShell("video", "视频介绍", "让老板更快了解你的风格", body);
+  function videoIntroHtml() {
+    // Videos moved into 展示资料 as an unlimited gallery; kept as a no-op for legacy callers.
+    return "";
   }
   function selfIntroHtml(data) {
     data = data || {};
@@ -2203,7 +2349,7 @@
   }
   function uploadHtml(draft) {
     // Keep callable for any leftover callers; media is split across showcase/video/voice cards.
-    return mediaShowcaseHtml(draft) + videoIntroHtml(draft) + voiceCardHtml(draft);
+    return mediaShowcaseHtml(draft) + voiceCardHtml(draft);
   }
 
   function voiceCardHtml(draft) {
@@ -2747,7 +2893,6 @@
       personalProfileHtml(data) +
       gameProfileHtml(data, draft.uploads || {}) +
       voiceCardHtml(draft) +
-      videoIntroHtml(draft) +
       selfIntroHtml(data) +
       "</div>"
     );
@@ -3317,17 +3462,18 @@
       });
     }
     var photoList = photoListOf(uploads);
-    photoList.slice(0, 6).forEach(function (img) {
+    photoList.forEach(function (img) {
       if (!needsMediaUpload(img)) return;
       chain = chain.then(function () {
         return postCompanion("upload_media", { media_type: "gallery", data_url: normalizeUploadAsset(img).url, filename: "gallery.jpg" });
       });
     });
-    if (needsMediaUpload(uploads.records)) {
+    recordsListOf(uploads).forEach(function (rec) {
+      if (!needsMediaUpload(rec)) return;
       chain = chain.then(function () {
-        return postCompanion("upload_media", { media_type: "gallery", data_url: normalizeUploadAsset(uploads.records).url, filename: "records.jpg" });
+        return postCompanion("upload_media", { media_type: "achievement", data_url: normalizeUploadAsset(rec).url, filename: "records.jpg" });
       });
-    }
+    });
     if (needsMediaUpload(voice.url) || (voice.url && /^data:/i.test(String(voice.url)))) {
       chain = chain.then(function () {
         return postCompanion("upload_media", {
@@ -4334,11 +4480,13 @@
       var mt =
         key === "avatar"
           ? "avatar"
-          : key === "showcaseVideo"
+          : key === "showcaseVideo" || key === "videos"
             ? "video"
             : key === "voiceFile"
               ? "voice"
-              : "gallery";
+              : key === "records"
+                ? "achievement"
+                : "gallery";
       postCompanion("delete_media", {
         media_id: existing.id || "",
         media_type: mt,
@@ -4346,6 +4494,15 @@
       }).catch(function () {});
     }
     render(Number(document.getElementById("companionApplyRoot").dataset.step || 0));
+  }
+  function isDuplicateAsset(list, safe) {
+    return (list || []).some(function (p) {
+      return (
+        (safe.id && p && p.id && String(p.id) === String(safe.id)) ||
+        (safe.path && p && p.path && String(p.path) === String(safe.path)) ||
+        (safe.url && p && p.url && String(p.url) === String(safe.url) && !/^data:/i.test(String(safe.url)))
+      );
+    });
   }
   function setUploadAsset(key, asset) {
     var draft = readDraft();
@@ -4376,17 +4533,23 @@
       });
       draft.voice.duration = draft.voice.duration || 15;
     } else if (key === "photos") {
+      // No cap — append every uploaded photo.
       var list = photoListOf(draft.uploads);
-      var dup = list.some(function (p) {
-        return (
-          (safe.id && p && p.id && String(p.id) === String(safe.id)) ||
-          (safe.path && p && p.path && String(p.path) === String(safe.path)) ||
-          (safe.url && p && p.url && String(p.url) === String(safe.url) && !/^data:/i.test(String(safe.url)))
-        );
-      });
-      if (dup) return;
+      if (isDuplicateAsset(list, safe)) return;
       list.push(safe);
-      draft.uploads.photos = list.slice(0, 6);
+      draft.uploads.photos = list;
+    } else if (key === "videos" || key === "showcaseVideo") {
+      // Migrate the legacy single showcaseVideo into the unlimited videos list.
+      var vlist = videoListOf(draft.uploads);
+      if (isDuplicateAsset(vlist, safe)) return;
+      vlist.push(safe);
+      draft.uploads.videos = vlist;
+      delete draft.uploads.showcaseVideo;
+    } else if (key === "records") {
+      var rlist = recordsListOf(draft.uploads);
+      if (isDuplicateAsset(rlist, safe)) return;
+      rlist.push(safe);
+      draft.uploads.records = rlist;
     } else if (key === "cover" || key === "cardCover" || key === "card_cover" || key === "profile_cover") {
       // Cover upload removed — ignore.
       return;
@@ -4399,8 +4562,10 @@
     var map = {
       avatar: { api: "upload_media", mediaType: "avatar", kind: "image" },
       photos: { api: "upload_media", mediaType: "gallery", kind: "image" },
-      records: { api: "upload_media", mediaType: "gallery", kind: "image" },
+      // records takes images and videos — kind is detected per file.
+      records: { api: "upload_media", mediaType: "achievement", kind: "auto" },
       voiceFile: { api: "upload_media", mediaType: "voice", kind: "audio" },
+      videos: { api: "upload_media", mediaType: "video", kind: "video" },
       showcaseVideo: { api: "upload_media", mediaType: "video", kind: "video" },
       idFront: { api: "upload_private_doc", docType: "id_front", kind: "image" },
       idBack: { api: "upload_private_doc", docType: "id_back", kind: "image" },
@@ -4429,7 +4594,8 @@
     }
     var file = files[0];
     if (!file) return Promise.resolve();
-    var kind = cfg.kind || payload.kind || "image";
+    var kind = cfg.kind === "auto" ? (isVideoFile(file) ? "video" : "image") : cfg.kind || payload.kind || "image";
+    var mediaType = cfg.mediaType;
     var check = U() ? U().validateFile(file, kind) : { ok: true };
     if (!check.ok) {
       uploadErrors[key] = check.error || "文件格式不支持";
@@ -4438,24 +4604,20 @@
       return Promise.resolve();
     }
     function continueUpload(durationSeconds) {
-    if (key === "photos" && photoListOf(readDraft().uploads).length >= 6) {
-      showApplyTip("相册最多上传 6 张");
-      return Promise.resolve();
-    }
     uploadBusy[key] = true;
     delete uploadErrors[key];
     var step = Number(document.getElementById("companionApplyRoot").dataset.step || 0);
     var localPreview = "";
     try {
       localPreview = URL.createObjectURL(file);
-      if (key !== "photos") setLivePreview(key, localPreview);
+      if (!isMultiUploadKey(key)) setLivePreview(key, localPreview);
     } catch (e) {
       localPreview = "";
     }
     render(step);
 
     // Showcase video: browser → Supabase direct (signed PUT / TUS). Never POST binary via Vercel.
-    if (kind === "video" || cfg.mediaType === "video") {
+    if (kind === "video" || mediaType === "video") {
       var accessToken = companionToken();
       return postCompanion("prepare_video_upload", {
         filename: file.name || "showcase.mp4",
@@ -4467,7 +4629,7 @@
           if (!prep || !prep.path || !prep.signedUrl) {
             throw new Error("直传凭证签发失败，请稍后重试");
           }
-          if (key !== "photos") {
+          if (!isMultiUploadKey(key)) {
             setUploadAsset(key, { url: "", path: "", status: "uploading" });
             render(step);
           }
@@ -4483,7 +4645,7 @@
             onProgress: function () {},
           }).then(function () {
             return postCompanion("upload_media", {
-              media_type: "video",
+              media_type: mediaType === "achievement" ? "achievement" : "video",
               storage_path: prep.path,
               storage_bucket: prep.bucket || "companion-video",
               content_type: prep.contentType || file.type || "video/mp4",
@@ -4510,8 +4672,8 @@
           if (asset.url && !isEphemeralMediaUrl(asset.url)) {
             clearLivePreview(key);
           }
-          setUploadAsset(key, asset);
-          showApplyTip("展示视频上传成功");
+          setUploadAsset(key, Object.assign({ contentType: file.type || "video/mp4" }, asset));
+          showApplyTip(mediaType === "achievement" ? "战绩视频上传成功" : "展示视频上传成功");
           render(Number(document.getElementById("companionApplyRoot").dataset.step || 0));
         })
         .catch(function (err) {
@@ -4528,10 +4690,12 @@
           }
           uploadErrors[key] = friendly;
           clearLivePreview(key);
-          var du = readDraft();
-          du.uploads = du.uploads || {};
-          delete du.uploads[key];
-          writeDraftRecord(du);
+          if (!isMultiUploadKey(key)) {
+            var du = readDraft();
+            du.uploads = du.uploads || {};
+            delete du.uploads[key];
+            writeDraftRecord(du);
+          }
           showApplyTip("上传失败：" + friendly);
           render(Number(document.getElementById("companionApplyRoot").dataset.step || 0));
           return Promise.reject(err);
@@ -4548,7 +4712,7 @@
           throw new Error("读取图片失败，请重选后重试");
         }
         // Do NOT write dataUrl into localStorage — that caused QuotaExceededError on mobile.
-        if (key !== "photos") {
+        if (!isMultiUploadKey(key)) {
           setUploadAsset(key, { url: "", path: "", status: "uploading" });
           render(step);
         }
@@ -4556,9 +4720,9 @@
           cfg.api === "upload_private_doc"
             ? { doc_type: cfg.docType, data_url: dataUrl, filename: file.name || cfg.docType + ".jpg" }
             : {
-                media_type: cfg.mediaType,
+                media_type: mediaType,
                 data_url: dataUrl,
-                filename: file.name || (cfg.mediaType === "voice" ? "voice.webm" : cfg.mediaType === "video" ? "showcase.mp4" : cfg.mediaType + ".jpg"),
+                filename: file.name || (mediaType === "voice" ? "voice.webm" : mediaType === "video" ? "showcase.mp4" : mediaType + ".jpg"),
                 duration_seconds: durationSeconds != null ? durationSeconds : undefined,
               };
         return postCompanion(cfg.api, body);
@@ -4610,7 +4774,7 @@
           dv.voice = dv.voice || {};
           delete dv.voice.fileUpload;
           writeDraftRecord(dv);
-        } else if (key !== "photos") {
+        } else if (!isMultiUploadKey(key)) {
           var du2 = readDraft();
           du2.uploads = du2.uploads || {};
           delete du2.uploads[key];
@@ -4652,7 +4816,6 @@
     files.forEach(function (file) {
       chain = chain
         .then(function () {
-          if (payload.key === "photos" && photoListOf(readDraft().uploads).length >= 6) return null;
           return handleUploadPick({ key: payload.key, files: [file], kind: payload.kind, input: null, _queued: true });
         })
         .catch(function () {
@@ -4793,7 +4956,7 @@
     if (U() && U().bind) {
       U().bind(root, {
         onPick: function (payload) {
-          if (payload.key === "photos" && payload.files && payload.files.length > 1) {
+          if (isMultiUploadKey(payload.key) && payload.files && payload.files.length > 1) {
             handleUploadPickQueue(payload);
           } else {
             handleUploadPick(payload);
@@ -5380,6 +5543,47 @@
         }
         return;
       }
+      var clearVideo = e.target.closest("[data-clear-video]");
+      if (clearVideo) {
+        e.preventDefault();
+        e.stopPropagation();
+        var vIdx = Number(clearVideo.getAttribute("data-clear-video"));
+        var vd = readDraft();
+        var vlist = videoListOf(vd.uploads);
+        if (vIdx >= 0 && vIdx < vlist.length) {
+          var removedVideo = vlist[vIdx];
+          vlist.splice(vIdx, 1);
+          vd.uploads = vd.uploads || {};
+          vd.uploads.videos = vlist;
+          delete vd.uploads.showcaseVideo;
+          writeDraftRecord(vd);
+          render(Number(root.dataset.step || 0));
+          if (removedVideo && removedVideo.id && companionToken()) {
+            postCompanion("delete_media", { media_id: removedVideo.id, media_type: "video" }).catch(function () {});
+          }
+        }
+        return;
+      }
+      var clearRecords = e.target.closest("[data-clear-records]");
+      if (clearRecords) {
+        e.preventDefault();
+        e.stopPropagation();
+        var rIdx = Number(clearRecords.getAttribute("data-clear-records"));
+        var rd = readDraft();
+        var rlist = recordsListOf(rd.uploads);
+        if (rIdx >= 0 && rIdx < rlist.length) {
+          var removedRecord = rlist[rIdx];
+          rlist.splice(rIdx, 1);
+          rd.uploads = rd.uploads || {};
+          rd.uploads.records = rlist;
+          writeDraftRecord(rd);
+          render(Number(root.dataset.step || 0));
+          if (removedRecord && removedRecord.id && companionToken()) {
+            postCompanion("delete_media", { media_id: removedRecord.id, media_type: "achievement" }).catch(function () {});
+          }
+        }
+        return;
+      }
       var rulesAccBtn = e.target.closest("[data-rules-acc-toggle]");
       if (rulesAccBtn) {
         e.preventDefault();
@@ -5594,6 +5798,8 @@
       voiceUrl: "",
       videoUrl: "",
       gallery: [],
+      videos: [],
+      records: [],
     };
     mediaList.forEach(function (m) {
       if (!m) return;
@@ -5601,12 +5807,15 @@
       var url = m.url || "";
       if (!url) return;
       var ctype = String(m.contentType || m.content_type || "").toLowerCase();
-      var isVideo = mt === "video" || (mt === "gallery" && /^video\//.test(ctype));
+      var isVideo = mt === "video" || (/^(gallery|achievement)$/.test(mt) && /^video\//.test(ctype));
       if (mt === "avatar" && !mediaMap.avatarUrl) mediaMap.avatarUrl = url;
       else if (mt === "cover" && !mediaMap.coverUrl) mediaMap.coverUrl = url;
       else if (mt === "voice" && !mediaMap.voiceUrl) mediaMap.voiceUrl = url;
-      else if (isVideo && !mediaMap.videoUrl) mediaMap.videoUrl = url;
-      else if (mt === "gallery" && !isVideo) mediaMap.gallery.push({ id: m.id || "", url: url, status: "ok" });
+      else if (mt === "achievement") mediaMap.records.push({ id: m.id || "", url: url, contentType: ctype, status: "ok" });
+      else if (isVideo) {
+        if (!mediaMap.videoUrl) mediaMap.videoUrl = url;
+        mediaMap.videos.push({ id: m.id || "", url: url, contentType: ctype || "video/mp4", status: "ok" });
+      } else if (mt === "gallery") mediaMap.gallery.push({ id: m.id || "", url: url, status: "ok" });
     });
     if (boot.media && !Array.isArray(boot.media)) {
       mediaMap.avatarUrl = mediaMap.avatarUrl || boot.media.avatarUrl || "";
@@ -5614,17 +5823,26 @@
       mediaMap.voiceUrl = mediaMap.voiceUrl || boot.media.voiceUrl || "";
       mediaMap.videoUrl = mediaMap.videoUrl || boot.media.videoUrl || "";
       if (Array.isArray(boot.media.gallery)) mediaMap.gallery = boot.media.gallery;
+      if (Array.isArray(boot.media.videos)) mediaMap.videos = boot.media.videos;
+      if (Array.isArray(boot.media.achievements)) mediaMap.records = boot.media.achievements;
+      if (!mediaMap.videos.length && mediaMap.videoUrl) {
+        mediaMap.videos = [{ id: "", url: mediaMap.videoUrl, contentType: "video/mp4", status: "ok" }];
+      }
     }
     if (!hasDurableUpload(draft.uploads.avatar) && (mediaMap.avatarUrl || player.avatar)) {
       draft.uploads.avatar = { url: mediaMap.avatarUrl || player.avatar, status: "ok" };
     }
     // Card cover upload removed — do not hydrate into draft.uploads.cover.
-    if (!hasDurableUpload(draft.uploads.showcaseVideo) && mediaMap.videoUrl) {
-      draft.uploads.showcaseVideo = { url: mediaMap.videoUrl, status: "ok" };
+    // Media lists are unlimited: merge the whole server list by id/url instead of only filling an empty draft.
+    var mergedPhotos = mergeServerMediaList(photoListOf(draft.uploads), mediaMap.gallery);
+    if (mergedPhotos.length) draft.uploads.photos = mergedPhotos;
+    var mergedVideos = mergeServerMediaList(videoListOf(draft.uploads), mediaMap.videos);
+    if (mergedVideos.length) {
+      draft.uploads.videos = mergedVideos;
+      delete draft.uploads.showcaseVideo;
     }
-    if (!photoListOf(draft.uploads).length && mediaMap.gallery.length) {
-      draft.uploads.photos = mediaMap.gallery;
-    }
+    var mergedRecords = mergeServerMediaList(recordsListOf(draft.uploads), mediaMap.records);
+    if (mergedRecords.length) draft.uploads.records = mergedRecords;
     if (!hasDurableUpload(draft.voice) && !hasDurableUpload(draft.voice.url) && (mediaMap.voiceUrl || player.voiceUrl)) {
       draft.voice.url = mediaMap.voiceUrl || player.voiceUrl;
       draft.voice.confirmed = true;

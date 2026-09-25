@@ -370,6 +370,50 @@
   gap:10px;
   padding:16px 18px 18px;
 }
+.profile-detail-page .pd-media-rail{
+  display:flex;
+  flex-wrap:nowrap;
+  overflow-x:auto;
+  -webkit-overflow-scrolling:touch;
+  gap:10px;
+  padding:16px 18px 18px;
+  scroll-snap-type:x proximity;
+}
+.profile-detail-page .pd-media-rail .mcj-album-thumb,
+.profile-detail-page .pd-media-rail img{
+  flex:0 0 112px;
+  width:112px;
+  height:112px;
+  scroll-snap-align:start;
+}
+.profile-detail-page .pd-video-rail{
+  display:flex;
+  flex-wrap:nowrap;
+  overflow-x:auto;
+  gap:12px;
+  padding:8px 0 4px;
+  -webkit-overflow-scrolling:touch;
+}
+.profile-detail-page .pd-video-rail .pd-video-player{
+  flex:0 0 min(280px,82vw);
+  max-width:min(280px,82vw);
+}
+.profile-detail-page .pd-video-rail video{
+  width:100%;
+  border-radius:12px;
+  background:#000;
+  max-height:220px;
+}
+.profile-detail-page .pd-album-more{
+  margin:0 18px 14px;
+  height:36px;
+  border-radius:10px;
+  border:1px solid rgba(232,154,196,.28);
+  background:rgba(255,255,255,.04);
+  color:#ffd6e8;
+  font-size:13px;
+  font-weight:760;
+}
 
 .profile-detail-page .wall-grid img{
   width:100%;

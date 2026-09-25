@@ -245,6 +245,14 @@ function publicCompanion(row = {}, profile = {}, levels = [], catalog = [], medi
   const gallery = Array.isArray(mediaExtras.gallery)
     ? mediaExtras.gallery.filter((g) => g && g.url && /^https?:\/\//i.test(String(g.url)))
     : [];
+  const videos = Array.isArray(mediaExtras.videos)
+    ? mediaExtras.videos.filter((v) => v && v.url && /^https?:\/\//i.test(String(v.url)))
+    : videoPlayable
+      ? [{ url: videoPlayable }]
+      : [];
+  const achievements = Array.isArray(mediaExtras.achievements)
+    ? mediaExtras.achievements.filter((a) => a && a.url && /^https?:\/\//i.test(String(a.url)))
+    : [];
   return {
     id: row.user_id || row.id,
     uid: row.user_id || row.id,
@@ -315,6 +323,8 @@ function publicCompanion(row = {}, profile = {}, levels = [], catalog = [], medi
     hasVoice: !!voicePlayable,
     cardImageUrl: pickStableMediaUrl(row.card_image_url, cover) || "",
     gallery,
+    videos,
+    achievements,
     videoUrl: videoPlayable,
     showcaseVideoUrl: videoPlayable,
     desc: row.description || "",
@@ -484,13 +494,13 @@ async function mediaExtrasByProfile(profileIds = [], opts = {}) {
   const listMode = !!opts.listMode;
   const mediaTypes = listMode
     ? "avatar,cover,gallery"
-    : "avatar,cover,gallery,voice,video";
+    : "avatar,cover,gallery,voice,video,achievement";
   let rows = [];
   try {
     rows = await supabaseJson(
       restUrl(
         "companion_media",
-        `?companion_profile_id=in.(${ids.map(encodeURIComponent).join(",")})&media_type=in.(${mediaTypes})&order=sort_order.asc&limit=${listMode ? 1200 : 3000}&select=id,companion_profile_id,media_type,storage_bucket,storage_path,status,content_type`
+        `?companion_profile_id=in.(${ids.map(encodeURIComponent).join(",")})&media_type=in.(${mediaTypes})&order=sort_order.asc&limit=${listMode ? 1200 : 3000}&select=id,companion_profile_id,media_type,storage_bucket,storage_path,status,content_type,sort_order`
       ),
       { headers: headers() }
     );
@@ -551,17 +561,45 @@ async function mediaExtrasByProfile(profileIds = [], opts = {}) {
   for (const item of resolved) {
     if (!item) continue;
     const { row, pid, url, isVideo } = item;
-    if (!byProfile[pid]) byProfile[pid] = { avatarUrl: "", coverUrl: "", voiceUrl: "", videoUrl: "", showcaseVideoUrl: "", gallery: [] };
+    if (!byProfile[pid]) {
+      byProfile[pid] = {
+        avatarUrl: "",
+        coverUrl: "",
+        voiceUrl: "",
+        videoUrl: "",
+        showcaseVideoUrl: "",
+        gallery: [],
+        videos: [],
+        achievements: [],
+      };
+    }
     if (row.media_type === "avatar" && !byProfile[pid].avatarUrl) byProfile[pid].avatarUrl = url;
     if (row.media_type === "cover" && !byProfile[pid].coverUrl) byProfile[pid].coverUrl = url;
     if (row.media_type === "gallery" && !isVideo) {
-      byProfile[pid].gallery.push({ id: row.id, url });
-      if (!byProfile[pid].coverUrl) byProfile[pid].coverUrl = url;
+      // Legacy achievement fallbacks used sort_order >= 500 — keep out of personal gallery.
+      const sortN = Number(row.sort_order || 0);
+      if (sortN >= 500) {
+        byProfile[pid].achievements.push({ id: row.id, url, contentType: row.content_type || "" });
+      } else {
+        byProfile[pid].gallery.push({ id: row.id, url });
+        if (!byProfile[pid].coverUrl) byProfile[pid].coverUrl = url;
+      }
+    }
+    if (row.media_type === "achievement") {
+      byProfile[pid].achievements.push({
+        id: row.id,
+        url,
+        contentType: row.content_type || "",
+        mediaType: isVideo ? "video" : "image",
+      });
     }
     if (row.media_type === "voice" && !byProfile[pid].voiceUrl) byProfile[pid].voiceUrl = url;
-    if (isVideo && !byProfile[pid].videoUrl) {
-      byProfile[pid].videoUrl = url;
-      byProfile[pid].showcaseVideoUrl = url;
+    if (isVideo && row.media_type !== "achievement") {
+      byProfile[pid].videos.push({ id: row.id, url, contentType: row.content_type || "" });
+      if (!byProfile[pid].videoUrl) {
+        byProfile[pid].videoUrl = url;
+        byProfile[pid].showcaseVideoUrl = url;
+      }
     }
     if (row.media_type === "avatar" && !byProfile[pid].coverUrl) byProfile[pid].coverUrl = url;
   }
