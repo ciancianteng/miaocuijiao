@@ -1888,21 +1888,17 @@ body.companion-apply-page .apply-success{
   opacity:.85;
 }
 #companionApplyRoot .voice-card-player{
-  display:grid;
-  grid-template-columns:40px 1fr;
-  grid-template-rows:auto auto;
-  gap:8px 10px;
-  align-items:center;
+  display:flex;
+  flex-direction:column;
+  align-items:stretch;
+  gap:8px;
+  width:100%;
+  min-width:0;
 }
 #companionApplyRoot .voice-card-play{
-  grid-row:1 / span 2;
-  width:40px;height:40px;border-radius:50%;
-  border:0;
-  background:linear-gradient(180deg,#ffe2ef,#f0a7ca);
-  color:#190812;
-  font-size:14px;font-weight:1000;
-  display:grid;place-items:center;
-  cursor:pointer;
+  width:40px;height:40px;border-radius:50%;border:0;cursor:pointer;flex-shrink:0;
+  background:linear-gradient(180deg,#ffe2ef,#f0a7ca);color:#190812;font-size:14px;font-weight:1000;
+  display:inline-flex;align-items:center;justify-content:center;
 }
 #companionApplyRoot .voice-card-play:disabled{
   opacity:.45;cursor:not-allowed;filter:saturate(.6);
@@ -2102,12 +2098,17 @@ body.companion-apply-page .apply-success{
 #companionApplyRoot .voice-card-status.is-live{border-color:rgba(255,120,160,.35);background:rgba(255,90,140,.12);color:#ffd0e2}
 #companionApplyRoot .voice-card-status.is-busy{border-color:rgba(255,209,102,.28);background:rgba(255,209,102,.10);color:#ffe2a8}
 #companionApplyRoot .voice-card-player{
-  display:grid;grid-template-columns:40px 1fr;grid-template-rows:auto auto;gap:8px 10px;align-items:center;
+  display:flex;
+  flex-direction:column;
+  align-items:stretch;
+  gap:8px;
+  width:100%;
+  min-width:0;
 }
 #companionApplyRoot .voice-card-play{
-  grid-row:1 / span 2;width:40px;height:40px;border-radius:50%;border:0;cursor:pointer;
+  width:40px;height:40px;border-radius:50%;border:0;cursor:pointer;flex-shrink:0;
   background:linear-gradient(180deg,#ffe2ef,#f0a7ca);color:#190812;font-size:14px;font-weight:1000;
-  display:grid;place-items:center;
+  display:inline-flex;align-items:center;justify-content:center;
 }
 #companionApplyRoot .voice-card-track{
   position:relative;height:6px;border-radius:99px;background:rgba(255,255,255,.10);overflow:hidden;cursor:pointer;
@@ -2129,15 +2130,7 @@ body.companion-apply-page .apply-success{
 #companionApplyRoot .voice-card-idle p{margin:0;padding:6px 2px;color:rgba(217,191,205,.7);font-size:13px;font-weight:750;line-height:1.45}
 #companionApplyRoot .voice-card-actions{display:flex;flex-wrap:wrap;gap:8px}
 #companionApplyRoot .voice-card-actions .apply-btn{min-width:0;flex:1 1 auto;height:42px;border-radius:12px}
-#companionApplyRoot .voice-card-play-cta{
-  width:100%;
-  display:inline-flex;
-  align-items:center;
-  justify-content:center;
-  gap:8px;
-  min-height:42px;
-  margin:0 0 8px;
-}
+
 #companionApplyRoot .apply-btn-ghost-soft,
 #companionApplyRoot .apply-btn.apply-btn-ghost-soft{
   border-color:rgba(255,255,255,.10);background:transparent;color:rgba(217,191,205,.82);
@@ -2303,4 +2296,50 @@ html body.companion-apply-page .apply-shell{
   min-height:42px;
   margin:0 0 8px;
   box-sizing:border-box;
+}
+
+
+/* Voice play CTA: always ONE horizontal line — never 播/放/试/听 stacked */
+#companionApplyRoot .voice-card-player{
+  display:flex !important;
+  flex-direction:column !important;
+  align-items:stretch !important;
+  grid-template-columns:none !important;
+  width:100% !important;
+  min-width:0 !important;
+  gap:8px !important;
+}
+#companionApplyRoot .voice-card-play-cta,
+#companionApplyRoot button.voice-card-play-cta,
+#companionApplyRoot .apply-btn.voice-card-play-cta{
+  display:inline-flex !important;
+  flex-direction:row !important;
+  flex-wrap:nowrap !important;
+  align-items:center !important;
+  justify-content:center !important;
+  gap:8px !important;
+  width:auto !important;
+  max-width:100% !important;
+  align-self:center !important;
+  min-width:min(100%, 10em) !important;
+  min-height:42px !important;
+  height:auto !important;
+  margin:0 auto 4px !important;
+  padding:0 16px !important;
+  box-sizing:border-box !important;
+  white-space:nowrap !important;
+  word-break:keep-all !important;
+  overflow-wrap:normal !important;
+  writing-mode:horizontal-tb !important;
+  text-orientation:mixed !important;
+  flex-shrink:0 !important;
+  line-height:1.2 !important;
+}
+#companionApplyRoot .voice-card-play-cta [data-voice-play-icon],
+#companionApplyRoot .voice-card-play-cta [data-voice-play-label]{
+  display:inline-block !important;
+  flex:0 0 auto !important;
+  white-space:nowrap !important;
+  word-break:keep-all !important;
+  writing-mode:horizontal-tb !important;
 }

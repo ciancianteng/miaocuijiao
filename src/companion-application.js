@@ -2161,7 +2161,8 @@
       playerHtml =
         '<div class="voice-card-player" data-voice-player>' +
         '<button type="button" class="apply-btn apply-btn-ghost-soft voice-card-play-cta" data-record-play aria-label="播放试听">' +
-        '<span data-voice-play-icon>▶</span> 播放试听</button>' +
+        '<span data-voice-play-icon aria-hidden="true">▶</span>' +
+        '<span data-voice-play-label>播放试听</span></button>' +
         '<div class="voice-card-track" data-voice-seek hidden>' +
         '<div class="voice-card-track-fill" data-voice-progress style="width:0%"></div>' +
         "</div>" +
@@ -3117,6 +3118,28 @@
     var v = readDraft().voice || {};
     return !!(liveVoiceObjectUrl || liveVoiceBlob || hasDurableUpload(v) || hasDurableUpload(v.url) || hasDurableUpload(v.fileUpload));
   }
+  /** Keep ▶ + label on one horizontal line; modes: idle | playing | paused */
+  function setVoicePlayUi(mode) {
+    var icon = document.querySelector("#companionApplyRoot [data-voice-play-icon]");
+    var label = document.querySelector("#companionApplyRoot [data-voice-play-label]");
+    var btn = document.querySelector("#companionApplyRoot [data-record-play]");
+    var next =
+      mode === "playing"
+        ? { icon: "⏸", label: "暂停试听" }
+        : mode === "paused"
+          ? { icon: "▶", label: "继续试听" }
+          : { icon: "▶", label: "播放试听" };
+    if (icon) icon.textContent = next.icon;
+    if (label) label.textContent = next.label;
+    if (btn) btn.setAttribute("aria-label", next.label);
+  }
+  function markVoiceListenedQuiet() {
+    var draft = readDraft();
+    draft.voice = draft.voice || {};
+    if (draft.voice.listened) return;
+    draft.voice.listened = true;
+    writeDraftRecord(draft);
+  }
   function currentApplyStep() {
     var root = document.getElementById("companionApplyRoot");
     if (root && root.dataset && root.dataset.step != null && root.dataset.step !== "") {
@@ -3731,13 +3754,6 @@
         .then(function (res) {
           uploadBusy.voice = false;
           delete uploadErrors.voice;
-          liveVoiceBlob = null;
-          if (liveVoiceObjectUrl) {
-            try {
-              URL.revokeObjectURL(liveVoiceObjectUrl);
-            } catch (e) {}
-            liveVoiceObjectUrl = "";
-          }
           var next = readDraft();
           var durableUrl =
             (res && res.url) || (res && res.media && res.media.url) || "";
@@ -3765,6 +3781,13 @@
           voicePhase = VOICE_PHASE.IDLE;
           showApplyTip("录音已保存", "ok");
           refreshVoiceUi();
+          liveVoiceBlob = null;
+          if (liveVoiceObjectUrl) {
+            try {
+              URL.revokeObjectURL(liveVoiceObjectUrl);
+            } catch (e) {}
+            liveVoiceObjectUrl = "";
+          }
         })
         .catch(function (err) {
           uploadBusy.voice = false;
@@ -4771,27 +4794,35 @@
       }
       if (e.target.closest("[data-record-play]")) {
         var audio = document.getElementById("voicePreview");
-        var playSrc = (audio && audio.getAttribute("src")) || (audio && audio.src) || liveVoiceObjectUrl || ((readDraft().voice || {}).url || "");
+        var playSrc =
+          liveVoiceObjectUrl ||
+          (audio && audio.getAttribute("src")) ||
+          (audio && audio.src) ||
+          ((readDraft().voice || {}).url || "");
         if (!audio || !playSrc) {
           showApplyTip("请先完成录音。");
           return;
         }
-        if (!audio.getAttribute("src") || audio.src !== playSrc) {
+        var currentSrc = audio.getAttribute("src") || audio.src || "";
+        if (!currentSrc || (liveVoiceObjectUrl && currentSrc !== liveVoiceObjectUrl) || currentSrc !== playSrc) {
           audio.setAttribute("src", playSrc);
           audio.src = playSrc;
+          try {
+            audio.load();
+          } catch (eLoad) {}
         }
         audio.hidden = true;
         audio.removeAttribute("controls");
-        var icon = document.querySelector("[data-voice-play-icon]");
         if (audio.paused) {
           audio.play().then(function () {
-            if (icon) icon.textContent = "❚❚";
+            setVoicePlayUi("playing");
           }).catch(function (err) {
+            setVoicePlayUi("idle");
             showApplyTip("播放失败：" + ((err && err.message) || "请重试或改用上传已有音频"));
           });
         } else {
           audio.pause();
-          if (icon) icon.textContent = "▶";
+          setVoicePlayUi("paused");
         }
         return;
       }
@@ -5010,12 +5041,10 @@
     });
     document.addEventListener("ended", function (e) {
       if (e.target && e.target.id === "voicePreview") {
-        var draft = readDraft();
-        draft.voice = draft.voice || {};
-        draft.voice.listened = true;
-        draft.voice.status = "已试听，可确认";
-        writeDraftRecord(draft);
-        render(Number((document.getElementById("companionApplyRoot") || {}).dataset.step || 2));
+        markVoiceListenedQuiet();
+        setVoicePlayUi("idle");
+        var fillEnded = document.querySelector("[data-voice-progress]");
+        if (fillEnded) fillEnded.style.width = "100%";
       }
     }, true);
     document.addEventListener("timeupdate", function (e) {
@@ -5034,29 +5063,19 @@
       if (curEl) curEl.textContent = fmt(cur);
       if (durEl && dur > 0) durEl.textContent = fmt(dur);
       if (!(dur > 0 && cur / dur >= 0.85) && !(cur >= 8)) return;
-      var draft = readDraft();
-      if (!draft.voice || draft.voice.listened) return;
-      draft.voice.listened = true;
-      draft.voice.status = "已试听，可确认";
-      writeDraftRecord(draft);
-      render(Number((document.getElementById("companionApplyRoot") || {}).dataset.step || 2));
+      markVoiceListenedQuiet();
     }, true);
     document.addEventListener("play", function (e) {
       if (!(e.target && e.target.id === "voicePreview")) return;
-      var icon = document.querySelector("[data-voice-play-icon]");
-      if (icon) icon.textContent = "❚❚";
+      setVoicePlayUi("playing");
     }, true);
     document.addEventListener("pause", function (e) {
       if (!(e.target && e.target.id === "voicePreview")) return;
-      var icon = document.querySelector("[data-voice-play-icon]");
-      if (icon) icon.textContent = "▶";
-    }, true);
-    document.addEventListener("ended", function (e) {
-      if (!(e.target && e.target.id === "voicePreview")) return;
-      var icon = document.querySelector("[data-voice-play-icon]");
-      var fill = document.querySelector("[data-voice-progress]");
-      if (icon) icon.textContent = "▶";
-      if (fill) fill.style.width = "100%";
+      if (e.target.ended) {
+        setVoicePlayUi("idle");
+        return;
+      }
+      setVoicePlayUi("paused");
     }, true);
   }
   function hydrateUploadsFromBootstrap(boot) {
