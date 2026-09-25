@@ -12,7 +12,11 @@
  * - waiting_companion (UI「等待陪玩确认」): parent status in pending|claimed
  * - in_progress: parent status in confirmed|in_progress
  * - completed / refunds: parent status completed / refund_requested|refunded
- * - revenue: paid parent roots (countsAsRevenue), Asia/Kuala_Lumpur calendar day for "today"
+ * - revenue / valid orders: ONLY parent roots with CS-approved payment evidence
+ *   (payment_transactions.paid OR paid_at / paid_cat_food / cs_approved markers).
+ *   Child allocation rows NEVER count as revenue or valid orders.
+ *   Amount SoT = payment_transactions.gross_amount → paid_cat_food → total_amount.
+ * - "today" metrics use paid_at / TX confirmed_at (Asia/Kuala_Lumpur), not order created_at
  * - platform_profit: SUM platform_fee (else gross - companion_income; else 20% fallback)
  * - withdrawals: companion_withdrawals (not legacy withdrawals table)
  */
@@ -41,6 +45,7 @@ const ZERO = {
   refunds: 0,
   totalAmount: 0,
   todayAmount: 0,
+  validOrders: 0,
   platformProfit: 0,
   withdrawPending: 0,
   withdrawPaid: 0,
@@ -126,11 +131,33 @@ function money(v) {
   return Number.isFinite(n) ? n : 0;
 }
 
-/** Revenue: paid / in service / completed parents. Exclude unpaid drafts and cancelled/refunded. */
+/**
+ * True when parent payment was CS-approved / ledgered.
+ * Status alone is NEVER enough — unpaid drafts that somehow left awaiting_payment must not inflate GMV.
+ */
+export function hasCsApprovedPayment(order = {}) {
+  if (!order || typeof order !== "object") return false;
+  if (order._paymentTxPaid === true) return true;
+  if (money(order.payment_tx_gross) > 0 || money(order.approved_amount) > 0) return true;
+  if (order.paid_at || order.paidAt) return true;
+  if (money(order.paid_cat_food) > 0 || money(order.paidCatFood) > 0) return true;
+  if (order.cs_approved_at || order.csApprovedAt) return true;
+  if (order.payment_reviewed_at || order.paymentReviewedAt) return true;
+  const receiptStatus = String(order.payment_receipt_status || order.paymentReceiptStatus || "").toLowerCase();
+  if (receiptStatus === "approved" || receiptStatus === "confirmed" || receiptStatus === "paid") return true;
+  return false;
+}
+
+/**
+ * Revenue gate: parent business root + CS-approved payment + not cancelled/refunded/unpaid.
+ * Child multi-order allocation rows never count (defense in depth beyond isBusinessOrderRoot).
+ */
 export function countsAsRevenue(order = {}) {
+  if (!isBusinessOrderRoot(order)) return false;
   const s = String(order.status || "");
   if (!s) return false;
   if (["awaiting_payment", "cancelled", "expired", "refunded"].includes(s)) return false;
+  if (!hasCsApprovedPayment(order)) return false;
   return [
     "pending",
     "waiting_boss_confirm",
@@ -142,8 +169,67 @@ export function countsAsRevenue(order = {}) {
   ].includes(s);
 }
 
+/** Unique effective Boss payment amount for a parent (never child allocation). */
+export function approvedRevenueAmount(order = {}) {
+  const fromTx = money(order.approved_amount != null ? order.approved_amount : order.payment_tx_gross);
+  if (fromTx > 0) return fromTx;
+  const paidCat = money(order.paid_cat_food != null ? order.paid_cat_food : order.paidCatFood);
+  if (paidCat > 0) return paidCat;
+  const listed = money(order.total_amount != null ? order.total_amount : order.totalAmount != null ? order.totalAmount : order.amount);
+  return listed > 0 ? listed : 0;
+}
+
+/** Calendar-day timestamp for "today" revenue — prefer CS approval / ledger time. */
+export function revenueRecognizedAt(order = {}) {
+  return (
+    order.paid_at ||
+    order.paidAt ||
+    order.payment_tx_confirmed_at ||
+    order.paymentTxConfirmedAt ||
+    order.cs_approved_at ||
+    order.csApprovedAt ||
+    order.payment_reviewed_at ||
+    order.paymentReviewedAt ||
+    order.created_at ||
+    order.createdAt ||
+    ""
+  );
+}
+
+/**
+ * Attach payment_transactions rows onto orders (mutates copies).
+ * Child TX rows are ignored — only parent order_id ledger counts.
+ */
+export function attachPaymentApprovals(orders = [], transactions = []) {
+  const txByOrder = new Map();
+  for (const tx of transactions || []) {
+    if (!tx || typeof tx !== "object") continue;
+    const oid = String(tx.order_id || tx.orderId || "").trim();
+    if (!oid) continue;
+    const st = String(tx.payment_status || tx.status || "paid").toLowerCase();
+    if (st && st !== "paid") continue;
+    const gross = money(tx.gross_amount != null ? tx.gross_amount : tx.net_amount);
+    const prev = txByOrder.get(oid);
+    if (!prev || gross > money(prev.gross_amount)) txByOrder.set(oid, tx);
+  }
+  return (orders || []).map((o) => {
+    const id = String(o?.id || o?.orderId || "").trim();
+    const tx = id ? txByOrder.get(id) : null;
+    if (!tx) return { ...o };
+    const gross = money(tx.gross_amount != null ? tx.gross_amount : tx.net_amount);
+    return {
+      ...o,
+      _paymentTxPaid: true,
+      payment_tx_gross: gross,
+      approved_amount: gross,
+      payment_tx_confirmed_at: tx.confirmed_at || tx.confirmedAt || tx.created_at || "",
+      paid_at: o.paid_at || o.paidAt || tx.confirmed_at || tx.confirmedAt || "",
+    };
+  });
+}
+
 function platformProfitOf(order = {}) {
-  const gross = money(order.total_amount);
+  const gross = approvedRevenueAmount(order);
   const companion = money(order.player_income != null ? order.player_income : order.companion_income);
   const fee = money(order.platform_fee != null ? order.platform_fee : order.platform_commission);
   if (fee > 0) return fee;
@@ -204,15 +290,20 @@ export function buildDashboardStats({
   orders = [],
   withdrawals = [],
   companionProfiles = [],
+  paymentTransactions = [],
   now = new Date(),
   timeZone = PLATFORM_STATS_TIMEZONE,
 } = {}) {
   const { byId, testIds } = indexProfilesForStats(profiles);
-  const rootOrders = (orders || []).filter((o) => isBusinessOrderRoot(o));
+  const enrichedOrders =
+    Array.isArray(paymentTransactions) && paymentTransactions.length
+      ? attachPaymentApprovals(orders, paymentTransactions)
+      : orders || [];
+  const rootOrders = enrichedOrders.filter((o) => isBusinessOrderRoot(o));
   const businessOrders = rootOrders.filter((o) => !isTestTouchedOrder(o, testIds, byId));
   const today = localDateYmd(now, timeZone);
   const revenueOrders = businessOrders.filter((o) => countsAsRevenue(o));
-  const paidToday = revenueOrders.filter((o) => isCreatedOnLocalDay(o.created_at, today, timeZone));
+  const paidToday = revenueOrders.filter((o) => isCreatedOnLocalDay(revenueRecognizedAt(o), today, timeZone));
 
   const wd = (Array.isArray(withdrawals) ? withdrawals : []).filter((w) => {
     const uid = w.user_id || w.companion_id || w.boss_id || w.profile_id;
@@ -236,20 +327,24 @@ export function buildDashboardStats({
       ? countApprovedCompanions({ profiles, companionProfiles })
       : filterActiveBusinessProfiles(profiles, "companion").length;
 
+  const totalAmount = revenueOrders.reduce((sum, o) => sum + approvedRevenueAmount(o), 0);
+  const todayAmount = paidToday.reduce((sum, o) => sum + approvedRevenueAmount(o), 0);
+
   return {
     stats: {
       bosses: bosses.length,
       companions,
       customerServices: customerServices.length,
       todayOrders: paidToday.length,
+      validOrders: revenueOrders.length,
       awaitingPayment: businessOrders.filter((o) => o.status === "awaiting_payment").length,
       // Kept key pendingOrders for API compat; UI label = 等待陪玩确认
       pendingOrders: businessOrders.filter((o) => WAITING_COMPANION_STATUSES.has(String(o.status || ""))).length,
       inProgress: businessOrders.filter((o) => IN_PROGRESS_STATUSES.has(String(o.status || ""))).length,
       completed: businessOrders.filter((o) => o.status === "completed").length,
       refunds: businessOrders.filter((o) => REFUND_STATUSES.has(String(o.status || ""))).length,
-      totalAmount: revenueOrders.reduce((sum, o) => sum + money(o.total_amount), 0),
-      todayAmount: paidToday.reduce((sum, o) => sum + money(o.total_amount), 0),
+      totalAmount,
+      todayAmount,
       platformProfit: Math.round(platformProfit * 100) / 100,
       withdrawPending: Math.round(withdrawPending * 100) / 100,
       withdrawPaid: Math.round(withdrawPaid * 100) / 100,
@@ -257,6 +352,7 @@ export function buildDashboardStats({
     filter: {
       testAccountsExcluded: true,
       parentOrdersOnly: true,
+      revenueSource: "cs_approved_parent_payment",
       companionSource: "companion_profiles.approved+profiles.active",
       timezone: timeZone,
       excludedBosses: (profiles || []).filter((p) => p.role === "boss").length - bosses.length,
@@ -265,9 +361,10 @@ export function buildDashboardStats({
         filterActiveBusinessProfiles(profiles, "companion").length,
       excludedCustomerServices:
         (profiles || []).filter((p) => p.role === "customer_service").length - customerServices.length,
-      excludedOrders: (orders || []).length - businessOrders.length,
-      childOrdersSkipped: (orders || []).filter((o) => !isBusinessOrderRoot(o)).length,
+      excludedOrders: enrichedOrders.length - businessOrders.length,
+      childOrdersSkipped: enrichedOrders.filter((o) => !isBusinessOrderRoot(o)).length,
       smokeGmvExcluded: true,
+      paymentTransactionsAttached: Array.isArray(paymentTransactions) ? paymentTransactions.length : 0,
     },
     definitions: {
       boss_total: "profiles.role=boss AND status=active AND NOT test",
@@ -275,6 +372,8 @@ export function buildDashboardStats({
         "companion_profiles approved (verification|application) JOIN profiles status=active NOT test (role may be boss)",
       customer_service_total: "profiles.role=customer_service AND status=active AND NOT test",
       order_scope: "parent_order_id IS NULL only",
+      revenue_rule:
+        "parent + CS-approved (payment_transactions|paid_at|paid_cat_food); amount=TX.gross→paid_cat_food→total_amount; children never count",
       waiting_companion_statuses: [...WAITING_COMPANION_STATUSES],
       in_progress_statuses: [...IN_PROGRESS_STATUSES],
       timezone: timeZone,
@@ -315,6 +414,8 @@ async function loadCompanionProfilesForStats() {
 
 async function loadOrdersForStats() {
   const queries = [
+    "?select=id,status,total_amount,created_at,paid_at,paid_cat_food,boss_id,companion_id,customer_service_id,companion_income,platform_fee,parent_order_id,order_type&order=created_at.desc&limit=5000",
+    "?select=id,status,total_amount,created_at,paid_at,boss_id,companion_id,customer_service_id,companion_income,platform_fee,parent_order_id,order_type&order=created_at.desc&limit=5000",
     "?select=id,status,total_amount,created_at,boss_id,companion_id,customer_service_id,companion_income,platform_fee,parent_order_id,order_type&order=created_at.desc&limit=5000",
     "?select=id,status,total_amount,created_at,boss_id,companion_id,customer_service_id,parent_order_id,order_type&order=created_at.desc&limit=5000",
     "?select=id,status,total_amount,created_at,boss_id,companion_id,customer_service_id&order=created_at.desc&limit=5000",
@@ -325,6 +426,24 @@ async function loadOrdersForStats() {
       return Array.isArray(rows) ? rows : [];
     } catch {
       /* try next */
+    }
+  }
+  return [];
+}
+
+async function loadPaymentTransactionsForStats() {
+  const queries = [
+    "?select=id,order_id,boss_id,gross_amount,net_amount,payment_status,confirmed_at,created_at&payment_status=eq.paid&order=confirmed_at.desc&limit=5000",
+    "?select=id,order_id,boss_id,gross_amount,net_amount,payment_status,confirmed_at,created_at&order=confirmed_at.desc&limit=5000",
+    "?select=id,order_id,gross_amount,net_amount,payment_status,confirmed_at&limit=5000",
+  ];
+  for (const q of queries) {
+    try {
+      const rows = await supabaseJson(restUrl("payment_transactions", q), { headers: serviceHeaders() });
+      return Array.isArray(rows) ? rows : [];
+    } catch (error) {
+      if (isMissingRelationError(error)) return [];
+      /* try next shape */
     }
   }
   return [];
@@ -366,17 +485,19 @@ export default async function handler(req, res) {
   }
   try {
     await requireAdmin(req);
-    const [profiles, orders, withdrawals, companionProfiles] = await Promise.all([
+    const [profiles, orders, withdrawals, companionProfiles, paymentTransactions] = await Promise.all([
       loadProfilesForStats(),
       loadOrdersForStats(),
       loadWithdrawalsForStats(),
       loadCompanionProfilesForStats(),
+      loadPaymentTransactionsForStats(),
     ]);
     const { stats, filter, definitions } = buildDashboardStats({
       profiles,
       orders,
       withdrawals,
       companionProfiles,
+      paymentTransactions,
     });
     return json(res, 200, { ok: true, configured: true, stats, filter, definitions });
   } catch (error) {

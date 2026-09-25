@@ -179,7 +179,16 @@ export function nestParentOnlyOrders(orders = []) {
         companionId: c.companionId || c.companion_id || "",
         companionName: c.companionName || c.playerName || "",
         companionCode: c.companionCode || c.playerUid || "",
-        allocatedAmount: Number(c.allocatedAmount != null ? c.allocatedAmount : c.totalAmount != null ? c.totalAmount : c.amount) || 0,
+        allocatedAmount:
+          Number(
+            c.allocatedAmount != null
+              ? c.allocatedAmount
+              : c.totalAmount != null
+                ? c.totalAmount
+                : c.total_amount != null
+                  ? c.total_amount
+                  : c.amount
+          ) || 0,
         status: c.status || "",
         statusText: c.statusText || "",
       })),

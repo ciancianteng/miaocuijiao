@@ -3617,6 +3617,16 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
       };
 
       async function transitionWithOptionalPaidAt() {
+        const approvedAmt =
+          money(approvedReceiptSnapshot?.amount) > 0
+            ? money(approvedReceiptSnapshot.amount)
+            : money(existingManualPayment?.gross_amount) > 0
+              ? money(existingManualPayment.gross_amount)
+              : amount;
+        const paidStamp = {
+          paid_at: nowIso(),
+          paid_cat_food: approvedAmt,
+        };
         const tryPatch = async (patch) =>
           transitionOrderStatus(
             { restUrl, supabaseJson, serviceHeaders },
@@ -3636,9 +3646,20 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
             }
           );
         try {
-          return await tryPatch({ ...basePatch, paid_at: nowIso() });
+          return await tryPatch({ ...basePatch, ...paidStamp });
         } catch (err) {
           const msg = String(err?.message || err || "");
+          if (/paid_cat_food|column|schema cache|PGRST/i.test(msg)) {
+            try {
+              return await tryPatch({ ...basePatch, paid_at: paidStamp.paid_at });
+            } catch (errPaid) {
+              if (/paid_at|PGRST204|schema cache|column/i.test(String(errPaid?.message || errPaid))) {
+                /* fall through to soft */
+              } else {
+                throw errPaid;
+              }
+            }
+          }
           if (/paid_at|PGRST204|schema cache|column/i.test(msg)) {
             // Never drop assignment_type / companion_id / order_type on soft retry.
             try {

@@ -81,15 +81,36 @@ async function loadProfiles() {
 }
 
 async function loadOrders() {
-  const full =
-    "?select=id,status,total_amount,created_at,boss_id,companion_id,customer_service_id,player_income,companion_income,platform_fee,platform_commission&order=created_at.desc&limit=5000";
-  const basic =
-    "?select=id,status,total_amount,created_at,boss_id,companion_id,customer_service_id&order=created_at.desc&limit=5000";
-  try {
-    return await supabaseJson(restUrl("orders", full));
-  } catch {
-    return await supabaseJson(restUrl("orders", basic)).catch(() => []);
+  const queries = [
+    "?select=id,status,total_amount,created_at,paid_at,paid_cat_food,boss_id,companion_id,customer_service_id,player_income,companion_income,platform_fee,platform_commission,parent_order_id,order_type&order=created_at.desc&limit=5000",
+    "?select=id,status,total_amount,created_at,paid_at,boss_id,companion_id,customer_service_id,player_income,companion_income,platform_fee,platform_commission,parent_order_id,order_type&order=created_at.desc&limit=5000",
+    "?select=id,status,total_amount,created_at,boss_id,companion_id,customer_service_id,player_income,companion_income,platform_fee,platform_commission,parent_order_id,order_type&order=created_at.desc&limit=5000",
+    "?select=id,status,total_amount,created_at,boss_id,companion_id,customer_service_id,player_income,companion_income,platform_fee,platform_commission&order=created_at.desc&limit=5000",
+    "?select=id,status,total_amount,created_at,boss_id,companion_id,customer_service_id&order=created_at.desc&limit=5000",
+  ];
+  for (const q of queries) {
+    try {
+      return await supabaseJson(restUrl("orders", q));
+    } catch {
+      /* try next */
+    }
   }
+  return [];
+}
+
+async function loadPaymentTransactions() {
+  const queries = [
+    "?select=id,order_id,boss_id,gross_amount,net_amount,payment_status,confirmed_at,created_at&payment_status=eq.paid&order=confirmed_at.desc&limit=5000",
+    "?select=id,order_id,gross_amount,net_amount,payment_status,confirmed_at&limit=5000",
+  ];
+  for (const q of queries) {
+    try {
+      return await supabaseJson(restUrl("payment_transactions", q));
+    } catch {
+      /* try next */
+    }
+  }
+  return [];
 }
 
 async function loadCompanionsOnline(profiles) {
@@ -152,12 +173,20 @@ async function loadReviews(profiles) {
 export function buildHomeDailyStatsPayload({
   profiles = [],
   orders = [],
+  paymentTransactions = [],
   onlineCompanions = 0,
   reviews = null,
   now = new Date(),
   timeZone = PLATFORM_STATS_TIMEZONE,
 } = {}) {
-  const { stats, filter } = buildDashboardStats({ profiles, orders, withdrawals: [], now, timeZone });
+  const { stats, filter } = buildDashboardStats({
+    profiles,
+    orders,
+    paymentTransactions,
+    withdrawals: [],
+    now,
+    timeZone,
+  });
   const date = localDateYmd(now, timeZone);
   const completedOrders = Math.max(0, Number(stats.completed) || 0);
   let goodRate = null;
@@ -197,8 +226,9 @@ export function buildHomeDailyStatsPayload({
     filter: {
       ...filter,
       source: "admin_dashboard_buildDashboardStats",
-      revenueRule: "countsAsRevenue (excludes awaiting_payment/cancelled/expired/refunded)",
-      dayRule: `local calendar day in ${timeZone}`,
+      revenueRule:
+        "countsAsRevenue = parent + CS-approved payment (TX|paid_at|paid_cat_food); children never count; amount=approvedRevenueAmount",
+      dayRule: `local calendar day in ${timeZone} using paid_at/TX confirmed_at`,
       completedRule: "business orders with status=completed (test accounts excluded)",
       goodRateRule: "companion_reviews rating>=4 / total ratings (1-5); null when no reviews",
     },
@@ -245,7 +275,11 @@ export default async function handler(req, res) {
   }
 
   try {
-    const [profiles, orders] = await Promise.all([loadProfiles(), loadOrders()]);
+    const [profiles, orders, paymentTransactions] = await Promise.all([
+      loadProfiles(),
+      loadOrders(),
+      loadPaymentTransactions(),
+    ]);
     const [onlineCompanions, reviews] = await Promise.all([
       loadCompanionsOnline(profiles),
       loadReviews(profiles).catch(() => []),
@@ -253,6 +287,7 @@ export default async function handler(req, res) {
     const payload = buildHomeDailyStatsPayload({
       profiles,
       orders,
+      paymentTransactions,
       onlineCompanions,
       reviews,
       now,

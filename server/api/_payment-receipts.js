@@ -554,6 +554,12 @@ export async function recoverApprovedWithoutTx({ order, reviewerId }) {
 }
 
 export async function approveAndLedger({ order, receipt, reviewerId, reviewerName = "" }) {
+  if (order?.parent_order_id) {
+    throw Object.assign(
+      new Error("子订单（分配行）不能审核入账；请审核主订单付款。"),
+      { status: 409, code: "CHILD_ORDER_NO_PAYMENT_APPROVE" }
+    );
+  }
   const existing = await companionDb("payment_transactions", `?order_id=eq.${encodeURIComponent(order.id)}&limit=1`).catch(() => []);
   if (existing?.[0]) return { transaction: existing[0], duplicate: true };
   const at = nowIso();
