@@ -45,7 +45,7 @@ import {
   money as incomeMoney,
   clawbackCompanionIncomeForOrder,
 } from "./_companion-income.js";
-import { splitCompanionIncomeByWithdrawLock } from "./_earnings-windows.js";
+import { splitCompanionIncomeByWithdrawLock, companionEarningsUnlockMeta } from "./_earnings-windows.js";
 import {
   anonymousBossLabel,
   allocateWithdrawalNo,
@@ -1871,6 +1871,8 @@ async function ordersForIncomeTransactions(transactions = [], myOrders = []) {
       completed_at: o.completedAt || o.completed_at || "",
       completion_method: o.completionMethod || o.completion_method || "",
       cancelled_at: o.cancelledAt || o.cancelled_at || "",
+      note: o.note || "",
+      description: o.description || "",
     });
   }
   // Always refresh from DB for companion_income order ids so SoT completed_at wins
@@ -1887,7 +1889,7 @@ async function ordersForIncomeTransactions(transactions = [], myOrders = []) {
       const rows = await supabaseJson(
         restUrl(
           "orders",
-          `?id=in.(${incomeOids.map(encodeURIComponent).join(",")})&select=id,status,order_no,companion_id,completed_at,cancelled_at,completion_method`
+          `?id=in.(${incomeOids.map(encodeURIComponent).join(",")})&select=id,status,order_no,companion_id,completed_at,cancelled_at,completion_method,note,description`
         ),
         { headers: serviceHeaders() }
       );
@@ -1979,6 +1981,8 @@ async function loadWalletBundle(profile, myOrders = []) {
   const walletLedger = [...ledgerFromTx, ...ledgerFromWithdraw].sort((a, b) =>
     String(b.createdAt || "").localeCompare(String(a.createdAt || ""))
   );
+  // Unlock = earliest of Boss confirm OR serviceComplete+24h (read-time; never re-settle).
+  const orderMap = new Map((linkedOrders || []).map((o) => [String(o.id), o]));
   const earningDetails = ledgerFromTx
     .filter(
       (row) =>
@@ -1996,10 +2000,26 @@ async function loadWalletBundle(profile, myOrders = []) {
           : row.incomeKind === "invite_income"
             ? "邀请佣金"
             : row.type || "订单收入";
+      const linked = row.orderId ? orderMap.get(String(row.orderId)) : null;
+      const unlock =
+        row.incomeKind === "order_income" && linked
+          ? companionEarningsUnlockMeta(linked)
+          : {
+              locked: false,
+              unlockAt: "",
+              bossConfirmedAt: "",
+              unlockReason: "immediate",
+              statusLabel: "可提现",
+            };
       return {
         ...row,
         type: kindLabel,
-        orderNo: settlement.orderNo || settlement.order_no || giftMeta.giftName || "",
+        orderNo:
+          settlement.orderNo ||
+          settlement.order_no ||
+          linked?.order_no ||
+          giftMeta.giftName ||
+          "",
         grossAmount: money(
           settlement.orderAmountCatFood ||
             settlement.gross ||
@@ -2013,7 +2033,12 @@ async function loadWalletBundle(profile, myOrders = []) {
             0
         ),
         netIncome: money(settlement.companionNetCatFood || giftMeta.net || row.amount),
-        statusText: row.status === "completed" ? "已完成" : row.status === "pending" ? "待处理" : row.status || "-",
+        statusText: unlock.locked ? "锁定中" : "可提现",
+        earningsLocked: !!unlock.locked,
+        withdrawableAt: unlock.unlockAt || "",
+        bossConfirmedAt: unlock.bossConfirmedAt || "",
+        unlockReason: unlock.unlockReason || "",
+        unlockStatusLabel: unlock.statusLabel || "",
       };
     });
   const bonus = sumTxAmount(partitioned.rewardOther);
@@ -2153,7 +2178,7 @@ function summaryFrom(myOrders, transactions, withdrawals = [], linkedOrders = []
   const refundTotal = refundRows.reduce((n, row) => n + money(row.amount), 0);
   const orderNet = Math.max(0, roundMoney(orderGross - refundTotal));
   // Gift + invite catfood ledger rows enter withdrawable (source kept via incomeKind).
-  // Order income still subject to #294 completed_at+24h lock below.
+  // Order income: unlock at earliest of Boss confirm OR serviceComplete+24h (read-time).
   const withdrawableBase = Math.max(0, roundMoney(orderNet + giftGross + inviteGross));
   const bonus = sumTxAmount(rewardOther);
   const sumIncomeOn = (pred) =>

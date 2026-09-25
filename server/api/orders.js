@@ -32,6 +32,7 @@ import {
   bossAfterSaleClosesAtIso,
   companionWithdrawableAtIso,
   isCompanionEarningsLocked,
+  companionEarningsUnlockMeta,
 } from "./_earnings-windows.js";
 
 loadLocalEnv();
@@ -603,6 +604,7 @@ function viewOrder(row = {}) {
     afterSaleClosesAt: bossAfterSaleClosesAtIso({ ...row, status }),
     companionWithdrawableAt: companionWithdrawableAtIso({ ...row, status }),
     companionEarningsLocked: isCompanionEarningsLocked({ ...row, status }),
+    companionEarningsUnlock: companionEarningsUnlockMeta({ ...row, status }),
     grabs: row.grabs || [],
     grabCount,
     bossIntent,
