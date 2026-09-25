@@ -154,6 +154,16 @@
     .companion-pick div.companion-avatar{display:grid;place-items:center}
     .companion-pick p{margin:4px 0 0;color:#9ca3af}
     .modal-box.review-modal{width:min(440px,100%);border:1px solid rgba(255,143,197,.26);border-radius:18px;background:#111014;padding:20px}
+    .multi-review-pick{width:min(420px,100%);border:1px solid rgba(255,143,197,.26);border-radius:18px;background:#111014;padding:18px 16px 14px;max-height:min(78vh,560px);display:flex;flex-direction:column;gap:10px;box-sizing:border-box}
+    .multi-review-pick .modal-head{margin:0}
+    .multi-review-pick .pick-hint{margin:0;color:rgba(255,220,235,.7);font-size:13px;line-height:1.45}
+    .multi-review-pick .pick-list{display:grid;gap:8px;overflow:auto;padding:2px 0 4px;-webkit-overflow-scrolling:touch}
+    .multi-review-pick .pick-row{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid rgba(255,255,255,.08);border-radius:14px;background:rgba(255,255,255,.03)}
+    .multi-review-pick .pick-row .pick-copy{flex:1;min-width:0}
+    .multi-review-pick .pick-row strong{display:block;font-size:14px;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .multi-review-pick .pick-row span{display:block;margin-top:2px;font-size:12px;color:rgba(255,220,235,.62)}
+    .multi-review-pick .pick-row .pick-done{color:#5ee0a1;font-weight:700}
+    .multi-review-pick .pick-foot{margin:0;padding-top:4px;color:rgba(255,220,235,.55);font-size:12px;text-align:center}
     .review-modal .modal-head{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:12px}
     .review-modal .modal-head h2{margin:0;font-size:20px}
     .review-modal .close{width:36px;height:36px;border:1px solid rgba(255,255,255,.12);border-radius:10px;background:rgba(255,255,255,.06);color:#fff;cursor:pointer}
@@ -205,6 +215,14 @@
       </div>
     </form>
   </div>
+  <div class="modal" id="multiReviewPickModal" aria-hidden="true">
+    <div class="multi-review-pick" role="dialog" aria-labelledby="multiReviewPickTitle">
+      <div class="modal-head"><h2 id="multiReviewPickTitle">评价陪玩</h2><button class="close" type="button" data-multi-review-close aria-label="关闭">×</button></div>
+      <p class="pick-hint" id="multiReviewPickHint">请选择要评价的陪玩</p>
+      <div class="pick-list" id="multiReviewPickList"></div>
+      <p class="pick-foot" id="multiReviewPickFoot"></p>
+    </div>
+  </div>
   <div class="modal" id="unavailableModal" aria-hidden="true">
     <div class="unavailable-modal" role="dialog" aria-labelledby="unavailableTitle">
       <h2 id="unavailableTitle">当前陪玩无法接单</h2>
@@ -230,6 +248,7 @@
     (function(){
       var root=document.getElementById('ordersApp'),modal=document.getElementById('detailModal'),detailBody=document.getElementById('detailBody'),detailFooter=document.getElementById('detailFooter');
       var reviewModal=document.getElementById('reviewModal'),reviewForm=document.getElementById('reviewForm'),reviewOrderMeta=document.getElementById('reviewOrderMeta'),reviewStars=document.getElementById('reviewStars'),reviewRating=document.getElementById('reviewRating'),reviewContent=document.getElementById('reviewContent'),reviewState=document.getElementById('reviewState'),reviewSubmitBtn=document.getElementById('reviewSubmitBtn');
+      var multiReviewPickModal=document.getElementById('multiReviewPickModal'),multiReviewPickList=document.getElementById('multiReviewPickList'),multiReviewPickHint=document.getElementById('multiReviewPickHint'),multiReviewPickFoot=document.getElementById('multiReviewPickFoot');
       var unavailableModal=document.getElementById('unavailableModal');
       var CACHE_KEY='mcjBossOrdersCache';
       var POLL_MS=8000;
@@ -237,6 +256,7 @@
       var loadGen=0;
       var pollTimer=null;
       var reviewOrderId='';
+      var reviewReturnParentId='';
       var pendingUnavailable=null;
       var openDetailId='';
       var seenUnavailableKeys=(function(){try{return JSON.parse(sessionStorage.getItem('mcjSeenUnavailable')||'{}')||{}}catch(e){return {}}});
@@ -269,7 +289,72 @@
         if(isPaymentReview(o)&&o.status==='awaiting_payment')return '待客服审核';
         return o.statusText||statusText[o.status]||o.status||'-';
       }
-      function canReview(o){return !!(o.canReview||(o.status==='completed'&&!o.reviewed&&(o.companionId||(o.companion&&o.companion.id))))}
+      function canReview(o){return !!(o&&(o.canReview||(o.status==='completed'&&!o.reviewed&&(o.companionId||o.companion_id||(o.companion&&o.companion.id)))))}
+      function isReviewEligibleChild(ch){
+        if(!ch)return false;
+        var k=childConfirmKey(ch);
+        if(k==='exited'||k==='exited_kept'||k==='awaiting_payment'||k==='not_ready')return false;
+        var s=String(ch.status||'');
+        if(/^(cancelled|refunded|refund_requested)$/.test(s))return false;
+        if(!(ch.companionId||ch.companion_id||(ch.companion&&(ch.companion.id||ch.companion.user_id))))return false;
+        return s==='completed'||s==='reviewed'||!!ch.reviewed||!!ch.canReview;
+      }
+      function multiReviewTargets(parent){
+        return childrenOf(parent&&parent.id).filter(isReviewEligibleChild);
+      }
+      function multiReviewStats(parent){
+        var targets=multiReviewTargets(parent);
+        var done=targets.filter(function(ch){return !!(ch.reviewed||ch.status==='reviewed')}).length;
+        var pending=targets.filter(canReview).length;
+        if(parent&&parent.multiReview&&parent.multiReview.total!=null&&!targets.length){
+          return {
+            targets:targets,
+            done:Number(parent.multiReview.done)||0,
+            total:Number(parent.multiReview.total)||0,
+            pending:Number(parent.multiReview.pending)!=null?Number(parent.multiReview.pending):Math.max(0,(Number(parent.multiReview.total)||0)-(Number(parent.multiReview.done)||0))
+          };
+        }
+        return {targets:targets,done:done,total:targets.length,pending:pending};
+      }
+      function reviewCtaLabel(o){
+        if(!o)return '';
+        if(isMultiParent(o)){
+          var st=multiReviewStats(o);
+          if(!st.total)return '';
+          if(st.pending<=0)return '查看评价';
+          if(st.done>0)return '继续评价 '+st.done+'/'+st.total;
+          return '评价陪玩';
+        }
+        if(canReview(o))return '评价陪玩';
+        if(o.reviewed||o.status==='reviewed')return '已评价';
+        return '';
+      }
+      function canOpenReviewFlow(o){
+        if(!o)return false;
+        if(isMultiParent(o))return multiReviewStats(o).total>0;
+        return canReview(o);
+      }
+      function findOrderById(id){
+        var sid=String(id||'');
+        var top=state.orders.find(function(x){return String(x.id)===sid});
+        if(top)return top;
+        for(var i=0;i<state.orders.length;i++){
+          var kids=state.orders[i]&&state.orders[i].children;
+          if(!Array.isArray(kids))continue;
+          var hit=kids.find(function(c){return String(c.id)===sid});
+          if(hit)return hit;
+        }
+        return null;
+      }
+      function parentOfChildId(childId){
+        var sid=String(childId||'');
+        for(var i=0;i<state.orders.length;i++){
+          var p=state.orders[i];
+          if(!isMultiParent(p))continue;
+          if(childrenOf(p.id).some(function(c){return String(c.id)===sid}))return p;
+        }
+        return null;
+      }
       function remainingLabel(o){
         if(o.autoConfirmRemainingLabel)return o.autoConfirmRemainingLabel;
         var ms=Number(o.autoConfirmRemainingMs);
@@ -683,6 +768,9 @@
         }else if(canReview(o)&&!multiParent){
           out.push('<button class="order-btn primary" data-review-order="'+esc(o.id)+'" type="button">评价陪玩</button>');
           out.push('<button class="order-btn" data-action="request_refund" data-id="'+esc(o.id)+'">申请售后</button>');
+        }else if(multiParent&&(String(o.status||'')==='completed'||String(o.status||'')==='reviewed'||o.reviewed)&&canOpenReviewFlow(o)){
+          out.push('<button class="order-btn primary" data-review-order="'+esc(o.id)+'" type="button">'+esc(reviewCtaLabel(o)||'评价陪玩')+'</button>');
+          out.push('<button class="order-btn" data-detail="'+esc(o.id)+'" type="button">查看子订单售后</button>');
         }else if(o.reviewed||s==='reviewed'){
           out.push('<button class="order-btn is-disabled" type="button" disabled aria-disabled="true">已评价</button>');
           if(!multiParent)out.push('<button class="order-btn" data-action="request_refund" data-id="'+esc(o.id)+'">申请售后</button>');
@@ -792,9 +880,12 @@
           if(footerMulti&&footerMulti.total>0&&!footerMulti.allReady){
             footer+='<button class="order-btn is-disabled" type="button" disabled aria-disabled="true">等待陪玩完成 '+footerMulti.ready+'/'+footerMulti.total+'</button>';
           }
-        }else if(canReview(o)||o.status==='completed'||o.status==='reviewed'||o.reviewed){
-          if(canReview(o))footer+='<button class="order-btn primary" type="button" data-show-review="'+esc(o.id)+'">评价陪玩</button>';
-          else if(o.reviewed||o.status==='reviewed')footer+='<button class="order-btn is-disabled" type="button" disabled aria-disabled="true">已评价</button>';
+        }else if(canOpenReviewFlow(o)||o.status==='completed'||o.status==='reviewed'||o.reviewed){
+          if(canOpenReviewFlow(o)){
+            footer+='<button class="order-btn primary" type="button" data-show-review="'+esc(o.id)+'">'+esc(reviewCtaLabel(o)||'评价陪玩')+'</button>';
+          }else if(o.reviewed||o.status==='reviewed'){
+            footer+='<button class="order-btn is-disabled" type="button" disabled aria-disabled="true">已评价</button>';
+          }
           footer+='<button class="order-btn" type="button" data-action="request_refund" data-id="'+esc(o.id)+'">申请售后</button>';
           footer+='<a class="order-btn primary" href="support.html?order='+encodeURIComponent(o.id)+'">联系客服</a>';
         }else{
@@ -810,7 +901,7 @@
         modal.classList.add('open');
         modal.setAttribute('aria-hidden','false');
         openDetailId=String(o.id||'');
-        if(openReview&&canReview(o))openReviewModal(o);
+        if(openReview&&canOpenReviewFlow(o))openReviewFlow(o);
       }
       function statusPanelInner(o,openReview){
         var html='';
@@ -876,13 +967,15 @@
           if(o.completionMethod){
             html+='<p>完成方式：'+esc(o.completionMethod==='system_auto_24h'?'24小时系统自动确认':(o.completionMethod==='admin_force'?'后台确认':'老板手动确认'))+'</p>';
           }
-          if(o.reviewed||o.status==='reviewed'){
+          if(isMultiParent(o)&&canOpenReviewFlow(o)){
+            var mst=multiReviewStats(o);
+            html+='<p>评价进度：'+esc(mst.done+'/'+mst.total)+'</p>';
+            html+='<div class="status-actions"><button class="order-btn primary" type="button" data-show-review="'+esc(o.id)+'">'+esc(reviewCtaLabel(o)||'评价陪玩')+'</button><button class="order-btn" data-action="request_refund" data-id="'+esc(o.id)+'">申请售后</button></div>';
+          }else if(o.reviewed||o.status==='reviewed'){
             html+='<p>评分：'+esc('★★★★★'.slice(0,Number(o.reviewRating||0)||0)+(o.reviewRating?(' '+o.reviewRating+' 星'):'已评价'))+'</p><p>评价：'+esc(o.reviewContent||'-')+'</p>';
+            html+='<div class="status-actions" style="margin-top:10px"><button class="order-btn" data-action="request_refund" data-id="'+esc(o.id)+'">申请售后</button></div>';
           }else{
             html+='<div class="status-actions"><button class="order-btn primary" type="button" data-show-review="'+esc(o.id)+'">评价陪玩</button><button class="order-btn" data-action="request_refund" data-id="'+esc(o.id)+'">申请售后</button></div>';
-          }
-          if(o.reviewed||o.status==='reviewed'){
-            html+='<div class="status-actions" style="margin-top:10px"><button class="order-btn" data-action="request_refund" data-id="'+esc(o.id)+'">申请售后</button></div>';
           }
           html+='</div>';
         }else if(o.status==='refund_requested'||o.status==='refunded'){
@@ -1011,7 +1104,7 @@
             if(done&&String(done.status||'')==='completed'){
               try{document.querySelector('[data-filter="completed"]')?.click?.()}catch(eTab){}
             }
-            if(done&&canReview(done)){openReviewModal(done)}
+            if(done&&canOpenReviewFlow(done)){openReviewFlow(done)}
             else if(done&&modal.classList.contains('open')){detail(done,false)}
             alert(body.message||'已确认完成，订单已完成。');
           }else if(modal.classList.contains('open')){var cur=state.orders.find(function(x){return x.id===id});if(cur)detail(cur)}
@@ -1028,9 +1121,54 @@
         }
         reviewStars.innerHTML=html;
       }
+      function openMultiReviewPicker(parent){
+        if(!parent||!multiReviewPickModal||!multiReviewPickList)return;
+        var st=multiReviewStats(parent);
+        reviewReturnParentId=String(parent.id||'');
+        if(multiReviewPickHint){
+          multiReviewPickHint.textContent=st.pending<=0
+            ?('已完成全部陪玩评价（'+st.done+'/'+st.total+'）')
+            :(st.done>0?('请继续评价剩余陪玩（'+st.done+'/'+st.total+'）'):'请选择要评价的陪玩');
+        }
+        if(multiReviewPickFoot){
+          multiReviewPickFoot.textContent=st.total?(st.done+'/'+st.total+' 已评价'):'';
+        }
+        multiReviewPickList.innerHTML=st.targets.map(function(ch){
+          var done=!!(ch.reviewed||ch.status==='reviewed');
+          var can=canReview(ch);
+          var btn=done
+            ?'<span class="pick-done">✅ 已评价</span>'
+            :(can
+              ?'<button class="order-btn primary" type="button" data-review-child="'+esc(ch.id)+'">去评价</button>'
+              :'<span>暂不可评</span>');
+          return '<div class="pick-row">'+companionAvatarHtml(ch)+
+            '<div class="pick-copy"><strong>'+esc(companionName(ch))+'</strong>'+
+            '<span>'+esc(ch.serviceType||ch.game||'陪玩服务')+(done&&ch.reviewRating?(' · '+ch.reviewRating+' 星'):'')+'</span></div>'+
+            btn+'</div>';
+        }).join('')||'<div class="pick-row"><div class="pick-copy"><strong>暂无可评价陪玩</strong><span>仅实际完成服务的陪玩可评价</span></div></div>';
+        multiReviewPickModal.classList.add('open');
+        multiReviewPickModal.setAttribute('aria-hidden','false');
+      }
+      function closeMultiReviewPicker(){
+        if(!multiReviewPickModal)return;
+        multiReviewPickModal.classList.remove('open');
+        multiReviewPickModal.setAttribute('aria-hidden','true');
+      }
+      function openReviewFlow(o){
+        if(!o)return;
+        if(isMultiParent(o)){
+          openMultiReviewPicker(o);
+          return;
+        }
+        openReviewModal(o);
+      }
       function openReviewModal(o){
-        if(!o||!canReview(o)||!reviewModal)return;
+        if(!o||!reviewModal)return;
+        if(isMultiParent(o)){openMultiReviewPicker(o);return}
+        if(!canReview(o))return;
         reviewOrderId=o.id;
+        var parent=parentOfChildId(o.id);
+        if(parent)reviewReturnParentId=String(parent.id||'');
         if(reviewOrderMeta){
           reviewOrderMeta.textContent='订单 '+(o.orderNo||o.order_no||o.id)+' · 陪玩 '+companionName(o);
         }
@@ -1038,6 +1176,7 @@
         if(reviewState)reviewState.textContent='';
         if(reviewSubmitBtn){reviewSubmitBtn.disabled=false;reviewSubmitBtn.textContent='提交评价'}
         paintReviewStars(5);
+        closeMultiReviewPicker();
         reviewModal.classList.add('open');
         reviewModal.setAttribute('aria-hidden','false');
       }
@@ -1056,8 +1195,8 @@
           u.searchParams.delete('openReview');
           history.replaceState({},'',u.pathname+(u.search||'')+(u.hash||''));
         }catch(e){}
-        var o=state.orders.find(function(x){return x.id===id});
-        if(o&&canReview(o))openReviewModal(o);
+        var o=findOrderById(id)||state.orders.find(function(x){return x.id===id});
+        if(o&&canOpenReviewFlow(o))openReviewFlow(o);
         else if(o&&(o.reviewed||o.status==='reviewed'))alert('该订单已评价');
       }
       async function submitReview(id){
@@ -1073,24 +1212,45 @@
           var body=await res.json().catch(function(){return {}});
           if(!res.ok||body.ok===false)throw new Error(body.message||'评价失败');
           if(body.order){
+            var updated=Object.assign({},findOrderById(orderId)||{},body.order,{reviewed:true,canReview:false,status:body.order.status||'reviewed',reviewRating:body.order.reviewRating!=null?body.order.reviewRating:rating,reviewContent:body.order.reviewContent!=null?body.order.reviewContent:content});
             var ix=state.orders.findIndex(function(x){return x.id===orderId});
             if(ix>=0){
-              state.orders[ix]=Object.assign({},state.orders[ix],body.order,{reviewed:true,canReview:false,status:body.order.status||'reviewed',reviewRating:body.order.reviewRating!=null?body.order.reviewRating:rating,reviewContent:body.order.reviewContent!=null?body.order.reviewContent:content});
-              writeCache(state.orders);
+              state.orders[ix]=Object.assign({},state.orders[ix],updated);
+            }else{
+              for(var pi=0;pi<state.orders.length;pi++){
+                var p=state.orders[pi];
+                if(!Array.isArray(p.children))continue;
+                var ci=p.children.findIndex(function(c){return String(c.id)===String(orderId)});
+                if(ci<0)continue;
+                var nextKids=p.children.slice();
+                nextKids[ci]=Object.assign({},nextKids[ci],updated);
+                state.orders[pi]=Object.assign({},p,{children:nextKids});
+                break;
+              }
             }
+            writeCache(state.orders);
           }
           await load({silent:true});
           paint();
           closeReviewModal();
-          if(modal.classList.contains('open')){
-            var o=state.orders.find(function(x){return x.id===orderId});
-            if(o)detail(o,false);
+          var returnParentId=reviewReturnParentId||(parentOfChildId(orderId)||{}).id||'';
+          var parentAfter=returnParentId?findOrderById(returnParentId):null;
+          if(parentAfter&&isMultiParent(parentAfter)){
+            if(modal.classList.contains('open'))detail(parentAfter,false);
+            openMultiReviewPicker(parentAfter);
+            var stAfter=multiReviewStats(parentAfter);
+            alert(body.already?'该陪玩已评价':(stAfter.pending<=0?'评价成功，已完成全部陪玩评价':(body.message||'评价提交成功')));
+          }else{
+            if(modal.classList.contains('open')){
+              var o=findOrderById(orderId);
+              if(o)detail(isMultiParent(o)?o:(parentOfChildId(orderId)||o),false);
+            }
+            alert(body.already?'该订单已评价':(body.message||'评价提交成功'));
           }
           try{
-            var bumpCid=(body.companionId||(body.order&&(body.order.companionId||body.order.companion_id))||(state.orders.find(function(x){return x.id===orderId})||{}).companionId||'');
+            var bumpCid=(body.companionId||(body.order&&(body.order.companionId||body.order.companion_id))||(findOrderById(orderId)||{}).companionId||'');
             localStorage.setItem('mcjCompanionReviewBump',JSON.stringify({companionId:bumpCid,orderId:orderId,at:Date.now()}));
           }catch(eBump){}
-          alert(body.already?'该订单已评价':(body.message||'评价提交成功'));
         }catch(err){
           if(reviewState)reviewState.textContent=err.message||'评价失败';
           if(reviewSubmitBtn){reviewSubmitBtn.disabled=false;reviewSubmitBtn.textContent='提交评价'}
@@ -1143,7 +1303,21 @@
           submitKeepRemaining(keepBtn.getAttribute('data-parent-id'),keepBtn.getAttribute('data-child-id'));
           return;
         }
-        var f=e.target.closest('[data-filter]');if(f){state.filter=f.dataset.filter;paint();return}if(e.target.closest('[data-refresh]')){load();return}var revBtn=e.target.closest('[data-review-order]');if(revBtn){var ro=state.orders.find(function(x){return x.id===revBtn.getAttribute('data-review-order')});if(ro)openReviewModal(ro);return}var starBtn=e.target.closest('[data-star]');if(starBtn&&reviewStars&&reviewStars.contains(starBtn)){paintReviewStars(starBtn.getAttribute('data-star'));return}if(e.target.closest('[data-review-close]')||e.target===reviewModal){closeReviewModal();return}var d=e.target.closest('[data-detail]');if(d){e.preventDefault();var detailId=d.getAttribute('data-detail')||d.dataset.detail||'';var o=state.orders.find(function(x){return String(x.id)===String(detailId)});if(!o){alert('订单不存在或已从列表移除，请刷新后重试');return}detail(o,false);(async function(){try{var freshRes=await fetch('/api/orders?id='+encodeURIComponent(o.id),{headers:{Accept:'application/json',Authorization:'Bearer '+token()},cache:'no-store'});var freshBody=await freshRes.json().catch(function(){return{}});if(freshRes.status===403||freshRes.status===401){alert((freshBody&&freshBody.message)||'无权查看该订单');return}if(freshRes.status===404){alert((freshBody&&freshBody.message)||'订单不存在');return}if(freshRes.ok&&freshBody.ok!==false){var fresh=(Array.isArray(freshBody.orders)?freshBody.orders[0]:null)||freshBody.order;if(fresh&&fresh.id){o=Object.assign({},o,fresh);var ix=state.orders.findIndex(function(x){return x.id===o.id});if(ix>=0)state.orders[ix]=o;writeCache(state.orders)}}}catch(errFresh){}if((o.status==='waiting_boss_confirm'||o.status==='pending')&&!(o.grabs&&o.grabs.length)){try{var res=await fetch('/api/orders',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token()},body:JSON.stringify({action:'list_grabs',id:o.id})});var body=await res.json().catch(function(){return{}});if(res.ok&&body.ok!==false&&Array.isArray(body.grabs)){o.grabs=body.grabs;var idx=state.orders.findIndex(function(x){return x.id===o.id});if(idx>=0)state.orders[idx]=o}}catch(err){}}if(modal.classList.contains('open'))detail(o,false)})();return}var showRev=e.target.closest('[data-show-review]');if(showRev){var o2=state.orders.find(function(x){return x.id===showRev.getAttribute('data-show-review')});if(o2)openReviewModal(o2);return}var a=e.target.closest('[data-action]');if(a){submit(a.dataset.action,a.dataset.id,{companion_id:a.getAttribute('data-companion-id')||''});return}if(e.target.closest('[data-close]')||e.target===modal){modal.classList.remove('open');modal.setAttribute('aria-hidden','true');openDetailId='';return}if(e.target.closest('[data-logout]')){if(window.MCJRoleGate){window.MCJRoleGate.logout('boss');window.MCJRoleGate.logout('customer')}localStorage.removeItem('mcjAuthAccessToken');localStorage.removeItem('mcjAuthRefreshToken');sessionStorage.removeItem('mcjAuthAccessToken');sessionStorage.removeItem('mcjAuthRefreshToken');location.href='index.html';return}});
+        var f=e.target.closest('[data-filter]');if(f){state.filter=f.dataset.filter;paint();return}if(e.target.closest('[data-refresh]')){load();return}
+        if(e.target.closest('[data-multi-review-close]')||e.target===multiReviewPickModal){closeMultiReviewPicker();return}
+        var reviewChildBtn=e.target.closest('[data-review-child]');
+        if(reviewChildBtn){
+          var childOrder=findOrderById(reviewChildBtn.getAttribute('data-review-child'));
+          if(childOrder)openReviewModal(childOrder);
+          return;
+        }
+        var revBtn=e.target.closest('[data-review-order]');
+        if(revBtn){
+          var ro=findOrderById(revBtn.getAttribute('data-review-order'))||state.orders.find(function(x){return x.id===revBtn.getAttribute('data-review-order')});
+          if(ro)openReviewFlow(ro);
+          return;
+        }
+        var starBtn=e.target.closest('[data-star]');if(starBtn&&reviewStars&&reviewStars.contains(starBtn)){paintReviewStars(starBtn.getAttribute('data-star'));return}if(e.target.closest('[data-review-close]')||e.target===reviewModal){closeReviewModal();if(reviewReturnParentId){var rp=findOrderById(reviewReturnParentId);if(rp&&isMultiParent(rp))openMultiReviewPicker(rp)}return}var d=e.target.closest('[data-detail]');if(d){e.preventDefault();var detailId=d.getAttribute('data-detail')||d.dataset.detail||'';var o=state.orders.find(function(x){return String(x.id)===String(detailId)});if(!o){alert('订单不存在或已从列表移除，请刷新后重试');return}detail(o,false);(async function(){try{var freshRes=await fetch('/api/orders?id='+encodeURIComponent(o.id),{headers:{Accept:'application/json',Authorization:'Bearer '+token()},cache:'no-store'});var freshBody=await freshRes.json().catch(function(){return{}});if(freshRes.status===403||freshRes.status===401){alert((freshBody&&freshBody.message)||'无权查看该订单');return}if(freshRes.status===404){alert((freshBody&&freshBody.message)||'订单不存在');return}if(freshRes.ok&&freshBody.ok!==false){var fresh=(Array.isArray(freshBody.orders)?freshBody.orders[0]:null)||freshBody.order;if(fresh&&fresh.id){if(Array.isArray(fresh.children)&&fresh.children.length){o=Object.assign({},o,fresh)}else{var keepKids=o.children;o=Object.assign({},o,fresh);if(keepKids&&keepKids.length&&!(fresh.children&&fresh.children.length))o.children=keepKids}var ix=state.orders.findIndex(function(x){return x.id===o.id});if(ix>=0)state.orders[ix]=o;writeCache(state.orders)}}}catch(errFresh){}if((o.status==='waiting_boss_confirm'||o.status==='pending')&&!(o.grabs&&o.grabs.length)){try{var res=await fetch('/api/orders',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token()},body:JSON.stringify({action:'list_grabs',id:o.id})});var body=await res.json().catch(function(){return{}});if(res.ok&&body.ok!==false&&Array.isArray(body.grabs)){o.grabs=body.grabs;var idx=state.orders.findIndex(function(x){return x.id===o.id});if(idx>=0)state.orders[idx]=o}}catch(err){}}if(modal.classList.contains('open'))detail(o,false)})();return}var showRev=e.target.closest('[data-show-review]');if(showRev){var o2=findOrderById(showRev.getAttribute('data-show-review'))||state.orders.find(function(x){return x.id===showRev.getAttribute('data-show-review')});if(o2)openReviewFlow(o2);return}var a=e.target.closest('[data-action]');if(a){submit(a.dataset.action,a.dataset.id,{companion_id:a.getAttribute('data-companion-id')||''});return}if(e.target.closest('[data-close]')||e.target===modal){modal.classList.remove('open');modal.setAttribute('aria-hidden','true');openDetailId='';return}if(e.target.closest('[data-logout]')){if(window.MCJRoleGate){window.MCJRoleGate.logout('boss');window.MCJRoleGate.logout('customer')}localStorage.removeItem('mcjAuthAccessToken');localStorage.removeItem('mcjAuthRefreshToken');sessionStorage.removeItem('mcjAuthAccessToken');sessionStorage.removeItem('mcjAuthRefreshToken');location.href='index.html';return}});
       if(reviewForm){reviewForm.addEventListener('submit',function(e){e.preventDefault();submitReview(reviewOrderId)})}
       document.addEventListener('visibilitychange',function(){if(!document.hidden)load({silent:true})});
       window.addEventListener('pagehide',function(){if(abortCtrl)abortCtrl.abort();if(pollTimer)clearInterval(pollTimer)});
