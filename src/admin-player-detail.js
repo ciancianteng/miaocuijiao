@@ -423,7 +423,7 @@
   }
 
   /** Large proof / ID / deposit thumbs — never circular 30px avatar buttons. */
-  function proofThumb(url, title, galleryJson) {
+  function proofThumb(url, title, galleryJson, galleryIndex) {
     if (!url) {
       return '<div class="player-proof-missing">尚未上传 · ' + esc(title || "图片") + "</div>";
     }
@@ -434,6 +434,9 @@
       esc(title || "预览") +
       '"' +
       (galleryJson ? ' data-player-gallery="' + esc(galleryJson) + '"' : "") +
+      (galleryIndex != null && galleryIndex !== ""
+        ? ' data-player-gallery-index="' + esc(String(galleryIndex)) + '"'
+        : "") +
       ' title="点击查看大图">' +
       '<img src="' +
       esc(url) +
@@ -868,14 +871,19 @@
         ]) +
         '<div class="player-proof-grid">' +
         '<div class="player-proof-item"><span class="player-proof-label">身份证正面</span>' +
-        proofThumb(identity.hasFront ? identity.idFrontUrl : "", "身份证正面", idGalleryJson) +
+        proofThumb(identity.hasFront ? identity.idFrontUrl : "", "身份证正面", idGalleryJson, 0) +
         "</div>" +
         '<div class="player-proof-item"><span class="player-proof-label">身份证反面</span>' +
-        proofThumb(identity.hasBack ? identity.idBackUrl : "", "身份证反面", idGalleryJson) +
+        proofThumb(identity.hasBack ? identity.idBackUrl : "", "身份证反面", idGalleryJson, identity.hasFront ? 1 : 0) +
         "</div>" +
         (identity.hasHandheld
           ? '<div class="player-proof-item"><span class="player-proof-label">手持身份证</span>' +
-            proofThumb(identity.idHandheldUrl, "手持身份证", idGalleryJson) +
+            proofThumb(
+              identity.idHandheldUrl,
+              "手持身份证",
+              idGalleryJson,
+              (identity.hasFront ? 1 : 0) + (identity.hasBack ? 1 : 0)
+            ) +
             "</div>"
           : '<div class="player-proof-item"><span class="player-proof-label">手持身份证</span><div class="player-proof-missing">未上传（非强制）</div></div>') +
         "</div></div>";
@@ -1268,7 +1276,15 @@
         return section("deposit", "② 身份认证 · 押金", depositHtml, true) + section("payment", "结款账户", paymentHtml, false);
       }
       if (isIdCert || !identity.empty) {
-        return section("identity", "② 身份认证 · 身份证", identityHtml, true) + section("payment", "结款账户", paymentHtml, false);
+        var extraDeposit =
+          !deposit.empty && deposit.hasProof
+            ? section("deposit", "押金凭证（附加）", depositHtml, true)
+            : "";
+        return (
+          section("identity", "② 身份认证 · 身份证", identityHtml, true) +
+          extraDeposit +
+          section("payment", "结款账户", paymentHtml, false)
+        );
       }
       return (
         section("identity", "② 身份认证", identityHtml, true) +
@@ -1502,11 +1518,16 @@
     var body = document.getElementById("playerMediaPreviewBody");
     if (!modal || !body || !src) return;
     var items = Array.isArray(gallery) && gallery.length ? gallery.slice() : [{ src: src, title: title || "预览" }];
-    var idx = Number(index);
+    var idx = index == null || index === "" ? NaN : Number(index);
     if (!Number.isFinite(idx) || idx < 0) {
       idx = items.findIndex(function (it) {
         return it && it.src === src;
       });
+      if (idx < 0 && title) {
+        idx = items.findIndex(function (it) {
+          return it && String(it.title || "") === String(title || "");
+        });
+      }
       if (idx < 0) idx = 0;
     }
     previewState.items = items;
