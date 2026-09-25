@@ -985,6 +985,8 @@ const COMPANION_ISOLATION_ALLOWED_ACTIONS = new Set([
   "upload_media",
   "prepare_video_upload",
   "delete_media",
+  "discard_application_draft",
+  "clear_application_draft",
   "reorder_media",
   "start_cs_consult",
   "open_cs_conversation",
@@ -5066,6 +5068,130 @@ return json(res, 200, {
         }),
       });
       return json(res, 200, { ok: true, message: "已提交审核，等待后台审核。" });
+    }
+
+    if (action === "discard_application_draft" || action === "clear_application_draft") {
+      const { isApplicationDraft, isApplicationApproved, isApplicationQueueRow } = await import("./_companion-draft.js");
+      if (isApplicationApproved(companion || {})) {
+        return json(res, 409, {
+          ok: false,
+          message: "正式陪玩资料不能通过「清空草稿」删除。",
+          code: "FORMAL_PROFILE_PROTECTED",
+        });
+      }
+      if (isApplicationQueueRow(companion || {}) || companion?.application_submitted_at) {
+        return json(res, 409, {
+          ok: false,
+          message: "已提交审核的申请不能清空草稿。",
+          code: "SUBMITTED_PROTECTED",
+        });
+      }
+      if (companion && !isApplicationDraft(companion)) {
+        return json(res, 409, {
+          ok: false,
+          message: "当前申请状态不允许清空草稿。",
+          code: "NOT_DRAFT",
+        });
+      }
+      const row = await ensureCompanionRow(auth.profile, companion);
+      const mediaRows = await companionDb(
+        "companion_media",
+        `?companion_profile_id=eq.${encodeURIComponent(row.id)}&select=id,media_type,storage_bucket,storage_path&limit=200`
+      ).catch((error) => (isMissingRelation(error) ? [] : Promise.reject(error)));
+      for (const item of mediaRows || []) {
+        try {
+          if (item.storage_bucket && item.storage_path) {
+            await deleteStorageObject(item.storage_bucket, item.storage_path);
+          }
+        } catch {
+          /* keep clearing references even if storage object already gone */
+        }
+        try {
+          await companionDb("companion_media", `?id=eq.${encodeURIComponent(item.id)}`, { method: "DELETE" });
+        } catch (error) {
+          if (!isMissingRelation(error)) throw error;
+        }
+      }
+      // Clear draft identity / payment / deposit proof paths only when still draft-like.
+      const identityRows = await companionDb(
+        "companion_identity_verifications",
+        `?companion_profile_id=eq.${encodeURIComponent(row.id)}&limit=5`
+      ).catch(() => []);
+      for (const idRow of identityRows || []) {
+        const st = String(idRow.status || "").toLowerCase();
+        if (/approved|verified|passed/.test(st)) continue;
+        for (const pathKey of ["id_front_path", "id_back_path", "id_handheld_path"]) {
+          if (idRow[pathKey]) {
+            try {
+              await deleteStorageObject(PRIVATE_BUCKETS.identity, idRow[pathKey]);
+            } catch {
+              /* ignore */
+            }
+          }
+        }
+        await companionDb("companion_identity_verifications", `?id=eq.${encodeURIComponent(idRow.id)}`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            id_front_path: "",
+            id_back_path: "",
+            id_handheld_path: "",
+            status: "draft",
+            reject_reason: "",
+            updated_at: nowIso(),
+          }),
+        }).catch(() => null);
+      }
+      const depositRows = await companionDb(
+        "companion_deposits",
+        `?companion_profile_id=eq.${encodeURIComponent(row.id)}&order=created_at.desc&limit=5`
+      ).catch(() => []);
+      for (const dep of depositRows || []) {
+        const st = String(dep.status || "").toLowerCase();
+        if (/approved|verified|paid|passed/.test(st)) continue;
+        if (dep.proof_path) {
+          try {
+            await deleteStorageObject(dep.proof_bucket || PRIVATE_BUCKETS.payment, dep.proof_path);
+          } catch {
+            /* ignore */
+          }
+        }
+        await companionDb("companion_deposits", `?id=eq.${encodeURIComponent(dep.id)}`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            proof_path: "",
+            proof_bucket: "",
+            status: "draft",
+            reject_reason: "",
+            updated_at: nowIso(),
+          }),
+        }).catch(() => null);
+      }
+      await patchCompanionProfile(`?id=eq.${encodeURIComponent(row.id)}`, {
+        description: "",
+        voice_url: "",
+        card_image_url: "",
+        game: "",
+        game_id: "",
+        main_service: "",
+        service_type: "",
+        service_ids: [],
+        tags: "",
+        game_rank: "",
+        position: "",
+        schedule: "",
+        voice_type: "",
+        application_status: "draft",
+        application_reject_reason: "",
+        application_submitted_at: null,
+        media_status: "pending",
+        updated_at: nowIso(),
+      });
+      return json(res, 200, {
+        ok: true,
+        message: "草稿已清空，可重新填写申请。",
+        discarded: true,
+        mediaCleared: (mediaRows || []).length,
+      });
     }
 
     if (action === "upload_private_doc") {
