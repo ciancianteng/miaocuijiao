@@ -42,13 +42,34 @@ export async function loadStaffReviewer(staffId) {
 }
 
 const REVIEW_STAFF_MARK_RE = /\[\[REVIEW_STAFF:([^\]|]+)\|([^\]|]+)\|([^\]]+)\]\]/;
+const REVIEWER_ROLE_MARK_RE = /\[\[REVIEWER_ROLE:([a-z_]+)\]\]/i;
 
-export function encodeReviewStaffMark({ staffId, staffName, reviewedAt }) {
+export function normalizeReviewerRole(role = "") {
+  const r = String(role || "")
+    .trim()
+    .toLowerCase();
+  if (r === "admin" || r === "administrator" || r === "super_admin") return "admin";
+  if (r === "customer_service" || r === "cs" || r === "staff") return "customer_service";
+  return "";
+}
+
+export function encodeReviewerRoleMark(role = "") {
+  const r = normalizeReviewerRole(role);
+  return r ? `[[REVIEWER_ROLE:${r}]]` : "";
+}
+
+export function parseReviewerRoleMark(text = "") {
+  const m = String(text || "").match(REVIEWER_ROLE_MARK_RE);
+  return normalizeReviewerRole(m?.[1] || "");
+}
+
+export function encodeReviewStaffMark({ staffId, staffName, reviewedAt, reviewerRole = "" }) {
   const id = String(staffId || "").trim();
   const name = String(staffName || "").trim().replace(/[|\]]/g, "");
   const at = String(reviewedAt || nowIso()).trim();
   if (!id || !name) return "";
-  return `[[REVIEW_STAFF:${id}|${name}|${at}]]`;
+  const roleMark = encodeReviewerRoleMark(reviewerRole);
+  return [`[[REVIEW_STAFF:${id}|${name}|${at}]]`, roleMark].filter(Boolean).join("\n");
 }
 
 export function parseReviewStaffMark(text = "") {
@@ -58,12 +79,14 @@ export function parseReviewStaffMark(text = "") {
     reviewed_by_staff_id: String(m[1] || "").trim(),
     reviewed_by_staff_name: String(m[2] || "").trim(),
     reviewed_at: String(m[3] || "").trim(),
+    reviewer_role: parseReviewerRoleMark(text),
   };
 }
 
 export function stripReviewStaffMark(text = "") {
   return String(text || "")
     .replace(REVIEW_STAFF_MARK_RE, "")
+    .replace(REVIEWER_ROLE_MARK_RE, "")
     .replace(/\n{2,}/g, "\n")
     .trim();
 }
@@ -74,6 +97,11 @@ export function receiptReviewerFields(receipt = {}) {
     receipt.reviewed_by_staff_id || marked?.reviewed_by_staff_id || receipt.reviewed_by || receipt.confirmed_by || ""
   ).trim();
   const staffName = String(receipt.reviewed_by_staff_name || marked?.reviewed_by_staff_name || "").trim();
+  const reviewerRole =
+    normalizeReviewerRole(receipt.reviewer_role || receipt.reviewerRole || "") ||
+    normalizeReviewerRole(marked?.reviewer_role || "") ||
+    parseReviewerRoleMark(receipt.review_remark || "") ||
+    parseReviewerRoleMark(receipt.reject_reason || "");
   return {
     paymentReviewedByStaffId: staffId,
     paymentReviewedByName: staffName,
@@ -81,6 +109,8 @@ export function receiptReviewerFields(receipt = {}) {
     paymentReviewStatus: receipt.status || "",
     paymentRejectReason: stripReviewStaffMark(receipt.reject_reason || ""),
     paymentReviewRemark: stripReviewStaffMark(receipt.review_remark || ""),
+    paymentReviewerRole: reviewerRole,
+    reviewerRole,
   };
 }
 
@@ -95,6 +125,7 @@ async function appendOperationLogSnapshot({
   reviewRemark = "",
   rejectReason = "",
   reviewedAt,
+  reviewerRole = "",
 }) {
   try {
     await companionDb("payment_operation_logs", "", {
@@ -103,7 +134,7 @@ async function appendOperationLogSnapshot({
         id: `payrev-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`,
         action: `payment_review_${String(action || reviewStatus || "review")}`,
         target_id: String(sourceId || ""),
-        operator_role: "customer_service",
+        operator_role: normalizeReviewerRole(reviewerRole) || "customer_service",
         ip: "",
         device: sourceTable || "",
         before_value: null,
@@ -112,6 +143,7 @@ async function appendOperationLogSnapshot({
           source_id: sourceId,
           reviewed_by_staff_id: staffId || null,
           reviewed_by_staff_name: String(staffName || ""),
+          reviewer_role: normalizeReviewerRole(reviewerRole) || null,
           review_status: String(reviewStatus || ""),
           review_remark: String(reviewRemark || ""),
           reject_reason: String(rejectReason || ""),
@@ -270,7 +302,9 @@ async function appendReviewHistory({
   reviewRemark = "",
   rejectReason = "",
   reviewedAt,
+  reviewerRole = "",
 }) {
+  const role = normalizeReviewerRole(reviewerRole);
   const payload = {
     sourceTable,
     sourceId,
@@ -281,6 +315,7 @@ async function appendReviewHistory({
     reviewRemark,
     rejectReason,
     reviewedAt,
+    reviewerRole: role,
   };
   try {
     await companionDb("payment_review_history", "", {
@@ -291,6 +326,7 @@ async function appendReviewHistory({
         action: String(action || ""),
         reviewed_by_staff_id: staffId || null,
         reviewed_by_staff_name: String(staffName || ""),
+        reviewer_role: role || null,
         review_status: String(reviewStatus || ""),
         review_remark: String(reviewRemark || ""),
         reject_reason: String(rejectReason || ""),
@@ -300,7 +336,27 @@ async function appendReviewHistory({
     });
   } catch (error) {
     // History table may be missing before migration; never block approve/reject.
-    if (!/PGRST205|Could not find the table|schema cache|does not exist/i.test(String(error?.message || ""))) {
+    // Retry without reviewer_role if column absent.
+    const msg = String(error?.message || "");
+    if (/reviewer_role|Could not find the .* column|PGRST204/i.test(msg)) {
+      try {
+        await companionDb("payment_review_history", "", {
+          method: "POST",
+          body: JSON.stringify({
+            source_table: sourceTable,
+            source_id: sourceId,
+            action: String(action || ""),
+            reviewed_by_staff_id: staffId || null,
+            reviewed_by_staff_name: String(staffName || ""),
+            review_status: String(reviewStatus || ""),
+            review_remark: String(reviewRemark || ""),
+            reject_reason: String(rejectReason || ""),
+            reviewed_at: reviewedAt || nowIso(),
+            created_at: nowIso(),
+          }),
+        });
+      } catch (_) {}
+    } else if (!/PGRST205|Could not find the table|schema cache|does not exist/i.test(msg)) {
       console.warn("[payment_review_history]", error?.message || error);
     }
   }
@@ -315,6 +371,7 @@ async function persistReviewerSnapshotArtifacts(receipt, payload) {
     source_id: payload.sourceId,
     reviewed_by_staff_id: payload.staffId || null,
     reviewed_by_staff_name: String(payload.staffName || ""),
+    reviewer_role: normalizeReviewerRole(payload.reviewerRole) || null,
     review_status: String(payload.reviewStatus || ""),
     review_remark: String(payload.reviewRemark || ""),
     reject_reason: String(payload.rejectReason || ""),
@@ -322,8 +379,9 @@ async function persistReviewerSnapshotArtifacts(receipt, payload) {
   });
 }
 
-function reviewPatch({ staffId, staffName, status, at, reason = "", remark = "" }) {
-  const mark = encodeReviewStaffMark({ staffId, staffName, reviewedAt: at });
+function reviewPatch({ staffId, staffName, status, at, reason = "", remark = "", reviewerRole = "" }) {
+  const role = normalizeReviewerRole(reviewerRole);
+  const mark = encodeReviewStaffMark({ staffId, staffName, reviewedAt: at, reviewerRole: role });
   // Always embed snapshot mark into existing text columns so name survives without DDL.
   const reasonWithMark =
     status === "rejected"
@@ -340,6 +398,7 @@ function reviewPatch({ staffId, staffName, status, at, reason = "", remark = "" 
     reject_reason: status === "rejected" ? reasonWithMark : mark,
     review_remark: remarkWithMark,
   };
+  if (role) patch.reviewer_role = role;
   if (status === "approved") {
     patch.confirmed_at = at;
     patch.confirmed_by = staffId || null;
@@ -356,7 +415,7 @@ async function patchReceiptReview(receiptId, patch) {
     });
   } catch (error) {
     const msg = `${error?.message || ""} ${JSON.stringify(error?.body || "")}`;
-    if (!/reviewed_by_staff|review_remark|Could not find the .* column/i.test(msg)) throw error;
+    if (!/reviewed_by_staff|review_remark|reviewer_role|Could not find the .* column/i.test(msg)) throw error;
     const legacy = {
       status: patch.status,
       reviewed_at: patch.reviewed_at,
@@ -366,6 +425,7 @@ async function patchReceiptReview(receiptId, patch) {
     };
     if (patch.confirmed_at) legacy.confirmed_at = patch.confirmed_at;
     if (patch.confirmed_by) legacy.confirmed_by = patch.confirmed_by;
+    if (patch.review_remark) legacy.review_remark = patch.review_remark;
     return companionDb("payment_receipts", `?id=eq.${encodeURIComponent(receiptId)}&status=eq.pending`, {
       method: "PATCH",
       body: JSON.stringify(legacy),
@@ -553,7 +613,7 @@ export async function recoverApprovedWithoutTx({ order, reviewerId }) {
   }
 }
 
-export async function approveAndLedger({ order, receipt, reviewerId, reviewerName = "" }) {
+export async function approveAndLedger({ order, receipt, reviewerId, reviewerName = "", reviewerRole = "customer_service" }) {
   if (order?.parent_order_id) {
     throw Object.assign(
       new Error("子订单（分配行）不能审核入账；请审核主订单付款。"),
@@ -561,11 +621,12 @@ export async function approveAndLedger({ order, receipt, reviewerId, reviewerNam
     );
   }
   const existing = await companionDb("payment_transactions", `?order_id=eq.${encodeURIComponent(order.id)}&limit=1`).catch(() => []);
-  if (existing?.[0]) return { transaction: existing[0], duplicate: true };
+  if (existing?.[0]) return { transaction: existing[0], duplicate: true, receipt };
   const at = nowIso();
   const staff = await loadStaffReviewer(reviewerId);
   const staffId = staff.id || String(reviewerId || "").trim();
   const staffName = String(reviewerName || staff.name || "").trim();
+  const role = normalizeReviewerRole(reviewerRole) || "customer_service";
   if (!staffId) throw Object.assign(new Error("缺少审核客服身份，无法确认付款。"), { status: 401 });
   if (!staffName) {
     throw Object.assign(new Error("当前客服账号未设置真实显示名称，请先在客服资料中填写姓名后再审核。"), {
@@ -584,7 +645,7 @@ export async function approveAndLedger({ order, receipt, reviewerId, reviewerNam
 
   const approved = await patchReceiptReview(
     receipt.id,
-    reviewPatch({ staffId, staffName, status: "approved", at })
+    reviewPatch({ staffId, staffName, status: "approved", at, reviewerRole: role })
   );
   const approvedReceipt = approved?.[0];
   if (!approvedReceipt) {
@@ -601,6 +662,7 @@ export async function approveAndLedger({ order, receipt, reviewerId, reviewerNam
     reviewed_by: staffId,
     reviewed_by_staff_id: staffId,
     reviewed_by_staff_name: staffName || approvedReceipt.reviewed_by_staff_name || "",
+    reviewer_role: role,
     reviewed_at: approvedReceipt.reviewed_at || at,
     storage_path: approvedReceipt.storage_path || receipt.storage_path,
     storage_bucket: approvedReceipt.storage_bucket || receipt.storage_bucket,
@@ -612,6 +674,7 @@ export async function approveAndLedger({ order, receipt, reviewerId, reviewerNam
     action: "approved",
     staffId,
     staffName,
+    reviewerRole: role,
     reviewStatus: "approved",
     reviewedAt: at,
   });
@@ -629,11 +692,12 @@ export async function approveAndLedger({ order, receipt, reviewerId, reviewerNam
   }
 }
 
-export async function rejectProof({ receipt, reviewerId, reviewerName = "", reason, remark = "" }) {
+export async function rejectProof({ receipt, reviewerId, reviewerName = "", reason, remark = "", reviewerRole = "customer_service" }) {
   const at = nowIso();
   const staff = await loadStaffReviewer(reviewerId);
   const staffId = staff.id || String(reviewerId || "").trim();
   const staffName = String(reviewerName || staff.name || "").trim();
+  const role = normalizeReviewerRole(reviewerRole) || "customer_service";
   if (!staffId) throw Object.assign(new Error("缺少审核客服身份，无法驳回付款。"), { status: 401 });
   if (!staffName) {
     throw Object.assign(new Error("当前客服账号未设置真实显示名称，请先在客服资料中填写姓名后再审核。"), {
@@ -652,6 +716,7 @@ export async function rejectProof({ receipt, reviewerId, reviewerName = "", reas
       at,
       reason,
       remark: remark || reason,
+      reviewerRole: role,
     })
   );
   if (!rows?.[0]) throw Object.assign(new Error("付款凭证已被处理，请刷新后重试。"), { status: 409 });
@@ -660,6 +725,7 @@ export async function rejectProof({ receipt, reviewerId, reviewerName = "", reas
     reviewed_by: staffId,
     reviewed_by_staff_id: staffId,
     reviewed_by_staff_name: staffName,
+    reviewer_role: role,
     reviewed_at: rows[0].reviewed_at || at,
     storage_path: rows[0].storage_path || receipt.storage_path,
     storage_bucket: rows[0].storage_bucket || receipt.storage_bucket,
@@ -670,6 +736,7 @@ export async function rejectProof({ receipt, reviewerId, reviewerName = "", reas
     action: "rejected",
     staffId,
     staffName,
+    reviewerRole: role,
     reviewStatus: "rejected",
     reviewRemark: remark || reason,
     rejectReason: reason,

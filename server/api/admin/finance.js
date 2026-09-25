@@ -817,13 +817,30 @@ export default async function handler(req, res) {
           ).catch(() => []);
           if (approvedRows?.[0]) receipt = approvedRows[0];
         }
+        if (!receipt && orderId) {
+          const anyRows = await companionDb(
+            "payment_receipts",
+            `?order_id=eq.${encodeURIComponent(orderId)}&order=uploaded_at.desc&limit=1`
+          ).catch(() => []);
+          if (anyRows?.[0]) receipt = anyRows[0];
+        }
         if (!receipt) return json(res, 404, { ok: false, message: "未找到待审核付款凭证。" });
         const orderRows = await companionDb("orders", `?id=eq.${encodeURIComponent(receipt.order_id || orderId)}&limit=1`).catch(() => []);
         const order = orderRows?.[0];
         if (!order) return json(res, 404, { ok: false, message: "订单不存在。" });
+
+        // Idempotent: already approved / left awaiting_payment → return current state (no double ledger).
         if (order.status !== "awaiting_payment") {
-          return json(res, 409, { ok: false, message: "当前订单不在付款审核中。" });
+          return json(res, 200, {
+            ok: true,
+            duplicate: true,
+            message: "订单已审核处理，无需重复操作。",
+            orderId: order.id,
+            status: order.status,
+            reviewerRole: receipt.reviewer_role || null,
+          });
         }
+
         if (action === "reject_payment_proof") {
           if (String(receipt.status || "") !== "pending") {
             return json(res, 409, { ok: false, message: "付款凭证已被处理，无法驳回。" });
@@ -834,6 +851,7 @@ export default async function handler(req, res) {
             receipt,
             reviewerId: adminProfile.id,
             reviewerName: staffReviewerNameFromProfile(adminProfile),
+            reviewerRole: "admin",
             reason,
           });
           const stripProof = (text) =>
@@ -860,29 +878,38 @@ export default async function handler(req, res) {
             operatorId: adminProfile.id,
             operatorRole: adminRole,
             reason,
-            after: { orderId: order.id, status: "rejected" },
+            after: { orderId: order.id, status: "rejected", reviewer_role: "admin" },
           }).catch(() => null);
-          return json(res, 200, { ok: true, message: "已驳回付款凭证，老板可重新上传。" });
+          return json(res, 200, { ok: true, message: "已驳回付款凭证，老板可重新上传。", reviewerRole: "admin" });
         }
+
+        const { isMultiGroupParent, ORDER_TYPE_MULTI_GROUP } = await import("../_order-group.js");
+        const isMultiParent =
+          isMultiGroupParent(order) || String(order.order_type || "").toLowerCase() === ORDER_TYPE_MULTI_GROUP;
+        let approvedReceiptSnapshot = null;
         if (String(receipt.status || "pending") === "pending") {
-          await approveAndLedger({
+          const ledged = await approveAndLedger({
             order,
             receipt,
             reviewerId: adminProfile.id,
             reviewerName: staffReviewerNameFromProfile(adminProfile),
+            reviewerRole: "admin",
           });
+          approvedReceiptSnapshot = ledged?.receipt || null;
+        } else if (String(receipt.status || "") === "approved") {
+          approvedReceiptSnapshot = receipt;
         }
-        const next = order.companion_id ? "claimed" : "pending";
+        const next = isMultiParent || order.companion_id ? "claimed" : "pending";
         // Keep patch minimal — avoid optional columns that break Prefer/404 on some schemas.
         let patched = null;
         const attempts = [
           {
             status: next,
-            companion_id: order.companion_id || null,
+            companion_id: isMultiParent ? null : order.companion_id || null,
             customer_service_id: order.customer_service_id || null,
             updated_at: nowIso(),
           },
-          { status: next, companion_id: order.companion_id || null },
+          { status: next, companion_id: isMultiParent ? null : order.companion_id || null },
           { status: next },
         ];
         for (const patch of attempts) {
@@ -899,12 +926,10 @@ export default async function handler(req, res) {
             if (/paid_at|assignment_type|order_type|customer_service_id|updated_at|PGRST204|schema cache|column/i.test(msg)) {
               continue;
             }
-            // Do not mis-label order patch failures as missing finance SQL.
             throw Object.assign(new Error(msg || "订单状态更新失败"), { status: err?.status && err.status !== 404 ? err.status : 500 });
           }
         }
         if (!patched || patched.status === "awaiting_payment") {
-          // Fallback unconditional status write (still scoped by id).
           try {
             patched = (
               await companionDb("orders", `?id=eq.${encodeURIComponent(order.id)}`, {
@@ -919,19 +944,53 @@ export default async function handler(req, res) {
         if (!patched || patched.status === "awaiting_payment") {
           return json(res, 409, { ok: false, message: "订单状态已变更，请刷新后重试。" });
         }
-        // Best-effort enrichment (optional columns / notifications must not fail the approve).
+        const paidAtIso = nowIso();
         try {
           await companionDb("orders", `?id=eq.${encodeURIComponent(order.id)}`, {
             method: "PATCH",
             body: JSON.stringify({
-              paid_at: nowIso(),
-              assignment_type: order.companion_id ? order.assignment_type || "assigned" : order.assignment_type || "public",
-              updated_at: nowIso(),
+              paid_at: paidAtIso,
+              assignment_type: isMultiParent || order.companion_id ? order.assignment_type || "assigned" : order.assignment_type || "public",
+              updated_at: paidAtIso,
             }),
           });
         } catch (_) {}
+
+        if (isMultiParent) {
+          try {
+            const { cascadeMultiChildrenToClaimed } = await import("../_place-multi-order.js");
+            const { normalizeOrderStatus } = await import("../_order-status.js");
+            await cascadeMultiChildrenToClaimed(
+              {
+                restUrl: (table, q = "") => `${table}${q}`,
+                supabaseJson: async (path, opts = {}) => {
+                  const raw = String(path || "").replace(/^\/rest\/v1\//, "");
+                  const qIdx = raw.indexOf("?");
+                  const table = qIdx >= 0 ? raw.slice(0, qIdx) : raw;
+                  const query = qIdx >= 0 ? raw.slice(qIdx) : "";
+                  return companionDb(table, query, {
+                    method: opts.method || "GET",
+                    body: opts.body,
+                    headers: opts.headers,
+                  });
+                },
+                serviceHeaders: () => ({}),
+                normalizeOrderStatus,
+                money: (v) => {
+                  const n = Number(String(v ?? "").replace(/[^\d.-]/g, ""));
+                  return Number.isFinite(n) ? Math.round(n * 100) / 100 : 0;
+                },
+              },
+              { ...order, ...patched, status: next },
+              { paidAtIso, notify: true }
+            );
+          } catch (err) {
+            console.warn("[finance/approve] multi cascade", err?.message || err);
+          }
+        }
+
         try {
-          if (order.companion_id) {
+          if (!isMultiParent && order.companion_id) {
             await insertCompanionNotification({
               companionUserId: order.companion_id,
               category: "order",
@@ -942,6 +1001,14 @@ export default async function handler(req, res) {
             });
           }
         } catch (_) {}
+
+        try {
+          await (await import("../_cs-commission-settle.js")).settleCsOrderIncome(
+            { ...order, ...patched, status: next },
+            { source: "admin_approve_payment_proof", forceServiceId: order.customer_service_id || null }
+          );
+        } catch (_) {}
+
         await writeAdminLog({
           module: "finance",
           action,
@@ -950,7 +1017,12 @@ export default async function handler(req, res) {
           operatorId: adminProfile.id,
           operatorRole: adminRole,
           reason: "admin approved manual payment proof",
-          after: { orderId: order.id, nextStatus: next },
+          after: {
+            orderId: order.id,
+            nextStatus: next,
+            reviewer_role: "admin",
+            receiptId: approvedReceiptSnapshot?.id || receipt.id,
+          },
         }).catch(() => null);
         try {
           const { recastBossVipSafe } = await import("../_boss-vip.js");
@@ -960,9 +1032,10 @@ export default async function handler(req, res) {
         }
         return json(res, 200, {
           ok: true,
-          message: order.companion_id ? "已审核通过，订单进入待陪玩确认。" : "已审核通过，订单已进入抢单大厅。",
+          message: isMultiParent || order.companion_id ? "已审核通过，订单进入待陪玩确认。" : "已审核通过，订单已进入抢单大厅。",
           orderId: order.id,
           status: next,
+          reviewerRole: "admin",
         });
       } catch (proofErr) {
         return json(res, proofErr.status || 500, {

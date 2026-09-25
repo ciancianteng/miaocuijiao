@@ -372,12 +372,15 @@ test("STATIC points skip child + parent refresh wired", () => {
   const complete = readFileSync(path.join(root, "server/api/_order-complete.js"), "utf8");
   assert.match(complete, /refreshParentOrderStatus/);
   assert.match(complete, /MULTI_PARENT_NO_DIRECT_FINALIZE/);
+  assert.match(complete, /finalizeMultiParentBossConfirm/);
   const admin = readFileSync(path.join(root, "server/api/admin/orders.js"), "utf8");
   assert.match(admin, /MULTI_PARENT_NO_DIRECT_FINALIZE/);
   const cs = readFileSync(path.join(root, "server/api/customer-service.js"), "utf8");
   assert.match(cs, /MULTI_PARENT_NO_DIRECT_FINALIZE/);
   const refund = readFileSync(path.join(root, "server/api/_boss-refund-payout.js"), "utf8");
   assert.match(refund, /MULTI_PARENT_NO_DIRECT_REFUND/);
+  const ordersSrc = readFileSync(path.join(root, "server/api/orders.js"), "utf8");
+  assert.match(ordersSrc, /finalizeMultiParentBossConfirm/);
 });
 
 test("STATIC no order_items / no batch_id misuse", () => {

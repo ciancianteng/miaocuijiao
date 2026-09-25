@@ -255,16 +255,21 @@
       :'暂无付款截图';
     var reviewName=o.paymentReviewedByName||o.paymentReviewerName||'-';
     var reviewCode=o.paymentReviewedByCode||o.paymentReviewerCode||'';
+    var reviewRole=o.paymentReviewerRole||o.reviewerRole||'';
+    var reviewRoleLabel=reviewRole==='admin'?'后台管理员':(reviewRole==='customer_service'?'客服':(reviewRole||'-'));
     var reviewResult=o.paymentReviewResult||(o.paymentReviewStatus==='approved'?'已通过':o.paymentReviewStatus==='rejected'?'已拒绝':o.paymentReviewStatus==='pending'?'待审核':'-');
     var rejectReason=o.paymentRejectReason||'';
+    var memberCount=Number(o.memberCount||o.companionsCount||(o.children&&o.children.length)||0)||0;
     var html=
       detailSection('① 订单信息',[
         ['订单号',displayOrderNo(o)],
         ['订单类型',o.orderType||o.type||'-'],
+        ['人数',memberCount?String(memberCount):'-'],
         ['金额',money(o.totalAmount)],
         ['猫粮',money(o.totalAmount)],
         ['创建时间',fmtOrderTime(o.createdAt)],
-        ['订单状态',o.statusText||statusText(o.status)]
+        ['订单状态',o.statusText||statusText(o.status)],
+        ['付款/冻结',o.paymentStatus||'-']
       ])+
       detailSection('② 老板信息',[
         ['老板昵称',o.bossName||'-'],
@@ -282,8 +287,9 @@
         ['付款提交时间',fmtOrderTime(o.paymentUploadedAt||(pending&&pending.uploadedAt)||'-')]
       ])+
       detailSection('⑤ 付款审核记录',[
-        ['审核客服',reviewName],
-        ['客服ID',reviewCode||'-'],
+        ['审核人',reviewName],
+        ['审核角色',reviewRoleLabel],
+        ['审核人编号',reviewCode||'-'],
         ['审核时间',fmtOrderTime(o.paymentReviewedAt||'-')],
         ['审核结果',reviewResult],
         ['拒绝原因',rejectReason||'-']
@@ -301,9 +307,9 @@
       ]);
     var extraActions='';
     if(pending){
-      extraActions='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">'+
+      extraActions='<div class="admin-order-review-actions" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">'+
         '<button class="mini-btn primary-lite" type="button" data-admin-approve-proof="'+esc(pending.orderId||o.id)+'" data-receipt-id="'+esc(pending.receiptId||pending.id||'')+'">审核通过</button>'+
-        '<button class="mini-btn" type="button" data-admin-reject-proof="'+esc(pending.orderId||o.id)+'" data-receipt-id="'+esc(pending.receiptId||pending.id||'')+'">拒绝付款</button>'+
+        '<button class="mini-btn" type="button" data-admin-reject-proof="'+esc(pending.orderId||o.id)+'" data-receipt-id="'+esc(pending.receiptId||pending.id||'')+'">驳回</button>'+
         '<button class="mini-btn" type="button" data-admin-order-manage-toggle data-order-id="'+esc(o.id)+'" aria-expanded="false" aria-haspopup="menu">更多操作 ▼</button>'+
         '</div>';
     }else{
@@ -331,19 +337,19 @@
       var proofByOrder={};
       pendingProofs.forEach(function(p){if(p.orderId)proofByOrder[String(p.orderId)]=p;});
       closeOrderManageMenu();
-      var proofPanel='<section class="admin-orders-proof-panel"><div class="admin-final-head"><div><h3>支付审核（待处理）</h3><p>查看老板付款截图并审核。通过/拒绝后写入真实客服审核记录，可在订单列表「付款审核客服」列查看。</p></div></div>'+
+      var proofPanel='<section class="admin-orders-proof-panel"><div class="admin-final-head"><div><h3>支付审核（待处理）</h3><p>客服与后台管理员共用同一付款审核状态。通过/驳回写入真实审核记录（含 reviewer_role），可在订单列表「付款审核」列查看。</p></div></div>'+
         '<div class="admin-final-table-wrap"><table class="admin-final-table"><thead><tr><th>订单号</th><th>老板</th><th>金额</th><th>支付方式</th><th>付款截图</th><th>上传时间</th><th>操作</th></tr></thead><tbody>'+
         (pendingProofs.length?pendingProofs.map(function(r){
           var ono=(r.orderNo&&!isUuid(r.orderNo))?r.orderNo:'历史订单';
           var bossLabel=(!isUuid(r.bossName)?r.bossName:'')||(!isUuid(r.bossUid)?r.bossUid:'')||'-';
           return '<tr><td><strong>'+esc(ono)+'</strong></td><td>'+esc(bossLabel)+'</td><td>'+esc(r.amount)+'</td><td>'+esc(r.paymentMethod||'-')+'</td><td>'+
             (r.proofUrl?'<button class="mini-btn" type="button" data-admin-proof-preview="'+esc(r.proofUrl)+'"><img src="'+esc(r.proofUrl)+'" alt="付款截图" style="width:56px;height:56px;object-fit:cover;border-radius:8px;display:block"></button>':'无图')+
-            '</td><td>'+esc(fmtOrderTime(r.uploadedAt)||'-')+'</td><td><button class="mini-btn primary-lite" type="button" data-admin-approve-proof="'+esc(r.orderId)+'" data-receipt-id="'+esc(r.receiptId||r.id||'')+'">审核通过</button> <button class="mini-btn" type="button" data-admin-reject-proof="'+esc(r.orderId)+'" data-receipt-id="'+esc(r.receiptId||r.id||'')+'">拒绝</button></td></tr>';
+            '</td><td>'+esc(fmtOrderTime(r.uploadedAt)||'-')+'</td><td class="admin-order-review-actions"><button class="mini-btn primary-lite" type="button" data-admin-approve-proof="'+esc(r.orderId)+'" data-receipt-id="'+esc(r.receiptId||r.id||'')+'">审核通过</button> <button class="mini-btn" type="button" data-admin-reject-proof="'+esc(r.orderId)+'" data-receipt-id="'+esc(r.receiptId||r.id||'')+'">驳回</button></td></tr>';
         }).join(''):'<tr><td colspan="7"><div class="empty">暂无待审核付款凭证</div></td></tr>')+
         '</tbody></table></div></section>';
       target.innerHTML=(res.message?note(res.message):'')+
         '<div class="admin-orders-page">'+
-        '<div class="admin-final-head"><div><h3>订单管理</h3><p>列表展示可读业务字段；点「查看详情」一次看完订单/付款/审核资料。待付款审核时可直接点「审核」。</p></div><button class="mini-btn" data-admin-final-refresh="orders">刷新</button></div>'+
+        '<div class="admin-final-head"><div><h3>订单管理</h3><p>列表展示可读业务字段；点「查看详情」一次看完订单/付款/审核资料。待付款审核时可直接「审核通过 / 驳回」。</p></div><button class="mini-btn" data-admin-final-refresh="orders">刷新</button></div>'+
         proofPanel+
         '<div class="admin-final-table-wrap admin-orders-table-wrap"><table class="admin-final-table admin-orders-table"><thead><tr>'+
         '<th class="admin-orders-col-no">订单号</th>'+
@@ -354,7 +360,7 @@
         '<th class="admin-orders-col-status">付款状态</th>'+
         '<th class="admin-orders-col-status">订单状态</th>'+
         '<th class="admin-orders-col-staff">接待客服</th>'+
-        '<th class="admin-orders-col-staff">付款审核客服</th>'+
+        '<th class="admin-orders-col-staff">付款审核</th>'+
         '<th class="admin-orders-col-time">下单时间</th>'+
         '<th class="admin-orders-col-actions">操作</th>'+
         '</tr></thead><tbody>'+
@@ -362,9 +368,12 @@
           var hasProof=!!proofByOrder[String(o.id)];
           var reviewer=o.paymentReviewedByName||o.paymentReviewerName||'';
           var reviewerCode=o.paymentReviewedByCode||o.paymentReviewerCode||'';
+          var reviewerRole=o.paymentReviewerRole||o.reviewerRole||'';
+          var roleTag=reviewerRole==='admin'?'管理员':(reviewerRole==='customer_service'?'客服':'');
           var actions='<button class="mini-btn" type="button" data-admin-order-detail="'+esc(o.id)+'">查看详情</button>';
           if(hasProof){
-            actions+=' <button class="mini-btn primary-lite" type="button" data-admin-order-detail="'+esc(o.id)+'" data-admin-order-review-focus="1">审核</button>';
+            actions+=' <span class="admin-order-review-actions"><button class="mini-btn primary-lite" type="button" data-admin-approve-proof="'+esc(o.id)+'" data-receipt-id="'+esc((proofByOrder[String(o.id)]&&(proofByOrder[String(o.id)].receiptId||proofByOrder[String(o.id)].id))||'')+'">审核通过</button>'+
+              ' <button class="mini-btn" type="button" data-admin-reject-proof="'+esc(o.id)+'" data-receipt-id="'+esc((proofByOrder[String(o.id)]&&(proofByOrder[String(o.id)].receiptId||proofByOrder[String(o.id)].id))||'')+'">驳回</button></span>';
           }
           return '<tr data-order-row="'+esc(o.id)+'"'+(hasProof?' data-has-proof="1"':'')+'>'+
             '<td class="admin-orders-col-no" title="'+esc(displayOrderNo(o))+'"><strong>'+esc(displayOrderNo(o))+'</strong></td>'+
@@ -375,7 +384,7 @@
             '<td class="admin-orders-col-status">'+statusPill(o.paymentStatus||'-')+'</td>'+
             '<td class="admin-orders-col-status">'+statusPill(o.statusText||statusText(o.status))+'</td>'+
             '<td class="admin-orders-col-staff">'+displayParty(o.serviceStaff||o.serviceName,o.serviceCode||o.serviceStaffCode)+'</td>'+
-            '<td class="admin-orders-col-staff">'+(reviewer?displayParty(reviewer,reviewerCode):'<span style="color:#9ca3af">—</span>')+'</td>'+
+            '<td class="admin-orders-col-staff">'+(reviewer?displayParty(reviewer+(roleTag?' · '+roleTag:''),reviewerCode):'<span style="color:#9ca3af">—</span>')+'</td>'+
             '<td class="admin-orders-col-time">'+esc(fmtOrderTime(o.createdAt))+'</td>'+
             '<td class="admin-order-actions admin-orders-col-actions">'+actions+'</td></tr>';
         }).join(''):'<tr><td colspan="11"><div class="empty">暂无订单</div></td></tr>')+

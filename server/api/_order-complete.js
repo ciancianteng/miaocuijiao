@@ -922,6 +922,124 @@ export function createOrderCompleteHelpers({ restUrl, supabaseJson, serviceHeade
     };
   }
 
+  /**
+   * Boss confirms a multi_group parent only after every effective child has
+   * applied completion (or is already completed). Finalizes each pending child
+   * via finalizeOrderCompletion (idempotent settle); parent aggregates via refresh.
+   */
+  async function finalizeMultiParentBossConfirm(parent, { actorId = "", message = "" } = {}) {
+    if (!parent?.id) throw Object.assign(new Error("订单不存在。"), { status: 404 });
+    const { isMultiGroupParent, ORDER_TYPE_MULTI_GROUP, effectiveChildren, refreshParentOrderStatus } =
+      await import("./_order-group.js");
+    const isParent =
+      isMultiGroupParent(parent) ||
+      String(parent.order_type || "").toLowerCase() === ORDER_TYPE_MULTI_GROUP;
+    if (!isParent || parent.parent_order_id) {
+      throw Object.assign(new Error("不是多人主订单。"), { status: 400, code: "NOT_MULTI_PARENT" });
+    }
+    if (String(parent.status) === "completed") {
+      return {
+        ok: true,
+        duplicate: true,
+        message: "订单已完成，无需重复确认。",
+        order: parent,
+        children: [],
+      };
+    }
+    const children =
+      (await supabaseJson(
+        restUrl("orders", `?parent_order_id=eq.${encodeURIComponent(parent.id)}&select=*&order=created_at.asc`),
+        { headers: serviceHeaders() }
+      ).catch(() => [])) || [];
+    const effective = effectiveChildren(children);
+    if (!effective.length) {
+      throw Object.assign(new Error("没有可确认完成的陪玩子订单。"), { status: 409 });
+    }
+    const childReady = (c) => {
+      const st = String(c.status || "");
+      if (st === "completed" || st === "reviewed") return true;
+      return st === "in_progress" && orderHasCompletionPending(c);
+    };
+    const ready = effective.filter(childReady);
+    if (ready.length < effective.length) {
+      throw Object.assign(
+        new Error(`等待陪玩完成 ${ready.length}/${effective.length}`),
+        {
+          status: 409,
+          code: "MULTI_CHILDREN_COMPLETION_INCOMPLETE",
+          readyCount: ready.length,
+          totalCount: effective.length,
+        }
+      );
+    }
+    const pending = effective.filter(
+      (c) => String(c.status) === "in_progress" && orderHasCompletionPending(c)
+    );
+    const childResults = [];
+    for (const child of pending) {
+      const out = await finalizeOrderCompletion(child, {
+        method: "boss_manual",
+        actorId,
+        message: message || "老板已确认完成订单。",
+      });
+      childResults.push({ id: child.id, ...out });
+    }
+    let parentRefresh = null;
+    try {
+      parentRefresh = await refreshParentOrderStatus(parent.id, {
+        loadOrder: async (pid) =>
+          (
+            await supabaseJson(restUrl("orders", `?id=eq.${encodeURIComponent(pid)}&limit=1`), {
+              headers: serviceHeaders(),
+            })
+          )?.[0] || null,
+        loadChildren: async (pid) =>
+          (await supabaseJson(
+            restUrl("orders", `?parent_order_id=eq.${encodeURIComponent(pid)}&select=*&order=created_at.asc`),
+            { headers: serviceHeaders() }
+          ).catch(() => [])) || [],
+        patchOrder: async (pid, patch) => {
+          const rows = await supabaseJson(restUrl("orders", `?id=eq.${encodeURIComponent(pid)}`), {
+            method: "PATCH",
+            headers: serviceHeaders(),
+            body: JSON.stringify(patch),
+          });
+          return rows?.[0] || null;
+        },
+        awardBossPointsForCompletedOrder: async (order, opts = {}) =>
+          safeAwardBossPoints(order, {
+            method: opts.method || "boss_manual",
+            operatorId: opts.operatorId ?? actorId ?? null,
+          }),
+        awardMethod: "boss_manual",
+        operatorId: actorId || null,
+      });
+    } catch (e) {
+      parentRefresh = { ok: false, error: String(e?.message || e).slice(0, 160) };
+    }
+    const freshParent =
+      parentRefresh?.parent ||
+      (
+        await supabaseJson(restUrl("orders", `?id=eq.${encodeURIComponent(parent.id)}&limit=1`), {
+          headers: serviceHeaders(),
+        })
+      )?.[0] ||
+      parent;
+    const allDup = childResults.length > 0 && childResults.every((r) => r.duplicate);
+    return {
+      ok: true,
+      duplicate: allDup && String(freshParent.status) === "completed",
+      message:
+        String(freshParent.status) === "completed"
+          ? "已确认完成，订单已完成。"
+          : "已确认各陪玩完成，主单状态已更新。",
+      order: freshParent,
+      children: childResults,
+      parentRefresh,
+      completionMethod: "boss_manual",
+    };
+  }
+
   return {
     grabsApi,
     markCompletionPending,
@@ -932,6 +1050,7 @@ export function createOrderCompleteHelpers({ restUrl, supabaseJson, serviceHeade
     stampFrozen,
     clearFrozen,
     finalizeOrderCompletion,
+    finalizeMultiParentBossConfirm,
     settleCompanionIncome,
     expireCompletionAutoConfirms,
     orderHasCompletionPending,

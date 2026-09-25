@@ -81,11 +81,11 @@ a.admin-final-stat:hover{border-color:rgba(255,140,200,.45);background:rgba(255,
   min-width:168px;
   width:auto;
   text-align:right;
-  white-space:nowrap;
+  white-space:normal;
 }
 .admin-final-table td.admin-order-actions,
 .admin-order-actions{
-  white-space:nowrap!important;
+  white-space:normal!important;
   display:table-cell!important;
   min-width:168px!important;
   max-width:none!important;
@@ -93,6 +93,23 @@ a.admin-final-stat:hover{border-color:rgba(255,140,200,.45);background:rgba(255,
   overflow:visible!important;
 }
 .admin-order-actions .mini-btn{margin:2px 0 2px 6px}
+.admin-order-review-actions{
+  display:inline-flex;
+  flex-wrap:wrap;
+  gap:6px;
+  align-items:center;
+  max-width:100%;
+}
+@media (max-width:900px){
+  .admin-order-review-actions{
+    display:flex;
+    width:100%;
+  }
+  .admin-order-review-actions .mini-btn{
+    flex:1 1 auto;
+    min-width:0;
+  }
+}
 .admin-order-status-pill{
   display:inline-flex;
   align-items:center;

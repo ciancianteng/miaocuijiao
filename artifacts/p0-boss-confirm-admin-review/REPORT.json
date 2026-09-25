@@ -1,0 +1,33 @@
+{
+  "title": "P0 Boss confirm + Admin review + MCJO395 purge",
+  "branch": "fix/p0-boss-confirm-admin-review-purge395",
+  "staging_url": "https://meow-cuijiao-homepage-staging.vercel.app/",
+  "A_boss_confirm_complete": {
+    "code": [
+      "server/api/_order-complete.js finalizeMultiParentBossConfirm",
+      "server/api/orders.js confirm_completion multi cascade",
+      "orders.html multiBossConfirmState + CTA + wait X/Y + submitBusy"
+    ],
+    "rules": "all effective children completionPending|completed → Boss 确认完成订单 → parent+children completed; partial shows 等待陪玩完成 n/m; idempotent finalize; no new money path"
+  },
+  "B_mcjo395_purge": {
+    "order_no_found": "MCJO000395",
+    "root_id": "a7b111de-348d-46d2-be5a-c04385de6706",
+    "children": ["MCJO000396", "MCJO000397"],
+    "preview": "artifacts/mcjo395-cleanup/DELETE_PREVIEW.json",
+    "execute": "artifacts/mcjo395-cleanup/EXECUTE_RESULT.json",
+    "ok": true,
+    "wallet_reverse": "credited 70 from order_payment ledger row then deleted order-scoped txs",
+    "companion_income_clawback": "28.7 cancelled then deleted",
+    "protected_untouched": ["MCJO0000415", "MCJO0000419"]
+  },
+  "C_admin_review": {
+    "code": [
+      "server/api/_payment-receipts.js reviewer_role + marks",
+      "server/api/admin/finance.js approve/reject reviewerRole=admin + multi cascade + idempotent",
+      "server/api/customer-service.js reviewerRole=customer_service",
+      "src/admin-final-v1.js 审核通过/驳回 inline + reviewer role display"
+    ],
+    "shared_sot": "approveAndLedger + same payment_receipts status"
+  }
+}

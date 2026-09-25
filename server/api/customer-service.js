@@ -3579,6 +3579,7 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
             receipt: pendingReceipt,
             reviewerId: service.profile.id,
             reviewerName: staffReviewerNameFromProfile(service.profile),
+            reviewerRole: "customer_service",
           });
           approvedReceiptSnapshot = ledged?.receipt || null;
         } catch (err) {
