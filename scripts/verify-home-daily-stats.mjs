@@ -21,17 +21,23 @@ const klMorningOrder = {
   id: "o-kl-morning",
   status: "completed",
   total_amount: 238,
+  paid_at: "2026-09-02T16:30:00.000Z",
+  paid_cat_food: 238,
   created_at: "2026-09-02T16:30:00.000Z",
   boss_id: realBoss.id,
   companion_id: realComp.id,
+  parent_order_id: null,
 };
 const utcSameCalendarButPrevKlDay = {
   id: "o-utc-prev",
   status: "completed",
   total_amount: 100,
+  paid_at: "2026-09-02T10:00:00.000Z",
+  paid_cat_food: 100,
   created_at: "2026-09-02T10:00:00.000Z",
   boss_id: realBoss.id,
   companion_id: realComp.id,
+  parent_order_id: null,
 };
 const unpaidToday = {
   id: "o-unpaid",
@@ -40,22 +46,29 @@ const unpaidToday = {
   created_at: "2026-09-02T18:00:00.000Z",
   boss_id: realBoss.id,
   companion_id: realComp.id,
+  parent_order_id: null,
 };
 const smokeToday = {
   id: "o-smoke",
   status: "completed",
   total_amount: 6000,
+  paid_at: "2026-09-02T18:00:00.000Z",
+  paid_cat_food: 6000,
   created_at: "2026-09-02T18:00:00.000Z",
   boss_id: smokeBoss.id,
   companion_id: realComp.id,
+  parent_order_id: null,
 };
 const olderCompleted = {
   id: "o-old",
   status: "completed",
   total_amount: 50,
+  paid_at: "2026-08-01T10:00:00.000Z",
+  paid_cat_food: 50,
   created_at: "2026-08-01T10:00:00.000Z",
   boss_id: realBoss.id,
   companion_id: realComp.id,
+  parent_order_id: null,
 };
 
 const now = new Date("2026-09-03T04:00:00.000Z");

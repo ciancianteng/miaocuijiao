@@ -27,6 +27,18 @@ import {
   isTestTouchedOrder,
 } from "../_test-accounts.js";
 import { PLATFORM_STATS_TIMEZONE, isCreatedOnLocalDay, localDateYmd } from "../_platform-day.js";
+import {
+  assertOrdersCarryParentField,
+  countCompletedBusinessOrders,
+  isBusinessOrderRoot,
+  isRealCompletedBusinessOrder,
+} from "../_business-order-stats.js";
+
+export {
+  isBusinessOrderRoot,
+  isRealCompletedBusinessOrder,
+  countCompletedBusinessOrders,
+} from "../_business-order-stats.js";
 
 const REQUIRED_ENV = ["SUPABASE_URL", "SUPABASE_ANON_KEY", "SUPABASE_SERVICE_ROLE_KEY"];
 const ADMIN_ROLES = new Set(["admin", "super_admin"]);
@@ -238,13 +250,7 @@ function platformProfitOf(order = {}) {
 }
 
 /** Parent / standalone business order (never count multi-group children twice). */
-export function isBusinessOrderRoot(order = {}) {
-  if (order.parent_order_id) return false;
-  const t = String(order.order_type || "").toLowerCase();
-  // Defensive: some legacy rows may mark children only via type.
-  if (t === "multi_group_child" || t === "child") return false;
-  return true;
-}
+// isBusinessOrderRoot imported from _business-order-stats.js
 
 export function isApprovedCompanionProfile(row = {}) {
   const ver = String(row.verification_status || "").toLowerCase();
@@ -301,9 +307,18 @@ export function buildDashboardStats({
       : orders || [];
   const rootOrders = enrichedOrders.filter((o) => isBusinessOrderRoot(o));
   const businessOrders = rootOrders.filter((o) => !isTestTouchedOrder(o, testIds, byId));
+  const parentField = assertOrdersCarryParentField(enrichedOrders);
   const today = localDateYmd(now, timeZone);
   const revenueOrders = businessOrders.filter((o) => countsAsRevenue(o));
   const paidToday = revenueOrders.filter((o) => isCreatedOnLocalDay(revenueRecognizedAt(o), today, timeZone));
+  const completedBusiness = businessOrders.filter((o) => isRealCompletedBusinessOrder(o));
+  if (!parentField.ok && enrichedOrders.length > 0) {
+    // Fail closed: never publish an inflated completed count when parent_order_id was not selected.
+    throw Object.assign(
+      new Error("orders payload missing parent_order_id — refusing completed/GMV aggregation"),
+      { status: 500, code: "PARENT_ORDER_ID_REQUIRED" }
+    );
+  }
 
   const wd = (Array.isArray(withdrawals) ? withdrawals : []).filter((w) => {
     const uid = w.user_id || w.companion_id || w.boss_id || w.profile_id;
@@ -341,7 +356,7 @@ export function buildDashboardStats({
       // Kept key pendingOrders for API compat; UI label = 等待陪玩确认
       pendingOrders: businessOrders.filter((o) => WAITING_COMPANION_STATUSES.has(String(o.status || ""))).length,
       inProgress: businessOrders.filter((o) => IN_PROGRESS_STATUSES.has(String(o.status || ""))).length,
-      completed: businessOrders.filter((o) => o.status === "completed").length,
+      completed: completedBusiness.length,
       refunds: businessOrders.filter((o) => REFUND_STATUSES.has(String(o.status || ""))).length,
       totalAmount,
       todayAmount,
@@ -352,6 +367,8 @@ export function buildDashboardStats({
     filter: {
       testAccountsExcluded: true,
       parentOrdersOnly: true,
+      parentOrderIdRequired: true,
+      parentOrderIdPresent: parentField.ok,
       revenueSource: "cs_approved_parent_payment",
       companionSource: "companion_profiles.approved+profiles.active",
       timezone: timeZone,
@@ -365,13 +382,15 @@ export function buildDashboardStats({
       childOrdersSkipped: enrichedOrders.filter((o) => !isBusinessOrderRoot(o)).length,
       smokeGmvExcluded: true,
       paymentTransactionsAttached: Array.isArray(paymentTransactions) ? paymentTransactions.length : 0,
+      completedBusinessOrderIds: completedBusiness.map((o) => o.id || o.orderId).filter(Boolean).slice(0, 50),
     },
     definitions: {
       boss_total: "profiles.role=boss AND status=active AND NOT test",
       companion_total:
         "companion_profiles approved (verification|application) JOIN profiles status=active NOT test (role may be boss)",
       customer_service_total: "profiles.role=customer_service AND status=active AND NOT test",
-      order_scope: "parent_order_id IS NULL only",
+      order_scope: "parent_order_id IS NULL only (parent_order_id must be selected)",
+      completed_rule: "status in (completed,reviewed) AND isBusinessOrderRoot AND NOT test",
       revenue_rule:
         "parent + CS-approved (payment_transactions|paid_at|paid_cat_food); amount=TX.gross→paid_cat_food→total_amount; children never count",
       waiting_companion_statuses: [...WAITING_COMPANION_STATUSES],
@@ -413,22 +432,31 @@ async function loadCompanionProfilesForStats() {
 }
 
 async function loadOrdersForStats() {
+  // Never fall back to a SELECT without parent_order_id — that doubles completed/GMV.
   const queries = [
     "?select=id,status,total_amount,created_at,paid_at,paid_cat_food,boss_id,companion_id,customer_service_id,companion_income,platform_fee,parent_order_id,order_type&order=created_at.desc&limit=5000",
     "?select=id,status,total_amount,created_at,paid_at,boss_id,companion_id,customer_service_id,companion_income,platform_fee,parent_order_id,order_type&order=created_at.desc&limit=5000",
     "?select=id,status,total_amount,created_at,boss_id,companion_id,customer_service_id,companion_income,platform_fee,parent_order_id,order_type&order=created_at.desc&limit=5000",
     "?select=id,status,total_amount,created_at,boss_id,companion_id,customer_service_id,parent_order_id,order_type&order=created_at.desc&limit=5000",
-    "?select=id,status,total_amount,created_at,boss_id,companion_id,customer_service_id&order=created_at.desc&limit=5000",
+    "?select=id,status,total_amount,created_at,boss_id,companion_id,parent_order_id&order=created_at.desc&limit=5000",
   ];
+  let lastError = null;
   for (const q of queries) {
     try {
       const rows = await supabaseJson(restUrl("orders", q), { headers: serviceHeaders() });
-      return Array.isArray(rows) ? rows : [];
-    } catch {
-      /* try next */
+      if (!Array.isArray(rows)) continue;
+      return rows.map((o) =>
+        o && typeof o === "object" && !Object.prototype.hasOwnProperty.call(o, "parent_order_id")
+          ? { ...o, parent_order_id: null }
+          : o
+      );
+    } catch (error) {
+      lastError = error;
     }
   }
-  return [];
+  throw Object.assign(new Error(lastError?.message || "orders load failed (parent_order_id required)"), {
+    status: lastError?.status || 500,
+  });
 }
 
 async function loadPaymentTransactionsForStats() {

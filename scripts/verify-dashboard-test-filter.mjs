@@ -91,6 +91,7 @@ const orders = [
     boss_id: smokeBossId,
     companion_id: smokeCompId,
     customer_service_id: smokeCsId,
+    parent_order_id: null,
   },
   {
     id: "o2",
@@ -99,6 +100,7 @@ const orders = [
     created_at: "2026-09-02T18:48:56.563Z",
     boss_id: smokeBossId,
     companion_id: smokeCompId,
+    parent_order_id: null,
   },
   {
     id: "o3",
@@ -107,6 +109,7 @@ const orders = [
     created_at: "2026-08-29T09:10:11.331Z",
     boss_id: realBossId,
     companion_id: null,
+    parent_order_id: null,
   },
   {
     id: parentId,
@@ -145,6 +148,7 @@ const orders = [
     created_at: "2026-09-21T08:29:03.520Z",
     boss_id: vipBossId,
     companion_id: realCompId,
+    parent_order_id: null,
   },
   {
     id: "paid-real",
@@ -156,6 +160,7 @@ const orders = [
     boss_id: realBossId,
     companion_id: realCompId,
     platform_fee: 6,
+    parent_order_id: null,
   },
   {
     id: "claimed-1",
@@ -166,6 +171,7 @@ const orders = [
     created_at: "2026-09-03T09:00:00.000Z",
     boss_id: realBossId,
     companion_id: dualRoleId,
+    parent_order_id: null,
   },
   {
     id: "confirmed-1",
@@ -176,6 +182,7 @@ const orders = [
     created_at: "2026-09-03T10:00:00.000Z",
     boss_id: realBossId,
     companion_id: realCompId,
+    parent_order_id: null,
   },
 ];
 

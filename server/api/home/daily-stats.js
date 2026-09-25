@@ -81,21 +81,34 @@ async function loadProfiles() {
 }
 
 async function loadOrders() {
+  // CRITICAL: parent_order_id must always be selected. Dropping it makes multi children
+  // look like roots and doubles homepage「完成订单」(prod incident: 4→8).
   const queries = [
     "?select=id,status,total_amount,created_at,paid_at,paid_cat_food,boss_id,companion_id,customer_service_id,player_income,companion_income,platform_fee,platform_commission,parent_order_id,order_type&order=created_at.desc&limit=5000",
     "?select=id,status,total_amount,created_at,paid_at,boss_id,companion_id,customer_service_id,player_income,companion_income,platform_fee,platform_commission,parent_order_id,order_type&order=created_at.desc&limit=5000",
     "?select=id,status,total_amount,created_at,boss_id,companion_id,customer_service_id,player_income,companion_income,platform_fee,platform_commission,parent_order_id,order_type&order=created_at.desc&limit=5000",
-    "?select=id,status,total_amount,created_at,boss_id,companion_id,customer_service_id,player_income,companion_income,platform_fee,platform_commission&order=created_at.desc&limit=5000",
-    "?select=id,status,total_amount,created_at,boss_id,companion_id,customer_service_id&order=created_at.desc&limit=5000",
+    "?select=id,status,total_amount,created_at,boss_id,companion_id,customer_service_id,companion_income,platform_fee,parent_order_id,order_type&order=created_at.desc&limit=5000",
+    "?select=id,status,total_amount,created_at,boss_id,companion_id,customer_service_id,parent_order_id,order_type&order=created_at.desc&limit=5000",
+    "?select=id,status,total_amount,created_at,boss_id,companion_id,parent_order_id&order=created_at.desc&limit=5000",
   ];
+  let lastError = null;
   for (const q of queries) {
     try {
-      return await supabaseJson(restUrl("orders", q));
-    } catch {
-      /* try next */
+      const rows = await supabaseJson(restUrl("orders", q));
+      if (!Array.isArray(rows)) continue;
+      // Soft-fill missing key so hasOwnProperty checks pass even when all null.
+      return rows.map((o) =>
+        o && typeof o === "object" && !Object.prototype.hasOwnProperty.call(o, "parent_order_id")
+          ? { ...o, parent_order_id: o.parent_order_id ?? null }
+          : o
+      );
+    } catch (error) {
+      lastError = error;
     }
   }
-  return [];
+  throw Object.assign(new Error(lastError?.message || "orders load failed (parent_order_id required)"), {
+    status: lastError?.status || 500,
+  });
 }
 
 async function loadPaymentTransactions() {
@@ -229,7 +242,8 @@ export function buildHomeDailyStatsPayload({
       revenueRule:
         "countsAsRevenue = parent + CS-approved payment (TX|paid_at|paid_cat_food); children never count; amount=approvedRevenueAmount",
       dayRule: `local calendar day in ${timeZone} using paid_at/TX confirmed_at`,
-      completedRule: "business orders with status=completed (test accounts excluded)",
+      completedRule:
+        "status in (completed,reviewed) AND parent_order_id IS NULL (children never count; test accounts excluded)",
       goodRateRule: "companion_reviews rating>=4 / total ratings (1-5); null when no reviews",
     },
     currency: "CATFOOD",
