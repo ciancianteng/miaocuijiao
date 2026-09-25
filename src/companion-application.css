@@ -1884,6 +1884,11 @@ body.companion-apply-page .apply-success{
   background:rgba(255,209,102,.10);
   color:#ffe2a8;
 }
+#companionApplyRoot .voice-card-status.is-warn{
+  border-color:rgba(255,140,120,.35);
+  background:rgba(255,90,90,.12);
+  color:#ffc9bc;
+}
 #companionApplyRoot .voice-card-status.is-muted{
   opacity:.85;
 }
@@ -2097,6 +2102,7 @@ body.companion-apply-page .apply-success{
 #companionApplyRoot .voice-card-status.is-done{border-color:rgba(114,239,180,.28);background:rgba(114,239,180,.10);color:#b8ffd7}
 #companionApplyRoot .voice-card-status.is-live{border-color:rgba(255,120,160,.35);background:rgba(255,90,140,.12);color:#ffd0e2}
 #companionApplyRoot .voice-card-status.is-busy{border-color:rgba(255,209,102,.28);background:rgba(255,209,102,.10);color:#ffe2a8}
+#companionApplyRoot .voice-card-status.is-warn{border-color:rgba(255,140,120,.35);background:rgba(255,90,90,.12);color:#ffc9bc}
 #companionApplyRoot .voice-card-player{
   display:flex;
   flex-direction:column;

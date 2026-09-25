@@ -55,6 +55,21 @@ const states = {
     statusText: "录音中",
     actions: '<button class="apply-btn primary" type="button">停止录音</button>',
   }),
+  "01b-too-short": `<section class="apply-section apply-voice-card" id="applyVoicePanel">
+  <div class="apply-section-head"><h3>语音介绍</h3>
+  <p class="apply-section-hint">录一段简单的自我介绍 · 必填，同步后台审核</p></div>
+  <div class="apply-section-body"><div class="voice-card" data-voice-phase="too_short">
+    <div class="voice-card-main"><div class="voice-card-row">
+      <div class="voice-card-icon">🎙</div>
+      <div class="voice-card-meta"><strong id="voiceState">00:06</strong>
+      <span class="voice-card-caption">至少需要 10 秒</span>
+      </div>
+      <span class="voice-card-status is-warn">不足10秒</span>
+    </div>
+    <div class="voice-card-idle voice-card-too-short" role="alert"><p><strong>语音介绍至少需要录制 10 秒</strong></p><p>刚才录了 00:06，请重新录制。</p></div>
+    <div class="voice-card-actions"><button class="apply-btn primary" type="button">重新录制</button></div>
+    <div class="voice-card-quality"><span class="bad">语音介绍至少需要录制 10 秒</span></div>
+  </div></div></div></section>`,
   "02-pending-confirm": voiceCard({
     phase: "ready",
     timer: "00:12",

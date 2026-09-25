@@ -14,6 +14,7 @@
     RECORDING: "recording",
     STOPPING: "stopping",
     RECORDED: "recorded",
+    TOO_SHORT: "too_short",
     UPLOADING: "uploading",
     ERROR: "error",
   };
@@ -23,6 +24,8 @@
   var chunks = [];
   var recordTimer = null;
   var recordStartedAt = 0;
+  var stopWatchdogTimer = null;
+  var voiceStopSeq = 0;
   var suppressVoiceSave = false;
   var uploadBusy = {};
   var uploadErrors = {};
@@ -2083,11 +2086,15 @@
       voicePhase === VOICE_PHASE.STOPPING ||
       voicePhase === VOICE_PHASE.REQUESTING ||
       !!(v.recording || (document.body && document.body.classList.contains("voice-recording-active")));
+    var tooShortFlag =
+      voicePhase === VOICE_PHASE.TOO_SHORT ||
+      v.tooShort === true ||
+      /时长不足|不足\s*10/.test(String(v.status || ""));
     // Confirm only needs a live ≥10s take. Quality tips are advisory; listen is optional.
     var durationOk =
       Number(v.duration || 0) >= MIN_VOICE_SECONDS || !!(q && q.durationOk);
     var canConfirm =
-      hasLiveLocal && !uploadedOk && durationOk && !uploadBusy.voice;
+      hasLiveLocal && !uploadedOk && durationOk && !uploadBusy.voice && !tooShortFlag;
     var reasons = Array.isArray(q.reasons) ? q.reasons : [];
     var template =
       "大家好，我是" +
@@ -2120,6 +2127,7 @@
     else if (voicePhase === VOICE_PHASE.RECORDING || isLiveRec) phase = "recording";
     else if (uploadedOk) phase = "done";
     else if (hasVoice) phase = "ready";
+    else if (tooShortFlag) phase = "too_short";
     else if (staleLocal) phase = "stale";
 
     var statusLabel =
@@ -2135,9 +2143,11 @@
                 ? "已录制 ✓"
                 : phase === "ready"
                   ? "待确认"
-                  : phase === "stale"
-                    ? "需重录"
-                    : "未录制";
+                  : phase === "too_short"
+                    ? "不足10秒"
+                    : phase === "stale"
+                      ? "需重录"
+                      : "未录制";
 
     var fileUploadCard = fileField("voiceFile", "上传已有音频（备用）", {
       kind: "audio",
@@ -2154,7 +2164,9 @@
           ? '<span class="voice-card-status is-live" role="status" data-voice-status>' + esc(statusLabel) + "</span>"
           : phase === "uploading"
             ? '<span class="voice-card-status is-busy" role="status" data-voice-status>保存中…</span>'
-            : '<span class="voice-card-status is-muted" data-voice-status>' + esc(statusLabel) + "</span>";
+            : phase === "too_short"
+              ? '<span class="voice-card-status is-warn" role="status" data-voice-status>不足10秒</span>'
+              : '<span class="voice-card-status is-muted" data-voice-status>' + esc(statusLabel) + "</span>";
 
     var playerHtml = "";
     if (phase === "done" || phase === "ready") {
@@ -2181,6 +2193,14 @@
         "<span>" +
         (phase === "requesting" ? "正在请求麦克风…" : phase === "stopping" ? "正在停止…" : "正在录音…") +
         "</span></div>";
+    } else if (phase === "too_short") {
+      playerHtml =
+        '<div class="voice-card-idle voice-card-too-short" role="alert">' +
+        "<p><strong>语音介绍至少需要录制 10 秒</strong></p>" +
+        "<p>刚才录了 " +
+        esc(timerLabel) +
+        "，请重新录制。</p>" +
+        "</div>";
     } else {
       playerHtml =
         '<div class="voice-card-idle">' +
@@ -2192,6 +2212,9 @@
     if (phase === "idle" || phase === "stale") {
       actionsHtml =
         '<button class="apply-btn primary" type="button" data-record-start>开始录音</button>';
+    } else if (phase === "too_short") {
+      actionsHtml =
+        '<button class="apply-btn primary" type="button" data-record-start>重新录制</button>';
     } else if (phase === "requesting") {
       actionsHtml =
         '<button class="apply-btn primary" type="button" disabled aria-busy="true">请求权限中…</button>';
@@ -2220,7 +2243,10 @@
     }
 
     var qualityHtml = "";
-    if ((phase === "ready" || phase === "stale") && reasons.length) {
+    if (phase === "too_short") {
+      qualityHtml =
+        '<div class="voice-card-quality"><span class="bad">语音介绍至少需要录制 10 秒</span></div>';
+    } else if ((phase === "ready" || phase === "stale") && reasons.length) {
       qualityHtml =
         '<div class="voice-card-quality">' +
         reasons
@@ -2246,7 +2272,11 @@
       (phase === "done" || phase === "ready"
         ? ""
         : '<span class="voice-card-caption">' +
-          (phase === "recording" ? "录音中…" : "10～60 秒即可") +
+          (phase === "recording"
+            ? "录音中…"
+            : phase === "too_short"
+              ? "至少需要 10 秒"
+              : "10～60 秒即可") +
           "</span>") +
       "</div>" +
       topRight +
@@ -3204,6 +3234,35 @@
       recordTimer = null;
     }
   }
+  function clearStopWatchdog() {
+    if (stopWatchdogTimer) {
+      clearTimeout(stopWatchdogTimer);
+      stopWatchdogTimer = null;
+    }
+  }
+  function withTimeout(promise, ms, fallbackValue) {
+    return new Promise(function (resolve) {
+      var settled = false;
+      var timer = setTimeout(function () {
+        if (settled) return;
+        settled = true;
+        resolve(fallbackValue);
+      }, ms);
+      Promise.resolve(promise)
+        .then(function (v) {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          resolve(v);
+        })
+        .catch(function () {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          resolve(fallbackValue);
+        });
+    });
+  }
   function pickRecorderMime() {
     var ua = String(navigator.userAgent || "");
     var isApple =
@@ -3253,6 +3312,7 @@
   function abortVoiceRecording(opts) {
     opts = opts || {};
     clearRecordTimer();
+    clearStopWatchdog();
     suppressVoiceSave = true;
     voicePhase = VOICE_PHASE.IDLE;
     document.body.classList.remove("voice-recording-active");
@@ -3290,6 +3350,21 @@
     voicePhase = VOICE_PHASE.REQUESTING;
     chunks = [];
     suppressVoiceSave = false;
+    clearStopWatchdog();
+    // Clear previous too-short / idle leftovers so UI doesn't stick on「不足10秒」.
+    try {
+      var draftStart = readDraft();
+      if (draftStart.voice && (draftStart.voice.tooShort || draftStart.voice.hasLocal)) {
+        draftStart.voice = Object.assign({}, draftStart.voice, {
+          tooShort: false,
+          hasLocal: false,
+          status: "请求麦克风…",
+          confirmed: false,
+          uploaded: false,
+        });
+        writeDraftRecord(draftStart);
+      }
+    } catch (eDraft) {}
     refreshVoiceUi({ scrollVoice: true });
 
     var stream;
@@ -3330,6 +3405,7 @@
       }
     }
 
+    var thisStopSeq = ++voiceStopSeq;
     recorder.ondataavailable = function (e) {
       if (e.data && e.data.size) chunks.push(e.data);
     };
@@ -3338,7 +3414,10 @@
       abortVoiceRecording({ silent: false });
     };
     recorder.onstop = async function () {
+      if (thisStopSeq !== voiceStopSeq) return;
+      voiceStopSeq += 1; // invalidate duplicate onstop / watchdog
       clearRecordTimer();
+      clearStopWatchdog();
       releaseMicTracks();
       var stoppedRec = recorder;
       recorder = null;
@@ -3372,6 +3451,7 @@
             listened: false,
             uploaded: false,
             hasLocal: false,
+            tooShort: false,
           },
         });
         setVoiceState("录音失败，请重录", duration);
@@ -3381,7 +3461,7 @@
       }
 
       if (duration < MIN_VOICE_SECONDS) {
-        voicePhase = VOICE_PHASE.IDLE;
+        voicePhase = VOICE_PHASE.TOO_SHORT;
         if (liveVoiceObjectUrl) {
           try {
             URL.revokeObjectURL(liveVoiceObjectUrl);
@@ -3398,14 +3478,29 @@
             listened: false,
             uploaded: false,
             hasLocal: false,
+            tooShort: true,
           },
         });
-        showApplyTip("语音介绍至少需要录制 " + MIN_VOICE_SECONDS + " 秒，请重新录制。");
+        showApplyTip("语音介绍至少需要录制 10 秒");
         refreshVoiceUi({ scrollVoice: true });
         return;
       }
 
-      var quality = await analyzeVoiceBlob(blob, duration);
+      var qualityFallback = {
+        duration: duration,
+        durationOk: true,
+        volumeOk: true,
+        humanVoice: true,
+        notBlank: true,
+        rms: 0,
+        peak: 0,
+        silenceRatio: 0,
+        waveform: [],
+        reasons: [],
+        passed: true,
+      };
+      // Safari decodeAudioData can hang — never block preview/confirm on analysis.
+      var quality = await withTimeout(analyzeVoiceBlob(blob, duration), 2500, qualityFallback);
       // Duration is the hard gate. Volume heuristics are advisory only (Safari decode often false-negatives).
       quality.durationOk = duration >= MIN_VOICE_SECONDS && duration <= MAX_VOICE_SECONDS;
       quality.passed = !!quality.durationOk;
@@ -3429,6 +3524,7 @@
         listened: false,
         uploaded: false,
         uploadedAt: "",
+        tooShort: false,
         mimeType: blob.type,
         size: blob.size,
         quality: quality,
@@ -3552,6 +3648,7 @@
       !(recorder && recorder.state && recorder.state !== "inactive")
     ) {
       clearRecordTimer();
+      clearStopWatchdog();
       releaseMicTracks();
       voicePhase = VOICE_PHASE.IDLE;
       document.body.classList.remove("voice-recording-active");
@@ -3574,13 +3671,44 @@
         }
         rec.stop();
       } catch (eStop) {
+        clearStopWatchdog();
         releaseMicTracks();
         recorder = null;
         voicePhase = VOICE_PHASE.IDLE;
         showApplyTip("停止录音失败，请重试。");
         refreshVoiceUi();
+        return;
       }
+      // Safari/iOS occasionally never fires onstop — force finalize after 1.8s.
+      clearStopWatchdog();
+      stopWatchdogTimer = setTimeout(function () {
+        stopWatchdogTimer = null;
+        if (voicePhase !== VOICE_PHASE.STOPPING) return;
+        try {
+          if (typeof rec.requestData === "function" && rec.state === "recording") {
+            rec.requestData();
+          }
+        } catch (e2) {}
+        try {
+          if (rec.state && rec.state !== "inactive") rec.stop();
+        } catch (e3) {}
+        // If still stuck, synthesize onstop outcome from chunks.
+        if (voicePhase === VOICE_PHASE.STOPPING && recorder === rec) {
+          try {
+            if (typeof rec.onstop === "function") {
+              rec.onstop();
+            }
+          } catch (e4) {
+            releaseMicTracks();
+            recorder = null;
+            voicePhase = VOICE_PHASE.IDLE;
+            showApplyTip("停止录音失败，请重试。");
+            refreshVoiceUi();
+          }
+        }
+      }, 1800);
     } else {
+      clearStopWatchdog();
       releaseMicTracks();
       recorder = null;
       voicePhase = VOICE_PHASE.IDLE;
@@ -3598,7 +3726,7 @@
       liveVoiceObjectUrl = "";
     }
     var draft = readDraft();
-    draft.voice = { status: "尚未录制" };
+    draft.voice = { status: "尚未录制", tooShort: false, duration: 0 };
     writeDraftRecord(draft);
     var db = readDB();
     var app = (db.companionApplications || []).find(function (a) {
@@ -3628,7 +3756,7 @@
         }
       }
       if (duration < MIN_VOICE_SECONDS) {
-        showApplyTip("语音介绍至少需要录制 " + MIN_VOICE_SECONDS + " 秒，请重新录制。");
+        showApplyTip("语音介绍至少需要录制 10 秒");
         return;
       }
       if (!companionToken()) {
