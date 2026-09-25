@@ -170,6 +170,23 @@ export function nestParentOnlyOrders(orders = []) {
     const companionNames = kids
       .map((c) => c.companionName || c.playerName || c.companion_name || "")
       .filter(Boolean);
+    // Review targets = effective completed children with a companion (not cancelled/refunded).
+    const reviewTargets = kids.filter((c) => {
+      const st = String(c.status || "").toLowerCase();
+      if (CANCELLED_LIKE.has(st) || st === "refund_requested") return false;
+      const cid = c.companionId || c.companion_id || (c.companion && (c.companion.id || c.companion.user_id));
+      if (!cid) return false;
+      return st === "completed" || st === "reviewed" || !!c.reviewed || !!c.canReview;
+    });
+    const reviewDone = reviewTargets.filter((c) => !!c.reviewed || String(c.status || "").toLowerCase() === "reviewed").length;
+    const reviewPending = reviewTargets.filter((c) => !!c.canReview || (String(c.status || "").toLowerCase() === "completed" && !c.reviewed)).length;
+    const isMultiRoot =
+      String(root.orderTypeKey || root.order_type || "").toLowerCase() === ORDER_TYPE_MULTI_GROUP ||
+      !!root.isMultiGroupParent ||
+      childCount > 0;
+    const multiReview = isMultiRoot
+      ? { done: reviewDone, total: reviewTargets.length, pending: Math.max(0, reviewTargets.length - reviewDone) }
+      : null;
     return {
       ...root,
       children: kids,
@@ -191,6 +208,8 @@ export function nestParentOnlyOrders(orders = []) {
           ) || 0,
         status: c.status || "",
         statusText: c.statusText || "",
+        reviewed: !!(c.reviewed || String(c.status || "").toLowerCase() === "reviewed"),
+        canReview: !!c.canReview,
       })),
       childCount,
       companionCount: childCount || (root.companionId || root.companion_id ? 1 : 0),
@@ -198,6 +217,14 @@ export function nestParentOnlyOrders(orders = []) {
         companionNames.length > 0
           ? companionNames.join("、")
           : root.companionName || root.playerName || (childCount ? `${childCount}位陪玩` : "待分配"),
+      multiReview,
+      // Parent has no companion_id — expose aggregate review CTA from children.
+      canReview: isMultiRoot
+        ? reviewPending > 0 || reviewTargets.some((c) => !!c.canReview)
+        : !!root.canReview,
+      reviewed: isMultiRoot
+        ? reviewTargets.length > 0 && reviewDone >= reviewTargets.length
+        : !!root.reviewed,
     };
   });
 }

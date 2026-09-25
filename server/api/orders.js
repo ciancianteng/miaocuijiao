@@ -723,10 +723,12 @@ async function loadOrders(profile, id = "") {
     selectCoreLegacy,
   ];
   let rows;
+  let usedSelect = selectRich;
   let lastSelectErr = null;
   for (const sel of selectCandidates) {
     try {
       rows = await supabaseJson(restUrl(TABLE, queryOf(sel)), { headers: serviceHeaders() });
+      usedSelect = sel;
       lastSelectErr = null;
       break;
     } catch (err) {
@@ -735,7 +737,27 @@ async function loadOrders(profile, id = "") {
     }
   }
   if (lastSelectErr) throw lastSelectErr;
-  const orders = Array.isArray(rows) ? rows : [];
+  let orders = Array.isArray(rows) ? rows : [];
+  // Single-id parent fetch must include children so boss can review each companion.
+  if (id && orders[0] && !orders[0].parent_order_id) {
+    const head = orders[0];
+    const isMultiParent =
+      String(head.order_type || "").toLowerCase() === "multi_group" || head._is_multi_group_parent === true;
+    if (isMultiParent) {
+      try {
+        const kids = await supabaseJson(
+          restUrl(
+            TABLE,
+            `?parent_order_id=eq.${encodeURIComponent(head.id)}&boss_id=eq.${encodeURIComponent(profile.id)}&select=${usedSelect}&order=created_at.asc`
+          ),
+          { headers: serviceHeaders() }
+        );
+        if (Array.isArray(kids) && kids.length) orders = [head, ...kids];
+      } catch {
+        /* keep parent-only; list path still nests when children are in the wider query */
+      }
+    }
+  }
   const companionIds = [...new Set(orders.map((row) => row.companion_id).filter(Boolean))];
   const serviceIds = [...new Set(orders.map((row) => row.customer_service_id).filter(Boolean))];
   const orderIds = orders.map((row) => row.id).filter(Boolean);
@@ -2993,6 +3015,18 @@ export default async function handler(req, res) {
       );
       const order = Array.isArray(beforeRows) ? beforeRows[0] : null;
       if (!order) return json(res, 404, { ok: false, message: "订单不存在。" });
+      try {
+        const { isMultiGroupParent } = await import("./_order-group.js");
+        if (isMultiGroupParent(order) || (String(order.order_type || "").toLowerCase() === "multi_group" && !order.parent_order_id)) {
+          return json(res, 400, {
+            ok: false,
+            code: "MULTI_PARENT_REVIEW",
+            message: "多人订单请分别评价每位陪玩（使用对应子订单）。",
+          });
+        }
+      } catch {
+        /* continue with companion_id check */
+      }
       const statusNow = String(order.status || "");
       if (/^(cancelled|refunded|refund_requested)$/.test(statusNow)) {
         return json(res, 400, { ok: false, message: "已取消或退款的订单不能评价。" });
