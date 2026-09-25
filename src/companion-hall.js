@@ -152,12 +152,23 @@
     var dataItems = [];
     state.loadError = "";
     try {
-      // Allow short CDN/browser cache from API Cache-Control (list is slowly changing).
-      // Detail pages still fetch by id with no-store on the server.
-      var response = await fetch("/api/public/companions", { headers: { Accept: "application/json" }, cache: "default" });
-      var body = await response.json().catch(function () { return {}; });
-      if (!response.ok || !body.ok) throw new Error(body.message || "陪玩列表读取失败");
-      dataItems = Array.isArray(body.companions) ? body.companions : [];
+      var Cache = window.MCJCompanionsCache;
+      var pack = Cache
+        ? await Cache.load({ limit: 80 })
+        : {
+            value: await (async function () {
+              var response = await fetch("/api/public/companions?limit=80", {
+                headers: { Accept: "application/json" },
+                cache: "default",
+              });
+              var body = await response.json().catch(function () {
+                return {};
+              });
+              if (!response.ok || !body.ok) throw new Error(body.message || "陪玩列表读取失败");
+              return Array.isArray(body.companions) ? body.companions : [];
+            })(),
+          };
+      dataItems = Array.isArray(pack.value) ? pack.value : [];
     } catch (error) {
       console.error("陪玩大厅读取失败", error);
       state.loadError = error.message || "陪玩列表读取失败";
@@ -589,11 +600,11 @@
       '" ' +
       extraAttrs +
       ">" +
-      '<div class="hot-cover"><img src="' +
+      '<div class="hot-cover"><img class="mcj-fade-img" src="' +
       esc(item.image || DEFAULT_AVATAR) +
       '" alt="' +
       esc(nickname) +
-      '" loading="lazy" onerror="this.onerror=null;this.src=\'' +
+      '" loading="lazy" decoding="async" onload="this.classList.add(\'is-loaded\')" onerror="this.onerror=null;this.classList.add(\'is-loaded\');this.src=\'' +
       DEFAULT_AVATAR +
       '\'"></div>' +
       '<div class="hot-info"><div class="hot-name-row"><h3>' +
@@ -670,12 +681,21 @@
       render();
     });
     document.addEventListener("click", function (event) {
+      var profileLink = event.target.closest('a[href*="profile.html"]');
+      if (profileLink) {
+        try {
+          sessionStorage.setItem("mcjHallScrollY", String(window.scrollY || 0));
+        } catch (e) {}
+      }
       var orderBtn = event.target.closest("[data-hall-order]");
       if (!orderBtn) return;
       event.preventDefault();
       var id = orderBtn.getAttribute("data-hall-order") || "";
       if (!id) return;
       if (!window.MCJPlaceOrder || typeof window.MCJPlaceOrder.openFromCompanion !== "function") {
+        try {
+          sessionStorage.setItem("mcjHallScrollY", String(window.scrollY || 0));
+        } catch (e2) {}
         location.href = "profile.html?id=" + encodeURIComponent(id) + "&open_order=1";
         return;
       }
@@ -736,13 +756,18 @@
     paintHallSkeleton();
     var count = document.getElementById("resultCount");
     if (count) count.textContent = "正在加载陪玩…";
-    // Do not auto-seed preview fixtures into the public hall path.
-    // Hydrate admin levels before building the level/price dropdowns.
-    if (window.MCJCompanionLevels && typeof window.MCJCompanionLevels.hydrateFromApi === "function") {
-      try { await window.MCJCompanionLevels.hydrateFromApi(); } catch (e) { /* keep last known */ }
-    }
+    // Restore scroll after detail → back, if saved.
     try {
-      state.items = await readItems();
+      var savedY = sessionStorage.getItem("mcjHallScrollY");
+      if (savedY != null) state._restoreScrollY = Number(savedY);
+    } catch (e) {}
+    var hydrate =
+      window.MCJCompanionLevels && typeof window.MCJCompanionLevels.hydrateFromApi === "function"
+        ? window.MCJCompanionLevels.hydrateFromApi().catch(function () {})
+        : Promise.resolve();
+    try {
+      var pair = await Promise.all([hydrate, readItems()]);
+      state.items = pair[1] || [];
     } finally {
       state.loading = false;
     }
@@ -750,6 +775,16 @@
     await loadGameFilterFromServicesApi();
     bind();
     render();
+    if (state._restoreScrollY != null && Number.isFinite(state._restoreScrollY)) {
+      var y = state._restoreScrollY;
+      state._restoreScrollY = null;
+      requestAnimationFrame(function () {
+        window.scrollTo(0, y);
+        try {
+          sessionStorage.removeItem("mcjHallScrollY");
+        } catch (e2) {}
+      });
+    }
   }
   function init() {
     // Load companions immediately; refresh filter options when taxonomy arrives.
