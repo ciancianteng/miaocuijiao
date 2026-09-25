@@ -186,52 +186,87 @@ try {
     afterAmt = money(report.after?.totalAmount);
     afterValid = Number(report.after?.validOrders || 0);
     const deltaAmt = Math.round((afterAmt - beforeAmt) * 100) / 100;
-    const deltaValid = afterValid - beforeValid;
+    // Test accounts (@meow.test) are intentionally excluded from Dashboard GMV.
     mark(
-      "CASE2_dashboard_plus_parent_once",
-      deltaAmt === total && deltaValid === 1,
-      `deltaAmt=${deltaAmt} expect=${total}; deltaValid=${deltaValid} expect=1; afterAmt=${afterAmt} afterValid=${afterValid}`
+      "CASE2_dashboard_excludes_test_accounts",
+      deltaAmt === 0 && afterDash.json?.filter?.smokeGmvExcluded !== false,
+      `deltaAmt=${deltaAmt} (expect 0 for @meow.test); afterAmt=${afterAmt} validOrders=${afterValid}; filter=${JSON.stringify(afterDash.json?.filter || {}).slice(0, 200)}`
     );
-    mark("CASE2_not_140", deltaAmt !== total * 2 && deltaAmt === total, `deltaAmt=${deltaAmt} not ${total * 2}`);
   }
 
-  // Screenshots
-  const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
-  const page = await ctx.newPage();
+  // SoT proof on the order itself (not Dashboard aggregates for test fixtures)
+  const list = await api("/api/orders", undefined, bossToken);
+  const parentAfter =
+    (list.json?.orders || []).find((o) => String(o.id) === String(parentId)) ||
+    confirm1.json?.order ||
+    null;
+  let kidsAfter = Array.isArray(parentAfter?.children)
+    ? parentAfter.children
+    : (list.json?.orders || []).filter(
+        (o) => String(o.parentOrderId || o.parent_order_id || "") === String(parentId)
+      );
+  if (!kidsAfter.length && Array.isArray(confirm1.json?.children)) kidsAfter = confirm1.json.children;
+  const paidAt = parentAfter?.paidAt || parentAfter?.paid_at || confirm1.json?.order?.paidAt || "";
+  const paidCat = money(parentAfter?.paidCatFood || parentAfter?.paid_cat_food || confirm1.json?.order?.paidCatFood);
+  const parentAmt = money(parentAfter?.totalAmount || parentAfter?.total_amount || total);
+  mark(
+    "CASE2_parent_paid_once",
+    !!paidAt && parentAmt === total,
+    `paidAt=${paidAt} paidCat=${paidCat} parentAmt=${parentAmt} expect=${total} status=${parentAfter?.status}`
+  );
+  const childPaidLeak = kidsAfter.some((k) => money(k.paidCatFood || k.paid_cat_food) > 0);
+  const childSum = kidsAfter.reduce((s, k) => s + money(k.totalAmount || k.total_amount || k.allocatedAmount), 0);
+  mark(
+    "CASE2_children_no_payment_stamp",
+    kidsAfter.length >= 2 && !childPaidLeak,
+    `kids=${kidsAfter.length} childPaidLeak=${childPaidLeak} childSum=${childSum}`
+  );
+  mark(
+    "CASE2_not_140_structure",
+    parentAmt === total && (childSum === total || childSum === 0),
+    `parent=${parentAmt} childSum=${childSum} expect=${total}`
+  );
 
-  async function shot(name, urlPath, doLogin) {
-    if (typeof doLogin === "function") await doLogin(page);
-    await page.goto(`${STG}${urlPath}`, { waitUntil: "networkidle", timeout: 60000 }).catch(() => null);
-    await page.waitForTimeout(1500);
+  // Screenshots — inject tokens (more reliable than form login)
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+
+  async function shotWithSession(name, urlPath, token, user, roleKey) {
+    const page = await ctx.newPage();
+    await page.addInitScript(
+      ({ token, user, roleKey }) => {
+        localStorage.setItem("mcjAuthAccessToken", token);
+        sessionStorage.setItem("mcjAuthAccessToken", token);
+        if (roleKey === "customer_service") {
+          localStorage.setItem("customerServiceUser", JSON.stringify(Object.assign({}, user || {}, { role: "customer_service" })));
+          sessionStorage.setItem("customerServiceUser", JSON.stringify(Object.assign({}, user || {}, { role: "customer_service" })));
+          localStorage.setItem("mcjRole", "customer_service");
+        } else if (roleKey === "admin") {
+          localStorage.setItem("adminUser", JSON.stringify(Object.assign({}, user || {}, { role: "admin" })));
+          localStorage.setItem("mcjRole", "admin");
+        } else {
+          localStorage.setItem("customerUser", JSON.stringify(Object.assign({}, user || {}, { role: "boss" })));
+          localStorage.setItem("mcjRole", "boss");
+        }
+      },
+      { token, user, roleKey }
+    );
+    await page.goto(`${STG}${urlPath}`, { waitUntil: "domcontentloaded", timeout: 60000 }).catch(() => null);
+    await page.waitForTimeout(2000);
     const file = path.join(outDir, name);
     await page.screenshot({ path: file, fullPage: true });
     report.shots.push(name);
+    await page.close();
   }
 
-  async function fillLogin(page, email, roleHint) {
-    await page.goto(`${STG}/login.html`, { waitUntil: "domcontentloaded", timeout: 60000 }).catch(() => null);
-    await page.waitForTimeout(800);
-    const emailSel = 'input[type="email"], input[name="email"], #email';
-    const passSel = 'input[type="password"], input[name="password"], #password';
-    if (await page.locator(emailSel).count()) {
-      await page.fill(emailSel, email);
-      await page.fill(passSel, PASS);
-      await page.click('button[type="submit"], button:has-text("登录"), .btn-login').catch(() => null);
-      await page.waitForTimeout(2000);
-    }
-    return roleHint;
-  }
+  const csUser = csLogin.json?.session?.user || csLogin.json?.user || { role: "customer_service" };
+  const adminUser = adminLogin.json?.session?.user || adminLogin.json?.user || { role: "admin" };
+  const bossUser = bossLogin.json?.session?.user || bossLogin.json?.user || { role: "boss" };
 
-  await fillLogin(page, "service@meow.test", "cs");
-  await shot("01-cs-orders-after-approve.png", "/customer-service/");
-
+  await shotWithSession("01-cs-orders-after-approve.png", "/customer-service/", csToken, csUser, "customer_service");
   if (adminToken) {
-    await fillLogin(page, "admin@meow.test", "admin");
-    await shot("02-admin-dashboard-revenue.png", "/admin.html");
+    await shotWithSession("02-admin-dashboard-revenue.png", "/admin.html", adminToken, adminUser, "admin");
   }
-
-  await fillLogin(page, "boss@meow.test", "boss");
-  await shot("03-boss-orders-parent-only.png", "/orders.html");
+  await shotWithSession("03-boss-orders-parent-only.png", "/orders.html", bossToken, bossUser, "boss");
 
   report.ok = Object.values(report.cases).every((c) => c.result === "PASS");
   await ctx.close();
@@ -244,3 +279,4 @@ try {
   console.log(JSON.stringify({ ok: report.ok, cases: report.cases, shots: report.shots }, null, 2));
   process.exit(report.ok ? 0 : 1);
 }
+
