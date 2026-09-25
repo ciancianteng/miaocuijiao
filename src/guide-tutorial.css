@@ -531,6 +531,43 @@
   font-size: 14px;
   line-height: 1.6;
 }
+.mcj-guide-companion-shortcut {
+  margin-top: 12px;
+  display: flex;
+  justify-content: flex-start;
+}
+.mcj-guide-companion-go {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  padding: 0 16px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 140, 200, 0.55);
+  background: linear-gradient(135deg, rgba(255, 105, 180, 0.22), rgba(20, 10, 18, 0.9));
+  color: #ffe4f1;
+  font-size: 14px;
+  font-weight: 900;
+  letter-spacing: 0.03em;
+  text-decoration: none;
+  white-space: nowrap;
+  -webkit-tap-highlight-color: transparent;
+}
+.mcj-guide-companion-go:hover,
+.mcj-guide-companion-go:focus-visible {
+  border-color: rgba(255, 180, 220, 0.85);
+  color: #fff;
+  outline: none;
+}
+body.mcj-boss-shell .mcj-guide {
+  padding-top: 0;
+}
+body.mcj-boss-shell .mcj-guide-doc {
+  padding-top: 8px;
+}
+body.mcj-boss-shell .mcj-guide-doc-hero {
+  padding-top: 18px;
+}
 .mcj-guide-doc-cards {
   display: grid;
   gap: 14px;

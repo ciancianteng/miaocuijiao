@@ -59,26 +59,69 @@
     );
   }
 
+  function isCompanionLoggedIn() {
+    try {
+      var token =
+        localStorage.getItem("companionAuthToken") ||
+        sessionStorage.getItem("companionAuthToken") ||
+        "";
+      if (!token) return false;
+      var raw =
+        localStorage.getItem("companionUser") ||
+        sessionStorage.getItem("companionUser") ||
+        "";
+      if (!raw) return true;
+      var u = JSON.parse(raw);
+      return !!(u && (u.id || u.user_id || u.userId || u.email));
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function companionEntryHref() {
+    return isCompanionLoggedIn() ? "/companion/dashboard/" : "/companion/login/";
+  }
+
+  /** Compact shortcut for 陪玩教学 tab only — whole control is one tap. */
+  function renderCompanionShortcut() {
+    var logged = isCompanionLoggedIn();
+    var href = companionEntryHref();
+    var label = logged ? "进入陪玩工作台 →" : "进入陪玩端 →";
+    return (
+      '<div class="mcj-guide-companion-shortcut">' +
+      '<a class="mcj-guide-companion-go" href="' +
+      esc(href) +
+      '" data-guide-companion-go="1">' +
+      esc(label) +
+      "</a></div>"
+    );
+  }
+
   function renderLoginCta(opts) {
     opts = opts || {};
     var id = opts.id || "guide-companion-login";
-    var href = CFG.companionLoginHref || "/companion/login/";
+    var logged = isCompanionLoggedIn();
+    var href = companionEntryHref();
+    var label = logged
+      ? "进入陪玩工作台"
+      : CFG.companionLoginLabel || "陪玩登录";
+    var hint = logged
+      ? "已登录陪玩账号，可直接进入工作台、抢单、订单与收益。"
+      : CFG.companionLoginHint || "";
     return (
       '<section class="mcj-guide-login-cta" id="' +
       esc(id) +
       '" data-guide-companion-login="1">' +
       "<h2>" +
-      esc(CFG.companionLoginLabel || "陪玩登录入口") +
+      esc(label) +
       "</h2>" +
-      (CFG.companionLoginHint ? "<p>" + esc(CFG.companionLoginHint) + "</p>" : "") +
+      (hint ? "<p>" + esc(hint) + "</p>" : "") +
       '<a class="mcj-guide-login-btn" href="' +
       esc(href) +
       '" data-guide-companion-login-link="1">' +
-      esc(CFG.companionLoginLabel || "陪玩登录入口") +
-      "</a>" +
-      '<p class="mcj-guide-login-path">入口地址：' +
-      esc(href) +
-      "</p></section>"
+      esc(label) +
+      " →</a>" +
+      "</section>"
     );
   }
 
@@ -187,6 +230,7 @@
       (section.subtitle
         ? '<p class="mcj-guide-doc-section-sub">' + esc(section.subtitle) + "</p>"
         : "") +
+      (activeTab === "companion" ? renderCompanionShortcut() : "") +
       "</div>" +
       (activeTab === "companion" ? renderLoginCta({ id: "guide-companion-login" }) : "") +
       '<div class="mcj-guide-acc" data-acc-root="' +
@@ -201,7 +245,7 @@
         : "") +
       "</section>" +
       (activeTab === "boss"
-        ? '<p class="mcj-guide-switch-hint">想接单？切换到上方「陪玩教学」，顶部有陪玩登录入口。</p>'
+        ? '<p class="mcj-guide-switch-hint">想接单？切换到上方「陪玩教学」，可用菜单里的「陪玩登录」或教学内快捷入口进入陪玩端。</p>'
         : "") +
       "</div></div>";
 
