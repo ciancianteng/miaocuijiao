@@ -485,6 +485,12 @@ export async function listPendingForCs({ orderIds = [] } = {}) {
 }
 
 async function insertPaidTransaction({ order, receipt, reviewerId, at }) {
+  if (order?.parent_order_id) {
+    throw Object.assign(
+      new Error("子订单（分配行）不能创建 Boss 付款流水；请审核主订单。"),
+      { status: 409, code: "CHILD_ORDER_NO_PAYMENT_TX" }
+    );
+  }
   const confirmed =
     money(receipt?.amount) > 0 ? money(receipt.amount) : money(order.total_amount);
   const rows = await companionDb("payment_transactions", "", {

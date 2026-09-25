@@ -150,7 +150,13 @@ function paymentMethodFrom(row = {}, receipt = null) {
   const hit = text.match(/付款方式[：:]\s*([^\n；;]+)/i);
   return (hit ? hit[1] : "").trim() || "-";
 }
-function paymentStatusLabel(status, reviewStatus) {
+function paymentStatusLabel(status, reviewStatus, row = {}) {
+  if (row.parent_order_id) {
+    const st = String(status || "");
+    if (st === "awaiting_payment") return "待主单付款";
+    if (st === "cancelled" || st === "refunded") return "已取消";
+    return "主单已付·分配";
+  }
   const st = String(status || "");
   const rv = String(reviewStatus || "").toLowerCase();
   if (rv === "approved") return "已支付";
@@ -280,8 +286,14 @@ function safeOrder(row, profiles, extras = {}) {
     serviceContent: row.service_name || row.title || companionExtra.main_service || row.description || "-",
     amount: money(row.total_amount),
     totalAmount: money(row.total_amount),
-    paymentMethod: paymentMethodFrom(row, receipt),
-    paymentStatus: paymentStatusLabel(status, reviewStatus),
+    paymentMethod: row.parent_order_id ? "主单分配" : paymentMethodFrom(row, receipt),
+    paymentStatus: paymentStatusLabel(status, reviewStatus, row),
+    parentOrderId: row.parent_order_id || "",
+    isMultiGroupChild: !!row.parent_order_id,
+    isMultiGroupParent: String(row.order_type || "").toLowerCase() === "multi_group" && !row.parent_order_id,
+    allocatedAmount: row.parent_order_id ? money(row.total_amount) : null,
+    amountKind: row.parent_order_id ? "allocation" : "payment",
+    amountLabel: row.parent_order_id ? "分配金额" : "订单金额",
     paymentProofUrl: extras.paymentProofUrl || "",
     paymentUploadedAt: receipt?.uploaded_at || receipt?.created_at || "",
     paymentReceiptId: receipt?.id || "",
@@ -833,7 +845,10 @@ export default async function handler(req, res) {
           };
         })
       );
-      const list = sortOrdersByActivityDesc(await enrichSafeOrders((orders || []).slice(0, 200), map, baseExtras));
+      const enrichedAll = sortOrdersByActivityDesc(await enrichSafeOrders((orders || []).slice(0, 200), map, baseExtras));
+      const { nestParentOnlyOrders } = await import("../_order-group.js");
+      const { countsAsRevenue } = await import("./dashboard.js");
+      const list = nestParentOnlyOrders(enrichedAll);
       const summary = {
         total: list.length,
         todayOrders: 0,
@@ -843,10 +858,12 @@ export default async function handler(req, res) {
         completed: list.filter((x) => x.status === "completed").length,
         afterSale: list.filter((x) => x.status === "refund_requested").length,
         revenue: list.reduce((n, x) => {
-          if (x.status === "awaiting_payment" || x.status === "cancelled") return n;
-          return n + x.amount;
+          if (!countsAsRevenue(x)) return n;
+          return n + (Number(x.amount) || Number(x.totalAmount) || 0);
         }, 0),
         profit: 0,
+        gmvScope: "parent_order_id IS NULL only",
+        childRowsHidden: Math.max(0, enrichedAll.length - list.length),
       };
       return json(res, 200, { ok: true, configured: true, orders: list, summary, orderStatuses: ORDER_STATUS_TEXT });
     }

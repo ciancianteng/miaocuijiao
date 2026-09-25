@@ -139,6 +139,60 @@ export function isMultiGroupChild(order) {
   return !!(order.parent_order_id && String(order.parent_order_id).trim());
 }
 
+/** True payment / wallet / revenue owner — never a multi child allocation row. */
+export function isBossPaymentOwnerOrder(order) {
+  if (!order || typeof order !== "object") return false;
+  return !isMultiGroupChild(order);
+}
+
+/**
+ * Boss / Admin / CS order lists: only top-level rows; nest children under parent.
+ * Children remain available as `children` / `allocations` for detail UI.
+ */
+export function nestParentOnlyOrders(orders = []) {
+  const list = Array.isArray(orders) ? orders : [];
+  const childrenByParent = new Map();
+  const roots = [];
+  for (const o of list) {
+    if (!o || typeof o !== "object") continue;
+    const pid = String(o.parent_order_id || o.parentOrderId || "").trim();
+    if (pid) {
+      if (!childrenByParent.has(pid)) childrenByParent.set(pid, []);
+      childrenByParent.get(pid).push(o);
+      continue;
+    }
+    roots.push(o);
+  }
+  return roots.map((root) => {
+    const id = String(root.id || root.orderId || "");
+    const kids = childrenByParent.get(id) || [];
+    const childCount = kids.length;
+    const companionNames = kids
+      .map((c) => c.companionName || c.playerName || c.companion_name || "")
+      .filter(Boolean);
+    return {
+      ...root,
+      children: kids,
+      allocations: kids.map((c) => ({
+        id: c.id,
+        orderNo: c.orderNo || c.order_no || c.orderNoDisplay || "",
+        companionId: c.companionId || c.companion_id || "",
+        companionName: c.companionName || c.playerName || "",
+        companionCode: c.companionCode || c.playerUid || "",
+        allocatedAmount: Number(c.allocatedAmount != null ? c.allocatedAmount : c.totalAmount != null ? c.totalAmount : c.amount) || 0,
+        status: c.status || "",
+        statusText: c.statusText || "",
+      })),
+      childCount,
+      companionCount: childCount || (root.companionId || root.companion_id ? 1 : 0),
+      companionsLabel:
+        companionNames.length > 0
+          ? companionNames.join("、")
+          : root.companionName || root.playerName || (childCount ? `${childCount}位陪玩` : "待分配"),
+    };
+  });
+}
+
 /** Legacy single-companion / open-grab / custom — not part of a multi group. */
 export function isLegacyStandaloneOrder(order) {
   return !isMultiGroupParent(order) && !isMultiGroupChild(order);
