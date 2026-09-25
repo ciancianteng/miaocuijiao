@@ -137,20 +137,30 @@
   function statusLabel(code) {
     var key = String(code || "").toLowerCase().trim();
     var map = {
-      draft: "草稿中",
-      pending: "审核中",
-      review: "审核中",
-      submitted: "审核中",
+      draft: "草稿",
+      pending: "待审核",
+      review: "待审核",
+      submitted: "待审核",
       resubmit: "需要补资料",
       need_more: "需要补资料",
-      approved: "审核通过",
-      verified: "审核通过",
-      passed: "审核通过",
-      rejected: "审核未通过",
+      approved: "已通过",
+      verified: "已通过",
+      passed: "已通过",
+      rejected: "已驳回",
     };
     if (map[key]) return map[key];
     if (!key || /^[a-z][a-z0-9_]*$/i.test(key)) return "-";
     return String(code);
+  }
+  function completenessHint(item) {
+    var bits = [];
+    if (item.nickname || item.name) bits.push("资料");
+    var cert = certMethodOf(item);
+    if (cert && cert !== "-") bits.push(cert);
+    var photos = Number(item.galleryCount || item.gallery_count || 0);
+    if (photos > 0 || item.avatar || item.avatarUrl) bits.push("照片");
+    if (item.voiceUrl || item.voice_url || Number(item.voiceCount || 0) > 0) bits.push("声线");
+    return bits.length ? bits.join(" · ") : "待核验";
   }
   function isApplicationQueue(row) {
     var code = statusCode(row);
@@ -336,6 +346,43 @@
         );
       })
       .join("");
+    var cards = rows
+      .map(function (item) {
+        var code = statusCode(item);
+        var id = rowId(item);
+        var statusText = statusLabel(code);
+        var pending = /pending|review|submitted/.test(code);
+        return (
+          '<article class="capp-card">' +
+          '<div class="capp-card-head"><img src="' +
+          esc(item.avatarUrl || item.avatar || item.card_image_url || "/assets/meow-cuijiao-brand.jpg") +
+          '" alt="" onerror="this.onerror=null;this.src=\'/assets/meow-cuijiao-brand.jpg\'"><div><strong>' +
+          esc(item.nickname || item.name || "-") +
+          "</strong><span>" +
+          esc(statusText) +
+          (pending ? " · 待处理" : "") +
+          "</span></div></div>" +
+          '<div class="capp-card-meta">' +
+          "<div>申请时间：" +
+          esc(item.application_submitted_at || item.applicationSubmittedAt || item.created_at || "—") +
+          "</div><div>认证方式：" +
+          esc(certMethodOf(item)) +
+          "</div><div>资料：" +
+          esc(completenessHint(item)) +
+          "</div></div>" +
+          '<div class="capp-card-actions">' +
+          '<button class="mini-btn primary-lite" type="button" data-capp-open="' +
+          esc(id) +
+          '">审核</button>' +
+          (pending
+            ? '<button class="mini-btn danger-btn" type="button" data-capp-reject="' +
+              esc(id) +
+              '">驳回</button>'
+            : "") +
+          "</div></article>"
+        );
+      })
+      .join("");
     var batchLevelOpts =
       '<option value="">批量通过使用等级</option>' +
       (state.levels || [])
@@ -356,12 +403,12 @@
       '<div class="admin-section-head compact"><div><h3>陪玩申请审核</h3><p>通过审核前必须选择陪玩等级。系统按等级 base_price 初始化服务价格；真实用户须具备昵称、游戏，且账号 active；测试账号保持隔离不进正式大厅。</p></div>' +
       '<div class="content-admin-toolbar compact"><select data-capp-filter>' +
       [
-        ["pending", "审核中"],
+        ["pending", "待审核"],
         ["resubmit", "需要补资料"],
-        ["approved", "审核通过"],
+        ["approved", "已通过"],
         ["approved_not_in_hall", "已通过但未上大厅"],
         ["approved_missing_price", "已通过但缺价格"],
-        ["rejected", "审核未通过"],
+        ["rejected", "已驳回"],
         ["all", "全部"],
       ]
         .map(function (pair) {
@@ -394,12 +441,14 @@
           ' 位陪玩吗？</strong> 仅处理当前页已勾选的审核中对象。<button class="mini-btn primary-lite" type="button" data-capp-confirm-yes>确认通过</button> <button class="mini-btn" type="button" data-capp-confirm-no>取消</button></div>'
         : "") +
       (state.message ? '<div class="admin-sync-note" data-capp-batch-result>' + esc(state.message) + "</div>" : "") +
-      '<div class="table-wrap"><table><thead><tr><th><input type="checkbox" data-capp-select-all' +
+      '<div class="table-wrap capp-table-wrap"><table><thead><tr><th><input type="checkbox" data-capp-select-all' +
       (allEligibleChecked ? " checked" : "") +
       (eligible.length ? "" : " disabled") +
       ' aria-label="全选当前页待审核"></th><th>申请ID</th><th>昵称</th><th>联系方式</th><th>游戏</th><th>申请/大厅状态</th><th>认证方式</th><th>押金</th><th>操作</th></tr></thead><tbody>' +
       (body || '<tr><td colspan="9">暂无陪玩申请</td></tr>') +
-      "</tbody></table></div>";
+      '</tbody></table></div><div class="capp-mobile-cards">' +
+      (cards || '<div class="admin-sync-note">暂无陪玩申请</div>') +
+      "</div>";
   }
   function load() {
     state.loading = true;
