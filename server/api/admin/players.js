@@ -23,6 +23,7 @@ import { resolveCompanionAvatar, resolveCompanionCover } from "../_companion-pub
 import { resolveCompanionPublicCode } from "../_account-codes.js";
 import { requireAdmin as requireAdminJwt, ADMIN_ROLES as SHARED_ADMIN_ROLES } from "../_admin-auth.js";
 import { isTestAccountRecord } from "../_test-accounts.js";
+import { companionEarningsUnlockMeta } from "../_earnings-windows.js";
 import {
   hasPositivePrice,
   isFirstApprovalTransition,
@@ -947,14 +948,30 @@ async function buildDetail(row, profile, opts = {}) {
       status: o.status,
       createdAt: o.created_at,
     })),
-    incomeRows: related.income.slice(0, 20).map((t) => ({
-      id: t.id,
-      type: t.transaction_type || "companion_income",
-      amount: t.amount,
-      status: t.status,
-      createdAt: t.created_at,
-      note: t.note || "",
-    })),
+    incomeRows: related.income.slice(0, 20).map((t) => {
+      const oid = String(t.order_id || "");
+      const linked = oid
+        ? (related.orders || []).find((o) => String(o.id) === oid) || null
+        : null;
+      const unlock = linked
+        ? companionEarningsUnlockMeta(linked)
+        : { locked: false, unlockAt: "", bossConfirmedAt: "", unlockReason: "", statusLabel: t.status || "-" };
+      return {
+        id: t.id,
+        orderId: oid,
+        orderNo: linked?.order_no || oid || "-",
+        type: t.transaction_type || "companion_income",
+        amount: t.amount,
+        status: unlock.locked ? "锁定中" : "可提现",
+        statusDetail: unlock.statusLabel || "",
+        withdrawableAt: unlock.unlockAt || "",
+        bossConfirmedAt: unlock.bossConfirmedAt || "",
+        unlockReason: unlock.unlockReason || "",
+        createdAt: t.created_at,
+        time: t.created_at,
+        note: t.note || "",
+      };
+    }),
     reviews: reviewList.slice(0, 30).map((r) => ({
       id: r.id,
       orderId: r.order_id || "",

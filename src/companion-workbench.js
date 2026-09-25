@@ -3023,20 +3023,28 @@
       infoRow('礼物平台抽成',money(num(e.giftCommission||channels.giftCommission||0)))+
       infoRow('礼物净收入（可提现）',money(num(giftNet)))+
       infoRow('邀请佣金',money(num(inviteIncome)))+
-      infoRow('订单 24h 锁定',money(num(e.earningsLocked||0)))+
+      infoRow('订单锁定中（待解锁）',money(num(e.earningsLocked||0)))+
       infoRow('提现冻结中',money(num(frozen)))+
       infoRow('已提现合计',money(num(withdrawn)))+
       infoRow('当前可提现',money(num(available)))+
       infoRow('平台订单抽成',esc(commission)+'%')+
-      '</div></section>'+
+      '</div><p class="pw-note" style="margin-top:10px">解锁规则：Boss 确认完成立即解锁；否则服务完成满 24 小时自动解锁。</p></section>'+
       '<section class="pw-card pad" style="margin-top:14px"><h3>奖励 / 其它（不可提现）</h3><div class="pw-info-list">'+infoRow('奖励猫粮',money(num(e.bonus||e.reward||0)))+infoRow('说明',esc(e.rewardNote||'奖励/其它不计入订单/礼物提现额度'))+'</div></section>'+
-      '<section class="pw-card pad" style="margin-top:14px"><h3>收入明细</h3>'+(details.length?'<div class="pw-table-wrap"><table class="pw-table"><thead><tr><th>类型</th><th>订单/礼物</th><th>总额</th><th>平台抽成</th><th>实际到账</th><th>状态</th><th>时间</th></tr></thead><tbody>'+details.map(function(x){
+      '<section class="pw-card pad" style="margin-top:14px"><h3>收入明细</h3>'+(details.length?'<div class="pw-table-wrap"><table class="pw-table"><thead><tr><th>类型</th><th>订单/礼物</th><th>总额</th><th>平台抽成</th><th>实际到账</th><th>提现状态</th><th>时间</th></tr></thead><tbody>'+details.map(function(x){
         var s=x.settlement||{};
         var gross=x.grossAmount!=null?x.grossAmount:(s.totalCatFood!=null?s.totalCatFood:x.amount);
         var fee=x.platformFee!=null?x.platformFee:(s.platformCommissionCatFood!=null?s.platformCommissionCatFood:0);
         var net=x.netIncome!=null?x.netIncome:(s.companionNetCatFood!=null?s.companionNetCatFood:x.amount);
-        var no=x.orderId?(noMap[x.orderId]||humanId(x.orderId)):(x.orderNo||'-');
-        return '<tr><td data-label="类型">'+esc(x.type||'订单收入')+'</td><td data-label="订单/礼物">'+esc(no)+'</td><td data-label="总额">'+money(num(gross))+'</td><td data-label="平台抽成">'+money(num(fee))+'</td><td data-label="实际到账">'+money(num(net))+'</td><td data-label="状态">'+esc(ledgerStatusCN(x.status))+'</td><td data-label="时间">'+esc(fmtTime(x.createdAt))+'</td></tr>';
+        var no=x.orderNo||(x.orderId?(noMap[x.orderId]||humanId(x.orderId)):'-');
+        var unlockLabel=x.unlockStatusLabel||x.statusText||ledgerStatusCN(x.status);
+        if(x.earningsLocked&&x.withdrawableAt){
+          unlockLabel='锁定中 · 预计解锁 '+fmtTime(x.withdrawableAt);
+        }else if(x.unlockReason==='boss_confirmed_early'||(x.bossConfirmedAt&&!x.earningsLocked)){
+          unlockLabel='可提现 · Boss已确认完成 · 已提前解锁';
+        }else if(!x.earningsLocked&&x.incomeKind==='order_income'){
+          unlockLabel='可提现';
+        }
+        return '<tr><td data-label="类型">'+esc(x.type||'订单收入')+'</td><td data-label="订单/礼物">'+esc(no)+'</td><td data-label="总额">'+money(num(gross))+'</td><td data-label="平台抽成">'+money(num(fee))+'</td><td data-label="实际到账">'+money(num(net))+'</td><td data-label="提现状态">'+esc(unlockLabel)+'</td><td data-label="时间">'+esc(fmtTime(x.createdAt))+'</td></tr>';
       }).join('')+'</tbody></table></div>':'<div class="pw-empty">暂无收入明细</div>')+'</section>';
   }
   function earningsWithdrawTab(){

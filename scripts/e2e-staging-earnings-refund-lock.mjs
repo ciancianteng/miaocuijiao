@@ -101,19 +101,21 @@ try {
   {
     const completedAt = "2026-09-22T06:00:00.000Z";
     const t0 = Date.parse(completedAt);
+    const plain = { status: "completed", completed_at: completedAt };
     const auto = { status: "completed", completed_at: completedAt, completion_method: "system_auto_24h" };
     const boss = { status: "completed", completed_at: completedAt, completion_method: "boss_manual" };
     mark(
       "COMPANION_24H_WITHDRAW_LOCK",
-      isCompanionEarningsLocked(auto, t0 + 1000) &&
-        !isCompanionEarningsLocked(auto, t0 + MS_24H + 1000) &&
-        isCompanionEarningsLocked(boss, t0 + 1000),
-      "locked before +24h; unlocked after; boss_manual does not unlock early"
+      isCompanionEarningsLocked(plain, t0 + 1000) &&
+        !isCompanionEarningsLocked(plain, t0 + MS_24H + 1000) &&
+        !isCompanionEarningsLocked(auto, t0 + 1000) &&
+        !isCompanionEarningsLocked(boss, t0 + 1000),
+      "plain locked until +24h; system_auto and boss_manual unlock at completed_at"
     );
     mark(
       "BOSS_AFTER_SALE_WINDOW",
-      isBossAfterSaleOpen(auto, t0 + 1000) &&
-        !isBossAfterSaleOpen(auto, t0 + MS_24H + 1000) &&
+      isBossAfterSaleOpen(plain, t0 + 1000) &&
+        !isBossAfterSaleOpen(plain, t0 + MS_24H + 1000) &&
         !isBossAfterSaleOpen(boss, t0 + 1000),
       "auto open until +24h; boss_manual closes immediately"
     );
