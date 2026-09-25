@@ -22,6 +22,8 @@ const parent = {
   status: "claimed",
   total_amount: 70,
   amount: 70,
+  paid_at: new Date().toISOString(),
+  paid_cat_food: 70,
   created_at: new Date().toISOString(),
   boss_id: "b1",
   companion_id: null,
@@ -91,11 +93,11 @@ test("CASE1 dashboard GMV = 70 not 140", () => {
   assert.equal(dash.filter.childOrdersSkipped, 2);
 });
 
-test("CASE1 countsAsRevenue on child status alone is not enough without root filter", () => {
+test("CASE1 countsAsRevenue on child is false (root+CS gate)", () => {
   assert.equal(isBusinessOrderRoot(c1), false);
   assert.equal(isBusinessOrderRoot(parent), true);
-  // Status would count if wrongly included:
-  assert.equal(countsAsRevenue(c1), true);
+  assert.equal(countsAsRevenue(c1), false);
+  assert.equal(countsAsRevenue(parent), true);
 });
 
 test("CASE3 allocation sum = parent total", () => {

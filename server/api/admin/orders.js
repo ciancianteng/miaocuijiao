@@ -847,8 +847,21 @@ export default async function handler(req, res) {
       );
       const enrichedAll = sortOrdersByActivityDesc(await enrichSafeOrders((orders || []).slice(0, 200), map, baseExtras));
       const { nestParentOnlyOrders } = await import("../_order-group.js");
-      const { countsAsRevenue } = await import("./dashboard.js");
-      const list = nestParentOnlyOrders(enrichedAll);
+      const { countsAsRevenue, approvedRevenueAmount, attachPaymentApprovals } = await import("./dashboard.js");
+      let paymentTx = [];
+      try {
+        paymentTx = await supabaseJson(
+          restUrl(
+            "payment_transactions",
+            "?select=id,order_id,gross_amount,net_amount,payment_status,confirmed_at&payment_status=eq.paid&limit=5000"
+          ),
+          { headers: serviceHeaders() }
+        );
+      } catch {
+        paymentTx = [];
+      }
+      const withApprovals = attachPaymentApprovals(enrichedAll, paymentTx);
+      const list = nestParentOnlyOrders(withApprovals);
       const summary = {
         total: list.length,
         todayOrders: 0,
@@ -859,10 +872,10 @@ export default async function handler(req, res) {
         afterSale: list.filter((x) => x.status === "refund_requested").length,
         revenue: list.reduce((n, x) => {
           if (!countsAsRevenue(x)) return n;
-          return n + (Number(x.amount) || Number(x.totalAmount) || 0);
+          return n + approvedRevenueAmount(x);
         }, 0),
         profit: 0,
-        gmvScope: "parent_order_id IS NULL only",
+        gmvScope: "parent_order_id IS NULL + CS-approved payment only",
         childRowsHidden: Math.max(0, enrichedAll.length - list.length),
       };
       return json(res, 200, { ok: true, configured: true, orders: list, summary, orderStatuses: ORDER_STATUS_TEXT });

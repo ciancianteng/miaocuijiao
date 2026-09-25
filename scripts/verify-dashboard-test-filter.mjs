@@ -150,6 +150,8 @@ const orders = [
     id: "paid-real",
     status: "completed",
     total_amount: 30,
+    paid_at: "2026-09-03T08:00:00.000Z",
+    paid_cat_food: 30,
     created_at: "2026-09-03T08:00:00.000Z",
     boss_id: realBossId,
     companion_id: realCompId,
@@ -159,6 +161,8 @@ const orders = [
     id: "claimed-1",
     status: "claimed",
     total_amount: 35,
+    paid_at: "2026-09-03T09:00:00.000Z",
+    paid_cat_food: 35,
     created_at: "2026-09-03T09:00:00.000Z",
     boss_id: realBossId,
     companion_id: dualRoleId,
@@ -167,6 +171,8 @@ const orders = [
     id: "confirmed-1",
     status: "confirmed",
     total_amount: 35,
+    paid_at: "2026-09-03T10:00:00.000Z",
+    paid_cat_food: 35,
     created_at: "2026-09-03T10:00:00.000Z",
     boss_id: realBossId,
     companion_id: realCompId,
@@ -189,7 +195,8 @@ const { stats, filter } = buildDashboardStats({
 assert.equal(stats.bosses, 2, "real boss + dual-role boss");
 assert.equal(stats.companions, 2, "hall-aligned approved companions");
 assert.equal(stats.customerServices, 1, "only real CS counted");
-assert.equal(stats.totalAmount, 30 + 35 + 35, "vip.deploy + smoke excluded; children not double-counted in GMV roots that are revenue");
+assert.equal(stats.totalAmount, 30 + 35 + 35, "vip.deploy + smoke excluded; CS-approved parent GMV only");
+assert.equal(stats.validOrders, 3, "three CS-approved parent payments");
 assert.equal(stats.completed, 1, "only real completed (vip excluded)");
 assert.equal(stats.awaitingPayment, 2, "real awaiting + multi parent only (not 2 children)");
 assert.equal(stats.pendingOrders, 1, "claimed counts as waiting companion confirm");
@@ -199,6 +206,7 @@ assert.equal(stats.withdrawPending, 3);
 assert.equal(stats.platformProfit, 6 + Math.round((35 + 35) * 0.2 * 100) / 100);
 assert.equal(filter.testAccountsExcluded, true);
 assert.equal(filter.parentOrdersOnly, true);
+assert.equal(filter.revenueSource, "cs_approved_parent_payment");
 assert.equal(filter.childOrdersSkipped, 2);
 
 console.log(
