@@ -2385,9 +2385,10 @@
       v.tooShort === true ||
       /时长不足|不足\s*10/.test(String(v.status || "")) ||
       // Orphan duration after a failed finalize must not look like idle「未录制」.
-      (!hasLiveLocal && !uploadedOk && durationSec > 0 && durationSec < MIN_VOICE_SECONDS);
+      (!hasLiveLocal && !uploadedOk && durationSec > 0 && durationSec < MIN_VOICE_SECONDS) ||
+      (hasLiveLocal && !uploadedOk && durationSec > 0 && durationSec < MIN_VOICE_SECONDS);
     // Confirm only needs a live ≥10s take. Quality tips are advisory; listen is optional.
-    var durationOk = durationSec >= MIN_VOICE_SECONDS || !!(q && q.durationOk);
+    var durationOk = durationSec >= MIN_VOICE_SECONDS;
     var canConfirm =
       hasLiveLocal && !uploadedOk && durationOk && !tooShortFlag && !uploadBusy.voice;
     var reasons = Array.isArray(q.reasons) ? q.reasons : [];
@@ -2421,8 +2422,14 @@
     else if (voicePhase === VOICE_PHASE.STOPPING) phase = "stopping";
     else if (voicePhase === VOICE_PHASE.RECORDING || isLiveRec) phase = "recording";
     else if (uploadedOk) phase = "done";
-    // Explicit RECORDED + live blob → pending confirm (never fall through to idle).
-    else if (voicePhase === VOICE_PHASE.RECORDED && hasLiveLocal) phase = "ready";
+    // Any live blob after stop → pending_confirm (ready). Short takes stay ready with
+    // disabled confirm — never collapse to idle「未录制」+「开始录音」.
+    else if (
+      (voicePhase === VOICE_PHASE.RECORDED || voicePhase === VOICE_PHASE.TOO_SHORT) &&
+      hasLiveLocal
+    ) {
+      phase = "ready";
+    } else if (hasLiveLocal && !uploadedOk) phase = "ready";
     else if (hasVoice && !tooShortFlag) phase = "ready";
     else if (tooShortFlag) phase = "too_short";
     else if (staleLocal) phase = "stale";
@@ -2437,9 +2444,11 @@
             : phase === "recording"
               ? "录音中"
               : phase === "done"
-                ? "已录制 ✓"
+                ? "已确认"
                 : phase === "ready"
-                  ? "待确认"
+                  ? tooShortFlag
+                    ? "不足10秒"
+                    : "待确认"
                   : phase === "too_short"
                     ? "不足10秒"
                     : phase === "stale"
@@ -2456,22 +2465,29 @@
 
     var topRight =
       phase === "done"
-        ? '<span class="voice-card-status is-done" role="status" data-voice-status>已录制 ✓</span>'
+        ? '<span class="voice-card-status is-done" role="status" data-voice-status>已确认</span>'
         : phase === "recording" || phase === "stopping" || phase === "requesting"
           ? '<span class="voice-card-status is-live" role="status" data-voice-status>' + esc(statusLabel) + "</span>"
           : phase === "uploading"
             ? '<span class="voice-card-status is-busy" role="status" data-voice-status>保存中…</span>'
-            : phase === "too_short"
+            : phase === "too_short" || (phase === "ready" && tooShortFlag)
               ? '<span class="voice-card-status is-warn" role="status" data-voice-status>不足10秒</span>'
-              : '<span class="voice-card-status is-muted" data-voice-status>' + esc(statusLabel) + "</span>";
+              : phase === "ready"
+                ? '<span class="voice-card-status is-live" role="status" data-voice-status>待确认</span>'
+                : '<span class="voice-card-status is-muted" data-voice-status>' + esc(statusLabel) + "</span>";
 
+    var playLabel = phase === "done" ? "播放" : "播放试听";
     var playerHtml = "";
     if (phase === "done" || phase === "ready") {
       playerHtml =
         '<div class="voice-card-player" data-voice-player>' +
-        '<button type="button" class="apply-btn apply-btn-ghost-soft voice-card-play-cta" data-record-play aria-label="播放试听">' +
+        '<button type="button" class="apply-btn apply-btn-ghost-soft voice-card-play-cta" data-record-play aria-label="' +
+        esc(playLabel) +
+        '">' +
         '<span data-voice-play-icon aria-hidden="true">▶</span>' +
-        '<span data-voice-play-label>播放试听</span></button>' +
+        '<span data-voice-play-label>' +
+        esc(playLabel) +
+        "</span></button>" +
         '<div class="voice-card-track" data-voice-seek hidden>' +
         '<div class="voice-card-track-fill" data-voice-progress style="width:0%"></div>' +
         "</div>" +
@@ -2493,10 +2509,10 @@
     } else if (phase === "too_short") {
       playerHtml =
         '<div class="voice-card-idle voice-card-too-short" role="alert">' +
-        "<p><strong>语音介绍至少需要录制 10 秒</strong></p>" +
+        "<p><strong>录音至少需要 10 秒，请重新录制。</strong></p>" +
         "<p>刚才录了 " +
         esc(timerLabel) +
-        "，请重新录制。</p>" +
+        "。</p>" +
         "</div>";
     } else {
       playerHtml =
@@ -2540,9 +2556,9 @@
     }
 
     var qualityHtml = "";
-    if (phase === "too_short") {
+    if (phase === "too_short" || (phase === "ready" && tooShortFlag)) {
       qualityHtml =
-        '<div class="voice-card-quality"><span class="bad">语音介绍至少需要录制 10 秒</span></div>';
+        '<div class="voice-card-quality"><span class="bad">录音至少需要 10 秒，请重新录制。</span></div>';
     } else if ((phase === "ready" || phase === "stale") && reasons.length) {
       qualityHtml =
         '<div class="voice-card-quality">' +
@@ -3615,10 +3631,16 @@
     if (state && clock) state.textContent = clock;
     else if (state && text) state.textContent = text;
     if (timer && clock) timer.textContent = clock;
-    if (status && text && /录音|请求|停止|保存|未录|待确认|已录/.test(String(text))) {
+    if (status && text && /录音|请求|停止|保存|未录|待确认|已录|已确认|不足/.test(String(text))) {
       status.textContent = text;
       if (/录音中|请求|停止/.test(String(text))) {
         status.className = "voice-card-status is-live";
+      } else if (/待确认/.test(String(text))) {
+        status.className = "voice-card-status is-live";
+      } else if (/不足/.test(String(text))) {
+        status.className = "voice-card-status is-warn";
+      } else if (/已确认|已录/.test(String(text))) {
+        status.className = "voice-card-status is-done";
       }
     }
   }
@@ -3727,8 +3749,17 @@
       ) {
         return;
       }
-      if (voicePhase === VOICE_PHASE.RECORDING || voicePhase === VOICE_PHASE.REQUESTING) {
-        abortVoiceRecording({ silent: true });
+      if (voicePhase === VOICE_PHASE.RECORDING) {
+        // Prefer finalize → pending_confirm over silent wipe (ghost 00:06 + 未录制).
+        try {
+          stopRecording();
+        } catch (eStopHide) {
+          abortVoiceRecording({ silent: false, preserveElapsed: true });
+        }
+        return;
+      }
+      if (voicePhase === VOICE_PHASE.REQUESTING) {
+        abortVoiceRecording({ silent: false });
       }
     });
     document.addEventListener("visibilitychange", function () {
@@ -3742,10 +3773,32 @@
     if (voicePhase === VOICE_PHASE.STOPPING || voicePhase === VOICE_PHASE.RECORDED) {
       return;
     }
+    var elapsed = recordStartedAt ? Math.max(0, Math.round((Date.now() - recordStartedAt) / 1000)) : 0;
     clearRecordTimer();
     clearStopWatchdog();
+    // When we already have chunks, let onstop finalize instead of suppress→idle.
+    if (opts.preserveElapsed && chunks && chunks.length && recorder) {
+      suppressVoiceSave = false;
+      voicePhase = VOICE_PHASE.STOPPING;
+      document.body.classList.remove("voice-recording-active");
+      var recKeep = recorder;
+      try {
+        if (typeof recKeep.requestData === "function" && recKeep.state === "recording") {
+          recKeep.requestData();
+        }
+      } catch (eReqAbort) {}
+      try {
+        if (recKeep.state && recKeep.state !== "inactive") recKeep.stop();
+      } catch (eStopAbort) {
+        suppressVoiceSave = true;
+        voicePhase = VOICE_PHASE.IDLE;
+        recorder = null;
+        releaseMicTracks();
+        refreshVoiceUi();
+      }
+      return;
+    }
     suppressVoiceSave = true;
-    voicePhase = VOICE_PHASE.IDLE;
     document.body.classList.remove("voice-recording-active");
     var rec = recorder;
     recorder = null;
@@ -3755,7 +3808,85 @@
       } catch (e) {}
     }
     releaseMicTracks();
+    // Never leave idle + orphan duration clock (setVoiceState ghost).
+    if (elapsed > 0 && elapsed < MIN_VOICE_SECONDS) {
+      suppressVoiceSave = false;
+      voicePhase = VOICE_PHASE.TOO_SHORT;
+      saveDraft({
+        voice: {
+          status: "时长不足，请重录",
+          url: "",
+          duration: elapsed,
+          confirmed: false,
+          listened: false,
+          uploaded: false,
+          hasLocal: false,
+          tooShort: true,
+        },
+      });
+      showApplyTip("录音至少需要 10 秒，请重新录制。");
+      refreshVoiceUi({ scrollVoice: true });
+      return;
+    }
+    voicePhase = VOICE_PHASE.IDLE;
     if (!opts.silent) refreshVoiceUi();
+    else refreshVoiceUi();
+  }
+  /**
+   * Stop → pending_confirm. Always keep blob + preview URL.
+   * Short takes (<10s) stay pending with tooShort + disabled confirm.
+   */
+  async function enterPendingConfirmFromBlob(blob, duration, mimeType) {
+    duration = Math.max(0, Math.round(Number(duration) || 0));
+    var short = duration < MIN_VOICE_SECONDS;
+    var qualityFallback = {
+      duration: duration,
+      durationOk: !short && duration <= MAX_VOICE_SECONDS,
+      volumeOk: true,
+      humanVoice: true,
+      notBlank: true,
+      rms: 0,
+      peak: 0,
+      silenceRatio: 0,
+      waveform: [],
+      reasons: short ? ["录音至少需要 10 秒，请重新录制。"] : [],
+      passed: !short && duration <= MAX_VOICE_SECONDS,
+    };
+    var quality = await withTimeout(analyzeVoiceBlob(blob, duration), 2500, qualityFallback);
+    quality.durationOk = duration >= MIN_VOICE_SECONDS && duration <= MAX_VOICE_SECONDS;
+    quality.passed = !!quality.durationOk;
+    if (short && (!quality.reasons || !quality.reasons.length)) {
+      quality.reasons = ["录音至少需要 10 秒，请重新录制。"];
+    }
+    if (liveVoiceObjectUrl) {
+      try {
+        URL.revokeObjectURL(liveVoiceObjectUrl);
+      } catch (e) {}
+    }
+    liveVoiceBlob = blob;
+    liveVoiceObjectUrl = URL.createObjectURL(blob);
+    voicePhase = VOICE_PHASE.RECORDED;
+    var draftAfterRec = readDraft();
+    draftAfterRec.voice = {
+      status: short ? "不足10秒" : "待确认",
+      url: "",
+      path: "",
+      bucket: "",
+      hasLocal: true,
+      duration: Math.max(duration, Number(quality.duration) || 0),
+      confirmed: false,
+      listened: false,
+      uploaded: false,
+      uploadedAt: "",
+      tooShort: short,
+      mimeType: blob.type || mimeType || "",
+      size: blob.size,
+      quality: quality,
+    };
+    writeDraftRecord(draftAfterRec);
+    setVoiceState(short ? "不足10秒" : "待确认", draftAfterRec.voice.duration);
+    if (short) showApplyTip("录音至少需要 10 秒，请重新录制。");
+    refreshVoiceUi({ scrollVoice: true });
   }
   async function startRecording() {
     ensureVoiceReleaseHooks();
@@ -3856,7 +3987,34 @@
 
       if (suppressVoiceSave) {
         suppressVoiceSave = false;
+        var abortedElapsed = recordStartedAt
+          ? Math.max(0, Math.round((Date.now() - recordStartedAt) / 1000))
+          : 0;
+        var abortedBlob = chunks.length ? new Blob(chunks, { type: mime || "audio/webm" }) : null;
         chunks = [];
+        if (abortedBlob && abortedBlob.size && abortedElapsed > 0) {
+          // Treat interrupted stop as a normal finalize — never idle+duration ghost.
+          await enterPendingConfirmFromBlob(abortedBlob, abortedElapsed, mime || "audio/webm");
+          return;
+        }
+        if (abortedElapsed > 0 && abortedElapsed < MIN_VOICE_SECONDS) {
+          voicePhase = VOICE_PHASE.TOO_SHORT;
+          saveDraft({
+            voice: {
+              status: "时长不足，请重录",
+              url: "",
+              duration: abortedElapsed,
+              confirmed: false,
+              listened: false,
+              uploaded: false,
+              hasLocal: false,
+              tooShort: true,
+            },
+          });
+          showApplyTip("录音至少需要 10 秒，请重新录制。");
+          refreshVoiceUi({ scrollVoice: true });
+          return;
+        }
         voicePhase = VOICE_PHASE.IDLE;
         refreshVoiceUi();
         return;
@@ -3873,8 +4031,8 @@
 
       if (!blob.size) {
         // Safari/iOS can deliver empty chunks when stop races pagehide or start()-without-timeslice.
-        // Never leave orphan duration + idle「未录制」— surface too_short / error explicitly.
-        if (duration > 0 && duration < MIN_VOICE_SECONDS) {
+        // Never leave orphan duration + idle「未录制」.
+        if (duration > 0) {
           voicePhase = VOICE_PHASE.TOO_SHORT;
           liveVoiceBlob = null;
           if (liveVoiceObjectUrl) {
@@ -3885,17 +4043,21 @@
           liveVoiceObjectUrl = "";
           saveDraft({
             voice: {
-              status: "时长不足，请重录",
+              status: duration < MIN_VOICE_SECONDS ? "时长不足，请重录" : "录音失败（无声音数据），请重录",
               url: "",
               duration: duration,
               confirmed: false,
               listened: false,
               uploaded: false,
               hasLocal: false,
-              tooShort: true,
+              tooShort: duration < MIN_VOICE_SECONDS,
             },
           });
-          showApplyTip("语音介绍至少需要录制 10 秒");
+          showApplyTip(
+            duration < MIN_VOICE_SECONDS
+              ? "录音至少需要 10 秒，请重新录制。"
+              : "录音失败（无声音数据），请重新录制。"
+          );
           refreshVoiceUi({ scrollVoice: true });
           return;
         }
@@ -3918,94 +4080,17 @@
         return;
       }
 
-      if (duration < MIN_VOICE_SECONDS) {
-        voicePhase = VOICE_PHASE.TOO_SHORT;
-        if (liveVoiceObjectUrl) {
-          try {
-            URL.revokeObjectURL(liveVoiceObjectUrl);
-          } catch (eRev) {}
-        }
-        liveVoiceBlob = null;
-        liveVoiceObjectUrl = "";
-        saveDraft({
-          voice: {
-            status: "时长不足，请重录",
-            url: "",
-            duration: duration,
-            confirmed: false,
-            listened: false,
-            uploaded: false,
-            hasLocal: false,
-            tooShort: true,
-          },
-        });
-        showApplyTip("语音介绍至少需要录制 10 秒");
-        refreshVoiceUi({ scrollVoice: true });
-        return;
-      }
-
-      var qualityFallback = {
-        duration: duration,
-        durationOk: true,
-        volumeOk: true,
-        humanVoice: true,
-        notBlank: true,
-        rms: 0,
-        peak: 0,
-        silenceRatio: 0,
-        waveform: [],
-        reasons: [],
-        passed: true,
-      };
-      // Safari decodeAudioData can hang — never block preview/confirm on analysis.
-      var quality = await withTimeout(analyzeVoiceBlob(blob, duration), 2500, qualityFallback);
-      // Duration is the hard gate. Volume heuristics are advisory only (Safari decode often false-negatives).
-      quality.durationOk = duration >= MIN_VOICE_SECONDS && duration <= MAX_VOICE_SECONDS;
-      quality.passed = !!quality.durationOk;
-      if (liveVoiceObjectUrl) {
-        try {
-          URL.revokeObjectURL(liveVoiceObjectUrl);
-        } catch (e) {}
-      }
-      liveVoiceBlob = blob;
-      liveVoiceObjectUrl = URL.createObjectURL(blob);
-      voicePhase = VOICE_PHASE.RECORDED;
-      var draftAfterRec = readDraft();
-      draftAfterRec.voice = {
-        status: "待确认",
-        url: "",
-        path: "",
-        bucket: "",
-        hasLocal: true,
-        duration: Math.max(duration, Number(quality.duration) || 0),
-        confirmed: false,
-        listened: false,
-        uploaded: false,
-        uploadedAt: "",
-        tooShort: false,
-        mimeType: blob.type,
-        size: blob.size,
-        quality: quality,
-      };
-      writeDraftRecord(draftAfterRec);
-      setVoiceState("待确认", draftAfterRec.voice.duration);
-      refreshVoiceUi({ scrollVoice: true });
+      await enterPendingConfirmFromBlob(blob, duration, mimeType);
     };
 
     recordStartedAt = Date.now();
     try {
-      // Prefer a short timeslice so stop always has chunks (Safari used to start()
-      // with no timeslice → empty Blob on stop → idle + duration ghost UI).
-      var ua = String(navigator.userAgent || "");
-      var isAppleMobile = /iPhone|iPad|iPod/i.test(ua);
-      if (isAppleMobile) {
-        try {
-          recorder.start(1000);
-        } catch (eSlice) {
-          recorder.start();
-        }
-      } else {
+      // Always use a short timeslice so stop always has chunks (Safari empty-Blob
+      // on start()-without-timeslice previously caused idle + duration ghost UI).
+      try {
         recorder.start(250);
+      } catch (eSlice) {
+        recorder.start();
       }
     } catch (eStart) {
       try {
@@ -4140,9 +4225,29 @@
         clearStopWatchdog();
         releaseMicTracks();
         recorder = null;
-        voicePhase = VOICE_PHASE.IDLE;
-        showApplyTip("停止录音失败，请重试。");
-        refreshVoiceUi();
+        var failElapsed = recordStartedAt
+          ? Math.max(0, Math.round((Date.now() - recordStartedAt) / 1000))
+          : 0;
+        if (failElapsed > 0 && failElapsed < MIN_VOICE_SECONDS) {
+          voicePhase = VOICE_PHASE.TOO_SHORT;
+          saveDraft({
+            voice: {
+              status: "时长不足，请重录",
+              url: "",
+              duration: failElapsed,
+              confirmed: false,
+              listened: false,
+              uploaded: false,
+              hasLocal: false,
+              tooShort: true,
+            },
+          });
+          showApplyTip("录音至少需要 10 秒，请重新录制。");
+        } else {
+          voicePhase = VOICE_PHASE.IDLE;
+          showApplyTip("停止录音失败，请重试。");
+        }
+        refreshVoiceUi({ scrollVoice: true });
         return;
       }
       // Safari/iOS occasionally never fires onstop — force finalize after 1.8s.
@@ -4167,9 +4272,29 @@
           } catch (e4) {
             releaseMicTracks();
             recorder = null;
-            voicePhase = VOICE_PHASE.IDLE;
-            showApplyTip("停止录音失败，请重试。");
-            refreshVoiceUi();
+            var wdElapsed = recordStartedAt
+              ? Math.max(0, Math.round((Date.now() - recordStartedAt) / 1000))
+              : 0;
+            if (wdElapsed > 0 && wdElapsed < MIN_VOICE_SECONDS) {
+              voicePhase = VOICE_PHASE.TOO_SHORT;
+              saveDraft({
+                voice: {
+                  status: "时长不足，请重录",
+                  url: "",
+                  duration: wdElapsed,
+                  confirmed: false,
+                  listened: false,
+                  uploaded: false,
+                  hasLocal: false,
+                  tooShort: true,
+                },
+              });
+              showApplyTip("录音至少需要 10 秒，请重新录制。");
+            } else {
+              voicePhase = VOICE_PHASE.IDLE;
+              showApplyTip("停止录音失败，请重试。");
+            }
+            refreshVoiceUi({ scrollVoice: true });
           }
         }
       }, 1800);
@@ -4201,7 +4326,17 @@
             tooShort: true,
           },
         });
-        showApplyTip("语音介绍至少需要录制 10 秒");
+        showApplyTip("录音至少需要 10 秒");
+      } else if (elapsed >= MIN_VOICE_SECONDS && chunks && chunks.length) {
+        try {
+          var orphanBlob = new Blob(chunks, { type: "audio/webm" });
+          chunks = [];
+          if (orphanBlob.size) {
+            enterPendingConfirmFromBlob(orphanBlob, elapsed, "audio/webm");
+            return;
+          }
+        } catch (eOrphan) {}
+        voicePhase = VOICE_PHASE.IDLE;
       } else {
         voicePhase = VOICE_PHASE.IDLE;
       }
@@ -4249,7 +4384,7 @@
         }
       }
       if (duration < MIN_VOICE_SECONDS) {
-        showApplyTip("语音介绍至少需要录制 10 秒");
+        showApplyTip("录音至少需要 10 秒，请重新录制。");
         return;
       }
       if (!companionToken()) {
@@ -4262,7 +4397,7 @@
 
       // Only skip network upload when cloud asset already exists AND there is no new local blob to push.
       if (alreadyDurable && !hasLive) {
-        d.voice.status = "已录制 ✓";
+        d.voice.status = "已确认";
         d.voice.confirmed = true;
         d.voice.confirmedAt = now();
         d.voice.uploaded = true;
@@ -4386,7 +4521,7 @@
             throw new Error("上传成功但未返回云端地址，请重试");
           }
           next.voice = Object.assign({}, next.voice || {}, {
-            status: "已录制 ✓",
+            status: "已确认",
             confirmed: true,
             confirmedAt: now(),
             uploaded: true,
