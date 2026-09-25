@@ -64,10 +64,86 @@ button:disabled{cursor:not-allowed;opacity:.52}
 .pw-status-btn.is-active[data-online-status="offline"],.pw-btn.pw-status-btn.is-active[data-online-status="offline"]{background:linear-gradient(135deg,#8a8791,#5c5866);box-shadow:0 0 0 2px rgba(255,255,255,.12)}
 .pw-status-hint{margin:12px 0 0;padding:10px 12px;border-radius:12px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.06);color:var(--pw-muted);font-size:12px;line-height:1.55;position:static;clear:both}
 .pw-status-emoji{display:block;font-size:16px;line-height:1;margin-bottom:4px}
-.pw-status-guide{list-style:none;margin:12px 0 0;padding:0;display:grid;gap:8px}
-.pw-status-guide li{display:grid;gap:2px;padding:10px 12px;border-radius:12px;border:1px solid rgba(255,255,255,.06);background:rgba(255,255,255,.03)}
-.pw-status-guide strong{font-size:13px;color:#fff}
-.pw-status-guide span{font-size:12px;color:var(--pw-muted);line-height:1.5}
+.pw-status-guide{list-style:none;margin:12px 0 0;padding:0;display:none}
+.pw-status-panel.compact .pw-status-hint{margin-top:10px;padding:8px 10px}
+.pw-status-btn,.pw-btn.pw-status-btn{min-height:44px;padding:10px 8px}
+.pw-status-emoji{font-size:14px;margin-bottom:2px}
+.pw-status-btn-label{font-size:13px}
+
+.pw-page-head--compact{margin-bottom:12px;gap:8px}
+.pw-page-head--compact h2{font-size:22px;margin:0}
+.pw-page-head--compact p{margin:4px 0 0;font-size:13px;color:var(--pw-muted)}
+
+.pw-grid--dash,.pw-grid--earn{gap:10px}
+.pw-metric{padding:14px;min-height:88px}
+.pw-metric strong{font-size:22px;font-weight:780}
+.pw-metric.is-zero strong{color:rgba(255,220,235,.42);font-weight:650}
+.pw-metric.is-zero span{color:rgba(255,220,235,.45)}
+
+.pw-action-grid{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:10px;
+  margin-top:14px;
+}
+.pw-action-tile{
+  display:grid;
+  gap:4px;
+  text-align:left;
+  padding:14px 14px;
+  border-radius:14px;
+  border:1px solid rgba(232,154,196,.22);
+  background:rgba(255,255,255,.035);
+  color:#fff5fa;
+  cursor:pointer;
+  min-height:72px;
+  box-sizing:border-box;
+}
+.pw-action-tile strong{font-size:15px;font-weight:780}
+.pw-action-tile span{font-size:12px;color:var(--pw-muted);line-height:1.4}
+.pw-action-tile:active{transform:scale(.98);opacity:.9}
+
+.pw-hub-hero{
+  display:flex;
+  gap:12px;
+  align-items:center;
+  margin-bottom:12px;
+}
+.pw-hub-avatar{
+  width:56px;height:56px;border-radius:16px;object-fit:cover;
+  border:1px solid rgba(232,154,196,.35);flex:0 0 auto;
+}
+.pw-hub-copy{display:grid;gap:2px;min-width:0}
+.pw-hub-copy strong{font-size:17px;color:#fff}
+.pw-hub-copy span{font-size:12px;color:var(--pw-muted)}
+.pw-hub-list{
+  display:grid;gap:0;margin:0 0 14px;
+  border:1px solid rgba(232,154,196,.2);
+  border-radius:16px;overflow:hidden;
+  background:rgba(255,255,255,.03);
+}
+.pw-hub-row{
+  display:flex;align-items:center;justify-content:space-between;gap:10px;
+  width:100%;padding:14px 14px;border:0;border-bottom:1px solid rgba(255,255,255,.06);
+  background:transparent;color:#fff;text-align:left;cursor:pointer;
+}
+.pw-hub-row:last-child{border-bottom:0}
+.pw-hub-row strong{display:block;font-size:14px;font-weight:760}
+.pw-hub-row small{display:block;margin-top:2px;font-size:12px;color:var(--pw-muted)}
+.pw-hub-row i{color:rgba(255,220,235,.45);font-style:normal;font-size:18px}
+
+.pw-section-title{margin:0 0 10px;font-size:15px;font-weight:780}
+.pw-info-list--compact > div{padding:8px 0}
+.pw-empty--soft{padding:18px 14px;border-style:dashed;opacity:.92}
+
+.pw-announcement-host{
+  margin:0 16px 8px;
+}
+.pw-announcement-host .home-announcement-bar{
+  padding-top:8px !important;
+  padding-bottom:8px !important;
+  font-size:12px;
+}
 .pw-nav-badge{display:inline-block;min-width:18px;padding:0 6px;margin-left:6px;border-radius:999px;background:var(--pw-pink);color:#fff;font-size:11px;font-style:normal;line-height:18px;text-align:center}
 .pw-msg-card{padding:14px 16px;border:1px solid var(--pw-line);border-radius:14px;background:rgba(18,16,22,.82);margin-bottom:10px;cursor:pointer}
 .pw-msg-card.is-unread{border-color:rgba(255,143,197,.4);background:rgba(255,143,197,.08)}
@@ -1013,3 +1089,43 @@ a.pw-btn{display:inline-flex;align-items:center;justify-content:center;text-deco
 .pw-gift-popup-body strong{font-size:18px}
 .pw-gift-popup-body em{font-style:normal;color:#ffb6d8}
 .pw-gift-popup-body p{margin:0;color:var(--pw-muted);line-height:1.55;font-size:13px}
+
+/* P0 UI simplify — compact metrics / lighter cards (must win over base + mobile) */
+.pw-card{
+  border-color:rgba(255,255,255,.08);
+  box-shadow:none;
+  background:rgba(18,16,22,.72);
+}
+.pw-card.pad{padding:14px}
+.pw-grid--dash,.pw-grid--earn{gap:10px}
+.pw-metric{
+  min-height:76px !important;
+  padding:12px 12px !important;
+  align-content:start;
+  gap:8px;
+}
+.pw-metric span{font-size:12px}
+.pw-metric strong{font-size:20px !important;font-weight:760 !important;line-height:1.15}
+.pw-metric.is-zero strong{color:rgba(255,220,235,.4) !important;font-weight:620 !important}
+.pw-metric.is-zero span{color:rgba(255,220,235,.42)}
+.pw-earn-hint{margin:10px 0 0;font-size:12px;color:var(--pw-dim)}
+.pw-compose-list .pw-info-list > div{padding:9px 0}
+.pw-status-panel.compact{
+  padding:12px;
+  border-radius:16px;
+  box-shadow:none;
+}
+.pw-status-panel.compact .pw-status-current{margin-bottom:10px;font-size:14px}
+.pw-status-panel.compact .pw-status-current strong{font-size:15px}
+.pw-status-panel.compact .pw-status-btn,
+.pw-status-panel.compact .pw-btn.pw-status-btn{
+  min-height:42px !important;
+  padding:8px 6px !important;
+  font-size:13px;
+}
+@media (max-width:860px){
+  .pw-metric{min-height:72px !important;padding:12px !important}
+  .pw-metric strong{font-size:18px !important}
+  .pw-status-panel.compact .pw-status-switch .pw-btn,
+  .pw-status-panel.compact .pw-status-btn{min-height:42px !important;padding:8px 6px !important}
+}

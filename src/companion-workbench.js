@@ -2491,11 +2491,54 @@
       csThread+csComposer+
       '</section>';
   }
+  function metricIsZero(value){
+    if(value==null||value==='')return true;
+    if(typeof value==='number')return !value;
+    var s=String(value).replace(/[^\d.-]/g,'');
+    if(s===''||s==='-'||s==='.')return true;
+    var n=Number(s);
+    return Number.isFinite(n)?n===0:false;
+  }
   function metric(label,value,routePath,orderFilter){
+    var zero=metricIsZero(value);
+    var base='pw-card pw-metric'+(zero?' is-zero':'');
     var attrs='';
-    if(routePath)attrs=' data-route="'+esc(routePath)+'"'+(orderFilter?' data-order-filter="'+esc(orderFilter)+'"':'')+' tabindex="0" role="button" class="pw-card pw-metric is-clickable"';
-    else attrs=' class="pw-card pw-metric"';
+    if(routePath)attrs=' data-route="'+esc(routePath)+'"'+(orderFilter?' data-order-filter="'+esc(orderFilter)+'"':'')+' tabindex="0" role="button" class="'+base+' is-clickable"';
+    else attrs=' class="'+base+'"';
     return '<article'+attrs+'><span>'+esc(label)+'</span><strong>'+esc(value)+'</strong></article>';
+  }
+  function actionGridHtml(items){
+    return '<section class="pw-action-grid" aria-label="快捷入口">'+items.map(function(it){
+      return '<button type="button" class="pw-action-tile" data-route="'+esc(it.route)+'"'+(it.filter?' data-order-filter="'+esc(it.filter)+'"':'')+(it.tab?' data-earnings-tab="'+esc(it.tab)+'"':'')+'>'+
+        '<strong>'+esc(it.label)+'</strong>'+
+        (it.sub?'<span>'+esc(it.sub)+'</span>':'')+
+        '</button>';
+    }).join('')+'</section>';
+  }
+  function accountHubHtml(){
+    var p=(state.data&&state.data.player)||{};
+    var ua=unifiedAccess();
+    var level=(state.data&&state.data.levelInfo)||{};
+    var levelLabel=level.level||p.level||'未设置';
+    var cert=ua.identityVerified?'身份证已过':(ua.depositVerified?'押金已过':'认证待完成');
+    return '<section class="pw-hub-hero pw-card pad">'+
+      '<img class="pw-hub-avatar" src="'+esc(p.avatar||'/default-avatar.png')+'" alt="" onerror="this.onerror=null;this.src=\'/default-avatar.png\'">'+
+      '<div class="pw-hub-copy"><strong>'+esc(p.name||p.nickname||'陪玩')+'</strong>'+
+      '<span>'+esc(p.companionCode||p.publicId||'-')+' · '+esc(levelLabel)+'</span>'+
+      '<span>'+esc(((STATUS_META[currentOnlineStatus()]||STATUS_META.offline||{}).label)||'')+' · '+esc(cert)+'</span></div></section>'+
+      '<nav class="pw-hub-list" aria-label="账号入口">'+
+      [
+        ['/companion/profile','我的资料','公开资料与相册'],
+        ['/companion/profile','我的服务','可接游戏与服务类型'],
+        ['/companion/profile','等级与价格','当前等级与报价'],
+        ['/companion/account','认证信息','身份证 / 押金'],
+        ['/companion/messages','消息中心','订单与系统通知'],
+        ['/companion/rules','规则与制度','陪玩工作规则'],
+        ['/companion/settings','其他资料','通知规则与偏好']
+      ].map(function(row){
+        return '<button type="button" class="pw-hub-row" data-route="'+esc(row[0])+'"><span><strong>'+esc(row[1])+'</strong><small>'+esc(row[2])+'</small></span><i aria-hidden="true">›</i></button>';
+      }).join('')+
+      '</nav>';
   }
   function popularityHtml(){
     var pop=(state.data&&state.data.popularity)||{};
@@ -2572,14 +2615,7 @@
       '</div>'+
       (locked
         ?'<p class="pw-status-hint warn" data-status-hint>'+esc(auditHint())+'</p>'
-        :(extraClass&&String(extraClass).indexOf('compact')>=0
-          ?'<p class="pw-status-hint" data-status-hint>'+esc(metaCur.hint)+'</p>'
-          :'<ul class="pw-status-guide">'+
-            ['online','busy','paused','offline'].map(function(key){
-              var m=STATUS_META[key];
-              return '<li><strong>'+m.emoji+' '+esc(m.label)+'</strong><span>'+esc(m.hint)+'</span></li>';
-            }).join('')+
-          '</ul>'))+
+        :'<p class="pw-status-hint" data-status-hint>'+esc(metaCur.hint)+'</p>')+
       '</div>';
   }
   function publishGateBannerHtml(){
@@ -2731,22 +2767,28 @@
     var extra=showDesignated
       ?'<div class="pw-alert designated" role="status"><strong>你有新的指定订单</strong><span>共 '+esc(designated)+' 单等待确认接单</span><button class="pw-btn primary" type="button" data-route="/companion/orders" data-order-filter="waiting_confirm">去处理</button></div>'
       :'';
-    return '<div class="pw-page-head"><div><h2>工作台</h2><p>先切换今日状态，再处理订单。收益与提现请到独立页面。</p></div><div class="pw-actions"><button class="pw-btn primary" type="button" data-enter-hall '+(locked?'disabled':'')+'>进入抢单大厅</button><button class="pw-btn" data-route="/companion/orders">我的订单</button></div></div>'+
+    var earnings=(state.data&&state.data.earnings)||{};
+    var withdrawable=earnings.availableWithdrawable!=null?earnings.availableWithdrawable:(earnings.available!=null?earnings.available:(earnings.withdrawable!=null?earnings.withdrawable:(earnings.balance||0)));
+    var running=num(s.runningOrders)+num(s.waitingStart);
+    return '<div class="pw-page-head pw-page-head--compact"><div><h2>工作台</h2><p>切换状态 · 处理待办 · 进入抢单</p></div></div>'+
       publishBanner+
       reviewBanner+
       extra+
       depositBadgeHtml()+
-      statusSwitcherHtml()+
-      (!locked&&!online?'<div class="pw-note" style="margin:0 0 14px">请先切换为在线接单。</div>':'')+
-      '<section class="pw-grid">'+
+      statusSwitcherHtml('compact')+
+      (!locked&&!online?'<div class="pw-note" style="margin:0 0 12px">请先切换为在线接单。</div>':'')+
+      '<section class="pw-grid pw-grid--dash">'+
       metric('待确认',num(s.waitingConfirm),'/companion/orders','waiting_confirm')+
-      metric('进行中就绪',num(s.waitingStart),'/companion/orders','waiting_start')+
-      metric('进行中',num(s.runningOrders),'/companion/orders','running')+
+      metric('进行中',running,'/companion/orders','running')+
       metric('今日完成',num(s.todayCompleted),'/companion/orders','completed')+
+      metric('当前可提现',money(num(withdrawable)),'/companion/earnings')+
       '</section>'+
-      dashboardOverviewAccHtml()+
-      '<section class="pw-acc-stack" style="margin-top:10px">'+pwAccHtml('dash-todos','待处理事项', (function(){var s=(state.data||{}).summary||{};return '待确认 '+(s.waitingConfirm||0)+' · 进行中 '+(s.runningOrders||0);})(), todoList(), false)+'</section>'+
-      '<div class="pw-actions" style="margin-top:14px;flex-wrap:wrap"><button class="pw-btn" type="button" data-route="/companion/earnings">收益中心</button><button class="pw-btn" type="button" data-route="/companion/messages">消息中心</button><button class="pw-btn" type="button" data-route="/companion/rules">规则与制度</button></div>';
+      actionGridHtml([
+        {route:'/companion/orders',label:'我的订单',sub:'待确认 / 进行中'},
+        {route:'/companion/order-hall',label:'抢单大厅',sub:locked?'暂不可抢':'去接新单'},
+        {route:'/companion/earnings',label:'收益中心',sub:'可提现与流水'},
+        {route:'/companion/account',label:'我的资料',sub:'账号与认证'}
+      ]);
   }
   function dashboardOverviewAccHtml(){
     var p=(state.data&&state.data.player)||{};
@@ -2988,64 +3030,51 @@
       :(tab==='records'
         ?'<div class="pw-list-narrow">'+earningsRecordsTab()+'</div>'
         :earningsOverviewTab());
-    return '<div class="pw-page-head"><div><h2>收益中心</h2><p>收入、提现与流水来自真实数据库，切换下方标签查看收入 / 提现 / 流水。</p></div></div>'+
+    return '<div class="pw-page-head pw-page-head--compact"><div><h2>收益中心</h2><p>先看可提现，再查明细</p></div></div>'+
       '<div class="pw-tabs">'+EARNINGS_TABS.map(function(t){
         return '<button type="button" class="'+(tab===t[0]?'active':'')+'" data-earnings-tab="'+t[0]+'">'+t[1]+'</button>';
       }).join('')+'</div>'+
       body;
   }
   function earningsOverviewTab(){
-    var e=(state.data&&state.data.earnings)||{},summary=(state.data&&state.data.summary)||{},details=(state.data&&state.data.earningDetails)||[],level=(state.data&&state.data.levelInfo)||{},warn=state.walletWarning||'';
+    var e=(state.data&&state.data.earnings)||{},summary=(state.data&&state.data.summary)||{},level=(state.data&&state.data.levelInfo)||{},warn=state.walletWarning||'';
     var channels=e.channels||{};
     var available=e.availableWithdrawable!=null?e.availableWithdrawable:(e.available!=null?e.available:e.withdrawable);
     var frozen=e.withdrawalLocked!=null?e.withdrawalLocked:(e.frozen!=null?e.frozen:summary.frozen||0);
-    var withdrawn=e.withdrawnTotal!=null?e.withdrawnTotal:(e.withdrawn!=null?e.withdrawn:summary.withdrawn||0);
     var orderIncome=e.orderIncome!=null?e.orderIncome:channels.orderIncome||0;
-    var giftGross=e.giftGross!=null?e.giftGross:channels.giftGross||0;
     var giftNet=e.giftNetIncome!=null?e.giftNetIncome:(e.giftIncome!=null?e.giftIncome:channels.giftNetIncome||0);
     var inviteIncome=e.inviteIncome!=null?e.inviteIncome:channels.inviteCommission||0;
+    var locked24=e.earningsLocked!=null?e.earningsLocked:0;
+    var bonus=e.bonus!=null?e.bonus:(e.reward!=null?e.reward:0);
     var commission=level.platformCommissionRate!=null?level.platformCommissionRate:(level.orderCommissionRate||0);
-    var noMap=orderNoLookup();
-    return (warn?'<div class="pw-empty" style="margin-bottom:12px"><strong>部分数据读取异常</strong><span>'+esc(warn)+'</span></div>':'')+
-      '<section class="pw-grid">'+
-      metric('订单收入',money(num(orderIncome)))+
-      metric('礼物总额',money(num(giftGross)))+
-      metric('礼物净收入',money(num(giftNet)))+
-      metric('邀请佣金',money(num(inviteIncome)))+
-      metric('累计收入',money(num(e.totalIncome||summary.totalIncome)))+
-      metric('提现中',money(num(frozen)))+
-      metric('已提现',money(num(withdrawn)))+
-      metric('当前可提现',money(num(available)))+
-      '</section>'+
-      '<section class="pw-card pad" style="margin-top:14px"><h3>收益渠道</h3><div class="pw-info-list">'+
+    var totalIncome=e.totalIncome!=null?e.totalIncome:summary.totalIncome||0;
+    var composition=
+      '<section class="pw-card pad pw-compose-list" style="margin-top:12px">'+
+      '<h3 class="pw-section-title">收入构成</h3>'+
+      '<div class="pw-info-list pw-info-list--compact">'+
       infoRow('订单收入',money(num(orderIncome)))+
-      infoRow('礼物总额',money(num(giftGross)))+
-      infoRow('礼物平台抽成',money(num(e.giftCommission||channels.giftCommission||0)))+
-      infoRow('礼物净收入（可提现）',money(num(giftNet)))+
+      infoRow('礼物净收入',money(num(giftNet)))+
       infoRow('邀请佣金',money(num(inviteIncome)))+
-      infoRow('订单锁定中（待解锁）',money(num(e.earningsLocked||0)))+
-      infoRow('提现冻结中',money(num(frozen)))+
-      infoRow('已提现合计',money(num(withdrawn)))+
-      infoRow('当前可提现',money(num(available)))+
-      infoRow('平台订单抽成',esc(commission)+'%')+
-      '</div><p class="pw-note" style="margin-top:10px">解锁规则：Boss 确认完成立即解锁；否则服务完成满 24 小时自动解锁。</p></section>'+
-      '<section class="pw-card pad" style="margin-top:14px"><h3>奖励 / 其它（不可提现）</h3><div class="pw-info-list">'+infoRow('奖励猫粮',money(num(e.bonus||e.reward||0)))+infoRow('说明',esc(e.rewardNote||'奖励/其它不计入订单/礼物提现额度'))+'</div></section>'+
-      '<section class="pw-card pad" style="margin-top:14px"><h3>收入明细</h3>'+(details.length?'<div class="pw-table-wrap"><table class="pw-table"><thead><tr><th>类型</th><th>订单/礼物</th><th>总额</th><th>平台抽成</th><th>实际到账</th><th>提现状态</th><th>时间</th></tr></thead><tbody>'+details.map(function(x){
-        var s=x.settlement||{};
-        var gross=x.grossAmount!=null?x.grossAmount:(s.totalCatFood!=null?s.totalCatFood:x.amount);
-        var fee=x.platformFee!=null?x.platformFee:(s.platformCommissionCatFood!=null?s.platformCommissionCatFood:0);
-        var net=x.netIncome!=null?x.netIncome:(s.companionNetCatFood!=null?s.companionNetCatFood:x.amount);
-        var no=x.orderNo||(x.orderId?(noMap[x.orderId]||humanId(x.orderId)):'-');
-        var unlockLabel=x.unlockStatusLabel||x.statusText||ledgerStatusCN(x.status);
-        if(x.earningsLocked&&x.withdrawableAt){
-          unlockLabel='锁定中 · 预计解锁 '+fmtTime(x.withdrawableAt);
-        }else if(x.unlockReason==='boss_confirmed_early'||(x.bossConfirmedAt&&!x.earningsLocked)){
-          unlockLabel='可提现 · Boss已确认完成 · 已提前解锁';
-        }else if(!x.earningsLocked&&x.incomeKind==='order_income'){
-          unlockLabel='可提现';
-        }
-        return '<tr><td data-label="类型">'+esc(x.type||'订单收入')+'</td><td data-label="订单/礼物">'+esc(no)+'</td><td data-label="总额">'+money(num(gross))+'</td><td data-label="平台抽成">'+money(num(fee))+'</td><td data-label="实际到账">'+money(num(net))+'</td><td data-label="提现状态">'+esc(unlockLabel)+'</td><td data-label="时间">'+esc(fmtTime(x.createdAt))+'</td></tr>';
-      }).join('')+'</tbody></table></div>':'<div class="pw-empty">暂无收入明细</div>')+'</section>';
+      infoRow('奖励猫粮（不可提现）',money(num(bonus)))+
+      '</div></section>';
+    var rulesAcc=
+      '<details class="pw-card pad pw-rules-accordion" style="margin-top:12px">'+
+      '<summary><span class="pw-rules-summary-text">说明<span class="pw-rules-hint-closed">（点击展开）</span><span class="pw-rules-hint-open">（点击收起）</span></span></summary>'+
+      '<div class="pw-rules-body">'+
+      '<div class="pw-rule-item"><strong>平台订单抽成</strong><p>当前约 '+esc(commission)+'%。抽成不从陪玩服务标价外另扣老板金额口径以外的渠道重复计算。</p></div>'+
+      '<div class="pw-rule-item"><strong>可提现范围</strong><p>订单净收入、礼物净收入、邀请佣金计入可提现；奖励/其它猫粮不可提现。</p></div>'+
+      '<div class="pw-rule-item"><strong>解锁规则</strong><p>Boss 确认完成立即解锁；否则服务完成满 24 小时自动解锁。</p></div>'+
+      '</div></details>';
+    return (warn?'<div class="pw-empty" style="margin-bottom:12px"><strong>部分数据读取异常</strong><span>'+esc(warn)+'</span></div>':'')+
+      '<section class="pw-grid pw-grid--earn">'+
+      metric('当前可提现',money(num(available)))+
+      metric('提现中',money(num(frozen)))+
+      metric('订单24h锁定',money(num(locked24)))+
+      metric('累计收入',money(num(totalIncome)))+
+      '</section>'+
+      composition+
+      '<p class="pw-note pw-earn-hint">明细请切换上方「流水」查看</p>'+
+      rulesAcc;
   }
   function earningsWithdrawTab(){
     var e=(state.data&&state.data.earnings)||{},rules=(state.data&&state.data.withdrawalRules)||{},perm=(state.data&&state.data.permissions)||{};
@@ -4290,13 +4319,14 @@
       '<label>备注（可选）<textarea name="remark">'+esc((depositRemark||'').replace(/\[\[DEPOSIT_PAY\]\][\s\S]*?\[\[\/DEPOSIT_PAY\]\]/g,'').trim())+'</textarea></label>'+
       '<button class="pw-btn primary" type="submit" '+(depositChannelList.length?'':'disabled')+'>'+(depositPhase==='rejected'?'重新提交押金审核':'提交押金审核')+'</button></form>';
     var depositBlock=depositPhase==='approved'?depositPaidView:(depositLocked?depositPendingView:depositForm);
-    return '<div class="pw-page-head"><div><h2>账号中心（隐私）</h2><p>仅本人 / 客服 / 后台可见，老板永远看不到。</p></div><button class="pw-btn" type="button" data-route="/companion/profile">公开资料</button></div>'+
+    return '<div class="pw-page-head pw-page-head--compact"><div><h2>账号</h2><p>资料 · 认证 · 消息 · 规则</p></div></div>'+
+      accountHubHtml()+
       accountAccessBannerHtml()+
       reviewRejectBannerHtml('/companion/account')+
       credentialBanner+
       (depositPhase==='approved'?depositBadgeHtml():'')+
-      '<div class="pw-alert"><strong>隐私提示</strong><span>本页面仅本人和平台后台可见，不会公开给老板。</span></div>'+
-      '<section class="pw-card pad" style="margin-bottom:14px" id="pwDirectBossCard" data-direct-boss-card><h3>直属负责人</h3><div class="pw-empty">加载中…</div></section>'+
+      '<section class="pw-card pad" style="margin:14px 0" id="pwDirectBossCard" data-direct-boss-card><h3>直属负责人</h3><div class="pw-empty">加载中…</div></section>'+
+      '<section class="pw-card pad" style="margin-bottom:14px" id="pwInviteCard" data-invite-card><h3>我的邀请</h3><div class="pw-empty">加载中…</div></section>'+
       '<div class="pw-two-col">'+
         '<section class="pw-card pad"><h3>账号信息</h3><div class="pw-info-list">'+
           infoRow('登录邮箱',p.email||p.uid||'-')+
