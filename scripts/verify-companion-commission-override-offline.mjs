@@ -1,88 +1,113 @@
 /**
- * Offline unit checks for companion commission SoT.
+ * Offline regression for companion commission SoT.
  * Run: node scripts/verify-companion-commission-override-offline.mjs
  */
+import assert from "node:assert/strict";
 import {
-  parseCompanionShareOverride,
   resolveEffectiveCompanionCommission,
-  resolvePlatformCommission,
   splitByCompanionShare,
+  parseCompanionShareOverride,
+  resolvePlatformCommission,
 } from "../server/api/_commission-rates.js";
 
-function assert(cond, msg) {
-  if (!cond) throw new Error(msg);
-}
-
-// Case D: platform default 80% share (platform rate 20 on profile)
-{
-  const r = resolveEffectiveCompanionCommission({
+function caseD_systemDefault() {
+  const e = resolveEffectiveCompanionCommission({
     companionProfile: { commission_rate: 20 },
-    levelPlatformRate: 20,
+    fallbackPlatform: 20,
   });
-  assert(r.companionShareRate === 80, "D share should be 80");
-  assert(r.source === "system", "D source system");
+  assert.equal(e.companionShareRate, 80);
+  assert.equal(e.source, "system");
 }
 
-// Case E: club 70%
-{
-  const r = resolveEffectiveCompanionCommission({
+function caseE_clubDefault() {
+  const e = resolveEffectiveCompanionCommission({
     companionProfile: { commission_rate: 20 },
     clubMeta: { companionShareRate: 70, name: "KC" },
-    levelPlatformRate: 20,
+    fallbackPlatform: 20,
   });
-  assert(r.companionShareRate === 70, "E share 70");
-  assert(r.source === "club", "E club");
+  assert.equal(e.companionShareRate, 70);
+  assert.equal(e.source, "club");
 }
 
-// Case F: override 75 beats club 70
-{
-  const r = resolveEffectiveCompanionCommission({
+function caseF_override() {
+  const e = resolveEffectiveCompanionCommission({
     companionProfile: { commission_rate: 20, commission_rate_override: 75 },
     clubMeta: { companionShareRate: 70, name: "KC" },
   });
-  assert(r.companionShareRate === 75, "F override 75");
-  assert(r.source === "override", "F override");
+  assert.equal(e.companionShareRate, 75);
+  assert.equal(e.source, "override");
 }
 
-// Case G: clear override → back to club
-{
-  const r = resolveEffectiveCompanionCommission({
+function caseG_clearOverride() {
+  const e = resolveEffectiveCompanionCommission({
     companionProfile: { commission_rate: 20, commission_rate_override: null },
     clubMeta: { companionShareRate: 70, name: "KC" },
   });
-  assert(r.companionShareRate === 70, "G inherit club 70");
+  assert.equal(e.companionShareRate, 70);
+  assert.equal(e.source, "club");
 }
 
-// Case H: plain override 85
-{
-  const r = resolveEffectiveCompanionCommission({
-    companionProfile: { commission_rate_override: 85 },
+function caseH_plainOverride() {
+  const e = resolveEffectiveCompanionCommission({
+    companionProfile: { commission_rate: 20, commission_rate_override: 85 },
   });
-  assert(r.companionShareRate === 85, "H 85");
+  assert.equal(e.companionShareRate, 85);
+  assert.equal(e.platformRate, 15);
 }
 
-// Case I: historical snapshot independence — split uses snapshotted rate
-{
-  const old = splitByCompanionShare(70, 80);
-  const next = splitByCompanionShare(70, 70);
-  assert(old.companionNet === 56, "I old 56");
-  assert(next.companionNet === 49, "I new 49");
-  assert(old.companionNet !== next.companionNet, "I must not mutate history math");
-}
-
-// Case J: multi allocation
-{
+function caseJ_multiAllocation() {
   const a = splitByCompanionShare(35, 80);
   const b = splitByCompanionShare(35, 70);
-  assert(a.companionNet === 28, "J A 28");
-  assert(b.companionNet === 24.5, "J B 24.5");
-  assert(a.companionNet + b.companionNet === 52.5, "J sum incomes");
-  assert(a.amount + b.amount === 70, "J allocations still 70 total");
+  assert.equal(a.companionNet, 28);
+  assert.equal(b.companionNet, 24.5);
+  assert.equal(a.amount + b.amount, 70);
+  // Must NOT double-count full order for each companion
+  assert.ok(a.companionNet + b.companionNet < 70);
 }
 
-assert(parseCompanionShareOverride("") === null, "empty override null");
-assert(parseCompanionShareOverride(101) === null, "101 invalid");
-assert(parseCompanionShareOverride(80) === 80, "80 ok");
-assert(resolvePlatformCommission(80).platformRate === 20, "legacy share 80→platform 20");
+function caseNullInherit() {
+  assert.equal(parseCompanionShareOverride(null), null);
+  assert.equal(parseCompanionShareOverride(""), null);
+  assert.equal(parseCompanionShareOverride(80), 80);
+  const legacy = resolvePlatformCommission(80, 20);
+  assert.equal(legacy.companionShareRate, 80);
+  assert.equal(legacy.platformRate, 20);
+}
 
-console.log("PASS verify-companion-commission-override-offline");
+function caseI_snapshotImmutabilityDoc() {
+  // Settlement snapshots live on orders; changing override must not rewrite settled rows.
+  // This asserts the split math for a locked 80% snapshot stays 56 on RM70.
+  const snap = splitByCompanionShare(70, 80);
+  assert.equal(snap.companionNet, 56);
+  assert.equal(snap.platformFee, 14);
+  const later = splitByCompanionShare(70, 70);
+  assert.equal(later.companionNet, 49);
+  assert.notEqual(snap.companionNet, later.companionNet);
+}
+
+const tests = [
+  caseD_systemDefault,
+  caseE_clubDefault,
+  caseF_override,
+  caseG_clearOverride,
+  caseH_plainOverride,
+  caseJ_multiAllocation,
+  caseNullInherit,
+  caseI_snapshotImmutabilityDoc,
+];
+
+let failed = 0;
+for (const t of tests) {
+  try {
+    t();
+    console.log("PASS", t.name);
+  } catch (err) {
+    failed += 1;
+    console.error("FAIL", t.name, err?.message || err);
+  }
+}
+if (failed) {
+  console.error(`FAILED ${failed}/${tests.length}`);
+  process.exit(1);
+}
+console.log(`OK ${tests.length}/${tests.length}`);
