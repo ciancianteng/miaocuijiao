@@ -19,8 +19,11 @@ const checks = [
   ["uploadBusy guard", /if \(uploadBusy\.voice\)/.test(t)],
   ["keep blob on fail", t.includes("录音仍在")],
   ["validation confirmed+durable", t.includes("语音介绍（需确认录音并上传成功）")],
-  ["abortVoiceRecording", t.includes("function abortVoiceRecording")],
-  ["pagehide abort", /pagehide[\s\S]{0,120}abortVoiceRecording/.test(t)],
+  ["abort skips stopping finalize", /STOPPING[\s\S]{0,80}return/.test(t) && /pagehide[\s\S]{0,200}STOPPING/.test(t)],
+  ["orphan duration → too_short", /durationSec > 0 && durationSec < MIN_VOICE_SECONDS/.test(t)],
+  ["RECORDED forces ready", /VOICE_PHASE\.RECORDED && hasLiveLocal/.test(t)],
+  ["apple timeslice start", /isAppleMobile[\s\S]{0,120}start\(1000\)/.test(t)],
+  ["empty blob short → too_short", /!blob\.size[\s\S]{0,500}TOO_SHORT/.test(t)],
 ];
 let fail = 0;
 for (const [n, ok] of checks) {

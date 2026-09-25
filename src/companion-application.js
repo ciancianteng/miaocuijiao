@@ -2233,15 +2233,17 @@
       voicePhase === VOICE_PHASE.STOPPING ||
       voicePhase === VOICE_PHASE.REQUESTING ||
       !!(v.recording || (document.body && document.body.classList.contains("voice-recording-active")));
+    var durationSec = Math.max(0, Number(v.duration) || 0);
     var tooShortFlag =
       voicePhase === VOICE_PHASE.TOO_SHORT ||
       v.tooShort === true ||
-      /时长不足|不足\s*10/.test(String(v.status || ""));
+      /时长不足|不足\s*10/.test(String(v.status || "")) ||
+      // Orphan duration after a failed finalize must not look like idle「未录制」.
+      (!hasLiveLocal && !uploadedOk && durationSec > 0 && durationSec < MIN_VOICE_SECONDS);
     // Confirm only needs a live ≥10s take. Quality tips are advisory; listen is optional.
-    var durationOk =
-      Number(v.duration || 0) >= MIN_VOICE_SECONDS || !!(q && q.durationOk);
+    var durationOk = durationSec >= MIN_VOICE_SECONDS || !!(q && q.durationOk);
     var canConfirm =
-      hasLiveLocal && !uploadedOk && durationOk && !uploadBusy.voice && !tooShortFlag;
+      hasLiveLocal && !uploadedOk && durationOk && !tooShortFlag && !uploadBusy.voice;
     var reasons = Array.isArray(q.reasons) ? q.reasons : [];
     var template =
       "大家好，我是" +
@@ -2260,10 +2262,10 @@
       ? String(Math.floor(liveSec / 60)).padStart(2, "0") +
         ":" +
         String(Math.floor(liveSec % 60)).padStart(2, "0")
-      : v.duration
-        ? String(Math.floor(Number(v.duration) / 60)).padStart(2, "0") +
+      : durationSec
+        ? String(Math.floor(durationSec / 60)).padStart(2, "0") +
           ":" +
-          String(Math.floor(Number(v.duration) % 60)).padStart(2, "0")
+          String(Math.floor(durationSec % 60)).padStart(2, "0")
         : "00:00";
     var currentLabel = "00:00";
 
@@ -2273,7 +2275,9 @@
     else if (voicePhase === VOICE_PHASE.STOPPING) phase = "stopping";
     else if (voicePhase === VOICE_PHASE.RECORDING || isLiveRec) phase = "recording";
     else if (uploadedOk) phase = "done";
-    else if (hasVoice) phase = "ready";
+    // Explicit RECORDED + live blob → pending confirm (never fall through to idle).
+    else if (voicePhase === VOICE_PHASE.RECORDED && hasLiveLocal) phase = "ready";
+    else if (hasVoice && !tooShortFlag) phase = "ready";
     else if (tooShortFlag) phase = "too_short";
     else if (staleLocal) phase = "stale";
 
@@ -3567,7 +3571,19 @@
     if (voiceReleaseBound) return;
     voiceReleaseBound = true;
     window.addEventListener("pagehide", function () {
-      abortVoiceRecording({ silent: true });
+      // Do NOT abort a user-initiated stop/finalize — Safari often fires pagehide
+      // around mic permission / UI reflow and was wiping pending_confirm to idle.
+      if (
+        voicePhase === VOICE_PHASE.STOPPING ||
+        voicePhase === VOICE_PHASE.RECORDED ||
+        voicePhase === VOICE_PHASE.UPLOADING ||
+        voicePhase === VOICE_PHASE.TOO_SHORT
+      ) {
+        return;
+      }
+      if (voicePhase === VOICE_PHASE.RECORDING || voicePhase === VOICE_PHASE.REQUESTING) {
+        abortVoiceRecording({ silent: true });
+      }
     });
     document.addEventListener("visibilitychange", function () {
       // Keep recording if user briefly switches apps; only hard-release on pagehide/unmount.
@@ -3576,6 +3592,10 @@
   /** Hard abort: stop recorder + mic + timer. Used on leave / reset. */
   function abortVoiceRecording(opts) {
     opts = opts || {};
+    // If stop already in progress, never suppress the save/finalize path.
+    if (voicePhase === VOICE_PHASE.STOPPING || voicePhase === VOICE_PHASE.RECORDED) {
+      return;
+    }
     clearRecordTimer();
     clearStopWatchdog();
     suppressVoiceSave = true;
@@ -3706,12 +3726,39 @@
       chunks = [];
 
       if (!blob.size) {
+        // Safari/iOS can deliver empty chunks when stop races pagehide or start()-without-timeslice.
+        // Never leave orphan duration + idle「未录制」— surface too_short / error explicitly.
+        if (duration > 0 && duration < MIN_VOICE_SECONDS) {
+          voicePhase = VOICE_PHASE.TOO_SHORT;
+          liveVoiceBlob = null;
+          if (liveVoiceObjectUrl) {
+            try {
+              URL.revokeObjectURL(liveVoiceObjectUrl);
+            } catch (eEmptyRev) {}
+          }
+          liveVoiceObjectUrl = "";
+          saveDraft({
+            voice: {
+              status: "时长不足，请重录",
+              url: "",
+              duration: duration,
+              confirmed: false,
+              listened: false,
+              uploaded: false,
+              hasLocal: false,
+              tooShort: true,
+            },
+          });
+          showApplyTip("语音介绍至少需要录制 10 秒");
+          refreshVoiceUi({ scrollVoice: true });
+          return;
+        }
         voicePhase = VOICE_PHASE.ERROR;
         saveDraft({
           voice: {
             status: "录音失败（无声音数据），请重录",
             url: "",
-            duration: duration,
+            duration: 0,
             confirmed: false,
             listened: false,
             uploaded: false,
@@ -3719,7 +3766,7 @@
             tooShort: false,
           },
         });
-        setVoiceState("录音失败，请重录", duration);
+        setVoiceState("录音失败，请重录", 0);
         showApplyTip("录音失败（无声音数据），请重新录制。");
         refreshVoiceUi({ scrollVoice: true });
         return;
@@ -3801,11 +3848,19 @@
 
     recordStartedAt = Date.now();
     try {
-      // timeslice can break Safari/iOS MediaRecorder; start without it on Apple.
+      // Prefer a short timeslice so stop always has chunks (Safari used to start()
+      // with no timeslice → empty Blob on stop → idle + duration ghost UI).
       var ua = String(navigator.userAgent || "");
       var isAppleMobile = /iPhone|iPad|iPod/i.test(ua);
-      if (isAppleMobile) recorder.start();
-      else recorder.start(250);
+      if (isAppleMobile) {
+        try {
+          recorder.start(1000);
+        } catch (eSlice) {
+          recorder.start();
+        }
+      } else {
+        recorder.start(250);
+      }
     } catch (eStart) {
       try {
         recorder.start();
@@ -3974,10 +4029,37 @@
       }, 1800);
     } else {
       clearStopWatchdog();
+      // Recorder already inactive — still finalize from any buffered chunks.
+      if (chunks && chunks.length) {
+        try {
+          if (typeof recorder !== "undefined" && recorder && typeof recorder.onstop === "function") {
+            recorder.onstop();
+            return;
+          }
+        } catch (eFinalize) {}
+      }
       releaseMicTracks();
       recorder = null;
-      voicePhase = VOICE_PHASE.IDLE;
-      refreshVoiceUi();
+      var elapsed = recordStartedAt ? Math.max(0, Math.round((Date.now() - recordStartedAt) / 1000)) : 0;
+      if (elapsed > 0 && elapsed < MIN_VOICE_SECONDS) {
+        voicePhase = VOICE_PHASE.TOO_SHORT;
+        saveDraft({
+          voice: {
+            status: "时长不足，请重录",
+            url: "",
+            duration: elapsed,
+            confirmed: false,
+            listened: false,
+            uploaded: false,
+            hasLocal: false,
+            tooShort: true,
+          },
+        });
+        showApplyTip("语音介绍至少需要录制 10 秒");
+      } else {
+        voicePhase = VOICE_PHASE.IDLE;
+      }
+      refreshVoiceUi({ scrollVoice: true });
     }
   }
   function clearVoiceRecording() {
