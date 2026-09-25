@@ -477,10 +477,25 @@
     });
   }
   function loadHomeCompanionsFromApi() {
-    return fetch("/api/public/companions", { headers: { Accept: "application/json" }, cache: "no-store" })
-      .then(function (res) { return res.json().catch(function () { return { ok: false, companions: [] }; }); })
-      .then(function (body) {
-        var rows = body && body.ok && Array.isArray(body.companions) ? body.companions : [];
+    var Cache = window.MCJCompanionsCache;
+    var done = Cache
+      ? Cache.load({ limit: 80 }).then(function (pack) {
+          return Array.isArray(pack.value) ? pack.value : [];
+        })
+      : fetch("/api/public/companions?limit=80", {
+          headers: { Accept: "application/json" },
+          cache: "default",
+        })
+          .then(function (res) {
+            return res.json().catch(function () {
+              return { ok: false, companions: [] };
+            });
+          })
+          .then(function (body) {
+            return body && body.ok && Array.isArray(body.companions) ? body.companions : [];
+          });
+    return done
+      .then(function (rows) {
         return rows.map(mapPublicCompanion).filter(function (c) {
           return c && c.id && c.nameValid !== false && !isGarbledName(c.name) && c.name;
         });

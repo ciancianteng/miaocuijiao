@@ -30,6 +30,7 @@
   <link rel="stylesheet" href="src/home-app-mobile.css?v=20260924hallHomeCard1">
   <!-- Hall CSS last: shared CompanionCard with Home -->
   <link rel="stylesheet" href="src/companion-hall.css?v=20260924hallHomeCard1">
+  <link rel="stylesheet" href="/src/mcj-ui-feedback.css?v=20260925perf1">
 </head>
 <body>
   <header class="topbar companion-market-header">
@@ -192,6 +193,9 @@
   <script src="src/companion-levels.js?v=20260907capsuleFix1"></script>
   <script src="src/role-gates.js?v=20260908antiBlank1"></script>
   <script src="src/boss-auth-session.js?v=20260811authUnify2"></script>
+  <script src="/src/mcj-swr.js?v=20260925perf1"></script>
+  <script src="/src/mcj-companions-cache.js?v=20260925perf1"></script>
+  <script src="/src/mcj-ui-feedback.js?v=20260925perf1"></script>
   <script src="src/avatar-fallback.js?v=20260911hallPhoto45"></script>
   <script src="src/companion-media.js?v=20260802mediaSync"></script>
   <script src="src/companion-identity.js?v=20260907capsuleFix1"></script>
@@ -205,10 +209,21 @@
   <script src="/src/mcj-time-picker.js?v=20260924timeWheel3" defer></script>
   <script src="/src/place-order-modal.js?v=20260924duitnow1" defer></script>
   <script src="/src/multi-companion-team.js?v=20260924csMultiConfirm1" defer></script>
-  <script src="src/companion-hall.js?v=20260924hallHomeCard1" defer></script>
+  <script src="src/companion-hall.js?v=20260925perf1" defer></script>
   <script src="src/companion-hall-channels.js?v=20260911channels2" defer></script>
   <script src="src/notify-system.js" defer></script>
   <script src="src/launch-readiness-fixes.js" defer></script>
+  <script src="/src/boss-nav-prefetch.js?v=20260925perf1" defer></script>
+  <script>
+    document.addEventListener("DOMContentLoaded", function () {
+      if (window.MCJBossNavPrefetch && window.MCJBossNavPrefetch.run) {
+        window.MCJBossNavPrefetch.run({
+          delayMs: 400,
+          pages: ["index.html", "orders.html", "messages.html", "mine.html", "profile.html", "gifts.html"],
+        });
+      }
+    });
+  </script>
 <script>
     (function () {
       try {

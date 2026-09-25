@@ -674,15 +674,31 @@ async function resolveCompanionProfileRows(idRaw = "") {
   return [];
 }
 
-async function loadCompanions(id = "") {
+async function loadCompanions(id = "", opts = {}) {
   let companions;
   if (id) {
     companions = await resolveCompanionProfileRows(id);
     if (!Array.isArray(companions)) companions = [];
   } else {
-    const rows = await fetchCompanionRowsHideTest(
-      "?or=(verification_status.eq.approved,application_status.eq.approved)&order=updated_at.desc&limit=300"
-    );
+    const limitRaw = Number(opts.limit || 80);
+    const limit = Number.isFinite(limitRaw) ? Math.min(200, Math.max(12, Math.floor(limitRaw))) : 80;
+    const LIST_SELECT =
+      "id,user_id,nickname,game,main_service,price,game_prices,level_id,level_name,commission_rate," +
+      "online_status,allow_orders,application_status,verification_status,companion_code,is_test_account," +
+      "gender,age,region,voice_type,tags,featured,updated_at,voice_url,card_image_url,description," +
+      "schedule,game_rank,position,contact_phone";
+    let rows;
+    try {
+      rows = await fetchCompanionRowsHideTest(
+        `?or=(verification_status.eq.approved,application_status.eq.approved)&order=updated_at.desc&limit=${limit}&select=${LIST_SELECT}`
+      );
+    } catch (selectErr) {
+      // Older DBs may lack some columns — fall back to full row fetch with same limit.
+      console.warn("[public/companions] list select fallback", selectErr?.message || selectErr);
+      rows = await fetchCompanionRowsHideTest(
+        `?or=(verification_status.eq.approved,application_status.eq.approved)&order=updated_at.desc&limit=${limit}`
+      );
+    }
     companions = Array.isArray(rows) ? rows : [];
   }
   // JS safety net (no deletes): drop smoke/test companions even if DB filter unavailable.
@@ -826,7 +842,8 @@ export default async function handler(req, res) {
     return json(res, 200, { ok: true, configured: false, companions: [], message: "未配置 Supabase，陪玩大厅不返回假数据。" });
   }
   try {
-    const companions = await loadCompanions(lookup);
+    const limitRaw = Number(req.query?.limit || req.query?.pageSize || 80);
+    const companions = await loadCompanions(lookup, { limit: limitRaw });
     // Detail lookup: attach approved gift wall (aggregated, permanent).
     if (lookup && companions?.length === 1) {
       try {

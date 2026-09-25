@@ -422,16 +422,26 @@
     var list = $("gmCompanionList");
     if (list) list.innerHTML = '<p class="gm-empty soft">加载陪玩名单…</p>';
     try {
-      var res = await fetch("/api/public/companions", {
-        headers: { Accept: "application/json" },
-        credentials: "same-origin",
-        cache: "no-store",
-      });
-      var data = await res.json().catch(function () {
-        return {};
-      });
-      if (!res.ok || !data.ok) throw new Error((data && data.message) || "load_failed");
-      state.companions = (Array.isArray(data.companions) ? data.companions : [])
+      var Cache = window.MCJCompanionsCache;
+      var pack = Cache
+        ? await Cache.load({ limit: 80 })
+        : null;
+      var rows;
+      if (pack) {
+        rows = Array.isArray(pack.value) ? pack.value : [];
+      } else {
+        var res = await fetch("/api/public/companions?limit=80", {
+          headers: { Accept: "application/json" },
+          credentials: "same-origin",
+          cache: "default",
+        });
+        var data = await res.json().catch(function () {
+          return {};
+        });
+        if (!res.ok || !data.ok) throw new Error((data && data.message) || "load_failed");
+        rows = Array.isArray(data.companions) ? data.companions : [];
+      }
+      state.companions = rows
         .filter(function (c) {
           return c && (c.id || c.uid) && (c.nickname || c.name);
         })
