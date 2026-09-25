@@ -643,6 +643,21 @@ async function buildDetail(row, profile, opts = {}) {
     return false;
   });
 
+  const appReviewerId = String(row.application_reviewed_by || "").trim();
+  let appReviewerName = "";
+  if (appReviewerId) {
+    if (reviewerMap[appReviewerId]) {
+      appReviewerName = reviewerMap[appReviewerId];
+    } else {
+      try {
+        const p = await getProfile(appReviewerId);
+        appReviewerName = p?.display_name || p?.nickname || p?.email || appReviewerId;
+      } catch {
+        appReviewerName = appReviewerId;
+      }
+    }
+  }
+
   const completed = related.orders.filter((o) => o.status === "completed").length;
   const cancelled = related.orders.filter((o) => o.status === "cancelled").length;
   const refunded = related.orders.filter((o) => /refund/i.test(String(o.status || ""))).length;
@@ -747,8 +762,14 @@ async function buildDetail(row, profile, opts = {}) {
       status: row.application_status || row.verification_status || "pending",
       statusLabel: labelStatus(row.application_status || row.verification_status || "pending"),
       rejectReason: row.application_reject_reason || "",
+      reviewedAt: row.application_reviewed_at || "",
+      reviewedBy: row.application_reviewed_by || "",
+      reviewedByName: appReviewerName || "",
       empty: !row.application_submitted_at && !row.main_service && !row.game,
     },
+    applicationReviewedAt: row.application_reviewed_at || "",
+    applicationReviewedBy: row.application_reviewed_by || "",
+    applicationReviewedByName: appReviewerName || "",
     bio: row.description || "",
     intro: row.description || "",
     identity: identity
@@ -1293,6 +1314,20 @@ async function reviewApplication(req, companion, payload) {
   if ((status === "rejected" || status === "resubmit") && !reason) {
     throw Object.assign(new Error("驳回或要求补资料时必须填写原因。"), { status: 400 });
   }
+  // Draft must never be approved / rejected as a formal review.
+  try {
+    const { isApplicationDraft } = await import("../_companion-draft.js");
+    if (isApplicationDraft(companion) && (status === "approved" || status === "rejected" || status === "resubmit")) {
+      throw Object.assign(new Error("草稿申请不可审核。请等陪玩正式提交后再审核。"), {
+        status: 400,
+        code: "DRAFT_NOT_REVIEWABLE",
+      });
+    }
+  } catch (draftErr) {
+    if (draftErr?.code === "DRAFT_NOT_REVIEWABLE") throw draftErr;
+  }
+  const adminActor = await requireAdmin(req).catch(() => null);
+  const reviewedAt = new Date().toISOString();
   const { approveListingPatchForRow, unlistListingPatch } = await import("../_companion-listing-sync.js");
   let profileBefore = companion.user_id ? await getProfile(companion.user_id) : {};
   let patch;
@@ -1380,6 +1415,8 @@ async function reviewApplication(req, companion, payload) {
     }
     // Must set verification_status=approved so /api/public/companions publishes the companion.
     patch = approveListingPatchForRow(companion, extras);
+    patch.application_reviewed_at = reviewedAt;
+    if (adminActor?.id) patch.application_reviewed_by = adminActor.id;
     if (!String(companion.companion_code || "").trim() && !patch.companion_code) {
       try {
         const { allocateCompanionCode, resolveCompanionPublicCode } = await import("../_account-codes.js");
@@ -1393,14 +1430,68 @@ async function reviewApplication(req, companion, payload) {
     }
   } else {
     patch = unlistListingPatch({ status, reason });
+    patch.application_reviewed_at = reviewedAt;
+    if (adminActor?.id) patch.application_reviewed_by = adminActor.id;
     Object.keys(patch).forEach((k) => {
       if (patch[k] === undefined) delete patch[k];
     });
   }
-  const after = await companionDb(PLAYER_TABLE, `?id=eq.${encodeURIComponent(companion.id)}`, {
-    method: "PATCH",
-    body: JSON.stringify(patch),
-  });
+  let after;
+  try {
+    after = await companionDb(PLAYER_TABLE, `?id=eq.${encodeURIComponent(companion.id)}`, {
+      method: "PATCH",
+      body: JSON.stringify(patch),
+    });
+  } catch (patchErr) {
+    // Older schemas may lack application_reviewed_* columns — retry without them.
+    if (!/application_reviewed|column|schema cache|PGRST/i.test(String(patchErr?.message || patchErr || ""))) {
+      throw patchErr;
+    }
+    const fallback = { ...patch };
+    delete fallback.application_reviewed_at;
+    delete fallback.application_reviewed_by;
+    after = await companionDb(PLAYER_TABLE, `?id=eq.${encodeURIComponent(companion.id)}`, {
+      method: "PATCH",
+      body: JSON.stringify(fallback),
+    });
+  }
+  // Keep cert-side rows in sync with application decision (single SoT for list/detail/companion).
+  try {
+    if (status === "approved" || status === "rejected" || status === "resubmit") {
+      const certMode = resolveCertificationMethod(companion);
+      const idRows = await companionDb(
+        "companion_identity_verifications",
+        `?companion_profile_id=eq.${encodeURIComponent(companion.id)}&limit=1`
+      ).catch(() => []);
+      const idRow = Array.isArray(idRows) ? idRows[0] : null;
+      if (idRow && certMode !== "deposit") {
+        const idPatch = {
+          status: status === "approved" ? "approved" : status,
+          reject_reason: status === "approved" ? "" : reason,
+          reviewed_at: reviewedAt,
+          updated_at: reviewedAt,
+        };
+        if (adminActor?.id) idPatch.reviewed_by = adminActor.id;
+        await companionDb("companion_identity_verifications", `?id=eq.${encodeURIComponent(idRow.id)}`, {
+          method: "PATCH",
+          body: JSON.stringify(idPatch),
+        }).catch(() => {});
+      }
+      if (certMode === "deposit") {
+        await reviewDeposit(
+          req,
+          companion,
+          {
+            status: status === "approved" ? "approved" : status,
+            rejectReason: reason,
+          },
+          adminActor
+        ).catch(() => {});
+      }
+    }
+  } catch (syncErr) {
+    console.warn("[admin/players] cert sync after application review failed", syncErr?.message || syncErr);
+  }
   let profileAfter = profileBefore;
   if (status === "approved" && companion.user_id) {
     // Prefer already-activated profile from pre-write guard; otherwise activate now

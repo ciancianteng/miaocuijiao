@@ -299,8 +299,23 @@
     );
   }
 
-  function section(key, title, html) {
-    var open = key === "basic" || key === "application" || key === "split";
+  function section(key, title, html, forceOpen) {
+    var open =
+      forceOpen === true ||
+      key === "basic" ||
+      key === "identity" ||
+      key === "deposit" ||
+      key === "media" ||
+      key === "review-ops" ||
+      key === "application" ||
+      key === "split";
+    var collapsed =
+      forceOpen === false ||
+      key === "income" ||
+      key === "account" ||
+      key === "cert-badges" ||
+      key === "debug";
+    if (collapsed && forceOpen !== true) open = false;
     return (
       '<details class="player-detail-section" data-player-detail-section="' +
       esc(key) +
@@ -312,6 +327,37 @@
       html +
       "</details>"
     );
+  }
+
+  function formatMYT(iso) {
+    if (!iso) return "—";
+    var t = Date.parse(iso);
+    if (!Number.isFinite(t)) {
+      var s = String(iso);
+      if (/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}/.test(s) && !/[zZ]|[+-]\d{2}:?\d{2}$/.test(s)) return s.slice(0, 16).replace("T", " ");
+      return s;
+    }
+    try {
+      return (
+        new Intl.DateTimeFormat("sv-SE", {
+          timeZone: "Asia/Kuala_Lumpur",
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit",
+          hour12: false,
+        })
+          .format(new Date(t))
+          .replace(",", "") + " MYT"
+      );
+    } catch (e) {
+      var d = new Date(t + 8 * 3600 * 1000);
+      var p = function (n) {
+        return (n < 10 ? "0" : "") + n;
+      };
+      return d.getUTCFullYear() + "-" + p(d.getUTCMonth() + 1) + "-" + p(d.getUTCDate()) + " " + p(d.getUTCHours()) + ":" + p(d.getUTCMinutes()) + " MYT";
+    }
   }
 
   function field(label, name, value, type) {
@@ -371,6 +417,50 @@
       '" alt="' +
       esc(title || "") +
       '" onerror="this.onerror=null;this.src=\'/assets/meow-cuijiao-brand.jpg\'">' +
+      (meta ? '<span class="player-name-meta">' + esc(meta) + "</span>" : "") +
+      "</button>"
+    );
+  }
+
+  /** Large proof / ID / deposit thumbs — never circular 30px avatar buttons. */
+  function proofThumb(url, title, galleryJson) {
+    if (!url) {
+      return '<div class="player-proof-missing">尚未上传 · ' + esc(title || "图片") + "</div>";
+    }
+    return (
+      '<button class="player-proof-thumb" type="button" data-player-preview-src="' +
+      esc(url) +
+      '" data-player-preview-title="' +
+      esc(title || "预览") +
+      '"' +
+      (galleryJson ? ' data-player-gallery="' + esc(galleryJson) + '"' : "") +
+      ' title="点击查看大图">' +
+      '<img src="' +
+      esc(url) +
+      '" alt="' +
+      esc(title || "") +
+      '" loading="lazy" decoding="async" onerror="this.onerror=null;this.closest(\'.player-proof-thumb\').classList.add(\'is-broken\');this.alt=\'图片加载失败\'">' +
+      '<span class="player-proof-hint">点击查看大图</span></button>'
+    );
+  }
+
+  function galleryThumb(url, title, index, urlsJson, meta) {
+    if (!url) return "";
+    return (
+      '<button class="player-gallery-thumb" type="button" data-player-preview-src="' +
+      esc(url) +
+      '" data-player-preview-title="' +
+      esc(title || "相册") +
+      '" data-player-gallery="' +
+      esc(urlsJson || "") +
+      '" data-player-gallery-index="' +
+      esc(String(index || 0)) +
+      '" title="点击查看">' +
+      '<img src="' +
+      esc(url) +
+      '" alt="' +
+      esc(title || "") +
+      '" loading="lazy" decoding="async">' +
       (meta ? '<span class="player-name-meta">' + esc(meta) + "</span>" : "") +
       "</button>"
     );
@@ -694,11 +784,42 @@
         : hallHidden
           ? "已通过但未上大厅"
           : d.publishStatusLabel || "未上大厅";
+    var certMode = String(
+      d.certificationMethod ||
+        d.certification_method ||
+        d.credential_mode ||
+        app.certificationMethod ||
+        app.credential_mode ||
+        ""
+    ).toLowerCase();
+    var isDepositCert = certMode === "deposit";
+    var isIdCert = certMode === "id_card" || (!isDepositCert && !identity.empty);
+    var appStatusRaw = String(app.status || d.applicationStatus || d.application_status || "pending").toLowerCase();
+    var appPending = /pending|review|submitted|审核中|待审核/.test(appStatusRaw);
+    var appApproved = /approved|verified|passed|已通过/.test(appStatusRaw);
+    var appRejected = /rejected|已驳回|已拒绝/.test(appStatusRaw);
+    var appDraft = /^draft$|草稿/.test(appStatusRaw);
+    var appStatusLabel =
+      app.statusLabel ||
+      (appApproved ? "已通过" : appRejected ? "已驳回" : appDraft ? "草稿" : appPending ? "待审核" : appStatusRaw || "待审核");
+
+    var basicCompact = rows([
+      ["昵称", d.name || d.nickname || "—"],
+      ["性别", d.gender || "尚未填写"],
+      ["年龄", d.age || "尚未填写"],
+      ["地区", d.region || "尚未填写"],
+      ["游戏", d.mainGame || d.game || app.mainGame || "尚未填写"],
+      ["段位", app.gameRank || d.game_rank || "尚未填写"],
+      ["价格", playerMissingPrice(d) ? "审核时由等级写入" : (d.price != null ? d.price + " 猫粮" : "—")],
+      ["手机号", d.phone || d.contact_phone || "尚未填写"],
+      ["可接单时间", app.schedule || d.schedule || "尚未填写"],
+    ]);
+
     var applicationHtml = app.empty
       ? emptyText("尚未提交陪玩申请资料")
       : rows([
-          ["申请时间", app.submittedAt || "—"],
-          ["认证方式", d.certificationMethodLabel || app.certificationMethodLabel || (String(d.certificationMethod || app.certificationMethod || d.credential_mode || "").toLowerCase() === "deposit" ? "押金认证" : String(d.certificationMethod || app.certificationMethod || d.credential_mode || "").toLowerCase() === "id_card" ? "身份证认证" : "未选择")],
+          ["申请时间", formatMYT(app.submittedAt)],
+          ["认证方式", d.certificationMethodLabel || app.certificationMethodLabel || (isDepositCert ? "押金认证" : isIdCert ? "身份证认证" : "未选择")],
           ["主接服务", app.mainService || "尚未填写"],
           ["主接游戏", app.mainGame || "尚未填写"],
           ["游戏段位", app.gameRank || "尚未填写"],
@@ -707,8 +828,8 @@
           ["可接单时间", app.schedule || "尚未填写"],
           ["自我介绍（前台展示）", d.description || d.bio || d.intro || "尚未填写"],
           ["申请备注（仅后台）", app.note || "无"],
-          ["当前申请状态", app.statusLabel || app.status],
-          ["大厅可见", hallStatusText + (hallOn ? "（hallVisible=true）" : "（hallVisible=false）")],
+          ["当前申请状态", appStatusLabel],
+          ["大厅可见", hallStatusText],
           [
             "未上大厅原因",
             Array.isArray(hallReasons) && hallReasons.length
@@ -716,12 +837,19 @@
               : d.listingBlockReason || (hallOn || d.isTestAccount ? "无" : "—"),
           ],
           ["驳回原因", app.rejectReason || "无"],
+          ["审核人", app.reviewedByName || app.reviewedBy || d.applicationReviewedByName || "—"],
+          ["审核时间", formatMYT(app.reviewedAt || d.applicationReviewedAt)],
         ]);
-    if (edit) applicationHtml += reviewBox("application", app.status);
 
+    var idGallery = [];
+    if (identity.hasFront && identity.idFrontUrl) idGallery.push({ src: identity.idFrontUrl, title: "身份证正面" });
+    if (identity.hasBack && identity.idBackUrl) idGallery.push({ src: identity.idBackUrl, title: "身份证反面" });
+    if (identity.hasHandheld && identity.idHandheldUrl) idGallery.push({ src: identity.idHandheldUrl, title: "手持身份证" });
+    var idGalleryJson = JSON.stringify(idGallery);
     var identityHtml = identity.empty
       ? emptyText("尚未上传身份证")
-      : rows([
+      : '<div class="player-proof-block">' +
+        rows([
           ["真实姓名", identity.realName || "—"],
           {
             0: "身份证号码",
@@ -732,64 +860,71 @@
                 : ""),
             html: true,
           },
-          {
-            0: "身份证正面",
-            1: identity.hasFront ? thumb(identity.idFrontUrl, "身份证正面") : "",
-            2: "尚未上传身份证正面",
-            html: true,
-          },
-          {
-            0: "身份证反面",
-            1: identity.hasBack ? thumb(identity.idBackUrl, "身份证反面") : "",
-            2: "尚未上传身份证反面",
-            html: true,
-          },
-          {
-            0: "手持身份证",
-            1: identity.hasHandheld ? thumb(identity.idHandheldUrl, "手持身份证") : "",
-            2: "尚未上传手持身份证",
-            html: true,
-          },
-          ["提交时间", identity.submittedAt || "—"],
+          ["提交时间", formatMYT(identity.submittedAt)],
           ["审核状态", identity.statusLabel || identity.status],
           ["审核人", identity.reviewedBy || "—"],
-          ["审核时间", identity.reviewedAt || "—"],
+          ["审核时间", formatMYT(identity.reviewedAt)],
           ["驳回原因", identity.rejectReason || "无"],
-        ]);
-    if (edit && !identity.empty) identityHtml += reviewBox("identity", identity.status);
+        ]) +
+        '<div class="player-proof-grid">' +
+        '<div class="player-proof-item"><span class="player-proof-label">身份证正面</span>' +
+        proofThumb(identity.hasFront ? identity.idFrontUrl : "", "身份证正面", idGalleryJson) +
+        "</div>" +
+        '<div class="player-proof-item"><span class="player-proof-label">身份证反面</span>' +
+        proofThumb(identity.hasBack ? identity.idBackUrl : "", "身份证反面", idGalleryJson) +
+        "</div>" +
+        (identity.hasHandheld
+          ? '<div class="player-proof-item"><span class="player-proof-label">手持身份证</span>' +
+            proofThumb(identity.idHandheldUrl, "手持身份证", idGalleryJson) +
+            "</div>"
+          : '<div class="player-proof-item"><span class="player-proof-label">手持身份证</span><div class="player-proof-missing">未上传（非强制）</div></div>') +
+        "</div></div>";
 
     var paymentHtml = payment.empty ? emptyText("尚未填写结款账户") : paymentCardsHtml(payment);
     if (edit && !payment.empty) paymentHtml += reviewBox("payment", payment.status);
 
+    var galleryUrls = (media.gallery || [])
+      .filter(function (item) {
+        return item && item.url;
+      })
+      .map(function (item) {
+        return { src: item.url, title: "相册" };
+      });
+    var galleryJson = JSON.stringify(galleryUrls);
     var galleryHtml =
-      (media.gallery || [])
-        .map(function (item) {
-          return (
-            '<div style="display:inline-block;margin:4px 8px 4px 0;text-align:center">' +
-            thumb(item.url, "相册", item.statusLabel) +
-            (edit
-              ? '<div><button class="mini-btn" type="button" data-player-media-review="' +
-                esc(item.id) +
-                '" data-status="approved">通过</button> <button class="mini-btn" type="button" data-player-media-review="' +
-                esc(item.id) +
-                '" data-status="rejected">不通过</button></div>'
-              : "") +
-            "</div>"
-          );
-        })
-        .join("") || emptyText("尚未上传相册");
+      galleryUrls.length
+        ? '<div class="player-gallery-grid">' +
+          (media.gallery || [])
+            .map(function (item, idx) {
+              if (!item || !item.url) return "";
+              return (
+                '<div class="player-gallery-cell">' +
+                galleryThumb(item.url, "相册", idx, galleryJson, item.statusLabel) +
+                (edit
+                  ? '<div class="player-media-actions"><button class="mini-btn" type="button" data-player-media-review="' +
+                    esc(item.id) +
+                    '" data-status="approved">通过</button> <button class="mini-btn" type="button" data-player-media-review="' +
+                    esc(item.id) +
+                    '" data-status="rejected">不通过</button></div>'
+                  : "") +
+                "</div>"
+              );
+            })
+            .join("") +
+          "</div>"
+        : emptyText("尚未上传相册");
     var voiceHtml =
       (media.voices || [])
         .map(function (item) {
           return (
-            '<div class="admin-sync-note">' +
+            '<div class="player-audio-card admin-sync-note">' +
             (item.url
-              ? '<audio controls src="' + esc(item.url) + '" style="width:100%;max-width:360px"></audio>'
+              ? '<audio controls playsinline preload="metadata" src="' + esc(item.url) + '" style="width:100%;max-width:100%"></audio>'
               : "语音文件暂不可播放") +
             "<div>时长：" +
             esc(item.durationSeconds != null ? item.durationSeconds + " 秒" : "未知") +
             " · 上传：" +
-            esc(item.uploadedAt || "—") +
+            esc(formatMYT(item.uploadedAt)) +
             " · " +
             esc(item.statusLabel || "") +
             "</div>" +
@@ -808,16 +943,16 @@
       (media.videos || [])
         .map(function (item) {
           return (
-            '<div class="admin-sync-note">' +
+            '<div class="player-video-card admin-sync-note">' +
             (item.url
-              ? '<video controls playsinline src="' +
+              ? '<video controls playsinline preload="metadata" src="' +
                 esc(item.url) +
-                '" style="width:100%;max-width:420px;border-radius:12px;background:#000"></video>'
+                '" style="width:100%;max-width:100%;border-radius:12px;background:#000"></video>'
               : "展示视频暂不可播放") +
             "<div>时长：" +
             esc(item.durationSeconds != null ? item.durationSeconds + " 秒" : "未知") +
             " · 上传：" +
-            esc(item.uploadedAt || "—") +
+            esc(formatMYT(item.uploadedAt)) +
             " · " +
             esc(item.statusLabel || "") +
             "</div>" +
@@ -834,32 +969,24 @@
         .join("") || emptyText("尚未上传展示视频");
     var mediaHtml =
       rows([
-      {
-        0: "当前头像",
-        1: media.avatarUrl ? thumb(media.avatarUrl, "头像") : "",
-        2: "尚未上传头像",
-        html: true,
-      },
-      {
-        0: "卡面展示",
-        1: media.coverUrl
-          ? thumb(media.coverUrl, "卡面")
-          : media.avatarUrl
-            ? thumb(media.avatarUrl, "卡面(=头像)")
-            : "",
-        2: "使用头像/相册（已取消单独卡面上传）",
-        html: true,
-      },
+        {
+          0: "当前头像",
+          1: media.avatarUrl ? proofThumb(media.avatarUrl, "头像") : "",
+          2: "尚未上传头像",
+          html: true,
+        },
         ["媒体总状态", media.statusLabel || "—"],
         ["驳回原因", media.rejectReason || "无"],
+        ["照片", String((media.gallery || []).length) + " 张"],
+        ["视频", String((media.videos || []).length) + " 个"],
+        ["声线", String((media.voices || []).length) + " 条"],
       ]) +
-      "<h4 style=\"margin:12px 0 8px;color:#fff;font-size:13px\">相册</h4>" +
+      "<h4 class=\"player-media-h\">相册</h4>" +
       galleryHtml +
-      "<h4 style=\"margin:12px 0 8px;color:#fff;font-size:13px\">语音</h4>" +
+      "<h4 class=\"player-media-h\">语音</h4>" +
       voiceHtml +
-      "<h4 style=\"margin:12px 0 8px;color:#fff;font-size:13px\">展示视频</h4>" +
+      "<h4 class=\"player-media-h\">展示视频</h4>" +
       videoHtml;
-    if (edit) mediaHtml += reviewBox("media", media.status);
 
     var split =
       (edit ? "" : servicePricesViewHtml(d)) +
@@ -895,26 +1022,25 @@
           : [];
     var depositHtml = deposit.empty && !depositHistory.length
       ? emptyText("尚未缴纳押金")
-      : rows([
+      : '<div class="player-proof-block">' +
+        rows([
           ["记录编号", deposit.recordNo || "—"],
-          ["应缴押金", "RM" + (deposit.requiredAmount != null ? deposit.requiredAmount : 100)],
+          ["押金金额", "RM" + (deposit.requiredAmount != null ? deposit.requiredAmount : 100)],
           ["已缴金额", "RM" + (deposit.paidAmount != null ? deposit.paidAmount : 0)],
-          ["缴纳时间", deposit.paidAt || "—"],
+          ["支付时间", formatMYT(deposit.paidAt)],
           ["支付方式", deposit.paymentMethod || "—"],
-          {
-            0: "支付凭证",
-            1: deposit.hasProof ? thumb(deposit.proofUrl, "押金凭证") : "",
-            2: "尚未上传凭证",
-            html: true,
-          },
+          ["付款人", deposit.payerName || deposit.accountName || deposit.payer || "—"],
+          ["转账参考号", deposit.referenceNo || deposit.transferRef || deposit.refNo || "—"],
           ["审核状态", deposit.statusLabel || deposit.status],
-          ["审核时间", deposit.reviewedAt || "—"],
+          ["审核时间", formatMYT(deposit.reviewedAt)],
           ["审核管理员", deposit.reviewedByName || deposit.reviewedBy || "—"],
           ["退款状态", deposit.refundStatusLabel || deposit.refundStatus || "无"],
-          ["退还时间", deposit.refundedAt || "—"],
           ["驳回原因", deposit.rejectReason || "无"],
-        ]);
-    if (depositHistory.length) {
+        ]) +
+        '<div class="player-proof-grid"><div class="player-proof-item"><span class="player-proof-label">押金付款截图</span>' +
+        proofThumb(deposit.hasProof ? deposit.proofUrl : "", "押金凭证") +
+        "</div></div></div>";
+    if (depositHistory.length > 1) {
       depositHtml +=
         '<div class="player-deposit-history" style="margin-top:14px"><h4 style="margin:0 0 8px">押金记录（永久账目）</h4>' +
         depositHistory
@@ -926,13 +1052,12 @@
                 ["金额", "RM" + (row.requiredAmount != null ? row.requiredAmount : row.paidAmount != null ? row.paidAmount : 100)],
                 ["状态", row.statusLabel || row.status || "—"],
                 ["付款方式", row.paymentMethod || "—"],
-                ["缴纳时间", row.paidAt || "—"],
-                ["审核时间", row.reviewedAt || "—"],
+                ["缴纳时间", formatMYT(row.paidAt)],
+                ["审核时间", formatMYT(row.reviewedAt)],
                 ["审核管理员", row.reviewedByName || row.reviewedBy || "—"],
-                ["退还时间", row.refundedAt || "—"],
                 {
                   0: "付款凭证",
-                  1: row.hasProof ? thumb(row.proofUrl, "押金凭证") : "",
+                  1: row.hasProof ? proofThumb(row.proofUrl, "押金凭证") : "",
                   2: "无凭证",
                   html: true,
                 },
@@ -943,7 +1068,6 @@
           .join("") +
         "</div>";
     }
-    if (edit) depositHtml += reviewBox("deposit", deposit.status === "paid" ? "approved" : deposit.status);
 
     var orderRows = (d.recentOrders || [])
       .map(function (o) {
@@ -1060,50 +1184,124 @@
             "</div>"
           : emptyText("未分配认证徽章");
 
+    var hasPhotos = (media.gallery || []).length > 0 || !!media.avatarUrl;
+    var hasVideos = (media.videos || []).length > 0;
+    var hasVoices = (media.voices || []).length > 0;
+    var hasIdentityOk = isDepositCert
+      ? !!(deposit.hasProof || (deposit.paidAmount != null && Number(deposit.paidAmount) > 0) || /paid|approved|pending/.test(String(deposit.status || "")))
+      : !!(identity.hasFront && identity.hasBack);
+    var hasBasicOk = !!(d.name || d.nickname) && !!(d.mainGame || d.game || app.mainGame);
+    var hasPriceOk = !playerMissingPrice(d) || !!findLevelByValue(d.levelId || d.level_id || d.levelName, levels);
+    var completenessItems = [
+      { ok: hasBasicOk, label: "基本资料", warn: "基本资料不完整", required: true },
+      { ok: hasIdentityOk, label: isDepositCert ? "押金认证" : "身份认证", warn: isDepositCert ? "押金凭证缺失" : "身份证正反面未齐", required: true },
+      { ok: hasPhotos, label: "照片", warn: "尚未上传照片", required: true },
+      { ok: hasVideos, label: "视频", warn: "尚未上传视频", required: false },
+      { ok: hasVoices, label: "声线", warn: "尚未上传声线", required: true },
+      { ok: hasPriceOk || appPending, label: "服务价格", warn: "缺少服务价格/等级", required: false },
+    ];
+    var completenessHtml =
+      '<div class="player-completeness" data-player-completeness><div class="player-completeness-title">资料完整度</div><ul>' +
+      completenessItems
+        .map(function (item) {
+          return (
+            "<li class=\"" +
+            (item.ok ? "is-ok" : item.required ? "is-miss" : "is-warn") +
+            '"><span>' +
+            (item.ok ? "✓" : "⚠") +
+            "</span> " +
+            esc(item.ok ? item.label : item.warn || item.label) +
+            (item.required && !item.ok ? "（必填）" : "") +
+            "</li>"
+          );
+        })
+        .join("") +
+      "</ul></div>";
+
+    var canQuickReview = edit && appPending && !appDraft;
+    var quickReviewHtml =
+      '<div class="player-review-bar" data-player-review-bar>' +
+      '<div class="player-review-bar-meta">' +
+      '<img class="player-review-avatar" src="' +
+      esc(media.avatarUrl || d.avatar || "/assets/meow-cuijiao-brand.jpg") +
+      '" alt="" onerror="this.onerror=null;this.src=\'/assets/meow-cuijiao-brand.jpg\'">' +
+      "<div><strong>" +
+      esc(d.name || d.nickname || "-") +
+      '</strong><span>UID · ' +
+      esc(d.publicId || d.companionCode || d.companion_code || d.playerId || d.id) +
+      '</span><span class="player-review-status ' +
+      (appApproved ? "is-ok" : appRejected ? "is-bad" : "is-wait") +
+      '">审核状态：' +
+      esc(appStatusLabel) +
+      "</span></div></div>" +
+      completenessHtml +
+      '<div class="player-review-bar-actions">' +
+      (canQuickReview
+        ? '<label class="player-review-level"><span>通过等级</span><select data-player-quick-level>' +
+          levelOptions(d.levelId || d.level_id || d.levelName, levels) +
+          "</select></label>" +
+          '<button class="btn primary player-one-click-approve" type="button" data-player-one-click="approve">一键通过</button>' +
+          '<button class="btn danger-btn player-one-click-reject" type="button" data-player-one-click="reject">驳回</button>'
+        : appDraft
+          ? '<p class="admin-sync-note">草稿不可审核，请等陪玩正式提交。</p>'
+          : appApproved
+            ? '<p class="admin-sync-note">已通过 · ' + esc(formatMYT(app.reviewedAt || d.applicationReviewedAt || d.updated_at)) + "</p>"
+            : "") +
+      "</div></div>";
+
+    var reviewOpsHtml =
+      rows([
+        ["状态", appStatusLabel],
+        ["提交时间", formatMYT(app.submittedAt)],
+        ["审核人", app.reviewedByName || app.reviewedBy || d.applicationReviewedByName || "—"],
+        ["审核时间", formatMYT(app.reviewedAt || d.applicationReviewedAt)],
+        ["驳回原因", app.rejectReason || "无"],
+      ]) +
+      (canQuickReview
+        ? '<div class="player-review-bar-actions inline">' +
+          '<button class="btn primary" type="button" data-player-one-click="approve">一键通过</button>' +
+          '<button class="btn danger-btn" type="button" data-player-one-click="reject">驳回</button></div>'
+        : "");
+
+    var certSections = (function () {
+      if (isDepositCert) {
+        return section("deposit", "② 身份认证 · 押金", depositHtml, true) + section("payment", "结款账户", paymentHtml, false);
+      }
+      if (isIdCert || !identity.empty) {
+        return section("identity", "② 身份认证 · 身份证", identityHtml, true) + section("payment", "结款账户", paymentHtml, false);
+      }
+      return (
+        section("identity", "② 身份认证", identityHtml, true) +
+        section("deposit", "押金记录", depositHtml, false) +
+        section("payment", "结款账户", paymentHtml, false)
+      );
+    })();
+
     return (
-      '<div class="player-drawer-head"><div><h2>' +
-      esc(edit ? "编辑陪玩" : "陪玩详情") +
-      "</h2><p>" +
+      '<div class="player-drawer-head"><div><h2>陪玩审核</h2><p>' +
       esc(d.name || d.nickname || "-") +
       " · " +
-      esc(d.playerId || d.id) +
+      esc(d.publicId || d.playerId || d.id) +
       '</p></div><button class="mini-btn" type="button" data-player-drawer-close>关闭</button></div>' +
       '<form data-player-detail-form data-player-id="' +
       esc(d.id) +
       '" data-player-mode="' +
       esc(mode || "view") +
+      '" data-app-status="' +
+      esc(appStatusRaw) +
       '" data-missing-price="' +
       (playerMissingPrice(d) ? "1" : "0") +
       '">' +
-      '<div class="player-detail-hero"><img src="' +
-      esc(media.avatarUrl || d.avatar || "/assets/meow-cuijiao-brand.jpg") +
-      '" alt="" onerror="this.onerror=null;this.src=\'/assets/meow-cuijiao-brand.jpg\'"><div><strong>' +
-      esc(d.name || d.nickname || "-") +
-      "</strong><span>" +
-      esc(d.levelName || d.level_name || "未设置等级") +
-      " · " +
-      esc(d.mainGame || d.game || "未设置服务") +
-      "</span></div><span class=\"status ok\">" +
-      esc(d.accountStatus || d.status || "正常") +
-      "</span></div>" +
-      section("basic", "基础资料", basic) +
-      section("application", "陪玩申请资料", applicationHtml) +
-      (function () {
-        var mode = String(d.certificationMethod || d.certification_method || d.credential_mode || (d.application && (d.application.certificationMethod || d.application.credential_mode)) || "").toLowerCase();
-        if (mode === "deposit") {
-          return section("deposit", "押金认证资料", depositHtml) + section("payment", "结款账户", paymentHtml);
-        }
-        if (mode === "id_card") {
-          return section("identity", "身份证认证资料", identityHtml) + section("payment", "结款账户", paymentHtml);
-        }
-        return section("identity", "身份认证", identityHtml) + section("deposit", "押金记录", depositHtml) + section("payment", "结款账户", paymentHtml);
-      })() +
-      section("media", "头像 / 相册 / 语音", mediaHtml) +
-      section("split", "等级与价格", split) +
-      section("cert-badges", "认证徽章（前台卡片）", certHtml) +
-      (String(d.certificationMethod || d.certification_method || d.credential_mode || "").toLowerCase() === "id_card" || String(d.certificationMethod || d.certification_method || d.credential_mode || "").toLowerCase() === "deposit" ? "" : section("deposit", "押金记录", depositHtml)) +
-      section("income", "订单与收益", income) +
-      section("account", "账号管理", account) +
+      quickReviewHtml +
+      section("basic", "① 基本资料", basicCompact + (edit && basic.indexOf('class="player-edit-grid"') >= 0 ? basic.slice(basic.indexOf('<div class="player-edit-grid">')) : ""), true) +
+      certSections +
+      section("media", "③ 展示资料 · 照片 / 视频 / 声线", mediaHtml, true) +
+      section("application", "④ 接单资料", applicationHtml, false) +
+      section("split", "等级与价格", split, canQuickReview) +
+      section("review-ops", "⑤ 审核信息", reviewOpsHtml, true) +
+      section("cert-badges", "认证徽章（前台卡片）", certHtml, false) +
+      section("income", "订单与收益", income, false) +
+      section("account", "账号管理", account, false) +
       (edit
         ? '<div class="player-drawer-actions"><button class="btn primary" type="button" data-player-action="save-detail" data-player-id="' +
           esc(d.id) +
@@ -1116,7 +1314,14 @@
           esc(d.id) +
           '">进入编辑</button><button class="btn" type="button" data-player-drawer-close>关闭</button></div>') +
       "</form>" +
-      '<div class="modal" id="playerMediaPreview" aria-hidden="true" hidden><div class="modal-card" style="max-width:min(920px,92vw)"><button class="modal-close" type="button" data-player-preview-close>×</button><div id="playerMediaPreviewBody"></div></div></div>'
+      '<div class="modal player-preview-modal" id="playerMediaPreview" aria-hidden="true" hidden>' +
+      '<div class="modal-card player-preview-card">' +
+      '<button class="modal-close" type="button" data-player-preview-close aria-label="关闭">×</button>' +
+      '<button class="player-preview-nav prev" type="button" data-player-preview-prev hidden aria-label="上一张">‹</button>' +
+      '<button class="player-preview-nav next" type="button" data-player-preview-next hidden aria-label="下一张">›</button>' +
+      '<div id="playerMediaPreviewBody" class="player-preview-body"></div>' +
+      '<div class="player-preview-caption" id="playerMediaPreviewCaption"></div>' +
+      "</div></div>"
     );
   }
 
@@ -1170,16 +1375,143 @@
     });
   }
 
-  function openPreview(src, title) {
+  var previewState = { items: [], index: 0, scale: 1, tx: 0, ty: 0 };
+
+  function parseGalleryAttr(el) {
+    var raw = el && el.getAttribute("data-player-gallery");
+    if (!raw) return null;
+    try {
+      var list = JSON.parse(raw);
+      if (!Array.isArray(list) || !list.length) return null;
+      return list
+        .map(function (item) {
+          if (!item) return null;
+          if (typeof item === "string") return { src: item, title: "" };
+          return { src: item.src || item.url || "", title: item.title || "" };
+        })
+        .filter(function (x) {
+          return x && x.src;
+        });
+    } catch (err) {
+      return null;
+    }
+  }
+
+  function renderPreviewBody() {
+    var modal = document.getElementById("playerMediaPreview");
+    var body = document.getElementById("playerMediaPreviewBody");
+    var caption = document.getElementById("playerMediaPreviewCaption");
+    var prevBtn = modal && modal.querySelector("[data-player-preview-prev]");
+    var nextBtn = modal && modal.querySelector("[data-player-preview-next]");
+    if (!modal || !body) return;
+    var item = previewState.items[previewState.index] || {};
+    var src = item.src || "";
+    var title = item.title || "预览";
+    var isVideo = /\.(mp4|webm|mov)(\?|$)/i.test(src) || /video/i.test(title);
+    body.innerHTML = isVideo
+      ? '<video class="player-preview-media" controls playsinline src="' + esc(src) + '"></video>'
+      : '<div class="player-preview-stage" data-player-preview-stage><img class="player-preview-media" src="' +
+        esc(src) +
+        '" alt="' +
+        esc(title) +
+        '" draggable="false"></div>';
+    if (caption) {
+      caption.textContent =
+        title +
+        (previewState.items.length > 1 ? " · " + (previewState.index + 1) + "/" + previewState.items.length : "") +
+        " · 双指缩放";
+    }
+    if (prevBtn) prevBtn.hidden = previewState.items.length < 2;
+    if (nextBtn) nextBtn.hidden = previewState.items.length < 2;
+    previewState.scale = 1;
+    previewState.tx = 0;
+    previewState.ty = 0;
+    applyPreviewTransform();
+    bindPreviewGestures(body.querySelector("[data-player-preview-stage]"));
+  }
+
+  function applyPreviewTransform() {
+    var img = document.querySelector("#playerMediaPreview .player-preview-media");
+    if (!img || img.tagName === "VIDEO") return;
+    img.style.transform =
+      "translate(" + previewState.tx + "px," + previewState.ty + "px) scale(" + previewState.scale + ")";
+  }
+
+  function bindPreviewGestures(stage) {
+    if (!stage || stage._mcjBound) return;
+    stage._mcjBound = true;
+    var lastDist = 0;
+    var lastX = 0;
+    var lastY = 0;
+    var panning = false;
+    stage.addEventListener(
+      "touchstart",
+      function (ev) {
+        if (ev.touches.length === 2) {
+          var dx = ev.touches[0].clientX - ev.touches[1].clientX;
+          var dy = ev.touches[0].clientY - ev.touches[1].clientY;
+          lastDist = Math.hypot(dx, dy) || 1;
+          panning = false;
+        } else if (ev.touches.length === 1 && previewState.scale > 1) {
+          lastX = ev.touches[0].clientX;
+          lastY = ev.touches[0].clientY;
+          panning = true;
+        }
+      },
+      { passive: true }
+    );
+    stage.addEventListener(
+      "touchmove",
+      function (ev) {
+        if (ev.touches.length === 2) {
+          ev.preventDefault();
+          var dx = ev.touches[0].clientX - ev.touches[1].clientX;
+          var dy = ev.touches[0].clientY - ev.touches[1].clientY;
+          var dist = Math.hypot(dx, dy) || 1;
+          var ratio = dist / (lastDist || dist);
+          previewState.scale = Math.min(4, Math.max(1, previewState.scale * ratio));
+          lastDist = dist;
+          if (previewState.scale === 1) {
+            previewState.tx = 0;
+            previewState.ty = 0;
+          }
+          applyPreviewTransform();
+        } else if (panning && ev.touches.length === 1) {
+          ev.preventDefault();
+          previewState.tx += ev.touches[0].clientX - lastX;
+          previewState.ty += ev.touches[0].clientY - lastY;
+          lastX = ev.touches[0].clientX;
+          lastY = ev.touches[0].clientY;
+          applyPreviewTransform();
+        }
+      },
+      { passive: false }
+    );
+    stage.addEventListener("dblclick", function () {
+      previewState.scale = previewState.scale > 1 ? 1 : 2;
+      if (previewState.scale === 1) {
+        previewState.tx = 0;
+        previewState.ty = 0;
+      }
+      applyPreviewTransform();
+    });
+  }
+
+  function openPreview(src, title, gallery, index) {
     var modal = document.getElementById("playerMediaPreview");
     var body = document.getElementById("playerMediaPreviewBody");
     if (!modal || !body || !src) return;
-    body.innerHTML =
-      "<h3 style=\"margin:0 0 12px;color:#fff\">" +
-      esc(title || "预览") +
-      '</h3><img src="' +
-      esc(src) +
-      '" alt="" style="max-width:100%;max-height:70vh;display:block;margin:0 auto;border-radius:12px">';
+    var items = Array.isArray(gallery) && gallery.length ? gallery.slice() : [{ src: src, title: title || "预览" }];
+    var idx = Number(index);
+    if (!Number.isFinite(idx) || idx < 0) {
+      idx = items.findIndex(function (it) {
+        return it && it.src === src;
+      });
+      if (idx < 0) idx = 0;
+    }
+    previewState.items = items;
+    previewState.index = Math.min(items.length - 1, Math.max(0, idx));
+    renderPreviewBody();
     modal.hidden = false;
     modal.setAttribute("aria-hidden", "false");
     modal.classList.add("open");
@@ -1191,6 +1523,140 @@
     modal.hidden = true;
     modal.setAttribute("aria-hidden", "true");
     modal.classList.remove("open");
+    var body = document.getElementById("playerMediaPreviewBody");
+    if (body) body.innerHTML = "";
+    previewState = { items: [], index: 0, scale: 1, tx: 0, ty: 0 };
+  }
+
+  function stepPreview(delta) {
+    if (previewState.items.length < 2) return;
+    previewState.index = (previewState.index + delta + previewState.items.length) % previewState.items.length;
+    renderPreviewBody();
+  }
+
+  var REJECT_QUICK = ["身份资料不完整", "身份证照片不清晰", "押金资料有问题", "个人资料不完整", "图片/视频不合格", "录音不合格", "其他"];
+
+  function promptRejectReason() {
+    return new Promise(function (resolve) {
+      var existing = document.getElementById("playerRejectModal");
+      if (existing) existing.remove();
+      var modal = document.createElement("div");
+      modal.id = "playerRejectModal";
+      modal.className = "modal open player-reject-modal";
+      modal.setAttribute("aria-hidden", "false");
+      modal.innerHTML =
+        '<div class="modal-card player-reject-card"><h3>驳回原因</h3>' +
+        '<textarea data-reject-text rows="3" placeholder="请填写驳回原因（必填）"></textarea>' +
+        '<div class="player-reject-quick">' +
+        REJECT_QUICK.map(function (r) {
+          return '<button type="button" class="mini-btn" data-reject-chip="' + esc(r) + '">' + esc(r) + "</button>";
+        }).join("") +
+        '</div><div class="form-actions"><button class="btn danger-btn" type="button" data-reject-ok>确认驳回</button>' +
+        '<button class="btn" type="button" data-reject-cancel>取消</button></div></div>';
+      document.body.appendChild(modal);
+      var ta = modal.querySelector("[data-reject-text]");
+      modal.addEventListener("click", function (ev) {
+        var chip = ev.target.closest("[data-reject-chip]");
+        if (chip) {
+          ta.value = chip.getAttribute("data-reject-chip") || "";
+          return;
+        }
+        if (ev.target.closest("[data-reject-cancel]") || ev.target === modal) {
+          modal.remove();
+          resolve("");
+          return;
+        }
+        if (ev.target.closest("[data-reject-ok]")) {
+          var reason = String(ta.value || "").trim();
+          if (!reason) {
+            alert("驳回原因不能为空");
+            return;
+          }
+          modal.remove();
+          resolve(reason);
+        }
+      });
+    });
+  }
+
+  function runQuickReview(form, status) {
+    var appStatus = String(form.getAttribute("data-app-status") || "").toLowerCase();
+    if (/^draft$|草稿/.test(appStatus)) {
+      alert("草稿不可审核，请等陪玩正式提交后再审核。");
+      return;
+    }
+    if (!/pending|review|submitted|审核中|待审核/.test(appStatus) && status === "approved") {
+      alert("当前状态不可一键通过（仅待审核可通过）。");
+      return;
+    }
+    var nick =
+      (form.querySelector(".player-review-bar-meta strong") &&
+        form.querySelector(".player-review-bar-meta strong").textContent) ||
+      "";
+    var payload = { status: status, rejectReason: "" };
+    if (status === "approved") {
+      if (!window.confirm("确认通过该陪玩申请？\n陪玩：" + (nick || "—"))) return;
+      var levelEl =
+        form.querySelector("[data-player-quick-level]") || form.querySelector('[name="levelId"]');
+      var levelVal = levelEl ? String(levelEl.value || "").trim() : "";
+      if (!levelVal) {
+        alert("无法通过：必须选择陪玩等级。禁止无等级默认 Lv1。");
+        var split = form.querySelector('[data-player-detail-section="split"]');
+        if (split) split.open = true;
+        return;
+      }
+      var lv = findLevelByValue(levelVal, getLevels());
+      var base = levelBasePriceOf(lv);
+      if (!(base > 0)) {
+        alert("无法通过：所选等级缺少有效的基础价格 base_price。");
+        return;
+      }
+      payload.levelId = levelVal;
+      payload.level_id = levelVal;
+      if (lv) {
+        payload.levelName = lv.name || "";
+        payload.level_name = lv.name || "";
+      }
+      doReview();
+    } else {
+      promptRejectReason().then(function (reason) {
+        if (!reason) return;
+        payload.rejectReason = reason;
+        doReview();
+      });
+    }
+    function doReview() {
+      apiPost({
+        action: "review_application",
+        id: form.getAttribute("data-player-id"),
+        payload: payload,
+      })
+        .then(function (res) {
+          var msg = res.message || (status === "approved" ? "已通过" : "已驳回");
+          if (status === "approved") {
+            if (res.hallVisible) msg = "已通过，已同步进入陪玩大厅";
+            else if (res.approvedButHidden) {
+              msg =
+                "已通过，但未进入大厅：" +
+                ((res.blockReasons && res.blockReasons.join("、")) || "请检查资料完整性");
+            }
+          }
+          alert(msg);
+          if (window.MCJAdminPlayerBridge && window.MCJAdminPlayerBridge.reloadDetail) {
+            window.MCJAdminPlayerBridge.reloadDetail(form.getAttribute("data-player-id"), "edit");
+          }
+          if (window.MCJAdminPlayerBridge && window.MCJAdminPlayerBridge.reloadList) {
+            window.MCJAdminPlayerBridge.reloadList();
+          }
+        })
+        .catch(function (err) {
+          var extra =
+            err && Array.isArray(err.blockReasons) && err.blockReasons.length
+              ? "\n原因：" + err.blockReasons.join("、")
+              : "";
+          alert((err.message || "审核失败") + extra);
+        });
+    }
   }
 
   window.MCJAdminPlayerDetail = {
@@ -1214,16 +1680,42 @@
   document.addEventListener("click", function (e) {
     var preview = e.target.closest("[data-player-preview-src]");
     if (preview) {
-      openPreview(preview.getAttribute("data-player-preview-src"), preview.getAttribute("data-player-preview-title"));
+      var gallery = parseGalleryAttr(preview);
+      var gIndex = preview.getAttribute("data-player-gallery-index");
+      openPreview(
+        preview.getAttribute("data-player-preview-src"),
+        preview.getAttribute("data-player-preview-title"),
+        gallery,
+        gIndex
+      );
       var form = preview.closest("[data-player-detail-form]");
       var id = form && form.getAttribute("data-player-id");
-      if (id && /身份证/.test(preview.getAttribute("data-player-preview-title") || "")) {
-        apiPost({ action: "view_identity_image", id: id, payload: { side: preview.getAttribute("data-player-preview-title") } }).catch(function () {});
+      if (id && /身份证|押金/.test(preview.getAttribute("data-player-preview-title") || "")) {
+        apiPost({
+          action: "view_identity_image",
+          id: id,
+          payload: { side: preview.getAttribute("data-player-preview-title") },
+        }).catch(function () {});
       }
       return;
     }
     if (e.target.closest("[data-player-preview-close]")) {
       closePreview();
+      return;
+    }
+    if (e.target.closest("[data-player-preview-prev]")) {
+      stepPreview(-1);
+      return;
+    }
+    if (e.target.closest("[data-player-preview-next]")) {
+      stepPreview(1);
+      return;
+    }
+    var oneClick = e.target.closest("[data-player-one-click]");
+    if (oneClick) {
+      var formQuick = oneClick.closest("[data-player-detail-form]");
+      if (!formQuick) return;
+      runQuickReview(formQuick, oneClick.getAttribute("data-player-one-click") === "reject" ? "rejected" : "approved");
       return;
     }
     var reveal = e.target.closest("[data-player-reveal]");
