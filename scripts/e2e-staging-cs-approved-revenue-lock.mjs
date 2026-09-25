@@ -63,14 +63,17 @@ try {
   const bossToken = bossLogin.json?.session?.accessToken || bossLogin.json?.session?.access_token || "";
   if (!bossToken) throw new Error("boss login failed");
 
-  const csLogin = await api("/api/auth", {
+  const csLogin = await api("/api/customer-service", {
     action: "login",
-    email: "cs@meow.test",
+    account: "service@meow.test",
     password: PASS,
-    role: "customer_service",
   });
-  const csToken = csLogin.json?.session?.accessToken || csLogin.json?.session?.access_token || "";
-  if (!csToken) throw new Error("cs login failed");
+  const csToken =
+    csLogin.json?.session?.token ||
+    csLogin.json?.session?.accessToken ||
+    csLogin.json?.session?.access_token ||
+    "";
+  if (!csToken) throw new Error(`cs login failed: ${JSON.stringify(csLogin.json).slice(0, 200)}`);
 
   const adminLogin = await api("/api/auth", { action: "login", email: "admin@meow.test", password: PASS, role: "admin" });
   const adminToken =
@@ -218,8 +221,8 @@ try {
     return roleHint;
   }
 
-  await fillLogin(page, "cs@meow.test", "cs");
-  await shot("01-cs-orders-after-approve.png", "/customer-service.html");
+  await fillLogin(page, "service@meow.test", "cs");
+  await shot("01-cs-orders-after-approve.png", "/customer-service/");
 
   if (adminToken) {
     await fillLogin(page, "admin@meow.test", "admin");
