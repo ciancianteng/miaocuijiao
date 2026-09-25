@@ -1966,6 +1966,25 @@ body[data-admin-section="players"] .player-data-table th:nth-child(14){z-index:8
 .service-account-table tbody tr:hover td:last-child{background:#1a151c}
 .service-account-actions{display:flex;align-items:center;gap:6px;flex-wrap:nowrap;overflow:visible!important;white-space:nowrap;min-width:max-content}
 .service-account-actions .mini-btn{height:28px;min-height:28px;border-radius:7px;padding:0 8px;font-size:12px;flex:0 0 auto}
+.sa-cell-wrap{display:inline-block;max-width:100%;overflow-wrap:anywhere;word-break:break-word;white-space:normal;}
+.sa-mobile-only{display:none;}
+.sa-desktop-only{display:block;}
+.sa-mobile-cards{display:none;gap:10px;min-width:0;max-width:100%;}
+.sa-card{min-width:0;max-width:100%;box-sizing:border-box;padding:12px;border:1px solid rgba(255,255,255,.1);border-radius:12px;background:rgba(255,255,255,.03);overflow:hidden;}
+.sa-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:10px;min-width:0;}
+.sa-card-name{color:#fff;font-size:16px;font-weight:820;overflow-wrap:anywhere;word-break:break-word;min-width:0;}
+.sa-card-status{flex:0 0 auto;}
+.sa-card-meta{display:grid;gap:8px;min-width:0;}
+.sa-card-meta > div{display:grid;grid-template-columns:72px minmax(0,1fr);gap:8px;align-items:start;min-width:0;}
+.sa-card-meta span{color:#9f949c;font-size:12px;}
+.sa-card-meta strong{color:#f4eaf0;font-size:13px;font-weight:700;overflow-wrap:anywhere;word-break:break-word;min-width:0;}
+.sa-card-dev{margin:10px 0;color:#9f949c;font-size:12px;}
+.sa-card-dev summary{cursor:pointer;user-select:none;}
+.sa-card-actions{flex-wrap:wrap!important;white-space:normal!important;min-width:0!important;margin-top:10px;}
+.sa-card-actions .mini-btn{flex:1 1 calc(50% - 6px);min-width:0;justify-content:center;}
+.player-commission-share{margin-top:12px;padding:12px;border:1px solid rgba(255,255,255,.1);border-radius:12px;background:rgba(0,0,0,.18);min-width:0;max-width:100%;box-sizing:border-box;}
+.player-commission-share h4{margin:0 0 6px;color:#ffd6e7;font-size:13px;}
+.player-commission-share .muted{margin:0 0 10px;font-size:12px;line-height:1.45;color:#9f949c;}
 .mini-btn.danger{color:#ff8ca6;border-color:rgba(255,111,145,.28)}
 .admin-sync-note.error{border-color:rgba(255,111,145,.28);color:#ffc3d0;background:rgba(255,111,145,.07)}
 body[data-admin-section="service-accounts"] #section-service-accounts,
@@ -1985,8 +2004,21 @@ body[data-admin-section="service-reports"] #section-service-reports > .panel{
 @media(max-width:900px){
   .service-account-head{align-items:flex-start;flex-direction:column}
   .service-account-form .form-grid{grid-template-columns:1fr}
-  .service-account-table-wrap{min-height:360px;max-height:70vh;overflow-x:auto!important}
-  .service-account-table{min-width:1100px}
+  .service-account-form-shell{padding:12px;max-width:100%;box-sizing:border-box;overflow-x:hidden;}
+  .service-account-form input,.service-account-form select,.service-account-form textarea{max-width:100%;box-sizing:border-box;}
+}
+@media(max-width:768px){
+  .sa-desktop-only,.service-account-table-wrap.sa-desktop-only{display:none!important;}
+  .sa-mobile-only,.sa-mobile-cards{display:grid!important;}
+  .service-account-table-wrap{min-height:0;max-height:none;overflow:visible!important;}
+  .service-account-table{min-width:0!important;width:100%!important;}
+  body[data-admin-section="service-accounts"] #section-service-accounts,
+  body[data-admin-section="service-accounts"] #section-service-accounts > .panel,
+  body[data-admin-section="service-accounts"] .service-account-admin,
+  body[data-admin-section="service-accounts"] .cs-acc-body{
+    overflow-x:hidden!important;
+    max-width:100vw;
+  }
 }
 
 /* CS dock rewards panel — document-flow stack (toolbar never overlaps table) */

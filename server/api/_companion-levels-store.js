@@ -399,7 +399,10 @@ function companionProfilesUrl(query = "") {
 
 /**
  * Push each level's commission_rate onto companions at that level.
- * New settlements read companion_profiles.commission_rate; historical settled orders keep their snapshot.
+ * New settlements read effective rate (override → club → profile/level).
+ * Companions with commission_rate_override set keep their override; we still refresh
+ * the inherited commission_rate base so clearing override returns to the new level rate.
+ * Historical settled orders keep their snapshot.
  */
 export async function syncCompanionCommissionsFromLevels(levels) {
   const list = (Array.isArray(levels) ? levels : []).map((row, index) => normalizeLevelRow(row, index));
@@ -416,9 +419,10 @@ export async function syncCompanionCommissionsFromLevels(levels) {
       commission_effective_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
+    // Only companions WITHOUT a personal share override inherit the level platform rate.
     const queries = [
-      `?level_id=eq.${encodeURIComponent(level.id)}`,
-      `?level_id=eq.${encodeURIComponent(level.code)}`,
+      `?level_id=eq.${encodeURIComponent(level.id)}&commission_rate_override=is.null`,
+      `?level_id=eq.${encodeURIComponent(level.code)}&commission_rate_override=is.null`,
     ];
     for (const query of queries) {
       try {
@@ -435,6 +439,36 @@ export async function syncCompanionCommissionsFromLevels(levels) {
           body = text;
         }
         if (!response.ok) {
+          // Older schemas may lack commission_rate_override — fall back to all-at-level sync.
+          if (/commission_rate_override|column|schema cache|PGRST/i.test(text || "")) {
+            try {
+              const fallbackQuery = query.replace(/&commission_rate_override=is\.null$/, "");
+              const fallback = await fetch(companionProfilesUrl(fallbackQuery), {
+                method: "PATCH",
+                headers: serviceHeaders({ Prefer: "return=representation" }),
+                body: JSON.stringify(patch),
+              });
+              const fbText = await fallback.text();
+              let fbBody = null;
+              try {
+                fbBody = fbText ? JSON.parse(fbText) : null;
+              } catch {
+                fbBody = fbText;
+              }
+              if (!fallback.ok) {
+                if (fallback.status === 404 || isMissingTable({ message: fbText })) continue;
+                report.errors.push(`${level.code}: ${fbBody?.message || fbText || `HTTP ${fallback.status}`}`);
+                report.ok = false;
+                continue;
+              }
+              report.updated += Array.isArray(fbBody) ? fbBody.length : 0;
+              continue;
+            } catch (fbErr) {
+              report.errors.push(`${level.code}: ${fbErr.message || fbErr}`);
+              report.ok = false;
+              continue;
+            }
+          }
           if (response.status === 404 || isMissingTable({ message: text })) continue;
           report.errors.push(`${level.code}: ${body?.message || text || `HTTP ${response.status}`}`);
           report.ok = false;

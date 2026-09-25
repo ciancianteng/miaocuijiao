@@ -14,7 +14,11 @@ import {
   setAssignmentsForProfile,
   toPublicCertTag,
 } from "../_companion-cert-tags-store.js";
-import { resolvePlatformCommission } from "../_commission-rates.js";
+import {
+  parseCompanionShareOverride,
+  resolveEffectiveCompanionCommission,
+  resolvePlatformCommission,
+} from "../_commission-rates.js";
 import { resolveCompanionAvatar, resolveCompanionCover } from "../_companion-public-map.js";
 import { resolveCompanionPublicCode } from "../_account-codes.js";
 import { requireAdmin as requireAdminJwt, ADMIN_ROLES as SHARED_ADMIN_ROLES } from "../_admin-auth.js";
@@ -107,6 +111,9 @@ async function patchCompanionRow(id, patch) {
     if (!isMissingRelation(error) && !/column|schema cache|PGRST/i.test(String(error.message || ""))) throw error;
     // Progressive strip of optional columns so gift/direct rebate still persist when present.
     const optional = [
+      "commission_rate_override",
+      "application_reviewed_at",
+      "application_reviewed_by",
       "gift_commission_rate",
       "direct_rebate_rate",
       "level_id",
@@ -398,6 +405,14 @@ function mapListPlayer(row = {}, profile = {}) {
     missing_price: !hasPositivePrice(row),
     commission_rate: resolvePlatformCommission(row.commission_rate).platformRate,
     orderCommissionRate: resolvePlatformCommission(row.commission_rate).platformRate,
+    commission_rate_override:
+      row.commission_rate_override == null || row.commission_rate_override === ""
+        ? null
+        : Number(row.commission_rate_override),
+    commissionRateOverride:
+      row.commission_rate_override == null || row.commission_rate_override === ""
+        ? null
+        : Number(row.commission_rate_override),
     gift_commission_rate: row.gift_commission_rate,
     giftCommissionRate: row.gift_commission_rate,
     direct_rebate_rate: row.direct_rebate_rate,
@@ -678,6 +693,32 @@ async function buildDetail(row, profile, opts = {}) {
     },
     profile
   );
+
+  try {
+    const levelMetaEarly = await resolveLevelMeta(row.level_id || row.level_name);
+    const commissionEffective = resolveEffectiveCompanionCommission({
+      companionProfile: row,
+      levelPlatformRate: levelMetaEarly?.commissionRate ?? levelMetaEarly?.commission_rate ?? 20,
+      fallbackPlatform: 20,
+    });
+    base.commissionEffectiveShareRate = commissionEffective.companionShareRate;
+    base.commissionEffectivePlatformRate = commissionEffective.platformRate;
+    base.commissionSource = commissionEffective.source;
+    base.commissionSourceLabel = commissionEffective.sourceLabel;
+    base.commissionRateOverride = commissionEffective.overrideRate;
+    base.commission_rate_override = commissionEffective.overrideRate;
+  } catch (_) {
+    const fallback = resolveEffectiveCompanionCommission({
+      companionProfile: row,
+      fallbackPlatform: 20,
+    });
+    base.commissionEffectiveShareRate = fallback.companionShareRate;
+    base.commissionEffectivePlatformRate = fallback.platformRate;
+    base.commissionSource = fallback.source;
+    base.commissionSourceLabel = fallback.sourceLabel;
+    base.commissionRateOverride = fallback.overrideRate;
+    base.commission_rate_override = fallback.overrideRate;
+  }
 
   let hasPassword = profile?.has_password === true;
   let mustChangePassword = profile?.must_change_password === true;
@@ -1018,6 +1059,34 @@ function companionEditablePatch(payload = {}) {
   if (giftRate !== undefined) patch.gift_commission_rate = giftRate;
   const rebate = percent(payload.directRebateRate ?? payload.direct_rebate_rate);
   if (rebate !== undefined) patch.direct_rebate_rate = rebate;
+  // Personal companion SHARE % override. null / "" / "inherit" clears to inherit.
+  if (
+    Object.prototype.hasOwnProperty.call(payload, "commissionRateOverride") ||
+    Object.prototype.hasOwnProperty.call(payload, "commission_rate_override") ||
+    payload.clearCommissionOverride === true ||
+    payload.restoreCommissionInherit === true
+  ) {
+    if (payload.clearCommissionOverride === true || payload.restoreCommissionInherit === true) {
+      patch.commission_rate_override = null;
+    } else {
+      const raw =
+        payload.commissionRateOverride !== undefined
+          ? payload.commissionRateOverride
+          : payload.commission_rate_override;
+      if (raw === null || raw === "" || String(raw).toLowerCase() === "inherit") {
+        patch.commission_rate_override = null;
+      } else {
+        const share = parseCompanionShareOverride(raw);
+        if (share == null) {
+          throw Object.assign(new Error("个人佣金比例须为 0–100 的数字"), {
+            status: 400,
+            code: "INVALID_COMMISSION_OVERRIDE",
+          });
+        }
+        patch.commission_rate_override = share;
+      }
+    }
+  }
   if (payload.featured != null) patch.featured = bool(payload.featured, false);
   if (payload.allowOrders != null || payload.allow_orders != null) {
     patch.allow_orders = bool(payload.allowOrders ?? payload.allow_orders, true);
@@ -1859,7 +1928,16 @@ export default async function handler(req, res) {
     }
 
     // default save / edit / quick-edit
-    const companionPatch = companionEditablePatch(payload);
+    let companionPatch;
+    try {
+      companionPatch = companionEditablePatch(payload);
+    } catch (editErr) {
+      return json(res, editErr.status || 400, {
+        ok: false,
+        code: editErr.code || "",
+        message: editErr.message || "保存失败",
+      });
+    }
     // PERMANENT RULE: submission/first-approval validation must never block
     // admin corrections on already-approved companions.
     const firstApproveViaEdit = isFirstApprovalTransition(companion, companionPatch.application_status);
@@ -1932,7 +2010,11 @@ export default async function handler(req, res) {
     if (
       payload.orderCommissionRate != null ||
       payload.giftCommissionRate != null ||
-      payload.directRebateRate != null
+      payload.directRebateRate != null ||
+      Object.prototype.hasOwnProperty.call(payload, "commissionRateOverride") ||
+      Object.prototype.hasOwnProperty.call(payload, "commission_rate_override") ||
+      payload.clearCommissionOverride === true ||
+      payload.restoreCommissionInherit === true
     ) {
       companionPatch.commission_effective_at = new Date().toISOString();
     }
