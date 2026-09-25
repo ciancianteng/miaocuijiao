@@ -35,6 +35,10 @@ import {
   seedCompanionServicesFromLevel,
 } from "../_companion-services-seed.js";
 import {
+  isGalleryPhotoRow,
+  selectPendingGalleryPhotoIds,
+} from "../_companion-media-review.js";
+import {
   applyAdminServicePrices,
   buildAdminServicePriceList,
   loadCompanionServiceRows,
@@ -1251,7 +1255,7 @@ async function reviewPayment(req, companion, payload) {
   return after?.[0];
 }
 
-async function reviewMedia(req, companion, payload) {
+async function reviewMedia(req, companion, payload, admin = null) {
   const status = normalizeStatusInput(payload.status || payload.mediaStatus, "pending");
   const reason = String(payload.rejectReason || payload.reason || "").trim();
   if ((status === "rejected" || status === "resubmit") && !reason) {
@@ -1259,18 +1263,24 @@ async function reviewMedia(req, companion, payload) {
   }
   const mediaId = String(payload.mediaId || "").trim();
   if (mediaId) {
-    const beforeRows = await companionDb("companion_media", `?id=eq.${encodeURIComponent(mediaId)}&limit=1`);
+    const beforeRows = await companionDb(
+      "companion_media",
+      `?id=eq.${encodeURIComponent(mediaId)}&companion_profile_id=eq.${encodeURIComponent(companion.id)}&limit=1`
+    );
     const before = beforeRows?.[0];
-    if (!before) throw Object.assign(new Error("媒体不存在。"), { status: 404 });
-    const after = await companionDb("companion_media", `?id=eq.${encodeURIComponent(mediaId)}`, {
-      method: "PATCH",
-      body: JSON.stringify({
-        status,
-        reject_reason: reason,
-        reviewed_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      }),
-    });
+    if (!before) throw Object.assign(new Error("媒体不存在或不属于该陪玩。"), { status: 404 });
+    const patch = {
+      status,
+      reject_reason: reason,
+      reviewed_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+    if (admin?.id) patch.reviewed_by = admin.id;
+    const after = await companionDb(
+      "companion_media",
+      `?id=eq.${encodeURIComponent(mediaId)}&companion_profile_id=eq.${encodeURIComponent(companion.id)}`,
+      { method: "PATCH", body: JSON.stringify(patch) }
+    );
     await logOperation(req, "review_media", companion.id, before, after?.[0], reason);
   }
   await companionDb(PLAYER_TABLE, `?id=eq.${encodeURIComponent(companion.id)}`, {
@@ -1283,6 +1293,88 @@ async function reviewMedia(req, companion, payload) {
   });
   await logOperation(req, "review_media_batch", companion.id, { media_status: companion.media_status }, { status, reason }, reason);
   return { status, reason };
+}
+
+async function bulkApprovePendingGalleryPhotos(req, companion, admin = null, opts = {}) {
+  const source = String(opts.source || "bulk_approve").trim() || "bulk_approve";
+  const pid = String(companion?.id || "").trim();
+  if (!pid) throw Object.assign(new Error("缺少陪玩 ID"), { status: 400 });
+  const rows = await companionDb(
+    "companion_media",
+    `?companion_profile_id=eq.${encodeURIComponent(pid)}&select=id,companion_profile_id,media_type,content_type,status,sort_order&limit=500`
+  ).catch((e) => {
+    if (isMissingRelation(e)) return [];
+    throw e;
+  });
+  const list = Array.isArray(rows) ? rows : [];
+  const { ids, skipped } = selectPendingGalleryPhotoIds(list, pid);
+  if (!ids.length) {
+    return { ok: true, approvedCount: 0, skippedOtherCompanions: skipped, mediaIds: [], source };
+  }
+  const now = new Date().toISOString();
+  const patch = {
+    status: "approved",
+    reject_reason: "",
+    reviewed_at: now,
+    updated_at: now,
+  };
+  if (admin?.id) patch.reviewed_by = admin.id;
+  const idFilter = ids.map(encodeURIComponent).join(",");
+  const after = await companionDb(
+    "companion_media",
+    `?companion_profile_id=eq.${encodeURIComponent(pid)}&id=in.(${idFilter})&status=eq.pending`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(patch),
+      headers: { Prefer: "return=representation" },
+    }
+  ).catch(async (err) => {
+    if (!/status|PGRST|schema/i.test(String(err?.message || err || ""))) throw err;
+    return companionDb(
+      "companion_media",
+      `?companion_profile_id=eq.${encodeURIComponent(pid)}&id=in.(${idFilter})`,
+      {
+        method: "PATCH",
+        body: JSON.stringify(patch),
+        headers: { Prefer: "return=representation" },
+      }
+    );
+  });
+  const updated = Array.isArray(after) ? after : [];
+  const safeUpdated = updated.filter(
+    (r) => String(r.companion_profile_id || "") === pid && isGalleryPhotoRow(r)
+  );
+  await companionDb(PLAYER_TABLE, `?id=eq.${encodeURIComponent(pid)}`, {
+    method: "PATCH",
+    body: JSON.stringify({
+      media_status: "approved",
+      media_reject_reason: "",
+      updated_at: now,
+    }),
+  }).catch(() => {});
+  await logOperation(
+    req,
+    "bulk_approve_gallery_photos",
+    pid,
+    { pendingIds: ids, source },
+    {
+      approvedCount: safeUpdated.length || ids.length,
+      mediaIds: (safeUpdated.length ? safeUpdated : ids.map((id) => ({ id }))).map((r) => r.id || r),
+      reviewer: admin?.id || "",
+      reviewer_role: "admin",
+      reviewed_at: now,
+      status: "approved",
+      review_source: source,
+    },
+    source
+  );
+  return {
+    ok: true,
+    approvedCount: safeUpdated.length || ids.length,
+    skippedOtherCompanions: skipped,
+    mediaIds: ids,
+    source,
+  };
 }
 
 async function reviewDeposit(req, companion, payload, admin = null) {
@@ -1436,6 +1528,11 @@ async function reviewApplication(req, companion, payload) {
     let levelMeta = null;
     let basePrice = 0;
     let seedProfilesPatch = null;
+    try {
+      await bulkApprovePendingGalleryPhotos(req, companion, adminActor, { source: "one_click_approve" });
+    } catch (bulkErr) {
+      console.warn("[admin/players] bulk gallery approve on application skip:", bulkErr?.message || bulkErr);
+    }
     if (isFirstApprovalTransition(companion, status)) {
       publishPreview = await ensureFirstApprovalReady(companion, payload, profileBefore);
       void publishPreview;
@@ -1757,9 +1854,24 @@ export default async function handler(req, res) {
       return json(res, 200, { ok: true, message: "结款账户审核已保存", player: detail });
     }
     if (action === "review_media") {
-      await reviewMedia(req, companion, payload);
+      await reviewMedia(req, companion, payload, admin);
       const detail = await buildDetail(await getCompanion(id), await getProfile(companion.user_id));
       return json(res, 200, { ok: true, message: "媒体审核已保存", player: detail });
+    }
+    if (action === "bulk_approve_gallery_photos" || action === "bulk_approve_photos") {
+      const bulk = await bulkApprovePendingGalleryPhotos(req, companion, admin, {
+        source: String(payload.reviewSource || payload.source || "bulk_approve").trim() || "bulk_approve",
+      });
+      const detail = await buildDetail(await getCompanion(id), await getProfile(companion.user_id));
+      return json(res, 200, {
+        ok: true,
+        message:
+          bulk.approvedCount > 0
+            ? `已一键通过 ${bulk.approvedCount} 张待审核照片`
+            : "全部照片已审核",
+        player: detail,
+        bulk,
+      });
     }
     if (action === "review_deposit") {
       await reviewDeposit(req, companion, payload, admin);

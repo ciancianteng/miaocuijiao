@@ -938,14 +938,44 @@
         return { src: item.url, title: "相册" };
       });
     var galleryJson = JSON.stringify(galleryUrls);
+    var galleryList = (media.gallery || []).filter(function (item) {
+      return item && item.url;
+    });
+    var pendingGalleryCount = galleryList.filter(function (item) {
+      var st = String(item.status || "pending").toLowerCase();
+      return !/approved|verified|passed|rejected|resubmit/.test(st);
+    }).length;
+    var galleryToolbar =
+      galleryList.length
+        ? '<div class="player-gallery-toolbar" data-player-gallery-toolbar>' +
+          '<div class="player-gallery-toolbar-meta"><strong>照片（共 ' +
+          galleryList.length +
+          " 张）</strong><span data-player-gallery-pending>" +
+          (pendingGalleryCount > 0
+            ? "待审核 " + pendingGalleryCount + " 张"
+            : "全部照片已审核") +
+          "</span></div>" +
+          (edit
+            ? pendingGalleryCount > 0
+              ? '<button class="btn primary player-gallery-bulk-approve" type="button" data-player-gallery-bulk-approve>一键通过全部待审核照片</button>'
+              : '<button class="btn player-gallery-bulk-approve is-done" type="button" disabled>全部照片已审核</button>'
+            : "") +
+          "</div>"
+        : "";
     var galleryHtml =
-      galleryUrls.length
-        ? '<div class="player-gallery-grid">' +
-          (media.gallery || [])
+      galleryList.length
+        ? galleryToolbar +
+          '<div class="player-gallery-grid">' +
+          galleryList
             .map(function (item, idx) {
-              if (!item || !item.url) return "";
+              var st = String(item.status || "pending").toLowerCase();
+              var pending = !/approved|verified|passed|rejected|resubmit/.test(st);
               return (
-                '<div class="player-gallery-cell">' +
+                '<div class="player-gallery-cell' +
+                (pending ? " is-pending" : "") +
+                '" data-media-status="' +
+                esc(item.status || "pending") +
+                '">' +
                 galleryThumb(item.url, "相册", idx, galleryJson, item.statusLabel) +
                 (edit
                   ? '<div class="player-media-actions"><button class="mini-btn" type="button" data-player-media-review="' +
@@ -1013,7 +1043,8 @@
             "</div>"
           );
         })
-        .join("") || emptyText("尚未上传展示视频");
+        .join("") ||
+      '<div class="player-video-optional admin-sync-note">展示视频：未上传（选填）</div>';
     var achievementItems = media.achievements || media.records || [];
     var achievementUrls = achievementItems
       .filter(function (item) {
@@ -1058,13 +1089,13 @@
         ["媒体总状态", media.statusLabel || "—"],
         ["驳回原因", media.rejectReason || "无"],
         ["照片", String((media.gallery || []).length) + " 张"],
-        ["视频", String((media.videos || []).length) + " 个"],
+        ["展示视频", String((media.videos || []).length) + " 个" + ((media.videos || []).length ? "" : "（选填）")],
         ["游戏战绩", String(achievementItems.length) + " 个"],
         ["声线", String((media.voices || []).length) + " 条"],
       ]) +
-      "<h4 class=\"player-media-h\">相册</h4>" +
+      "<h4 class=\"player-media-h\">照片</h4>" +
       galleryHtml +
-      "<h4 class=\"player-media-h\">展示视频</h4>" +
+      "<h4 class=\"player-media-h\">展示视频（选填）</h4>" +
       videoHtml +
       "<h4 class=\"player-media-h\">游戏战绩</h4>" +
       achievementHtml +
@@ -1280,7 +1311,13 @@
       { ok: hasBasicOk, label: "基本资料", warn: "基本资料不完整", required: true },
       { ok: hasIdentityOk, label: isDepositCert ? "押金认证" : "身份认证", warn: isDepositCert ? "押金凭证缺失" : "身份证正反面未齐", required: true },
       { ok: hasPhotos, label: "照片", warn: "尚未上传照片", required: true },
-      { ok: hasVideos, label: "视频", warn: "尚未上传视频", required: false },
+      {
+        ok: hasVideos,
+        label: "展示视频",
+        warn: "展示视频（选填，未上传）",
+        required: false,
+        optional: true,
+      },
       { ok: hasVoices, label: "声线", warn: "尚未上传声线", required: true },
       { ok: hasPriceOk || appPending, label: "服务价格", warn: "缺少服务价格/等级", required: false },
     ];
@@ -1288,13 +1325,20 @@
       '<div class="player-completeness" data-player-completeness><div class="player-completeness-title">资料完整度</div><ul>' +
       completenessItems
         .map(function (item) {
+          var cls = item.ok ? "is-ok" : item.required ? "is-miss" : item.optional ? "is-optional" : "is-warn";
+          var mark = item.ok ? "✓" : item.optional ? "○" : "⚠";
+          var text = item.ok
+            ? item.label
+            : item.optional
+              ? item.warn || item.label + "（选填，未上传）"
+              : item.warn || item.label;
           return (
-            "<li class=\"" +
-            (item.ok ? "is-ok" : item.required ? "is-miss" : "is-warn") +
+            '<li class="' +
+            cls +
             '"><span>' +
-            (item.ok ? "✓" : "⚠") +
+            mark +
             "</span> " +
-            esc(item.ok ? item.label : item.warn || item.label) +
+            esc(text) +
             (item.required && !item.ok ? "（必填）" : "") +
             "</li>"
           );
@@ -1813,6 +1857,32 @@
       var formQuick = oneClick.closest("[data-player-detail-form]");
       if (!formQuick) return;
       runQuickReview(formQuick, oneClick.getAttribute("data-player-one-click") === "reject" ? "rejected" : "approved");
+      return;
+    }
+    var galleryBulk = e.target.closest("[data-player-gallery-bulk-approve]");
+    if (galleryBulk && !galleryBulk.disabled) {
+      var formGal = galleryBulk.closest("[data-player-detail-form]");
+      if (!formGal) return;
+      if (!window.confirm("确认一键通过当前陪玩全部待审核照片？\n不会影响其他陪玩。")) return;
+      galleryBulk.disabled = true;
+      var prevBulk = galleryBulk.textContent;
+      galleryBulk.textContent = "处理中…";
+      apiPost({
+        action: "bulk_approve_gallery_photos",
+        id: formGal.getAttribute("data-player-id"),
+        payload: { source: "bulk_approve", reviewSource: "bulk_approve" },
+      })
+        .then(function (res) {
+          alert(res.message || "已一键通过待审核照片");
+          if (window.MCJAdminPlayerBridge && window.MCJAdminPlayerBridge.reloadDetail) {
+            window.MCJAdminPlayerBridge.reloadDetail(formGal.getAttribute("data-player-id"), "edit");
+          }
+        })
+        .catch(function (err) {
+          galleryBulk.disabled = false;
+          galleryBulk.textContent = prevBulk || "一键通过全部待审核照片";
+          alert(err.message || "操作失败");
+        });
       return;
     }
     var reveal = e.target.closest("[data-player-reveal]");
