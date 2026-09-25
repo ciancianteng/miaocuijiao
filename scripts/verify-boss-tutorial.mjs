@@ -88,8 +88,9 @@ test("TEST 4 multi + CS review wording", () => {
 test("TEST 5 companion login CTA reuses /companion/login/", () => {
   assert.equal(cfg.companionLoginHref, "/companion/login/");
   assert.match(guideJs, /companionLoginHref|\/companion\/login\//);
+  assert.match(guideJs, /\/companion\/dashboard\//);
   assert.match(guideJs, /data-guide-companion-login/);
-  assert.match(guideJs, /mcj-guide-login-btn/);
+  assert.match(guideJs, /mcj-guide-login-btn|mcj-guide-companion-go/);
 });
 
 test("TEST 6 tutorial display-only (no order/wallet writes)", () => {
@@ -101,12 +102,14 @@ test("TEST 6 tutorial display-only (no order/wallet writes)", () => {
   assert.match(guideHtml, /mcjGuideRoot/);
 });
 
-test("TEST 7 document CSS + mobile", () => {
+test("TEST 7 document CSS + mobile + shared header", () => {
   assert.match(guideCss, /mcj-guide-doc-card/);
   assert.match(guideCss, /mcj-guide-login-cta/);
+  assert.match(guideCss, /mcj-guide-companion-go/);
   assert.match(guideCss, /max-width:\s*420px/);
   assert.match(guideHtml, /viewport-fit=cover/);
-  assert.match(guideHtml, /20260924guideAcc2/);
+  assert.match(guideHtml, /boss-header\.js/);
+  assert.match(guideHtml, /20260925guideNav1/);
   assert.match(guideJs, /data-guide-accordion|mcj-guide-acc/);
   assert.match(guideCss, /mcj-guide-acc-item/);
 });
@@ -127,7 +130,19 @@ test("TEST 10 accordion mode + companion login CTA", () => {
   assert.match(guideJs, /data-acc-toggle/);
   assert.match(guideJs, /data-guide-tab/);
   assert.match(guideJs, /data-guide-companion-login/);
+  assert.match(guideJs, /renderCompanionShortcut|mcj-guide-companion-go/);
   assert.ok(cfg.companion.steps.length >= 12);
+});
+
+test("TEST 11 shared mobile nav has companion entry card", () => {
+  const headerJs = read("src/boss-header.js");
+  const headerCss = read("src/boss-header.css");
+  assert.match(headerJs, /mcj-mnav-companion-card/);
+  assert.match(headerJs, /\/companion\/login\//);
+  assert.match(headerJs, /\/companion\/dashboard\//);
+  assert.match(headerJs, /进入陪玩工作台/);
+  assert.match(headerJs, /guide\.html/);
+  assert.match(headerCss, /mcj-mnav-companion-card/);
 });
 
 const failed = results.filter((r) => !r.ok);

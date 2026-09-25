@@ -543,6 +543,130 @@ header.mcj-boss-header .mcj-mnav-toggle:focus-visible {
   background: rgba(6, 4, 8, 0.88);
 }
 
+.mcj-mnav-divider {
+  height: 1px;
+  margin: 6px 2px;
+  background: rgba(255, 140, 200, 0.22);
+  border: 0;
+}
+
+/* Companion login / workbench shortcut — full-card tap target */
+a.mcj-mnav-companion-card,
+.mcj-mnav-drawer-links a.mcj-mnav-companion-card,
+header.mcj-boss-header .mcj-mnav-drawer a.mcj-mnav-companion-card {
+  display: grid !important;
+  grid-template-columns: 44px minmax(0, 1fr) 22px;
+  align-items: center;
+  justify-content: stretch;
+  gap: 12px;
+  width: 100%;
+  min-height: 0 !important;
+  height: auto !important;
+  max-height: none !important;
+  padding: 14px 12px !important;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 120, 180, 0.55);
+  background:
+    linear-gradient(135deg, rgba(255, 105, 180, 0.14), rgba(8, 6, 10, 0.92)),
+    rgba(12, 8, 14, 0.95);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35), 0 0 18px rgba(255, 100, 170, 0.12);
+  text-decoration: none;
+  color: #fff;
+  white-space: normal;
+  overflow: hidden;
+  -webkit-tap-highlight-color: transparent;
+}
+
+header.mcj-boss-header .mcj-mnav-drawer a.mcj-mnav-companion-card::after {
+  display: none !important;
+}
+
+a.mcj-mnav-companion-card:hover,
+a.mcj-mnav-companion-card:focus-visible {
+  border-color: rgba(255, 158, 207, 0.85);
+  background:
+    linear-gradient(135deg, rgba(255, 120, 190, 0.2), rgba(10, 6, 12, 0.96)),
+    rgba(14, 8, 16, 0.98);
+  outline: none;
+}
+
+.mcj-mnav-companion-logo {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid rgba(255, 214, 235, 0.72);
+  box-shadow: 0 0 14px rgba(255, 105, 180, 0.35);
+  flex-shrink: 0;
+}
+
+.mcj-mnav-companion-body {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.mcj-mnav-companion-title {
+  font-size: 16px;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  color: #ffffff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mcj-mnav-companion-en {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: #ffd6ea;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mcj-mnav-companion-sub {
+  font-size: 12px;
+  font-weight: 700;
+  color: rgba(255, 230, 242, 0.78);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mcj-mnav-companion-feats {
+  margin-top: 2px;
+  font-size: 11px;
+  font-weight: 650;
+  color: rgba(189, 170, 182, 0.95);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mcj-mnav-companion-arrow {
+  font-size: 22px;
+  font-weight: 900;
+  color: #ff8ec7;
+  line-height: 1;
+  text-align: center;
+}
+
+@media (max-width: 360px) {
+  a.mcj-mnav-companion-card,
+  .mcj-mnav-drawer-links a.mcj-mnav-companion-card {
+    gap: 10px;
+    padding: 12px 10px;
+  }
+  .mcj-mnav-companion-title {
+    font-size: 15px;
+  }
+  .mcj-mnav-companion-feats {
+    font-size: 10px;
+  }
+}
+
 html.mcj-mnav-open,
 html.mcj-mnav-open body {
   overscroll-behavior: none;

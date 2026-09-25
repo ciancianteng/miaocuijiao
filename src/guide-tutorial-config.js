@@ -9,7 +9,8 @@
     pageTitle: "使用教学",
     pageSubtitle: "第一次使用妙脆角？跟着下面步骤，很快就能顺利下单或接单。",
     companionLoginHref: "/companion/login/",
-    companionLoginLabel: "陪玩登录入口",
+    companionLoginLabel: "陪玩登录",
+    companionWorkbenchHref: "/companion/dashboard/",
     companionLoginHint:
       "已有陪玩账号？点这里进入陪玩端登录。登录后会进入陪玩工作台，不会进老板端。",
 

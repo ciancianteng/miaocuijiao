@@ -77,6 +77,7 @@
     if (target === "more-gameplays.html" && /gameplay-product\.html|fixed-order\.html/.test(file)) return true;
     if (target === "orders.html" && /custom-order\.html/.test(file)) return true;
     if (target === "support.html" && /support\.html/.test(file)) return true;
+    if (target === "guide.html" && /guide\.html/.test(file)) return true;
     if (target === "mine.html" && /mine\.html/.test(file)) return true;
     if (target === "favorites.html" && /favorites\.html/.test(file)) return true;
     if (target === "messages.html" && /messages\.html/.test(file)) return true;
@@ -370,7 +371,7 @@
           esc(unreadLabel(n)) +
           "</em>"
         : '<em class="mcj-chat-unread-badge" data-mcj-chat-unread-badge hidden></em>';
-    return '<a href="support.html?start=1"' + active + ">客服" + badge + "</a>";
+    return '<a href="support.html?start=1"' + active + ">客服中心" + badge + "</a>";
   }
 
   function setChatUnread(n) {
@@ -458,6 +459,67 @@
     });
   }
 
+  function companionAuthToken() {
+    try {
+      return (
+        localStorage.getItem("companionAuthToken") ||
+        sessionStorage.getItem("companionAuthToken") ||
+        ""
+      );
+    } catch (e) {
+      return "";
+    }
+  }
+
+  function isCompanionLoggedIn() {
+    if (!companionAuthToken()) return false;
+    try {
+      var raw =
+        localStorage.getItem("companionUser") ||
+        sessionStorage.getItem("companionUser") ||
+        "";
+      if (!raw) return true;
+      var u = JSON.parse(raw);
+      return !!(u && (u.id || u.user_id || u.userId || u.email));
+    } catch (e2) {
+      return true;
+    }
+  }
+
+  /** Real companion routes only — never invent new login paths. */
+  function companionEntryHref() {
+    return isCompanionLoggedIn() ? "/companion/dashboard/" : "/companion/login/";
+  }
+
+  function companionEntryCardHtml() {
+    var logged = isCompanionLoggedIn();
+    var href = companionEntryHref();
+    var title = logged ? "进入陪玩工作台" : "陪玩登录";
+    var feats = logged
+      ? "订单 · 抢单 · 收益 · 个人资料"
+      : "工作台 · 抢单 · 订单 · 收益";
+    return (
+      '<a class="mcj-mnav-companion-card" href="' +
+      href +
+      '" data-mcj-companion-entry="1" aria-label="' +
+      esc(title) +
+      '">' +
+      '<img class="mcj-mnav-companion-logo" src="/src/assets/meow-cuijiao-brand-96.webp" alt="" width="44" height="44" decoding="async" loading="eager" onerror="this.onerror=null;this.src=\'/src/assets/meow-cuijiao-brand-96.jpg\'">' +
+      '<span class="mcj-mnav-companion-body">' +
+      '<span class="mcj-mnav-companion-title">' +
+      esc(title) +
+      "</span>" +
+      '<span class="mcj-mnav-companion-en">MEOW CUI JIAO</span>' +
+      '<span class="mcj-mnav-companion-sub">妙脆角陪玩端</span>' +
+      '<span class="mcj-mnav-companion-feats">' +
+      esc(feats) +
+      "</span>" +
+      "</span>" +
+      '<span class="mcj-mnav-companion-arrow" aria-hidden="true">→</span>' +
+      "</a>"
+    );
+  }
+
   function mobileAuthLinkHtml() {
     if (isLoggedIn()) {
       return (
@@ -468,7 +530,7 @@
     return (
       '<a href="login.html" data-mcj-boss-login' +
       (activeHref("login.html") ? ' class="active"' : "") +
-      ">登录</a>"
+      ">老板登录</a>"
     );
   }
 
@@ -476,9 +538,12 @@
     // mobileAuthLinkHtml already includes one logout when logged in — do not append a second.
     return (
       navLink("index.html", "首页") +
-      navLink("companion-center.html", "大厅") +
-      navLink("orders.html", "订单") +
+      navLink("companion-center.html", "陪玩大厅") +
+      navLink("guide.html", "使用教学") +
       supportNavLink() +
+      '<div class="mcj-mnav-divider" role="separator" aria-hidden="true"></div>' +
+      companionEntryCardHtml() +
+      '<div class="mcj-mnav-divider" role="separator" aria-hidden="true"></div>' +
       mobileAuthLinkHtml()
     );
   }
@@ -493,7 +558,7 @@
       '<a class="mcj-header-brand" href="/" aria-label="MEOW CUI JIAO 妙脆角 首页">' +
       '<img class="mcj-header-brand-logo" src="/src/assets/meow-cuijiao-brand-96.webp" alt="MEOW CUI JIAO" width="40" height="40" decoding="async" loading="eager" data-mcj-brand-logo="1" onerror="this.onerror=null;this.src=\'/src/assets/meow-cuijiao-brand-96.jpg\'">' +
       '<span class="mcj-header-brand-text">' +
-      '<span class="mcj-header-brand-en">Meow Cui Jiao</span>' +
+      '<span class="mcj-header-brand-en">MEOW CUI JIAO</span>' +
       '<span class="mcj-header-brand-zh">妙脆角</span>' +
       "</span></a>"
     );
@@ -506,6 +571,7 @@
       '<nav class="mcj-desk-nav" aria-label="桌面主导航">' +
       navLink("index.html", "首页") +
       navLink("companion-center.html", "大厅") +
+      navLink("guide.html", "使用教学") +
       navLink("orders.html", "订单") +
       supportNavLink() +
       deskAuthLinkHtml() +
@@ -755,7 +821,7 @@
   function mount() {
     if (!isBossPublicPage() || !document.body) return;
     // Always rebuild header markup for tab-nav-only layout
-    ensureCss("/src/boss-header.css?v=20260815applyBossHeader1", "data-mcj-boss-header-css");
+    ensureCss("/src/boss-header.css?v=20260925guideNav1", "data-mcj-boss-header-css");
     ensureCss("/src/mcj-safe-area.css?v=20260802mobileP0c", "data-mcj-safe-area-css");
     ensureCss("/src/home-mobile.css?v=20260802mobileP0c", "data-mcj-home-mobile-css");
     // Shared install guide also loaded by /pwa-boot.js sitewide; keep as boss fallback.
