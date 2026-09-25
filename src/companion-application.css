@@ -183,6 +183,32 @@ body.companion-apply-page .apply-status-note{
   background:transparent;
   box-shadow:none;
 }
+.apply-draft-gate{
+  margin:0 0 16px;
+  padding:20px 18px;
+  border-radius:18px;
+  border:1px solid rgba(243,168,203,.34);
+  background:linear-gradient(135deg,rgba(255,91,170,.16),rgba(255,255,255,.04));
+  box-shadow:0 0 24px rgba(243,168,203,.12);
+}
+.apply-draft-gate h2{margin:0 0 8px;color:#fff5fa;font-size:20px}
+.apply-draft-gate p{margin:0 0 16px;color:#d9bfcd;line-height:1.55;font-weight:850}
+.apply-draft-gate-actions{display:flex;flex-wrap:wrap;gap:10px}
+.apply-draft-toolbar{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  flex-wrap:wrap;
+  margin:0 0 14px;
+  padding:12px 14px;
+  border-radius:14px;
+  border:1px solid rgba(243,168,203,.22);
+  background:rgba(255,255,255,.04);
+  color:#d9bfcd;
+  font-size:13px;
+  font-weight:850;
+}
 @media(max-width:760px){
   body.companion-apply-page .apply-shell{
     width:100%;
