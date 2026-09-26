@@ -269,7 +269,7 @@ function safeOrder(row, profiles, extras = {}) {
   return {
     id: row.id || row.uuid || "",
     orderNo,
-    orderNoDisplay: orderNo || "历史订单",
+    orderNoDisplay: orderNo || "",
     hasFormalOrderNo: !!orderNo,
     bossId: row.boss_id || "",
     bossUid,
