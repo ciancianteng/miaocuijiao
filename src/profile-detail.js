@@ -931,6 +931,11 @@
               if (busy) return;
               busy = true;
               paint();
+              var payBtn = sheet.querySelector("[data-pay-wallet]");
+              if (payBtn) {
+                payBtn.disabled = true;
+                payBtn.textContent = "处理中…";
+              }
               fetch("/api/boss/marketplace", {
                 method: "POST",
                 headers: authHeaders(),
@@ -958,7 +963,20 @@
                   busy = false;
                   paint();
                   if (err.code === "INSUFFICIENT_BALANCE" || /余额不足/.test(err.message || "")) {
-                    if (confirm("猫粮余额不足，是否去充值？")) location.href = err.rechargeUrl || "recharge.html";
+                    var avail = err.availableBalance != null ? err.availableBalance : "?";
+                    var need = err.requiredAmount != null ? err.requiredAmount : gross;
+                    var short =
+                      err.shortfall != null ? err.shortfall : Math.max(0, Number(need) - Number(avail) || 0);
+                    var go = window.confirm(
+                      "猫粮余额不足\n\n当前余额：" +
+                        avail +
+                        " 猫粮\n需要支付：" +
+                        need +
+                        " 猫粮\n还差：" +
+                        short +
+                        " 猫粮\n\n是否去充值？"
+                    );
+                    if (go) location.href = err.rechargeUrl || "recharge.html";
                     return;
                   }
                   alert(err.message || "赠送失败");

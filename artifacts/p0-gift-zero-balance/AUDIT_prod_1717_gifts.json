@@ -1,0 +1,288 @@
+{
+  "target": "prod",
+  "ref": "jqfaknpmcnqwqvatrwgo",
+  "since": "2026-09-24T00:56:27.235Z",
+  "boss": {
+    "id": "458ce9ad-3425-42b1-ab66-24bca342f971"
+  },
+  "wallet": [],
+  "walletAlt": [],
+  "gift_transactions": [
+    {
+      "id": "1394fe0f-3534-482c-8c8f-da25837e47d3",
+      "tx_no": "GIFT-1790383755138-IX1TX",
+      "sender_boss_id": "458ce9ad-3425-42b1-ab66-24bca342f971",
+      "receiver_companion_id": "0daa3089-ab2c-4364-919d-08e2fad2af36",
+      "gift_id": "ca332b7d-aeed-4d0f-a990-b397159c724e",
+      "gift_name": "小铛钤",
+      "quantity": 1,
+      "gross_cat_food": 20,
+      "platform_commission_rate": 80,
+      "platform_commission_amount": 16,
+      "companion_income": 4,
+      "message": "",
+      "related_order_id": null,
+      "kind": "gift",
+      "idempotency_key": "idem-1790383754414-w2vg3oib",
+      "created_at": "2026-09-26T00:49:15.139+00:00",
+      "gift_order_id": null,
+      "fulfillment_status": "completed",
+      "gift_image_url": "",
+      "unit_price": 20,
+      "gross_amount": 20,
+      "platform_commission": 16,
+      "net_companion_income": 4,
+      "payment_method": "catfood",
+      "payment_status": "paid",
+      "approval_status": "auto",
+      "approved_by": null,
+      "wallet_transaction_id": null,
+      "settlement_transaction_id": "abca2342-5118-4802-8ea9-2078d8e10e14",
+      "delivered_at": "2026-09-26T00:49:15.139+00:00"
+    }
+  ],
+  "gift_orders": [],
+  "wallet_transactions": "column wallet_transactions.user_id does not exist",
+  "boss_transactions": [],
+  "companion_income": [
+    {
+      "companionId": "0daa3089-ab2c-4364-919d-08e2fad2af36",
+      "ok": true,
+      "rows": [
+        {
+          "id": "abca2342-5118-4802-8ea9-2078d8e10e14",
+          "user_id": "0daa3089-ab2c-4364-919d-08e2fad2af36",
+          "order_id": null,
+          "transaction_type": "companion_income",
+          "amount": 4,
+          "status": "completed",
+          "note": "礼物收益：小铛钤 MCJ_GIFT:{\"source\":\"gift\",\"giftName\":\"小铛钤\",\"qty\":1,\"gross\":20,\"platformCommission\":16,\"net\":4,\"paymentMethod\":\"catfood\"}",
+          "created_at": "2026-09-26T00:49:15.05+00:00"
+        }
+      ]
+    }
+  ],
+  "gift_wall": [
+    {
+      "companionId": "0daa3089-ab2c-4364-919d-08e2fad2af36",
+      "ok": true,
+      "rows": [
+        {
+          "companion_id": "0daa3089-ab2c-4364-919d-08e2fad2af36",
+          "gift_id": "ca332b7d-aeed-4d0f-a990-b397159c724e",
+          "gift_name": "小铛钤",
+          "gift_image_url": "",
+          "total_quantity": 1,
+          "last_received_at": "2026-09-26T00:49:15.321+00:00",
+          "updated_at": "2026-09-26T00:49:15.321+00:00"
+        }
+      ]
+    }
+  ],
+  "boss_notifications": [
+    {
+      "id": "2cbd29d4-7bb2-4288-9546-8e4121c714ce",
+      "boss_id": "458ce9ad-3425-42b1-ab66-24bca342f971",
+      "title": "订单完成",
+      "body": "您已确认完成，订单已结束。",
+      "kind": "order_completed",
+      "related_id": "8dfba3dd-f855-4d53-9bbf-65e64338cbc1",
+      "read_at": null,
+      "created_at": "2026-09-25T15:04:43.687+00:00"
+    },
+    {
+      "id": "45928046-6624-4230-92e6-3771617a8033",
+      "boss_id": "458ce9ad-3425-42b1-ab66-24bca342f971",
+      "title": "订单完成",
+      "body": "您已确认完成，订单已结束。",
+      "kind": "order_completed",
+      "related_id": "c588e77a-293c-464e-b5a0-cf9a1ae9bf77",
+      "read_at": null,
+      "created_at": "2026-09-25T15:03:44.82+00:00"
+    },
+    {
+      "id": "b6df42f8-47a1-4856-b81c-f2cf376169e8",
+      "boss_id": "458ce9ad-3425-42b1-ab66-24bca342f971",
+      "title": "请确认订单",
+      "body": "陪玩已完成服务，请确认订单。",
+      "kind": "order_complete_requested",
+      "related_id": "8cb53ed2-21eb-402f-b5d3-7af5d9807045",
+      "read_at": null,
+      "created_at": "2026-09-25T12:28:29.373+00:00"
+    },
+    {
+      "id": "2c3ae8c0-d1c6-4252-9125-b189c4934394",
+      "boss_id": "458ce9ad-3425-42b1-ab66-24bca342f971",
+      "title": "请确认订单",
+      "body": "陪玩已完成服务，请确认订单。",
+      "kind": "order_complete_requested",
+      "related_id": "1ac122e9-fb67-45df-91bf-48f5316539bb",
+      "read_at": null,
+      "created_at": "2026-09-25T12:28:20.691+00:00"
+    },
+    {
+      "id": "1384d1e4-d78d-4a49-b7f0-4001fe328f6d",
+      "boss_id": "458ce9ad-3425-42b1-ab66-24bca342f971",
+      "title": "请确认订单",
+      "body": "陪玩已完成服务，请确认订单。",
+      "kind": "order_complete_requested",
+      "related_id": "b8ca5d07-d59e-4352-9b8f-ba416c1e106c",
+      "read_at": null,
+      "created_at": "2026-09-25T12:28:12.828+00:00"
+    },
+    {
+      "id": "83a29f10-567d-444e-80a1-08d33a25d31b",
+      "boss_id": "458ce9ad-3425-42b1-ab66-24bca342f971",
+      "title": "陪玩已接单",
+      "body": "陪玩已确认接单，订单进行中。",
+      "kind": "order_accepted",
+      "related_id": "b8ca5d07-d59e-4352-9b8f-ba416c1e106c",
+      "read_at": null,
+      "created_at": "2026-09-25T12:27:35.301+00:00"
+    },
+    {
+      "id": "22a55429-0c9c-4fee-ad84-df07f1bf07f9",
+      "boss_id": "458ce9ad-3425-42b1-ab66-24bca342f971",
+      "title": "陪玩已接单",
+      "body": "陪玩已确认接单，订单进行中。",
+      "kind": "order_accepted",
+      "related_id": "8cb53ed2-21eb-402f-b5d3-7af5d9807045",
+      "read_at": null,
+      "created_at": "2026-09-25T12:27:31.199+00:00"
+    },
+    {
+      "id": "e5db832a-7e38-4ae4-a452-57e3f900ef3f",
+      "boss_id": "458ce9ad-3425-42b1-ab66-24bca342f971",
+      "title": "陪玩已接单",
+      "body": "陪玩已确认接单，订单进行中。",
+      "kind": "order_accepted",
+      "related_id": "1ac122e9-fb67-45df-91bf-48f5316539bb",
+      "read_at": null,
+      "created_at": "2026-09-25T12:26:44.56+00:00"
+    },
+    {
+      "id": "e72ea71f-325d-4402-99c3-40cac38cea80",
+      "boss_id": "458ce9ad-3425-42b1-ab66-24bca342f971",
+      "title": "待客服审核",
+      "body": "付款凭证已提交，等待客服审核通过后才会进入等待陪玩确认。",
+      "kind": "payment_review",
+      "related_id": "c588e77a-293c-464e-b5a0-cf9a1ae9bf77",
+      "read_at": null,
+      "created_at": "2026-09-25T12:21:45.15+00:00"
+    },
+    {
+      "id": "0975913e-a0f7-4b2e-bf8e-e63b4334a022",
+      "boss_id": "458ce9ad-3425-42b1-ab66-24bca342f971",
+      "title": "请确认订单",
+      "body": "陪玩已完成服务，请确认订单。",
+      "kind": "order_complete_requested",
+      "related_id": "ade2423d-0747-4087-bb8c-a730df4b96e8",
+      "read_at": null,
+      "created_at": "2026-09-24T09:00:50.697+00:00"
+    },
+    {
+      "id": "486960f2-6f21-4af8-aa9b-4391eeed0d2f",
+      "boss_id": "458ce9ad-3425-42b1-ab66-24bca342f971",
+      "title": "请确认订单",
+      "body": "陪玩已完成服务，请确认订单。",
+      "kind": "order_complete_requested",
+      "related_id": "2f4edc0e-a9a2-4777-b78f-d755e7b50e2f",
+      "read_at": null,
+      "created_at": "2026-09-24T09:00:39.233+00:00"
+    },
+    {
+      "id": "ba2d778e-4219-4c0e-babe-e6a9a762b62a",
+      "boss_id": "458ce9ad-3425-42b1-ab66-24bca342f971",
+      "title": "请确认订单",
+      "body": "陪玩已完成服务，请确认订单。",
+      "kind": "order_complete_requested",
+      "related_id": "92146a8c-0cca-41eb-8ae6-b99c504f7a45",
+      "read_at": null,
+      "created_at": "2026-09-24T09:00:30.655+00:00"
+    },
+    {
+      "id": "23d6bbb5-1679-4ec2-b096-5bc89317b073",
+      "boss_id": "458ce9ad-3425-42b1-ab66-24bca342f971",
+      "title": "请确认订单",
+      "body": "陪玩已完成服务，请确认订单。",
+      "kind": "order_complete_requested",
+      "related_id": "570eb756-fe1a-4d26-ab4c-5abc30ff6176",
+      "read_at": null,
+      "created_at": "2026-09-24T02:09:39.439+00:00"
+    },
+    {
+      "id": "d1c8ed29-80b5-47c4-81d0-952032ec6b7d",
+      "boss_id": "458ce9ad-3425-42b1-ab66-24bca342f971",
+      "title": "陪玩已接单",
+      "body": "陪玩已确认接单，订单进行中。",
+      "kind": "order_accepted",
+      "related_id": "570eb756-fe1a-4d26-ab4c-5abc30ff6176",
+      "read_at": null,
+      "created_at": "2026-09-24T02:09:00.51+00:00"
+    },
+    {
+      "id": "eeda3df0-ac4c-4b4d-a955-96f8dec71845",
+      "boss_id": "458ce9ad-3425-42b1-ab66-24bca342f971",
+      "title": "陪玩已接单",
+      "body": "陪玩已确认接单，订单进行中。",
+      "kind": "order_accepted",
+      "related_id": "92146a8c-0cca-41eb-8ae6-b99c504f7a45",
+      "read_at": null,
+      "created_at": "2026-09-24T02:04:32.466+00:00"
+    },
+    {
+      "id": "2513a787-76b7-4c0c-b457-42fe7d08c89a",
+      "boss_id": "458ce9ad-3425-42b1-ab66-24bca342f971",
+      "title": "待客服审核",
+      "body": "付款凭证已提交，等待客服审核通过后才会进入等待陪玩确认。",
+      "kind": "payment_review",
+      "related_id": "8dfba3dd-f855-4d53-9bbf-65e64338cbc1",
+      "read_at": null,
+      "created_at": "2026-09-24T02:03:10.777+00:00"
+    },
+    {
+      "id": "cdd64d47-f74c-4f35-aaf0-9d77d261aed4",
+      "boss_id": "458ce9ad-3425-42b1-ab66-24bca342f971",
+      "title": "陪玩已接单",
+      "body": "陪玩已确认接单，订单进行中。",
+      "kind": "order_accepted",
+      "related_id": "2f4edc0e-a9a2-4777-b78f-d755e7b50e2f",
+      "read_at": null,
+      "created_at": "2026-09-24T01:49:24.34+00:00"
+    }
+  ],
+  "suspects": [
+    {
+      "id": "1394fe0f-3534-482c-8c8f-da25837e47d3",
+      "tx_no": "GIFT-1790383755138-IX1TX",
+      "sender_boss_id": "458ce9ad-3425-42b1-ab66-24bca342f971",
+      "receiver_companion_id": "0daa3089-ab2c-4364-919d-08e2fad2af36",
+      "gift_id": "ca332b7d-aeed-4d0f-a990-b397159c724e",
+      "gift_name": "小铛钤",
+      "quantity": 1,
+      "gross_cat_food": 20,
+      "platform_commission_rate": 80,
+      "platform_commission_amount": 16,
+      "companion_income": 4,
+      "message": "",
+      "related_order_id": null,
+      "kind": "gift",
+      "idempotency_key": "idem-1790383754414-w2vg3oib",
+      "created_at": "2026-09-26T00:49:15.139+00:00",
+      "gift_order_id": null,
+      "fulfillment_status": "completed",
+      "gift_image_url": "",
+      "unit_price": 20,
+      "gross_amount": 20,
+      "platform_commission": 16,
+      "net_companion_income": 4,
+      "payment_method": "catfood",
+      "payment_status": "paid",
+      "approval_status": "auto",
+      "approved_by": null,
+      "wallet_transaction_id": null,
+      "settlement_transaction_id": "abca2342-5118-4802-8ea9-2078d8e10e14",
+      "delivered_at": "2026-09-26T00:49:15.139+00:00"
+    }
+  ]
+}

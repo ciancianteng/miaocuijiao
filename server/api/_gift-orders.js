@@ -651,18 +651,29 @@ export async function approveGiftOrder({ orderId, staffId, staffName = "" }) {
       }).catch(() => null);
     }
     await upsertGiftWall(working);
-    const boss = await loadBossProfile(working.sender_boss_id);
-    const bossName = boss?.nickname || boss?.display_name || "一位老板";
     await insertCompanionNotification({
       companionUserId: working.receiver_companion_id,
       category: "gift",
-      title: "你收到了一份新礼物",
-      body: `${bossName} 送出了「${working.gift_name_snapshot}」×${working.quantity}`,
+      title: "🎁 你收到新礼物啦",
+      body: `老板送给你：「${working.gift_name_snapshot} ×${working.quantity}」\n礼物总额：${fulfilled.gross} 猫粮`,
       href: "/companion/gifts",
       noticeKey: `gift-order-approved-${working.id}`,
       notificationType: "gift_received",
       relatedApplicationId: working.id,
     }).catch((err) => console.warn("[gift-orders] notify", err?.message || err));
+    try {
+      const { notifyBoss } = await import("./_wallet.js");
+      const companionName = companionRow?.nickname || "陪玩";
+      await notifyBoss(
+        working.sender_boss_id,
+        "🎁 礼物赠送成功",
+        `你已成功向「${companionName}」赠送「${working.gift_name_snapshot} ×${working.quantity}」\n共支付：${fulfilled.gross} 猫粮（外部支付已通过审核）`,
+        "gift",
+        working.id
+      );
+    } catch (bossNotifyErr) {
+      console.warn("[gift-orders] boss notify", bossNotifyErr?.message || bossNotifyErr);
+    }
     try {
       scheduleRecomputeSoft();
     } catch {

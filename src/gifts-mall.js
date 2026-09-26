@@ -511,9 +511,16 @@
     if (!state.selectedGift || !hasRecipients()) return;
     if (state.creating) return;
     state.creating = true;
+    var payBtn = $("gmPayWallet");
+    if (payBtn) {
+      payBtn.disabled = true;
+      payBtn.textContent = "处理中…";
+    }
     var okCount = 0;
     try {
       var recipients = selectedCompanions().slice();
+      var gift = state.selectedGift || {};
+      var unit = giftPrice(gift);
       for (var i = 0; i < recipients.length; i++) {
         var companion = recipients[i];
         var res = await fetch("/api/boss/marketplace", {
@@ -533,7 +540,22 @@
         });
         if (!res.ok || !data.ok) {
           if (data && data.code === "INSUFFICIENT_BALANCE") {
-            if (confirm("猫粮余额不足，是否去充值？")) location.href = data.rechargeUrl || "/recharge.html";
+            var need = data.requiredAmount != null ? data.requiredAmount : unit * state.quantity;
+            var avail = data.availableBalance != null ? data.availableBalance : 0;
+            var short = data.shortfall != null ? data.shortfall : Math.max(0, need - avail);
+            if (
+              confirm(
+                "猫粮余额不足\n\n当前余额：" +
+                  avail +
+                  " 猫粮\n需要支付：" +
+                  need +
+                  " 猫粮\n还差：" +
+                  short +
+                  " 猫粮\n\n是否去充值？"
+              )
+            ) {
+              location.href = data.rechargeUrl || "/recharge.html";
+            }
             return;
           }
           toast(String((data && data.message) || "余额支付失败") + "（" + (companion.nickname || "陪玩") + "）");
@@ -548,6 +570,10 @@
       toast("网络错误，请重试");
     } finally {
       state.creating = false;
+      if (payBtn) {
+        payBtn.disabled = false;
+        payBtn.textContent = "猫粮余额支付";
+      }
     }
   }
 
