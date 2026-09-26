@@ -573,10 +573,34 @@ function viewOrder(row = {}) {
     discordChannelStatus: row.discord_channel_status || null,
     discord_channel_status: row.discord_channel_status || null,
     discordChannelCreatedAt: row.discord_channel_created_at || null,
-    discordChannelUrl:
-      row.discord_channel_id && process.env.DISCORD_GUILD_ID
-        ? `https://discord.com/channels/${process.env.DISCORD_GUILD_ID}/${row.discord_channel_id}`
-        : null,
+    discordInviteUrl: row.discord_invite_url || null,
+    discord_invite_url: row.discord_invite_url || null,
+    discordInviteCode: row.discord_invite_code || null,
+    discordChannelUrl: (() => {
+      const st = String(row.discord_channel_status || "").toLowerCase();
+      if (st === "deleted" || st === "closed") return null;
+      const invite = String(row.discord_invite_url || "").trim();
+      if (invite) return invite;
+      const code = String(row.discord_invite_code || "").trim();
+      if (code) return `https://discord.gg/${code}`;
+      if (row.discord_channel_id && process.env.DISCORD_GUILD_ID) {
+        return `https://discord.com/channels/${process.env.DISCORD_GUILD_ID}/${row.discord_channel_id}`;
+      }
+      return null;
+    })(),
+    discord_channel_url: (() => {
+      const st = String(row.discord_channel_status || "").toLowerCase();
+      if (st === "deleted" || st === "closed") return null;
+      const invite = String(row.discord_invite_url || "").trim();
+      if (invite) return invite;
+      const code = String(row.discord_invite_code || "").trim();
+      if (code) return `https://discord.gg/${code}`;
+      if (row.discord_channel_id && process.env.DISCORD_GUILD_ID) {
+        return `https://discord.com/channels/${process.env.DISCORD_GUILD_ID}/${row.discord_channel_id}`;
+      }
+      return null;
+    })(),
+
     hours: Number(row.hours || 0),
     unitPrice: money(row.unit_price),
     totalAmount: money(row.total_amount),
@@ -671,11 +695,15 @@ async function loadOrders(profile, id = "") {
   // note is preferred for markers; cancel_reason is optional — never drop note when cancel_reason is missing.
   // CRITICAL: parent_order_id must survive schema fallbacks. Production may lack paid_at / paid_cat_food;
   // dropping parent_order_id with those columns causes "共0位陪玩" + child top-level duplicate cards.
-  const selectVoice =
+  const selectVoiceCore =
     ",voice_mode,discord_channel_id,discord_channel_status,discord_channel_created_at,discord_channel_deleted_at";
+  const selectVoice = selectVoiceCore + ",discord_invite_url,discord_invite_code";
   const selectBase =
     "id,order_no,boss_id,companion_id,customer_service_id,order_type,game,title,description,hours,unit_price,total_amount,status,created_at,accepted_at,started_at,completed_at,cancelled_at,parent_order_id" +
     selectVoice;
+  const selectBaseNoInvite =
+    "id,order_no,boss_id,companion_id,customer_service_id,order_type,game,title,description,hours,unit_price,total_amount,status,created_at,accepted_at,started_at,completed_at,cancelled_at,parent_order_id" +
+    selectVoiceCore;
   const selectWithPaid = selectBase + ",paid_cat_food,paid_at";
   const selectWithNote = selectWithPaid + ",note";
   const selectRich = selectWithNote + ",cancel_reason";
@@ -683,6 +711,8 @@ async function loadOrders(profile, id = "") {
   const selectBaseNoPaid = selectBase;
   const selectWithNoteNoPaid = selectBaseNoPaid + ",note";
   const selectRichNoPaid = selectWithNoteNoPaid + ",cancel_reason";
+  const selectRichNoInvite = selectBaseNoInvite + ",paid_cat_food,paid_at,note,cancel_reason";
+  const selectWithNoteNoInvite = selectBaseNoInvite + ",paid_cat_food,paid_at,note";
   // Absolute last resort only if parent_order_id column itself is missing.
   const selectCoreLegacy =
     "id,order_no,boss_id,companion_id,customer_service_id,order_type,game,title,description,hours,unit_price,total_amount,status,created_at,accepted_at,started_at,completed_at,cancelled_at";
@@ -718,6 +748,9 @@ async function loadOrders(profile, id = "") {
     selectRichNoPaid,
     selectWithNoteNoPaid,
     selectBaseNoPaid,
+    selectRichNoInvite,
+    selectWithNoteNoInvite,
+    selectBaseNoInvite,
     selectRichLegacy,
     selectWithNoteLegacy,
     selectCoreLegacy,
@@ -1990,6 +2023,25 @@ export default async function handler(req, res) {
       } catch (err) {
         console.warn("[orders/pay_order] boss push", err?.message || err);
       }
+      // Discord voice: best-effort create invite room after pay (never block payment).
+      let discordVoice = null;
+      try {
+        const { maybeEnsureDiscordAfterPaid } = await import("./_discord-voice-orders.js");
+        discordVoice = await maybeEnsureDiscordAfterPaid(saved || { ...before, status: nextStatus, voice_mode: before.voice_mode }, {
+          bossUserId: profile.id,
+          companionUserId: (saved || before).companion_id || undefined,
+        });
+        if (discordVoice?.inviteUrl || discordVoice?.channelUrl) {
+          saved = {
+            ...(saved || before),
+            discord_channel_id: discordVoice.channelId || saved?.discord_channel_id,
+            discord_channel_status: "ready",
+            discord_invite_url: discordVoice.inviteUrl || null,
+          };
+        }
+      } catch (err) {
+        console.warn("[orders/pay_order] discord voice", String(err?.message || err).slice(0, 160));
+      }
       let reward = null;
       try {
         reward = await (await import("./_cs-commission-settle.js")).settleCsOrderIncome(saved, {
@@ -2011,6 +2063,7 @@ export default async function handler(req, res) {
         children: children.map(viewOrder),
         allowTestPay: previewAllowed,
         reward,
+        discordVoice: discordVoice && !discordVoice.skipped ? discordVoice : undefined,
       });
     }
     if (action === "list_grabs" || action === "grab_applicants") {

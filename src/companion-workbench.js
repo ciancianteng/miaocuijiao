@@ -2882,19 +2882,23 @@
   function voiceDiscordActions(o){
     var m=String((o&&(o.voiceMode||o.voice_mode))||'').toLowerCase();
     if(m!=='discord')return '';
-    var url=o.discordChannelUrl||o.discord_channel_url||'';
-    if(url){
-      return '<div><span>Discord 语音房</span><strong><a class="pw-btn" href="'+esc(url)+'" target="_blank" rel="noopener">🎧 进入 Discord 语音房</a></strong></div>';
+    var st=String(o.discordChannelStatus||o.discord_channel_status||'');
+    if(st==='deleted'||st==='closed'){
+      return '<div><span>Discord 语音房</span><strong>订单已结束，入口已关闭</strong></div>';
     }
-    if(String(o.discordChannelStatus||o.discord_channel_status||'')==='error'){
-      return '<div><span>Discord 语音房</span><strong>暂时创建失败 <button class="pw-btn" type="button" data-discord-retry="'+esc(o.id)+'">重试创建</button></strong></div>';
+    var url=o.discordInviteUrl||o.discord_invite_url||o.discordChannelUrl||o.discord_channel_url||'';
+    if(url){
+      return '<div><span>Discord 语音房</span><strong><a class="pw-btn" href="'+esc(url)+'" target="_blank" rel="noopener">🎙️ 进入 Discord 订单语音房</a></strong></div>';
+    }
+    if(st==='error'){
+      return '<div><span>Discord 语音房</span><strong>语音房创建失败 <button class="pw-btn" type="button" data-discord-retry="'+esc(o.id)+'">重试创建</button></strong></div>';
     }
     var bound=!!(o.discordBound||o.discord_bound);
     if(!bound){
       return '<div><span>Discord 语音房</span><strong>本订单使用 Discord 私人语音房</strong></div>'+
         '<div><span>Discord 账号</span><strong><button class="pw-btn primary" type="button" data-discord-connect="1">连接 Discord</button></strong></div>';
     }
-    return '<div><span>Discord 语音房</span><strong>等待开启（确认接单后创建）</strong></div>';
+    return '<div><span>Discord 语音房</span><strong>准备中 <button class="pw-btn" type="button" data-discord-retry="'+esc(o.id)+'">开启语音房</button></strong></div>';
   }
   function orderActions(o){
     var s=orderStatus(o),id=esc(o.id);var raw=o.status||o.rawStatus||'';var out=[];

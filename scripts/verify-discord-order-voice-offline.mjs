@@ -159,7 +159,7 @@ test("payment-confirm post-pay Discord bind UI (no pay-time gate)", () => {
   assert.match(js, /连接 Discord/);
   assert.match(js, /data-discord-connect/);
   assert.match(js, /oauth-start\?format=json/);
-  assert.match(js, /支付成功后可连接 Discord|私人语音房/);
+  assert.match(js, /进入 Discord 订单语音房|开启语音房|私人语音房/);
   // Pay path must not hard-block on Discord bind.
   assert.doesNotMatch(js, /DISCORD_BIND_REQUIRED/);
   const orders = read("server/api/orders.js");
@@ -169,7 +169,7 @@ test("payment-confirm post-pay Discord bind UI (no pay-time gate)", () => {
 test("orders GET select includes voice_mode columns", () => {
   const orders = read("server/api/orders.js");
   assert.match(orders, /selectVoice[\s\S]*voice_mode,discord_channel_id/);
-  assert.match(orders, /selectCore\s*=\s*[\s\S]*selectVoice/);
+  assert.match(orders, /selectCore\s*=\s*[\s\S]*selectVoice|selectVoiceCore|selectBase/);
 });
 
 test("discord cleanup uses created_at (orders has no updated_at)", () => {
@@ -201,12 +201,49 @@ test("channel create uses @everyone deny overwrites", () => {
   assert.match(d, /SPEAK/);
   assert.match(d, /parent_id:\s*c\.categoryId/);
   assert.match(d, /type:\s*2/);
+  assert.match(d, /createChannelInvite/);
+  assert.match(d, /discord\.gg/);
 });
 
 test("idempotent ensureOrderVoiceChannel reuses discord_channel_id", () => {
   const src = read("server/api/_discord-voice-orders.js");
   assert.match(src, /already have channel|reused:\s*true|if \(owner\.discord_channel_id\)/);
   assert.match(src, /resolveVoiceOwnerOrder/);
+  assert.match(src, /createChannelInvite|ensureInviteForOwner|discord_invite_url/);
+  assert.match(src, /maybeEnsureDiscordAfterPaid/);
+  assert.match(src, /syncBoundUserToOpenDiscordOrders/);
+});
+
+test("invite migration is additive", () => {
+  const sql = read("supabase/migrations/20260926_discord_invite_url.sql");
+  assert.match(sql, /discord_invite_url/);
+  assert.match(sql, /add column if not exists/i);
+  assert.doesNotMatch(sql, /drop column/i);
+});
+
+test("orderVoiceView prefers invite URL over deep link", () => {
+  const ready = orderVoiceView(
+    {
+      voice_mode: "discord",
+      discord_channel_id: "ch123",
+      discord_channel_status: "ready",
+      discord_invite_url: "https://discord.gg/abcXYZ",
+    },
+    { discordLink: { discord_user_id: "u1", discord_username: "Boss" } }
+  );
+  assert.equal(ready.discordInviteUrl, "https://discord.gg/abcXYZ");
+  assert.equal(ready.discordChannelUrl, "https://discord.gg/abcXYZ");
+  const closed = orderVoiceView(
+    {
+      voice_mode: "discord",
+      discord_channel_id: "ch123",
+      discord_channel_status: "deleted",
+      discord_invite_url: "https://discord.gg/abcXYZ",
+    },
+    { discordLink: { discord_user_id: "u1" } }
+  );
+  assert.equal(closed.discordRoomClosed, true);
+  assert.equal(closed.discordInviteUrl, null);
 });
 
 const failed = results.filter((r) => !r.ok);

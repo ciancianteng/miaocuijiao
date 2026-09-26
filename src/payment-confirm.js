@@ -839,16 +839,44 @@
         throw new Error("Discord 授权地址缺失");
       });
   }
-  /** Pre-pay: tiny hint only. Post-pay: connect CTA if unbound. Never block payment. */
+  /** Pre-pay: tiny hint only. Post-pay: invite CTA or connect Discord. Never block payment. */
   function discordPanelHtml(order) {
     var mode = orderVoiceMode(order);
     if (mode !== "discord") return "";
     var bound = !!(discordStatus.bound || order.discordBound);
     var name = discordStatus.username || order.discordUsername || "";
+    var invite =
+      (discordStatus.voice && (discordStatus.voice.discordInviteUrl || discordStatus.voice.discordChannelUrl)) ||
+      order.discordInviteUrl ||
+      order.discord_invite_url ||
+      order.discordChannelUrl ||
+      order.discord_channel_url ||
+      "";
+    var st = String(
+      (discordStatus.voice && discordStatus.voice.discordChannelStatus) ||
+        order.discordChannelStatus ||
+        order.discord_channel_status ||
+        ""
+    );
 
     if (isPrePay(order)) {
       return (
-        '<p class="pay-voice-hint">支付成功后可连接 Discord，陪玩接单后将开启私人语音房。</p>'
+        '<p class="pay-voice-hint">支付成功后可连接 Discord，并进入本单私人语音房。</p>'
+      );
+    }
+
+    if (invite && st !== "deleted" && st !== "closed") {
+      return (
+        '<div class="pay-discord is-bound" data-discord-panel="1">' +
+        '<p class="pay-discord-title">🎙️ Discord 订单语音房已就绪</p>' +
+        (bound && name ? '<p class="pay-discord-desc">已连接：' + esc(name) + "</p>" : "") +
+        '<div class="pay-actions pay-discord-actions">' +
+        '<a class="pay-btn primary" href="' +
+        esc(invite) +
+        '" target="_blank" rel="noopener">🎙️ 进入 Discord 订单语音房</a>' +
+        '<a class="pay-btn" href="orders.html?id=' +
+        encodeURIComponent(order.id) +
+        '">查看订单</a></div></div>'
       );
     }
 
@@ -858,14 +886,21 @@
         '<p class="pay-discord-title">Discord 已连接' +
         (name ? "：" + esc(name) : "") +
         "</p>" +
-        '<p class="pay-discord-desc">陪玩确认接单后将开启私人语音房。</p></div>'
+        '<p class="pay-discord-desc">点击开启本单私人语音房。</p>' +
+        '<div class="pay-actions pay-discord-actions">' +
+        '<button type="button" class="pay-btn primary" data-discord-retry="' +
+        esc(order.id) +
+        '">开启语音房</button>' +
+        '<a class="pay-btn" href="orders.html?id=' +
+        encodeURIComponent(order.id) +
+        '">查看订单</a></div></div>'
       );
     }
 
     return (
       '<div class="pay-discord" data-discord-panel="1">' +
       '<p class="pay-discord-title">连接 Discord</p>' +
-      '<p class="pay-discord-desc">你已选择 Discord语音房，请先连接 Discord，以便后续进入私人语音房。</p>' +
+      '<p class="pay-discord-desc">你已选择 Discord语音房，请先连接 Discord，以便进入本单私人语音房。</p>' +
       '<div class="pay-actions pay-discord-actions">' +
       '<button type="button" class="pay-btn primary" data-discord-connect="' +
       esc(order.id) +
@@ -895,6 +930,7 @@
           bound: !!body.bound,
           username: (body.discord && body.discord.username) || "",
           configured: body.configured !== false,
+          voice: body.voice || null,
         };
       } else {
         discordStatus = { loaded: true, bound: false, username: "", configured: true };
@@ -1775,6 +1811,48 @@
       startDiscordOAuth(discordBtn.getAttribute("data-discord-connect") || q("order") || q("id")).catch(function (err) {
         failUi(err.message || "连接 Discord 失败");
       });
+      return;
+    }
+    var discordRetry = e.target.closest("[data-discord-retry]");
+    if (discordRetry) {
+      e.preventDefault();
+      var rid = discordRetry.getAttribute("data-discord-retry") || q("order") || q("id");
+      fetch("/api/discord/retry-channel", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: "Bearer " + token(),
+        },
+        body: JSON.stringify({ orderId: rid }),
+      })
+        .then(function (r) {
+          return r.json().then(function (j) {
+            if (!r.ok || j.ok === false) throw new Error((j && j.message) || "语音房创建失败，请稍后重试");
+            return j;
+          });
+        })
+        .then(function (j) {
+          var oid = rid;
+          var cur = readCache(oid) || { id: oid };
+          if (j.inviteUrl || j.channelUrl) {
+            cur = Object.assign({}, cur, {
+              discordInviteUrl: j.inviteUrl || j.channelUrl,
+              discord_invite_url: j.inviteUrl || j.channelUrl,
+              discordChannelUrl: j.inviteUrl || j.channelUrl,
+              discord_channel_url: j.inviteUrl || j.channelUrl,
+              discordChannelId: j.channelId || cur.discordChannelId,
+              discordChannelStatus: "ready",
+            });
+            writeCache(oid, cur);
+          }
+          renderOrder(cur);
+          if (j.inviteUrl || j.channelUrl) {
+            window.open(j.inviteUrl || j.channelUrl, "_blank", "noopener");
+          }
+        })
+        .catch(function (err) {
+          failUi(err.message || "语音房创建失败，请稍后重试");
+        });
     }
   });
   root.addEventListener("change", function (e) {
