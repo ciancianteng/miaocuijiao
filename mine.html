@@ -52,10 +52,10 @@
     /* Perf Phase2: instant click feedback (<100ms) on full-page nav */
     a,button{touch-action:manipulation}
     a:active,button:active{opacity:.78}
-    .mine-quick a,.entry-trigger,.boss-nav a{
+    .mine-quick a,.entry-trigger,.boss-nav a,.bca-quick-item,.bca-row{
       transition:opacity .08s linear,transform .08s linear,background-color .12s ease;
     }
-    .mine-quick a.is-nav-pending,.entry-trigger.is-nav-pending,.boss-nav a.is-nav-pending{
+    .mine-quick a.is-nav-pending,.entry-trigger.is-nav-pending,.boss-nav a.is-nav-pending,.bca-quick-item.is-nav-pending,.bca-row.is-nav-pending{
       opacity:.62;transform:scale(.98);
     }
     .topbar .boss-nav{display:none!important}
@@ -321,12 +321,14 @@
     </form>
   </div>
   <link rel="stylesheet" href="/src/boss-vip-ui.css?v=20260920bossVipUi2">
+  <link rel="stylesheet" href="/src/boss-center-actions.css?v=20260926bossCenterActions1">
   <script src="src/boss-auth-session.js?v=20260911authPerfP0"></script>
   <script src="src/boss-profile-cache.js?v=20260911perfP2"></script>
   <script src="src/boss-nav-prefetch.js?v=20260911perfP2"></script>
   <script src="src/role-gates.js?v=20260911authPerfP0"></script>
   <script src="src/account-security.js?v=20260805acctSec1"></script>
   <script src="src/boss-vip-ui.js?v=20260921bossVipProg1"></script>
+  <script src="src/boss-center-actions.js?v=20260926bossCenterActions1"></script>
   <script src="src/boss-header.js" defer></script>
   <script>
     (function(){
@@ -486,7 +488,7 @@
         var paidBal=wallet.paidBalance!=null?wallet.paidBalance:'-';
         var bonusBal=wallet.bonusBalance!=null?wallet.bonusBalance:'-';
         var pointsBal=(state.points&&state.points.balance!=null)?state.points.balance:0;
-        var titles={profile:'编辑资料',assets:'我的资产',security:'账号安全',orders:'订单与服务'};
+        var titles={profile:'编辑资料',assets:'我的资产',security:'账号安全'};
         var body='';
         if(key==='profile'){
           body='<p class="feature-modal-note">上传头像、修改昵称与手机号。</p>'+
@@ -498,12 +500,6 @@
             entryLink({tag:'a',title:'我的积分',attrs:'href="points.html"'});
         }else if(key==='security'){
           body='<div id="bossAccountSecurity"></div>';
-        }else if(key==='orders'){
-          body=entryLink({tag:'a',title:'查看我的订单',attrs:'href="/orders.html"'})+
-            entryLink({tag:'a',title:'联系客服',attrs:'href="/support.html"'})+
-            (u.hasCompanion
-              ?entryLink({tag:'button',title:'切换到陪玩端',attrs:'type="button" data-switch-portal="companion"'})
-              :entryLink({tag:'a',title:'申请成为陪玩',attrs:'href="companion-apply.html"'}));
         }else{
           return;
         }
@@ -563,26 +559,9 @@
           '</section>'+
           bossVipCardHtml()+
           (setHint?'<p style="margin:0 0 14px;color:#fbbf24;font-size:12px;line-height:1.45">'+esc(setHint)+'</p>':'')+
-          '<div class="mine-quick" aria-label="'+mineL('常用功能','Quick actions')+'">'+
-            '<a href="/orders.html" aria-label="'+mineL('订单','Orders')+'"><span class="mine-quick-ico" aria-hidden="true">'+mineQuickIco('orders')+'</span><span class="mine-quick-label">'+mineL('订单','Orders')+'</span></a>'+
-            '<a href="/messages.html" aria-label="'+mineL('消息','Messages')+'"><span class="mine-quick-ico" aria-hidden="true">'+mineQuickIco('messages')+'</span><span class="mine-quick-label">'+mineL('消息','Messages')+'</span></a>'+
-            '<a href="support.html?start=1" aria-label="'+mineL('客服','Support')+'"><span class="mine-quick-ico" aria-hidden="true">'+mineQuickIco('support')+'</span><span class="mine-quick-label">'+mineL('客服','Support')+'</span></a>'+
-            '<a href="/recharge.html" aria-label="'+mineL('充值','Top Up')+'"><span class="mine-quick-ico" aria-hidden="true">'+mineQuickIco('recharge')+'</span><span class="mine-quick-label">'+mineL('充值','Top Up')+'</span></a>'+
-          '</div>'+
-          '<p class="mine-section-title">账户与服务</p>'+
-          '<div class="entry-stack">'+
-          entryRow('profile','编辑资料')+
-          entryRow('assets','我的资产')+
-          entryRow('security','账号安全')+
-          entryRow('orders','订单与服务')+
-          '<section class="entry"><a class="entry-trigger" href="/messages.html"><span class="entry-title">消息中心</span><span class="entry-arrow" aria-hidden="true"></span></a></section>'+
-          '<section class="entry"><a class="entry-trigger" href="points.html"><span class="entry-title">我的积分</span><span class="entry-arrow" aria-hidden="true"></span></a></section>'+
-          '<section class="entry"><a class="entry-trigger" href="gifts.html"><span class="entry-title">礼物中心</span><span class="entry-arrow" aria-hidden="true"></span></a></section>'+
-          '<section class="entry"><a class="entry-trigger" href="/guide.html?role=boss" data-boss-tutorial-entry="1"><span class="entry-title">老板使用教学</span><span class="entry-arrow" aria-hidden="true"></span></a></section>'+
-          '<section class="entry"><a class="entry-trigger" href="my-direct-companions.html"><span class="entry-title">直属陪玩</span><span class="entry-arrow" aria-hidden="true"></span></a></section>'+
-          '<section class="entry"><button type="button" class="entry-trigger" data-pwa-install><span class="entry-title">添加妙脆角到主屏幕</span><span class="entry-arrow" aria-hidden="true"></span></button></section>'+
-          '<section class="entry"><button type="button" class="entry-trigger" data-open-notify-settings><span class="entry-title">消息通知</span><span class="entry-arrow" aria-hidden="true"></span></button></section>'+
-          '</div>'+
+          (window.MCJBossCenterActions&&typeof window.MCJBossCenterActions.render==='function'
+            ?window.MCJBossCenterActions.render({hasCompanion:!!u.hasCompanion})
+            :'')+
           '<div id="mcjWebPushSettingsMount" class="mcj-webpush-mine-mount" hidden></div>'+
           '<div class="mine-logout-wrap"><button class="mine-logout" type="button" data-logout>退出登录</button></div>';
       }
