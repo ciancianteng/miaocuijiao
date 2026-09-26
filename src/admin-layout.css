@@ -411,11 +411,29 @@ body[data-admin-section="orders"] #orderManagement {
 
 @media (max-width: 767px) {
   .admin-content .admin-final-grid,
-  .admin-content .metric-grid,
+  .admin-content .metric-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 12px !important;
+  }
+
   .admin-content .panel-grid,
   .admin-content .admin-chart-grid,
   .admin-content .dashboard-trends {
     grid-template-columns: 1fr;
+  }
+
+  .admin-content .admin-final-stat strong {
+    font-size: 16px !important;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .admin-content .admin-final-stat strong.admin-final-stat-value-wrap {
+    white-space: normal !important;
+    overflow-wrap: anywhere;
+    word-break: keep-all;
+    font-size: 15px !important;
   }
 
   .admin-header .topbar-actions {
