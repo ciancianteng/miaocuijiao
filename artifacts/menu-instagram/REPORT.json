@@ -1,0 +1,24 @@
+{
+  "base": "http://127.0.0.1:4179",
+  "ts": "2026-09-26T00:31:24.458Z",
+  "checks": {
+    "hasCard": true,
+    "href": "https://www.instagram.com/meowcuijiao/",
+    "hasHandle": true,
+    "hasTitle": true,
+    "noLegacy": true,
+    "targetBlank": true,
+    "relOk": true,
+    "companionAfterIg": true,
+    "drawerOpen": true,
+    "destUrl": "https://www.instagram.com/meowcuijiao/",
+    "destIsMeowcuijiao": true,
+    "destNotLegacy": true
+  },
+  "shots": [
+    "01-menu-full-390.png",
+    "02-instagram-card.png",
+    "03-instagram-destination.png"
+  ],
+  "pass": true
+}

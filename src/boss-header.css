@@ -653,6 +653,29 @@ a.mcj-mnav-companion-card:focus-visible {
   text-align: center;
 }
 
+/* Official Instagram card — same shell as companion card */
+a.mcj-mnav-instagram-card .mcj-mnav-ig-logo {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 214, 235, 0.72);
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow: 0 0 14px rgba(255, 105, 180, 0.35);
+  flex-shrink: 0;
+}
+
+a.mcj-mnav-instagram-card .mcj-mnav-ig-icon {
+  display: block;
+}
+
+a.mcj-mnav-instagram-card .mcj-mnav-companion-feats {
+  white-space: normal;
+  line-height: 1.35;
+}
+
 @media (max-width: 360px) {
   a.mcj-mnav-companion-card,
   .mcj-mnav-drawer-links a.mcj-mnav-companion-card {
