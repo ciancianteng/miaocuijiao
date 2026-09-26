@@ -1,7 +1,7 @@
 (function () {
   "use strict";
 
-  var state = { items: [], rules: null, loading: true, error: "" };
+  var state = { items: [], rules: null, loading: true, error: "", periodStart: "", periodEnd: "" };
 
   function esc(v) {
     return String(v == null ? "" : v).replace(/[&<>"']/g, function (c) {
@@ -56,10 +56,29 @@
     }
     return item.availabilityStatus || "offline";
   }
-  function badge(rank) {
-    if (rank === 1) return '<span class="pop-medal gold">冠军</span>';
-    if (rank === 2) return '<span class="pop-medal silver">亚军</span>';
-    if (rank === 3) return '<span class="pop-medal bronze">季军</span>';
+  /** Premium TOP badge — top-left corner, gold/silver/rose metal. */
+  function topBadge(rank) {
+    if (rank === 1) {
+      return (
+        '<span class="pop-top-badge gold" aria-label="TOP1">' +
+        '<span class="pop-top-badge-icon" aria-hidden="true">👑</span>' +
+        "<strong>TOP1</strong></span>"
+      );
+    }
+    if (rank === 2) {
+      return (
+        '<span class="pop-top-badge silver" aria-label="TOP2">' +
+        '<span class="pop-top-badge-icon" aria-hidden="true">🥈</span>' +
+        "<strong>TOP2</strong></span>"
+      );
+    }
+    if (rank === 3) {
+      return (
+        '<span class="pop-top-badge bronze" aria-label="TOP3">' +
+        '<span class="pop-top-badge-icon" aria-hidden="true">🥉</span>' +
+        "<strong>TOP3</strong></span>"
+      );
+    }
     return '<span class="pop-rank-num">' + esc(rank) + "</span>";
   }
   function profileHref(item) {
@@ -67,19 +86,19 @@
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(uuid)) return "companion-center.html";
     return "profile.html?id=" + encodeURIComponent(uuid);
   }
-  function orderHref(item) {
-    var uuid = String(item.companionId || item.id || item.uid || "").trim();
-    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(uuid)) return "companion-center.html";
-    return "profile.html?id=" + encodeURIComponent(uuid) + "&open_order=1";
-  }
 
   function podiumCard(item) {
     var r = item.rank;
+    var rating = Number(item.averageRating || 0);
+    var ratingHtml =
+      rating > 0
+        ? "<div><span>好评星级</span><strong>" + esc(rating.toFixed(1)) + "</strong></div>"
+        : "";
     return (
       '<article class="pop-podium-card rank-' +
       r +
       '">' +
-      badge(r) +
+      topBadge(r) +
       '<a class="pop-avatar" href="' +
       esc(profileHref(item)) +
       '"><img src="' +
@@ -100,18 +119,13 @@
       esc(presenceLabel(item)) +
       "</span></div>" +
       '<div class="pop-stats">' +
-      (state.rules && state.rules.showScore !== false
-        ? "<div><span>人气值</span><strong>" + esc(money(item.popularityScore)) + "</strong></div>"
-        : "") +
-      (state.rules && state.rules.showOrders !== false
-        ? "<div><span>本周接单</span><strong>" + esc(item.completedOrders) + "</strong></div>"
-        : "") +
-      "<div><span>好评</span><strong>" +
-      esc(item.fiveStarReviews) +
-      "</strong></div>" +
+      '<div class="pop-stat-orders"><span>本周完成</span><strong>' +
+      esc(item.completedOrders || 0) +
+      " 单</strong></div>" +
       "<div><span>单价</span><strong>" +
       esc(money(item.price).toFixed(0)) +
       " 猫粮</strong></div>" +
+      ratingHtml +
       "</div>" +
       '<button type="button" class="pop-order-btn" data-pop-order="' +
       esc(item.companionId || "") +
@@ -134,75 +148,20 @@
     );
   }
 
-  function listRow(item) {
-    return (
-      '<article class="pop-list-row" style="display:grid">' +
-      '<a class="pop-list-rank" href="' +
-      esc(profileHref(item)) +
-      '" style="text-decoration:none;color:inherit">' +
-      esc(item.rank) +
-      "</a>" +
-      '<a href="' +
-      esc(profileHref(item)) +
-      '"><img class="pop-list-avatar" src="' +
-      esc(avatarUrl(item.avatar)) +
-      '" alt="" loading="lazy" decoding="async" onerror="this.onerror=null;this.src=\'' +
-      DEFAULT_AVATAR +
-      '\'"></a>' +
-      '<div class="pop-list-main"><strong>' +
-      esc(displayName(item)) +
-      "</strong><span>" +
-      esc(item.publicId || "") +
-      ' · <span class="companion-level-pill" data-level-id="' +
-      esc(item.levelId || "") +
-      '">' +
-      esc(item.level) +
-      "</span> · " +
-      esc(presenceLabel(item)) +
-      "</span><span>" +
-      esc(item.mainService || item.game || "-") +
-      " · " +
-      esc(money(item.price).toFixed(0)) +
-      " 猫粮" +
-      " · 单" +
-      esc(item.completedOrders) +
-      " · 好评" +
-      esc(item.fiveStarReviews) +
-      " · 礼物" +
-      esc(money(item.giftCatFood)) +
-      "</span></div>" +
-      '<div class="pop-list-side"><strong>' +
-      esc(money(item.popularityScore)) +
-      "</strong><span>人气值</span></div>" +
-      '<div style="display:flex;gap:6px">' +
-      '<button type="button" class="pop-list-cta" data-pop-order="' +
-      esc(item.companionId || "") +
-      '" data-pop-name="' +
-      esc(displayName(item)) +
-      '" data-pop-price="' +
-      esc(item.price || "") +
-      '" data-pop-game="' +
-      esc(item.mainService || item.game || "") +
-      '" data-pop-avatar="' +
-      esc(avatarUrl(item.avatar)) +
-      '" data-pop-public-id="' +
-      esc(item.publicId || "") +
-      '" data-pop-status="' +
-      esc(item.availabilityStatus || "") +
-      '" data-pop-status-text="' +
-      esc(presenceLabel(item) || item.availabilityText || "") +
-      '">下单</button></div></article>'
-    );
-  }
-
   /** Honest ranks only — never pad podium with zero-score public companions. */
   function normalizeRankItems(items) {
     return (items || [])
       .filter(function (it) {
-        return it && (it.companionId || it.publicId) && !isGarbledName(it.nickname);
+        return (
+          it &&
+          (it.companionId || it.publicId) &&
+          !isGarbledName(it.nickname) &&
+          Number(it.completedOrders || 0) > 0
+        );
       })
+      .slice(0, 3)
       .map(function (it, idx) {
-        if (!(Number(it.rank) > 0)) it.rank = idx + 1;
+        it.rank = idx + 1;
         return it;
       });
   }
@@ -220,34 +179,32 @@
     }
     if (!state.items.length) {
       root.innerHTML =
-        '<div class="pop-desktop-grid"><div class="pop-empty pop-desktop-empty">暂无陪玩</div></div>' +
-        '<div class="pop-empty">暂无陪玩</div>';
+        '<div class="pop-desktop-grid"><div class="pop-empty pop-desktop-empty">本周暂无已完成订单排行</div></div>' +
+        '<div class="pop-empty">本周暂无已完成订单排行</div>';
       return;
     }
     var top = state.items.slice(0, 3);
-    var rest = state.items.slice(3);
-    var desktopFour = state.items.slice(0, Math.max(3, Math.min(4, state.items.length)));
     var desktopHtml =
       '<div class="pop-desktop-grid">' +
-      desktopFour
+      top
         .map(function (item) {
           return String(podiumCard(item)).replace("pop-podium-card", "pop-podium-card pop-desktop-card");
         })
         .join("") +
       "</div>";
-    // Rank order must stay 冠军 → 亚军 → 季军 → TOP4+ (no visual reordering).
+    // Rank order must stay TOP1 → TOP2 → TOP3 (no visual reordering).
     var podiumHtml = "";
     if (top.length) {
-      podiumHtml = '<div class="pop-podium">' + top.map(podiumCard).join("") + "</div>";
+      podiumHtml =
+        '<div class="pop-podium pop-podium-count-' + top.length + '">' + top.map(podiumCard).join("") + "</div>";
     }
-    var listHtml = rest.length ? '<div class="pop-list">' + rest.map(listRow).join("") + "</div>" : "";
-    root.innerHTML = desktopHtml + podiumHtml + listHtml;
+    root.innerHTML = desktopHtml + podiumHtml;
   }
 
   function load() {
     state.loading = true;
     paint();
-    fetch("/api/popularity?action=home&period=weekly&limit=10", { headers: { Accept: "application/json" }, cache: "no-store" })
+    fetch("/api/popularity?action=home&period=weekly&limit=3", { headers: { Accept: "application/json" }, cache: "no-store" })
       .then(function (res) {
         return res.json().then(function (body) {
           if (!res.ok || body.ok === false) throw new Error(body.message || "人气榜读取失败");
@@ -256,6 +213,8 @@
       })
       .then(function (body) {
         state.rules = body.rules || null;
+        state.periodStart = body.periodStart || "";
+        state.periodEnd = body.periodEnd || "";
         state.error = "";
         if (body.enabled === false) {
           state.items = [];

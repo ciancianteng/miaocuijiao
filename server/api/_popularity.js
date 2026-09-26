@@ -16,6 +16,8 @@ import {
 } from "./_companion-public-map.js";
 import { resolveCompanionPublicCode } from "./_account-codes.js";
 import { isTestAccountRecord } from "./_test-accounts.js";
+import { isRealCompletedOrder } from "./_business-order-stats.js";
+import { isMultiGroupParent } from "./_order-group.js";
 
 const TZ = "Asia/Kuala_Lumpur";
 const BRUSH_ORDER_LIMIT_24H = 5;
@@ -619,6 +621,282 @@ export async function recomputePopularity({ periods, gameKeys, operatorId, opera
   }
 
   return { ok: true, slices: results, rules: viewRules(rules), computedAt: nowIso() };
+}
+
+/**
+ * Homepage「本周人气榜」SoT: live TOP by weekly completed-order count.
+ * Sort: completed_orders DESC → average_rating DESC → last_completed_at DESC.
+ * Independent of popularity_score / pinned / featured / admin recommend.
+ *
+ * Multi-order: each completed child (or standalone) credits its companion once
+ * (dedupe by order id). Multi-group parents never inflate companion counts.
+ */
+export function countsTowardCompanionCompleted(order = {}) {
+  if (!isRealCompletedOrder(order)) return false;
+  const cid = String(order.companion_id || order.companionId || "").trim();
+  if (!cid) return false;
+  if (isMultiGroupParent(order)) return false;
+  return true;
+}
+
+function weekIsoBounds(bounds) {
+  // Asia/Kuala_Lumpur calendar day → ISO range for PostgREST filters
+  const start = `${bounds.periodStart}T00:00:00+08:00`;
+  const end = `${bounds.periodEnd}T23:59:59.999+08:00`;
+  return { start, end };
+}
+
+export async function listWeeklyCompletedTop({ limit = 3 } = {}) {
+  const displayLimit = Math.min(10, Math.max(1, Number(limit) || 3));
+  const bounds = periodBounds("weekly");
+  const { start: weekStartIso, end: weekEndIso } = weekIsoBounds(bounds);
+
+  let orders = await db(
+    "orders",
+    `?status=in.(completed,reviewed)&select=id,boss_id,companion_id,status,order_type,parent_order_id,completed_at,updated_at,created_at&completed_at=gte.${encodeURIComponent(weekStartIso)}&completed_at=lte.${encodeURIComponent(weekEndIso)}&order=completed_at.desc&limit=5000`
+  ).catch(async (e) => {
+    // Fallback if completed_at filter / order_type column missing
+    if (/column|order_type|parent_order_id|completed_at/i.test(String(e.message || ""))) {
+      const all = await dbMaybe(
+        "orders",
+        "?status=in.(completed,reviewed)&select=id,boss_id,companion_id,status,completed_at,updated_at,created_at&order=completed_at.desc&limit=5000"
+      );
+      return (all || []).filter((o) =>
+        inPeriod(o.completed_at || o.updated_at || o.created_at, bounds.periodStart, bounds.periodEnd)
+      );
+    }
+    if (isMissingRelation(e)) return [];
+    throw e;
+  });
+
+  // Also catch completed rows whose completed_at is null but updated this week
+  const nullCompleted = await dbMaybe(
+    "orders",
+    `?status=in.(completed,reviewed)&completed_at=is.null&select=id,boss_id,companion_id,status,order_type,parent_order_id,completed_at,updated_at,created_at&updated_at=gte.${encodeURIComponent(weekStartIso)}&updated_at=lte.${encodeURIComponent(weekEndIso)}&limit=2000`
+  ).catch(() => []);
+  if (nullCompleted?.length) {
+    const seen = new Set((orders || []).map((o) => o.id));
+    for (const o of nullCompleted) {
+      if (!seen.has(o.id)) {
+        orders = orders || [];
+        orders.push(o);
+      }
+    }
+  }
+
+  // Aggregate distinct completed order ids per companion
+  const byCompanion = new Map(); // cid -> { orderIds:Set, lastCompletedAt }
+  for (const o of orders || []) {
+    if (!countsTowardCompanionCompleted(o)) continue;
+    const ts = o.completed_at || o.updated_at || o.created_at;
+    if (!inPeriod(ts, bounds.periodStart, bounds.periodEnd)) continue;
+    const cid = String(o.companion_id).trim();
+    let bucket = byCompanion.get(cid);
+    if (!bucket) {
+      bucket = { orderIds: new Set(), lastCompletedAt: "" };
+      byCompanion.set(cid, bucket);
+    }
+    const oid = String(o.id || "").trim();
+    if (!oid || bucket.orderIds.has(oid)) continue;
+    bucket.orderIds.add(oid);
+    if (!bucket.lastCompletedAt || String(ts) > bucket.lastCompletedAt) {
+      bucket.lastCompletedAt = String(ts || "");
+    }
+  }
+
+  if (!byCompanion.size) {
+    return {
+      ok: true,
+      enabled: true,
+      rankingMode: "weekly_completed",
+      period: "weekly",
+      periodStart: bounds.periodStart,
+      periodEnd: bounds.periodEnd,
+      gameKey: "",
+      items: [],
+      rules: {
+        showScore: false,
+        showOrders: true,
+        showGifts: false,
+        showOnline: true,
+        displayCount: displayLimit,
+      },
+      updatedAt: nowIso(),
+    };
+  }
+
+  const companionIds = Array.from(byCompanion.keys());
+  const inList = companionIds.map(encodeURIComponent).join(",");
+
+  const [companions, profiles, reviews, bossProfiles] = await Promise.all([
+    dbMaybe(
+      "companion_profiles",
+      `?user_id=in.(${inList})&select=*,is_test_account&limit=500`
+    ).catch(async () => dbMaybe("companion_profiles", `?user_id=in.(${inList})&limit=500`)),
+    dbMaybe(
+      "profiles",
+      `?id=in.(${inList})&select=id,display_name,avatar_url,email,is_test_account&limit=500`
+    ).catch(async () =>
+      dbMaybe("profiles", `?id=in.(${inList})&select=id,display_name,avatar_url,email&limit=500`)
+    ),
+    dbMaybe(
+      "companion_reviews",
+      `?companion_id=in.(${inList})&select=companion_id,rating,status&limit=5000`
+    ),
+    // Load boss profiles for test-boss exclusion (batch from order boss_ids)
+    (async () => {
+      const bossIds = [
+        ...new Set((orders || []).map((o) => o.boss_id).filter(Boolean)),
+      ];
+      if (!bossIds.length) return [];
+      const chunks = [];
+      for (let i = 0; i < bossIds.length; i += 80) {
+        const slice = bossIds.slice(i, i + 80);
+        const rows = await dbMaybe(
+          "profiles",
+          `?id=in.(${slice.map(encodeURIComponent).join(",")})&select=id,email,display_name,is_test_account&limit=200`
+        ).catch(async () =>
+          dbMaybe(
+            "profiles",
+            `?id=in.(${slice.map(encodeURIComponent).join(",")})&select=id,email,display_name&limit=200`
+          )
+        );
+        chunks.push(...(rows || []));
+      }
+      return chunks;
+    })(),
+  ]);
+
+  const cMap = Object.fromEntries((companions || []).map((c) => [c.user_id, c]));
+  const pMap = Object.fromEntries((profiles || []).map((p) => [p.id, p]));
+  const bossMap = Object.fromEntries((bossProfiles || []).map((p) => [p.id, p]));
+
+  // Rebuild counts excluding test companions / test bosses / draft companions
+  const clean = new Map();
+  for (const o of orders || []) {
+    if (!countsTowardCompanionCompleted(o)) continue;
+    const ts = o.completed_at || o.updated_at || o.created_at;
+    if (!inPeriod(ts, bounds.periodStart, bounds.periodEnd)) continue;
+    const cid = String(o.companion_id).trim();
+    const c = cMap[cid];
+    const p = pMap[cid] || {};
+    // Must be a real published companion profile (never invent ranks from orphan order rows).
+    if (!c?.user_id) continue;
+    const ver = String(c.verification_status || "").trim().toLowerCase();
+    if (ver && ver !== "approved" && ver !== "verified" && ver !== "passed") continue;
+    if (isTestAccountRecord(p, c) || p.is_test_account === true || c.is_test_account === true) continue;
+    const boss = bossMap[o.boss_id] || {};
+    if (boss?.id && (isTestAccountRecord(boss) || boss.is_test_account === true)) continue;
+    const appSt = String(c.application_status || "").trim().toLowerCase();
+    if (/^(draft|archived|deleted)$/.test(appSt)) continue;
+    if (appSt && !/approved|verified|passed/.test(appSt)) continue;
+    if (!appSt && !c.application_submitted_at) continue;
+    let bucket = clean.get(cid);
+    if (!bucket) {
+      bucket = { orderIds: new Set(), lastCompletedAt: "" };
+      clean.set(cid, bucket);
+    }
+    const oid = String(o.id || "").trim();
+    if (!oid || bucket.orderIds.has(oid)) continue;
+    bucket.orderIds.add(oid);
+    if (!bucket.lastCompletedAt || String(ts) > bucket.lastCompletedAt) {
+      bucket.lastCompletedAt = String(ts || "");
+    }
+  }
+
+  // Average rating (published reviews, all-time — tie-break only)
+  const ratingAgg = {};
+  for (const r of reviews || []) {
+    if (r.status && r.status !== "published") continue;
+    const cid = r.companion_id;
+    if (!cid || !clean.has(cid)) continue;
+    const rating = Number(r.rating || 0);
+    if (!(rating > 0)) continue;
+    if (!ratingAgg[cid]) ratingAgg[cid] = { sum: 0, n: 0 };
+    ratingAgg[cid].sum += rating;
+    ratingAgg[cid].n += 1;
+  }
+
+  let ranked = Array.from(clean.entries())
+    .map(([cid, bucket]) => {
+      const avg =
+        ratingAgg[cid] && ratingAgg[cid].n
+          ? Math.round((ratingAgg[cid].sum / ratingAgg[cid].n) * 100) / 100
+          : 0;
+      return {
+        companionId: cid,
+        completedOrders: bucket.orderIds.size,
+        averageRating: avg,
+        lastCompletedAt: bucket.lastCompletedAt || "",
+      };
+    })
+    .filter((r) => r.completedOrders > 0)
+    .sort((a, b) => {
+      if (b.completedOrders !== a.completedOrders) return b.completedOrders - a.completedOrders;
+      if (b.averageRating !== a.averageRating) return b.averageRating - a.averageRating;
+      return String(b.lastCompletedAt).localeCompare(String(a.lastCompletedAt));
+    })
+    .slice(0, displayLimit);
+
+  const items = ranked.map((r, idx) => {
+    const c = cMap[r.companionId] || {};
+    const p = pMap[r.companionId] || {};
+    const availRaw = String(c.availability_status || c.online_status || "offline").toLowerCase();
+    const availabilityStatus =
+      availRaw === "online" ? "online" : availRaw === "busy" ? "busy" : availRaw === "paused" ? "paused" : "offline";
+    return {
+      rank: idx + 1,
+      companionId: r.companionId,
+      publicId: resolveCompanionPublicCode(c) || "",
+      nickname: resolveCompanionName(c, p) || "未命名陪玩",
+      avatar: resolveCompanionAvatar(p, c),
+      cover: resolveCompanionCover(p, c),
+      level: c.level_name || "未设置等级",
+      levelId: c.level_id || "",
+      mainService: c.main_service || c.game || "",
+      game: c.game || "",
+      price: money(c.price),
+      pricingUnit: c.pricing_unit || "小时",
+      availabilityStatus,
+      availabilityText: ({ online: "在线可接单", busy: "忙碌中", paused: "暂停接单", offline: "离线" })[
+        availabilityStatus
+      ],
+      popularityScore: 0,
+      completedOrders: r.completedOrders,
+      averageRating: r.averageRating,
+      lastCompletedAt: r.lastCompletedAt,
+      fiveStarReviews: 0,
+      fourStarReviews: 0,
+      giftCatFood: 0,
+      onlineMinutes: 0,
+      favorites: 0,
+      anomaly: false,
+      periodType: "weekly",
+      periodStart: bounds.periodStart,
+      periodEnd: bounds.periodEnd,
+      gameKey: "",
+      rankingMode: "weekly_completed",
+    };
+  });
+
+  return {
+    ok: true,
+    enabled: true,
+    rankingMode: "weekly_completed",
+    period: "weekly",
+    periodStart: bounds.periodStart,
+    periodEnd: bounds.periodEnd,
+    gameKey: "",
+    items,
+    rules: {
+      showScore: false,
+      showOrders: true,
+      showGifts: false,
+      showOnline: true,
+      displayCount: displayLimit,
+    },
+    updatedAt: nowIso(),
+  };
 }
 
 export async function listBoard({ period = "weekly", gameKey = "", limit, onlineOnly, level } = {}) {

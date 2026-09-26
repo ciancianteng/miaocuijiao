@@ -3,6 +3,7 @@ import {
   hasPopularityDb,
   isMissingRelation,
   listBoard,
+  listWeeklyCompletedTop,
   loadRules,
   periodBounds,
   recomputePopularity,
@@ -46,10 +47,17 @@ export default async function handler(req, res) {
   try {
     const action = String(req.method === "GET" ? req.query.action || "board" : req.body?.action || "board").trim();
 
-    if (req.method === "GET" && (action === "board" || action === "home")) {
+    // Homepage「本周人气榜」= live weekly completed-order TOP3 (not composite score / pinned).
+    if (req.method === "GET" && action === "home") {
+      const limit = Math.min(10, Math.max(1, Number(req.query.limit || 3) || 3));
+      const board = await listWeeklyCompletedTop({ limit });
+      return json(res, 200, board);
+    }
+
+    if (req.method === "GET" && action === "board") {
       const period = String(req.query.period || "weekly");
       const gameKey = String(req.query.game || req.query.gameKey || req.query.service || "");
-      const limit = Number(req.query.limit || (action === "home" ? 10 : 50));
+      const limit = Number(req.query.limit || 50);
       const onlineOnly = req.query.online === "1" || req.query.online === "true";
       const level = String(req.query.level || "");
       const board = await listBoard({ period, gameKey, limit, onlineOnly, level });

@@ -12,7 +12,7 @@
   display:grid;grid-template-columns:1fr 1.12fr 1fr;gap:14px;align-items:end;margin-bottom:14px;
 }
 .pop-podium-card{
-  position:relative;border-radius:18px;padding:16px 14px 14px;
+  position:relative;border-radius:18px;padding:22px 14px 14px;
   border:1px solid rgba(243,168,203,.26);
   background:linear-gradient(160deg,rgba(48,26,48,.82),rgba(12,8,14,.92));
   box-shadow:0 14px 36px rgba(0,0,0,.36);
@@ -23,10 +23,43 @@
   border-color:rgba(255,214,120,.55);
   background:linear-gradient(160deg,rgba(72,48,18,.55),rgba(18,10,14,.94)),
     linear-gradient(145deg,rgba(255,200,120,.12),transparent 50%);
+  box-shadow:0 14px 36px rgba(0,0,0,.36),0 0 22px rgba(255,200,100,.18);
   transform:translateY(-6px);
 }
 .pop-podium-card.rank-2{border-color:rgba(210,220,235,.45)}
 .pop-podium-card.rank-3{border-color:rgba(205,140,90,.5)}
+.pop-podium-count-1{grid-template-columns:minmax(0,320px);justify-content:center}
+.pop-podium-count-2{grid-template-columns:1fr 1fr}
+/* Premium TOP badge — top-left metal plate */
+.pop-top-badge{
+  position:absolute;top:10px;left:10px;z-index:2;
+  display:inline-flex;align-items:center;gap:4px;
+  min-height:26px;padding:3px 10px 3px 7px;border-radius:999px;
+  font-size:11px;font-weight:1000;letter-spacing:.06em;
+  border:1px solid transparent;
+  box-shadow:0 6px 14px rgba(0,0,0,.35);
+  backdrop-filter:blur(6px);
+}
+.pop-top-badge strong{font-weight:1000;line-height:1}
+.pop-top-badge-icon{font-size:12px;line-height:1;filter:drop-shadow(0 1px 1px rgba(0,0,0,.35))}
+.pop-top-badge.gold{
+  color:#2a1800;
+  background:linear-gradient(145deg,#fff1c4 0%,#f0c14a 42%,#c9921a 100%);
+  border-color:rgba(255,236,170,.85);
+  box-shadow:0 6px 16px rgba(180,120,20,.35),0 0 12px rgba(255,210,100,.35);
+}
+.pop-top-badge.silver{
+  color:#1a222c;
+  background:linear-gradient(145deg,#f7f9fc 0%,#c8d0dc 48%,#8e99a8 100%);
+  border-color:rgba(230,236,245,.9);
+  box-shadow:0 6px 14px rgba(80,90,110,.3),0 0 10px rgba(200,210,230,.25);
+}
+.pop-top-badge.bronze{
+  color:#2a1208;
+  background:linear-gradient(145deg,#f6d0b0 0%,#d48a5a 45%,#a85a38 100%);
+  border-color:rgba(255,200,160,.75);
+  box-shadow:0 6px 14px rgba(120,60,30,.32),0 0 10px rgba(220,140,90,.22);
+}
 .pop-medal{
   display:inline-flex;align-items:center;justify-content:center;
   min-height:26px;padding:0 10px;border-radius:999px;font-size:12px;font-weight:1000;letter-spacing:.04em;margin-bottom:10px;
@@ -34,6 +67,12 @@
 .pop-medal.gold{background:linear-gradient(180deg,#ffe7a8,#d4a017);color:#2a1800}
 .pop-medal.silver{background:linear-gradient(180deg,#f2f4f8,#aeb6c2);color:#1c222c}
 .pop-medal.bronze{background:linear-gradient(180deg,#f0c19a,#b87333);color:#2a1408}
+.pop-stat-orders{
+  grid-column:1 / -1;
+  background:linear-gradient(135deg,rgba(255,180,210,.14),rgba(255,120,170,.06))!important;
+  border:1px solid rgba(255,180,210,.22);
+}
+.pop-stat-orders strong{color:#ffd6e8!important;font-size:16px!important}
 .pop-avatar{display:block;width:72px;height:72px;margin:0 auto 10px;border-radius:50%;overflow:hidden;border:2px solid rgba(255,200,220,.35)}
 .pop-podium-card.rank-1 .pop-avatar{width:84px;height:84px;border-color:rgba(255,214,120,.65)}
 .pop-avatar img{width:100%;height:100%;object-fit:cover}
