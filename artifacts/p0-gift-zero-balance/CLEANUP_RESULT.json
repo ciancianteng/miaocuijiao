@@ -1,0 +1,87 @@
+{
+  "steps": [
+    {
+      "deleteIncome": "abca2342-5118-4802-8ea9-2078d8e10e14",
+      "ok": true
+    },
+    {
+      "deleteWalletTx": "618c00aa-d173-4174-b3e1-e9d69d9f14da",
+      "ok": true
+    },
+    {
+      "deleteGift": "1394fe0f-3534-482c-8c8f-da25837e47d3",
+      "ok": true
+    },
+    {
+      "creditRefund": 20,
+      "result": {
+        "ok": true,
+        "wallet": {
+          "id": "255c683c-c936-46b4-9397-b6291c07f1e6",
+          "frozen": false,
+          "boss_id": "458ce9ad-3425-42b1-ab66-24bca342f971",
+          "created_at": "2026-09-02T18:20:48.625281+00:00",
+          "updated_at": "2026-09-26T01:00:18.022166+00:00",
+          "total_spent": 160,
+          "held_balance": 0,
+          "paid_balance": 550,
+          "bonus_balance": 0,
+          "total_balance": 550,
+          "total_paid_in": 160,
+          "total_bonus_in": 0,
+          "total_recharge_rm": 0,
+          "total_compensation": 0
+        },
+        "duplicate": false,
+        "transaction": {
+          "id": "9464da6a-943c-4eb0-8b44-69bc91d35b67",
+          "amount": 20,
+          "reason": "P0 rollback invalid gift test 小铃铛×1",
+          "boss_id": "458ce9ad-3425-42b1-ab66-24bca342f971",
+          "direction": "credit",
+          "created_at": "2026-09-26T01:00:18.022166+00:00",
+          "expires_at": null,
+          "campaign_id": null,
+          "operator_id": "458ce9ad-3425-42b1-ab66-24bca342f971",
+          "balance_type": "paid",
+          "internal_note": "cleanup-boss-1717-zero-gift-prod",
+          "compensation_id": null,
+          "idempotency_key": "p0-gift-zero-rollback:1394fe0f-3534-482c-8c8f-da25837e47d3",
+          "related_order_id": null,
+          "transaction_type": "refund",
+          "paid_balance_after": 550,
+          "bonus_balance_after": 0,
+          "related_recharge_id": null,
+          "total_balance_after": 550
+        }
+      }
+    },
+    {
+      "giftWall": "deleted"
+    }
+  ],
+  "after": {
+    "gift": [],
+    "income": [],
+    "walletTx": [],
+    "wallet": [
+      {
+        "id": "255c683c-c936-46b4-9397-b6291c07f1e6",
+        "boss_id": "458ce9ad-3425-42b1-ab66-24bca342f971",
+        "paid_balance": 550,
+        "bonus_balance": 0,
+        "total_balance": 550,
+        "frozen": false,
+        "total_paid_in": 160,
+        "total_bonus_in": 0,
+        "total_spent": 160,
+        "total_compensation": 0,
+        "total_recharge_rm": 0,
+        "updated_at": "2026-09-26T01:00:18.022166+00:00",
+        "created_at": "2026-09-02T18:20:48.625281+00:00",
+        "held_balance": 0
+      }
+    ],
+    "wall": []
+  }
+}

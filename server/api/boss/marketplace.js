@@ -624,18 +624,6 @@ export default async function handler(req, res) {
       if (!companionId) return json(res, 400, { ok: false, message: "缺少陪玩" });
       if (!idempotencyKey) return json(res, 400, { ok: false, message: "缺少 idempotency_key" });
 
-      try {
-        const existed = await companionDb(
-          "gift_transactions",
-          `?idempotency_key=eq.${encodeURIComponent(idempotencyKey)}&limit=1`
-        );
-        if (existed?.[0]) {
-          return json(res, 200, { ok: true, message: "已处理（防重复）", transaction: existed[0], replayed: true });
-        }
-      } catch (e) {
-        if (!isMissingRelation(e)) throw e;
-      }
-
       const companion = await loadCompanion(companionId);
       if (!companion) return json(res, 404, { ok: false, message: "陪玩不存在" });
       try {
@@ -651,183 +639,51 @@ export default async function handler(req, res) {
         }
         throw selfErr;
       }
-      const rate = await giftCommissionRate(companion);
-      let gross = 0;
-      let giftName = "打赏";
-      let giftId = null;
-      let giftIconUrl = "";
-      let quantity = 1;
 
-      if (action === "send_gift") {
-        giftId = String(body.giftId || body.gift_id || "").trim();
-        quantity = Math.max(1, Math.floor(Number(body.quantity || 1)));
-        const gifts = await companionDb("gifts", `?id=eq.${encodeURIComponent(giftId)}&enabled=eq.true&limit=1`).catch((e) => {
-          if (isMissingRelation(e)) return [];
-          throw e;
-        });
-        const gift = gifts?.[0];
-        if (!gift) return json(res, 400, { ok: false, message: "礼物不存在或已下架" });
-        giftName = gift.name;
-        giftIconUrl = String(gift.icon_url || "");
-        gross = money(gift.cat_food_price) * quantity;
-      } else {
-        gross = money(body.amount || body.catFood || body.cat_food);
-        quantity = 1;
-        giftName = "自由打赏";
-        if (gross <= 0) return json(res, 400, { ok: false, message: "请输入打赏数量" });
-      }
-
-      const commissionAmount = Math.round(gross * (rate / 100) * 100) / 100;
-      const companionIncome = Math.round((gross - commissionAmount) * 100) / 100;
-      const message = String(body.message || "").trim();
-      const unitPrice = quantity > 0 ? money(gross / quantity) : gross;
-
-      let walletDebit = null;
+      const { sendCatfoodGift, insufficientPayload } = await import("../_send-catfood-gift.js");
       try {
-        walletDebit = await debitWallet({
+        const result = await sendCatfoodGift({
           bossId: boss.id,
-          amount: gross,
-          transactionType: action === "send_gift" ? "gift" : "tip",
-          idempotencyKey: `gift:${idempotencyKey}`,
-          reason: `${giftName} x${quantity} → ${companion.nickname || companionId}`,
-          operatorId: boss.id,
+          companionId,
+          giftId: body.giftId || body.gift_id || null,
+          quantity: body.quantity || 1,
+          amount: body.amount || body.catFood || body.cat_food,
+          kind: action === "send_tip" ? "tip" : "gift",
+          idempotencyKey,
+          message: body.message || "",
+          relatedOrderId: body.relatedOrderId || body.related_order_id || null,
+          companionRow: companion,
+          bossProfile: boss,
         });
-      } catch (e) {
-        if (/不足|insufficient|balance/i.test(String(e.message || ""))) {
-          return json(res, 400, {
-            ok: false,
-            code: "INSUFFICIENT_BALANCE",
-            message: "猫粮余额不足",
-            rechargeUrl: "/recharge.html",
-          });
+        return json(res, 200, {
+          ok: true,
+          message: result.message,
+          replayed: !!result.replayed,
+          transaction: result.transaction,
+          wallet: result.wallet || null,
+          snapshot: result.snapshot || null,
+        });
+      } catch (giftErr) {
+        if (giftErr?.code === "INSUFFICIENT_BALANCE" || /余额不足|insufficient/i.test(String(giftErr?.message || ""))) {
+          return json(res, 400, insufficientPayload(giftErr));
         }
-        // If transaction type not allowed by wallet RPC, retry as order_payment-like
-        try {
-          walletDebit = await debitWallet({
-            bossId: boss.id,
-            amount: gross,
-            transactionType: "order_payment",
-            idempotencyKey: `gift:${idempotencyKey}`,
-            reason: `${giftName} x${quantity}`,
-            operatorId: boss.id,
-          });
-        } catch (e2) {
-          if (/不足|insufficient|balance/i.test(String(e2.message || ""))) {
-            return json(res, 400, {
-              ok: false,
-              code: "INSUFFICIENT_BALANCE",
-              message: "猫粮余额不足",
-              rechargeUrl: "/recharge.html",
-            });
-          }
-          throw e2;
-        }
+        throw giftErr;
       }
-
-      // Gift net → companion earnings (source=gift). Never MCJ_SETTLEMENT / order_income.
-      const giftNote = `礼物收益：${giftName || "礼物"} MCJ_GIFT:${JSON.stringify({
-        source: "gift",
-        giftName: giftName || "礼物",
-        qty: quantity,
-        gross,
-        platformCommission: commissionAmount,
-        net: companionIncome,
-        paymentMethod: "catfood",
-      })}`;
-      const incomeTx = await creditCompanionIncome(companionId, companionIncome, giftNote, null);
-      const walletTxId =
-        walletDebit?.id ||
-        walletDebit?.transaction_id ||
-        (Array.isArray(walletDebit) ? walletDebit[0]?.id : null) ||
-        null;
-
-      let tx = null;
-      try {
-        let payload = {
-          tx_no: no("GIFT"),
-          sender_boss_id: boss.id,
-          receiver_companion_id: companionId,
-          gift_id: giftId,
-          gift_name: giftName,
-          quantity,
-          unit_price: unitPrice,
-          gross_cat_food: gross,
-          gross_amount: gross,
-          platform_commission_rate: rate,
-          platform_commission_amount: commissionAmount,
-          platform_commission: commissionAmount,
-          companion_income: companionIncome,
-          net_companion_income: companionIncome,
-          message,
-          related_order_id: body.relatedOrderId || null,
-          kind: action === "send_gift" ? "gift" : "tip",
-          idempotency_key: idempotencyKey,
-          fulfillment_status: "completed",
-          gift_image_url: giftIconUrl || "",
-          payment_method: "catfood",
-          payment_status: "paid",
-          approval_status: "auto",
-          wallet_transaction_id: walletTxId,
-          settlement_transaction_id: incomeTx?.id || null,
-          delivered_at: nowIso(),
-          created_at: nowIso(),
-        };
-        for (let attempt = 0; attempt < 12; attempt++) {
-          try {
-            const rows = await companionDb("gift_transactions", "", {
-              method: "POST",
-              body: JSON.stringify(payload),
-            });
-            tx = rows?.[0] || null;
-            break;
-          } catch (err) {
-            const msg = `${err?.message || ""} ${JSON.stringify(err?.body || "")}`;
-            const m = msg.match(/Could not find the '([^']+)' column/i);
-            if (m && m[1] in payload) {
-              delete payload[m[1]];
-              continue;
-            }
-            throw err;
-          }
-        }
-      } catch (e) {
-        if (!isMissingRelation(e)) throw e;
-      }
-
-      if (action === "send_gift") {
-        try {
-          const { recordCompanionGiftWallHit } = await import("../_gift-orders.js");
-          await recordCompanionGiftWallHit({
-            companionId,
-            giftId,
-            giftName,
-            giftImageUrl: giftIconUrl,
-            quantity,
-          });
-        } catch (wallErr) {
-          console.warn("[marketplace/send_gift] gift wall", wallErr?.message || wallErr);
-        }
-      }
-
-      scheduleRecomputeSoft();
-      return json(res, 200, {
-        ok: true,
-        message: action === "send_gift" ? "礼物已送出" : "打赏成功",
-        transaction: tx,
-        snapshot: {
-          grossCatFood: gross,
-          platformCommissionRate: rate,
-          platformCommissionAmount: commissionAmount,
-          companionIncome,
-          giftName,
-          quantity,
-          paymentMethod: "catfood",
-        },
-      });
     }
 
     return json(res, 400, { ok: false, message: "未知操作" });
   } catch (error) {
+    if (error?.code === "INSUFFICIENT_BALANCE") {
+      return json(res, 400, {
+        ok: false,
+        code: "INSUFFICIENT_BALANCE",
+        message: error.message || "猫粮余额不足",
+        availableBalance: error.availableBalance ?? 0,
+        requiredAmount: error.requiredAmount ?? null,
+        shortfall: error.shortfall ?? null,
+        rechargeUrl: error.rechargeUrl || "/recharge.html",
+      });
+    }
     return json(res, error.status || 500, { ok: false, message: error.message || "接口异常" });
   }
 }
