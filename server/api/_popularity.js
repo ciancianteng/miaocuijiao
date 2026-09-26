@@ -651,20 +651,21 @@ export async function listWeeklyCompletedTop({ limit = 3 } = {}) {
   const bounds = periodBounds("weekly");
   const { start: weekStartIso, end: weekEndIso } = weekIsoBounds(bounds);
 
+  // Production enum mcj_order_status = completed only (no reviewed). Never filter reviewed in REST.
   let orders = await db(
     "orders",
-    `?status=in.(completed,reviewed)&select=id,boss_id,companion_id,status,order_type,parent_order_id,completed_at,created_at&completed_at=gte.${encodeURIComponent(weekStartIso)}&completed_at=lte.${encodeURIComponent(weekEndIso)}&order=completed_at.desc&limit=5000`
+    `?status=eq.completed&select=id,boss_id,companion_id,status,order_type,parent_order_id,completed_at,created_at&completed_at=gte.${encodeURIComponent(weekStartIso)}&completed_at=lte.${encodeURIComponent(weekEndIso)}&order=completed_at.desc&limit=5000`
   ).catch(async (e) => {
     // Fallback if completed_at filter / order_type column missing
     // NOTE: Production orders has NO updated_at — never select it.
-    if (/column|order_type|parent_order_id|completed_at/i.test(String(e.message || ""))) {
+    if (/column|order_type|parent_order_id|completed_at|enum|22P02|reviewed/i.test(String(e.message || ""))) {
       const all = await dbMaybe(
         "orders",
-        "?status=in.(completed,reviewed)&select=id,boss_id,companion_id,status,order_type,parent_order_id,completed_at,created_at&order=completed_at.desc&limit=5000"
+        "?status=eq.completed&select=id,boss_id,companion_id,status,order_type,parent_order_id,completed_at,created_at&order=completed_at.desc&limit=5000"
       ).catch(async () =>
         dbMaybe(
           "orders",
-          "?status=in.(completed,reviewed)&select=id,boss_id,companion_id,status,completed_at,created_at&order=completed_at.desc&limit=5000"
+          "?status=eq.completed&select=id,boss_id,companion_id,status,completed_at,created_at&order=completed_at.desc&limit=5000"
         )
       );
       return (all || []).filter((o) =>
@@ -678,11 +679,11 @@ export async function listWeeklyCompletedTop({ limit = 3 } = {}) {
   // Catch completed rows whose completed_at is null but created this week
   const nullCompleted = await dbMaybe(
     "orders",
-    `?status=in.(completed,reviewed)&completed_at=is.null&select=id,boss_id,companion_id,status,order_type,parent_order_id,completed_at,created_at&created_at=gte.${encodeURIComponent(weekStartIso)}&created_at=lte.${encodeURIComponent(weekEndIso)}&limit=2000`
+    `?status=eq.completed&completed_at=is.null&select=id,boss_id,companion_id,status,order_type,parent_order_id,completed_at,created_at&created_at=gte.${encodeURIComponent(weekStartIso)}&created_at=lte.${encodeURIComponent(weekEndIso)}&limit=2000`
   ).catch(async () =>
     dbMaybe(
       "orders",
-      `?status=in.(completed,reviewed)&completed_at=is.null&select=id,boss_id,companion_id,status,completed_at,created_at&created_at=gte.${encodeURIComponent(weekStartIso)}&created_at=lte.${encodeURIComponent(weekEndIso)}&limit=2000`
+      `?status=eq.completed&completed_at=is.null&select=id,boss_id,companion_id,status,completed_at,created_at&created_at=gte.${encodeURIComponent(weekStartIso)}&created_at=lte.${encodeURIComponent(weekEndIso)}&limit=2000`
     )
   );
   if (nullCompleted?.length) {
