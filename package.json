@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
+    "prebuild": "node scripts/assert-env-isolation.mjs",
     "build": "vite build",
+    "assert:env-isolation": "node scripts/assert-env-isolation.mjs",
     "preview": "vite preview --host 0.0.0.0",
     "verify:dashboard-test-filter": "node scripts/verify-dashboard-test-filter.mjs",
     "verify:home-daily-stats": "node scripts/verify-home-daily-stats.mjs",
