@@ -33,10 +33,10 @@
         {label:'有效营业额',value:money(s.totalAmount||0),href:'#orders'},
         {label:'今日营业额',value:money(s.todayAmount||0),href:'#orders'},
         {label:'平台利润',value:money(s.platformProfit||0),href:'#orders'},
-        {label:'提现中/已打款',value:money(s.withdrawPending||0)+' / '+money(s.withdrawPaid||0),href:'#service-reports'}
+        {label:'提现中/已打款',value:money(s.withdrawPending||0)+' / '+money(s.withdrawPaid||0),href:'#service-reports',valueClass:'admin-final-stat-value-wrap'}
       ];
       target.innerHTML=(res.message?note(res.message):'')+'<div class="admin-final-grid">'+cards.map(function(item){
-        return '<a class="admin-final-stat" href="'+esc(item.href)+'"><span>'+esc(item.label)+'</span><strong>'+esc(item.value)+'</strong></a>';
+        return '<a class="admin-final-stat" href="'+esc(item.href)+'"><span>'+esc(item.label)+'</span><strong'+(item.valueClass?' class="'+esc(item.valueClass)+'"':'')+'>'+esc(item.value)+'</strong></a>';
       }).join('')+'</div>';
     }).catch(function(err){
       target.innerHTML=note(err.message||'数据加载失败')+'<button class="mini-btn" type="button" data-admin-final-refresh="dashboard">重试</button>';
