@@ -148,7 +148,15 @@
           .then(function (result) {
             var redirect = "/admin.html#dashboard";
             try {
-              redirect = sessionStorage.getItem("mcjAfterLoginRedirect") || (result && result.redirect) || redirect;
+              var mustChange =
+                result &&
+                (result.mustChangePassword === true ||
+                  (result.session && result.session.user && (result.session.user.mustChangePassword || result.session.user.must_change_password)));
+              if (mustChange) {
+                redirect = "/admin.html#change-password";
+              } else {
+                redirect = sessionStorage.getItem("mcjAfterLoginRedirect") || (result && result.redirect) || redirect;
+              }
               sessionStorage.removeItem("mcjAfterLoginRedirect");
             } catch (e) {}
             if (redirect === "/admin/" || redirect === "/admin") redirect = "/admin.html#dashboard";
