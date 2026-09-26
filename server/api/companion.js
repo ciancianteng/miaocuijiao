@@ -3559,7 +3559,7 @@ export default async function handler(req, res) {
       } catch { /* if helper missing, continue */ }
       try {
         const { touchLastLogin, stampPasswordSet } = await import("./_account-security.js");
-        await stampPasswordSet(profile.id, { mustChangePassword: false }).catch(() => null);
+        await stampPasswordSet(profile.id, { mustChangePassword: false, touchPasswordSetAt: false }).catch(() => null);
         await touchLastLogin(profile.id, "");
       } catch { /* optional */ }
       let playerProfile = profile;

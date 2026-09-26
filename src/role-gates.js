@@ -238,7 +238,10 @@
     if (!msg || /failed to fetch|fetch failed|networkerror|network request failed|load failed|err_connection|econnrefused|econnreset|enotfound|timeout/i.test(msg)) {
       return "暂时无法连接服务器，请稍后重试";
     }
-    if (/invalid login credentials|invalid.*(email|password)|email not confirmed/i.test(msg)) {
+    if (/email not confirmed|邮箱尚未验证/i.test(msg)) {
+      return "邮箱尚未验证，请先完成邮箱验证后再登录。";
+    }
+    if (/invalid login credentials|invalid.*(email|password)|wrong password/i.test(msg)) {
       return "邮箱或密码错误。";
     }
     if (/尚未设置密码|NO_PASSWORD/i.test(msg) || /请使用验证码登录后前往账号安全/i.test(msg)) {

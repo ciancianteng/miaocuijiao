@@ -2557,10 +2557,18 @@ export default async function handler(req, res) {
         }
       }
       let message = raw;
-      if (/invalid login credentials|invalid.*(email|password)|email not confirmed/i.test(message)) {
+      if (/email not confirmed/i.test(message)) {
+        return json(res, 403, {
+          ok: false,
+          message: "邮箱尚未验证，请先完成邮箱验证后再登录。",
+          code: "EMAIL_NOT_CONFIRMED",
+        });
+      }
+      if (/invalid login credentials|invalid.*(email|password)|wrong password/i.test(message)) {
         message = "邮箱或密码错误。";
       }
-      return json(res, 401, { ok: false, message: message || "邮箱或密码错误。" });
+      // Do not collapse rate-limit / network / unknown Auth errors into wrong-password.
+      return json(res, 401, { ok: false, message: message || "登录失败，请稍后重试。" });
     }
     const authUser = auth.user;
     let profile = await profileFor(authUser.id);
@@ -2592,9 +2600,11 @@ export default async function handler(req, res) {
         /* keep login usable even if UID backfill fails */
       }
     }
-    // Successful password login proves password exists — stamp for future probes.
+    // Successful password login proves password exists — stamp has_password only.
+    // Do not bump password_set_at (that timestamp is for real set/reset events).
     await stampPasswordSet(authUser.id, {
       mustChangePassword: resolveMustChangePassword(profile, authUser),
+      touchPasswordSetAt: false,
     }).catch(() => null);
     const user = await enrichSafeProfile(
       { ...profile, has_password: true },
@@ -2663,7 +2673,9 @@ export default async function handler(req, res) {
     let message = String(error.message || "").trim();
     if (/failed to fetch|fetch failed|network|econnrefused|enotfound|timeout/i.test(message)) {
       message = "暂时无法连接服务器，请稍后重试";
-    } else if (/invalid login credentials|invalid.*(email|password)|email not confirmed/i.test(message)) {
+    } else if (/email not confirmed/i.test(message)) {
+      message = "邮箱尚未验证，请先完成邮箱验证后再登录。";
+    } else if (/invalid login credentials|invalid.*(email|password)|wrong password/i.test(message)) {
       message = "邮箱或密码错误。";
     }
     if (
@@ -2686,7 +2698,13 @@ export default async function handler(req, res) {
             : "保存资料失败。";
       return json(res, status, { ok: false, message: message || fallback });
     }
-    const fallback = action === "refresh" ? "refreshToken 已失效，请重新登录。" : "邮箱或密码错误。";
+    // Login / refresh / other: never collapse profile/role/network failures into wrong-password.
+    const fallback =
+      action === "refresh"
+        ? "refreshToken 已失效，请重新登录。"
+        : action === "login"
+          ? "登录失败，请稍后重试。"
+          : "请求失败，请稍后重试。";
     return json(res, 401, { ok: false, message: message || fallback });
   }
 }

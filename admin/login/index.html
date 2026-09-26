@@ -158,10 +158,18 @@
             submitting = false;
             Auth.setLoading(btn, false, "登录");
             var raw = String((err && err.message) || "").trim();
-            var friendly =
-              !raw || /bad request|invalid|credentials|unauthorized|^\d{3}\b/i.test(raw)
-                ? "账号或密码错误，请重试。"
-                : raw;
+            // Only credential failures become「邮箱或密码错误」.
+            // Portal / profile / network / permission errors must keep their own text.
+            var looksCredential =
+              !raw ||
+              /invalid login credentials|invalid.*(email|password)|wrong password|邮箱或密码错误|账号或密码错误/i.test(
+                raw
+              );
+            var looksOtherMapped =
+              /暂时无法连接|未绑定平台资料|账号已停用|账号角色|入口不匹配|PORTAL_DENIED|EMAIL_NOT_VERIFIED|请先完成邮箱|账号未启用|正在审核|无权限|PROD_TEST_ACCOUNT/i.test(
+                raw
+              );
+            var friendly = looksCredential && !looksOtherMapped ? "邮箱或密码错误。" : raw || "登录失败，请稍后重试。";
             Auth.setFormError(target, friendly);
           });
       });
