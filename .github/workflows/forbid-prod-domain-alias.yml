@@ -1,0 +1,36 @@
+name: Forbid Production domain alias abuse
+
+# Fails if a workflow attempts to document/alias Production domains from non-main.
+# Companion to scripts/assert-prod-domain-alias-safe.mjs
+on:
+  pull_request:
+  push:
+    branches:
+      - "**"
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assert staging deploy script never targets Production domains
+        run: |
+          set -euo pipefail
+          if grep -nE 'alias set.*(www\.meowcuijiao\.com|meowcuijiao\.com)' scripts/deploy-staging.mjs; then
+            echo "::error::deploy-staging.mjs must never alias Production domains"
+            exit 1
+          fi
+          if grep -nE 'vercel deploy --prod' scripts/deploy-staging.mjs; then
+            echo "::error::deploy-staging.mjs must never use --prod"
+            exit 1
+          fi
+          node scripts/assert-prod-domain-alias-safe.mjs meow-cuijiao-homepage-git-staging-ciancianteng-4581s-projects.vercel.app meow-cuijiao-homepage-staging.vercel.app
+          # Negative test: preview host → www must fail
+          if node scripts/assert-prod-domain-alias-safe.mjs meow-cuijiao-homepage-git-fi-cc9414-ciancianteng-4581s-projects.vercel.app www.meowcuijiao.com; then
+            echo "::error::expected refuse preview→www alias"
+            exit 1
+          fi
+          echo "OK production domain alias guards"

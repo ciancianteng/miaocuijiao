@@ -56,6 +56,21 @@ jobs:
           fi
           HOST="${HOST#https://}"
           HOST="${HOST%/}"
+          # Hard refuse Production domains — staging workflow must never touch www.
+          case "$HOST" in
+            www.meowcuijiao.com|meowcuijiao.com|meow-cuijiao-homepage.vercel.app)
+              echo "::error::REFUSED: Host $HOST is a Production domain. Staging workflow cannot use it."
+              exit 1
+              ;;
+          esac
+          for A in "$FIXED" "$MIRROR"; do
+            case "$A" in
+              www.meowcuijiao.com|meowcuijiao.com)
+                echo "::error::REFUSED: cannot alias Production domain $A"
+                exit 1
+                ;;
+            esac
+          done
           echo "Aliasing $HOST -> $FIXED"
           vercel alias set "$HOST" "$FIXED" --token "$VERCEL_TOKEN" --scope ciancianteng-4581s-projects
           echo "Aliasing $HOST -> $MIRROR"
