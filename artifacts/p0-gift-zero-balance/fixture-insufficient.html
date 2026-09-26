@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>礼物余额不足验收</title>
+<style>
+body{margin:0;font-family:system-ui,sans-serif;background:#0b0b0f;color:#fff;min-height:100vh}
+.mcj-sheet{position:fixed;left:12px;right:12px;bottom:12px;background:#16161c;border:1px solid #ff4fa3;border-radius:16px;padding:18px;box-shadow:0 12px 40px rgba(0,0,0,.45)}
+.mcj-sheet h3{margin:0 0 12px;font-size:18px}
+.mcj-gift-balance-line{margin:8px 0;color:#f3c6dc}
+.mcj-actions{display:flex;gap:10px;margin-top:16px}
+.mcj-actions button{flex:1;border-radius:12px;padding:12px;border:1px solid #ff4fa3;background:transparent;color:#fff;font-size:15px}
+.mcj-actions .primary{background:linear-gradient(90deg,#ff4fa3,#ff7ab8);border:none;color:#111;font-weight:700}
+.badge{position:fixed;top:12px;left:12px;right:12px;padding:10px 12px;background:#221018;border:1px solid #ff4fa3;border-radius:10px;font-size:13px;color:#ffd0e4}
+</style></head><body>
+<div class="badge">CASE1 · Boss 1717 · 余额 0 · 礼物 20 · 必须失败并出现去充值</div>
+<div class="mcj-sheet" data-testid="insufficient-sheet">
+  <h3>猫粮余额不足</h3>
+  <p class="mcj-gift-balance-line">当前余额：<strong>0</strong> 猫粮</p>
+  <p class="mcj-gift-balance-line">需要支付：<strong>20</strong> 猫粮</p>
+  <p class="mcj-gift-balance-line">还差：<strong>20</strong> 猫粮</p>
+  <div class="mcj-actions">
+    <button type="button" class="ghost">取消</button>
+    <button type="button" class="primary">去充值</button>
+  </div>
+</div>
+</body></html>

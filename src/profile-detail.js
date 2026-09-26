@@ -961,24 +961,35 @@
                 })
                 .catch(function (err) {
                   busy = false;
-                  paint();
                   if (err.code === "INSUFFICIENT_BALANCE" || /余额不足/.test(err.message || "")) {
-                    var avail = err.availableBalance != null ? err.availableBalance : "?";
+                    var avail = err.availableBalance != null ? err.availableBalance : 0;
                     var need = err.requiredAmount != null ? err.requiredAmount : gross;
                     var short =
                       err.shortfall != null ? err.shortfall : Math.max(0, Number(need) - Number(avail) || 0);
-                    var go = window.confirm(
-                      "猫粮余额不足\n\n当前余额：" +
-                        avail +
-                        " 猫粮\n需要支付：" +
-                        need +
-                        " 猫粮\n还差：" +
-                        short +
-                        " 猫粮\n\n是否去充值？"
+                    openSheet(
+                      "<h3>猫粮余额不足</h3>" +
+                        '<p class="mcj-gift-balance-line">当前余额：<strong>' +
+                        esc(String(avail)) +
+                        "</strong> 猫粮</p>" +
+                        '<p class="mcj-gift-balance-line">需要支付：<strong>' +
+                        esc(String(need)) +
+                        "</strong> 猫粮</p>" +
+                        '<p class="mcj-gift-balance-line">还差：<strong>' +
+                        esc(String(short)) +
+                        "</strong> 猫粮</p>" +
+                        '<div class="mcj-actions">' +
+                        '<button type="button" class="ghost" data-close-sheet>取消</button>' +
+                        '<button type="button" class="primary" data-go-recharge>去充值</button>' +
+                        "</div>"
                     );
-                    if (go) location.href = err.rechargeUrl || "recharge.html";
+                    var balSheet = document.querySelector(".mcj-sheet");
+                    balSheet.querySelector("[data-close-sheet]").onclick = closeSheet;
+                    balSheet.querySelector("[data-go-recharge]").onclick = function () {
+                      location.href = err.rechargeUrl || "recharge.html";
+                    };
                     return;
                   }
+                  paint();
                   alert(err.message || "赠送失败");
                 });
             });
