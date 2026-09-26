@@ -653,27 +653,38 @@ export async function listWeeklyCompletedTop({ limit = 3 } = {}) {
 
   let orders = await db(
     "orders",
-    `?status=in.(completed,reviewed)&select=id,boss_id,companion_id,status,order_type,parent_order_id,completed_at,updated_at,created_at&completed_at=gte.${encodeURIComponent(weekStartIso)}&completed_at=lte.${encodeURIComponent(weekEndIso)}&order=completed_at.desc&limit=5000`
+    `?status=in.(completed,reviewed)&select=id,boss_id,companion_id,status,order_type,parent_order_id,completed_at,created_at&completed_at=gte.${encodeURIComponent(weekStartIso)}&completed_at=lte.${encodeURIComponent(weekEndIso)}&order=completed_at.desc&limit=5000`
   ).catch(async (e) => {
     // Fallback if completed_at filter / order_type column missing
+    // NOTE: Production orders has NO updated_at — never select it.
     if (/column|order_type|parent_order_id|completed_at/i.test(String(e.message || ""))) {
       const all = await dbMaybe(
         "orders",
-        "?status=in.(completed,reviewed)&select=id,boss_id,companion_id,status,completed_at,updated_at,created_at&order=completed_at.desc&limit=5000"
+        "?status=in.(completed,reviewed)&select=id,boss_id,companion_id,status,order_type,parent_order_id,completed_at,created_at&order=completed_at.desc&limit=5000"
+      ).catch(async () =>
+        dbMaybe(
+          "orders",
+          "?status=in.(completed,reviewed)&select=id,boss_id,companion_id,status,completed_at,created_at&order=completed_at.desc&limit=5000"
+        )
       );
       return (all || []).filter((o) =>
-        inPeriod(o.completed_at || o.updated_at || o.created_at, bounds.periodStart, bounds.periodEnd)
+        inPeriod(o.completed_at || o.created_at, bounds.periodStart, bounds.periodEnd)
       );
     }
     if (isMissingRelation(e)) return [];
     throw e;
   });
 
-  // Also catch completed rows whose completed_at is null but updated this week
+  // Catch completed rows whose completed_at is null but created this week
   const nullCompleted = await dbMaybe(
     "orders",
-    `?status=in.(completed,reviewed)&completed_at=is.null&select=id,boss_id,companion_id,status,order_type,parent_order_id,completed_at,updated_at,created_at&updated_at=gte.${encodeURIComponent(weekStartIso)}&updated_at=lte.${encodeURIComponent(weekEndIso)}&limit=2000`
-  ).catch(() => []);
+    `?status=in.(completed,reviewed)&completed_at=is.null&select=id,boss_id,companion_id,status,order_type,parent_order_id,completed_at,created_at&created_at=gte.${encodeURIComponent(weekStartIso)}&created_at=lte.${encodeURIComponent(weekEndIso)}&limit=2000`
+  ).catch(async () =>
+    dbMaybe(
+      "orders",
+      `?status=in.(completed,reviewed)&completed_at=is.null&select=id,boss_id,companion_id,status,completed_at,created_at&created_at=gte.${encodeURIComponent(weekStartIso)}&created_at=lte.${encodeURIComponent(weekEndIso)}&limit=2000`
+    )
+  );
   if (nullCompleted?.length) {
     const seen = new Set((orders || []).map((o) => o.id));
     for (const o of nullCompleted) {
@@ -688,7 +699,7 @@ export async function listWeeklyCompletedTop({ limit = 3 } = {}) {
   const byCompanion = new Map(); // cid -> { orderIds:Set, lastCompletedAt }
   for (const o of orders || []) {
     if (!countsTowardCompanionCompleted(o)) continue;
-    const ts = o.completed_at || o.updated_at || o.created_at;
+    const ts = o.completed_at || o.created_at;
     if (!inPeriod(ts, bounds.periodStart, bounds.periodEnd)) continue;
     const cid = String(o.companion_id).trim();
     let bucket = byCompanion.get(cid);
@@ -775,7 +786,7 @@ export async function listWeeklyCompletedTop({ limit = 3 } = {}) {
   const clean = new Map();
   for (const o of orders || []) {
     if (!countsTowardCompanionCompleted(o)) continue;
-    const ts = o.completed_at || o.updated_at || o.created_at;
+    const ts = o.completed_at || o.created_at;
     if (!inPeriod(ts, bounds.periodStart, bounds.periodEnd)) continue;
     const cid = String(o.companion_id).trim();
     const c = cMap[cid];
