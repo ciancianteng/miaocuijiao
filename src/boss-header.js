@@ -520,6 +520,46 @@
     );
   }
 
+  /** Official Instagram — always @meowcuijiao (never legacy handles). */
+  var OFFICIAL_INSTAGRAM_URL = "https://www.instagram.com/meowcuijiao/";
+  var OFFICIAL_INSTAGRAM_HANDLE = "@meowcuijiao";
+
+  function instagramIconSvg() {
+    return (
+      '<svg class="mcj-mnav-ig-icon" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false">' +
+      '<defs><linearGradient id="mcjIgGrad" x1="0%" y1="100%" x2="100%" y2="0%">' +
+      '<stop offset="0%" stop-color="#f58529"/><stop offset="50%" stop-color="#dd2a7b"/><stop offset="100%" stop-color="#8134af"/>' +
+      "</linearGradient></defs>" +
+      '<rect x="2.5" y="2.5" width="19" height="19" rx="5.5" fill="none" stroke="url(#mcjIgGrad)" stroke-width="1.8"/>' +
+      '<circle cx="12" cy="12" r="4.2" fill="none" stroke="url(#mcjIgGrad)" stroke-width="1.8"/>' +
+      '<circle cx="17.4" cy="6.6" r="1.15" fill="url(#mcjIgGrad)"/>' +
+      "</svg>"
+    );
+  }
+
+  function instagramEntryCardHtml() {
+    return (
+      '<a class="mcj-mnav-companion-card mcj-mnav-instagram-card" href="' +
+      OFFICIAL_INSTAGRAM_URL +
+      '" target="_blank" rel="noopener noreferrer" data-mcj-instagram-entry="1" aria-label="官方 Instagram ' +
+      esc(OFFICIAL_INSTAGRAM_HANDLE) +
+      '">' +
+      '<span class="mcj-mnav-companion-logo mcj-mnav-ig-logo" aria-hidden="true">' +
+      instagramIconSvg() +
+      "</span>" +
+      '<span class="mcj-mnav-companion-body">' +
+      '<span class="mcj-mnav-companion-title">官方 Instagram</span>' +
+      '<span class="mcj-mnav-companion-en">MEOW CUI JIAO</span>' +
+      '<span class="mcj-mnav-companion-sub">' +
+      esc(OFFICIAL_INSTAGRAM_HANDLE) +
+      "</span>" +
+      '<span class="mcj-mnav-companion-feats">关注妙脆角最新公告 · 活动 · 陪玩资讯</span>' +
+      "</span>" +
+      '<span class="mcj-mnav-companion-arrow" aria-hidden="true">→</span>' +
+      "</a>"
+    );
+  }
+
   function mobileAuthLinkHtml() {
     if (isLoggedIn()) {
       return (
@@ -541,6 +581,8 @@
       navLink("companion-center.html", "陪玩大厅") +
       navLink("guide.html", "使用教学") +
       supportNavLink() +
+      '<div class="mcj-mnav-divider" role="separator" aria-hidden="true"></div>' +
+      instagramEntryCardHtml() +
       '<div class="mcj-mnav-divider" role="separator" aria-hidden="true"></div>' +
       companionEntryCardHtml() +
       '<div class="mcj-mnav-divider" role="separator" aria-hidden="true"></div>' +
@@ -821,7 +863,7 @@
   function mount() {
     if (!isBossPublicPage() || !document.body) return;
     // Always rebuild header markup for tab-nav-only layout
-    ensureCss("/src/boss-header.css?v=20260925guideNav1", "data-mcj-boss-header-css");
+    ensureCss("/src/boss-header.css?v=20260926igNav1", "data-mcj-boss-header-css");
     ensureCss("/src/mcj-safe-area.css?v=20260802mobileP0c", "data-mcj-safe-area-css");
     ensureCss("/src/home-mobile.css?v=20260802mobileP0c", "data-mcj-home-mobile-css");
     // Shared install guide also loaded by /pwa-boot.js sitewide; keep as boss fallback.
