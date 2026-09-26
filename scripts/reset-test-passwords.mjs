@@ -1,8 +1,9 @@
-import fs from "node:fs";
-import path from "node:path";
 import { guardAfterEnvLoad } from "./lib/prod-guard.mjs";
 
-const ROOT = process.cwd();
+/**
+ * Staging-only helper for rotating KNOWN STAGING test passwords.
+ * NEVER target Production real admin UUID (meowcuijiao@gmail.com).
+ */
 guardAfterEnvLoad("reset-test-passwords.mjs");
 
 const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
@@ -13,9 +14,10 @@ if (!url || !key) {
 }
 
 const PASS = "McjTest@12345678";
+// Staging test fixtures only — do NOT include production admin UUID
+// 6f31b706-11e7-42df-8db1-d2caccd796de (meowcuijiao@gmail.com).
 const targets = [
   { id: "268e8205-0e09-4870-b44f-72676ade6ce5", email: "service.final.1785714993009@meow.test" },
-  { id: "6f31b706-11e7-42df-8db1-d2caccd796de", email: "admin@meow.test" },
 ];
 
 for (const t of targets) {
@@ -49,32 +51,5 @@ console.log(
     account: "service.final.1785714993009@meow.test",
     password: PASS,
     email: "service.final.1785714993009@meow.test",
-  })
-);
-console.log(
-  "verify admin",
-  await login("/api/auth", {
-    action: "login",
-    email: "admin@meow.test",
-    password: PASS,
-    account: "admin@meow.test",
-  })
-);
-console.log(
-  "verify boss",
-  await login("/api/auth", {
-    action: "login",
-    email: "boss.final.1785714993009@meow.test",
-    password: PASS,
-    account: "boss.final.1785714993009@meow.test",
-  })
-);
-console.log(
-  "verify companion",
-  await login("/api/auth", {
-    action: "login",
-    email: "companion.idcard.1785715257525@meow.test",
-    password: PASS,
-    account: "companion.idcard.1785715257525@meow.test",
   })
 );

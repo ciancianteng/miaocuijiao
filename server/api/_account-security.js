@@ -118,7 +118,7 @@ export async function patchProfileSecurity(userId, fields = {}) {
   }
 }
 
-export async function stampPasswordSet(userId, { mustChangePassword = false } = {}) {
+export async function stampPasswordSet(userId, { mustChangePassword = false, touchPasswordSetAt = true } = {}) {
   const now = new Date().toISOString();
   // Also stamp user_metadata so has_password survives missing columns.
   try {
@@ -127,8 +127,13 @@ export async function stampPasswordSet(userId, { mustChangePassword = false } = 
     });
     const user = raw?.user && typeof raw.user === "object" ? raw.user : raw;
     const prev = (user?.user_metadata && typeof user.user_metadata === "object" && user.user_metadata) || {};
+    // On login success, preserve existing password_set_at so it does not look like a reset.
+    // Real set/change/forgot-reset paths pass touchPasswordSetAt=true (default).
+    const passwordSetAt = touchPasswordSetAt
+      ? now
+      : prev.password_set_at || prev.passwordSetAt || user?.app_metadata?.password_set_at || now;
     // Strip any accidental secret fields if present.
-    const nextMeta = { ...prev, has_password: true, password_set_at: now };
+    const nextMeta = { ...prev, has_password: true, password_set_at: passwordSetAt };
     delete nextMeta.password;
     delete nextMeta.password_hash;
     delete nextMeta.encrypted_password;
@@ -148,7 +153,7 @@ export async function stampPasswordSet(userId, { mustChangePassword = false } = 
   }
   return patchProfileSecurity(userId, {
     hasPassword: true,
-    passwordSetAt: now,
+    ...(touchPasswordSetAt ? { passwordSetAt: now } : {}),
     mustChangePassword: !!mustChangePassword,
   });
 }

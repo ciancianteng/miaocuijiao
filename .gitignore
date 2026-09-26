@@ -21,3 +21,7 @@ BUTTON_AUDIT.md
 .vercel/
 .vercel/**
 dist
+.vercel
+.env*
+artifacts/**/TEMP_PASSWORD.local.txt
+artifacts/**/*.local.txt
