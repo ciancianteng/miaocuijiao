@@ -3772,6 +3772,20 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
         );
       } catch (_) {}
 
+      // Discord voice room after CS confirms payment (soft-fail).
+      try {
+        const paidRow = { ...order, ...patched, status: next };
+        if (String(paidRow.voice_mode || "").toLowerCase() === "discord") {
+          const { maybeEnsureDiscordAfterPaid } = await import("./_discord-voice-orders.js");
+          await maybeEnsureDiscordAfterPaid(paidRow, {
+            bossUserId: order.boss_id,
+            companionUserId: isMultiParent ? undefined : assignedCompanionId || order.companion_id || undefined,
+          });
+        }
+      } catch (err) {
+        console.warn("[cs/confirm_payment] discord voice", String(err?.message || err).slice(0, 160));
+      }
+
       const paidAtIso = patched.paid_at || nowIso();
       let cascadedChildren = [];
       if (isMultiParent) {

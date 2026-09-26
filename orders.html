@@ -856,11 +856,20 @@
               field('支付方式',esc(o.paymentMethod||o.payment_method||'-'))+
               field('语音方式',esc(voiceModeLabel(o)))+
               (String(o.voiceMode||o.voice_mode||'')==='discord'
-                ? (o.discordChannelUrl || o.discord_channel_url
-                    ? field('Discord 语音房','<a class="order-btn" style="display:inline-flex;width:auto;padding:6px 10px" href="'+esc(o.discordChannelUrl||o.discord_channel_url)+'" target="_blank" rel="noopener">🎧 进入 Discord 语音房</a>')
-                    : (String(o.discordChannelStatus||o.discord_channel_status||'')==='error'
-                        ? field('Discord 语音','暂时创建失败 · <button class="order-btn" type="button" data-discord-retry="'+esc(o.id)+'">重试创建</button>')
-                        : field('Discord 语音','等待陪玩确认后开启')))
+                ? (function(){
+                    var invite=o.discordInviteUrl||o.discord_invite_url||o.discordChannelUrl||o.discord_channel_url||'';
+                    var st=String(o.discordChannelStatus||o.discord_channel_status||'');
+                    if(st==='deleted'||st==='closed'){
+                      return field('Discord 语音房','订单已结束，语音房入口已关闭');
+                    }
+                    if(invite){
+                      return field('Discord 语音房','<a class="order-btn" style="display:inline-flex;width:auto;padding:6px 10px" href="'+esc(invite)+'" target="_blank" rel="noopener">🎙️ 进入 Discord 订单语音房</a>');
+                    }
+                    if(st==='error'){
+                      return field('Discord 语音','语音房创建失败 · <button class="order-btn" type="button" data-discord-retry="'+esc(o.id)+'">重试创建</button>');
+                    }
+                    return field('Discord 语音','准备中 · <button class="order-btn" type="button" data-discord-retry="'+esc(o.id)+'">开启语音房</button>');
+                  })()
                 : '')+
             '</div></div>'+
           '</div>';

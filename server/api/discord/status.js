@@ -74,6 +74,24 @@ export default async function handler(req, res) {
       });
       const order = rows?.[0];
       if (order) {
+        const isBoss = String(order.boss_id || "") === String(profile.id || "");
+        const isCompanion = String(order.companion_id || "") === String(profile.id || "");
+        let isChildCompanion = false;
+        if (!isBoss && !isCompanion && !order.parent_order_id) {
+          try {
+            const kids = await supabaseJson(
+              restUrl(
+                "orders",
+                `?parent_order_id=eq.${encodeURIComponent(order.id)}&companion_id=eq.${encodeURIComponent(profile.id)}&select=id&limit=1`
+              ),
+              { headers: serviceHeaders() }
+            );
+            isChildCompanion = Array.isArray(kids) && kids.length > 0;
+          } catch (_) {}
+        }
+        if (!isBoss && !isCompanion && !isChildCompanion) {
+          return json(res, 403, { ok: false, message: "无权查看此订单的 Discord 语音房" });
+        }
         const owner = await resolveVoiceOwnerOrder(order);
         voice = orderVoiceView(order, { discordLink: link, owner });
       }

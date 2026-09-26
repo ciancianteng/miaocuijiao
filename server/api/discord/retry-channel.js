@@ -82,8 +82,8 @@ export default async function handler(req, res) {
       ? result.created
         ? "Discord 语音房已创建"
         : result.reused
-          ? "Discord 语音房已存在"
+          ? "Discord 语音房已就绪"
           : "已处理"
-      : result.message || "Discord 语音房创建失败，订单不受影响，可稍后重试",
+      : result.message || "语音房创建失败，请稍后重试",
   });
 }

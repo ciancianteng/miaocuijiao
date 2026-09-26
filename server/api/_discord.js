@@ -194,6 +194,40 @@ export function discordChannelUrl(channelId) {
   return `https://discord.com/channels/${guildId}/${channelId}`;
 }
 
+export function discordInviteUrlFromCode(code) {
+  const c = String(code || "").trim();
+  if (!c) return "";
+  return `https://discord.gg/${c}`;
+}
+
+/**
+ * Create a real Discord invite for a voice channel (usable join link).
+ * max_age=0 / max_uses=0 → never expire / unlimited uses (order-scoped room).
+ */
+export async function createChannelInvite(channelId, { maxAge = 0, maxUses = 0, unique = true } = {}) {
+  if (!channelId) throw Object.assign(new Error("missing channelId"), { code: "DISCORD_INVITE_FAILED" });
+  const invite = await discordFetch(`/channels/${encodeURIComponent(channelId)}/invites`, {
+    method: "POST",
+    body: JSON.stringify({
+      max_age: Math.max(0, Number(maxAge) || 0),
+      max_uses: Math.max(0, Number(maxUses) || 0),
+      unique: !!unique,
+    }),
+  });
+  const code = String(invite?.code || "").trim();
+  if (!code) {
+    throw Object.assign(new Error("Discord invite create returned empty code"), {
+      code: "DISCORD_INVITE_FAILED",
+      body: invite,
+    });
+  }
+  return {
+    code,
+    url: discordInviteUrlFromCode(code),
+    invite,
+  };
+}
+
 /**
  * Create a private voice channel under the order category.
  * Permission overwrites on the channel itself (not only category).
@@ -203,7 +237,8 @@ export async function createPrivateVoiceChannel({ orderNo, bossDiscordUserId, co
   if (!c.guildId || !c.categoryId) {
     throw Object.assign(new Error("Discord guild/category not configured"), { code: "DISCORD_NOT_CONFIGURED" });
   }
-  const name = safeChannelName(orderNo);
+  const cleaned = safeChannelName(orderNo);
+  const name = cleaned.startsWith("ORDER-") ? cleaned.slice(0, 90) : `order-${cleaned}`.slice(0, 90);
   const permission_overwrites = [everyoneDenyOverwrite(c.guildId)];
   if (bossDiscordUserId) permission_overwrites.push(allowVoiceOverwrite(bossDiscordUserId));
   const seen = new Set();

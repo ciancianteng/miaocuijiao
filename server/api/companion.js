@@ -1382,10 +1382,32 @@ function viewOrder(row = {}, boss = {}, settlement = null) {
     discord_channel_id: row.discord_channel_id || null,
     discordChannelStatus: row.discord_channel_status || null,
     discord_channel_status: row.discord_channel_status || null,
-    discordChannelUrl:
-      row.discord_channel_id && process.env.DISCORD_GUILD_ID
-        ? `https://discord.com/channels/${process.env.DISCORD_GUILD_ID}/${row.discord_channel_id}`
-        : null,
+    discordInviteUrl: row.discord_invite_url || null,
+    discord_invite_url: row.discord_invite_url || null,
+    discordChannelUrl: (() => {
+      const st = String(row.discord_channel_status || "").toLowerCase();
+      if (st === "deleted" || st === "closed") return null;
+      const invite = String(row.discord_invite_url || "").trim();
+      if (invite) return invite;
+      const code = String(row.discord_invite_code || "").trim();
+      if (code) return `https://discord.gg/${code}`;
+      if (row.discord_channel_id && process.env.DISCORD_GUILD_ID) {
+        return `https://discord.com/channels/${process.env.DISCORD_GUILD_ID}/${row.discord_channel_id}`;
+      }
+      return null;
+    })(),
+    discord_channel_url: (() => {
+      const st = String(row.discord_channel_status || "").toLowerCase();
+      if (st === "deleted" || st === "closed") return null;
+      const invite = String(row.discord_invite_url || "").trim();
+      if (invite) return invite;
+      const code = String(row.discord_invite_code || "").trim();
+      if (code) return `https://discord.gg/${code}`;
+      if (row.discord_channel_id && process.env.DISCORD_GUILD_ID) {
+        return `https://discord.com/channels/${process.env.DISCORD_GUILD_ID}/${row.discord_channel_id}`;
+      }
+      return null;
+    })(),
     confirmDeadline,
     acceptedAt: row.accepted_at || "",
     startedAt: row.started_at || "",
