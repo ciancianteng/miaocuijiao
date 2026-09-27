@@ -303,6 +303,32 @@
   color:rgba(255,214,232,.55)!important;
 }
 .pop-rank-grid .hot-meta{display:flex!important;flex-wrap:nowrap!important;gap:4px!important;align-items:center!important;min-width:0!important;overflow:hidden!important}
+.pop-rank-grid .companion-level-pill{
+  --pop-lv:#9CA3AF;
+  display:inline-flex!important;
+  align-items:center!important;
+  flex:0 1 auto!important;
+  min-width:0!important;
+  height:18px!important;
+  margin:0!important;
+  padding:0 7px!important;
+  box-sizing:border-box!important;
+  border:1px solid var(--pop-lv)!important;
+  border-radius:999px!important;
+  background:color-mix(in srgb,var(--pop-lv) 18%,transparent)!important;
+  color:#f3f6ff!important;
+  font-size:10px!important;
+  font-weight:800!important;
+  line-height:1!important;
+  letter-spacing:.02em!important;
+  white-space:nowrap!important;
+  overflow:hidden!important;
+  text-overflow:ellipsis!important;
+}
+.pop-rank-grid .companion-level-pill[data-level-id="lv2"]{--pop-lv:#3B82F6}
+.pop-rank-grid .companion-level-pill[data-level-id="lv3"]{--pop-lv:#A855F7}
+.pop-rank-grid .companion-level-pill[data-level-id="lv4"]{--pop-lv:#EAB308}
+.pop-rank-grid .companion-level-pill[data-level-id="lv5"]{--pop-lv:#EF4444}
 .pop-rank-grid .hot-status{font-size:11px!important;font-weight:650!important;color:rgba(255,214,232,.78)!important;white-space:nowrap!important}
 .pop-rank-grid .hot-game{
   margin:0!important;
