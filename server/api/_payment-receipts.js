@@ -539,9 +539,14 @@ export async function uploadProof({ order, bossId, dataUrl, paymentMethod: metho
 
 export async function listPendingForCs({ orderIds = [] } = {}) {
   const query = orderIds.length
-    ? `?status=eq.pending&order_id=in.(${orderIds.map(encodeURIComponent).join(",")})&order=uploaded_at.asc&limit=500`
-    : "?status=eq.pending&order=uploaded_at.asc&limit=500";
-  return companionDb("payment_receipts", query).catch(() => []);
+    ? `?status=eq.pending&order_id=in.(${orderIds.map(encodeURIComponent).join(",")})&order=uploaded_at.desc&limit=500`
+    : "?status=eq.pending&order=uploaded_at.desc&limit=500";
+  const rows = await companionDb("payment_receipts", query).catch(() => []);
+  return (Array.isArray(rows) ? rows : []).sort((a, b) => {
+    const aTs = Date.parse(a?.uploaded_at || 0) || 0;
+    const bTs = Date.parse(b?.uploaded_at || 0) || 0;
+    return bTs - aTs;
+  });
 }
 
 async function insertPaidTransaction({ order, receipt, reviewerId, at }) {
