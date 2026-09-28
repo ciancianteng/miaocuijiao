@@ -18,10 +18,29 @@
       return "admin";
     }
   }
+  function getAdminAccessToken() {
+    try {
+      if (Auth && typeof Auth.getAccessToken === "function") {
+        var token = Auth.getAccessToken();
+        if (token) return token;
+      }
+      if (window.MCJAdminAuthFetch && typeof window.MCJAdminAuthFetch.getAccessToken === "function") {
+        var token2 = window.MCJAdminAuthFetch.getAccessToken();
+        if (token2) return token2;
+      }
+    } catch (e) {}
+    return "";
+  }
   function api(path, opts) {
     opts = opts || {};
-    opts.headers = Object.assign({ Accept: "application/json", "x-mcj-admin-role": role() }, opts.headers || {});
-    return (Auth && Auth.fetch ? Auth.fetch(path, opts) : fetch(path, opts)).then(function (res) {
+    var headers = Object.assign({ Accept: "application/json", "x-mcj-admin-role": role() }, opts.headers || {});
+    var token = getAdminAccessToken();
+    if (token) {
+      headers.Authorization = "Bearer " + token;
+      headers["x-mcj-access-token"] = token;
+    }
+    opts.headers = headers;
+    return (Auth && typeof Auth.fetch === "function" ? Auth.fetch(path, opts) : fetch(path, opts)).then(function (res) {
       return res.json().then(function (body) {
         if (!res.ok || body.ok === false) throw new Error(body.message || "请求失败");
         return body;
@@ -30,8 +49,8 @@
   }
   function target() {
     return (
-      document.getElementById(TARGET) ||
       document.getElementById("table-recharge_requests") ||
+      document.getElementById(TARGET) ||
       document.querySelector("#section-recharge-center .panel")
     );
   }
