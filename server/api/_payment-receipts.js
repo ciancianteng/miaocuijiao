@@ -955,8 +955,52 @@ export function exportCsv(rows = []) {
       .map(csvCell).join(",")
   ).join("\n");
 }
-
 export async function signedProofUrl(receipt, expiresIn = 3600) {
+  if (!receipt) return "";
+
+  const bucket =
+    String(receipt.storage_bucket || BUCKET || "").trim();
+
+  const path =
+    String(receipt.storage_path || "").trim();
+
+  if (!path) {
+    console.warn("[signedProofUrl] missing storage_path", receipt.id);
+    return "";
+  }
+
+  const ttl = Math.max(300, Number(expiresIn) || 3600);
+
+  try {
+    // already signed/public url fallback
+    if (
+      path.startsWith("http://") ||
+      path.startsWith("https://")
+    ) {
+      return path;
+    }
+
+    const url = await createSignedUrl(
+      bucket,
+      path,
+      ttl
+    );
+
+    return url || "";
+  } catch (error) {
+    console.warn(
+      "[signedProofUrl failed]",
+      {
+        id: receipt.id,
+        bucket,
+        path,
+        error: error?.message
+      }
+    );
+
+    return "";
+  }
+}
   if (!receipt?.storage_path) return "";
   const ttl = Math.max(300, Number(expiresIn) || 3600);
   return createSignedUrl(receipt.storage_bucket || BUCKET, receipt.storage_path, ttl);
