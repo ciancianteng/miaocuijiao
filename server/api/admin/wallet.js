@@ -18,7 +18,7 @@ import {
   writeAdminLog,
 } from "../_wallet.js";
 import { requireAdmin } from "../_admin-auth.js";
-import { staffReviewerNameFromProfile } from "../_payment-receipts.js";
+import { staffReviewerNameFromProfile, signedProofUrl } from "../_payment-receipts.js";
 import { companionDb } from "../_companion-media-store.js";
 
 const ADMIN_ROLES = new Set(["admin", "super_admin", "finance_admin"]);
@@ -107,13 +107,7 @@ export default async function handler(req, res) {
           else throw e;
         }
         const list = Array.isArray(rows) ? rows : [];
-        const receipts = await supabaseJson(
-  restUrl(
-    "payment_receipts",
-    "?order=created_at.desc&limit=500"
-  ),
-  { headers: serviceHeaders() }
-).catch(() => []);
+        const receipts = await companionDb("payment_receipts", "?order=uploaded_at.desc&limit=500").catch(() => []);
         const bossIds = [...new Set(list.map((r) => r.boss_id).filter(Boolean))];
         const profileMap = {};
         await Promise.all(
@@ -130,52 +124,27 @@ export default async function handler(req, res) {
         );
         const items = [];
         for (const row of list) {
-          const receipt = receipts.find(
-  (r) => r.order_id === row.id || r.payment_order_id === row.id
-);
+          const receipt = receipts.find((r) => r.order_id === row.id);
           const p = profileMap[row.boss_id] || {};
           const raw = row.raw_response && typeof row.raw_response === "object" ? row.raw_response : {};
-let proofUrl = String(
-  row.proof_url ||
-  raw.proofUrl ||
-  row.receipt_url ||
-  raw.receipt_url ||
-  (receipt && receipt.receipt_url) ||
-  ""
-).trim();
-
-if (!proofUrl && receipt && receipt.storage_bucket && receipt.storage_path) {
-  try {
-    const { createSignedUrl } = await import("../_companion-media-store.js");
-    proofUrl = await createSignedUrl(
-      receipt.storage_bucket,
-      receipt.storage_path,
-      3600
-    ) || "";
-  } catch {}
-}
-  const bucket = String(
- row.proof_bucket ||
- raw.proofBucket ||
- row.storage_bucket ||
- raw.storage_bucket ||
- ""
-).trim();
-const objectPath = String(
- row.proof_path ||
- raw.proofPath ||
- row.storage_path ||
- raw.storage_path ||
- (receipt && receipt.storage_path) ||
- ""
-).trim();
-          if ((!proofUrl || !/^https?:\/\//i.test(proofUrl)) && bucket && objectPath) {
+          
+          let proofUrl = "";
+          if (receipt && receipt.storage_bucket && receipt.storage_path) {
             try {
-              const { createSignedUrl } = await import("../_companion-media-store.js");
-              proofUrl = (await createSignedUrl(bucket, objectPath, 60 * 60)) || proofUrl;
-            } catch {
-              /* keep */
+              proofUrl = await signedProofUrl(receipt, 3600).catch(() => "");
+            } catch (err) {
+              console.warn("[wallet] signedProofUrl failed for receipt", receipt.id, err?.message || err);
             }
+          }
+          
+          if (!proofUrl) {
+            proofUrl = String(
+              row.proof_url ||
+              raw.proofUrl ||
+              row.receipt_url ||
+              raw.receipt_url ||
+              ""
+            ).trim();
           }
           items.push({
             id: row.id,
@@ -192,7 +161,6 @@ const objectPath = String(
             status: row.status || "pending_payment",
             paymentUrl: row.payment_url || "",
             proofUrl,
-            proofPath: objectPath,
             rejectReason: String(row.reject_reason || raw.rejectReason || "").trim(),
             reviewedByStaffId: row.reviewed_by_staff_id || raw.reviewedByStaffId || "",
             reviewedByStaffName: String(row.reviewed_by_staff_name || raw.reviewedByStaffName || "").trim(),
@@ -531,7 +499,7 @@ const objectPath = String(
           reviewedByStaffName: order.reviewed_by_staff_name || "",
         });
       }
-      const staffName = staffReviewerNameFromProfile(admin);
+      const staffName = staffReviewerNameFromProfile(admin) || admin.display_name || admin.email || admin.id;
       if (!staffName) {
         return json(res, 400, {
           ok: false,
@@ -644,7 +612,7 @@ const objectPath = String(
           message: "该充值单已由其他审核人处理，不可覆盖审核人。",
         });
       }
-      const staffName = staffReviewerNameFromProfile(admin);
+      const staffName = staffReviewerNameFromProfile(admin) || admin.display_name || admin.email || admin.id;
       if (!staffName) {
         return json(res, 400, {
           ok: false,

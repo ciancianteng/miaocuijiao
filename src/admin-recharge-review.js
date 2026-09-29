@@ -219,6 +219,8 @@
   function confirmPaid(paymentNo) {
     if (!paymentNo) return;
     if (!confirm("确认审核通过并给老板入账猫粮？\n单号：" + paymentNo + "\n（重复点击不会重复加猫粮）")) return;
+    state.message = "处理中...";
+    paint();
     api("/api/admin/wallet", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -229,7 +231,9 @@
         return load();
       })
       .catch(function (err) {
-        alert(err.message || "确认失败");
+        state.message = "";
+        alert("审核失败：" + (err.message || "未知错误"));
+        paint();
       });
   }
   function rejectPaid(paymentNo) {
@@ -241,6 +245,8 @@
       alert("必须填写拒绝原因");
       return;
     }
+    state.message = "处理中...";
+    paint();
     api("/api/admin/wallet", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -251,7 +257,9 @@
         return load();
       })
       .catch(function (err) {
-        alert(err.message || "拒绝失败");
+        state.message = "";
+        alert("拒绝失败：" + (err.message || "未知错误"));
+        paint();
       });
   }
   function bind() {
