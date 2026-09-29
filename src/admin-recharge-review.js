@@ -2,7 +2,7 @@
   "use strict";
   var Auth = window.MCJAdminAuthFetch;
   var TARGET = "rechargeReviewMount";
-  var ALT = "table-recharge_requests_alt";
+  var ALT = "/api/recharge_alt";
   var state = { loading: true, error: "", message: "", pending: [], recent: [], rejected: [], tab: "pending" };
 
   function esc(v) {
@@ -49,7 +49,7 @@
   }
   function target() {
     return (
-      document.getElementById("table-recharge_requests") ||
+      document.getElementById("/api/recharge") ||
       document.getElementById(TARGET) ||
       document.querySelector("#section-recharge-center .panel")
     );
@@ -149,12 +149,12 @@
   function paint() {
     var box = target();
     if (!box) return;
-    if (box.id !== TARGET && box.id !== "table-recharge_requests") {
+    if (box.id !== TARGET && box.id !== "/api/recharge") {
       // Ensure mount node inside section panel
-      var mount = document.getElementById("table-recharge_requests");
+      var mount = document.getElementById("/api/recharge");
       if (!mount) {
-        box.innerHTML = '<h2>猫粮充值审核</h2><div id="table-recharge_requests"></div>';
-        box = document.getElementById("table-recharge_requests");
+        box.innerHTML = '<h2>猫粮充值审核</h2><div id="/api/recharge"></div>';
+        box = document.getElementById("/api/recharge");
       } else box = mount;
     }
     if (state.loading) {
@@ -278,7 +278,7 @@
   }
 
   function boot() {
-    if (!document.getElementById("section-recharge-center") && !document.getElementById("table-recharge_requests") && !document.getElementById(TARGET)) {
+    if (!document.getElementById("section-recharge-center") && !document.getElementById("/api/recharge") && !document.getElementById(TARGET)) {
       return;
     }
     bind();

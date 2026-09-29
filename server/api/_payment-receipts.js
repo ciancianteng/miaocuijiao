@@ -766,16 +766,15 @@ export async function latestApprovedForOrders(orderIds = []) {
 }
 
 export async function listPaidForAdmin({ year = "", month = "" } = {}) {
-  const rows = await companionDb("payment_transactions", "?payment_status=eq.paid&order=confirmed_at.desc&limit=2000").catch(() => []);
-  const receipts = await companionDb("payment_receipts", "?status=eq.approved&limit=2000").catch(() => []);
-  const hydratedReceipts = await hydrateReceiptReviewers(receipts || []);
+  const rows = await companionDb('payment_receipts', 'order=created_at.desc&limit=2000')
+  const hydratedReceipts = await hydrateReceiptReviewers(rows || []);
   const receiptMap = Object.fromEntries((hydratedReceipts || []).map((row) => [row.id, row]));
   const filtered = (rows || [])
     .filter((row) => {
       const date = String(row.confirmed_at || row.created_at || "");
       return (!year || date.startsWith(year)) && (!month || date.slice(5, 7) === String(month).padStart(2, "0"));
     })
-    .map((row) => ({ ...row, receipt: receiptMap[row.receipt_id] || null }));
+    .map((row) => ({ ...row, receipt: receiptMap[row.id] || null }));
   return Promise.all(
     filtered.map(async (row) => {
       const proofUrl = row.receipt ? await signedProofUrl(row.receipt).catch(() => "") : "";
@@ -834,13 +833,11 @@ export async function signedProofUrl(receipt, expiresIn = 3600) {
     );
 
     return "";
-  }
 }
-  if (!receipt?.storage_path) return "";
+}
+if (!receipt?.storage_path) return "";
   const ttl = Math.max(300, Number(expiresIn) || 3600);
   return createSignedUrl(receipt.storage_bucket || BUCKET, receipt.storage_path, ttl);
-}
-
 export async function latestReceiptForOrder(orderId) {
   const id = String(orderId || "").trim();
   if (!id) return null;

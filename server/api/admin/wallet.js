@@ -107,6 +107,13 @@ export default async function handler(req, res) {
           else throw e;
         }
         const list = Array.isArray(rows) ? rows : [];
+        const receipts = await supabaseJson(
+  restUrl(
+    "payment_receipts",
+    "?order=created_at.desc&limit=500"
+  ),
+  { headers: serviceHeaders() }
+).catch(() => []);
         const bossIds = [...new Set(list.map((r) => r.boss_id).filter(Boolean))];
         const profileMap = {};
         await Promise.all(
@@ -123,11 +130,45 @@ export default async function handler(req, res) {
         );
         const items = [];
         for (const row of list) {
+          const receipt = receipts.find(
+  (r) => r.order_id === row.id || r.payment_order_id === row.id
+);
           const p = profileMap[row.boss_id] || {};
           const raw = row.raw_response && typeof row.raw_response === "object" ? row.raw_response : {};
-          let proofUrl = String(row.proof_url || raw.proofUrl || "").trim();
-          const bucket = String(row.proof_bucket || raw.proofBucket || "").trim();
-          const objectPath = String(row.proof_path || raw.proofPath || "").trim();
+let proofUrl = String(
+  row.proof_url ||
+  raw.proofUrl ||
+  row.receipt_url ||
+  raw.receipt_url ||
+  (receipt && receipt.receipt_url) ||
+  ""
+).trim();
+
+if (!proofUrl && receipt && receipt.storage_bucket && receipt.storage_path) {
+  try {
+    const { createSignedUrl } = await import("../_companion-media-store.js");
+    proofUrl = await createSignedUrl(
+      receipt.storage_bucket,
+      receipt.storage_path,
+      3600
+    ) || "";
+  } catch {}
+}
+  const bucket = String(
+ row.proof_bucket ||
+ raw.proofBucket ||
+ row.storage_bucket ||
+ raw.storage_bucket ||
+ ""
+).trim();
+const objectPath = String(
+ row.proof_path ||
+ raw.proofPath ||
+ row.storage_path ||
+ raw.storage_path ||
+ (receipt && receipt.storage_path) ||
+ ""
+).trim();
           if ((!proofUrl || !/^https?:\/\//i.test(proofUrl)) && bucket && objectPath) {
             try {
               const { createSignedUrl } = await import("../_companion-media-store.js");
