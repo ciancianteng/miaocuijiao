@@ -85,14 +85,24 @@ export default async function handler(req, res) {
         try {
           if (statusFilter === "pending_all" || statusFilter === "queue") {
             // Review queue: awaiting payment proof review (and legacy pending_payment shells).
-            const a = await supabaseJson(
-              restUrl("payment_orders", `?status=eq.pending_review&order=submitted_at.desc.nullslast,created_at.desc&limit=200`),
-              { headers: serviceHeaders() }
-            ).catch(() => []);
-            const b = await supabaseJson(
-              restUrl("payment_orders", `?status=eq.pending_payment&order=created_at.desc&limit=100`),
-              { headers: serviceHeaders() }
-            ).catch(() => []);
+            let a = [];
+            try {
+              a = await supabaseJson(
+                restUrl("payment_orders", `?status=eq.pending_review&order=submitted_at.desc.nullslast,created_at.desc&limit=200`),
+                { headers: serviceHeaders() }
+              );
+            } catch {
+              a = [];
+            }
+            let b = [];
+            try {
+              b = await supabaseJson(
+                restUrl("payment_orders", `?status=eq.pending_payment&order=created_at.desc&limit=100`),
+                { headers: serviceHeaders() }
+              );
+            } catch {
+              b = [];
+            }
             rows = [...(Array.isArray(a) ? a : []), ...(Array.isArray(b) ? b : [])];
           } else if (statusFilter && statusFilter !== "all") {
             const query = `?status=eq.${encodeURIComponent(statusFilter)}&order=created_at.desc&limit=200`;
@@ -125,15 +135,18 @@ export default async function handler(req, res) {
         for (const row of list) {
           const p = profileMap[row.boss_id] || {};
           const raw = row.raw_response && typeof row.raw_response === "object" ? row.raw_response : {};
-          let proofUrl = String(row.proof_url || raw.proofUrl || "").trim();
+          const storedUrl = String(row.proof_url || raw.proofUrl || "").trim();
           const bucket = String(row.proof_bucket || raw.proofBucket || "companion-payment-proofs").trim();
           const objectPath = String(row.proof_path || raw.proofPath || "").trim();
-          if ((!proofUrl || !/^https?:\/\//i.test(proofUrl)) && bucket && objectPath) {
+          let proofUrl = "";
+          if (bucket && objectPath) {
             try {
-              proofUrl = (await createSignedUrl(bucket, objectPath, 60 * 60)) || proofUrl;
+              proofUrl = (await createSignedUrl(bucket, objectPath, 60 * 60)) || "";
             } catch {
-              /* keep */
+              proofUrl = "";
             }
+          } else if (/^https?:\/\//i.test(storedUrl)) {
+            proofUrl = storedUrl;
           }
           items.push({
             id: row.id,
