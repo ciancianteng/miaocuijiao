@@ -1879,11 +1879,12 @@ export default async function handler(req, res) {
 
       let usedTestPay = false;
       let usedCatfoodHold = false;
+      let holdResult = null;
       if (isWalletMethod(paymentMethod) && !previewTest) {
         try {
           const walletApi = await import("./_wallet.js");
           // Cat-food: HOLD only (not final debit). Finalize on COMPLETE; release on cancel.
-          await walletApi.holdWalletForOrder({
+          holdResult = await walletApi.holdWalletForOrder({
             bossId: profile.id,
             orderId: before.id,
             orderNo: before.order_no || before.id,
@@ -1977,6 +1978,71 @@ export default async function handler(req, res) {
       }
 
       // —— Multi-group parent already rejected above; single-order continues. ——
+
+      // Cat-food is held, not approved: order stays awaiting_payment until CS confirm_payment
+      // moves it to claimed/pending and notifies the companion.
+      if (isWalletMethod(paymentMethod) && !previewTest) {
+        const holdStatus = String(holdResult?.hold?.status || "").toLowerCase();
+        if (usedCatfoodHold && holdResult?.duplicate && holdStatus && holdStatus !== "held") {
+          return json(res, 409, {
+            ok: false,
+            code: "WALLET_HOLD_NOT_ACTIVE",
+            message: "该订单的猫粮冻结已释放，无法再次提交付款审核。请取消后重新下单，或联系客服。",
+            order: viewOrder(before),
+          });
+        }
+        let reviewReceipt = null;
+        let reviewDuplicate = false;
+        try {
+          const { createPendingWalletReceipt } = await import("./_payment-receipts.js");
+          const created = await createPendingWalletReceipt({
+            order: before,
+            bossId: profile.id,
+            paymentMethod,
+          });
+          reviewReceipt = created?.receipt || null;
+          reviewDuplicate = !!created?.duplicate;
+        } catch (err) {
+          return json(res, err.status || 500, {
+            ok: false,
+            code: err.code || "PAYMENT_REVIEW_SUBMIT_FAILED",
+            message: err.message || "提交付款审核失败，请重试。",
+            order: viewOrder(before),
+          });
+        }
+        if (!reviewDuplicate) {
+          await addSystemMessage(
+            before,
+            profile.id,
+            "老板已使用猫粮付款（已冻结），等待客服审核。审核通过前不会通知陪玩、不会进入等待陪玩确认。"
+          ).catch(() => {});
+          try {
+            const { notifyBossOrderEvent } = await import("./_boss-order-notify.js");
+            await notifyBossOrderEvent(before, {
+              title: "待客服审核",
+              body: "猫粮已冻结，等待客服审核通过后才会进入等待陪玩确认。",
+              kind: "payment_review",
+            });
+          } catch (err) {
+            console.warn("[orders/pay_order] catfood review boss push", err?.message || err);
+          }
+        }
+        return json(res, 200, {
+          ok: true,
+          testPay: false,
+          paymentReview: true,
+          message: "猫粮已冻结，等待客服审核。审核通过前不会进入等待陪玩确认。",
+          receipt: reviewReceipt ? { id: reviewReceipt.id, receiptNo: reviewReceipt.receipt_no } : undefined,
+          order: {
+            ...viewOrder({ ...before, paymentReceipt: reviewReceipt, status: "awaiting_payment" }),
+            paymentReview: true,
+            statusText: "待客服审核",
+            paymentStatus: "待客服审核",
+          },
+          children: [],
+          allowTestPay: previewAllowed,
+        });
+      }
 
       const nextStatus = before.companion_id ? "claimed" : "pending";
       // Companion must confirm before accepted_at / start — never pre-stamp on pay.
