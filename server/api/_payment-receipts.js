@@ -1001,10 +1001,6 @@ export async function signedProofUrl(receipt, expiresIn = 3600) {
     return "";
   }
 }
-  if (!receipt?.storage_path) return "";
-  const ttl = Math.max(300, Number(expiresIn) || 3600);
-  return createSignedUrl(receipt.storage_bucket || BUCKET, receipt.storage_path, ttl);
-}
 
 export async function latestReceiptForOrder(orderId) {
   const id = String(orderId || "").trim();

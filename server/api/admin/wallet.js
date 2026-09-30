@@ -136,11 +136,10 @@ export default async function handler(req, res) {
           const p = profileMap[row.boss_id] || {};
           const raw = row.raw_response && typeof row.raw_response === "object" ? row.raw_response : {};
           let proofUrl = String(row.proof_url || raw.proofUrl || "").trim();
-          const bucket = String(row.proof_bucket || raw.proofBucket || "").trim();
+          const bucket = String(row.proof_bucket || raw.proofBucket || "companion-payment-proofs").trim();
           const objectPath = String(row.proof_path || raw.proofPath || "").trim();
           if ((!proofUrl || !/^https?:\/\//i.test(proofUrl)) && bucket && objectPath) {
             try {
-              const { createSignedUrl } = await import("../_companion-media-store.js");
               proofUrl = (await createSignedUrl(bucket, objectPath, 60 * 60)) || proofUrl;
             } catch {
               /* keep */
