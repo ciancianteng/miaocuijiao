@@ -21,6 +21,7 @@ import { companionDb } from "./_companion-media-store.js";
 import { listPendingForCs, latestRejectedForOrders, latestApprovedForOrders, signedProofUrl, uploadProof, receiptReviewerFields } from "./_payment-receipts.js";
 import { loadPlatformPayQr, listBossOrderPaymentMethods, normalizePaymentChannelId, isWalletPayEnabled, loadPaymentChannelsContext } from "./_platform-pay-qr.js";
 import { stripInternalOrderMarkers } from "./_order-grabs.js";
+import { fromDbRow as gameplayProductFromDbRow, isJunkGameplayProduct } from "./_gameplay-products-store.js";
 import {
   completionCountdown,
   formatRemainingLabel,
@@ -111,6 +112,38 @@ async function loadCompanionPricingRow(userId) {
     }
   }
   return null;
+}
+
+/**
+ * Server-authoritative gameplay product pricing: published product + selected package × quantity.
+ * Product orders have no coupon support server-side, so the payable amount is never discounted here.
+ */
+async function priceGameplayProductOrder({ productId, packageId, quantity }) {
+  const id = String(productId || "").trim();
+  if (!id) return { ok: false, status: 400, code: "GAMEPLAY_PRODUCT_REQUIRED", message: "缺少玩法商品 ID，无法下单。" };
+  const rows = await supabaseJson(
+    restUrl("gameplay_products", `?id=eq.${encodeURIComponent(id)}&limit=1`),
+    { headers: serviceHeaders() }
+  );
+  const product = Array.isArray(rows) && rows[0] ? gameplayProductFromDbRow(rows[0]) : null;
+  if (!product || product.status !== "published" || product.deletedAt || isJunkGameplayProduct(product)) {
+    return { ok: false, status: 404, code: "GAMEPLAY_PRODUCT_UNAVAILABLE", message: "该商品已下架或不存在。" };
+  }
+  const packages = Array.isArray(product.packages) ? product.packages : [];
+  if (!packages.length) {
+    return { ok: false, status: 409, code: "GAMEPLAY_PACKAGE_MISSING", message: "该商品暂无可下单套餐。" };
+  }
+  const wantPackage = String(packageId || "").trim();
+  const pkg = wantPackage ? packages.find((p) => String(p.id) === wantPackage) : packages[0];
+  if (!pkg) {
+    return { ok: false, status: 409, code: "GAMEPLAY_PACKAGE_CHANGED", message: "所选套餐已变更，请刷新后重试。" };
+  }
+  const unitPrice = Math.max(0, money(pkg.price));
+  const totalAmount = Math.round(unitPrice * quantity * 100) / 100;
+  if (!(totalAmount > 0)) {
+    return { ok: false, status: 409, code: "GAMEPLAY_PRICE_INVALID", message: "该套餐价格无效，无法下单。" };
+  }
+  return { ok: true, product, pkg, unitPrice, totalAmount };
 }
 
 async function loadCompanionMediaExtras(companionProfileId) {
@@ -1412,6 +1445,46 @@ export default async function handler(req, res) {
         unitPrice = money(order.unit_price || order.unitPrice || order.price || order.budget || 0);
         totalAmount = money(order.total_amount || order.totalAmount);
         if (!(totalAmount > 0)) totalAmount = Math.round(unitPrice * hours * 100) / 100;
+
+        const requestedProductId = String(
+          order.gameplay_product_id || order.gameplayProductId || order.productId || order.product_id || ""
+        ).trim();
+        const isProductRequest =
+          String(order.order_type || order.orderType || "").toLowerCase() === "gameplay_product" || !!requestedProductId;
+        if (isProductRequest) {
+          const priced = await priceGameplayProductOrder({
+            productId: requestedProductId,
+            packageId: order.packageId || order.package_id,
+            quantity,
+          });
+          if (!priced.ok) {
+            return json(res, priced.status, { ok: false, code: priced.code, message: priced.message });
+          }
+          const clientUnit = money(order.unit_price || order.unitPrice || order.price || 0);
+          const clientTotal = money(order.total_amount || order.totalAmount);
+          const clientPackageName = String(order.packageName || order.package_name || "").trim();
+          const descText = String(order.description || "");
+          const descPackage = (descText.match(/^套餐[：:]\s*(.+)$/m) || [])[1];
+          const descQuantity = (descText.match(/^数量[：:]\s*(\d+)/m) || [])[1];
+          const descProductId = (descText.match(/^商品ID[：:]\s*(.+)$/m) || [])[1];
+          const mismatch =
+            (clientUnit > 0 && Math.abs(clientUnit - priced.unitPrice) > 0.05) ||
+            (clientTotal > 0 && Math.abs(clientTotal - priced.totalAmount) > 0.05) ||
+            (clientPackageName && clientPackageName !== priced.pkg.name) ||
+            (descPackage != null && descPackage.trim() !== priced.pkg.name) ||
+            (descQuantity != null && Number(descQuantity) !== quantity) ||
+            (descProductId != null && descProductId.trim() !== String(priced.product.id));
+          if (mismatch) {
+            return json(res, 400, {
+              ok: false,
+              code: "GAMEPLAY_PRICE_MISMATCH",
+              message: `价格已变化，请刷新后重试（单价 ${priced.unitPrice}，应付 ${priced.totalAmount}）`,
+              expected: { unitPrice: priced.unitPrice, totalAmount: priced.totalAmount, packageId: priced.pkg.id, quantity },
+            });
+          }
+          unitPrice = priced.unitPrice;
+          totalAmount = priced.totalAmount;
+        }
       }
 
       const useWallet = action === "place_order" && isWalletMethod(paymentMethod);
