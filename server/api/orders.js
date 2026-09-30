@@ -1993,8 +1993,9 @@ export default async function handler(req, res) {
         }
         let reviewReceipt = null;
         let reviewDuplicate = false;
+        let reviewError = null;
+        const { createPendingWalletReceipt, listPendingForCs } = await import("./_payment-receipts.js");
         try {
-          const { createPendingWalletReceipt } = await import("./_payment-receipts.js");
           const created = await createPendingWalletReceipt({
             order: before,
             bossId: profile.id,
@@ -2003,10 +2004,18 @@ export default async function handler(req, res) {
           reviewReceipt = created?.receipt || null;
           reviewDuplicate = !!created?.duplicate;
         } catch (err) {
-          return json(res, err.status || 500, {
+          reviewError = err;
+          // Concurrent pay click lost the one-pending-receipt-per-order race: reuse the winner.
+          if (/duplicate|unique|one_pending_per_order/i.test(String(err?.message || ""))) {
+            reviewReceipt = (await listPendingForCs({ orderIds: [before.id] }).catch(() => []))?.[0] || null;
+            reviewDuplicate = !!reviewReceipt;
+          }
+        }
+        if (!reviewReceipt) {
+          return json(res, reviewError?.status || 500, {
             ok: false,
-            code: err.code || "PAYMENT_REVIEW_SUBMIT_FAILED",
-            message: err.message || "提交付款审核失败，请重试。",
+            code: reviewError?.code || "PAYMENT_REVIEW_SUBMIT_FAILED",
+            message: reviewError?.message || "提交付款审核失败，请重试。",
             order: viewOrder(before),
           });
         }
