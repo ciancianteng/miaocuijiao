@@ -565,16 +565,21 @@ export default async function handler(req, res) {
         reason: String(body.reason || "确认线下转账到账"),
         after: { ...result, reviewedByStaffId: operatorId, reviewedByStaffName: staffName },
       });
-      try {
-        await notifyBoss(
-          order.boss_id,
-          "充值已到账",
-          `客服 ${staffName} 已审核通过您的充值 ${order.payment_no}，猫粮已入账。`,
-          "wallet",
-          order.payment_no
-        );
-      } catch {
-        /* optional */
+      if (!result?.duplicate) {
+        // Inbox row is written by mcj_wallet_credit_recharge; only fan out Web Push here.
+        try {
+          const { fanoutWebPush } = await import("../_web-push.js");
+          fanoutWebPush(order.boss_id, {
+            title: "充值到账",
+            body: `充值成功，订单 ${order.payment_no} 猫粮已入账。`,
+            url: "/recharge.html",
+            notificationType: "recharge",
+            entityId: order.payment_no,
+            tag: "boss-recharge-" + order.payment_no,
+          });
+        } catch {
+          /* optional */
+        }
       }
       return json(res, 200, {
         ok: true,
