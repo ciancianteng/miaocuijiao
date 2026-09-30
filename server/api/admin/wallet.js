@@ -135,15 +135,18 @@ export default async function handler(req, res) {
         for (const row of list) {
           const p = profileMap[row.boss_id] || {};
           const raw = row.raw_response && typeof row.raw_response === "object" ? row.raw_response : {};
-          let proofUrl = String(row.proof_url || raw.proofUrl || "").trim();
+          const storedUrl = String(row.proof_url || raw.proofUrl || "").trim();
           const bucket = String(row.proof_bucket || raw.proofBucket || "companion-payment-proofs").trim();
           const objectPath = String(row.proof_path || raw.proofPath || "").trim();
-          if ((!proofUrl || !/^https?:\/\//i.test(proofUrl)) && bucket && objectPath) {
+          let proofUrl = "";
+          if (bucket && objectPath) {
             try {
-              proofUrl = (await createSignedUrl(bucket, objectPath, 60 * 60)) || proofUrl;
+              proofUrl = (await createSignedUrl(bucket, objectPath, 60 * 60)) || "";
             } catch {
-              /* keep */
+              proofUrl = "";
             }
+          } else if (/^https?:\/\//i.test(storedUrl)) {
+            proofUrl = storedUrl;
           }
           items.push({
             id: row.id,
