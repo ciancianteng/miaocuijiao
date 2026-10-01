@@ -1,0 +1,20 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>P2 fixture</title>
+<link rel="stylesheet" href="/src/style.css"><link rel="stylesheet" href="/src/my-direct-companions.css">
+<style>
+body{background:#050406;color:#fff;padding:16px;font-family:system-ui}
+.panel{border:1px solid rgba(255,158,207,.28);border-radius:16px;padding:14px;background:rgba(20,10,24,.9);margin-bottom:12px}
+.formula{font-size:13px;line-height:1.5;color:#ffd6ea}
+.formula code{display:inline-block;margin-top:6px;padding:6px 8px;border-radius:8px;background:#120814;color:#ff9ec8}
+.stat-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.stat{padding:10px;border-radius:12px;background:rgba(255,255,255,.04)}
+.stat span{display:block;font-size:12px;opacity:.7}.stat strong{font-size:18px}
+</style></head><body>
+<section class="panel"><h2>直属分成概览</h2>
+<p class="sub" style="opacity:.7">分成来自平台抽成，不扣减陪玩服务收入</p>
+<div class="stat-grid"><div class="stat"><span>累计已获分成</span><strong class="money">RM 12.80</strong></div>
+<div class="stat"><span>成功分成笔数</span><strong>3</strong></div></div>
+<div class="formula">结算公式：<strong>平台抽成金额 × 分成比例%</strong><br><code>boss_commission = platform_fee × rate / 100</code><br>直属分成从平台抽成支付，不扣减陪玩收入</div>
+</section>
+<section class="panel"><h2>邀请直属</h2><p class="message">老板邀请链接功能尚未开通</p><p class="message">直属关系功能尚未开通</p></section>
+<p style="opacity:.6;font-size:12px">P2/P3 BEFORE: formula leak + invite placeholders</p>
+</body></html>

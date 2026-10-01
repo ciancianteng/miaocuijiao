@@ -1,0 +1,233 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>P1 fixture</title>
+<link rel="stylesheet" href="/src/style.css">
+<style>
+    :root{
+      --bg:#050505;
+      --card:#0d0d0f;
+      --text:#f5f5f7;
+      --muted:rgba(255,255,255,.48);
+      --line:rgba(232,154,196,.34);
+      --pink:#e89ac4;
+    }
+    body{
+      min-height:100vh;
+      background:#050505;
+      color:var(--text);
+    }
+    /* Header ~70px, small brand only */
+    .topbar{
+      min-height:70px;height:70px;display:flex;align-items:center;
+      padding:0 16px!important;margin:0;border:0!important;
+      background:transparent!important;box-shadow:none!important;
+    }
+    .topbar .brand{
+      display:inline-flex;align-items:center;gap:8px;text-decoration:none;color:var(--text);
+      font-size:12px;font-weight:700;letter-spacing:.04em;opacity:.85;
+    }
+    .topbar .brand img{width:24px;height:24px;border-radius:8px;object-fit:cover}
+    .topbar .boss-nav{display:none!important}
+    body.mcj-boss-shell header.mcj-boss-header{
+      min-height:70px!important;height:70px!important;padding:0 16px!important;
+      background:transparent!important;border:0!important;box-shadow:none!important;
+    }
+    body.mcj-boss-shell header.mcj-boss-header .mcj-header-brand-logo{width:24px!important;height:24px!important;border-radius:8px!important}
+    body.mcj-boss-shell header.mcj-boss-header .mcj-header-brand-en{font-size:12px!important;opacity:.85}
+    body.mcj-boss-shell header.mcj-boss-header .mcj-header-brand-zh{display:none!important}
+
+    .boss-shell{
+      width:min(400px,calc(100% - 28px));margin:0 auto;padding:8px 0 100px;box-sizing:border-box;
+    }
+    .empty-card{
+      border:1px solid var(--line);border-radius:18px;background:rgba(13,13,15,.92);
+      padding:28px 22px;
+    }
+    .empty-card h1{margin:0 0 8px;font-size:20px}
+    .empty-card p{margin:0 0 16px;color:var(--muted);line-height:1.5}
+
+    /* Boss identity card */
+    .boss-id{
+      display:flex;flex-direction:column;align-items:stretch;gap:14px;
+      padding:20px;margin:0 0 22px;
+      border-radius:22px;border:1px solid var(--line);
+      background:rgba(10,10,12,.88);
+      box-shadow:0 0 0 1px rgba(0,0,0,.4),0 12px 40px rgba(0,0,0,.35);
+    }
+    .boss-id-top{display:flex;align-items:center;gap:16px;min-width:0}
+    .boss-id-avatar{
+      width:72px;height:72px;flex:0 0 72px;border-radius:999px;overflow:hidden;
+      border:1px solid rgba(232,154,196,.4);
+      background:rgba(232,154,196,.08);
+      display:grid;place-items:center;color:#ffd6e7;font-weight:900;font-size:28px;
+    }
+    .boss-id-avatar img{width:100%;height:100%;object-fit:cover;display:block}
+    .boss-id-meta{min-width:0;flex:1}
+    .boss-id-meta h1{
+      margin:0;font-size:22px;line-height:1.2;font-weight:800;letter-spacing:.01em;
+    }
+    .boss-id-meta p{
+      margin:8px 0 0;color:var(--muted);font-size:13px;font-weight:600;line-height:1.35;
+    }
+    .boss-stats{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    .boss-stat{
+      display:flex;flex-direction:column;align-items:flex-start;justify-content:center;gap:6px;
+      min-height:72px;padding:12px 14px;border-radius:16px;
+      border:1px solid rgba(232,154,196,.34);
+      background:rgba(232,154,196,.06);
+      color:var(--text);text-decoration:none;font:inherit;
+      cursor:pointer;-webkit-tap-highlight-color:transparent;
+    }
+    .boss-stat:hover,.boss-stat:active{background:rgba(232,154,196,.1)}
+    .boss-stat-label{display:flex;align-items:center;gap:6px;color:#ffd6e7;font-size:13px;font-weight:700}
+    .boss-stat-value{font-size:22px;font-weight:800;line-height:1.1;letter-spacing:.01em}
+
+    /* 4 entry buttons — open modal, never inline expand */
+    .entry-stack{display:grid;gap:14px}
+    .entry{
+      border-radius:18px;border:1px solid var(--line);overflow:hidden;
+      background:rgba(10,10,12,.9);
+      box-shadow:0 10px 28px rgba(0,0,0,.28);
+    }
+    .entry a.entry-trigger{text-decoration:none;color:inherit;box-sizing:border-box}
+    .entry-trigger{
+      width:100%;min-height:70px;height:70px;padding:0 18px;
+      display:flex;align-items:center;justify-content:space-between;gap:12px;
+      border:0;background:transparent;color:var(--text);
+      font:inherit;font-size:16px;font-weight:750;letter-spacing:.01em;
+      text-align:left;cursor:pointer;-webkit-tap-highlight-color:transparent;
+    }
+    .entry-trigger:focus-visible{outline:2px solid rgba(232,154,196,.35);outline-offset:-3px}
+    .entry-title{min-width:0}
+    .entry-arrow{
+      flex:0 0 30px;width:30px;height:30px;border-radius:999px;
+      border:1px solid rgba(232,154,196,.4);
+      background:rgba(232,154,196,.08);
+      display:grid;place-items:center;
+    }
+    .entry-arrow::before{
+      content:"";width:7px;height:7px;
+      border-right:2px solid #ffd6e7;border-bottom:2px solid #ffd6e7;
+      transform:rotate(-45deg);
+    }
+
+    .entry-link{
+      display:flex;align-items:center;justify-content:space-between;gap:10px;
+      min-height:48px;padding:10px 6px;border:0;border-radius:12px;background:transparent;
+      color:var(--text);font:inherit;font-size:14px;font-weight:650;
+      text-decoration:none;cursor:pointer;text-align:left;width:100%;
+    }
+    .entry-link:hover,.entry-link:active{background:rgba(255,255,255,.03)}
+    .entry-link::after{
+      content:"";width:6px;height:6px;flex:0 0 6px;
+      border-right:1.5px solid rgba(255,255,255,.35);border-bottom:1.5px solid rgba(255,255,255,.35);
+      transform:rotate(-45deg);
+    }
+    .feature-modal-body{display:grid;gap:4px;max-height:min(70vh,560px);overflow:auto;padding-right:2px}
+    .feature-modal-note{margin:0 0 8px;color:var(--muted);font-size:13px;line-height:1.45}
+
+    #bossAccountSecurity{padding:2px 2px 6px}
+    #bossAccountSecurity .mcj-account-security{margin:0!important;padding:0!important;border:0!important;background:transparent!important;border-radius:0!important}
+    #bossAccountSecurity .mcj-account-security > h3{display:none}
+    #bossAccountSecurity .mcj-sec-grid{display:grid;gap:0;grid-template-columns:1fr!important}
+    #bossAccountSecurity .mcj-sec-grid div{
+      padding:12px 6px!important;border:0!important;border-radius:0!important;background:transparent!important;
+      border-bottom:1px solid rgba(255,255,255,.06)!important;
+    }
+    #bossAccountSecurity .mcj-sec-grid div:last-child{border-bottom:0!important}
+    #bossAccountSecurity .mcj-sec-form button,
+    #bossAccountSecurity .mcj-sec-actions button{
+      border:1px solid rgba(232,154,196,.28)!important;background:rgba(232,154,196,.08)!important;
+      color:var(--text)!important;border-radius:12px!important;min-height:42px!important;
+    }
+    #bossAccountSecurity .mcj-sec-link{border:0!important;background:transparent!important;width:100%;justify-content:flex-start;padding:10px 6px!important}
+
+    .mine-logout-wrap{margin-top:28px;display:flex;justify-content:center}
+    .mine-logout{
+      border:0;background:transparent;color:rgba(255,255,255,.4);
+      font:inherit;font-size:13px;font-weight:600;cursor:pointer;padding:10px 16px;
+    }
+    .mine-logout:hover{color:rgba(255,255,255,.62)}
+
+    .boss-btn{border:1px solid rgba(232,154,196,.35);border-radius:12px;background:rgba(232,154,196,.1);color:#fff;min-height:42px;padding:10px 14px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;text-decoration:none}
+    .boss-btn.ghost{background:transparent}
+    /* Beat global style.css `.modal{position:relative;z-index:1}` so overlays cover the page */
+    #featureModal.modal,
+    #editModal.modal{
+      position:fixed!important;inset:0!important;z-index:100000!important;
+      background:rgba(0,0,0,.72)!important;
+      display:none;align-items:center;justify-content:center;padding:18px;
+    }
+    #featureModal.modal.open,
+    #editModal.modal.open{display:flex!important}
+    #featureModal .modal-box,
+    #editModal .modal-box{
+      width:min(520px,100%);max-height:min(86vh,720px);overflow:auto;
+      border:1px solid rgba(232,154,196,.34);border-radius:18px;background:#111014;
+      padding:20px;box-sizing:border-box;box-shadow:0 18px 48px rgba(0,0,0,.55);
+    }
+    .modal-head{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:12px}
+    .modal-head h2{margin:0;font-size:18px}
+    .close{width:36px;height:36px;border:1px solid rgba(232,154,196,.28);border-radius:10px;background:rgba(232,154,196,.08);color:#fff;cursor:pointer;font-size:20px;line-height:1}
+    .form-grid{display:grid;gap:12px}
+    .form-grid label{display:grid;gap:7px;color:#ffd6e7;font-weight:700;font-size:13px}
+    .form-grid input{height:44px;border:1px solid rgba(255,255,255,.12);border-radius:12px;background:rgba(0,0,0,.28);color:#fff;padding:0 12px}
+    .avatar-edit{
+      display:flex;flex-direction:column;align-items:center;gap:12px;
+      padding:6px 0 10px;text-align:center;
+    }
+    .avatar-edit-preview{
+      width:88px;height:88px;flex:0 0 88px;border-radius:999px;overflow:hidden;
+      border:2px solid rgba(232,154,196,.45);background:rgba(232,154,196,.08);
+      box-shadow:0 0 0 4px rgba(232,154,196,.08);
+      display:grid;place-items:center;color:#ffd6e7;font-weight:900;font-size:32px;
+    }
+    .avatar-edit-preview img{width:100%;height:100%;object-fit:cover;display:block}
+    .avatar-edit-tools{display:grid;gap:6px;width:min(220px,100%);justify-items:center}
+    .avatar-edit-tools .boss-btn{
+      width:100%;justify-content:center;min-height:40px;border-radius:999px;
+      font-weight:700;letter-spacing:.02em;
+    }
+    .avatar-edit-hint{
+      margin:0;color:rgba(255,255,255,.38);font-size:11px;line-height:1.35;font-weight:500;
+      max-width:18em;
+    }
+    .state{margin-top:10px;color:#ffb9d6;min-height:20px}
+
+    /* App-style mine polish (features preserved) */
+    body{background:radial-gradient(ellipse 80% 40% at 50% -8%,rgba(255,126,189,.1),transparent 55%),#050505!important}
+    .boss-shell{width:min(430px,calc(100% - 24px));padding:4px 0 calc(28px + env(safe-area-inset-bottom,0px))}
+    .boss-id{gap:16px;padding:18px 16px;margin:0 0 16px;border-radius:20px;border:1px solid rgba(255,214,232,.14);background:linear-gradient(160deg,rgba(28,18,28,.95),rgba(10,10,12,.96));box-shadow:0 14px 36px rgba(0,0,0,.32)}
+    .boss-id-avatar{width:64px;height:64px;flex-basis:64px;border:2px solid rgba(255,158,207,.35)}
+    .boss-id-meta h1{font-size:20px}
+    .boss-stats{gap:8px}
+    .boss-stat{min-height:64px;border-radius:14px;padding:10px 12px;border-color:rgba(255,214,232,.16);background:rgba(255,255,255,.03)}
+    .boss-stat-value{font-size:20px}
+    .mine-quick{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:0 0 16px}
+    .mine-quick a,.mine-quick button{
+      display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;
+      min-height:72px;padding:10px 4px;border-radius:16px;border:1px solid rgba(255,214,232,.12);
+      background:rgba(255,255,255,.03);color:#fff8fc;text-decoration:none;font:inherit;cursor:pointer;
+      -webkit-tap-highlight-color:transparent;
+    }
+    .mine-quick-ico{width:28px;height:28px;border-radius:10px;display:grid;place-items:center;background:rgba(255,158,207,.12);font-size:14px}
+    .mine-quick-label{font-size:11px;font-weight:700;letter-spacing:.02em;color:rgba(255,232,242,.82)}
+    .mine-section-title{margin:4px 2px 8px;font-size:12px;font-weight:700;letter-spacing:.08em;color:rgba(255,214,232,.45);text-transform:uppercase}
+    .entry-stack{gap:10px}
+    .entry{border-radius:16px;border-color:rgba(255,214,232,.12);background:rgba(12,10,16,.92);box-shadow:none}
+    .entry-trigger{min-height:56px;height:56px;padding:0 14px;font-size:15px}
+    .entry-arrow{width:26px;height:26px;flex-basis:26px;border-color:rgba(255,214,232,.22)}
+    .empty-card{border-radius:18px;border-color:rgba(255,214,232,.14);background:rgba(14,12,18,.94)}
+
+    .review-tip{margin:0 0 14px;padding:12px 14px;border:1px solid rgba(232,154,196,.28);border-radius:14px;background:rgba(232,154,196,.08);color:#ffd6e7;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+    .review-tip p{margin:0;font-size:13px;line-height:1.45}
+    .review-tip .tip-actions{display:flex;gap:8px;align-items:center}
+    .review-tip .tip-link{border:0;background:transparent;color:#ffe6f2;font-weight:800;cursor:pointer;text-decoration:underline;padding:0;font:inherit}
+    .review-tip .tip-dismiss{width:32px;height:32px;border:1px solid rgba(255,255,255,.12);border-radius:10px;background:rgba(255,255,255,.05);color:#fff;cursor:pointer}
+  </style></head><body style="background:#050406;color:#fff;padding:16px">
+<div class="mine-quick" aria-label="常用功能">
+  <a href="orders.html"><span class="mine-quick-ico" aria-hidden="true">单</span><span class="mine-quick-label">订单</span></a>
+  <a href="messages.html"><span class="mine-quick-ico" aria-hidden="true">信</span><span class="mine-quick-label">消息</span></a>
+  <a href="support.html?start=1"><span class="mine-quick-ico" aria-hidden="true">客</span><span class="mine-quick-label">客服</span></a>
+  <a href="recharge.html"><span class="mine-quick-ico" aria-hidden="true">充</span><span class="mine-quick-label">充值</span></a>
+</div>
+<p style="opacity:.6;font-size:12px">P1 BEFORE: circular single-char icons</p>
+</body></html>
