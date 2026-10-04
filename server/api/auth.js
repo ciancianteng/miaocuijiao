@@ -2191,15 +2191,61 @@ export default async function handler(req, res) {
     if (requestedAction === "refresh") {
       const refreshToken = String(body.refreshToken || body.refresh_token || "").trim();
       if (!refreshToken) return json(res, 400, { ok: false, message: "缺少 refreshToken。" });
-      const auth = await supabaseJson(authUrl("token?grant_type=refresh_token"), {
-        method: "POST",
-        headers: authHeaders(),
-        body: JSON.stringify({ refresh_token: refreshToken }),
-      });
-      const authUser = auth.user || (auth.access_token ? await userFromToken(auth.access_token).catch(() => null) : null);
-      const profile = authUser ? await profileFor(authUser.id) : null;
+      // 401 = refresh token really invalid (client must re-login).
+      // 503 = upstream/network trouble (client keeps its session and retries later).
+      const upstreamUnavailable = (extra = {}) =>
+        json(res, 503, {
+          ok: false,
+          code: "AUTH_UPSTREAM_UNAVAILABLE",
+          retryable: true,
+          message: "暂时无法连接服务器，请稍后重试",
+          ...extra,
+        });
+      let refreshRes;
+      try {
+        refreshRes = await fetch(authUrl("token?grant_type=refresh_token"), {
+          method: "POST",
+          headers: authHeaders(),
+          body: JSON.stringify({ refresh_token: refreshToken }),
+        });
+      } catch {
+        return upstreamUnavailable();
+      }
+      const refreshText = await refreshRes.text().catch(() => "");
+      let auth = null;
+      try {
+        auth = refreshText ? JSON.parse(refreshText) : null;
+      } catch {
+        auth = null;
+      }
+      if (!refreshRes.ok || !auth?.access_token) {
+        if (refreshRes.status >= 500 || refreshRes.status === 429 || (refreshRes.ok && !auth?.access_token)) {
+          return upstreamUnavailable();
+        }
+        return json(res, 401, {
+          ok: false,
+          code: "REFRESH_TOKEN_INVALID",
+          message: "登录已过期，请重新登录。",
+        });
+      }
+      // Supabase has already rotated the refresh token at this point; the new pair must reach the
+      // client even if the profile lookup below fails, or the old token gets reused and revoked.
+      const rotated = {
+        accessToken: auth.access_token,
+        refreshToken: auth.refresh_token || refreshToken,
+        expiresAt: auth.expires_at,
+      };
+      let authUser;
+      let profile;
+      let user;
+      try {
+        authUser = auth.user || (await userFromToken(auth.access_token).catch(() => null));
+        profile = authUser ? await profileFor(authUser.id) : null;
+        if (profile) user = await enrichSafeProfile(profile, authUser || {});
+      } catch {
+        return upstreamUnavailable({ session: rotated });
+      }
       if (!profile) return json(res, 403, { ok: false, message: "账号未绑定平台资料，请联系管理员。" });
-      const user = await enrichSafeProfile(profile, authUser || {});
       if (!VALID_ROLES.has(user.role)) return json(res, 403, { ok: false, message: "账号角色无效。" });
       if (!canLoginWithStatus(profile, user.role)) return json(res, 403, { ok: false, message: "账号未启用或正在审核。" });
       return json(res, 200, {

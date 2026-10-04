@@ -1046,6 +1046,39 @@
     return fallback==null?'':String(fallback);
   }
   function readSession(){try{return JSON.parse(localStorage.getItem(SESSION_KEY)||sessionStorage.getItem(SESSION_KEY)||'null')}catch(e){return null}}
+  function sessionAccessToken(s){return String((s&&(s.token||s.accessToken||s.access_token))||'').trim()}
+  function sessionRefreshToken(s){return String((s&&(s.refreshToken||s.refresh_token))||'').trim()}
+  function sessionExpSec(s){
+    var exp=0;
+    try{
+      var part=sessionAccessToken(s).split('.')[1]||'';
+      var b64=part.replace(/-/g,'+').replace(/_/g,'/');
+      while(b64.length%4)b64+='=';
+      exp=Number(JSON.parse(atob(b64)).exp)||0;
+    }catch(e){exp=0}
+    if(!exp){
+      exp=Number(s&&(s.expiresAt!=null&&s.expiresAt!==''?s.expiresAt:s.expires_at))||0;
+      if(exp>1e12)exp=Math.floor(exp/1000);
+    }
+    return exp;
+  }
+  function accessTokenStale(s,skewSec){
+    if(!sessionAccessToken(s))return true;
+    var exp=sessionExpSec(s);
+    return !!exp&&exp<=Math.floor(Date.now()/1000)+(skewSec||0);
+  }
+  // Storage is shared by every companion tab / PWA window, and any of them may rotate the tokens.
+  function currentSession(){
+    var stored=readSession();
+    if(stored&&sessionLooksValid(stored)&&(
+      !state.session||
+      sessionAccessToken(stored)!==sessionAccessToken(state.session)||
+      sessionRefreshToken(stored)!==sessionRefreshToken(state.session)
+    )){
+      state.session=stored;
+    }
+    return state.session;
+  }
   function sessionLooksValid(s){
     if(!s||typeof s!=='object')return false;
     var t=String(s.token||s.accessToken||'').trim();
@@ -1066,6 +1099,7 @@
       portalLoginAt:Date.now()
     };
     if(!normalized.token&&!normalized.refreshToken)return;
+    state._reloginPending=false;
     // P0: companion portal session is isolated — do NOT wipe boss/CS/admin or shared boss JWT.
     if(window.MCJRoleGate&&typeof window.MCJRoleGate.writeCompanionPortalSession==='function'){
       window.MCJRoleGate.writeCompanionPortalSession({
@@ -1092,20 +1126,16 @@
   }
   function clearSession(){
     try{if(window.MCJWebPush&&window.MCJWebPush.disablePush)window.MCJWebPush.disablePush()}catch(e){}
-    localStorage.removeItem(SESSION_KEY);
-    sessionStorage.removeItem(SESSION_KEY);
-    try{
-      localStorage.removeItem('companionAuthToken');
-      localStorage.removeItem('companionUser');
-      sessionStorage.removeItem('companionAuthToken');
-      sessionStorage.removeItem('companionUser');
-      // Never clear boss mcjAuth* — boss portal must stay logged in.
-    }catch(e){}
     state.session=null;
     state.data=null;
+    // Companion keys only — boss mcjAuth* must stay so the boss portal remains logged in.
     if(window.MCJRoleGate&&typeof window.MCJRoleGate.logout==='function'){
       window.MCJRoleGate.logout('companion');
+      return;
     }
+    [SESSION_KEY,'companionAuthToken','companionUser'].forEach(function(k){
+      try{localStorage.removeItem(k);sessionStorage.removeItem(k);}catch(e){}
+    });
   }
   function isAuthExpiredError(err){
     var msg=String((err&&err.message)||err||'');
@@ -1114,42 +1144,84 @@
     return status===401||/登录已过期|请先登录|登录态无效|jwt|token is expired|invalid jwt|unauthorized/i.test(msg);
   }
   var refreshPromise=null;
+  function authInvalidError(message){
+    var e=new Error(message||'登录已过期，请重新登录。');
+    e.status=401;e.authInvalid=true;
+    return e;
+  }
+  function authTransientError(){
+    var e=new Error('网络不稳定，暂时无法确认登录状态，请稍后重试。');
+    e.status=503;e.transient=true;
+    return e;
+  }
+  function withRefreshLock(task){
+    try{
+      if(navigator.locks&&typeof navigator.locks.request==='function'){
+        return navigator.locks.request('mcj-companion-session-refresh',task);
+      }
+    }catch(e){}
+    return Promise.resolve().then(task);
+  }
+  // Only a definitive auth rejection (401/400/403 from /api/auth refresh) ends the session.
+  // Network errors, timeouts and 5xx keep the stored session so the next attempt can succeed.
   function refreshCompanionSession(){
     if(refreshPromise)return refreshPromise;
-    var session=state.session||readSession()||{};
-    var refreshToken=String(session.refreshToken||session.refresh_token||'').trim();
-    if(!refreshToken){
+    var startRefresh=sessionRefreshToken(currentSession());
+    if(!startRefresh){
       clearSession();
-      return Promise.reject(new Error('登录已过期，请重新登录。'));
+      return Promise.reject(authInvalidError());
     }
-    refreshPromise=fetch('/api/auth',{
-      method:'POST',
-      headers:{'Content-Type':'application/json',Accept:'application/json'},
-      body:JSON.stringify({action:'refresh',refreshToken:refreshToken})
-    }).then(function(res){
-      return res.text().then(function(text){
-        var body={};try{body=text?JSON.parse(text):{}}catch(e){body={}}
-        if(!res.ok||body.ok===false){
-          clearSession();
-          throw new Error(body.message||'登录已过期，请重新登录。');
-        }
-        var sess=body.session||{};
-        saveSession({
-          token:sess.accessToken||sess.token||'',
-          refreshToken:sess.refreshToken||refreshToken,
-          expiresAt:sess.expiresAt||sess.expires_at||'',
-          user:sess.user||session.user||{},
-          remember:session.remember!==false
-        },session.remember!==false);
+    refreshPromise=withRefreshLock(function(){
+      var base=currentSession()||{};
+      var refreshToken=sessionRefreshToken(base);
+      if(!refreshToken)throw authInvalidError();
+      if(refreshToken!==startRefresh&&!accessTokenStale(base,30)){
+        state._lastRefreshAt=Date.now();
         return state.session;
-      });
-    }).catch(function(err){
-      clearSession();
-      throw err;
+      }
+      var ctrl=typeof AbortController!=='undefined'?new AbortController():null;
+      var timer=ctrl?setTimeout(function(){try{ctrl.abort()}catch(e){}},15000):null;
+      return fetch('/api/auth',{
+        method:'POST',
+        headers:{'Content-Type':'application/json',Accept:'application/json'},
+        cache:'no-store',
+        signal:ctrl?ctrl.signal:undefined,
+        body:JSON.stringify({action:'refresh',refreshToken:refreshToken})
+      }).catch(function(){
+        throw authTransientError();
+      }).then(function(res){
+        return res.text().then(function(text){
+          var body={};try{body=text?JSON.parse(text):{}}catch(e){body={}}
+          var sess=(body&&body.session)||{};
+          if(sessionAccessToken(sess)){
+            saveSession({
+              token:sessionAccessToken(sess),
+              refreshToken:sessionRefreshToken(sess)||refreshToken,
+              expiresAt:sess.expiresAt||sess.expires_at||'',
+              user:Object.assign({},base.user||{},sess.user||{},{role:'companion'}),
+              remember:base.remember!==false
+            },base.remember!==false);
+            state._lastRefreshAt=Date.now();
+            return state.session;
+          }
+          if(res.status===400||res.status===401||res.status===403){
+            var latest=readSession();
+            if(latest&&sessionRefreshToken(latest)&&sessionRefreshToken(latest)!==refreshToken){
+              state.session=latest;
+              return state.session;
+            }
+            clearSession();
+            throw authInvalidError(body.message);
+          }
+          throw authTransientError();
+        });
+      }).finally(function(){if(timer)clearTimeout(timer)});
     }).finally(function(){refreshPromise=null});
     return refreshPromise;
   }
   function forceReLogin(message){
+    if(state._reloginPending)return;
+    state._reloginPending=true;
     clearSession();
     state.error='';
     state.loginError=message||'登录已过期，请重新登录。';
@@ -1205,26 +1277,39 @@
     return text.replace(/^上传失败：\s*/,'');
   }
   function ensureFreshCompanionSession(){
-    var session=state.session||readSession()||{};
-    if(!session.token){
-      return Promise.reject(new Error('登录状态已过期，请重新登录后继续。'));
+    var session=currentSession();
+    if(!session||(!sessionAccessToken(session)&&!sessionRefreshToken(session))){
+      return Promise.reject(authInvalidError('登录状态已过期，请重新登录后继续。'));
     }
-    var expRaw=session.expiresAt!=null?session.expiresAt:session.expires_at;
-    var exp=Number(expRaw)||0;
-    // Support unix seconds or ms.
-    if(exp>1e12)exp=Math.floor(exp/1000);
-    var nowSec=Math.floor(Date.now()/1000);
-    if(exp && exp <= nowSec + 90){
+    if(sessionRefreshToken(session)&&accessTokenStale(session,90)){
       return refreshCompanionSession();
     }
     return Promise.resolve(session);
   }
+  function onRefreshFailed(refreshErr){
+    if(refreshErr&&refreshErr.transient)throw refreshErr;
+    var msg=humanizeClientError((refreshErr&&refreshErr.message)||'登录状态已过期，请重新登录后继续。');
+    forceReLogin(msg);
+    throw authInvalidError(msg);
+  }
   function api(action,body,method,retried){
+    var session=currentSession();
+    // Expired access token (e.g. PWA reopened after an hour): refresh before calling, not after a 401.
+    // Throttled so a skewed device clock cannot turn every call into a refresh.
+    if(!retried&&session&&sessionRefreshToken(session)&&accessTokenStale(session,30)&&
+      Date.now()-Number(state._lastRefreshAt||0)>60000){
+      return refreshCompanionSession().then(function(){
+        return sendApi(action,body,method,false);
+      },onRefreshFailed);
+    }
+    return sendApi(action,body,method,retried);
+  }
+  function sendApi(action,body,method,retried){
     var opts={method:method||'POST',headers:{'Content-Type':'application/json'}};
-    var session=state.session||readSession();
-    if(session&&session.token){
-      opts.headers['x-mcj-companion-token']=session.token;
-      opts.headers.Authorization='Bearer '+session.token;
+    var sentToken=sessionAccessToken(currentSession());
+    if(sentToken){
+      opts.headers['x-mcj-companion-token']=sentToken;
+      opts.headers.Authorization='Bearer '+sentToken;
     }
     var ctrl=typeof AbortController!=='undefined'?new AbortController():null;
     if(ctrl){
@@ -1248,12 +1333,13 @@
     return run.then(parseResponse).catch(function(err){
       if(err&&err.name==='AbortError')throw new Error('请求超时，请重试');
       if(!retried&&isAuthExpiredError(err)){
+        var latestToken=sessionAccessToken(currentSession());
+        if(latestToken&&latestToken!==sentToken&&!accessTokenStale(state.session,0)){
+          return sendApi(action,body,method,true);
+        }
         return refreshCompanionSession().then(function(){
-          return api(action,body,method,true);
-        }).catch(function(refreshErr){
-          forceReLogin(humanizeClientError((refreshErr&&refreshErr.message)||'登录状态已过期，请重新登录后继续。'));
-          throw new Error(humanizeClientError((refreshErr&&refreshErr.message)||'登录状态已过期，请重新登录后继续。'));
-        });
+          return sendApi(action,body,method,true);
+        },onRefreshFailed);
       }
       err.message=humanizeClientError(err.message||err)||'操作失败，请稍后重试';
       throw err;
@@ -2407,8 +2493,8 @@
   function mountCompanionAccountSecurity(){
     var mount=document.getElementById('pwAccountSecurityMount');
     if(!mount||!window.MCJAccountSecurity)return;
+    // companionAuthToken is only a soft marker; /api/auth needs the access JWT.
     var token='';
-    try{token=sessionStorage.getItem('companionAuthToken')||localStorage.getItem('companionAuthToken')||'';}catch(e){}
     var player=(state.data&&state.data.player)||(state.session&&state.session.user)||{};
     function apply(user){
       window.MCJAccountSecurity.mount(mount,user,{
@@ -2417,10 +2503,13 @@
         onUpdated:function(){/* keep page; soft reload security only */}
       });
     }
-    fetch('/api/auth',{
-      method:'POST',
-      headers:{'Content-Type':'application/json',Accept:'application/json',Authorization:'Bearer '+token},
-      body:JSON.stringify({action:'account_security'})
+    ensureFreshCompanionSession().catch(function(){return currentSession();}).then(function(s){
+      token=sessionAccessToken(s||currentSession());
+      return fetch('/api/auth',{
+        method:'POST',
+        headers:{'Content-Type':'application/json',Accept:'application/json',Authorization:'Bearer '+token},
+        body:JSON.stringify({action:'account_security'})
+      });
     }).then(function(r){return r.json().catch(function(){return {};});}).then(function(body){
       if(body&&body.ok&&body.user)apply(body.user);
       else apply({email:player.email||player.uid||'',hasPassword:false,role:'companion'});
@@ -6477,6 +6566,20 @@
   }
   window.MCJCompanionApi=api;
   window.__MCJCompanionAfterForcedAck=function(){loadData({soft:true}).then(function(){paint()});};
+  window.addEventListener('storage',function(e){
+    if(!e||e.key!==SESSION_KEY||e.storageArea!==localStorage)return;
+    if(e.newValue){
+      var next=null;
+      try{next=JSON.parse(e.newValue)}catch(err){next=null}
+      if(next&&sessionLooksValid(next))state.session=next;
+      return;
+    }
+    if(!state.session||state.route==='login')return;
+    // Logged out from another companion tab / window.
+    state.session=null;
+    state.data=null;
+    location.replace('/companion/login/');
+  });
   window.addEventListener('storage',function(e){
     if(!e||e.key!=='mcjCompanionReviewBump')return;
     if(!state.session||!state.session.token)return;
