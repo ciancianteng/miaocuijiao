@@ -404,6 +404,7 @@ async function attachReviews(companions = [], opts = {}) {
         rows = await fetchReviews(`${baseSelect},image_urls`);
       } catch (imgErr) {
         if (!isMissingReviewImagesColumn(imgErr)) throw imgErr;
+        console.warn("[public/companions] companion_reviews.image_urls missing:", imgErr?.message || imgErr);
         rows = await fetchReviews(baseSelect);
       }
     }

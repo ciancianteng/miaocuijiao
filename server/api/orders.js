@@ -3178,7 +3178,7 @@ export default async function handler(req, res) {
           rows = await insertReview(imageUrls.length ? { ...reviewRow, image_urls: imageUrls } : reviewRow);
         } catch (imgErr) {
           if (!imageUrls.length || !reviewImages.isMissingReviewImagesColumn(imgErr)) throw imgErr;
-          console.warn("[orders] companion_reviews.image_urls missing; saving review without images");
+          console.warn("[orders] companion_reviews.image_urls missing; saving review without images:", imgErr?.message || imgErr);
           imagesDropped = true;
           rows = await insertReview(reviewRow);
         }
