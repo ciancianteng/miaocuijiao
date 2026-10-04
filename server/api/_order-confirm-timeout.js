@@ -7,9 +7,10 @@
  * Exception — gameplay product orders (更多玩法商品) created with the no-taker rule line:
  *   claimed  (指定陪玩) 30 min unconfirmed → reopened in public grab hall
  *   pending  (抢单大厅) 30 min without grab → full refund to 猫粮余额 (any payment method)
- * Driven by the scheduled /api/cron/gameplay-no-taker tick (GitHub Actions, every 5 min)
- * plus the daily Vercel cron; never by page reads. Every transition is a CAS patch, so
- * overlapping ticks cannot move or refund an order twice.
+ * Driven by the scheduled /api/cron/gameplay-no-taker tick (Supabase pg_cron, every minute)
+ * plus the daily Vercel cron; never by page reads. Every transition is a CAS patch and only
+ * the run that wins it writes logs / notifications, so overlapping ticks cannot move or
+ * refund an order twice.
  */
 import "./_load-env.js";
 
@@ -22,6 +23,15 @@ export const GAMEPLAY_NO_TAKER_TIMEOUT_MS = 30 * 60 * 1000;
 export const GAMEPLAY_NO_TAKER_RULE_TAG = "无人接单自动全额退回猫粮余额";
 /** Stamped on the refund lock so a tick that died mid-refund is finished by the next tick. */
 const NO_TAKER_REFUND_MARKER = "[[NO_TAKER_REFUND]]";
+/** A lock younger than this may still be in flight in another tick; don't resume it yet. */
+const NO_TAKER_RESUME_GRACE_MS = 2 * 60 * 1000;
+
+function refundLockStale(order = {}, now = Date.now()) {
+  const hit = String(order.note || "").match(/\[\[NO_TAKER_REFUND\]\]\s*([^\n|]+)/);
+  if (!hit) return false;
+  const at = Date.parse(hit[1].trim());
+  return !Number.isFinite(at) || now - at >= NO_TAKER_RESUME_GRACE_MS;
+}
 
 function nowIso() {
   return new Date().toISOString();
@@ -261,7 +271,7 @@ function holdWasReleased(result) {
 export async function refundGameplayNoTaker(db, order, { reason = "抢单大厅30分钟无人接单，自动全额退款" } = {}) {
   let locked = null;
   if (order.status === "refund_requested") {
-    if (!String(order.note || "").includes(NO_TAKER_REFUND_MARKER)) return null;
+    if (!refundLockStale(order)) return null;
     locked = order;
   } else {
     const lockNote = `${String(order.note || "").trim()}\n${NO_TAKER_REFUND_MARKER}${nowIso()}`.trim();
@@ -284,6 +294,8 @@ export async function refundGameplayNoTaker(db, order, { reason = "抢单大厅3
   const amount = money(order.paid_cat_food) || money(order.total_amount);
   let mode = "";
   let refund = null;
+  // Only the run that actually moved the money / status announces it.
+  let won = false;
 
   try {
     const released = await db.wallet.releaseWalletHold({
@@ -301,9 +313,9 @@ export async function refundGameplayNoTaker(db, order, { reason = "抢单大厅3
   }
 
   if (mode === "hold_release") {
-    await patchFirstAccepted(db, `?id=eq.${encodeURIComponent(order.id)}&status=eq.refund_requested`, [
+    won = !!(await patchFirstAccepted(db, `?id=eq.${encodeURIComponent(order.id)}&status=eq.refund_requested`, [
       { status: "refunded" },
-    ]).catch(() => null);
+    ]).catch(() => null));
     // CS order commission is booked at pay time; reverse it like the refund-request path does.
     try {
       const settleApi = await import("./_cs-commission-settle.js");
@@ -351,6 +363,7 @@ export async function refundGameplayNoTaker(db, order, { reason = "抢单大厅3
         if (confirmed.ok) {
           mode = "catfood_credit";
           refund = confirmed.refund || null;
+          won = !confirmed.duplicate;
         } else {
           console.warn("[gameplay-timeout] refund confirm", confirmed.message);
         }
@@ -362,6 +375,7 @@ export async function refundGameplayNoTaker(db, order, { reason = "抢单大厅3
 
   const resumed = order.status === "refund_requested";
   if (!mode && resumed) return { order: locked, mode: "manual_review", amount, refund };
+  if (mode && !won) return { order: { ...locked, status: "refunded" }, mode, amount, refund, duplicate: true };
   if (mode) {
     await db.writeOrderStatusLog(db, {
       orderId: order.id,
@@ -412,7 +426,8 @@ async function hasSelectableGrabs(db, orderIds, orders) {
  * One sweep over product orders past the 30-min window. Safe to run concurrently (CAS patches).
  * @returns {{ reopened: number, refunded: number, actions: Array<{ id: string, orderNo: string, action: string, mode?: string }> }}
  */
-export async function sweepGameplayNoTakerOrders({ limit = 60, now = Date.now() } = {}) {
+export async function sweepGameplayNoTakerOrders({ limit = 60, now = Date.now(), budgetMs = 0 } = {}) {
+  const startedAt = Date.now();
   const db = await loadDb();
   const result = { reopened: 0, refunded: 0, actions: [] };
   if (!db.wallet.hasWalletDb()) return result;
@@ -434,13 +449,17 @@ export async function sweepGameplayNoTakerOrders({ limit = 60, now = Date.now() 
   const enteredAt = await loadEnteredAtLookup(db, candidates);
   const due = candidates.filter(
     (o) =>
-      (o.status === "refund_requested" && String(o.note || "").includes(NO_TAKER_REFUND_MARKER)) ||
+      (o.status === "refund_requested" && refundLockStale(o, now)) ||
       (o.status !== "refund_requested" && now - enteredAt(o) >= GAMEPLAY_NO_TAKER_TIMEOUT_MS)
   );
   const hallDue = due.filter((o) => o.status === "pending" && !o.companion_id);
   const grabbed = hallDue.length ? await hasSelectableGrabs(db, hallDue.map((o) => o.id), hallDue) : {};
   for (const order of due) {
     const ref = { id: order.id, orderNo: order.order_no || "" };
+    if (budgetMs > 0 && Date.now() - startedAt > budgetMs) {
+      result.deferred = (result.deferred || 0) + 1;
+      continue;
+    }
     try {
       if (order.status === "claimed" && order.companion_id) {
         if (await reopenDesignatedInHall(db, order)) {
@@ -452,7 +471,9 @@ export async function sweepGameplayNoTakerOrders({ limit = 60, now = Date.now() 
         order.status === "refund_requested"
       ) {
         const out = await refundGameplayNoTaker(db, order);
-        if (out && out.mode !== "manual_review") {
+        if (out?.duplicate) {
+          result.actions.push({ ...ref, action: "already_refunded" });
+        } else if (out && out.mode !== "manual_review") {
           result.refunded += 1;
           result.actions.push({ ...ref, action: "refunded", mode: out.mode });
         } else if (out) {

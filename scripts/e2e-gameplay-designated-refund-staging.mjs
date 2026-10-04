@@ -16,6 +16,11 @@
  *   --phase=cron-watch   only GET /api/cron/gameplay-no-taker (3 concurrent calls per minute)
  *   --phase=cron-verify  four-end state, wallet, exactly-once transition counts, screenshots
  *   --phase=cleanup      cancel leftover E2E orders, delete E2E product (--reverse-duitnow, --apply)
+ *
+ * Database-scheduler verification (needs Staging DB credentials; nothing in this script calls the endpoint):
+ *   --phase=pgcron-start   pg_cron job + secret enforced; P1 left unconfirmed, P2 rejected → hall
+ *   --phase=pgcron-watch   reads the DB only; extra concurrent ticks fired from SQL around each due time
+ *   --phase=pgcron-verify  exactly-once status logs / hold release / wallet rows, pg_net responses, four-end
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -38,12 +43,14 @@ const outDir = path.join(root, "artifacts/gameplay-designated-refund");
 const shotDir = path.join(outDir, "screenshots");
 const phaseArg = (process.argv.find((a) => a.startsWith("--phase=")) || "--phase=start").slice(8);
 const cronMode = phaseArg.startsWith("cron-") || phaseArg === "cleanup";
-const statePath = path.join(outDir, cronMode ? "state-cron.json" : "state.json");
-const reportPath = path.join(outDir, cronMode ? "report-cron.json" : "report.json");
+const pgcronMode = phaseArg.startsWith("pgcron-");
+const suffix = pgcronMode ? "-pgcron" : cronMode ? "-cron" : "";
+const statePath = path.join(outDir, `state${suffix}.json`);
+const reportPath = path.join(outDir, `report${suffix}.json`);
 fs.mkdirSync(shotDir, { recursive: true });
 
 const phase = phaseArg;
-const freshPhase = phase === "start" || phase === "cron-start";
+const freshPhase = phase === "start" || phase === "cron-start" || phase === "pgcron-start";
 
 assertSmokeTargetAllowed({ script: "e2e-gameplay-designated-refund-staging", base: STG });
 const publicCfg = await (await fetch(`${STG}/api/public/realtime-config`, { cache: "no-store" })).json();
@@ -136,8 +143,8 @@ async function bossOrder(t, id) {
   return (r.json?.orders || []).find((o) => String(o.id) === id) || deepFind(r.json, id);
 }
 /** The scheduler's only entry point: unauthenticated-by-session cron tick, no page or order reads. */
-async function cronTick() {
-  const r = await api("/api/cron/gameplay-no-taker", null, null, "GET");
+async function cronTick(secret = process.env.GAMEPLAY_CRON_SECRET || "") {
+  const r = await api("/api/cron/gameplay-no-taker", null, null, "GET", secret ? { "x-cron-secret": secret } : {});
   return { at: new Date().toISOString(), status: r.status, ok: r.json?.ok === true, actions: r.json?.actions || [], error: r.json?.error };
 }
 async function fourEnd(t, id) {
@@ -843,6 +850,275 @@ async function cronVerifyPhase() {
   console.log(`\nCRON VERIFY DONE ${JSON.stringify(report.summary)}`);
 }
 
+// ——— database-scheduler verification (pg_cron + pg_net) ———
+let dbTarget = null;
+let dbQuery = null;
+async function sql(text, params = []) {
+  if (!dbTarget) {
+    const mod = await import("./apply-gameplay-no-taker-cron-staging.mjs");
+    dbTarget = mod.stagingDbTarget();
+    dbQuery = mod.stagingQuery;
+    if (!dbTarget) throw new Error("Staging DB credentials required (STAGING_DATABASE_URL / STAGING_DB_PASSWORD / SUPABASE_ACCESS_TOKEN)");
+  }
+  return dbQuery(dbTarget, text, params);
+}
+const uuidList = (ids) => {
+  if (!ids.every((id) => /^[0-9a-f-]{36}$/i.test(id))) throw new Error("bad uuid");
+  return ids.map((id) => `'${id}'`).join(",");
+};
+const pgIds = () => [state.orders.P1.id, state.orders.P2.id];
+
+async function cronJob() {
+  return (await sql("select jobid, schedule, active from cron.job where jobname = 'gameplay-no-taker-sweep'"))[0] || null;
+}
+async function cronRunsSince(iso) {
+  return (
+    await sql(
+      `select count(*)::int as total, count(*) filter (where d.status = 'succeeded')::int as succeeded, max(d.start_time) as last
+         from cron.job_run_details d join cron.job j using (jobid)
+        where j.jobname = 'gameplay-no-taker-sweep' and d.start_time >= $1`,
+      [iso]
+    )
+  )[0];
+}
+/** Responses pg_net stored for our endpoint (body always carries "reopened" or our auth messages). */
+async function httpCodesSince(iso) {
+  const rows = await sql(
+    `select coalesce(status_code, 0)::int as code, timed_out, count(*)::int as n from net._http_response
+      where created >= $1 and (content like '%"reopened":%' or content like '%Unauthorized cron%' or content like '%GAMEPLAY_CRON_SECRET%')
+      group by 1, 2 order by 1`,
+    [iso]
+  );
+  return Object.fromEntries(rows.map((r) => [`${r.code}${r.timed_out ? "-timeout" : ""}`, r.n]));
+}
+async function actingResponses(id, action) {
+  return sql(
+    `select created, status_code, content from net._http_response
+      where created >= $1 and content ~ $2 order by created`,
+    [state.startedAt, `"id":"${id}","orderNo":"[^"]*","action":"${action}"`]
+  );
+}
+async function pgOrders() {
+  const rows = await sql(`select id, order_no, status, companion_id from public.orders where id in (${uuidList(pgIds())})`);
+  return Object.fromEntries(rows.map((r) => [r.id, r]));
+}
+async function fireSqlTicks(n = 3) {
+  const rows = await sql(`select public.mcj_gameplay_no_taker_tick() as request_id from generate_series(1, ${Number(n) | 0})`);
+  return rows.map((r) => r.request_id);
+}
+
+async function pgcronStartPhase() {
+  report.started_at = new Date().toISOString();
+  report.mode = "pg_cron";
+  if (!(await deployedHasFix())) throw new Error("Staging target does not serve this branch's build — run deploy-staging.mjs first");
+  const noSecret = await cronTick("");
+  const wrongSecret = await cronTick("wrong-secret");
+  step(
+    "P0a_endpoint_rejects_missing_or_wrong_secret",
+    noSecret.status === 401 && wrongSecret.status === 401,
+    `no secret http=${noSecret.status}, wrong secret http=${wrongSecret.status} (503 would mean no secret configured)`
+  );
+  const job = await cronJob();
+  const since = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+  const runs = await cronRunsSince(since);
+  const codes = await httpCodesSince(since);
+  step(
+    "P0b_pg_cron_job_every_minute_authorized",
+    job?.active === true && job.schedule === "* * * * *" && runs.succeeded >= 3 && (codes["200"] || 0) >= 3 && !codes["401"] && !codes["503"],
+    `job=${JSON.stringify(job)} last5min runs=${runs.succeeded}/${runs.total} http=${JSON.stringify(codes)}`
+  );
+  const t = await actors();
+  state.actors = { bossId: t.boss.id, companionId: t.comp.id };
+  await api("/api/companion", t.comp.token, { action: "set_online_status", online_status: "online" });
+  const pubC = (await api(`/api/public/companions?id=${t.comp.id}`)).json?.companions?.[0] || {};
+  const companion = { id: t.comp.id, name: pubC.name || pubC.nickname || "CompA" };
+  const product = await ensureProduct(t);
+  state.product = { id: product.id, name: product.name, price: product.packages[0].price };
+  state.wallet0 = await wallet(t);
+  state.startedAt = report.started_at;
+  save();
+
+  await createPaidDesignated(t, product, companion, "P1");
+  const P2 = await createPaidDesignated(t, product, companion, "P2");
+  const rej = await api("/api/companion", t.comp.token, { action: "reject_direct_order", id: P2.id, reason: "时间无法配合" });
+  P2.hallAt = new Date().toISOString();
+  const fP2 = await fourEnd(t, P2.id);
+  step("P2_companion_reject_to_hall", rej.status < 300 && fP2.boss === "pending" && !fP2.companionId.boss, `http=${rej.status} ${fourEndText(fP2)}`);
+  save();
+  console.log(`\nPGCRON START DONE. P1 claimed ${state.orders.P1.claimedAt}, P2 in hall ${P2.hallAt}. Run --phase=pgcron-watch now.`);
+}
+
+async function pgcronWatchPhase() {
+  const { P1, P2 } = state.orders;
+  const untilHall = process.argv.includes("--until=hall");
+  state.pgLog = state.pgLog || [];
+  state.sqlBursts = state.sqlBursts || [];
+  const deadline = Date.parse(P1.claimedAt) + 70 * 60 * 1000;
+  const label = { [P1.id]: "P1", [P2.id]: "P2" };
+  let doneAt = 0;
+  while (Date.now() < deadline) {
+    const rows = await pgOrders();
+    const at = new Date().toISOString();
+    const p1 = rows[P1.id] || {};
+    const p2 = rows[P2.id] || {};
+    const transitions = [];
+    if (p1.status === "pending" && !P1.events.reopened_in_hall) transitions.push([P1, "reopened_in_hall"]);
+    if (p1.status === "refunded" && !P1.events.refunded) transitions.push([P1, "refunded"]);
+    if (p2.status === "refunded" && !P2.events.refunded) transitions.push([P2, "refunded"]);
+    for (const [rec, ev] of transitions) {
+      rec.events[ev] = at;
+      if (ev === "reopened_in_hall") rec.hallAt = at;
+    }
+    // Overlap the scheduled tick with 3 extra concurrent ticks while an order is due.
+    const p1Due = p1.status === "claimed" ? Number(minsSince(P1.claimedAt)) : p1.status === "pending" ? Number(minsSince(P1.hallAt)) : -1;
+    const p2Due = p2.status === "pending" ? Number(minsSince(P2.hallAt)) : -1;
+    const inWindow = (m) => m >= 29.3 && m <= 32;
+    let burst = null;
+    if (inWindow(p1Due) || inWindow(p2Due)) {
+      burst = await fireSqlTicks(3).catch((e) => `error: ${e.message}`);
+      state.sqlBursts.push({ at, requestIds: burst });
+    }
+    const runs = await cronRunsSince(state.startedAt);
+    const entry = {
+      at,
+      p1: `${p1.status}${p1.companion_id ? "+companion" : ""} ${minsSince(P1.claimedAt)}m`,
+      p2: `${p2.status} ${minsSince(P2.hallAt)}m in hall`,
+      cronRuns: `${runs.succeeded}/${runs.total}`,
+      http: await httpCodesSince(state.startedAt),
+      sqlBurst: burst ? "3 extra ticks" : "",
+      transitions: transitions.map(([rec, ev]) => `${label[rec.id]}:${ev}`),
+    };
+    state.pgLog.push(entry);
+    console.log(JSON.stringify(entry));
+    save();
+    if (transitions.length) {
+      // Pages are opened only after the DB already shows the transition, so they cannot have caused it.
+      const t = await actors();
+      await openBrowser();
+      try {
+        for (const [rec, ev] of transitions) {
+          const name = label[rec.id];
+          rec.fourEnd[ev] = fourEndText(await fourEnd(t, rec.id));
+          if (ev === "reopened_in_hall") {
+            await companionShot(t, "/companion/order-hall", rec.orderNo, `${name}-pgcron-companion-hall`);
+            await bossOrderShot(t, rec.id, rec.orderNo, `${name}-pgcron-boss-hall`);
+          } else {
+            await bossOrderShot(t, rec.id, rec.orderNo, `${name}-pgcron-boss-refunded`);
+          }
+        }
+      } finally {
+        await browser.close();
+      }
+      save();
+    }
+    const finished = untilHall ? P1.events.reopened_in_hall && P2.events.refunded : P1.events.refunded && P2.events.refunded;
+    if (!doneAt && finished) doneAt = Date.now();
+    if (doneAt && Date.now() - doneAt >= 3 * 60 * 1000) break;
+    await sleep(60 * 1000);
+  }
+  console.log(`\nPGCRON WATCH DONE bursts=${state.sqlBursts.length}`);
+}
+
+async function pgcronVerifyPhase() {
+  const { P1, P2 } = state.orders;
+  const ids = uuidList(pgIds());
+  const logs = await sql(
+    `select order_id, from_status, to_status, count(*)::int as n, min(created_at) as first_at, string_agg(distinct coalesce(operator_role, ''), ',') as roles
+       from public.order_status_logs where order_id in (${ids}) and created_at >= $1 group by 1, 2, 3`,
+    [state.startedAt]
+  );
+  const logOf = (id, from, to) => logs.find((l) => l.order_id === id && l.from_status === from && l.to_status === to);
+  const mins = (a, b) => (Date.parse(b) - Date.parse(a)) / 60000;
+  state.statusLogs = logs;
+
+  const p1Hall = logOf(P1.id, "claimed", "pending");
+  step(
+    "P3_P1_unconfirmed_30min_to_hall_exactly_once_by_cron",
+    p1Hall?.n === 1 && p1Hall.roles === "system" && mins(P1.claimedAt, p1Hall.first_at) >= 29.5,
+    `claimed→pending ×${p1Hall?.n || 0} at ${p1Hall?.first_at} (${p1Hall ? mins(P1.claimedAt, p1Hall.first_at).toFixed(1) : "?"}m after pay) operator=${p1Hall?.roles}`,
+    { screenshot: ["screenshots/P1-pgcron-companion-hall.png", "screenshots/P1-pgcron-boss-hall.png"] }
+  );
+  const p2Ref = logOf(P2.id, "refund_requested", "refunded");
+  const p2Lock = logOf(P2.id, "pending", "refund_requested");
+  step(
+    "P4_P2_hall_30min_refund_exactly_once_by_cron",
+    p2Ref?.n === 1 && p2Lock?.n === 1 && mins(P2.hallAt, p2Ref.first_at) >= 29.5,
+    `pending→refund_requested ×${p2Lock?.n || 0}, →refunded ×${p2Ref?.n || 0} at ${p2Ref?.first_at} (${p2Ref ? mins(P2.hallAt, p2Ref.first_at).toFixed(1) : "?"}m in hall)`,
+    { screenshot: ["screenshots/P2-pgcron-boss-refunded.png"] }
+  );
+  const p1Ref = logOf(P1.id, "refund_requested", "refunded");
+  if (P1.events.refunded) {
+    step(
+      "P5_P1_hall_30min_refund_exactly_once_by_cron",
+      p1Ref?.n === 1 && mins(p1Hall.first_at, p1Ref.first_at) >= 29.5,
+      `→refunded ×${p1Ref?.n || 0} at ${p1Ref?.first_at} (${p1Ref ? mins(p1Hall.first_at, p1Ref.first_at).toFixed(1) : "?"}m in hall)`
+    );
+  }
+
+  const holds = await sql(`select order_id, status, release_idempotency_key from public.wallet_order_holds where order_id in (${ids})`);
+  const txs = await sql(
+    `select related_order_id, transaction_type, direction, count(*)::int as n, sum(amount)::numeric as amount
+       from public.wallet_transactions where related_order_id in (${ids}) group by 1, 2, 3 order by 1, 2`
+  );
+  state.holds = holds;
+  state.walletTxs = txs;
+  const refundedIds = [P2.id, ...(P1.events.refunded ? [P1.id] : [])];
+  step(
+    "P6_hold_released_once_no_duplicate_wallet_rows",
+    refundedIds.every((id) => holds.filter((h) => h.order_id === id).length === 1 && holds.find((h) => h.order_id === id)?.status === "released") &&
+      txs.every((r) => r.n === 1 || r.transaction_type === "order_hold"),
+    `holds=${JSON.stringify(holds.map((h) => [label(h.order_id), h.status, h.release_idempotency_key]))} walletTxs=${JSON.stringify(txs.map((r) => [label(r.related_order_id), r.transaction_type, r.direction, r.n, r.amount]))}`
+  );
+  function label(id) {
+    return id === P1.id ? "P1" : id === P2.id ? "P2" : id;
+  }
+
+  const actsP1 = await actingResponses(P1.id, "reopened_in_hall");
+  const actsP2 = await actingResponses(P2.id, "refunded");
+  const actsP1r = P1.events.refunded ? await actingResponses(P1.id, "refunded") : [];
+  state.actingResponses = { P1_reopened: actsP1, P2_refunded: actsP2, P1_refunded: actsP1r };
+  const runs = await cronRunsSince(state.startedAt);
+  const codes = await httpCodesSince(state.startedAt);
+  state.cronSummary = { runs, codes, sqlBursts: (state.sqlBursts || []).length };
+  step(
+    "P7_transitions_came_from_pg_net_responses_exactly_once",
+    actsP1.length === 1 && actsP2.length === 1 && (!P1.events.refunded || actsP1r.length === 1),
+    `pg_net responses acting: P1 reopened×${actsP1.length} at ${actsP1[0]?.created}, P2 refunded×${actsP2.length} at ${actsP2[0]?.created}${
+      P1.events.refunded ? `, P1 refunded×${actsP1r.length} at ${actsP1r[0]?.created}` : ""
+    }`
+  );
+  step(
+    "P8_scheduler_ran_every_minute_with_extra_concurrent_ticks",
+    runs.succeeded >= 30 && (codes["200"] || 0) >= runs.succeeded && !codes["401"] && !codes["503"] && (state.sqlBursts || []).length >= 2,
+    `pg_cron runs ${runs.succeeded}/${runs.total} since start, pg_net http=${JSON.stringify(codes)}, SQL bursts=${(state.sqlBursts || []).length}×3 extra ticks`
+  );
+
+  const t = await actors();
+  for (const [name, rec] of Object.entries({ P1, P2 })) {
+    const f = await fourEnd(t, rec.id);
+    rec.fourEnd.final = fourEndText(f);
+    step(`${name}_four_end_final`, rec.events.refunded ? [f.boss, f.cs, f.admin].every((s) => s === "refunded") : f.boss === "pending", fourEndText(f));
+  }
+  if (P1.events.refunded) {
+    const w = await wallet(t);
+    step(
+      "P9_wallet_back_to_baseline",
+      money(w.paidBalance) === money(state.wallet0.paidBalance) && money(w.heldBalance) === money(state.wallet0.heldBalance),
+      `before P-orders paid=${state.wallet0.paidBalance} held=${state.wallet0.heldBalance} → now paid=${w.paidBalance} held=${w.heldBalance}`,
+      { walletBefore: state.wallet0, walletAfter: w }
+    );
+  }
+  await openBrowser();
+  try {
+    await csShot(t, P2.orderNo, "P2-pgcron-cs-refunded");
+    await adminShot(t, P2.orderNo, "P2-pgcron-admin-refunded");
+  } finally {
+    await browser.close();
+  }
+  save();
+  console.log(`\nPGCRON VERIFY DONE ${JSON.stringify(report.summary)}`);
+}
+
 /**
  * Dry-run by default; pass --apply to write. Only touches [E2E-GP-DESIGNATE] orders and the E2E product.
  * --reverse-duitnow debits refunds of fake-proof DuitNow orders; run it once per order.
@@ -902,6 +1178,9 @@ try {
   else if (phase === "cron-start") await cronStartPhase();
   else if (phase === "cron-watch") await cronWatchPhase();
   else if (phase === "cron-verify") await cronVerifyPhase();
+  else if (phase === "pgcron-start") await pgcronStartPhase();
+  else if (phase === "pgcron-watch") await pgcronWatchPhase();
+  else if (phase === "pgcron-verify") await pgcronVerifyPhase();
   else if (phase === "cleanup") await cleanupPhase();
   else throw new Error(`unknown phase ${phase}`);
 } catch (e) {
