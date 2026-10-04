@@ -10,6 +10,8 @@
  * After a new secret, redeploy Staging (node scripts/deploy-staging.mjs) so the function sees it.
  */
 import "../server/api/_load-env.js";
+import fs from "node:fs";
+import path from "node:path";
 import { randomBytes } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import {
@@ -19,6 +21,7 @@ import {
   buildStagingPoolerUrl,
   readSqlFile,
   projectRefFromDatabaseUrl,
+  projectRefFromSupabaseUrl,
 } from "../server/api/_staging-sql.js";
 
 const DEFAULT_URL = "https://meow-cuijiao-homepage-staging.vercel.app/api/cron/gameplay-no-taker";
@@ -31,24 +34,68 @@ const args = Object.fromEntries(
   })
 );
 
-export function stagingDbTarget() {
-  const pass = String(process.env.STAGING_DB_PASSWORD || "").trim();
-  const pat = String(process.env.STAGING_SUPABASE_ACCESS_TOKEN || process.env.SUPABASE_ACCESS_TOKEN || "").trim();
-  const candidates = [
-    process.env.STAGING_DATABASE_URL,
-    pass ? buildStagingPoolerUrl(pass) : "",
-    process.env.DATABASE_URL,
-    process.env.POSTGRES_URL,
-  ].map((v) => String(v || "").trim());
-  // Generic DATABASE_URL may point at Production locally; only a Staging ref is ever used.
-  const dbUrl = candidates.find((u) => u && projectRefFromDatabaseUrl(u) === STAGING_PROJECT_REF);
-  if (dbUrl) {
-    if (projectRefFromDatabaseUrl(dbUrl) === PRODUCTION_PROJECT_REF) throw new Error("Refusing Production database.");
-    assertStagingOnly({ databaseUrl: dbUrl });
-    return { via: "postgres", dbUrl };
+/** Optional env file (e.g. `vercel env pull`) consulted for DB credentials only; never merged into process.env. */
+function parseEnvFile(file) {
+  const out = {};
+  if (!file || !fs.existsSync(file)) return out;
+  for (const line of fs.readFileSync(file, "utf8").split(/\r?\n/)) {
+    const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/i);
+    if (!m) continue;
+    out[m[1]] = m[2].replace(/^"(.*)"$/s, "$1").replace(/^'(.*)'$/s, "$1").replace(/\\n$/, "").trim();
   }
-  if (pat) return { via: "management_api", pat };
+  return out;
+}
+const envFile = String(args["env-file"] || process.env.STAGING_ENV_FILE || "").trim();
+const fileEnv = parseEnvFile(envFile);
+
+const DB_URL_KEYS = ["STAGING_DATABASE_URL", "DATABASE_URL", "POSTGRES_URL", "POSTGRES_URL_NON_POOLING", "POSTGRES_PRISMA_URL", "SUPABASE_DB_URL"];
+const DB_PASSWORD_KEYS = ["STAGING_DB_PASSWORD", "SUPABASE_DB_PASSWORD", "POSTGRES_PASSWORD"];
+const PAT_KEYS = ["STAGING_SUPABASE_ACCESS_TOKEN", "SUPABASE_ACCESS_TOKEN"];
+
+/** Key names + project refs only (no values) — safe to print. */
+export function describeCredentialSources() {
+  const sources = { file: envFile ? `${path.basename(envFile)} (${Object.keys(fileEnv).length} keys)` : "(none)", found: [] };
+  const sbRef = projectRefFromSupabaseUrl(fileEnv.SUPABASE_URL || fileEnv.NEXT_PUBLIC_SUPABASE_URL || "");
+  sources.fileSupabaseRef = sbRef || "(none)";
+  for (const k of DB_URL_KEYS) if (fileEnv[k]) sources.found.push(`${k}→ref=${projectRefFromDatabaseUrl(fileEnv[k]) || "?"}`);
+  for (const k of [...DB_PASSWORD_KEYS, ...PAT_KEYS]) if (fileEnv[k]) sources.found.push(`${k}(present)`);
+  return sources;
+}
+
+export function stagingDbTarget() {
+  const fromFile = (k) => String(fileEnv[k] || "").trim();
+  const fileSbRef = projectRefFromSupabaseUrl(fileEnv.SUPABASE_URL || fileEnv.NEXT_PUBLIC_SUPABASE_URL || "");
+  const candidates = [];
+  for (const k of DB_URL_KEYS) if (fromFile(k)) candidates.push({ source: `file:${k}`, url: fromFile(k) });
+  // A bare password is only trusted when the same file's Supabase URL is the Staging project.
+  for (const k of DB_PASSWORD_KEYS) {
+    if (fromFile(k) && (k === "STAGING_DB_PASSWORD" || fileSbRef === STAGING_PROJECT_REF)) {
+      candidates.push({ source: `file:${k}+staging-pooler`, url: buildStagingPoolerUrl(fromFile(k)) });
+    }
+  }
+  if (process.env.STAGING_DATABASE_URL) candidates.push({ source: "env:STAGING_DATABASE_URL", url: process.env.STAGING_DATABASE_URL.trim() });
+  if (process.env.STAGING_DB_PASSWORD) candidates.push({ source: "env:STAGING_DB_PASSWORD+staging-pooler", url: buildStagingPoolerUrl(process.env.STAGING_DB_PASSWORD) });
+  // Generic DATABASE_URL may point at Production; only an exact Staging ref is ever used.
+  const hit = candidates.find((c) => c.url && projectRefFromDatabaseUrl(c.url) === STAGING_PROJECT_REF);
+  if (hit) {
+    if (projectRefFromDatabaseUrl(hit.url) === PRODUCTION_PROJECT_REF) throw new Error("Refusing Production database.");
+    assertStagingOnly({ databaseUrl: hit.url });
+    return { via: "postgres", source: hit.source, ref: STAGING_PROJECT_REF, dbUrl: hit.url };
+  }
+  const patKey = PAT_KEYS.find((k) => fromFile(k)) || (process.env.STAGING_SUPABASE_ACCESS_TOKEN ? "env:STAGING_SUPABASE_ACCESS_TOKEN" : "");
+  const pat = patKey.startsWith("env:") ? process.env.STAGING_SUPABASE_ACCESS_TOKEN : fromFile(patKey);
+  if (pat) return { via: "management_api", source: patKey, ref: STAGING_PROJECT_REF, pat };
   return null;
+}
+
+/** Read-only identity proof before any write: the target must contain a known Staging-only order UUID. */
+export async function assertStagingIdentity(target, fingerprintOrderId) {
+  if (target.ref !== STAGING_PROJECT_REF) throw new Error(`Target ref ${target.ref} is not ${STAGING_PROJECT_REF}`);
+  if (!fingerprintOrderId) return { ref: target.ref, fingerprint: "skipped" };
+  if (!/^[0-9a-f-]{36}$/i.test(fingerprintOrderId)) throw new Error("bad fingerprint uuid");
+  const rows = await stagingQuery(target, `select count(*)::int as n from public.orders where id = '${fingerprintOrderId}'`);
+  if (rows[0]?.n !== 1) throw new Error("Staging fingerprint order not found — refusing to run.");
+  return { ref: target.ref, fingerprint: "ok" };
 }
 
 /** Run statements on Staging; returns rows of the last statement. Params only via postgres. */
@@ -107,18 +154,24 @@ async function status(target) {
 }
 
 async function main() {
+  const sources = describeCredentialSources();
   const target = stagingDbTarget();
   if (!target) {
     console.error(
       [
-        "Missing Staging credentials (STAGING_DATABASE_URL / STAGING_DB_PASSWORD / SUPABASE_ACCESS_TOKEN).",
+        `Missing Staging DB credentials. Sources (names only): ${JSON.stringify(sources)}`,
+        `Need one of: a DB URL whose ref is ${STAGING_PROJECT_REF} (STAGING_DATABASE_URL / POSTGRES_URL / DATABASE_URL), STAGING_DB_PASSWORD, or SUPABASE_ACCESS_TOKEN.`,
         `SQL Editor: https://supabase.com/dashboard/project/${STAGING_PROJECT_REF}/sql/new`,
         `File: ${SQL_FILE}`,
       ].join("\n")
     );
     process.exit(2);
   }
-  console.log(`[gameplay-cron] stagingRef=${STAGING_PROJECT_REF} via=${target.via}; Production NOT targeted.`);
+  const identity = await assertStagingIdentity(target, String(args["fingerprint-order"] || ""));
+  console.log(
+    `[gameplay-cron] target ref=${identity.ref} via=${target.via} source=${target.source} fingerprint=${identity.fingerprint}; Production NOT targeted.`
+  );
+  if (args.check) return;
 
   if (args.status) {
     console.log(JSON.stringify(await status(target), null, 2));

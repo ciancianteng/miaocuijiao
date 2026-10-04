@@ -856,9 +856,12 @@ let dbQuery = null;
 async function sql(text, params = []) {
   if (!dbTarget) {
     const mod = await import("./apply-gameplay-no-taker-cron-staging.mjs");
-    dbTarget = mod.stagingDbTarget();
+    const target = mod.stagingDbTarget();
+    if (!target) throw new Error("Staging DB credentials required (STAGING_DATABASE_URL / STAGING_DB_PASSWORD / SUPABASE_ACCESS_TOKEN)");
+    const fingerprint = process.argv.find((a) => a.startsWith("--fingerprint-order="))?.slice(20) || "";
+    await mod.assertStagingIdentity(target, fingerprint);
+    dbTarget = target;
     dbQuery = mod.stagingQuery;
-    if (!dbTarget) throw new Error("Staging DB credentials required (STAGING_DATABASE_URL / STAGING_DB_PASSWORD / SUPABASE_ACCESS_TOKEN)");
   }
   return dbQuery(dbTarget, text, params);
 }
