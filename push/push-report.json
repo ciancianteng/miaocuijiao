@@ -1,0 +1,98 @@
+{
+  "base": "https://meow-cuijiao-homepage-6bxic7ke4-ciancianteng-4581s-projects.vercel.app",
+  "log": [
+    {
+      "k": "sw",
+      "v": {
+        "controlled": true,
+        "scope": "https://meow-cuijiao-homepage-6bxic7ke4-ciancianteng-4581s-projects.vercel.app/",
+        "script": "https://meow-cuijiao-homepage-6bxic7ke4-ciancianteng-4581s-projects.vercel.app/sw-mcj.js",
+        "swHasFetchListener": false,
+        "swHasPush": true,
+        "permission": "granted"
+      },
+      "t": "2026-10-04T02:55:49.144Z"
+    },
+    {
+      "k": "registration",
+      "v": {
+        "registrationId": "0",
+        "scopeURL": "https://meow-cuijiao-homepage-6bxic7ke4-ciancianteng-4581s-projects.vercel.app/",
+        "isDeleted": false
+      },
+      "t": "2026-10-04T02:55:49.541Z"
+    },
+    {
+      "k": "url before push",
+      "v": "https://meow-cuijiao-homepage-6bxic7ke4-ciancianteng-4581s-projects.vercel.app/",
+      "t": "2026-10-04T02:55:49.542Z"
+    },
+    {
+      "k": "push delivered",
+      "v": {
+        "title": "妙脆角推送验证 MCJ-VERIFY 10:55:46",
+        "body": "点击本通知应打开 新手教程 (/guide.html)",
+        "url": "/guide.html",
+        "tag": "mcj-push-verify",
+        "notification_type": "verify"
+      },
+      "t": "2026-10-04T02:55:52.062Z"
+    },
+    {
+      "k": "getNotifications (SW showed it)",
+      "v": [
+        {
+          "title": "妙脆角推送验证 MCJ-VERIFY 10:55:46",
+          "body": "点击本通知应打开 新手教程 (/guide.html)",
+          "tag": "mcj-push-verify",
+          "url": "/guide.html"
+        }
+      ],
+      "t": "2026-10-04T02:55:52.173Z"
+    },
+    {
+      "k": "os notification captured (no automated click; waiting for a human click)",
+      "v": "{\"found\":true,\"how\":\"name-match\",\"x\":1550,\"y\":930,\"w\":360,\"h\":92,\"clicked\":false,\"clickHow\":\"\"}",
+      "t": "2026-10-04T02:55:52.678Z"
+    },
+    {
+      "k": "notification count changed",
+      "v": {
+        "from": 1,
+        "to": -1
+      },
+      "t": "2026-10-04T02:56:06.385Z"
+    },
+    {
+      "k": "NEW TAB",
+      "v": "",
+      "t": "2026-10-04T02:56:14.985Z"
+    },
+    {
+      "k": "NAVIGATED",
+      "v": "https://meow-cuijiao-homepage-6bxic7ke4-ciancianteng-4581s-projects.vercel.app/guide.html",
+      "t": "2026-10-04T02:56:15.008Z"
+    },
+    {
+      "k": "page closed after click (renderer swap)",
+      "v": true,
+      "t": "2026-10-04T02:56:15.111Z"
+    },
+    {
+      "k": "after click",
+      "v": {
+        "pages": [
+          "https://meow-cuijiao-homepage-6bxic7ke4-ciancianteng-4581s-projects.vercel.app/guide.html"
+        ],
+        "navigated": true,
+        "title": "使用教学 · 妙脆角"
+      },
+      "t": "2026-10-04T02:56:16.547Z"
+    },
+    {
+      "k": "notifications left after click",
+      "v": 0,
+      "t": "2026-10-04T02:56:16.612Z"
+    }
+  ]
+}

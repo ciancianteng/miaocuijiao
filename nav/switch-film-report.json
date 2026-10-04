@@ -1,0 +1,72 @@
+{
+  "before": {
+    "base": "https://meow-cuijiao-homepage-4prlmtvhi-ciancianteng-4581s-projects.vercel.app",
+    "runs": [
+      {
+        "cardsMs": 1018,
+        "fcpMs": 722,
+        "loadMs": 1726
+      },
+      {
+        "cardsMs": 835,
+        "fcpMs": 736,
+        "loadMs": 1642
+      },
+      {
+        "cardsMs": 984,
+        "fcpMs": 710,
+        "loadMs": 1858
+      },
+      {
+        "cardsMs": 668,
+        "fcpMs": 452,
+        "loadMs": 1396
+      },
+      {
+        "cardsMs": 967,
+        "fcpMs": 683,
+        "loadMs": 1664
+      }
+    ],
+    "median": {
+      "cardsMs": 967,
+      "fcpMs": 683,
+      "loadMs": 1664
+    }
+  },
+  "after": {
+    "base": "https://meow-cuijiao-homepage-staging.vercel.app",
+    "runs": [
+      {
+        "cardsMs": 1249,
+        "fcpMs": 907,
+        "loadMs": 1465
+      },
+      {
+        "cardsMs": 942,
+        "fcpMs": 724,
+        "loadMs": 1163
+      },
+      {
+        "cardsMs": 900,
+        "fcpMs": 697,
+        "loadMs": 1103
+      },
+      {
+        "cardsMs": 915,
+        "fcpMs": 689,
+        "loadMs": 1135
+      },
+      {
+        "cardsMs": 962,
+        "fcpMs": 729,
+        "loadMs": 1169
+      }
+    ],
+    "median": {
+      "cardsMs": 942,
+      "fcpMs": 724,
+      "loadMs": 1163
+    }
+  }
+}
