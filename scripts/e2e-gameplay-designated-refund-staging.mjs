@@ -20,7 +20,9 @@
  * Database-scheduler verification (needs Staging DB credentials; nothing in this script calls the endpoint):
  *   --phase=pgcron-start   pg_cron job + secret enforced; P1 left unconfirmed, P2 rejected → hall
  *   --phase=pgcron-watch   reads the DB only; extra concurrent ticks fired from SQL around each due time
- *   --phase=pgcron-verify  exactly-once status logs / hold release / wallet rows, pg_net responses, four-end
+ *   --phase=pgcron-add     P3 left unconfirmed, P4 rejected → hall (a second pair, aligned to the DB clock)
+ *   --phase=pgcron-verify  exactly-once row markers / notifications / hold release / wallet rows, pg_net responses, four-end
+ *   --phase=pgcron-wallet  boss wallet vs. the pre-P baseline (after cleanup of any order left in the hall)
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -869,7 +871,7 @@ const uuidList = (ids) => {
   if (!ids.every((id) => /^[0-9a-f-]{36}$/i.test(id))) throw new Error("bad uuid");
   return ids.map((id) => `'${id}'`).join(",");
 };
-const pgIds = () => [state.orders.P1.id, state.orders.P2.id];
+const pgIds = () => Object.keys(state.orders).filter((k) => /^P\d$/.test(k)).map((k) => state.orders[k].id);
 
 async function cronJob() {
   return (await sql("select jobid, schedule, active from cron.job where jobname = 'gameplay-no-taker-sweep'"))[0] || null;
@@ -951,45 +953,102 @@ async function pgcronStartPhase() {
   console.log(`\nPGCRON START DONE. P1 claimed ${state.orders.P1.claimedAt}, P2 in hall ${P2.hallAt}. Run --phase=pgcron-watch now.`);
 }
 
+/** P3 left unconfirmed, P4 rejected → hall; added while P1 waits for its 60-min refund. */
+async function pgcronAddPhase() {
+  const t = await actors();
+  const pubC = (await api(`/api/public/companions?id=${t.comp.id}`)).json?.companions?.[0] || {};
+  const companion = { id: t.comp.id, name: pubC.name || pubC.nickname || "CompA" };
+  const product = await ensureProduct(t);
+  await createPaidDesignated(t, product, companion, "P3");
+  const P4 = await createPaidDesignated(t, product, companion, "P4");
+  const rej = await api("/api/companion", t.comp.token, { action: "reject_direct_order", id: P4.id, reason: "时间无法配合" });
+  P4.hallAt = new Date().toISOString();
+  const f = await fourEnd(t, P4.id);
+  step("P4_companion_reject_to_hall", rej.status < 300 && f.boss === "pending" && !f.companionId.boss, `http=${rej.status} ${fourEndText(f)}`);
+  state.goals = { P1: "refunded", P2: "refunded", P3: "reopened_in_hall", P4: "refunded" };
+  save();
+}
+
+const pLabels = () => Object.keys(state.orders).filter((k) => /^P\d$/.test(k));
+async function dbNowMs() {
+  return new Date((await sql("select now() as now"))[0].now).getTime();
+}
+/**
+ * Row stamps the sweep measures against (Staging has no order_status_logs / paid_at):
+ * claimed → [[CLAIMED_AT]] or created_at; pending → [[HALL_OPEN_AT]]. Marker counts prove exactly-once writes.
+ */
+async function orderStamps() {
+  const rows = await sql(`select id, status, companion_id, created_at, note from public.orders where id in (${uuidList(pgIds())})`);
+  const ms = (v) => (v && Number.isFinite(Date.parse(v)) ? Date.parse(v) : 0);
+  return Object.fromEntries(
+    rows.map((r) => {
+      const note = String(r.note || "");
+      const created = new Date(r.created_at).getTime();
+      const claimedAt = ms(note.match(/\[\[CLAIMED_AT\]\]\s*([^\n|]+)/)?.[1]?.trim());
+      const hallOpenAt = ms(note.match(/\[\[HALL_OPEN_AT\]\]\s*([^\n|]+)/)?.[1]?.trim());
+      const entered = r.status === "claimed" ? Math.max(claimedAt, created) : r.status === "pending" ? Math.max(hallOpenAt, created) : 0;
+      return [
+        r.id,
+        {
+          status: r.status,
+          companion: !!r.companion_id,
+          created,
+          hallOpenAt,
+          entered,
+          unconfirmedMarks: (note.match(/指定陪玩30分钟未确认/g) || []).length,
+          refundLocks: [...note.matchAll(/\[\[NO_TAKER_REFUND\]\]\s*([^\n|]+)/g)].map((x) => x[1].trim()),
+        },
+      ];
+    })
+  );
+}
+
 async function pgcronWatchPhase() {
-  const { P1, P2 } = state.orders;
-  const untilHall = process.argv.includes("--until=hall");
   state.pgLog = state.pgLog || [];
   state.sqlBursts = state.sqlBursts || [];
-  const deadline = Date.parse(P1.claimedAt) + 70 * 60 * 1000;
-  const label = { [P1.id]: "P1", [P2.id]: "P2" };
+  state.goals = state.goals || { P1: "refunded", P2: "refunded" };
+  const offset = Date.now() - (await dbNowMs());
+  state.clockOffsetMs = offset;
+  const deadline = Date.now() + 75 * 60 * 1000;
   let doneAt = 0;
   while (Date.now() < deadline) {
     const rows = await pgOrders();
+    const stamps = await orderStamps();
+    const dbNow = Date.now() - offset;
+    const minuteStart = Math.floor(dbNow / 60000) * 60000;
     const at = new Date().toISOString();
-    const p1 = rows[P1.id] || {};
-    const p2 = rows[P2.id] || {};
     const transitions = [];
-    if (p1.status === "pending" && !P1.events.reopened_in_hall) transitions.push([P1, "reopened_in_hall"]);
-    if (p1.status === "refunded" && !P1.events.refunded) transitions.push([P1, "refunded"]);
-    if (p2.status === "refunded" && !P2.events.refunded) transitions.push([P2, "refunded"]);
-    for (const [rec, ev] of transitions) {
+    const due = [];
+    const view = {};
+    for (const label of pLabels()) {
+      const rec = state.orders[label];
+      const row = rows[rec.id] || {};
+      if (row.status === "pending" && !row.companion_id && !rec.events.reopened_in_hall && !rec.hallAt) transitions.push([label, "reopened_in_hall"]);
+      if (row.status === "refunded" && !rec.events.refunded) transitions.push([label, "refunded"]);
+      const reached = rec.events[state.goals[label]] || transitions.some(([l, ev]) => l === label && ev === state.goals[label]);
+      const entered = stamps[rec.id]?.entered || 0;
+      // Only when already due before this minute's scheduled tick started, so pg_cron gets the first shot.
+      if (!reached && ["claimed", "pending"].includes(row.status) && entered && entered + 30 * 60 * 1000 <= minuteStart) due.push(label);
+      view[label] = `${row.status}${row.companion_id ? "+companion" : ""}${entered ? ` ${((dbNow - entered) / 60000).toFixed(1)}m` : ""}`;
+    }
+    for (const [label, ev] of transitions) {
+      const rec = state.orders[label];
       rec.events[ev] = at;
       if (ev === "reopened_in_hall") rec.hallAt = at;
     }
-    // Overlap the scheduled tick with 3 extra concurrent ticks while an order is due.
-    const p1Due = p1.status === "claimed" ? Number(minsSince(P1.claimedAt)) : p1.status === "pending" ? Number(minsSince(P1.hallAt)) : -1;
-    const p2Due = p2.status === "pending" ? Number(minsSince(P2.hallAt)) : -1;
-    const inWindow = (m) => m >= 29.3 && m <= 32;
     let burst = null;
-    if (inWindow(p1Due) || inWindow(p2Due)) {
+    if (due.length) {
       burst = await fireSqlTicks(3).catch((e) => `error: ${e.message}`);
-      state.sqlBursts.push({ at, requestIds: burst });
+      state.sqlBursts.push({ at, due, requestIds: burst });
     }
     const runs = await cronRunsSince(state.startedAt);
     const entry = {
       at,
-      p1: `${p1.status}${p1.companion_id ? "+companion" : ""} ${minsSince(P1.claimedAt)}m`,
-      p2: `${p2.status} ${minsSince(P2.hallAt)}m in hall`,
+      ...view,
       cronRuns: `${runs.succeeded}/${runs.total}`,
       http: await httpCodesSince(state.startedAt),
-      sqlBurst: burst ? "3 extra ticks" : "",
-      transitions: transitions.map(([rec, ev]) => `${label[rec.id]}:${ev}`),
+      sqlBurst: burst ? `3 extra ticks (due: ${due.join(",")}) ids=${Array.isArray(burst) ? burst.join(",") : burst}` : "",
+      transitions: transitions.map(([l, ev]) => `${l}:${ev}`),
     };
     state.pgLog.push(entry);
     console.log(JSON.stringify(entry));
@@ -999,14 +1058,14 @@ async function pgcronWatchPhase() {
       const t = await actors();
       await openBrowser();
       try {
-        for (const [rec, ev] of transitions) {
-          const name = label[rec.id];
+        for (const [label, ev] of transitions) {
+          const rec = state.orders[label];
           rec.fourEnd[ev] = fourEndText(await fourEnd(t, rec.id));
           if (ev === "reopened_in_hall") {
-            await companionShot(t, "/companion/order-hall", rec.orderNo, `${name}-pgcron-companion-hall`);
-            await bossOrderShot(t, rec.id, rec.orderNo, `${name}-pgcron-boss-hall`);
+            await companionShot(t, "/companion/order-hall", rec.orderNo, `${label}-pgcron-companion-hall`);
+            await bossOrderShot(t, rec.id, rec.orderNo, `${label}-pgcron-boss-hall`);
           } else {
-            await bossOrderShot(t, rec.id, rec.orderNo, `${name}-pgcron-boss-refunded`);
+            await bossOrderShot(t, rec.id, rec.orderNo, `${label}-pgcron-boss-refunded`);
           }
         }
       } finally {
@@ -1014,49 +1073,82 @@ async function pgcronWatchPhase() {
       }
       save();
     }
-    const finished = untilHall ? P1.events.reopened_in_hall && P2.events.refunded : P1.events.refunded && P2.events.refunded;
+    const finished = pLabels().every((l) => state.orders[l].events[state.goals[l]]);
     if (!doneAt && finished) doneAt = Date.now();
     if (doneAt && Date.now() - doneAt >= 3 * 60 * 1000) break;
-    await sleep(60 * 1000);
+    const nowDb = Date.now() - offset;
+    let wait = 60000 - (nowDb % 60000) + 1000;
+    if (wait > 61000) wait -= 60000;
+    await sleep(wait);
   }
   console.log(`\nPGCRON WATCH DONE bursts=${state.sqlBursts.length}`);
 }
 
 async function pgcronVerifyPhase() {
-  const { P1, P2 } = state.orders;
   const ids = uuidList(pgIds());
-  const logs = await sql(
-    `select order_id, from_status, to_status, count(*)::int as n, min(created_at) as first_at, string_agg(distinct coalesce(operator_role, ''), ',') as roles
-       from public.order_status_logs where order_id in (${ids}) and created_at >= $1 group by 1, 2, 3`,
-    [state.startedAt]
+  const label = (id) => pLabels().find((l) => state.orders[l].id === id) || id;
+  const stamps = await orderStamps();
+  state.orderMarkers = Object.fromEntries(
+    pLabels().map((l) => {
+      const s = stamps[state.orders[l].id] || {};
+      return [l, { status: s.status, hallOpenAt: s.hallOpenAt ? new Date(s.hallOpenAt).toISOString() : null, unconfirmedMarks: s.unconfirmedMarks, refundLocks: s.refundLocks }];
+    })
   );
-  const logOf = (id, from, to) => logs.find((l) => l.order_id === id && l.from_status === from && l.to_status === to);
-  const mins = (a, b) => (Date.parse(b) - Date.parse(a)) / 60000;
-  state.statusLogs = logs;
+  const burstIds = new Set((state.sqlBursts || []).flatMap((b) => (Array.isArray(b.requestIds) ? b.requestIds.map(String) : [])));
+  const acting = async (l, action) =>
+    (
+      await sql(`select id::text as id, created, status_code, content from net._http_response where created >= $1 and content ~ $2 order by created`, [
+        state.startedAt,
+        `"id":"${state.orders[l].id}","orderNo":"[^"]*","action":"${action}"`,
+      ])
+    ).map((r) => ({ ...r, by: burstIds.has(r.id) ? "extra SQL tick" : "scheduled pg_cron tick" }));
+  const notif = await sql(
+    `select related_id, title, count(*)::int as n from public.boss_notifications
+      where related_id in (${ids}) and title in ('指定陪玩未及时确认', '无人接单，已自动退款', '无人接单，退款处理中') group by 1, 2`
+  );
+  const compNotif = await sql(
+    `select notice_key, count(*)::int as n from public.companion_notifications where notice_key in (${pgIds().map((id) => `'gameplay-confirm-timeout-${id}'`).join(",")}) group by 1`
+  );
+  state.notifications = { boss: notif, companion: compNotif };
+  const nBoss = (l, title) => notif.find((x) => x.related_id === state.orders[l].id && x.title === title)?.n || 0;
+  const nComp = (l) => compNotif.find((x) => x.notice_key === `gameplay-confirm-timeout-${state.orders[l].id}`)?.n || 0;
+  state.actingResponses = {};
+  const mins = (a, b) => (new Date(b).getTime() - new Date(a).getTime()) / 60000;
 
-  const p1Hall = logOf(P1.id, "claimed", "pending");
-  step(
-    "P3_P1_unconfirmed_30min_to_hall_exactly_once_by_cron",
-    p1Hall?.n === 1 && p1Hall.roles === "system" && mins(P1.claimedAt, p1Hall.first_at) >= 29.5,
-    `claimed→pending ×${p1Hall?.n || 0} at ${p1Hall?.first_at} (${p1Hall ? mins(P1.claimedAt, p1Hall.first_at).toFixed(1) : "?"}m after pay) operator=${p1Hall?.roles}`,
-    { screenshot: ["screenshots/P1-pgcron-companion-hall.png", "screenshots/P1-pgcron-boss-hall.png"] }
-  );
-  const p2Ref = logOf(P2.id, "refund_requested", "refunded");
-  const p2Lock = logOf(P2.id, "pending", "refund_requested");
-  step(
-    "P4_P2_hall_30min_refund_exactly_once_by_cron",
-    p2Ref?.n === 1 && p2Lock?.n === 1 && mins(P2.hallAt, p2Ref.first_at) >= 29.5,
-    `pending→refund_requested ×${p2Lock?.n || 0}, →refunded ×${p2Ref?.n || 0} at ${p2Ref?.first_at} (${p2Ref ? mins(P2.hallAt, p2Ref.first_at).toFixed(1) : "?"}m in hall)`,
-    { screenshot: ["screenshots/P2-pgcron-boss-refunded.png"] }
-  );
-  const p1Ref = logOf(P1.id, "refund_requested", "refunded");
-  if (P1.events.refunded) {
+  const checks = [
+    { l: "P1", ev: "reopened_in_hall", title: "指定陪玩未及时确认" },
+    { l: "P2", ev: "refunded", title: "无人接单，已自动退款" },
+    { l: "P3", ev: "reopened_in_hall", title: "指定陪玩未及时确认" },
+    { l: "P4", ev: "refunded", title: "无人接单，已自动退款" },
+    { l: "P1", ev: "refunded", title: "无人接单，已自动退款" },
+  ].filter((c) => state.orders[c.l]);
+  for (const c of checks) {
+    const s = stamps[state.orders[c.l].id] || {};
+    const acts = await acting(c.l, c.ev);
+    state.actingResponses[`${c.l}:${c.ev}`] = acts.map(({ content, ...r }) => ({ ...r, content: String(content).slice(0, 600) }));
+    // Hall move: created → [[HALL_OPEN_AT]], one 未确认 marker. Refund: [[HALL_OPEN_AT]] → single [[NO_TAKER_REFUND]] lock.
+    const from = c.ev === "reopened_in_hall" ? s.created : s.hallOpenAt;
+    const to = c.ev === "reopened_in_hall" ? s.hallOpenAt : Date.parse(s.refundLocks?.[0] || "");
+    const marks = c.ev === "reopened_in_hall" ? s.unconfirmedMarks : (s.refundLocks || []).length;
+    const waited = from && to ? mins(from, to) : NaN;
+    const notifN = nBoss(c.l, c.title);
+    const compN = c.ev === "reopened_in_hall" ? nComp(c.l) : 1;
     step(
-      "P5_P1_hall_30min_refund_exactly_once_by_cron",
-      p1Ref?.n === 1 && mins(p1Hall.first_at, p1Ref.first_at) >= 29.5,
-      `→refunded ×${p1Ref?.n || 0} at ${p1Ref?.first_at} (${p1Ref ? mins(p1Hall.first_at, p1Ref.first_at).toFixed(1) : "?"}m in hall)`
+      `${c.l}_${c.ev}_exactly_once`,
+      marks === 1 && acts.length === 1 && notifN === 1 && compN === 1 && waited >= 29.5,
+      `${c.ev === "reopened_in_hall" ? "未确认→大厅 marker" : "退款锁 [[NO_TAKER_REFUND]]"} ×${marks} at ${to ? new Date(to).toISOString() : "?"} after ${
+        Number.isFinite(waited) ? waited.toFixed(1) : "?"
+      }m · acting pg_net response ×${acts.length} by ${acts.map((a) => `${a.by} #${a.id}`).join(",") || "-"} · boss notice「${c.title}」×${notifN}${
+        c.ev === "reopened_in_hall" ? ` · companion notice ×${compN}` : ""
+      }`
     );
   }
+  const cronActed = checks.filter((c) => (state.actingResponses[`${c.l}:${c.ev}`] || [])[0]?.by === "scheduled pg_cron tick").map((c) => `${c.l}:${c.ev}`);
+  step(
+    "P_scheduled_pg_cron_performed_each_transition_type",
+    ["reopened_in_hall", "refunded"].every((ev) => cronActed.some((k) => k.endsWith(ev))),
+    `transitions performed by the scheduled pg_cron tick: ${cronActed.join(", ") || "-"}`
+  );
 
   const holds = await sql(`select order_id, status, release_idempotency_key from public.wallet_order_holds where order_id in (${ids})`);
   const txs = await sql(
@@ -1065,62 +1157,77 @@ async function pgcronVerifyPhase() {
   );
   state.holds = holds;
   state.walletTxs = txs;
-  const refundedIds = [P2.id, ...(P1.events.refunded ? [P1.id] : [])];
+  const refunded = pLabels().filter((l) => state.orders[l].events.refunded);
   step(
-    "P6_hold_released_once_no_duplicate_wallet_rows",
-    refundedIds.every((id) => holds.filter((h) => h.order_id === id).length === 1 && holds.find((h) => h.order_id === id)?.status === "released") &&
-      txs.every((r) => r.n === 1 || r.transaction_type === "order_hold"),
-    `holds=${JSON.stringify(holds.map((h) => [label(h.order_id), h.status, h.release_idempotency_key]))} walletTxs=${JSON.stringify(txs.map((r) => [label(r.related_order_id), r.transaction_type, r.direction, r.n, r.amount]))}`
+    "P_hold_released_once_no_duplicate_wallet_rows",
+    refunded.every((l) => holds.filter((h) => h.order_id === state.orders[l].id).length === 1 && holds.find((h) => h.order_id === state.orders[l].id).status === "released") &&
+      txs.every((r) => r.n === 1),
+    `holds=${JSON.stringify(holds.map((h) => [label(h.order_id), h.status]))} walletTxs=${JSON.stringify(txs.map((r) => [label(r.related_order_id), r.transaction_type, r.direction, r.n, Number(r.amount)]))}`
   );
-  function label(id) {
-    return id === P1.id ? "P1" : id === P2.id ? "P2" : id;
-  }
 
-  const actsP1 = await actingResponses(P1.id, "reopened_in_hall");
-  const actsP2 = await actingResponses(P2.id, "refunded");
-  const actsP1r = P1.events.refunded ? await actingResponses(P1.id, "refunded") : [];
-  state.actingResponses = { P1_reopened: actsP1, P2_refunded: actsP2, P1_refunded: actsP1r };
   const runs = await cronRunsSince(state.startedAt);
   const codes = await httpCodesSince(state.startedAt);
   state.cronSummary = { runs, codes, sqlBursts: (state.sqlBursts || []).length };
-  step(
-    "P7_transitions_came_from_pg_net_responses_exactly_once",
-    actsP1.length === 1 && actsP2.length === 1 && (!P1.events.refunded || actsP1r.length === 1),
-    `pg_net responses acting: P1 reopened×${actsP1.length} at ${actsP1[0]?.created}, P2 refunded×${actsP2.length} at ${actsP2[0]?.created}${
-      P1.events.refunded ? `, P1 refunded×${actsP1r.length} at ${actsP1r[0]?.created}` : ""
-    }`
+  state.cronRegistration = {
+    job: (await sql("select jobid, jobname, schedule, active, command, database, username from cron.job where jobname = 'gameplay-no-taker-sweep'"))[0] || null,
+    vault: await sql(
+      "select name, length(decrypted_secret) as length, case when name like '%url' then decrypted_secret else '(secret, not shown)' end as value from vault.decrypted_secrets where name like 'gameplay_no_taker_cron_%' order by name"
+    ),
+    extensions: await sql("select extname, extversion from pg_extension where extname in ('pg_cron', 'pg_net', 'supabase_vault') order by extname"),
+  };
+  state.cronRunSample = await sql(
+    `select d.runid, d.status, d.start_time, d.end_time, d.return_message from cron.job_run_details d join cron.job j using (jobid)
+      where j.jobname = 'gameplay-no-taker-sweep' and d.start_time >= $1 order by d.start_time`,
+    [state.startedAt]
   );
   step(
-    "P8_scheduler_ran_every_minute_with_extra_concurrent_ticks",
-    runs.succeeded >= 30 && (codes["200"] || 0) >= runs.succeeded && !codes["401"] && !codes["503"] && (state.sqlBursts || []).length >= 2,
-    `pg_cron runs ${runs.succeeded}/${runs.total} since start, pg_net http=${JSON.stringify(codes)}, SQL bursts=${(state.sqlBursts || []).length}×3 extra ticks`
+    "P_scheduler_ran_every_minute_all_authorized",
+    runs.succeeded >= 30 && runs.succeeded === runs.total && !codes["401"] && !codes["503"] && (codes["200"] || 0) >= runs.succeeded,
+    `pg_cron runs ${runs.succeeded}/${runs.total} since start, pg_net http=${JSON.stringify(codes)}, extra SQL bursts=${(state.sqlBursts || []).length}×3`
   );
 
   const t = await actors();
-  for (const [name, rec] of Object.entries({ P1, P2 })) {
-    const f = await fourEnd(t, rec.id);
-    rec.fourEnd.final = fourEndText(f);
-    step(`${name}_four_end_final`, rec.events.refunded ? [f.boss, f.cs, f.admin].every((s) => s === "refunded") : f.boss === "pending", fourEndText(f));
-  }
-  if (P1.events.refunded) {
-    const w = await wallet(t);
-    step(
-      "P9_wallet_back_to_baseline",
-      money(w.paidBalance) === money(state.wallet0.paidBalance) && money(w.heldBalance) === money(state.wallet0.heldBalance),
-      `before P-orders paid=${state.wallet0.paidBalance} held=${state.wallet0.heldBalance} → now paid=${w.paidBalance} held=${w.heldBalance}`,
-      { walletBefore: state.wallet0, walletAfter: w }
-    );
+  for (const l of pLabels()) {
+    const f = await fourEnd(t, state.orders[l].id);
+    state.orders[l].fourEnd.final = fourEndText(f);
+    const want = state.orders[l].events.refunded ? "refunded" : "pending";
+    step(`${l}_four_end_final`, [f.boss, f.cs, f.admin].every((s) => s === want), fourEndText(f));
   }
   await openBrowser();
   try {
-    await csShot(t, P2.orderNo, "P2-pgcron-cs-refunded");
-    await adminShot(t, P2.orderNo, "P2-pgcron-admin-refunded");
+    for (const l of pLabels().filter((x) => state.orders[x].events.refunded)) {
+      await csShot(t, state.orders[l].orderNo, `${l}-pgcron-cs-refunded`);
+      await adminShot(t, state.orders[l].orderNo, `${l}-pgcron-admin-refunded`);
+    }
   } finally {
     await browser.close();
   }
   save();
   console.log(`\nPGCRON VERIFY DONE ${JSON.stringify(report.summary)}`);
 }
+
+/** Boss wallet vs. the pre-P baseline (run after cleanup of any order left in the hall). */
+async function pgcronWalletPhase() {
+  const t = await actors();
+  const w = await wallet(t);
+  step(
+    "P_wallet_back_to_baseline",
+    money(w.paidBalance) === money(state.wallet0.paidBalance) && money(w.heldBalance) === money(state.wallet0.heldBalance),
+    `before P-orders paid=${state.wallet0.paidBalance} held=${state.wallet0.heldBalance} → now paid=${w.paidBalance} held=${w.heldBalance}`,
+    { walletBefore: state.wallet0, walletAfter: w }
+  );
+  await openBrowser();
+  try {
+    const wp = await bossPage(t);
+    await wp.goto(`${STG}/recharge.html`, { waitUntil: "domcontentloaded", timeout: 60000 });
+    await wp.waitForTimeout(4000);
+    await shot(wp, "P-boss-wallet-after-pgcron", false);
+    await wp.context().close();
+  } finally {
+    await browser.close();
+  }
+}
+
 
 /**
  * Dry-run by default; pass --apply to write. Only touches [E2E-GP-DESIGNATE] orders and the E2E product.
@@ -1182,7 +1289,9 @@ try {
   else if (phase === "cron-watch") await cronWatchPhase();
   else if (phase === "cron-verify") await cronVerifyPhase();
   else if (phase === "pgcron-start") await pgcronStartPhase();
+  else if (phase === "pgcron-add") await pgcronAddPhase();
   else if (phase === "pgcron-watch") await pgcronWatchPhase();
+  else if (phase === "pgcron-wallet") await pgcronWalletPhase();
   else if (phase === "pgcron-verify") await pgcronVerifyPhase();
   else if (phase === "cleanup") await cleanupPhase();
   else throw new Error(`unknown phase ${phase}`);
