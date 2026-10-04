@@ -55,6 +55,7 @@
   };
   var COMPANION_ISOLATION_MSG='您的陪玩认证尚未通过，目前只能查看审核进度。';
   var COMPANION_TUTORIAL_HREF='/guide.html?role=companion';
+  var BOSS_PORTAL_HREF='/mine.html';
   var HIDDEN_MVP_ROUTES={};
   var state={route:'dashboard',session:null,data:null,notice:'',loading:false,error:'',walletWarning:'',authTab:'login',loginMethod:'otp',loginError:'',loginBusy:false,registerToken:'',registerVerifiedEmail:'',registerCooldownUntil:0,registerBusy:false,inviteCode:'',forgotStep:'',forgotAccount:'',forgotBusy:false,forgotMsg:'',forgotResetToken:'',profileServices:[],profileVoiceTypes:[],profileCompanionTags:[],profileErrors:{},profileDraft:null,accountDraft:null,uploadBusy:'',galleryPending:[],statusBusy:false,pendingOnlineStatus:null,settlement:null,orderFilter:'all',pollTimer:null,rulesPollTimer:null,ordersCacheAt:0,msgFilter:'all',settings:null,earningsTab:'overview',chatSession:'cs',chatConversationId:'',chatBusy:false,withdrawBusy:false,inbox:null,inboxError:'',hallOrderType:'all',hallGame:'all',drawerOpen:false,_prevDesignated:null,_prevAuditLocked:null,_toastTimer:null,_ordersRtReady:false,_alertedOrderIds:null,_baseDocTitle:'',_focusOrderId:'',myGifts:null,myGiftsBusy:false,myGiftsError:'',giftWall:[],_giftPopupShown:false};
   var IMAGE_ACCEPT='image/jpeg,image/jpg,image/png,image/webp,image/*';
@@ -2256,9 +2257,10 @@
       ? isolationHint()
       : (lock?esc(lock):'抢单 → 服务 → 完成订单 → 收益提现');
     // Account dropdown: secondary only. Primary destinations live in side drawer / bottom nav.
+    var switchBossBtn='<button type="button" data-switch-boss="menu">切换到老板端</button>';
     var accountMenu=isolated
-      ? '<button class="danger" type="button" data-logout>退出登录</button>'
-      : '<button type="button" data-route="/companion/settings">设置</button><button class="danger" type="button" data-logout>退出登录</button>';
+      ? switchBossBtn+'<button class="danger" type="button" data-logout>退出登录</button>'
+      : switchBossBtn+'<button type="button" data-route="/companion/settings">设置</button><button class="danger" type="button" data-logout>退出登录</button>';
 
     var existing=root.querySelector('.pw-shell');
     var canPatch=!!existing
@@ -2311,7 +2313,7 @@
         var badge=n[0]==='messages'&&unread?' <em class="pw-nav-badge">'+unread+'</em>':'';
         return '<button type="button" class="'+(state.route===n[0]||(n[0]==='account'&&(state.route==='mine'||state.route==='verification'))||(n[0]==='earnings'&&state.route==='wallet')?'active':'')+'" data-route="'+n[2]+'">'+n[1]+badge+'</button>';
       }).join('')+'</nav>'+
-      (!isolated?'<div class="pw-side-extra"><a class="pw-btn pw-tutorial-nav" href="'+COMPANION_TUTORIAL_HREF+'" data-companion-tutorial-entry="nav">陪玩教学</a><button type="button" class="pw-btn" data-route="/companion/rules">规则与制度</button></div>':'')+
+      (!isolated?'<div class="pw-side-extra"><a class="pw-btn pw-tutorial-nav" href="'+COMPANION_TUTORIAL_HREF+'" data-companion-tutorial-entry="nav">陪玩教学</a><button type="button" class="pw-btn" data-route="/companion/rules">规则与制度</button><button type="button" class="pw-btn" data-switch-boss="nav">切换到老板端</button></div>':'')+
       '</aside>'+
       '<button type="button" class="pw-drawer-backdrop" data-pw-drawer-close aria-label="关闭菜单" tabindex="-1"></button>'+
       '<section class="pw-main"><header class="pw-top">'+
@@ -4379,7 +4381,8 @@
           var hasBoss=!!(state.session&&state.session.user&&(state.session.user.hasBoss||state.session.user.role==='boss'))||
             (Array.isArray(roles)&&roles.indexOf('boss')>=0);
           if(hasBoss){
-            return '<p class="pw-note">本账号已开通老板身份。可用同一邮箱从老板入口登录，不会创建第二个账号。</p>';
+            return '<p class="pw-note">本账号已开通老板身份。可用同一邮箱从老板入口登录，不会创建第二个账号。</p>'+
+              '<button class="pw-btn primary" type="button" data-switch-boss="account">切换到老板端</button>';
           }
           return '<p class="pw-note">同一邮箱可同时拥有陪玩与老板身份，不会创建第二个账号。开通后可用老板入口登录，钱包/订单仍绑定本账号。</p>'+
             '<button class="pw-btn primary" type="button" data-open-boss-role>开通老板身份</button>'+
@@ -5002,6 +5005,18 @@
       if(willOpen)setDrawerOpen(false);
       closeAccountMenu();
       if(willOpen)account.classList.add('open');
+      return;
+    }
+    if(e.target.closest('[data-switch-boss]')){
+      e.preventDefault();
+      closeAccountMenu();
+      setDrawerOpen(false);
+      // Companion session stays intact; boss pages run their own gate (login.html if no boss JWT).
+      try{
+        localStorage.setItem('mcjActivePortal','boss');
+        sessionStorage.setItem('mcjActivePortal','boss');
+      }catch(err){}
+      location.href=BOSS_PORTAL_HREF;
       return;
     }
     if(e.target.closest('[data-logout]')){clearSession();location.replace('/companion/login/');return}
