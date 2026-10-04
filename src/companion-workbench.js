@@ -54,6 +54,7 @@
     'review-status':1,'profile':1,'account':1,'mine':1,'verification':1,'login':1
   };
   var COMPANION_ISOLATION_MSG='您的陪玩认证尚未通过，目前只能查看审核进度。';
+  var COMPANION_TUTORIAL_HREF='/guide.html?role=companion';
   var HIDDEN_MVP_ROUTES={};
   var state={route:'dashboard',session:null,data:null,notice:'',loading:false,error:'',walletWarning:'',authTab:'login',loginMethod:'otp',loginError:'',loginBusy:false,registerToken:'',registerVerifiedEmail:'',registerCooldownUntil:0,registerBusy:false,inviteCode:'',forgotStep:'',forgotAccount:'',forgotBusy:false,forgotMsg:'',forgotResetToken:'',profileServices:[],profileVoiceTypes:[],profileCompanionTags:[],profileErrors:{},profileDraft:null,accountDraft:null,uploadBusy:'',galleryPending:[],statusBusy:false,pendingOnlineStatus:null,settlement:null,orderFilter:'all',pollTimer:null,rulesPollTimer:null,ordersCacheAt:0,msgFilter:'all',settings:null,earningsTab:'overview',chatSession:'cs',chatConversationId:'',chatBusy:false,withdrawBusy:false,inbox:null,inboxError:'',hallOrderType:'all',hallGame:'all',drawerOpen:false,_prevDesignated:null,_prevAuditLocked:null,_toastTimer:null,_ordersRtReady:false,_alertedOrderIds:null,_baseDocTitle:'',_focusOrderId:'',myGifts:null,myGiftsBusy:false,myGiftsError:'',giftWall:[],_giftPopupShown:false};
   var IMAGE_ACCEPT='image/jpeg,image/jpg,image/png,image/webp,image/*';
@@ -2310,7 +2311,7 @@
         var badge=n[0]==='messages'&&unread?' <em class="pw-nav-badge">'+unread+'</em>':'';
         return '<button type="button" class="'+(state.route===n[0]||(n[0]==='account'&&(state.route==='mine'||state.route==='verification'))||(n[0]==='earnings'&&state.route==='wallet')?'active':'')+'" data-route="'+n[2]+'">'+n[1]+badge+'</button>';
       }).join('')+'</nav>'+
-      (!isolated?'<div class="pw-side-extra"><button type="button" class="pw-btn" data-route="/companion/rules">规则与制度</button></div>':'')+
+      (!isolated?'<div class="pw-side-extra"><a class="pw-btn pw-tutorial-nav" href="'+COMPANION_TUTORIAL_HREF+'" data-companion-tutorial-entry="nav">陪玩教学</a><button type="button" class="pw-btn" data-route="/companion/rules">规则与制度</button></div>':'')+
       '</aside>'+
       '<button type="button" class="pw-drawer-backdrop" data-pw-drawer-close aria-label="关闭菜单" tabindex="-1"></button>'+
       '<section class="pw-main"><header class="pw-top">'+
@@ -2788,7 +2789,8 @@
         {route:'/companion/order-hall',label:'抢单大厅',sub:locked?'暂不可抢':'去接新单'},
         {route:'/companion/earnings',label:'收益中心',sub:'可提现与流水'},
         {route:'/companion/account',label:'我的资料',sub:'账号与认证'}
-      ]);
+      ])+
+      '<a class="pw-action-tile pw-tutorial-tile" href="'+COMPANION_TUTORIAL_HREF+'" data-companion-tutorial-entry="dashboard"><strong>陪玩教学</strong><span>登录 · 接单 · 服务 · 收入提现，一步步看懂</span></a>';
   }
   function dashboardOverviewAccHtml(){
     var p=(state.data&&state.data.player)||{};
@@ -3384,7 +3386,7 @@
       : '<p class="pw-note">添加到主屏幕后打开更快，使用起来更像 App。关闭自动提示后仍可从这里重新查看说明。</p>'+
         '<button class="pw-btn primary" type="button" data-pwa-install-guide>安装妙脆角 / 添加到主屏幕</button>';
     return '<div class="pw-page-head"><div><h2>设置</h2><p>仅影响本机陪玩端体验。</p></div></div>'+
-      '<section class="pw-card pad"><h3>新手教学</h3><p class="pw-note">约 1～2 分钟了解申请、抢单与收入流程（可随时重看）。</p><a class="pw-btn primary" href="/guide.html?role=companion" data-companion-tutorial-entry="1">打开新手教学</a></section>'+
+      '<section class="pw-card pad"><h3>陪玩教学</h3><p class="pw-note">从登录、接单、服务到收入提现，分步骤查看完整流程（可随时重看）。</p><a class="pw-btn primary" href="'+COMPANION_TUTORIAL_HREF+'" data-companion-tutorial-entry="settings">打开陪玩教学</a></section>'+
       '<section class="pw-card pad" style="margin-top:14px"><h3>主题</h3><p class="pw-note">当前为固定黑粉运营主题（上线版不可切换品牌色）。</p><div class="pw-info-list"><div><span>主题</span><strong>暗色粉（默认）</strong></div></div></section>'+
       '<section class="pw-card pad" style="margin-top:14px"><h3>消息通知</h3><div id="mcjWebPushSettingsMount" class="mcj-webpush-companion-mount"></div><p class="pw-note">关闭开关会取消本机 Web Push 订阅；站内消息仍可在消息中心查看。</p></section>'+
       '<section class="pw-card pad" style="margin-top:14px"><h3>声音</h3><label class="pw-check"><input type="checkbox" data-setting="sound" '+(s.sound?'checked':'')+'> 提示音（新消息 / 订单 / 抢单 / 审核）</label></section>'+
