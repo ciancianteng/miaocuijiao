@@ -238,11 +238,6 @@
       '">' +
       items +
       "</div>" +
-      (activeTab === "companion"
-        ? '<div class="mcj-guide-login-cta-foot">' +
-          renderLoginCta({ id: "guide-companion-login-foot" }) +
-          "</div>"
-        : "") +
       "</section>" +
       (activeTab === "boss"
         ? '<p class="mcj-guide-switch-hint">想接单？切换到上方「陪玩教学」，可用菜单里的「陪玩登录」或教学内快捷入口进入陪玩端。</p>'
