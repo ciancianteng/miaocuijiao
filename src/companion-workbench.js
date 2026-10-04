@@ -56,6 +56,23 @@
   var COMPANION_ISOLATION_MSG='您的陪玩认证尚未通过，目前只能查看审核进度。';
   var COMPANION_TUTORIAL_HREF='/guide.html?role=companion';
   var BOSS_PORTAL_HREF='/mine.html';
+  var LOGIN_FROM_BOSS_KEY='mcjCompanionLoginFromBoss';
+  // 陪玩登录页「返回老板端」: shown for visitors arriving from boss pages or holding a boss session.
+  // Sticky per tab so tab/method switches and reloads keep it.
+  function loginCameFromBoss(){
+    try{
+      if(sessionStorage.getItem(LOGIN_FROM_BOSS_KEY)==='1')return true;
+      var get=function(k){return localStorage.getItem(k)||sessionStorage.getItem(k)||''};
+      var from=get('mcjActivePortal')==='companion'||
+        String(get('mcjAuthAccessToken')).split('.').length===3||!!get('mcjAuthRefreshToken');
+      if(!from&&document.referrer){
+        var ref=new URL(document.referrer);
+        from=ref.origin===location.origin&&!/^\/(companion(\/|$)|invite)/i.test(ref.pathname);
+      }
+      if(from)sessionStorage.setItem(LOGIN_FROM_BOSS_KEY,'1');
+      return from;
+    }catch(e){return false}
+  }
   var HIDDEN_MVP_ROUTES={};
   var state={route:'dashboard',session:null,data:null,notice:'',loading:false,error:'',walletWarning:'',authTab:'login',loginMethod:'otp',loginError:'',loginBusy:false,registerToken:'',registerVerifiedEmail:'',registerCooldownUntil:0,registerBusy:false,inviteCode:'',forgotStep:'',forgotAccount:'',forgotBusy:false,forgotMsg:'',forgotResetToken:'',profileServices:[],profileVoiceTypes:[],profileCompanionTags:[],profileErrors:{},profileDraft:null,accountDraft:null,uploadBusy:'',galleryPending:[],statusBusy:false,pendingOnlineStatus:null,settlement:null,orderFilter:'all',pollTimer:null,rulesPollTimer:null,ordersCacheAt:0,msgFilter:'all',settings:null,earningsTab:'overview',chatSession:'cs',chatConversationId:'',chatBusy:false,withdrawBusy:false,inbox:null,inboxError:'',hallOrderType:'all',hallGame:'all',drawerOpen:false,_prevDesignated:null,_prevAuditLocked:null,_toastTimer:null,_ordersRtReady:false,_alertedOrderIds:null,_baseDocTitle:'',_focusOrderId:'',myGifts:null,myGiftsBusy:false,myGiftsError:'',giftWall:[],_giftPopupShown:false};
   var IMAGE_ACCEPT='image/jpeg,image/jpg,image/png,image/webp,image/*';
@@ -2181,7 +2198,9 @@
     }
     root.innerHTML=
       '<main class="mcj-auth-page">'+
-      '<section class="mcj-auth-card mcj-auth-card--companion">'+header+
+      '<section class="mcj-auth-card mcj-auth-card--companion">'+
+      (loginCameFromBoss()?'<a class="pw-auth-back-boss" href="'+BOSS_PORTAL_HREF+'" data-switch-boss="login">‹ 返回老板端</a>':'')+
+      header+
       '<div class="mcj-auth-tabs mcj-auth-primary-tabs">'+
       '<button class="mcj-auth-btn '+(tab==='login'?'primary active':'ghost')+'" type="button" data-auth-tab="login">登录</button>'+
       '<button class="mcj-auth-btn '+(tab==='register'?'primary active':'ghost')+'" type="button" data-auth-tab="register">注册陪玩</button>'+

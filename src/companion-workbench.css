@@ -601,6 +601,8 @@ a.pw-btn{display:inline-flex;align-items:center;justify-content:center;text-deco
 .pw-app .mcj-auth-method-block{margin:16px 0 2px}
 .pw-app .mcj-auth-segment{margin:0}
 .pw-app .mcj-auth-card--companion{min-height:0;height:auto;padding:28px 22px}
+.pw-app .pw-auth-back-boss{display:inline-flex;align-items:center;gap:4px;min-height:40px;padding:0 16px;margin:0 0 14px;border:1px solid rgba(243,168,203,.5);border-radius:999px;background:rgba(243,168,203,.14);color:#ffd6e7;font-size:15px;font-weight:700;line-height:1;text-decoration:none;-webkit-tap-highlight-color:transparent}
+.pw-app .pw-auth-back-boss:active{background:rgba(243,168,203,.26)}
 .pw-app .mcj-auth-card--companion .mcj-auth-form{gap:14px}
 .pw-app .mcj-auth-text-btn{margin-top:2px}
 .pw-app .mcj-auth-card--companion input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="hidden"]):not([type="range"]),
