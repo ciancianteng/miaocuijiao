@@ -24,6 +24,7 @@ import { companionPopularityMe, recordOnlineSession, scheduleRecomputeSoft } fro
 import { readLocalLevels, toPublicLevel } from "./_companion-levels-store.js";
 import { resolvePlatformCommission } from "./_commission-rates.js";
 import { writeOrderStatusLog, COMPANION_STATUS_LABELS } from "./_order-status.js";
+import { stripInternalMarkers } from "./_order-assignment.js";
 import {
   completionCountdown,
   formatRemainingLabel,
@@ -1274,11 +1275,12 @@ async function assertCompanionOrderEligibility(profile, companion) {
   return { identity, deposit };
 }
 function stripOrderFacingText(text = "") {
-  return String(text || "")
+  const withoutGrabs = String(text || "")
     .replace(/\[\[ORDER_GRABS\]\][\s\S]*?\[\[\/ORDER_GRABS\]\]/g, "")
     .replace(/\[\[ORDER_GRABS\]\][\s\S]*$/g, "")
     .split("[[COMPLETION_PENDING]]")
-    .join("")
+    .join("");
+  return stripInternalMarkers(withoutGrabs)
     .replace(/\buuid\s+create\s+regression\s+\d+\b/gi, "")
     .replace(/\bcreate\s+regression\s+\d+\b/gi, "")
     .replace(/\bregression\s+\d+\b/gi, "")
