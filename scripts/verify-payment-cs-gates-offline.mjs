@@ -30,6 +30,9 @@ assert.equal(isManualPaymentMethod("catfood"), false);
 
 throws(() => assertLegalStatusJump("awaiting_payment", "confirmed"), "ILLEGAL_STATUS_TRANSITION");
 throws(() => assertLegalStatusJump("awaiting_payment", "in_progress"), "ILLEGAL_STATUS_TRANSITION");
+throws(() => assertLegalStatusJump("awaiting_payment", "companion_confirmed"), "ILLEGAL_STATUS_TRANSITION");
+assertLegalStatusJump("awaiting_payment", "pending");
+assertLegalStatusJump("awaiting_payment", "claimed");
 assertLegalStatusJump("claimed", "in_progress");
 
 throws(

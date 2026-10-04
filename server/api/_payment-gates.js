@@ -52,8 +52,11 @@ export const FORBIDDEN_STATUS_JUMPS = Object.freeze([
 export function assertLegalStatusJump(fromStatus, toStatus) {
   const from = normalizeOrderStatus(fromStatus);
   const to = normalizeOrderStatus(toStatus);
+  const rawTo = String(toStatus || "").trim().toLowerCase();
+  // Match targets literally: ALIASES maps companion_confirmed → pending, and
+  // awaiting_payment → pending (publish to grab hall) must stay legal.
   for (const [a, b] of FORBIDDEN_STATUS_JUMPS) {
-    if (from === normalizeOrderStatus(a) && to === normalizeOrderStatus(b)) {
+    if (from === a && (to === b || rawTo === b)) {
       throw httpError(
         `不允许从「${from}」直接跳到「${to}」。须先完成付款凭证与客服审核。`,
         409,
