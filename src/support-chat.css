@@ -898,6 +898,8 @@ button.support-send-btn[type="submit"]:disabled {
   .support-composer textarea {
     min-width: 0 !important;
     flex: 1 1 auto !important;
+    /* iOS Safari zooms into any focused field under 16px. */
+    font-size: 16px;
   }
 
   .support-composer .support-send-btn,
