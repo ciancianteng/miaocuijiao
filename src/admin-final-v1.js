@@ -336,7 +336,8 @@
       ])+
       detailSection('⑦ 完成/售后信息',[
         ['完成时间',fmtOrderTime(o.completedAt||'-')],
-        ['评价状态',o.reviewStatus||(o.reviewed?'已评价':'未评价')],
+        ['评价状态','<span data-admin-order-review-status="'+esc(o.id)+'">'+esc(o.reviewStatus||(o.reviewed?'已评价':'未评价'))+'</span>',true],
+        ['订单评价','<span data-admin-order-review="'+esc(o.id)+'">-</span>',true],
         ['售后状态',o.afterSaleStatus||'-']
       ]);
     var extraActions='';
@@ -352,6 +353,21 @@
     lb.hidden=false;
     lb.setAttribute('aria-hidden','false');
     lb.innerHTML='<div class="admin-proof-lightbox-card admin-order-detail-card"><div class="admin-proof-lightbox-head"><strong>订单详情 · '+esc(displayOrderNo(o))+'</strong><button class="mini-btn" type="button" data-admin-proof-close>关闭</button></div>'+html+extraActions+'</div>';
+    get('/api/admin/orders?id='+encodeURIComponent(o.id)).then(function(res){
+      var st=lb.querySelector('[data-admin-order-review-status="'+String(o.id).replace(/"/g,'')+'"]');
+      var body=lb.querySelector('[data-admin-order-review="'+String(o.id).replace(/"/g,'')+'"]');
+      if(!st||!body||!res||!res.order)return;
+      var rv=res.order.review;
+      st.textContent=rv?'已评价':'未评价';
+      body.innerHTML=rv?(esc('★'+(rv.rating||0)+(rv.content?' · '+rv.content:''))+reviewImagesHtml(rv.images)):'-';
+    }).catch(function(){});
+  }
+  function reviewImagesHtml(list){
+    var urls=(Array.isArray(list)?list:[]).filter(function(u){return /^https:\/\//i.test(String(u||''))}).slice(0,3);
+    if(!urls.length)return '';
+    return '<span style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">'+urls.map(function(u,i){
+      return '<a href="'+esc(u)+'" target="_blank" rel="noopener" style="display:block;width:56px;height:56px;border-radius:8px;overflow:hidden;border:1px solid rgba(255,255,255,.14)"><img src="'+esc(u)+'" alt="评价图片 '+(i+1)+'" loading="lazy" style="width:100%;height:100%;object-fit:cover;display:block"></a>';
+    }).join('')+'</span>';
   }
   function paintOrdersPage(message){
     var target=document.getElementById('orderManagement');
