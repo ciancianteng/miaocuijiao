@@ -12,6 +12,7 @@ import {
 } from "./_order-group.js";
 import { resolveOrderUnitPrice } from "./_admin-service-prices.js";
 import { readLocalLevels } from "./_companion-levels-store.js";
+import { buildServiceSnapshotForCompanion, persistOrderServiceSnapshot } from "./_service-standard.js";
 
 function money(v) {
   const n = Number(String(v ?? "").replace(/[^\d.-]/g, ""));
@@ -489,6 +490,16 @@ export async function placeMultiOrder(ctx) {
         throw cerr;
       }
       if (!child?.id) throw new Error("子订单创建失败");
+      await persistOrderServiceSnapshot(
+        child,
+        await buildServiceSnapshotForCompanion(line.companionId, {
+          serviceId: line.serviceId,
+          serviceName: line.serviceType,
+          unitPrice: line.unitPrice,
+          hours: line.hours,
+          quantity: line.quantity,
+        })
+      );
       if (!isMultiGroupChild(child) && !child.parent_order_id) {
         // Column silently dropped
         await softCancelOrders(deps, [...createdIds, child.id], "parent_order_id_not_persisted");

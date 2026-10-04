@@ -3041,7 +3041,17 @@ import './mcj-chat-realtime.js';
       :'';
     modal('<div class="cs-dialog-head"><h3>'+esc(title)+'</h3><button class="cs-btn ghost" type="button" data-close-modal>关闭</button></div><div class="cs-info-list">'+
       rows.map(function(r){return '<div><span>'+esc(r[0])+'</span><strong>'+esc(String(r[1]==null?'-':r[1]))+'</strong></div>';}).join('')+
-      '</div>'+proof);
+      '</div>'+(mode==='detail'?orderServiceStandardHtml(o):'')+proof);
+  }
+  function orderServiceStandardHtml(o){
+    var s=o&&o.serviceSnapshot;
+    if(!s)return '';
+    var rows=s.sections&&s.sections.length
+      ?s.sections.map(function(sec){return '<div><span>'+esc(sec.label)+'</span><strong style="white-space:pre-wrap;font-weight:500;text-align:left">'+esc(sec.value)+'</strong></div>';}).join('')
+      :'<div><span>服务标准</span><strong>下单时陪玩未填写详细标准（按'+esc(s.pricingUnit||'小时')+'计费）</strong></div>';
+    return '<h4 style="margin:14px 0 6px">服务标准（下单时快照）· '+esc(s.serviceName||o.game||'-')+'</h4>'+
+      '<div class="cs-info-list" data-order-service-standard>'+rows+'</div>'+
+      '<p class="cs-note" style="margin:6px 0 0">老板下单时看到的标准，陪玩之后修改不会影响本单；售后判定以此为准。</p>';
   }
   function orderRow(o){
     var actions=[];

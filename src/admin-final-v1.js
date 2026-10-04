@@ -269,6 +269,17 @@
       rows.map(function(r){return '<div><span>'+esc(r[0])+'</span><strong>'+(r[2]?r[1]:esc(r[1]))+'</strong></div>'}).join('')+
       '</div></div>';
   }
+  function serviceStandardSection(o){
+    var s=o&&o.serviceSnapshot;
+    if(!s)return '';
+    var rows=[['项目',s.serviceName||o.serviceContent||'-'],['下单时单价',money(s.unitPrice)+' / '+(s.pricingUnit||'小时')]];
+    if(s.sections&&s.sections.length){
+      s.sections.forEach(function(sec){rows.push([sec.label,esc(sec.value).replace(/\n/g,'<br>'),true]);});
+    }else{
+      rows.push(['服务标准','下单时陪玩未填写详细标准']);
+    }
+    return detailSection('③-2 服务标准（下单时快照）',rows);
+  }
   function showOrderDetail(orderId){
     var o=ordersById[orderId];
     if(!o){toast('未找到订单');return}
@@ -314,6 +325,7 @@
         ['陪玩编号',o.companionCode||o.playerUid||'-'],
         ['服务项目',o.serviceContent||o.game||'-']
       ])+
+      serviceStandardSection(o)+
       detailSection('④ 老板付款信息',[
         ['支付方式',o.paymentMethod||(pending&&pending.paymentMethod)||'-'],
         ['应付金额',money(o.totalAmount)],
