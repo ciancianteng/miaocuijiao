@@ -102,6 +102,8 @@ button:disabled{cursor:not-allowed;opacity:.52}
 .pw-action-tile strong{font-size:15px;font-weight:780}
 .pw-action-tile span{font-size:12px;color:var(--pw-muted);line-height:1.4}
 .pw-action-tile:active{transform:scale(.98);opacity:.9}
+a.pw-action-tile{text-decoration:none}
+.pw-tutorial-tile{width:100%;margin-top:10px;border-color:rgba(232,154,196,.42);background:rgba(232,154,196,.08)}
 
 .pw-hub-hero{
   display:flex;
@@ -471,8 +473,9 @@ a.pw-btn{display:inline-flex;align-items:center;justify-content:center;text-deco
 .pw-top-logo{display:block;font-size:15px;font-weight:800;letter-spacing:.04em;line-height:1.2;color:#fff}
 .pw-top-brand-cn{display:block;font-size:12px;color:rgba(255,214,231,.9);line-height:1.3}
 .pw-top-page{display:block;font-size:11px;color:var(--pw-muted);line-height:1.3;margin-top:2px}
-.pw-side-extra{margin-top:18px;padding:0 6px}
-.pw-side-extra .pw-btn{width:100%;justify-content:center}
+.pw-side-extra{margin-top:18px;padding:0 6px;display:grid;gap:8px}
+.pw-side-extra .pw-btn{width:100%;justify-content:center;box-sizing:border-box}
+.pw-side-extra .pw-tutorial-nav{border-color:rgba(232,154,196,.42);color:#ffd3e6}
 @media (max-width:1100px){
   .pw-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
   .pw-card-list{grid-template-columns:1fr}
