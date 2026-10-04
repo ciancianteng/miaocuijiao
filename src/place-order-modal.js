@@ -222,7 +222,7 @@
     if (document.querySelector('link[data-mcj-place-order-css]')) return;
     var link = document.createElement("link");
     link.rel = "stylesheet";
-    link.href = "/src/place-order-modal.css?v=20260923p0pay1";
+    link.href = "/src/place-order-modal.css?v=20261004svcstd1";
     link.setAttribute("data-mcj-place-order-css", "1");
     document.head.appendChild(link);
   }
@@ -637,7 +637,61 @@
       price: money(s.price != null ? s.price : s.unitPrice != null ? s.unitPrice : 0),
       pricingUnit: String(s.pricingUnit || s.pricing_unit || "小时"),
       sort: s.sort != null ? Number(s.sort) : idx || 0,
+      standard: s.standard && typeof s.standard === "object" ? s.standard : null,
     };
+  }
+  function selectedServiceItem() {
+    if (!state.companion || !state.service) return null;
+    var list = resolveServices(state.companion);
+    var sid = String(state.selectedServiceId || "").trim();
+    return (
+      (sid &&
+        list.find(function (s) {
+          return String(s.serviceId || "") === sid || String(s.id || "") === sid;
+        })) ||
+      list.find(function (s) {
+        return serviceNamesMatch(s.name, state.service);
+      }) ||
+      null
+    );
+  }
+  function serviceStandardHtml(svc) {
+    if (!svc) {
+      return '<p class="mcj-po-standard-empty">选择游戏/服务项目后，这里会显示该项目的服务内容和执行标准。</p>';
+    }
+    var sections = (svc.standard && Array.isArray(svc.standard.sections) ? svc.standard.sections : []).filter(function (s) {
+      return s && s.value;
+    });
+    var head =
+      '<div class="mcj-po-standard-head"><strong>服务明细 · ' +
+      esc(svc.name) +
+      "</strong><span>" +
+      esc(moneyText(svc.price) + " / " + (svc.pricingUnit || "小时")) +
+      "</span></div>";
+    if (!sections.length) {
+      return (
+        head +
+        '<p class="mcj-po-standard-empty">该陪玩暂未填写此项目的详细服务标准。按' +
+        esc(svc.pricingUnit || "小时") +
+        "计费；如需确认服务内容，可下单前联系客服。</p>"
+      );
+    }
+    return (
+      head +
+      '<dl class="mcj-po-standard-list">' +
+      sections
+        .map(function (s) {
+          return "<div><dt>" + esc(s.label) + "</dt><dd>" + esc(s.value) + "</dd></div>";
+        })
+        .join("") +
+      "</dl>" +
+      '<p class="mcj-po-standard-foot">下单后将以此标准保存到订单，陪玩后续修改不影响本单。</p>'
+    );
+  }
+  function refreshServiceStandard() {
+    var mask = activeMask();
+    var box = mask && mask.querySelector("[data-po-standard]");
+    if (box) box.innerHTML = serviceStandardHtml(selectedServiceItem());
   }
   function resolveServices(companion) {
     companion = companion || {};
@@ -759,6 +813,7 @@
       var unitLabel = mask.querySelector(".mcj-po-price-row small");
       if (unitLabel && state.companion) unitLabel.textContent = "/ " + (state.companion.pricingUnit || "小时");
     }
+    refreshServiceStandard();
     refreshTotals();
     syncInheritedGameIdField();
   }
@@ -805,6 +860,7 @@
     // hide legacy custom input if present
     var customWrap = mask.querySelector("[data-po-custom-service]");
     if (customWrap) customWrap.classList.remove("show");
+    refreshServiceStandard();
   }
   function hydrateFromCatalog(companionId) {
     companionId = String(companionId || (state.companion && state.companion.companionId) || "").trim();
@@ -1250,6 +1306,9 @@
       "</strong></div></div>" +
       '<div class="mcj-po-field"><span class="mcj-po-label">游戏/服务项目</span><div class="mcj-po-chips" role="group">' +
       serviceChips +
+      "</div>" +
+      '<div class="mcj-po-standard" data-po-standard aria-live="polite">' +
+      serviceStandardHtml(selectedServiceItem()) +
       "</div></div>" +
       '<div class="mcj-po-field"><span class="mcj-po-label">数量或时长</span><div class="mcj-po-chips" role="radiogroup">' +
       hourChips +
@@ -1837,6 +1896,7 @@
             serviceType: currentServiceLabel(),
             service: currentServiceLabel(),
             game: currentServiceLabel(),
+            serviceId: /^[0-9a-f-]{36}$/i.test(String(state.selectedServiceId || "")) ? state.selectedServiceId : "",
             unitPrice: money(c.unitPrice),
             hours: hours,
             quantity: quantity,

@@ -6,6 +6,11 @@ import { readLocalLevels } from "./_companion-levels-store.js";
 import { priceForGame } from "./_game-prices.js";
 import { resolveOrderUnitPrice } from "./_admin-service-prices.js";
 import {
+  buildServiceSnapshotForCompanion,
+  persistOrderServiceSnapshot,
+  viewServiceSnapshot,
+} from "./_service-standard.js";
+import {
   ORDER_STATUS_LABELS,
   allowPreviewTestPay,
   bossFacingStatusText,
@@ -578,6 +583,7 @@ function viewOrder(row = {}) {
     bossNotes,
     serviceType: serviceName || row.game || "",
     serviceName: serviceName || row.game || "",
+    serviceSnapshot: viewServiceSnapshot(row),
     gameId,
     game_id: gameId,
     paymentMethod: paymentMethod || "线下确认",
@@ -758,6 +764,7 @@ async function loadOrders(profile, id = "") {
       ? `?id=eq.${encodeURIComponent(id)}&boss_id=eq.${encodeURIComponent(profile.id)}&select=${sel}&order=created_at.desc&limit=1`
       : `?boss_id=eq.${encodeURIComponent(profile.id)}&select=${sel}&order=created_at.desc&limit=80`;
   const selectCandidates = [
+    selectRich + ",service_snapshot",
     selectRich,
     selectWithNote,
     selectWithPaid,
@@ -1356,6 +1363,7 @@ export default async function handler(req, res) {
       let totalAmount = 0;
       let noTakerProductId = "";
       let productCompanionName = "";
+      let serviceSnapshot = null;
 
       if (companionId) {
         let companions = await supabaseJson(restUrl("profiles", `?id=eq.${encodeURIComponent(companionId)}&limit=1`), { headers: serviceHeaders() });
@@ -1427,6 +1435,14 @@ export default async function handler(req, res) {
           return json(res, 400, { ok: false, message: `价格已变化，请刷新后重试（应付 ${totalAmount}）` });
         }
         if (!(totalAmount > 0)) return json(res, 400, { ok: false, message: "订单金额无效。" });
+        serviceSnapshot = await buildServiceSnapshotForCompanion(companionId, {
+          serviceId: serviceId || resolved?.serviceRow?.service_id || "",
+          serviceName: serviceType,
+          unitPrice,
+          pricingUnit: String(order.pricingUnit || order.pricing_unit || cp.pricing_unit || "小时"),
+          hours,
+          quantity,
+        });
       } else {
         if (!order.game || (!order.description && !order.requirements && !order.title)) {
           return json(res, 400, { ok: false, message: "请填写游戏和需求说明。" });
@@ -1552,6 +1568,7 @@ export default async function handler(req, res) {
       if (productCommissionSnapshot != null) {
         enriched.platform_fee_rate = productCommissionSnapshot;
       }
+      if (serviceSnapshot) enriched.service_snapshot = serviceSnapshot;
       let rows;
       try {
         rows = await supabaseJson(restUrl(TABLE), { method: "POST", headers: serviceHeaders(), body: JSON.stringify(enriched) });
@@ -1616,6 +1633,7 @@ export default async function handler(req, res) {
         }
       }
       let saved = rows?.[0] || enriched;
+      if (serviceSnapshot && rows?.[0]) await persistOrderServiceSnapshot(saved, serviceSnapshot);
 
       const companionLabel = productCompanionName || companionName || companionId || "未指定（公开抢单）";
       const notify = `新订单已提交，等待支付，指定陪玩为 ${companionLabel}。支付方式：${(/^acct-/.test(paymentMethod) && payGate.label) || paymentMethodLabel(paymentMethod)}；服务：${serviceType}；时长：${hours}小时；金额：${totalAmount} 猫粮。`;
@@ -2731,6 +2749,15 @@ export default async function handler(req, res) {
         throw cerr;
       }
       if (!child?.id) return json(res, 500, { ok: false, message: "补位子订单创建失败。" });
+      await persistOrderServiceSnapshot(
+        child,
+        await buildServiceSnapshotForCompanion(companionId, {
+          serviceId: serviceId || resolved?.serviceRow?.service_id || "",
+          serviceName: serviceType,
+          unitPrice,
+          hours,
+        })
+      );
       // Stamp exited slot as replaced (keep history row).
       try {
         const prevNote = String(exited.note || "");

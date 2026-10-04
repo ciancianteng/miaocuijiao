@@ -1,5 +1,6 @@
 import { ORDER_STATUS_LABELS, fetchOrdersActivityDesc, sortOrdersByActivityDesc } from "../_order-status.js";
 import { normalizeReviewImages } from "../_review-images.js";
+import { viewServiceSnapshot } from "../_service-standard.js";
 import {
   completionCountdown,
   formatRemainingLabel,
@@ -285,6 +286,7 @@ function safeOrder(row, profiles, extras = {}) {
     serviceStaffCode: serviceCode,
     game: row.game || companionExtra.game || "",
     serviceContent: row.service_name || row.title || companionExtra.main_service || row.description || "-",
+    serviceSnapshot: viewServiceSnapshot(row),
     amount: money(row.total_amount),
     totalAmount: money(row.total_amount),
     paymentMethod: row.parent_order_id ? "主单分配" : paymentMethodFrom(row, receipt),

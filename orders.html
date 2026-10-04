@@ -97,6 +97,7 @@
     .od-field span{display:block;color:#9ca3af;font-size:12px}
     .od-field strong{display:block;margin-top:4px;word-break:break-word;font-size:14px}
     .od-field.wide{grid-column:1/-1}
+    .od-field.od-std strong{white-space:pre-wrap;font-weight:500;line-height:1.55}
     .od-timeline{display:flex;flex-direction:column;gap:0;padding:4px 2px 2px}
     .od-step{display:grid;grid-template-columns:18px 1fr;gap:10px;align-items:start;position:relative;padding-bottom:14px}
     .od-step:last-child{padding-bottom:0}
@@ -731,6 +732,20 @@
       function field(label,value,wide){
         return '<div class="od-field'+(wide?' wide':'')+'"><span>'+esc(label)+'</span><strong>'+value+'</strong></div>';
       }
+      function serviceStandardModule(o){
+        var multi=isMultiParent(o);
+        var blocks=(multi?childrenOf(o.id):[o]).map(function(x){
+          var s=x.serviceSnapshot;
+          if(!s)return '';
+          var who=multi?'<div class="od-field wide od-std-who"><span>'+esc(companionName(x))+'</span><strong>'+esc(s.serviceName||x.serviceType||'-')+'</strong></div>':'';
+          var body=s.sections&&s.sections.length
+            ?s.sections.map(function(sec){return '<div class="od-field wide od-std"><span>'+esc(sec.label)+'</span><strong>'+esc(sec.value)+'</strong></div>';}).join('')
+            :field('服务标准','下单时陪玩未填写详细标准，按'+esc(s.pricingUnit||'小时')+'计费',true);
+          return who+body;
+        }).join('');
+        if(!blocks)return '';
+        return '<div class="od-module"><h3>服务标准（下单时快照）</h3><div class="od-fields">'+blocks+'</div><p class="order-hint">以下为下单时该项目的服务内容与执行标准；陪玩之后修改不会影响本单。</p></div>';
+      }
       function actions(o){
         var out=['<button class="order-btn" data-detail="'+esc(o.id)+'" type="button">查看详情</button>'];
         var s=String(o.status||'');
@@ -887,6 +902,7 @@
                   })()
                 : '')+
             '</div></div>'+
+            serviceStandardModule(o)+
           '</div>';
         var right=
           '<div class="od-col">'+

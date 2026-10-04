@@ -1,5 +1,6 @@
 import "./_load-env.js";
 import { mapCompanionPublicFields } from "./_companion-public-map.js";
+import { viewServiceSnapshot } from "./_service-standard.js";
 import { ORDER_STATUS_LABELS } from "./_order-status.js";
 import {
   allocateOrderNo,
@@ -497,6 +498,7 @@ function safeOrder(row, profiles = {}, extras = {}) {
     game: row.game || "",
     title: row.title || "",
     description: row.description || "",
+    serviceSnapshot: viewServiceSnapshot(row),
     hours: money(row.hours),
     unitPrice: money(row.unit_price),
     totalAmount: money(row.total_amount),
