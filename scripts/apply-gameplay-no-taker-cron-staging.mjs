@@ -93,9 +93,9 @@ export async function assertStagingIdentity(target, fingerprintOrderId) {
   if (target.ref !== STAGING_PROJECT_REF) throw new Error(`Target ref ${target.ref} is not ${STAGING_PROJECT_REF}`);
   if (!fingerprintOrderId) return { ref: target.ref, fingerprint: "skipped" };
   if (!/^[0-9a-f-]{36}$/i.test(fingerprintOrderId)) throw new Error("bad fingerprint uuid");
-  const rows = await stagingQuery(target, `select count(*)::int as n from public.orders where id = '${fingerprintOrderId}'`);
-  if (rows[0]?.n !== 1) throw new Error("Staging fingerprint order not found — refusing to run.");
-  return { ref: target.ref, fingerprint: "ok" };
+  const rows = await stagingQuery(target, `select order_no from public.orders where id = '${fingerprintOrderId}'`);
+  if (rows.length !== 1) throw new Error("Staging fingerprint order not found — refusing to run.");
+  return { ref: target.ref, fingerprint: `ok (${rows[0].order_no})` };
 }
 
 /** Run statements on Staging; returns rows of the last statement. Params only via postgres. */
@@ -171,7 +171,14 @@ async function main() {
   console.log(
     `[gameplay-cron] target ref=${identity.ref} via=${target.via} source=${target.source} fingerprint=${identity.fingerprint}; Production NOT targeted.`
   );
-  if (args.check) return;
+  if (args.check) {
+    const ext = await stagingQuery(
+      target,
+      "select name, installed_version, default_version from pg_available_extensions where name in ('pg_cron', 'pg_net', 'supabase_vault') order by name"
+    );
+    console.log(JSON.stringify(ext));
+    return;
+  }
 
   if (args.status) {
     console.log(JSON.stringify(await status(target), null, 2));
