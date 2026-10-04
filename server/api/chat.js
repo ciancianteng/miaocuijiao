@@ -282,10 +282,16 @@ async function getOrCreateConversation(profile, orderId = "", meta = {}) {
   }
   const conversation = rows?.[0];
   if (conversation?.id) {
+    const orderBrief = order
+      ? [order.game || order.title || "", order.total_amount != null ? `${order.total_amount} 猫粮` : ""]
+          .filter(Boolean)
+          .join("｜")
+      : "";
+    const orderLabel = order ? `${order.order_no || order.id}${orderBrief ? `（${orderBrief}）` : ""}` : "";
     const tip = order
       ? forceNew
-        ? `老板重新发起订单咨询，已关联订单 ${order.order_no || order.id}。`
-        : `老板发起客服咨询，已自动关联订单 ${order.order_no || order.id}。`
+        ? `老板重新发起订单咨询，已关联订单 ${orderLabel}。`
+        : `老板发起客服咨询，已自动关联订单 ${orderLabel}。`
       : forceNew
         ? "老板重新发起人工客服咨询。"
         : "老板发起客服咨询。";
@@ -646,8 +652,18 @@ async function resolveConversation(profile, { conversationId = "", orderId = "",
     if (!existing) throw Object.assign(new Error("会话不存在或不属于当前账号。"), { status: 404 });
     return { conversation: existing, created: false };
   }
-  if (!create && !orderId && !forceNew) {
-    return { conversation: null, created: false };
+  if (!create && !forceNew) {
+    if (!orderId) return { conversation: null, created: false };
+    const rows = await supabaseJson(
+      restUrl(
+        "conversations",
+        `?boss_id=eq.${encodeURIComponent(profile.id)}&order_id=eq.${encodeURIComponent(orderId)}&order=updated_at.desc&limit=5`
+      ),
+      { headers: serviceHeaders() }
+    ).catch(() => []);
+    const owned = (Array.isArray(rows) ? rows : []).filter((r) => String(r.conversation_type || "") !== "companion_support");
+    const existing = owned.find((r) => !["closed", "ended"].includes(String(r.status || ""))) || owned[0] || null;
+    return { conversation: existing, created: false };
   }
   return getOrCreateConversation(profile, orderId || "", { forceNew: !!forceNew });
 }
@@ -812,12 +828,8 @@ export default async function handler(req, res) {
       });
     }
 
-    // Create only when opening by order / sending / explicit thread with ids.
-    const shouldCreate =
-      !!orderId ||
-      action === "send" ||
-      (req.method === "POST" && action !== "list") ||
-      (req.method === "GET" && !!orderId);
+    // Reads (GET) never create a CS thread; only explicit POST actions (send etc.) may.
+    const shouldCreate = req.method === "POST" && action !== "list" && !!String(body.content || "").trim();
     const resolved = await resolveConversation(profile, {
       conversationId,
       orderId,

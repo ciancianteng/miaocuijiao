@@ -307,9 +307,6 @@ import {
   function conversationParam() {
     return q.get("conversation") || q.get("conversation_id") || "";
   }
-  function wantsAutoOpen() {
-    return !!(orderId() || conversationParam() || q.get("start") === "1" || q.get("from") === "gameplay");
-  }
   function isAftersale() {
     return q.get("aftersale") === "1";
   }
@@ -1175,12 +1172,8 @@ import {
         null
       );
     }
-    // Without ?order=, never auto-pick an order-linked thread (prevents old order locking new chats).
-    return (
-      list.find(function (c) {
-        return !isClosedConversation(c) && !isOrderConversation(c);
-      }) || null
-    );
+    // Plain entry (bottom tab / header / ?start=1) only shows the hub; the boss picks a thread or 联系客服.
+    return null;
   }
   function orderSummaryHtml(order) {
     if (!order) return "";
@@ -1776,11 +1769,6 @@ import {
               state.mobileDetail = isMobile();
               syncUrl(state.conversation);
               return loadThread(picked.id, false);
-            }
-            if (wantsAutoOpen()) {
-              return openConversation(oid ? { order_id: oid } : {}).catch(function () {
-                return null;
-              });
             }
             state.conversation = null;
             state.messages = [];

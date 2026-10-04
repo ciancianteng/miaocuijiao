@@ -3354,9 +3354,10 @@ async function viewCompanionWithdrawal(w) {
     createdAt: w.submitted_at || w.created_at,
   };
 }
-async function ensureConversation(order) {
+async function ensureConversation(order, { create = false } = {}) {
   // System notices for order events belong on the BOSS↔CS order_support thread only.
   // Never attach companion_id and never reuse companion_support rows for the same order_id.
+  // Routine order events must not open a CS thread on their own (create=false → reuse only).
   const bossId = order?.boss_id || null;
   if (!bossId || !order?.id) return null;
   const typed = await supabaseJson(
@@ -3379,6 +3380,7 @@ async function ensureConversation(order) {
     return t !== "companion_support" && !!row.boss_id;
   });
   if (hit) return hit;
+  if (!create) return null;
   const rows = await supabaseJson(restUrl("conversations"), {
     method: "POST",
     headers: serviceHeaders(),
@@ -3410,8 +3412,8 @@ async function ensureConversation(order) {
   });
   return rows?.[0] || null;
 }
-async function addSystemMessage(order, senderId, senderRole, content) {
-  const conversation = await ensureConversation(order);
+async function addSystemMessage(order, senderId, senderRole, content, { needsCs = false } = {}) {
+  const conversation = await ensureConversation(order, { create: needsCs });
   if (!conversation) return;
   await supabaseJson(restUrl("messages"), {
     method: "POST",
@@ -4471,7 +4473,8 @@ export default async function handler(req, res) {
         { ...saved, companion_id: null },
         auth.profile.id,
         "companion",
-        `陪玩 ${name} 无法接单（${reason}）。订单 ${before.order_no || before.id} 状态：陪玩无法接单，等待重新安排。请客服更换陪玩、推送抢单、联系老板或发起退款。`
+        `陪玩 ${name} 无法接单（${reason}）。订单 ${before.order_no || before.id} 状态：陪玩无法接单，等待重新安排。请客服更换陪玩、推送抢单、联系老板或发起退款。`,
+        { needsCs: true }
       );
       try {
         const { notifyBossOrderEvent } = await import("./_boss-order-notify.js");
