@@ -987,8 +987,9 @@ async function loadOrders(profile, id = "") {
     return viewedList.filter((o) => !o.isMultiGroupChild && !o.parentOrderId);
   }
 }
-async function ensureConversation(order, bossId) {
+async function ensureConversation(order, bossId, { create = false } = {}) {
   // Boss↔CS order_support only. Never stamp companion_id; never reuse companion_support by order_id.
+  // Routine order events must not open a CS thread on their own (create=false → reuse only).
   const typed = await supabaseJson(
     restUrl(
       "conversations",
@@ -1031,6 +1032,7 @@ async function ensureConversation(order, bossId) {
     } catch (_) {}
     return { ...existing, ...patch };
   }
+  if (!create) return null;
   const base = {
     boss_id: bossId,
     companion_id: null,
@@ -1076,8 +1078,10 @@ async function touchConversation(conversationId, patch = {}) {
     });
   }
 }
-async function addSystemMessage(order, bossId, content) {
-  const conversation = await ensureConversation(order, bossId);
+async function addSystemMessage(order, bossId, content, { needsCs = false } = {}) {
+  const ownerId = order?.boss_id || bossId;
+  if (!ownerId || !order?.id) return;
+  const conversation = await ensureConversation(order, ownerId, { create: needsCs });
   if (!conversation) return;
   await supabaseJson(restUrl("messages"), {
     method: "POST",
@@ -2332,7 +2336,8 @@ export default async function handler(req, res) {
       await addSystemMessage(
         order,
         profile.id,
-        `老板选择了陪玩 ${pickName}（意向）。请客服确认指定后，订单才会锁定。`
+        `老板选择了陪玩 ${pickName}（意向）。请客服确认指定后，订单才会锁定。`,
+        { needsCs: true }
       );
       const intent = parseBossIntent(order);
       const marked = enriched.map((g) => ({
@@ -2441,7 +2446,9 @@ export default async function handler(req, res) {
         return json(res, 409, { ok: false, message: "陪玩尚未申请完成，请直接联系客服。" });
       }
       await helpers.stampAutoPaused(before, String(body.reason || "boss_problem").slice(0, 80));
-      await addSystemMessage(before, profile.id, "老板反馈订单有问题，已暂停 24 小时自动确认，请客服处理。");
+      await addSystemMessage(before, profile.id, "老板反馈订单有问题，已暂停 24 小时自动确认，请客服处理。", {
+        needsCs: true,
+      });
       const fresh = (
         await supabaseJson(
           restUrl(TABLE, `?id=eq.${encodeURIComponent(id)}&boss_id=eq.${encodeURIComponent(profile.id)}&limit=1`),
