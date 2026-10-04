@@ -1,4 +1,5 @@
 import { ORDER_STATUS_LABELS, fetchOrdersActivityDesc, sortOrdersByActivityDesc } from "../_order-status.js";
+import { normalizeReviewImages } from "../_review-images.js";
 import {
   completionCountdown,
   formatRemainingLabel,
@@ -750,6 +751,7 @@ export default async function handler(req, res) {
             boss: (map[r.boss_id] && (map[r.boss_id].display_name || map[r.boss_id].boss_uid || map[r.boss_id].email)) || "-",
             rating: String(r.rating || ""),
             content: r.content || "",
+            images: normalizeReviewImages(r.image_urls),
             status: r.status === "published" ? "显示中" : r.status || "显示中",
             createdAt: r.created_at || "",
           })),
@@ -771,7 +773,7 @@ export default async function handler(req, res) {
         const reviewRows = await supabaseJson(
           restUrl(
             "companion_reviews",
-            `?order_id=eq.${encodeURIComponent(id)}&select=id,order_id,boss_id,companion_id,rating,content,status,created_at&order=created_at.desc&limit=5`
+            `?order_id=eq.${encodeURIComponent(id)}&select=*&order=created_at.desc&limit=5`
           ),
           { headers: serviceHeaders() }
         ).catch(() => []);
@@ -782,6 +784,7 @@ export default async function handler(req, res) {
           companionId: r.companion_id || "",
           rating: Number(r.rating) || 0,
           content: r.content || "",
+          images: normalizeReviewImages(r.image_urls),
           status: r.status || "published",
           createdAt: r.created_at || "",
         }));

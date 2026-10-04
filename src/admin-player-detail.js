@@ -276,6 +276,32 @@
     });
   }
 
+  function reviewImagesHtml(list) {
+    var urls = (Array.isArray(list) ? list : [])
+      .filter(function (u) {
+        return /^https:\/\//i.test(String(u || ""));
+      })
+      .slice(0, 3);
+    if (!urls.length) return "";
+    return (
+      '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">' +
+      urls
+        .map(function (u, i) {
+          return (
+            '<a href="' +
+            esc(u) +
+            '" target="_blank" rel="noopener" style="display:block;width:56px;height:56px;border-radius:8px;overflow:hidden;border:1px solid rgba(255,255,255,.15)"><img src="' +
+            esc(u) +
+            '" alt="评价图片 ' +
+            (i + 1) +
+            '" loading="lazy" style="width:100%;height:100%;object-fit:cover;display:block"></a>'
+          );
+        })
+        .join("") +
+      "</div>"
+    );
+  }
+
   function rows(list) {
     return (
       '<div class="detail-list player-detail-list">' +
@@ -1209,6 +1235,7 @@
           esc(r.rating || "-") +
           "★</td><td>" +
           esc(r.content || "无文字") +
+          reviewImagesHtml(r.images) +
           "</td><td>" +
           esc(r.orderId || "-") +
           "</td><td>" +

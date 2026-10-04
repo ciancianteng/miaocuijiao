@@ -3068,6 +3068,31 @@ export default async function handler(req, res) {
         refund,
       });
     }
+    if (action === "upload_review_image") {
+      const rows = await supabaseJson(
+        restUrl(TABLE, `?id=eq.${encodeURIComponent(id)}&boss_id=eq.${encodeURIComponent(profile.id)}&select=id,status,companion_id&limit=1`),
+        { headers: serviceHeaders() }
+      );
+      const order = Array.isArray(rows) ? rows[0] : null;
+      if (!order) return json(res, 404, { ok: false, message: "订单不存在。" });
+      if (String(order.status || "") !== "completed" || !order.companion_id) {
+        return json(res, 400, { ok: false, message: "只有已完成订单可以上传评价图片。" });
+      }
+      const reviewed = await supabaseJson(
+        restUrl("companion_reviews", `?order_id=eq.${encodeURIComponent(order.id)}&select=id&limit=1`),
+        { headers: serviceHeaders() }
+      ).catch(() => []);
+      if (Array.isArray(reviewed) && reviewed[0]) {
+        return json(res, 409, { ok: false, message: "该订单已评价，不能再上传图片。" });
+      }
+      const { uploadReviewImage } = await import("./_review-images.js");
+      const uploaded = await uploadReviewImage({
+        bossId: profile.id,
+        orderId: order.id,
+        dataUrl: body.data_url || body.dataUrl || "",
+      });
+      return json(res, 200, { ok: true, url: uploaded.url });
+    }
     if (action === "submit_review") {
       const beforeRows = await supabaseJson(
         restUrl(TABLE, `?id=eq.${encodeURIComponent(id)}&boss_id=eq.${encodeURIComponent(profile.id)}&limit=1`),
@@ -3133,21 +3158,37 @@ export default async function handler(req, res) {
           }),
         });
       }
-      let rows;
-      try {
-        rows = await supabaseJson(restUrl("companion_reviews"), {
+      const reviewImages = await import("./_review-images.js");
+      const imageUrls = reviewImages.sanitizeReviewImageUrls(body.image_urls || body.imageUrls || body.images, {
+        bossId: profile.id,
+        orderId: order.id,
+      });
+      const reviewRow = {
+        order_id: order.id,
+        boss_id: profile.id,
+        companion_id: order.companion_id,
+        rating,
+        content,
+        status: "published",
+        created_at: nowIso(),
+      };
+      const insertReview = (row) =>
+        supabaseJson(restUrl("companion_reviews"), {
           method: "POST",
           headers: serviceHeaders(),
-          body: JSON.stringify({
-            order_id: order.id,
-            boss_id: profile.id,
-            companion_id: order.companion_id,
-            rating,
-            content,
-            status: "published",
-            created_at: nowIso(),
-          }),
+          body: JSON.stringify(row),
         });
+      let rows;
+      let imagesDropped = false;
+      try {
+        try {
+          rows = await insertReview(imageUrls.length ? { ...reviewRow, image_urls: imageUrls } : reviewRow);
+        } catch (imgErr) {
+          if (!imageUrls.length || !reviewImages.isMissingReviewImagesColumn(imgErr)) throw imgErr;
+          console.warn("[orders] companion_reviews.image_urls missing; saving review without images:", imgErr?.message || imgErr);
+          imagesDropped = true;
+          rows = await insertReview(reviewRow);
+        }
       } catch (e) {
         const msg = String(e?.message || e || "");
         if (/companion_reviews|schema cache|PGRST|does not exist/i.test(msg)) {
@@ -3165,8 +3206,9 @@ export default async function handler(req, res) {
       const review = rows?.[0] || null;
       return json(res, 200, {
         ok: true,
-        message: "评价已提交。",
+        message: imagesDropped ? "评价已提交（评价图片功能暂未开放，图片未保存）。" : "评价已提交。",
         review,
+        imagesDropped,
         companionId: order.companion_id,
         order: viewOrder({
           ...order,

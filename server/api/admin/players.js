@@ -8,6 +8,7 @@ import {
   maskIdentityNo,
 } from "../_companion-media-store.js";
 import { readLocalLevels } from "../_companion-levels-store.js";
+import { normalizeReviewImages } from "../_review-images.js";
 import {
   getAssignmentsForProfiles,
   readCertTags,
@@ -506,7 +507,7 @@ async function loadRelated(profileId, companionId) {
       ).catch(() => []),
       companionDb(
         "companion_reviews",
-        `?companion_id=eq.${encodeURIComponent(profileId)}&order=created_at.desc&limit=50&select=id,order_id,boss_id,rating,content,status,created_at`
+        `?companion_id=eq.${encodeURIComponent(profileId)}&order=created_at.desc&limit=50&select=*`
       ).catch((e) => {
         if (isMissingRelation(e)) return [];
         throw e;
@@ -981,6 +982,7 @@ async function buildDetail(row, profile, opts = {}) {
       orderId: r.order_id || "",
       rating: Number(r.rating) || 0,
       content: r.content || "",
+      images: normalizeReviewImages(r.image_urls),
       status: r.status || "published",
       createdAt: r.created_at || "",
     })),
