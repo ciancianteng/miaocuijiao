@@ -332,7 +332,15 @@
     }), "全部等级");
     setupPriceOptions(levelOpts);
   }
-  function loadGameFilterFromServicesApi() {
+  function readServicesList() {
+    var Taxonomy = window.MCJTaxonomy;
+    if (Taxonomy && typeof Taxonomy.fetchServicesResponse === "function") {
+      return Taxonomy.fetchServicesResponse().then(function (result) {
+        var body = result.body || {};
+        if (!result.ok || body.ok === false) return [];
+        return Array.isArray(body.services) ? body.services : [];
+      });
+    }
     return fetch("/api/platform/services", { headers: { Accept: "application/json" } })
       .then(function (res) {
         return res.text().then(function (raw) {
@@ -341,7 +349,10 @@
           if (!res.ok || body.ok === false) return [];
           return Array.isArray(body.services) ? body.services : [];
         });
-      })
+      });
+  }
+  function loadGameFilterFromServicesApi() {
+    return readServicesList()
       .then(function (services) {
         var enabled = (services || []).filter(function (item) {
           return item && item.enabled !== false && item.status !== "disabled";

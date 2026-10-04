@@ -1,6 +1,6 @@
 /**
  * Low-priority prefetch of common boss page shells after mine (or other hubs) become usable.
- * Prefetches HTML + shared static JS/CSS only — never sensitive realtime APIs.
+ * Prefetches shared static JS/CSS only (no-store HTML shells are skipped) — never sensitive realtime APIs.
  */
 (function () {
   "use strict";
@@ -42,8 +42,27 @@
     } catch (e) {}
   }
 
+  function loadedOnPage(url) {
+    try {
+      return performance.getEntriesByName(new URL(url, location.href).href).length > 0;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  // HTML is served with Cache-Control: no-store, so a prefetched page can never be
+  // reused by the next navigation — fetching it only doubles the download.
+  function isPageShell(url) {
+    var path = String(url || "").split(/[?#]/)[0];
+    return /\.html$/i.test(path) || /\/$/.test(path) || path === "";
+  }
+
   function injectLink(url, as) {
-    if (!url || already(url)) return;
+    if (!url || already(url) || isPageShell(url)) return;
+    if (loadedOnPage(url)) {
+      mark(url);
+      return;
+    }
     if (document.querySelector('link[data-mcj-prefetch="' + url + '"]')) return;
     var link = document.createElement("link");
     link.rel = "prefetch";
@@ -55,18 +74,19 @@
   }
 
   function prefetchUrl(url) {
-    if (!url || already(url)) return;
+    if (!url || already(url) || isPageShell(url)) return;
+    if (loadedOnPage(url)) {
+      mark(url);
+      return;
+    }
     if (window.fetch) {
+      mark(url);
       fetch(url, {
         method: "GET",
         credentials: "same-origin",
         cache: "force-cache",
         priority: "low",
-      })
-        .catch(function () {})
-        .finally(function () {
-          mark(url);
-        });
+      }).catch(function () {});
       return;
     }
     injectLink(url);
@@ -79,13 +99,11 @@
     var delay = opts.delayMs != null ? opts.delayMs : 700;
     var start = function () {
       pages.forEach(function (p) {
-        prefetchUrl(p);
         injectLink(p, "document");
       });
       assets.forEach(function (a) {
         var as = /\.css(\?|$)/i.test(a) ? "style" : /\.js(\?|$)/i.test(a) ? "script" : undefined;
         injectLink(a, as);
-        prefetchUrl(a);
       });
     };
     if (typeof requestIdleCallback === "function") {

@@ -55,20 +55,35 @@
       return item.allowApply !== false && positions.indexOf("companion_profile") >= 0;
     });
   }
-  function loadFromServicesApi() {
-    return fetch("/api/platform/services", { headers: { Accept: "application/json" } })
+  // Taxonomy and the hall game filter both need the raw catalog during boot; share one request.
+  var SERVICES_SHARE_MS = 10 * 1000;
+  var servicesRequest = null;
+  var servicesRequestAt = 0;
+  function fetchServicesResponse(force) {
+    if (!force && servicesRequest && Date.now() - servicesRequestAt < SERVICES_SHARE_MS) return servicesRequest;
+    servicesRequestAt = Date.now();
+    var request = fetch("/api/platform/services", { headers: { Accept: "application/json" } })
       .then(function (res) {
         return res.text().then(function (raw) {
-          var body = {};
-          try { body = raw ? JSON.parse(raw) : {}; } catch (err) { throw new Error("服务接口返回非 JSON：HTTP " + res.status); }
-          if (!res.ok || body.ok === false) throw new Error(body.message || ("HTTP " + res.status));
-          return body;
+          var body = null;
+          try { body = raw ? JSON.parse(raw) : {}; } catch (err) { body = null; }
+          return { ok: res.ok, status: res.status, body: body };
         });
-      })
-      .then(function (body) {
-        applyServices(body.services || []);
-        return state;
       });
+    request.catch(function () {
+      if (servicesRequest === request) servicesRequest = null;
+    });
+    servicesRequest = request;
+    return request;
+  }
+  function loadFromServicesApi(force) {
+    return fetchServicesResponse(force).then(function (result) {
+      var body = result.body;
+      if (!body) throw new Error("服务接口返回非 JSON：HTTP " + result.status);
+      if (!result.ok || body.ok === false) throw new Error(body.message || ("HTTP " + result.status));
+      applyServices(body.services || []);
+      return state;
+    });
   }
   var TAXONOMY_CHANNEL = "mcj-taxonomy-reload";
   var loadedAt = 0;
@@ -82,7 +97,7 @@
     }
     if (state.loaded) return Promise.resolve(state);
     if (state.loading) return state.loading;
-    state.loading = loadFromServicesApi()
+    state.loading = loadFromServicesApi(!!(force || stale))
       .then(function () {
         return fetch("/api/platform/content?types=" + encodeURIComponent(["companion_tags", "voice_types", "companion_levels", "featured_players"].join(",")), {
           headers: { Accept: "application/json" },
@@ -166,6 +181,7 @@
     load: load,
     reload: reload,
     notifyChanged: notifyChanged,
+    fetchServicesResponse: function () { return fetchServicesResponse(false); },
     items: items,
     enabled: items,
     label: label,

@@ -146,16 +146,19 @@
         .catch(function () {
           return {};
         }),
-      fetch("/api/platform/companion-levels", {
-        cache: "no-store",
-        headers: { Accept: "application/json" },
-      })
-        .then(function (r) {
-          return r.json();
-        })
-        .catch(function () {
-          return {};
-        }),
+      (window.MCJCompanionLevels && typeof window.MCJCompanionLevels.fetchLevelsResponse === "function"
+        ? window.MCJCompanionLevels.fetchLevelsResponse().then(function (result) {
+            return result.body;
+          })
+        : fetch("/api/platform/companion-levels", {
+            cache: "no-store",
+            headers: { Accept: "application/json" },
+          }).then(function (r) {
+            return r.json();
+          })
+      ).catch(function () {
+        return {};
+      }),
     ]).then(function (pair) {
       var guideRows = ((pair[0] || {}).byType || {}).club_level_guide || [];
       var guide = guideRows[0] || { title: "俱乐部等级说明", intro: "" };

@@ -398,16 +398,36 @@
     return save(list, { fromApi: true });
   }
 
-  function hydrateFromApi() {
-    return fetch("/api/platform/companion-levels", { headers: { Accept: "application/json" }, cache: "no-store" })
+  // Several scripts on one page ask for levels during boot; share one request.
+  var LEVELS_SHARE_MS = 10 * 1000;
+  var levelsRequest = null;
+  var levelsRequestAt = 0;
+
+  function fetchLevelsResponse(opts) {
+    var force = !!(opts && opts.force);
+    if (!force && levelsRequest && Date.now() - levelsRequestAt < LEVELS_SHARE_MS) return levelsRequest;
+    levelsRequestAt = Date.now();
+    var request = fetch("/api/platform/companion-levels", { headers: { Accept: "application/json" }, cache: "no-store" })
       .then(function (res) {
         return res.json().catch(function () { return {}; }).then(function (body) {
-          if (!res.ok || body.ok === false) throw new Error(body.message || "等级读取失败");
-          var levels = body.levels || [];
-          if (!levels.length) throw new Error("等级配置为空");
-          return hydrateFromList(levels);
+          return { ok: res.ok, body: body || {} };
         });
       });
+    request.catch(function () {
+      if (levelsRequest === request) levelsRequest = null;
+    });
+    levelsRequest = request;
+    return request;
+  }
+
+  function hydrateFromApi(opts) {
+    return fetchLevelsResponse(opts).then(function (result) {
+      var body = result.body;
+      if (!result.ok || body.ok === false) throw new Error(body.message || "等级读取失败");
+      var levels = body.levels || [];
+      if (!levels.length) throw new Error("等级配置为空");
+      return hydrateFromList(levels);
+    });
   }
 
   // Prefer previous API cache; refresh from server when possible.
@@ -436,6 +456,7 @@
     inlineCardStyle: inlineCardStyle,
     levelVisualTier: levelVisualTier,
     hydrateFromApi: hydrateFromApi,
+    fetchLevelsResponse: fetchLevelsResponse,
     hydrateFromList: hydrateFromList,
     normalizeLevelRecord: normalizeLevelRecord,
     isHydratedFromApi: function () { return hydratedFromApi; }

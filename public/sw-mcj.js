@@ -1,31 +1,16 @@
 /* MCJ service worker — installability + Web Push
    Do NOT rewrite navigations to "/". Portal PWAs (companion / customer-service /
    admin) must keep their own start_url paths when launched from the home screen.
-   Shared SW scope "/" keeps Web Push / #248 subscriptions intact. */
+   Shared SW scope "/" keeps Web Push / #248 subscriptions intact.
+   No "fetch" listener on purpose: a pass-through handler forces the worker to
+   boot and proxy every page/asset request, slowing each page switch on iOS/Android.
+   Chrome 108+ (mobile) / 112+ (desktop) no longer require one for installability. */
 self.addEventListener("install", function () {
   self.skipWaiting();
 });
 
 self.addEventListener("activate", function (event) {
   event.waitUntil(self.clients.claim());
-});
-
-self.addEventListener("fetch", function (event) {
-  var req = event.request;
-  if (!req || req.method !== "GET") return;
-  var url;
-  try {
-    url = new URL(req.url);
-  } catch (e) {
-    return;
-  }
-  if (url.origin !== self.location.origin) return;
-  if (url.pathname.indexOf("/api/") === 0) return;
-  event.respondWith(
-    fetch(req).catch(function () {
-      return fetch(req);
-    })
-  );
 });
 
 function safeParse(data) {
