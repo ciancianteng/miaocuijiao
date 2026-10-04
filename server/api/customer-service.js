@@ -169,12 +169,34 @@ async function resolveBoss(input) {
   }
   return profileByBossUid(value);
 }
+/**
+ * Companion capability = same rule as the companion portal (requireCompanion → hasCompanionRole):
+ * a companion_profiles row on profiles.id is enough. Dual-role accounts keep profiles.role = "boss",
+ * so checking profiles.role === "companion" alone rejects companions who can grab orders.
+ */
+async function companionCapableProfile(userId) {
+  const profile = await profileById(userId);
+  if (!profile) return null;
+  if (profile.role === "companion") return profile;
+  const rows = await maybeRows(
+    "companion_profiles",
+    `?user_id=eq.${encodeURIComponent(profile.id)}&select=id,user_id&limit=1`
+  );
+  const { hasCompanionRole } = await import("./_account-roles.js");
+  return hasCompanionRole(profile, { companion: rows[0] || null }) ? profile : null;
+}
+/** Resolves PW code / auth user UUID / companion_profiles.id / nickname → canonical profiles row (id = auth user UUID). */
 async function resolveCompanion(input) {
   const value = String(input || "").trim();
   if (!value) return null;
   if (isUuid(value)) {
-    const byId = await profileById(value);
-    if (byId && byId.role === "companion") return byId;
+    const byId = await companionCapableProfile(value);
+    if (byId) return byId;
+    const byRowId = await maybeRows(
+      "companion_profiles",
+      `?id=eq.${encodeURIComponent(value)}&select=user_id&limit=1`
+    );
+    if (isUuid(byRowId[0]?.user_id)) return companionCapableProfile(byRowId[0].user_id);
     return null;
   }
   const seq = parseCompanionCodeNumber(value);
@@ -185,8 +207,8 @@ async function resolveCompanion(input) {
       `?companion_code=eq.${encodeURIComponent(code)}&select=user_id,companion_uid,companion_code&limit=1`
     );
     if (isUuid(byCode[0]?.user_id)) {
-      const profile = await profileById(byCode[0].user_id);
-      if (profile && profile.role === "companion") return profile;
+      const profile = await companionCapableProfile(byCode[0].user_id);
+      if (profile) return profile;
     }
     for (const uid of [seq, seq + 100000, code.replace(/^PW/i, "")]) {
       const rows = await maybeRows(
@@ -194,8 +216,8 @@ async function resolveCompanion(input) {
         `?companion_uid=eq.${encodeURIComponent(uid)}&select=user_id&limit=1`
       );
       if (isUuid(rows[0]?.user_id)) {
-        const profile = await profileById(rows[0].user_id);
-        if (profile && profile.role === "companion") return profile;
+        const profile = await companionCapableProfile(rows[0].user_id);
+        if (profile) return profile;
       }
     }
     // Scan public-code resolution (covers missing companion_code column values).
@@ -205,8 +227,8 @@ async function resolveCompanion(input) {
     );
     const hit = (pool || []).find((cp) => resolveCompanionPublicCode(cp) === code);
     if (isUuid(hit?.user_id)) {
-      const profile = await profileById(hit.user_id);
-      if (profile && profile.role === "companion") return profile;
+      const profile = await companionCapableProfile(hit.user_id);
+      if (profile) return profile;
     }
   }
   // Nickname / display_name fallback (exact then ilike).
@@ -216,8 +238,8 @@ async function resolveCompanion(input) {
   );
   for (const row of nickExact || []) {
     if (!isUuid(row?.user_id)) continue;
-    const profile = await profileById(row.user_id);
-    if (profile && profile.role === "companion") return profile;
+    const profile = await companionCapableProfile(row.user_id);
+    if (profile) return profile;
   }
   const nameExact = await maybeRows(
     "profiles",
@@ -2802,6 +2824,10 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
             signedByOrder = {};
           }
         }
+        const missingProfileIds = (ordersMerged || [])
+          .flatMap((row) => [row.boss_id, row.companion_id, row.customer_service_id])
+          .filter((id) => id && !profiles[id]);
+        if (missingProfileIds.length) Object.assign(profiles, await profileMap(missingProfileIds));
         return (ordersMerged || []).map((row) =>
           safeOrder(row, profiles, {
             paymentReceipt: receiptByOrder[row.id] || null,
@@ -3988,9 +4014,10 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
       action === "send_companion_card"
     ) {
       const order = await orderById(String(body.id || body.order_id || ""));
+      if (!order) return json(res, 404, { ok: false, code: "ORDER_NOT_FOUND", message: "订单不存在或已失效" });
       const companion = await resolveCompanion(String(body.companion_id || body.companionId || body.companion_uid || ""));
-      if (!order || !companion || !isUuid(companion.id)) {
-        return json(res, 400, { ok: false, message: "订单或陪玩不存在。" });
+      if (!companion || !isUuid(companion.id)) {
+        return json(res, 404, { ok: false, code: "COMPANION_NOT_FOUND", message: "陪玩资料不存在" });
       }
       if (!["pending", "waiting_boss_confirm"].includes(order.status)) {
         return json(res, 409, { ok: false, message: "当前订单状态不能推送陪玩名片给老板。" });
@@ -4101,8 +4128,27 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
           }
         }
       }
+      if (!order) return json(res, 404, { ok: false, code: "ORDER_NOT_FOUND", message: "订单不存在或已失效" });
+      if (["cancelled", "refunded", "refund_requested"].includes(String(order.status || ""))) {
+        return json(res, 409, { ok: false, code: "ORDER_INACTIVE", message: "订单不存在或已失效" });
+      }
+      if (!companionInput) return json(res, 400, { ok: false, code: "COMPANION_REQUIRED", message: "请选择要指定的陪玩" });
       const companion = await resolveCompanion(companionInput);
-      if (!order || !companion || !isUuid(companion.id)) return json(res, 400, { ok: false, message: "订单或陪玩不存在。" });
+      if (!companion || !isUuid(companion.id)) {
+        return json(res, 404, { ok: false, code: "COMPANION_NOT_FOUND", message: "陪玩资料不存在" });
+      }
+      {
+        const cpRow = (
+          await maybeRows(
+            "companion_profiles",
+            `?user_id=eq.${encodeURIComponent(companion.id)}&select=allow_orders&limit=1`
+          )
+        )[0];
+        const accountStatus = String(companion.status || "active").toLowerCase();
+        if (["disabled", "banned"].includes(accountStatus) || cpRow?.allow_orders === false) {
+          return json(res, 409, { ok: false, code: "COMPANION_UNAVAILABLE", message: "该陪玩当前无法接单" });
+        }
+      }
       try {
         await assertOrderMutationAllowed(order, service.profile);
       } catch (err) {
