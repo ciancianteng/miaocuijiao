@@ -666,3 +666,12 @@ html.mcj-admin-login vercel-live-feedback {
     min-height: 52px;
   }
 }
+
+/* iOS Safari zooms into any focused field under 16px. Scoped to the CS and
+   companion apps because admin pages share this stylesheet. */
+@media (max-width: 560px) {
+  :is(.cs-app, .pw-app) .mcj-auth-field :is(input, select, textarea),
+  body:has(.cs-app, .pw-app) .mcj-forgot-card :is(input, select, textarea) {
+    font-size: 16px;
+  }
+}
