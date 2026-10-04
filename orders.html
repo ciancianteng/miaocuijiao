@@ -1249,7 +1249,7 @@
         if(!canReview(o))return;
         reviewOrderId=o.id;
         var parent=parentOfChildId(o.id);
-        if(parent)reviewReturnParentId=String(parent.id||'');
+        reviewReturnParentId=parent?String(parent.id||''):'';
         if(reviewOrderMeta){
           reviewOrderMeta.textContent='订单 '+(o.orderNo||o.order_no||o.id)+' · 陪玩 '+companionName(o);
         }
