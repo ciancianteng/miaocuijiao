@@ -28,7 +28,8 @@
       Scope + !important so detail/review modals always paint as overlays.
     */
     #detailModal.modal,
-    #reviewModal.modal{
+    #reviewModal.modal,
+    #multiReviewPickModal.modal{
       position:fixed !important;
       inset:0 !important;
       background:rgba(0,0,0,.68) !important;
@@ -40,7 +41,8 @@
       pointer-events:auto !important;
     }
     #detailModal.modal.open,
-    #reviewModal.modal.open{
+    #reviewModal.modal.open,
+    #multiReviewPickModal.modal.open{
       display:flex !important;
     }
     .modal-box.order-detail-modal{width:min(1040px,calc(100% - 32px));max-height:min(88vh,920px);display:flex;flex-direction:column;overflow:hidden;border:1px solid rgba(255,143,197,.26);border-radius:18px;background:#111014;padding:0}
@@ -1221,7 +1223,7 @@
               :'<span>暂不可评</span>');
           return '<div class="pick-row">'+companionAvatarHtml(ch)+
             '<div class="pick-copy"><strong>'+esc(companionName(ch))+'</strong>'+
-            '<span>'+esc(ch.serviceType||ch.game||'陪玩服务')+(done&&ch.reviewRating?(' · '+ch.reviewRating+' 星'):'')+'</span></div>'+
+            '<span>'+esc(ch.serviceType||ch.game||'陪玩服务')+' · '+(done?('已评价'+(ch.reviewRating?(' '+ch.reviewRating+' 星'):'')):'未评价')+'</span></div>'+
             btn+'</div>';
         }).join('')||'<div class="pick-row"><div class="pick-copy"><strong>暂无可评价陪玩</strong><span>仅实际完成服务的陪玩可评价</span></div></div>';
         multiReviewPickModal.classList.add('open');
