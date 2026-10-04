@@ -4137,15 +4137,27 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
       if (!companion || !isUuid(companion.id)) {
         return json(res, 404, { ok: false, code: "COMPANION_NOT_FOUND", message: "陪玩资料不存在" });
       }
+      // Boss「我要她」binds the order straight to claimed; confirming that same companion is a no-op success.
+      if (String(order.status || "") === "claimed" && String(order.companion_id || "") === String(companion.id)) {
+        const profiles = await profileMap([order.boss_id, companion.id, order.customer_service_id]);
+        return json(res, 200, {
+          ok: true,
+          deduped: true,
+          message: "老板已选择该陪玩，订单已进入待陪玩确认。",
+          order: safeOrder(order, profiles),
+        });
+      }
       {
         const cpRow = (
-          await maybeRows(
-            "companion_profiles",
-            `?user_id=eq.${encodeURIComponent(companion.id)}&select=allow_orders&limit=1`
-          )
+          await maybeRows("companion_profiles", `?user_id=eq.${encodeURIComponent(companion.id)}&select=*&limit=1`)
         )[0];
         const accountStatus = String(companion.status || "active").toLowerCase();
-        if (["disabled", "banned"].includes(accountStatus) || cpRow?.allow_orders === false) {
+        const availability = String(cpRow?.availability_status || cpRow?.online_status || "offline").toLowerCase();
+        if (
+          ["disabled", "banned"].includes(accountStatus) ||
+          cpRow?.allow_orders === false ||
+          ["offline", "paused"].includes(availability)
+        ) {
           return json(res, 409, { ok: false, code: "COMPANION_UNAVAILABLE", message: "该陪玩当前无法接单" });
         }
       }
@@ -4227,6 +4239,16 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
           }
           if (hit.status === "not_selected") {
             return json(res, 409, { ok: false, message: "该陪玩已被标记为未选中。" });
+          }
+        }
+        if (isPublicHall) {
+          const intent = parseBossIntent(order);
+          if (!intent || String(intent.companionId) !== String(companionId)) {
+            return json(res, 409, {
+              ok: false,
+              code: intent ? "BOSS_INTENT_MISMATCH" : "BOSS_INTENT_REQUIRED",
+              message: "老板尚未确认该陪玩，暂不能指定",
+            });
           }
         }
         // After payment: push companion into claimed (waiting companion confirm). Before payment keep awaiting_payment with companion bound.

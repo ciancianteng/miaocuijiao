@@ -1002,6 +1002,21 @@ export default async function handler(req, res) {
     } else if (action === "assign_companion" || action === "confirm_grab_assignment") {
       const companionId = String(body.companion_id || payload.companion_id || payload.player_id || "").trim();
       if (!companionId) return json(res, 400, { ok: false, message: "请指定陪玩 ID。" });
+      if (["cancelled", "refunded", "refund_requested"].includes(String(before.status || ""))) {
+        return json(res, 409, { ok: false, code: "ORDER_INACTIVE", message: "订单不存在或已失效" });
+      }
+      {
+        const cpRows = await supabaseJson(
+          restUrl("companion_profiles", `?user_id=eq.${encodeURIComponent(companionId)}&select=*&limit=1`),
+          { headers: serviceHeaders() }
+        ).catch(() => []);
+        const cpRow = Array.isArray(cpRows) ? cpRows[0] : null;
+        if (!cpRow) return json(res, 404, { ok: false, code: "COMPANION_NOT_FOUND", message: "陪玩资料不存在" });
+        const availability = String(cpRow.availability_status || cpRow.online_status || "offline").toLowerCase();
+        if (cpRow.allow_orders === false || ["offline", "paused"].includes(availability)) {
+          return json(res, 409, { ok: false, code: "COMPANION_UNAVAILABLE", message: "该陪玩当前无法接单" });
+        }
+      }
       // BOSS_PICK_LOCK — already locked after companion confirmed/started.
       if (before.companion_id && ["confirmed", "in_progress"].includes(before.status)) {
         return json(res, 409, {
@@ -1030,6 +1045,17 @@ export default async function handler(req, res) {
         if (!hit) return json(res, 409, { ok: false, message: "只能从已抢单陪玩中指定。" });
         if (hit.status === "not_selected") {
           return json(res, 409, { ok: false, message: "该陪玩已被标记为未选中。" });
+        }
+      }
+      if (isPublicHall) {
+        const { parseBossIntent } = await import("../_order-flow.js");
+        const intent = parseBossIntent(before);
+        if (!intent || String(intent.companionId) !== companionId) {
+          return json(res, 409, {
+            ok: false,
+            code: intent ? "BOSS_INTENT_MISMATCH" : "BOSS_INTENT_REQUIRED",
+            message: "老板尚未确认该陪玩，暂不能指定",
+          });
         }
       }
       // Bind order first (same as CS); then finalize grab winners/losers.
