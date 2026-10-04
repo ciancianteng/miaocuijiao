@@ -670,3 +670,6 @@
 .mcj-gift-upload{display:block;margin:12px 0;padding:12px;border-radius:14px;border:1px dashed rgba(239,171,201,.35);text-align:center;cursor:pointer;color:#ffd9ea;font-weight:850}
 .mcj-gift-upload input{display:none}
 .ghost-outline{background:transparent!important;border:1px solid rgba(239,171,201,.45)!important;color:#ffe1ef!important}
+.profile-detail-page .pd-review-images{display:flex;flex-wrap:wrap;gap:8px}
+.profile-detail-page .pd-review-images a{display:block;width:76px;height:76px;border-radius:10px;overflow:hidden;border:1px solid rgba(255,255,255,.12);background:rgba(0,0,0,.24)}
+.profile-detail-page .pd-review-images img{width:100%;height:100%;object-fit:cover;display:block}

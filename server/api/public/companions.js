@@ -382,19 +382,31 @@ async function attachReviews(companions = [], opts = {}) {
   const ids = [...new Set((companions || []).map((c) => c.id || c.uid).filter(Boolean))];
   if (!ids.length) return companions || [];
   let rows = [];
+  const { normalizeReviewImages, isMissingReviewImagesColumn } = await import("../_review-images.js");
   try {
     // List: lighter select + lower limit — hall only needs rating aggregates.
-    const select = summaryOnly
+    const baseSelect = summaryOnly
       ? "id,companion_id,order_id,rating,status,created_at"
       : "id,companion_id,boss_id,order_id,rating,content,status,created_at";
     const limit = summaryOnly ? 800 : 3000;
-    rows = await supabaseJson(
-      restUrl(
-        "companion_reviews",
-        `?companion_id=in.(${ids.map(encodeURIComponent).join(",")})&or=(status.eq.published,status.is.null)&order=created_at.desc&limit=${limit}&select=${select}`
-      ),
-      { headers: headers() }
-    );
+    const fetchReviews = (select) =>
+      supabaseJson(
+        restUrl(
+          "companion_reviews",
+          `?companion_id=in.(${ids.map(encodeURIComponent).join(",")})&or=(status.eq.published,status.is.null)&order=created_at.desc&limit=${limit}&select=${select}`
+        ),
+        { headers: headers() }
+      );
+    if (summaryOnly) {
+      rows = await fetchReviews(baseSelect);
+    } else {
+      try {
+        rows = await fetchReviews(`${baseSelect},image_urls`);
+      } catch (imgErr) {
+        if (!isMissingReviewImagesColumn(imgErr)) throw imgErr;
+        rows = await fetchReviews(baseSelect);
+      }
+    }
   } catch (e) {
     if (/companion_reviews|schema cache|PGRST|does not exist/i.test(String(e.message || e))) return companions;
     throw e;
@@ -474,6 +486,7 @@ async function attachReviews(companions = [], opts = {}) {
           game: order.game || "",
           rating: Number(r.rating) || 0,
           content: r.content || "",
+          images: normalizeReviewImages(r.image_urls),
           createdAt: r.created_at || "",
           status: r.status || "published",
         };

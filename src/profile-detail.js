@@ -489,6 +489,28 @@
             var badge = reviewBadge(n);
             var avatarUrl = String(r.avatarUrl || r.bossAvatar || "").trim();
             var content = String(r.content || "").trim() || "老板已完成真实订单评价";
+            var images = (Array.isArray(r.images) ? r.images : [])
+              .filter(function (u) {
+                return /^https:\/\//i.test(String(u || ""));
+              })
+              .slice(0, 3);
+            var imagesHtml = images.length
+              ? '<div class="pd-review-images">' +
+                images
+                  .map(function (u, idx) {
+                    return (
+                      '<a href="' +
+                      esc(u) +
+                      '" target="_blank" rel="noopener"><img src="' +
+                      esc(u) +
+                      '" alt="评价图片 ' +
+                      (idx + 1) +
+                      '" loading="lazy"></a>'
+                    );
+                  })
+                  .join("") +
+                "</div>"
+              : "";
             var letter = esc(bossLabel.slice(0, 1) || "匿");
             var avatarHtml = avatarUrl
               ? '<img class="pd-review-avatar" src="' +
@@ -523,6 +545,7 @@
               '<p class="pd-review-body">' +
               esc(content) +
               '</p><button type="button" class="pd-review-expand" data-review-expand hidden aria-expanded="false">展开↓</button>' +
+              imagesHtml +
               "</article>"
             );
           })

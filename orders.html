@@ -177,6 +177,13 @@
     .review-star.on{border-color:rgba(255,143,197,.55);background:rgba(255,143,197,.22);color:#ffd6e7}
     .review-modal .review-state{margin:4px 0 0;min-height:20px;color:#ffb9d6;font-size:13px}
     .review-modal .review-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:4px}
+    .review-modal .review-images-field{display:grid;gap:7px;color:#ffd6e7;font-weight:800}
+    .review-modal .review-images-field small{color:#9ca3af;font-weight:500}
+    .review-images{display:flex;gap:8px;flex-wrap:wrap}
+    .review-image-thumb{position:relative;width:72px;height:72px;border:1px solid rgba(255,255,255,.12);border-radius:10px;overflow:hidden;background:rgba(0,0,0,.24)}
+    .review-image-thumb img{width:100%;height:100%;object-fit:cover;display:block}
+    .review-image-thumb button{position:absolute;top:3px;right:3px;width:22px;height:22px;border:0;border-radius:50%;background:rgba(0,0,0,.7);color:#fff;font-size:14px;line-height:1;cursor:pointer}
+    .review-image-add{width:72px;height:72px;border:1px dashed rgba(255,143,197,.45);border-radius:10px;background:rgba(255,143,197,.08);color:#ffd6e7;font-size:26px;cursor:pointer}
     @media(max-width:880px){.order-grid{grid-template-columns:1fr 1fr}.order-actions{justify-content:flex-start}.od-layout{grid-template-columns:1fr}.modal-box.order-detail-modal{width:min(100%,calc(100% - 16px));max-height:92vh}}
     @media(max-width:560px){.tabs{flex-wrap:nowrap;overflow-x:auto;padding-bottom:6px;-webkit-overflow-scrolling:touch}.order-grid{grid-template-columns:1fr}.orders-head{display:block}.order-card header{display:block}.order-status{display:inline-block;margin-top:8px}.order-btn{width:100%}.status-actions{display:grid}.companion-pick{grid-template-columns:48px 1fr}.companion-avatar{width:48px;height:48px}.od-fields{grid-template-columns:1fr}.order-detail-modal .modal-footer{justify-content:stretch}.order-detail-modal .modal-footer .order-btn{flex:1 1 calc(50% - 6px);min-width:0}.review-modal .review-actions .order-btn{flex:1}}
   </style>
@@ -207,6 +214,11 @@
           <input type="hidden" name="rating" id="reviewRating" value="5">
         </label>
         <label>评价内容<textarea name="content" id="reviewContent" rows="4" maxlength="500" placeholder="写下你的评价（选填）"></textarea></label>
+        <div class="review-images-field">
+          <span>上传截图 / 图片 <small>选填，最多 3 张</small></span>
+          <div class="review-images" id="reviewImages"></div>
+          <input type="file" id="reviewImageInput" accept="image/*" multiple hidden>
+        </div>
         <div class="review-actions">
           <button class="order-btn primary" type="submit" id="reviewSubmitBtn">提交评价</button>
           <button class="order-btn" type="button" data-review-close>取消</button>
@@ -247,7 +259,8 @@
   <script>
     (function(){
       var root=document.getElementById('ordersApp'),modal=document.getElementById('detailModal'),detailBody=document.getElementById('detailBody'),detailFooter=document.getElementById('detailFooter');
-      var reviewModal=document.getElementById('reviewModal'),reviewForm=document.getElementById('reviewForm'),reviewOrderMeta=document.getElementById('reviewOrderMeta'),reviewStars=document.getElementById('reviewStars'),reviewRating=document.getElementById('reviewRating'),reviewContent=document.getElementById('reviewContent'),reviewState=document.getElementById('reviewState'),reviewSubmitBtn=document.getElementById('reviewSubmitBtn');
+      var reviewModal=document.getElementById('reviewModal'),reviewForm=document.getElementById('reviewForm'),reviewOrderMeta=document.getElementById('reviewOrderMeta'),reviewStars=document.getElementById('reviewStars'),reviewRating=document.getElementById('reviewRating'),reviewContent=document.getElementById('reviewContent'),reviewState=document.getElementById('reviewState'),reviewSubmitBtn=document.getElementById('reviewSubmitBtn'),reviewImagesBox=document.getElementById('reviewImages'),reviewImageInput=document.getElementById('reviewImageInput');
+      var REVIEW_IMAGE_MAX=3,reviewImageItems=[];
       var multiReviewPickModal=document.getElementById('multiReviewPickModal'),multiReviewPickList=document.getElementById('multiReviewPickList'),multiReviewPickHint=document.getElementById('multiReviewPickHint'),multiReviewPickFoot=document.getElementById('multiReviewPickFoot');
       var unavailableModal=document.getElementById('unavailableModal');
       var CACHE_KEY='mcjBossOrdersCache';
@@ -1130,6 +1143,63 @@
         }
         reviewStars.innerHTML=html;
       }
+      function paintReviewImages(){
+        if(!reviewImagesBox)return;
+        var html=reviewImageItems.map(function(item,i){
+          return '<div class="review-image-thumb"><img src="'+esc(item.url||item.dataUrl)+'" alt="评价图片 '+(i+1)+'"><button type="button" data-review-image-remove="'+i+'" aria-label="删除图片">×</button></div>';
+        }).join('');
+        if(reviewImageItems.length<REVIEW_IMAGE_MAX)html+='<button class="review-image-add" type="button" data-review-image-add aria-label="添加图片">+</button>';
+        reviewImagesBox.innerHTML=html;
+      }
+      function compressReviewImage(file){
+        return new Promise(function(resolve,reject){
+          if(!file||!/^image\//i.test(file.type||'')){reject(new Error('请选择图片文件'));return}
+          if(file.size>20*1024*1024){reject(new Error('单张图片不能超过 20MB'));return}
+          var objectUrl=URL.createObjectURL(file);
+          var img=new Image();
+          img.onload=function(){
+            var scale=Math.min(1,1600/Math.max(img.naturalWidth||1,img.naturalHeight||1));
+            var canvas=document.createElement('canvas');
+            canvas.width=Math.max(1,Math.round(img.naturalWidth*scale));
+            canvas.height=Math.max(1,Math.round(img.naturalHeight*scale));
+            var ctx=canvas.getContext('2d');
+            ctx.fillStyle='#fff';ctx.fillRect(0,0,canvas.width,canvas.height);
+            ctx.drawImage(img,0,0,canvas.width,canvas.height);
+            URL.revokeObjectURL(objectUrl);
+            var quality=0.82,dataUrl=canvas.toDataURL('image/jpeg',quality);
+            while(dataUrl.length*0.75>1.5*1024*1024&&quality>0.5){quality-=0.08;dataUrl=canvas.toDataURL('image/jpeg',quality)}
+            if(dataUrl.length*0.75>2*1024*1024){reject(new Error('图片压缩后仍超过 2MB，请换一张'));return}
+            resolve(dataUrl);
+          };
+          img.onerror=function(){URL.revokeObjectURL(objectUrl);reject(new Error('无法读取该图片，请换 jpg / png 格式'))};
+          img.src=objectUrl;
+        });
+      }
+      async function addReviewImageFiles(files){
+        var list=Array.prototype.slice.call(files||[]);
+        var room=REVIEW_IMAGE_MAX-reviewImageItems.length;
+        if(list.length>room&&reviewState)reviewState.textContent='最多上传 '+REVIEW_IMAGE_MAX+' 张图片';
+        for(var i=0;i<list.length&&i<room;i++){
+          try{reviewImageItems.push({dataUrl:await compressReviewImage(list[i]),url:''})}
+          catch(err){if(reviewState)reviewState.textContent=err.message||'图片处理失败'}
+        }
+        paintReviewImages();
+      }
+      async function uploadReviewImages(orderId){
+        var urls=[];
+        for(var i=0;i<reviewImageItems.length;i++){
+          var item=reviewImageItems[i];
+          if(!item.url){
+            if(reviewState)reviewState.textContent='正在上传图片 '+(i+1)+'/'+reviewImageItems.length+'…';
+            var res=await fetch('/api/orders',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token()},body:JSON.stringify({action:'upload_review_image',id:orderId,data_url:item.dataUrl})});
+            var body=await res.json().catch(function(){return {}});
+            if(!res.ok||body.ok===false||!body.url)throw new Error(body.message||'图片上传失败，请重试');
+            item.url=body.url;
+          }
+          urls.push(item.url);
+        }
+        return urls;
+      }
       function openMultiReviewPicker(parent){
         if(!parent||!multiReviewPickModal||!multiReviewPickList)return;
         var st=multiReviewStats(parent);
@@ -1185,6 +1255,8 @@
         if(reviewState)reviewState.textContent='';
         if(reviewSubmitBtn){reviewSubmitBtn.disabled=false;reviewSubmitBtn.textContent='提交评价'}
         paintReviewStars(5);
+        reviewImageItems=[];
+        paintReviewImages();
         closeMultiReviewPicker();
         reviewModal.classList.add('open');
         reviewModal.setAttribute('aria-hidden','false');
@@ -1217,7 +1289,9 @@
         if(reviewState)reviewState.textContent='提交中…';
         if(reviewSubmitBtn){reviewSubmitBtn.disabled=true;reviewSubmitBtn.textContent='提交中…'}
         try{
-          var res=await fetch('/api/orders',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token()},body:JSON.stringify({action:'submit_review',id:orderId,rating:rating,content:content})});
+          var imageUrls=await uploadReviewImages(orderId);
+          if(reviewState)reviewState.textContent='提交中…';
+          var res=await fetch('/api/orders',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token()},body:JSON.stringify({action:'submit_review',id:orderId,rating:rating,content:content,image_urls:imageUrls})});
           var body=await res.json().catch(function(){return {}});
           if(!res.ok||body.ok===false)throw new Error(body.message||'评价失败');
           if(body.order){
@@ -1326,8 +1400,9 @@
           if(ro)openReviewFlow(ro);
           return;
         }
-        var starBtn=e.target.closest('[data-star]');if(starBtn&&reviewStars&&reviewStars.contains(starBtn)){paintReviewStars(starBtn.getAttribute('data-star'));return}if(e.target.closest('[data-review-close]')||e.target===reviewModal){closeReviewModal();if(reviewReturnParentId){var rp=findOrderById(reviewReturnParentId);if(rp&&isMultiParent(rp))openMultiReviewPicker(rp)}return}var d=e.target.closest('[data-detail]');if(d){e.preventDefault();var detailId=d.getAttribute('data-detail')||d.dataset.detail||'';var o=state.orders.find(function(x){return String(x.id)===String(detailId)});if(!o){alert('订单不存在或已从列表移除，请刷新后重试');return}detail(o,false);(async function(){try{var freshRes=await fetch('/api/orders?id='+encodeURIComponent(o.id),{headers:{Accept:'application/json',Authorization:'Bearer '+token()},cache:'no-store'});var freshBody=await freshRes.json().catch(function(){return{}});if(freshRes.status===403||freshRes.status===401){alert((freshBody&&freshBody.message)||'无权查看该订单');return}if(freshRes.status===404){alert((freshBody&&freshBody.message)||'订单不存在');return}if(freshRes.ok&&freshBody.ok!==false){var fresh=(Array.isArray(freshBody.orders)?freshBody.orders[0]:null)||freshBody.order;if(fresh&&fresh.id){if(Array.isArray(fresh.children)&&fresh.children.length){o=Object.assign({},o,fresh)}else{var keepKids=o.children;o=Object.assign({},o,fresh);if(keepKids&&keepKids.length&&!(fresh.children&&fresh.children.length))o.children=keepKids}var ix=state.orders.findIndex(function(x){return x.id===o.id});if(ix>=0)state.orders[ix]=o;writeCache(state.orders)}}}catch(errFresh){}if((o.status==='waiting_boss_confirm'||o.status==='pending')&&!(o.grabs&&o.grabs.length)){try{var res=await fetch('/api/orders',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token()},body:JSON.stringify({action:'list_grabs',id:o.id})});var body=await res.json().catch(function(){return{}});if(res.ok&&body.ok!==false&&Array.isArray(body.grabs)){o.grabs=body.grabs;var idx=state.orders.findIndex(function(x){return x.id===o.id});if(idx>=0)state.orders[idx]=o}}catch(err){}}if(modal.classList.contains('open'))detail(o,false)})();return}var showRev=e.target.closest('[data-show-review]');if(showRev){var o2=findOrderById(showRev.getAttribute('data-show-review'))||state.orders.find(function(x){return x.id===showRev.getAttribute('data-show-review')});if(o2)openReviewFlow(o2);return}var a=e.target.closest('[data-action]');if(a){submit(a.dataset.action,a.dataset.id,{companion_id:a.getAttribute('data-companion-id')||''});return}if(e.target.closest('[data-close]')||e.target===modal){modal.classList.remove('open');modal.setAttribute('aria-hidden','true');openDetailId='';return}if(e.target.closest('[data-logout]')){if(window.MCJRoleGate){window.MCJRoleGate.logout('boss');window.MCJRoleGate.logout('customer')}localStorage.removeItem('mcjAuthAccessToken');localStorage.removeItem('mcjAuthRefreshToken');sessionStorage.removeItem('mcjAuthAccessToken');sessionStorage.removeItem('mcjAuthRefreshToken');location.href='index.html';return}});
+        var starBtn=e.target.closest('[data-star]');if(starBtn&&reviewStars&&reviewStars.contains(starBtn)){paintReviewStars(starBtn.getAttribute('data-star'));return}if(e.target.closest('[data-review-image-add]')){if(reviewImageInput){reviewImageInput.value='';reviewImageInput.click()}return}var imgRemove=e.target.closest('[data-review-image-remove]');if(imgRemove){reviewImageItems.splice(Number(imgRemove.getAttribute('data-review-image-remove'))||0,1);paintReviewImages();return}if(e.target.closest('[data-review-close]')||e.target===reviewModal){closeReviewModal();if(reviewReturnParentId){var rp=findOrderById(reviewReturnParentId);if(rp&&isMultiParent(rp))openMultiReviewPicker(rp)}return}var d=e.target.closest('[data-detail]');if(d){e.preventDefault();var detailId=d.getAttribute('data-detail')||d.dataset.detail||'';var o=state.orders.find(function(x){return String(x.id)===String(detailId)});if(!o){alert('订单不存在或已从列表移除，请刷新后重试');return}detail(o,false);(async function(){try{var freshRes=await fetch('/api/orders?id='+encodeURIComponent(o.id),{headers:{Accept:'application/json',Authorization:'Bearer '+token()},cache:'no-store'});var freshBody=await freshRes.json().catch(function(){return{}});if(freshRes.status===403||freshRes.status===401){alert((freshBody&&freshBody.message)||'无权查看该订单');return}if(freshRes.status===404){alert((freshBody&&freshBody.message)||'订单不存在');return}if(freshRes.ok&&freshBody.ok!==false){var fresh=(Array.isArray(freshBody.orders)?freshBody.orders[0]:null)||freshBody.order;if(fresh&&fresh.id){if(Array.isArray(fresh.children)&&fresh.children.length){o=Object.assign({},o,fresh)}else{var keepKids=o.children;o=Object.assign({},o,fresh);if(keepKids&&keepKids.length&&!(fresh.children&&fresh.children.length))o.children=keepKids}var ix=state.orders.findIndex(function(x){return x.id===o.id});if(ix>=0)state.orders[ix]=o;writeCache(state.orders)}}}catch(errFresh){}if((o.status==='waiting_boss_confirm'||o.status==='pending')&&!(o.grabs&&o.grabs.length)){try{var res=await fetch('/api/orders',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token()},body:JSON.stringify({action:'list_grabs',id:o.id})});var body=await res.json().catch(function(){return{}});if(res.ok&&body.ok!==false&&Array.isArray(body.grabs)){o.grabs=body.grabs;var idx=state.orders.findIndex(function(x){return x.id===o.id});if(idx>=0)state.orders[idx]=o}}catch(err){}}if(modal.classList.contains('open'))detail(o,false)})();return}var showRev=e.target.closest('[data-show-review]');if(showRev){var o2=findOrderById(showRev.getAttribute('data-show-review'))||state.orders.find(function(x){return x.id===showRev.getAttribute('data-show-review')});if(o2)openReviewFlow(o2);return}var a=e.target.closest('[data-action]');if(a){submit(a.dataset.action,a.dataset.id,{companion_id:a.getAttribute('data-companion-id')||''});return}if(e.target.closest('[data-close]')||e.target===modal){modal.classList.remove('open');modal.setAttribute('aria-hidden','true');openDetailId='';return}if(e.target.closest('[data-logout]')){if(window.MCJRoleGate){window.MCJRoleGate.logout('boss');window.MCJRoleGate.logout('customer')}localStorage.removeItem('mcjAuthAccessToken');localStorage.removeItem('mcjAuthRefreshToken');sessionStorage.removeItem('mcjAuthAccessToken');sessionStorage.removeItem('mcjAuthRefreshToken');location.href='index.html';return}});
       if(reviewForm){reviewForm.addEventListener('submit',function(e){e.preventDefault();submitReview(reviewOrderId)})}
+      if(reviewImageInput){reviewImageInput.addEventListener('change',function(){addReviewImageFiles(reviewImageInput.files)})}
       document.addEventListener('visibilitychange',function(){if(!document.hidden)load({silent:true})});
       window.addEventListener('pagehide',function(){if(abortCtrl)abortCtrl.abort();if(pollTimer)clearInterval(pollTimer)});
       var boot=readCache();
