@@ -64,11 +64,35 @@ import {
     { key: "refund", label: "退款售后", needsOrder: true },
   ];
 
+  function consultOrderOptionsHtml(orders) {
+    if (!orders.length) {
+      return '<p class="support-consult-order-empty">暂无可关联的订单，可不关联直接创建。</p>';
+    }
+    return orders
+      .map(function (o) {
+        var no = o.orderNo || o.order_no || o.id;
+        var meta = [o.game || o.serviceType || "", o.statusText || o.status || ""].filter(Boolean).join(" · ");
+        return (
+          '<button type="button" class="support-consult-order-opt" data-consult-order-opt="' +
+          esc(o.id) +
+          '"><strong>' +
+          esc(no) +
+          "</strong><span>" +
+          esc(meta) +
+          "</span></button>"
+        );
+      })
+      .join("");
+  }
+
   /** Modal picker — never use browser prompt / number entry. */
   function pickBossConsultType(defaultKey) {
     return new Promise(function (resolve) {
       var existing = document.querySelector("[data-support-consult-modal]");
-      if (existing) existing.remove();
+      if (existing) {
+        if (typeof existing._mcjFinish === "function") existing._mcjFinish(null);
+        else existing.remove();
+      }
       var def = String(defaultKey || "other");
       var orders = state.orders || [];
       var modal = document.createElement("div");
@@ -94,26 +118,31 @@ import {
           );
         }).join("") +
         "</div>" +
-        '<label class="support-consult-order" data-consult-order-wrap hidden>关联订单（可选）' +
-        '<select data-consult-order><option value="">不关联订单</option>' +
-        orders
-          .map(function (o) {
-            return (
-              '<option value="' +
-              esc(o.id) +
-              '">' +
-              esc(o.orderNo || o.id) +
-              " · " +
-              esc(o.statusText || o.status || "") +
-              "</option>"
-            );
-          })
-          .join("") +
-        "</select></label>" +
-        '<button type="button" class="support-btn primary" data-consult-confirm>创建会话</button>' +
+        '<div class="support-consult-order" data-consult-order-wrap hidden>' +
+        '<div class="support-consult-label">关联订单（可选）</div>' +
+        '<input type="hidden" data-consult-order value="">' +
+        '<div class="support-consult-order-list" role="listbox" aria-label="关联订单">' +
+        '<button type="button" class="support-consult-order-opt is-active" data-consult-order-opt=""><strong>不关联订单</strong><span>普通跟进</span></button>' +
+        '<div data-consult-order-items>' +
+        (orders.length ? consultOrderOptionsHtml(orders) : '<p class="support-consult-order-empty">正在读取订单…</p>') +
+        "</div></div></div>" +
+        '<button type="button" class="support-btn primary support-consult-confirm" data-consult-confirm>创建会话</button>' +
         "</div>";
       document.body.appendChild(modal);
+      document.documentElement.classList.add("support-consult-open");
       var selected = def;
+      if (!orders.length && hasAuthSession()) {
+        fetchJson("/api/orders")
+          .then(function (body) {
+            var list = Array.isArray(body && body.orders) ? body.orders : [];
+            var box = modal.querySelector("[data-consult-order-items]");
+            if (box) box.innerHTML = consultOrderOptionsHtml(list.slice(0, 20));
+          })
+          .catch(function () {
+            var box = modal.querySelector("[data-consult-order-items]");
+            if (box) box.innerHTML = consultOrderOptionsHtml([]);
+          });
+      }
       function syncOrderWrap() {
         var hit = BOSS_CONSULT_TYPES.find(function (t) {
           return t.key === selected;
@@ -122,15 +151,31 @@ import {
         if (wrap) wrap.hidden = !(hit && hit.needsOrder);
       }
       syncOrderWrap();
+      function onKey(ev) {
+        if (ev.key === "Escape") finish(null);
+      }
       function finish(result) {
+        document.removeEventListener("keydown", onKey);
+        document.documentElement.classList.remove("support-consult-open");
         try {
           modal.remove();
         } catch (e) {}
         resolve(result);
       }
+      modal._mcjFinish = finish;
+      document.addEventListener("keydown", onKey);
       modal.addEventListener("click", function (ev) {
         if (ev.target === modal || ev.target.closest("[data-consult-cancel]")) {
           finish(null);
+          return;
+        }
+        var orderOpt = ev.target.closest("[data-consult-order-opt]");
+        if (orderOpt) {
+          var input = modal.querySelector("[data-consult-order]");
+          if (input) input.value = orderOpt.getAttribute("data-consult-order-opt") || "";
+          modal.querySelectorAll("[data-consult-order-opt]").forEach(function (b) {
+            b.classList.toggle("is-active", b === orderOpt);
+          });
           return;
         }
         var typeBtn = ev.target.closest("[data-consult-type]");
@@ -1906,15 +1951,11 @@ import {
         toast('正在创建会话，请稍候…');
         return;
       }
-      state.creatingGeneral = true;
-      softUpdate({ keepScroll: true });
       // Different consult types MUST create independent conversations (no account lock reuse).
       pickBossConsultType("other").then(function (picked) {
-        if (!picked) {
-          state.creatingGeneral = false;
-          softUpdate({ keepScroll: true });
-          return;
-        }
+        if (!picked) return;
+        state.creatingGeneral = true;
+        softUpdate({ keepScroll: true });
         var consultType = picked.consultType || "other";
         var linkedOrder = String(picked.orderId || "").trim();
         var needNew = isClosedConversation(state.conversation) ||
