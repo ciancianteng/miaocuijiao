@@ -26,6 +26,11 @@ import {
 
 const DEFAULT_URL = "https://meow-cuijiao-homepage-staging.vercel.app/api/cron/gameplay-no-taker";
 const SQL_FILE = "supabase/migrations/20261004_gameplay_no_taker_pg_cron.sql";
+// The migration only installs functions; the job is registered here, after Vault holds the URL + secret.
+const SCHEDULE_SQL = [
+  "select cron.unschedule(jobid) from cron.job where jobname = 'gameplay-no-taker-sweep';",
+  "select cron.schedule('gameplay-no-taker-sweep', '* * * * *', 'select public.mcj_gameplay_no_taker_tick()');",
+].join("\n");
 
 const args = Object.fromEntries(
   process.argv.slice(2).map((a) => {
@@ -201,6 +206,8 @@ async function main() {
     console.log(`[gameplay-cron] vercel preview env: ${setVercelPreviewSecret(secret)}`);
     await stagingQuery(target, "select public.mcj_set_gameplay_no_taker_cron($1, $2)", [url, secret]);
     console.log(`[gameplay-cron] vault url=${url} secret=(${secret.length} chars, not printed)`);
+    await stagingQuery(target, SCHEDULE_SQL);
+    console.log("[gameplay-cron] job gameplay-no-taker-sweep scheduled");
   }
   const s = await status(target);
   console.log(JSON.stringify({ jobs: s.jobs, vault: s.vault }, null, 2));

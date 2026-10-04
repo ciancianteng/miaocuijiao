@@ -2,13 +2,11 @@
 --   指定陪玩 30 分钟未确认/拒单 → 抢单大厅；抢单大厅 30 分钟无人接 → 全额退回猫粮余额
 -- 不依赖任何页面访问。端点本身幂等（CAS + 钱包幂等键），重复/并发调用不会重复转大厅或重复退款。
 --
--- 前置（每个项目一次，值不要提交到仓库）：
---   1) Vercel 环境变量 GAMEPLAY_CRON_SECRET = <随机密钥>，并重新部署
---   2) 在 Supabase SQL Editor 执行（或重复执行以更新）：
---      select public.mcj_set_gameplay_no_taker_cron(
---        'https://www.meowcuijiao.com/api/cron/gameplay-no-taker',
---        '<与 GAMEPLAY_CRON_SECRET 相同的值>'
---      );
+-- 本文件只装基础设施（扩展 + 函数 + 权限），不创建、不启用定时任务。
+-- 启用定时任务是单独一步，必须在部署、密钥、Vault 都就绪且接口返回 401 校验通过之后：
+--   Production：supabase/pending-prod/22_gameplay_no_taker_cron_step2_activate.sql
+--   Staging：scripts/apply-gameplay-no-taker-cron-staging.mjs（写入 Vault 后再注册）
+-- Production 完整顺序见 supabase/pending-prod/22_gameplay_no_taker_cron_step1_infra.sql 文件头。
 -- 本文件可重复执行。
 
 create extension if not exists pg_cron;
@@ -68,6 +66,3 @@ $$;
 
 revoke all on function public.mcj_set_gameplay_no_taker_cron(text, text) from public, anon, authenticated;
 revoke all on function public.mcj_gameplay_no_taker_tick() from public, anon, authenticated;
-
-select cron.unschedule(jobid) from cron.job where jobname = 'gameplay-no-taker-sweep';
-select cron.schedule('gameplay-no-taker-sweep', '* * * * *', 'select public.mcj_gameplay_no_taker_tick()');

@@ -2,7 +2,8 @@
  * Scheduled tick for 更多玩法 product orders (no page visit required):
  *   指定陪玩 30 min unconfirmed → public grab hall; hall 30 min without taker → refund to 猫粮余额.
  * GET|POST /api/cron/gameplay-no-taker — called every minute by Supabase pg_cron + pg_net
- * (supabase/migrations/20261004_gameplay_no_taker_pg_cron.sql).
+ * (functions: supabase/migrations/20261004_gameplay_no_taker_pg_cron.sql;
+ *  Production job: supabase/pending-prod/22_gameplay_no_taker_cron_step2_activate.sql).
  * Idempotent: transitions are CAS patches and wallet writes carry idempotency keys.
  * Requires GAMEPLAY_CRON_SECRET (or CRON_SECRET); without one the endpoint refuses to run.
  */
