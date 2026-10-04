@@ -1,0 +1,41 @@
+name: Gameplay no-taker sweep
+
+# Background trigger for 更多玩法 designated orders: 30 min unconfirmed → 抢单大厅,
+# another 30 min untaken → auto refund to 猫粮余额. Runs without anyone opening a page.
+# The endpoint is idempotent (CAS status patches + wallet idempotency keys), so
+# overlapping or repeated ticks never move/refund an order twice.
+# Vercel Hobby crons are daily only; /api/cron/order-auto-complete remains a daily backstop.
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gameplay-no-taker-sweep
+  cancel-in-progress: false
+
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Sweep (production required, staging best-effort)
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: >
+          node scripts/cron-gameplay-no-taker-tick.mjs
+          --base=https://www.meowcuijiao.com
+          --optional-base=https://meow-cuijiao-homepage-staging.vercel.app
+          --ticks=4
+          --interval=60

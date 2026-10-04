@@ -4414,7 +4414,10 @@ export default async function handler(req, res) {
         });
       }
 
-      const note = `陪玩无法接单|原因:${reason}|原陪玩:${auth.profile.id}|${nowIso()}`;
+      const { isGameplayNoTakerOrder, stampHallOpenNote } = await import("./_order-confirm-timeout.js");
+      const noTakerRule = isGameplayNoTakerOrder(before);
+      const rejectNote = `陪玩无法接单|原因:${reason}|原陪玩:${auth.profile.id}|${nowIso()}`;
+      const note = noTakerRule ? stampHallOpenNote(rejectNote) : rejectNote;
       // Legacy standalone: Reject designated → reopen as public hall for CS re-assign / public grab.
       // Staging schema may lack cancel_reason / assignment_type / order_type — try progressively.
       const rejectAttempts = [
@@ -4473,16 +4476,31 @@ export default async function handler(req, res) {
         { ...saved, companion_id: null },
         auth.profile.id,
         "companion",
-        `陪玩 ${name} 无法接单（${reason}）。订单 ${before.order_no || before.id} 状态：陪玩无法接单，等待重新安排。请客服更换陪玩、推送抢单、联系老板或发起退款。`,
-        { needsCs: true }
+        noTakerRule
+          ? `陪玩 ${name} 无法接单（${reason}）。订单 ${before.order_no || before.id} 已转入抢单大厅，30分钟内无人接单将自动全额退回猫粮余额。`
+          : `陪玩 ${name} 无法接单（${reason}）。订单 ${before.order_no || before.id} 状态：陪玩无法接单，等待重新安排。请客服更换陪玩、推送抢单、联系老板或发起退款。`,
+        { needsCs: !noTakerRule }
       );
+      if (noTakerRule) {
+        try {
+          const { createGrabListingHelpers } = await import("./_order-grab-listings.js");
+          await createGrabListingHelpers({ restUrl, supabaseJson, serviceHeaders }).upsertListing(
+            { ...before, ...saved, companion_id: null },
+            { publishedByCsId: null, reason: "gameplay_companion_reject" }
+          );
+        } catch (err) {
+          console.warn("[companion/reject_direct] listing", err?.message || err);
+        }
+      }
       try {
         const { notifyBossOrderEvent } = await import("./_boss-order-notify.js");
         await notifyBossOrderEvent(
           { ...before, ...saved, boss_id: before.boss_id },
           {
             title: "当前陪玩无法接单",
-            body: "当前陪玩无法接单，请重新选择陪玩。",
+            body: noTakerRule
+              ? "当前陪玩无法接单，订单已转入抢单大厅；30分钟内无人接单将自动全额退回猫粮余额。"
+              : "当前陪玩无法接单，请重新选择陪玩。",
             kind: "order_companion_unavailable",
           }
         );
@@ -4492,7 +4510,7 @@ export default async function handler(req, res) {
       scheduleRecomputeSoft();
       return json(res, 200, {
         ok: true,
-        message: "已提交无法接单，订单已交由客服重新安排",
+        message: noTakerRule ? "已提交无法接单，订单已转入抢单大厅" : "已提交无法接单，订单已交由客服重新安排",
         order: viewOrder(saved),
         reasons: REJECT_REASONS,
       });
