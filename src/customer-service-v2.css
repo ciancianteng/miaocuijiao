@@ -617,6 +617,10 @@
   background:rgba(12,10,16,.92)!important;
   border:1px solid rgba(255,145,195,.45)!important;
 }
+/* iOS Safari zooms into any focused field under 16px. */
+@media (max-width:1050px){
+  .cs-chat-input textarea{font-size:16px}
+}
 
 /* Attendance history: table on desktop, cards on mobile; never widen the page */
 /* Single scroll owner: .cs-page (PC+mobile). Avoid overflow-x:hidden on .cs-main

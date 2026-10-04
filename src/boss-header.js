@@ -1300,7 +1300,7 @@
           window.MCJBossNavPrefetch.run({ delayMs: 900 });
         } else {
           var s = document.createElement("script");
-          s.src = "/src/boss-nav-prefetch.js?v=20260911perfP2";
+          s.src = "/src/boss-nav-prefetch.js?v=20261004navPerf1";
           s.async = true;
           s.onload = function () {
             if (window.MCJBossNavPrefetch) window.MCJBossNavPrefetch.run({ delayMs: 200 });

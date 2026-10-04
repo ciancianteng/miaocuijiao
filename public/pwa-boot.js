@@ -5,10 +5,37 @@
  * - Re-assert apple-web-app meta (static tags remain primary for iOS).
  * - Register SW at scope "/" (shared Web Push / #248 — do not split SW scope).
  * - In standalone/display-mode, force same-origin navigations to stay in-app.
+ * - Touch scroll stability (iOS Safari + PWA): no focus/double-tap/pinch zoom
+ *   drift, no per-card GPU layers that render as black tiles while scrolling.
  */
 (function () {
   var ICON_V = "20260914pwaPortal4";
   var INSTALL_V = "20260914pwaPortal4";
+
+  // Companion cards (dozens per carousel/grid) sit on a >=96% opaque gradient,
+  // so their backdrop blur is invisible but each costs a composited layer that
+  // iOS drops as black tiles while scrolling. They are position:relative, so
+  // absolute children keep their containing block; isolation keeps stacking.
+  // Fixed/sticky chrome (header, tabbar, drawers, modals) keeps its blur.
+  var FLAT_CARD_SELECTOR = ".neon-card,.companion-card,.hot-card";
+  var TOUCH_STABILITY_CSS =
+    "@media (hover:none) and (pointer:coarse){" +
+    "html{touch-action:manipulation;-webkit-text-size-adjust:100%;text-size-adjust:100%}" +
+    // :not(#…) lifts specificity above the existing !important card rules.
+    "html body :is(" + FLAT_CARD_SELECTOR + "):not(#mcj-touch-stability){" +
+    "-webkit-backdrop-filter:none!important;backdrop-filter:none!important;" +
+    "will-change:auto!important;isolation:isolate}" +
+    "}";
+
+  function isIOS() {
+    try {
+      var ua = navigator.userAgent || "";
+      if (/iPad|iPhone|iPod/.test(ua)) return true;
+      return navigator.platform === "MacIntel" && Number(navigator.maxTouchPoints || 0) > 1;
+    } catch (e) {
+      return false;
+    }
+  }
 
   function inStandalone() {
     try {
@@ -143,6 +170,54 @@
     };
   }
 
+  function installTouchStyles() {
+    if (!document.head || document.querySelector("style[data-mcj-touch-stability]")) return;
+    var style = document.createElement("style");
+    style.setAttribute("data-mcj-touch-stability", "1");
+    style.textContent = TOUCH_STABILITY_CSS;
+    document.head.appendChild(style);
+  }
+
+  // iOS zooms into inputs under 16px and keeps the zoom after blur; it also
+  // zooms out to fit any overflow. Pin the scale (Safari still honours user
+  // pinch for accessibility; Android is left untouched).
+  function lockIOSViewportScale() {
+    if (!isIOS() || !document.head) return;
+    var meta = document.head.querySelector('meta[name="viewport"]');
+    if (!meta) {
+      meta = document.createElement("meta");
+      meta.setAttribute("name", "viewport");
+      document.head.insertBefore(meta, document.head.firstChild);
+    }
+    var order = [];
+    var map = {};
+    String(meta.getAttribute("content") || "").split(",").forEach(function (part) {
+      var kv = part.split("=");
+      var k = String(kv[0] || "").trim().toLowerCase();
+      if (!k) return;
+      if (!(k in map)) order.push(k);
+      map[k] = String(kv.slice(1).join("=") || "").trim();
+    });
+    var want = { width: "device-width", "initial-scale": "1", "minimum-scale": "1", "maximum-scale": "1" };
+    Object.keys(want).forEach(function (k) {
+      if (k === "width" && map.width) return;
+      if (!(k in map)) order.push(k);
+      map[k] = want[k];
+    });
+    var next = order.map(function (k) { return k + "=" + map[k]; }).join(", ");
+    if (meta.getAttribute("content") !== next) meta.setAttribute("content", next);
+  }
+
+  // Home-screen web app has no browser chrome to reset a stray pinch zoom.
+  function blockStandalonePinch() {
+    if (!isIOS() || !inStandalone() || window.__MCJ_PINCH_GUARD__) return;
+    window.__MCJ_PINCH_GUARD__ = true;
+    var stop = function (ev) { ev.preventDefault(); };
+    ["gesturestart", "gesturechange", "gestureend"].forEach(function (type) {
+      document.addEventListener(type, stop, { passive: false });
+    });
+  }
+
   function loadInstallGuide() {
     if (!document.head) return;
     if (!document.querySelector('link[data-mcj-pwa-install-css]')) {
@@ -162,6 +237,9 @@
   }
 
   ensureHead();
+  lockIOSViewportScale();
+  installTouchStyles();
+  blockStandalonePinch();
   registerSw();
   installNavGuards();
   loadInstallGuide();
