@@ -28,7 +28,8 @@
       Scope + !important so detail/review modals always paint as overlays.
     */
     #detailModal.modal,
-    #reviewModal.modal{
+    #reviewModal.modal,
+    #multiReviewPickModal.modal{
       position:fixed !important;
       inset:0 !important;
       background:rgba(0,0,0,.68) !important;
@@ -40,7 +41,8 @@
       pointer-events:auto !important;
     }
     #detailModal.modal.open,
-    #reviewModal.modal.open{
+    #reviewModal.modal.open,
+    #multiReviewPickModal.modal.open{
       display:flex !important;
     }
     .modal-box.order-detail-modal{width:min(1040px,calc(100% - 32px));max-height:min(88vh,920px);display:flex;flex-direction:column;overflow:hidden;border:1px solid rgba(255,143,197,.26);border-radius:18px;background:#111014;padding:0}
@@ -163,6 +165,7 @@
     .multi-review-pick .pick-row strong{display:block;font-size:14px;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
     .multi-review-pick .pick-row span{display:block;margin-top:2px;font-size:12px;color:rgba(255,220,235,.62)}
     .multi-review-pick .pick-row .pick-done{color:#5ee0a1;font-weight:700}
+    .multi-review-pick .pick-row .order-btn{flex:0 0 auto;width:auto;min-width:84px;white-space:nowrap}
     .multi-review-pick .pick-foot{margin:0;padding-top:4px;color:rgba(255,220,235,.55);font-size:12px;text-align:center}
     .review-modal .modal-head{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:12px}
     .review-modal .modal-head h2{margin:0;font-size:20px}
@@ -1221,7 +1224,7 @@
               :'<span>暂不可评</span>');
           return '<div class="pick-row">'+companionAvatarHtml(ch)+
             '<div class="pick-copy"><strong>'+esc(companionName(ch))+'</strong>'+
-            '<span>'+esc(ch.serviceType||ch.game||'陪玩服务')+(done&&ch.reviewRating?(' · '+ch.reviewRating+' 星'):'')+'</span></div>'+
+            '<span>'+esc(ch.serviceType||ch.game||'陪玩服务')+' · '+(done?('已评价'+(ch.reviewRating?(' '+ch.reviewRating+' 星'):'')):'未评价')+'</span></div>'+
             btn+'</div>';
         }).join('')||'<div class="pick-row"><div class="pick-copy"><strong>暂无可评价陪玩</strong><span>仅实际完成服务的陪玩可评价</span></div></div>';
         multiReviewPickModal.classList.add('open');
@@ -1246,7 +1249,7 @@
         if(!canReview(o))return;
         reviewOrderId=o.id;
         var parent=parentOfChildId(o.id);
-        if(parent)reviewReturnParentId=String(parent.id||'');
+        reviewReturnParentId=parent?String(parent.id||''):'';
         if(reviewOrderMeta){
           reviewOrderMeta.textContent='订单 '+(o.orderNo||o.order_no||o.id)+' · 陪玩 '+companionName(o);
         }
