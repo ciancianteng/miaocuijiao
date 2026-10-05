@@ -68,6 +68,7 @@
   }
   function methodName(code) {
     var m = state.methods.find(function (x) { return x.code === code; });
+    if (!m && /^acct-/i.test(String(code || ""))) return "收款渠道";
     return m ? m.name : code || "-";
   }
   function statusText(s) {
@@ -109,7 +110,29 @@
     // 「我已付款」仅在本地新选截图后可点（拒绝后也必须重新选图再提交）。
     var canSubmit = !!state.localProofDataUrl && !/paid|credited/i.test(String(o.status || ""));
 
+    var isBankAccount = info.source === "payment_bank_accounts";
     var qrAlt = (info.title || methodName(o.paymentMethod)) + " 收款二维码";
+    function payRow(label, value, extraStyle) {
+      return (
+        '<div class="pay-row"><span>' +
+        esc(label) +
+        "</span><strong" +
+        (extraStyle ? ' style="' + extraStyle + '"' : "") +
+        ">" +
+        esc(value) +
+        "</strong></div>"
+      );
+    }
+    var payMeta = isBankAccount
+      ? payRow("渠道名称", info.channelName || info.bankName || info.title || "-") +
+        payRow("收款人 / 户名", info.receiverName || "-") +
+        (info.enterpriseName ? payRow("企业名称", info.enterpriseName) : "") +
+        payRow("账号 / 钱包地址", info.bankAccount || "-", "word-break:break-all") +
+        payRow("币种", info.currency || "MYR") +
+        (info.instructions ? payRow("收款说明", info.instructions, "white-space:pre-wrap;text-align:left") : "")
+      : payRow("收款人", info.receiverName || "-") +
+        payRow("银行", info.bankName || "-") +
+        payRow("银行账号", info.bankAccount || info.phone || info.duitnowId || "-");
     var qr =
       info && info.qrUrl
         ? window.McjPayQrPreview && typeof window.McjPayQrPreview.frameHtml === "function"
@@ -119,7 +142,9 @@
             '" alt="' +
             esc(qrAlt) +
             '" data-mcj-pay-qr="1" referrerpolicy="no-referrer" draggable="false"></div>'
-        : '<p class="pay-hint">平台暂未配置该支付方式的收款二维码，请联系客服。</p>';
+        : isBankAccount
+          ? ""
+          : '<p class="pay-hint">平台暂未配置该支付方式的收款二维码，请联系客服。</p>';
 
     return (
       '<section class="page-head"><div><h1>充值付款</h1><p>请按收款信息完成转账，上传付款截图后提交审核。未上传截图无法提交。</p></div>' +
@@ -150,15 +175,7 @@
       '<div class="pay-qr-block">' +
       qr +
       '<div class="pay-qr-meta">' +
-      '<div class="pay-row"><span>收款人</span><strong>' +
-      esc(info.receiverName || "-") +
-      "</strong></div>" +
-      '<div class="pay-row"><span>银行</span><strong>' +
-      esc(info.bankName || "-") +
-      "</strong></div>" +
-      '<div class="pay-row"><span>银行账号</span><strong>' +
-      esc(info.bankAccount || info.phone || info.duitnowId || "-") +
-      "</strong></div>" +
+      payMeta +
       "</div></div>" +
       '<div class="pay-proof-block">' +
       "<h3>上传付款截图</h3>" +
