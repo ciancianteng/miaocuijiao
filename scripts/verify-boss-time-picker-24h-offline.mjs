@@ -45,6 +45,31 @@ test("mcj-time-picker script is included", () => {
   }
 });
 
+test("every page loading the picker JS also loads its CSS (else the wheel hides behind the order modal)", () => {
+  for (const f of ["companion-center.html", "place-order.html", "profile.html", "index.html", "ranking.html", "companion-apply.html"]) {
+    assert.match(read(f), /mcj-time-picker\.css/, f);
+  }
+});
+
+test("picker self-injects CSS and pins its mask above order modals", () => {
+  const js = read("src/mcj-time-picker.js");
+  assert.match(js, /function ensureCss\(\)/);
+  assert.match(js, /mask\.style\.zIndex\s*=\s*"100050"/);
+  assert.match(js, /mask\.style\.position\s*=\s*"fixed"/);
+});
+
+test("offline / paused designated companion gets a visible reason before submit", () => {
+  const js = read("src/place-order-modal.js");
+  assert.match(js, /function companionUnavailableText\(\)/);
+  assert.match(js, /data-po-avail-note/);
+});
+
+test("native datetime-local boss pages only offer future Malaysia times", () => {
+  assert.match(read("src/mcj-datetime-min.js"), /Asia\/Kuala_Lumpur/);
+  for (const f of ["custom-order.html", "fixed-order.html"]) assert.match(read(f), /mcj-datetime-min\.js/, f);
+  assert.match(read("src/gameplay-product.js"), /min="' \+ esc\(minStartTime\(\)\)/);
+});
+
 test("picker CSS has 24h wheel + time card", () => {
   const wheel = read("src/mcj-time-picker.css");
   assert.match(wheel, /\.mcj-tp-item\.is-active/);

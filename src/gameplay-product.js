@@ -199,11 +199,30 @@
     return (Number.isFinite(v) ? v : 0).toFixed(2).replace(/\.00$/, "") + " 猫粮";
   }
 
+  // Start times are business-local (Asia/Kuala_Lumpur) regardless of the device timezone.
+  function myLocalInputValue(ms) {
+    var parts = {};
+    new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Kuala_Lumpur",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+    })
+      .formatToParts(new Date(ms))
+      .forEach(function (p) {
+        parts[p.type] = p.value;
+      });
+    return parts.year + "-" + parts.month + "-" + parts.day + "T" + parts.hour + ":" + parts.minute;
+  }
   function defaultStartTime() {
-    var d = new Date(Date.now() + 60 * 60 * 1000);
-    d.setMinutes(0, 0, 0);
-    var pad = function (n) { return String(n).padStart(2, "0"); };
-    return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()) + "T" + pad(d.getHours()) + ":" + pad(d.getMinutes());
+    var hour = 60 * 60 * 1000;
+    return myLocalInputValue(Math.ceil((Date.now() + hour) / hour) * hour);
+  }
+  function minStartTime() {
+    return myLocalInputValue(Date.now());
   }
 
   function safeCoverUrl(p) {
@@ -356,7 +375,7 @@
       '<input name="quantity" type="number" min="1" max="99" value="' + esc(qty()) + '">' +
       '<button type="button" data-gp-qty="1" aria-label="增加">+</button></div></div>' +
       '<div class="gameplay-product-field"><span>开始时间</span>' +
-      '<input name="startTime" type="datetime-local" value="' + esc(state.startTime || defaultStartTime()) + '" required></div>' +
+      '<input name="startTime" type="datetime-local" min="' + esc(minStartTime()) + '" value="' + esc(state.startTime || defaultStartTime()) + '" required></div>' +
       '<div class="gameplay-product-field"><span>游戏ID <i class="req">*</i></span>' +
       '<input id="gpGameId" name="gameId" type="text" maxlength="64" placeholder="请填写游戏 ID" value="' + esc(state.gameId) + '" required autocomplete="off"></div>' +
       (showServer
@@ -496,6 +515,11 @@
     }
     if (!state.startTime) {
       state.message = "请选择开始时间";
+      render();
+      return;
+    }
+    if (state.startTime < myLocalInputValue(Date.now() - 5 * 60 * 1000)) {
+      state.message = "开始时间不能早于现在（马来西亚时间），请重新选择";
       render();
       return;
     }

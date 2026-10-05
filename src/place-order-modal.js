@@ -222,7 +222,7 @@
     if (document.querySelector('link[data-mcj-place-order-css]')) return;
     var link = document.createElement("link");
     link.rel = "stylesheet";
-    link.href = "/src/place-order-modal.css?v=20261004svcstd1";
+    link.href = "/src/place-order-modal.css?v=20261005batch1";
     link.setAttribute("data-mcj-place-order-css", "1");
     document.head.appendChild(link);
   }
@@ -323,8 +323,24 @@
       btn.textContent = "请选择支付方式";
       return;
     }
+    if (companionUnavailableText()) {
+      btn.disabled = true;
+      btn.textContent = "该陪玩当前不可接单";
+      return;
+    }
     btn.disabled = false;
     btn.textContent = "确认订单并付款";
+  }
+  // Mirrors server canCompanionAcceptBossOrder: only online / busy companions accept designated orders.
+  function companionUnavailableText() {
+    var c = state.companion || {};
+    var code = String(c.availabilityStatus || "").toLowerCase();
+    if (code !== "offline" && code !== "paused") return "";
+    return (
+      "该陪玩当前" +
+      (code === "paused" ? "暂停接单" : "离线") +
+      "，暂时无法指定下单。可以选择其他在线陪玩，或到抢单大厅发布需求。"
+    );
   }
   function applyOrderPayMethods(body) {
     // Sole SoT: GET /api/recharge → orderPayMethods (payment_channels + wallet gate).
@@ -1291,7 +1307,11 @@
       '">' +
       esc(c.availabilityText || (c.online ? "在线可接单" : "离线")) +
       "</span>" +
-      "</div></div></div>" +
+      "</div>" +
+      (companionUnavailableText()
+        ? '<div class="mcj-po-avail-note" data-po-avail-note role="status">' + esc(companionUnavailableText()) + "</div>"
+        : "") +
+      "</div></div>" +
       '<button type="button" class="mcj-po-close" data-po-close aria-label="关闭">×</button>' +
       "</div></div>" +
       '<div class="mcj-po-scroll">' +

@@ -156,6 +156,17 @@
   background: rgba(80, 180, 120, 0.14);
 }
 
+.mcj-po-avail-note {
+  margin-top: 8px;
+  padding: 6px 10px;
+  border-radius: 10px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #ffe2b8;
+  background: rgba(255, 170, 80, 0.12);
+  border: 1px solid rgba(255, 170, 80, 0.3);
+}
+
 .mcj-po-close {
   flex: 0 0 auto;
   width: 40px;
