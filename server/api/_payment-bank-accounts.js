@@ -51,11 +51,23 @@ export function isBankQrPath(path) {
   return p.startsWith(BANK_QR_PREFIX) && !p.includes("..") && /\.(jpe?g|png|webp)$/i.test(p);
 }
 
+function sniffImageMime(buffer) {
+  if (!buffer || buffer.length < 12) return "";
+  if (buffer[0] === 0x89 && buffer.toString("ascii", 1, 4) === "PNG") return "image/png";
+  if (buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) return "image/jpeg";
+  if (buffer.toString("ascii", 0, 4) === "RIFF" && buffer.toString("ascii", 8, 12) === "WEBP") return "image/webp";
+  return "";
+}
+
 export async function uploadBankQrImage(dataUrl, bankId = "") {
   const decoded = assertImageUpload(decodeDataUrl(dataUrl));
+  const mime = sniffImageMime(decoded.buffer);
+  if (!mime) {
+    throw Object.assign(new Error("图片内容无效或已损坏，仅支持真实的 JPG / JPEG / PNG / WEBP 图片"), { status: 400 });
+  }
+  decoded.contentType = mime;
   await ensurePrivateBucket(BANK_QR_BUCKET, QR_MIME, 10 * 1024 * 1024);
-  const mime = String(decoded.contentType || "image/jpeg").toLowerCase();
-  const ext = mime.includes("webp") ? "webp" : mime.includes("png") ? "png" : "jpg";
+  const ext = mime === "image/webp" ? "webp" : mime === "image/png" ? "png" : "jpg";
   const folder =
     String(bankId || "")
       .trim()
