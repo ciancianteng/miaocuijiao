@@ -21,6 +21,8 @@ import { companionDb } from "./_companion-media-store.js";
 import { listPendingForCs, latestRejectedForOrders, latestApprovedForOrders, signedProofUrl, uploadProof, receiptReviewerFields } from "./_payment-receipts.js";
 import { loadPlatformPayQr, listBossOrderPaymentMethods, normalizePaymentChannelId, isWalletPayEnabled, loadPaymentChannelsContext } from "./_platform-pay-qr.js";
 import { stripInternalOrderMarkers } from "./_order-grabs.js";
+import { fromDbRow as gameplayProductFromDbRow, isJunkGameplayProduct } from "./_gameplay-products-store.js";
+import { gameplayNoTakerRuleLine } from "./_order-confirm-timeout.js";
 import {
   completionCountdown,
   formatRemainingLabel,
@@ -111,6 +113,19 @@ async function loadCompanionPricingRow(userId) {
     }
   }
   return null;
+}
+
+/** Id of a published, non-junk gameplay product; "" when missing or unlisted. */
+async function publishedGameplayProductId(productId) {
+  const id = String(productId || "").trim();
+  if (!id) return "";
+  const rows = await supabaseJson(
+    restUrl("gameplay_products", `?id=eq.${encodeURIComponent(id)}&limit=1`),
+    { headers: serviceHeaders() }
+  ).catch(() => []);
+  const product = Array.isArray(rows) && rows[0] ? gameplayProductFromDbRow(rows[0]) : null;
+  if (!product || product.status !== "published" || product.deletedAt || isJunkGameplayProduct(product)) return "";
+  return String(product.id);
 }
 
 async function loadCompanionMediaExtras(companionProfileId) {
@@ -1338,6 +1353,8 @@ export default async function handler(req, res) {
       const game = String(order.game || serviceType || "陪玩").trim();
       let unitPrice = 0;
       let totalAmount = 0;
+      let noTakerProductId = "";
+      let productCompanionName = "";
 
       if (companionId) {
         let companions = await supabaseJson(restUrl("profiles", `?id=eq.${encodeURIComponent(companionId)}&limit=1`), { headers: serviceHeaders() });
@@ -1416,6 +1433,29 @@ export default async function handler(req, res) {
         unitPrice = money(order.unit_price || order.unitPrice || order.price || order.budget || 0);
         totalAmount = money(order.total_amount || order.totalAmount);
         if (!(totalAmount > 0)) totalAmount = Math.round(unitPrice * hours * 100) / 100;
+
+        const requestedProductId = String(
+          order.gameplay_product_id ||
+            order.gameplayProductId ||
+            order.productId ||
+            order.product_id ||
+            (String(order.description || "").match(/^商品ID[：:]\s*(\S+)\s*$/m) || [])[1] ||
+            ""
+        ).trim();
+        if (String(order.order_type || order.orderType || "").toLowerCase() === "gameplay_product" || requestedProductId) {
+          noTakerProductId = await publishedGameplayProductId(requestedProductId);
+          if (noTakerProductId && companionId) {
+            const orderable = await assertCompanionOrderable(companionId);
+            if (!orderable.ok) {
+              return json(res, 400, {
+                ok: false,
+                code: "COMPANION_NOT_ORDERABLE",
+                message: orderable.message || "该陪玩暂不可下单",
+              });
+            }
+            productCompanionName = String(orderable.cp?.nickname || "").trim() || companionName || "指定陪玩";
+          }
+        }
       }
 
       const useWallet = action === "place_order" && isWalletMethod(paymentMethod);
@@ -1438,6 +1478,9 @@ export default async function handler(req, res) {
               gameId && !String(order.description || "").includes("游戏ID") ? `游戏ID：${gameId}` : "",
               // Persist selected channel for QR routing (create path previously dropped it → 线下确认).
               `付款方式：${paymentMethod}`,
+              noTakerProductId && !/^商品ID[：:]/m.test(String(order.description || "")) ? `商品ID：${noTakerProductId}` : "",
+              productCompanionName ? `指定陪玩：${productCompanionName}` : "",
+              noTakerProductId ? gameplayNoTakerRuleLine(!!companionId) : "",
             ].filter(Boolean);
 
       const row = {
@@ -1573,7 +1616,7 @@ export default async function handler(req, res) {
       }
       let saved = rows?.[0] || enriched;
 
-      const companionLabel = companionName || companionId || "未指定（公开抢单）";
+      const companionLabel = productCompanionName || companionName || companionId || "未指定（公开抢单）";
       const notify = `新订单已提交，等待支付，指定陪玩为 ${companionLabel}。支付方式：${paymentMethodLabel(paymentMethod)}；服务：${serviceType}；时长：${hours}小时；金额：${totalAmount} 猫粮。`;
       await addSystemMessage(saved, profile.id, notify);
       const okMessage = useWallet ? "订单已创建，请完成支付。" : "订单已提交，请完成支付。";

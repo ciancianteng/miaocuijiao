@@ -20,6 +20,8 @@
     couponHint: "",
     payment: "",
     payMethods: [],
+    companionId: new URLSearchParams(location.search).get("companion") || "",
+    companions: [],
   };
 
   function esc(v) {
@@ -111,6 +113,46 @@
       return window.MCJBossAuth.ensureSession().then(runFetch).catch(runFetch);
     }
     return runFetch();
+  }
+
+  function refreshCompanions() {
+    return fetch("/api/public/companions?limit=120", { headers: { Accept: "application/json" } })
+      .then(function (res) {
+        return res.json();
+      })
+      .then(function (body) {
+        var games = (state.product && state.product.gameIds) || [];
+        var list = (Array.isArray(body && body.companions) ? body.companions : [])
+          .filter(function (c) {
+            return c && c.id && c.canAcceptBossOrder;
+          })
+          .map(function (c) {
+            var game = String(c.mainGame || c.game || "");
+            return {
+              id: String(c.id),
+              name: String(c.name || c.nickname || "陪玩"),
+              game: game,
+              status: String(c.availabilityText || ""),
+              match: games.some(function (g) {
+                return g && game.indexOf(g) !== -1;
+              }),
+            };
+          });
+        list.sort(function (a, b) {
+          return (b.match ? 1 : 0) - (a.match ? 1 : 0);
+        });
+        state.companions = list;
+        if (state.companionId && !list.some(function (c) { return c.id === state.companionId; })) {
+          state.companionId = "";
+        }
+      })
+      .catch(function () {
+        state.companions = [];
+      });
+  }
+
+  function currentCompanion() {
+    return state.companions.find(function (c) { return c.id === state.companionId; }) || null;
   }
 
   function packagesOf(p) {
@@ -291,6 +333,24 @@
       "</div>" +
       '<input type="hidden" name="packageId" value="' + esc(state.packageId) + '">' +
       "</div>" +
+      '<div class="gameplay-product-field"><span>指定陪玩（可选）</span>' +
+      '<select name="companionId" data-gp-companion>' +
+      '<option value="">不指定（客服派单 / 抢单大厅）</option>' +
+      state.companions
+        .map(function (c) {
+          return (
+            '<option value="' + esc(c.id) + '"' + (c.id === state.companionId ? " selected" : "") + ">" +
+            esc(c.name + (c.game ? " · " + c.game : "") + (c.status ? "（" + c.status + "）" : "")) +
+            "</option>"
+          );
+        })
+        .join("") +
+      "</select>" +
+      '<small class="gameplay-product-hint">' +
+      (state.companionId
+        ? "指定陪玩需在30分钟内确认接单；未确认或拒单将转入抢单大厅，大厅30分钟无人接单自动全额退回猫粮余额。"
+        : "付款后进入抢单大厅，30分钟无人接单自动全额退回猫粮余额。") +
+      "</small></div>" +
       '<div class="gameplay-product-field"><span>数量</span><div class="gameplay-qty-row">' +
       '<button type="button" data-gp-qty="-1" aria-label="减少">−</button>' +
       '<input name="quantity" type="number" min="1" max="99" value="' + esc(qty()) + '">' +
@@ -307,7 +367,7 @@
       '<div class="gameplay-product-field"><span>优惠码</span>' +
       '<div class="gameplay-coupon-row"><input name="couponCode" type="text" maxlength="40" placeholder="可选" value="' + esc(state.couponCode) + '">' +
       '<button type="button" data-gp-apply-coupon>使用</button></div>' +
-      (state.couponHint ? '<small class="gameplay-product-hint">' + esc(state.couponHint) + "</small>" : "") +
+      (state.couponHint ? '<small class="gameplay-product-hint" data-gp-coupon-hint>' + esc(state.couponHint) + "</small>" : "") +
       "</div>" +
       '<div class="gameplay-product-field"><span>支付方式 <i class="req">*</i></span>' +
       '<div class="gameplay-pay-methods" data-gp-pay-grid role="group">' +
@@ -378,7 +438,7 @@
       .finally(function () {
         state.loading = false;
         render();
-        refreshPayMethods().then(function () {
+        Promise.all([refreshPayMethods(), refreshCompanions()]).then(function () {
           if (!state.loading) render();
         });
       });
@@ -400,6 +460,7 @@
     state.server = String(fd.get("server") || "").trim();
     state.remark = String(fd.get("remark") || "").trim();
     state.couponCode = String(fd.get("couponCode") || "").trim();
+    state.companionId = String(fd.get("companionId") || "").trim();
   }
 
   function applyCoupon() {
@@ -412,7 +473,7 @@
     }
     state.couponDiscount = 0;
     state.couponHint = "优惠码无效或暂不适用于该商品";
-    var hint = document.querySelector(".gameplay-product-hint");
+    var hint = document.querySelector("[data-gp-coupon-hint]");
     if (hint) hint.textContent = state.couponHint;
     else render();
     renderTotals();
@@ -510,6 +571,8 @@
           discountAmount: discount(),
           paymentMethod: state.payment,
           startTime: state.startTime,
+          companionId: state.companionId || undefined,
+          companionName: (currentCompanion() || {}).name || undefined,
         },
       }),
     })
@@ -592,6 +655,12 @@
     if (e.target.name === "server") state.server = e.target.value || "";
     if (e.target.name === "remark") state.remark = e.target.value || "";
     if (e.target.name === "couponCode") state.couponCode = e.target.value || "";
+    if (e.target.name === "companionId") {
+      state.companionId = e.target.value || "";
+      var form = e.target.closest("[data-gp-order-form]");
+      if (form) collectForm(form);
+      render();
+    }
   });
 
   document.addEventListener("submit", function (e) {
