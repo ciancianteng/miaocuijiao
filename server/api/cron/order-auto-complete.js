@@ -81,10 +81,18 @@ export default async function handler(req, res) {
       addSystemMessage: async () => {},
     });
     const out = await helpers.expireCompletionAutoConfirms({ limit: 80 });
+    let gameplayNoTaker = null;
+    try {
+      const { sweepGameplayNoTakerOrders } = await import("../_order-confirm-timeout.js");
+      gameplayNoTaker = await sweepGameplayNoTakerOrders({ limit: 100 });
+    } catch (err) {
+      gameplayNoTaker = { ok: false, message: String(err?.message || err).slice(0, 160) };
+    }
     return json(res, 200, {
       ok: true,
       message: `自动确认扫描完成：到期 ${out.due}，处理 ${out.processed}`,
       ...out,
+      gameplayNoTaker,
     });
   } catch (error) {
     return json(res, error.status || 500, {
