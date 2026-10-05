@@ -33,6 +33,7 @@ import {
   publicDisplayName,
   resolveCompanionPublicCode,
 } from "../_account-codes.js";
+import { scrubInternalOutput } from "../_output-sanitize.js";
 import { exportCsv as exportPaymentReceiptsCsv, listPaidForAdmin, listPendingForAdmin, listRejectedForAdmin, enrichReceiptAudit, approveAndLedger, rejectProof, staffReviewerNameFromProfile, stripReviewStaffMark } from "../_payment-receipts.js";
 import { normalizeAdminRole } from "../_admin-auth.js";
 
@@ -78,7 +79,7 @@ const WITHDRAW_STATUS = {
 const PAYROLL_STATUS = { ...WITHDRAW_STATUS, draft: "待结算", completed: "已完成" };
 
 function json(res, status, data) {
-  res.status(status).json(data);
+  res.status(status).json(scrubInternalOutput(data));
 }
 
 async function assertFinanceAdmin(req) {

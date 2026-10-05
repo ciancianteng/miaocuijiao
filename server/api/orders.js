@@ -21,6 +21,7 @@ import { companionDb } from "./_companion-media-store.js";
 import { listPendingForCs, latestRejectedForOrders, latestApprovedForOrders, signedProofUrl, uploadProof, receiptReviewerFields } from "./_payment-receipts.js";
 import { loadPlatformPayQr, listBossOrderPaymentMethods, normalizePaymentChannelId, isWalletPayEnabled, loadPaymentChannelsContext } from "./_platform-pay-qr.js";
 import { stripInternalOrderMarkers } from "./_order-grabs.js";
+import { sanitizeOrderText, scrubInternalOutput } from "./_output-sanitize.js";
 import { fromDbRow as gameplayProductFromDbRow, isJunkGameplayProduct } from "./_gameplay-products-store.js";
 import { gameplayNoTakerRuleLine } from "./_order-confirm-timeout.js";
 import {
@@ -70,7 +71,7 @@ const ORDER_TYPE_TEXT = {
   multi_group: "多人订单（主单）",
 };
 
-function json(res, status, data) { res.status(status).json(data); }
+function json(res, status, data) { res.status(status).json(scrubInternalOutput(data)); }
 function hasDb() { return REQUIRED_ENV.every((key) => envValue(key)); }
 function anonHeaders(extra = {}) { return { apikey: envValue("SUPABASE_ANON_KEY"), "Content-Type": "application/json", ...extra }; }
 function serviceHeaders(extra = {}) {
@@ -446,7 +447,7 @@ function acceptStatusLabel(row = {}) {
   if (s === "cancelled") return "已取消";
   return bossFacingStatusText(row);
 }
-function viewOrder(row = {}) {
+export function viewOrder(row = {}) {
   const reviewed = !!(row.reviewed || row.review_id || row.reviewId);
   const status = reviewed && row.status === "completed" ? "reviewed" : row.status || "awaiting_payment";
   const description = String(row.description || "");
@@ -490,7 +491,7 @@ function viewOrder(row = {}) {
     }
     return "";
   })();
-  const bossNotes = String(row.notes || "").trim() || notesFromDesc;
+  const bossNotes = sanitizeOrderText(String(row.notes || "").trim() || notesFromDesc);
   const completionPending =
     String(row.note || "").includes("[[COMPLETION_PENDING]]") ||
     String(row.description || "").includes("[[COMPLETION_PENDING]]");
@@ -525,8 +526,8 @@ function viewOrder(row = {}) {
   } else if (status === "awaiting_payment" && row.paymentRejectReason) {
     statusText = "待付款";
   }
-  const cleanDescription = stripInternalOrderMarkers(description);
-  const cleanNote = stripInternalOrderMarkers(String(row.note || ""));
+  const cleanDescription = sanitizeOrderText(stripInternalOrderMarkers(description));
+  const cleanNote = sanitizeOrderText(stripInternalOrderMarkers(String(row.note || "")));
   // Sync confirmation chip for multi children (viewOrder stays sync).
   let companionConfirm = null;
   if (row.parent_order_id) {
@@ -1746,7 +1747,7 @@ export default async function handler(req, res) {
         order: {
           ...viewOrder({ ...saved, paymentReceipt: result.receipt, paymentProofUrl: proofUrl || "", status: "awaiting_payment" }),
           paymentReview: true,
-          paymentProofUrl: proofUrl || result.receipt?.storage_path || "",
+          paymentProofUrl: proofUrl || "",
           statusText: "待客服审核",
           paymentStatus: "待客服审核",
         },
