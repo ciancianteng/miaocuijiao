@@ -763,7 +763,6 @@ async function loadOrders(profile, id = "") {
       ? `?id=eq.${encodeURIComponent(id)}&boss_id=eq.${encodeURIComponent(profile.id)}&select=${sel}&order=created_at.desc&limit=1`
       : `?boss_id=eq.${encodeURIComponent(profile.id)}&select=${sel}&order=created_at.desc&limit=80`;
   const selectCandidates = [
-    selectRich + ",service_snapshot",
     selectRich,
     selectWithNote,
     selectWithPaid,
@@ -780,7 +779,10 @@ async function loadOrders(profile, id = "") {
   let rows;
   let usedSelect = selectRich;
   let lastSelectErr = null;
-  for (const sel of selectCandidates) {
+  // service_snapshot rides on every fallback; it is dropped only when that column itself is missing.
+  let withSnapshot = true;
+  for (const base of selectCandidates) {
+    let sel = withSnapshot ? `${base},service_snapshot` : base;
     try {
       rows = await supabaseJson(restUrl(TABLE, queryOf(sel)), { headers: serviceHeaders() });
       usedSelect = sel;
@@ -788,7 +790,21 @@ async function loadOrders(profile, id = "") {
       break;
     } catch (err) {
       lastSelectErr = err;
-      if (!/column|schema cache|PGRST|parent_order|paid_/i.test(String(err?.message || ""))) throw err;
+      const msg = String(err?.message || "");
+      if (!/column|schema cache|PGRST|parent_order|paid_/i.test(msg)) throw err;
+      if (withSnapshot && /service_snapshot/i.test(msg)) {
+        withSnapshot = false;
+        sel = base;
+        try {
+          rows = await supabaseJson(restUrl(TABLE, queryOf(sel)), { headers: serviceHeaders() });
+          usedSelect = sel;
+          lastSelectErr = null;
+          break;
+        } catch (err2) {
+          lastSelectErr = err2;
+          if (!/column|schema cache|PGRST|parent_order|paid_/i.test(String(err2?.message || ""))) throw err2;
+        }
+      }
     }
   }
   if (lastSelectErr) throw lastSelectErr;
