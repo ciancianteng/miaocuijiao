@@ -1146,6 +1146,23 @@ async function handler(req, res) {
       }
     }
 
+    if (action === "discard_bank_qr") {
+      const path = String(body.path || "").trim();
+      if (!isBankQrPath(path)) return json(res, 400, { ok: false, message: "收款图片路径无效" });
+      let referenced = false;
+      try {
+        const rows = await supabaseFetch(TABLES.banks, `?qr_image_path=eq.${encodeURIComponent(path)}&select=id&limit=1`);
+        referenced = Array.isArray(rows) && rows.length > 0;
+      } catch (error) {
+        if (!isMissingTable(error) && !isMissingBankQrColumn(error)) throw error;
+      }
+      if (!referenced) referenced = (await readPlatformBanks()).some((b) => bankQrPathOf(b) === path);
+      if (referenced) return json(res, 200, { ok: true, discarded: false, message: "图片仍被收款渠道使用，未删除" });
+      await removeBankQr(path);
+      await writeLog(req, "discard_bank_qr", "draft", { path }, null);
+      return json(res, 200, { ok: true, discarded: true, message: "未保存的收款图片已清理" });
+    }
+
     if (action === "save_channel") {
       const input = body.channel || {};
       const tpl = channelTemplate(input.channel_id || input.id);

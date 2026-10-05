@@ -516,7 +516,9 @@
     var path = String(item.qr_image_path || "");
     var url = path ? String(item.qrImageUrl || "") : "";
     return (
-      '<div class="wide payment-qr-preview" data-bank-qr-field>' +
+      '<div class="wide payment-qr-preview" data-bank-qr-field data-bank-qr-original="' +
+      esc(path) +
+      '">' +
       "<span>收款图片 / QR Code（可选）</span>" +
       '<div data-bank-qr-preview style="margin:8px 0' +
       (url ? "" : ";display:none") +
@@ -538,6 +540,18 @@
       '">删除图片</button>' +
       "</div>"
     );
+  }
+
+  function discardUnsavedBankQr(form, path) {
+    var field = form && form.querySelector("[data-bank-qr-field]");
+    var original = field ? field.getAttribute("data-bank-qr-original") || "" : "";
+    if (!path || path === original) return;
+    fetchApi({ method: "POST", body: JSON.stringify({ action: "discard_bank_qr", path: path }) }).catch(function () {});
+  }
+
+  function currentBankQrPath(form) {
+    var hidden = form && form.querySelector('input[name="qrImagePath"]');
+    return hidden ? hidden.value : "";
   }
 
   function setBankQrField(form, path, url, status) {
@@ -592,6 +606,7 @@
         }),
       })
         .then(function (result) {
+          discardUnsavedBankQr(form, prevPath);
           setBankQrField(form, result.path || "", result.url || dataUrl, "图片已上传，点击「保存」后生效。");
         })
         .catch(function (err) {
@@ -1031,11 +1046,15 @@
       var bankQrRemove = e.target.closest("[data-bank-qr-remove]");
       if (bankQrRemove) {
         if (!confirm("确认删除收款图片？点击「保存」后生效。")) return;
-        setBankQrField(bankQrRemove.closest("[data-bank-form]"), "", "", "图片已移除，点击「保存」后生效。");
+        var removeForm = bankQrRemove.closest("[data-bank-form]");
+        discardUnsavedBankQr(removeForm, currentBankQrPath(removeForm));
+        setBankQrField(removeForm, "", "", "图片已移除，点击「保存」后生效。");
         return;
       }
       var bankCancel = e.target.closest("[data-bank-cancel]");
       if (bankCancel) {
+        var cancelForm = bankCancel.closest("[data-bank-form]");
+        discardUnsavedBankQr(cancelForm, currentBankQrPath(cancelForm));
         state.bankFormOpen = false;
         state.bankEditId = "";
         render();
