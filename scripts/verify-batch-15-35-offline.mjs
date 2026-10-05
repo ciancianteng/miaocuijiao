@@ -324,6 +324,186 @@ await test("#29 nav badge hidden at 0, shows count, refreshes after approve/reje
   assert.match(ui, /setInterval\(function\(\)\{if\(!document\.hidden\)refreshReviewBadges\(\);\},8000\)/);
 });
 
+// ---------- #21 / #23 unified CS cancel + refund ----------
+function orderDb(order, { hold = false, receipts = [] } = {}) {
+  const st = { order: { ...order }, hold, holdReleases: 0, credits: [], refunds: [], receipts: receipts.map((r) => ({ ...r })) };
+  st.fetch = fakeRest([
+    [/\/rpc\/mcj_wallet_release_hold/, {
+      method: "POST",
+      run: ({ body }) => {
+        st.lastReleaseKey = body.p_idempotency_key;
+        if (!st.hold) return { __error: { status: 400, message: "no_hold" } };
+        if (st.holdReleased) return { ok: true, duplicate: true };
+        st.holdReleased = true;
+        st.holdReleases += 1;
+        return { ok: true, hold: { status: "released" } };
+      },
+    }],
+    [/\/rpc\/mcj_wallet_credit$/, {
+      method: "POST",
+      run: ({ body }) => {
+        if (st.credits.some((c) => c.p_idempotency_key === body.p_idempotency_key)) return { ok: true, duplicate: true };
+        st.credits.push(body);
+        return { ok: true, duplicate: false };
+      },
+    }],
+    [/\/orders\?id=eq\.[^&]+&limit=1/, { method: "GET", run: () => [{ ...st.order }] }],
+    [/\/orders\?id=eq\.[^&]+&select=/, { method: "GET", run: () => [{ ...st.order }] }],
+    [/\/orders\?id=eq\./, {
+      method: "PATCH",
+      run: ({ url, body }) => {
+        const m = url.match(/status=eq\.([a-z_]+)/);
+        if (m && m[1] !== st.order.status) return [];
+        Object.assign(st.order, body);
+        return [{ ...st.order }];
+      },
+    }],
+    [/\/payment_receipts\?order_id=eq/, { method: "GET", run: () => st.receipts.filter((r) => r.status === "pending") }],
+    [/\/payment_receipts\?id=eq/, {
+      method: "PATCH",
+      run: ({ url, body }) => {
+        const id = decodeURIComponent(url.match(/id=eq\.([^&]+)/)[1]);
+        const r = st.receipts.find((x) => x.id === id);
+        if (r) Object.assign(r, body);
+        return r ? [r] : [];
+      },
+    }],
+    [/\/boss_refund_requests\?order_id=eq/, { method: "GET", run: () => st.refunds.filter((r) => !/rejected|cancelled/.test(r.status)) }],
+    [/\/boss_refund_requests\?id=eq/, {
+      method: "GET",
+      run: ({ url }) => st.refunds.filter((r) => r.id === decodeURIComponent(url.match(/id=eq\.([^&]+)/)[1])),
+    }],
+    [/\/boss_refund_requests$/, {
+      method: "POST",
+      run: ({ body }) => {
+        const row = { ...body, id: `rf-${st.refunds.length + 1}` };
+        st.refunds.push(row);
+        return [row];
+      },
+    }],
+    [/\/boss_refund_requests\?id=eq/, {
+      method: "PATCH",
+      run: ({ url, body }) => {
+        const r = st.refunds.find((x) => x.id === decodeURIComponent(url.match(/id=eq\.([^&]+)/)[1]));
+        if (r) Object.assign(r, body);
+        return r ? [r] : [];
+      },
+    }],
+  ]);
+  return st;
+}
+const CS_OP = { id: "44444444-4444-4444-8444-444444444444", name: "小美", role: "customer_service" };
+const baseOrder = (over = {}) => ({
+  id: "55555555-5555-4555-8555-555555555555",
+  order_no: "MCJ-T21",
+  boss_id: "33333333-3333-4333-8333-333333333333",
+  companion_id: null,
+  status: "awaiting_payment",
+  total_amount: 120,
+  paid_cat_food: 0,
+  paid_at: null,
+  note: "",
+  ...over,
+});
+
+await test("#21 unpaid CS-created order: cancel works, reason recorded, repeat is a no-op", async () => {
+  const { csCancelOrRefundOrder } = await import("../server/api/_order-cancel.js");
+  const st = orderDb(baseOrder());
+  await withFetch(st.fetch, async () => {
+    assert.equal((await csCancelOrRefundOrder(st.order, { reason: "", operator: CS_OP })).status, 400);
+    const a = await csCancelOrRefundOrder(st.order, { reason: "老板不要了", operator: CS_OP });
+    assert.equal(a.ok, true);
+    assert.equal(a.mode, "unpaid");
+    assert.equal(st.order.status, "cancelled");
+    assert.match(st.order.note, /\[客服取消\] 老板不要了/);
+    const b = await csCancelOrRefundOrder(st.order, { reason: "again", operator: CS_OP });
+    assert.equal(b.duplicate, true);
+  });
+  assert.equal(st.refunds.length, 0);
+  assert.equal(st.credits.length, 0);
+});
+await test("#21 awaiting_payment with a boss proof pending review is blocked (no silent money loss)", async () => {
+  const { csCancelOrRefundOrder } = await import("../server/api/_order-cancel.js");
+  const st = orderDb(baseOrder(), { receipts: [{ id: "rc1", status: "pending", payment_method: "tng", storage_path: "x/proof.png" }] });
+  const out = await withFetch(st.fetch, () => csCancelOrRefundOrder(st.order, { reason: "x", operator: CS_OP }));
+  assert.equal(out.status, 409);
+  assert.equal(out.code, "PAYMENT_PROOF_PENDING");
+  assert.equal(st.order.status, "awaiting_payment");
+});
+await test("#21 cat-food hold order: hold released once, wallet-hold receipt superseded, no extra credit", async () => {
+  const { csCancelOrRefundOrder } = await import("../server/api/_order-cancel.js");
+  const st = orderDb(baseOrder(), { hold: true, receipts: [{ id: "rw", status: "pending", payment_method: "catfood", review_remark: "[[WALLET_HOLD_PENDING_REVIEW]]" }] });
+  await withFetch(st.fetch, async () => {
+    const a = await csCancelOrRefundOrder(st.order, { reason: "下错单", operator: CS_OP });
+    assert.equal(a.mode, "hold_release");
+    assert.equal(st.order.status, "cancelled");
+    await csCancelOrRefundOrder(st.order, { reason: "下错单", operator: CS_OP });
+  });
+  assert.equal(st.holdReleases, 1);
+  assert.equal(st.lastReleaseKey, "order-release:MCJ-T21");
+  assert.equal(st.receipts[0].status, "superseded");
+  assert.equal(st.credits.length, 0);
+});
+await test("#21 paid hall order with hold: cancel → hold released, status cancelled, single release", async () => {
+  const { csCancelOrRefundOrder } = await import("../server/api/_order-cancel.js");
+  const st = orderDb(baseOrder({ status: "pending", paid_cat_food: 120, paid_at: "2026-10-05T01:00:00Z" }), { hold: true });
+  await withFetch(st.fetch, async () => {
+    const a = await csCancelOrRefundOrder(st.order, { reason: "无人接单", operator: CS_OP });
+    assert.equal(a.ok, true);
+    assert.equal(a.mode, "hold_release");
+    assert.equal(a.amount, 120);
+    assert.equal(st.order.status, "cancelled");
+    const b = await csCancelOrRefundOrder(st.order, { reason: "无人接单", operator: CS_OP });
+    assert.equal(b.duplicate, true);
+  });
+  assert.equal(st.holdReleases, 1);
+  assert.equal(st.refunds.length, 0);
+});
+await test("#23 paid without hold (debit / proof): exact amount refunded to 猫粮 once; repeat does not refund again", async () => {
+  const { csCancelOrRefundOrder } = await import("../server/api/_order-cancel.js");
+  const st = orderDb(baseOrder({ status: "claimed", companion_id: "66666666-6666-4666-8666-666666666666", paid_cat_food: 88, paid_at: "2026-10-05T01:00:00Z" }));
+  await withFetch(st.fetch, async () => {
+    const a = await csCancelOrRefundOrder(st.order, { intent: "refund", reason: "指定陪玩无法接单", operator: CS_OP });
+    assert.equal(a.ok, true, a.message);
+    assert.equal(a.mode, "catfood_credit");
+    assert.equal(st.order.status, "refunded");
+    const b = await csCancelOrRefundOrder(st.order, { intent: "refund", reason: "重复点击", operator: CS_OP });
+    assert.equal(b.duplicate, true);
+  });
+  assert.equal(st.refunds.length, 1);
+  assert.equal(st.refunds[0].amount_rm, 88);
+  assert.equal(st.credits.length, 1);
+  assert.equal(st.credits[0].p_amount, 88);
+  assert.equal(st.credits[0].p_idempotency_key, "refund-meow:rf-1");
+});
+await test("#21/#23 blocked states: in_progress / completed / multi child / no-taker sweep in flight / refund on unpaid", async () => {
+  const { csCancelOrRefundOrder } = await import("../server/api/_order-cancel.js");
+  const cases = [
+    [baseOrder({ status: "in_progress", paid_at: "x" }), "cancel", "NOT_CANCELLABLE"],
+    [baseOrder({ status: "completed", paid_at: "x" }), "cancel", "NOT_CANCELLABLE"],
+    [baseOrder({ status: "claimed", paid_at: "x", parent_order_id: "p1" }), "cancel", "MULTI_ORDER_USE_GROUP_FLOW"],
+    [baseOrder({ status: "refund_requested", paid_at: "x", note: "[[NO_TAKER_REFUND]]2026-10-05T01:00:00Z" }), "cancel", "IN_REFUND_FLOW"],
+    [baseOrder(), "refund", "NOTHING_TO_REFUND"],
+  ];
+  for (const [o, intent, code] of cases) {
+    const st = orderDb(o);
+    const out = await withFetch(st.fetch, () => csCancelOrRefundOrder(st.order, { intent, reason: "x", operator: CS_OP }));
+    assert.equal(out.code, code, `${o.status} → ${out.code}`);
+    assert.equal(st.order.status, o.status);
+    assert.equal(st.credits.length + st.holdReleases, 0);
+  }
+});
+await test("#21 every CS cancel entry routes through the unified path", () => {
+  const cs = read("server/api/customer-service.js");
+  assert.match(cs, /action === "cs_cancel_order"/);
+  assert.match(cs, /action === "cs_refund_order"/);
+  assert.match(cs, /if \(String\(status\)\.toLowerCase\(\) === "cancelled"\) \{\s*return runCsCancelOrRefund\(/);
+  assert.doesNotMatch(cs, /cancel_reason: String\(body\.reason \|\| "客服取消抢单"\)/);
+  const ui = read("src/customer-service-v2.js");
+  assert.match(ui, /api\('cs_cancel_order',\{id:cid,reason:cReason\}\)/);
+  assert.match(ui, /data-cancel-order="'\+esc\(o\.id\)\+'">取消订单<\/button>'\);\s*\}/);
+});
+
 const failed = results.filter((r) => !r.ok);
 console.log(`\n${results.length - failed.length}/${results.length} passed`);
 if (failed.length) process.exit(1);

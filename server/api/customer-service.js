@@ -696,6 +696,44 @@ async function assertOrderMutationAllowed(order, serviceProfile, { requireOwner 
     throw err;
   }
 }
+async function runCsCancelOrRefund(res, order, serviceProfile, { intent = "cancel", reason = "" } = {}) {
+  try {
+    await assertOrderMutationAllowed(order, serviceProfile);
+  } catch (err) {
+    return json(res, err.status || 403, { ok: false, message: err.message || CS_LOCK_DENIED, code: err.code || "CS_SESSION_LOCKED" });
+  }
+  const { csCancelOrRefundOrder } = await import("./_order-cancel.js");
+  const out = await csCancelOrRefundOrder(order, {
+    intent,
+    reason,
+    operator: {
+      id: serviceProfile.id,
+      name: staffReviewerNameFromProfile(serviceProfile) || serviceProfile.display_name || "",
+      role: "customer_service",
+    },
+  });
+  if (out.ok && !out.duplicate && out.order) {
+    try {
+      const conversation = await ensureConversation({
+        boss_id: out.order.boss_id,
+        companion_id: out.order.companion_id || null,
+        customer_service_id: serviceProfile.id,
+        order_id: out.order.id,
+      });
+      await addMessage(conversation, serviceProfile.id, "customer_service", out.notice?.body || out.message, "system", out.order.id);
+    } catch (_) {}
+  }
+  const profiles = out.order ? await profileMap([out.order.boss_id, out.order.companion_id, serviceProfile.id].filter(Boolean)) : {};
+  return json(res, out.status || (out.ok ? 200 : 400), {
+    ok: out.ok,
+    code: out.code || "",
+    message: out.message,
+    duplicate: !!out.duplicate,
+    mode: out.mode || "",
+    refundAmount: out.amount || 0,
+    order: out.order ? safeOrder(out.order, profiles) : null,
+  });
+}
 async function logSessionAction(payload) {
   return writeLockLog({ restUrl, supabaseJson, serviceHeaders }, payload);
 }
@@ -4008,43 +4046,20 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
       if (!["pending", "waiting_boss_confirm"].includes(String(order.status || ""))) {
         return json(res, 400, { ok: false, message: "当前订单不在抢单大厅。" });
       }
-      const { transitionOrderStatus } = await import("./_order-status.js");
-      const patched =
-        (await transitionOrderStatus(
-          { restUrl, supabaseJson, serviceHeaders },
-          {
-            orderId: order.id,
-            fromStatus: order.status,
-            toStatus: "cancelled",
-            patch: { cancelled_at: nowIso(), customer_service_id: service.profile.id, cancel_reason: String(body.reason || "客服取消抢单").slice(0, 200) },
-            operatorRole: "customer_service",
-            operatorId: service.profile.id,
-            note: "cs cancel_grab_hall",
-          }
-        ).catch(() => null)) ||
-        (await patchOrder(order.id, {
-          status: "cancelled",
-          cancelled_at: nowIso(),
-          customer_service_id: service.profile.id,
-          cancel_reason: String(body.reason || "客服取消抢单").slice(0, 200),
-        }));
-      try {
-        const { createGrabListingHelpers } = await import("./_order-grab-listings.js");
-        await createGrabListingHelpers({ restUrl, supabaseJson, serviceHeaders }).closeListing(order.id, "cs_cancelled");
-      } catch (_) {}
-      const conversation = await ensureConversation({
-        boss_id: order.boss_id,
-        companion_id: null,
-        customer_service_id: service.profile.id,
-        order_id: order.id,
+      return runCsCancelOrRefund(res, order, service.profile, {
+        intent: "cancel",
+        reason: String(body.reason || "客服取消抢单"),
       });
-      await addMessage(conversation, service.profile.id, "customer_service", "客服已取消该订单的抢单发布。", "system", order.id);
-      const profiles = await profileMap([order.boss_id, service.profile.id]);
-      return json(res, 200, {
-        ok: true,
-        message: "已取消抢单，订单已关闭。",
-        order: safeOrder(patched || { ...order, status: "cancelled" }, profiles),
-      });
+    }
+    if (action === "cs_cancel_order" || action === "cancel_order") {
+      const order = await orderById(String(body.id || body.order_id || ""));
+      if (!order) return json(res, 404, { ok: false, message: "订单不存在。" });
+      return runCsCancelOrRefund(res, order, service.profile, { intent: "cancel", reason: String(body.reason || "") });
+    }
+    if (action === "cs_refund_order" || action === "refund_unfulfillable_order") {
+      const order = await orderById(String(body.id || body.order_id || ""));
+      if (!order) return json(res, 404, { ok: false, message: "订单不存在。" });
+      return runCsCancelOrRefund(res, order, service.profile, { intent: "refund", reason: String(body.reason || "") });
     }
     if (action === "list_grabs" || action === "grab_applicants") {
       const order = await orderById(String(body.id || body.order_id || ""));
@@ -4462,6 +4477,12 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
       const status = String(body.status || "");
       const order = await orderById(id);
       if (!order) return json(res, 404, { ok: false, message: "订单不存在。" });
+      if (String(status).toLowerCase() === "cancelled") {
+        return runCsCancelOrRefund(res, order, service.profile, {
+          intent: "cancel",
+          reason: String(body.reason || body.note || "客服取消订单"),
+        });
+      }
       try {
         await assertOrderMutationAllowed(order, service.profile);
       } catch (err) {

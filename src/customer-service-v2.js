@@ -3185,6 +3185,7 @@ import './mcj-chat-realtime.js';
         actions.push('<button class="cs-btn danger" data-reject-payment-proof="'+esc(o.id)+'">驳回付款</button>');
       }else{
         actions.push('<span class="cs-note">等待老板扫码付款并上传截图</span>');
+        actions.push('<button class="cs-btn ghost" data-cancel-order="'+esc(o.id)+'">取消订单</button>');
       }
     }else if(inGrabHall){
       actions.push('<button class="cs-btn ghost" data-view-grabs="'+esc(o.id)+'">查看抢单人数('+(o.grabCount||0)+')</button>');
@@ -3969,13 +3970,16 @@ import './mcj-chat-realtime.js';
     var cancelOrderBtn=e.target.closest('[data-cancel-order]');
     if(cancelOrderBtn){
       e.preventDefault();
-      if(!confirm('确认取消该订单？'))return;
       var cid=cancelOrderBtn.dataset.cancelOrder;
+      var cOrder=(((state.data&&state.data.orders)||[]).find(function(x){return x.id===cid}))||{};
+      var cPaid=String(cOrder.status||'')!=='awaiting_payment';
+      var cReason=String(prompt((cPaid?'取消后已付猫粮将自动全额退回老板余额（只退一次）。\n':'')+'请输入取消原因（老板会看到）')||'').trim();
+      if(!cReason){toast('取消必须填写原因');return;}
       cancelOrderBtn.disabled=true;
-      api('update_order_status',{id:cid,status:'cancelled',note:'客服取消订单'}).then(function(res){toast(res.message||'订单已取消');return softRefresh();}).catch(function(err){cancelOrderBtn.disabled=false;toast(err.message||'取消失败');});
+      api('cs_cancel_order',{id:cid,reason:cReason}).then(function(res){toast(res.message||'订单已取消');return softRefresh();}).catch(function(err){cancelOrderBtn.disabled=false;toast(err.message||'取消失败');});
       return;
     }
-    var completeOrder=e.target.closest('[data-complete-order]');if(completeOrder){if(!confirm('确认提前结束订单并标记为已完成？'))return;completeOrder.disabled=true;completeOrder.textContent='处理中…';api('update_order_status',{id:completeOrder.dataset.completeOrder,status:'completed'}).then(function(res){toast(res.message||'订单已结束');return softRefresh()}).catch(function(err){completeOrder.disabled=false;completeOrder.textContent='提前结束订单';toast(err.message||'操作失败')});return}var cancelHall=e.target.closest('[data-cancel-grab-hall]');if(cancelHall){if(!confirm('确认取消该订单的抢单发布？订单将关闭。'))return;var cid=cancelHall.dataset.cancelGrabHall;cancelHall.disabled=true;api('cancel_grab_hall',{id:cid,reason:'客服取消抢单'}).then(function(res){toast(res.message||'已取消抢单');return softRefresh()}).catch(function(err){cancelHall.disabled=false;toast(err.message||'取消失败')});return}var viewGrabs=e.target.closest('[data-view-grabs]');if(viewGrabs){openGrabList(viewGrabs.dataset.viewGrabs);return}var assign=e.target.closest('[data-assign-order]');if(assign){openAssign(assign.dataset.assignOrder);return}var st=e.target.closest('[data-status-order]');if(st){openStatus(st.dataset.statusOrder);return}var refund=e.target.closest('[data-refund-order]');if(refund){openRefund(refund.dataset.refundOrder);return}var close=e.target.closest('[data-close-modal]');if(close){close.closest('.cs-modal').remove();return}});
+    var completeOrder=e.target.closest('[data-complete-order]');if(completeOrder){if(!confirm('确认提前结束订单并标记为已完成？'))return;completeOrder.disabled=true;completeOrder.textContent='处理中…';api('update_order_status',{id:completeOrder.dataset.completeOrder,status:'completed'}).then(function(res){toast(res.message||'订单已结束');return softRefresh()}).catch(function(err){completeOrder.disabled=false;completeOrder.textContent='提前结束订单';toast(err.message||'操作失败')});return}var cancelHall=e.target.closest('[data-cancel-grab-hall]');if(cancelHall){var hallReason=String(prompt('取消抢单将关闭订单，已付猫粮自动全额退回老板余额（只退一次）。\n请输入取消原因（老板会看到）','无人接单')||'').trim();if(!hallReason){toast('取消必须填写原因');return;}var cid=cancelHall.dataset.cancelGrabHall;cancelHall.disabled=true;api('cancel_grab_hall',{id:cid,reason:hallReason}).then(function(res){toast(res.message||'已取消抢单');return softRefresh()}).catch(function(err){cancelHall.disabled=false;toast(err.message||'取消失败')});return}var viewGrabs=e.target.closest('[data-view-grabs]');if(viewGrabs){openGrabList(viewGrabs.dataset.viewGrabs);return}var assign=e.target.closest('[data-assign-order]');if(assign){openAssign(assign.dataset.assignOrder);return}var st=e.target.closest('[data-status-order]');if(st){openStatus(st.dataset.statusOrder);return}var refund=e.target.closest('[data-refund-order]');if(refund){openRefund(refund.dataset.refundOrder);return}var close=e.target.closest('[data-close-modal]');if(close){close.closest('.cs-modal').remove();return}});
   function modal(html, dialogClass){
     var cls=String(dialogClass||'cs-form').trim()||'cs-form';
     document.body.insertAdjacentHTML('beforeend','<div class="cs-modal"><div class="cs-dialog '+cls+'">'+html+'</div></div>');
