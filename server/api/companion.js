@@ -24,6 +24,7 @@ import { companionPopularityMe, recordOnlineSession, scheduleRecomputeSoft } fro
 import { readLocalLevels, toPublicLevel } from "./_companion-levels-store.js";
 import { resolvePlatformCommission } from "./_commission-rates.js";
 import { writeOrderStatusLog, COMPANION_STATUS_LABELS } from "./_order-status.js";
+import { stripInternalMarkers } from "./_order-assignment.js";
 import {
   completionCountdown,
   formatRemainingLabel,
@@ -1274,11 +1275,12 @@ async function assertCompanionOrderEligibility(profile, companion) {
   return { identity, deposit };
 }
 function stripOrderFacingText(text = "") {
-  return String(text || "")
+  const withoutGrabs = String(text || "")
     .replace(/\[\[ORDER_GRABS\]\][\s\S]*?\[\[\/ORDER_GRABS\]\]/g, "")
     .replace(/\[\[ORDER_GRABS\]\][\s\S]*$/g, "")
     .split("[[COMPLETION_PENDING]]")
-    .join("")
+    .join("");
+  return stripInternalMarkers(withoutGrabs)
     .replace(/\buuid\s+create\s+regression\s+\d+\b/gi, "")
     .replace(/\bcreate\s+regression\s+\d+\b/gi, "")
     .replace(/\bregression\s+\d+\b/gi, "")
@@ -1448,7 +1450,7 @@ function viewOrder(row = {}, boss = {}, settlement = null) {
       String(row.order_type || "").toLowerCase() === "multi_group" && !row.parent_order_id,
     groupPeerCount: Number(row._groupPeerCount || 0) || 0,
     groupPeers: Array.isArray(row._groupPeers) ? row._groupPeers : [],
-    raw: row
+    raw: { ...row, note: stripInternalMarkers(row.note || ""), description: stripInternalMarkers(row.description || "") }
   };
 }
 async function bossesForOrders(orders) { const ids=[...new Set((orders||[]).map((row)=>row.boss_id).filter(Boolean))]; if(!ids.length) return {}; const rows=await supabaseJson(restUrl("profiles", `?id=in.(${ids.map(encodeURIComponent).join(",")})`), { headers: serviceHeaders() }); return Object.fromEntries((rows||[]).map((row)=>[row.id,row])); }

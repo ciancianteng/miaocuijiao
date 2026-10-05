@@ -47,9 +47,22 @@ export function isAssignedPendingConfirm(row = {}, companionId = "") {
   return String(row.status || "") === "claimed";
 }
 
+/**
+ * Drops system metadata the server appends to orders.note / description
+ * ([[PAYMENT_PROOF]] bucket=… path=…, [[BOSS_INTENT]]{…}[[/BOSS_INTENT]], [[CLAIMED_AT]] …).
+ * Single markers carry their payload to end of line, so the whole line goes.
+ */
+export function stripInternalMarkers(text = "") {
+  return String(text || "")
+    .replace(/\[\[([A-Z][A-Z0-9_]*)\]\][\s\S]*?\[\[\/\1\]\]/g, "")
+    .replace(/\[\[\/?[A-Z][A-Z0-9_]*(?::[^\]]*)?\]\][^\n]*/g, "")
+    .replace(/\n{2,}/g, "\n")
+    .trim();
+}
+
 /** Fields safe to show on the public grab hall card. */
 export function sanitizeHallOrderView(viewed = {}) {
-  const publicNote = String(viewed.bossNotes || viewed.remark || "")
+  const publicNote = stripInternalMarkers(viewed.bossNotes || viewed.remark || "")
     .replace(/(?:电话|手机|联系方式|微信|WhatsApp|QQ)[：:\s]*[^\n；;]*/gi, "")
     .replace(/(?:密码|口令|支付|付款方式|收款)[：:\s]*[^\n；;]*/gi, "")
     .replace(/(?:指定陪玩|陪玩姓名|陪玩名)[：:\s]*[^\n；;]*/gi, "")
@@ -63,7 +76,7 @@ export function sanitizeHallOrderView(viewed = {}) {
     orderSource: viewed.orderSource,
     game: viewed.game,
     gameServer: viewed.gameServer,
-    serviceContent: String(viewed.serviceContent || "")
+    serviceContent: stripInternalMarkers(viewed.serviceContent || "")
       .replace(/(?:电话|手机|联系方式|微信|WhatsApp|QQ|密码|口令|付款方式)[：:\s]*[^\n；;]*/gi, "")
       .trim()
       .slice(0, 240),

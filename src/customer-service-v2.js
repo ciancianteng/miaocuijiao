@@ -3070,6 +3070,7 @@ import './mcj-chat-realtime.js';
       actions.push('<button class="cs-btn primary" data-view-grabs="'+esc(o.id)+'">确认指定</button>');
       actions.push('<button class="cs-btn danger" data-cancel-grab-hall="'+esc(o.id)+'">取消抢单</button>');
     }else if(st==='claimed'){
+      if((o.grabCount||0)>0)actions.push('<button class="cs-btn ghost" data-view-grabs="'+esc(o.id)+'">查看抢单人('+(o.grabCount||0)+')</button>');
       actions.push('<button class="cs-btn warn" data-urge-companion="'+esc(o.id)+'">催单</button>');
       actions.push('<button class="cs-btn ghost" data-return-grab-hall="'+esc(o.id)+'">返回抢单大厅</button>');
       actions.push('<button class="cs-btn danger" data-cancel-order="'+esc(o.id)+'">取消订单</button>');
@@ -3919,25 +3920,37 @@ import './mcj-chat-realtime.js';
     api('list_grabs',{id:id}).then(function(res){
       var grabs=res.grabs||[];
       var intent=res.bossIntent||null;
+      var ord=res.order||{};
+      var boundId=String(ord.companionId||'');
       var html=grabs.length?grabs.map(function(g){
         var c=g.companion||{};
+        var picked=!!g.bossPreferred||(!!boundId&&boundId===String(g.companionId||''));
+        var notSelected=!picked&&String(g.status||'')==='not_selected';
         var avatar=c.avatarUrl||c.cardImageUrl
           ?('<img src="'+esc(c.avatarUrl||c.cardImageUrl)+'" style="width:48px;height:48px;border-radius:10px;object-fit:cover" alt="">')
           :('<div style="width:48px;height:48px;border-radius:10px;background:#333;display:grid;place-items:center">'+esc((c.nickname||'?').slice(0,1))+'</div>');
         return '<div style="display:flex;gap:10px;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.08)">'+
           avatar+
-          '<div style="flex:1;min-width:0"><strong>'+esc(c.nickname||'陪玩')+(g.bossPreferred?' · 老板意向':'')+'</strong>'+
+          '<div style="flex:1;min-width:0"><strong>'+esc(c.nickname||'陪玩')+(picked?' · 老板已选择':(notSelected?' · 未选中':''))+'</strong>'+
           '<p style="margin:4px 0;font-size:12px">ID '+esc(c.companionUid||c.id||'-')+' · '+esc(c.level||'-')+' · 音色 '+esc(c.voiceType||c.voice_type||'-')+' · 段位 '+esc(c.gameRank||c.rank||'-')+'</p>'+
           '<p style="margin:0;font-size:12px">'+esc(c.mainGame||c.game||'-')+' · 单价 '+money(c.price||0)+' · '+esc(c.onlineStatusLabel||c.onlineStatus||'-')+'</p>'+
           '<p style="margin:4px 0 0;font-size:12px">标签：'+esc(c.tags||'-')+' · 抢单时间 '+esc(g.grabbedAt||g.grabbed_at||'-')+'</p>'+
           (c.voiceUrl?'<p style="margin:4px 0 0"><a href="'+esc(c.voiceUrl)+'" target="_blank" rel="noopener">试听录音</a></p>':'')+
           '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">'+
           '<a class="cs-btn" href="'+esc(c.detailUrl||('/profile.html?player='+encodeURIComponent(c.id||'')))+'" target="_blank" rel="noopener">资料详情</a>'+
-          '<button class="cs-btn primary" type="button" data-confirm-assign="'+esc(id)+'" data-companion-id="'+esc(g.companionId||c.id||'')+'">'+(g.bossPreferred?'确认指定（老板意向）':'确认指定')+'</button>'+
-          '<button class="cs-btn" type="button" data-push-to-boss="'+esc(id)+'" data-companion-id="'+esc(g.companionId||c.id||'')+'">推送给老板</button>'+
+          (notSelected?'':
+            '<button class="cs-btn primary" type="button" data-confirm-assign="'+esc(id)+'" data-companion-id="'+esc(g.companionId||c.id||'')+'">'+(picked?'确认指定（老板已选择）':'确认指定')+'</button>'+
+            (boundId?'':'<button class="cs-btn" type="button" data-push-to-boss="'+esc(id)+'" data-companion-id="'+esc(g.companionId||c.id||'')+'">推送给老板</button>'))+
           '</div></div></div>';
-      }).join(''):'<p>暂无抢单人。请等待陪玩抢单，并由老板提交「我要她」意向后再确认指定。</p>';
-      modal('<div class="cs-dialog-head"><h3>抢单人列表 / 确认指定</h3><button class="cs-btn" type="button" data-close-modal>关闭</button></div>'+(intent?'<p>老板意向：'+esc(intent.companionName||intent.companionId)+'</p>':'<p class="cs-note">老板尚未提交意向。可先沟通，待老板点击「我要她」后再确认指定。</p>')+'<p class="cs-note">确认指定后订单离开抢单大厅，正式发给该陪玩等待确认接单。</p>'+html);
+      }).join(''):'<p>暂无抢单人。请等待陪玩抢单，并由老板点击「我要她」选择陪玩。</p>';
+      var pickedGrab=grabs.find(function(g){return !!g.bossPreferred||(!!boundId&&boundId===String(g.companionId||''));});
+      var pickedName=pickedGrab?((pickedGrab.companion||{}).nickname||''):'';
+      var head=boundId
+        ?'<p class="cs-note">老板已选择：'+esc(pickedName||ord.companionName||'陪玩')+'。订单已进入待陪玩确认，等待陪玩确认接单。</p>'
+        :(intent
+          ?'<p>老板已选择：'+esc(intent.companionName||pickedName||intent.companionId)+'（请客服确认指定）</p>'
+          :'<p class="cs-note">老板尚未选择陪玩。老板点击「我要她」前，客服不能确认指定。</p>');
+      modal('<div class="cs-dialog-head"><h3>抢单人列表 / 确认指定</h3><button class="cs-btn" type="button" data-close-modal>关闭</button></div>'+head+'<p class="cs-note">确认指定后订单离开抢单大厅，正式发给该陪玩等待确认接单。</p>'+html);
     }).catch(function(err){toast(err.message||'加载失败')});
   }
   function openStatus(id){
