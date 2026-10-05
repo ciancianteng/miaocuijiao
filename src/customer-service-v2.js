@@ -406,30 +406,58 @@ import './mcj-chat-realtime.js';
     }
     return att.workHours!=null&&att.workHours!==''?att.workHours:0;
   }
+  /** none = 未上班, on = 上班中, done = 今日已下班 (can still start an overtime shift). */
+  function clockStateOf(att){
+    att=att||{};
+    if(clockCanOut(att))return 'on';
+    if(Number(att.closedCount||0)>0||att.clockOutAt)return 'done';
+    return 'none';
+  }
+  function clockShortTime(text,iso){
+    var full=fmtAttDateTime(text,iso)||'';
+    var m=full.match(/(\d{1,2}:\d{2})(?::\d{2})?\s*$/);
+    return m?m[1]:full;
+  }
+  function clockStatusText(att){
+    var st=clockStateOf(att);
+    if(st==='on')return (att.sessionType==='overtime'||att.sessionType==='night'||att.attendanceStatus==='加班中')?'加班中':'上班中';
+    if(st==='done')return '今日已下班';
+    return '未上班';
+  }
+  function clockDoneText(att){
+    var label=att.attendanceLabel?(' · '+att.attendanceLabel):'';
+    return '✓ 今日已下班 '+(clockShortTime(att.clockInText,att.clockInAt)||'-')+'–'+(clockShortTime(att.clockOutText,att.clockOutAt)||'-')+label;
+  }
   function patchClockPanel(att,busy){
     att=att||((state.data&&state.data.workData&&state.data.workData.todayAttendance)||{});
-    var canIn=clockCanIn(att);
-    var canOut=clockCanOut(att);
+    var st=clockStateOf(att);
     var liveHours=liveTotalHours(att);
     var statusEl=root.querySelector('[data-clock-status]');
     var inEl=root.querySelector('[data-clock-in-at]');
     var outEl=root.querySelector('[data-clock-out-at]');
     var hoursEl=root.querySelector('[data-live-hours]');
     var overtimeEl=root.querySelector('[data-overtime-hours]');
+    var labelEl=root.querySelector('[data-clock-label]');
+    var doneEl=root.querySelector('[data-clock-done]');
     var btnIn=root.querySelector('[data-clock-in]');
     var btnOut=root.querySelector('[data-clock-out]');
-    if(statusEl)statusEl.textContent=att.attendanceStatus||'未打卡';
+    if(statusEl)statusEl.textContent=clockStatusText(att);
     if(inEl)inEl.textContent=fmtAttDateTime(att.clockInText,att.clockInAt)||'-';
-    if(outEl)outEl.textContent=canOut?'上班中':(fmtAttDateTime(att.clockOutText,att.clockOutAt)||'-');
+    if(outEl)outEl.textContent=st==='on'?'上班中':(fmtAttDateTime(att.clockOutText,att.clockOutAt)||'-');
     if(hoursEl)hoursEl.textContent=(liveHours!=null&&liveHours!==''?(liveHours+' 小时'):'-');
     if(overtimeEl)overtimeEl.textContent=(att.overtimeHours!=null?att.overtimeHours:0)+' 小时';
+    if(labelEl)labelEl.textContent=att.attendanceLabel||'-';
+    if(doneEl){doneEl.hidden=st!=='done';doneEl.textContent=st==='done'?clockDoneText(att):'';}
     if(btnIn){
-      btnIn.disabled=!!(busy||!canIn);
-      btnIn.textContent=busy?'处理中…':(canIn?(Number(att.closedCount||0)>0?'再次上班（加班）':'上班打卡'):'上班中');
+      btnIn.hidden=st==='on';
+      btnIn.disabled=!!busy;
+      btnIn.className='cs-btn cs-clock-btn'+(st==='none'?' primary':'');
+      btnIn.textContent=busy&&st!=='on'?'处理中…':(st==='done'?'加班上班':'上班打卡');
     }
     if(btnOut){
-      btnOut.disabled=!!(busy||!canOut);
-      btnOut.textContent=busy?'处理中…':(canOut?'下班打卡':'已下班');
+      btnOut.hidden=st!=='on';
+      btnOut.disabled=!!busy;
+      btnOut.textContent=busy&&st==='on'?'处理中…':'下班打卡';
     }
   }
   function optimisticClockIn(prev){
@@ -482,9 +510,7 @@ import './mcj-chat-realtime.js';
     });
   }
   function apiClock(action){
-    var cfg=(state.data&&state.data.workData&&state.data.workData.config)||null;
-    var payload=cfg?{config:{shiftStart:cfg.shiftStart,shiftEnd:cfg.shiftEnd,graceMinutes:cfg.graceMinutes}}:{};
-    var req=api(action,payload);
+    var req=api(action,{});
     var timeout=new Promise(function(_,reject){
       setTimeout(function(){
         reject(Object.assign(new Error('网络较慢，正在核对打卡结果…'),{timeout:true,status:408}));
@@ -2148,25 +2174,27 @@ import './mcj-chat-realtime.js';
     var work=(state.data&&state.data.workData)||{};
     var att=work.todayAttendance||{};
     var reassign=s.needsReassign||0;
-    var canIn=clockCanIn(att);
     var canOut=clockCanOut(att);
+    var clockSt=clockStateOf(att);
     var liveHours=liveTotalHours(att);
     var closedCount=Number(att.closedCount||0)||0;
-    var clockInLabel=state.clockBusy?'处理中…':(canIn?(closedCount>0?'再次上班（加班）':'上班打卡'):'上班中');
-    var clockOutLabel=state.clockBusy?'处理中…':(canOut?'下班打卡':'已下班');
+    var clockInLabel=state.clockBusy&&clockSt!=='on'?'处理中…':(clockSt==='done'?'加班上班':'上班打卡');
+    var clockOutLabel=state.clockBusy&&clockSt==='on'?'处理中…':'下班打卡';
     recomputeSummaryFromConversations();
     s=(state.data&&state.data.summary)||s;
     return '<div class="cs-page-head"><div><h2>工作台</h2><p>主流程：接待会话、确认付款、推进订单。</p></div><div class="cs-actions"><button class="cs-btn primary" type="button" data-route="/customer-service/conversations">进入会话池</button><button class="cs-btn" type="button" data-route="/customer-service/orders">订单处理</button></div></div>'+
       '<section class="cs-card" style="margin-bottom:14px" data-clock-panel><h3>今日打卡</h3><div class="cs-info-list">'+
-      '<div><span>当前状态</span><strong data-clock-status>'+esc(att.attendanceStatus||'未打卡')+'</strong></div>'+
+      '<div><span>当前状态</span><strong data-clock-status>'+esc(clockStatusText(att))+'</strong></div>'+
+      '<div><span>考勤</span><strong data-clock-label>'+esc(att.attendanceLabel||'-')+'</strong></div>'+
       '<div><span>本班上班</span><strong data-clock-in-at>'+esc(fmtAttDateTime(att.clockInText,att.clockInAt)||'-')+'</strong></div>'+
       '<div><span>本班下班</span><strong data-clock-out-at>'+esc(canOut?'上班中':(fmtAttDateTime(att.clockOutText,att.clockOutAt)||'-'))+'</strong></div>'+
       '<div><span>今日工时累计</span><strong data-live-hours>'+esc(liveHours!=null&&liveHours!==''?(liveHours+' 小时'):'-')+'</strong></div>'+
       '<div><span>今日加班工时</span><strong data-overtime-hours>'+esc((att.overtimeHours!=null?att.overtimeHours:0)+' 小时')+'</strong></div>'+
       '<div><span>今日班次</span><strong>'+esc((att.sessionCount!=null?att.sessionCount:closedCount+(canOut?1:0))+' 次')+'</strong></div>'+
-      '</div><div class="cs-actions" style="margin-top:12px">'+
-      '<button class="cs-btn primary" type="button" data-clock-in '+(!canIn||state.clockBusy?'disabled':'')+'>'+esc(clockInLabel)+'</button>'+
-      '<button class="cs-btn" type="button" data-clock-out '+(!canOut||state.clockBusy?'disabled':'')+'>'+esc(clockOutLabel)+'</button>'+
+      '</div><div class="cs-clock-done" data-clock-done'+(clockSt==='done'?'':' hidden')+'>'+esc(clockSt==='done'?clockDoneText(att):'')+'</div>'+
+      '<div class="cs-actions cs-clock-actions" style="margin-top:12px">'+
+      '<button class="cs-btn cs-clock-btn'+(clockSt==='none'?' primary':'')+'" type="button" data-clock-in'+(clockSt==='on'?' hidden':'')+(state.clockBusy?' disabled':'')+'>'+esc(clockInLabel)+'</button>'+
+      '<button class="cs-btn primary cs-clock-btn" type="button" data-clock-out'+(clockSt==='on'?'':' hidden')+(state.clockBusy?' disabled':'')+'>'+esc(clockOutLabel)+'</button>'+
       '</div></section>'+
       attendanceHistoryHtml()+
       (reassign?'<div class="cs-empty" style="margin-bottom:12px"><strong>待重新安排订单</strong><span>共 '+esc(reassign)+' 单陪玩无法接单或确认超时，请到订单处理中更换陪玩 / 推送抢单 / 联系老板 / 发起退款。</span></div>':'')+

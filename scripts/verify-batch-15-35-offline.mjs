@@ -504,6 +504,138 @@ await test("#21 every CS cancel entry routes through the unified path", () => {
   assert.match(ui, /data-cancel-order="'\+esc\(o\.id\)\+'">取消订单<\/button>'\);\s*\}/);
 });
 
+// ---------- #22 per-staff schedule / attendance + #35A clock button ----------
+await test("#22 missing days: Mon–Fri schedule counts only scheduled past days without clock-in", async () => {
+  const w = await import("../server/api/_customer-service-work.js");
+  const cfg = { workDays: [1, 2, 3, 4, 5], attendanceEnabled: true };
+  const out = w.monthAbsence(cfg, ["2026-10-01", "2026-10-05"], "2026-10", "2026-10-08");
+  assert.deepEqual(out.dates, ["2026-10-02", "2026-10-06", "2026-10-07"]);
+  assert.equal(out.count, 3);
+  assert.equal(w.monthAbsence({ standardDays: 22 }, ["2026-10-01", "2026-10-05"], "2026-10", "2026-10-08").count, 20);
+  assert.equal(w.monthAbsence({ ...cfg, attendanceEnabled: false }, [], "2026-10", "2026-10-08").count, 0);
+});
+await test("#22 attendance day: Sunday off-schedule and attendance-off never count late", async () => {
+  const w = await import("../server/api/_customer-service-work.js");
+  const cfg = { workDays: [1, 2, 3, 4, 5], shiftStart: "09:00", shiftEnd: "18:00", graceMinutes: 10 };
+  assert.equal(w.isAttendanceDay(cfg, "2026-10-04"), false);
+  assert.equal(w.isAttendanceDay(cfg, "2026-10-05"), true);
+  assert.equal(w.isAttendanceDay({ attendanceEnabled: false }, "2026-10-05"), false);
+  const lateRow = { shift_start: "2026-10-05T01:30:00Z", shift_end: "2026-10-05T09:30:00Z" };
+  assert.equal(w.calcAttendanceMeta(cfg, lateRow, "2026-10-05").lateMinutes, 20);
+  assert.equal(w.calcAttendanceMeta(cfg, lateRow, "2026-10-05").earlyLeaveMinutes, 30);
+  const sundayRow = { shift_start: "2026-10-04T01:30:00Z", shift_end: "2026-10-04T09:30:00Z" };
+  assert.equal(w.calcAttendanceMeta(cfg, sundayRow, "2026-10-04").lateMinutes, 0);
+  assert.equal(w.calcAttendanceMeta({ ...cfg, attendanceEnabled: false }, lateRow, "2026-10-05").lateMinutes, 0);
+});
+await test("#22 base salary: explicit per-staff 0 sticks, unset falls back to global", async () => {
+  const w = await import("../server/api/_customer-service-work.js");
+  assert.equal(w.mergeServiceConfig({ baseSalary: 1800 }, { baseSalary: 0, baseSalarySet: true }).baseSalary, 0);
+  assert.equal(w.mergeServiceConfig({ baseSalary: 1800 }, { baseSalary: 0 }).baseSalary, 1800);
+  assert.equal(w.mergeServiceConfig({ baseSalary: 1800 }, { baseSalary: 2500, baseSalarySet: true }).baseSalary, 2500);
+  assert.deepEqual(w.normalizeWorkDays("5,1,1,9,x"), [1, 5]);
+  assert.equal(w.normalizeWorkDays([]), null);
+});
+await test("#22 saveServiceConfig rejects bad HH:MM and stamps updatedAt/updatedBy", async () => {
+  const w = await import("../server/api/_customer-service-work.js");
+  const sid = "11111111-2222-3333-4444-555555555555";
+  let written = null;
+  const fake = fakeRest([
+    [/customer_service_reports\?customer_service_id=eq\./, { method: "GET", run: () => [] }],
+    [/customer_service_reports/, { method: "POST", run: ({ body }) => ((written = body), [body]) }],
+  ]);
+  await withFetch(fake, async () => {
+    await assert.rejects(() => w.saveServiceConfig(sid, { shiftStart: "25:00" }), /HH:MM/);
+    await w.saveServiceConfig(sid, { shiftStart: "10:00", shiftEnd: "19:00", workDays: [1, 3, 5], attendanceEnabled: false, baseSalary: 0, updatedBy: "admin-1", updatedByName: "Admin" });
+  });
+  const meta = JSON.parse(String(written.note).replace(/^[^{]*/, ""));
+  assert.equal(meta.shiftStart, "10:00");
+  assert.deepEqual(meta.workDays, [1, 3, 5]);
+  assert.equal(meta.attendanceEnabled, false);
+  assert.equal(meta.baseSalarySet, true);
+  assert.equal(meta.baseSalary, 0);
+  assert.equal(meta.updatedBy, "admin-1");
+  assert.ok(Date.parse(meta.updatedAt) > 0);
+});
+await test("#22 clock-in late uses server config; duplicate (23505) race returns already instead of 500", async () => {
+  const w = await import("../server/api/_customer-service-work.js");
+  const sid = "11111111-2222-3333-4444-555555555555";
+  const sessions = [];
+  let failInsert = false;
+  const fake = fakeRest([
+    [/cs_attendance_sessions\?.*status=eq\.open/, { method: "GET", run: () => sessions.filter((s) => s.status === "open") }],
+    [/cs_attendance_sessions\?/, { method: "GET", run: () => sessions }],
+    [/cs_attendance_sessions/, {
+      method: "POST",
+      run: ({ body }) => {
+        if (failInsert) {
+          sessions.push({ ...body, id: "raced" });
+          return { __error: { status: 409, code: "23505", message: 'duplicate key value violates unique constraint "idx_cs_att_sessions_one_open"' } };
+        }
+        const row = { ...body, id: `s${sessions.length + 1}` };
+        sessions.push(row);
+        return [row];
+      },
+    }],
+    [/customer_service_reports/, { run: () => [] }],
+  ]);
+  await withFetch(fake, async () => {
+    const off = await w.clockInService(sid, { config: { shiftStart: "00:00", graceMinutes: 0, attendanceEnabled: false }, sessionType: "normal" });
+    assert.equal(off.row.late_minutes, 0);
+    sessions.length = 0;
+    failInsert = true;
+    const raced = await w.clockInService(sid, { config: {}, sessionType: "normal" });
+    assert.equal(raced.already, true);
+    assert.equal(raced.row.id, "raced");
+  });
+});
+await test("#22 CS clock handler ignores client config; admin uses per-staff config + save_staff_config", () => {
+  const cs = read("server/api/customer-service.js");
+  assert.match(cs, /const cfg = await workApi\.loadClockConfig\(service\.profile\.id\);/);
+  assert.doesNotMatch(cs, /body\.config \|\| body\.shiftConfig/);
+  const ui = read("src/customer-service-v2.js");
+  assert.match(ui, /var req=api\(action,\{\}\);/);
+  const admin = read("server/api/admin/service-accounts.js");
+  assert.match(admin, /const staffConfig = configFor\(row\.id\);/);
+  assert.match(admin, /action === "save_staff_config"/);
+  assert.match(admin, /workApi\.monthAbsence\(staffConfig/);
+  assert.match(admin, /attendanceSummary: \{/);
+  const adminUi = read("src/admin-service-accounts.js");
+  assert.match(adminUi, /shiftFieldsHtml\(row, readonly\)/);
+  assert.match(adminUi, /payload\.workDays = fd\.getAll\("workDay"\)\.map\(Number\)/);
+});
+await test("#35A clock panel: exactly one primary action per state + explicit done line", () => {
+  const src = read("src/customer-service-v2.js");
+  const start = src.indexOf("function clockCanIn(att){");
+  const end = src.indexOf("function optimisticClockIn(prev){");
+  const nodes = {};
+  const mk = (sel) => (nodes[sel] = { hidden: false, disabled: false, textContent: "", className: "" });
+  ["[data-clock-status]", "[data-clock-in-at]", "[data-clock-out-at]", "[data-live-hours]", "[data-overtime-hours]", "[data-clock-label]", "[data-clock-done]", "[data-clock-in]", "[data-clock-out]"].forEach(mk);
+  const ctx = { root: { querySelector: (s) => nodes[s] || null }, state: {}, Date, Number, Math, fmtAttDateTime: (t) => t || "" };
+  vm.runInNewContext(src.slice(start, end) + ";this.patch=patchClockPanel;", ctx);
+  ctx.patch({ canClockIn: true, canClockOut: false, closedCount: 0 }, false);
+  assert.equal(nodes["[data-clock-status]"].textContent, "未上班");
+  assert.equal(nodes["[data-clock-in]"].hidden, false);
+  assert.equal(nodes["[data-clock-in]"].textContent, "上班打卡");
+  assert.match(nodes["[data-clock-in]"].className, /primary/);
+  assert.equal(nodes["[data-clock-out]"].hidden, true);
+  ctx.patch({ canClockIn: false, canClockOut: true, clockInAt: "x", clockInText: "2026-10-05 09:01" }, false);
+  assert.equal(nodes["[data-clock-status]"].textContent, "上班中");
+  assert.equal(nodes["[data-clock-in]"].hidden, true);
+  assert.equal(nodes["[data-clock-out]"].hidden, false);
+  assert.equal(nodes["[data-clock-out]"].textContent, "下班打卡");
+  assert.equal(nodes["[data-clock-done]"].hidden, true);
+  ctx.patch({ canClockIn: true, canClockOut: false, closedCount: 1, clockInText: "2026-10-05 09:01", clockOutText: "2026-10-05 18:03", clockOutAt: "y", attendanceLabel: "正常" }, false);
+  assert.equal(nodes["[data-clock-status]"].textContent, "今日已下班");
+  assert.equal(nodes["[data-clock-done]"].hidden, false);
+  assert.match(nodes["[data-clock-done]"].textContent, /今日已下班 09:01–18:03 · 正常/);
+  assert.equal(nodes["[data-clock-in]"].textContent, "加班上班");
+  assert.doesNotMatch(nodes["[data-clock-in]"].className, /primary/);
+  assert.equal(nodes["[data-clock-out]"].hidden, true);
+  const css = read("src/customer-service-v2.css");
+  assert.match(css, /\.cs-clock-btn\[hidden\],\.cs-clock-done\[hidden\]\{display:none!important\}/);
+  assert.match(css, /\.cs-clock-actions \.cs-clock-btn\{min-height:44px/);
+});
+
 const failed = results.filter((r) => !r.ok);
 console.log(`\n${results.length - failed.length}/${results.length} passed`);
 if (failed.length) process.exit(1);

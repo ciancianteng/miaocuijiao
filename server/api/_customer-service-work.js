@@ -114,13 +114,69 @@ function configFromMeta(meta = {}) {
     settleOnPayment: !!meta.settleOnPayment,
     clawbackOnRefund: meta.clawbackOnRefund !== false,
     frozen: !!meta.frozen,
+    workDays: normalizeWorkDays(meta.workDays),
+    attendanceEnabled: meta.attendanceEnabled !== false,
+    baseSalarySet: !!meta.baseSalarySet,
+    updatedAt: meta.updatedAt || "",
+    updatedBy: meta.updatedBy || "",
+    updatedByName: meta.updatedByName || "",
   };
+}
+const HHMM_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
+/** 0 = Sunday … 6 = Saturday; null = not configured (legacy standardDays rule). */
+export function normalizeWorkDays(v) {
+  if (v == null || v === "") return null;
+  const list = (Array.isArray(v) ? v : String(v).split(/[,\s]+/))
+    .map((d) => Number(d))
+    .filter((d) => Number.isInteger(d) && d >= 0 && d <= 6);
+  return list.length ? [...new Set(list)].sort((a, b) => a - b) : null;
+}
+function weekdayOf(workDate) {
+  return new Date(`${workDate}T12:00:00+08:00`).getUTCDay();
+}
+/** Late / early-leave only count on scheduled days with attendance enabled. */
+export function isAttendanceDay(config = {}, workDate = todayKey()) {
+  if (config.attendanceEnabled === false) return false;
+  const days = normalizeWorkDays(config.workDays);
+  return !days || days.includes(weekdayOf(workDate));
+}
+/**
+ * Missing (未打卡) days for a month. With workDays configured: scheduled days strictly before
+ * today that have no clock-in. Without: legacy standardDays − attended days.
+ */
+export function monthAbsence(config = {}, attendedDates = [], month = monthKey(), today = todayKey()) {
+  if (config.attendanceEnabled === false) return { count: 0, dates: [] };
+  const days = normalizeWorkDays(config.workDays);
+  const attended = new Set((attendedDates || []).map((d) => String(d).slice(0, 10)));
+  if (!days) return { count: Math.max(0, num(config.standardDays || 22) - attended.size), dates: [] };
+  const dates = [];
+  const [y, m] = month.split("-").map(Number);
+  const last = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  for (let d = 1; d <= last; d += 1) {
+    const key = `${month}-${String(d).padStart(2, "0")}`;
+    if (key >= today) break;
+    if (days.includes(weekdayOf(key)) && !attended.has(key)) dates.push(key);
+  }
+  return { count: dates.length, dates };
+}
+/** Shift rules for clock in/out always come from the DB (never from the client). */
+export async function loadClockConfig(serviceId) {
+  try {
+    const [globalCfg, staffCfg] = await Promise.all([getGlobalCommissionConfig(), getServiceConfig(serviceId)]);
+    return mergeServiceConfig(globalCfg, staffCfg);
+  } catch (err) {
+    console.warn("[cs-attendance] config load failed, using defaults", err?.message || err);
+    return {};
+  }
+}
+export function staffConfigFromReportRow(row) {
+  return { rowId: row?.id || "", ...configFromMeta(parseMeta(row?.note)) };
 }
 export function mergeServiceConfig(globalCfg = {}, staffCfg = {}) {
   const hasGlobal = !!globalCfg.rowId;
   return {
     ...staffCfg,
-    baseSalary: num(staffCfg.baseSalary) || num(globalCfg.baseSalary),
+    baseSalary: staffCfg.baseSalarySet ? num(staffCfg.baseSalary) : num(staffCfg.baseSalary) || num(globalCfg.baseSalary),
     attendanceBonus: hasGlobal ? num(globalCfg.attendanceBonus) : num(staffCfg.attendanceBonus) || num(globalCfg.attendanceBonus),
     receptionBonus: hasGlobal ? num(globalCfg.receptionBonus) : num(staffCfg.receptionBonus) || num(globalCfg.receptionBonus),
     orderCommission: hasGlobal ? num(globalCfg.orderCommission) : num(staffCfg.orderCommission) || num(globalCfg.orderCommission),
@@ -314,13 +370,26 @@ export async function saveServiceConfig(serviceId, input = {}) {
   }
   const current = await getServiceConfig(serviceId);
   const defaults = {};
+  for (const key of ["shiftStart", "shiftEnd"]) {
+    if (input[key] != null && input[key] !== "" && !HHMM_RE.test(String(input[key]).trim())) {
+      throw Object.assign(new Error(`${key === "shiftStart" ? "上班" : "下班"}时间格式应为 HH:MM`), { status: 400 });
+    }
+  }
   const next = {
     employeeCode: String(input.employeeCode || current.employeeCode || "").trim(),
     shiftName: String(input.shiftName || current.shiftName || "默认班次").trim(),
     shiftStart: String(input.shiftStart || current.shiftStart || "09:00").trim(),
     shiftEnd: String(input.shiftEnd || current.shiftEnd || "18:00").trim(),
+    workDays: input.workDays !== undefined ? normalizeWorkDays(input.workDays) : current.workDays,
+    attendanceEnabled: input.attendanceEnabled != null ? input.attendanceEnabled !== false && input.attendanceEnabled !== "false" : current.attendanceEnabled !== false,
+    baseSalarySet: input.baseSalaryClear ? false : input.baseSalary != null && input.baseSalary !== "" ? true : !!current.baseSalarySet,
+    updatedAt: nowIso(),
+    updatedBy: String(input.updatedBy || ""),
+    updatedByName: String(input.updatedByName || ""),
     joinDate: String(input.joinDate || current.joinDate || "").trim(),
-    baseSalary: num(input.baseSalary != null ? input.baseSalary : current.baseSalary != null ? current.baseSalary : defaults.baseSalary),
+    baseSalary: input.baseSalaryClear
+      ? 0
+      : num(input.baseSalary != null && input.baseSalary !== "" ? input.baseSalary : current.baseSalary != null ? current.baseSalary : defaults.baseSalary),
     attendanceBonus: num(
       input.attendanceBonus != null ? input.attendanceBonus : current.attendanceBonus != null ? current.attendanceBonus : defaults.attendanceBonus
     ),
@@ -443,12 +512,13 @@ function viewSession(row = {}, config = {}) {
   const hours = Math.round((mins / 60) * 100) / 100;
   const shiftStart = `${workDate}T${config.shiftStart || "09:00"}:00+08:00`;
   const shiftEnd = `${workDate}T${config.shiftEnd || "18:00"}:00+08:00`;
+  const attend = isAttendanceDay(config, workDate);
   const lateMinutes =
-    sessionType === "normal" && clockInAt
+    attend && sessionType === "normal" && clockInAt
       ? Math.max(0, Math.round((Date.parse(clockInAt) - Date.parse(shiftStart)) / 60000) - num(config.graceMinutes || 0))
       : 0;
   const earlyLeaveMinutes =
-    sessionType === "normal" && clockOutAt
+    attend && sessionType === "normal" && clockOutAt
       ? Math.max(0, Math.round((Date.parse(shiftEnd) - Date.parse(clockOutAt)) / 60000))
       : 0;
   const open = String(row.status || "") === "open" || (!!clockInAt && !clockOutAt);
@@ -517,6 +587,9 @@ function aggregateTodaySessions(config, sessions = [], workDate = todayKey()) {
     isLate: views.some((v) => v.isLate),
     isEarlyLeave: views.some((v) => v.isEarlyLeave),
     isAbsent: !views.length && String(workDate) < todayKey(),
+    scheduledDay: isAttendanceDay(config, workDate),
+    attendanceEnabled: config.attendanceEnabled !== false,
+    attendanceLabel: attendanceLabelOf(views, config, workDate),
     // 核心：下班后仍可再次上班
     canClockIn: !open,
     canClockOut: !!open,
@@ -528,6 +601,16 @@ function aggregateTodaySessions(config, sessions = [], workDate = todayKey()) {
   };
 }
 
+function attendanceLabelOf(views, config, workDate) {
+  if (!views.length) return "";
+  if (!isAttendanceDay(config, workDate)) return config.attendanceEnabled === false ? "不考勤" : "非排班日";
+  const late = views.reduce((sum, v) => sum + num(v.lateMinutes), 0);
+  const early = views.reduce((sum, v) => sum + num(v.earlyLeaveMinutes), 0);
+  const parts = [];
+  if (late > 0) parts.push(`迟到 ${late} 分钟`);
+  if (early > 0) parts.push(`早退 ${early} 分钟`);
+  return parts.length ? parts.join(" · ") : "正常";
+}
 function timeText(value) {
   if (!value) return "";
   try {
@@ -550,13 +633,14 @@ export function calcAttendanceMeta(config, row, workDate = todayKey()) {
   const clockOutAt = row?.shift_end || meta.clockOutAt || "";
   const shiftStart = `${workDate}T${config.shiftStart || "09:00"}:00+08:00`;
   const shiftEnd = `${workDate}T${config.shiftEnd || "18:00"}:00+08:00`;
-  const lateMinutes = clockInAt ? Math.max(0, Math.round((Date.parse(clockInAt) - Date.parse(shiftStart)) / 60000) - num(config.graceMinutes || 0)) : 0;
-  const earlyLeaveMinutes = clockOutAt ? Math.max(0, Math.round((Date.parse(shiftEnd) - Date.parse(clockOutAt)) / 60000)) : 0;
+  const attend = isAttendanceDay(config, workDate);
+  const lateMinutes = attend && clockInAt ? Math.max(0, Math.round((Date.parse(clockInAt) - Date.parse(shiftStart)) / 60000) - num(config.graceMinutes || 0)) : 0;
+  const earlyLeaveMinutes = attend && clockOutAt ? Math.max(0, Math.round((Date.parse(shiftEnd) - Date.parse(clockOutAt)) / 60000)) : 0;
   const hours = workHours(clockInAt, clockOutAt);
   const today = todayKey();
   const isLate = lateMinutes > 0;
   const isEarlyLeave = earlyLeaveMinutes > 0;
-  const isAbsent = !clockInAt && String(workDate) < today;
+  const isAbsent = attend && !clockInAt && String(workDate) < today;
   let attendanceStatus = "未打卡";
   let dutyStatus = "none";
   if (clockInAt && !clockOutAt) {
@@ -686,7 +770,7 @@ export async function clockInService(serviceId, opts = {}) {
     inferSessionType(config, workDate, priorClosed, started);
   const shiftStart = `${workDate}T${config.shiftStart || "09:00"}:00+08:00`;
   const lateMinutes =
-    sessionType === "normal"
+    sessionType === "normal" && isAttendanceDay(config, workDate)
       ? Math.max(0, Math.round((Date.parse(started) - Date.parse(shiftStart)) / 60000) - num(config.graceMinutes || 0))
       : 0;
   const payload = {
@@ -713,6 +797,13 @@ export async function clockInService(serviceId, opts = {}) {
     });
     saved = rows?.[0] || null;
   } catch (err) {
+    if (/23505|duplicate key|one_open/i.test(String(err?.message || ""))) {
+      const raced = await openSessionForService(serviceId);
+      if (raced?.id) {
+        const sessions = await listSessionsForService(serviceId, { workDate });
+        return { row: raced, meta: aggregateTodaySessions(config, sessions, workDate), already: true, elapsedMs: Date.now() - t0 };
+      }
+    }
     // Table missing → fall back to legacy single-day row
     if (/cs_attendance_sessions|PGRST|schema cache|does not exist/i.test(String(err?.message || ""))) {
       return clockInServiceLegacy(serviceId, opts);
@@ -806,7 +897,7 @@ export async function clockOutService(serviceId, opts = {}) {
   const mins = durationMinutes(open.clock_in_at, ended);
   const shiftEnd = `${String(open.work_date || workDate)}T${config.shiftEnd || "18:00"}:00+08:00`;
   const earlyLeaveMinutes =
-    open.session_type === "normal"
+    open.session_type === "normal" && isAttendanceDay(config, String(open.work_date || workDate))
       ? Math.max(0, Math.round((Date.parse(shiftEnd) - Date.parse(ended)) / 60000))
       : 0;
   const payload = {
@@ -1042,8 +1133,17 @@ export async function loadServiceWorkData(serviceId) {
   const earlyLeaveCount =
     sessionViews.filter((v) => v.isEarlyLeave).length ||
     monthAttendance.filter((row) => calcAttendanceMeta(config, row, row.report_date).earlyLeaveMinutes > 0).length;
-  const absenceCount = Math.max(0, num(config.standardDays || 22) - actualDays);
-  const allPerfect = actualDays >= num(config.standardDays || 22) && !lateCount && !earlyLeaveCount && !absenceCount;
+  const attendedDates = daysWithWork.size
+    ? [...daysWithWork]
+    : monthAttendance.filter((row) => !!row.shift_start).map((row) => String(row.report_date));
+  const absence = monthAbsence(config, attendedDates, month, today);
+  const absenceCount = absence.count;
+  const allPerfect =
+    (normalizeWorkDays(config.workDays) ? true : actualDays >= num(config.standardDays || 22)) &&
+    actualDays > 0 &&
+    !lateCount &&
+    !earlyLeaveCount &&
+    !absenceCount;
   const monthOrders = myOrders.filter((row) => String(row.created_at || "").slice(0, 7) === month);
   const completedOrders = myOrders.filter((row) => row.status === "completed");
   const monthCompletedOrders = monthOrders.filter((row) => row.status === "completed");
@@ -1153,6 +1253,7 @@ export async function loadServiceWorkData(serviceId) {
       monthAttendanceDays: actualDays,
       monthLateCount: lateCount,
       monthAbsenceCount: absenceCount,
+    monthAbsenceDates: absence.dates,
       monthOvertimeHours: overtimeHoursMonth,
       estimatedSalary,
       incomeToday,

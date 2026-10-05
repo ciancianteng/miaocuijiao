@@ -2962,7 +2962,7 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
       const t0 = Date.now();
       const workApi = await import("./_customer-service-work.js");
       // Fast path only: no loadBootstrap / wage / conversation reload.
-      const cfg = body.config || body.shiftConfig || null;
+      const cfg = await workApi.loadClockConfig(service.profile.id);
       const result =
         action === "clock_in"
           ? await workApi.clockInService(service.profile.id, { config: cfg })

@@ -918,3 +918,9 @@
   .cs-nav button{flex:0 0 auto;min-width:64px;white-space:nowrap}
   .cs-nav-unread{top:3px;right:3px}
 }
+
+/* Clock panel: one primary action per state */
+.cs-clock-actions .cs-clock-btn{min-height:44px;height:auto;min-width:140px;padding:10px 18px;font-size:15px;touch-action:manipulation}
+.cs-clock-btn[hidden],.cs-clock-done[hidden]{display:none!important}
+.cs-clock-done{margin-top:12px;padding:10px 12px;border-radius:12px;border:1px solid rgba(64,211,154,.35);background:rgba(64,211,154,.08);color:var(--ok);font-weight:800;font-size:14px}
+@media(max-width:640px){.cs-clock-actions .cs-clock-btn{flex:1 1 100%;min-width:0}}
