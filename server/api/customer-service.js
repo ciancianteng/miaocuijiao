@@ -15,6 +15,7 @@ import { companionDb } from "./_companion-media-store.js";
 import {
   approveAndLedger,
   hydrateReceiptReviewers,
+  isTerminalOrderStatus,
   isWalletHoldReceipt,
   latestApprovedForOrders,
   latestReceiptForOrder,
@@ -24,6 +25,7 @@ import {
   rejectProof,
   signedProofUrl,
   staffReviewerNameFromProfile,
+  terminalOrderReviewText,
 } from "./_payment-receipts.js";
 import { bossForCs } from "./_privacy.js";
 import { sendEmailOtp, mailProviderStatus } from "./_mail.js";
@@ -539,7 +541,11 @@ function safeOrder(row, profiles = {}, extras = {}) {
       String(row.note || "").includes("[[COMPLETION_PENDING]]") ||
       String(row.description || "").includes("[[COMPLETION_PENDING]]"),
     note,
-    paymentReview: !!extras.paymentReceipt,
+    paymentReview: !!extras.paymentReceipt && !isTerminalOrderStatus(row.status),
+    paymentReviewNote:
+      extras.paymentReceipt && String(extras.paymentReceipt.status || "pending") === "pending"
+        ? terminalOrderReviewText(row.status)
+        : "",
     paymentProofUrl: extras.paymentProofUrl || "",
     paymentReceiptId: extras.paymentReceipt?.id || "",
     paymentRejectReason: extras.paymentRejectReason || "",

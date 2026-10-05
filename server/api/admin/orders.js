@@ -15,11 +15,13 @@ import {
 } from "../_account-codes.js";
 import {
   hydrateReceiptReviewers,
+  isTerminalOrderStatus,
   latestApprovedForOrders,
   latestRejectedForOrders,
   receiptReviewerFields,
   signedProofUrl,
   staffReviewerNameFromProfile,
+  terminalOrderReviewText,
 } from "../_payment-receipts.js";
 import {
   excludeTestTouchedOnProduction,
@@ -163,16 +165,18 @@ function paymentStatusLabel(status, reviewStatus, row = {}) {
   const rv = String(reviewStatus || "").toLowerCase();
   if (rv === "approved") return "已支付";
   if (rv === "rejected") return "付款已拒绝";
+  if (rv === "pending" && isTerminalOrderStatus(st)) return terminalOrderReviewText(st);
   if (rv === "pending") return "待审核付款";
   if (st === "awaiting_payment") return "待付款";
   if (st === "cancelled") return "已取消";
   if (st && !["awaiting_payment", "cancelled"].includes(st)) return "已支付";
   return "未支付";
 }
-function reviewResultLabel(reviewStatus) {
+function reviewResultLabel(reviewStatus, orderStatus = "") {
   const rv = String(reviewStatus || "").toLowerCase();
   if (rv === "approved") return "已通过";
   if (rv === "rejected") return "已拒绝";
+  if (rv === "pending" && isTerminalOrderStatus(orderStatus)) return terminalOrderReviewText(orderStatus);
   if (rv === "pending") return "待审核";
   return "";
 }
@@ -307,7 +311,7 @@ function safeOrder(row, profiles, extras = {}) {
     paymentReviewerCode: reviewerCode,
     paymentReviewedAt: review.paymentReviewedAt || "",
     paymentReviewStatus: reviewStatus,
-    paymentReviewResult: reviewResultLabel(reviewStatus),
+    paymentReviewResult: reviewResultLabel(reviewStatus, status),
     paymentReviewerRole: review.paymentReviewerRole || review.reviewerRole || "",
     reviewerRole: review.paymentReviewerRole || review.reviewerRole || "",
     paymentRejectReason: review.paymentRejectReason || "",
