@@ -1,6 +1,7 @@
 import { ORDER_STATUS_LABELS, fetchOrdersActivityDesc, sortOrdersByActivityDesc } from "../_order-status.js";
 import { normalizeReviewImages } from "../_review-images.js";
 import { viewServiceSnapshot } from "../_service-standard.js";
+import { sanitizeOrderText, scrubInternalOutput } from "../_output-sanitize.js";
 import {
   completionCountdown,
   formatRemainingLabel,
@@ -58,7 +59,7 @@ const UI_ACTION_MAP = {
 };
 
 function json(res, status, data) {
-  return res.status(status).json(data);
+  return res.status(status).json(scrubInternalOutput(data));
 }
 function hasDb() {
   return REQUIRED_ENV.every((key) => process.env[key]);
@@ -221,7 +222,7 @@ async function loadPaymentReviewMap(orderIds = []) {
   }
   return map;
 }
-function safeOrder(row, profiles, extras = {}) {
+export function safeOrder(row, profiles, extras = {}) {
   const boss = profiles[row.boss_id] || {};
   const companion = profiles[row.companion_id] || {};
   const service = profiles[row.customer_service_id] || {};
@@ -289,7 +290,8 @@ function safeOrder(row, profiles, extras = {}) {
     serviceCode,
     serviceStaffCode: serviceCode,
     game: row.game || companionExtra.game || "",
-    serviceContent: row.service_name || row.title || companionExtra.main_service || row.description || "-",
+    serviceContent:
+      row.service_name || row.title || companionExtra.main_service || sanitizeOrderText(row.description || "") || "-",
     serviceSnapshot: viewServiceSnapshot(row),
     amount: money(row.total_amount),
     totalAmount: money(row.total_amount),
@@ -340,7 +342,7 @@ function safeOrder(row, profiles, extras = {}) {
     cancelledAt: row.cancelled_at || "",
     assignedAt: row.accepted_at || row.claimed_at || "",
     serviceTime: row.scheduled_at || row.started_at || "-",
-    description: row.description || "",
+    description: sanitizeOrderText(row.description || ""),
     orderType: row.order_type || "普通陪玩订单",
     type: row.order_type || "普通陪玩订单",
     companion_id: row.companion_id || "",

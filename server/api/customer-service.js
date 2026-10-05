@@ -29,6 +29,7 @@ import {
 } from "./_payment-receipts.js";
 import { bossForCs } from "./_privacy.js";
 import { sendEmailOtp, mailProviderStatus } from "./_mail.js";
+import { sanitizeOrderText, scrubInternalOutput } from "./_output-sanitize.js";
 import {
   conversationLockedByOther as lockOwnedByOther,
   consultTypeLabel,
@@ -64,7 +65,7 @@ const ASSIGN_LOCKS = new Map();
 const TEST_NOISE_RE = /\[TEST\]|E2E-MSG|E2E[_-]|CHAT-|CS-LINK|SVC-|MSG-|ORDER-CHAT-|acceptance|自动化测试/i;
 const GARBLE_RE = /Ã.|Â.|ä¸|æ.|å.|ç.|è.|é.|ðŸ|ï¼|ï½/;
 
-function json(res, status, data) { return res.status(status).json(data); }
+function json(res, status, data) { return res.status(status).json(scrubInternalOutput(data)); }
 function hasDb() { return REQUIRED_ENV.every((key) => process.env[key]); }
 function restUrl(table, query = "") { return `${process.env.SUPABASE_URL}/rest/v1/${table}${query}`; }
 function authUrl(path) { return `${process.env.SUPABASE_URL}/auth/v1/${path}`; }
@@ -462,7 +463,7 @@ function safeProfile(row) {
     status: row.status || "",
   };
 }
-function safeOrder(row, profiles = {}, extras = {}) {
+export function safeOrder(row, profiles = {}, extras = {}) {
   const boss = profiles[row.boss_id] || {};
   const companion = profiles[row.companion_id] || {};
   const service = profiles[row.customer_service_id] || {};
@@ -499,7 +500,7 @@ function safeOrder(row, profiles = {}, extras = {}) {
       (row.companion_id ? "assigned" : "public"),
     game: row.game || "",
     title: row.title || "",
-    description: row.description || "",
+    description: sanitizeOrderText(row.description || ""),
     serviceSnapshot: viewServiceSnapshot(row),
     hours: money(row.hours),
     unitPrice: money(row.unit_price),
@@ -540,7 +541,7 @@ function safeOrder(row, profiles = {}, extras = {}) {
     completionPending:
       String(row.note || "").includes("[[COMPLETION_PENDING]]") ||
       String(row.description || "").includes("[[COMPLETION_PENDING]]"),
-    note,
+    note: sanitizeOrderText(note),
     paymentReview: !!extras.paymentReceipt && !isTerminalOrderStatus(row.status),
     paymentReviewNote:
       extras.paymentReceipt && String(extras.paymentReceipt.status || "pending") === "pending"
