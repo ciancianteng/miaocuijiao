@@ -1164,3 +1164,22 @@ a.pw-btn{display:inline-flex;align-items:center;justify-content:center;text-deco
 .pw-order-std dt{font-size:12px;font-weight:700;color:var(--pw-muted)}
 .pw-order-std dd{margin:0;font-size:13px;line-height:1.55;white-space:pre-wrap;word-break:break-word}
 .pw-order-std-foot{margin:8px 0 0;font-size:12px;color:var(--pw-dim)}
+
+/* Chat composer: one row (tools | input | send), capped growth, never under keyboard / bottom nav */
+.pw-composer{position:relative;grid-template-columns:auto minmax(0,1fr) auto;gap:8px;align-items:end;padding:10px 12px calc(10px + var(--pw-keyboard-inset,0px))}
+.pw-composer .mcj-composer-tools{grid-column:1;align-self:end;display:flex;gap:4px;padding-bottom:2px}
+.pw-composer textarea{grid-column:2;min-height:44px;height:44px;max-height:120px;padding:11px 14px;border:1px solid var(--pw-line);border-radius:14px;background:rgba(255,255,255,.05);font:inherit;font-size:15px;line-height:1.4;overflow-y:auto}
+.pw-composer textarea:focus{border-color:var(--pw-line-pink);background:rgba(255,255,255,.07)}
+.pw-composer .pw-send-line{grid-column:3;display:block}
+.pw-composer .pw-send-line .pw-btn{min-width:68px;height:44px;border-radius:14px;padding:0 14px}
+.pw-composer .mcj-upload-status{position:absolute;left:16px;top:-18px;font-size:11px;color:var(--pw-dim)}
+.pw-composer .mcj-upload-status:empty{display:none}
+.pw-composer.is-disabled{grid-template-columns:minmax(0,1fr) auto}
+.pw-composer.is-disabled textarea{grid-column:1}
+.pw-composer.is-disabled .pw-send-line{grid-column:2}
+@media (max-width:820px){
+  .pw-composer textarea{font-size:16px}
+  .pw-composer .mcj-composer-tool{width:36px;height:36px}
+  html.pw-kb-open .pw-bottom-nav{display:none}
+  html.pw-kb-open .pw-shell{padding-bottom:0}
+}

@@ -893,7 +893,7 @@ import './mcj-chat-realtime.js';
   function autoResizeComposer(el){
     if(!el||el.tagName!=='TEXTAREA')return;
     el.style.height='auto';
-    var next=Math.min(120,Math.max(56,el.scrollHeight));
+    var next=Math.min(120,Math.max(44,el.scrollHeight));
     el.style.height=next+'px';
   }
   function composerBlockReason(conv){

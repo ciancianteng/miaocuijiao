@@ -900,3 +900,8 @@
   border-color:rgba(255,255,255,.12) !important;
   color:#9ca3af !important;
 }
+
+/* Composer parity with boss / companion: 44px base, 14px radius, grows to 120px */
+.cs-chat-input textarea{height:44px;min-height:44px;border-radius:14px;padding:11px 14px;line-height:1.4;font-size:15px}
+.cs-chat-input .cs-send-btn,
+.cs-chat-input [data-cs-send]{border-radius:14px}@media (max-width:1050px){.cs-chat-input textarea{font-size:16px}}

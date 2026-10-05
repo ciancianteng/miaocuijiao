@@ -2247,7 +2247,13 @@
       }
       var inset=Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
       document.documentElement.style.setProperty('--pw-keyboard-inset', inset+'px');
+      document.documentElement.classList.toggle('pw-kb-open', inset>80);
     }catch(e){}
+  }
+  function autoSizeChatInput(ta){
+    if(!ta)return;
+    ta.style.height='auto';
+    ta.style.height=Math.min(120, Math.max(44, ta.scrollHeight))+'px';
   }
   function bindPwKeyboardInset(){
     if(state._kbBound)return;
@@ -3332,7 +3338,7 @@
         '<button class="mcj-composer-tool" type="button" data-pw-emoji '+(busy?'disabled':'')+' aria-label="表情">😊</button>'+
         '<button class="mcj-composer-tool" type="button" data-pw-image '+(busy?'disabled':'')+' aria-label="图片">🖼</button>'+
         '</div>'+
-        '<textarea name="content" placeholder="输入消息，Enter 发送，Shift+Enter 换行" data-chat-input '+(busy?'disabled':'')+'></textarea>'+
+        '<textarea name="content" rows="1" maxlength="2000" enterkeyhint="send" placeholder="输入消息…" data-chat-input '+(busy?'disabled':'')+'></textarea>'+
         '<div class="pw-send-line"><span class="mcj-upload-status" data-pw-upload-status>'+(busy?'发送中…':'')+'</span><button class="pw-btn primary" type="submit" '+(busy?'disabled':'')+'>发送</button></div>'+
         '</form>';
     }
@@ -6067,6 +6073,9 @@
       }catch(err){}
     },280);
   });
+  document.addEventListener('input',function(e){
+    if(e.target&&e.target.matches&&e.target.matches('[data-chat-input]'))autoSizeChatInput(e.target);
+  });
   document.addEventListener('keydown',function(e){
     if(e.key==='Escape'){
       if(state.drawerOpen||root.querySelector('.pw-account.open')){
@@ -6076,6 +6085,7 @@
     }
     var input=e.target.closest('[data-chat-input]');
     if(!input)return;
+    if(e.isComposing||e.keyCode===229)return;
     if(e.key==='Enter'&&!e.shiftKey){
       e.preventDefault();
       var form=input.closest('form');
@@ -6404,7 +6414,7 @@
         messageType:'text',content:content,createdAt:new Date().toISOString()
       };
       state.chatBusy=true;
-      if(ta)ta.value='';
+      if(ta){ta.value='';autoSizeChatInput(ta);}
       state.inbox.messages=(state.inbox.messages||[]).concat([optimistic]);
       paint({preserveScroll:true});
       api('send_cs_message',{content:content,consult_type:consultType,conversation_id:cid,forceNew:forceNew}).then(function(){

@@ -96,6 +96,25 @@ await test("#20 support page + boss header render the badge slots", () => {
   assert.match(read("src/boss-header.js"), /data-cs-online-badge="compact"/);
 });
 
+// ---------- #17 chat composers ----------
+await test("#17 companion composer: IME-safe Enter, autosize, keyboard inset, 16px on phones", () => {
+  const js = read("src/companion-workbench.js");
+  assert.match(js, /if\(e\.isComposing\|\|e\.keyCode===229\)return;/);
+  assert.match(js, /function autoSizeChatInput\(ta\)/);
+  assert.match(js, /classList\.toggle\('pw-kb-open', inset>80\)/);
+  const css = read("src/companion-workbench.css");
+  assert.match(css, /padding:10px 12px calc\(10px \+ var\(--pw-keyboard-inset,0px\)\)/);
+  assert.match(css, /@media \(max-width:820px\)\{\s*\.pw-composer textarea\{font-size:16px\}/);
+  assert.match(css, /html\.pw-kb-open \.pw-bottom-nav\{display:none\}/);
+});
+await test("#17 CS + boss composers share 44px base / 120px cap / 16px mobile font", () => {
+  const cs = read("src/customer-service-v2.css");
+  assert.match(cs, /\.cs-chat-input textarea\{height:44px;min-height:44px;border-radius:14px/);
+  assert.match(cs, /@media \(max-width:1050px\)\{\.cs-chat-input textarea\{font-size:16px\}\}\s*$/);
+  assert.match(read("src/customer-service-v2.js"), /Math\.min\(120,Math\.max\(44,el\.scrollHeight\)\)/);
+  assert.match(read("src/support-chat.js"), /isComposing/);
+});
+
 const failed = results.filter((r) => !r.ok);
 console.log(`\n${results.length - failed.length}/${results.length} passed`);
 if (failed.length) process.exit(1);
