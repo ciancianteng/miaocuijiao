@@ -1158,9 +1158,13 @@ async function handler(req, res) {
       }
       if (!referenced) referenced = (await readPlatformBanks()).some((b) => bankQrPathOf(b) === path);
       if (referenced) return json(res, 200, { ok: true, discarded: false, message: "图片仍被收款渠道使用，未删除" });
-      await removeBankQr(path);
-      await writeLog(req, "discard_bank_qr", "draft", { path }, null);
-      return json(res, 200, { ok: true, discarded: true, message: "未保存的收款图片已清理" });
+      const discarded = await removeBankQr(path);
+      await writeLog(req, "discard_bank_qr", "draft", { path }, { discarded });
+      return json(res, discarded ? 200 : 502, {
+        ok: discarded,
+        discarded,
+        message: discarded ? "未保存的收款图片已清理" : "收款图片清理失败，请稍后重试",
+      });
     }
 
     if (action === "save_channel") {

@@ -444,12 +444,13 @@
 
   function renderBankEditor(item) {
     item = item || { bank_name: BANK_PROVIDERS[0], currency: "MYR", usage: "充值收款", enabled: true };
+    var hasCustom = (state.bankProviders && state.bankProviders.length ? state.bankProviders : BANK_PROVIDERS).indexOf(item.bank_name) === -1;
     var providerOptions = (state.bankProviders && state.bankProviders.length ? state.bankProviders : BANK_PROVIDERS)
       .map(function (p) {
-        return '<option value="' + esc(p) + '"' + (item.bank_name === p ? " selected" : "") + ">" + esc(p) + "</option>";
+        var selected = item.bank_name === p || (hasCustom && p === "其他");
+        return '<option value="' + esc(p) + '"' + (selected ? " selected" : "") + ">" + esc(p) + "</option>";
       })
       .join("");
-    var hasCustom = (state.bankProviders && state.bankProviders.length ? state.bankProviders : BANK_PROVIDERS).indexOf(item.bank_name) === -1;
     return (
       '<form class="payment-editor" data-bank-form="' +
       esc(item.id || "") +

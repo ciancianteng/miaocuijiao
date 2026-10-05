@@ -6,9 +6,9 @@ import crypto from "node:crypto";
 import {
   assertImageUpload,
   companionDb,
+  companionServiceHeaders,
   createSignedUrl,
   decodeDataUrl,
-  deleteStorageObject,
   ensurePrivateBucket,
   uploadPrivateObject,
 } from "./_companion-media-store.js";
@@ -89,12 +89,20 @@ export async function signBankQr(path) {
   }
 }
 
+/** Storage rejects a body-less DELETE sent with Content-Type: application/json, so use the bulk remove API. */
 export async function removeBankQr(path) {
-  if (!isBankQrPath(path)) return;
+  if (!isBankQrPath(path)) return false;
   try {
-    await deleteStorageObject(BANK_QR_BUCKET, path);
-  } catch {
-    /* object cleanup is best-effort; the row no longer references it */
+    const res = await fetch(`${process.env.SUPABASE_URL}/storage/v1/object/${BANK_QR_BUCKET}`, {
+      method: "DELETE",
+      headers: companionServiceHeaders(),
+      body: JSON.stringify({ prefixes: [path] }),
+    });
+    if (!res.ok && res.status !== 404) throw new Error(`HTTP ${res.status} ${(await res.text()).slice(0, 200)}`);
+    return true;
+  } catch (err) {
+    console.warn("[bank-qr] storage cleanup failed", path, err.message || err);
+    return false;
   }
 }
 
