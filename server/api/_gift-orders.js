@@ -337,6 +337,14 @@ export async function listReviewGiftOrders({ status = "under_review", limit = 10
   });
 }
 
+export async function countPendingGiftOrderReviews() {
+  const rows = await companionDb(
+    "gift_orders",
+    `?status=in.(${[...REVIEWABLE].map(encodeURIComponent).join(",")})&select=id&limit=1000`
+  ).catch(() => []);
+  return Array.isArray(rows) ? rows.length : 0;
+}
+
 export async function signedGiftProofUrl(order, expiresIn = 3600) {
   const path = String(order?.payment_proof_path || "").trim();
   if (!path) return "";
@@ -444,6 +452,18 @@ export async function uploadGiftOrderProof({ orderId, bossId, dataUrl }) {
   }
 
   const proofUrl = await signedGiftProofUrl(updated).catch(() => "");
+  try {
+    const { notifyCustomerServiceStaff } = await import("./_staff-notify.js");
+    await notifyCustomerServiceStaff({
+      kind: "gift_proof",
+      relatedId: updated.order_no || updated.id,
+      title: "新的礼物付款待审核",
+      body: `礼物订单 ${updated.order_no || updated.id} · ${updated.gift_name_snapshot || "礼物"} ×${Number(updated.quantity || 1)}，请到「礼物审核」处理。`,
+      href: "/customer-service/gift-orders",
+    });
+  } catch (err) {
+    console.warn("[gift-orders] notify cs", err?.message || err);
+  }
   return { order: updated, proofUrl };
 }
 

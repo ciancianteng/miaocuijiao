@@ -9,8 +9,8 @@ import './mcj-chat-realtime.js';
     return;
   }
   var SESSION_KEY='mcjServiceSession';
-  var ROUTES={'/customer-service/':'dashboard','/customer-service':'dashboard','/customer-service/login':'login','/customer-service/dashboard':'dashboard','/customer-service/conversations':'conversations','/customer-service/chats':'conversations','/customer-service/orders':'orders','/customer-service/gift-orders':'giftOrders','/customer-service/create-order':'createOrder','/customer-service/compensation':'compensation','/customer-service/reports':'reports','/customer-service/profile':'profile'};
-  var NAV=[['dashboard','工作台','/customer-service/dashboard'],['conversations','统一会话池','/customer-service/conversations'],['orders','订单处理','/customer-service/orders'],['giftOrders','礼物审核','/customer-service/gift-orders'],['compensation','申请补偿','/customer-service/compensation'],['reports','工资中心','/customer-service/reports'],['createOrder','客服代下单','/customer-service/create-order'],['profile','我的资料','/customer-service/profile'],['logout','退出登录','logout']];
+  var ROUTES={'/customer-service/':'dashboard','/customer-service':'dashboard','/customer-service/login':'login','/customer-service/dashboard':'dashboard','/customer-service/conversations':'conversations','/customer-service/chats':'conversations','/customer-service/orders':'orders','/customer-service/gift-orders':'giftOrders','/customer-service/recharges':'recharges','/customer-service/create-order':'createOrder','/customer-service/compensation':'compensation','/customer-service/reports':'reports','/customer-service/profile':'profile'};
+  var NAV=[['dashboard','工作台','/customer-service/dashboard'],['conversations','统一会话池','/customer-service/conversations'],['orders','订单处理','/customer-service/orders'],['giftOrders','礼物审核','/customer-service/gift-orders'],['recharges','充值审核','/customer-service/recharges'],['compensation','申请补偿','/customer-service/compensation'],['reports','工资中心','/customer-service/reports'],['createOrder','客服代下单','/customer-service/create-order'],['profile','我的资料','/customer-service/profile'],['logout','退出登录','logout']];
   var HIDDEN_MVP_ROUTES={};
   var Auth=window.MCJAuthShell;
   var softRefreshSeq=0;
@@ -1218,6 +1218,7 @@ import './mcj-chat-realtime.js';
     else if(next==='conversations')url='/customer-service/conversations';
     else if(next==='orders')url='/customer-service/orders';
     else if(next==='giftOrders')url='/customer-service/gift-orders';
+    else if(next==='recharges')url='/customer-service/recharges';
     else if(next==='profile')url='/customer-service/profile';
     history.pushState(null,'',url);
     state.route=next;
@@ -1914,6 +1915,7 @@ import './mcj-chat-realtime.js';
     return softRefresh();
   }
   function startPoll(){
+    startReviewBadgePoll();
     if(window.__MCJCsPoll)return;
     bindPoolRealtime();
     window.__MCJCsPoll=setInterval(function(){
@@ -2109,14 +2111,14 @@ import './mcj-chat-realtime.js';
       });
     }
   }
-  function title(){return ({dashboard:'客服工作台',conversations:'统一会话池',orders:'订单处理',giftOrders:'礼物审核',createOrder:'客服代下单',compensation:'申请补偿',reports:'工资中心',profile:'我的资料'})[state.route]||'客服端'}
+  function title(){return ({dashboard:'客服工作台',conversations:'统一会话池',orders:'订单处理',giftOrders:'礼物审核',recharges:'充值审核',createOrder:'客服代下单',compensation:'申请补偿',reports:'工资中心',profile:'我的资料'})[state.route]||'客服端'}
   function renderShell(){
     var staff=(state.data&&state.data.staff)||(state.session&&state.session.user)||{};
     recomputeSummaryFromConversations();
     var unread=Number((state.data&&state.data.summary&&state.data.summary.unreadMessages)||0)||0;
     root.innerHTML='<div class="cs-shell"><aside class="cs-side"><div class="cs-brand"><strong>MEOW CUI JIAO</strong><span>Customer Service</span></div><nav class="cs-nav">'+NAV.map(function(n){
       if(n[0]==='logout')return '<button type="button" data-logout>'+n[1]+'</button>';
-      var badge=n[0]==='conversations'?('<b class="cs-nav-unread" data-nav-unread'+(unread?'':' hidden')+'>'+(unread>99?'99+':String(unread||''))+'</b>'):'';
+      var badge=n[0]==='conversations'?('<b class="cs-nav-unread" data-nav-unread'+(unread?'':' hidden')+'>'+(unread>99?'99+':String(unread||''))+'</b>'):reviewBadgeHtml(n[0]);
       return '<button type="button" class="'+(state.route===n[0]?'active':'')+'" data-route="'+n[2]+'">'+n[1]+badge+'</button>';
     }).join('')+'</nav></aside><section class="cs-main"><header class="cs-top"><div><h1>'+title()+'</h1><p>客服端只处理会话与订单主流程。</p></div><div class="cs-account"><span>'+esc(staff.name||staff.email||'客服')+'</span></div></header><main class="cs-page" data-route="'+esc(state.route||'dashboard')+'">'+pageHtml()+'</main></section></div>'+noticeHtml();
   }
@@ -2130,6 +2132,7 @@ import './mcj-chat-realtime.js';
     if(state.route==='conversations')return note+conversationsHtml();
     if(state.route==='orders')return note+ordersHtml();
     if(state.route==='giftOrders')return note+giftOrdersHtml();
+    if(state.route==='recharges')return note+rechargesHtml();
     if(state.route==='compensation')return note+compensationHtml();
     if(state.route==='reports')return note+reportsHtml();
     if(state.route==='createOrder')return (state.loading?note:'')+createOrderHtml();
@@ -2926,6 +2929,7 @@ import './mcj-chat-realtime.js';
     }).catch(function(err){
       giftOrdersState.loading=false;giftOrdersState.error=err.message||'加载失败';paint();
     });
+    api('mark_staff_notifications_read',{kinds:['gift_proof']}).catch(function(){});
   }
   function giftOrdersHtml(){
     if(!giftOrdersState._booted){giftOrdersState._booted=true;setTimeout(loadGiftOrders,0)}
@@ -2960,6 +2964,113 @@ import './mcj-chat-realtime.js';
       }).join('')+'</tbody></table></section>';
     return '<div class="cs-page-head"><div><h2>礼物审核</h2><p>审核付款截图；通过后礼物到账并进入礼物墙。</p></div></div>'+
       '<div class="cs-actions" style="margin-bottom:12px">'+tabs+'<button class="cs-btn" data-gift-reload>刷新</button></div>'+body;
+  }
+  var reviewBadges={giftOrders:0,recharges:0,loaded:false,busy:false,timer:null};
+  function reviewBadgeHtml(key){
+    if(key!=='giftOrders'&&key!=='recharges')return '';
+    var n=Number(reviewBadges[key]||0)||0;
+    return '<b class="cs-nav-unread" data-nav-review="'+key+'"'+(n?'':' hidden')+'>'+(n>99?'99+':String(n||''))+'</b>';
+  }
+  function paintReviewBadges(){
+    Array.prototype.forEach.call(root.querySelectorAll('[data-nav-review]'),function(el){
+      var n=Number(reviewBadges[el.getAttribute('data-nav-review')]||0)||0;
+      el.textContent=n>99?'99+':String(n||'');
+      if(n)el.removeAttribute('hidden');else el.setAttribute('hidden','');
+    });
+  }
+  function showReviewNotice(text,path){
+    var el=document.getElementById('csReviewNotice');
+    if(!el){
+      el=document.createElement('button');
+      el.type='button';
+      el.id='csReviewNotice';
+      el.className='cs-review-notice';
+      el.addEventListener('click',function(){
+        var p=el.getAttribute('data-path');
+        if(el.parentNode)el.parentNode.removeChild(el);
+        if(p)go(p);
+      });
+      document.body.appendChild(el);
+    }
+    el.setAttribute('data-path',path);
+    el.textContent=text+' · 点击查看';
+    clearTimeout(el._t);
+    el._t=setTimeout(function(){if(el.parentNode)el.parentNode.removeChild(el);},10000);
+  }
+  function refreshReviewBadges(){
+    if(reviewBadges.busy||!state.session||!state.session.token||isLoginView())return Promise.resolve();
+    reviewBadges.busy=true;
+    return api('review_badges',{}).then(function(res){
+      var c=(res&&res.counts)||{};
+      var nextRecharge=Number(c.recharges||0)||0, nextGift=Number(c.giftOrders||0)||0;
+      if(reviewBadges.loaded){
+        if(nextRecharge>reviewBadges.recharges&&state.route!=='recharges')showReviewNotice('新的充值凭证待审核（'+nextRecharge+'）','/customer-service/recharges');
+        else if(nextGift>reviewBadges.giftOrders&&state.route!=='giftOrders')showReviewNotice('新的礼物付款待审核（'+nextGift+'）','/customer-service/gift-orders');
+      }
+      reviewBadges.recharges=nextRecharge;reviewBadges.giftOrders=nextGift;reviewBadges.loaded=true;
+      paintReviewBadges();
+    }).catch(function(){}).then(function(){reviewBadges.busy=false;});
+  }
+  function startReviewBadgePoll(){
+    if(reviewBadges.timer)return;
+    refreshReviewBadges();
+    reviewBadges.timer=setInterval(function(){if(!document.hidden)refreshReviewBadges();},8000);
+    document.addEventListener('visibilitychange',function(){if(!document.hidden)refreshReviewBadges();});
+  }
+  var rechargesState={loading:false,items:[],filter:'pending_review',error:'',busyId:''};
+  function rechargeStatusLabel(st){
+    return ({pending_payment:'待付款',pending_review:'待审核',paid:'已到账',credited:'已到账',rejected:'已拒绝',cancelled:'已取消',expired:'已过期'})[st]||st||'-';
+  }
+  function rechargeMethodLabel(m){
+    return ({tng:"Touch 'n Go",touchngo:"Touch 'n Go",duitnow:'DuitNow',bank:'银行转账',bank_transfer:'银行转账',fpx:'FPX',manual:'线下转账'})[String(m||'').toLowerCase()]||m||'-';
+  }
+  function loadRecharges(){
+    rechargesState.loading=true;rechargesState.error='';paint();
+    api('list_recharges',{status:rechargesState.filter||'pending_review'}).then(function(res){
+      rechargesState.items=Array.isArray(res.items)?res.items:[];
+      rechargesState.loading=false;paint();
+    }).catch(function(err){
+      rechargesState.loading=false;rechargesState.error=err.message||'加载失败';paint();
+    });
+    api('mark_staff_notifications_read',{kinds:['recharge_proof']}).catch(function(){});
+  }
+  function rechargesHtml(){
+    if(!rechargesState._booted){rechargesState._booted=true;setTimeout(loadRecharges,0)}
+    var filters=[['pending_review','待审核'],['paid','已到账'],['rejected','已拒绝']];
+    var tabs=filters.map(function(f){
+      return '<button type="button" class="cs-btn'+(rechargesState.filter===f[0]?' active':'')+'" data-recharge-filter="'+f[0]+'">'+f[1]+(f[0]==='pending_review'&&reviewBadges.recharges?' ('+reviewBadges.recharges+')':'')+'</button>';
+    }).join('');
+    var focus='';
+    try{focus=new URLSearchParams(location.search).get('paymentNo')||'';}catch(e){}
+    var body='';
+    if(rechargesState.loading&&!rechargesState.items.length) body='<div class="cs-card">加载充值记录…</div>';
+    else if(rechargesState.error) body='<div class="cs-card">'+esc(rechargesState.error)+' <button class="cs-btn" data-recharge-reload>重试</button></div>';
+    else if(!rechargesState.items.length) body='<div class="cs-card">'+(rechargesState.filter==='pending_review'?'暂无待审核的充值':'暂无记录')+'</div>';
+    else body='<section class="cs-table-wrap"><table class="cs-table cs-recharge-table"><thead><tr><th>充值单号</th><th>老板</th><th>金额</th><th>到账猫粮</th><th>付款方式</th><th>凭证</th><th>提交时间</th><th>状态</th><th>审核</th><th>操作</th></tr></thead><tbody>'+
+      rechargesState.items.map(function(r){
+        var proofCell=r.proofUrl
+          ?('<button type="button" class="cs-proof-thumb-btn" data-proof-lightbox="'+esc(r.proofUrl)+'" title="查看付款截图"><img class="cs-proof-thumb" src="'+esc(r.proofUrl)+'" alt="付款凭证" loading="lazy"></button>')
+          :'<span class="cs-proof-fallback">'+(r.hasProof?'截图不可用':'未上传')+'</span>';
+        var busy=rechargesState.busyId===r.paymentNo;
+        var actions=r.status==='pending_review'
+          ?('<button class="cs-btn primary" data-recharge-approve="'+esc(r.paymentNo)+'"'+(busy||!r.hasProof?' disabled':'')+'>'+(busy?'处理中…':'通过')+'</button> <button class="cs-btn danger" data-recharge-reject="'+esc(r.paymentNo)+'"'+(busy?' disabled':'')+'>拒绝</button>')
+          :'-';
+        var reviewer=r.reviewedByStaffName?esc(r.reviewedByStaffName)+'<br><small>'+esc(fmtOrderDateTime(r.reviewedAt||r.creditedAt))+'</small>':'-';
+        var bonus=Number(r.bonusCatFood||0)>0?'<br><small>含赠送 '+esc(r.bonusCatFood)+'</small>':'';
+        return '<tr data-recharge-row="'+esc(r.paymentNo)+'"'+(focus&&focus===r.paymentNo?' class="cs-row-focus"':'')+'>'+
+          '<td>'+esc(r.paymentNo)+'</td>'+
+          '<td>'+esc(r.bossName||'-')+(r.bossEmail?'<br><small>'+esc(r.bossEmail)+'</small>':'')+'</td>'+
+          '<td>RM '+esc(Number(r.amountRm||0).toFixed(2))+'</td>'+
+          '<td>'+esc(r.totalCatFood)+bonus+'</td>'+
+          '<td>'+esc(rechargeMethodLabel(r.paymentMethod))+'</td>'+
+          '<td>'+proofCell+'</td>'+
+          '<td>'+esc(fmtOrderDateTime(r.submittedAt||r.createdAt))+'</td>'+
+          '<td>'+esc(rechargeStatusLabel(r.status))+(r.rejectReason?'<br><small>'+esc(r.rejectReason)+'</small>':'')+'</td>'+
+          '<td>'+reviewer+'</td>'+
+          '<td><div class="cs-actions">'+actions+'</div></td></tr>';
+      }).join('')+'</tbody></table></section>';
+    return '<div class="cs-page-head"><div><h2>充值审核</h2><p>核对付款截图与金额；通过后猫粮自动入账（同一笔只会入账一次），拒绝不会入账并通知老板。</p></div></div>'+
+      '<div class="cs-actions" style="margin-bottom:12px">'+tabs+'<button class="cs-btn" data-recharge-reload>刷新</button></div>'+body;
   }
   function ordersHtml(){
     var rows=((state.data&&state.data.orders)||[]).slice().filter(function(o){
@@ -3154,7 +3265,7 @@ import './mcj-chat-realtime.js';
     }
     return '<div class="cs-page-head"><div><h2>客服代下单</h2><p>客服根据老板需求代为创建订单。可通过老板 UID 识别账号。</p></div></div><form class="cs-card cs-form" data-order-form><label>选择老板<select name="boss_id"><option value="">请选择老板</option>'+bosses.map(function(b){return '<option value="'+esc(b.id)+'" '+(draft&&draft.bossId===b.id?'selected':'')+'>'+esc(b.bossUid||b.uid||'')+' / '+esc(b.name)+'</option>'}).join('')+'</select></label>'+bossesTip+'<label>或输入老板 UID<input name="boss_uid" placeholder="例如 MCJ00001" value=""></label><label>发布方式<select name="companion_id"><option value="">A · 发布到抢单大厅（公开抢单）</option>'+companions.map(function(p){return '<option value="'+esc(p.id)+'">B · 指定陪玩：'+esc(p.name)+' / '+esc((p.companionCode||p.publicId||(p.companionUid?('PW'+String(p.companionUid).padStart(5,'0')):''))||p.id)+' / '+esc(p.game||'-')+' / '+money(p.price)+'</option>'}).join('')+'</select></label>'+companionsTip+serviceField+'<label>订单类型<input name="order_type" value="'+(draft?'gameplay_mall':'customer_service')+'"></label><label>需求说明<textarea name="description" required>'+(draft?('更多玩法商品：'+(draft.name||'')+'（ID：'+(draft.productId||'')+'）\n计价：'+(draft.unit||'')+'\n数量：\n时长：\n游戏区服：\n开始时间：\n备注：'):'')+'</textarea></label><label>时长<input name="hours" type="number" min="1" value="1" required></label><label>单价 RM<input name="unit_price" type="number" min="0" value="'+esc(draft&&draft.price||'')+'" required></label><label>总金额 RM<input name="total_amount" type="number" min="1" value="'+esc(draft&&draft.price||'')+'" required></label><button class="cs-btn primary" type="submit">创建订单</button></form>';
   }
-  function reportsHtml(){var work=(state.data&&state.data.workData)||{},salary=work.salary||{},cur=salary.current||{},history=salary.history||[],attRows=(work.attendance&&work.attendance.rows)||[],notices=(state.data&&state.data.notifications)||[],payrolls=(state.data&&state.data.payrolls)||[],settlements=(state.data&&state.data.commissionSettlements)||work.commissionSettlements||[],sum=(state.data&&state.data.summary)||{},cfg=work.config||{},withdrawable=sum.withdrawableSalary!=null?sum.withdrawableSalary:(cur.totalSalary||0);var noticeBlock=notices.length?'<section class="cs-card" style="margin-bottom:14px"><h3 style="margin:0 0 8px">工资通知</h3>'+notices.slice(0,8).map(function(n){return '<div style="padding:8px 0;border-bottom:1px solid #eee"><strong>'+esc(n.title||'通知')+'</strong><div style="color:#9ca3af;font-size:12px;margin-top:4px">'+esc(n.body||'')+'</div><div style="color:#6b7280;font-size:11px;margin-top:4px">'+esc(n.at||'')+'</div></div>'}).join('')+'</section>':'';var withdrawBlock='<section class="cs-card" style="margin-bottom:14px"><h3 style="margin:0 0 8px">每周五统一结算</h3><p style="margin:0 0 10px;color:#6b7280;font-size:13px">'+esc(((state.data&&state.data.weeklySettlement)||{}).csBannerBody||'周四 23:59 前 → 本周五；截止后 → 下周五。金额系统自动计算，不可手填。')+'</p><div class="cs-info-list"><div><span>本周可结算工资</span><strong>'+money(((state.data&&state.data.payrollSummary)||{}).settleableAmount!=null?state.data.payrollSummary.settleableAmount:withdrawable)+'</strong></div><div><span>已申请金额</span><strong>'+money(((state.data&&state.data.payrollSummary)||{}).appliedAmount||0)+'</strong></div><div><span>待周五发放金额</span><strong>'+money(((state.data&&state.data.payrollSummary)||{}).pendingFridayAmount||0)+'</strong></div><div><span>预计发放日期</span><strong>'+esc((((state.data&&state.data.weeklySettlement)||{}).nextSettlementDate||((state.data&&state.data.payrollSummary)||{}).nextSettlementDate||'-'))+( ((state.data&&state.data.weeklySettlement)||{}).nextSettlementDate?'（星期五）':'')+'</strong></div><div><span>可申请金额</span><strong>'+money(withdrawable)+'</strong></div></div><div class="cs-actions" style="margin-top:12px"><button class="cs-btn primary" type="button" data-request-salary-withdraw '+(Number(withdrawable)<=0?'disabled':'')+'>申请本周结算（'+money(withdrawable)+'）</button></div></section>';var rewardBlock='<section class="cs-table-wrap" style="margin-top:14px"><h3 style="margin:0 0 10px">奖励记录</h3><table class="cs-table"><thead><tr><th>订单号</th><th>奖励类型</th><th>固定奖励</th><th>提成</th><th>夜班补贴</th><th>全勤奖励</th><th>退款扣回</th><th>最终金额</th><th>状态</th></tr></thead><tbody>'+(settlements.length?settlements.map(function(r){return '<tr><td>'+esc(r.orderNo||'-')+'</td><td>'+esc(r.rewardType||'order_commission')+'</td><td>'+money(r.fixedRewardRm||0)+'</td><td>'+money(r.percentCommissionRm||0)+'</td><td>'+money(r.nightShiftRm||0)+'</td><td>'+money(r.attendanceBonusRm||0)+'</td><td>'+money(r.clawbackRm||0)+'</td><td>'+money(r.finalAmountRm||0)+'</td><td>'+esc(r.status||'-')+'</td></tr>'}).join(''):'<tr><td colspan="9">暂无奖励记录（完成订单后按后台佣金设置自动入账）</td></tr>')+'</tbody></table></section>';var payrollBlock='<section class="cs-table-wrap" style="margin-top:14px"><h3 style="margin:0 0 10px">历史结算记录</h3><table class="cs-table"><thead><tr><th>单号</th><th>周期</th><th>底薪</th><th>奖金</th><th>扣款</th><th>应发</th><th>预计发放</th><th>状态</th><th></th></tr></thead><tbody>'+(payrolls.length?payrolls.map(function(p){return '<tr><td>'+esc(p.payrollNo||'-')+'</td><td>'+esc((p.periodStart||'')+' ~ '+(p.periodEnd||''))+'</td><td>'+money(p.baseSalaryRm||0)+'</td><td>'+money(p.bonusRm||0)+'</td><td>'+money(p.deductionRm||0)+'</td><td>'+money(p.netSalaryRm||0)+'</td><td>'+esc(p.settlementDate||'-')+'</td><td>'+esc(p.statusText||p.status||'-')+'</td><td>'+(p.status!=='completed'?'<button class="cs-btn ghost" type="button" data-payroll-appeal="'+esc(p.id)+'">申诉</button>':'-')+'</td></tr>'}).join(''):'<tr><td colspan="9">暂无发放记录</td></tr>')+'</tbody></table></section>';return '<div class="cs-page-head"><div><h2>工资中心</h2><p>底薪/全勤/夜班/每单奖励/提成等全部实时读取后台佣金设置；订单提成按结算快照入账，改配置不影响历史单。</p></div></div>'+noticeBlock+withdrawBlock+'<section class="cs-grid cs-metrics">'+metric('基础工资',money(cur.baseSalary||0))+metric('全勤奖励',money(cur.attendanceBonus||0))+metric('接待奖励',money(cur.receptionBonus||0))+metric('订单提成',money(cur.orderCommission||0))+metric('夜班补贴',money(cur.nightShiftAllowance||0))+metric('迟到扣款',money(cur.lateDeduction||0))+metric('缺勤扣款',money(cur.absenceDeduction||0))+metric('其他调整',money(cur.otherAdjustment||0))+metric('本月预计工资',money(cur.totalSalary||0))+metric('工资状态',cur.status||'统计中')+'</section><section class="cs-table-wrap" style="margin-top:14px"><h3 style="margin:0 0 10px">本月打卡（工资计算依据）</h3><table class="cs-table"><thead><tr><th>日期</th><th>上班</th><th>下班</th><th>工时</th><th>迟到</th><th>缺勤</th><th>状态</th></tr></thead><tbody>'+(attRows.length?attRows.map(function(r){return '<tr><td>'+esc(r.reportDate||r.date||'-')+'</td><td>'+esc(r.clockInText||'-')+'</td><td>'+esc(r.clockOutText||'-')+'</td><td>'+esc(r.workHours!=null?r.workHours:'-')+'</td><td>'+esc(r.isLate?'是':'否')+'</td><td>'+esc(r.isAbsent?'是':'否')+'</td><td>'+esc(r.attendanceStatus||'-')+'</td></tr>'}).join(''):'<tr><td colspan="7">暂无打卡记录</td></tr>')+'</tbody></table></section>'+rewardBlock+payrollBlock+'<section class="cs-table-wrap" style="margin-top:14px"><table class="cs-table"><thead><tr><th>月份</th><th>基础工资</th><th>全勤奖励</th><th>接待奖励</th><th>订单提成</th><th>扣款合计</th><th>预计工资</th><th>状态</th></tr></thead><tbody>'+(history.length?history.map(function(r){var deductions=(Number(r.lateDeduction||0)+Number(r.absenceDeduction||0)+Number(r.earlyLeaveDeduction||0));return '<tr><td>'+esc(r.salaryMonth||'-')+'</td><td>'+money(r.baseSalary||0)+'</td><td>'+money(r.attendanceBonus||0)+'</td><td>'+money(r.receptionBonus||0)+'</td><td>'+money(r.orderCommission||0)+'</td><td>'+money(deductions)+'</td><td>'+money(r.totalSalary||0)+'</td><td>'+esc(r.status||'统计中')+'</td></tr>'}).join(''):'<tr><td colspan="8">暂无工资记录</td></tr>')+'</tbody></table></section>'}
+  function reportsHtml(){var work=(state.data&&state.data.workData)||{},salary=work.salary||{},cur=salary.current||{},history=salary.history||[],attRows=(work.attendance&&work.attendance.rows)||[],notices=((state.data&&state.data.notifications)||[]).filter(function(n){return n.kind!=='recharge_proof'&&n.kind!=='gift_proof'}),payrolls=(state.data&&state.data.payrolls)||[],settlements=(state.data&&state.data.commissionSettlements)||work.commissionSettlements||[],sum=(state.data&&state.data.summary)||{},cfg=work.config||{},withdrawable=sum.withdrawableSalary!=null?sum.withdrawableSalary:(cur.totalSalary||0);var noticeBlock=notices.length?'<section class="cs-card" style="margin-bottom:14px"><h3 style="margin:0 0 8px">工资通知</h3>'+notices.slice(0,8).map(function(n){return '<div style="padding:8px 0;border-bottom:1px solid #eee"><strong>'+esc(n.title||'通知')+'</strong><div style="color:#9ca3af;font-size:12px;margin-top:4px">'+esc(n.body||'')+'</div><div style="color:#6b7280;font-size:11px;margin-top:4px">'+esc(n.at||'')+'</div></div>'}).join('')+'</section>':'';var withdrawBlock='<section class="cs-card" style="margin-bottom:14px"><h3 style="margin:0 0 8px">每周五统一结算</h3><p style="margin:0 0 10px;color:#6b7280;font-size:13px">'+esc(((state.data&&state.data.weeklySettlement)||{}).csBannerBody||'周四 23:59 前 → 本周五；截止后 → 下周五。金额系统自动计算，不可手填。')+'</p><div class="cs-info-list"><div><span>本周可结算工资</span><strong>'+money(((state.data&&state.data.payrollSummary)||{}).settleableAmount!=null?state.data.payrollSummary.settleableAmount:withdrawable)+'</strong></div><div><span>已申请金额</span><strong>'+money(((state.data&&state.data.payrollSummary)||{}).appliedAmount||0)+'</strong></div><div><span>待周五发放金额</span><strong>'+money(((state.data&&state.data.payrollSummary)||{}).pendingFridayAmount||0)+'</strong></div><div><span>预计发放日期</span><strong>'+esc((((state.data&&state.data.weeklySettlement)||{}).nextSettlementDate||((state.data&&state.data.payrollSummary)||{}).nextSettlementDate||'-'))+( ((state.data&&state.data.weeklySettlement)||{}).nextSettlementDate?'（星期五）':'')+'</strong></div><div><span>可申请金额</span><strong>'+money(withdrawable)+'</strong></div></div><div class="cs-actions" style="margin-top:12px"><button class="cs-btn primary" type="button" data-request-salary-withdraw '+(Number(withdrawable)<=0?'disabled':'')+'>申请本周结算（'+money(withdrawable)+'）</button></div></section>';var rewardBlock='<section class="cs-table-wrap" style="margin-top:14px"><h3 style="margin:0 0 10px">奖励记录</h3><table class="cs-table"><thead><tr><th>订单号</th><th>奖励类型</th><th>固定奖励</th><th>提成</th><th>夜班补贴</th><th>全勤奖励</th><th>退款扣回</th><th>最终金额</th><th>状态</th></tr></thead><tbody>'+(settlements.length?settlements.map(function(r){return '<tr><td>'+esc(r.orderNo||'-')+'</td><td>'+esc(r.rewardType||'order_commission')+'</td><td>'+money(r.fixedRewardRm||0)+'</td><td>'+money(r.percentCommissionRm||0)+'</td><td>'+money(r.nightShiftRm||0)+'</td><td>'+money(r.attendanceBonusRm||0)+'</td><td>'+money(r.clawbackRm||0)+'</td><td>'+money(r.finalAmountRm||0)+'</td><td>'+esc(r.status||'-')+'</td></tr>'}).join(''):'<tr><td colspan="9">暂无奖励记录（完成订单后按后台佣金设置自动入账）</td></tr>')+'</tbody></table></section>';var payrollBlock='<section class="cs-table-wrap" style="margin-top:14px"><h3 style="margin:0 0 10px">历史结算记录</h3><table class="cs-table"><thead><tr><th>单号</th><th>周期</th><th>底薪</th><th>奖金</th><th>扣款</th><th>应发</th><th>预计发放</th><th>状态</th><th></th></tr></thead><tbody>'+(payrolls.length?payrolls.map(function(p){return '<tr><td>'+esc(p.payrollNo||'-')+'</td><td>'+esc((p.periodStart||'')+' ~ '+(p.periodEnd||''))+'</td><td>'+money(p.baseSalaryRm||0)+'</td><td>'+money(p.bonusRm||0)+'</td><td>'+money(p.deductionRm||0)+'</td><td>'+money(p.netSalaryRm||0)+'</td><td>'+esc(p.settlementDate||'-')+'</td><td>'+esc(p.statusText||p.status||'-')+'</td><td>'+(p.status!=='completed'?'<button class="cs-btn ghost" type="button" data-payroll-appeal="'+esc(p.id)+'">申诉</button>':'-')+'</td></tr>'}).join(''):'<tr><td colspan="9">暂无发放记录</td></tr>')+'</tbody></table></section>';return '<div class="cs-page-head"><div><h2>工资中心</h2><p>底薪/全勤/夜班/每单奖励/提成等全部实时读取后台佣金设置；订单提成按结算快照入账，改配置不影响历史单。</p></div></div>'+noticeBlock+withdrawBlock+'<section class="cs-grid cs-metrics">'+metric('基础工资',money(cur.baseSalary||0))+metric('全勤奖励',money(cur.attendanceBonus||0))+metric('接待奖励',money(cur.receptionBonus||0))+metric('订单提成',money(cur.orderCommission||0))+metric('夜班补贴',money(cur.nightShiftAllowance||0))+metric('迟到扣款',money(cur.lateDeduction||0))+metric('缺勤扣款',money(cur.absenceDeduction||0))+metric('其他调整',money(cur.otherAdjustment||0))+metric('本月预计工资',money(cur.totalSalary||0))+metric('工资状态',cur.status||'统计中')+'</section><section class="cs-table-wrap" style="margin-top:14px"><h3 style="margin:0 0 10px">本月打卡（工资计算依据）</h3><table class="cs-table"><thead><tr><th>日期</th><th>上班</th><th>下班</th><th>工时</th><th>迟到</th><th>缺勤</th><th>状态</th></tr></thead><tbody>'+(attRows.length?attRows.map(function(r){return '<tr><td>'+esc(r.reportDate||r.date||'-')+'</td><td>'+esc(r.clockInText||'-')+'</td><td>'+esc(r.clockOutText||'-')+'</td><td>'+esc(r.workHours!=null?r.workHours:'-')+'</td><td>'+esc(r.isLate?'是':'否')+'</td><td>'+esc(r.isAbsent?'是':'否')+'</td><td>'+esc(r.attendanceStatus||'-')+'</td></tr>'}).join(''):'<tr><td colspan="7">暂无打卡记录</td></tr>')+'</tbody></table></section>'+rewardBlock+payrollBlock+'<section class="cs-table-wrap" style="margin-top:14px"><table class="cs-table"><thead><tr><th>月份</th><th>基础工资</th><th>全勤奖励</th><th>接待奖励</th><th>订单提成</th><th>扣款合计</th><th>预计工资</th><th>状态</th></tr></thead><tbody>'+(history.length?history.map(function(r){var deductions=(Number(r.lateDeduction||0)+Number(r.absenceDeduction||0)+Number(r.earlyLeaveDeduction||0));return '<tr><td>'+esc(r.salaryMonth||'-')+'</td><td>'+money(r.baseSalary||0)+'</td><td>'+money(r.attendanceBonus||0)+'</td><td>'+money(r.receptionBonus||0)+'</td><td>'+money(r.orderCommission||0)+'</td><td>'+money(deductions)+'</td><td>'+money(r.totalSalary||0)+'</td><td>'+esc(r.status||'统计中')+'</td></tr>'}).join(''):'<tr><td colspan="8">暂无工资记录</td></tr>')+'</tbody></table></section>'}
   function reportStatus(s){return ({pending:'待审核',approved:'已批准',rejected:'已拒绝',paid:'已支付',completed:'已发放'})[s]||s||'-'}
   function profileHtml(){var s=(state.data&&state.data.staff)||state.session.user||{},work=(state.data&&state.data.workData)||{},cfg=work.config||{},att=work.attendance||{},sum=(state.data&&state.data.summary)||{},csName=String(s.name||s.displayName||'').trim()||'客服',avatar='<div class="cs-avatar" style="width:64px;height:64px;display:grid;place-items:center">'+esc(csName.slice(0,1))+'</div>';var attText=dataUnavailable()?'--':((att.actualDays!=null||att.standardDays!=null)?((att.actualDays!=null?att.actualDays:'--')+' / '+(att.standardDays!=null?att.standardDays:'--')):'--');var histLen=work.salary&&work.salary.history&&work.salary.history.length;var histText=dataUnavailable()?'--':(histLen!=null?histLen+' 条':'--');var joinText=dataUnavailable()?(cfg.joinDate?esc(cfg.joinDate):'--'):esc(cfg.joinDate||'-');return '<section class="cs-card"><h2>我的资料</h2><div class="cs-user-card">'+avatar+'<div><strong>'+esc(csName)+'</strong><div style="color:#9ca3af;margin-top:4px">'+esc(cfg.shiftName||'默认班次')+'</div></div></div><div class="cs-info-list"><div><span>当前班次</span><strong>'+esc((cfg.shiftStart||'09:00')+' - '+(cfg.shiftEnd||'18:00'))+'</strong></div><div><span>入职日期</span><strong>'+joinText+'</strong></div><div><span>在线状态</span><strong>'+esc(sum.currentReceptions>0?'接待中':'在线')+'</strong></div><div><span>今日打卡状态</span><strong>'+esc((work.todayAttendance&&work.todayAttendance.attendanceStatus)||'未打卡')+'</strong></div><div><span>本月出勤</span><strong>'+esc(attText)+'</strong></div><div><span>本月预计工资</span><strong>'+moneyOrDash(sum.estimatedSalary!=null?sum.estimatedSalary:null)+'</strong></div><div><span>历史工资记录</span><strong>'+esc(histText)+'</strong></div></div>'+(dataUnavailable()?'<p style="margin:12px 0 0;color:#f59e0b;font-size:13px">数据暂不可用</p>':'')+'</section><section class="cs-card" style="margin-top:14px"><h3 style="margin:0 0 10px">消息通知</h3><div id="mcjWebPushSettingsMount" class="mcj-webpush-cs-mount"></div><p style="margin:10px 0 0;color:#9ca3af;font-size:12px;line-height:1.45">开启后可及时收到订单与会话相关推送；关闭开关仅取消本机订阅。</p></section>'}
   function ensureCsWebPushScript(){
@@ -3780,7 +3891,7 @@ import './mcj-chat-realtime.js';
     if(giftApprove){
       if(!confirm('确认通过该礼物订单？通过后礼物将正式到账。'))return;
       api('approve_gift_order',{id:giftApprove.getAttribute('data-gift-approve')}).then(function(res){
-        toast(res.message||'已通过');loadGiftOrders();
+        toast(res.message||'已通过');loadGiftOrders();refreshReviewBadges();
       }).catch(function(err){toast(err.message||'操作失败')});
       return;
     }
@@ -3789,8 +3900,39 @@ import './mcj-chat-realtime.js';
       var giftRejectReason=String(prompt('请输入拒绝原因')||'').trim();
       if(!giftRejectReason){toast('拒绝必须填写原因');return;}
       api('reject_gift_order',{id:giftReject.getAttribute('data-gift-reject'),reason:giftRejectReason}).then(function(res){
-        toast(res.message||'已拒绝');loadGiftOrders();
+        toast(res.message||'已拒绝');loadGiftOrders();refreshReviewBadges();
       }).catch(function(err){toast(err.message||'操作失败')});
+      return;
+    }
+    var rcFilter=e.target.closest('[data-recharge-filter]');
+    if(rcFilter){rechargesState.filter=rcFilter.getAttribute('data-recharge-filter')||'pending_review';rechargesState.items=[];loadRecharges();return;}
+    if(e.target.closest('[data-recharge-reload]')){loadRecharges();refreshReviewBadges();return;}
+    var rcApprove=e.target.closest('[data-recharge-approve]');
+    if(rcApprove){
+      var rcNo=rcApprove.getAttribute('data-recharge-approve');
+      if(rechargesState.busyId)return;
+      var rcRow=rechargesState.items.find(function(x){return x.paymentNo===rcNo})||{};
+      if(!confirm('确认已收到 RM '+Number(rcRow.amountRm||0).toFixed(2)+'？通过后将为老板入账 '+(rcRow.totalCatFood||0)+' 猫粮。'))return;
+      rechargesState.busyId=rcNo;paint();
+      api('approve_recharge',{paymentNo:rcNo}).then(function(res){
+        toast(res.duplicate?'该充值单已到账，未重复入账':(res.message||'已通过，猫粮已入账'));
+      }).catch(function(err){toast(err.message||'操作失败')}).then(function(){
+        rechargesState.busyId='';loadRecharges();refreshReviewBadges();
+      });
+      return;
+    }
+    var rcReject=e.target.closest('[data-recharge-reject]');
+    if(rcReject){
+      var rcRejectNo=rcReject.getAttribute('data-recharge-reject');
+      if(rechargesState.busyId)return;
+      var rcReason=String(prompt('请输入拒绝原因（老板会看到）')||'').trim();
+      if(!rcReason){toast('拒绝必须填写原因');return;}
+      rechargesState.busyId=rcRejectNo;paint();
+      api('reject_recharge',{paymentNo:rcRejectNo,reason:rcReason}).then(function(res){
+        toast(res.message||'已拒绝');
+      }).catch(function(err){toast(err.message||'操作失败')}).then(function(){
+        rechargesState.busyId='';loadRecharges();refreshReviewBadges();
+      });
       return;
     }
     var rejectProof=e.target.closest('[data-reject-payment-proof]');if(rejectProof){var reason=String(prompt('请输入驳回付款原因')||'').trim();if(!reason){toast('驳回必须填写原因');return;}api('reject_payment_proof',{id:rejectProof.dataset.rejectPaymentProof,reason:reason}).then(function(res){toast(res.message||'已驳回付款凭证');return softRefresh()}).catch(function(err){toast(err.message)});return}

@@ -1462,10 +1462,19 @@ async function loadBootstrap(serviceProfile) {
     notifications: (staffNotifications || []).map((n) => ({
       id: n.id,
       key: n.notice_key,
-      category: n.category || "payroll",
+      category: n.category || (n.kind && n.kind !== "system" ? n.kind : "payroll"),
+      kind: n.kind || n.category || "payroll",
+      relatedId: n.related_id || "",
       title: n.title || "系统通知",
       body: n.body || "",
-      href: n.href || "/customer-service/reports/",
+      href:
+        n.href ||
+        (n.kind === "recharge_proof"
+          ? "/customer-service/recharges"
+          : n.kind === "gift_proof"
+            ? "/customer-service/gift-orders"
+            : "/customer-service/reports/"),
+      readAt: n.read_at || "",
       at: n.created_at || "",
     })),
     orderStatuses: ORDER_STATUS_TEXT,
@@ -3424,6 +3433,53 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
         message: "已驳回付款凭证，老板可重新上传。",
         order: { ...order, paymentReview: false, ...rejectFields },
       });
+    }
+    // —— Boss recharge proof review (same rows/rules as 后台 /api/admin/wallet) ——
+    if (action === "list_recharges" || action === "list_recharge_reviews") {
+      const { listRecharges } = await import("./_recharge-review.js");
+      const status = String(body.status || body.filter || "pending_review").trim();
+      const allowed = new Set(["pending_review", "reviewed", "paid", "rejected"]);
+      const items = await listRecharges({ status: allowed.has(status) ? status : "pending_review" });
+      return json(res, 200, { ok: true, items });
+    }
+    if (action === "approve_recharge" || action === "recharge_approve") {
+      const { approveRecharge } = await import("./_recharge-review.js");
+      const out = await approveRecharge({
+        paymentNo: String(body.paymentNo || body.payment_no || body.id || "").trim(),
+        reviewer: service.profile,
+        reason: String(body.reason || "客服审核通过"),
+        operatorRole: "customer_service",
+        requireProof: true,
+      });
+      return json(res, out.status, out.body);
+    }
+    if (action === "reject_recharge" || action === "recharge_reject") {
+      const { rejectRecharge } = await import("./_recharge-review.js");
+      const out = await rejectRecharge({
+        paymentNo: String(body.paymentNo || body.payment_no || body.id || "").trim(),
+        reviewer: service.profile,
+        reason: String(body.reason || body.reject_reason || body.rejectReason || "").trim(),
+        operatorRole: "customer_service",
+      });
+      return json(res, out.status, out.body);
+    }
+    if (action === "review_badges" || action === "pending_review_counts") {
+      const [{ countPendingRechargeReviews }, gifts] = await Promise.all([
+        import("./_recharge-review.js"),
+        import("./_gift-orders.js"),
+      ]);
+      const [recharges, giftOrders] = await Promise.all([
+        countPendingRechargeReviews(),
+        gifts.countPendingGiftOrderReviews ? gifts.countPendingGiftOrderReviews() : 0,
+      ]);
+      return json(res, 200, { ok: true, counts: { recharges, giftOrders } });
+    }
+    if (action === "mark_staff_notifications_read") {
+      const { markStaffNotificationsRead } = await import("./_staff-notify.js");
+      const kinds = Array.isArray(body.kinds) ? body.kinds : [body.kind || ""];
+      const allowed = kinds.filter((k) => /^[a-z_]{2,40}$/.test(String(k || "")));
+      const marked = await markStaffNotificationsRead(service.profile.id, allowed);
+      return json(res, 200, { ok: true, marked });
     }
     // —— Gift orders (mall payment proof review) ——
     if (
