@@ -389,9 +389,13 @@
         var enabledText = item.enabled !== false ? "已启用" : "已停用";
         return (
           '<article class="payment-channel-card">' +
-          '<div class="payment-channel-icon">' +
-          esc((item.bank_name || "?").slice(0, 3).toUpperCase()) +
-          "</div>" +
+          (item.qrImageUrl
+            ? '<div class="payment-channel-icon" style="overflow:hidden;padding:0;background:#fff"><img src="' +
+              esc(item.qrImageUrl) +
+              '" alt="收款图片" data-bank-qr-thumb="' +
+              esc(item.id) +
+              '" style="width:100%;height:100%;object-fit:cover"></div>'
+            : '<div class="payment-channel-icon">' + esc((item.bank_name || "?").slice(0, 3).toUpperCase()) + "</div>") +
           '<div class="payment-channel-main"><h3>' +
           esc(item.bank_name || "未命名渠道") +
           "</h3><p>" +
@@ -402,6 +406,7 @@
           '<div class="payment-card-meta">' +
           chip(enabledText) +
           (item.is_default ? chip("默认") : "") +
+          (item.qrImageUrl ? chip("含收款图片") : "") +
           "<small>" +
           esc(item.currency || "MYR") +
           " · " +
@@ -439,12 +444,13 @@
 
   function renderBankEditor(item) {
     item = item || { bank_name: BANK_PROVIDERS[0], currency: "MYR", usage: "充值收款", enabled: true };
+    var hasCustom = (state.bankProviders && state.bankProviders.length ? state.bankProviders : BANK_PROVIDERS).indexOf(item.bank_name) === -1;
     var providerOptions = (state.bankProviders && state.bankProviders.length ? state.bankProviders : BANK_PROVIDERS)
       .map(function (p) {
-        return '<option value="' + esc(p) + '"' + (item.bank_name === p ? " selected" : "") + ">" + esc(p) + "</option>";
+        var selected = item.bank_name === p || (hasCustom && p === "其他");
+        return '<option value="' + esc(p) + '"' + (selected ? " selected" : "") + ">" + esc(p) + "</option>";
       })
       .join("");
-    var hasCustom = (state.bankProviders && state.bankProviders.length ? state.bankProviders : BANK_PROVIDERS).indexOf(item.bank_name) === -1;
     return (
       '<form class="payment-editor" data-bank-form="' +
       esc(item.id || "") +
@@ -485,12 +491,165 @@
       '>启用</option><option value="false"' +
       (item.enabled === false ? " selected" : "") +
       ">停用</option></select></label>" +
+      bankQrFieldHtml(item) +
+      '<label class="wide"><span>收款说明（可选，老板充值页显示）</span><textarea name="instructions" maxlength="1000">' +
+      esc(item.instructions || "") +
+      "</textarea></label>" +
       "</div></section>" +
       '<div class="form-actions">' +
       '<button class="primary-btn" type="submit">保存</button>' +
       '<button class="ghost-btn" type="button" data-bank-cancel>取消</button>' +
       "</div></form>"
     );
+  }
+
+  function bankQrPreviewHtml(url) {
+    return url
+      ? '<a href="' +
+          esc(url) +
+          '" target="_blank" rel="noopener"><img src="' +
+          esc(url) +
+          '" alt="收款图片预览" data-bank-qr-img="1" style="max-width:220px;max-height:220px;border-radius:12px;border:1px solid rgba(255,255,255,.12);background:#fff;padding:8px"></a>'
+      : "";
+  }
+
+  function bankQrFieldHtml(item) {
+    var path = String(item.qr_image_path || "");
+    var url = path ? String(item.qrImageUrl || "") : "";
+    return (
+      '<div class="wide payment-qr-preview" data-bank-qr-field data-bank-qr-original="' +
+      esc(path) +
+      '">' +
+      "<span>收款图片 / QR Code（可选）</span>" +
+      '<div data-bank-qr-preview style="margin:8px 0' +
+      (url ? "" : ";display:none") +
+      '">' +
+      bankQrPreviewHtml(url) +
+      "</div>" +
+      '<p class="muted" data-bank-qr-status style="margin:8px 0">' +
+      (path ? (url ? "已上传收款图片。" : "已上传收款图片（预览暂不可用，可重新上传）。") : "尚未上传。支持 JPG / JPEG / PNG / WEBP，银行与电子钱包均可上传。") +
+      "</p>" +
+      '<input type="hidden" name="qrImagePath" value="' +
+      esc(path) +
+      '">' +
+      '<label style="display:block;margin-top:8px"><span data-bank-qr-pick-label>' +
+      (path ? "重新上传" : "上传收款图片") +
+      "（JPG / JPEG / PNG / WEBP）</span>" +
+      '<input type="file" accept="image/jpeg,image/jpg,image/png,image/webp" data-bank-qr-upload></label>' +
+      '<button class="mini-btn danger" type="button" data-bank-qr-remove style="margin-top:8px' +
+      (path ? "" : ";display:none") +
+      '">删除图片</button>' +
+      "</div>"
+    );
+  }
+
+  function discardUnsavedBankQr(form, path) {
+    var field = form && form.querySelector("[data-bank-qr-field]");
+    var original = field ? field.getAttribute("data-bank-qr-original") || "" : "";
+    if (!path || path === original) return;
+    fetchApi({ method: "POST", body: JSON.stringify({ action: "discard_bank_qr", path: path }) }).catch(function () {});
+  }
+
+  function currentBankQrPath(form) {
+    var hidden = form && form.querySelector('input[name="qrImagePath"]');
+    return hidden ? hidden.value : "";
+  }
+
+  function setBankQrField(form, path, url, status) {
+    var field = form && form.querySelector("[data-bank-qr-field]");
+    if (!field) return;
+    var hidden = field.querySelector('input[name="qrImagePath"]');
+    if (hidden) hidden.value = path || "";
+    var preview = field.querySelector("[data-bank-qr-preview]");
+    if (preview) {
+      preview.innerHTML = bankQrPreviewHtml(url);
+      preview.style.display = url ? "" : "none";
+    }
+    var label = field.querySelector("[data-bank-qr-pick-label]");
+    if (label) label.textContent = (path ? "重新上传" : "上传收款图片") + "（JPG / JPEG / PNG / WEBP）";
+    var remove = field.querySelector("[data-bank-qr-remove]");
+    if (remove) remove.style.display = path ? "" : "none";
+    var statusEl = field.querySelector("[data-bank-qr-status]");
+    if (statusEl && status != null) statusEl.textContent = status;
+  }
+
+  function uploadBankQr(form, file) {
+    if (!form || !file) return;
+    var name = String(file.name || "").toLowerCase();
+    var type = String(file.type || "").toLowerCase();
+    if (!/image\/(png|jpeg|jpg|webp)/.test(type) && !/\.(png|jpe?g|webp)$/.test(name)) {
+      alert("仅支持 JPG / JPEG / PNG / WEBP 图片");
+      return;
+    }
+    if (file.size > 15 * 1024 * 1024) {
+      alert("图片不能超过 15MB");
+      return;
+    }
+    var hidden = form.querySelector('input[name="qrImagePath"]');
+    var prevPath = hidden ? hidden.value : "";
+    var submit = form.querySelector('[type="submit"]');
+    var reader = new FileReader();
+    reader.onload = function () {
+      shrinkBankQrDataUrl(String(reader.result || ""), file.size).then(sendDataUrl, function (err) {
+        alert(err.message || "图片处理失败，请换一张图片");
+      });
+    };
+    function sendDataUrl(dataUrl) {
+      setBankQrField(form, prevPath, dataUrl, "正在上传到 Storage…");
+      if (submit) submit.disabled = true;
+      fetchApi({
+        method: "POST",
+        body: JSON.stringify({
+          action: "upload_bank_qr",
+          bankId: form.getAttribute("data-bank-form") || "",
+          dataUrl: dataUrl,
+          filename: file.name || "bank-qr.png",
+        }),
+      })
+        .then(function (result) {
+          discardUnsavedBankQr(form, prevPath);
+          setBankQrField(form, result.path || "", result.url || dataUrl, "图片已上传，点击「保存」后生效。");
+        })
+        .catch(function (err) {
+          var original = bankById(form.getAttribute("data-bank-form") || "") || {};
+          var keepUrl = prevPath && prevPath === original.qr_image_path ? original.qrImageUrl || "" : "";
+          setBankQrField(form, prevPath, keepUrl, "上传失败：" + (err.message || "未知错误"));
+          alert("上传失败：" + (err.message || "未知错误"));
+        })
+        .finally(function () {
+          if (submit) submit.disabled = false;
+        });
+    }
+    reader.onerror = function () {
+      alert("读取图片失败，请重试");
+    };
+    reader.readAsDataURL(file);
+  }
+
+  // Serverless request bodies cap near 4.5MB, so large photos are downscaled before upload.
+  function shrinkBankQrDataUrl(dataUrl, size) {
+    var limit = 3 * 1024 * 1024;
+    if (size <= limit) return Promise.resolve(dataUrl);
+    return new Promise(function (resolve, reject) {
+      var img = new Image();
+      img.onload = function () {
+        var scale = Math.min(1, 1600 / Math.max(img.naturalWidth || 1, img.naturalHeight || 1));
+        var canvas = document.createElement("canvas");
+        canvas.width = Math.max(1, Math.round(img.naturalWidth * scale));
+        canvas.height = Math.max(1, Math.round(img.naturalHeight * scale));
+        var ctx = canvas.getContext("2d");
+        ctx.fillStyle = "#fff";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        var out = canvas.toDataURL("image/jpeg", 0.9);
+        if (out.length * 0.75 > limit) reject(new Error("图片过大，请压缩到 3MB 以内后再上传"));
+        else resolve(out);
+      };
+      img.onerror = function () {
+        reject(new Error("图片无法读取，请换一张 JPG / PNG / WEBP 图片"));
+      };
+      img.src = dataUrl;
+    });
   }
 
   function collectBankForm(form) {
@@ -509,6 +668,8 @@
         usage: String(fd.get("usage") || "充值收款").trim(),
         isDefault: String(fd.get("isDefault")) === "true",
         enabled: String(fd.get("enabled")) === "true",
+        qrImagePath: String(fd.get("qrImagePath") || "").trim(),
+        instructions: String(fd.get("instructions") || "").trim(),
       },
     };
   }
@@ -820,6 +981,13 @@
       uploadQr(channelId, file);
       input.value = "";
     });
+    document.addEventListener("change", function (e) {
+      var input = e.target.closest("[data-bank-qr-upload]");
+      if (!input) return;
+      var file = input.files && input.files[0];
+      uploadBankQr(input.closest("[data-bank-form]"), file);
+      input.value = "";
+    });
     document.addEventListener("click", function (e) {
       var tab = e.target.closest("[data-pay-tab]");
       if (tab) {
@@ -876,8 +1044,18 @@
         render();
         return;
       }
+      var bankQrRemove = e.target.closest("[data-bank-qr-remove]");
+      if (bankQrRemove) {
+        if (!confirm("确认删除收款图片？点击「保存」后生效。")) return;
+        var removeForm = bankQrRemove.closest("[data-bank-form]");
+        discardUnsavedBankQr(removeForm, currentBankQrPath(removeForm));
+        setBankQrField(removeForm, "", "", "图片已移除，点击「保存」后生效。");
+        return;
+      }
       var bankCancel = e.target.closest("[data-bank-cancel]");
       if (bankCancel) {
+        var cancelForm = bankCancel.closest("[data-bank-form]");
+        discardUnsavedBankQr(cancelForm, currentBankQrPath(cancelForm));
         state.bankFormOpen = false;
         state.bankEditId = "";
         render();

@@ -1,5 +1,12 @@
 ﻿import crypto from "node:crypto";
 import { loadLocalEnv } from "../_load-env.js";
+import {
+  bankQrPathOf,
+  isBankQrPath,
+  removeBankQr,
+  signBankQr,
+  uploadBankQrImage,
+} from "../_payment-bank-accounts.js";
 
 loadLocalEnv();
 
@@ -190,6 +197,21 @@ function isMissingTable(error) {
     code === "42P01" ||
     code === "PGRST205" ||
     /PGRST205|Could not find the table|schema cache|does not exist/i.test(msg)
+  );
+}
+
+function isMissingBankQrColumn(error) {
+  const msg = String(error?.message || error?.body?.message || "");
+  const code = String(error?.body?.code || error?.code || "");
+  return (code === "PGRST204" || code === "42703" || /column/i.test(msg)) && /qr_image_path|instructions/i.test(msg);
+}
+
+async function withBankQrUrls(banks = []) {
+  return Promise.all(
+    (Array.isArray(banks) ? banks : []).map(async (bank) => {
+      const path = bankQrPathOf(bank);
+      return { ...bank, qr_image_path: path, qrImageUrl: path ? await signBankQr(path) : "" };
+    })
   );
 }
 
@@ -950,7 +972,7 @@ async function loadState() {
     }
     return {
       channels: merged,
-      banks: bankRows || [],
+      banks: await withBankQrUrls(bankRows || []),
       rates: rates || [],
       webhooks: webhooks || [],
       transactions: transactions || [],
@@ -961,7 +983,8 @@ async function loadState() {
     };
   } catch (error) {
     if (isMissingTable(error)) {
-      const [banks, publicMap] = await Promise.all([readPlatformBanks(), readPaymentChannelsPublic()]);
+      const [platformBanks, publicMap] = await Promise.all([readPlatformBanks(), readPaymentChannelsPublic()]);
+      const banks = await withBankQrUrls(platformBanks);
       return {
         channels: applyPublicPayOverlay(defaults(), publicMap, { publicIsSoT: true }),
         banks,
@@ -1102,6 +1125,45 @@ async function handler(req, res) {
         source: saved.source,
         channel: saved.channel,
         activePublicQr,
+      });
+    }
+
+    if (action === "upload_bank_qr") {
+      const dataUrl = String(body.dataUrl || body.data_url || "").trim();
+      if (!dataUrl) return json(res, 400, { ok: false, message: "请先选择收款图片（JPG / JPEG / PNG / WEBP）。" });
+      const bankId = String(body.bankId || body.bank_id || "").trim();
+      try {
+        const uploaded = await uploadBankQrImage(dataUrl, bankId);
+        await writeLog(req, "upload_bank_qr", bankId || "draft", null, { bucket: uploaded.bucket, path: uploaded.path });
+        return json(res, 200, {
+          ok: true,
+          message: "收款图片已上传，保存收款渠道后生效",
+          path: uploaded.path,
+          url: uploaded.url,
+        });
+      } catch (err) {
+        return json(res, err.status || 400, { ok: false, message: err.message || "收款图片上传失败" });
+      }
+    }
+
+    if (action === "discard_bank_qr") {
+      const path = String(body.path || "").trim();
+      if (!isBankQrPath(path)) return json(res, 400, { ok: false, message: "收款图片路径无效" });
+      let referenced = false;
+      try {
+        const rows = await supabaseFetch(TABLES.banks, `?qr_image_path=eq.${encodeURIComponent(path)}&select=id&limit=1`);
+        referenced = Array.isArray(rows) && rows.length > 0;
+      } catch (error) {
+        if (!isMissingTable(error) && !isMissingBankQrColumn(error)) throw error;
+      }
+      if (!referenced) referenced = (await readPlatformBanks()).some((b) => bankQrPathOf(b) === path);
+      if (referenced) return json(res, 200, { ok: true, discarded: false, message: "图片仍被收款渠道使用，未删除" });
+      const discarded = await removeBankQr(path);
+      await writeLog(req, "discard_bank_qr", "draft", { path }, { discarded });
+      return json(res, discarded ? 200 : 502, {
+        ok: discarded,
+        discarded,
+        message: discarded ? "未保存的收款图片已清理" : "收款图片清理失败，请稍后重试",
       });
     }
 
@@ -1375,33 +1437,68 @@ async function handler(req, res) {
       if (!BANK_PROVIDERS.includes(row.bank_name) && row.bank_name !== "其他") {
         // Allow custom but keep known providers first.
       }
+      const rawQr = bank.qrImagePath ?? bank.qr_image_path;
+      if (rawQr !== undefined && rawQr !== null && String(rawQr).trim() && !isBankQrPath(rawQr)) {
+        return json(res, 400, { ok: false, message: "收款图片路径无效，请重新上传图片。" });
+      }
+      const previousQr = bankQrPathOf(existing || {});
+      row.qr_image_path = rawQr === undefined || rawQr === null ? previousQr : String(rawQr).trim();
+      row.instructions = String(
+        bank.instructions ?? (existing && existing.instructions) ?? ""
+      ).slice(0, 1000);
+      const respond = async (saved, extra = {}) => {
+        if (previousQr && previousQr !== row.qr_image_path) await removeBankQr(previousQr);
+        const [withUrl] = await withBankQrUrls([saved]);
+        return json(res, 200, { ok: true, message: "收款渠道已保存", bank: withUrl, ...extra });
+      };
+      const logRow = { ...row, encrypted_payload: "[encrypted]" };
       try {
         if (usePlatform) throw Object.assign(new Error("Could not find the table"), { status: 404 });
-        const rows = await upsert(TABLES.banks, row);
-        await writeLog(req, "save_bank", row.id, existing, { ...row, encrypted_payload: "[encrypted]" });
-        return json(res, 200, { ok: true, message: "收款渠道已保存", bank: rows?.[0] || row });
+        let rows;
+        try {
+          rows = await upsert(TABLES.banks, row);
+        } catch (error) {
+          if (!isMissingBankQrColumn(error)) throw error;
+          return json(res, 409, {
+            ok: false,
+            message: "数据库尚未升级收款图片字段（payment_bank_accounts.qr_image_path / instructions），请联系运维执行迁移后再保存。",
+            detail: String(error?.message || error?.body?.message || "").slice(0, 300),
+            code: String(error?.body?.code || error?.code || ""),
+          });
+        }
+        await writeLog(req, "save_bank", row.id, existing, logRow);
+        return respond(rows?.[0] || row);
       } catch (error) {
         if (!isMissingTable(error)) throw error;
         const list = await readPlatformBanks();
         const idx = list.findIndex((b) => String(b.id) === String(row.id));
+        const prev = idx >= 0 ? list[idx] : null;
+        if (rawQr === undefined || rawQr === null) row.qr_image_path = bankQrPathOf(prev || {});
         const next = idx >= 0 ? list.map((b, i) => (i === idx ? row : b)) : [row, ...list];
         await writePlatformBanks(next);
-        await writeLog(req, "save_bank", row.id, existing, { ...row, encrypted_payload: "[encrypted]", source: "platform_settings" });
-        return json(res, 200, { ok: true, message: "收款渠道已保存", bank: row, bankSource: "platform_settings" });
+        await writeLog(req, "save_bank", row.id, prev || existing, { ...logRow, source: "platform_settings" });
+        return respond(row, { bankSource: "platform_settings" });
       }
     }
 
     if (action === "delete_bank") {
       const id = String(body.id || "").trim();
       if (!id) return json(res, 400, { ok: false, message: "缺少收款渠道 ID" });
+      let removed = null;
       try {
-        await supabaseFetch(TABLES.banks, `?id=eq.${encodeURIComponent(id)}`, { method: "DELETE" });
+        const rows = await supabaseFetch(TABLES.banks, `?id=eq.${encodeURIComponent(id)}`, {
+          method: "DELETE",
+          headers: { Prefer: "return=representation" },
+        });
+        removed = Array.isArray(rows) ? rows[0] || null : null;
       } catch (error) {
         if (!isMissingTable(error)) throw error;
-        const next = (await readPlatformBanks()).filter((b) => String(b.id) !== id);
-        await writePlatformBanks(next);
+        const list = await readPlatformBanks();
+        removed = list.find((b) => String(b.id) === id) || null;
+        await writePlatformBanks(list.filter((b) => String(b.id) !== id));
       }
-      await writeLog(req, "delete_bank", id, null, null);
+      await removeBankQr(bankQrPathOf(removed || {}));
+      await writeLog(req, "delete_bank", id, removed ? { ...removed, encrypted_payload: "[encrypted]" } : null, null);
       return json(res, 200, { ok: true, message: "收款渠道已删除" });
     }
 

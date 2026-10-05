@@ -121,7 +121,7 @@
             esc(r.totalCatFood || r.catFoodAmount) +
             "</td>" +
             "<td>" +
-            esc(r.paymentMethod) +
+            esc(r.paymentMethodName || r.paymentMethod) +
             "</td>" +
             "<td>" +
             proof +

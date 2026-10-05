@@ -20,6 +20,7 @@ import {
 import { requireAdmin } from "../_admin-auth.js";
 import { staffReviewerNameFromProfile } from "../_payment-receipts.js";
 import { companionDb, createSignedUrl } from "../_companion-media-store.js";
+import { bankMethodLabels } from "../_payment-bank-accounts.js";
 
 const ADMIN_ROLES = new Set(["admin", "super_admin", "finance_admin"]);
 
@@ -132,6 +133,7 @@ export default async function handler(req, res) {
           })
         );
         const items = [];
+        const bankLabels = await bankMethodLabels(list.map((row) => row.payment_method)).catch(() => ({}));
         for (const row of list) {
           const p = profileMap[row.boss_id] || {};
           const raw = row.raw_response && typeof row.raw_response === "object" ? row.raw_response : {};
@@ -160,6 +162,7 @@ export default async function handler(req, res) {
             bonusCatFood: money(row.bonus_cat_food),
             totalCatFood: money(row.cat_food_amount) || money(row.paid_cat_food) + money(row.bonus_cat_food),
             paymentMethod: row.payment_method || "",
+            paymentMethodName: bankLabels[String(row.payment_method || "").toLowerCase()] || "",
             status: row.status || "pending_payment",
             paymentUrl: row.payment_url || "",
             proofUrl,
