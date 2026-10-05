@@ -1681,7 +1681,7 @@ import {
           esc(Number(state.totalUnread) > 99 ? "99+" : state.totalUnread) +
           "</em>"
         : "") +
-      '</h1><p>仅显示本人会话</p></div>' +
+      '</h1><p>仅显示本人会话</p><div data-cs-online-badge="full"></div></div>' +
       '<span class="support-online-chip' +
       (state.serviceOnline ? " is-online" : "") +
       '" aria-live="polite">' +

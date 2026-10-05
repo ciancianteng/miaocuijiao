@@ -371,7 +371,19 @@
           esc(unreadLabel(n)) +
           "</em>"
         : '<em class="mcj-chat-unread-badge" data-mcj-chat-unread-badge hidden></em>';
-    return '<a href="support.html?start=1"' + active + ">客服中心" + badge + "</a>";
+    ensureCsOnlineHours();
+    return (
+      '<a href="support.html?start=1"' + active + ">客服中心" + badge + '<span data-cs-online-badge="compact"></span></a>'
+    );
+  }
+
+  function ensureCsOnlineHours() {
+    if (window.MCJCsOnlineHours || document.querySelector("script[data-mcj-cs-hours]")) return;
+    var s = document.createElement("script");
+    s.src = "/src/cs-online-hours.js?v=20261005batch1";
+    s.defer = true;
+    s.setAttribute("data-mcj-cs-hours", "1");
+    (document.head || document.documentElement).appendChild(s);
   }
 
   function setChatUnread(n) {

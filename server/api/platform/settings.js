@@ -36,7 +36,35 @@ const DEFAULT_SETTINGS = {
   teamLobbyLink: "",
   /** Public Discord permanent invite for boss-side community CTA (https://discord.gg/…) */
   discordInviteUrl: "",
+  /** Boss-facing CS online window, business time (timezone above). */
+  csOnlineHoursStart: "09:00",
+  csOnlineHoursEnd: "12:00",
 };
+
+const HHMM_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+/** Admin-only keys that must never reach the public settings payload. */
+const PRIVATE_KEYS = [
+  "csCommission",
+  "smtpHost",
+  "smtpPort",
+  "smtpUsername",
+  "smtpTls",
+  "mailFromEmail",
+  "aiBaseUrl",
+  "aiModel",
+  "aiSystemPrompt",
+  "aiDailyLimit",
+  "aiHandoffRule",
+  "paymentMerchantId",
+  "paymentCallbackUrl",
+  "whatsappPhoneId",
+  "smsSender",
+  "loginFailLockCount",
+  "adminTwoFactorRequired",
+  "sensitiveChangeReverify",
+  "discordGuildId",
+];
 
 function json(res, status, data) {
   return res.status(status).json(data);
@@ -74,6 +102,9 @@ function publicView(data = {}) {
   delete merged.duitnowId;
   delete merged.accountNumber;
   delete merged.bankAccount;
+  for (const key of PRIVATE_KEYS) delete merged[key];
+  if (!HHMM_RE.test(String(merged.csOnlineHoursStart || ""))) merged.csOnlineHoursStart = DEFAULT_SETTINGS.csOnlineHoursStart;
+  if (!HHMM_RE.test(String(merged.csOnlineHoursEnd || ""))) merged.csOnlineHoursEnd = DEFAULT_SETTINGS.csOnlineHoursEnd;
   // Normalize community link aliases for support Discord CTA.
   const community =
     String(merged.discordInviteUrl || merged.discordInviteLink || merged.teamLobbyLink || "").trim();
