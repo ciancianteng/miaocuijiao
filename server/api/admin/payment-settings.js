@@ -1458,6 +1458,8 @@ async function handler(req, res) {
           return json(res, 409, {
             ok: false,
             message: "数据库尚未升级收款图片字段（payment_bank_accounts.qr_image_path / instructions），请联系运维执行迁移后再保存。",
+            detail: String(error?.message || error?.body?.message || "").slice(0, 300),
+            code: String(error?.body?.code || error?.code || ""),
           });
         }
         await writeLog(req, "save_bank", row.id, existing, logRow);
