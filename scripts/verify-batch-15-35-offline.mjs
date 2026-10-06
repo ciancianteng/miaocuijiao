@@ -967,6 +967,28 @@ await test("#30 CS→companion reply: push only for companion rooms, one tag per
   assert.doesNotMatch(wb, /state\.data\.summary\.unreadMessages=num\(state\.data\.summary\.unreadMessages\)\+1/);
 });
 
+await test("#18 gifts: income only after the gift record wins, replay repairs missing income once, reject notifies boss, stable client keys", () => {
+  const cat = read("server/api/_send-catfood-gift.js");
+  const insertAt = cat.indexOf('companionDb("gift_transactions", "", {');
+  const incomeAt = cat.indexOf("incomeTx = await creditCompanionIncome(companion, companionIncome, giftNote);");
+  assert.ok(insertAt > 0 && incomeAt > insertAt, "income must be credited after the gift_transactions insert");
+  assert.match(cat, /settlement_transaction_id: null,/);
+  assert.match(cat, /sender_boss_id=eq\.\$\{encodeURIComponent\(boss\)\}/);
+  const go = read("server/api/_gift-orders.js");
+  assert.match(go, /const needsIncomeRepair =/);
+  assert.match(go, /note=like\.\$\{encodeURIComponent\(`\*"giftOrderId":"\$\{working\.id\}"\*`\)\}/);
+  assert.match(go, /GIFT_INCOME_PENDING/);
+  assert.match(go, /"礼物订单未通过审核"/);
+  assert.match(go, /assertNotSelfTrade\(boss, companionRow\.user_id \|\| companion, "送礼给自己"\)/);
+  const mall = read("src/gifts-mall.js");
+  assert.match(mall, /batchKey\("external", state\.selectedGift\.id, companion\.id, state\.quantity\)/);
+  assert.match(mall, /state\.proofQueue\.shift\(\)/);
+  assert.doesNotMatch(mall, /idempotencyKey:\s*idem\(\)/);
+  const pd = read("src/profile-detail.js");
+  assert.doesNotMatch(pd, /idempotencyKey:\s*idem\(\)/);
+  assert.match(pd, /clearKey\("tip\|"/);
+});
+
 const failed = results.filter((r) => !r.ok);
 console.log(`\n${results.length - failed.length}/${results.length} passed`);
 if (failed.length) process.exit(1);

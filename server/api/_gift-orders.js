@@ -243,7 +243,10 @@ export async function createGiftOrder({
   if (!key) throw httpError("缺少 idempotency_key", 400);
 
   try {
-    const existed = await companionDb("gift_orders", `?idempotency_key=eq.${encodeURIComponent(key)}&limit=1`);
+    const existed = await companionDb(
+      "gift_orders",
+      `?idempotency_key=eq.${encodeURIComponent(key)}&sender_boss_id=eq.${encodeURIComponent(boss)}&limit=1`
+    );
     if (existed?.[0]) {
     const payInfoEarly = await resolveGiftPaymentInfo(paymentChannel).catch(() => null);
     return { order: existed[0], replayed: true, payInfo: payInfoEarly };
@@ -256,6 +259,15 @@ export async function createGiftOrder({
   if (!gift) throw httpError("礼物不存在或已下架", 400);
   const companionRow = await loadCompanionProfile(companion);
   if (!companionRow) throw httpError("陪玩不存在", 404);
+  try {
+    const { assertNotSelfTrade } = await import("./_account-roles.js");
+    assertNotSelfTrade(boss, companionRow.user_id || companion, "送礼给自己");
+  } catch (selfErr) {
+    if (selfErr?.code === "SELF_ORDER_NOT_ALLOWED" || selfErr?.code === "SELF_TRADE_FORBIDDEN") {
+      throw httpError("不能向自己的陪玩账号送礼", 403, { code: selfErr.code });
+    }
+    throw selfErr;
+  }
 
   const unit = money(gift.cat_food_price);
   if (unit <= 0) throw httpError("礼物价格无效", 400);
@@ -299,7 +311,7 @@ export async function createGiftOrder({
     if (/duplicate|unique|23505/i.test(String(e.message || e.body || ""))) {
       const again = await companionDb(
         "gift_orders",
-        `?idempotency_key=eq.${encodeURIComponent(key)}&limit=1`
+        `?idempotency_key=eq.${encodeURIComponent(key)}&sender_boss_id=eq.${encodeURIComponent(boss)}&limit=1`
       ).catch(() => []);
       if (again?.[0]) return { order: again[0], replayed: true };
     }
@@ -645,7 +657,10 @@ export async function approveGiftOrder({ orderId, staffId, staffName = "" }) {
     approvedBy: staffId || working.reviewed_by || null,
   });
 
-  if (!fulfilled.replayed) {
+  // A replay whose income never landed (first attempt failed mid-way) finishes delivery exactly once.
+  const needsIncomeRepair =
+    fulfilled.replayed && !fulfilled.tx?.settlement_transaction_id && fulfilled.companionIncome > 0;
+  if (!fulfilled.replayed || needsIncomeRepair) {
     // Gift net → companion earnings ledger with source=gift (never MCJ_SETTLEMENT / order_income).
     // Do NOT put gift_order id into transactions.order_id — that field is companion order FK.
     const giftNote = `礼物收益：${working.gift_name_snapshot || "礼物"} MCJ_GIFT:${JSON.stringify({
@@ -658,17 +673,31 @@ export async function approveGiftOrder({ orderId, staffId, staffName = "" }) {
       net: fulfilled.companionIncome,
       paymentMethod: working.payment_channel || "external",
     })}`;
-    const incomeTx = await creditCompanionIncome(
-      working.receiver_companion_id,
-      fulfilled.companionIncome,
-      giftNote,
-      null
-    );
+    let incomeTx = null;
+    if (needsIncomeRepair) {
+      const prior = await companionDb(
+        "transactions",
+        `?user_id=eq.${encodeURIComponent(working.receiver_companion_id)}&transaction_type=eq.companion_income&note=like.${encodeURIComponent(`*"giftOrderId":"${working.id}"*`)}&limit=1`
+      ).catch(() => []);
+      incomeTx = prior?.[0] || null;
+    }
+    if (!incomeTx) {
+      incomeTx = await creditCompanionIncome(
+        working.receiver_companion_id,
+        fulfilled.companionIncome,
+        giftNote,
+        null
+      );
+    }
+    if (!incomeTx?.id && fulfilled.companionIncome > 0) {
+      throw httpError("陪玩礼物收益写入失败，请稍后重试审核（不会重复入账）", 500, { code: "GIFT_INCOME_PENDING" });
+    }
     if (incomeTx?.id && fulfilled.tx?.id) {
-      await companionDb("gift_transactions", `?id=eq.${encodeURIComponent(fulfilled.tx.id)}`, {
-        method: "PATCH",
-        body: JSON.stringify({ settlement_transaction_id: incomeTx.id }),
-      }).catch(() => null);
+      await companionDb(
+        "gift_transactions",
+        `?id=eq.${encodeURIComponent(fulfilled.tx.id)}&settlement_transaction_id=is.null`,
+        { method: "PATCH", body: JSON.stringify({ settlement_transaction_id: incomeTx.id }) }
+      ).catch(() => null);
     }
     await upsertGiftWall(working);
     await insertCompanionNotification({
@@ -743,6 +772,18 @@ export async function rejectGiftOrder({ orderId, staffId, staffName = "", reason
       return { order: latest, replayed: true, message: "已拒绝（幂等）" };
     }
     throw httpError("拒绝失败，请刷新后重试", 409);
+  }
+  try {
+    const { notifyBoss } = await import("./_wallet.js");
+    await notifyBoss(
+      updated.sender_boss_id,
+      "礼物订单未通过审核",
+      `「${updated.gift_name_snapshot || "礼物"} ×${updated.quantity || 1}」付款凭证未通过：${why}\n礼物未送出，请重新上传正确的付款截图或联系客服。`,
+      "gift",
+      updated.id
+    );
+  } catch (bossNotifyErr) {
+    console.warn("[gift-orders] boss reject notify", bossNotifyErr?.message || bossNotifyErr);
   }
   return { order: updated, replayed: false, message: "已拒绝该礼物订单" };
 }
