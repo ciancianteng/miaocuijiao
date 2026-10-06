@@ -380,7 +380,7 @@
   function ensureCsOnlineHours() {
     if (window.MCJCsOnlineHours || document.querySelector("script[data-mcj-cs-hours]")) return;
     var s = document.createElement("script");
-    s.src = "/src/cs-online-hours.js?v=20261005batch1";
+    s.src = "/src/cs-online-hours.js?v=20261006b1535";
     s.defer = true;
     s.setAttribute("data-mcj-cs-hours", "1");
     (document.head || document.documentElement).appendChild(s);

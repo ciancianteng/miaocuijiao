@@ -107,7 +107,7 @@
     if (document.querySelector("link[data-mcj-cs-hours-css]")) return;
     var link = document.createElement("link");
     link.rel = "stylesheet";
-    link.href = "/src/cs-online-hours.css?v=20261005batch1";
+    link.href = "/src/cs-online-hours.css?v=20261006b1535";
     link.setAttribute("data-mcj-cs-hours-css", "1");
     document.head.appendChild(link);
   }
