@@ -268,6 +268,7 @@ async function nextOrderNo() {
 }
 function paymentMethodLabel(method) {
   const key = String(method || "").toLowerCase();
+  if (/^acct-/.test(key)) return "收款渠道";
   if (/duitnow/.test(key)) return "DuitNow";
   if (/tng/.test(key)) return "TNG";
   if (/bank|银行/.test(key)) return "银行卡";
@@ -305,7 +306,7 @@ async function assertOrderPaymentMethodAllowed(paymentMethod) {
   if (!hit || hit.open === false) {
     return { ok: false, message: "该支付方式暂未开放，请选择其他支付方式" };
   }
-  return { ok: true, code: hit.code || code };
+  return { ok: true, code: hit.code || code, label: hit.label || hit.name || "" };
 }
 
 async function parseBody(req) {
@@ -1617,7 +1618,7 @@ export default async function handler(req, res) {
       let saved = rows?.[0] || enriched;
 
       const companionLabel = productCompanionName || companionName || companionId || "未指定（公开抢单）";
-      const notify = `新订单已提交，等待支付，指定陪玩为 ${companionLabel}。支付方式：${paymentMethodLabel(paymentMethod)}；服务：${serviceType}；时长：${hours}小时；金额：${totalAmount} 猫粮。`;
+      const notify = `新订单已提交，等待支付，指定陪玩为 ${companionLabel}。支付方式：${(/^acct-/.test(paymentMethod) && payGate.label) || paymentMethodLabel(paymentMethod)}；服务：${serviceType}；时长：${hours}小时；金额：${totalAmount} 猫粮。`;
       await addSystemMessage(saved, profile.id, notify);
       const okMessage = useWallet ? "订单已创建，请完成支付。" : "订单已提交，请完成支付。";
       return json(res, 200, {

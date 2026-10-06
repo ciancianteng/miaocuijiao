@@ -115,6 +115,13 @@ export function isRechargeUsage(usage) {
   return !u || /充值|recharge|全部|通用|all/i.test(u);
 }
 
+/** Default usage「充值收款」also collects order payments; only an explicit「仅充值」opts out. */
+export function isOrderUsage(usage) {
+  const u = String(usage || "").trim();
+  if (/仅充值|只充值|recharge\s*only/i.test(u)) return false;
+  return isRechargeUsage(u) || /下单|订单|order/i.test(u);
+}
+
 export function bankMethodCode(id) {
   return `${BANK_METHOD_PREFIX}${String(id || "").trim().toLowerCase()}`;
 }
@@ -172,7 +179,16 @@ async function loadBankRows() {
 
 /** Enabled recharge-usage bank/e-wallet channels in the same shape as listBossPaymentMethods rows. */
 export async function listBossBankAccountMethods() {
-  const rows = (await loadBankRows()).filter((row) => row && row.id && isRechargeUsage(row.usage));
+  return listBankAccountMethods((row) => isRechargeUsage(row.usage));
+}
+
+/** Enabled order-usage bank/e-wallet channels (boss order pay / gift pay). */
+export async function listBossOrderBankAccountMethods() {
+  return listBankAccountMethods((row) => isOrderUsage(row.usage));
+}
+
+async function listBankAccountMethods(keep) {
+  const rows = (await loadBankRows()).filter((row) => row && row.id && keep(row));
   const out = [];
   for (const row of rows) {
     const payInfo = await bankPayInfo(row);
@@ -185,8 +201,8 @@ export async function listBossBankAccountMethods() {
       enabled: true,
       configured: usable,
       open: usable,
-      forOrder: false,
-      forRecharge: true,
+      forOrder: isOrderUsage(row.usage),
+      forRecharge: isRechargeUsage(row.usage),
       forDeposit: false,
       mode: "live",
       statusText: usable ? "可用" : "暂未开放",
@@ -221,7 +237,7 @@ export async function loadBankAccountPayInfo(code) {
   if (!id) return null;
   const rows = await loadBankRows();
   const row = rows.find((r) => String(r.id || "").toLowerCase() === id);
-  if (!row || !isRechargeUsage(row.usage)) return null;
+  if (!row || !(isRechargeUsage(row.usage) || isOrderUsage(row.usage))) return null;
   const info = await bankPayInfo(row);
   return info.bankAccount || info.qrUrl ? info : null;
 }

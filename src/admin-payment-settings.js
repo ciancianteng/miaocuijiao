@@ -223,10 +223,11 @@
         );
       })
       .join("");
+    cards += (state.banks || []).map(bankChannelCard).join("");
 
     var editor = state.editId ? renderEditor(channelById(state.editId)) : "";
-    var orderCodes = (state.bossOrderMethods || []).join(", ") || "（无）";
-    var rechargeCodes = (state.bossRechargeMethods || []).join(", ") || "（无）";
+    var orderCodes = (state.bossOrderMethods || []).map(methodCodeLabel).join(", ") || "（无）";
+    var rechargeCodes = (state.bossRechargeMethods || []).map(methodCodeLabel).join(", ") || "（无）";
     var sotLabel =
       state.channelSource === "platform_settings" || state.tablesReady === false
         ? "当前使用平台配置兜底（支付渠道表未就绪，与老板端同源）"
@@ -247,6 +248,60 @@
       (cards || '<div class="empty">暂无支付渠道</div>') +
       "</div>" +
       editor
+    );
+  }
+
+  function bankMethodCode(id) {
+    return "acct-" + String(id || "").trim().toLowerCase();
+  }
+
+  function methodCodeLabel(code) {
+    var bank = (state.banks || []).find(function (b) {
+      return bankMethodCode(b.id) === code;
+    });
+    return bank ? bank.bank_name || code : code;
+  }
+
+  /** 后台「新增收款渠道」(payment_bank_accounts) rows shown alongside built-in channels. */
+  function bankChannelCard(item) {
+    var code = bankMethodCode(item.id);
+    var enabled = item.enabled !== false;
+    var orderVisible = (state.bossOrderMethods || []).indexOf(code) !== -1;
+    var rechargeVisible = (state.bossRechargeMethods || []).indexOf(code) !== -1;
+    return (
+      '<article class="payment-channel-card">' +
+      '<div class="payment-channel-icon">' +
+      esc((item.bank_name || "?").slice(0, 3).toUpperCase()) +
+      "</div>" +
+      '<div class="payment-channel-main"><h3>' +
+      esc(item.bank_name || "未命名渠道") +
+      "</h3><p>收款渠道 · " +
+      esc(item.account_name || "-") +
+      " · " +
+      esc(item.currency || "MYR") +
+      "</p></div>" +
+      '<div class="payment-card-meta">' +
+      chip(orderVisible || rechargeVisible ? "已启用" : enabled ? "已启用(缺资料)" : "已停用") +
+      chip(enabled ? "开关:开" : "开关:关") +
+      chip(orderVisible ? "订单可见" : "订单不可见") +
+      chip(rechargeVisible ? "充值可见" : "充值不可见") +
+      "<small>" +
+      esc(item.usage || "充值收款") +
+      " · " +
+      esc(item.updated_at || "-") +
+      "</small></div>" +
+      '<div class="payment-card-actions">' +
+      '<button class="mini-btn" type="button" data-bank-edit="' +
+      esc(item.id) +
+      '">编辑</button>' +
+      '<button class="mini-btn" type="button" data-bank-toggle="' +
+      esc(item.id) +
+      '" data-bank-enabled="' +
+      (enabled ? "0" : "1") +
+      '">' +
+      (enabled ? "停用" : "启用") +
+      "</button>" +
+      "</div></article>"
     );
   }
 
@@ -433,7 +488,7 @@
 
     var editor = state.bankFormOpen ? renderBankEditor(bankById(state.bankEditId)) : "";
     return (
-      '<div class="payment-module-head" style="margin:0 0 12px"><p class="muted">管理多个银行账户 / 电子钱包收款渠道：Maybank、CIMB、Public Bank、Touch \'n Go、支付宝、微信支付、USDT 等。启用后老板端充值页可读取。</p>' +
+      '<div class="payment-module-head" style="margin:0 0 12px"><p class="muted">管理多个银行账户 / 电子钱包收款渠道：Maybank、CIMB、Public Bank、Touch \'n Go、支付宝、微信支付、USDT 等。启用后老板端充值页与下单付款均可读取（用途填「仅充值」则不用于下单）。</p>' +
       '<button class="primary-btn" type="button" data-bank-new style="margin-top:8px">新增收款渠道</button></div>' +
       '<div class="payment-channel-grid">' +
       (cards || '<div class="empty">暂无收款渠道，点击「新增收款渠道」创建。</div>') +
@@ -1039,6 +1094,8 @@
       }
       var bankEdit = e.target.closest("[data-bank-edit]");
       if (bankEdit) {
+        state.tab = "banks";
+        state.editId = "";
         state.bankEditId = bankEdit.getAttribute("data-bank-edit") || "";
         state.bankFormOpen = true;
         render();

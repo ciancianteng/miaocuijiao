@@ -7,7 +7,11 @@
  * Never cross-fallback (TNG ↛ DuitNow, Stripe ↛ DuitNow, etc.).
  */
 import { companionDb } from "./_companion-media-store.js";
-import { bankIdFromMethodCode, loadBankAccountPayInfo } from "./_payment-bank-accounts.js";
+import {
+  bankIdFromMethodCode,
+  listBossOrderBankAccountMethods,
+  loadBankAccountPayInfo,
+} from "./_payment-bank-accounts.js";
 
 async function bankAccountPayInfoOrUnavailable(code) {
   const info = await loadBankAccountPayInfo(code).catch(() => null);
@@ -593,6 +597,24 @@ export async function listBossOrderPaymentMethods(methodRows = []) {
     category: m.category,
     payInfo: m.payInfo,
   }));
+  const bankMethods = await listBossOrderBankAccountMethods().catch(() => []);
+  for (const m of bankMethods) {
+    if (!m.open || !m.forOrder) continue;
+    methods.push({
+      id: m.code,
+      code: m.code,
+      label: m.name,
+      name: m.name,
+      open: true,
+      enabled: true,
+      configured: true,
+      forOrder: true,
+      forRecharge: m.forRecharge !== false,
+      statusText: "可用",
+      category: "manual",
+      payInfo: m.payInfo,
+    });
+  }
   if (listed.walletPayEnabled) {
     methods.push({
       id: "catfood",
