@@ -256,6 +256,7 @@ export async function confirmBossCatFoodRefund(db, {
   adminId,
   adminName,
   reason,
+  orderGross: orderGrossHint,
 } = {}) {
   const rows = await db("boss_refund_requests", `?id=eq.${encodeURIComponent(refundId)}&limit=1`);
   const row = rows?.[0];
@@ -351,12 +352,15 @@ export async function confirmBossCatFoodRefund(db, {
     // orders 表无 refund_amount / updated_at 列；只写 status，避免 PATCH 静默失败导致仍为售后中。
     // Full vs partial is measured against what the order was paid (plus earlier paid refunds), never against
     // this refund row's own amount — otherwise every partial refund flips the order to refunded + full clawback.
-    let orderGross = money(row.amount_rm || creditAmount);
+    let orderGross = money(orderGrossHint) > 0 ? money(orderGrossHint) : money(row.amount_rm || creditAmount);
     let priorPaidRefunds = 0;
     try {
-      const ors = await db("orders", `?id=eq.${encodeURIComponent(saved.order_id)}&select=id,total_amount,paid_cat_food&limit=1`);
+      // paid_cat_food is missing on some schemas; a failed select must not degrade to "refund row = whole order".
+      const ors = await db("orders", `?id=eq.${encodeURIComponent(saved.order_id)}&select=id,total_amount,paid_cat_food&limit=1`).catch(() =>
+        db("orders", `?id=eq.${encodeURIComponent(saved.order_id)}&select=id,total_amount&limit=1`)
+      );
       const paidGross = money(ors?.[0]?.paid_cat_food || ors?.[0]?.total_amount || 0);
-      if (paidGross > 0) orderGross = paidGross;
+      if (paidGross > 0 && !(money(orderGrossHint) > 0)) orderGross = paidGross;
       const prior = await db(
         "boss_refund_requests",
         `?order_id=eq.${encodeURIComponent(saved.order_id)}&status=eq.paid&id=neq.${encodeURIComponent(row.id)}&select=id,paid_amount_rm,amount_rm&limit=50`

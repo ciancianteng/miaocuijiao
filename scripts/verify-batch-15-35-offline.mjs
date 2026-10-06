@@ -865,6 +865,20 @@ await test("#35B single order: settles once, refunds remainder once (partial sta
   assert.equal(done.confirmedByName, "小美");
   assert.ok(msgs.some((m) => /实际服务 1\.5 小时 \/ 预约 2 小时/.test(m)));
 });
+await test("#35B partial refund stays completed when orders.paid_cat_food is missing (no full clawback)", async () => {
+  const ef = await import("../server/api/_order-early-finish.js");
+  const { paid_cat_food, ...noPaidCol } = efOrder();
+  const st = efDb([noPaidCol]);
+  const base = st.fetch;
+  const fetchNoCol = async (url, init) =>
+    /\/orders\?[^#]*select=[^&]*paid_cat_food/.test(String(url))
+      ? new Response(JSON.stringify({ message: "column orders.paid_cat_food does not exist" }), { status: 400, headers: { "content-type": "application/json" } })
+      : base(url, init);
+  await withFetch(fetchNoCol, () => ef.executeEarlyFinish(st.orders[0], { servedHours: 0.5, reason: "x", initiator: "boss", operator: CS_OP }));
+  assert.equal(st.orders[0].status, "completed");
+  const done = ef.readEarlyFinish(st.orders[0]);
+  assert.deepEqual([done.settleAmount, done.refundAmount, done.companionIncome], [25, 75, 20]);
+});
 await test("#35B blocked: completed / cancelled / not started; concurrent claim loses cleanly", async () => {
   const ef = await import("../server/api/_order-early-finish.js");
   for (const [status, re] of [["completed", /已完成/], ["cancelled", /已取消/], ["claimed", /仅服务中/]]) {

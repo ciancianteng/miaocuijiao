@@ -211,7 +211,7 @@ async function patchMarker(orderId, data) {
   return rows?.[0] || { ...fresh };
 }
 
-async function refundEarlyFinish(order, amount, reason, operator) {
+async function refundEarlyFinish(order, amount, reason, operator, orderGross) {
   const refundApi = await import("./_boss-refund-payout.js");
   const tagged = await companionDb(
     "boss_refund_requests",
@@ -239,6 +239,7 @@ async function refundEarlyFinish(order, amount, reason, operator) {
     adminId: operator?.id || null,
     adminName: operator?.name || "customer_service",
     reason: `${EARLY_FINISH_REFUND_PREFIX}${reason}`,
+    orderGross,
   });
   if (!confirmed.ok) return { ok: false, message: confirmed.message, refundId };
   return { ok: true, duplicate: !!confirmed.duplicate, refundId };
@@ -300,7 +301,7 @@ async function finishOne(row, { servedHours, reason, initiator, operator, addSys
 
   let refund = { ok: true, refundId: data.refundId || "" };
   if (data.refundAmount > 0) {
-    refund = await refundEarlyFinish(fresh, data.refundAmount, data.reason, operator);
+    refund = await refundEarlyFinish(fresh, data.refundAmount, data.reason, operator, data.totalAmount);
     if (!refund.ok) {
       await patchMarker(fresh.id, { ...data, status: "processing", refundError: String(refund.message || "").slice(0, 160), claimedAt: new Date(0).toISOString() });
       throw fail(502, "EARLY_FINISH_REFUND_PENDING", `订单已结算，但退款 ${data.refundAmount} 猫粮未完成：${refund.message || "请稍后重试"}（重试不会重复退款）`, { orderId: fresh.id });
