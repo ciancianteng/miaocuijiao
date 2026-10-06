@@ -1708,6 +1708,7 @@
       }
       bindCompanionChatRealtime();
       bindCompanionOrdersRealtime();
+      bindCompanionInboxRealtime();
       if(state._focusOrderId){
         setTimeout(function(){
           var el=document.querySelector('[data-order-focus="1"]')||document.getElementById('order-'+state._focusOrderId);
@@ -1784,6 +1785,15 @@
         }
         state._prevDesignated=designated;
         updateTabBadge(designated);
+        if(state.route!=='messages'&&(!state._inboxRtReady||tick%5===0)){
+          api('inbox',inboxQueryParams({light:'1',include_messages:'0'}),'GET').then(function(res){
+            if(!res||!res.ok)return;
+            var before=num(state.inbox&&state.inbox.unreadTotal);
+            applyInboxPayload(res.data||res.inbox||null);
+            if(num(state.inbox&&state.inbox.unreadTotal)>before)announceCsMessage();
+            refreshUnreadChrome();
+          }).catch(function(){});
+        }
         if(editingLive||isEditingLiveForm())return;
         if(state.route==='messages'){
           return api('inbox',inboxQueryParams({light:'1',include_messages:'0'}),'GET').then(function(res){
@@ -1923,23 +1933,86 @@
           var MediaPrev=window.MCJChatMedia;
           convs[i].lastMessage=(MediaPrev&&MediaPrev.isImageMessage(view))?'[图片]':String(view.content||'').slice(0,80);
           convs[i].lastTime=view.createdAt||'';
-          if(role!=='companion'&&state.route==='messages'&&state.chatSession==='cs'){
-            /* active thread is open — unread stays 0 via mark read */
-          }else if(role!=='companion'){
-            convs[i].unread=num(convs[i].unread)+1;
-          }
           break;
         }
       }catch(e){}
-      if(role!=='companion')playCue('message');
-      try{
-        if(state.data&&state.data.summary){
-          state.data.summary.unreadMessages=num(state.data.summary.unreadMessages)+1;
-          updateTabBadge(state.data.summary.waitingConfirm||state.data.summary.designatedPending);
-        }
-      }catch(e){}
+      onCompanionCsMessage(row);
       if(state.route==='messages')paint();
     }).catch(function(){ state._rtBoundCid=''; });
+  }
+  function recomputeInboxUnread(){
+    if(!state.inbox)return;
+    var csUnread=csConvList(state.inbox).reduce(function(sum,c){return sum+num(c.unread)},0);
+    var sys=(state.inbox.systemNotices||[]).filter(function(n){return n.unread}).length;
+    state.inbox.unreadTotal=csUnread+sys;
+    state.inbox.unreadMessages=state.inbox.unreadTotal;
+    if(state.data&&state.data.summary)state.data.summary.unreadMessages=state.inbox.unreadTotal;
+  }
+  function onCompanionCsMessage(row){
+    if(!row||!row.id)return;
+    if(String(row.sender_role||'')!=='customer_service'||String(row.message_type||'')==='system')return;
+    if(String(row.sender_id||'')===companionUserId())return;
+    var seen=state._rtSeenCsMsg||(state._rtSeenCsMsg={});
+    if(seen[row.id])return;
+    seen[row.id]=1;
+    var cid=String(row.conversation_id||'');
+    var conv=csConvList(state.inbox).find(function(c){return String(c.id)===cid});
+    if(!conv){
+      // Unknown thread (new consult / other room): server list is the privacy-filtered truth.
+      var now=Date.now();
+      if(now-num(state._rtUnknownReloadAt)<8000)return;
+      state._rtUnknownReloadAt=now;
+      var before=num(state.inbox&&state.inbox.unreadTotal);
+      reloadInbox({paint:false}).then(function(){
+        if(num(state.inbox&&state.inbox.unreadTotal)>before)announceCsMessage();
+        refreshUnreadChrome();
+      });
+      return;
+    }
+    var viewing=state.route==='messages'&&state.chatSession!=='system'&&companionCsConversationId()===cid&&!document.hidden;
+    if(viewing){
+      clearTimeout(state._rtMarkReadTimer);
+      state._rtMarkReadTimer=setTimeout(function(){markActiveChatSessionRead({skipReload:true,paint:false})},600);
+      return;
+    }
+    conv.unread=num(conv.unread)+1;
+    (state.inbox.conversations||[]).forEach(function(c){if(c!==conv&&c.type==='cs'&&String(c.id)===cid)c.unread=conv.unread});
+    recomputeInboxUnread();
+    announceCsMessage();
+    refreshUnreadChrome();
+  }
+  function announceCsMessage(){
+    playCue('message');
+    if(state.route!=='messages')toast('客服发来新消息');
+  }
+  function refreshUnreadChrome(){
+    var s=(state.data||{}).summary||{};
+    updateTabBadge(s.waitingConfirm||s.designatedPending);
+    if(!isEditingLiveForm())paint({preserveScroll:true});
+  }
+  function bindCompanionInboxRealtime(){
+    var RT=window.MCJChatRealtime;
+    var token=state.session&&state.session.token;
+    var uid=companionUserId();
+    if(!RT||!token||!uid||typeof RT.subscribeConversations!=='function')return;
+    if(state._rtInboxUid===uid)return;
+    state._rtInboxUid=uid;
+    RT.subscribeConversations(token,{
+      onReady:function(){state._inboxRtReady=true},
+      onError:function(){state._inboxRtReady=false},
+      onMessage:onCompanionCsMessage
+    }).catch(function(){state._rtInboxUid='';state._inboxRtReady=false});
+  }
+  function applyConversationFromQuery(){
+    if(state.route!=='messages')return;
+    try{
+      var q=new URLSearchParams(location.search||'');
+      var cid=String(q.get('conversation')||'').trim();
+      if(!cid)return;
+      state.chatConversationId=cid;
+      state.chatSession='cs';
+      history.replaceState(null,'','/companion/messages');
+    }catch(e){}
   }
   function init(){
     state.settings=readSettings();
@@ -1950,6 +2023,7 @@
     }
     state.route=route();
     applyFocusOrderFromQuery();
+    applyConversationFromQuery();
     // Capture Boss invite code for companion register (from /invite.html or ?code=).
     try{
       var q=new URLSearchParams(location.search||'');
@@ -1974,6 +2048,7 @@
         startPoll();
         bindCompanionChatRealtime();
         bindCompanionOrdersRealtime();
+        bindCompanionInboxRealtime();
         var s=(state.data||{}).summary||{};
         updateTabBadge(s.waitingConfirm||s.designatedPending);
         try{

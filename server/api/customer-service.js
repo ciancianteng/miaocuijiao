@@ -2959,6 +2959,15 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
       } catch (err) {
         console.warn("[customer-service/send_message] boss push", err?.message || err);
       }
+      if (conversation.companion_id && !conversation.boss_id && messageType !== "system") {
+        const { notifyCompanionCsReply } = await import("./_companion-inbox.js");
+        await notifyCompanionCsReply(conversation, {
+          messageId: msg?.id || "",
+          content,
+          messageType,
+          csName: String(service.profile.display_name || "").trim(),
+        });
+      }
       return json(res, 200, { ok: true, message: "消息已发送。", messageRow });
     }
     if (action === "clock_in" || action === "clock_out") {

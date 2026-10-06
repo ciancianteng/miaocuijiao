@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import vm from "node:vm";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -943,6 +943,28 @@ await test("#31 multi review: picker per child, parent review rejected, dedupe, 
   const admin = read("src/admin-final-v1.js");
   assert.match(admin, /data-admin-child-review=/);
   assert.match(admin, /reviewImagesHtml\(k\.images\)/);
+});
+
+await test("#30 CS→companion reply: push only for companion rooms, one tag per message, deep link + companion-portal routing", async () => {
+  const { notifyCompanionCsReply } = await import(pathToFileURL(path.join(root, "server/api/_companion-inbox.js")).href);
+  const boss = await notifyCompanionCsReply({ id: "c1", boss_id: "b1", companion_id: "", conversation_type: "order_support" }, { messageId: "m1", content: "hi" });
+  assert.equal(boss.skipped, "not_companion_cs");
+  const sys = await notifyCompanionCsReply({ id: "c2", companion_id: "p1", conversation_type: "companion_support" }, { messageId: "m2", messageType: "system" });
+  assert.equal(sys.skipped, "system");
+  const inbox = read("server/api/_companion-inbox.js");
+  assert.match(inbox, /url: `\/companion\/messages\?conversation=\$\{encodeURIComponent\(cid\)\}`/);
+  assert.match(inbox, /tag: `cs-msg-\$\{String\(messageId \|\| cid\)/);
+  assert.match(inbox, /preferRole: "companion"/);
+  assert.match(read("server/api/_web-push.js"), /const rows = roleRows\.length \? roleRows : allRows;/);
+  assert.match(read("server/api/customer-service.js"), /conversation\.companion_id && !conversation\.boss_id && messageType !== "system"[\s\S]{0,200}notifyCompanionCsReply/);
+  const wb = read("src/companion-workbench.js");
+  assert.match(wb, /function onCompanionCsMessage\(row\)/);
+  assert.match(wb, /if\(seen\[row\.id\]\)return;/);
+  assert.match(wb, /String\(row\.sender_role\|\|''\)!=='customer_service'/);
+  assert.match(wb, /RT\.subscribeConversations\(token,\{/);
+  assert.match(wb, /var cid=String\(q\.get\('conversation'\)\|\|''\)\.trim\(\);/);
+  assert.match(wb, /applyFocusOrderFromQuery\(\);\r?\n\s+applyConversationFromQuery\(\);/);
+  assert.doesNotMatch(wb, /state\.data\.summary\.unreadMessages=num\(state\.data\.summary\.unreadMessages\)\+1/);
 });
 
 const failed = results.filter((r) => !r.ok);

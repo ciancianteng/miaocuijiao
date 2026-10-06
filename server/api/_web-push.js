@@ -311,8 +311,12 @@ export async function sendWebPushToUser(userId, payloadInput) {
     return { ok: false, sent: 0, failed: 0, skipped: "vapid_unconfigured" };
   }
 
-  const rows = await listActiveSubscriptionsForUser(uid);
-  if (!rows.length) return { ok: true, sent: 0, failed: 0, skipped: "no_subscriptions" };
+  const allRows = await listActiveSubscriptionsForUser(uid);
+  if (!allRows.length) return { ok: true, sent: 0, failed: 0, skipped: "no_subscriptions" };
+  // Dual-identity accounts: deliver portal-specific pushes to that portal's devices when any exist.
+  const preferRole = String((payloadInput && payloadInput.preferRole) || "").trim().toLowerCase();
+  const roleRows = preferRole ? allRows.filter(function (r) { return String(r.role || "").toLowerCase() === preferRole; }) : [];
+  const rows = roleRows.length ? roleRows : allRows;
 
   let webPush;
   try {
