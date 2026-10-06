@@ -74,6 +74,7 @@
     var raw = String(order.paymentMethod || order.payment_method || "").trim();
     if (!raw) return "该支付方式";
     var key = raw.toLowerCase();
+    if (/^acct-/.test(key)) return "收款渠道";
     if (/duitnow/.test(key)) return "DuitNow";
     if (/tng/.test(key)) return "TNG";
     if (/bank|银行/.test(key)) return "银行卡";
@@ -81,6 +82,12 @@
     if (/stripe/.test(key)) return "Stripe";
     if (/hitpay/.test(key)) return "HitPay";
     return raw;
+  }
+  function acctMethodName(order) {
+    if (!/^acct-/.test(methodCode(order))) return "";
+    var info = (order && order.platformPayInfo) || platformPayInfo || null;
+    if (!info || String(info.channelId || "").toLowerCase() !== methodCode(order)) return "";
+    return String(info.channelName || info.bankName || info.title || "").trim();
   }
   function isWalletMethod(order) {
     return /cat.?food|wallet|猫粮|余额/.test(methodCode(order));
@@ -575,7 +582,12 @@
     var qrUrlRaw = String((info && info.qrUrl) || "").trim();
     var hasQr = !!(info && qrUrlRaw && info.enabled !== false && info.unavailable !== true);
     var mismatch = false;
-    if (hasQr && channelId && /tng|duitnow|alipay|bank|stripe|hitpay/.test(methodCode(order))) {
+    // 后台「收款渠道」(acct-*) binds to its own account row; account number alone is payable.
+    var isAcct = /^acct-/.test(methodCode(order));
+    if (isAcct) {
+      mismatch = !!(info && channelId && channelId !== methodCode(order));
+      hasQr = !mismatch && !!(info && info.enabled !== false && info.unavailable !== true && (qrUrlRaw || info.bankAccount));
+    } else if (hasQr && channelId && /tng|duitnow|alipay|bank|stripe|hitpay/.test(methodCode(order))) {
       var methodKey = methodCode(order);
       mismatch =
         (/tng/.test(methodKey) && channelId !== "tng") ||
@@ -614,7 +626,9 @@
         '<p class="pay-hint">' +
         esc((info && info.instructions) || "请扫描下方收款二维码完成付款。仅本支付页显示，首页不公开收款码。") +
         "</p>";
-      if (window.McjPayQrPreview && typeof window.McjPayQrPreview.frameHtml === "function") {
+      if (!qrUrlRaw) {
+        /* acct-* without QR: account rows below are the payee details */
+      } else if (window.McjPayQrPreview && typeof window.McjPayQrPreview.frameHtml === "function") {
         html += window.McjPayQrPreview.frameHtml(qrUrlRaw, payLabel + " 收款二维码");
       } else {
         html +=
@@ -635,10 +649,10 @@
       html += '<div class="pay-row"><span>收款人</span><strong>' + esc(info.receiverName) + "</strong></div>";
     }
     if (hasQr && info && info.bankName) {
-      html += '<div class="pay-row"><span>银行</span><strong>' + esc(info.bankName) + "</strong></div>";
+      html += '<div class="pay-row"><span>' + (isAcct ? "渠道" : "银行") + "</span><strong>" + esc(info.bankName) + "</strong></div>";
     }
     if (hasQr && info && info.bankAccount) {
-      html += '<div class="pay-row"><span>银行账号</span><strong>' + esc(info.bankAccount) + "</strong></div>";
+      html += '<div class="pay-row"><span>' + (isAcct ? "账号" : "银行账号") + "</span><strong>" + esc(info.bankAccount) + "</strong></div>";
     }
     if (hasQr && info && info.phone && channelId === "tng") {
       html += '<div class="pay-row"><span>TNG 手机号</span><strong>' + esc(info.phone) + "</strong></div>";
@@ -1159,7 +1173,9 @@
       !hasLocal &&
       info &&
       info.__live === true &&
-      (!info.qrUrl || info.enabled === false || info.unavailable === true);
+      ((!info.qrUrl && !(/^acct-/.test(methodCode(order)) && info.bankAccount)) ||
+        info.enabled === false ||
+        info.unavailable === true);
     if (channelClosed) return "";
 
     var html = '<div class="pay-proof" data-proof-panel>';
@@ -1400,7 +1416,7 @@
         "</strong></div>" +
         (isPrePay(order)
           ? '<div class="pay-row"><span>支付方式</span><strong>' +
-            esc(order.paymentMethod || order.payment_method || "-") +
+            esc(acctMethodName(order) || order.paymentMethod || order.payment_method || "-") +
             "</strong></div>"
           : "") +
         "</div>" +
