@@ -1,12 +1,26 @@
 (function(){
   var root=document.getElementById('companionApp');
   if(!root)return;
+  /** Platform clock = Asia/Kuala_Lumpur (UTC+8, no DST). Returns a Date whose getUTC* fields are KL wall-clock.
+   *  Zoned strings (Z / ±hh:mm) are converted; zone-less strings are already KL wall-clock and kept as-is. */
+  function klDate(v){
+    if(v==null||v==='')return null;
+    if(typeof v==='number'||v instanceof Date){var t=new Date(v);return isNaN(t.getTime())?null:new Date(t.getTime()+288e5);}
+    var s=String(v).trim();
+    var n=s.match(/^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2}))?(?:\.\d+)?)?$/);
+    if(n)return new Date(Date.UTC(+n[1],+n[2]-1,+n[3],+(n[4]||0),+(n[5]||0),+(n[6]||0)));
+    var d=new Date(s.replace(/^(\d{4}-\d{2}-\d{2}) /,'$1T').replace(/([+-]\d{2})(\d{2})$/,'$1:$2').replace(/([+-]\d{2})$/,'$1:00'));
+    return isNaN(d.getTime())?null:new Date(d.getTime()+288e5);
+  }
+  function klFmt(v,withSeconds){
+    var d=klDate(v);
+    if(!d)return v?String(v):'';
+    function p(n){return n<10?'0'+n:String(n)}
+    return d.getUTCFullYear()+'-'+p(d.getUTCMonth()+1)+'-'+p(d.getUTCDate())+' '+p(d.getUTCHours())+':'+p(d.getUTCMinutes())+(withSeconds?':'+p(d.getUTCSeconds()):'');
+  }
   function fmtContentTime(v){
-    if(window.MCJContentTime&&window.MCJContentTime.fmtContentTime)return window.MCJContentTime.fmtContentTime(v);
     if(!v)return '';
-    try{
-      return new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Kuala_Lumpur',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(v)).replace(' ',' ');
-    }catch(e){return String(v).slice(0,16).replace('T',' ')}
+    return klFmt(v);
   }
   var ROUTES={
     '/companion/':'dashboard','/companion/login':'login','/companion/dashboard':'dashboard',
@@ -2232,7 +2246,7 @@
       ['平台抽成猫粮',s.platformCommissionCatFood],
       ['邀请返点/其他扣除',s.rebateOrOtherDeduction||0],
       ['陪玩实际到账猫粮',s.companionNetCatFood],
-      ['完成时间',s.completedAt||'-'],
+      ['完成时间',s.completedAt?fmtTime(s.completedAt):'-'],
       ['结算状态',s.settlementStatus||'已结算']
     ];
     var note=s.bossCommissionTransparencyNote||'老板直属分成由平台抽成支付，不扣陪玩收入';
@@ -2403,7 +2417,7 @@
         infoRow('老板昵称',boss.displayName||'-')+
         infoRow('老板 UID',boss.bossUid||'-')+
         infoRow('状态',boss.status==='active'?'生效中':(boss.status||'-'))+
-        infoRow('绑定时间',boss.boundAt?String(boss.boundAt).replace('T',' ').slice(0,19):'-')+
+        infoRow('绑定时间',boss.boundAt?fmtTime(boss.boundAt):'-')+
         '</div><p class="pw-note" style="margin-top:10px;margin-bottom:0">只读。换绑 / 解绑由后台操作。老板分成由平台抽成支付，不扣陪玩收入。</p>';
     }).catch(function(){
       if(!mount.isConnected)return;
@@ -2886,7 +2900,7 @@
     var one=normOne(s);
     return /^\d{2}:\d{2}$/.test(one)?one:s.replace(/\s*-\s*/g,' – ');
   }
-  function fmtTime(v){if(!v)return '-';try{return new Date(v).toLocaleString('zh-CN',{hour12:false})}catch(e){return String(v)}}
+  function fmtTime(v){if(!v)return '-';return klFmt(v,true)||'-';}
   var REJECT_REASONS=['正在服务其他订单','时间无法配合','临时有事','不接该项目','其他'];
   function voiceModeLabel(o){
     var m=String((o&&(o.voiceMode||o.voice_mode))||'game_mic').toLowerCase();
@@ -3362,14 +3376,11 @@
   }
   function fmtSessionTime(v){
     if(!v)return '';
-    try{
-      var d=new Date(v);
-      if(isNaN(d.getTime()))return '';
-      var now=new Date();
-      var sameDay=d.toDateString()===now.toDateString();
-      if(sameDay)return d.toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit',hour12:false});
-      return d.toLocaleDateString('zh-CN',{month:'2-digit',day:'2-digit'})+' '+d.toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit',hour12:false});
-    }catch(e){return ''}
+    var full=klFmt(v);
+    if(!klDate(v))return '';
+    var today=klFmt(Date.now()).slice(0,10);
+    if(full.slice(0,10)===today)return full.slice(11,16);
+    return full.slice(5,7)+'/'+full.slice(8,10)+' '+full.slice(11,16);
   }
   function messagesHtml(){
     var inbox=state.inbox;
@@ -4195,7 +4206,7 @@
       return '<div class="pw-page-head"><div><h2>我的礼物</h2><p>客服审核通过后到账的礼物。</p></div></div><section class="pw-card pad"><p class="pw-note">'+esc(state.giftsError||state.myGiftsError)+'</p><button class="pw-btn" type="button" data-gifts-reload>重试</button></section>';
     }
     var hist=list.length?list.map(function(g){
-      return '<div class="pw-gift-row"><div class="pw-gift-ico">'+(g.giftImage?'<img src="'+esc(g.giftImage)+'" alt="">':'🎁')+'</div><div><strong>'+esc(g.giftName||'礼物')+'</strong><span>×'+esc(g.quantity||1)+' · '+esc(String(g.createdAt||'').slice(0,16).replace('T',' '))+'</span></div></div>';
+      return '<div class="pw-gift-row"><div class="pw-gift-ico">'+(g.giftImage?'<img src="'+esc(g.giftImage)+'" alt="">':'🎁')+'</div><div><strong>'+esc(g.giftName||'礼物')+'</strong><span>×'+esc(g.quantity||1)+' · '+esc(fmtContentTime(g.createdAt))+'</span></div></div>';
     }).join(''):'<p class="pw-note">还没有收到礼物</p>';
     var wallHtml=wall.length?wall.map(function(w){
       return '<div class="pw-gift-chip">'+(w.giftImage?'<img src="'+esc(w.giftImage)+'" alt="">':'🎁')+'<strong>'+esc(w.giftName||'礼物')+'</strong><em>×'+esc(w.totalQuantity||0)+'</em></div>';

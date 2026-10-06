@@ -262,8 +262,8 @@ import './mcj-chat-realtime.js';
         hour:'2-digit',minute:'2-digit',hour12:false
       }).format(new Date()).replace(/\//g,'-');
     }catch(e){
-      var d=new Date();
-      return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')+' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+      var d=klDate(Date.now());
+      return d.getUTCFullYear()+'-'+String(d.getUTCMonth()+1).padStart(2,'0')+'-'+String(d.getUTCDate()).padStart(2,'0')+' '+klHm(d);
     }
   }
   function shanghaiTodayKey(){
@@ -2233,20 +2233,34 @@ import './mcj-chat-realtime.js';
     var list=(msgs||[]).filter(function(m){return c&&m.conversationId===c.id});
     return list.some(function(m){return m.messageType==='product_card'||/更多玩法/.test(String(m.content||''));});
   }
+  /** Platform clock = Asia/Kuala_Lumpur (UTC+8, no DST). Returns a Date whose getUTC* fields are KL wall-clock.
+   *  Zoned strings (Z / ±hh:mm) are converted; zone-less strings are already KL wall-clock and kept as-is. */
+  function klDate(v){
+    if(v==null||v==='')return null;
+    if(typeof v==='number'||v instanceof Date){var t=new Date(v);return isNaN(t.getTime())?null:new Date(t.getTime()+288e5);}
+    var s=String(v).trim();
+    var n=s.match(/^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2}))?(?:\.\d+)?)?$/);
+    if(n)return new Date(Date.UTC(+n[1],+n[2]-1,+n[3],+(n[4]||0),+(n[5]||0),+(n[6]||0)));
+    var d=new Date(s.replace(/^(\d{4}-\d{2}-\d{2}) /,'$1T').replace(/([+-]\d{2})(\d{2})$/,'$1:$2').replace(/([+-]\d{2})$/,'$1:00'));
+    return isNaN(d.getTime())?null:new Date(d.getTime()+288e5);
+  }
+  function klDayKey(d){return d?d.getUTCFullYear()+'-'+(d.getUTCMonth()+1)+'-'+d.getUTCDate():'';}
+  function klRelDay(d){
+    var now=klDate(Date.now());
+    if(klDayKey(d)===klDayKey(now))return 'today';
+    if(klDayKey(d)===klDayKey(new Date(now.getTime()-864e5)))return 'yesterday';
+    return '';
+  }
+  function klHm(d){return String(d.getUTCHours()).padStart(2,'0')+':'+String(d.getUTCMinutes()).padStart(2,'0');}
   function fmtChatTime(v){
     if(!v)return '';
-    var d=new Date(v);
-    if(isNaN(d.getTime()))return String(v);
-    var now=new Date();
-    var hh=String(d.getHours()).padStart(2,'0');
-    var mm=String(d.getMinutes()).padStart(2,'0');
-    var time=hh+':'+mm;
-    var sameDay=d.getFullYear()===now.getFullYear()&&d.getMonth()===now.getMonth()&&d.getDate()===now.getDate();
-    if(sameDay)return '今天 '+time;
-    var yest=new Date(now);yest.setDate(now.getDate()-1);
-    var isYest=d.getFullYear()===yest.getFullYear()&&d.getMonth()===yest.getMonth()&&d.getDate()===yest.getDate();
-    if(isYest)return '昨天 '+time;
-    return (d.getMonth()+1)+'/'+d.getDate()+' '+time;
+    var d=klDate(v);
+    if(!d)return String(v);
+    var time=klHm(d);
+    var rel=klRelDay(d);
+    if(rel==='today')return '今天 '+time;
+    if(rel==='yesterday')return '昨天 '+time;
+    return (d.getUTCMonth()+1)+'/'+d.getUTCDate()+' '+time;
   }
   function companionAcceptLabel(order){
     if(!order)return '-';
@@ -2714,25 +2728,20 @@ import './mcj-chat-realtime.js';
   }
   function listTimeLabel(v){
     if(!v)return '';
-    var d=new Date(v);
-    if(isNaN(d.getTime()))return '';
-    var now=new Date();
-    var hh=String(d.getHours()).padStart(2,'0');
-    var mm=String(d.getMinutes()).padStart(2,'0');
-    var time=hh+':'+mm;
-    var sameDay=d.getFullYear()===now.getFullYear()&&d.getMonth()===now.getMonth()&&d.getDate()===now.getDate();
-    if(sameDay)return time;
-    var yest=new Date(now);yest.setDate(now.getDate()-1);
-    if(d.getFullYear()===yest.getFullYear()&&d.getMonth()===yest.getMonth()&&d.getDate()===yest.getDate())return '昨天';
-    return (d.getMonth()+1)+'/'+d.getDate();
+    var d=klDate(v);
+    if(!d)return '';
+    var rel=klRelDay(d);
+    if(rel==='today')return klHm(d);
+    if(rel==='yesterday')return '昨天';
+    return (d.getUTCMonth()+1)+'/'+d.getUTCDate();
   }
   /** Orders table / detail: readable local datetime, never raw DB ISO with ms/offset. */
   function fmtOrderDateTime(v){
     if(v==null||v==='')return '-';
-    var d=new Date(v);
+    var d=klDate(v);
     function pad(n){return String(n).padStart(2,'0');}
-    if(!isNaN(d.getTime())){
-      return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())+' '+pad(d.getHours())+':'+pad(d.getMinutes())+':'+pad(d.getSeconds());
+    if(d){
+      return d.getUTCFullYear()+'-'+pad(d.getUTCMonth()+1)+'-'+pad(d.getUTCDate())+' '+pad(d.getUTCHours())+':'+pad(d.getUTCMinutes())+':'+pad(d.getUTCSeconds());
     }
     var s=String(v).trim().replace('T',' ');
     s=s.replace(/\.\d+/,'').replace(/Z$/i,'').replace(/[+-]\d{2}:?\d{2}$/,'');
@@ -2986,7 +2995,7 @@ import './mcj-chat-realtime.js';
           '<td>×'+esc(o.quantity||1)+'</td>'+
           '<td>'+esc(o.totalAmount)+' 猫粮</td>'+
           '<td>'+proofCell+'</td>'+
-          '<td>'+esc(String(o.paymentProofUploadedAt||o.createdAt||'-').replace('T',' ').slice(0,19))+'</td>'+
+          '<td>'+esc(fmtOrderDateTime(o.paymentProofUploadedAt||o.createdAt))+'</td>'+
           '<td>'+esc(giftOrderStatusLabel(o.status))+(o.rejectReason?'<br><small>'+esc(o.rejectReason)+'</small>':'')+'</td>'+
           '<td><div class="cs-actions">'+actions+'</div></td></tr>';
       }).join('')+'</tbody></table></section>';
@@ -3102,7 +3111,9 @@ import './mcj-chat-realtime.js';
   }
   function ordersHtml(){
     var rows=((state.data&&state.data.orders)||[]).slice().filter(function(o){
-      if(state.orderFilter&&o.status!==state.orderFilter)return false;
+      if(state.orderFilter==='payment_review'){if(!o.paymentReview)return false;}
+      else if(state.orderFilter==='awaiting_payment'){if(o.status!=='awaiting_payment'||o.paymentReview)return false;}
+      else if(state.orderFilter&&o.status!==state.orderFilter)return false;
       // Multi child rows stay in DB but must not appear as independent CS work items.
       if(o.isMultiGroupChild||o.parentOrderId||o.parent_order_id)return false;
       return true;
@@ -4052,7 +4063,7 @@ import './mcj-chat-realtime.js';
         '<div style="flex:1;min-width:0"><strong>'+esc(c.nickname||'陪玩')+(preferred?' · <span style="color:#60a5fa">老板意向</span>':'')+'</strong>'+
         '<p style="margin:4px 0;font-size:12px;opacity:.85">ID '+esc(c.companionUid||c.id||'-')+' · '+esc(c.level||'-')+' · 段位 '+esc(c.gameRank||c.rank||c.mainGame||c.game||'-')+'</p>'+
         '<p style="margin:0;font-size:12px;opacity:.85">单价 '+money(c.price||0)+' · 声线 '+esc(c.voiceType||c.voice_type||'-')+' · '+esc(c.onlineStatusLabel||c.onlineStatus||'-')+'</p>'+
-        '<p style="margin:4px 0 0;font-size:12px;opacity:.85">抢单时间 '+esc(g.grabbedAt||g.grabbed_at||'-')+'</p>'+
+        '<p style="margin:4px 0 0;font-size:12px;opacity:.85">抢单时间 '+esc(fmtOrderDateTime(g.grabbedAt||g.grabbed_at))+'</p>'+
         (window.MCJCompanionIdentity&&window.MCJCompanionIdentity.renderTags
           ? window.MCJCompanionIdentity.renderTags({
               levelId:c.levelId||'',
@@ -4119,7 +4130,7 @@ import './mcj-chat-realtime.js';
           '<div style="flex:1;min-width:0"><strong>'+esc(c.nickname||'陪玩')+(picked?' · 老板已选择':(notSelected?' · 未选中':''))+'</strong>'+
           '<p style="margin:4px 0;font-size:12px">ID '+esc(c.companionUid||c.id||'-')+' · '+esc(c.level||'-')+' · 音色 '+esc(c.voiceType||c.voice_type||'-')+' · 段位 '+esc(c.gameRank||c.rank||'-')+'</p>'+
           '<p style="margin:0;font-size:12px">'+esc(c.mainGame||c.game||'-')+' · 单价 '+money(c.price||0)+' · '+esc(c.onlineStatusLabel||c.onlineStatus||'-')+'</p>'+
-          '<p style="margin:4px 0 0;font-size:12px">标签：'+esc(c.tags||'-')+' · 抢单时间 '+esc(g.grabbedAt||g.grabbed_at||'-')+'</p>'+
+          '<p style="margin:4px 0 0;font-size:12px">标签：'+esc(c.tags||'-')+' · 抢单时间 '+esc(fmtOrderDateTime(g.grabbedAt||g.grabbed_at))+'</p>'+
           (c.voiceUrl?'<p style="margin:4px 0 0"><a href="'+esc(c.voiceUrl)+'" target="_blank" rel="noopener">试听录音</a></p>':'')+
           '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">'+
           '<a class="cs-btn" href="'+esc(c.detailUrl||('/profile.html?player='+encodeURIComponent(c.id||'')))+'" target="_blank" rel="noopener">资料详情</a>'+

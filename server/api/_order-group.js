@@ -45,6 +45,16 @@ export function deriveMultiGroupState(parent, children = []) {
   const total = effective.length;
   const confirmedCount = confirmed.length;
 
+  if (parentSt === "cancelled" || parentSt === "refunded") {
+    return {
+      key: parentSt === "refunded" ? "REFUNDED" : "CANCELED",
+      parentStatus: parentSt,
+      confirmedCount: 0,
+      totalCount: 0,
+      label: parentSt === "refunded" ? "已退款" : "已取消",
+    };
+  }
+
   if (!list.length) {
     return {
       key: parentSt === "awaiting_payment" ? "PAYMENT_PENDING" : "WAITING_CONFIRMATION",
@@ -404,7 +414,8 @@ export async function refreshParentOrderStatus(parentOrderId, deps = {}) {
   }
 
   const children = await loadChildren(parentOrderId);
-  const nextStatus = aggregateParentStatus(children);
+  // A whole-order cancel/refund is final: stale child rows must never reopen the parent into a review queue.
+  const nextStatus = CANCELLED_LIKE.has(statusOf(parent)) ? statusOf(parent) : aggregateParentStatus(children);
   const amounts = summarizeGroupAmounts(parent, children);
 
   let saved = parent;

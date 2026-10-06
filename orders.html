@@ -285,7 +285,7 @@
       function esc(v){return String(v==null?'':v).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
       function money(v){if(window.MCJCurrency)return window.MCJCurrency.formatPlain(v);var n=Number(v||0);return (Number.isFinite(n)?n:0).toFixed(2).replace(/\.00$/,'')+' 猫粮'}
       function moneyEmoji(v){if(window.MCJCurrency)return window.MCJCurrency.formatAmount(v);return '🐱 '+money(v)}
-      function date(v){if(!v)return '-';try{return new Date(v).toLocaleString('zh-CN',{hour12:false})}catch(e){return v}}
+      function date(v){if(!v)return '-';var K=window.MCJContentTime;if(K&&K.fmtContentTime)return K.fmtContentTime(v,true)||'-';var s=String(v).trim(),n=s.match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?(?:\.\d+)?$/);var d=n?new Date(Date.UTC(+n[1],+n[2]-1,+n[3],+n[4],+n[5],+(n[6]||0))):new Date(new Date(s.replace(/^(\d{4}-\d{2}-\d{2}) /,'$1T').replace(/([+-]\d{2})$/,'$1:00')).getTime()+288e5);if(isNaN(d.getTime()))return s;var p=function(x){return x<10?'0'+x:String(x)};return d.getUTCFullYear()+'-'+p(d.getUTCMonth()+1)+'-'+p(d.getUTCDate())+' '+p(d.getUTCHours())+':'+p(d.getUTCMinutes())+':'+p(d.getUTCSeconds())}
       function voiceModeLabel(o){
         var m=String((o&& (o.voiceMode||o.voice_mode))||'game_mic').toLowerCase();
         if(m==='discord')return 'Discord语音房';

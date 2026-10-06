@@ -159,14 +159,16 @@ function paymentStatusLabel(status, reviewStatus, row = {}) {
   if (row.parent_order_id) {
     const st = String(status || "");
     if (st === "awaiting_payment") return "待主单付款";
-    if (st === "cancelled" || st === "refunded") return "已取消";
+    if (st === "cancelled") return "已取消";
+    if (st === "refunded") return "已退款";
     return "主单已付·分配";
   }
   const st = String(status || "");
   const rv = String(reviewStatus || "").toLowerCase();
-  if (rv === "approved") return "已支付";
-  if (rv === "rejected") return "付款已拒绝";
+  if (st === "refunded") return "已退款";
   if (rv === "pending" && isTerminalOrderStatus(st)) return terminalOrderReviewText(st);
+  if (rv === "approved") return st === "cancelled" ? "已支付·订单已取消" : "已支付";
+  if (rv === "rejected") return "付款已拒绝";
   if (rv === "pending") return "待审核付款";
   if (st === "awaiting_payment") return "待付款";
   if (st === "cancelled") return "已取消";

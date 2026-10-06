@@ -254,11 +254,9 @@
   }
 
   function defaultStartTime() {
-    var d = new Date();
-    d.setSeconds(0, 0);
-    d.setMinutes(0);
-    d.setHours(d.getHours() + 1);
-    return pad2(d.getHours()) + ":" + pad2(d.getMinutes());
+    // Next full hour on the platform clock (Asia/Kuala_Lumpur, UTC+8), independent of device timezone.
+    var d = new Date(Date.now() + 288e5);
+    return pad2((d.getUTCHours() + 1) % 24) + ":00";
   }
 
   function normalizeTimeValue(v) {

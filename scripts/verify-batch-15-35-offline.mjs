@@ -675,6 +675,76 @@ await test("#27 boss rank frozen in order snapshot; hall keeps only bossRank; CS
   assert.match(read("server/api/_place-multi-order.js"), /sharedBossRank/);
 });
 
+await test("#32 cancelled/refunded multi parent never derives a payment-review label and is never reopened", async () => {
+  const g = await import("../server/api/_order-group.js");
+  const kids = [{ status: "awaiting_payment" }, { status: "awaiting_payment" }];
+  const c = g.deriveMultiGroupState({ status: "cancelled", order_type: "multi_group" }, kids);
+  assert.equal(c.label, "已取消");
+  assert.equal(c.parentStatus, "cancelled");
+  const r = g.deriveMultiGroupState({ status: "refunded", order_type: "multi_group" }, kids);
+  assert.equal(r.label, "已退款");
+  const live = g.deriveMultiGroupState({ status: "awaiting_payment", order_type: "multi_group" }, kids);
+  assert.equal(live.parentStatus, "awaiting_payment");
+  const patches = [];
+  const out = await g.refreshParentOrderStatus("p1", {
+    loadOrder: async () => ({ id: "p1", status: "cancelled", order_type: "multi_group" }),
+    loadChildren: async () => kids,
+    patchOrder: async (id, patch) => { patches.push(patch); return { id, ...patch }; },
+  });
+  assert.equal(patches.length, 0, "cancelled parent must not be patched back to awaiting_payment");
+  assert.notEqual(out?.error, "missing_deps");
+});
+await test("#32 CS + admin labels/filters: terminal orders show 已取消/已退款, never 待审核", async () => {
+  const pr = await import("../server/api/_payment-receipts.js");
+  assert.equal(pr.isTerminalOrderStatus("cancelled"), true);
+  assert.equal(pr.isTerminalOrderStatus("refunded"), true);
+  assert.doesNotMatch(pr.terminalOrderReviewText("cancelled"), /待审核|付款审核|等待审核/);
+  const admin = read("server/api/admin/orders.js");
+  assert.match(admin, /if \(st === "refunded"\) return "已退款";\r?\n  if \(rv === "pending" && isTerminalOrderStatus\(st\)\)/);
+  assert.match(admin, /if \(st === "refunded"\) return "已退款";\r?\n    return "主单已付·分配";/);
+  const cs = read("server/api/customer-service.js");
+  assert.match(cs, /paymentReview: !!extras\.paymentReceipt && !isTerminalOrderStatus\(row\.status\)/);
+  const ui = read("src/customer-service-v2.js");
+  assert.match(ui, /state\.orderFilter==='payment_review'\)\{if\(!o\.paymentReview\)return false;\}/);
+  assert.match(ui, /state\.orderFilter==='awaiting_payment'\)\{if\(o\.status!=='awaiting_payment'\|\|o\.paymentReview\)return false;\}/);
+});
+await test("#33 KL formatters: UTC→+8 once, zone-less kept, identical under any device TZ", async () => {
+  const { execFileSync } = await import("node:child_process");
+  const probe = `
+    const fs=require('fs'),vm=require('vm');
+    const cs=fs.readFileSync('src/customer-service-v2.js','utf8');
+    const a=cs.indexOf('function klDate(v){'),b=cs.indexOf('function companionAcceptLabel(');
+    const s2=cs.indexOf('function fmtOrderDateTime(v){'),e2=cs.indexOf('function conversationStatusKind(');
+    const ctx={};vm.runInNewContext(cs.slice(a,b)+cs.slice(s2,e2)+';this.o=fmtOrderDateTime;this.c=fmtChatTime;',ctx);
+    const ad=fs.readFileSync('src/admin-final-v1.js','utf8');
+    const a3=ad.indexOf('function klDate(v){'),b3=ad.indexOf('function orderStatusSelectValue(');
+    const ctx2={};vm.runInNewContext(ad.slice(a3,b3)+';this.f=fmtOrderTime;',ctx2);
+    const ct={window:{}};vm.runInNewContext(fs.readFileSync('src/content-time.js','utf8'),ct);
+    const k=ct.window.MCJContentTime.fmtContentTime;
+    const inputs=['2026-10-06T01:05:09.123+00:00','2026-10-06T01:05:09Z','2026-10-06 01:05:09+00','2026-10-06T09:05:09+08:00','2026-10-06 09:05:09','2026-10-06T09:05:09','2026-10-05T16:30:00Z'];
+    console.log(JSON.stringify(inputs.map(v=>[ctx.o(v),ctx2.f(v,true),k(v,true)])));
+  `;
+  const outs = ["UTC", "America/Los_Angeles", "Asia/Kolkata", "Asia/Kuala_Lumpur"].map((tz) =>
+    execFileSync(process.execPath, ["-e", probe], { cwd: root, env: { ...process.env, TZ: tz }, encoding: "utf8" }).trim()
+  );
+  assert.ok(outs.every((o) => o === outs[0]), "device TZ must not change output:\n" + outs.join("\n"));
+  const rows = JSON.parse(outs[0]);
+  for (const r of rows.slice(0, 6)) assert.deepEqual(r, ["2026-10-06 09:05:09", "2026-10-06 09:05:09", "2026-10-06 09:05:09"]);
+  assert.deepEqual(rows[6], ["2026-10-06 00:30:00", "2026-10-06 00:30:00", "2026-10-06 00:30:00"]);
+});
+await test("#33 every end routes order/chat times through the KL helper (no device-local toLocaleString)", () => {
+  const wb = read("src/companion-workbench.js");
+  assert.match(wb, /function fmtTime\(v\)\{if\(!v\)return '-';return klFmt\(v,true\)\|\|'-';\}/);
+  assert.doesNotMatch(wb, /toLocaleTimeString\('zh-CN'/);
+  const admin = read("src/admin-final-v1.js");
+  assert.doesNotMatch(admin, /toLocaleString\('zh-CN',\{hour12:false\}\)/);
+  const cs = read("src/customer-service-v2.js");
+  assert.doesNotMatch(cs, /String\(d\.getHours\(\)\)/);
+  assert.match(read("orders.html"), /function date\(v\)\{if\(!v\)return '-';var K=window\.MCJContentTime/);
+  assert.match(read("server/api/_companion-order-notify.js"), /8 \* 3600 \* 1000/);
+  assert.match(read("src/place-order-modal.js"), /pad2\(\(d\.getUTCHours\(\) \+ 1\) % 24\) \+ ":00"/);
+});
+
 const failed = results.filter((r) => !r.ok);
 console.log(`\n${results.length - failed.length}/${results.length} passed`);
 if (failed.length) process.exit(1);
