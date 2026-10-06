@@ -1,0 +1,89 @@
+{
+  "at": "2026-10-06T03:05:47.947Z",
+  "staging": "https://meow-cuijiao-homepage-staging.vercel.app",
+  "deployment": "meow-cuijiao-homepage-bcxpr7gxx-ciancianteng-4581s-projects.vercel.app",
+  "results": [
+    {
+      "step": "admin_bank_saved",
+      "result": "PASS",
+      "detail": "bank-1791255965475 支付宝 qr=true"
+    },
+    {
+      "step": "admin_boss_order_visible",
+      "result": "PASS",
+      "detail": "[\"duitnow\",\"acct-bank-1791255965475\"]"
+    },
+    {
+      "step": "admin_boss_recharge_visible",
+      "result": "PASS",
+      "detail": "[\"duitnow\",\"acct-bank-1791255965475\"]"
+    },
+    {
+      "step": "admin_channel_list_shows_alipay",
+      "result": "PASS",
+      "detail": "支付宝 支付宝 收款渠道 · STAGING-TEST 妙脆角 · MYR 已启用 开关:开 订单可见 充值可见 充值收款 · 2026-10-06T03:06:05.476+00:00 编辑 停用"
+    },
+    {
+      "step": "boss_recharge_method",
+      "result": "PASS",
+      "detail": "支付宝 · STAGING-TEST 妙脆角"
+    },
+    {
+      "step": "boss_order_method",
+      "result": "PASS",
+      "detail": "支付宝 · STAGING-TEST 妙脆角 qr=true"
+    },
+    {
+      "step": "boss_recharge_ui_alipay",
+      "result": "PASS",
+      "detail": ""
+    },
+    {
+      "step": "boss_order_ui_alipay_selectable",
+      "result": "PASS",
+      "detail": "DuitNow | 支付宝 · STAGING-TEST 妙脆角 | 猫粮余额"
+    },
+    {
+      "step": "boss_order_created_with_alipay",
+      "result": "PASS",
+      "detail": "{\"action\":\"create\",\"status\":200,\"ok\":true,\"message\":\"订单已提交，请完成支付。\",\"id\":\"88324b07-3bc8-4332-b1db-314a3ba3c7a9\",\"orderNo\":\"MCJO000408\",\"paymentMethod\":\"acct-bank-1791255965475\"}"
+    },
+    {
+      "step": "payment_page_alipay_info",
+      "result": "PASS",
+      "detail": "支付宝 · STAGING-TEST 妙脆角 STAGING-TEST：请用支付宝扫码付款，付款后上传截图。 收款人 STAGING-TEST 妙脆角 渠道 支付宝 账号 alipay-test-13800138000 应付金额 20 猫粮"
+    },
+    {
+      "step": "payment_page_proof_upload_available",
+      "result": "PASS",
+      "detail": "proofPanel=1"
+    },
+    {
+      "step": "payment_page_method_label_no_raw_code",
+      "result": "PASS",
+      "detail": "支付方式 支付宝"
+    },
+    {
+      "step": "server_pay_info_bound_to_alipay",
+      "result": "PASS",
+      "detail": "acct-bank-1791255965475 支付宝 支付宝 · STAGING-TEST 妙脆角"
+    },
+    {
+      "step": "cleanup_cancel_test_order",
+      "result": "PASS",
+      "detail": "MCJO000408 200 订单已取消。"
+    }
+  ],
+  "testOrder": {
+    "id": "88324b07-3bc8-4332-b1db-314a3ba3c7a9",
+    "orderNo": "MCJO000408",
+    "cancelled": true
+  },
+  "bank": {
+    "id": "bank-1791255965475",
+    "code": "acct-bank-1791255965475",
+    "bank_name": "支付宝",
+    "account_name": "STAGING-TEST 妙脆角",
+    "kept": true
+  }
+}
