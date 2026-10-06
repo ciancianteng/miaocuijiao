@@ -321,6 +321,14 @@ async function finishOne(row, { servedHours, reason, initiator, operator, addSys
     completedAt: nowIso(),
   };
   delete done.refundError;
+  if (done.refundAmount > 0 && fullIncome > 0) {
+    // Partial clawback is a separate ledger row; keep the order's display split equal to the ledger net.
+    await supabaseJson(restUrl("orders", `?id=eq.${encodeURIComponent(fresh.id)}`), {
+      method: "PATCH",
+      headers: serviceHeaders(),
+      body: JSON.stringify({ companion_income: done.companionIncome, platform_fee: done.platformCommission }),
+    }).catch(() => null);
+  }
   await patchMarker(fresh.id, done);
   await writeOrderStatusLog(db, {
     orderId: fresh.id,

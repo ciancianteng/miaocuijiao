@@ -861,6 +861,7 @@ await test("#35B single order: settles once, refunds remainder once (partial sta
   const done = ef.readEarlyFinish(o);
   assert.equal(done.status, "done");
   assert.deepEqual([done.settleAmount, done.refundAmount, done.companionIncome, done.platformCommission], [75, 25, 60, 15]);
+  assert.deepEqual([o.companion_income, o.platform_fee], [60, 15], "order display split must match the post-clawback ledger");
   assert.equal(done.initiator.label, "老板要求");
   assert.equal(done.confirmedByName, "小美");
   assert.ok(msgs.some((m) => /实际服务 1\.5 小时 \/ 预约 2 小时/.test(m)));
