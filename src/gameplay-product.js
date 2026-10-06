@@ -381,6 +381,8 @@
       (showServer
         ? '<div class="gameplay-product-field"><span>区服</span><input name="server" type="text" maxlength="64" placeholder="例如：亚服 / 国服" value="' + esc(state.server) + '"></div>'
         : "") +
+      '<div class="gameplay-product-field"><span>我的段位（选填，陪玩接单前可见）</span>' +
+      '<input name="bossRank" type="text" maxlength="30" placeholder="例如：钻石 2 / 星耀 / 无段位" value="' + esc(state.bossRank || "") + '" autocomplete="off"></div>' +
       '<div class="gameplay-product-field"><span>备注</span>' +
       '<textarea name="remark" rows="3" placeholder="段位目标、联系方式偏好等">' + esc(state.remark) + "</textarea></div>" +
       '<div class="gameplay-product-field"><span>优惠码</span>' +
@@ -478,6 +480,7 @@
     state.gameId = String(fd.get("gameId") || "").trim();
     state.server = String(fd.get("server") || "").trim();
     state.remark = String(fd.get("remark") || "").trim();
+    state.bossRank = String(fd.get("bossRank") || "").trim().slice(0, 30);
     state.couponCode = String(fd.get("couponCode") || "").trim();
     state.companionId = String(fd.get("companionId") || "").trim();
   }
@@ -577,6 +580,7 @@
           service_type: (pkg && pkg.name) || p.name || p.category || "更多玩法",
           description: description,
           notes: state.remark,
+          bossRank: state.bossRank || "",
           gameId: state.gameId,
           game_id: state.gameId,
           server: state.server,

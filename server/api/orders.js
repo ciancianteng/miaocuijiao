@@ -6,7 +6,9 @@ import { readLocalLevels } from "./_companion-levels-store.js";
 import { priceForGame } from "./_game-prices.js";
 import { resolveOrderUnitPrice } from "./_admin-service-prices.js";
 import {
+  buildServiceSnapshot,
   buildServiceSnapshotForCompanion,
+  cleanRank,
   persistOrderServiceSnapshot,
   viewServiceSnapshot,
 } from "./_service-standard.js";
@@ -1380,6 +1382,7 @@ export default async function handler(req, res) {
       let noTakerProductId = "";
       let productCompanionName = "";
       let serviceSnapshot = null;
+      const bossRank = cleanRank(order.bossRank || order.boss_rank || body.bossRank || "");
 
       if (companionId) {
         let companions = await supabaseJson(restUrl("profiles", `?id=eq.${encodeURIComponent(companionId)}&limit=1`), { headers: serviceHeaders() });
@@ -1458,6 +1461,7 @@ export default async function handler(req, res) {
           pricingUnit: String(order.pricingUnit || order.pricing_unit || cp.pricing_unit || "小时"),
           hours,
           quantity,
+          bossRank,
         });
       } else {
         if (!order.game || (!order.description && !order.requirements && !order.title)) {
@@ -1583,6 +1587,18 @@ export default async function handler(req, res) {
       };
       if (productCommissionSnapshot != null) {
         enriched.platform_fee_rate = productCommissionSnapshot;
+      }
+      if (!serviceSnapshot && bossRank) {
+        serviceSnapshot = buildServiceSnapshot({
+          serviceName: serviceType || game,
+          unitPrice,
+          pricingUnit: String(order.pricingUnit || order.pricing_unit || "小时"),
+          hours,
+          quantity,
+          companionId: companionId || "",
+          bossRank,
+          bossRankGame: String(order.game || game || "").trim(),
+        });
       }
       if (serviceSnapshot) enriched.service_snapshot = serviceSnapshot;
       let rows;
@@ -2772,6 +2788,7 @@ export default async function handler(req, res) {
           serviceName: serviceType,
           unitPrice,
           hours,
+          bossRank: cleanRank(body.bossRank || body.boss_rank || "") || viewServiceSnapshot(exited)?.bossRank?.rank || "",
         })
       );
       // Stamp exited slot as replaced (keep history row).

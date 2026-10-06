@@ -12,7 +12,7 @@ import {
 } from "./_order-group.js";
 import { resolveOrderUnitPrice } from "./_admin-service-prices.js";
 import { readLocalLevels } from "./_companion-levels-store.js";
-import { buildServiceSnapshotForCompanion, persistOrderServiceSnapshot } from "./_service-standard.js";
+import { buildServiceSnapshotForCompanion, cleanRank, persistOrderServiceSnapshot } from "./_service-standard.js";
 
 function money(v) {
   const n = Number(String(v ?? "").replace(/[^\d.-]/g, ""));
@@ -194,6 +194,7 @@ export async function placeMultiOrder(ctx) {
 
   const sharedGameId = String(body.gameId || body.game_id || "").trim();
   const sharedNotes = String(body.notes || body.remark || "").trim();
+  const sharedBossRank = cleanRank(body.bossRank || body.boss_rank || "");
   let voiceMode = "game_mic";
   try {
     const { normalizeVoiceModeForNewOrder } = await import("./_discord-voice-orders.js");
@@ -498,6 +499,7 @@ export async function placeMultiOrder(ctx) {
           unitPrice: line.unitPrice,
           hours: line.hours,
           quantity: line.quantity,
+          bossRank: sharedBossRank,
         })
       );
       if (!isMultiGroupChild(child) && !child.parent_order_id) {

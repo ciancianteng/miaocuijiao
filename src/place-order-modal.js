@@ -1169,6 +1169,29 @@
     }
   }
 
+  /** Draft prefill only (per game); the order snapshot on the server is the record. */
+  function rememberedBossRank(game) {
+    try {
+      return String(localStorage.getItem("mcjBossRank:" + String(game || "").trim()) || "").slice(0, 30);
+    } catch (e) {
+      return "";
+    }
+  }
+  document.addEventListener("input", function (e) {
+    if (e.target && e.target.matches && e.target.matches("[data-po-boss-rank]")) {
+      state.bossRank = String(e.target.value || "").slice(0, 30);
+    }
+  });
+  function readBossRank() {
+    var el = qs("[data-po-boss-rank]");
+    var v = el ? String(el.value || "").trim().slice(0, 30) : String(state.bossRank || "");
+    state.bossRank = v;
+    try {
+      if (v) localStorage.setItem("mcjBossRank:" + currentServiceLabel(), v);
+    } catch (e) {}
+    return v;
+  }
+
   function gameIdFieldHtml() {
     var inherited = inheritedAccountId();
     var showInherited = !!(inherited && !state.editingGameId);
@@ -1342,6 +1365,9 @@
       esc(state.quantity) +
       '"></label>' +
       gameIdFieldHtml() +
+      '<label>我的段位（选填，陪玩接单前可见）<input data-po-boss-rank maxlength="30" autocomplete="off" placeholder="例如：钻石 2 / 星耀 / 无段位" value="' +
+      esc(state.bossRank || rememberedBossRank(currentServiceLabel())) +
+      '"></label>' +
       '<div class="mcj-po-field mcj-po-schedule-field"><span class="mcj-po-label">服务时间 *</span>' +
       '<div class="mcj-po-time-row">' +
       '<div class="mcj-po-time-col mcj-po-time-start"><span class="mcj-po-time-cap">开始时间</span>' +
@@ -1657,6 +1683,7 @@
     team.applyShared({
       gameId: readModalGameId(),
       idContext: currentIdContext(),
+      bossRank: readBossRank(),
       notes: notesEl ? String(notesEl.value || "").trim() : "",
       startTime: readStartTimeFromDom(activeMask()) || state.startTime,
       voiceMode: state.voiceMode,
@@ -1898,6 +1925,7 @@
             quantity: quantity,
             totalAmount: total,
             gameId: gameId,
+            bossRank: readBossRank(),
             notes: noteParts.join("；"),
             paymentMethod: "catfood",
             voiceMode: state.voiceMode || "game_mic",
@@ -1922,6 +1950,7 @@
             quantity: quantity,
             totalAmount: total,
             gameId: gameId,
+            bossRank: readBossRank(),
             schedule: schedule,
             startTime: startTime,
             endTime: endTime,

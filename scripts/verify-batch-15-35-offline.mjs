@@ -636,6 +636,45 @@ await test("#35A clock panel: exactly one primary action per state + explicit do
   assert.match(css, /\.cs-clock-actions \.cs-clock-btn\{min-height:44px/);
 });
 
+await test("#26 per-game companion rank: tied to service, sanitized, empty ranks never shown", async () => {
+  const ss = await import("../server/api/_service-standard.js");
+  assert.equal(ss.cleanRank("  钻石<script>\u0007 II  "), "钻石script II");
+  assert.equal(ss.cleanRank("x".repeat(80)).length, 30);
+  const standards = {
+    s1: { name: "王者荣耀", rank: "星耀 III", content: "" },
+    s2: { name: "和平精英", rank: "", content: "带飞" },
+    s3: { name: "英雄联盟", rank: "钻石 II" },
+  };
+  assert.deepEqual(ss.gameRanksFromStandards(standards).map((r) => [r.name, r.rank]), [["王者荣耀", "星耀 III"], ["英雄联盟", "钻石 II"]]);
+  assert.equal(ss.rankForService(standards, { serviceId: "s1" }), "星耀 III");
+  assert.equal(ss.rankForService(standards, { name: "英雄联盟" }), "钻石 II");
+  assert.equal(ss.rankForService(standards, { serviceId: "s2" }), "");
+  const pub = read("server/api/public/companions.js");
+  assert.match(pub, /legacy && games\.length === 1/);
+  assert.match(read("src/companion-hall.js"), /data-game-rank/);
+  assert.match(read("src/profile-detail.js"), /pd-service-chip--rank/);
+  assert.match(read("src/companion-workbench.js"), /name="rank" maxlength="30"/);
+});
+await test("#27 boss rank frozen in order snapshot; hall keeps only bossRank; CS + admin render it", async () => {
+  const ss = await import("../server/api/_service-standard.js");
+  const snap = ss.buildServiceSnapshot({ standards: {}, serviceId: "s1", serviceName: "王者荣耀", unitPrice: 30, bossRank: "王者 50星", bossRankGame: "王者荣耀" });
+  assert.deepEqual(snap.bossRank, { game: "王者荣耀", rank: "王者 50星" });
+  const noRank = ss.buildServiceSnapshot({ standards: {}, serviceId: "s1", serviceName: "王者荣耀" });
+  assert.equal(noRank.bossRank, undefined);
+  const viewed = ss.viewServiceSnapshot({ service_snapshot: snap, game: "王者荣耀" });
+  assert.deepEqual(viewed.bossRank, { game: "王者荣耀", rank: "王者 50星" });
+  const { sanitizeHallOrderView } = await import("../server/api/_order-assignment.js");
+  const hall = sanitizeHallOrderView({ id: "o1", serviceSnapshot: { ...viewed, sections: [{ label: "x", value: "secret" }] } });
+  assert.deepEqual(hall.serviceSnapshot, { bossRank: { game: "王者荣耀", rank: "王者 50星" } });
+  assert.equal(sanitizeHallOrderView({ id: "o2", serviceSnapshot: viewServiceNull() }).serviceSnapshot, null);
+  function viewServiceNull() { return null; }
+  assert.match(read("src/customer-service-v2.js"), /data-order-boss-rank/);
+  assert.match(read("src/admin-final-v1.js"), /\['老板段位'/);
+  assert.match(read("src/companion-workbench.js"), /function bossRankMetaHtml\(o\)/);
+  assert.match(read("server/api/orders.js"), /cleanRank\(order\.bossRank/);
+  assert.match(read("server/api/_place-multi-order.js"), /sharedBossRank/);
+});
+
 const failed = results.filter((r) => !r.ok);
 console.log(`\n${results.length - failed.length}/${results.length} passed`);
 if (failed.length) process.exit(1);

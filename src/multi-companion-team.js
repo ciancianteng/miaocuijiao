@@ -24,6 +24,7 @@
     sharedGameId: "",
     sharedIdContext: { serviceKey: "", game: "", server: "", platform: "" },
     sharedNotes: "",
+    sharedBossRank: "",
     sharedStartTime: "",
     sharedVoiceMode: "game_mic",
     paymentMethod: "", // chosen on sheet / inherited from place-order modal — never hardcode catfood
@@ -392,6 +393,7 @@
         sharedGameId: state.sharedGameId || "",
         sharedIdContext: state.sharedIdContext || { serviceKey: "", game: "", server: "", platform: "" },
         sharedNotes: state.sharedNotes || "",
+        sharedBossRank: state.sharedBossRank || "",
         sharedStartTime: state.sharedStartTime || "",
         sharedVoiceMode: state.sharedVoiceMode || "game_mic",
         paymentMethod: state.paymentMethod || "",
@@ -439,6 +441,7 @@
       state.sharedGameId = data.sharedGameId || "";
       state.sharedIdContext = normalizeIdContext(data.sharedIdContext || {});
       state.sharedNotes = data.sharedNotes || "";
+      state.sharedBossRank = data.sharedBossRank || "";
       state.sharedStartTime = normalizeTimeValue(data.sharedStartTime || "") || "";
       state.sharedVoiceMode = data.sharedVoiceMode || "game_mic";
       if (state.sharedVoiceMode !== "discord" && state.sharedVoiceMode !== "game_mic") {
@@ -463,6 +466,7 @@
     state.sharedGameId = "";
     state.sharedIdContext = { serviceKey: "", game: "", server: "", platform: "" };
     state.sharedNotes = "";
+    state.sharedBossRank = "";
     state.sharedStartTime = "";
     state.sharedVoiceMode = "game_mic";
     state.paymentMethod = "";
@@ -1319,6 +1323,7 @@
       action: "place_multi_order",
       paymentMethod: String(state.paymentMethod || "").trim().toLowerCase(),
       gameId: String(state.sharedGameId || "").trim(),
+      bossRank: String(state.sharedBossRank || "").trim(),
       notes: notes,
       schedule: schedule,
       startTime: startTime,
@@ -1581,6 +1586,7 @@
       state.sharedIdContext = idContextFromService(patch.service || patch.game);
     }
     if (patch.notes != null) state.sharedNotes = String(patch.notes || "");
+    if (patch.bossRank != null) state.sharedBossRank = String(patch.bossRank || "").trim().slice(0, 30);
     if (patch.startTime) {
       var t = normalizeTimeValue(patch.startTime);
       if (t) state.sharedStartTime = t;

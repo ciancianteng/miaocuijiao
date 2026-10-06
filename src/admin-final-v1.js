@@ -273,6 +273,7 @@
     var s=o&&o.serviceSnapshot;
     if(!s)return '';
     var rows=[['项目',s.serviceName||o.serviceContent||'-'],['下单时单价',money(s.unitPrice)+' / '+(s.pricingUnit||'小时')]];
+    if(s.bossRank&&s.bossRank.rank)rows.push(['老板段位',(s.bossRank.game?s.bossRank.game+' · ':'')+s.bossRank.rank]);
     if(s.sections&&s.sections.length){
       s.sections.forEach(function(sec){rows.push([sec.label,esc(sec.value).replace(/\n/g,'<br>'),true]);});
     }else{

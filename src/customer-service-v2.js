@@ -3188,6 +3188,7 @@ import './mcj-chat-realtime.js';
     var rows=s.sections&&s.sections.length
       ?s.sections.map(function(sec){return '<div><span>'+esc(sec.label)+'</span><strong style="white-space:pre-wrap;font-weight:500;text-align:left">'+esc(sec.value)+'</strong></div>';}).join('')
       :'<div><span>服务标准</span><strong>下单时陪玩未填写详细标准（按'+esc(s.pricingUnit||'小时')+'计费）</strong></div>';
+    if(s.bossRank&&s.bossRank.rank)rows='<div data-order-boss-rank><span>老板段位</span><strong>'+esc((s.bossRank.game?s.bossRank.game+' · ':'')+s.bossRank.rank)+'</strong></div>'+rows;
     return '<h4 style="margin:14px 0 6px">服务标准（下单时快照）· '+esc(s.serviceName||o.game||'-')+'</h4>'+
       '<div class="cs-info-list" data-order-service-standard>'+rows+'</div>'+
       '<p class="cs-note" style="margin:6px 0 0">老板下单时看到的标准，陪玩之后修改不会影响本单；售后判定以此为准。</p>';

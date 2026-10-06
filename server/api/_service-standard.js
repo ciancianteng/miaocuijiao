@@ -46,6 +46,33 @@ export function normalizeServiceStandard(raw) {
   return out;
 }
 
+const MAX_RANK_LEN = 30;
+/** Game rank text (companion per-service rank or boss rank captured on the order). */
+export function cleanRank(v) {
+  return String(v == null ? "" : v)
+    .replace(/[\u0000-\u001f<>]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, MAX_RANK_LEN);
+}
+
+/** Companion's rank for one service (id first, then name); "" when not set. */
+export function rankForService(standards, { serviceId = "", name = "" } = {}) {
+  return cleanRank(pickServiceStandard(standards, { serviceId, name })?.rank);
+}
+
+/** [{ serviceId, name, rank }] — only services that actually have a rank (no empty badges). */
+export function gameRanksFromStandards(standards) {
+  const map = standards && typeof standards === "object" ? standards : {};
+  return Object.entries(map)
+    .map(([key, val]) => ({
+      serviceId: isUuid(key) ? key : "",
+      name: String(val?.name || (isUuid(key) ? "" : key)).trim(),
+      rank: cleanRank(val?.rank),
+    }))
+    .filter((r) => r.rank && r.name);
+}
+
 export function hasStandardContent(std) {
   if (!std || typeof std !== "object") return false;
   return SERVICE_STANDARD_KEYS.some((k) => String(std[k] || "").trim());
@@ -107,7 +134,7 @@ export async function loadCompanionServiceStandards(companionUserId) {
   }
 }
 
-export async function saveCompanionServiceStandard(companionUserId, { serviceId, name, standard }) {
+export async function saveCompanionServiceStandard(companionUserId, { serviceId, name, standard, rank }) {
   const id = String(companionUserId || "").trim();
   const sid = String(serviceId || "").trim();
   if (!id || !sid) throw Object.assign(new Error("缺少服务项目"), { status: 400 });
@@ -120,8 +147,9 @@ export async function saveCompanionServiceStandard(companionUserId, { serviceId,
   }
   const next = { ...loaded.standards };
   const norm = normalizeServiceStandard(standard);
-  if (hasStandardContent(norm)) {
-    next[sid] = { name: String(name || "").trim(), ...norm, updatedAt: new Date().toISOString() };
+  const nextRank = rank !== undefined ? cleanRank(rank) : cleanRank(next[sid]?.rank);
+  if (hasStandardContent(norm) || nextRank) {
+    next[sid] = { name: String(name || "").trim(), ...norm, rank: nextRank, updatedAt: new Date().toISOString() };
   } else {
     delete next[sid];
   }
@@ -145,10 +173,14 @@ export function buildServiceSnapshot({
   hours = 0,
   quantity = 1,
   companionId = "",
+  bossRank = "",
+  bossRankGame = "",
 } = {}) {
   const picked = pickServiceStandard(standards, { serviceId, name: serviceName });
   const norm = normalizeServiceStandard(picked || {});
+  const boss = cleanRank(bossRank);
   return {
+    ...(boss ? { bossRank: { game: String(bossRankGame || serviceName || picked?.name || "").trim(), rank: boss } } : {}),
     version: 1,
     serviceId: String(serviceId || "").trim(),
     serviceName: String(serviceName || picked?.name || "").trim(),
@@ -215,5 +247,14 @@ export function viewServiceSnapshot(row = {}) {
     standardUpdatedAt: String(snap.standardUpdatedAt || ""),
     hasStandard: hasStandardContent(std),
     sections: standardSections(std),
+    bossRank: viewBossRank(snap, row),
   };
+}
+
+/** Boss rank frozen on the order (null when the boss did not fill one). */
+export function viewBossRank(snap, row = {}) {
+  const r = snap?.bossRank;
+  const rank = cleanRank(r && typeof r === "object" ? r.rank : r);
+  if (!rank) return null;
+  return { game: String((r && r.game) || snap.serviceName || row.service_name || row.game || "").trim(), rank };
 }

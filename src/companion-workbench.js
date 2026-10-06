@@ -3001,7 +3001,13 @@
           (o.paymentReviewedByName?'<div><span>审核客服</span><strong>'+esc(o.paymentReviewedByName)+'</strong></div>':'')+
           (o.paymentReviewedAt?'<div><span>审核时间</span><strong>'+esc(fmtTime(o.paymentReviewedAt))+'</strong></div>':''))
         :'')+
-      '</div>'+orderServiceStandardHtml(o)+peerHtml+'<footer class="pw-actions">'+orderActions(o)+'</footer></article>';
+      bossRankMetaHtml(o)+'</div>'+orderServiceStandardHtml(o)+peerHtml+'<footer class="pw-actions">'+orderActions(o)+'</footer></article>';
+  }
+  /** Boss rank frozen in the order snapshot at create time. */
+  function bossRankMetaHtml(o){
+    var r=o&&o.serviceSnapshot&&o.serviceSnapshot.bossRank;
+    if(!r||!r.rank)return '';
+    return '<div data-boss-rank><span>老板段位</span><strong>'+esc((r.game?r.game+' · ':'')+r.rank)+'</strong></div>';
   }
   function orderServiceStandardHtml(o){
     var s=o&&o.serviceSnapshot;
@@ -3838,8 +3844,8 @@
       var std=serviceStandardFor(s.id,s.name)||{};
       var filled=serviceStandardFields().filter(function(f){return String(std[f.key]||'').trim()}).length;
       return '<div class="pw-std-row'+(filled?' is-filled':'')+'">'+
-        '<div><strong>'+esc(s.name)+'</strong><span>'+(filled?('已填写 '+filled+'/'+serviceStandardFields().length+' 项'):'未填写，老板下单时只能看到项目名和价格')+'</span></div>'+
-        '<button type="button" class="pw-btn'+(filled?'':' primary')+'" data-std-edit="'+esc(s.id)+'" data-std-name="'+esc(s.name)+'">'+(filled?'查看/修改':'填写服务标准')+'</button>'+
+        '<div><strong>'+esc(s.name)+(std.rank?' · 段位 '+esc(std.rank):'')+'</strong><span>'+(filled?('已填写 '+filled+'/'+serviceStandardFields().length+' 项'):'未填写，老板下单时只能看到项目名和价格')+'</span></div>'+
+        '<button type="button" class="pw-btn'+(filled?'':' primary')+'" data-std-edit="'+esc(s.id)+'" data-std-name="'+esc(s.name)+'">'+(filled?'查看/修改':'填写标准 / 段位')+'</button>'+
         '</div>';
     }).join(''):'<p class="pw-field-hint">先勾选可接游戏并保存，再为每个项目填写服务标准。</p>';
     return '<div class="pw-field" data-field="service_standard">'+fieldLabel('服务标准（老板下单时可见）',false)+
@@ -3858,7 +3864,10 @@
     wrap.setAttribute('data-std-modal','1');
     wrap.innerHTML='<div class="pw-std-dialog" role="dialog" aria-modal="true" aria-label="服务标准">'+
       '<header><div><h3>服务标准 · '+esc(name)+'</h3><p>老板点这个项目时会看到以下内容</p></div><button type="button" class="pw-std-close" data-std-cancel aria-label="关闭">×</button></header>'+
-      '<form data-std-form>'+serviceStandardFields().map(function(f){
+      '<form data-std-form>'+
+      '<label class="pw-field"><span class="pw-field-label">我在「'+esc(name)+'」的段位（选填，老板卡面显示）</span>'+
+      '<input name="rank" maxlength="30" autocomplete="off" placeholder="例如：钻石 2 / 超凡 / 战神" value="'+esc(std.rank||'')+'"></label>'+
+      serviceStandardFields().map(function(f){
         return '<label class="pw-field"><span class="pw-field-label">'+esc(f.label)+'</span>'+
           '<textarea name="'+esc(f.key)+'" rows="3" maxlength="500" placeholder="'+esc(f.placeholder||'')+'">'+esc(std[f.key]||'')+'</textarea></label>';
       }).join('')+
@@ -3874,10 +3883,11 @@
       e.preventDefault();
       var standard={};
       serviceStandardFields().forEach(function(f){var el=form.elements[f.key];standard[f.key]=el?String(el.value||''):'';});
+      var rankEl=form.elements.rank;
       var btn=form.querySelector('[data-std-save]');
       var errBox=form.querySelector('[data-std-error]');
       btn.disabled=true;btn.textContent='保存中…';errBox.hidden=true;
-      api('save_service_standard',{serviceId:sid,standard:standard}).then(function(res){
+      api('save_service_standard',{serviceId:sid,standard:standard,rank:rankEl?String(rankEl.value||'').trim():''}).then(function(res){
         if(state.data&&state.data.levelInfo)state.data.levelInfo.serviceStandards=res.serviceStandards||{};
         closeServiceStandardEditor();
         toast(res.message||'服务标准已保存');
@@ -4117,7 +4127,7 @@
         var orderNo=o.orderNo||humanId(o.id)||'-';
         var created=o.createdAt||o.appointmentAt||'';
         var createdLabel=created?fmtTime(created):'-';
-        return '<article class="pw-grab-card'+(hallState==='settled'?' is-settled':'')+'" data-order-id="'+esc(o.id)+'"><header><div><span class="pw-type">'+esc(o.orderType||o.orderSource||'订单')+'</span>'+hallBadge+'<h3>'+esc(o.game||'-')+'</h3><p>'+esc(serviceText)+'</p></div><strong>'+money(o.amount||o.budget||0)+'</strong></header><div class="pw-order-meta"><div><span>订单编号</span><strong>'+esc(orderNo)+'</strong></div><div><span>服务类型</span><strong>'+esc(o.serviceType||o.serviceName||o.orderType||'-')+'</strong></div><div><span>游戏</span><strong>'+esc(o.game||'-')+'</strong></div>'+(o.gameId?'<div><span>老板游戏ID</span><strong>'+esc(o.gameId)+'</strong></div>':'')+(o.serviceSchedule||o.schedule?'<div><span>服务时段</span><strong>'+esc(formatSchedule24h(o.serviceSchedule||o.schedule))+'</strong></div>':(o.gameServer&&o.gameServer!=='-'?'<div><span>区服</span><strong>'+esc(o.gameServer)+'</strong></div>':''))+'<div><span>单价</span><strong>'+money(o.unitPrice||0)+'</strong></div><div><span>时长/局数</span><strong>'+esc(o.duration||'-')+'</strong></div><div><span>老板备注</span><strong>'+esc(o.bossNotes||o.remark||'-')+'</strong></div><div><span>下单时间</span><strong>'+esc(createdLabel)+'</strong></div><div><span>订单来源</span><strong>'+esc(o.orderSource||o.orderType||'-')+'</strong></div><div><span>预计收入</span><strong>'+money(o.playerIncome||0)+'</strong></div><div><span>抢单人数</span><strong>'+esc(grabCount)+'</strong></div><div><span>当前状态</span><strong>'+esc(o.hallStateLabel||o.statusText||o.orderStatus||'待抢单')+'</strong></div></div><footer><button class="pw-btn primary" data-accept-order="'+esc(o.id)+'" '+(disabled?'disabled':'')+'>'+esc(btnLabel)+'</button></footer></article>';
+        return '<article class="pw-grab-card'+(hallState==='settled'?' is-settled':'')+'" data-order-id="'+esc(o.id)+'"><header><div><span class="pw-type">'+esc(o.orderType||o.orderSource||'订单')+'</span>'+hallBadge+'<h3>'+esc(o.game||'-')+'</h3><p>'+esc(serviceText)+'</p></div><strong>'+money(o.amount||o.budget||0)+'</strong></header><div class="pw-order-meta"><div><span>订单编号</span><strong>'+esc(orderNo)+'</strong></div><div><span>服务类型</span><strong>'+esc(o.serviceType||o.serviceName||o.orderType||'-')+'</strong></div><div><span>游戏</span><strong>'+esc(o.game||'-')+'</strong></div>'+(o.gameId?'<div><span>老板游戏ID</span><strong>'+esc(o.gameId)+'</strong></div>':'')+bossRankMetaHtml(o)+(o.serviceSchedule||o.schedule?'<div><span>服务时段</span><strong>'+esc(formatSchedule24h(o.serviceSchedule||o.schedule))+'</strong></div>':(o.gameServer&&o.gameServer!=='-'?'<div><span>区服</span><strong>'+esc(o.gameServer)+'</strong></div>':''))+'<div><span>单价</span><strong>'+money(o.unitPrice||0)+'</strong></div><div><span>时长/局数</span><strong>'+esc(o.duration||'-')+'</strong></div><div><span>老板备注</span><strong>'+esc(o.bossNotes||o.remark||'-')+'</strong></div><div><span>下单时间</span><strong>'+esc(createdLabel)+'</strong></div><div><span>订单来源</span><strong>'+esc(o.orderSource||o.orderType||'-')+'</strong></div><div><span>预计收入</span><strong>'+money(o.playerIncome||0)+'</strong></div><div><span>抢单人数</span><strong>'+esc(grabCount)+'</strong></div><div><span>当前状态</span><strong>'+esc(o.hallStateLabel||o.statusText||o.orderStatus||'待抢单')+'</strong></div></div><footer><button class="pw-btn primary" data-accept-order="'+esc(o.id)+'" '+(disabled?'disabled':'')+'>'+esc(btnLabel)+'</button></footer></article>';
       }).join(''):'<div class="pw-empty"><strong>暂无可抢订单</strong><span>'+(locked?auditHint():(!online?'请先切换为在线接单。':'客服发布订单后会自动显示，或调整筛选条件。'))+'</span></div>')+'</section>';
   }
   function accountDocCard(opts){

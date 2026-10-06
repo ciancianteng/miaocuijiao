@@ -4808,10 +4808,11 @@ return json(res, 200, {
           serviceId,
           name: svc.name || svc.title || "",
           standard: body.standard || body,
+          rank: body.rank !== undefined ? body.rank : body.standard?.rank,
         });
         return json(res, 200, {
           ok: true,
-          message: saved.standard ? "服务标准已保存，老板下单时可查看" : "已清空该项目的服务标准",
+          message: saved.standard ? "服务标准 / 段位已保存，老板可查看" : "已清空该项目的服务标准",
           serviceId,
           standard: saved.standard,
           serviceStandards: saved.standards,

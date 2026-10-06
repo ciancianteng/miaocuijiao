@@ -339,6 +339,12 @@
     if (gameChipLabel) {
       serviceChips.push('<span class="pd-service-chip">' + esc(gameChipLabel) + "</span>");
     }
+    (Array.isArray(c.gameRanks) ? c.gameRanks : []).forEach(function (r) {
+      if (!r || !String(r.rank || "").trim() || !String(r.name || "").trim()) return;
+      serviceChips.push(
+        '<span class="pd-service-chip pd-service-chip--rank" data-game-rank>' + esc(r.name) + " 段位：" + esc(r.rank) + "</span>"
+      );
+    });
     if (levelChipLabel) {
       serviceChips.push(
         '<span class="pd-service-chip pd-service-chip--level" data-level-id="' +
