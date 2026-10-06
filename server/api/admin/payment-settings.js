@@ -3,6 +3,7 @@ import { loadLocalEnv } from "../_load-env.js";
 import {
   bankQrPathOf,
   isBankQrPath,
+  listBossBankAccountMethods,
   removeBankQr,
   signBankQr,
   uploadBankQrImage,
@@ -1049,7 +1050,8 @@ async function handler(req, res) {
         const listed = await listBossPaymentMethods([]);
         const depositListed = await listDepositPaymentMethods([]);
         bossOrderCodes = (orderListed.methods || []).map((m) => m.code).filter((c) => c && c !== "catfood");
-        bossRechargeCodes = filterBossRechargeMethods(listed.methods || []).map((m) => m.code);
+        const bankRecharge = await listBossBankAccountMethods().catch(() => []);
+        bossRechargeCodes = filterBossRechargeMethods([...(listed.methods || []), ...bankRecharge]).map((m) => m.code);
         bossDepositCodes = (depositListed.methods || []).map((m) => m.code).filter(Boolean);
         state.channels = (state.channels || []).map((ch) => {
           const id = ch.channel_id || ch.id;
