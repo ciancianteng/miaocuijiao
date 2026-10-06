@@ -3722,6 +3722,72 @@
       (busy?'<p class="pw-media-status" data-gallery-status>'+statusText+'</p>':'')+
       '</div>';
   }
+  var SHOWCASE_VIDEO_ACCEPT='video/*,.mp4,.mov,.m4v,.webm,.3gp';
+  var SHOWCASE_VIDEO_MAX_BYTES=50*1024*1024;
+  var SHOWCASE_VIDEO_MAX_SECONDS=30;
+  function showcasePendingList(kind){
+    state.showcasePending=state.showcasePending||{video:[],achievement:[]};
+    if(!Array.isArray(state.showcasePending[kind]))state.showcasePending[kind]=[];
+    return state.showcasePending[kind];
+  }
+  function showcaseSaved(kind){
+    var media=(state.data&&state.data.media)||[];
+    return media.filter(function(m){
+      return m&&m.mediaType===kind&&m.id&&!/^legacy-/.test(String(m.id));
+    });
+  }
+  function showcaseStatusText(m){
+    var s=String((m&&m.status)||'pending').toLowerCase();
+    if(s==='approved')return '已通过';
+    if(s==='rejected')return '未通过'+(m.rejectReason?('：'+m.rejectReason):'');
+    return '审核中';
+  }
+  function pwShowcaseItemHtml(kind,item){
+    var pendingId=item._localId?String(item._localId):'';
+    var uploading=!!item._uploading;
+    var failed=!!item._failed;
+    var isVid=pendingId?!!item._isVideo:(kind==='video'||/^video\//i.test(String(item.contentType||item.content_type||'')));
+    var url=String(item.url||'');
+    var body=isVid
+      ? (url?'<video src="'+esc(url)+'" controls playsinline preload="metadata"></video>':'<div class="pw-showcase-ph">视频</div>')
+      : '<button type="button" class="pw-media-thumb-hit" '+(uploading||failed||!url?'disabled':'data-gallery-preview="'+esc(url)+'"')+' aria-label="预览战绩图片">'+
+        (url?'<img src="'+esc(url)+'" alt="游戏战绩">':'<div class="pw-showcase-ph">图片</div>')+'</button>';
+    var status=uploading
+      ? ('上传中…'+(item._progress?(' '+item._progress+'%'):''))
+      : (failed?('上传失败'+(item._error?('：'+item._error):'')):showcaseStatusText(item));
+    var st=String(item.status||'').toLowerCase();
+    var cls=failed||(!pendingId&&st==='rejected')?' is-fail':(!pendingId&&st==='approved'?' is-ok':'');
+    var del=pendingId
+      ? 'data-showcase-dismiss="'+esc(kind+'|'+pendingId)+'"'
+      : 'data-delete-showcase="'+esc(item.id||'')+'"';
+    return '<article class="pw-media-thumb pw-showcase-item'+(isVid?' is-video':'')+(uploading?' is-uploading':'')+(failed?' is-fail':'')+'" data-showcase-kind="'+esc(kind)+'"'+(pendingId?' data-showcase-pending="'+esc(pendingId)+'"':' data-showcase-id="'+esc(item.id||'')+'"')+'>'+
+      body+
+      '<span class="pw-showcase-status'+cls+'" data-showcase-status>'+esc(status)+'</span>'+
+      (uploading?'':'<div class="pw-media-thumb-tools"><button type="button" class="pw-media-icon-btn danger" '+del+' title="删除" aria-label="删除">×</button></div>')+
+      '</article>';
+  }
+  function pwShowcaseUploadHtml(kind){
+    var isVid=kind==='video';
+    var pending=showcasePendingList(kind).filter(Boolean);
+    var busy=pending.some(function(p){return p._uploading})||state._showcaseDeleting===kind;
+    var display=showcaseSaved(kind).concat(pending);
+    var items=display.map(function(it){return pwShowcaseItemHtml(kind,it)}).join('');
+    var label='<label class="pw-media-chip primary pw-gallery-pick-label'+(busy?' is-busy':'')+'" data-pw-showcase-label="'+kind+'">'+
+      (busy?'请稍候…':(isVid?'＋ 上传视频':'＋ 添加战绩图'))+
+      '<input type="file" accept="'+(isVid?SHOWCASE_VIDEO_ACCEPT:'image/*')+'" multiple data-pw-showcase-input="'+kind+'" '+
+      (busy?'disabled ':'')+
+      'class="pw-gallery-native-input" tabindex="-1" aria-hidden="true">'+
+      '</label>';
+    var hint=isVid
+      ? '选填，可多个。支持 mp4 / mov / m4v / 3gp / webm，单个最长 30 秒、不超过 50MB；审核通过后老板端可见。'
+      : '选填，可多选。支持 jpg / png / webp；上传后老板可在陪玩详情「游戏战绩」查看，审核未通过会自动隐藏。';
+    return '<div class="pw-media-block pw-showcase-block" data-showcase-block="'+kind+'">'+
+      '<p class="pw-field-hint">'+hint+'</p>'+
+      (items?'<div class="pw-gallery-grid pw-showcase-grid" data-showcase-list="'+kind+'">'+items+'</div>':'')+
+      '<div class="pw-gallery-actions">'+label+'</div>'+
+      (state._showcaseDeleting===kind?'<p class="pw-media-status">正在删除…</p>':'')+
+      '</div>';
+  }
   function isPlayableMediaUrl(u){
     return /^(https?:\/\/|blob:|data:audio\/)/i.test(String(u||'').trim());
   }
@@ -4129,7 +4195,7 @@
         '</div>'+
         '<div class="pw-field">'+fieldLabel('擅长位置',false)+'<input name="position" value="'+esc(positionVal)+'" placeholder="例如：决斗 / 烟位"></div>'
       , false)+
-      pwAccHtml('profile-media','展示资料','相册 · 语音试听',
+      pwAccHtml('profile-media','展示资料','相册 · 语音试听 · 视频 · 战绩',
         '<div class="pw-field pw-upload-block'+(state.profileErrors&&state.profileErrors.gallery?' is-missing':'')+'" data-field="gallery">'+
         fieldLabel('相册照片',true)+
         pwGalleryUploadHtml(gallery,uploadBusy)+
@@ -4139,6 +4205,14 @@
         fieldLabel('语音试听',true)+
         pwVoiceUploadHtml(p,raw,uploadBusy)+
         fieldErr('voice')+
+        '</div>'+
+        '<div class="pw-field pw-upload-block" data-field="showcase_video">'+
+        fieldLabel('展示视频',false)+
+        pwShowcaseUploadHtml('video')+
+        '</div>'+
+        '<div class="pw-field pw-upload-block" data-field="game_records">'+
+        fieldLabel('游戏战绩',false)+
+        pwShowcaseUploadHtml('achievement')+
         '</div>'
       , false)+
       '</div>'+
@@ -5521,6 +5595,22 @@
       deletePrivateDoc(delDoc.getAttribute('data-delete-doc')||'');
       return;
     }
+    var scDismiss=e.target.closest('[data-showcase-dismiss]');
+    if(scDismiss){
+      e.preventDefault();
+      var dParts=String(scDismiss.getAttribute('data-showcase-dismiss')||'').split('|');
+      var dList=showcasePendingList(dParts[0]==='video'?'video':'achievement');
+      for(var di=dList.length-1;di>=0;di--){if(dList[di]&&dList[di]._localId===dParts[1])dList.splice(di,1)}
+      captureLiveForms(true);
+      paint({preserveScroll:true});
+      return;
+    }
+    var scDel=e.target.closest('[data-delete-showcase]');
+    if(scDel){
+      e.preventDefault();
+      deleteShowcaseMedia(scDel);
+      return;
+    }
     var del=e.target.closest('[data-delete-media]');
     if(del){
       if(state.uploadBusy){toast('请等待当前操作完成');return}
@@ -5774,6 +5864,212 @@
       toast(humanizeClientError((err&&err.message)||'上传失败，请重试'));
     }).finally(function(){
       state._galleryUploadStop=false;
+    });
+  }
+  var _videoUploaderPromise=null;
+  function ensureVideoUploader(){
+    if(window.McjCompanionVideoUpload&&typeof window.McjCompanionVideoUpload.upload==='function'){
+      return Promise.resolve(window.McjCompanionVideoUpload);
+    }
+    if(_videoUploaderPromise)return _videoUploaderPromise;
+    _videoUploaderPromise=new Promise(function(resolve,reject){
+      var s=document.createElement('script');
+      s.src='/src/mcj-companion-video-upload.js?v=20261006-showcase';
+      s.async=true;
+      s.onload=function(){
+        if(window.McjCompanionVideoUpload&&typeof window.McjCompanionVideoUpload.upload==='function'){
+          resolve(window.McjCompanionVideoUpload);
+        }else{
+          _videoUploaderPromise=null;
+          reject(new Error('视频直传组件未加载，请刷新后重试'));
+        }
+      };
+      s.onerror=function(){
+        _videoUploaderPromise=null;
+        reject(new Error('视频直传组件加载失败，请检查网络后重试'));
+      };
+      document.head.appendChild(s);
+    });
+    return _videoUploaderPromise;
+  }
+  function guessVideoMime(file){
+    var type=String(file&&file.type||'').toLowerCase();
+    if(/^video\//.test(type))return type;
+    var name=String(file&&file.name||'');
+    if(/\.mov$/i.test(name))return 'video/quicktime';
+    if(/\.m4v$/i.test(name))return 'video/x-m4v';
+    if(/\.3gp$/i.test(name))return 'video/3gpp';
+    if(/\.webm$/i.test(name))return 'video/webm';
+    return 'video/mp4';
+  }
+  function probeVideoDuration(file){
+    return new Promise(function(resolve){
+      var url='';
+      try{url=URL.createObjectURL(file)}catch(e){resolve(null);return}
+      var v=document.createElement('video');
+      var done=false;
+      function fin(d){
+        if(done)return;
+        done=true;
+        try{URL.revokeObjectURL(url)}catch(e){}
+        resolve(d);
+      }
+      v.preload='metadata';
+      v.muted=true;
+      v.onloadedmetadata=function(){var d=Number(v.duration||0);fin(isFinite(d)&&d>0?d:null)};
+      v.onerror=function(){fin(null)};
+      setTimeout(function(){fin(null)},8000);
+      v.src=url;
+    });
+  }
+  function validateShowcaseFile(kind,file){
+    if(kind==='video'){
+      var name=String(file&&file.name||'');
+      var type=String(file&&file.type||'').toLowerCase();
+      if(type&&!/^video\//.test(type)&&!/\.(mp4|mov|m4v|webm|3gp)$/i.test(name))return '仅支持 mp4 / mov / m4v / 3gp / webm 视频';
+      if(file.size>SHOWCASE_VIDEO_MAX_BYTES)return '视频不能超过 50MB';
+      return '';
+    }
+    if(window.MCJUpload&&window.MCJUpload.validateFile){
+      var check=window.MCJUpload.validateFile(file,'image');
+      if(!check.ok)return check.error||'仅支持 jpg / png / webp 图片';
+    }
+    return '';
+  }
+  function uploadOneShowcaseVideo(p){
+    var file=p.file;
+    var mime=guessVideoMime(file);
+    var dur=null;
+    return probeVideoDuration(file).then(function(d){
+      dur=d;
+      if(dur&&dur>SHOWCASE_VIDEO_MAX_SECONDS+0.5)throw new Error('视频最长 30 秒，请裁剪后再上传');
+      return Promise.all([ensureVideoUploader(),ensureFreshCompanionSession()]);
+    }).then(function(r){
+      var uploader=r[0];
+      var session=r[1]||state.session||readSession()||{};
+      return api('prepare_video_upload',{
+        filename:file.name||'showcase.mp4',
+        content_type:mime,
+        byte_length:file.size,
+        duration_seconds:dur!=null?Math.round(dur*10)/10:undefined
+      }).then(function(prep){
+        if(!prep||!prep.path||!prep.signedUrl)throw new Error('直传凭证签发失败，请稍后重试');
+        return uploader.upload({
+          file:file,
+          prep:prep,
+          accessToken:session.token||'',
+          onProgress:function(pct){
+            p._progress=pct;
+            var el=document.querySelector('[data-showcase-pending="'+p._localId+'"] [data-showcase-status]');
+            if(el)el.textContent='上传中… '+pct+'%';
+          }
+        }).then(function(){
+          return api('upload_media',{
+            media_type:'video',
+            storage_path:prep.path,
+            storage_bucket:prep.bucket||'companion-video',
+            content_type:prep.contentType||mime,
+            filename:file.name||'showcase.mp4',
+            byte_length:file.size,
+            duration_seconds:dur!=null?Math.round(dur*10)/10:undefined
+          });
+        });
+      });
+    });
+  }
+  function uploadOneShowcaseImage(p){
+    var file=p.file;
+    var prep=window.MCJUpload&&typeof window.MCJUpload.compressImageFile==='function'
+      ? window.MCJUpload.compressImageFile(file)
+      : readFileAsDataUrl(file,'image');
+    return ensureFreshCompanionSession().then(function(){
+      return withTimeout(prep.then(function(dataUrl){
+        return api('upload_media',{
+          media_type:'achievement',
+          data_url:dataUrl,
+          filename:file.name||('record-'+Date.now()+'.jpg')
+        });
+      }),45000,'上传超时，请检查网络后重试');
+    });
+  }
+  function uploadShowcaseFiles(kind,files){
+    var list=(files||[]).filter(Boolean);
+    if(!list.length)return Promise.resolve();
+    captureLiveForms(true);
+    var stamp=Date.now();
+    var queue=showcasePendingList(kind);
+    var items=list.map(function(file,i){
+      var err=validateShowcaseFile(kind,file);
+      var p={_localId:'sc-'+kind+'-'+stamp+'-'+i,_isVideo:kind==='video',_uploading:!err,_failed:!!err,_error:err,_progress:0,file:file,url:''};
+      if(!err){
+        try{p.url=URL.createObjectURL(file)}catch(e){}
+      }
+      queue.push(p);
+      return p;
+    });
+    paint({preserveScroll:true});
+    var ok=0;
+    var failed=items.filter(function(p){return p._failed}).length;
+    var chain=Promise.resolve();
+    items.forEach(function(p){
+      if(p._failed)return;
+      chain=chain.then(function(){
+        return (kind==='video'?uploadOneShowcaseVideo(p):uploadOneShowcaseImage(p)).then(function(res){
+          if(!res||res.ok===false)throw new Error((res&&res.message)||'上传失败');
+          ok+=1;
+          var q=showcasePendingList(kind);
+          var idx=q.indexOf(p);
+          if(idx>=0)q.splice(idx,1);
+          try{if(p.url&&/^blob:/.test(p.url))URL.revokeObjectURL(p.url)}catch(e){}
+          if(res.media&&state.data&&Array.isArray(state.data.media)){
+            state.data.media=state.data.media.concat([{
+              id:res.media.id,
+              mediaType:kind,
+              status:'pending',
+              url:res.url||res.media.url||'',
+              contentType:kind==='video'?guessVideoMime(p.file):(p.file&&p.file.type)||'image/jpeg'
+            }]);
+          }
+        }).catch(function(err){
+          failed+=1;
+          p._uploading=false;
+          p._failed=true;
+          p._error=humanizeClientError((err&&err.message)||'上传失败，请重试');
+          try{console.error('[companion-media] showcase '+kind+' failed',err)}catch(e){}
+        }).then(function(){
+          paint({preserveScroll:true});
+        });
+      });
+    });
+    return chain.then(function(){
+      var noun=kind==='video'?'个视频':'张战绩图';
+      if(ok&&!failed)toast('已上传 '+ok+' '+noun+'，等待审核');
+      else if(ok&&failed)toast('成功 '+ok+' '+noun+'，失败 '+failed+'（可删除后重试）');
+      else if(failed)toast('上传失败：'+((items.filter(function(p){return p._error})[0]||{})._error||'请重试'));
+      if(ok)return loadData({soft:true,forcePaint:true,preserveScroll:true});
+    });
+  }
+  function deleteShowcaseMedia(btn){
+    var id=String(btn.getAttribute('data-delete-showcase')||'');
+    var card=btn.closest('[data-showcase-kind]');
+    var kind=card&&card.getAttribute('data-showcase-kind')==='video'?'video':'achievement';
+    if(!id)return;
+    if(state._showcaseDeleting){toast('请等待当前操作完成');return}
+    if(!window.confirm(kind==='video'?'确定删除这个展示视频？':'确定删除这张战绩图？'))return;
+    captureLiveForms(true);
+    state._showcaseDeleting=kind;
+    paint({preserveScroll:true});
+    api('delete_media',{media_id:id}).then(function(x){
+      if(state.data&&Array.isArray(state.data.media)){
+        state.data.media=state.data.media.filter(function(m){return !m||String(m.id)!==id});
+      }
+      toast((x&&x.message)||'已删除');
+      return loadData({soft:true,forcePaint:true,preserveScroll:true});
+    }).catch(function(err){
+      toast(humanizeClientError((err&&err.message)||'删除失败'));
+    }).finally(function(){
+      state._showcaseDeleting='';
+      paint({preserveScroll:true});
     });
   }
   function clearVoiceLocal(){
@@ -6138,6 +6434,14 @@
       var multiFiles=Array.prototype.slice.call(galleryMulti.files);
       galleryMulti.value='';
       uploadGalleryFiles(multiFiles);
+      return;
+    }
+    var showcaseInput=e.target.closest('[data-pw-showcase-input]');
+    if(showcaseInput&&showcaseInput.files&&showcaseInput.files.length){
+      var scFiles=Array.prototype.slice.call(showcaseInput.files);
+      var scKind=showcaseInput.getAttribute('data-pw-showcase-input')==='video'?'video':'achievement';
+      showcaseInput.value='';
+      uploadShowcaseFiles(scKind,scFiles);
       return;
     }
     var galleryInput=e.target.closest('[data-upload-gallery]');

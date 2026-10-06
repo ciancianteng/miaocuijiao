@@ -989,6 +989,36 @@ await test("#18 gifts: income only after the gift record wins, replay repairs mi
   assert.match(pd, /clearKey\("tip\|"/);
 });
 
+await test("#19 showcase video + game records: phone formats, review gate, private storage, workbench upload UI", () => {
+  const up = loadBrowserScript("src/mcj-upload.js").MCJUpload;
+  const v = (name, type, size = 1024) => up.validateFile({ name, type, size }, "video");
+  assert.equal(v("clip.3gp", "video/3gpp").ok, true);
+  assert.equal(v("clip.m4v", "").ok, true);
+  assert.equal(v("clip.mov", "video/quicktime").ok, true);
+  assert.equal(v("doc.pdf", "application/pdf").ok, false);
+  assert.equal(v("big.mp4", "video/mp4", 51 * 1024 * 1024).ok, false);
+  assert.match(up.VIDEO_ACCEPT, /\.3gp/);
+  const store = read("server/api/_companion-media-store.js");
+  assert.match(store, /"video\/x-m4v", "video\/3gpp", "application\/octet-stream"\]/);
+  const comp = read("server/api/companion.js");
+  assert.match(comp, /let bucket = mediaType === "achievement" \? PRIVATE_BUCKETS\.gallery : PUBLIC_BUCKETS\.profile;/);
+  const pub = read("server/api/public/companions.js");
+  assert.match(pub, /if \(row\.media_type === "achievement" && status === "rejected"\) return null;/);
+  assert.match(pub, /\(row\.media_type === "achievement" && \/\^video\\\/\/\.test\(ctype\)\) \|\|/);
+  assert.doesNotMatch(pub.slice(pub.indexOf("async function mediaExtrasByProfile")), /storage_path: |storagePath: /);
+  const wb = read("src/companion-workbench.js");
+  assert.match(wb, /pwShowcaseUploadHtml\('video'\)/);
+  assert.match(wb, /pwShowcaseUploadHtml\('achievement'\)/);
+  assert.match(wb, /multiple data-pw-showcase-input="'\+kind\+'"/);
+  assert.match(wb, /s\.src='\/src\/mcj-companion-video-upload\.js/);
+  assert.match(wb, /api\('prepare_video_upload',\{/);
+  assert.match(wb, /media_type:'achievement',\r?\n\s+data_url:dataUrl/);
+  assert.match(wb, /api\('delete_media',\{media_id:id\}\)/);
+  assert.match(wb, /if\(s==='rejected'\)return '未通过'/);
+  const admin = read("src/admin-player-detail.js");
+  assert.match(admin, /edit && item\.id\s*\?\s*'<button class="mini-btn" type="button" data-player-media-review="'/);
+});
+
 const failed = results.filter((r) => !r.ok);
 console.log(`\n${results.length - failed.length}/${results.length} passed`);
 if (failed.length) process.exit(1);

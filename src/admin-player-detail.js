@@ -1092,7 +1092,16 @@
                   '<div class="player-gallery-cell player-video-card">' +
                   '<video controls playsinline preload="metadata" src="' +
                   esc(item.url) +
-                  '" style="width:100%;border-radius:10px;background:#000"></video></div>'
+                  '" style="width:100%;border-radius:10px;background:#000"></video>' +
+                  (item.statusLabel ? "<div>" + esc(item.statusLabel) + "</div>" : "") +
+                  (edit && item.id
+                    ? '<button class="mini-btn" type="button" data-player-media-review="' +
+                      esc(item.id) +
+                      '" data-status="approved">通过</button> <button class="mini-btn" type="button" data-player-media-review="' +
+                      esc(item.id) +
+                      '" data-status="rejected">不通过</button>'
+                    : "") +
+                  "</div>"
                 );
               }
               return (

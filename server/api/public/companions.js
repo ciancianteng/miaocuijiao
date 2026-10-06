@@ -558,9 +558,11 @@ async function mediaExtrasByProfile(profileIds = [], opts = {}) {
       const path = String(row.storage_path || "").trim();
       if (!pid || !bucket || !path) return null;
       const status = String(row.status || "pending").toLowerCase();
+      if (row.media_type === "achievement" && status === "rejected") return null;
       const ctype = String(row.content_type || "").toLowerCase();
       const isVideo =
         row.media_type === "video" ||
+        (row.media_type === "achievement" && /^video\//.test(ctype)) ||
         (row.media_type === "gallery" && /^video\//.test(ctype)) ||
         (row.media_type === "gallery" && /\/video\//i.test(path));
       // List mode: never sign voice/video (hall cards do not play them).

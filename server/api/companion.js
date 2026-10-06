@@ -5808,10 +5808,11 @@ return json(res, 200, {
       } else {
         const decoded = assertImageUpload(decodeDataUrl(dataUrl));
         const objectPath = buildObjectPath(auth.profile.id, mediaType, body.filename || `${mediaType}.jpg`);
-        let bucket = PUBLIC_BUCKETS.profile;
+        // Game records are served to bosses via signed URLs only (no raw public bucket path / user id).
+        let bucket = mediaType === "achievement" ? PRIVATE_BUCKETS.gallery : PUBLIC_BUCKETS.profile;
         try {
           await uploadPrivateObject(bucket, objectPath, decoded.buffer, decoded.contentType);
-          publicUrl = publicObjectUrl(bucket, objectPath);
+          publicUrl = bucket === PUBLIC_BUCKETS.profile ? publicObjectUrl(bucket, objectPath) : "";
         } catch (publicErr) {
           // Private fallback is allowed for storage, but NEVER persist signed URLs into profile fields.
           bucket = PRIVATE_BUCKETS.gallery;
