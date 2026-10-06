@@ -3099,7 +3099,7 @@ import './mcj-chat-realtime.js';
           '<td>'+esc(r.bossName||'-')+(r.bossEmail?'<br><small>'+esc(r.bossEmail)+'</small>':'')+'</td>'+
           '<td>RM '+esc(Number(r.amountRm||0).toFixed(2))+'</td>'+
           '<td>'+esc(r.totalCatFood)+bonus+'</td>'+
-          '<td>'+esc(rechargeMethodLabel(r.paymentMethod))+'</td>'+
+          '<td>'+esc(r.paymentMethodName||rechargeMethodLabel(r.paymentMethod))+'</td>'+
           '<td>'+proofCell+'</td>'+
           '<td>'+esc(fmtOrderDateTime(r.submittedAt||r.createdAt))+'</td>'+
           '<td>'+esc(rechargeStatusLabel(r.status))+(r.rejectReason?'<br><small>'+esc(r.rejectReason)+'</small>':'')+'</td>'+

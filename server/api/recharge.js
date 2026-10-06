@@ -19,6 +19,7 @@ import {
   loadPlatformPayQr,
   normalizePaymentChannelId,
 } from "./_platform-pay-qr.js";
+import { listBossBankAccountMethods } from "./_payment-bank-accounts.js";
 import {
   buildObjectPath,
   createSignedUrl,
@@ -213,7 +214,8 @@ async function loadMethods() {
   try {
     const listed = await listBossPaymentMethods(methodRows);
     const orderListed = await listBossOrderPaymentMethods(methodRows);
-    const raw = listed.methods.length ? listed.methods : defaultMethodRows();
+    const bankMethods = await listBossBankAccountMethods().catch(() => []);
+    const raw = [...(listed.methods.length ? listed.methods : defaultMethodRows()), ...bankMethods];
     const publicMethods = raw.map(publicMethod);
     // Recharge center: open + forRecharge only (order uses orderPayMethods).
     const rechargeOpen = filterBossRechargeMethods(publicMethods);

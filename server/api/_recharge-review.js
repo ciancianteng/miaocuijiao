@@ -17,6 +17,7 @@ import {
 } from "./_wallet.js";
 import { staffReviewerNameFromProfile } from "./_payment-receipts.js";
 import { companionDb, createSignedUrl } from "./_companion-media-store.js";
+import { bankMethodLabels } from "./_payment-bank-accounts.js";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -119,6 +120,7 @@ export async function listRecharges({ status = RECHARGE_PENDING_REVIEW, includeP
       /* names optional */
     }
   }
+  const bankLabels = await bankMethodLabels(list.map((row) => row.payment_method)).catch(() => ({}));
   const items = [];
   for (const row of list) {
     const p = profileMap[row.boss_id] || {};
@@ -136,6 +138,7 @@ export async function listRecharges({ status = RECHARGE_PENDING_REVIEW, includeP
       bonusCatFood: money(row.bonus_cat_food),
       totalCatFood: money(row.cat_food_amount) || money(row.paid_cat_food) + money(row.bonus_cat_food),
       paymentMethod: row.payment_method || "",
+      paymentMethodName: bankLabels[String(row.payment_method || "").toLowerCase()] || "",
       status: row.status || "pending_payment",
       paymentUrl: row.payment_url || "",
       proofUrl: await signedProofUrl(row),

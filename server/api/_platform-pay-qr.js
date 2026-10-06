@@ -7,6 +7,17 @@
  * Never cross-fallback (TNG ↛ DuitNow, Stripe ↛ DuitNow, etc.).
  */
 import { companionDb } from "./_companion-media-store.js";
+import {
+  bankIdFromMethodCode,
+  listBossOrderBankAccountMethods,
+  loadBankAccountPayInfo,
+} from "./_payment-bank-accounts.js";
+
+async function bankAccountPayInfoOrUnavailable(code) {
+  const info = await loadBankAccountPayInfo(code).catch(() => null);
+  if (info) return { ...info, requestedMethod: moneySafe(code) };
+  return { ...unavailablePayInfo(moneySafe(code), code), title: "收款渠道" };
+}
 
 function moneySafe(v) {
   return String(v == null ? "" : v).trim();
@@ -370,6 +381,7 @@ export function isWalletPayEnabled(platformData = {}, publicMap = {}, byId = {})
  * Load pay info for ONE channel only. Never falls back to DuitNow/other channels.
  */
 export async function loadChannelPayInfo(channelId) {
+  if (bankIdFromMethodCode(channelId)) return bankAccountPayInfoOrUnavailable(channelId);
   const id = normalizePaymentChannelId(channelId);
   if (!id || id === "catfood") return emptyPayInfo(channelId);
   const ctx = await loadPaymentChannelsContext();
@@ -391,6 +403,7 @@ export async function loadChannelPayInfo(channelId) {
  * Never invent hardcoded accounts. Never substitute another channel's QR.
  */
 export async function loadPlatformPayQr(preferredMethod = "") {
+  if (bankIdFromMethodCode(preferredMethod)) return bankAccountPayInfoOrUnavailable(preferredMethod);
   const method = moneySafe(preferredMethod);
   const channelIds = resolvePayChannelIds(method);
 
@@ -584,6 +597,24 @@ export async function listBossOrderPaymentMethods(methodRows = []) {
     category: m.category,
     payInfo: m.payInfo,
   }));
+  const bankMethods = await listBossOrderBankAccountMethods().catch(() => []);
+  for (const m of bankMethods) {
+    if (!m.open || !m.forOrder) continue;
+    methods.push({
+      id: m.code,
+      code: m.code,
+      label: m.name,
+      name: m.name,
+      open: true,
+      enabled: true,
+      configured: true,
+      forOrder: true,
+      forRecharge: m.forRecharge !== false,
+      statusText: "可用",
+      category: "manual",
+      payInfo: m.payInfo,
+    });
+  }
   if (listed.walletPayEnabled) {
     methods.push({
       id: "catfood",
