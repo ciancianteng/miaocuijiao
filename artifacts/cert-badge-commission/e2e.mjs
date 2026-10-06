@@ -288,7 +288,13 @@ const multi = await api("/api/orders", bossT, {
   ],
 });
 const parentId = multi.json?.order?.id || multi.json?.parent?.id || multi.json?.parentOrderId || "";
-const payM = parentId ? await api("/api/orders", bossT, { action: "pay_order", id: parentId, paymentMethod: "catfood" }) : null;
+// Multi orders must go through payment proof + CS approval (MULTI_REQUIRES_PROOF_AND_CS).
+const TINY_PNG =
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+const payM = parentId
+  ? await api("/api/orders", bossT, { action: "submit_payment_proof", id: parentId, proofDataUrl: TINY_PNG, paymentMethod: "catfood" })
+  : null;
+const csApprove = parentId ? await api("/api/customer-service", csT, { action: "confirm_payment", id: parentId }) : null;
 const children = (multi.json?.children || multi.json?.childOrders || []).map((c) => ({ id: c.id, companionId: c.companionId || c.companion_id }));
 for (const ch of children) {
   const pw = ch.companionId === pwA.id ? pwA : pwB;
@@ -298,6 +304,7 @@ for (const ch of children) {
   if (st === "confirmed") await api("/api/companion", pw.t, { action: "start_order", id: ch.id });
   await api("/api/companion", pw.t, { action: "complete_order", id: ch.id });
 }
+report.orders.multiCsApprove = csApprove && brief(csApprove);
 const confM = parentId ? await api("/api/orders", bossT, { action: "confirm_completion", id: parentId }) : null;
 report.orders.multi = { parentId, create: brief(multi), pay: payM && brief(payM), confirm: confM && brief(confM), children };
 dA = await detail(AID);
@@ -328,7 +335,7 @@ const exA = await cget(`action=export&year=${nowMy.getUTCFullYear()}&month=${now
 const exAll = await cget(`action=export&year=${nowMy.getUTCFullYear()}&month=${nowMy.getUTCMonth() + 1}`);
 fs.writeFileSync(path.join(here, "export-badgeA.csv"), "\ufeff" + (exA.json?.csv || ""));
 fs.writeFileSync(path.join(here, "export-all.csv"), "\ufeff" + (exAll.json?.csv || ""));
-check("E1", "Monthly export (badge A): summary + order detail rows with PW code / amounts", exA.status === 200 && /勋章名称,持有人数,完成单量/.test(exA.json?.csv || "") && exA.json?.orderCount === dA.orders.length && (exA.json?.csv || "").includes("PW00077"), { file: exA.json?.fileBase, orders: exA.json?.orderCount });
+check("E1", "Monthly export (badge A): summary + order detail rows with PW code / amounts", exA.status === 200 && /"?勋章名称"?,"?持有人数"?,"?完成单量/.test(exA.json?.csv || "") && exA.json?.orderCount === dA.orders.length && (exA.json?.csv || "").includes("PW00077"), { file: exA.json?.fileBase, orders: exA.json?.orderCount });
 check("E2", "Monthly export (all badges)", exAll.status === 200 && (exAll.json?.summaryCount || 0) >= 2, { file: exAll.json?.fileBase, summary: exAll.json?.summaryCount, orders: exAll.json?.orderCount });
 
 // ---------------------------------------------------------------- permissions

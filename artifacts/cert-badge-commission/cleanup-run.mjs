@@ -33,7 +33,7 @@ const orderIds = (process.argv[3] || "").split(",").filter(Boolean);
 const mine = await api("/api/orders", bossT, null, "GET");
 for (const o of mine.json?.orders || []) {
   const no = String(o.orderNo || o.order_no || "");
-  if (!orderIds.includes(no)) continue;
+  if (!orderIds.includes(no) && !orderIds.includes(String(o.id))) continue;
   const c = await api("/api/orders", bossT, { action: "cancel_order", id: o.id, reason: "[cert-badge-e2e] aborted run cleanup" });
   console.log("cancel", no, o.status, c.status, c.json?.message);
 }

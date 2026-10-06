@@ -152,7 +152,8 @@ export function orderFigures(order = {}, incomeTxs = [], refunds = []) {
     companionIncome,
     platformCommission,
     duplicateIncomeTx: live.length > 1,
-    effective: COMPLETED_STATUSES.includes(status) && actualSettled > 0,
+    // Admin refund marks the order "refunded" even for a partial amount; that order still completed at its actual amount.
+    effective: actualSettled > 0 && (COMPLETED_STATUSES.includes(status) || (status === "refunded" && refund > 0 && refund < gross)),
     refunded: refund > 0,
   };
 }
