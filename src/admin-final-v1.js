@@ -325,7 +325,9 @@
     try{(window.__adminPendingProofs||[]).forEach(function(p){if(p.orderId)proofByOrder[String(p.orderId)]=p;});}catch(e){}
     var pending=proofByOrder[String(o.id)]||null;
     var proofUrl=o.paymentProofUrl||(pending&&pending.proofUrl)||'';
-    var proofHtml=proofUrl
+    var proofHtml=o.paymentWalletHold&&!proofUrl
+      ?'猫粮支付（已冻结，无需截图）'
+      :proofUrl
       ?('<button type="button" class="admin-order-proof-thumb-btn" data-admin-proof-preview="'+esc(proofUrl)+'" style="border:0;padding:0;background:transparent;cursor:zoom-in"><img class="admin-order-proof-thumb" src="'+esc(proofUrl)+'" alt="付款截图"></button>')
       :'暂无付款截图';
     var reviewName=o.paymentReviewedByName||o.paymentReviewerName||'-';

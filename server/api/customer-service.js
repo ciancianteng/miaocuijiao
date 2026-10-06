@@ -550,6 +550,7 @@ export function safeOrder(row, profiles = {}, extras = {}) {
         : "",
     paymentProofUrl: extras.paymentProofUrl || "",
     paymentReceiptId: extras.paymentReceipt?.id || "",
+    paymentWalletHold: !!extras.paymentReceipt && isWalletHoldReceipt(extras.paymentReceipt),
     paymentRejectReason: extras.paymentRejectReason || "",
     paymentReviewedByName: extras.paymentReviewedByName || "",
     paymentReviewedByStaffId: extras.paymentReviewedByStaffId || "",

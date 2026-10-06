@@ -3185,7 +3185,7 @@ import './mcj-chat-realtime.js';
       if(o.paymentRejectReason)rows.push(['拒绝原因',o.paymentRejectReason]);
     }
     if(mode==='review')rows.push(['评价',o.reviewText||o.rating||'暂无评价']);
-    var hasProof=(o.paymentProofUrl&&!/^proof:/i.test(String(o.paymentProofUrl||'')))||o.paymentReceiptId||o.paymentReview;
+    var hasProof=!(o.paymentWalletHold&&!o.paymentProofUrl)&&((o.paymentProofUrl&&!/^proof:/i.test(String(o.paymentProofUrl||'')))||o.paymentReceiptId||o.paymentReview);
     var proof=(mode==='pay'||mode==='refund')&&hasProof
       ?('<div style="margin-top:12px"><button type="button" class="cs-btn ghost" data-proof-lightbox="'+(esc(o.paymentProofUrl||''))+'" data-proof-order-id="'+esc(o.id)+'" data-proof-receipt-id="'+esc(o.paymentReceiptId||'')+'">查看凭证图片</button></div>')
       :'';
@@ -3211,7 +3211,7 @@ import './mcj-chat-realtime.js';
     var inGrabHall=isPublicHall&&(st==='pending'||st==='waiting_boss_confirm')&&!o.companionId;
     var proofUrl=(!/^proof:/i.test(String(o.paymentProofUrl||''))?String(o.paymentProofUrl||''):'');
     var canShowProof=!!(o.paymentReview&&(o.paymentReceiptId||proofUrl));
-    var proofBlock=canShowProof?('<div class="cs-proof-preview"><button type="button" class="cs-proof-thumb-btn" data-proof-lightbox="'+esc(proofUrl)+'" data-proof-order-id="'+esc(o.id)+'" data-proof-receipt-id="'+esc(o.paymentReceiptId||'')+'" title="查看付款截图大图">'+(proofUrl?('<img class="cs-proof-thumb" src="'+esc(proofUrl)+'" alt="付款凭证" loading="lazy">'):('<span class="cs-btn ghost cs-proof-fallback">查看付款截图</span>'))+'</button></div>'):'';
+    var proofBlock=canShowProof&&o.paymentWalletHold&&!proofUrl?'<div class="cs-proof-preview" data-wallet-hold><span class="cs-note">猫粮支付 · 已冻结 '+esc(String(o.totalAmount||o.amount||''))+' 猫粮（无需截图）</span></div>':canShowProof?('<div class="cs-proof-preview"><button type="button" class="cs-proof-thumb-btn" data-proof-lightbox="'+esc(proofUrl)+'" data-proof-order-id="'+esc(o.id)+'" data-proof-receipt-id="'+esc(o.paymentReceiptId||'')+'" title="查看付款截图大图">'+(proofUrl?('<img class="cs-proof-thumb" src="'+esc(proofUrl)+'" alt="付款凭证" loading="lazy">'):('<span class="cs-btn ghost cs-proof-fallback">查看付款截图</span>'))+'</button></div>'):'';
 
     if(st==='awaiting_payment'){
       if(o.paymentReview){

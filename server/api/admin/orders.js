@@ -18,6 +18,7 @@ import {
 import {
   hydrateReceiptReviewers,
   isTerminalOrderStatus,
+  isWalletHoldReceipt,
   latestApprovedForOrders,
   latestRejectedForOrders,
   receiptReviewerFields,
@@ -311,6 +312,7 @@ export function safeOrder(row, profiles, extras = {}) {
     paymentProofUrl: extras.paymentProofUrl || "",
     paymentUploadedAt: receipt?.uploaded_at || receipt?.created_at || "",
     paymentReceiptId: receipt?.id || "",
+    paymentWalletHold: !!receipt && isWalletHoldReceipt(receipt),
     paymentReviewedByStaffId: review.paymentReviewedByStaffId || "",
     paymentReviewedByName: reviewerName,
     paymentReviewerName: reviewerName,

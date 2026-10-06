@@ -87,6 +87,7 @@ export function stripReviewStaffMark(text = "") {
   return String(text || "")
     .replace(REVIEW_STAFF_MARK_RE, "")
     .replace(REVIEWER_ROLE_MARK_RE, "")
+    .replace(/\[\[[A-Z][A-Z0-9_]*(?::[^\]]*)?\]\][^\n]*/g, "")
     .replace(/\n{2,}/g, "\n")
     .trim();
 }
@@ -980,6 +981,7 @@ export function exportCsv(rows = []) {
 }
 export async function signedProofUrl(receipt, expiresIn = 3600) {
   if (!receipt) return "";
+  if (/\.marker$/i.test(String(receipt.storage_path || ""))) return "";
 
   const bucket =
     String(receipt.storage_bucket || BUCKET || "").trim();
