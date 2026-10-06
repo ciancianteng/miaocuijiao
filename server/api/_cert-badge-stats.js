@@ -422,10 +422,12 @@ async function loadAccounts(userIds = []) {
   return new Map(rows.map((r) => [String(r.id), r]));
 }
 
+/** uid = the companion's public UID shown across admin (PW code, as in 订单管理「陪玩 UID」). */
 function companionLabel(cp = {}, account = {}) {
+  const pwCode = resolveCompanionPublicCode(cp) || "";
   return {
-    pwCode: resolveCompanionPublicCode(cp) || "",
-    uid: cp.companion_uid != null && cp.companion_uid !== "" ? String(cp.companion_uid) : "",
+    pwCode,
+    uid: pwCode || (cp.companion_uid != null && cp.companion_uid !== "" ? String(cp.companion_uid) : ""),
     nickname: cp.nickname || account.display_name || "",
   };
 }

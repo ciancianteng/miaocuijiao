@@ -95,7 +95,7 @@ async function holderFilter(ref) {
   return {
     profileId: String(cp.id),
     userId: cp.user_id ? String(cp.user_id) : "",
-    label: { companionProfileId: String(cp.id), pwCode: resolveCompanionPublicCode(cp), uid: cp.companion_uid != null ? String(cp.companion_uid) : "", nickname: cp.nickname || "" },
+    label: { companionProfileId: String(cp.id), pwCode: resolveCompanionPublicCode(cp), uid: resolveCompanionPublicCode(cp) || (cp.companion_uid != null ? String(cp.companion_uid) : ""), nickname: cp.nickname || "" },
   };
 }
 

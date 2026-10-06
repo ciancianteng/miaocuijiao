@@ -286,16 +286,13 @@
     );
   }
 
+  function uidText(c) {
+    return "UID " + ((c && (c.uid || c.pwCode)) || "-");
+  }
+
   function whoHtml(c) {
     if (!c) return "-";
-    return (
-      "<b>" +
-      esc(c.nickname || "-") +
-      '</b> <small style="color:var(--muted)">' +
-      esc(c.pwCode || "") +
-      (c.uid ? " · UID " + esc(c.uid) : "") +
-      "</small>"
-    );
+    return "<b>" + esc(c.nickname || "-") + '</b> <small style="color:var(--muted)">' + esc(uidText(c)) + "</small>";
   }
 
   function holderLink(pid, tagId, label) {
@@ -342,7 +339,7 @@
         .join("") +
       "</select>" +
       "<span>持有人 / 陪玩</span>" +
-      '<input data-cert-filter-companion placeholder="PW 编号 / UID / 昵称" style="min-width:0;flex:1 1 160px" value="' +
+      '<input data-cert-filter-companion placeholder="UID（PW 编号）/ 昵称" style="min-width:0;flex:1 1 160px" value="' +
       esc(state.companionQuery) +
       '">' +
       '<button class="mini-btn" type="button" data-cert-filter-apply>筛选</button>' +
@@ -555,17 +552,15 @@
     var rows = d.members || [];
     if (!rows.length) return '<div class="empty">暂无持有人。可在上方输入 PW 编号授予。</div>';
     var table =
-      '<div class="table-wrap capp-table-wrap"><table class="data-table" style="min-width:1280px"><thead><tr><th>陪玩名称 / 昵称</th><th>PW 编号 / UID</th><th>徽章名称</th><th>获得徽章时间 / 授予人</th><th>状态</th><th class="amount">接单数量</th><th class="amount">已完成订单</th><th class="amount">接单总金额</th><th class="amount">订单总金额</th><th class="amount">接单总利润</th><th class="amount">陪玩收入</th><th>取消记录</th><th>操作</th></tr></thead><tbody>' +
+      '<div class="table-wrap capp-table-wrap"><table class="data-table" style="min-width:1280px"><thead><tr><th>陪玩名称 / 昵称</th><th>UID</th><th>徽章名称</th><th>获得徽章时间 / 授予人</th><th>状态</th><th class="amount">接单数量</th><th class="amount">已完成订单</th><th class="amount">接单总金额</th><th class="amount">订单总金额</th><th class="amount">接单总利润</th><th class="amount">陪玩收入</th><th>取消记录</th><th>操作</th></tr></thead><tbody>' +
       rows
         .map(function (r) {
           return (
             "<tr><td>" +
             holderLink(r.companionProfileId, state.detailId, r.nickname || r.pwCode || "-") +
             "</td><td>" +
-            esc(r.pwCode || "-") +
-            "<br><small>UID " +
-            esc(r.uid || "-") +
-            "</small></td><td>" +
+            esc(r.uid || r.pwCode || "-") +
+            "</td><td>" +
             esc(r.badgeName || r.tagName || "-") +
             "</td><td>" +
             dt(r.joinedAt) +
@@ -599,7 +594,7 @@
       rows
         .map(function (r) {
           return cardHtml(
-            '<div style="min-width:0">' + holderLink(r.companionProfileId, state.detailId, r.nickname || r.pwCode || "-") + '<br><small style="color:#9f949c">' + esc(r.pwCode || "-") + " · UID " + esc(r.uid || "-") + "</small></div>" + memberStatus(r),
+            '<div style="min-width:0">' + holderLink(r.companionProfileId, state.detailId, r.nickname || r.pwCode || "-") + '<br><small style="color:#9f949c">' + esc(uidText(r)) + "</small></div>" + memberStatus(r),
             [
               ["徽章名称", esc(r.badgeName || r.tagName || "-")],
               ["获得徽章时间", dt(r.joinedAt)],
@@ -680,7 +675,7 @@
             (r.bossCode ? "<br><small>" + esc(r.bossCode) + "</small>" : "") +
             "</td>" +
             (opts.showCompanion
-              ? "<td>" + holderLink(r.companionProfileId, opts.tagId, r.nickname || r.pwCode || "-") + "<br><small>" + esc(r.pwCode || "") + (r.uid ? " · UID " + esc(r.uid) : "") + "</small></td>"
+              ? "<td>" + holderLink(r.companionProfileId, opts.tagId, r.nickname || r.pwCode || "-") + "<br><small>" + esc(uidText(r)) + "</small></td>"
               : "") +
             "<td>" +
             orderStatusHtml(r) +
@@ -793,7 +788,7 @@
             '"' +
             (String(state.detailHolder) === String(o.companionProfileId) ? " selected" : "") +
             ">" +
-            esc((o.nickname || "-") + " · " + (o.pwCode || "") + (o.uid ? " · UID " + o.uid : "") + (o.status === "removed" ? "（已取消）" : o.status === "pending_removal" ? "（待取消）" : "")) +
+            esc((o.nickname || "-") + " · " + uidText(o) + (o.status === "removed" ? "（已取消）" : o.status === "pending_removal" ? "（待取消）" : "")) +
             "</option>"
           );
         })
@@ -911,8 +906,7 @@
         '<h3 style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">' +
           esc(who.nickname || "-") +
           '<small style="color:var(--muted);font-weight:400">' +
-          esc(who.pwCode || "") +
-          (who.uid ? " · UID " + esc(who.uid) : "") +
+          esc(uidText(who)) +
           "</small></h3><p style=\"display:flex;align-items:center;gap:8px;flex-wrap:wrap\">" +
           (a && tag
             ? badgePreviewHtml(tag) + "<span>获得徽章时间 " + dt(a.grantedAt) + (a.grantedByName ? "（" + esc(a.grantedByName) + "）" : "") + "</span>" + memberStatus(a)
