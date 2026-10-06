@@ -401,6 +401,14 @@
       var body=lb.querySelector('[data-admin-order-review="'+String(o.id).replace(/"/g,'')+'"]');
       if(!st||!body||!res||!res.order)return;
       var rv=res.order.review;
+      var kids=Array.isArray(res.order.childReviews)?res.order.childReviews:null;
+      if(!rv&&kids){
+        st.textContent=kids.length?(res.order.reviewStatus||'已评价'):'未评价';
+        body.innerHTML=kids.length?kids.map(function(k){
+          return '<span data-admin-child-review="'+esc(k.orderId)+'" style="display:block;margin-bottom:6px">'+esc(k.companionName+' · ★'+(k.rating||0)+(k.content?' · '+k.content:''))+reviewImagesHtml(k.images)+'</span>';
+        }).join(''):'-';
+        return;
+      }
       st.textContent=rv?'已评价':'未评价';
       body.innerHTML=rv?(esc('★'+(rv.rating||0)+(rv.content?' · '+rv.content:''))+reviewImagesHtml(rv.images)):'-';
     }).catch(function(){});

@@ -825,6 +825,54 @@ export default async function handler(req, res) {
           viewed.reviewStatus = "未评价";
         }
         viewed.reviews = reviews;
+        const { isMultiGroupParent } = await import("../_order-group.js");
+        if (isMultiGroupParent(order)) {
+          const kids = await supabaseJson(
+            restUrl("orders", `?parent_order_id=eq.${encodeURIComponent(id)}&select=id,companion_id,order_no&limit=20`),
+            { headers: serviceHeaders() }
+          ).catch(() => []);
+          const kidList = Array.isArray(kids) ? kids : [];
+          const kidRows = kidList.length
+            ? await supabaseJson(
+                restUrl(
+                  "companion_reviews",
+                  `?order_id=in.(${kidList.map((k) => encodeURIComponent(k.id)).join(",")})&select=*&order=created_at.desc&limit=40`
+                ),
+                { headers: serviceHeaders() }
+              ).catch(() => [])
+            : [];
+          const kidCompanionIds = [...new Set(kidList.map((k) => k.companion_id).filter((v) => v && !map[v]))];
+          const kidProfiles = kidCompanionIds.length
+            ? await supabaseJson(
+                restUrl("profiles", `?id=in.(${kidCompanionIds.map(encodeURIComponent).join(",")})&select=id,display_name,email`),
+                { headers: serviceHeaders() }
+              ).catch(() => [])
+            : [];
+          for (const p of Array.isArray(kidProfiles) ? kidProfiles : []) map[p.id] = p;
+          const seen = new Set();
+          viewed.childReviews = (Array.isArray(kidRows) ? kidRows : [])
+            .filter((r) => (seen.has(r.order_id) ? false : seen.add(r.order_id)))
+            .map((r) => {
+              const kid = kidList.find((k) => k.id === r.order_id) || {};
+              const cp = map[r.companion_id || kid.companion_id] || {};
+              return {
+                id: r.id,
+                orderId: r.order_id,
+                orderNo: kid.order_no || "",
+                companionId: r.companion_id || kid.companion_id || "",
+                companionName: cp.display_name || cp.email || "-",
+                rating: Number(r.rating) || 0,
+                content: r.content || "",
+                images: normalizeReviewImages(r.image_urls),
+                createdAt: r.created_at || "",
+              };
+            });
+          viewed.childReviewTotal = kidList.filter((k) => k.companion_id).length;
+          if (!latest && viewed.childReviews.length) {
+            viewed.reviewed = true;
+            viewed.reviewStatus = `已评价 ${viewed.childReviews.length}/${viewed.childReviewTotal || viewed.childReviews.length}`;
+          }
+        }
         return json(res, 200, { ok: true, configured: true, order: viewed, reviews });
       }
       const [ordersRaw, profiles] = await Promise.all([

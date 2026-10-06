@@ -928,6 +928,23 @@ await test("#35B CS reject keeps the order running and records the reason; UI wi
   assert.match(read("src/companion-workbench.js"), /function earlyFinishMetaHtml\(o\)/);
 });
 
+await test("#31 multi review: picker per child, parent review rejected, dedupe, admin parent detail lists child reviews", () => {
+  const boss = read("orders.html");
+  assert.match(boss, /function openMultiReviewPicker\(parent\)/);
+  assert.match(boss, /data-review-child="'\+esc\(ch\.id\)\+'"/);
+  assert.match(boss, /if\(isMultiParent\(o\)\)\{openMultiReviewPicker\(o\);return\}/);
+  const ordersApi = read("server/api/orders.js");
+  assert.match(ordersApi, /MULTI_PARENT_REVIEW/);
+  assert.match(ordersApi, /该订单已评价/);
+  const adminApi = read("server/api/admin/orders.js");
+  assert.match(adminApi, /viewed\.childReviews = /);
+  assert.match(adminApi, /parent_order_id=eq\.\$\{encodeURIComponent\(id\)\}/);
+  assert.match(adminApi, /images: normalizeReviewImages\(r\.image_urls\),\r?\n\s+createdAt/);
+  const admin = read("src/admin-final-v1.js");
+  assert.match(admin, /data-admin-child-review=/);
+  assert.match(admin, /reviewImagesHtml\(k\.images\)/);
+});
+
 const failed = results.filter((r) => !r.ok);
 console.log(`\n${results.length - failed.length}/${results.length} passed`);
 if (failed.length) process.exit(1);
