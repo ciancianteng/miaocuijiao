@@ -83,6 +83,12 @@
     if (/hitpay/.test(key)) return "HitPay";
     return raw;
   }
+  function acctMethodName(order) {
+    if (!/^acct-/.test(methodCode(order))) return "";
+    var info = (order && order.platformPayInfo) || platformPayInfo || null;
+    if (!info || String(info.channelId || "").toLowerCase() !== methodCode(order)) return "";
+    return String(info.channelName || info.bankName || info.title || "").trim();
+  }
   function isWalletMethod(order) {
     return /cat.?food|wallet|猫粮|余额/.test(methodCode(order));
   }
@@ -1410,7 +1416,7 @@
         "</strong></div>" +
         (isPrePay(order)
           ? '<div class="pay-row"><span>支付方式</span><strong>' +
-            esc(order.paymentMethod || order.payment_method || "-") +
+            esc(acctMethodName(order) || order.paymentMethod || order.payment_method || "-") +
             "</strong></div>"
           : "") +
         "</div>" +
