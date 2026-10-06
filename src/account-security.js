@@ -26,11 +26,11 @@
     try {
       if (opts.token) return opts.token;
       if (opts.role === "companion") {
-        return (
-          sessionStorage.getItem("companionAuthToken") ||
-          localStorage.getItem("companionAuthToken") ||
-          ""
+        // companionAuthToken is a soft marker, not a JWT — read the companion portal blob.
+        var blob = JSON.parse(
+          localStorage.getItem("mcjCompanionSession") || sessionStorage.getItem("mcjCompanionSession") || "null"
         );
+        return String((blob && (blob.token || blob.accessToken)) || "");
       }
       return (
         sessionStorage.getItem("mcjAuthAccessToken") ||
@@ -175,6 +175,20 @@
   function saveSessionIfPossible(session, role) {
     if (!session || !session.accessToken) return;
     try {
+      // Companion must stay in its own portal blob; saveSession would write it as a boss session
+      // and leave the companion blob holding the revoked refresh token.
+      if (role === "companion" && window.MCJRoleGate && typeof window.MCJRoleGate.writeCompanionPortalSession === "function") {
+        window.MCJRoleGate.writeCompanionPortalSession(
+          {
+            accessToken: session.accessToken,
+            refreshToken: session.refreshToken,
+            expiresAt: session.expiresAt,
+            user: Object.assign({}, session.user || {}, { role: "companion" }),
+          },
+          true
+        );
+        return;
+      }
       if (window.MCJRoleGate && typeof window.MCJRoleGate.saveSession === "function") {
         window.MCJRoleGate.saveSession(
           {
@@ -186,14 +200,6 @@
           true
         );
         return;
-      }
-      if (role === "companion") {
-        localStorage.setItem("companionAuthToken", session.accessToken);
-        sessionStorage.setItem("companionAuthToken", session.accessToken);
-        if (session.user) {
-          localStorage.setItem("companionUser", JSON.stringify(session.user));
-          sessionStorage.setItem("companionUser", JSON.stringify(session.user));
-        }
       }
     } catch (e) {}
   }
