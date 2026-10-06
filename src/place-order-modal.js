@@ -591,8 +591,26 @@
       raw.onlineStatus ||
       raw.online_status ||
       raw.status;
+    // fromCompanion() defaults to "offline" when nothing is known; unknown must not block ordering.
+    var hasPresenceSignal = [
+      raw.availabilityStatus,
+      raw.availability_status,
+      raw.online_status,
+      raw.onlineStatus,
+      raw.availabilityText,
+      raw.status,
+      raw.statusText,
+      raw.onlineStatusLabel,
+      raw.workStatus,
+      raw.online,
+      raw.isOnline,
+      raw.canOrderNow,
+      raw.canAcceptBossOrder,
+    ].some(function (v) {
+      return v != null && v !== "";
+    });
     var presence =
-      window.MCJCompanionPresence && window.MCJCompanionPresence.fromCompanion
+      hasPresenceSignal && window.MCJCompanionPresence && window.MCJCompanionPresence.fromCompanion
         ? window.MCJCompanionPresence.fromCompanion(raw)
         : null;
     var online = presence

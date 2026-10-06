@@ -1019,6 +1019,13 @@ await test("#19 showcase video + game records: phone formats, review gate, priva
   assert.match(admin, /edit && item\.id\s*\?\s*'<button class="mini-btn" type="button" data-player-media-review="'/);
 });
 
+await test("#28 offline-companion gate only fires on an explicit status (unknown availability never blocks ordering)", () => {
+  const po = read("src/place-order-modal.js");
+  assert.match(po, /var hasPresenceSignal = \[/);
+  assert.match(po, /hasPresenceSignal && window\.MCJCompanionPresence && window\.MCJCompanionPresence\.fromCompanion/);
+  assert.match(po, /if \(code !== "offline" && code !== "paused"\) return "";/);
+});
+
 const failed = results.filter((r) => !r.ok);
 console.log(`\n${results.length - failed.length}/${results.length} passed`);
 if (failed.length) process.exit(1);
