@@ -1,0 +1,1375 @@
+{
+  "generated_at": "2026-10-06T03:46:05.524Z",
+  "staging": "https://meow-cuijiao-homepage-staging.vercel.app",
+  "build": {
+    "ok": true,
+    "sha": "",
+    "short": "",
+    "ref": "",
+    "env": "preview",
+    "url": "meow-cuijiao-homepage-cshhd3r17-ciancianteng-4581s-projects.vercel.app",
+    "supabaseRef": "cfccwysniduwkjskiqgy",
+    "supabaseIsProduction": false,
+    "supabaseIsStaging": true,
+    "isolationOk": true,
+    "envLabel": "STAGING/PREVIEW",
+    "paySot": "orderPayMethods",
+    "at": "2026-10-06T03:46:06.837Z"
+  },
+  "stamp": 1791258365524,
+  "badges": {
+    "A": {
+      "id": "8f53e63a-7fcc-4045-941b-758d28bf0eba",
+      "name": "E2E勋章A-65524",
+      "title": "E2E勋章A-65524",
+      "icon": "🎖️",
+      "color": "#4cc9f0",
+      "sort": 900,
+      "enabled": true,
+      "companionShareRate": 70,
+      "platformRate": 30,
+      "commissionPriority": 1,
+      "commissionUpdatedAt": "2026-10-06T03:46:14.477+00:00"
+    },
+    "B": {
+      "id": "1a6694af-7e22-4f84-83e9-0c556781fdb8",
+      "name": "E2E勋章B-65524",
+      "title": "E2E勋章B-65524",
+      "icon": "🎖️",
+      "color": "#ff9f1c",
+      "sort": 900,
+      "enabled": true,
+      "companionShareRate": 80,
+      "platformRate": 20,
+      "commissionPriority": 2,
+      "commissionUpdatedAt": "2026-10-06T03:46:15.107+00:00"
+    }
+  },
+  "orders": {
+    "A1": {
+      "id": "6ca8a838-2247-4c5b-8714-2439cad8968e",
+      "orderNo": "MCJO000435",
+      "create": {
+        "status": 200,
+        "ok": true,
+        "message": "订单已创建，请完成支付。",
+        "orderStatus": "awaiting_payment"
+      },
+      "pay": {
+        "status": 200,
+        "ok": true,
+        "message": "支付成功，订单已进入等待陪玩确认。",
+        "orderStatus": "claimed"
+      },
+      "drive": {
+        "status": "completed",
+        "steps": [
+          {
+            "st": "claimed",
+            "status": 200,
+            "ok": true,
+            "message": "已确认接单，订单进入进行中",
+            "orderStatus": "in_progress"
+          },
+          {
+            "step": "complete_order",
+            "status": 200,
+            "ok": true,
+            "message": "已提交完成申请，等待老板确认后结算。",
+            "orderStatus": "in_progress"
+          },
+          {
+            "st": "in_progress",
+            "status": 200,
+            "ok": true,
+            "message": "已确认完成，订单已完成。",
+            "orderStatus": "completed"
+          }
+        ]
+      },
+      "status": "completed",
+      "total": 20,
+      "companionIncome": 14,
+      "platformFee": 6
+    },
+    "A2": {
+      "id": "7171b587-28ef-4f33-af64-cec3d9185e32",
+      "orderNo": "MCJO000436",
+      "create": {
+        "status": 200,
+        "ok": true,
+        "message": "订单已创建，请完成支付。",
+        "orderStatus": "awaiting_payment"
+      },
+      "pay": {
+        "status": 200,
+        "ok": true,
+        "message": "支付成功，订单已进入等待陪玩确认。",
+        "orderStatus": "claimed"
+      },
+      "drive": {
+        "status": "completed",
+        "steps": [
+          {
+            "st": "claimed",
+            "status": 200,
+            "ok": true,
+            "message": "已确认接单，订单进入进行中",
+            "orderStatus": "in_progress"
+          },
+          {
+            "step": "complete_order",
+            "status": 200,
+            "ok": true,
+            "message": "已提交完成申请，等待老板确认后结算。",
+            "orderStatus": "in_progress"
+          },
+          {
+            "st": "in_progress",
+            "status": 200,
+            "ok": true,
+            "message": "已确认完成，订单已完成。",
+            "orderStatus": "completed"
+          }
+        ]
+      },
+      "status": "completed",
+      "total": 20,
+      "companionIncome": 14,
+      "platformFee": 6
+    },
+    "B1": {
+      "id": "4a722009-fda0-411d-8b24-4dd7b9a9bc91",
+      "orderNo": "MCJO000437",
+      "create": {
+        "status": 200,
+        "ok": true,
+        "message": "订单已创建，请完成支付。",
+        "orderStatus": "awaiting_payment"
+      },
+      "pay": {
+        "status": 200,
+        "ok": true,
+        "message": "支付成功，订单已进入等待陪玩确认。",
+        "orderStatus": "claimed"
+      },
+      "drive": {
+        "status": "completed",
+        "steps": [
+          {
+            "st": "claimed",
+            "status": 200,
+            "ok": true,
+            "message": "已确认接单，订单进入进行中",
+            "orderStatus": "in_progress"
+          },
+          {
+            "step": "complete_order",
+            "status": 200,
+            "ok": true,
+            "message": "已提交完成申请，等待老板确认后结算。",
+            "orderStatus": "in_progress"
+          },
+          {
+            "st": "in_progress",
+            "status": 200,
+            "ok": true,
+            "message": "已确认完成，订单已完成。",
+            "orderStatus": "completed"
+          }
+        ]
+      },
+      "status": "completed",
+      "total": 20,
+      "companionIncome": 16,
+      "platformFee": 4
+    },
+    "A3": {
+      "id": "768ee545-d543-42a6-8ed7-c841e2dec49b",
+      "orderNo": "MCJO000438",
+      "create": {
+        "status": 200,
+        "ok": true,
+        "message": "订单已创建，请完成支付。",
+        "orderStatus": "awaiting_payment"
+      },
+      "pay": {
+        "status": 200,
+        "ok": true,
+        "message": "支付成功，订单已进入等待陪玩确认。",
+        "orderStatus": "claimed"
+      },
+      "drive": {
+        "status": "completed",
+        "steps": [
+          {
+            "st": "claimed",
+            "status": 200,
+            "ok": true,
+            "message": "已确认接单，订单进入进行中",
+            "orderStatus": "in_progress"
+          },
+          {
+            "step": "complete_order",
+            "status": 200,
+            "ok": true,
+            "message": "已提交完成申请，等待老板确认后结算。",
+            "orderStatus": "in_progress"
+          },
+          {
+            "st": "in_progress",
+            "status": 200,
+            "ok": true,
+            "message": "已确认完成，订单已完成。",
+            "orderStatus": "completed"
+          }
+        ]
+      },
+      "status": "completed",
+      "total": 20,
+      "companionIncome": 15,
+      "platformFee": 5
+    },
+    "A4": {
+      "id": "4d73b741-f442-421a-b39d-14297e5976bf",
+      "orderNo": "MCJO000439",
+      "create": {
+        "status": 200,
+        "ok": true,
+        "message": "订单已创建，请完成支付。",
+        "orderStatus": "awaiting_payment"
+      },
+      "pay": {
+        "status": 200,
+        "ok": true,
+        "message": "支付成功，订单已进入等待陪玩确认。",
+        "orderStatus": "claimed"
+      },
+      "drive": {
+        "status": "completed",
+        "steps": [
+          {
+            "st": "claimed",
+            "status": 200,
+            "ok": true,
+            "message": "已确认接单，订单进入进行中",
+            "orderStatus": "in_progress"
+          },
+          {
+            "step": "complete_order",
+            "status": 200,
+            "ok": true,
+            "message": "已提交完成申请，等待老板确认后结算。",
+            "orderStatus": "in_progress"
+          },
+          {
+            "st": "in_progress",
+            "status": 200,
+            "ok": true,
+            "message": "已确认完成，订单已完成。",
+            "orderStatus": "completed"
+          }
+        ]
+      },
+      "status": "completed",
+      "total": 20,
+      "companionIncome": 16,
+      "platformFee": 4,
+      "settlementRate": null
+    },
+    "B2": {
+      "id": "df8dc5e3-b910-4af2-8244-8ade62d37756",
+      "orderNo": "MCJO000440",
+      "create": {
+        "status": 200,
+        "ok": true,
+        "message": "订单已创建，请完成支付。",
+        "orderStatus": "awaiting_payment"
+      },
+      "pay": {
+        "status": 200,
+        "ok": true,
+        "message": "支付成功，订单已进入等待陪玩确认。",
+        "orderStatus": "claimed"
+      },
+      "drive": {
+        "status": "completed",
+        "steps": [
+          {
+            "st": "claimed",
+            "status": 200,
+            "ok": true,
+            "message": "已确认接单，订单进入进行中",
+            "orderStatus": "in_progress"
+          },
+          {
+            "step": "complete_order",
+            "status": 200,
+            "ok": true,
+            "message": "已提交完成申请，等待老板确认后结算。",
+            "orderStatus": "in_progress"
+          },
+          {
+            "st": "in_progress",
+            "status": 200,
+            "ok": true,
+            "message": "已确认完成，订单已完成。",
+            "orderStatus": "completed"
+          }
+        ]
+      },
+      "status": "completed",
+      "total": 20,
+      "companionIncome": 16,
+      "platformFee": 4
+    },
+    "B3": {
+      "id": "bb1c634f-4a78-41fd-acd1-7f20a7f97b08",
+      "orderNo": "MCJO000441",
+      "create": {
+        "status": 200,
+        "ok": true,
+        "message": "订单已创建，请完成支付。",
+        "orderStatus": "awaiting_payment"
+      },
+      "pay": {
+        "status": 200,
+        "ok": true,
+        "message": "支付成功，订单已进入等待陪玩确认。",
+        "orderStatus": "claimed"
+      },
+      "drive": {
+        "status": "completed",
+        "steps": [
+          {
+            "st": "claimed",
+            "status": 200,
+            "ok": true,
+            "message": "已确认接单，订单进入进行中",
+            "orderStatus": "in_progress"
+          },
+          {
+            "step": "complete_order",
+            "status": 200,
+            "ok": true,
+            "message": "已提交完成申请，等待老板确认后结算。",
+            "orderStatus": "in_progress"
+          },
+          {
+            "st": "in_progress",
+            "status": 200,
+            "ok": true,
+            "message": "已确认完成，订单已完成。",
+            "orderStatus": "completed"
+          }
+        ]
+      },
+      "status": "completed",
+      "total": 20,
+      "companionIncome": 16,
+      "platformFee": 4
+    },
+    "multiCsApprove": {
+      "status": 200,
+      "ok": true,
+      "message": "已确认付款，多人订单进入等待陪玩确认。",
+      "orderStatus": "claimed"
+    },
+    "multi": {
+      "parentId": "b50e77e8-ac2d-46f8-ac3c-12f038d0853e",
+      "create": {
+        "status": 200,
+        "ok": true,
+        "message": "多人订单已创建，请完成支付。",
+        "orderStatus": "awaiting_payment"
+      },
+      "pay": {
+        "status": 200,
+        "ok": true,
+        "message": "付款凭证已提交，等待客服审核。审核通过前不会进入等待陪玩确认。",
+        "orderStatus": "awaiting_payment"
+      },
+      "confirm": {
+        "status": 200,
+        "ok": true,
+        "message": "已确认完成，订单已完成。",
+        "orderStatus": "completed"
+      },
+      "children": [
+        {
+          "id": "98894057-e6b2-4a78-82b7-ced056cb4344",
+          "companionId": "d9aded34-8ed5-436f-9f43-d654c8cda7f0"
+        },
+        {
+          "id": "c8a2fa8d-3a7b-4ee9-913d-458036d55841",
+          "companionId": "61c0fb64-0467-4d8c-9c1a-2d4c1a670ec9"
+        }
+      ]
+    }
+  },
+  "checks": [
+    {
+      "no": "M0",
+      "name": "Staging migration applied (ledger readable)",
+      "result": "PASS",
+      "evidence": {
+        "a": {
+          "status": 200,
+          "ok": true
+        },
+        "b": {
+          "status": 200,
+          "ok": true
+        }
+      }
+    },
+    {
+      "no": "S1",
+      "name": "Create badge A 70% / badge B 80%",
+      "result": "PASS",
+      "evidence": {
+        "A": {
+          "id": "8f53e63a-7fcc-4045-941b-758d28bf0eba",
+          "name": "E2E勋章A-65524",
+          "title": "E2E勋章A-65524",
+          "icon": "🎖️",
+          "color": "#4cc9f0",
+          "sort": 900,
+          "enabled": true,
+          "companionShareRate": 70,
+          "platformRate": 30,
+          "commissionPriority": 1,
+          "commissionUpdatedAt": "2026-10-06T03:46:14.477+00:00"
+        },
+        "B": {
+          "id": "1a6694af-7e22-4f84-83e9-0c556781fdb8",
+          "name": "E2E勋章B-65524",
+          "title": "E2E勋章B-65524",
+          "icon": "🎖️",
+          "color": "#ff9f1c",
+          "sort": 900,
+          "enabled": true,
+          "companionShareRate": 80,
+          "platformRate": 20,
+          "commissionPriority": 2,
+          "commissionUpdatedAt": "2026-10-06T03:46:15.107+00:00"
+        }
+      }
+    },
+    {
+      "no": "S2",
+      "name": "Grant A→PW00077, B→PW00076 (with granted time / admin); duplicate grant is idempotent",
+      "result": "PASS",
+      "evidence": {
+        "gA": {
+          "id": "eb133999-f97e-40f3-893e-0102279fb576",
+          "companionProfileId": "53be06d5-b94b-473c-a63d-cfd5926adfab",
+          "tagId": "8f53e63a-7fcc-4045-941b-758d28bf0eba",
+          "tagName": "",
+          "status": "active",
+          "statusLabel": "生效中",
+          "isCommissionPrimary": false,
+          "grantedAt": "2026-10-06T03:46:15.728+00:00",
+          "grantedByName": "Admin Staging",
+          "removalRequestedAt": "",
+          "removalRequestedByName": "",
+          "removalReason": "",
+          "removalApprovedAt": "",
+          "removalApprovedByName": "",
+          "removedAt": ""
+        },
+        "dup": {
+          "status": 200,
+          "ok": true,
+          "message": "该陪玩已持有此勋章"
+        }
+      }
+    },
+    {
+      "no": "S3",
+      "name": "Admin sees which badge drives commission (PW-A → A 70%, PW-B → B 80%)",
+      "result": "PASS",
+      "evidence": {
+        "a": {
+          "badgeId": "8f53e63a-7fcc-4045-941b-758d28bf0eba",
+          "badgeName": "E2E勋章A-65524",
+          "companionShareRate": 70,
+          "platformRate": 30,
+          "rule": "primary",
+          "ruleLabel": "后台指定的佣金主勋章"
+        },
+        "b": {
+          "badgeId": "1a6694af-7e22-4f84-83e9-0c556781fdb8",
+          "badgeName": "E2E勋章B-65524",
+          "companionShareRate": 80,
+          "platformRate": 20,
+          "rule": "primary",
+          "ruleLabel": "后台指定的佣金主勋章"
+        }
+      }
+    },
+    {
+      "no": "S4",
+      "name": "Companion detail effective commission = badge rate (source cert_badge)",
+      "result": "PASS",
+      "evidence": {
+        "rate": 70,
+        "source": "cert_badge",
+        "label": "认证勋章「E2E勋章A-65524」统一佣金"
+      }
+    },
+    {
+      "no": "O1",
+      "name": "A1 / A2 / B1 completed through real flow",
+      "result": "PASS",
+      "evidence": [
+        {
+          "no": "MCJO000435",
+          "st": "completed",
+          "steps": 3
+        },
+        {
+          "no": "MCJO000436",
+          "st": "completed",
+          "steps": 3
+        },
+        {
+          "no": "MCJO000437",
+          "st": "completed",
+          "steps": 3
+        }
+      ]
+    },
+    {
+      "no": "C1",
+      "name": "A1 settled 70/30 from ledger",
+      "result": "PASS",
+      "evidence": {
+        "orderId": "6ca8a838-2247-4c5b-8714-2439cad8968e",
+        "orderNo": "MCJO000435",
+        "parentOrderId": "",
+        "status": "completed",
+        "completedAt": "2026-10-06T03:46:27.218+00:00",
+        "bossId": "e68fd4e1-405c-4800-bb33-1a9bda032695",
+        "companionId": "d9aded34-8ed5-436f-9f43-d654c8cda7f0",
+        "companionProfileId": "53be06d5-b94b-473c-a63d-cfd5926adfab",
+        "badgeIds": [
+          "8f53e63a-7fcc-4045-941b-758d28bf0eba"
+        ],
+        "badgeNames": [
+          "E2E勋章A-65524"
+        ],
+        "commissionBadgeId": "8f53e63a-7fcc-4045-941b-758d28bf0eba",
+        "commissionBadgeName": "E2E勋章A-65524",
+        "commissionSource": "cert_badge",
+        "companionShareRate": 70,
+        "gross": 20,
+        "refund": 0,
+        "actualSettled": 20,
+        "companionIncome": 14,
+        "platformCommission": 6,
+        "duplicateIncomeTx": false,
+        "effective": true,
+        "refunded": false,
+        "pwCode": "PW00077",
+        "nickname": "Organic Invitee Comp",
+        "bossName": "Organic Invitee Boss",
+        "bossCode": "MCJ10033",
+        "statusLabel": "已完成"
+      }
+    },
+    {
+      "no": "C2",
+      "name": "A2 settled 70/30",
+      "result": "PASS",
+      "evidence": {
+        "gross": 20,
+        "c": 14
+      }
+    },
+    {
+      "no": "C3",
+      "name": "B1 settled 80/20",
+      "result": "PASS",
+      "evidence": {
+        "orderId": "4a722009-fda0-411d-8b24-4dd7b9a9bc91",
+        "orderNo": "MCJO000437",
+        "parentOrderId": "",
+        "status": "completed",
+        "completedAt": "2026-10-06T03:46:48.999+00:00",
+        "bossId": "e68fd4e1-405c-4800-bb33-1a9bda032695",
+        "companionId": "61c0fb64-0467-4d8c-9c1a-2d4c1a670ec9",
+        "companionProfileId": "aa962002-f63b-4cf5-88da-588e39910187",
+        "badgeIds": [
+          "1a6694af-7e22-4f84-83e9-0c556781fdb8"
+        ],
+        "badgeNames": [
+          "E2E勋章B-65524"
+        ],
+        "commissionBadgeId": "1a6694af-7e22-4f84-83e9-0c556781fdb8",
+        "commissionBadgeName": "E2E勋章B-65524",
+        "commissionSource": "cert_badge",
+        "companionShareRate": 80,
+        "gross": 20,
+        "refund": 0,
+        "actualSettled": 20,
+        "companionIncome": 16,
+        "platformCommission": 4,
+        "duplicateIncomeTx": false,
+        "effective": true,
+        "refunded": false,
+        "pwCode": "PW00076",
+        "nickname": "Organic Companion",
+        "bossName": "Organic Invitee Boss",
+        "bossCode": "MCJ10033",
+        "statusLabel": "已完成"
+      }
+    },
+    {
+      "no": "C4",
+      "name": "Badge A: completed 2, revenue = A1+A2, platform = 30%",
+      "result": "PASS",
+      "evidence": {
+        "completedCount": 2,
+        "gross": 40,
+        "actualSettled": 40,
+        "companionIncome": 28,
+        "platformCommission": 12,
+        "refundAmount": 0,
+        "refundedOrders": 0
+      }
+    },
+    {
+      "no": "C5",
+      "name": "Badge B: completed 1, 80/20",
+      "result": "PASS",
+      "evidence": {
+        "completedCount": 1,
+        "gross": 20,
+        "actualSettled": 20,
+        "companionIncome": 16,
+        "platformCommission": 4,
+        "refundAmount": 0,
+        "refundedOrders": 0
+      }
+    },
+    {
+      "no": "C6",
+      "name": "Members list: PW00077 in A with counts / income / commission",
+      "result": "PASS",
+      "evidence": [
+        {
+          "pw": "PW00077",
+          "st": "active",
+          "n": 2,
+          "by": "Admin Staging"
+        }
+      ]
+    },
+    {
+      "no": "C7",
+      "name": "Order rows carry order no / boss / companion / commission badge",
+      "result": "PASS",
+      "evidence": {
+        "no": "MCJO000435",
+        "pw": "PW00077",
+        "boss": "Organic Invitee Boss",
+        "badge": "E2E勋章A-65524"
+      }
+    },
+    {
+      "no": "D1",
+      "name": "Repeat complete/confirm on settled order: no extra income, counts unchanged",
+      "result": "PASS",
+      "evidence": {
+        "dupC": {
+          "status": 200,
+          "ok": true,
+          "message": "订单已结算",
+          "orderStatus": "completed"
+        },
+        "dupB": {
+          "status": 200,
+          "ok": true,
+          "message": "订单已完成/已结算，无需重复处理。",
+          "orderStatus": "completed"
+        },
+        "kpis": {
+          "completedCount": 2,
+          "gross": 40,
+          "actualSettled": 40,
+          "companionIncome": 28,
+          "platformCommission": 12,
+          "refundAmount": 0,
+          "refundedOrders": 0
+        }
+      }
+    },
+    {
+      "no": "R1",
+      "name": "Change badge A 70% → 75% (logged)",
+      "result": "PASS",
+      "evidence": {
+        "status": 200,
+        "ok": true,
+        "message": "统一佣金已更新：陪玩 75%（仅影响之后绑定的订单）"
+      }
+    },
+    {
+      "no": "R2",
+      "name": "New order after change settles 75/25",
+      "result": "PASS",
+      "evidence": {
+        "gross": 20,
+        "c": 15,
+        "rate": 75
+      }
+    },
+    {
+      "no": "R3",
+      "name": "Old orders keep 70% snapshot",
+      "result": "PASS",
+      "evidence": {
+        "a1": 70,
+        "a2": 70
+      }
+    },
+    {
+      "no": "R4",
+      "name": "Commission change log has 70 → 75 with operator",
+      "result": "PASS",
+      "evidence": {
+        "oldRate": 70,
+        "newRate": 75,
+        "changedAt": "2026-10-06T03:46:56.282+00:00",
+        "changedByName": "Admin Staging"
+      }
+    },
+    {
+      "no": "X1",
+      "name": "Removal needs a reason; request → 待取消 (initiator / time / reason recorded)",
+      "result": "PASS",
+      "evidence": {
+        "noReason": {
+          "status": 400,
+          "ok": false,
+          "message": "请填写取消原因"
+        },
+        "pend": {
+          "id": "eb133999-f97e-40f3-893e-0102279fb576",
+          "companionProfileId": "53be06d5-b94b-473c-a63d-cfd5926adfab",
+          "tagId": "8f53e63a-7fcc-4045-941b-758d28bf0eba",
+          "tagName": "E2E勋章A-65524",
+          "status": "pending_removal",
+          "statusLabel": "待取消",
+          "isCommissionPrimary": true,
+          "grantedAt": "2026-10-06T03:46:15.728+00:00",
+          "grantedByName": "Admin Staging",
+          "removalRequestedAt": "2026-10-06T03:47:07.75+00:00",
+          "removalRequestedByName": "Admin Staging",
+          "removalReason": "[cert-badge-e2e] 测试取消",
+          "removalApprovedAt": "",
+          "removalApprovedByName": "",
+          "removedAt": "",
+          "pwCode": "PW00077",
+          "nickname": "Organic Invitee Comp",
+          "accountStatus": "active",
+          "joinedAt": "2026-10-06T03:46:15.728+00:00",
+          "completedCount": 3,
+          "gross": 60,
+          "actualSettled": 60,
+          "companionIncome": 43,
+          "platformCommission": 17,
+          "refundAmount": 0
+        }
+      }
+    },
+    {
+      "no": "X2",
+      "name": "While 待取消 the front end still shows the badge (display unchanged)",
+      "result": "PASS",
+      "evidence": {
+        "found": true,
+        "pubHas": true
+      }
+    },
+    {
+      "no": "X3",
+      "name": "While 待取消 the badge still drives commission",
+      "result": "PASS",
+      "evidence": ""
+    },
+    {
+      "no": "X4",
+      "name": "Approve → 已取消 (approver / time recorded)",
+      "result": "PASS",
+      "evidence": {
+        "id": "eb133999-f97e-40f3-893e-0102279fb576",
+        "companionProfileId": "53be06d5-b94b-473c-a63d-cfd5926adfab",
+        "tagId": "8f53e63a-7fcc-4045-941b-758d28bf0eba",
+        "tagName": "E2E勋章A-65524",
+        "status": "removed",
+        "statusLabel": "已取消",
+        "isCommissionPrimary": false,
+        "grantedAt": "2026-10-06T03:46:15.728+00:00",
+        "grantedByName": "Admin Staging",
+        "removalRequestedAt": "2026-10-06T03:47:07.75+00:00",
+        "removalRequestedByName": "Admin Staging",
+        "removalReason": "[cert-badge-e2e] 测试取消",
+        "removalApprovedAt": "2026-10-06T03:47:09.559+00:00",
+        "removalApprovedByName": "Admin Staging",
+        "removedAt": "2026-10-06T03:47:09.559+00:00",
+        "pwCode": "PW00077",
+        "nickname": "Organic Invitee Comp",
+        "accountStatus": "active",
+        "joinedAt": "2026-10-06T03:46:15.728+00:00",
+        "completedCount": 3,
+        "gross": 60,
+        "actualSettled": 60,
+        "companionIncome": 43,
+        "platformCommission": 17,
+        "refundAmount": 0
+      }
+    },
+    {
+      "no": "H1",
+      "name": "After removal: new order A4 not attributed to A",
+      "result": "PASS",
+      "evidence": {
+        "a4": "MCJO000439"
+      }
+    },
+    {
+      "no": "H2",
+      "name": "History stays in A after removal (A1, A2, A3 still counted)",
+      "result": "PASS",
+      "evidence": {
+        "completedCount": 3,
+        "gross": 60,
+        "actualSettled": 60,
+        "companionIncome": 43,
+        "platformCommission": 17,
+        "refundAmount": 0,
+        "refundedOrders": 0
+      }
+    },
+    {
+      "no": "F1",
+      "name": "Partial refund counted at actual settled amount (gross − refund)",
+      "result": "PASS",
+      "evidence": {
+        "rf": {
+          "status": 200,
+          "ok": true,
+          "message": "已确认退回 6 猫粮到老板账户",
+          "orderStatus": "refunded"
+        },
+        "f": {
+          "gross": 20,
+          "refund": 6,
+          "actual": 14,
+          "c": 0,
+          "p": 14
+        }
+      }
+    },
+    {
+      "no": "F2",
+      "name": "Partial refund: companion income reduced by clawback, platform = actual − companion",
+      "result": "PASS",
+      "evidence": {
+        "c": 0,
+        "p": 14
+      }
+    },
+    {
+      "no": "F3",
+      "name": "Full refund not counted as completed revenue; refund recorded",
+      "result": "PASS",
+      "evidence": {
+        "rf": {
+          "status": 200,
+          "ok": true,
+          "message": "已确认退回 20 猫粮到老板账户",
+          "orderStatus": "refunded"
+        },
+        "f": {
+          "refund": 20,
+          "effective": false,
+          "status": "已退款"
+        }
+      }
+    },
+    {
+      "no": "F4",
+      "name": "Badge B totals: 2 completed (B1, B2), refund = partial + full",
+      "result": "PASS",
+      "evidence": {
+        "completedCount": 2,
+        "gross": 40,
+        "actualSettled": 34,
+        "companionIncome": 16,
+        "platformCommission": 18,
+        "refundAmount": 26,
+        "refundedOrders": 2
+      }
+    },
+    {
+      "no": "G1",
+      "name": "Multi order: each child attributed to its own badge and rate (A 75%, B 80%)",
+      "result": "PASS",
+      "evidence": {
+        "create": {
+          "status": 200,
+          "ok": true,
+          "message": "多人订单已创建，请完成支付。",
+          "orderStatus": "awaiting_payment"
+        },
+        "a": {
+          "gross": 20,
+          "rate": 75
+        },
+        "b": {
+          "gross": 20,
+          "rate": 80
+        }
+      }
+    },
+    {
+      "no": "G2",
+      "name": "Multi parent never counted",
+      "result": "PASS",
+      "evidence": {
+        "parentId": "b50e77e8-ac2d-46f8-ac3c-12f038d0853e"
+      }
+    },
+    {
+      "no": "K1",
+      "name": "Overview card A: holders / completed / revenue / profit / commission % / status",
+      "result": "PASS",
+      "evidence": {
+        "id": "8f53e63a-7fcc-4045-941b-758d28bf0eba",
+        "name": "E2E勋章A-65524",
+        "title": "E2E勋章A-65524",
+        "icon": "🎖️",
+        "color": "#4cc9f0",
+        "sort": 900,
+        "enabled": true,
+        "companionShareRate": 75,
+        "platformRate": 25,
+        "commissionPriority": 1,
+        "commissionUpdatedAt": "2026-10-06T03:46:56.222+00:00",
+        "holders": 1,
+        "pendingRemoval": 0,
+        "completedCount": 4,
+        "gross": 80,
+        "actualSettled": 80,
+        "companionIncome": 58,
+        "platformCommission": 22,
+        "refundAmount": 0,
+        "refundedOrders": 0,
+        "commissionOrders": 4,
+        "month": {
+          "completedCount": 4,
+          "actualSettled": 80,
+          "platformCommission": 22
+        }
+      }
+    },
+    {
+      "no": "K2",
+      "name": "Date filters: today = month = week = custom(today) for today's orders; past range = 0",
+      "result": "PASS",
+      "evidence": {
+        "all": 4,
+        "today": 4
+      }
+    },
+    {
+      "no": "K3",
+      "name": "Top KPIs dedupe orders across badges (≤ sum of badge cards)",
+      "result": "PASS",
+      "evidence": {
+        "completedCount": 17,
+        "gross": 340,
+        "actualSettled": 322,
+        "companionIncome": 208,
+        "platformCommission": 114,
+        "refundAmount": 78,
+        "refundedOrders": 6,
+        "holders": 2,
+        "badges": 13
+      }
+    },
+    {
+      "no": "K4",
+      "name": "Monthly summary present in detail",
+      "result": "PASS",
+      "evidence": {
+        "month": "2026-10",
+        "completedCount": 4,
+        "gross": 80,
+        "actualSettled": 80,
+        "companionIncome": 58,
+        "platformCommission": 22,
+        "refundAmount": 0,
+        "refundedOrders": 0
+      }
+    },
+    {
+      "no": "E1",
+      "name": "Monthly export (badge A): summary + order detail rows with PW code / amounts",
+      "result": "PASS",
+      "evidence": {
+        "file": "MeowCuiJiao_CertBadge_E2E勋章A-65524_2026_10",
+        "orders": 4
+      }
+    },
+    {
+      "no": "E2",
+      "name": "Monthly export (all badges)",
+      "result": "PASS",
+      "evidence": {
+        "file": "MeowCuiJiao_CertBadge_ALL_2026_10",
+        "summary": 13,
+        "orders": 20
+      }
+    },
+    {
+      "no": "P1",
+      "name": "CS / boss / companion / anonymous cannot read stats or change commission / grant",
+      "result": "PASS",
+      "evidence": [
+        {
+          "status": 403,
+          "ok": false,
+          "message": "没有后台管理权限。"
+        },
+        {
+          "status": 403,
+          "ok": false,
+          "message": "没有后台管理权限。"
+        },
+        {
+          "status": 403,
+          "ok": false,
+          "message": "没有后台管理权限。"
+        },
+        {
+          "status": 401,
+          "ok": false,
+          "message": "请先使用管理员账号登录后台。"
+        }
+      ]
+    },
+    {
+      "no": "P2",
+      "name": "Badge with history cannot be deleted (use disable)",
+      "result": "PASS",
+      "evidence": {
+        "status": 409,
+        "ok": false,
+        "message": "该勋章已有授予记录或订单归属，不能删除（会破坏历史统计），请改为停用。"
+      }
+    },
+    {
+      "no": "P3",
+      "name": "Invalid commission rate rejected",
+      "result": "PASS",
+      "evidence": {
+        "status": 400,
+        "ok": false,
+        "message": "陪玩分成比例需在 0–100 之间"
+      }
+    },
+    {
+      "no": "W1",
+      "name": "Companion earnings ledger contains B1 income equal to badge stats",
+      "result": "PASS",
+      "evidence": {
+        "b1": 16
+      }
+    },
+    {
+      "no": "U-desktop",
+      "name": "Admin UI (desktop) renders KPIs, members, orders, two-decimal money",
+      "result": "PASS",
+      "evidence": "🎖️\nE2E勋章A-65524\n勋章详情\n\n持有人数 1 · 统一陪玩分成 75% / 平台 25% · 佣金优先级 1\n\n返回勋章列表\n统一陪玩分成 %\n优先级\n保存统一佣金\n修改只影响之后绑定陪玩的订单；已绑定 / 已结算订单保留原佣金快照。\n授予勋章\n授予\n今日\n本周\n本月\n自定义\n全部\n完成单量\n4\n订单总金"
+    },
+    {
+      "no": "U-mobile",
+      "name": "Admin UI (mobile) renders KPIs, members, orders, two-decimal money",
+      "result": "PASS",
+      "evidence": "🎖️\nE2E勋章A-65524\n勋章详情\n\n持有人数 1 · 统一陪玩分成 75% / 平台 25% · 佣金优先级 1\n\n返回勋章列表\n统一陪玩分成 %\n优先级\n保存统一佣金\n修改只影响之后绑定陪玩的订单；已绑定 / 已结算订单保留原佣金快照。\n授予勋章\n授予\n今日\n本周\n本月\n自定义\n全部\n完成单量\n4\n订单总金"
+    },
+    {
+      "no": "U-mobile-overflow",
+      "name": "Mobile: page has no horizontal overflow (tables scroll inside their wrapper)",
+      "result": "PASS",
+      "evidence": {
+        "overflow": 0
+      }
+    },
+    {
+      "no": "U-pending",
+      "name": "Admin shows 待取消 with approve / reject actions",
+      "result": "PASS",
+      "evidence": ""
+    },
+    {
+      "no": "X5",
+      "name": "Reject removal → badge active again",
+      "result": "PASS",
+      "evidence": {
+        "status": 200,
+        "ok": true,
+        "message": "已驳回取消申请，勋章继续生效"
+      }
+    }
+  ],
+  "screenshots": [
+    "desktop-01-overview.png",
+    "desktop-02-detail-members.png",
+    "desktop-03-detail-orders.png",
+    "desktop-04-detail-monthly.png",
+    "desktop-05-commission-log.png",
+    "mobile-01-overview.png",
+    "mobile-02-detail-members.png",
+    "mobile-03-detail-orders.png",
+    "mobile-04-detail-monthly.png",
+    "mobile-05-commission-log.png",
+    "mobile-06-pending-removal.png"
+  ],
+  "baseline": {
+    "pwA": {
+      "ok": true,
+      "companion": {
+        "id": "53be06d5-b94b-473c-a63d-cfd5926adfab",
+        "pwCode": "PW00077",
+        "nickname": "Organic Invitee Comp"
+      },
+      "assignments": [
+        {
+          "id": "e6a34b47-a435-4c34-8101-c2043550692d",
+          "companionProfileId": "53be06d5-b94b-473c-a63d-cfd5926adfab",
+          "tagId": "d884cbc5-d755-446e-beb2-31c93ad882f3",
+          "tagName": "E2E勋章A-97215",
+          "status": "removed",
+          "statusLabel": "已取消",
+          "isCommissionPrimary": false,
+          "grantedAt": "2026-10-06T03:40:03.621+00:00",
+          "grantedByName": "Admin Staging",
+          "removalRequestedAt": "2026-10-06T03:45:50.47+00:00",
+          "removalRequestedByName": "Admin Staging",
+          "removalReason": "[cert-badge-e2e] aborted run cleanup",
+          "removalApprovedAt": "2026-10-06T03:45:50.768+00:00",
+          "removalApprovedByName": "Admin Staging",
+          "removedAt": "2026-10-06T03:45:50.768+00:00"
+        },
+        {
+          "id": "5417eace-ad1b-4bb3-b698-370bcbbb72a7",
+          "companionProfileId": "53be06d5-b94b-473c-a63d-cfd5926adfab",
+          "tagId": "d884cbc5-d755-446e-beb2-31c93ad882f3",
+          "tagName": "E2E勋章A-97215",
+          "status": "removed",
+          "statusLabel": "已取消",
+          "isCommissionPrimary": false,
+          "grantedAt": "2026-10-06T03:38:27.131+00:00",
+          "grantedByName": "Admin Staging",
+          "removalRequestedAt": "2026-10-06T03:39:18.983+00:00",
+          "removalRequestedByName": "Admin Staging",
+          "removalReason": "[cert-badge-e2e] 测试取消",
+          "removalApprovedAt": "2026-10-06T03:39:20.853+00:00",
+          "removalApprovedByName": "Admin Staging",
+          "removedAt": "2026-10-06T03:39:20.853+00:00"
+        },
+        {
+          "id": "9d1fa56b-e690-4e70-be9e-19d8945bb4b0",
+          "companionProfileId": "53be06d5-b94b-473c-a63d-cfd5926adfab",
+          "tagId": "4c61feba-4ad0-4810-aac1-a7486f0e3579",
+          "tagName": "E2E勋章A-24626",
+          "status": "removed",
+          "statusLabel": "已取消",
+          "isCommissionPrimary": false,
+          "grantedAt": "2026-10-06T03:33:49.613+00:00",
+          "grantedByName": "Admin Staging",
+          "removalRequestedAt": "2026-10-06T03:38:14.817+00:00",
+          "removalRequestedByName": "Admin Staging",
+          "removalReason": "[cert-badge-e2e] aborted run cleanup",
+          "removalApprovedAt": "2026-10-06T03:38:15.264+00:00",
+          "removalApprovedByName": "Admin Staging",
+          "removedAt": "2026-10-06T03:38:15.264+00:00"
+        },
+        {
+          "id": "257896c8-632c-4a5b-aaa9-d506ce43d478",
+          "companionProfileId": "53be06d5-b94b-473c-a63d-cfd5926adfab",
+          "tagId": "4c61feba-4ad0-4810-aac1-a7486f0e3579",
+          "tagName": "E2E勋章A-24626",
+          "status": "removed",
+          "statusLabel": "已取消",
+          "isCommissionPrimary": false,
+          "grantedAt": "2026-10-06T03:32:14.997+00:00",
+          "grantedByName": "Admin Staging",
+          "removalRequestedAt": "2026-10-06T03:33:07.69+00:00",
+          "removalRequestedByName": "Admin Staging",
+          "removalReason": "[cert-badge-e2e] 测试取消",
+          "removalApprovedAt": "2026-10-06T03:33:09.428+00:00",
+          "removalApprovedByName": "Admin Staging",
+          "removedAt": "2026-10-06T03:33:09.428+00:00"
+        },
+        {
+          "id": "fe757a87-a2a0-4504-9c59-5b36ddbd07e5",
+          "companionProfileId": "53be06d5-b94b-473c-a63d-cfd5926adfab",
+          "tagId": "74dd23bf-5b56-46a7-92d2-e85ae0777883",
+          "tagName": "E2E勋章A-86005",
+          "status": "removed",
+          "statusLabel": "已取消",
+          "isCommissionPrimary": false,
+          "grantedAt": "2026-10-06T03:30:15.686+00:00",
+          "grantedByName": "Admin Staging",
+          "removalRequestedAt": "2026-10-06T03:32:02.512+00:00",
+          "removalRequestedByName": "Admin Staging",
+          "removalReason": "[cert-badge-e2e] aborted run cleanup",
+          "removalApprovedAt": "2026-10-06T03:32:02.874+00:00",
+          "removalApprovedByName": "Admin Staging",
+          "removedAt": "2026-10-06T03:32:02.874+00:00"
+        },
+        {
+          "id": "fedfc94d-4dd8-46ba-a66f-482da3d03b58",
+          "companionProfileId": "53be06d5-b94b-473c-a63d-cfd5926adfab",
+          "tagId": "74dd23bf-5b56-46a7-92d2-e85ae0777883",
+          "tagName": "E2E勋章A-86005",
+          "status": "removed",
+          "statusLabel": "已取消",
+          "isCommissionPrimary": false,
+          "grantedAt": "2026-10-06T03:29:55.418+00:00",
+          "grantedByName": "Admin Staging",
+          "removalRequestedAt": "2026-10-06T03:30:07.75+00:00",
+          "removalRequestedByName": "Admin Staging",
+          "removalReason": "[cert-badge-e2e] 测试取消",
+          "removalApprovedAt": "2026-10-06T03:30:09.295+00:00",
+          "removalApprovedByName": "Admin Staging",
+          "removedAt": "2026-10-06T03:30:09.295+00:00"
+        },
+        {
+          "id": "74d0c270-fbd3-4780-94d5-d9da009258e3",
+          "companionProfileId": "53be06d5-b94b-473c-a63d-cfd5926adfab",
+          "tagId": "ca97c401-14e8-43ec-9aa0-7252ce5eb8ac",
+          "tagName": "E2E勋章A-45711",
+          "status": "removed",
+          "statusLabel": "已取消",
+          "isCommissionPrimary": false,
+          "grantedAt": "2026-10-06T03:27:36.343+00:00",
+          "grantedByName": "Admin Staging",
+          "removalRequestedAt": "2026-10-06T03:29:35.151+00:00",
+          "removalRequestedByName": "Admin Staging",
+          "removalReason": "[cert-badge-e2e] aborted run cleanup",
+          "removalApprovedAt": "2026-10-06T03:29:35.478+00:00",
+          "removalApprovedByName": "Admin Staging",
+          "removedAt": "2026-10-06T03:29:35.478+00:00"
+        }
+      ],
+      "commissionBadge": null
+    },
+    "pwB": {
+      "ok": true,
+      "companion": {
+        "id": "aa962002-f63b-4cf5-88da-588e39910187",
+        "pwCode": "PW00076",
+        "nickname": "Organic Companion"
+      },
+      "assignments": [
+        {
+          "id": "a19243bd-2ac3-4919-9455-64bafe5bfb12",
+          "companionProfileId": "aa962002-f63b-4cf5-88da-588e39910187",
+          "tagId": "88c85eaf-b941-4825-8b0f-328902eec877",
+          "tagName": "E2E勋章B-97215",
+          "status": "removed",
+          "statusLabel": "已取消",
+          "isCommissionPrimary": false,
+          "grantedAt": "2026-10-06T03:38:27.574+00:00",
+          "grantedByName": "Admin Staging",
+          "removalRequestedAt": "2026-10-06T03:45:52.276+00:00",
+          "removalRequestedByName": "Admin Staging",
+          "removalReason": "[cert-badge-e2e] aborted run cleanup",
+          "removalApprovedAt": "2026-10-06T03:45:52.533+00:00",
+          "removalApprovedByName": "Admin Staging",
+          "removedAt": "2026-10-06T03:45:52.533+00:00"
+        },
+        {
+          "id": "c336c060-8f1a-4817-a813-43af06d66a7f",
+          "companionProfileId": "aa962002-f63b-4cf5-88da-588e39910187",
+          "tagId": "84042b44-3dd3-4b62-90e2-7f1d49b1d676",
+          "tagName": "E2E勋章B-24626",
+          "status": "removed",
+          "statusLabel": "已取消",
+          "isCommissionPrimary": false,
+          "grantedAt": "2026-10-06T03:32:15.467+00:00",
+          "grantedByName": "Admin Staging",
+          "removalRequestedAt": "2026-10-06T03:38:17.04+00:00",
+          "removalRequestedByName": "Admin Staging",
+          "removalReason": "[cert-badge-e2e] aborted run cleanup",
+          "removalApprovedAt": "2026-10-06T03:38:17.314+00:00",
+          "removalApprovedByName": "Admin Staging",
+          "removedAt": "2026-10-06T03:38:17.314+00:00"
+        },
+        {
+          "id": "f9c4029d-9ad6-4969-8954-c9a4f8439e41",
+          "companionProfileId": "aa962002-f63b-4cf5-88da-588e39910187",
+          "tagId": "18aff039-9534-4b91-8fbb-7fa2321a120c",
+          "tagName": "E2E勋章B-86005",
+          "status": "removed",
+          "statusLabel": "已取消",
+          "isCommissionPrimary": false,
+          "grantedAt": "2026-10-06T03:29:55.844+00:00",
+          "grantedByName": "Admin Staging",
+          "removalRequestedAt": "2026-10-06T03:32:04.454+00:00",
+          "removalRequestedByName": "Admin Staging",
+          "removalReason": "[cert-badge-e2e] aborted run cleanup",
+          "removalApprovedAt": "2026-10-06T03:32:04.721+00:00",
+          "removalApprovedByName": "Admin Staging",
+          "removedAt": "2026-10-06T03:32:04.721+00:00"
+        },
+        {
+          "id": "36e802eb-b35d-405b-b633-a8fedca39bb0",
+          "companionProfileId": "aa962002-f63b-4cf5-88da-588e39910187",
+          "tagId": "59118835-18a1-4a46-ad62-1802f258ff9e",
+          "tagName": "E2E勋章B-45711",
+          "status": "removed",
+          "statusLabel": "已取消",
+          "isCommissionPrimary": false,
+          "grantedAt": "2026-10-06T03:27:36.789+00:00",
+          "grantedByName": "Admin Staging",
+          "removalRequestedAt": "2026-10-06T03:29:36.914+00:00",
+          "removalRequestedByName": "Admin Staging",
+          "removalReason": "[cert-badge-e2e] aborted run cleanup",
+          "removalApprovedAt": "2026-10-06T03:29:37.165+00:00",
+          "removalApprovedByName": "Admin Staging",
+          "removedAt": "2026-10-06T03:29:37.165+00:00"
+        }
+      ],
+      "commissionBadge": null
+    },
+    "pwBProfileId": "aa962002-f63b-4cf5-88da-588e39910187"
+  },
+  "bossWalletBefore": {
+    "bossId": "e68fd4e1-405c-4800-bb33-1a9bda032695",
+    "paidBalance": 1922,
+    "bonusBalance": 0,
+    "heldBalance": 720,
+    "availableBalance": 1922,
+    "totalBalance": 2642,
+    "frozen": false,
+    "totalPaidIn": 3052,
+    "totalBonusIn": 30,
+    "totalSpent": 440,
+    "totalCompensation": 0,
+    "totalRechargeRm": 600,
+    "updatedAt": "2026-10-06T03:40:00.177632+00:00"
+  },
+  "summary": {
+    "total": 45,
+    "pass": 45,
+    "fail": 0
+  }
+}
