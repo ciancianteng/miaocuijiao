@@ -3648,10 +3648,37 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
         });
       }
 
+      async function alreadyConfirmedReply(current) {
+        if (!current || isTerminalOrderStatus(current.status) || current.status === "awaiting_payment") return null;
+        const paidTx = (
+          await companionDb(
+            "payment_transactions",
+            `?order_id=eq.${encodeURIComponent(current.id)}&payment_status=eq.paid&limit=1`
+          ).catch(() => [])
+        )?.[0];
+        if (!paidTx) return null;
+        const profiles = await profileMap([current.boss_id, current.customer_service_id, service.profile.id]);
+        return json(res, 200, {
+          ok: true,
+          duplicate: true,
+          already: true,
+          message: "付款已确认（重复请求未重复处理）。",
+          order: safeOrder(current, profiles),
+        });
+      }
       if (order.status !== "awaiting_payment") {
-        return json(res, 400, {
+        if (action === "confirm_payment") {
+          const replay = await alreadyConfirmedReply(order);
+          if (replay) return replay;
+        }
+        const terminal = isTerminalOrderStatus(order.status);
+        return json(res, terminal ? 409 : 400, {
           ok: false,
-          message: "只有待付款确认订单可以确认付款 / 发送到抢单大厅。",
+          code: terminal ? "ORDER_TERMINAL_NO_PAYMENT_APPROVE" : "NOT_AWAITING_PAYMENT",
+          status: order.status,
+          message: terminal
+            ? `${terminalOrderReviewText(order.status)}，不能再确认付款。`
+            : "只有待付款确认订单可以确认付款 / 发送到抢单大厅。",
         });
       }
 
@@ -3822,7 +3849,15 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
         }
       }
 
-      let patched = await transitionWithOptionalPaidAt();
+      let patched;
+      try {
+        patched = await transitionWithOptionalPaidAt();
+      } catch (err) {
+        if (Number(err?.status) !== 409) throw err;
+        const replay = await alreadyConfirmedReply(await orderById(order.id));
+        if (replay) return replay;
+        return json(res, 409, { ok: false, message: err.message || "订单状态已变更，请刷新后重试。" });
+      }
       if (!patched) {
         try {
           patched = await patchOrder(order.id, { status: next, ...basePatch, paid_at: nowIso() });
