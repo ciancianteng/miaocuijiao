@@ -44,9 +44,21 @@ export const DEFAULT_CERT_TAGS = [
   { id: "cert-skill", name: "实力认证", icon: "💪", color: "#4cc9f0", sort: 3 },
 ].map((row) => ({ ...row, enabled: true }));
 
+/** Unified companion share % for a badge (0–100) or null when the badge does not set commission. */
+export function parseShareRate(v) {
+  if (v == null || v === "") return null;
+  const n = Number(v);
+  if (!Number.isFinite(n) || n < 0 || n > 100) return null;
+  return Math.round(n * 100) / 100;
+}
+
 export function normalizeCertTag(row = {}, index = 0) {
   const name = String(row.name || row.title || "").trim();
+  const priority = Number(row.commissionPriority ?? row.commission_priority);
   return {
+    companionShareRate: parseShareRate(row.companionShareRate ?? row.companion_share_rate),
+    commissionPriority: Number.isFinite(priority) ? priority : 100,
+    commissionUpdatedAt: row.commissionUpdatedAt || row.commission_updated_at || "",
     id: String(row.id || randomUUID()),
     name,
     title: name,
@@ -70,6 +82,18 @@ export function toPublicCertTag(tag) {
     color: item.color,
     sort: item.sort,
     enabled: item.enabled,
+  };
+}
+
+/** Admin-only shape: includes the unified commission (never sent to public/boss surfaces). */
+export function toAdminCertTag(tag) {
+  const item = normalizeCertTag(tag);
+  return {
+    ...toPublicCertTag(item),
+    companionShareRate: item.companionShareRate,
+    platformRate: item.companionShareRate == null ? null : Math.round((100 - item.companionShareRate) * 100) / 100,
+    commissionPriority: item.commissionPriority,
+    commissionUpdatedAt: item.commissionUpdatedAt,
   };
 }
 
@@ -102,14 +126,17 @@ function rowFromDb(row = {}, index = 0) {
       sort: row.sort_order,
       enabled: row.is_enabled,
       updated_at: row.updated_at,
+      companion_share_rate: row.companion_share_rate,
+      commission_priority: row.commission_priority,
+      commission_updated_at: row.commission_updated_at,
     },
     index
   );
 }
 
-function rowToDb(row) {
+function rowToDb(row, { withCommission = true } = {}) {
   const item = normalizeCertTag(row);
-  return {
+  const out = {
     id: item.id,
     name: item.name,
     icon: item.icon,
@@ -118,6 +145,12 @@ function rowToDb(row) {
     is_enabled: item.enabled,
     updated_at: new Date().toISOString(),
   };
+  if (withCommission) out.commission_priority = item.commissionPriority;
+  return out;
+}
+
+function isMissingColumn(error) {
+  return /PGRST204|column .* does not exist|Could not find the .* column/i.test(String(error?.message || error || ""));
 }
 
 async function readDbTags() {
@@ -143,35 +176,44 @@ async function readDbTags() {
 async function writeDbTags(rows) {
   if (!hasDb()) return null;
   const list = (Array.isArray(rows) ? rows : []).map((r, i) => normalizeCertTag(r, i)).filter((r) => r.name);
-  const del = await fetch(restUrl("companion_cert_tags", "?id=neq.__never__"), {
-    method: "DELETE",
-    headers: serviceHeaders({ Prefer: "return=minimal" }),
-  });
+  // Upsert (never delete-all + reinsert): unified commission columns must survive name/icon edits.
+  const upsert = async (withCommission) => {
+    const response = await fetch(restUrl("companion_cert_tags", "?on_conflict=id"), {
+      method: "POST",
+      headers: serviceHeaders({ Prefer: "resolution=merge-duplicates,return=representation" }),
+      body: JSON.stringify(list.map((r) => rowToDb(r, { withCommission }))),
+    });
+    const text = await response.text();
+    let body = null;
+    try {
+      body = text ? JSON.parse(text) : null;
+    } catch {
+      body = text;
+    }
+    if (!response.ok) throw Object.assign(new Error(body?.message || body?.hint || text || `HTTP ${response.status}`), { status: response.status });
+    return body;
+  };
+  let body = [];
+  if (list.length) {
+    try {
+      body = await upsert(true);
+    } catch (err) {
+      if (isMissingTable(err) || err.status === 404) return null;
+      if (!isMissingColumn(err)) throw err;
+      body = await upsert(false);
+    }
+  }
+  const keep = list.map((r) => `"${String(r.id).replace(/"/g, "")}"`).join(",");
+  const del = await fetch(
+    restUrl("companion_cert_tags", keep ? `?id=not.in.(${encodeURIComponent(keep)})` : "?id=neq.__never__"),
+    { method: "DELETE", headers: serviceHeaders({ Prefer: "return=minimal" }) }
+  );
   if (!del.ok) {
     const text = await del.text();
     const err = new Error(text || `HTTP ${del.status}`);
-    if (isMissingTable(err) || del.status === 404) return null;
-    throw err;
+    if (!isMissingTable(err)) throw err;
   }
-  if (!list.length) return [];
-  const response = await fetch(restUrl("companion_cert_tags", ""), {
-    method: "POST",
-    headers: serviceHeaders(),
-    body: JSON.stringify(list.map(rowToDb)),
-  });
-  const text = await response.text();
-  let body = null;
-  try {
-    body = text ? JSON.parse(text) : null;
-  } catch {
-    body = text;
-  }
-  if (!response.ok) {
-    const err = new Error(body?.message || body?.hint || text || `HTTP ${response.status}`);
-    if (isMissingTable(err) || response.status === 404) return null;
-    throw err;
-  }
-  return (Array.isArray(body) ? body : list).map((row, i) =>
+  return (Array.isArray(body) && body.length ? body : list).map((row, i) =>
     row.sort_order != null ? rowFromDb(row, i) : normalizeCertTag(row, i)
   );
 }
@@ -232,13 +274,20 @@ export async function updateCertTags(mutator) {
 async function readDbAssignments(profileIds = []) {
   if (!hasDb() || !profileIds.length) return null;
   const ids = profileIds.map(encodeURIComponent).join(",");
-  const response = await fetch(
+  // Removed badges stay as history rows; only active / pending_removal are "held".
+  let response = await fetch(
     restUrl(
       "companion_cert_tag_assignments",
-      `?companion_profile_id=in.(${ids})&select=companion_profile_id,tag_id`
+      `?companion_profile_id=in.(${ids})&status=in.(active,pending_removal)&select=companion_profile_id,tag_id`
     ),
     { headers: serviceHeaders() }
   );
+  if (response.status === 400) {
+    response = await fetch(
+      restUrl("companion_cert_tag_assignments", `?companion_profile_id=in.(${ids})&select=companion_profile_id,tag_id`),
+      { headers: serviceHeaders() }
+    );
+  }
   const text = await response.text();
   let body = null;
   try {
@@ -314,10 +363,23 @@ export async function getAssignmentsForProfiles(profileIds = []) {
   return out;
 }
 
-export async function setAssignmentsForProfile(profileId, tagIds) {
+/**
+ * Admin "勾选徽章" save. With the ledger schema: new ticks are granted immediately; unticked
+ * badges only move to pending_removal (an admin must approve before they are removed).
+ */
+export async function setAssignmentsForProfile(profileId, tagIds, { operator = null } = {}) {
   const pid = String(profileId || "").trim();
   if (!pid) throw Object.assign(new Error("缺少陪玩资料 ID"), { status: 400 });
   const ids = [...new Set((tagIds || []).map(String).filter(Boolean))];
+  try {
+    const ledger = await import("./_cert-badge-ledger.js");
+    const synced = await ledger.syncProfileBadges(pid, ids, { operator });
+    if (synced) return synced.heldTagIds;
+  } catch (error) {
+    if (error?.status && error.status < 500) throw error;
+    console.error("[cert-tags] ledger sync failed", error?.message || error);
+    throw Object.assign(new Error(`徽章分配保存失败：${error?.message || error}`), { status: 503 });
+  }
   try {
     const saved = await writeDbAssignments(pid, ids);
     if (Array.isArray(saved)) return saved;

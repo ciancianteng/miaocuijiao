@@ -782,6 +782,39 @@ async function buildDetail(row, profile, opts = {}) {
   } catch (err) {
     console.error("[players] cert tags load failed", err?.message || err);
   }
+  let certBadgeLedger = null;
+  try {
+    const ledger = await import("../_cert-badge-ledger.js");
+    if (await ledger.ledgerAvailable()) {
+      const [rows, catalog] = await Promise.all([
+        ledger.listAssignments({ profileIds: [row.id], limit: 100 }),
+        readCertTags().catch(() => []),
+      ]);
+      const tagById = new Map((catalog || []).map((t) => [String(t.id), t]));
+      const pick = ledger.resolveCommissionBadge(rows.filter((r) => ledger.OPEN_STATUSES.includes(r.status)), catalog);
+      certBadgeLedger = {
+        assignments: rows.map((r) => ledger.viewAssignment(r, tagById.get(String(r.tag_id)))),
+        commissionBadge: pick
+          ? {
+              badgeId: String(pick.tag.id),
+              badgeName: pick.tag.name,
+              companionShareRate: pick.tag.companionShareRate,
+              rule: pick.rule,
+            }
+          : null,
+      };
+    }
+  } catch (err) {
+    console.error("[players] cert badge ledger load failed", err?.message || err);
+  }
+  const badgeRate = certBadgeLedger?.commissionBadge?.companionShareRate;
+  if (badgeRate != null && Number.isFinite(Number(badgeRate))) {
+    // Settlement uses the badge rate ahead of personal override / club / system (see _order-complete.js).
+    base.commissionEffectiveShareRate = Number(badgeRate);
+    base.commissionEffectivePlatformRate = Math.round((100 - Number(badgeRate)) * 100) / 100;
+    base.commissionSource = "cert_badge";
+    base.commissionSourceLabel = `认证勋章「${certBadgeLedger.commissionBadge.badgeName}」统一佣金`;
+  }
 
   return {
     ...base,
@@ -990,6 +1023,7 @@ async function buildDetail(row, profile, opts = {}) {
     certCatalog,
     certTags,
     certTagIds,
+    certBadgeLedger,
     ...(await (async () => {
       try {
         const levelMeta = await resolveLevelMeta(row.level_id || row.level_name);
@@ -2218,7 +2252,7 @@ export default async function handler(req, res) {
             .split(/[,，\s]+/)
             .map((x) => x.trim())
             .filter(Boolean);
-      await setAssignmentsForProfile(id, tagIds);
+      await setAssignmentsForProfile(id, tagIds, { operator: admin });
     }
 
     const profilePatch = profileEditablePatch(payload);

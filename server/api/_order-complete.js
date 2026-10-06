@@ -4,6 +4,7 @@
  */
 import { resolveEffectiveCompanionCommission } from "./_commission-rates.js";
 import { readLocalLevels } from "./_companion-levels-store.js";
+import { ensureOrderBadgeSnapshot } from "./_cert-badge-ledger.js";
 import {
   createOrderGrabHelpers,
   stripInternalOrderMarkers,
@@ -393,11 +394,18 @@ export function createOrderCompleteHelpers({ restUrl, supabaseJson, serviceHeade
     let platformRate;
     let companionShareRate;
     let commissionSource = "system";
+    // Badge commission frozen when the companion was bound; later badge-rate edits never reach this order.
+    const badgeSnap = hasProductFeeSnapshot ? null : await ensureOrderBadgeSnapshot(saved, { stage: "completion" });
+    const badgeShare = badgeSnap?.commission?.companionShareRate;
     if (hasProductFeeSnapshot) {
       const snap = money(saved.platform_fee_rate);
       platformRate = Math.min(100, Math.max(0, Number.isFinite(snap) ? snap : 0));
       companionShareRate = Math.round((100 - platformRate) * 100) / 100;
       commissionSource = "order_snapshot";
+    } else if (badgeShare != null && Number.isFinite(Number(badgeShare))) {
+      companionShareRate = Math.min(100, Math.max(0, Math.round(Number(badgeShare) * 100) / 100));
+      platformRate = Math.round((100 - companionShareRate) * 100) / 100;
+      commissionSource = "cert_badge";
     } else {
       const effective = resolveEffectiveCompanionCommission({
         companionProfile: cp,
@@ -420,6 +428,8 @@ export function createOrderCompleteHelpers({ restUrl, supabaseJson, serviceHeade
       commissionRateSnapshot: companionShareRate,
       commissionAmountSnapshot: companionNet,
       commissionSource,
+      certBadgeId: commissionSource === "cert_badge" ? badgeSnap.commission.badgeId : null,
+      certBadgeName: commissionSource === "cert_badge" ? badgeSnap.commission.badgeName : null,
       completedAt,
       completionMethod: method,
       bossCommissionTransparencyNote: "老板直属分成由平台抽成支付，不扣陪玩收入",
