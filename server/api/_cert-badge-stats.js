@@ -225,17 +225,26 @@ async function inChunks(ids, fn, size = 80) {
 const ORDER_COLS =
   "id,order_no,status,settlement_status,settlement_note,order_type,parent_order_id,boss_id,companion_id,total_amount,companion_income,platform_fee,platform_fee_rate,companion_commission_rate_snapshot,completed_at,cert_badge_snapshot";
 
+/** Columns the stats cannot work without; the rest are optional settlement extras (older schemas lack some). */
+const REQUIRED_ORDER_COLS = new Set(["id", "status", "companion_id", "total_amount", "completed_at", "cert_badge_snapshot"]);
+
 export async function loadBadgeOrders({ tagId = "", fromIso = "", toIso = "" } = {}) {
-  const q = [`select=${ORDER_COLS}`, "cert_badge_snapshot=not.is.null", "completed_at=not.is.null", "order=completed_at.desc"];
-  if (tagId) q.push(`cert_badge_snapshot=cs.${encodeURIComponent(JSON.stringify({ badgeIds: [String(tagId)] }))}`);
-  if (fromIso) q.push(`completed_at=gte.${encodeURIComponent(fromIso)}`);
-  if (toIso) q.push(`completed_at=lt.${encodeURIComponent(toIso)}`);
-  try {
-    return await pageAll("orders", `?${q.join("&")}`);
-  } catch (err) {
-    if (isSchemaMissing(err)) return [];
-    throw err;
+  const filters = ["cert_badge_snapshot=not.is.null", "completed_at=not.is.null", "order=completed_at.desc"];
+  if (tagId) filters.push(`cert_badge_snapshot=cs.${encodeURIComponent(JSON.stringify({ badgeIds: [String(tagId)] }))}`);
+  if (fromIso) filters.push(`completed_at=gte.${encodeURIComponent(fromIso)}`);
+  if (toIso) filters.push(`completed_at=lt.${encodeURIComponent(toIso)}`);
+  let cols = ORDER_COLS.split(",");
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    try {
+      return await pageAll("orders", `?select=${cols.join(",")}&${filters.join("&")}`);
+    } catch (err) {
+      if (!isSchemaMissing(err)) throw err;
+      const missing = String(err?.message || err || "").match(/orders\.([a-z0-9_]+)/i)?.[1] || "";
+      if (!missing || REQUIRED_ORDER_COLS.has(missing) || !cols.includes(missing)) return [];
+      cols = cols.filter((c) => c !== missing);
+    }
   }
+  return [];
 }
 
 async function loadLedger(orders) {

@@ -49,7 +49,7 @@ function check(no, name, ok, evidence) {
   if (ok) pass += 1;
   else fail += 1;
   report.checks.push({ no, name, result: ok ? "PASS" : "FAIL", evidence });
-  console.log(`[${ok ? "PASS" : "FAIL"}] ${no} ${name} :: ${typeof evidence === "string" ? evidence : JSON.stringify(evidence).slice(0, 400)}`);
+  console.log(`[${ok ? "PASS" : "FAIL"}] ${no} ${name} :: ${typeof evidence === "string" ? evidence : String(JSON.stringify(evidence ?? null)).slice(0, 400)}`);
 }
 function save() {
   report.summary = { total: pass + fail, pass, fail };
@@ -166,18 +166,22 @@ async function driveToCompletion(orderId, pw, label) {
   return { status: st, steps };
 }
 async function directOrder(pw, label) {
+  // Same request shape as the boss order page (place_order → server-authoritative price).
   const created = await api("/api/orders", bossT, {
-    action: "create",
-    order: {
-      title: `${TAG} ${label}`,
-      game: "VALORANT",
-      game_id: `CB-${label}-${STAMP}`,
-      description: `${TAG} ${label} staging test data`,
-      hours: 1,
-      companion_id: pw.id,
-      payment_method: "catfood",
-      paymentMethod: "catfood",
-    },
+    action: "place_order",
+    companionId: pw.id,
+    serviceType: "默认服务",
+    service: "默认服务",
+    game: "默认服务",
+    hours: 1,
+    quantity: 1,
+    gameId: `CB-${label}-${STAMP}`,
+    schedule: "20:00 - 21:00",
+    startTime: "20:00",
+    endTime: "21:00",
+    notes: `${TAG} ${label} staging test data`,
+    paymentMethod: "catfood",
+    idempotencyKey: `cb-${label}-${STAMP}`,
   });
   const o = created.json?.order || {};
   const pay = o.id ? await api("/api/orders", bossT, { action: "pay_order", id: o.id, paymentMethod: "catfood" }) : null;
@@ -276,11 +280,11 @@ const multi = await api("/api/orders", bossT, {
   idempotencyKey: `cb-multi-${STAMP}`,
   paymentMethod: "catfood",
   gameId: `CB-MULTI-${STAMP}`,
-  game: "VALORANT",
+  game: "默认服务",
   notes: `${TAG} multi`,
   companions: [
-    { companionId: pwA.id, service: "VALORANT", hours: 1 },
-    { companionId: pwB.id, service: "VALORANT", hours: 1 },
+    { companionId: pwA.id, service: "默认服务", hours: 1 },
+    { companionId: pwB.id, service: "默认服务", hours: 1 },
   ],
 });
 const parentId = multi.json?.order?.id || multi.json?.parent?.id || multi.json?.parentOrderId || "";
