@@ -990,14 +990,20 @@
     return q;
   }
 
+  /** Filters fire overlapping requests; only the latest response per view may render. */
+  var reqSeq = { stats: 0, detail: 0, holder: 0 };
+
   function loadStats() {
+    var my = ++reqSeq.stats;
     state.statsError = "";
     return apiGet(listQuery())
       .then(function (body) {
+        if (my !== reqSeq.stats) return;
         state.stats = body;
         render();
       })
       .catch(function (err) {
+        if (my !== reqSeq.stats) return;
         state.statsError = err.message || "统计读取失败";
         render();
       });
@@ -1010,13 +1016,16 @@
     render();
     var q = "action=detail&id=" + encodeURIComponent(state.detailId) + "&" + rangeQuery();
     if (state.detailHolder) q += "&companion=" + encodeURIComponent(state.detailHolder);
+    var my = ++reqSeq.detail;
     return apiGet(q)
       .then(function (body) {
+        if (my !== reqSeq.detail) return;
         state.detail = body;
         state.detailLoading = false;
         render();
       })
       .catch(function (err) {
+        if (my !== reqSeq.detail) return;
         state.detailLoading = false;
         state.detailError = err.message || "详情读取失败";
         render();
@@ -1030,13 +1039,16 @@
     render();
     var q = "action=holder&companion=" + encodeURIComponent(state.holderRef) + "&" + rangeQuery();
     if (state.holderScope === "tag" && state.holderTag) q += "&id=" + encodeURIComponent(state.holderTag);
+    var my = ++reqSeq.holder;
     return apiGet(q)
       .then(function (body) {
+        if (my !== reqSeq.holder) return;
         state.holder = body;
         state.holderLoading = false;
         render();
       })
       .catch(function (err) {
+        if (my !== reqSeq.holder) return;
         state.holderLoading = false;
         state.holderError = err.message || "读取失败";
         render();

@@ -131,6 +131,8 @@ export function orderFigures(order = {}, incomeTxs = [], refunds = []) {
         : order.platform_fee_rate != null
           ? m(100 - Number(order.platform_fee_rate))
           : null;
+  // Credit the badge only when the settlement actually used its rate (older settlement code ignores badges).
+  const snapComm = snap.commission && snap.commission.badgeId && shareRate != null && m(snap.commission.companionShareRate) === shareRate ? snap.commission : null;
   return {
     orderId: String(order.id),
     orderNo: order.order_no || "",
@@ -142,8 +144,8 @@ export function orderFigures(order = {}, incomeTxs = [], refunds = []) {
     companionProfileId: snap.companionProfileId || "",
     badgeIds: snap.badgeIds.map(String),
     badgeNames: (snap.badges || []).map((b) => b.name),
-    commissionBadgeId: meta.certBadgeId || snap.commission?.badgeId || "",
-    commissionBadgeName: meta.certBadgeName || snap.commission?.badgeName || "",
+    commissionBadgeId: meta.certBadgeId || snapComm?.badgeId || "",
+    commissionBadgeName: meta.certBadgeName || snapComm?.badgeName || "",
     commissionSource: meta.commissionSource || "",
     companionShareRate: shareRate,
     gross,
@@ -271,8 +273,8 @@ export function orderActivity(order = {}, fig = null) {
     companionIncome: fig ? fig.companionIncome : 0,
     platformCommission: fig ? fig.platformCommission : 0,
     companionShareRate: fig ? fig.companionShareRate : null,
-    commissionBadgeId: fig?.commissionBadgeId || snap.commission?.badgeId || "",
-    commissionBadgeName: fig?.commissionBadgeName || snap.commission?.badgeName || "",
+    commissionBadgeId: fig ? fig.commissionBadgeId : snap.commission?.badgeId || "",
+    commissionBadgeName: fig ? fig.commissionBadgeName : snap.commission?.badgeName || "",
   };
 }
 
