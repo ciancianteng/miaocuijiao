@@ -21,7 +21,7 @@ import {
   resolveCommissionBadge,
   OPEN_STATUSES,
 } from "../_cert-badge-ledger.js";
-import { badgeOverview, badgeDetail, badgeMonthlyExport } from "../_cert-badge-stats.js";
+import { badgeOverview, badgeDetail, badgeHolder, badgeMonthlyExport } from "../_cert-badge-stats.js";
 import { resolveCompanionPublicCode } from "../_account-codes.js";
 
 const ADMIN_ROLES = new Set(["admin", "super_admin"]);
@@ -73,12 +73,30 @@ async function findCompanion(ref) {
     tries.push(`?companion_code=eq.${encodeURIComponent(raw.toUpperCase())}`);
     if (n > 0) tries.push(`?companion_uid=eq.${n + 100000}`, `?companion_uid=eq.${n}`);
   }
+  if (/^\d{1,9}$/.test(raw)) tries.push(`?companion_uid=eq.${raw}`);
   for (const q of tries) {
     const rows = await db("companion_profiles", `${q}&select=${cols}&limit=2`).catch(() => []);
     const hit = (rows || []).find((r) => !/^pw/i.test(raw) || resolveCompanionPublicCode(r) === raw.toUpperCase());
     if (hit) return hit;
   }
+  if (!/^pw\d+$/i.test(raw) && !/^[0-9a-f-]{36}$/i.test(raw)) {
+    const byName = await db("companion_profiles", `?nickname=ilike.*${encodeURIComponent(raw.replace(/[*,()]/g, ""))}*&select=${cols}&limit=5`).catch(() => []);
+    const exact = (byName || []).find((r) => String(r.nickname || "") === raw);
+    if (exact || byName?.length === 1) return exact || byName[0];
+    if (byName?.length > 1) throw Object.assign(new Error(`昵称「${raw}」匹配到多个陪玩，请改用 PW 编号或 UID`), { status: 409 });
+  }
   throw Object.assign(new Error(`找不到陪玩 ${raw}`), { status: 404 });
+}
+
+/** Optional holder filter (?companion=PW00076 | UID | 昵称 | profile id) → { profileId, userId, label }. */
+async function holderFilter(ref) {
+  if (!String(ref || "").trim()) return null;
+  const cp = await findCompanion(ref);
+  return {
+    profileId: String(cp.id),
+    userId: cp.user_id ? String(cp.user_id) : "",
+    label: { companionProfileId: String(cp.id), pwCode: resolveCompanionPublicCode(cp), uid: cp.companion_uid != null ? String(cp.companion_uid) : "", nickname: cp.nickname || "" },
+  };
 }
 
 async function badgeHasHistory(tagId) {
@@ -128,10 +146,17 @@ export default async function handler(req, res) {
       const q = req.query || {};
       const action = String(q.action || "list");
       if (action === "stats") {
-        return json(res, 200, { ok: true, ...(await badgeOverview({ range: q.range, from: q.from, to: q.to })) });
+        const who = await holderFilter(q.companion);
+        return json(res, 200, { ok: true, ...(await badgeOverview({ range: q.range, from: q.from, to: q.to, tagId: q.id || "", who })) });
       }
       if (action === "detail") {
-        return json(res, 200, { ok: true, ...(await badgeDetail({ tagId: q.id, range: q.range, from: q.from, to: q.to })) });
+        const who = await holderFilter(q.companion);
+        return json(res, 200, { ok: true, ...(await badgeDetail({ tagId: q.id, range: q.range, from: q.from, to: q.to, who })) });
+      }
+      if (action === "holder") {
+        const who = await holderFilter(q.companion || q.profile);
+        if (!who) return json(res, 400, { ok: false, message: "缺少陪玩（PW 编号 / UID / 昵称）" });
+        return json(res, 200, { ok: true, ...(await badgeHolder({ tagId: q.id || "", who, range: q.range, from: q.from, to: q.to })) });
       }
       if (action === "export") {
         return json(res, 200, { ok: true, ...(await badgeMonthlyExport({ year: q.year, month: q.month, tagId: q.id || "" })) });

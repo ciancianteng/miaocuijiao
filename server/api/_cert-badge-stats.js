@@ -192,15 +192,117 @@ export function inRange(iso, { fromIso = "", toIso = "" } = {}) {
   return true;
 }
 
-export function monthlyRows(figs = []) {
+export function monthlyRows(rows = []) {
   const by = new Map();
-  for (const f of figs) {
-    const k = monthKey(f.completedAt);
-    if (!k) continue;
-    if (!by.has(k)) by.set(k, []);
-    by.get(k).push(f);
+  const bucket = (k) => {
+    if (!by.has(k)) by.set(k, { settled: [], takenCount: 0, takenAmount: 0 });
+    return by.get(k);
+  };
+  for (const r of rows) {
+    if (r.taken) {
+      const tk = monthKey(r.takenAt);
+      if (tk) {
+        bucket(tk).takenCount += 1;
+        bucket(tk).takenAmount += m(r.gross);
+      }
+    }
+    const k = r.settled === false ? "" : monthKey(r.completedAt);
+    if (k) bucket(k).settled.push(r);
   }
-  return [...by.entries()].sort((a, b) => (a[0] < b[0] ? 1 : -1)).map(([month, list]) => ({ month, ...sumFigures(list) }));
+  return [...by.entries()]
+    .sort((a, b) => (a[0] < b[0] ? 1 : -1))
+    .map(([month, b]) => ({ month, takenCount: b.takenCount, takenAmount: m(b.takenAmount), ...sumFigures(b.settled) }));
+}
+
+const STATUS_LABELS = {
+  pending: "待付款",
+  awaiting_payment: "待付款",
+  payment_review: "付款审核中",
+  paid: "待接单",
+  open: "待接单",
+  published: "待接单",
+  claimed: "待陪玩确认",
+  ready: "待开始",
+  accepted: "已接单",
+  confirmed: "已接单",
+  in_progress: "进行中",
+  waiting_boss_confirm: "待老板确认完成",
+  completed: "已完成",
+  reviewed: "已完成（已评价）",
+  refund_requested: "退款处理中",
+  refunded: "已退款",
+  cancelled: "已取消",
+};
+
+/**
+ * Every badge-attributed child order (any status) → activity row. Settled ledger figures are merged in
+ * when present, so taken / completed / money all come from the same order + ledger source.
+ *   taken      the companion confirmed the order (accepted_at / started_at / completed_at) and it is not cancelled
+ *   takenAt    when it was taken (range filter for 接单 stats); completedAt drives completed / money stats
+ */
+export function orderActivity(order = {}, fig = null) {
+  if (!order?.id || !order.companion_id) return null;
+  if (String(order.order_type || "") === "multi_group") return null;
+  const snap = readOrderBadgeSnapshot(order);
+  if (!snap) return null;
+  const status = String(order.status || "");
+  const takenAt = order.accepted_at || order.started_at || order.completed_at || "";
+  const settledLabel = fig ? (fig.effective ? (fig.refund > 0 ? "已完成（部分退款）" : "已完成") : status === "refunded" || fig.refund >= fig.gross ? "已退款" : "") : "";
+  return {
+    orderId: String(order.id),
+    orderNo: order.order_no || "",
+    parentOrderId: order.parent_order_id || "",
+    status,
+    statusLabel: settledLabel || STATUS_LABELS[status] || status || "-",
+    createdAt: order.created_at || "",
+    takenAt,
+    completedAt: order.completed_at || "",
+    taken: !!takenAt && status !== "cancelled",
+    bossId: order.boss_id || "",
+    companionId: String(order.companion_id),
+    companionProfileId: snap.companionProfileId || "",
+    badgeIds: snap.badgeIds.map(String),
+    badgeNames: (snap.badges || []).map((b) => b.name),
+    gross: m(order.total_amount),
+    settled: !!fig,
+    effective: !!fig?.effective,
+    refund: fig ? fig.refund : 0,
+    actualSettled: fig ? fig.actualSettled : 0,
+    companionIncome: fig ? fig.companionIncome : 0,
+    platformCommission: fig ? fig.platformCommission : 0,
+    companionShareRate: fig ? fig.companionShareRate : null,
+    commissionBadgeId: fig?.commissionBadgeId || snap.commission?.badgeId || "",
+    commissionBadgeName: fig?.commissionBadgeName || snap.commission?.badgeName || "",
+  };
+}
+
+/** 接单 stats by takenAt, completed / money stats by completedAt (settled only). Order ids count once. */
+export function activityTotals(rows = [], bounds = {}) {
+  const seen = new Set();
+  let takenCount = 0;
+  let takenAmount = 0;
+  const settled = [];
+  for (const r of rows) {
+    if (!r || seen.has(r.orderId)) continue;
+    seen.add(r.orderId);
+    if (r.taken && inRange(r.takenAt, bounds)) {
+      takenCount += 1;
+      takenAmount += m(r.gross);
+    }
+    if (r.settled && inRange(r.completedAt, bounds)) settled.push(r);
+  }
+  return { takenCount, takenAmount: m(takenAmount), ...sumFigures(settled) };
+}
+
+function touchesRange(r, bounds) {
+  if (!bounds.fromIso && !bounds.toIso) return true;
+  return [r.createdAt, r.takenAt, r.completedAt].some((iso) => iso && inRange(iso, bounds));
+}
+
+function belongsTo(r, who) {
+  if (!who) return true;
+  if (who.profileId && r.companionProfileId) return r.companionProfileId === String(who.profileId);
+  return !!who.userId && r.companionId === String(who.userId);
 }
 
 // ---------------------------------------------------------------- loaders
@@ -224,16 +326,20 @@ async function inChunks(ids, fn, size = 80) {
 }
 
 const ORDER_COLS =
-  "id,order_no,status,settlement_status,settlement_note,order_type,parent_order_id,boss_id,companion_id,total_amount,companion_income,platform_fee,platform_fee_rate,companion_commission_rate_snapshot,completed_at,cert_badge_snapshot";
+  "id,order_no,status,settlement_status,settlement_note,order_type,parent_order_id,boss_id,companion_id,total_amount,companion_income,platform_fee,platform_fee_rate,companion_commission_rate_snapshot,created_at,accepted_at,started_at,completed_at,cert_badge_snapshot";
 
 /** Columns the stats cannot work without; the rest are optional settlement extras (older schemas lack some). */
 const REQUIRED_ORDER_COLS = new Set(["id", "status", "companion_id", "total_amount", "completed_at", "cert_badge_snapshot"]);
 
-export async function loadBadgeOrders({ tagId = "", fromIso = "", toIso = "" } = {}) {
-  const filters = ["cert_badge_snapshot=not.is.null", "completed_at=not.is.null", "order=completed_at.desc"];
+/** includeOpen: every badge-attributed order (any status, date filtering done by the caller). */
+export async function loadBadgeOrders({ tagId = "", fromIso = "", toIso = "", includeOpen = false, companionId = "" } = {}) {
+  const filters = includeOpen
+    ? ["cert_badge_snapshot=not.is.null", "order=created_at.desc"]
+    : ["cert_badge_snapshot=not.is.null", "completed_at=not.is.null", "order=completed_at.desc"];
   if (tagId) filters.push(`cert_badge_snapshot=cs.${encodeURIComponent(JSON.stringify({ badgeIds: [String(tagId)] }))}`);
-  if (fromIso) filters.push(`completed_at=gte.${encodeURIComponent(fromIso)}`);
-  if (toIso) filters.push(`completed_at=lt.${encodeURIComponent(toIso)}`);
+  if (companionId) filters.push(`companion_id=eq.${encodeURIComponent(companionId)}`);
+  if (!includeOpen && fromIso) filters.push(`completed_at=gte.${encodeURIComponent(fromIso)}`);
+  if (!includeOpen && toIso) filters.push(`completed_at=lt.${encodeURIComponent(toIso)}`);
   let cols = ORDER_COLS.split(",");
   for (let attempt = 0; attempt < 8; attempt += 1) {
     try {
@@ -285,6 +391,12 @@ async function figuresFor(orders) {
   return orders.map((o) => orderFigures(o, txBy.get(String(o.id)) || [], rfBy.get(String(o.id)) || [])).filter(Boolean);
 }
 
+async function activityFor(orders) {
+  const figs = await figuresFor(orders);
+  const figBy = new Map(figs.map((f) => [f.orderId, f]));
+  return orders.map((o) => orderActivity(o, figBy.get(String(o.id)) || null)).filter(Boolean);
+}
+
 async function loadCompanionProfiles({ ids = [], userIds = [] } = {}) {
   const cols = "id,user_id,nickname,companion_code,companion_uid";
   const a = await inChunks(ids, (c) => db("companion_profiles", `?id=in.(${c.join(",")})&select=${cols}`));
@@ -313,7 +425,23 @@ async function loadAccounts(userIds = []) {
 function companionLabel(cp = {}, account = {}) {
   return {
     pwCode: resolveCompanionPublicCode(cp) || "",
+    uid: cp.companion_uid != null && cp.companion_uid !== "" ? String(cp.companion_uid) : "",
     nickname: cp.nickname || account.display_name || "",
+  };
+}
+
+const MEMBER_RANK = { active: 0, pending_removal: 1, removed: 2 };
+
+function orderView(r, byId, byUser, accounts) {
+  const cp = (r.companionProfileId && byId.get(r.companionProfileId)) || byUser.get(r.companionId) || {};
+  const acc = accounts.get(r.companionId) || accounts.get(String(cp.user_id || "")) || {};
+  const boss = accounts.get(String(r.bossId)) || {};
+  return {
+    ...r,
+    ...companionLabel(cp, acc),
+    companionProfileId: r.companionProfileId || String(cp.id || ""),
+    bossName: boss.display_name || "",
+    bossCode: resolveBossPublicCode(boss) || "",
   };
 }
 
@@ -323,113 +451,159 @@ function badgeTotals(figs, tagId) {
   return sumFigures(figs.filter((f) => f.badgeIds.includes(String(tagId))));
 }
 
-export async function badgeOverview({ range = "all", from = "", to = "" } = {}) {
+function withBadge(rows, tagId) {
+  return rows.filter((r) => r.badgeIds.includes(String(tagId)));
+}
+
+function loadAllAssignments(filter = {}) {
+  return listAssignments({ limit: 20000, ...filter }).catch((err) => {
+    if (isSchemaMissing(err)) return [];
+    throw err;
+  });
+}
+
+function pickMembership(assignments) {
+  const memberOf = new Map();
+  for (const a of assignments) {
+    const pid = String(a.companion_profile_id);
+    const prev = memberOf.get(pid);
+    if (!prev || MEMBER_RANK[a.status] < MEMBER_RANK[prev.status]) memberOf.set(pid, a);
+  }
+  return memberOf;
+}
+
+function monthBrief(t) {
+  return { takenCount: t.takenCount, completedCount: t.completedCount, actualSettled: t.actualSettled, platformCommission: t.platformCommission };
+}
+
+/** who: resolved holder filter { profileId, userId, label } (optional); tagId narrows to one badge (optional). */
+export async function badgeOverview({ range = "all", from = "", to = "", tagId = "", who = null } = {}) {
   const bounds = rangeBounds({ range, from, to });
   const monthBounds = rangeBounds({ range: "month" });
-  const [tags, openRows] = await Promise.all([
-    readCertTags(),
-    listAssignments({ statuses: ["active", "pending_removal"], limit: 20000 }).catch((err) => {
-      if (isSchemaMissing(err)) return [];
-      throw err;
-    }),
-  ]);
-  const allOrders = await loadBadgeOrders({});
-  const figs = await figuresFor(allOrders);
-  const rangeFigs = figs.filter((f) => inRange(f.completedAt, bounds));
-  const monthFigs = figs.filter((f) => inRange(f.completedAt, monthBounds));
+  const [allTags, openAll] = await Promise.all([readCertTags(), loadAllAssignments({ statuses: ["active", "pending_removal"] })]);
+  if (tagId && !allTags.some((t) => String(t.id) === String(tagId))) throw Object.assign(new Error("认证勋章不存在"), { status: 404 });
+  const tags = tagId ? allTags.filter((t) => String(t.id) === String(tagId)) : allTags;
+  const openRows = who?.profileId ? openAll.filter((r) => String(r.companion_profile_id) === String(who.profileId)) : openAll;
+  const orders = await loadBadgeOrders({ includeOpen: true, tagId: tagId ? String(tagId) : "", companionId: who?.userId || "" });
+  const rows = (await activityFor(orders)).filter((r) => belongsTo(r, who));
   const badges = tags.map((tag) => {
     const id = String(tag.id);
     const holders = openRows.filter((r) => String(r.tag_id) === id);
-    const month = badgeTotals(monthFigs, id);
+    const mine = withBadge(rows, id);
     return {
       ...toAdminCertTag(tag),
       holders: holders.length,
       pendingRemoval: holders.filter((r) => r.status === "pending_removal").length,
-      ...badgeTotals(rangeFigs, id),
-      commissionOrders: rangeFigs.filter((f) => f.effective && f.commissionBadgeId === id).length,
-      month: { completedCount: month.completedCount, actualSettled: month.actualSettled, platformCommission: month.platformCommission },
+      ...activityTotals(mine, bounds),
+      commissionOrders: mine.filter((r) => r.effective && r.commissionBadgeId === id && inRange(r.completedAt, bounds)).length,
+      month: monthBrief(activityTotals(mine, monthBounds)),
     };
   });
-  const uniqueHolders = new Set(openRows.map((r) => String(r.companion_profile_id))).size;
+  const scoped = tagId ? withBadge(rows, tagId) : rows;
+  const holderIds = new Set(openRows.filter((r) => !tagId || String(r.tag_id) === String(tagId)).map((r) => String(r.companion_profile_id)));
   return {
     range: bounds,
-    kpis: { ...sumFigures(rangeFigs), holders: uniqueHolders, badges: tags.length },
-    month: sumFigures(monthFigs),
+    filters: { tagId: tagId ? String(tagId) : "", companion: who?.label || null },
+    kpis: { ...activityTotals(scoped, bounds), holders: holderIds.size, badges: tags.length },
+    month: activityTotals(scoped, monthBounds),
     badges,
-    note: "多勋章陪玩的订单会同时计入其持有的每个勋章；顶部合计按订单去重。历史订单按下单绑定陪玩时的勋章快照归属。",
+    note: "接单数量按陪玩确认接单时间统计；已完成单量 / 金额 / 利润按完成时间统计（只计已结算订单）。多勋章陪玩的订单会同时计入其持有的每个勋章，顶部合计按订单去重。历史订单按绑定陪玩时的勋章快照归属。",
   };
 }
 
-export async function badgeDetail({ tagId, range = "all", from = "", to = "" } = {}) {
+export async function badgeDetail({ tagId, range = "all", from = "", to = "", who = null } = {}) {
   const tags = await readCertTags();
   const tag = tags.find((t) => String(t.id) === String(tagId));
   if (!tag) throw Object.assign(new Error("认证勋章不存在"), { status: 404 });
   const bounds = rangeBounds({ range, from, to });
   const monthBounds = rangeBounds({ range: "month" });
-  const assignments = await listAssignments({ tagId: String(tag.id), limit: 5000 }).catch((err) => {
-    if (isSchemaMissing(err)) return [];
-    throw err;
-  });
-  const orders = await loadBadgeOrders({ tagId: String(tag.id) });
-  const figs = await figuresFor(orders);
-  const rangeFigs = figs.filter((f) => inRange(f.completedAt, bounds));
+  const assignmentsAll = await loadAllAssignments({ tagId: String(tag.id) });
+  const orders = await loadBadgeOrders({ tagId: String(tag.id), includeOpen: true, companionId: who?.userId || "" });
+  const rows = (await activityFor(orders)).filter((r) => belongsTo(r, who));
+  const rangeRows = rows.filter((r) => touchesRange(r, bounds));
 
   const { byId, byUser } = await loadCompanionProfiles({
-    ids: [...assignments.map((a) => a.companion_profile_id), ...figs.map((f) => f.companionProfileId)],
-    userIds: figs.map((f) => f.companionId),
+    ids: [...assignmentsAll.map((a) => a.companion_profile_id), ...rows.map((r) => r.companionProfileId)],
+    userIds: rows.map((r) => r.companionId),
   });
-  const userIds = [...byId.values()].map((p) => p.user_id).concat(rangeFigs.map((f) => f.bossId));
-  const accounts = await loadAccounts(userIds);
+  const accounts = await loadAccounts([...byId.values()].map((p) => p.user_id).concat(rangeRows.map((r) => r.bossId)));
 
-  const memberOf = new Map();
-  for (const a of assignments) {
-    const pid = String(a.companion_profile_id);
-    const prev = memberOf.get(pid);
-    const rank = { active: 0, pending_removal: 1, removed: 2 };
-    if (!prev || rank[a.status] < rank[prev.status]) memberOf.set(pid, a);
-  }
-  const members = [...memberOf.entries()].map(([pid, a]) => {
+  const memberAll = pickMembership(assignmentsAll);
+  const holderOptions = [...memberAll.entries()].map(([pid, a]) => {
     const cp = byId.get(pid) || {};
-    const acc = accounts.get(String(cp.user_id || "")) || {};
-    const mine = rangeFigs.filter((f) => (f.companionProfileId ? f.companionProfileId === pid : f.companionId === String(cp.user_id)));
-    const t = sumFigures(mine);
-    return {
-      ...viewAssignment(a, tag),
-      ...companionLabel(cp, acc),
-      accountStatus: acc.status || "",
-      joinedAt: a.granted_at || a.created_at || "",
-      completedCount: t.completedCount,
-      gross: t.gross,
-      actualSettled: t.actualSettled,
-      companionIncome: t.companionIncome,
-      platformCommission: t.platformCommission,
-      refundAmount: t.refundAmount,
-    };
+    return { companionProfileId: pid, status: a.status, ...companionLabel(cp, accounts.get(String(cp.user_id || "")) || {}) };
   });
-  members.sort((a, b) => ({ active: 0, pending_removal: 1, removed: 2 })[a.status] - ({ active: 0, pending_removal: 1, removed: 2 })[b.status] || b.actualSettled - a.actualSettled);
-
-  const orderRows = rangeFigs.map((f) => {
-    const cp = (f.companionProfileId && byId.get(f.companionProfileId)) || byUser.get(f.companionId) || {};
-    const acc = accounts.get(f.companionId) || {};
-    const boss = accounts.get(String(f.bossId)) || {};
-    return {
-      ...f,
-      ...companionLabel(cp, acc),
-      bossName: boss.display_name || "",
-      bossCode: resolveBossPublicCode(boss) || "",
-      statusLabel: f.effective ? (f.refund > 0 ? "部分退款" : "已完成") : f.status === "refunded" || f.refund >= f.gross ? "已退款" : "不计入",
-    };
-  });
+  const members = [...memberAll.entries()]
+    .filter(([pid]) => !who?.profileId || pid === String(who.profileId))
+    .map(([pid, a]) => {
+      const cp = byId.get(pid) || {};
+      const acc = accounts.get(String(cp.user_id || "")) || {};
+      const mine = rows.filter((r) => belongsTo(r, { profileId: pid, userId: cp.user_id }));
+      const t = activityTotals(mine, bounds);
+      return {
+        ...viewAssignment(a, tag),
+        ...companionLabel(cp, acc),
+        companionUserId: cp.user_id || "",
+        badgeName: tag.name,
+        accountStatus: acc.status || "",
+        joinedAt: a.granted_at || a.created_at || "",
+        orderCount: mine.filter((r) => touchesRange(r, bounds)).length,
+        takenCount: t.takenCount,
+        takenAmount: t.takenAmount,
+        completedCount: t.completedCount,
+        gross: t.gross,
+        actualSettled: t.actualSettled,
+        companionIncome: t.companionIncome,
+        platformCommission: t.platformCommission,
+        refundAmount: t.refundAmount,
+      };
+    });
+  members.sort((a, b) => MEMBER_RANK[a.status] - MEMBER_RANK[b.status] || b.takenCount - a.takenCount || b.platformCommission - a.platformCommission);
 
   return {
-    badge: { ...toAdminCertTag(tag), holders: members.filter((x) => x.status !== "removed").length },
+    badge: { ...toAdminCertTag(tag), holders: [...memberAll.values()].filter((x) => x.status !== "removed").length },
     range: bounds,
-    kpis: sumFigures(rangeFigs),
-    month: sumFigures(figs.filter((f) => inRange(f.completedAt, monthBounds))),
+    filters: { companion: who?.label || null },
+    holderOptions,
+    kpis: activityTotals(rows, bounds),
+    month: activityTotals(rows, monthBounds),
     members,
-    orders: orderRows,
-    monthly: monthlyRows(figs),
+    orders: rangeRows.map((r) => orderView(r, byId, byUser, accounts)),
+    monthly: monthlyRows(rows),
     commissionLog: await listCommissionLog(String(tag.id)),
+  };
+}
+
+/** One holder: every related order (any status) + totals; tagId limits to orders attributed to that badge. */
+export async function badgeHolder({ tagId = "", who, range = "all", from = "", to = "" } = {}) {
+  if (!who?.profileId && !who?.userId) throw Object.assign(new Error("缺少陪玩"), { status: 400 });
+  const tags = await readCertTags();
+  const tag = tagId ? tags.find((t) => String(t.id) === String(tagId)) : null;
+  if (tagId && !tag) throw Object.assign(new Error("认证勋章不存在"), { status: 404 });
+  const bounds = rangeBounds({ range, from, to });
+  const orders = await loadBadgeOrders({ includeOpen: true, tagId: tag ? String(tag.id) : "", companionId: who.userId || "" });
+  const rows = (await activityFor(orders)).filter((r) => belongsTo(r, who));
+  const rangeRows = rows.filter((r) => touchesRange(r, bounds));
+  const assignments = who.profileId ? await loadAllAssignments({ profileIds: [who.profileId] }) : [];
+  const { byId, byUser } = await loadCompanionProfiles({ ids: [who.profileId].filter(Boolean), userIds: [who.userId].filter(Boolean) });
+  const cp = byId.get(String(who.profileId || "")) || byUser.get(String(who.userId || "")) || {};
+  const accounts = await loadAccounts([cp.user_id || who.userId].filter(Boolean).concat(rangeRows.map((r) => r.bossId)));
+  const acc = accounts.get(String(cp.user_id || who.userId || "")) || {};
+  const tagBy = new Map(tags.map((t) => [String(t.id), t]));
+  const badgeRows = assignments
+    .map((a) => viewAssignment(a, tagBy.get(String(a.tag_id))))
+    .sort((a, b) => MEMBER_RANK[a.status] - MEMBER_RANK[b.status]);
+  const current = tag ? badgeRows.find((a) => String(a.tagId) === String(tag.id)) || null : null;
+  return {
+    holder: { ...companionLabel(cp, acc), companionProfileId: String(cp.id || who.profileId || ""), companionUserId: String(cp.user_id || who.userId || ""), accountStatus: acc.status || "" },
+    badge: tag ? toAdminCertTag(tag) : null,
+    assignment: current,
+    badges: badgeRows,
+    range: bounds,
+    kpis: activityTotals(rows, bounds),
+    allTime: activityTotals(rows, {}),
+    orders: rangeRows.map((r) => orderView(r, byId, byUser, accounts)),
+    monthly: monthlyRows(rows),
   };
 }
 
