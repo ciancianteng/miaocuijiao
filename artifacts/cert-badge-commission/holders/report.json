@@ -1,0 +1,632 @@
+{
+  "generated_at": "2026-10-06T07:57:40.770Z",
+  "staging": "https://meow-cuijiao-homepage-6qrs0a0fp-ciancianteng-4581s-projects.vercel.app",
+  "build": {
+    "ok": true,
+    "sha": "",
+    "short": "",
+    "ref": "",
+    "env": "preview",
+    "url": "meow-cuijiao-homepage-6qrs0a0fp-ciancianteng-4581s-projects.vercel.app",
+    "supabaseRef": "cfccwysniduwkjskiqgy",
+    "supabaseIsProduction": false,
+    "supabaseIsStaging": true,
+    "isolationOk": true,
+    "envLabel": "STAGING/PREVIEW",
+    "paySot": "orderPayMethods",
+    "at": "2026-10-06T07:57:42.253Z"
+  },
+  "stamp": 1791273460768,
+  "orders": {
+    "H1": {
+      "id": "24b90375-b1fb-4ed5-9c7c-31e300376322",
+      "orderNo": "MCJO000483",
+      "create": {
+        "status": 200,
+        "ok": true,
+        "message": "订单已创建，请完成支付。",
+        "orderStatus": "awaiting_payment"
+      },
+      "pay": {
+        "status": 200,
+        "ok": true,
+        "message": "支付成功，订单已进入等待陪玩确认。",
+        "orderStatus": "claimed"
+      },
+      "steps": [
+        {
+          "st": "claimed",
+          "status": 200,
+          "ok": true,
+          "message": "已确认接单，订单进入进行中",
+          "orderStatus": "in_progress"
+        },
+        {
+          "step": "complete_order",
+          "status": 200,
+          "ok": true,
+          "message": "已提交完成申请，等待老板确认后结算。",
+          "orderStatus": "in_progress"
+        },
+        {
+          "st": "in_progress",
+          "status": 200,
+          "ok": true,
+          "message": "已确认完成，订单已完成。",
+          "orderStatus": "completed"
+        }
+      ],
+      "status": "completed",
+      "total": 20,
+      "companionIncome": 14
+    },
+    "H2": {
+      "id": "68bc038e-d4d2-4fa5-95fc-654741f6e583",
+      "orderNo": "MCJO000484",
+      "create": {
+        "status": 200,
+        "ok": true,
+        "message": "订单已创建，请完成支付。",
+        "orderStatus": "awaiting_payment"
+      },
+      "pay": {
+        "status": 200,
+        "ok": true,
+        "message": "支付成功，订单已进入等待陪玩确认。",
+        "orderStatus": "claimed"
+      },
+      "steps": [
+        {
+          "st": "claimed",
+          "status": 200,
+          "ok": true,
+          "message": "已确认接单，订单进入进行中",
+          "orderStatus": "in_progress"
+        },
+        {
+          "step": "complete_order",
+          "status": 200,
+          "ok": true,
+          "message": "已提交完成申请，等待老板确认后结算。",
+          "orderStatus": "in_progress"
+        },
+        {
+          "st": "in_progress",
+          "status": 200,
+          "ok": true,
+          "message": "已确认完成，订单已完成。",
+          "orderStatus": "completed"
+        }
+      ],
+      "status": "completed",
+      "total": 20,
+      "companionIncome": 14
+    },
+    "H3": {
+      "id": "6842afff-ba9f-4493-92ea-9f39f745de4e",
+      "orderNo": "MCJO000485",
+      "create": {
+        "status": 200,
+        "ok": true,
+        "message": "订单已创建，请完成支付。",
+        "orderStatus": "awaiting_payment"
+      },
+      "pay": {
+        "status": 200,
+        "ok": true,
+        "message": "支付成功，订单已进入等待陪玩确认。",
+        "orderStatus": "claimed"
+      },
+      "steps": [
+        {
+          "st": "claimed",
+          "status": 200,
+          "ok": true,
+          "message": "已确认接单，订单进入进行中",
+          "orderStatus": "in_progress"
+        }
+      ],
+      "status": "in_progress",
+      "total": 20,
+      "companionIncome": 0
+    },
+    "H4": {
+      "id": "508f8aae-3f47-4fe9-bfe6-740566c94b52",
+      "orderNo": "MCJO000486",
+      "create": {
+        "status": 200,
+        "ok": true,
+        "message": "订单已创建，请完成支付。",
+        "orderStatus": "awaiting_payment"
+      },
+      "pay": {
+        "status": 200,
+        "ok": true,
+        "message": "支付成功，订单已进入等待陪玩确认。",
+        "orderStatus": "claimed"
+      },
+      "steps": [],
+      "status": "claimed",
+      "total": 20,
+      "companionIncome": 0
+    },
+    "H5": {
+      "id": "bd66bcf7-a16a-453c-adb1-d62cdbacd23e",
+      "orderNo": "MCJO000487",
+      "create": {
+        "status": 200,
+        "ok": true,
+        "message": "订单已创建，请完成支付。",
+        "orderStatus": "awaiting_payment"
+      },
+      "pay": {
+        "status": 200,
+        "ok": true,
+        "message": "支付成功，订单已进入等待陪玩确认。",
+        "orderStatus": "claimed"
+      },
+      "steps": [
+        {
+          "st": "claimed",
+          "status": 200,
+          "ok": true,
+          "message": "已确认接单，订单进入进行中",
+          "orderStatus": "in_progress"
+        },
+        {
+          "step": "complete_order",
+          "status": 200,
+          "ok": true,
+          "message": "已提交完成申请，等待老板确认后结算。",
+          "orderStatus": "in_progress"
+        },
+        {
+          "st": "in_progress",
+          "status": 200,
+          "ok": true,
+          "message": "已确认完成，订单已完成。",
+          "orderStatus": "completed"
+        }
+      ],
+      "status": "completed",
+      "total": 20,
+      "companionIncome": 14
+    }
+  },
+  "checks": [
+    {
+      "no": "S1",
+      "name": "Reuse badge H from previous run (PW00077 still holds it)",
+      "result": "PASS",
+      "evidence": {
+        "id": "e5472820-ad8c-43bf-be3b-870a4badacbc",
+        "name": "E2E持有人勋章-81819"
+      }
+    },
+    {
+      "no": "O1",
+      "name": "Orders in mixed states: H1/H2/H5 completed, H3 in progress, H4 waiting for companion",
+      "result": "PASS",
+      "evidence": [
+        "MCJO000483:completed",
+        "MCJO000484:completed",
+        "MCJO000485:in_progress",
+        "MCJO000486:claimed",
+        "MCJO000487:completed"
+      ]
+    },
+    {
+      "no": "K1",
+      "name": "Badge stats: holders 2, 接单 = 4 + other sessions' taken, 已完成 = 3 + others, 总利润 = sum of order profits",
+      "result": "PASS",
+      "evidence": {
+        "holders": 2,
+        "taken": 6,
+        "takenAmount": 160,
+        "completed": 4,
+        "gross": 100,
+        "profit": 28,
+        "extraTaken": 2,
+        "extraDone": 1
+      }
+    },
+    {
+      "no": "K1b",
+      "name": "Our completed orders settled at badge H 70/30 and are credited to H",
+      "result": "PASS",
+      "evidence": [
+        {
+          "no": "MCJO000483",
+          "rate": 70,
+          "profit": 6,
+          "badge": "E2E持有人勋章-81819"
+        },
+        {
+          "no": "MCJO000484",
+          "rate": 70,
+          "profit": 6,
+          "badge": "E2E持有人勋章-81819"
+        },
+        {
+          "no": "MCJO000487",
+          "rate": 70,
+          "profit": 6,
+          "badge": "E2E持有人勋章-81819"
+        }
+      ]
+    },
+    {
+      "no": "K2",
+      "name": "Holder row: 昵称 / UID / 徽章名称 / 获得时间 + PW00077 接单 / 已完成 / 接单总金额 / 订单总金额 / 利润 = its orders",
+      "result": "PASS",
+      "evidence": {
+        "nickname": "Organic Invitee Comp",
+        "uid": "PW00077",
+        "badge": "E2E持有人勋章-81819",
+        "joinedAt": "2026-10-06T06:43:13.674+00:00",
+        "taken": 4,
+        "done": 3,
+        "takenAmount": 100,
+        "gross": 80,
+        "profit": 22
+      }
+    },
+    {
+      "no": "K3",
+      "name": "PW00076 row: 接单 ≥ 1 · 已完成 ≥ 1 (H5)",
+      "result": "PASS",
+      "evidence": {
+        "taken": 2,
+        "done": 1,
+        "uid": "PW00076"
+      }
+    },
+    {
+      "no": "K4",
+      "name": "Badge order list contains all 5 of our orders (incl. in progress / waiting)",
+      "result": "PASS",
+      "evidence": {
+        "ours": 5,
+        "total": 7
+      }
+    },
+    {
+      "no": "K5",
+      "name": "Holder drill-down (PW00077): every related order incl. H1–H4 with per-order status",
+      "result": "PASS",
+      "evidence": [
+        "MCJO000492:已完成（部分退款）:taken=true",
+        "MCJO000486:待陪玩确认:taken=false",
+        "MCJO000485:进行中:taken=true",
+        "MCJO000484:已完成:taken=true",
+        "MCJO000483:已完成:taken=true"
+      ]
+    },
+    {
+      "no": "K6",
+      "name": "Holder drill-down KPIs = holder row",
+      "result": "PASS",
+      "evidence": {
+        "takenCount": 4,
+        "takenAmount": 100,
+        "completedCount": 3,
+        "gross": 80,
+        "actualSettled": 50,
+        "companionIncome": 28,
+        "platformCommission": 22,
+        "refundAmount": 30,
+        "refundedOrders": 1
+      }
+    },
+    {
+      "no": "F1",
+      "name": "Holder filter accepts UID and 昵称 (same holder / same orders)",
+      "result": "PASS",
+      "evidence": {
+        "uid": "PW00077",
+        "uidOrders": 5,
+        "nick": "Organic Invitee Comp",
+        "nickStatus": 200
+      }
+    },
+    {
+      "no": "F2",
+      "name": "List filter 徽章 + 持有人 PW00076 → only PW00076's figures",
+      "result": "PASS",
+      "evidence": {
+        "b": {
+          "taken": 2,
+          "done": 1
+        },
+        "f": {
+          "tagId": "e5472820-ad8c-43bf-be3b-870a4badacbc",
+          "companion": {
+            "companionProfileId": "aa962002-f63b-4cf5-88da-588e39910187",
+            "pwCode": "PW00076",
+            "uid": "PW00076",
+            "nickname": "Organic Companion"
+          }
+        }
+      }
+    },
+    {
+      "no": "F3",
+      "name": "Badge detail holder filter → only PW00077 member + orders",
+      "result": "PASS",
+      "evidence": {
+        "members": 1,
+        "orders": 5,
+        "options": 2
+      }
+    },
+    {
+      "no": "F4",
+      "name": "Date range filter: order day includes our orders; the day before = 0",
+      "result": "PASS",
+      "evidence": {
+        "day": "2026-10-06",
+        "before": "2026-10-05",
+        "d": [
+          6,
+          4
+        ],
+        "b": [
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "no": "C1",
+      "name": "Four-end source: stats amounts = admin order totals / companion income",
+      "result": "PASS",
+      "evidence": [
+        {
+          "no": "MCJO000483",
+          "orderTotal": 20,
+          "statsGross": 20,
+          "orderIncome": 14,
+          "statsIncome": 14
+        },
+        {
+          "no": "MCJO000484",
+          "orderTotal": 20,
+          "statsGross": 20,
+          "orderIncome": 14,
+          "statsIncome": 14
+        },
+        {
+          "no": "MCJO000487",
+          "orderTotal": 20,
+          "statsGross": 20,
+          "orderIncome": 14,
+          "statsIncome": 14
+        }
+      ]
+    },
+    {
+      "no": "C2",
+      "name": "Boss end sees the same 5 orders (same status as stats)",
+      "result": "PASS",
+      "evidence": [
+        "MCJO000487:completed",
+        "MCJO000486:claimed",
+        "MCJO000485:in_progress",
+        "MCJO000484:completed",
+        "MCJO000483:completed"
+      ]
+    },
+    {
+      "no": "C3",
+      "name": "Companion end (PW00077 workbench) sees its taken orders H1–H3",
+      "result": "PASS",
+      "evidence": {
+        "compSeen": [
+          "MCJO000483",
+          "MCJO000484",
+          "MCJO000485"
+        ],
+        "status": 200
+      }
+    },
+    {
+      "no": "U0-desktop",
+      "name": "Staging serves the new badge admin script (desktop)",
+      "result": "PASS",
+      "evidence": "https://meow-cuijiao-homepage-6qrs0a0fp-ciancianteng-4581s-projects.vercel.app/src/admin-companion-cert-tags.js?v=20261006certHolders3"
+    },
+    {
+      "no": "U1-desktop",
+      "name": "List: badge card shows 持有人数 / 接单数量 / 已完成订单 / 订单总金额 / 总利润 (desktop)",
+      "result": "PASS",
+      "evidence": ""
+    },
+    {
+      "no": "U1b-desktop",
+      "name": "List badge filter → exactly 1 badge card and KPIs scoped to 1 badge (desktop)",
+      "result": "PASS",
+      "evidence": {
+        "cardCount": 1
+      }
+    },
+    {
+      "no": "U2-desktop",
+      "name": "Detail: holder list with 昵称 / UID / 徽章名称 / 获得徽章时间 / 接单 / 已完成 / 金额 / 利润 (desktop)",
+      "result": "PASS",
+      "evidence": ""
+    },
+    {
+      "no": "U3-desktop",
+      "name": "Holder page: all PW00077 orders listed with KPIs (desktop)",
+      "result": "PASS",
+      "evidence": ""
+    },
+    {
+      "no": "U4-desktop",
+      "name": "Holder order filter 未完成 → H3 + H4, not completed H1 (desktop)",
+      "result": "PASS",
+      "evidence": ""
+    },
+    {
+      "no": "U5-desktop",
+      "name": "Detail 订单明细 tab: all 5 of our badge orders (desktop)",
+      "result": "PASS",
+      "evidence": ""
+    },
+    {
+      "no": "U6-desktop",
+      "name": "Detail holder filter PW00076 → exactly 1 holder row (desktop)",
+      "result": "PASS",
+      "evidence": {
+        "visRows": 1
+      }
+    },
+    {
+      "no": "U7-desktop",
+      "name": "List holder filter PW00077 → 当前陪玩 banner + 查看该陪玩全部订单 (desktop)",
+      "result": "PASS",
+      "evidence": ""
+    },
+    {
+      "no": "U0-mobile",
+      "name": "Staging serves the new badge admin script (mobile)",
+      "result": "PASS",
+      "evidence": "https://meow-cuijiao-homepage-6qrs0a0fp-ciancianteng-4581s-projects.vercel.app/src/admin-companion-cert-tags.js?v=20261006certHolders3"
+    },
+    {
+      "no": "U1-mobile",
+      "name": "List: badge card shows 持有人数 / 接单数量 / 已完成订单 / 订单总金额 / 总利润 (mobile)",
+      "result": "PASS",
+      "evidence": ""
+    },
+    {
+      "no": "U1b-mobile",
+      "name": "List badge filter → exactly 1 badge card and KPIs scoped to 1 badge (mobile)",
+      "result": "PASS",
+      "evidence": {
+        "cardCount": 1
+      }
+    },
+    {
+      "no": "U2-mobile",
+      "name": "Detail: holder list with 昵称 / UID / 徽章名称 / 获得徽章时间 / 接单 / 已完成 / 金额 / 利润 (mobile)",
+      "result": "PASS",
+      "evidence": ""
+    },
+    {
+      "no": "U-mobile-cards",
+      "name": "Mobile: holder list renders as cards (table hidden)",
+      "result": "PASS",
+      "evidence": {
+        "cards": "grid",
+        "table": "none"
+      }
+    },
+    {
+      "no": "U3-mobile",
+      "name": "Holder page: all PW00077 orders listed with KPIs (mobile)",
+      "result": "PASS",
+      "evidence": ""
+    },
+    {
+      "no": "U4-mobile",
+      "name": "Holder order filter 未完成 → H3 + H4, not completed H1 (mobile)",
+      "result": "PASS",
+      "evidence": ""
+    },
+    {
+      "no": "U-mobile-overflow-holder",
+      "name": "Mobile holder page: no horizontal overflow",
+      "result": "PASS",
+      "evidence": {
+        "overflow": 0
+      }
+    },
+    {
+      "no": "U5-mobile",
+      "name": "Detail 订单明细 tab: all 5 of our badge orders (mobile)",
+      "result": "PASS",
+      "evidence": ""
+    },
+    {
+      "no": "U6-mobile",
+      "name": "Detail holder filter PW00076 → exactly 1 holder row (mobile)",
+      "result": "PASS",
+      "evidence": {
+        "visRows": 1
+      }
+    },
+    {
+      "no": "U-mobile-overflow-detail",
+      "name": "Mobile detail page: no horizontal overflow",
+      "result": "PASS",
+      "evidence": {
+        "overflow": 0
+      }
+    },
+    {
+      "no": "U7-mobile",
+      "name": "List holder filter PW00077 → 当前陪玩 banner + 查看该陪玩全部订单 (mobile)",
+      "result": "PASS",
+      "evidence": ""
+    },
+    {
+      "no": "U-mobile-overflow-list",
+      "name": "Mobile list page: no horizontal overflow",
+      "result": "PASS",
+      "evidence": {
+        "overflow": 0
+      }
+    }
+  ],
+  "screenshots": [
+    "holders/desktop-01-list-badge-filter.png",
+    "holders/desktop-02-detail-holders.png",
+    "holders/desktop-03-holder-orders.png",
+    "holders/desktop-04-holder-orders-unfinished.png",
+    "holders/desktop-05-detail-all-orders.png",
+    "holders/desktop-06-detail-holder-filter.png",
+    "holders/desktop-07-list-holder-filter.png",
+    "holders/mobile-01-list-badge-filter.png",
+    "holders/mobile-02-detail-holders.png",
+    "holders/mobile-03-holder-orders.png",
+    "holders/mobile-04-holder-orders-unfinished.png",
+    "holders/mobile-05-detail-all-orders.png",
+    "holders/mobile-06-detail-holder-filter.png",
+    "holders/mobile-07-list-holder-filter.png"
+  ],
+  "badge": {
+    "id": "e5472820-ad8c-43bf-be3b-870a4badacbc",
+    "name": "E2E持有人勋章-81819"
+  },
+  "reusedFrom": "2026-10-06T07:12:20.419Z",
+  "summary": {
+    "total": 38,
+    "pass": 38,
+    "fail": 0
+  },
+  "extraOrders": [
+    "MCJO000492:已完成（部分退款）:PW00077",
+    "MCJO000491:已完成:PW00076"
+  ],
+  "holderA": {
+    "nickname": "Organic Invitee Comp",
+    "uid": "PW00077",
+    "profileId": "53be06d5-b94b-473c-a63d-cfd5926adfab"
+  },
+  "consistency": {
+    "bossSeen": [
+      "MCJO000487:completed",
+      "MCJO000486:claimed",
+      "MCJO000485:in_progress",
+      "MCJO000484:completed",
+      "MCJO000483:completed"
+    ],
+    "compSeen": [
+      "MCJO000483",
+      "MCJO000484",
+      "MCJO000485"
+    ],
+    "compStatus": 200
+  }
+}
