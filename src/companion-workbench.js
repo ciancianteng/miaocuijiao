@@ -3015,9 +3015,15 @@
           (o.paymentReviewedByName?'<div><span>审核客服</span><strong>'+esc(o.paymentReviewedByName)+'</strong></div>':'')+
           (o.paymentReviewedAt?'<div><span>审核时间</span><strong>'+esc(fmtTime(o.paymentReviewedAt))+'</strong></div>':''))
         :'')+
-      bossRankMetaHtml(o)+'</div>'+orderServiceStandardHtml(o)+peerHtml+'<footer class="pw-actions">'+orderActions(o)+'</footer></article>';
+      bossRankMetaHtml(o)+earlyFinishMetaHtml(o)+'</div>'+orderServiceStandardHtml(o)+peerHtml+'<footer class="pw-actions">'+orderActions(o)+'</footer></article>';
   }
   /** Boss rank frozen in the order snapshot at create time. */
+  function earlyFinishMetaHtml(o){
+    var ef=o&&o.earlyFinish,rj=o&&o.earlyFinishReject,out='';
+    if(ef)out+='<div data-early-finish><span>提前结束</span><strong>实际 '+esc(ef.servedHours)+' / 预约 '+esc(ef.bookedHours)+' 小时 · 结算 '+money(ef.settleAmount)+' · 我的收入 '+money(ef.companionIncome)+(Number(ef.refundAmount)>0?' · 退老板 '+money(ef.refundAmount):'')+'</strong></div>'+(ef.reason?'<div><span>提前结束原因</span><strong>'+esc((ef.initiatorLabel?ef.initiatorLabel+'：':'')+ef.reason)+'</strong></div>':'');
+    if(rj&&!ef)out+='<div data-early-finish-rejected><span>提前结束申请</span><strong>客服未同意（'+esc(fmtContentTime(rj.at))+'）：'+esc(rj.reason||'')+'</strong></div>';
+    return out;
+  }
   function bossRankMetaHtml(o){
     var r=o&&o.serviceSnapshot&&o.serviceSnapshot.bossRank;
     if(!r||!r.rank)return '';

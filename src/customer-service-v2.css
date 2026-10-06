@@ -924,3 +924,11 @@
 .cs-clock-btn[hidden],.cs-clock-done[hidden]{display:none!important}
 .cs-clock-done{margin-top:12px;padding:10px 12px;border-radius:12px;border:1px solid rgba(64,211,154,.35);background:rgba(64,211,154,.08);color:var(--ok);font-weight:800;font-size:14px}
 @media(max-width:640px){.cs-clock-actions .cs-clock-btn{flex:1 1 100%;min-width:0}}
+
+/* #35B early finish modal */
+.cs-ef-target{border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:10px 12px;margin:0 0 10px}
+.cs-ef-pick{display:flex;align-items:center;gap:8px;min-height:44px;font-size:14px}
+.cs-ef-pick input[type=checkbox]{width:20px;height:20px}
+.cs-ef-actions{justify-content:flex-end;margin-top:10px}
+.cs-ef-actions .cs-btn{min-height:44px}
+@media (max-width:640px){.cs-ef-actions{flex-direction:column-reverse}.cs-ef-actions .cs-btn{width:100%}[data-ef-modal] input,[data-ef-modal] select,[data-ef-modal] textarea{font-size:16px}}

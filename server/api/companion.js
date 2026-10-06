@@ -46,6 +46,22 @@ import {
   saveCompanionServiceStandard,
   viewServiceSnapshot,
 } from "./_service-standard.js";
+import { readEarlyFinish, readEarlyFinishReject } from "./_order-early-finish.js";
+
+function companionEarlyFinishView(row) {
+  const ef = readEarlyFinish(row);
+  if (!ef || ef.status !== "done") return null;
+  return {
+    servedHours: ef.servedHours,
+    bookedHours: ef.bookedHours,
+    settleAmount: ef.settleAmount,
+    refundAmount: ef.refundAmount,
+    companionIncome: ef.companionIncome,
+    initiatorLabel: ef.initiator?.label || "",
+    reason: ef.reason || "",
+    completedAt: ef.completedAt || "",
+  };
+}
 import {
   partitionCompanionIncome,
   sumTxAmount,
@@ -1376,6 +1392,8 @@ function viewOrder(row = {}, boss = {}, settlement = null) {
     serviceName: row.service_name || row.game || row.title || "",
     serviceType: row.service_name || row.title || ORDER_TYPE_TEXT[orderTypeKey] || orderTypeKey,
     serviceSnapshot: viewServiceSnapshot(row),
+    earlyFinish: companionEarlyFinishView(row),
+    earlyFinishReject: (() => { const r = readEarlyFinishReject(row); return r ? { reason: r.reason, at: r.at } : null; })(),
     duration: durationLabel,
     hours: money(row.hours),
     unitPrice,

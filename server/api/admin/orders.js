@@ -1,6 +1,7 @@
 import { ORDER_STATUS_LABELS, fetchOrdersActivityDesc, sortOrdersByActivityDesc } from "../_order-status.js";
 import { normalizeReviewImages } from "../_review-images.js";
 import { viewServiceSnapshot } from "../_service-standard.js";
+import { readEarlyFinish, readEarlyFinishReject } from "../_order-early-finish.js";
 import { sanitizeOrderText, scrubInternalOutput } from "../_output-sanitize.js";
 import {
   completionCountdown,
@@ -295,6 +296,8 @@ export function safeOrder(row, profiles, extras = {}) {
     serviceContent:
       row.service_name || row.title || companionExtra.main_service || sanitizeOrderText(row.description || "") || "-",
     serviceSnapshot: viewServiceSnapshot(row),
+    earlyFinish: readEarlyFinish(row),
+    earlyFinishReject: readEarlyFinishReject(row),
     amount: money(row.total_amount),
     totalAmount: money(row.total_amount),
     paymentMethod: row.parent_order_id ? "主单分配" : paymentMethodFrom(row, receipt),

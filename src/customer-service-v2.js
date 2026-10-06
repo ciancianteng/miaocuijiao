@@ -3191,7 +3191,7 @@ import './mcj-chat-realtime.js';
       :'';
     modal('<div class="cs-dialog-head"><h3>'+esc(title)+'</h3><button class="cs-btn ghost" type="button" data-close-modal>关闭</button></div><div class="cs-info-list">'+
       rows.map(function(r){return '<div><span>'+esc(r[0])+'</span><strong>'+esc(String(r[1]==null?'-':r[1]))+'</strong></div>';}).join('')+
-      '</div>'+(mode==='detail'?orderServiceStandardHtml(o):'')+proof);
+      '</div>'+(mode==='detail'?earlyFinishDetailHtml(o)+orderServiceStandardHtml(o):'')+proof);
   }
   function orderServiceStandardHtml(o){
     var s=o&&o.serviceSnapshot;
@@ -4019,7 +4019,7 @@ import './mcj-chat-realtime.js';
       api('cs_cancel_order',{id:cid,reason:cReason}).then(function(res){toast(res.message||'订单已取消');return softRefresh();}).catch(function(err){cancelOrderBtn.disabled=false;toast(err.message||'取消失败');});
       return;
     }
-    var completeOrder=e.target.closest('[data-complete-order]');if(completeOrder){if(!confirm('确认提前结束订单并标记为已完成？'))return;completeOrder.disabled=true;completeOrder.textContent='处理中…';api('update_order_status',{id:completeOrder.dataset.completeOrder,status:'completed'}).then(function(res){toast(res.message||'订单已结束');return softRefresh()}).catch(function(err){completeOrder.disabled=false;completeOrder.textContent='提前结束订单';toast(err.message||'操作失败')});return}var cancelHall=e.target.closest('[data-cancel-grab-hall]');if(cancelHall){var hallReason=String(prompt('取消抢单将关闭订单，已付猫粮自动全额退回老板余额（只退一次）。\n请输入取消原因（老板会看到）','无人接单')||'').trim();if(!hallReason){toast('取消必须填写原因');return;}var cid=cancelHall.dataset.cancelGrabHall;cancelHall.disabled=true;api('cancel_grab_hall',{id:cid,reason:hallReason}).then(function(res){toast(res.message||'已取消抢单');return softRefresh()}).catch(function(err){cancelHall.disabled=false;toast(err.message||'取消失败')});return}var viewGrabs=e.target.closest('[data-view-grabs]');if(viewGrabs){openGrabList(viewGrabs.dataset.viewGrabs);return}var assign=e.target.closest('[data-assign-order]');if(assign){openAssign(assign.dataset.assignOrder);return}var st=e.target.closest('[data-status-order]');if(st){openStatus(st.dataset.statusOrder);return}var refund=e.target.closest('[data-refund-order]');if(refund){openRefund(refund.dataset.refundOrder);return}var close=e.target.closest('[data-close-modal]');if(close){close.closest('.cs-modal').remove();return}});
+    var completeOrder=e.target.closest('[data-complete-order]');if(completeOrder){openEarlyFinish(completeOrder.dataset.completeOrder);return}var cancelHall=e.target.closest('[data-cancel-grab-hall]');if(cancelHall){var hallReason=String(prompt('取消抢单将关闭订单，已付猫粮自动全额退回老板余额（只退一次）。\n请输入取消原因（老板会看到）','无人接单')||'').trim();if(!hallReason){toast('取消必须填写原因');return;}var cid=cancelHall.dataset.cancelGrabHall;cancelHall.disabled=true;api('cancel_grab_hall',{id:cid,reason:hallReason}).then(function(res){toast(res.message||'已取消抢单');return softRefresh()}).catch(function(err){cancelHall.disabled=false;toast(err.message||'取消失败')});return}var viewGrabs=e.target.closest('[data-view-grabs]');if(viewGrabs){openGrabList(viewGrabs.dataset.viewGrabs);return}var assign=e.target.closest('[data-assign-order]');if(assign){openAssign(assign.dataset.assignOrder);return}var st=e.target.closest('[data-status-order]');if(st){openStatus(st.dataset.statusOrder);return}var refund=e.target.closest('[data-refund-order]');if(refund){openRefund(refund.dataset.refundOrder);return}var close=e.target.closest('[data-close-modal]');if(close){close.closest('.cs-modal').remove();return}});
   function modal(html, dialogClass){
     var cls=String(dialogClass||'cs-form').trim()||'cs-form';
     document.body.insertAdjacentHTML('beforeend','<div class="cs-modal"><div class="cs-dialog '+cls+'">'+html+'</div></div>');
@@ -4172,6 +4172,137 @@ import './mcj-chat-realtime.js';
       if(sel)sel.innerHTML='<option value="">加载失败</option>';
     });
   }
+  var EF_INITIATORS=[['companion','陪玩申请'],['boss','老板要求'],['customer_service','客服判定']];
+  var efState={orderId:'',preview:null,busy:false};
+  function efRound(n){return Math.round((Number(n)||0)*100)/100;}
+  /** Mirrors server computeEarlyFinish: pro-rata of paid amount; served ≥ booked settles in full. */
+  function efCalc(t,served){
+    var booked=Number(t.bookedHours)||0,total=Number(t.totalAmount)||0,h=Math.round((Number(served)||0)*100)/100;
+    if(!(booked>0))return null;
+    var settle=h>=booked?total:efRound(total*h/booked);
+    var income=efRound(settle*(Number(t.companionShareRate)||0)/100);
+    return {served:h,booked:booked,total:total,settle:settle,refund:efRound(total-settle),income:income,commission:efRound(settle-income)};
+  }
+  function efElapsedText(min){
+    if(min==null)return '未记录开始时间';
+    var h=Math.floor(min/60),m=min%60;
+    return (h?h+' 小时 ':'')+m+' 分钟';
+  }
+  function efDefaultServed(t){
+    var booked=Number(t.bookedHours)||0;
+    if(t.elapsedMinutes==null)return booked;
+    return Math.min(booked,Math.floor(t.elapsedMinutes/30)/2);
+  }
+  function efDoneHtml(ef){
+    return '<div class="cs-info-list" data-ef-done>'+
+      '<div><span>发起人</span><strong>'+esc((ef.initiator&&ef.initiator.label)||'-')+'</strong></div>'+
+      '<div><span>确认人</span><strong>'+esc(ef.confirmedByName||'-')+'</strong></div>'+
+      '<div><span>实际时长</span><strong>'+esc(ef.servedHours)+' 小时 / 预约 '+esc(ef.bookedHours)+' 小时</strong></div>'+
+      '<div><span>结算</span><strong>'+esc(ef.settleAmount)+' 猫粮</strong></div>'+
+      '<div><span>退款</span><strong>'+esc(ef.refundAmount)+' 猫粮（退回老板余额）</strong></div>'+
+      '<div><span>陪玩收入</span><strong>'+esc(ef.companionIncome)+' 猫粮</strong></div>'+
+      '<div><span>平台抽成</span><strong>'+esc(ef.platformCommission)+' 猫粮</strong></div>'+
+      '<div><span>原因</span><strong style="white-space:pre-wrap;text-align:left">'+esc(ef.reason||'-')+'</strong></div>'+
+      (ef.completedAt?'<div><span>确认时间</span><strong>'+esc(fmtOrderDateTime(ef.completedAt))+'</strong></div>':'')+
+      '</div>';
+  }
+  function earlyFinishDetailHtml(o){
+    var ef=o&&o.earlyFinish,rj=o&&o.earlyFinishReject,out='';
+    if(ef&&ef.status==='done')out+='<h4 style="margin:14px 0 6px">提前结束</h4>'+efDoneHtml(ef);
+    else if(ef&&ef.status==='processing')out+='<h4 style="margin:14px 0 6px">提前结束</h4><p class="cs-note" data-ef-processing>处理中'+(ef.refundError?'：退款未完成（'+esc(ef.refundError)+'），可再次确认继续，不会重复退款':'')+'</p>';
+    if(rj)out+='<p class="cs-note" data-ef-rejected>已拒绝陪玩提前结束申请（'+esc(rj.rejectedByName||'客服')+' · '+esc(fmtOrderDateTime(rj.at))+'）：'+esc(rj.reason||'')+'</p>';
+    if(o&&o.isMultiGroupParent){
+      ((state.data&&state.data.orders)||[]).forEach(function(c){
+        if(String(c.parentOrderId||'')!==String(o.id)||!c.earlyFinish)return;
+        out+='<h4 style="margin:14px 0 6px">提前结束 · 子单 '+esc(c.orderNo||'')+' · '+esc(c.companionName||'-')+'</h4>'+(c.earlyFinish.status==='done'?efDoneHtml(c.earlyFinish):'<p class="cs-note">处理中</p>');
+      });
+    }
+    return out;
+  }
+  function efTargetHtml(t,i,isMulti){
+    var head=(isMulti?'<label class="cs-ef-pick"><input type="checkbox" data-ef-child value="'+esc(t.id)+'" '+(t.eligible?'checked':'disabled')+'> ':'<div class="cs-ef-pick">')+
+      '<strong>'+esc(t.orderNo||t.id)+'</strong> · '+esc(t.companionName||'-')+(isMulti?'</label>':'</div>');
+    if(t.earlyFinish&&t.earlyFinish.status==='done')return '<div class="cs-ef-target">'+head+efDoneHtml(t.earlyFinish)+'</div>';
+    if(!t.eligible)return '<div class="cs-ef-target">'+head+'<p class="cs-note" data-ef-blocked>'+esc(t.blockedReason||'不可提前结束')+'</p></div>';
+    return '<div class="cs-ef-target" data-ef-target="'+esc(t.id)+'">'+head+
+      '<div class="cs-info-list">'+
+        '<div><span>发起</span><strong>'+esc(t.completionPending?'陪玩已申请完成'+(t.initiator&&t.initiator.at?'（'+fmtOrderDateTime(t.initiator.at)+'）':''):'无申请（客服/老板发起）')+'</strong></div>'+
+        '<div><span>已服务</span><strong>'+esc(efElapsedText(t.elapsedMinutes))+' / 预约 '+esc(t.bookedHours)+' 小时</strong></div>'+
+        '<div><span>实付</span><strong>'+esc(t.totalAmount)+' 猫粮 · 陪玩分成 '+esc(t.companionShareRate)+'%</strong></div>'+
+      '</div><div class="cs-info-list" data-ef-calc="'+esc(t.id)+'"></div></div>';
+  }
+  function efPaintCalc(){
+    var box=document.querySelector('[data-ef-modal]');if(!box||!efState.preview)return;
+    var served=Number((box.querySelector('[data-ef-served]')||{}).value);
+    var picked=efPickedIds(box);
+    (efState.preview.targets||[]).forEach(function(t){
+      var el=box.querySelector('[data-ef-calc="'+t.id+'"]');if(!el)return;
+      var on=!efState.preview.isMulti||picked.indexOf(t.id)>=0;
+      var c=on?efCalc(t,Math.min(served,Number(t.bookedHours)||0)):null;
+      el.innerHTML=!on?'<div><span>本次</span><strong>不结束（继续服务）</strong></div>':(!c?'<div><span>结算</span><strong>缺少预约时长</strong></div>':
+        '<div><span>结算</span><strong>'+c.settle+' 猫粮</strong></div><div><span>退款</span><strong>'+c.refund+' 猫粮</strong></div>'+
+        '<div><span>陪玩收入</span><strong>'+c.income+' 猫粮</strong></div><div><span>平台抽成</span><strong>'+c.commission+' 猫粮</strong></div>');
+    });
+  }
+  function efPickedIds(box){
+    return Array.prototype.slice.call(box.querySelectorAll('[data-ef-child]:checked')).map(function(x){return x.value;});
+  }
+  function openEarlyFinish(id){
+    efState={orderId:id,preview:null,busy:false};
+    modal('<div data-ef-modal><div class="cs-dialog-head"><h3>提前结束订单</h3><button class="cs-btn" type="button" data-close-modal>关闭</button></div><p class="cs-note" data-ef-loading>加载中…</p></div>');
+    api('early_finish_preview',{id:id}).then(function(res){
+      var p=res.preview||{targets:[]};efState.preview=p;
+      var box=document.querySelector('[data-ef-modal]');if(!box)return;
+      var live=(p.targets||[]).filter(function(t){return t.eligible;});
+      var pending=(p.targets||[]).some(function(t){return t.eligible&&t.completionPending;});
+      var served=live.length?efDefaultServed(live[0]):0;
+      var maxBooked=live.reduce(function(m,t){return Math.max(m,Number(t.bookedHours)||0);},0);
+      var initiator=pending?'companion':'boss';
+      box.innerHTML='<div class="cs-dialog-head"><h3>提前结束订单 '+esc(p.orderNo||'')+'</h3><button class="cs-btn" type="button" data-close-modal>关闭</button></div>'+
+        '<p class="cs-note">按实际服务时长结算给陪玩，未服务部分自动退回老板猫粮余额（只退一次）。'+(p.isMulti?'多人订单：勾选要结束的陪玩，未勾选的继续服务；全部勾选即整单结束。':'')+'</p>'+
+        (p.targets||[]).map(function(t,i){return efTargetHtml(t,i,p.isMulti);}).join('')+
+        (live.length?
+          '<label>发起人<select data-ef-initiator>'+EF_INITIATORS.map(function(x){return '<option value="'+x[0]+'" '+(x[0]===initiator?'selected':'')+'>'+x[1]+'</option>';}).join('')+'</select></label>'+
+          '<label>实际服务时长（小时）<input type="number" inputmode="decimal" min="0" max="'+esc(maxBooked)+'" step="0.5" value="'+esc(served)+'" data-ef-served></label>'+
+          '<label>原因（老板、陪玩、后台都能看到）<textarea data-ef-reason required placeholder="例如：老板临时有事，提前结束"></textarea></label>'+
+          '<div class="cs-actions cs-ef-actions">'+
+            (pending?'<button class="cs-btn danger" type="button" data-ef-reject>拒绝陪玩申请</button>':'')+
+            '<button class="cs-btn primary" type="button" data-ef-confirm>确认提前结束</button>'+
+          '</div>'
+        :'<p class="cs-note" data-ef-none>没有可提前结束的订单。</p>');
+      efPaintCalc();
+    }).catch(function(err){
+      var box=document.querySelector('[data-ef-modal]');
+      if(box)box.innerHTML='<div class="cs-dialog-head"><h3>提前结束订单</h3><button class="cs-btn" type="button" data-close-modal>关闭</button></div><p class="cs-note">'+esc(err.message||'加载失败')+'</p>';
+    });
+  }
+  document.addEventListener('input',function(e){
+    if(e.target.closest&&e.target.closest('[data-ef-modal]')&&(e.target.matches('[data-ef-served]')||e.target.matches('[data-ef-child]')))efPaintCalc();
+  });
+  document.addEventListener('change',function(e){
+    if(e.target.matches&&e.target.matches('[data-ef-child]'))efPaintCalc();
+  });
+  document.addEventListener('click',function(e){
+    var ok=e.target.closest('[data-ef-confirm]'),rej=e.target.closest('[data-ef-reject]');
+    if(!ok&&!rej)return;
+    var box=e.target.closest('[data-ef-modal]');if(!box||efState.busy)return;
+    var reason=String((box.querySelector('[data-ef-reason]')||{}).value||'').trim();
+    if(!reason){toast(ok?'请填写提前结束原因':'请填写拒绝原因');return;}
+    var childIds=efState.preview&&efState.preview.isMulti?efPickedIds(box):[];
+    if(efState.preview&&efState.preview.isMulti&&ok&&!childIds.length){toast('请至少勾选一个要结束的陪玩');return;}
+    var btn=ok||rej,prev=btn.textContent;
+    efState.busy=true;btn.disabled=true;btn.textContent='处理中…';
+    var req=ok?api('early_finish_order',{id:efState.orderId,servedHours:Number((box.querySelector('[data-ef-served]')||{}).value),reason:reason,initiator:(box.querySelector('[data-ef-initiator]')||{}).value||'',childIds:childIds})
+      :api('reject_early_finish',{id:efState.orderId,reason:reason,childIds:childIds});
+    req.then(function(res){
+      toast(res.message||(ok?'已提前结束':'已拒绝申请'));
+      var m=box.closest('.cs-modal');if(m)m.remove();
+      return softRefresh();
+    }).catch(function(err){
+      efState.busy=false;btn.disabled=false;btn.textContent=prev;
+      toast(err.message||'操作失败');
+    });
+  });
   function openRefund(id){modal('<div class="cs-dialog-head"><h3>处理退款（退回猫粮）</h3><button class="cs-btn" type="button" data-close-modal>关闭</button></div><p style="margin:0 0 10px;color:#f5b7d2;font-size:13px;line-height:1.55"><strong>退款方式：猫粮余额（固定，不可改）</strong><br>客服不可选择现金退款，也不可填写银行卡退款资料。建议批准后由后台点击「确认退款猫粮」立即入账。</p><label>处理结果<select data-refund-decision><option value="approve">建议批准（退回猫粮）</option><option value="reject">拒绝退款</option></select></label><label>拒绝后恢复状态<select data-restore-status><option value="in_progress">进行中</option><option value="completed">已完成</option><option value="cancelled">已取消</option></select></label><label>备注<textarea data-refund-note required></textarea></label><button class="cs-btn primary" type="button" data-do-refund="'+esc(id)+'">保存</button>')}
   document.addEventListener('click',function(e){
     var pushBoss=e.target.closest('[data-push-to-boss]');

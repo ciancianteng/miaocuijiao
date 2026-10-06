@@ -30,6 +30,7 @@ import {
 import { bossForCs } from "./_privacy.js";
 import { sendEmailOtp, mailProviderStatus } from "./_mail.js";
 import { sanitizeOrderText, scrubInternalOutput } from "./_output-sanitize.js";
+import { readEarlyFinish, readEarlyFinishReject } from "./_order-early-finish.js";
 import {
   conversationLockedByOther as lockOwnedByOther,
   consultTypeLabel,
@@ -560,6 +561,8 @@ export function safeOrder(row, profiles = {}, extras = {}) {
       String(row.order_type || "").toLowerCase() === "multi_group" && !row.parent_order_id,
     isMultiGroupChild: !!row.parent_order_id,
     cancelReason: row.cancel_reason || "",
+    earlyFinish: readEarlyFinish(row),
+    earlyFinishReject: readEarlyFinishReject(row),
     needsReassign,
     reassignHint: needsReassign
       ? /确认超时/.test(note)
@@ -4470,6 +4473,68 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
         });
       } finally {
         setTimeout(() => ASSIGN_LOCKS.delete(lockKey), 3000);
+      }
+    }
+    if (action === "early_finish_preview" || action === "early_finish_order" || action === "reject_early_finish") {
+      const id = String(body.id || body.order_id || "");
+      const order = await orderById(id);
+      if (!order) return json(res, 404, { ok: false, message: "订单不存在。" });
+      const ef = await import("./_order-early-finish.js");
+      if (action === "early_finish_preview") {
+        const preview = await ef.earlyFinishPreview(order);
+        const names = await profileMap(preview.targets.map((t) => t.companionId).filter(Boolean));
+        preview.targets = preview.targets.map((t) => ({
+          ...t,
+          companionName: String(names[t.companionId]?.display_name || names[t.companionId]?.nickname || "").trim() || "-",
+        }));
+        return json(res, 200, { ok: true, preview });
+      }
+      try {
+        await assertOrderMutationAllowed(order, service.profile);
+      } catch (err) {
+        return json(res, err.status || 403, { ok: false, message: err.message || CS_LOCK_DENIED, code: err.code || "CS_SESSION_LOCKED" });
+      }
+      const operator = { id: service.profile.id, name: csDisplayName(service.profile) };
+      const addSystemMessage = async (ord, actorId, content) => {
+        const conversation = await ensureConversation({
+          boss_id: ord.boss_id,
+          companion_id: ord.companion_id,
+          customer_service_id: service.profile.id,
+          order_id: ord.parent_order_id || ord.id,
+        });
+        await addMessage(conversation, actorId || service.profile.id, "customer_service", content, "system", ord.id);
+      };
+      const childIds = Array.isArray(body.childIds) ? body.childIds.map(String) : [];
+      try {
+        if (action === "reject_early_finish") {
+          const out = await ef.rejectEarlyFinish(order, { reason: body.reason, operator, childIds, addSystemMessage });
+          return json(res, 200, { ok: true, message: "已拒绝提前结束申请，订单继续服务。", ...out });
+        }
+        const out = await ef.executeEarlyFinish(order, {
+          servedHours: body.servedHours,
+          reason: body.reason,
+          initiator: String(body.initiator || ""),
+          childIds,
+          operator,
+          addSystemMessage,
+        });
+        try {
+          const { notifyCompanionOrderStatusChange } = await import("./_companion-order-notify.js");
+          for (const r of out.results) {
+            if (r.ok && !r.duplicate && r.order?.companion_id) notifyCompanionOrderStatusChange(r.order, { status: "completed" }).catch(() => {});
+          }
+        } catch (_) {}
+        const okCount = out.results.filter((r) => r.ok).length;
+        const dupOnly = out.results.length > 0 && out.results.every((r) => r.ok && r.duplicate);
+        const message = dupOnly
+          ? "该订单已提前结束，未重复结算或退款。"
+          : out.ok
+            ? `已提前结束 ${okCount} 个订单。`
+            : `部分失败：${out.results.filter((r) => !r.ok).map((r) => `${r.orderNo || r.orderId} ${r.message}`).join("；")}`;
+        const results = out.results.map(({ order: _o, ...rest }) => rest);
+        return json(res, out.ok ? 200 : 409, { ok: out.ok, message, results, duplicate: dupOnly });
+      } catch (err) {
+        return json(res, err.status || 500, { ok: false, code: err.code || "", message: err.message || "提前结束失败。" });
       }
     }
     if (action === "update_order_status") {

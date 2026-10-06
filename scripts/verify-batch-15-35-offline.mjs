@@ -745,6 +745,189 @@ await test("#33 every end routes order/chat times through the KL helper (no devi
   assert.match(read("src/place-order-modal.js"), /pad2\(\(d\.getUTCHours\(\) \+ 1\) % 24\) \+ ":00"/);
 });
 
+// ---------- #35B CS early finish ----------
+function efDb(orders) {
+  const st = { orders: orders.map((o) => ({ ...o })), credits: [], refunds: [], tx: [], patches: [] };
+  const byId = (url) => st.orders.find((o) => o.id === decodeURIComponent((url.match(/[?&]id=eq\.([^&]+)/) || [])[1] || ""));
+  st.fetch = fakeRest([
+    [/\/rpc\/mcj_wallet_credit$/, {
+      method: "POST",
+      run: ({ body }) => {
+        if (st.credits.some((c) => c.p_idempotency_key === body.p_idempotency_key)) return { ok: true, duplicate: true };
+        st.credits.push(body);
+        return { ok: true, duplicate: false };
+      },
+    }],
+    [/\/rpc\//, { method: "POST", run: () => ({ __error: { status: 400, message: "no_hold" } }) }],
+    [/\/orders\?parent_order_id=eq\./, { method: "GET", run: ({ url }) => st.orders.filter((o) => o.parent_order_id === decodeURIComponent(url.match(/parent_order_id=eq\.([^&]+)/)[1])).map((o) => ({ ...o })) }],
+    [/\/orders\?id=eq\./, { method: "GET", run: ({ url }) => { const o = byId(url); return o ? [{ ...o }] : []; } }],
+    [/\/orders\?id=eq\./, {
+      method: "PATCH",
+      run: ({ url, body }) => {
+        const o = byId(url);
+        if (!o) return [];
+        const m = url.match(/status=eq\.([a-z_]+)/);
+        if (m && m[1] !== o.status) return [];
+        if (/note\.not\.like/.test(url) && String(o.note || "").includes("EARLY_FINISH:")) return [];
+        Object.assign(o, body);
+        st.patches.push({ id: o.id, body });
+        return [{ ...o }];
+      },
+    }],
+    [/\/transactions\?/, {
+      method: "GET",
+      run: ({ url }) => {
+        const type = (url.match(/transaction_type=eq\.([a-z_]+)/) || [])[1];
+        return st.tx.filter((t) => (!type || t.transaction_type === type) && t.status !== "cancelled");
+      },
+    }],
+    [/\/transactions$/, { method: "POST", run: ({ body }) => { const row = { ...body, id: `tx-${st.tx.length + 1}` }; st.tx.push(row); return [row]; } }],
+    [/\/transactions\?id=eq/, {
+      method: "PATCH",
+      run: ({ url, body }) => { const t = st.tx.find((x) => x.id === decodeURIComponent(url.match(/id=eq\.([^&]+)/)[1])); if (t) Object.assign(t, body); return t ? [t] : []; },
+    }],
+    [/\/boss_refund_requests\?order_id=eq/, {
+      method: "GET",
+      run: ({ url }) => {
+        const oid = decodeURIComponent(url.match(/order_id=eq\.([^&]+)/)[1]);
+        const onlyPaid = /status=eq\.paid/.test(url);
+        const notId = decodeURIComponent((url.match(/id=neq\.([^&]+)/) || [])[1] || "");
+        return st.refunds.filter((r) => r.order_id === oid && !/rejected|cancelled/.test(r.status) && (!onlyPaid || r.status === "paid") && r.id !== notId);
+      },
+    }],
+    [/\/boss_refund_requests\?id=eq/, { method: "GET", run: ({ url }) => st.refunds.filter((r) => r.id === decodeURIComponent(url.match(/id=eq\.([^&]+)/)[1])) }],
+    [/\/boss_refund_requests$/, { method: "POST", run: ({ body }) => { const row = { ...body, id: `rf-${st.refunds.length + 1}` }; st.refunds.push(row); return [row]; } }],
+    [/\/boss_refund_requests\?id=eq/, {
+      method: "PATCH",
+      run: ({ url, body }) => { const r = st.refunds.find((x) => x.id === decodeURIComponent(url.match(/id=eq\.([^&]+)/)[1])); if (r) Object.assign(r, body); return r ? [r] : []; },
+    }],
+  ]);
+  return st;
+}
+const EF_BOSS = "33333333-3333-4333-8333-333333333333";
+const efOrder = (over = {}) => ({
+  id: "77777777-7777-4777-8777-777777777777",
+  order_no: "MCJ-EF1",
+  boss_id: EF_BOSS,
+  companion_id: "66666666-6666-4666-8666-666666666666",
+  status: "in_progress",
+  hours: 2,
+  total_amount: 100,
+  paid_cat_food: 100,
+  paid_at: "2026-10-06T01:00:00Z",
+  started_at: "2026-10-06T02:00:00Z",
+  companion_commission_rate_snapshot: 80,
+  note: "",
+  ...over,
+});
+
+await test("#35B math: pro-rata settle/refund, full when served ≥ booked, bad input rejected", async () => {
+  const ef = await import("../server/api/_order-early-finish.js");
+  const c = ef.computeEarlyFinish(efOrder(), { servedHours: 1.5, companionShareRate: 80 });
+  assert.deepEqual([c.settleAmount, c.refundAmount, c.companionIncome, c.platformCommission], [75, 25, 60, 15]);
+  const full = ef.computeEarlyFinish(efOrder(), { servedHours: 2, companionShareRate: 80 });
+  assert.deepEqual([full.settleAmount, full.refundAmount], [100, 0]);
+  assert.throws(() => ef.computeEarlyFinish(efOrder(), { servedHours: 3 }), /不能超过预约时长/);
+  assert.throws(() => ef.computeEarlyFinish(efOrder(), { servedHours: -1 }), /实际服务时长/);
+  assert.throws(() => ef.computeEarlyFinish(efOrder({ hours: 0 }), { servedHours: 1 }), /缺少预约时长/);
+  const marked = ef.withEarlyFinishMarker("备注]]x", { status: "done", reason: "a]]b\nc" });
+  assert.equal(ef.readEarlyFinish({ note: marked }).reason, "a]]b\nc");
+  assert.equal(ef.withEarlyFinishMarker(marked, { status: "done", reason: "z" }).match(/EARLY_FINISH:/g).length, 1);
+  const { sanitizeOrderText } = await import("../server/api/_output-sanitize.js");
+  assert.equal(sanitizeOrderText(marked).includes("EARLY_FINISH"), false);
+});
+await test("#35B single order: settles once, refunds remainder once (partial stays completed), repeat clicks are no-ops", async () => {
+  const ef = await import("../server/api/_order-early-finish.js");
+  const st = efDb([efOrder()]);
+  const msgs = [];
+  const opts = { servedHours: 1.5, reason: "老板临时有事", initiator: "boss", operator: CS_OP, addSystemMessage: async (o, a, m) => msgs.push(m) };
+  await withFetch(st.fetch, async () => {
+    const a = await ef.executeEarlyFinish(st.orders[0], opts);
+    assert.equal(a.ok, true, JSON.stringify(a.results));
+    const b = await ef.executeEarlyFinish(st.orders[0], opts);
+    assert.equal(b.results[0].duplicate, true);
+    const c = await ef.executeEarlyFinish({ ...st.orders[0] }, { ...opts, servedHours: 0.5 });
+    assert.equal(c.results[0].duplicate, true);
+  });
+  const o = st.orders[0];
+  assert.equal(o.status, "completed", "partial refund must keep the order completed, not refunded");
+  assert.equal(st.refunds.length, 1);
+  assert.equal(st.refunds[0].amount_rm, 25);
+  assert.match(st.refunds[0].reason, /^\[提前结束退款\]/);
+  assert.equal(st.credits.length, 1);
+  assert.equal(st.credits[0].p_amount, 25);
+  assert.equal(st.credits[0].p_idempotency_key, "refund-meow:rf-1");
+  assert.equal(st.tx.filter((t) => t.transaction_type === "companion_income").length, 1, "one companion_income row");
+  const done = ef.readEarlyFinish(o);
+  assert.equal(done.status, "done");
+  assert.deepEqual([done.settleAmount, done.refundAmount, done.companionIncome, done.platformCommission], [75, 25, 60, 15]);
+  assert.equal(done.initiator.label, "老板要求");
+  assert.equal(done.confirmedByName, "小美");
+  assert.ok(msgs.some((m) => /实际服务 1\.5 小时 \/ 预约 2 小时/.test(m)));
+});
+await test("#35B blocked: completed / cancelled / not started; concurrent claim loses cleanly", async () => {
+  const ef = await import("../server/api/_order-early-finish.js");
+  for (const [status, re] of [["completed", /已完成/], ["cancelled", /已取消/], ["claimed", /仅服务中/]]) {
+    const st = efDb([efOrder({ status })]);
+    const out = await withFetch(st.fetch, () => ef.executeEarlyFinish(st.orders[0], { servedHours: 1, reason: "x", operator: CS_OP }));
+    assert.equal(out.ok, false);
+    assert.match(out.results[0].message, re);
+    assert.equal(st.refunds.length + st.credits.length, 0);
+  }
+  const st = efDb([efOrder({ note: `[[EARLY_FINISH:${encodeURIComponent(JSON.stringify({ status: "processing", claimedAt: new Date().toISOString() }))}]]` })]);
+  const out = await withFetch(st.fetch, () => ef.executeEarlyFinish(st.orders[0], { servedHours: 1, reason: "x", operator: CS_OP }));
+  assert.equal(out.results[0].code, "EARLY_FINISH_IN_PROGRESS");
+  assert.equal(st.orders[0].status, "in_progress");
+  const st2 = efDb([efOrder()]);
+  const out2 = await withFetch(st2.fetch, () => ef.executeEarlyFinish(st2.orders[0], { servedHours: 1, reason: "", operator: CS_OP }).catch((e) => e));
+  assert.match(out2.message, /请填写提前结束原因/);
+});
+await test("#35B multi: one child ends without touching siblings; whole-order ends every live child; parent never refunded", async () => {
+  const ef = await import("../server/api/_order-early-finish.js");
+  const parent = efOrder({ id: "88888888-8888-4888-8888-888888888888", order_no: "MCJ-EFP", order_type: "multi_group", companion_id: null, total_amount: 200, paid_cat_food: 200 });
+  const kid = (n) => efOrder({ id: `9999999${n}-9999-4999-8999-99999999999${n}`, order_no: `MCJ-EFP-${n}`, parent_order_id: parent.id, paid_cat_food: 0, total_amount: 100, companion_id: `6666666${n}-6666-4666-8666-66666666666${n}` });
+  const st = efDb([parent, kid(1), kid(2)]);
+  await withFetch(st.fetch, async () => {
+    const one = await ef.executeEarlyFinish(st.orders[0], { servedHours: 1, reason: "一位陪玩掉线", childIds: [st.orders[1].id], operator: CS_OP });
+    assert.equal(one.ok, true, JSON.stringify(one.results));
+  });
+  assert.equal(st.orders[1].status, "completed");
+  assert.equal(st.orders[2].status, "in_progress", "sibling keeps serving");
+  assert.equal(st.refunds.length, 1);
+  assert.equal(st.refunds[0].order_id, st.orders[1].id);
+  assert.equal(st.refunds[0].amount_rm, 50);
+  await withFetch(st.fetch, async () => {
+    const all = await ef.executeEarlyFinish(st.orders[0], { servedHours: 2, reason: "整单结束", operator: CS_OP });
+    assert.equal(all.ok, true, JSON.stringify(all.results));
+    assert.equal(all.results.length, 1, "already-finished child is not processed again");
+  });
+  assert.equal(st.orders[2].status, "completed");
+  assert.equal(st.refunds.length, 1, "served = booked → no refund for child 2");
+  assert.ok(!st.refunds.some((r) => r.order_id === parent.id));
+  assert.equal(st.credits.length, 1);
+});
+await test("#35B CS reject keeps the order running and records the reason; UI wires confirm/reject + four-end views", async () => {
+  const ef = await import("../server/api/_order-early-finish.js");
+  const st = efDb([efOrder({ note: "[[COMPLETION_PENDING]]\n[[COMPLETION_REQUESTED_AT]] 2026-10-06T03:00:00Z" })]);
+  await withFetch(st.fetch, async () => {
+    const out = await ef.rejectEarlyFinish(st.orders[0], { reason: "老板还要继续玩", operator: CS_OP });
+    assert.equal(out.ok, true);
+  });
+  assert.equal(st.orders[0].status, "in_progress");
+  assert.equal(st.orders[0].note.includes("[[COMPLETION_PENDING]]"), false);
+  assert.equal(ef.readEarlyFinishReject(st.orders[0]).reason, "老板还要继续玩");
+  const cs = read("src/customer-service-v2.js");
+  assert.match(cs, /if\(completeOrder\)\{openEarlyFinish\(completeOrder\.dataset\.completeOrder\);return\}/);
+  assert.match(cs, /api\('early_finish_order'/);
+  assert.match(cs, /api\('reject_early_finish'/);
+  assert.match(cs, /efState\.busy=true;btn\.disabled=true/);
+  assert.match(read("server/api/customer-service.js"), /earlyFinish: readEarlyFinish\(row\)/);
+  assert.match(read("server/api/admin/orders.js"), /earlyFinish: readEarlyFinish\(row\)/);
+  assert.match(read("server/api/companion.js"), /earlyFinish: companionEarlyFinishView\(row\)/);
+  assert.match(read("src/admin-final-v1.js"), /earlyFinishSection\(o\)\+/);
+  assert.match(read("src/companion-workbench.js"), /function earlyFinishMetaHtml\(o\)/);
+});
+
 const failed = results.filter((r) => !r.ok);
 console.log(`\n${results.length - failed.length}/${results.length} passed`);
 if (failed.length) process.exit(1);

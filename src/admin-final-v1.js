@@ -276,6 +276,28 @@
       rows.map(function(r){return '<div><span>'+esc(r[0])+'</span><strong>'+(r[2]?r[1]:esc(r[1]))+'</strong></div>'}).join('')+
       '</div></div>';
   }
+  function earlyFinishSection(o){
+    var ef=o&&o.earlyFinish,rj=o&&o.earlyFinishReject,rows=[];
+    if(ef){
+      rows.push(['状态',ef.status==='done'?'已提前结束':'处理中'+(ef.refundError?'（退款未完成：'+ef.refundError+'）':'')]);
+      rows.push(['发起人',(ef.initiator&&ef.initiator.label)||'-']);
+      rows.push(['确认人',ef.confirmedByName||'-']);
+      rows.push(['实际时长',ef.servedHours+' 小时 / 预约 '+ef.bookedHours+' 小时']);
+      rows.push(['结算',money(ef.settleAmount)]);
+      rows.push(['退款（猫粮余额）',money(ef.refundAmount)]);
+      rows.push(['陪玩收入',money(ef.companionIncome)]);
+      rows.push(['平台抽成',money(ef.platformCommission)]);
+      rows.push(['原因',ef.reason||'-']);
+      if(ef.completedAt)rows.push(['确认时间',fmtOrderTime(ef.completedAt)]);
+    }
+    if(rj)rows.push(['拒绝陪玩提前结束',(rj.rejectedByName||'客服')+' · '+fmtOrderTime(rj.at)+'：'+(rj.reason||'')]);
+    (o&&o.children||[]).forEach(function(c){
+      var cf=c&&c.earlyFinish;if(!cf)return;
+      rows.push(['子单 '+(c.orderNo||c.order_no||'')+' · '+(c.companionName||c.playerName||'陪玩'),
+        (cf.status==='done'?'已提前结束':'处理中')+'：实际 '+cf.servedHours+'/'+cf.bookedHours+' 小时，结算 '+money(cf.settleAmount)+'，退款 '+money(cf.refundAmount)+'，陪玩收入 '+money(cf.companionIncome)+'，抽成 '+money(cf.platformCommission)+'，确认人 '+(cf.confirmedByName||'-')+'，原因 '+(cf.reason||'-')]);
+    });
+    return rows.length?detailSection('提前结束',rows):'';
+  }
   function serviceStandardSection(o){
     var s=o&&o.serviceSnapshot;
     if(!s)return '';
@@ -334,6 +356,7 @@
         ['服务项目',o.serviceContent||o.game||'-']
       ])+
       serviceStandardSection(o)+
+      earlyFinishSection(o)+
       detailSection('④ 老板付款信息',[
         ['支付方式',o.paymentMethod||(pending&&pending.paymentMethod)||'-'],
         ['应付金额',money(o.totalAmount)],

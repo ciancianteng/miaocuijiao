@@ -349,8 +349,23 @@ export async function confirmBossCatFoodRefund(db, {
 
   if (saved.order_id) {
     // orders 表无 refund_amount / updated_at 列；只写 status，避免 PATCH 静默失败导致仍为售后中。
-    const orderGross = money(row.amount_rm || creditAmount);
-    const isFullRefund = creditAmount >= orderGross - 0.001;
+    // Full vs partial is measured against what the order was paid (plus earlier paid refunds), never against
+    // this refund row's own amount — otherwise every partial refund flips the order to refunded + full clawback.
+    let orderGross = money(row.amount_rm || creditAmount);
+    let priorPaidRefunds = 0;
+    try {
+      const ors = await db("orders", `?id=eq.${encodeURIComponent(saved.order_id)}&select=id,total_amount,paid_cat_food&limit=1`);
+      const paidGross = money(ors?.[0]?.paid_cat_food || ors?.[0]?.total_amount || 0);
+      if (paidGross > 0) orderGross = paidGross;
+      const prior = await db(
+        "boss_refund_requests",
+        `?order_id=eq.${encodeURIComponent(saved.order_id)}&status=eq.paid&id=neq.${encodeURIComponent(row.id)}&select=id,paid_amount_rm,amount_rm&limit=50`
+      );
+      priorPaidRefunds = money((prior || []).reduce((n, r) => n + money(r.paid_amount_rm || r.amount_rm), 0));
+    } catch {
+      /* keep refund-row gross: legacy full-refund behaviour */
+    }
+    const isFullRefund = creditAmount + priorPaidRefunds >= orderGross - 0.001;
     try {
       await db("orders", `?id=eq.${encodeURIComponent(saved.order_id)}`, {
         method: "PATCH",
