@@ -70,16 +70,28 @@ export async function countPendingRechargeReviews() {
  * @param {{ status?: string, includeProofPath?: boolean }} opts
  *   status: pending_review (default) | queue | paid | rejected | all | any payment_orders status
  */
+/** submitted_at is optional on payment_orders (proof writer falls back to raw_response); never let the sort hide rows. */
+async function listPendingReviewRows(limit) {
+  try {
+    return await supabaseJson(
+      restUrl("payment_orders", `?status=eq.pending_review&order=submitted_at.desc.nullslast,created_at.desc&limit=${limit}`),
+      { headers: serviceHeaders() }
+    );
+  } catch (e) {
+    if (!/submitted_at|column|PGRST|42703/i.test(`${e?.message || ""} ${JSON.stringify(e?.body || "")}`)) throw e;
+    return supabaseJson(restUrl("payment_orders", `?status=eq.pending_review&order=created_at.desc&limit=${limit}`), {
+      headers: serviceHeaders(),
+    });
+  }
+}
+
 export async function listRecharges({ status = RECHARGE_PENDING_REVIEW, includeProofPath = false, limit = 200 } = {}) {
   const statusFilter = String(status || RECHARGE_PENDING_REVIEW).trim();
   let rows = [];
   try {
     if (statusFilter === "pending_all" || statusFilter === "queue") {
       const [a, b] = await Promise.all([
-        supabaseJson(
-          restUrl("payment_orders", `?status=eq.pending_review&order=submitted_at.desc.nullslast,created_at.desc&limit=${limit}`),
-          { headers: serviceHeaders() }
-        ).catch(() => []),
+        listPendingReviewRows(limit).catch(() => []),
         supabaseJson(restUrl("payment_orders", `?status=eq.pending_payment&order=created_at.desc&limit=100`), {
           headers: serviceHeaders(),
         }).catch(() => []),
@@ -90,10 +102,11 @@ export async function listRecharges({ status = RECHARGE_PENDING_REVIEW, includeP
         restUrl("payment_orders", `?status=in.(paid,credited,rejected)&order=updated_at.desc.nullslast,created_at.desc&limit=${limit}`),
         { headers: serviceHeaders() }
       );
+    } else if (statusFilter === RECHARGE_PENDING_REVIEW) {
+      rows = await listPendingReviewRows(limit);
     } else if (statusFilter && statusFilter !== "all") {
-      const order = statusFilter === RECHARGE_PENDING_REVIEW ? "submitted_at.desc.nullslast,created_at.desc" : "created_at.desc";
       rows = await supabaseJson(
-        restUrl("payment_orders", `?status=eq.${encodeURIComponent(statusFilter)}&order=${order}&limit=${limit}`),
+        restUrl("payment_orders", `?status=eq.${encodeURIComponent(statusFilter)}&order=created_at.desc&limit=${limit}`),
         { headers: serviceHeaders() }
       );
     } else {

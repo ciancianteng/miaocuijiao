@@ -251,6 +251,18 @@ await test("#15 CS list never exposes storage proofPath; admin list keeps it", a
     assert.equal(admin[0].proofPath, "boss/x/proof.png");
   });
 });
+await test("#15 pending list still returns rows when payment_orders.submitted_at is missing", async () => {
+  const { listRecharges } = await import("../server/api/_recharge-review.js");
+  const db = rechargeDb(pendingRow());
+  const noCol = async (url, init) =>
+    /payment_orders\?[^#]*order=submitted_at/.test(String(url))
+      ? { ok: false, status: 400, text: async () => JSON.stringify({ code: "42703", message: "column payment_orders.submitted_at does not exist" }), headers: { get: () => null } }
+      : db.fetch(url, init);
+  await withFetch(noCol, async () => {
+    assert.equal((await listRecharges({ status: "pending_review" })).length, 1);
+    assert.equal((await listRecharges({ status: "queue" })).length >= 1, true);
+  });
+});
 await test("#15 CS routes/actions + admin wallet delegate to the shared module", () => {
   const cs = read("server/api/customer-service.js");
   for (const a of ["list_recharges", "approve_recharge", "reject_recharge", "review_badges", "mark_staff_notifications_read"]) {
