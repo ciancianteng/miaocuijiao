@@ -2936,6 +2936,17 @@ export default async function handler(req, res) {
         });
       }
 
+      // Release the hold only for statuses that can actually be cancelled below;
+      // otherwise the boss gets the cat-food back while the order keeps running.
+      if (!["awaiting_payment", "claimed", "pending"].includes(before.status)) {
+        return json(res, 409, {
+          ok: false,
+          code: "PAID_CANCEL_USE_REFUND",
+          message: "订单已支付，无法直接取消。请申请退款；审核通过后猫粮将退回余额。",
+          order: viewOrder(before),
+        });
+      }
+
       // Paid / post-payment rows must use request_refund (wallet already debited),
       // EXCEPT active cat-food HOLD: release held funds then cancel.
       let holdReleased = null;
