@@ -1053,6 +1053,55 @@ await test("#28 offline-companion gate only fires on an explicit status (unknown
   assert.match(po, /if \(code !== "offline" && code !== "paused"\) return "";/);
 });
 
+// ---------- payment review hardening (wallet = CS review, idempotent approve, markers) ----------
+await test("wallet pay_order holds funds and files a pending review receipt; never jumps to claimed/pending", () => {
+  const src = read("server/api/orders.js");
+  const pay = src.slice(src.indexOf('if (action === "pay_order")'), src.indexOf("const nextStatus = before.companion_id"));
+  assert.match(pay, /holdWalletForOrder\(/);
+  assert.match(pay, /createPendingWalletReceipt\(/);
+  assert.match(pay, /paymentReview: true,\s*\r?\n\s*message: "猫粮已冻结，等待客服审核/);
+  const ret = pay.indexOf("paymentReview: true,");
+  assert.ok(ret > pay.indexOf("createPendingWalletReceipt("), "review return comes after receipt creation");
+});
+await test("review remarks never leak [[MARKERS]]; wallet-hold marker file never becomes a proof URL", async () => {
+  const mod = await import(pathToFileURL(path.join(root, "server/api/_payment-receipts.js")).href);
+  assert.equal(mod.stripReviewStaffMark("[[WALLET_HOLD_PENDING_REVIEW]]"), "");
+  assert.equal(mod.stripReviewStaffMark("截图不清\n[[PAYMENT_PROOF]] bucket=x path=y/z.png"), "截图不清");
+  assert.equal(mod.stripReviewStaffMark("[[REVIEW_STAFF:a|小喵|2026-10-06T00:00:00Z]]\n[[REVIEWER_ROLE:admin]]\n金额不符"), "金额不符");
+  assert.equal(await mod.signedProofUrl({ storage_bucket: "b", storage_path: "u/payment-proofs/o/wallet-hold-v1.marker" }), "");
+  assert.equal(mod.isWalletHoldReceipt({ payment_method: "catfood" }), true);
+  assert.equal(mod.isWalletHoldReceipt({ payment_method: "duitnow", storage_path: "u/p.png" }), false);
+});
+await test("CS confirm_payment: replay returns 200 duplicate with current order, terminal orders 409, race loser never re-notifies", () => {
+  const src = read("server/api/customer-service.js");
+  const blk = src.slice(src.indexOf('if (action === "confirm_payment" || action === "push_to_grab_hall"'), src.indexOf("// Harden routing fields if soft path dropped them."));
+  assert.match(blk, /async function alreadyConfirmedReply\(current\)/);
+  assert.match(blk, /payment_status=eq\.paid&limit=1/);
+  assert.match(blk, /duplicate: true,\s*\r?\n\s*already: true/);
+  assert.match(blk, /code: terminal \? "ORDER_TERMINAL_NO_PAYMENT_APPROVE" : "NOT_AWAITING_PAYMENT"/);
+  assert.match(blk, /if \(Number\(err\?\.status\) !== 409\) throw err;\s*\r?\n\s*const replay = await alreadyConfirmedReply\(await orderById\(order\.id\)\);/);
+  assert.match(src, /paymentWalletHold: !!extras\.paymentReceipt && isWalletHoldReceipt\(extras\.paymentReceipt\)/);
+});
+await test("admin approve_payment_proof: no unguarded status PATCH; replay duplicate; terminal 409", () => {
+  const src = read("server/api/admin/finance.js");
+  const blk = src.slice(src.indexOf('if (action === "approve_payment_proof" || action === "reject_payment_proof")'), src.indexOf("const paidAtIso = nowIso();", src.indexOf('if (action === "approve_payment_proof"')));
+  assert.doesNotMatch(blk, /`\?id=eq\.\$\{encodeURIComponent\(order\.id\)\}`, \{\s*\r?\n\s*method: "PATCH",\s*\r?\n\s*body: JSON\.stringify\(\{ status: next \}\)/);
+  assert.match(blk, /if \(fresh && fresh\.status === next && !ledgerReplay\)/);
+  assert.match(blk, /ledgerReplay = !!ledged\?\.duplicate;/);
+  assert.match(blk, /code: "ORDER_TERMINAL_NO_PAYMENT_APPROVE"/);
+});
+await test("boss cancel of a held cat-food order supersedes its pending wallet receipt", () => {
+  const src = read("server/api/orders.js");
+  assert.match(src, /let order = await patchCancel\(id\);\s*\r?\n\s*let cancelledChildren = \[\];\s*\r?\n\s*if \(hadActiveHold\) \{\s*\r?\n\s*const \{ supersedePendingReceipts \}/);
+});
+await test("CS + admin UIs label wallet-hold reviews instead of a broken proof button", () => {
+  const cs = read("src/customer-service-v2.js");
+  assert.match(cs, /o\.paymentWalletHold&&!proofUrl\?'<div class="cs-proof-preview" data-wallet-hold>/);
+  assert.match(cs, /var hasProof=!\(o\.paymentWalletHold&&!o\.paymentProofUrl\)&&/);
+  const ad = read("src/admin-final-v1.js");
+  assert.match(ad, /o\.paymentWalletHold&&!proofUrl\s*\r?\n\s*\?'猫粮支付（已冻结，无需截图）'/);
+});
+
 const failed = results.filter((r) => !r.ok);
 console.log(`\n${results.length - failed.length}/${results.length} passed`);
 if (failed.length) process.exit(1);
