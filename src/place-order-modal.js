@@ -222,7 +222,7 @@
     if (document.querySelector('link[data-mcj-place-order-css]')) return;
     var link = document.createElement("link");
     link.rel = "stylesheet";
-    link.href = "/src/place-order-modal.css?v=20261006b1535";
+    link.href = "/src/place-order-modal.css?v=20261007b1528";
     link.setAttribute("data-mcj-place-order-css", "1");
     document.head.appendChild(link);
   }
