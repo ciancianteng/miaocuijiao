@@ -103,7 +103,7 @@
       cover: item.cover ? avatarUrl(item.cover) : "",
       level: item.level || "未设置等级",
       levelId: item.levelId || "",
-      game: item.mainService || item.game || "",
+      game: item.mainService || item.game || (item.services || []).map(function (s) { return s && s.name; }).filter(Boolean).join("、"),
       availabilityStatus: presenceCode(item),
       availabilityText: item.availabilityText || "",
       tags: [],
