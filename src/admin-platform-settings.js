@@ -120,6 +120,8 @@
       field("companyName", "公司名称", x.companyName) +
       field("contactEmail", "联系邮箱", x.contactEmail, "email") +
       field("supportContact", "客服联系方式", x.supportContact) +
+      field("csOnlineHoursStart", "客服在线开始时间（马来西亚时间 HH:MM）", x.csOnlineHoursStart || "09:00") +
+      field("csOnlineHoursEnd", "客服在线结束时间（马来西亚时间 HH:MM）", x.csOnlineHoursEnd || "12:00") +
       field("timezone", "时区", x.timezone || "Asia/Kuala_Lumpur") +
       field("defaultCurrency", "默认货币", x.defaultCurrency || "RM") +
       field("catFoodDisplayName", "猫粮显示名称", x.catFoodDisplayName || "猫粮") +

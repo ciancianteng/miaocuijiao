@@ -181,6 +181,36 @@ export async function insertCompanionNotification({
   return savedKey;
 }
 
+/**
+ * CS → companion chat reply: one Web Push per message (tag = message id), deep link to that thread.
+ * Unread itself lives on messages.read_at, so no companion_notifications row (avoids a duplicate notice).
+ */
+export async function notifyCompanionCsReply(conversation, { messageId = "", content = "", messageType = "text", csName = "" } = {}) {
+  const uid = String(conversation?.companion_id || "").trim();
+  const cid = String(conversation?.id || "").trim();
+  if (!uid || !cid || !isCompanionCsConversation(conversation)) return { ok: false, skipped: "not_companion_cs" };
+  if (String(messageType || "") === "system") return { ok: false, skipped: "system" };
+  const body = messageType === "image" ? "客服发来一张图片，请及时查看。" : String(content || "").trim().slice(0, 120) || "客服发来一条新消息";
+  try {
+    const { sendWebPushToUser } = await import("./_web-push.js");
+    const send = sendWebPushToUser(uid, {
+      title: `${String(csName || "").trim() || "官方客服"}回复了你`,
+      body,
+      url: `/companion/messages?conversation=${encodeURIComponent(cid)}`,
+      notificationType: "cs_reply",
+      entityId: cid,
+      orderId: String(conversation.order_id || ""),
+      targetUserId: uid,
+      preferRole: "companion",
+      tag: `cs-msg-${String(messageId || cid).slice(0, 60)}`,
+    });
+    return await Promise.race([send, new Promise((r) => setTimeout(() => r({ ok: false, skipped: "timeout" }), 2500))]);
+  } catch (err) {
+    console.warn("[companion-cs-notify]", String(err?.message || err).slice(0, 160));
+    return { ok: false, skipped: "error" };
+  }
+}
+
 export async function notifyCompanionReviewResult(
   companionUserId,
   { status, reason = "", kind = "application", applicationId = "", email = "" } = {}

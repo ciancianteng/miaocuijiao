@@ -102,8 +102,37 @@ function safeStaff(row, stats = {}) {
     earlyLeaveDeduction: stats.earlyLeaveDeduction || 0,
     bonusRewards: stats.bonusRewards || 0,
     penaltyTotal: stats.penaltyTotal || 0,
+    shiftConfig: stats.shiftConfig || null,
+    attendanceSummary: stats.attendanceSummary || null,
     wageDetail: stats.wageDetail || null,
   };
+}
+const STAFF_CONFIG_KEYS = ["shiftStart", "shiftEnd", "workDays", "attendanceEnabled", "baseSalary"];
+function staffConfigInput(body = {}, admin = {}) {
+  const src = body.shiftConfig && typeof body.shiftConfig === "object" ? body.shiftConfig : body;
+  if (!STAFF_CONFIG_KEYS.some((k) => src[k] !== undefined)) return null;
+  const input = {};
+  if (src.shiftStart !== undefined) input.shiftStart = String(src.shiftStart || "").trim();
+  if (src.shiftEnd !== undefined) input.shiftEnd = String(src.shiftEnd || "").trim();
+  for (const key of ["shiftStart", "shiftEnd"]) {
+    if (input[key] && !/^([01]\d|2[0-3]):[0-5]\d$/.test(input[key])) {
+      throw Object.assign(new Error(`${key === "shiftStart" ? "上班" : "下班"}时间格式应为 HH:MM。`), { status: 400 });
+    }
+  }
+  if (src.workDays !== undefined) input.workDays = src.workDays;
+  if (src.attendanceEnabled !== undefined) {
+    input.attendanceEnabled = !(src.attendanceEnabled === false || src.attendanceEnabled === "false" || src.attendanceEnabled === "0" || src.attendanceEnabled === "off");
+  }
+  if (src.baseSalary !== undefined && String(src.baseSalary).trim() !== "") {
+    const n = Number(src.baseSalary);
+    if (!Number.isFinite(n) || n < 0) throw Object.assign(new Error("底薪需为不小于 0 的数字。"), { status: 400 });
+    input.baseSalary = Math.round(n * 100) / 100;
+  } else if (src.baseSalary !== undefined) {
+    input.baseSalaryClear = true;
+  }
+  input.updatedBy = admin.id || "";
+  input.updatedByName = admin.display_name || admin.nickname || admin.email || "";
+  return input;
 }
 function orderQualifiesForCommission(row, config) {
   const status = String(row?.status || "");
@@ -172,8 +201,16 @@ async function rows() {
   } catch (_) {
     settlementsAll = [];
   }
-  // Single global config + already-fetched rows — no N× loadServiceWorkData (was hanging create/list).
-  const staffConfig = workApi ? workApi.mergeServiceConfig(globalConfig, {}) : globalConfig;
+  // Global config + per-staff config rows already in `reports` — no N× loadServiceWorkData (was hanging create/list).
+  const configRows = new Map();
+  (reports || []).forEach((r) => {
+    if (r.report_date === "1970-01-01" && r.customer_service_id && !configRows.has(r.customer_service_id)) configRows.set(r.customer_service_id, r);
+  });
+  const configFor = (id) => {
+    if (!workApi) return globalConfig;
+    const own = configRows.get(id);
+    return workApi.mergeServiceConfig(globalConfig, own ? workApi.staffConfigFromReportRow(own) : {});
+  };
   const seenStaff = new Set();
   const uniqueStaff = (staff || []).filter((row) => {
     const id = String(row?.id || "");
@@ -183,6 +220,7 @@ async function rows() {
     return true;
   });
   return uniqueStaff.map((row) => {
+    const staffConfig = configFor(row.id);
     const ownOrders = orders.filter((o) => o.customer_service_id === row.id);
     const ownReceptions = (receptions || []).filter((r) => r.customer_service_id === row.id);
     const ownReports = (reports || []).filter((r) => r.customer_service_id === row.id && r.report_date !== "1970-01-01");
@@ -236,8 +274,15 @@ async function rows() {
     const actualDays = monthAttendance.filter((r) => !!r.shift_start).length;
     const lateCount = monthRows.filter((r) => r.isLate).length;
     const earlyLeaveCount = monthRows.filter((r) => r.isEarlyLeave).length;
-    const absenceCount = Math.max(0, num(staffConfig.standardDays || 22) - actualDays);
-    const allPerfect = actualDays >= num(staffConfig.standardDays || 22) && !lateCount && !earlyLeaveCount && !absenceCount;
+    const attendedDates = monthAttendance.filter((r) => !!r.shift_start).map((r) => String(r.report_date));
+    const absence = workApi
+      ? workApi.monthAbsence(staffConfig, attendedDates, month, today)
+      : { count: Math.max(0, num(staffConfig.standardDays || 22) - actualDays), dates: [] };
+    const absenceCount = absence.count;
+    const hasWorkDays = Array.isArray(staffConfig.workDays) && staffConfig.workDays.length > 0;
+    const allPerfect =
+      (hasWorkDays || actualDays >= num(staffConfig.standardDays || 22)) && actualDays > 0 && !lateCount && !earlyLeaveCount && !absenceCount;
+    const normalCount = monthRows.filter((r) => r.fullAttendance).length;
     const monthOrders = ownOrders.filter((o) => String(o.created_at || "").slice(0, 7) === month);
     const monthReceptions = ownReceptions.filter((r) => String(r.started_at || "").slice(0, 7) === month);
     const receptionBonus = round(monthReceptions.length * num(staffConfig.receptionBonus || 0));
@@ -279,6 +324,24 @@ async function rows() {
       earlyLeaveDeduction,
       bonusRewards,
       penaltyTotal,
+      shiftConfig: {
+        shiftStart: staffConfig.shiftStart || "09:00",
+        shiftEnd: staffConfig.shiftEnd || "18:00",
+        workDays: hasWorkDays ? staffConfig.workDays : null,
+        attendanceEnabled: staffConfig.attendanceEnabled !== false,
+        baseSalary: num(staffConfig.baseSalary || 0),
+        baseSalarySet: !!staffConfig.baseSalarySet,
+        updatedAt: staffConfig.updatedAt || "",
+        updatedBy: staffConfig.updatedBy || "",
+        updatedByName: staffConfig.updatedByName || "",
+      },
+      attendanceSummary: {
+        normal: normalCount,
+        late: lateCount,
+        early: earlyLeaveCount,
+        missing: absenceCount,
+        missingDates: absence.dates,
+      },
       wageDetail: {
         baseSalary: num(staffConfig.baseSalary || 0),
         receptionBonus,
@@ -397,7 +460,7 @@ export default async function handler(req, res) {
     });
   }
   try {
-    await requireAdmin(req);
+    const adminProfile = await requireAdmin(req);
     if (req.method === "GET") {
       const action = String(req.query.action || "list");
       if (action === "attendance_history") {
@@ -442,15 +505,36 @@ export default async function handler(req, res) {
       const config = await workApi.getGlobalCommissionConfig();
       return json(res, 200, { ok: true, message: "客服佣金设置已保存", config });
     }
+    const cfgInput = staffConfigInput(body, adminProfile);
+    const saveStaffConfig = async (id) => {
+      if (!cfgInput || !id) return null;
+      const workApi = await import("../_customer-service-work.js");
+      await workApi.saveServiceConfig(id, cfgInput);
+      return workApi.getServiceConfig(id);
+    };
+    if (action === "save_staff_config") {
+      const id = String(body.id || body.serviceId || "");
+      if (!cfgInput) return json(res, 400, { ok: false, message: "没有需要保存的排班字段。" });
+      const config = await saveStaffConfig(id);
+      return json(res, 200, { ok: true, message: "客服排班 / 底薪已保存。", config });
+    }
     if (action === "create") {
+      const account = await create(input);
+      const config = await saveStaffConfig(account?.id);
       return json(res, 200, {
         ok: true,
         message: "客服账号已创建，请把登录邮箱和临时密码交给客服。",
-        account: await create(input),
+        account,
+        config,
         temporaryPassword: input.password,
       });
     }
-    if (action === "update") return json(res, 200, { ok: true, message: "客服账号已更新。", account: await update(String(body.id || ""), input) });
+    if (action === "update") {
+      const id = String(body.id || "");
+      const account = await update(id, input);
+      const config = await saveStaffConfig(id);
+      return json(res, 200, { ok: true, message: "客服账号已更新。", account, config });
+    }
     if (action === "reset_password") {
       await resetPassword(String(body.id || ""), String(body.password || ""));
       return json(res, 200, { ok: true, message: "客服临时密码已重置，请交给客服本人。" });

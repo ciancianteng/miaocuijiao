@@ -529,6 +529,52 @@
       "</tbody></table></div>"
     );
   }
+  function attendanceSummaryHtml() {
+    var month = state.attendanceMonth || currentMonth();
+    if (month !== currentMonth()) return "";
+    var items = (state.rows || []).filter(function (r) {
+      return r && r.attendanceSummary;
+    });
+    if (!items.length) return "";
+    return items
+      .map(function (r) {
+        var s = r.attendanceSummary;
+        var cfg = r.shiftConfig || {};
+        var schedule =
+          cfg.attendanceEnabled === false
+            ? "考勤关闭"
+            : (cfg.shiftStart || "09:00") +
+              "–" +
+              (cfg.shiftEnd || "18:00") +
+              (Array.isArray(cfg.workDays) && cfg.workDays.length
+                ? " · 周" +
+                  cfg.workDays
+                    .map(function (d) {
+                      return WEEKDAY_LABELS[d];
+                    })
+                    .join("")
+                : "");
+        return (
+          '<div class="admin-sync-note" data-cs-attendance-summary="' +
+          esc(r.id) +
+          '" style="margin:0 0 6px">' +
+          esc(r.name || "-") +
+          "（" +
+          esc(schedule) +
+          "）本月：正常 " +
+          esc(s.normal || 0) +
+          " · 迟到 " +
+          esc(s.late || 0) +
+          " · 早退 " +
+          esc(s.early || 0) +
+          " · 缺卡 " +
+          esc(s.missing || 0) +
+          (s.missingDates && s.missingDates.length ? "（" + esc(s.missingDates.slice(-5).join("、")) + "）" : "") +
+          "</div>"
+        );
+      })
+      .join("");
+  }
   function attendanceBodyHtml() {
     var history = state.attendanceHistory.length
       ? state.attendanceHistory
@@ -545,6 +591,7 @@
           esc(state.attendanceError) +
           ' <button class="mini-btn" type="button" data-cs-attendance-refresh>重试</button></div>'
         : "") +
+      attendanceSummaryHtml() +
       '<div class="table-wrap service-account-table-wrap"><table class="service-account-table"><thead><tr><th>客服</th><th>日期</th><th>班次类型</th><th>上班时间</th><th>下班时间</th><th>工时</th><th>迟到</th><th>早退</th><th>状态</th></tr></thead><tbody>' +
       (state.attendanceLoading
         ? '<tr><td colspan="9"><div class="empty">Loading…</div></td></tr>'
@@ -829,7 +876,9 @@
       (!row || row.status === "启用" ? "selected" : "") +
       '>启用</option><option value="停用" ' +
       (row && row.status === "停用" ? "selected" : "") +
-      '>停用</option></select></label><label class="wide">备注，可选<textarea name="remark" ' +
+      '>停用</option></select></label>' +
+      shiftFieldsHtml(row, readonly) +
+      '<label class="wide">备注，可选<textarea name="remark" ' +
       (readonly ? "readonly" : "") +
       ">" +
       esc((row && row.remark) || "") +
@@ -852,6 +901,70 @@
       '<div class="admin-sync-note error" data-service-account-form-error hidden style="margin-top:10px"></div>' +
       "</form>"
     );
+  }
+  var WEEKDAY_LABELS = ["日", "一", "二", "三", "四", "五", "六"];
+  function shiftFieldsHtml(row, readonly) {
+    var cfg = (row && row.shiftConfig) || {};
+    var dis = readonly ? " disabled" : "";
+    var days = Array.isArray(cfg.workDays) ? cfg.workDays.map(Number) : [];
+    var audit = cfg.updatedAt
+      ? "最后修改：" + fmtAuditTime(cfg.updatedAt) + (cfg.updatedByName ? " · " + cfg.updatedByName : "")
+      : "尚未单独设置，沿用全局默认（09:00–18:00、按标准出勤天数）";
+    return (
+      '<label>个人底薪 (RM)<input name="baseSalary" type="number" min="0" step="0.01" inputmode="decimal" value="' +
+      esc(cfg.baseSalarySet ? cfg.baseSalary : "") +
+      '" placeholder="' +
+      esc(cfg.baseSalarySet ? "" : "留空沿用全局 RM " + (cfg.baseSalary || 0)) +
+      '"' +
+      dis +
+      '></label><label>考勤开关<select name="attendanceEnabled"' +
+      dis +
+      '><option value="1"' +
+      (cfg.attendanceEnabled !== false ? " selected" : "") +
+      '>开启（统计迟到/早退/缺卡）</option><option value="0"' +
+      (cfg.attendanceEnabled === false ? " selected" : "") +
+      ">关闭（只记工时）</option></select></label><label>上班时间<input name=\"shiftStart\" type=\"time\" value=\"" +
+      esc(cfg.shiftStart || "09:00") +
+      '"' +
+      dis +
+      '></label><label>下班时间<input name="shiftEnd" type="time" value="' +
+      esc(cfg.shiftEnd || "18:00") +
+      '"' +
+      dis +
+      '></label><div class="wide" data-sa-workdays><span>工作日（不勾选 = 按标准出勤天数）</span><div style="display:flex;flex-wrap:wrap;gap:6px 12px;margin-top:6px">' +
+      [1, 2, 3, 4, 5, 6, 0]
+        .map(function (d) {
+          return (
+            '<label style="display:inline-flex;align-items:center;gap:4px;min-height:32px"><input type="checkbox" name="workDay" value="' +
+            d +
+            '"' +
+            (days.indexOf(d) >= 0 ? " checked" : "") +
+            dis +
+            ">周" +
+            WEEKDAY_LABELS[d] +
+            "</label>"
+          );
+        })
+        .join("") +
+      '</div><input type="hidden" name="workDaysField" value="1"><small style="display:block;margin-top:6px;opacity:.75">' +
+      esc(audit) +
+      "</small></div>"
+    );
+  }
+  function fmtAuditTime(iso) {
+    try {
+      return new Intl.DateTimeFormat("zh-CN", {
+        timeZone: "Asia/Kuala_Lumpur",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      }).format(new Date(iso));
+    } catch (e) {
+      return String(iso || "");
+    }
   }
   function editorTitle(row, readonly) {
     if (readonly) return "查看客服";
@@ -900,6 +1013,11 @@
     fd.forEach(function (v, k) {
       payload[k] = String(v || "").trim();
     });
+    if (payload.workDaysField) {
+      payload.workDays = fd.getAll("workDay").map(Number);
+      delete payload.workDay;
+      delete payload.workDaysField;
+    }
     if (!id && payload.account && !payload.email) payload.email = payload.account;
     if (!id && payload.email && !payload.account) payload.account = payload.email;
     var action = id ? "update" : "create";

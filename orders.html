@@ -97,6 +97,7 @@
     .od-field span{display:block;color:#9ca3af;font-size:12px}
     .od-field strong{display:block;margin-top:4px;word-break:break-word;font-size:14px}
     .od-field.wide{grid-column:1/-1}
+    .od-field.od-std strong{white-space:pre-wrap;font-weight:500;line-height:1.55}
     .od-timeline{display:flex;flex-direction:column;gap:0;padding:4px 2px 2px}
     .od-step{display:grid;grid-template-columns:18px 1fr;gap:10px;align-items:start;position:relative;padding-bottom:14px}
     .od-step:last-child{padding-bottom:0}
@@ -254,7 +255,7 @@
   <script src="/src/mcj-ui-feedback.js?v=20260925perf1"></script>
   <link rel="stylesheet" href="/src/mcj-ui-feedback.css?v=20260925perf1">
   <script src="src/role-gates.js?v=20260908antiBlank1"></script>
-  <script src="src/boss-header.js?v=20260804authP0boss2" defer></script>
+  <script src="src/boss-header.js?v=20261005batch1" defer></script>
   <script src="src/boss-forced-ack.js?v=20260803rules1" defer></script>
   <script src="src/currency.js"></script>
   <script src="src/order-status.js"></script>
@@ -284,7 +285,7 @@
       function esc(v){return String(v==null?'':v).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
       function money(v){if(window.MCJCurrency)return window.MCJCurrency.formatPlain(v);var n=Number(v||0);return (Number.isFinite(n)?n:0).toFixed(2).replace(/\.00$/,'')+' 猫粮'}
       function moneyEmoji(v){if(window.MCJCurrency)return window.MCJCurrency.formatAmount(v);return '🐱 '+money(v)}
-      function date(v){if(!v)return '-';try{return new Date(v).toLocaleString('zh-CN',{hour12:false})}catch(e){return v}}
+      function date(v){if(!v)return '-';var K=window.MCJContentTime;if(K&&K.fmtContentTime)return K.fmtContentTime(v,true)||'-';var s=String(v).trim(),n=s.match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?(?:\.\d+)?$/);var d=n?new Date(Date.UTC(+n[1],+n[2]-1,+n[3],+n[4],+n[5],+(n[6]||0))):new Date(new Date(s.replace(/^(\d{4}-\d{2}-\d{2}) /,'$1T').replace(/([+-]\d{2})$/,'$1:00')).getTime()+288e5);if(isNaN(d.getTime()))return s;var p=function(x){return x<10?'0'+x:String(x)};return d.getUTCFullYear()+'-'+p(d.getUTCMonth()+1)+'-'+p(d.getUTCDate())+' '+p(d.getUTCHours())+':'+p(d.getUTCMinutes())+':'+p(d.getUTCSeconds())}
       function voiceModeLabel(o){
         var m=String((o&& (o.voiceMode||o.voice_mode))||'game_mic').toLowerCase();
         if(m==='discord')return 'Discord语音房';
@@ -731,6 +732,20 @@
       function field(label,value,wide){
         return '<div class="od-field'+(wide?' wide':'')+'"><span>'+esc(label)+'</span><strong>'+value+'</strong></div>';
       }
+      function serviceStandardModule(o){
+        var multi=isMultiParent(o);
+        var blocks=(multi?childrenOf(o.id):[o]).map(function(x){
+          var s=x.serviceSnapshot;
+          if(!s)return '';
+          var who=multi?'<div class="od-field wide od-std-who"><span>'+esc(companionName(x))+'</span><strong>'+esc(s.serviceName||x.serviceType||'-')+'</strong></div>':'';
+          var body=s.sections&&s.sections.length
+            ?s.sections.map(function(sec){return '<div class="od-field wide od-std"><span>'+esc(sec.label)+'</span><strong>'+esc(sec.value)+'</strong></div>';}).join('')
+            :field('服务标准','下单时陪玩未填写详细标准，按'+esc(s.pricingUnit||'小时')+'计费',true);
+          return who+body;
+        }).join('');
+        if(!blocks)return '';
+        return '<div class="od-module"><h3>服务标准（下单时快照）</h3><div class="od-fields">'+blocks+'</div><p class="order-hint">以下为下单时该项目的服务内容与执行标准；陪玩之后修改不会影响本单。</p></div>';
+      }
       function actions(o){
         var out=['<button class="order-btn" data-detail="'+esc(o.id)+'" type="button">查看详情</button>'];
         var s=String(o.status||'');
@@ -887,6 +902,7 @@
                   })()
                 : '')+
             '</div></div>'+
+            serviceStandardModule(o)+
           '</div>';
         var right=
           '<div class="od-col">'+

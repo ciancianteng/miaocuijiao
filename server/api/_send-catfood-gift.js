@@ -117,7 +117,7 @@ export async function sendCatfoodGift({
   try {
     const existed = await companionDb(
       "gift_transactions",
-      `?idempotency_key=eq.${encodeURIComponent(key)}&limit=1`
+      `?idempotency_key=eq.${encodeURIComponent(key)}&sender_boss_id=eq.${encodeURIComponent(boss)}&limit=1`
     );
     if (existed?.[0]) {
       return {
@@ -253,9 +253,8 @@ export async function sendCatfoodGift({
 
   let incomeTx = null;
   let tx = null;
+  // Gift record first: its unique idempotency_key decides the single winner that may credit income.
   try {
-    incomeTx = await creditCompanionIncome(companion, companionIncome, giftNote);
-
     let payload = {
       tx_no: no("GIFT"),
       sender_boss_id: boss,
@@ -281,7 +280,7 @@ export async function sendCatfoodGift({
       payment_status: "paid",
       approval_status: "auto",
       wallet_transaction_id: walletTxId,
-      settlement_transaction_id: incomeTx?.id || null,
+      settlement_transaction_id: null,
       delivered_at: nowIso(),
       created_at: nowIso(),
     };
@@ -299,7 +298,7 @@ export async function sendCatfoodGift({
         if (/duplicate|unique|23505/i.test(msg)) {
           const again = await companionDb(
             "gift_transactions",
-            `?idempotency_key=eq.${encodeURIComponent(key)}&limit=1`
+            `?idempotency_key=eq.${encodeURIComponent(key)}&sender_boss_id=eq.${encodeURIComponent(boss)}&limit=1`
           ).catch(() => []);
           if (again?.[0]) {
             return {
@@ -318,9 +317,40 @@ export async function sendCatfoodGift({
         throw err;
       }
     }
+  } catch (midErr) {
+    // Debit succeeded but the gift was never recorded → refund so we never keep money without gift
+    try {
+      await creditWallet({
+        bossId: boss,
+        amount: gross,
+        transactionType: "refund",
+        balanceType: "paid",
+        idempotencyKey: `gift-refund:${key}`,
+        reason: `礼物失败自动退回：${giftName}`,
+        operatorId: boss,
+      });
+    } catch (refundErr) {
+      console.error(
+        "[send-catfood-gift] CRITICAL refund failed after debit",
+        refundErr?.message || refundErr,
+        "original",
+        midErr?.message || midErr
+      );
+    }
+    throw midErr;
+  }
 
-    if (!tx?.id && !isMissingRelation({ message: "gift_transactions" })) {
-      // gift_transactions table may be missing on some envs — still require a durable record when table exists
+  {
+    incomeTx = await creditCompanionIncome(companion, companionIncome, giftNote);
+    if (incomeTx?.id && tx?.id) {
+      await companionDb(
+        "gift_transactions",
+        `?id=eq.${encodeURIComponent(tx.id)}&settlement_transaction_id=is.null`,
+        { method: "PATCH", body: JSON.stringify({ settlement_transaction_id: incomeTx.id }) }
+      ).catch((e) => console.warn("[send-catfood-gift] link settlement", e?.message || e));
+      tx = { ...tx, settlement_transaction_id: incomeTx.id };
+    } else if (companionIncome > 0) {
+      console.error("[send-catfood-gift] companion income not written", JSON.stringify({ giftTx: tx?.id || null, key }));
     }
 
     if (kind === "gift") {
@@ -386,27 +416,6 @@ export async function sendCatfoodGift({
         availableBalance: walletAfter.availableBalance,
       },
     };
-  } catch (midErr) {
-    // Debit succeeded but gift write failed → refund so we never keep money without gift
-    try {
-      await creditWallet({
-        bossId: boss,
-        amount: gross,
-        transactionType: "refund",
-        balanceType: "paid",
-        idempotencyKey: `gift-refund:${key}`,
-        reason: `礼物失败自动退回：${giftName}`,
-        operatorId: boss,
-      });
-    } catch (refundErr) {
-      console.error(
-        "[send-catfood-gift] CRITICAL refund failed after debit",
-        refundErr?.message || refundErr,
-        "original",
-        midErr?.message || midErr
-      );
-    }
-    throw midErr;
   }
 }
 

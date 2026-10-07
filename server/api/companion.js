@@ -41,6 +41,28 @@ import {
 import { loadPublicServices } from "./platform/services.js";
 import { syncCompanionServicesFromGamePrices } from "./_admin-service-prices.js";
 import {
+  SERVICE_STANDARD_FIELDS,
+  readServiceStandards,
+  saveCompanionServiceStandard,
+  viewServiceSnapshot,
+} from "./_service-standard.js";
+import { readEarlyFinish, readEarlyFinishReject } from "./_order-early-finish.js";
+
+function companionEarlyFinishView(row) {
+  const ef = readEarlyFinish(row);
+  if (!ef || ef.status !== "done") return null;
+  return {
+    servedHours: ef.servedHours,
+    bookedHours: ef.bookedHours,
+    settleAmount: ef.settleAmount,
+    refundAmount: ef.refundAmount,
+    companionIncome: ef.companionIncome,
+    initiatorLabel: ef.initiator?.label || "",
+    reason: ef.reason || "",
+    completedAt: ef.completedAt || "",
+  };
+}
+import {
   partitionCompanionIncome,
   sumTxAmount,
   money as incomeMoney,
@@ -1369,6 +1391,9 @@ function viewOrder(row = {}, boss = {}, settlement = null) {
     serviceContent: serviceContent || "无补充说明",
     serviceName: row.service_name || row.game || row.title || "",
     serviceType: row.service_name || row.title || ORDER_TYPE_TEXT[orderTypeKey] || orderTypeKey,
+    serviceSnapshot: viewServiceSnapshot(row),
+    earlyFinish: companionEarlyFinishView(row),
+    earlyFinishReject: (() => { const r = readEarlyFinishReject(row); return r ? { reason: r.reason, at: r.at } : null; })(),
     duration: durationLabel,
     hours: money(row.hours),
     unitPrice,
@@ -3105,6 +3130,8 @@ async function bootstrapData(profile, companion) {
       priceInRange: levelBundle.priceInRange,
       priceNeedsReset: levelBundle.priceNeedsReset,
       gamePrices: readGamePrices(companion || {}),
+      serviceStandards: readServiceStandards(companion || {}),
+      serviceStandardFields: SERVICE_STANDARD_FIELDS,
       effectiveAt: companion?.commission_effective_at || companion?.level_effective_at || "",
     },
     companionLevel: levelBundle.level,
@@ -4786,6 +4813,32 @@ return json(res, 200, {
         });
       }
     }
+    if (action === "save_service_standard") {
+      const serviceId = String(body.serviceId || body.service_id || "").trim();
+      if (!serviceId) return json(res, 400, { ok: false, message: "请选择服务项目", field: "serviceId" });
+      const servicesBundle = await loadPublicServices().catch(() => ({ services: [] }));
+      const svc = (Array.isArray(servicesBundle?.services) ? servicesBundle.services : []).find(
+        (s) => String(s.id) === serviceId
+      );
+      if (!svc) return json(res, 400, { ok: false, message: "服务项目不存在或已下架", field: "serviceId" });
+      try {
+        const saved = await saveCompanionServiceStandard(auth.profile.id, {
+          serviceId,
+          name: svc.name || svc.title || "",
+          standard: body.standard || body,
+          rank: body.rank !== undefined ? body.rank : body.standard?.rank,
+        });
+        return json(res, 200, {
+          ok: true,
+          message: saved.standard ? "服务标准 / 段位已保存，老板可查看" : "已清空该项目的服务标准",
+          serviceId,
+          standard: saved.standard,
+          serviceStandards: saved.standards,
+        });
+      } catch (e) {
+        return json(res, e.status || 500, { ok: false, code: e.code || "", message: e.message || "保存失败" });
+      }
+    }
     if (action === "update_profile") {
       if (body.privacy_only) {
         const privacyContact = String(body.contact_phone || body.phone || "").trim();
@@ -5755,10 +5808,11 @@ return json(res, 200, {
       } else {
         const decoded = assertImageUpload(decodeDataUrl(dataUrl));
         const objectPath = buildObjectPath(auth.profile.id, mediaType, body.filename || `${mediaType}.jpg`);
-        let bucket = PUBLIC_BUCKETS.profile;
+        // Game records are served to bosses via signed URLs only (no raw public bucket path / user id).
+        let bucket = mediaType === "achievement" ? PRIVATE_BUCKETS.gallery : PUBLIC_BUCKETS.profile;
         try {
           await uploadPrivateObject(bucket, objectPath, decoded.buffer, decoded.contentType);
-          publicUrl = publicObjectUrl(bucket, objectPath);
+          publicUrl = bucket === PUBLIC_BUCKETS.profile ? publicObjectUrl(bucket, objectPath) : "";
         } catch (publicErr) {
           // Private fallback is allowed for storage, but NEVER persist signed URLs into profile fields.
           bucket = PRIVATE_BUCKETS.gallery;

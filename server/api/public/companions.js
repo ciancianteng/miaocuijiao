@@ -19,6 +19,16 @@ import {
   resolveCompanionCover,
 } from "../_companion-public-map.js";
 import { createSignedUrl, publicObjectUrl } from "../_companion-media-store.js";
+import { cleanRank, gameRanksFromStandards, readServiceStandards } from "../_service-standard.js";
+
+/** Per-game ranks; a legacy single game_rank is only attributed when the companion offers exactly one game. */
+function publicGameRanks(row = {}, gameNames = []) {
+  const ranks = gameRanksFromStandards(readServiceStandards(row));
+  if (ranks.length) return ranks.map((r) => ({ name: r.name, rank: r.rank }));
+  const legacy = cleanRank(row.game_rank);
+  const games = (gameNames || []).filter(Boolean);
+  return legacy && games.length === 1 ? [{ name: games[0], rank: legacy }] : [];
+}
 
 /**
  * Resolve storage:// or http(s) media to a playable URL.
@@ -264,6 +274,7 @@ function publicCompanion(row = {}, profile = {}, levels = [], catalog = [], medi
     nameValid: !!base.nameValid,
     game: gameDisplay || row.game || "",
     mainGame: gameDisplay || row.game || "",
+    gameRanks: publicGameRanks(row, serviceNames.length ? serviceNames : String(row.game || "").split(/[,，、/|]+/).map((s) => s.trim())),
     service_type: serviceTypes.join(","),
     serviceType: serviceTypes[0] || "陪玩服务",
     serviceTypes,
@@ -547,9 +558,11 @@ async function mediaExtrasByProfile(profileIds = [], opts = {}) {
       const path = String(row.storage_path || "").trim();
       if (!pid || !bucket || !path) return null;
       const status = String(row.status || "pending").toLowerCase();
+      if (row.media_type === "achievement" && status === "rejected") return null;
       const ctype = String(row.content_type || "").toLowerCase();
       const isVideo =
         row.media_type === "video" ||
+        (row.media_type === "achievement" && /^video\//.test(ctype)) ||
         (row.media_type === "gallery" && /^video\//.test(ctype)) ||
         (row.media_type === "gallery" && /\/video\//i.test(path));
       // List mode: never sign voice/video (hall cards do not play them).
@@ -700,7 +713,7 @@ async function loadCompanions(id = "", opts = {}) {
       "id,user_id,nickname,game,main_service,price,game_prices,level_id,level_name,commission_rate," +
       "online_status,allow_orders,application_status,verification_status,companion_code,is_test_account," +
       "gender,age,region,voice_type,tags,featured,updated_at,voice_url,card_image_url,description," +
-      "schedule,game_rank,position,contact_phone";
+      "schedule,game_rank,position,contact_phone,service_standards";
     let rows;
     try {
       rows = await fetchCompanionRowsHideTest(

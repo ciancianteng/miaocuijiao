@@ -9,7 +9,7 @@
   var IMAGE_ACCEPT = "image/*,image/jpeg,image/jpg,image/png,image/webp";
   var AUDIO_ACCEPT =
     "audio/mpeg,audio/mp3,audio/mp4,audio/aac,audio/x-m4a,audio/webm,audio/ogg,audio/wav,audio/wave,audio/x-wav,.mp3,.m4a,.aac,.webm,.ogg,.wav";
-  var VIDEO_ACCEPT = "video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm";
+  var VIDEO_ACCEPT = "video/mp4,video/quicktime,video/webm,video/x-m4v,video/3gpp,.mp4,.mov,.webm,.m4v,.3gp";
   var MAX_IMAGE_BYTES = 10 * 1024 * 1024;
   var MAX_AUDIO_BYTES = 20 * 1024 * 1024;
   var MAX_VIDEO_BYTES = 50 * 1024 * 1024;
@@ -31,6 +31,8 @@
     "video/mp4": 1,
     "video/quicktime": 1,
     "video/webm": 1,
+    "video/x-m4v": 1,
+    "video/3gpp": 1,
   };
 
   function esc(v) {
@@ -129,11 +131,8 @@
       var videoOk =
         VIDEO_MIME[mime] ||
         !mime ||
-        /\.(mp4|mov|webm)$/i.test(name) ||
-        ext === "mp4" ||
-        ext === "mov" ||
-        ext === "webm";
-      if (!videoOk) return { ok: false, error: "仅支持 mp4 / mov 视频" };
+        /\.(mp4|mov|webm|m4v|3gp)$/i.test(name);
+      if (!videoOk) return { ok: false, error: "仅支持 mp4 / mov / m4v / 3gp / webm 视频" };
       if (file.size > MAX_VIDEO_BYTES) return { ok: false, error: "视频不能超过 50MB" };
       return { ok: true, maxSeconds: MAX_VIDEO_SECONDS };
     }

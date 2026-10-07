@@ -68,12 +68,17 @@ function publicSiteOrigin() {
     .replace(/^https:\/\/meowcuijiao\.com$/i, "https://www.meowcuijiao.com");
 }
 
+/** Vercel runs in UTC — always render Asia/Kuala_Lumpur (UTC+8); zone-less strings are already KL wall-clock. */
 function formatTime(iso) {
   if (!iso) return "-";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return String(iso);
+  const s = String(iso).trim();
+  const naive = s.match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})/);
+  if (naive && !/(Z|[+-]\d{2}(:?\d{2})?)$/i.test(s)) return `${naive[1]}-${naive[2]}-${naive[3]} ${naive[4]}:${naive[5]}`;
+  const d = new Date(s.replace(/^(\d{4}-\d{2}-\d{2}) /, "$1T").replace(/([+-]\d{2})$/, "$1:00"));
+  if (Number.isNaN(d.getTime())) return s;
+  const k = new Date(d.getTime() + 8 * 3600 * 1000);
   const pad = (n) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return `${k.getUTCFullYear()}-${pad(k.getUTCMonth() + 1)}-${pad(k.getUTCDate())} ${pad(k.getUTCHours())}:${pad(k.getUTCMinutes())}`;
 }
 
 function orderNoOf(order = {}) {

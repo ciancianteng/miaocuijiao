@@ -9,8 +9,8 @@ import './mcj-chat-realtime.js';
     return;
   }
   var SESSION_KEY='mcjServiceSession';
-  var ROUTES={'/customer-service/':'dashboard','/customer-service':'dashboard','/customer-service/login':'login','/customer-service/dashboard':'dashboard','/customer-service/conversations':'conversations','/customer-service/chats':'conversations','/customer-service/orders':'orders','/customer-service/gift-orders':'giftOrders','/customer-service/create-order':'createOrder','/customer-service/compensation':'compensation','/customer-service/reports':'reports','/customer-service/profile':'profile'};
-  var NAV=[['dashboard','工作台','/customer-service/dashboard'],['conversations','统一会话池','/customer-service/conversations'],['orders','订单处理','/customer-service/orders'],['giftOrders','礼物审核','/customer-service/gift-orders'],['compensation','申请补偿','/customer-service/compensation'],['reports','工资中心','/customer-service/reports'],['createOrder','客服代下单','/customer-service/create-order'],['profile','我的资料','/customer-service/profile'],['logout','退出登录','logout']];
+  var ROUTES={'/customer-service/':'dashboard','/customer-service':'dashboard','/customer-service/login':'login','/customer-service/dashboard':'dashboard','/customer-service/conversations':'conversations','/customer-service/chats':'conversations','/customer-service/orders':'orders','/customer-service/gift-orders':'giftOrders','/customer-service/recharges':'recharges','/customer-service/create-order':'createOrder','/customer-service/compensation':'compensation','/customer-service/reports':'reports','/customer-service/profile':'profile'};
+  var NAV=[['dashboard','工作台','/customer-service/dashboard'],['conversations','统一会话池','/customer-service/conversations'],['orders','订单处理','/customer-service/orders'],['giftOrders','礼物审核','/customer-service/gift-orders'],['recharges','充值审核','/customer-service/recharges'],['compensation','申请补偿','/customer-service/compensation'],['reports','工资中心','/customer-service/reports'],['createOrder','客服代下单','/customer-service/create-order'],['profile','我的资料','/customer-service/profile'],['logout','退出登录','logout']];
   var HIDDEN_MVP_ROUTES={};
   var Auth=window.MCJAuthShell;
   var softRefreshSeq=0;
@@ -262,8 +262,8 @@ import './mcj-chat-realtime.js';
         hour:'2-digit',minute:'2-digit',hour12:false
       }).format(new Date()).replace(/\//g,'-');
     }catch(e){
-      var d=new Date();
-      return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')+' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+      var d=klDate(Date.now());
+      return d.getUTCFullYear()+'-'+String(d.getUTCMonth()+1).padStart(2,'0')+'-'+String(d.getUTCDate()).padStart(2,'0')+' '+klHm(d);
     }
   }
   function shanghaiTodayKey(){
@@ -406,30 +406,58 @@ import './mcj-chat-realtime.js';
     }
     return att.workHours!=null&&att.workHours!==''?att.workHours:0;
   }
+  /** none = 未上班, on = 上班中, done = 今日已下班 (can still start an overtime shift). */
+  function clockStateOf(att){
+    att=att||{};
+    if(clockCanOut(att))return 'on';
+    if(Number(att.closedCount||0)>0||att.clockOutAt)return 'done';
+    return 'none';
+  }
+  function clockShortTime(text,iso){
+    var full=fmtAttDateTime(text,iso)||'';
+    var m=full.match(/(\d{1,2}:\d{2})(?::\d{2})?\s*$/);
+    return m?m[1]:full;
+  }
+  function clockStatusText(att){
+    var st=clockStateOf(att);
+    if(st==='on')return (att.sessionType==='overtime'||att.sessionType==='night'||att.attendanceStatus==='加班中')?'加班中':'上班中';
+    if(st==='done')return '今日已下班';
+    return '未上班';
+  }
+  function clockDoneText(att){
+    var label=att.attendanceLabel?(' · '+att.attendanceLabel):'';
+    return '✓ 今日已下班 '+(clockShortTime(att.clockInText,att.clockInAt)||'-')+'–'+(clockShortTime(att.clockOutText,att.clockOutAt)||'-')+label;
+  }
   function patchClockPanel(att,busy){
     att=att||((state.data&&state.data.workData&&state.data.workData.todayAttendance)||{});
-    var canIn=clockCanIn(att);
-    var canOut=clockCanOut(att);
+    var st=clockStateOf(att);
     var liveHours=liveTotalHours(att);
     var statusEl=root.querySelector('[data-clock-status]');
     var inEl=root.querySelector('[data-clock-in-at]');
     var outEl=root.querySelector('[data-clock-out-at]');
     var hoursEl=root.querySelector('[data-live-hours]');
     var overtimeEl=root.querySelector('[data-overtime-hours]');
+    var labelEl=root.querySelector('[data-clock-label]');
+    var doneEl=root.querySelector('[data-clock-done]');
     var btnIn=root.querySelector('[data-clock-in]');
     var btnOut=root.querySelector('[data-clock-out]');
-    if(statusEl)statusEl.textContent=att.attendanceStatus||'未打卡';
+    if(statusEl)statusEl.textContent=clockStatusText(att);
     if(inEl)inEl.textContent=fmtAttDateTime(att.clockInText,att.clockInAt)||'-';
-    if(outEl)outEl.textContent=canOut?'上班中':(fmtAttDateTime(att.clockOutText,att.clockOutAt)||'-');
+    if(outEl)outEl.textContent=st==='on'?'上班中':(fmtAttDateTime(att.clockOutText,att.clockOutAt)||'-');
     if(hoursEl)hoursEl.textContent=(liveHours!=null&&liveHours!==''?(liveHours+' 小时'):'-');
     if(overtimeEl)overtimeEl.textContent=(att.overtimeHours!=null?att.overtimeHours:0)+' 小时';
+    if(labelEl)labelEl.textContent=att.attendanceLabel||'-';
+    if(doneEl){doneEl.hidden=st!=='done';doneEl.textContent=st==='done'?clockDoneText(att):'';}
     if(btnIn){
-      btnIn.disabled=!!(busy||!canIn);
-      btnIn.textContent=busy?'处理中…':(canIn?(Number(att.closedCount||0)>0?'再次上班（加班）':'上班打卡'):'上班中');
+      btnIn.hidden=st==='on';
+      btnIn.disabled=!!busy;
+      btnIn.className='cs-btn cs-clock-btn'+(st==='none'?' primary':'');
+      btnIn.textContent=busy&&st!=='on'?'处理中…':(st==='done'?'加班上班':'上班打卡');
     }
     if(btnOut){
-      btnOut.disabled=!!(busy||!canOut);
-      btnOut.textContent=busy?'处理中…':(canOut?'下班打卡':'已下班');
+      btnOut.hidden=st!=='on';
+      btnOut.disabled=!!busy;
+      btnOut.textContent=busy&&st==='on'?'处理中…':'下班打卡';
     }
   }
   function optimisticClockIn(prev){
@@ -482,9 +510,7 @@ import './mcj-chat-realtime.js';
     });
   }
   function apiClock(action){
-    var cfg=(state.data&&state.data.workData&&state.data.workData.config)||null;
-    var payload=cfg?{config:{shiftStart:cfg.shiftStart,shiftEnd:cfg.shiftEnd,graceMinutes:cfg.graceMinutes}}:{};
-    var req=api(action,payload);
+    var req=api(action,{});
     var timeout=new Promise(function(_,reject){
       setTimeout(function(){
         reject(Object.assign(new Error('网络较慢，正在核对打卡结果…'),{timeout:true,status:408}));
@@ -893,7 +919,7 @@ import './mcj-chat-realtime.js';
   function autoResizeComposer(el){
     if(!el||el.tagName!=='TEXTAREA')return;
     el.style.height='auto';
-    var next=Math.min(120,Math.max(56,el.scrollHeight));
+    var next=Math.min(120,Math.max(44,el.scrollHeight));
     el.style.height=next+'px';
   }
   function composerBlockReason(conv){
@@ -1205,20 +1231,29 @@ import './mcj-chat-realtime.js';
   function go(path){
     if(isLoginView())captureLoginDraft();
     var raw=String(path||'');
-    var clean=raw.replace(/\\/g,'/').replace(/\/$/,'')||'/customer-service';
+    var hash='';
+    var search='';
+    var base=raw;
+    var hi=base.indexOf('#');
+    if(hi>=0){hash=base.slice(hi);base=base.slice(0,hi);}
+    var qi=base.indexOf('?');
+    if(qi>=0){search=base.slice(qi);base=base.slice(0,qi);}
+    var clean=base.replace(/\\/g,'/').replace(/\/$/,'')||'/customer-service';
     // Full navigation only for login page.
     if(/\/customer-service\/login$/i.test(clean)){
-      location.assign('/customer-service/login/');
+      location.assign('/customer-service/login/'+search+hash);
       return;
     }
     // SPA route switch — keep URL + in-memory route in sync, never hard-jump away from chats while typing.
+    // Query (paymentNo) is matched off the path, then put back so a notice opens that recharge row.
     var next=ROUTES[clean]||'dashboard';
-    var url=raw;
-    if(next==='dashboard')url='/customer-service/dashboard/';
-    else if(next==='conversations')url='/customer-service/conversations';
-    else if(next==='orders')url='/customer-service/orders';
-    else if(next==='giftOrders')url='/customer-service/gift-orders';
-    else if(next==='profile')url='/customer-service/profile';
+    var url=clean+search+hash;
+    if(next==='dashboard')url='/customer-service/dashboard/'+search+hash;
+    else if(next==='conversations')url='/customer-service/conversations'+search+hash;
+    else if(next==='orders')url='/customer-service/orders'+search+hash;
+    else if(next==='giftOrders')url='/customer-service/gift-orders'+search+hash;
+    else if(next==='recharges')url='/customer-service/recharges'+search+hash;
+    else if(next==='profile')url='/customer-service/profile'+search+hash;
     history.pushState(null,'',url);
     state.route=next;
     // Defer remount so the same click cannot "ghost click" 工作台 after buttons regenerate.
@@ -1914,6 +1949,7 @@ import './mcj-chat-realtime.js';
     return softRefresh();
   }
   function startPoll(){
+    startReviewBadgePoll();
     if(window.__MCJCsPoll)return;
     bindPoolRealtime();
     window.__MCJCsPoll=setInterval(function(){
@@ -2109,14 +2145,14 @@ import './mcj-chat-realtime.js';
       });
     }
   }
-  function title(){return ({dashboard:'客服工作台',conversations:'统一会话池',orders:'订单处理',giftOrders:'礼物审核',createOrder:'客服代下单',compensation:'申请补偿',reports:'工资中心',profile:'我的资料'})[state.route]||'客服端'}
+  function title(){return ({dashboard:'客服工作台',conversations:'统一会话池',orders:'订单处理',giftOrders:'礼物审核',recharges:'充值审核',createOrder:'客服代下单',compensation:'申请补偿',reports:'工资中心',profile:'我的资料'})[state.route]||'客服端'}
   function renderShell(){
     var staff=(state.data&&state.data.staff)||(state.session&&state.session.user)||{};
     recomputeSummaryFromConversations();
     var unread=Number((state.data&&state.data.summary&&state.data.summary.unreadMessages)||0)||0;
     root.innerHTML='<div class="cs-shell"><aside class="cs-side"><div class="cs-brand"><strong>MEOW CUI JIAO</strong><span>Customer Service</span></div><nav class="cs-nav">'+NAV.map(function(n){
       if(n[0]==='logout')return '<button type="button" data-logout>'+n[1]+'</button>';
-      var badge=n[0]==='conversations'?('<b class="cs-nav-unread" data-nav-unread'+(unread?'':' hidden')+'>'+(unread>99?'99+':String(unread||''))+'</b>'):'';
+      var badge=n[0]==='conversations'?('<b class="cs-nav-unread" data-nav-unread'+(unread?'':' hidden')+'>'+(unread>99?'99+':String(unread||''))+'</b>'):reviewBadgeHtml(n[0]);
       return '<button type="button" class="'+(state.route===n[0]?'active':'')+'" data-route="'+n[2]+'">'+n[1]+badge+'</button>';
     }).join('')+'</nav></aside><section class="cs-main"><header class="cs-top"><div><h1>'+title()+'</h1><p>客服端只处理会话与订单主流程。</p></div><div class="cs-account"><span>'+esc(staff.name||staff.email||'客服')+'</span></div></header><main class="cs-page" data-route="'+esc(state.route||'dashboard')+'">'+pageHtml()+'</main></section></div>'+noticeHtml();
   }
@@ -2130,6 +2166,7 @@ import './mcj-chat-realtime.js';
     if(state.route==='conversations')return note+conversationsHtml();
     if(state.route==='orders')return note+ordersHtml();
     if(state.route==='giftOrders')return note+giftOrdersHtml();
+    if(state.route==='recharges')return note+rechargesHtml();
     if(state.route==='compensation')return note+compensationHtml();
     if(state.route==='reports')return note+reportsHtml();
     if(state.route==='createOrder')return (state.loading?note:'')+createOrderHtml();
@@ -2145,25 +2182,27 @@ import './mcj-chat-realtime.js';
     var work=(state.data&&state.data.workData)||{};
     var att=work.todayAttendance||{};
     var reassign=s.needsReassign||0;
-    var canIn=clockCanIn(att);
     var canOut=clockCanOut(att);
+    var clockSt=clockStateOf(att);
     var liveHours=liveTotalHours(att);
     var closedCount=Number(att.closedCount||0)||0;
-    var clockInLabel=state.clockBusy?'处理中…':(canIn?(closedCount>0?'再次上班（加班）':'上班打卡'):'上班中');
-    var clockOutLabel=state.clockBusy?'处理中…':(canOut?'下班打卡':'已下班');
+    var clockInLabel=state.clockBusy&&clockSt!=='on'?'处理中…':(clockSt==='done'?'加班上班':'上班打卡');
+    var clockOutLabel=state.clockBusy&&clockSt==='on'?'处理中…':'下班打卡';
     recomputeSummaryFromConversations();
     s=(state.data&&state.data.summary)||s;
     return '<div class="cs-page-head"><div><h2>工作台</h2><p>主流程：接待会话、确认付款、推进订单。</p></div><div class="cs-actions"><button class="cs-btn primary" type="button" data-route="/customer-service/conversations">进入会话池</button><button class="cs-btn" type="button" data-route="/customer-service/orders">订单处理</button></div></div>'+
       '<section class="cs-card" style="margin-bottom:14px" data-clock-panel><h3>今日打卡</h3><div class="cs-info-list">'+
-      '<div><span>当前状态</span><strong data-clock-status>'+esc(att.attendanceStatus||'未打卡')+'</strong></div>'+
+      '<div><span>当前状态</span><strong data-clock-status>'+esc(clockStatusText(att))+'</strong></div>'+
+      '<div><span>考勤</span><strong data-clock-label>'+esc(att.attendanceLabel||'-')+'</strong></div>'+
       '<div><span>本班上班</span><strong data-clock-in-at>'+esc(fmtAttDateTime(att.clockInText,att.clockInAt)||'-')+'</strong></div>'+
       '<div><span>本班下班</span><strong data-clock-out-at>'+esc(canOut?'上班中':(fmtAttDateTime(att.clockOutText,att.clockOutAt)||'-'))+'</strong></div>'+
       '<div><span>今日工时累计</span><strong data-live-hours>'+esc(liveHours!=null&&liveHours!==''?(liveHours+' 小时'):'-')+'</strong></div>'+
       '<div><span>今日加班工时</span><strong data-overtime-hours>'+esc((att.overtimeHours!=null?att.overtimeHours:0)+' 小时')+'</strong></div>'+
       '<div><span>今日班次</span><strong>'+esc((att.sessionCount!=null?att.sessionCount:closedCount+(canOut?1:0))+' 次')+'</strong></div>'+
-      '</div><div class="cs-actions" style="margin-top:12px">'+
-      '<button class="cs-btn primary" type="button" data-clock-in '+(!canIn||state.clockBusy?'disabled':'')+'>'+esc(clockInLabel)+'</button>'+
-      '<button class="cs-btn" type="button" data-clock-out '+(!canOut||state.clockBusy?'disabled':'')+'>'+esc(clockOutLabel)+'</button>'+
+      '</div><div class="cs-clock-done" data-clock-done'+(clockSt==='done'?'':' hidden')+'>'+esc(clockSt==='done'?clockDoneText(att):'')+'</div>'+
+      '<div class="cs-actions cs-clock-actions" style="margin-top:12px">'+
+      '<button class="cs-btn cs-clock-btn'+(clockSt==='none'?' primary':'')+'" type="button" data-clock-in'+(clockSt==='on'?' hidden':'')+(state.clockBusy?' disabled':'')+'>'+esc(clockInLabel)+'</button>'+
+      '<button class="cs-btn primary cs-clock-btn" type="button" data-clock-out'+(clockSt==='on'?'':' hidden')+(state.clockBusy?' disabled':'')+'>'+esc(clockOutLabel)+'</button>'+
       '</div></section>'+
       attendanceHistoryHtml()+
       (reassign?'<div class="cs-empty" style="margin-bottom:12px"><strong>待重新安排订单</strong><span>共 '+esc(reassign)+' 单陪玩无法接单或确认超时，请到订单处理中更换陪玩 / 推送抢单 / 联系老板 / 发起退款。</span></div>':'')+
@@ -2202,20 +2241,34 @@ import './mcj-chat-realtime.js';
     var list=(msgs||[]).filter(function(m){return c&&m.conversationId===c.id});
     return list.some(function(m){return m.messageType==='product_card'||/更多玩法/.test(String(m.content||''));});
   }
+  /** Platform clock = Asia/Kuala_Lumpur (UTC+8, no DST). Returns a Date whose getUTC* fields are KL wall-clock.
+   *  Zoned strings (Z / ±hh:mm) are converted; zone-less strings are already KL wall-clock and kept as-is. */
+  function klDate(v){
+    if(v==null||v==='')return null;
+    if(typeof v==='number'||v instanceof Date){var t=new Date(v);return isNaN(t.getTime())?null:new Date(t.getTime()+288e5);}
+    var s=String(v).trim();
+    var n=s.match(/^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2}))?(?:\.\d+)?)?$/);
+    if(n)return new Date(Date.UTC(+n[1],+n[2]-1,+n[3],+(n[4]||0),+(n[5]||0),+(n[6]||0)));
+    var d=new Date(s.replace(/^(\d{4}-\d{2}-\d{2}) /,'$1T').replace(/([+-]\d{2})(\d{2})$/,'$1:$2').replace(/([+-]\d{2})$/,'$1:00'));
+    return isNaN(d.getTime())?null:new Date(d.getTime()+288e5);
+  }
+  function klDayKey(d){return d?d.getUTCFullYear()+'-'+(d.getUTCMonth()+1)+'-'+d.getUTCDate():'';}
+  function klRelDay(d){
+    var now=klDate(Date.now());
+    if(klDayKey(d)===klDayKey(now))return 'today';
+    if(klDayKey(d)===klDayKey(new Date(now.getTime()-864e5)))return 'yesterday';
+    return '';
+  }
+  function klHm(d){return String(d.getUTCHours()).padStart(2,'0')+':'+String(d.getUTCMinutes()).padStart(2,'0');}
   function fmtChatTime(v){
     if(!v)return '';
-    var d=new Date(v);
-    if(isNaN(d.getTime()))return String(v);
-    var now=new Date();
-    var hh=String(d.getHours()).padStart(2,'0');
-    var mm=String(d.getMinutes()).padStart(2,'0');
-    var time=hh+':'+mm;
-    var sameDay=d.getFullYear()===now.getFullYear()&&d.getMonth()===now.getMonth()&&d.getDate()===now.getDate();
-    if(sameDay)return '今天 '+time;
-    var yest=new Date(now);yest.setDate(now.getDate()-1);
-    var isYest=d.getFullYear()===yest.getFullYear()&&d.getMonth()===yest.getMonth()&&d.getDate()===yest.getDate();
-    if(isYest)return '昨天 '+time;
-    return (d.getMonth()+1)+'/'+d.getDate()+' '+time;
+    var d=klDate(v);
+    if(!d)return String(v);
+    var time=klHm(d);
+    var rel=klRelDay(d);
+    if(rel==='today')return '今天 '+time;
+    if(rel==='yesterday')return '昨天 '+time;
+    return (d.getUTCMonth()+1)+'/'+d.getUTCDate()+' '+time;
   }
   function companionAcceptLabel(order){
     if(!order)return '-';
@@ -2683,25 +2736,20 @@ import './mcj-chat-realtime.js';
   }
   function listTimeLabel(v){
     if(!v)return '';
-    var d=new Date(v);
-    if(isNaN(d.getTime()))return '';
-    var now=new Date();
-    var hh=String(d.getHours()).padStart(2,'0');
-    var mm=String(d.getMinutes()).padStart(2,'0');
-    var time=hh+':'+mm;
-    var sameDay=d.getFullYear()===now.getFullYear()&&d.getMonth()===now.getMonth()&&d.getDate()===now.getDate();
-    if(sameDay)return time;
-    var yest=new Date(now);yest.setDate(now.getDate()-1);
-    if(d.getFullYear()===yest.getFullYear()&&d.getMonth()===yest.getMonth()&&d.getDate()===yest.getDate())return '昨天';
-    return (d.getMonth()+1)+'/'+d.getDate();
+    var d=klDate(v);
+    if(!d)return '';
+    var rel=klRelDay(d);
+    if(rel==='today')return klHm(d);
+    if(rel==='yesterday')return '昨天';
+    return (d.getUTCMonth()+1)+'/'+d.getUTCDate();
   }
   /** Orders table / detail: readable local datetime, never raw DB ISO with ms/offset. */
   function fmtOrderDateTime(v){
     if(v==null||v==='')return '-';
-    var d=new Date(v);
+    var d=klDate(v);
     function pad(n){return String(n).padStart(2,'0');}
-    if(!isNaN(d.getTime())){
-      return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())+' '+pad(d.getHours())+':'+pad(d.getMinutes())+':'+pad(d.getSeconds());
+    if(d){
+      return d.getUTCFullYear()+'-'+pad(d.getUTCMonth()+1)+'-'+pad(d.getUTCDate())+' '+pad(d.getUTCHours())+':'+pad(d.getUTCMinutes())+':'+pad(d.getUTCSeconds());
     }
     var s=String(v).trim().replace('T',' ');
     s=s.replace(/\.\d+/,'').replace(/Z$/i,'').replace(/[+-]\d{2}:?\d{2}$/,'');
@@ -2926,6 +2974,7 @@ import './mcj-chat-realtime.js';
     }).catch(function(err){
       giftOrdersState.loading=false;giftOrdersState.error=err.message||'加载失败';paint();
     });
+    api('mark_staff_notifications_read',{kinds:['gift_proof']}).catch(function(){});
   }
   function giftOrdersHtml(){
     if(!giftOrdersState._booted){giftOrdersState._booted=true;setTimeout(loadGiftOrders,0)}
@@ -2954,16 +3003,128 @@ import './mcj-chat-realtime.js';
           '<td>×'+esc(o.quantity||1)+'</td>'+
           '<td>'+esc(o.totalAmount)+' 猫粮</td>'+
           '<td>'+proofCell+'</td>'+
-          '<td>'+esc(String(o.paymentProofUploadedAt||o.createdAt||'-').replace('T',' ').slice(0,19))+'</td>'+
+          '<td>'+esc(fmtOrderDateTime(o.paymentProofUploadedAt||o.createdAt))+'</td>'+
           '<td>'+esc(giftOrderStatusLabel(o.status))+(o.rejectReason?'<br><small>'+esc(o.rejectReason)+'</small>':'')+'</td>'+
           '<td><div class="cs-actions">'+actions+'</div></td></tr>';
       }).join('')+'</tbody></table></section>';
     return '<div class="cs-page-head"><div><h2>礼物审核</h2><p>审核付款截图；通过后礼物到账并进入礼物墙。</p></div></div>'+
       '<div class="cs-actions" style="margin-bottom:12px">'+tabs+'<button class="cs-btn" data-gift-reload>刷新</button></div>'+body;
   }
+  var reviewBadges={giftOrders:0,recharges:0,loaded:false,busy:false,timer:null};
+  function reviewBadgeHtml(key){
+    if(key!=='giftOrders'&&key!=='recharges')return '';
+    var n=Number(reviewBadges[key]||0)||0;
+    return '<b class="cs-nav-unread" data-nav-review="'+key+'"'+(n?'':' hidden')+'>'+(n>99?'99+':String(n||''))+'</b>';
+  }
+  function paintReviewBadges(){
+    Array.prototype.forEach.call(root.querySelectorAll('[data-nav-review]'),function(el){
+      var n=Number(reviewBadges[el.getAttribute('data-nav-review')]||0)||0;
+      el.textContent=n>99?'99+':String(n||'');
+      if(n)el.removeAttribute('hidden');else el.setAttribute('hidden','');
+    });
+  }
+  function showReviewNotice(text,path){
+    var el=document.getElementById('csReviewNotice');
+    if(!el){
+      el=document.createElement('button');
+      el.type='button';
+      el.id='csReviewNotice';
+      el.className='cs-review-notice';
+      el.addEventListener('click',function(){
+        var p=el.getAttribute('data-path');
+        if(el.parentNode)el.parentNode.removeChild(el);
+        if(p)go(p);
+      });
+      document.body.appendChild(el);
+    }
+    el.setAttribute('data-path',path);
+    el.textContent=text+' · 点击查看';
+    clearTimeout(el._t);
+    el._t=setTimeout(function(){if(el.parentNode)el.parentNode.removeChild(el);},10000);
+  }
+  function refreshReviewBadges(){
+    if(reviewBadges.busy||!state.session||!state.session.token||isLoginView())return Promise.resolve();
+    reviewBadges.busy=true;
+    return api('review_badges',{}).then(function(res){
+      var c=(res&&res.counts)||{};
+      var nextRecharge=Number(c.recharges||0)||0, nextGift=Number(c.giftOrders||0)||0;
+      if(reviewBadges.loaded){
+        if(nextRecharge>reviewBadges.recharges&&state.route!=='recharges'){
+          var pno=String((res&&res.latestRechargePaymentNo)||'');
+          showReviewNotice('新的充值凭证待审核（'+nextRecharge+'）',pno?('/customer-service/recharges?paymentNo='+encodeURIComponent(pno)):'/customer-service/recharges');
+        }
+        else if(nextGift>reviewBadges.giftOrders&&state.route!=='giftOrders')showReviewNotice('新的礼物付款待审核（'+nextGift+'）','/customer-service/gift-orders');
+      }
+      reviewBadges.recharges=nextRecharge;reviewBadges.giftOrders=nextGift;reviewBadges.loaded=true;
+      paintReviewBadges();
+    }).catch(function(){}).then(function(){reviewBadges.busy=false;});
+  }
+  function startReviewBadgePoll(){
+    if(reviewBadges.timer)return;
+    refreshReviewBadges();
+    reviewBadges.timer=setInterval(function(){if(!document.hidden)refreshReviewBadges();},8000);
+    document.addEventListener('visibilitychange',function(){if(!document.hidden)refreshReviewBadges();});
+  }
+  var rechargesState={loading:false,items:[],filter:'pending_review',error:'',busyId:''};
+  function rechargeStatusLabel(st){
+    return ({pending_payment:'待付款',pending_review:'待审核',paid:'已到账',credited:'已到账',rejected:'已拒绝',cancelled:'已取消',expired:'已过期'})[st]||st||'-';
+  }
+  function rechargeMethodLabel(m){
+    return ({tng:"Touch 'n Go",touchngo:"Touch 'n Go",duitnow:'DuitNow',bank:'银行转账',bank_transfer:'银行转账',fpx:'FPX',manual:'线下转账'})[String(m||'').toLowerCase()]||m||'-';
+  }
+  function loadRecharges(){
+    rechargesState.loading=true;rechargesState.error='';paint();
+    api('list_recharges',{status:rechargesState.filter||'pending_review'}).then(function(res){
+      rechargesState.items=Array.isArray(res.items)?res.items:[];
+      rechargesState.loading=false;paint();
+    }).catch(function(err){
+      rechargesState.loading=false;rechargesState.error=err.message||'加载失败';paint();
+    });
+    api('mark_staff_notifications_read',{kinds:['recharge_proof']}).catch(function(){});
+  }
+  function rechargesHtml(){
+    if(!rechargesState._booted){rechargesState._booted=true;setTimeout(loadRecharges,0)}
+    var filters=[['pending_review','待审核'],['paid','已到账'],['rejected','已拒绝']];
+    var tabs=filters.map(function(f){
+      return '<button type="button" class="cs-btn'+(rechargesState.filter===f[0]?' active':'')+'" data-recharge-filter="'+f[0]+'">'+f[1]+(f[0]==='pending_review'&&reviewBadges.recharges?' ('+reviewBadges.recharges+')':'')+'</button>';
+    }).join('');
+    var focus='';
+    try{focus=new URLSearchParams(location.search).get('paymentNo')||'';}catch(e){}
+    var body='';
+    if(rechargesState.loading&&!rechargesState.items.length) body='<div class="cs-card">加载充值记录…</div>';
+    else if(rechargesState.error) body='<div class="cs-card">'+esc(rechargesState.error)+' <button class="cs-btn" data-recharge-reload>重试</button></div>';
+    else if(!rechargesState.items.length) body='<div class="cs-card">'+(rechargesState.filter==='pending_review'?'暂无待审核的充值':'暂无记录')+'</div>';
+    else body='<section class="cs-table-wrap"><table class="cs-table cs-recharge-table"><thead><tr><th>充值单号</th><th>老板</th><th>金额</th><th>到账猫粮</th><th>付款方式</th><th>凭证</th><th>提交时间</th><th>状态</th><th>审核</th><th>操作</th></tr></thead><tbody>'+
+      rechargesState.items.map(function(r){
+        var proofCell=r.proofUrl
+          ?('<button type="button" class="cs-proof-thumb-btn" data-proof-lightbox="'+esc(r.proofUrl)+'" title="查看付款截图"><img class="cs-proof-thumb" src="'+esc(r.proofUrl)+'" alt="付款凭证" loading="lazy"></button>')
+          :'<span class="cs-proof-fallback">'+(r.hasProof?'截图不可用':'未上传')+'</span>';
+        var busy=rechargesState.busyId===r.paymentNo;
+        var actions=r.status==='pending_review'
+          ?('<button class="cs-btn primary" data-recharge-approve="'+esc(r.paymentNo)+'"'+(busy||!r.hasProof?' disabled':'')+'>'+(busy?'处理中…':'通过')+'</button> <button class="cs-btn danger" data-recharge-reject="'+esc(r.paymentNo)+'"'+(busy?' disabled':'')+'>拒绝</button>')
+          :'-';
+        var reviewer=r.reviewedByStaffName?esc(r.reviewedByStaffName)+'<br><small>'+esc(fmtOrderDateTime(r.reviewedAt||r.creditedAt))+'</small>':'-';
+        var bonus=Number(r.bonusCatFood||0)>0?'<br><small>含赠送 '+esc(r.bonusCatFood)+'</small>':'';
+        return '<tr data-recharge-row="'+esc(r.paymentNo)+'"'+(focus&&focus===r.paymentNo?' class="cs-row-focus"':'')+'>'+
+          '<td>'+esc(r.paymentNo)+'</td>'+
+          '<td>'+esc(r.bossName||'-')+(r.bossEmail?'<br><small>'+esc(r.bossEmail)+'</small>':'')+'</td>'+
+          '<td>RM '+esc(Number(r.amountRm||0).toFixed(2))+'</td>'+
+          '<td>'+esc(r.totalCatFood)+bonus+'</td>'+
+          '<td>'+esc(r.paymentMethodName||rechargeMethodLabel(r.paymentMethod))+'</td>'+
+          '<td>'+proofCell+'</td>'+
+          '<td>'+esc(fmtOrderDateTime(r.submittedAt||r.createdAt))+'</td>'+
+          '<td>'+esc(rechargeStatusLabel(r.status))+(r.rejectReason?'<br><small>'+esc(r.rejectReason)+'</small>':'')+'</td>'+
+          '<td>'+reviewer+'</td>'+
+          '<td><div class="cs-actions">'+actions+'</div></td></tr>';
+      }).join('')+'</tbody></table></section>';
+    return '<div class="cs-page-head"><div><h2>充值审核</h2><p>核对付款截图与金额；通过后猫粮自动入账（同一笔只会入账一次），拒绝不会入账并通知老板。</p></div></div>'+
+      '<div class="cs-actions" style="margin-bottom:12px">'+tabs+'<button class="cs-btn" data-recharge-reload>刷新</button></div>'+body;
+  }
   function ordersHtml(){
     var rows=((state.data&&state.data.orders)||[]).slice().filter(function(o){
-      if(state.orderFilter&&o.status!==state.orderFilter)return false;
+      if(state.orderFilter==='payment_review'){if(!o.paymentReview)return false;}
+      else if(state.orderFilter==='awaiting_payment'){if(o.status!=='awaiting_payment'||o.paymentReview)return false;}
+      else if(state.orderFilter&&o.status!==state.orderFilter)return false;
       // Multi child rows stay in DB but must not appear as independent CS work items.
       if(o.isMultiGroupChild||o.parentOrderId||o.parent_order_id)return false;
       return true;
@@ -3035,13 +3196,24 @@ import './mcj-chat-realtime.js';
       if(o.paymentRejectReason)rows.push(['拒绝原因',o.paymentRejectReason]);
     }
     if(mode==='review')rows.push(['评价',o.reviewText||o.rating||'暂无评价']);
-    var hasProof=(o.paymentProofUrl&&!/^proof:/i.test(String(o.paymentProofUrl||'')))||o.paymentReceiptId||o.paymentReview;
+    var hasProof=!(o.paymentWalletHold&&!o.paymentProofUrl)&&((o.paymentProofUrl&&!/^proof:/i.test(String(o.paymentProofUrl||'')))||o.paymentReceiptId||o.paymentReview);
     var proof=(mode==='pay'||mode==='refund')&&hasProof
       ?('<div style="margin-top:12px"><button type="button" class="cs-btn ghost" data-proof-lightbox="'+(esc(o.paymentProofUrl||''))+'" data-proof-order-id="'+esc(o.id)+'" data-proof-receipt-id="'+esc(o.paymentReceiptId||'')+'">查看凭证图片</button></div>')
       :'';
     modal('<div class="cs-dialog-head"><h3>'+esc(title)+'</h3><button class="cs-btn ghost" type="button" data-close-modal>关闭</button></div><div class="cs-info-list">'+
       rows.map(function(r){return '<div><span>'+esc(r[0])+'</span><strong>'+esc(String(r[1]==null?'-':r[1]))+'</strong></div>';}).join('')+
-      '</div>'+proof);
+      '</div>'+(mode==='detail'?earlyFinishDetailHtml(o)+orderServiceStandardHtml(o):'')+proof);
+  }
+  function orderServiceStandardHtml(o){
+    var s=o&&o.serviceSnapshot;
+    if(!s)return '';
+    var rows=s.sections&&s.sections.length
+      ?s.sections.map(function(sec){return '<div><span>'+esc(sec.label)+'</span><strong style="white-space:pre-wrap;font-weight:500;text-align:left">'+esc(sec.value)+'</strong></div>';}).join('')
+      :'<div><span>服务标准</span><strong>下单时陪玩未填写详细标准（按'+esc(s.pricingUnit||'小时')+'计费）</strong></div>';
+    if(s.bossRank&&s.bossRank.rank)rows='<div data-order-boss-rank><span>老板段位</span><strong>'+esc((s.bossRank.game?s.bossRank.game+' · ':'')+s.bossRank.rank)+'</strong></div>'+rows;
+    return '<h4 style="margin:14px 0 6px">服务标准（下单时快照）· '+esc(s.serviceName||o.game||'-')+'</h4>'+
+      '<div class="cs-info-list" data-order-service-standard>'+rows+'</div>'+
+      '<p class="cs-note" style="margin:6px 0 0">老板下单时看到的标准，陪玩之后修改不会影响本单；售后判定以此为准。</p>';
   }
   function orderRow(o){
     var actions=[];
@@ -3050,7 +3222,7 @@ import './mcj-chat-realtime.js';
     var inGrabHall=isPublicHall&&(st==='pending'||st==='waiting_boss_confirm')&&!o.companionId;
     var proofUrl=(!/^proof:/i.test(String(o.paymentProofUrl||''))?String(o.paymentProofUrl||''):'');
     var canShowProof=!!(o.paymentReview&&(o.paymentReceiptId||proofUrl));
-    var proofBlock=canShowProof?('<div class="cs-proof-preview"><button type="button" class="cs-proof-thumb-btn" data-proof-lightbox="'+esc(proofUrl)+'" data-proof-order-id="'+esc(o.id)+'" data-proof-receipt-id="'+esc(o.paymentReceiptId||'')+'" title="查看付款截图大图">'+(proofUrl?('<img class="cs-proof-thumb" src="'+esc(proofUrl)+'" alt="付款凭证" loading="lazy">'):('<span class="cs-btn ghost cs-proof-fallback">查看付款截图</span>'))+'</button></div>'):'';
+    var proofBlock=canShowProof&&o.paymentWalletHold&&!proofUrl?'<div class="cs-proof-preview" data-wallet-hold><span class="cs-note">猫粮支付 · 已冻结 '+esc(String(o.totalAmount||o.amount||''))+' 猫粮（无需截图）</span></div>':canShowProof?('<div class="cs-proof-preview"><button type="button" class="cs-proof-thumb-btn" data-proof-lightbox="'+esc(proofUrl)+'" data-proof-order-id="'+esc(o.id)+'" data-proof-receipt-id="'+esc(o.paymentReceiptId||'')+'" title="查看付款截图大图">'+(proofUrl?('<img class="cs-proof-thumb" src="'+esc(proofUrl)+'" alt="付款凭证" loading="lazy">'):('<span class="cs-btn ghost cs-proof-fallback">查看付款截图</span>'))+'</button></div>'):'';
 
     if(st==='awaiting_payment'){
       if(o.paymentReview){
@@ -3064,6 +3236,7 @@ import './mcj-chat-realtime.js';
         actions.push('<button class="cs-btn danger" data-reject-payment-proof="'+esc(o.id)+'">驳回付款</button>');
       }else{
         actions.push('<span class="cs-note">等待老板扫码付款并上传截图</span>');
+        actions.push('<button class="cs-btn ghost" data-cancel-order="'+esc(o.id)+'">取消订单</button>');
       }
     }else if(inGrabHall){
       actions.push('<button class="cs-btn ghost" data-view-grabs="'+esc(o.id)+'">查看抢单人数('+(o.grabCount||0)+')</button>');
@@ -3144,7 +3317,7 @@ import './mcj-chat-realtime.js';
     }
     return '<div class="cs-page-head"><div><h2>客服代下单</h2><p>客服根据老板需求代为创建订单。可通过老板 UID 识别账号。</p></div></div><form class="cs-card cs-form" data-order-form><label>选择老板<select name="boss_id"><option value="">请选择老板</option>'+bosses.map(function(b){return '<option value="'+esc(b.id)+'" '+(draft&&draft.bossId===b.id?'selected':'')+'>'+esc(b.bossUid||b.uid||'')+' / '+esc(b.name)+'</option>'}).join('')+'</select></label>'+bossesTip+'<label>或输入老板 UID<input name="boss_uid" placeholder="例如 MCJ00001" value=""></label><label>发布方式<select name="companion_id"><option value="">A · 发布到抢单大厅（公开抢单）</option>'+companions.map(function(p){return '<option value="'+esc(p.id)+'">B · 指定陪玩：'+esc(p.name)+' / '+esc((p.companionCode||p.publicId||(p.companionUid?('PW'+String(p.companionUid).padStart(5,'0')):''))||p.id)+' / '+esc(p.game||'-')+' / '+money(p.price)+'</option>'}).join('')+'</select></label>'+companionsTip+serviceField+'<label>订单类型<input name="order_type" value="'+(draft?'gameplay_mall':'customer_service')+'"></label><label>需求说明<textarea name="description" required>'+(draft?('更多玩法商品：'+(draft.name||'')+'（ID：'+(draft.productId||'')+'）\n计价：'+(draft.unit||'')+'\n数量：\n时长：\n游戏区服：\n开始时间：\n备注：'):'')+'</textarea></label><label>时长<input name="hours" type="number" min="1" value="1" required></label><label>单价 RM<input name="unit_price" type="number" min="0" value="'+esc(draft&&draft.price||'')+'" required></label><label>总金额 RM<input name="total_amount" type="number" min="1" value="'+esc(draft&&draft.price||'')+'" required></label><button class="cs-btn primary" type="submit">创建订单</button></form>';
   }
-  function reportsHtml(){var work=(state.data&&state.data.workData)||{},salary=work.salary||{},cur=salary.current||{},history=salary.history||[],attRows=(work.attendance&&work.attendance.rows)||[],notices=(state.data&&state.data.notifications)||[],payrolls=(state.data&&state.data.payrolls)||[],settlements=(state.data&&state.data.commissionSettlements)||work.commissionSettlements||[],sum=(state.data&&state.data.summary)||{},cfg=work.config||{},withdrawable=sum.withdrawableSalary!=null?sum.withdrawableSalary:(cur.totalSalary||0);var noticeBlock=notices.length?'<section class="cs-card" style="margin-bottom:14px"><h3 style="margin:0 0 8px">工资通知</h3>'+notices.slice(0,8).map(function(n){return '<div style="padding:8px 0;border-bottom:1px solid #eee"><strong>'+esc(n.title||'通知')+'</strong><div style="color:#9ca3af;font-size:12px;margin-top:4px">'+esc(n.body||'')+'</div><div style="color:#6b7280;font-size:11px;margin-top:4px">'+esc(n.at||'')+'</div></div>'}).join('')+'</section>':'';var withdrawBlock='<section class="cs-card" style="margin-bottom:14px"><h3 style="margin:0 0 8px">每周五统一结算</h3><p style="margin:0 0 10px;color:#6b7280;font-size:13px">'+esc(((state.data&&state.data.weeklySettlement)||{}).csBannerBody||'周四 23:59 前 → 本周五；截止后 → 下周五。金额系统自动计算，不可手填。')+'</p><div class="cs-info-list"><div><span>本周可结算工资</span><strong>'+money(((state.data&&state.data.payrollSummary)||{}).settleableAmount!=null?state.data.payrollSummary.settleableAmount:withdrawable)+'</strong></div><div><span>已申请金额</span><strong>'+money(((state.data&&state.data.payrollSummary)||{}).appliedAmount||0)+'</strong></div><div><span>待周五发放金额</span><strong>'+money(((state.data&&state.data.payrollSummary)||{}).pendingFridayAmount||0)+'</strong></div><div><span>预计发放日期</span><strong>'+esc((((state.data&&state.data.weeklySettlement)||{}).nextSettlementDate||((state.data&&state.data.payrollSummary)||{}).nextSettlementDate||'-'))+( ((state.data&&state.data.weeklySettlement)||{}).nextSettlementDate?'（星期五）':'')+'</strong></div><div><span>可申请金额</span><strong>'+money(withdrawable)+'</strong></div></div><div class="cs-actions" style="margin-top:12px"><button class="cs-btn primary" type="button" data-request-salary-withdraw '+(Number(withdrawable)<=0?'disabled':'')+'>申请本周结算（'+money(withdrawable)+'）</button></div></section>';var rewardBlock='<section class="cs-table-wrap" style="margin-top:14px"><h3 style="margin:0 0 10px">奖励记录</h3><table class="cs-table"><thead><tr><th>订单号</th><th>奖励类型</th><th>固定奖励</th><th>提成</th><th>夜班补贴</th><th>全勤奖励</th><th>退款扣回</th><th>最终金额</th><th>状态</th></tr></thead><tbody>'+(settlements.length?settlements.map(function(r){return '<tr><td>'+esc(r.orderNo||'-')+'</td><td>'+esc(r.rewardType||'order_commission')+'</td><td>'+money(r.fixedRewardRm||0)+'</td><td>'+money(r.percentCommissionRm||0)+'</td><td>'+money(r.nightShiftRm||0)+'</td><td>'+money(r.attendanceBonusRm||0)+'</td><td>'+money(r.clawbackRm||0)+'</td><td>'+money(r.finalAmountRm||0)+'</td><td>'+esc(r.status||'-')+'</td></tr>'}).join(''):'<tr><td colspan="9">暂无奖励记录（完成订单后按后台佣金设置自动入账）</td></tr>')+'</tbody></table></section>';var payrollBlock='<section class="cs-table-wrap" style="margin-top:14px"><h3 style="margin:0 0 10px">历史结算记录</h3><table class="cs-table"><thead><tr><th>单号</th><th>周期</th><th>底薪</th><th>奖金</th><th>扣款</th><th>应发</th><th>预计发放</th><th>状态</th><th></th></tr></thead><tbody>'+(payrolls.length?payrolls.map(function(p){return '<tr><td>'+esc(p.payrollNo||'-')+'</td><td>'+esc((p.periodStart||'')+' ~ '+(p.periodEnd||''))+'</td><td>'+money(p.baseSalaryRm||0)+'</td><td>'+money(p.bonusRm||0)+'</td><td>'+money(p.deductionRm||0)+'</td><td>'+money(p.netSalaryRm||0)+'</td><td>'+esc(p.settlementDate||'-')+'</td><td>'+esc(p.statusText||p.status||'-')+'</td><td>'+(p.status!=='completed'?'<button class="cs-btn ghost" type="button" data-payroll-appeal="'+esc(p.id)+'">申诉</button>':'-')+'</td></tr>'}).join(''):'<tr><td colspan="9">暂无发放记录</td></tr>')+'</tbody></table></section>';return '<div class="cs-page-head"><div><h2>工资中心</h2><p>底薪/全勤/夜班/每单奖励/提成等全部实时读取后台佣金设置；订单提成按结算快照入账，改配置不影响历史单。</p></div></div>'+noticeBlock+withdrawBlock+'<section class="cs-grid cs-metrics">'+metric('基础工资',money(cur.baseSalary||0))+metric('全勤奖励',money(cur.attendanceBonus||0))+metric('接待奖励',money(cur.receptionBonus||0))+metric('订单提成',money(cur.orderCommission||0))+metric('夜班补贴',money(cur.nightShiftAllowance||0))+metric('迟到扣款',money(cur.lateDeduction||0))+metric('缺勤扣款',money(cur.absenceDeduction||0))+metric('其他调整',money(cur.otherAdjustment||0))+metric('本月预计工资',money(cur.totalSalary||0))+metric('工资状态',cur.status||'统计中')+'</section><section class="cs-table-wrap" style="margin-top:14px"><h3 style="margin:0 0 10px">本月打卡（工资计算依据）</h3><table class="cs-table"><thead><tr><th>日期</th><th>上班</th><th>下班</th><th>工时</th><th>迟到</th><th>缺勤</th><th>状态</th></tr></thead><tbody>'+(attRows.length?attRows.map(function(r){return '<tr><td>'+esc(r.reportDate||r.date||'-')+'</td><td>'+esc(r.clockInText||'-')+'</td><td>'+esc(r.clockOutText||'-')+'</td><td>'+esc(r.workHours!=null?r.workHours:'-')+'</td><td>'+esc(r.isLate?'是':'否')+'</td><td>'+esc(r.isAbsent?'是':'否')+'</td><td>'+esc(r.attendanceStatus||'-')+'</td></tr>'}).join(''):'<tr><td colspan="7">暂无打卡记录</td></tr>')+'</tbody></table></section>'+rewardBlock+payrollBlock+'<section class="cs-table-wrap" style="margin-top:14px"><table class="cs-table"><thead><tr><th>月份</th><th>基础工资</th><th>全勤奖励</th><th>接待奖励</th><th>订单提成</th><th>扣款合计</th><th>预计工资</th><th>状态</th></tr></thead><tbody>'+(history.length?history.map(function(r){var deductions=(Number(r.lateDeduction||0)+Number(r.absenceDeduction||0)+Number(r.earlyLeaveDeduction||0));return '<tr><td>'+esc(r.salaryMonth||'-')+'</td><td>'+money(r.baseSalary||0)+'</td><td>'+money(r.attendanceBonus||0)+'</td><td>'+money(r.receptionBonus||0)+'</td><td>'+money(r.orderCommission||0)+'</td><td>'+money(deductions)+'</td><td>'+money(r.totalSalary||0)+'</td><td>'+esc(r.status||'统计中')+'</td></tr>'}).join(''):'<tr><td colspan="8">暂无工资记录</td></tr>')+'</tbody></table></section>'}
+  function reportsHtml(){var work=(state.data&&state.data.workData)||{},salary=work.salary||{},cur=salary.current||{},history=salary.history||[],attRows=(work.attendance&&work.attendance.rows)||[],notices=((state.data&&state.data.notifications)||[]).filter(function(n){return n.kind!=='recharge_proof'&&n.kind!=='gift_proof'}),payrolls=(state.data&&state.data.payrolls)||[],settlements=(state.data&&state.data.commissionSettlements)||work.commissionSettlements||[],sum=(state.data&&state.data.summary)||{},cfg=work.config||{},withdrawable=sum.withdrawableSalary!=null?sum.withdrawableSalary:(cur.totalSalary||0);var noticeBlock=notices.length?'<section class="cs-card" style="margin-bottom:14px"><h3 style="margin:0 0 8px">工资通知</h3>'+notices.slice(0,8).map(function(n){return '<div style="padding:8px 0;border-bottom:1px solid #eee"><strong>'+esc(n.title||'通知')+'</strong><div style="color:#9ca3af;font-size:12px;margin-top:4px">'+esc(n.body||'')+'</div><div style="color:#6b7280;font-size:11px;margin-top:4px">'+esc(n.at||'')+'</div></div>'}).join('')+'</section>':'';var withdrawBlock='<section class="cs-card" style="margin-bottom:14px"><h3 style="margin:0 0 8px">每周五统一结算</h3><p style="margin:0 0 10px;color:#6b7280;font-size:13px">'+esc(((state.data&&state.data.weeklySettlement)||{}).csBannerBody||'周四 23:59 前 → 本周五；截止后 → 下周五。金额系统自动计算，不可手填。')+'</p><div class="cs-info-list"><div><span>本周可结算工资</span><strong>'+money(((state.data&&state.data.payrollSummary)||{}).settleableAmount!=null?state.data.payrollSummary.settleableAmount:withdrawable)+'</strong></div><div><span>已申请金额</span><strong>'+money(((state.data&&state.data.payrollSummary)||{}).appliedAmount||0)+'</strong></div><div><span>待周五发放金额</span><strong>'+money(((state.data&&state.data.payrollSummary)||{}).pendingFridayAmount||0)+'</strong></div><div><span>预计发放日期</span><strong>'+esc((((state.data&&state.data.weeklySettlement)||{}).nextSettlementDate||((state.data&&state.data.payrollSummary)||{}).nextSettlementDate||'-'))+( ((state.data&&state.data.weeklySettlement)||{}).nextSettlementDate?'（星期五）':'')+'</strong></div><div><span>可申请金额</span><strong>'+money(withdrawable)+'</strong></div></div><div class="cs-actions" style="margin-top:12px"><button class="cs-btn primary" type="button" data-request-salary-withdraw '+(Number(withdrawable)<=0?'disabled':'')+'>申请本周结算（'+money(withdrawable)+'）</button></div></section>';var rewardBlock='<section class="cs-table-wrap" style="margin-top:14px"><h3 style="margin:0 0 10px">奖励记录</h3><table class="cs-table"><thead><tr><th>订单号</th><th>奖励类型</th><th>固定奖励</th><th>提成</th><th>夜班补贴</th><th>全勤奖励</th><th>退款扣回</th><th>最终金额</th><th>状态</th></tr></thead><tbody>'+(settlements.length?settlements.map(function(r){return '<tr><td>'+esc(r.orderNo||'-')+'</td><td>'+esc(r.rewardType||'order_commission')+'</td><td>'+money(r.fixedRewardRm||0)+'</td><td>'+money(r.percentCommissionRm||0)+'</td><td>'+money(r.nightShiftRm||0)+'</td><td>'+money(r.attendanceBonusRm||0)+'</td><td>'+money(r.clawbackRm||0)+'</td><td>'+money(r.finalAmountRm||0)+'</td><td>'+esc(r.status||'-')+'</td></tr>'}).join(''):'<tr><td colspan="9">暂无奖励记录（完成订单后按后台佣金设置自动入账）</td></tr>')+'</tbody></table></section>';var payrollBlock='<section class="cs-table-wrap" style="margin-top:14px"><h3 style="margin:0 0 10px">历史结算记录</h3><table class="cs-table"><thead><tr><th>单号</th><th>周期</th><th>底薪</th><th>奖金</th><th>扣款</th><th>应发</th><th>预计发放</th><th>状态</th><th></th></tr></thead><tbody>'+(payrolls.length?payrolls.map(function(p){return '<tr><td>'+esc(p.payrollNo||'-')+'</td><td>'+esc((p.periodStart||'')+' ~ '+(p.periodEnd||''))+'</td><td>'+money(p.baseSalaryRm||0)+'</td><td>'+money(p.bonusRm||0)+'</td><td>'+money(p.deductionRm||0)+'</td><td>'+money(p.netSalaryRm||0)+'</td><td>'+esc(p.settlementDate||'-')+'</td><td>'+esc(p.statusText||p.status||'-')+'</td><td>'+(p.status!=='completed'?'<button class="cs-btn ghost" type="button" data-payroll-appeal="'+esc(p.id)+'">申诉</button>':'-')+'</td></tr>'}).join(''):'<tr><td colspan="9">暂无发放记录</td></tr>')+'</tbody></table></section>';return '<div class="cs-page-head"><div><h2>工资中心</h2><p>底薪/全勤/夜班/每单奖励/提成等全部实时读取后台佣金设置；订单提成按结算快照入账，改配置不影响历史单。</p></div></div>'+noticeBlock+withdrawBlock+'<section class="cs-grid cs-metrics">'+metric('基础工资',money(cur.baseSalary||0))+metric('全勤奖励',money(cur.attendanceBonus||0))+metric('接待奖励',money(cur.receptionBonus||0))+metric('订单提成',money(cur.orderCommission||0))+metric('夜班补贴',money(cur.nightShiftAllowance||0))+metric('迟到扣款',money(cur.lateDeduction||0))+metric('缺勤扣款',money(cur.absenceDeduction||0))+metric('其他调整',money(cur.otherAdjustment||0))+metric('本月预计工资',money(cur.totalSalary||0))+metric('工资状态',cur.status||'统计中')+'</section><section class="cs-table-wrap" style="margin-top:14px"><h3 style="margin:0 0 10px">本月打卡（工资计算依据）</h3><table class="cs-table"><thead><tr><th>日期</th><th>上班</th><th>下班</th><th>工时</th><th>迟到</th><th>缺勤</th><th>状态</th></tr></thead><tbody>'+(attRows.length?attRows.map(function(r){return '<tr><td>'+esc(r.reportDate||r.date||'-')+'</td><td>'+esc(r.clockInText||'-')+'</td><td>'+esc(r.clockOutText||'-')+'</td><td>'+esc(r.workHours!=null?r.workHours:'-')+'</td><td>'+esc(r.isLate?'是':'否')+'</td><td>'+esc(r.isAbsent?'是':'否')+'</td><td>'+esc(r.attendanceStatus||'-')+'</td></tr>'}).join(''):'<tr><td colspan="7">暂无打卡记录</td></tr>')+'</tbody></table></section>'+rewardBlock+payrollBlock+'<section class="cs-table-wrap" style="margin-top:14px"><table class="cs-table"><thead><tr><th>月份</th><th>基础工资</th><th>全勤奖励</th><th>接待奖励</th><th>订单提成</th><th>扣款合计</th><th>预计工资</th><th>状态</th></tr></thead><tbody>'+(history.length?history.map(function(r){var deductions=(Number(r.lateDeduction||0)+Number(r.absenceDeduction||0)+Number(r.earlyLeaveDeduction||0));return '<tr><td>'+esc(r.salaryMonth||'-')+'</td><td>'+money(r.baseSalary||0)+'</td><td>'+money(r.attendanceBonus||0)+'</td><td>'+money(r.receptionBonus||0)+'</td><td>'+money(r.orderCommission||0)+'</td><td>'+money(deductions)+'</td><td>'+money(r.totalSalary||0)+'</td><td>'+esc(r.status||'统计中')+'</td></tr>'}).join(''):'<tr><td colspan="8">暂无工资记录</td></tr>')+'</tbody></table></section>'}
   function reportStatus(s){return ({pending:'待审核',approved:'已批准',rejected:'已拒绝',paid:'已支付',completed:'已发放'})[s]||s||'-'}
   function profileHtml(){var s=(state.data&&state.data.staff)||state.session.user||{},work=(state.data&&state.data.workData)||{},cfg=work.config||{},att=work.attendance||{},sum=(state.data&&state.data.summary)||{},csName=String(s.name||s.displayName||'').trim()||'客服',avatar='<div class="cs-avatar" style="width:64px;height:64px;display:grid;place-items:center">'+esc(csName.slice(0,1))+'</div>';var attText=dataUnavailable()?'--':((att.actualDays!=null||att.standardDays!=null)?((att.actualDays!=null?att.actualDays:'--')+' / '+(att.standardDays!=null?att.standardDays:'--')):'--');var histLen=work.salary&&work.salary.history&&work.salary.history.length;var histText=dataUnavailable()?'--':(histLen!=null?histLen+' 条':'--');var joinText=dataUnavailable()?(cfg.joinDate?esc(cfg.joinDate):'--'):esc(cfg.joinDate||'-');return '<section class="cs-card"><h2>我的资料</h2><div class="cs-user-card">'+avatar+'<div><strong>'+esc(csName)+'</strong><div style="color:#9ca3af;margin-top:4px">'+esc(cfg.shiftName||'默认班次')+'</div></div></div><div class="cs-info-list"><div><span>当前班次</span><strong>'+esc((cfg.shiftStart||'09:00')+' - '+(cfg.shiftEnd||'18:00'))+'</strong></div><div><span>入职日期</span><strong>'+joinText+'</strong></div><div><span>在线状态</span><strong>'+esc(sum.currentReceptions>0?'接待中':'在线')+'</strong></div><div><span>今日打卡状态</span><strong>'+esc((work.todayAttendance&&work.todayAttendance.attendanceStatus)||'未打卡')+'</strong></div><div><span>本月出勤</span><strong>'+esc(attText)+'</strong></div><div><span>本月预计工资</span><strong>'+moneyOrDash(sum.estimatedSalary!=null?sum.estimatedSalary:null)+'</strong></div><div><span>历史工资记录</span><strong>'+esc(histText)+'</strong></div></div>'+(dataUnavailable()?'<p style="margin:12px 0 0;color:#f59e0b;font-size:13px">数据暂不可用</p>':'')+'</section><section class="cs-card" style="margin-top:14px"><h3 style="margin:0 0 10px">消息通知</h3><div id="mcjWebPushSettingsMount" class="mcj-webpush-cs-mount"></div><p style="margin:10px 0 0;color:#9ca3af;font-size:12px;line-height:1.45">开启后可及时收到订单与会话相关推送；关闭开关仅取消本机订阅。</p></section>'}
   function ensureCsWebPushScript(){
@@ -3770,7 +3943,7 @@ import './mcj-chat-realtime.js';
     if(giftApprove){
       if(!confirm('确认通过该礼物订单？通过后礼物将正式到账。'))return;
       api('approve_gift_order',{id:giftApprove.getAttribute('data-gift-approve')}).then(function(res){
-        toast(res.message||'已通过');loadGiftOrders();
+        toast(res.message||'已通过');loadGiftOrders();refreshReviewBadges();
       }).catch(function(err){toast(err.message||'操作失败')});
       return;
     }
@@ -3779,8 +3952,39 @@ import './mcj-chat-realtime.js';
       var giftRejectReason=String(prompt('请输入拒绝原因')||'').trim();
       if(!giftRejectReason){toast('拒绝必须填写原因');return;}
       api('reject_gift_order',{id:giftReject.getAttribute('data-gift-reject'),reason:giftRejectReason}).then(function(res){
-        toast(res.message||'已拒绝');loadGiftOrders();
+        toast(res.message||'已拒绝');loadGiftOrders();refreshReviewBadges();
       }).catch(function(err){toast(err.message||'操作失败')});
+      return;
+    }
+    var rcFilter=e.target.closest('[data-recharge-filter]');
+    if(rcFilter){rechargesState.filter=rcFilter.getAttribute('data-recharge-filter')||'pending_review';rechargesState.items=[];loadRecharges();return;}
+    if(e.target.closest('[data-recharge-reload]')){loadRecharges();refreshReviewBadges();return;}
+    var rcApprove=e.target.closest('[data-recharge-approve]');
+    if(rcApprove){
+      var rcNo=rcApprove.getAttribute('data-recharge-approve');
+      if(rechargesState.busyId)return;
+      var rcRow=rechargesState.items.find(function(x){return x.paymentNo===rcNo})||{};
+      if(!confirm('确认已收到 RM '+Number(rcRow.amountRm||0).toFixed(2)+'？通过后将为老板入账 '+(rcRow.totalCatFood||0)+' 猫粮。'))return;
+      rechargesState.busyId=rcNo;paint();
+      api('approve_recharge',{paymentNo:rcNo}).then(function(res){
+        toast(res.duplicate?'该充值单已到账，未重复入账':(res.message||'已通过，猫粮已入账'));
+      }).catch(function(err){toast(err.message||'操作失败')}).then(function(){
+        rechargesState.busyId='';loadRecharges();refreshReviewBadges();
+      });
+      return;
+    }
+    var rcReject=e.target.closest('[data-recharge-reject]');
+    if(rcReject){
+      var rcRejectNo=rcReject.getAttribute('data-recharge-reject');
+      if(rechargesState.busyId)return;
+      var rcReason=String(prompt('请输入拒绝原因（老板会看到）')||'').trim();
+      if(!rcReason){toast('拒绝必须填写原因');return;}
+      rechargesState.busyId=rcRejectNo;paint();
+      api('reject_recharge',{paymentNo:rcRejectNo,reason:rcReason}).then(function(res){
+        toast(res.message||'已拒绝');
+      }).catch(function(err){toast(err.message||'操作失败')}).then(function(){
+        rechargesState.busyId='';loadRecharges();refreshReviewBadges();
+      });
       return;
     }
     var rejectProof=e.target.closest('[data-reject-payment-proof]');if(rejectProof){var reason=String(prompt('请输入驳回付款原因')||'').trim();if(!reason){toast('驳回必须填写原因');return;}api('reject_payment_proof',{id:rejectProof.dataset.rejectPaymentProof,reason:reason}).then(function(res){toast(res.message||'已驳回付款凭证');return softRefresh()}).catch(function(err){toast(err.message)});return}
@@ -3817,13 +4021,16 @@ import './mcj-chat-realtime.js';
     var cancelOrderBtn=e.target.closest('[data-cancel-order]');
     if(cancelOrderBtn){
       e.preventDefault();
-      if(!confirm('确认取消该订单？'))return;
       var cid=cancelOrderBtn.dataset.cancelOrder;
+      var cOrder=(((state.data&&state.data.orders)||[]).find(function(x){return x.id===cid}))||{};
+      var cPaid=String(cOrder.status||'')!=='awaiting_payment';
+      var cReason=String(prompt((cPaid?'取消后已付猫粮将自动全额退回老板余额（只退一次）。\n':'')+'请输入取消原因（老板会看到）')||'').trim();
+      if(!cReason){toast('取消必须填写原因');return;}
       cancelOrderBtn.disabled=true;
-      api('update_order_status',{id:cid,status:'cancelled',note:'客服取消订单'}).then(function(res){toast(res.message||'订单已取消');return softRefresh();}).catch(function(err){cancelOrderBtn.disabled=false;toast(err.message||'取消失败');});
+      api('cs_cancel_order',{id:cid,reason:cReason}).then(function(res){toast(res.message||'订单已取消');return softRefresh();}).catch(function(err){cancelOrderBtn.disabled=false;toast(err.message||'取消失败');});
       return;
     }
-    var completeOrder=e.target.closest('[data-complete-order]');if(completeOrder){if(!confirm('确认提前结束订单并标记为已完成？'))return;completeOrder.disabled=true;completeOrder.textContent='处理中…';api('update_order_status',{id:completeOrder.dataset.completeOrder,status:'completed'}).then(function(res){toast(res.message||'订单已结束');return softRefresh()}).catch(function(err){completeOrder.disabled=false;completeOrder.textContent='提前结束订单';toast(err.message||'操作失败')});return}var cancelHall=e.target.closest('[data-cancel-grab-hall]');if(cancelHall){if(!confirm('确认取消该订单的抢单发布？订单将关闭。'))return;var cid=cancelHall.dataset.cancelGrabHall;cancelHall.disabled=true;api('cancel_grab_hall',{id:cid,reason:'客服取消抢单'}).then(function(res){toast(res.message||'已取消抢单');return softRefresh()}).catch(function(err){cancelHall.disabled=false;toast(err.message||'取消失败')});return}var viewGrabs=e.target.closest('[data-view-grabs]');if(viewGrabs){openGrabList(viewGrabs.dataset.viewGrabs);return}var assign=e.target.closest('[data-assign-order]');if(assign){openAssign(assign.dataset.assignOrder);return}var st=e.target.closest('[data-status-order]');if(st){openStatus(st.dataset.statusOrder);return}var refund=e.target.closest('[data-refund-order]');if(refund){openRefund(refund.dataset.refundOrder);return}var close=e.target.closest('[data-close-modal]');if(close){close.closest('.cs-modal').remove();return}});
+    var completeOrder=e.target.closest('[data-complete-order]');if(completeOrder){openEarlyFinish(completeOrder.dataset.completeOrder);return}var cancelHall=e.target.closest('[data-cancel-grab-hall]');if(cancelHall){var hallReason=String(prompt('取消抢单将关闭订单，已付猫粮自动全额退回老板余额（只退一次）。\n请输入取消原因（老板会看到）','无人接单')||'').trim();if(!hallReason){toast('取消必须填写原因');return;}var cid=cancelHall.dataset.cancelGrabHall;cancelHall.disabled=true;api('cancel_grab_hall',{id:cid,reason:hallReason}).then(function(res){toast(res.message||'已取消抢单');return softRefresh()}).catch(function(err){cancelHall.disabled=false;toast(err.message||'取消失败')});return}var viewGrabs=e.target.closest('[data-view-grabs]');if(viewGrabs){openGrabList(viewGrabs.dataset.viewGrabs);return}var assign=e.target.closest('[data-assign-order]');if(assign){openAssign(assign.dataset.assignOrder);return}var st=e.target.closest('[data-status-order]');if(st){openStatus(st.dataset.statusOrder);return}var refund=e.target.closest('[data-refund-order]');if(refund){openRefund(refund.dataset.refundOrder);return}var close=e.target.closest('[data-close-modal]');if(close){close.closest('.cs-modal').remove();return}});
   function modal(html, dialogClass){
     var cls=String(dialogClass||'cs-form').trim()||'cs-form';
     document.body.insertAdjacentHTML('beforeend','<div class="cs-modal"><div class="cs-dialog '+cls+'">'+html+'</div></div>');
@@ -3867,7 +4074,7 @@ import './mcj-chat-realtime.js';
         '<div style="flex:1;min-width:0"><strong>'+esc(c.nickname||'陪玩')+(preferred?' · <span style="color:#60a5fa">老板意向</span>':'')+'</strong>'+
         '<p style="margin:4px 0;font-size:12px;opacity:.85">ID '+esc(c.companionUid||c.id||'-')+' · '+esc(c.level||'-')+' · 段位 '+esc(c.gameRank||c.rank||c.mainGame||c.game||'-')+'</p>'+
         '<p style="margin:0;font-size:12px;opacity:.85">单价 '+money(c.price||0)+' · 声线 '+esc(c.voiceType||c.voice_type||'-')+' · '+esc(c.onlineStatusLabel||c.onlineStatus||'-')+'</p>'+
-        '<p style="margin:4px 0 0;font-size:12px;opacity:.85">抢单时间 '+esc(g.grabbedAt||g.grabbed_at||'-')+'</p>'+
+        '<p style="margin:4px 0 0;font-size:12px;opacity:.85">抢单时间 '+esc(fmtOrderDateTime(g.grabbedAt||g.grabbed_at))+'</p>'+
         (window.MCJCompanionIdentity&&window.MCJCompanionIdentity.renderTags
           ? window.MCJCompanionIdentity.renderTags({
               levelId:c.levelId||'',
@@ -3934,7 +4141,7 @@ import './mcj-chat-realtime.js';
           '<div style="flex:1;min-width:0"><strong>'+esc(c.nickname||'陪玩')+(picked?' · 老板已选择':(notSelected?' · 未选中':''))+'</strong>'+
           '<p style="margin:4px 0;font-size:12px">ID '+esc(c.companionUid||c.id||'-')+' · '+esc(c.level||'-')+' · 音色 '+esc(c.voiceType||c.voice_type||'-')+' · 段位 '+esc(c.gameRank||c.rank||'-')+'</p>'+
           '<p style="margin:0;font-size:12px">'+esc(c.mainGame||c.game||'-')+' · 单价 '+money(c.price||0)+' · '+esc(c.onlineStatusLabel||c.onlineStatus||'-')+'</p>'+
-          '<p style="margin:4px 0 0;font-size:12px">标签：'+esc(c.tags||'-')+' · 抢单时间 '+esc(g.grabbedAt||g.grabbed_at||'-')+'</p>'+
+          '<p style="margin:4px 0 0;font-size:12px">标签：'+esc(c.tags||'-')+' · 抢单时间 '+esc(fmtOrderDateTime(g.grabbedAt||g.grabbed_at))+'</p>'+
           (c.voiceUrl?'<p style="margin:4px 0 0"><a href="'+esc(c.voiceUrl)+'" target="_blank" rel="noopener">试听录音</a></p>':'')+
           '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">'+
           '<a class="cs-btn" href="'+esc(c.detailUrl||('/profile.html?player='+encodeURIComponent(c.id||'')))+'" target="_blank" rel="noopener">资料详情</a>'+
@@ -3976,6 +4183,137 @@ import './mcj-chat-realtime.js';
       if(sel)sel.innerHTML='<option value="">加载失败</option>';
     });
   }
+  var EF_INITIATORS=[['companion','陪玩申请'],['boss','老板要求'],['customer_service','客服判定']];
+  var efState={orderId:'',preview:null,busy:false};
+  function efRound(n){return Math.round((Number(n)||0)*100)/100;}
+  /** Mirrors server computeEarlyFinish: pro-rata of paid amount; served ≥ booked settles in full. */
+  function efCalc(t,served){
+    var booked=Number(t.bookedHours)||0,total=Number(t.totalAmount)||0,h=Math.round((Number(served)||0)*100)/100;
+    if(!(booked>0))return null;
+    var settle=h>=booked?total:efRound(total*h/booked);
+    var income=efRound(settle*(Number(t.companionShareRate)||0)/100);
+    return {served:h,booked:booked,total:total,settle:settle,refund:efRound(total-settle),income:income,commission:efRound(settle-income)};
+  }
+  function efElapsedText(min){
+    if(min==null)return '未记录开始时间';
+    var h=Math.floor(min/60),m=min%60;
+    return (h?h+' 小时 ':'')+m+' 分钟';
+  }
+  function efDefaultServed(t){
+    var booked=Number(t.bookedHours)||0;
+    if(t.elapsedMinutes==null)return booked;
+    return Math.min(booked,Math.floor(t.elapsedMinutes/30)/2);
+  }
+  function efDoneHtml(ef){
+    return '<div class="cs-info-list" data-ef-done>'+
+      '<div><span>发起人</span><strong>'+esc((ef.initiator&&ef.initiator.label)||'-')+'</strong></div>'+
+      '<div><span>确认人</span><strong>'+esc(ef.confirmedByName||'-')+'</strong></div>'+
+      '<div><span>实际时长</span><strong>'+esc(ef.servedHours)+' 小时 / 预约 '+esc(ef.bookedHours)+' 小时</strong></div>'+
+      '<div><span>结算</span><strong>'+esc(ef.settleAmount)+' 猫粮</strong></div>'+
+      '<div><span>退款</span><strong>'+esc(ef.refundAmount)+' 猫粮（退回老板余额）</strong></div>'+
+      '<div><span>陪玩收入</span><strong>'+esc(ef.companionIncome)+' 猫粮</strong></div>'+
+      '<div><span>平台抽成</span><strong>'+esc(ef.platformCommission)+' 猫粮</strong></div>'+
+      '<div><span>原因</span><strong style="white-space:pre-wrap;text-align:left">'+esc(ef.reason||'-')+'</strong></div>'+
+      (ef.completedAt?'<div><span>确认时间</span><strong>'+esc(fmtOrderDateTime(ef.completedAt))+'</strong></div>':'')+
+      '</div>';
+  }
+  function earlyFinishDetailHtml(o){
+    var ef=o&&o.earlyFinish,rj=o&&o.earlyFinishReject,out='';
+    if(ef&&ef.status==='done')out+='<h4 style="margin:14px 0 6px">提前结束</h4>'+efDoneHtml(ef);
+    else if(ef&&ef.status==='processing')out+='<h4 style="margin:14px 0 6px">提前结束</h4><p class="cs-note" data-ef-processing>处理中'+(ef.refundError?'：退款未完成（'+esc(ef.refundError)+'），可再次确认继续，不会重复退款':'')+'</p>';
+    if(rj)out+='<p class="cs-note" data-ef-rejected>已拒绝陪玩提前结束申请（'+esc(rj.rejectedByName||'客服')+' · '+esc(fmtOrderDateTime(rj.at))+'）：'+esc(rj.reason||'')+'</p>';
+    if(o&&o.isMultiGroupParent){
+      ((state.data&&state.data.orders)||[]).forEach(function(c){
+        if(String(c.parentOrderId||'')!==String(o.id)||!c.earlyFinish)return;
+        out+='<h4 style="margin:14px 0 6px">提前结束 · 子单 '+esc(c.orderNo||'')+' · '+esc(c.companionName||'-')+'</h4>'+(c.earlyFinish.status==='done'?efDoneHtml(c.earlyFinish):'<p class="cs-note">处理中</p>');
+      });
+    }
+    return out;
+  }
+  function efTargetHtml(t,i,isMulti){
+    var head=(isMulti?'<label class="cs-ef-pick"><input type="checkbox" data-ef-child value="'+esc(t.id)+'" '+(t.eligible?'checked':'disabled')+'> ':'<div class="cs-ef-pick">')+
+      '<strong>'+esc(t.orderNo||t.id)+'</strong> · '+esc(t.companionName||'-')+(isMulti?'</label>':'</div>');
+    if(t.earlyFinish&&t.earlyFinish.status==='done')return '<div class="cs-ef-target">'+head+efDoneHtml(t.earlyFinish)+'</div>';
+    if(!t.eligible)return '<div class="cs-ef-target">'+head+'<p class="cs-note" data-ef-blocked>'+esc(t.blockedReason||'不可提前结束')+'</p></div>';
+    return '<div class="cs-ef-target" data-ef-target="'+esc(t.id)+'">'+head+
+      '<div class="cs-info-list">'+
+        '<div><span>发起</span><strong>'+esc(t.completionPending?'陪玩已申请完成'+(t.initiator&&t.initiator.at?'（'+fmtOrderDateTime(t.initiator.at)+'）':''):'无申请（客服/老板发起）')+'</strong></div>'+
+        '<div><span>已服务</span><strong>'+esc(efElapsedText(t.elapsedMinutes))+' / 预约 '+esc(t.bookedHours)+' 小时</strong></div>'+
+        '<div><span>实付</span><strong>'+esc(t.totalAmount)+' 猫粮 · 陪玩分成 '+esc(t.companionShareRate)+'%</strong></div>'+
+      '</div><div class="cs-info-list" data-ef-calc="'+esc(t.id)+'"></div></div>';
+  }
+  function efPaintCalc(){
+    var box=document.querySelector('[data-ef-modal]');if(!box||!efState.preview)return;
+    var served=Number((box.querySelector('[data-ef-served]')||{}).value);
+    var picked=efPickedIds(box);
+    (efState.preview.targets||[]).forEach(function(t){
+      var el=box.querySelector('[data-ef-calc="'+t.id+'"]');if(!el)return;
+      var on=!efState.preview.isMulti||picked.indexOf(t.id)>=0;
+      var c=on?efCalc(t,Math.min(served,Number(t.bookedHours)||0)):null;
+      el.innerHTML=!on?'<div><span>本次</span><strong>不结束（继续服务）</strong></div>':(!c?'<div><span>结算</span><strong>缺少预约时长</strong></div>':
+        '<div><span>结算</span><strong>'+c.settle+' 猫粮</strong></div><div><span>退款</span><strong>'+c.refund+' 猫粮</strong></div>'+
+        '<div><span>陪玩收入</span><strong>'+c.income+' 猫粮</strong></div><div><span>平台抽成</span><strong>'+c.commission+' 猫粮</strong></div>');
+    });
+  }
+  function efPickedIds(box){
+    return Array.prototype.slice.call(box.querySelectorAll('[data-ef-child]:checked')).map(function(x){return x.value;});
+  }
+  function openEarlyFinish(id){
+    efState={orderId:id,preview:null,busy:false};
+    modal('<div data-ef-modal><div class="cs-dialog-head"><h3>提前结束订单</h3><button class="cs-btn" type="button" data-close-modal>关闭</button></div><p class="cs-note" data-ef-loading>加载中…</p></div>');
+    api('early_finish_preview',{id:id}).then(function(res){
+      var p=res.preview||{targets:[]};efState.preview=p;
+      var box=document.querySelector('[data-ef-modal]');if(!box)return;
+      var live=(p.targets||[]).filter(function(t){return t.eligible;});
+      var pending=(p.targets||[]).some(function(t){return t.eligible&&t.completionPending;});
+      var served=live.length?efDefaultServed(live[0]):0;
+      var maxBooked=live.reduce(function(m,t){return Math.max(m,Number(t.bookedHours)||0);},0);
+      var initiator=pending?'companion':'boss';
+      box.innerHTML='<div class="cs-dialog-head"><h3>提前结束订单 '+esc(p.orderNo||'')+'</h3><button class="cs-btn" type="button" data-close-modal>关闭</button></div>'+
+        '<p class="cs-note">按实际服务时长结算给陪玩，未服务部分自动退回老板猫粮余额（只退一次）。'+(p.isMulti?'多人订单：勾选要结束的陪玩，未勾选的继续服务；全部勾选即整单结束。':'')+'</p>'+
+        (p.targets||[]).map(function(t,i){return efTargetHtml(t,i,p.isMulti);}).join('')+
+        (live.length?
+          '<label>发起人<select data-ef-initiator>'+EF_INITIATORS.map(function(x){return '<option value="'+x[0]+'" '+(x[0]===initiator?'selected':'')+'>'+x[1]+'</option>';}).join('')+'</select></label>'+
+          '<label>实际服务时长（小时）<input type="number" inputmode="decimal" min="0" max="'+esc(maxBooked)+'" step="0.5" value="'+esc(served)+'" data-ef-served></label>'+
+          '<label>原因（老板、陪玩、后台都能看到）<textarea data-ef-reason required placeholder="例如：老板临时有事，提前结束"></textarea></label>'+
+          '<div class="cs-actions cs-ef-actions">'+
+            (pending?'<button class="cs-btn danger" type="button" data-ef-reject>拒绝陪玩申请</button>':'')+
+            '<button class="cs-btn primary" type="button" data-ef-confirm>确认提前结束</button>'+
+          '</div>'
+        :'<p class="cs-note" data-ef-none>没有可提前结束的订单。</p>');
+      efPaintCalc();
+    }).catch(function(err){
+      var box=document.querySelector('[data-ef-modal]');
+      if(box)box.innerHTML='<div class="cs-dialog-head"><h3>提前结束订单</h3><button class="cs-btn" type="button" data-close-modal>关闭</button></div><p class="cs-note">'+esc(err.message||'加载失败')+'</p>';
+    });
+  }
+  document.addEventListener('input',function(e){
+    if(e.target.closest&&e.target.closest('[data-ef-modal]')&&(e.target.matches('[data-ef-served]')||e.target.matches('[data-ef-child]')))efPaintCalc();
+  });
+  document.addEventListener('change',function(e){
+    if(e.target.matches&&e.target.matches('[data-ef-child]'))efPaintCalc();
+  });
+  document.addEventListener('click',function(e){
+    var ok=e.target.closest('[data-ef-confirm]'),rej=e.target.closest('[data-ef-reject]');
+    if(!ok&&!rej)return;
+    var box=e.target.closest('[data-ef-modal]');if(!box||efState.busy)return;
+    var reason=String((box.querySelector('[data-ef-reason]')||{}).value||'').trim();
+    if(!reason){toast(ok?'请填写提前结束原因':'请填写拒绝原因');return;}
+    var childIds=efState.preview&&efState.preview.isMulti?efPickedIds(box):[];
+    if(efState.preview&&efState.preview.isMulti&&ok&&!childIds.length){toast('请至少勾选一个要结束的陪玩');return;}
+    var btn=ok||rej,prev=btn.textContent;
+    efState.busy=true;btn.disabled=true;btn.textContent='处理中…';
+    var req=ok?api('early_finish_order',{id:efState.orderId,servedHours:Number((box.querySelector('[data-ef-served]')||{}).value),reason:reason,initiator:(box.querySelector('[data-ef-initiator]')||{}).value||'',childIds:childIds})
+      :api('reject_early_finish',{id:efState.orderId,reason:reason,childIds:childIds});
+    req.then(function(res){
+      toast(res.message||(ok?'已提前结束':'已拒绝申请'));
+      var m=box.closest('.cs-modal');if(m)m.remove();
+      return softRefresh();
+    }).catch(function(err){
+      efState.busy=false;btn.disabled=false;btn.textContent=prev;
+      toast(err.message||'操作失败');
+    });
+  });
   function openRefund(id){modal('<div class="cs-dialog-head"><h3>处理退款（退回猫粮）</h3><button class="cs-btn" type="button" data-close-modal>关闭</button></div><p style="margin:0 0 10px;color:#f5b7d2;font-size:13px;line-height:1.55"><strong>退款方式：猫粮余额（固定，不可改）</strong><br>客服不可选择现金退款，也不可填写银行卡退款资料。建议批准后由后台点击「确认退款猫粮」立即入账。</p><label>处理结果<select data-refund-decision><option value="approve">建议批准（退回猫粮）</option><option value="reject">拒绝退款</option></select></label><label>拒绝后恢复状态<select data-restore-status><option value="in_progress">进行中</option><option value="completed">已完成</option><option value="cancelled">已取消</option></select></label><label>备注<textarea data-refund-note required></textarea></label><button class="cs-btn primary" type="button" data-do-refund="'+esc(id)+'">保存</button>')}
   document.addEventListener('click',function(e){
     var pushBoss=e.target.closest('[data-push-to-boss]');

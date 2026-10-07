@@ -382,16 +382,21 @@ import {
   }
   function shortTime(value) {
     if (!value) return "";
-    var d = new Date(value);
+    // KL wall-clock (UTC+8): zoned strings converted, zone-less strings kept as-is.
+    var s = String(value).trim();
+    var n = s.match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?(?:\.\d+)?$/);
+    var d = n
+      ? new Date(Date.UTC(+n[1], +n[2] - 1, +n[3], +n[4], +n[5], +(n[6] || 0)))
+      : new Date(new Date(typeof value === "number" ? value : s.replace(/^(\d{4}-\d{2}-\d{2}) /, "$1T").replace(/([+-]\d{2})$/, "$1:00")).getTime() + 288e5);
     if (Number.isNaN(d.getTime())) return String(value);
-    var now = new Date();
-    var today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    var day = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    var k = new Date(Date.now() + 288e5);
+    var today = Date.UTC(k.getUTCFullYear(), k.getUTCMonth(), k.getUTCDate());
+    var day = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
     var diff = Math.round((today - day) / 86400000);
-    var hhmm = pad(d.getHours()) + ":" + pad(d.getMinutes());
+    var hhmm = pad(d.getUTCHours()) + ":" + pad(d.getUTCMinutes());
     if (diff === 0) return "今天 " + hhmm;
     if (diff === 1) return "昨天 " + hhmm;
-    return d.getMonth() + 1 + "月" + d.getDate() + "日 " + hhmm;
+    return d.getUTCMonth() + 1 + "月" + d.getUTCDate() + "日 " + hhmm;
   }
   function previewMessage(raw, messageType) {
     var type = String(messageType || "").toLowerCase();
@@ -1681,7 +1686,7 @@ import {
           esc(Number(state.totalUnread) > 99 ? "99+" : state.totalUnread) +
           "</em>"
         : "") +
-      '</h1><p>仅显示本人会话</p></div>' +
+      '</h1><p>仅显示本人会话</p><div data-cs-online-badge="full"></div></div>' +
       '<span class="support-online-chip' +
       (state.serviceOnline ? " is-online" : "") +
       '" aria-live="polite">' +

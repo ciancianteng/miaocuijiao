@@ -97,6 +97,16 @@
     return "idem-" + Date.now() + "-" + Math.random().toString(36).slice(2, 10);
   }
 
+  // Retries of the same send reuse one key until it succeeds, so the server replays instead of charging twice.
+  var pendingKeys = {};
+  function stableKey(sig) {
+    if (!pendingKeys[sig]) pendingKeys[sig] = idem();
+    return pendingKeys[sig];
+  }
+  function clearKey(sig) {
+    delete pendingKeys[sig];
+  }
+
   function renderLoading() {
     var s = shell();
     if (s) s.innerHTML = '<section class="detail-card"><h1>陪玩资料</h1><p>正在读取真实陪玩资料...</p></section>';
@@ -339,6 +349,12 @@
     if (gameChipLabel) {
       serviceChips.push('<span class="pd-service-chip">' + esc(gameChipLabel) + "</span>");
     }
+    (Array.isArray(c.gameRanks) ? c.gameRanks : []).forEach(function (r) {
+      if (!r || !String(r.rank || "").trim() || !String(r.name || "").trim()) return;
+      serviceChips.push(
+        '<span class="pd-service-chip pd-service-chip--rank" data-game-rank>' + esc(r.name) + " 段位：" + esc(r.rank) + "</span>"
+      );
+    });
     if (levelChipLabel) {
       serviceChips.push(
         '<span class="pd-service-chip pd-service-chip--level" data-level-id="' +
@@ -967,7 +983,7 @@
                   companionId: targetId,
                   giftId: selected.id,
                   quantity: qty,
-                  idempotencyKey: idem(),
+                  idempotencyKey: stableKey("gift|" + targetId + "|" + selected.id + "|" + qty),
                 }),
               })
                 .then(function (res) {
@@ -978,6 +994,7 @@
                   });
                 })
                 .then(function (body) {
+                  clearKey("gift|" + targetId + "|" + selected.id + "|" + qty);
                   alert(body.message || "礼物已送出");
                   closeSheet();
                   load();
@@ -1030,7 +1047,7 @@
                   companionId: targetId,
                   giftId: selected.id,
                   quantity: qty,
-                  idempotencyKey: idem(),
+                  idempotencyKey: stableKey("gift-order|" + targetId + "|" + selected.id + "|" + qty),
                 }),
               })
                 .then(function (res) {
@@ -1041,6 +1058,7 @@
                   });
                 })
                 .then(function (body) {
+                  clearKey("gift-order|" + targetId + "|" + selected.id + "|" + qty);
                   closeSheet();
                   openProfileGiftPaySheet(body.order, body.payInfo, {
                     gift: selected,
@@ -1213,7 +1231,7 @@
             companionId: state.companion.id || state.companion.uid,
             amount: amount,
             message: sheet.querySelector("[data-tip-msg]").value || "",
-            idempotencyKey: idem(),
+            idempotencyKey: stableKey("tip|" + (state.companion.id || state.companion.uid) + "|" + amount),
           }),
         })
           .then(function (res) {
@@ -1223,6 +1241,7 @@
             });
           })
           .then(function (body) {
+            clearKey("tip|" + (state.companion.id || state.companion.uid) + "|" + amount);
             alert(body.message || "打赏成功");
             closeSheet();
           })

@@ -589,6 +589,19 @@ export default async function handler(req, res) {
       const proof = await uploadRechargeProof({ bossId: profile.id, paymentNo: order.payment_no, dataUrl });
       const saved = await patchPaymentOrderProof(order, proof, { status: "pending_review", rejectReason: "" });
       const proofUrl = (await signProofUrl(saved || order)) || proof.url || "";
+      try {
+        const { notifyCustomerServiceStaff } = await import("./_staff-notify.js");
+        const amount = Number((saved || order).amount || 0);
+        await notifyCustomerServiceStaff({
+          kind: "recharge_proof",
+          relatedId: order.payment_no,
+          title: "新的充值凭证待审核",
+          body: `充值单 ${order.payment_no}${amount ? ` · RM ${amount.toFixed(2)}` : ""}，请到「充值审核」处理。`,
+          href: `/customer-service/recharges?paymentNo=${encodeURIComponent(order.payment_no)}`,
+        });
+      } catch (err) {
+        console.warn("[recharge] notify cs", err?.message || err);
+      }
       return json(res, 200, {
         ok: true,
         message: "付款截图已提交，等待后台审核。",

@@ -87,6 +87,7 @@ export function stripReviewStaffMark(text = "") {
   return String(text || "")
     .replace(REVIEW_STAFF_MARK_RE, "")
     .replace(REVIEWER_ROLE_MARK_RE, "")
+    .replace(/\[\[[A-Z][A-Z0-9_]*(?::[^\]]*)?\]\][^\n]*/g, "")
     .replace(/\n{2,}/g, "\n")
     .trim();
 }
@@ -433,7 +434,7 @@ async function patchReceiptReview(receiptId, patch) {
   }
 }
 
-async function supersedePendingReceipts(orderId) {
+export async function supersedePendingReceipts(orderId) {
   const active = await companionDb(
     "payment_receipts",
     `?order_id=eq.${encodeURIComponent(orderId)}&status=eq.pending&limit=5`
@@ -537,6 +538,22 @@ export async function uploadProof({ order, bossId, dataUrl, paymentMethod: metho
   return { receipt: rows?.[0] || null, duplicate: false };
 }
 
+const TERMINAL_ORDER_REVIEW_TEXT = {
+  cancelled: "订单已取消，不需审核",
+  canceled: "订单已取消，不需审核",
+  refunded: "订单已退款，不需审核",
+  expired: "订单已过期，不需审核",
+  closed: "订单已关闭，不需审核",
+};
+
+export function isTerminalOrderStatus(status) {
+  return Object.prototype.hasOwnProperty.call(TERMINAL_ORDER_REVIEW_TEXT, String(status || "").toLowerCase());
+}
+
+export function terminalOrderReviewText(status) {
+  return TERMINAL_ORDER_REVIEW_TEXT[String(status || "").toLowerCase()] || "";
+}
+
 export async function listPendingForCs({ orderIds = [] } = {}) {
   const query = orderIds.length
     ? `?status=eq.pending&order_id=in.(${orderIds.map(encodeURIComponent).join(",")})&order=uploaded_at.desc&limit=500`
@@ -624,6 +641,12 @@ export async function approveAndLedger({ order, receipt, reviewerId, reviewerNam
       new Error("子订单（分配行）不能审核入账；请审核主订单付款。"),
       { status: 409, code: "CHILD_ORDER_NO_PAYMENT_APPROVE" }
     );
+  }
+  if (isTerminalOrderStatus(order?.status)) {
+    throw Object.assign(new Error(`${terminalOrderReviewText(order.status)}，不能再确认付款。`), {
+      status: 409,
+      code: "ORDER_TERMINAL_NO_PAYMENT_APPROVE",
+    });
   }
   const existing = await companionDb("payment_transactions", `?order_id=eq.${encodeURIComponent(order.id)}&limit=1`).catch(() => []);
   if (existing?.[0]) return { transaction: existing[0], duplicate: true, receipt };
@@ -761,8 +784,9 @@ export async function listPendingForAdmin() {
     ).catch(() => []);
   }
   const orderMap = Object.fromEntries((orders || []).map((row) => [row.id, row]));
+  const live = (receipts || []).filter((receipt) => !isTerminalOrderStatus(orderMap[receipt.order_id]?.status));
   return Promise.all(
-    (receipts || []).map(async (receipt) => {
+    live.map(async (receipt) => {
       const order = orderMap[receipt.order_id] || {};
       const proofUrl = await signedProofUrl(receipt).catch(() => "");
       return {
@@ -957,6 +981,7 @@ export function exportCsv(rows = []) {
 }
 export async function signedProofUrl(receipt, expiresIn = 3600) {
   if (!receipt) return "";
+  if (/\.marker$/i.test(String(receipt.storage_path || ""))) return "";
 
   const bucket =
     String(receipt.storage_bucket || BUCKET || "").trim();

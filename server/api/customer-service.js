@@ -1,5 +1,6 @@
 import "./_load-env.js";
 import { mapCompanionPublicFields } from "./_companion-public-map.js";
+import { viewServiceSnapshot } from "./_service-standard.js";
 import { ORDER_STATUS_LABELS } from "./_order-status.js";
 import {
   allocateOrderNo,
@@ -14,6 +15,7 @@ import { companionDb } from "./_companion-media-store.js";
 import {
   approveAndLedger,
   hydrateReceiptReviewers,
+  isTerminalOrderStatus,
   isWalletHoldReceipt,
   latestApprovedForOrders,
   latestReceiptForOrder,
@@ -23,9 +25,12 @@ import {
   rejectProof,
   signedProofUrl,
   staffReviewerNameFromProfile,
+  terminalOrderReviewText,
 } from "./_payment-receipts.js";
 import { bossForCs } from "./_privacy.js";
 import { sendEmailOtp, mailProviderStatus } from "./_mail.js";
+import { sanitizeOrderText, scrubInternalOutput } from "./_output-sanitize.js";
+import { readEarlyFinish, readEarlyFinishReject } from "./_order-early-finish.js";
 import {
   conversationLockedByOther as lockOwnedByOther,
   consultTypeLabel,
@@ -61,7 +66,7 @@ const ASSIGN_LOCKS = new Map();
 const TEST_NOISE_RE = /\[TEST\]|E2E-MSG|E2E[_-]|CHAT-|CS-LINK|SVC-|MSG-|ORDER-CHAT-|acceptance|自动化测试/i;
 const GARBLE_RE = /Ã.|Â.|ä¸|æ.|å.|ç.|è.|é.|ðŸ|ï¼|ï½/;
 
-function json(res, status, data) { return res.status(status).json(data); }
+function json(res, status, data) { return res.status(status).json(scrubInternalOutput(data)); }
 function hasDb() { return REQUIRED_ENV.every((key) => process.env[key]); }
 function restUrl(table, query = "") { return `${process.env.SUPABASE_URL}/rest/v1/${table}${query}`; }
 function authUrl(path) { return `${process.env.SUPABASE_URL}/auth/v1/${path}`; }
@@ -459,7 +464,7 @@ function safeProfile(row) {
     status: row.status || "",
   };
 }
-function safeOrder(row, profiles = {}, extras = {}) {
+export function safeOrder(row, profiles = {}, extras = {}) {
   const boss = profiles[row.boss_id] || {};
   const companion = profiles[row.companion_id] || {};
   const service = profiles[row.customer_service_id] || {};
@@ -496,7 +501,8 @@ function safeOrder(row, profiles = {}, extras = {}) {
       (row.companion_id ? "assigned" : "public"),
     game: row.game || "",
     title: row.title || "",
-    description: row.description || "",
+    description: sanitizeOrderText(row.description || ""),
+    serviceSnapshot: viewServiceSnapshot(row),
     hours: money(row.hours),
     unitPrice: money(row.unit_price),
     totalAmount: money(row.total_amount),
@@ -536,10 +542,15 @@ function safeOrder(row, profiles = {}, extras = {}) {
     completionPending:
       String(row.note || "").includes("[[COMPLETION_PENDING]]") ||
       String(row.description || "").includes("[[COMPLETION_PENDING]]"),
-    note,
-    paymentReview: !!extras.paymentReceipt,
+    note: sanitizeOrderText(note),
+    paymentReview: !!extras.paymentReceipt && !isTerminalOrderStatus(row.status),
+    paymentReviewNote:
+      extras.paymentReceipt && String(extras.paymentReceipt.status || "pending") === "pending"
+        ? terminalOrderReviewText(row.status)
+        : "",
     paymentProofUrl: extras.paymentProofUrl || "",
     paymentReceiptId: extras.paymentReceipt?.id || "",
+    paymentWalletHold: !!extras.paymentReceipt && isWalletHoldReceipt(extras.paymentReceipt),
     paymentRejectReason: extras.paymentRejectReason || "",
     paymentReviewedByName: extras.paymentReviewedByName || "",
     paymentReviewedByStaffId: extras.paymentReviewedByStaffId || "",
@@ -551,6 +562,8 @@ function safeOrder(row, profiles = {}, extras = {}) {
       String(row.order_type || "").toLowerCase() === "multi_group" && !row.parent_order_id,
     isMultiGroupChild: !!row.parent_order_id,
     cancelReason: row.cancel_reason || "",
+    earlyFinish: readEarlyFinish(row),
+    earlyFinishReject: readEarlyFinishReject(row),
     needsReassign,
     reassignHint: needsReassign
       ? /确认超时/.test(note)
@@ -686,6 +699,44 @@ async function assertOrderMutationAllowed(order, serviceProfile, { requireOwner 
     err.message = err.message || CS_LOCK_DENIED;
     throw err;
   }
+}
+async function runCsCancelOrRefund(res, order, serviceProfile, { intent = "cancel", reason = "" } = {}) {
+  try {
+    await assertOrderMutationAllowed(order, serviceProfile);
+  } catch (err) {
+    return json(res, err.status || 403, { ok: false, message: err.message || CS_LOCK_DENIED, code: err.code || "CS_SESSION_LOCKED" });
+  }
+  const { csCancelOrRefundOrder } = await import("./_order-cancel.js");
+  const out = await csCancelOrRefundOrder(order, {
+    intent,
+    reason,
+    operator: {
+      id: serviceProfile.id,
+      name: staffReviewerNameFromProfile(serviceProfile) || serviceProfile.display_name || "",
+      role: "customer_service",
+    },
+  });
+  if (out.ok && !out.duplicate && out.order) {
+    try {
+      const conversation = await ensureConversation({
+        boss_id: out.order.boss_id,
+        companion_id: out.order.companion_id || null,
+        customer_service_id: serviceProfile.id,
+        order_id: out.order.id,
+      });
+      await addMessage(conversation, serviceProfile.id, "customer_service", out.notice?.body || out.message, "system", out.order.id);
+    } catch (_) {}
+  }
+  const profiles = out.order ? await profileMap([out.order.boss_id, out.order.companion_id, serviceProfile.id].filter(Boolean)) : {};
+  return json(res, out.status || (out.ok ? 200 : 400), {
+    ok: out.ok,
+    code: out.code || "",
+    message: out.message,
+    duplicate: !!out.duplicate,
+    mode: out.mode || "",
+    refundAmount: out.amount || 0,
+    order: out.order ? safeOrder(out.order, profiles) : null,
+  });
 }
 async function logSessionAction(payload) {
   return writeLockLog({ restUrl, supabaseJson, serviceHeaders }, payload);
@@ -1453,10 +1504,19 @@ async function loadBootstrap(serviceProfile) {
     notifications: (staffNotifications || []).map((n) => ({
       id: n.id,
       key: n.notice_key,
-      category: n.category || "payroll",
+      category: n.category || (n.kind && n.kind !== "system" ? n.kind : "payroll"),
+      kind: n.kind || n.category || "payroll",
+      relatedId: n.related_id || "",
       title: n.title || "系统通知",
       body: n.body || "",
-      href: n.href || "/customer-service/reports/",
+      href:
+        n.href ||
+        (n.kind === "recharge_proof"
+          ? "/customer-service/recharges"
+          : n.kind === "gift_proof"
+            ? "/customer-service/gift-orders"
+            : "/customer-service/reports/"),
+      readAt: n.read_at || "",
       at: n.created_at || "",
     })),
     orderStatuses: ORDER_STATUS_TEXT,
@@ -2900,13 +2960,22 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
       } catch (err) {
         console.warn("[customer-service/send_message] boss push", err?.message || err);
       }
+      if (conversation.companion_id && !conversation.boss_id && messageType !== "system") {
+        const { notifyCompanionCsReply } = await import("./_companion-inbox.js");
+        await notifyCompanionCsReply(conversation, {
+          messageId: msg?.id || "",
+          content,
+          messageType,
+          csName: String(service.profile.display_name || "").trim(),
+        });
+      }
       return json(res, 200, { ok: true, message: "消息已发送。", messageRow });
     }
     if (action === "clock_in" || action === "clock_out") {
       const t0 = Date.now();
       const workApi = await import("./_customer-service-work.js");
       // Fast path only: no loadBootstrap / wage / conversation reload.
-      const cfg = body.config || body.shiftConfig || null;
+      const cfg = await workApi.loadClockConfig(service.profile.id);
       const result =
         action === "clock_in"
           ? await workApi.clockInService(service.profile.id, { config: cfg })
@@ -3416,6 +3485,54 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
         order: { ...order, paymentReview: false, ...rejectFields },
       });
     }
+    // —— Boss recharge proof review (same rows/rules as 后台 /api/admin/wallet) ——
+    if (action === "list_recharges" || action === "list_recharge_reviews") {
+      const { listRecharges } = await import("./_recharge-review.js");
+      const status = String(body.status || body.filter || "pending_review").trim();
+      const allowed = new Set(["pending_review", "reviewed", "paid", "rejected"]);
+      const items = await listRecharges({ status: allowed.has(status) ? status : "pending_review" });
+      return json(res, 200, { ok: true, items });
+    }
+    if (action === "approve_recharge" || action === "recharge_approve") {
+      const { approveRecharge } = await import("./_recharge-review.js");
+      const out = await approveRecharge({
+        paymentNo: String(body.paymentNo || body.payment_no || body.id || "").trim(),
+        reviewer: service.profile,
+        reason: String(body.reason || "客服审核通过"),
+        operatorRole: "customer_service",
+        requireProof: true,
+      });
+      return json(res, out.status, out.body);
+    }
+    if (action === "reject_recharge" || action === "recharge_reject") {
+      const { rejectRecharge } = await import("./_recharge-review.js");
+      const out = await rejectRecharge({
+        paymentNo: String(body.paymentNo || body.payment_no || body.id || "").trim(),
+        reviewer: service.profile,
+        reason: String(body.reason || body.reject_reason || body.rejectReason || "").trim(),
+        operatorRole: "customer_service",
+      });
+      return json(res, out.status, out.body);
+    }
+    if (action === "review_badges" || action === "pending_review_counts") {
+      const [{ countPendingRechargeReviews, latestPendingRechargePaymentNo }, gifts] = await Promise.all([
+        import("./_recharge-review.js"),
+        import("./_gift-orders.js"),
+      ]);
+      const [recharges, giftOrders, latestRechargePaymentNo] = await Promise.all([
+        countPendingRechargeReviews(),
+        gifts.countPendingGiftOrderReviews ? gifts.countPendingGiftOrderReviews() : 0,
+        latestPendingRechargePaymentNo().catch(() => ""),
+      ]);
+      return json(res, 200, { ok: true, counts: { recharges, giftOrders }, latestRechargePaymentNo: latestRechargePaymentNo || "" });
+    }
+    if (action === "mark_staff_notifications_read") {
+      const { markStaffNotificationsRead } = await import("./_staff-notify.js");
+      const kinds = Array.isArray(body.kinds) ? body.kinds : [body.kind || ""];
+      const allowed = kinds.filter((k) => /^[a-z_]{2,40}$/.test(String(k || "")));
+      const marked = await markStaffNotificationsRead(service.profile.id, allowed);
+      return json(res, 200, { ok: true, marked });
+    }
     // —— Gift orders (mall payment proof review) ——
     if (
       action === "list_gift_orders" ||
@@ -3532,10 +3649,37 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
         });
       }
 
+      async function alreadyConfirmedReply(current) {
+        if (!current || isTerminalOrderStatus(current.status) || current.status === "awaiting_payment") return null;
+        const paidTx = (
+          await companionDb(
+            "payment_transactions",
+            `?order_id=eq.${encodeURIComponent(current.id)}&payment_status=eq.paid&limit=1`
+          ).catch(() => [])
+        )?.[0];
+        if (!paidTx) return null;
+        const profiles = await profileMap([current.boss_id, current.customer_service_id, service.profile.id]);
+        return json(res, 200, {
+          ok: true,
+          duplicate: true,
+          already: true,
+          message: "付款已确认（重复请求未重复处理）。",
+          order: safeOrder(current, profiles),
+        });
+      }
       if (order.status !== "awaiting_payment") {
-        return json(res, 400, {
+        if (action === "confirm_payment") {
+          const replay = await alreadyConfirmedReply(order);
+          if (replay) return replay;
+        }
+        const terminal = isTerminalOrderStatus(order.status);
+        return json(res, terminal ? 409 : 400, {
           ok: false,
-          message: "只有待付款确认订单可以确认付款 / 发送到抢单大厅。",
+          code: terminal ? "ORDER_TERMINAL_NO_PAYMENT_APPROVE" : "NOT_AWAITING_PAYMENT",
+          status: order.status,
+          message: terminal
+            ? `${terminalOrderReviewText(order.status)}，不能再确认付款。`
+            : "只有待付款确认订单可以确认付款 / 发送到抢单大厅。",
         });
       }
 
@@ -3706,7 +3850,15 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
         }
       }
 
-      let patched = await transitionWithOptionalPaidAt();
+      let patched;
+      try {
+        patched = await transitionWithOptionalPaidAt();
+      } catch (err) {
+        if (Number(err?.status) !== 409) throw err;
+        const replay = await alreadyConfirmedReply(await orderById(order.id));
+        if (replay) return replay;
+        return json(res, 409, { ok: false, message: err.message || "订单状态已变更，请刷新后重试。" });
+      }
       if (!patched) {
         try {
           patched = await patchOrder(order.id, { status: next, ...basePatch, paid_at: nowIso() });
@@ -3943,43 +4095,20 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
       if (!["pending", "waiting_boss_confirm"].includes(String(order.status || ""))) {
         return json(res, 400, { ok: false, message: "当前订单不在抢单大厅。" });
       }
-      const { transitionOrderStatus } = await import("./_order-status.js");
-      const patched =
-        (await transitionOrderStatus(
-          { restUrl, supabaseJson, serviceHeaders },
-          {
-            orderId: order.id,
-            fromStatus: order.status,
-            toStatus: "cancelled",
-            patch: { cancelled_at: nowIso(), customer_service_id: service.profile.id, cancel_reason: String(body.reason || "客服取消抢单").slice(0, 200) },
-            operatorRole: "customer_service",
-            operatorId: service.profile.id,
-            note: "cs cancel_grab_hall",
-          }
-        ).catch(() => null)) ||
-        (await patchOrder(order.id, {
-          status: "cancelled",
-          cancelled_at: nowIso(),
-          customer_service_id: service.profile.id,
-          cancel_reason: String(body.reason || "客服取消抢单").slice(0, 200),
-        }));
-      try {
-        const { createGrabListingHelpers } = await import("./_order-grab-listings.js");
-        await createGrabListingHelpers({ restUrl, supabaseJson, serviceHeaders }).closeListing(order.id, "cs_cancelled");
-      } catch (_) {}
-      const conversation = await ensureConversation({
-        boss_id: order.boss_id,
-        companion_id: null,
-        customer_service_id: service.profile.id,
-        order_id: order.id,
+      return runCsCancelOrRefund(res, order, service.profile, {
+        intent: "cancel",
+        reason: String(body.reason || "客服取消抢单"),
       });
-      await addMessage(conversation, service.profile.id, "customer_service", "客服已取消该订单的抢单发布。", "system", order.id);
-      const profiles = await profileMap([order.boss_id, service.profile.id]);
-      return json(res, 200, {
-        ok: true,
-        message: "已取消抢单，订单已关闭。",
-        order: safeOrder(patched || { ...order, status: "cancelled" }, profiles),
-      });
+    }
+    if (action === "cs_cancel_order" || action === "cancel_order") {
+      const order = await orderById(String(body.id || body.order_id || ""));
+      if (!order) return json(res, 404, { ok: false, message: "订单不存在。" });
+      return runCsCancelOrRefund(res, order, service.profile, { intent: "cancel", reason: String(body.reason || "") });
+    }
+    if (action === "cs_refund_order" || action === "refund_unfulfillable_order") {
+      const order = await orderById(String(body.id || body.order_id || ""));
+      if (!order) return json(res, 404, { ok: false, message: "订单不存在。" });
+      return runCsCancelOrRefund(res, order, service.profile, { intent: "refund", reason: String(body.reason || "") });
     }
     if (action === "list_grabs" || action === "grab_applicants") {
       const order = await orderById(String(body.id || body.order_id || ""));
@@ -4392,11 +4521,79 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
         setTimeout(() => ASSIGN_LOCKS.delete(lockKey), 3000);
       }
     }
+    if (action === "early_finish_preview" || action === "early_finish_order" || action === "reject_early_finish") {
+      const id = String(body.id || body.order_id || "");
+      const order = await orderById(id);
+      if (!order) return json(res, 404, { ok: false, message: "订单不存在。" });
+      const ef = await import("./_order-early-finish.js");
+      if (action === "early_finish_preview") {
+        const preview = await ef.earlyFinishPreview(order);
+        const names = await profileMap(preview.targets.map((t) => t.companionId).filter(Boolean));
+        preview.targets = preview.targets.map((t) => ({
+          ...t,
+          companionName: String(names[t.companionId]?.display_name || names[t.companionId]?.nickname || "").trim() || "-",
+        }));
+        return json(res, 200, { ok: true, preview });
+      }
+      try {
+        await assertOrderMutationAllowed(order, service.profile);
+      } catch (err) {
+        return json(res, err.status || 403, { ok: false, message: err.message || CS_LOCK_DENIED, code: err.code || "CS_SESSION_LOCKED" });
+      }
+      const operator = { id: service.profile.id, name: csDisplayName(service.profile) };
+      const addSystemMessage = async (ord, actorId, content) => {
+        const conversation = await ensureConversation({
+          boss_id: ord.boss_id,
+          companion_id: ord.companion_id,
+          customer_service_id: service.profile.id,
+          order_id: ord.parent_order_id || ord.id,
+        });
+        await addMessage(conversation, actorId || service.profile.id, "customer_service", content, "system", ord.id);
+      };
+      const childIds = Array.isArray(body.childIds) ? body.childIds.map(String) : [];
+      try {
+        if (action === "reject_early_finish") {
+          const out = await ef.rejectEarlyFinish(order, { reason: body.reason, operator, childIds, addSystemMessage });
+          return json(res, 200, { ok: true, message: "已拒绝提前结束申请，订单继续服务。", ...out });
+        }
+        const out = await ef.executeEarlyFinish(order, {
+          servedHours: body.servedHours,
+          reason: body.reason,
+          initiator: String(body.initiator || ""),
+          childIds,
+          operator,
+          addSystemMessage,
+        });
+        try {
+          const { notifyCompanionOrderStatusChange } = await import("./_companion-order-notify.js");
+          for (const r of out.results) {
+            if (r.ok && !r.duplicate && r.order?.companion_id) notifyCompanionOrderStatusChange(r.order, { status: "completed" }).catch(() => {});
+          }
+        } catch (_) {}
+        const okCount = out.results.filter((r) => r.ok).length;
+        const dupOnly = out.results.length > 0 && out.results.every((r) => r.ok && r.duplicate);
+        const message = dupOnly
+          ? "该订单已提前结束，未重复结算或退款。"
+          : out.ok
+            ? `已提前结束 ${okCount} 个订单。`
+            : `部分失败：${out.results.filter((r) => !r.ok).map((r) => `${r.orderNo || r.orderId} ${r.message}`).join("；")}`;
+        const results = out.results.map(({ order: _o, ...rest }) => rest);
+        return json(res, out.ok ? 200 : 409, { ok: out.ok, message, results, duplicate: dupOnly });
+      } catch (err) {
+        return json(res, err.status || 500, { ok: false, code: err.code || "", message: err.message || "提前结束失败。" });
+      }
+    }
     if (action === "update_order_status") {
       const id = String(body.id || body.order_id || "");
       const status = String(body.status || "");
       const order = await orderById(id);
       if (!order) return json(res, 404, { ok: false, message: "订单不存在。" });
+      if (String(status).toLowerCase() === "cancelled") {
+        return runCsCancelOrRefund(res, order, service.profile, {
+          intent: "cancel",
+          reason: String(body.reason || body.note || "客服取消订单"),
+        });
+      }
       try {
         await assertOrderMutationAllowed(order, service.profile);
       } catch (err) {

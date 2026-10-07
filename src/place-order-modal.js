@@ -222,7 +222,7 @@
     if (document.querySelector('link[data-mcj-place-order-css]')) return;
     var link = document.createElement("link");
     link.rel = "stylesheet";
-    link.href = "/src/place-order-modal.css?v=20260923p0pay1";
+    link.href = "/src/place-order-modal.css?v=20261007b1528";
     link.setAttribute("data-mcj-place-order-css", "1");
     document.head.appendChild(link);
   }
@@ -323,8 +323,24 @@
       btn.textContent = "请选择支付方式";
       return;
     }
+    if (companionUnavailableText()) {
+      btn.disabled = true;
+      btn.textContent = "该陪玩当前不可接单";
+      return;
+    }
     btn.disabled = false;
     btn.textContent = "确认订单并付款";
+  }
+  // Mirrors server canCompanionAcceptBossOrder: only online / busy companions accept designated orders.
+  function companionUnavailableText() {
+    var c = state.companion || {};
+    var code = String(c.availabilityStatus || "").toLowerCase();
+    if (code !== "offline" && code !== "paused") return "";
+    return (
+      "该陪玩当前" +
+      (code === "paused" ? "暂停接单" : "离线") +
+      "，暂时无法指定下单。可以选择其他在线陪玩，或到抢单大厅发布需求。"
+    );
   }
   function applyOrderPayMethods(body) {
     // Sole SoT: GET /api/recharge → orderPayMethods (payment_channels + wallet gate).
@@ -575,8 +591,26 @@
       raw.onlineStatus ||
       raw.online_status ||
       raw.status;
+    // fromCompanion() defaults to "offline" when nothing is known; unknown must not block ordering.
+    var hasPresenceSignal = [
+      raw.availabilityStatus,
+      raw.availability_status,
+      raw.online_status,
+      raw.onlineStatus,
+      raw.availabilityText,
+      raw.status,
+      raw.statusText,
+      raw.onlineStatusLabel,
+      raw.workStatus,
+      raw.online,
+      raw.isOnline,
+      raw.canOrderNow,
+      raw.canAcceptBossOrder,
+    ].some(function (v) {
+      return v != null && v !== "";
+    });
     var presence =
-      window.MCJCompanionPresence && window.MCJCompanionPresence.fromCompanion
+      hasPresenceSignal && window.MCJCompanionPresence && window.MCJCompanionPresence.fromCompanion
         ? window.MCJCompanionPresence.fromCompanion(raw)
         : null;
     var online = presence
@@ -637,7 +671,61 @@
       price: money(s.price != null ? s.price : s.unitPrice != null ? s.unitPrice : 0),
       pricingUnit: String(s.pricingUnit || s.pricing_unit || "小时"),
       sort: s.sort != null ? Number(s.sort) : idx || 0,
+      standard: s.standard && typeof s.standard === "object" ? s.standard : null,
     };
+  }
+  function selectedServiceItem() {
+    if (!state.companion || !state.service) return null;
+    var list = resolveServices(state.companion);
+    var sid = String(state.selectedServiceId || "").trim();
+    return (
+      (sid &&
+        list.find(function (s) {
+          return String(s.serviceId || "") === sid || String(s.id || "") === sid;
+        })) ||
+      list.find(function (s) {
+        return serviceNamesMatch(s.name, state.service);
+      }) ||
+      null
+    );
+  }
+  function serviceStandardHtml(svc) {
+    if (!svc) {
+      return '<p class="mcj-po-standard-empty">选择游戏/服务项目后，这里会显示该项目的服务内容和执行标准。</p>';
+    }
+    var sections = (svc.standard && Array.isArray(svc.standard.sections) ? svc.standard.sections : []).filter(function (s) {
+      return s && s.value;
+    });
+    var head =
+      '<div class="mcj-po-standard-head"><strong>服务明细 · ' +
+      esc(svc.name) +
+      "</strong><span>" +
+      esc(moneyText(svc.price) + " / " + (svc.pricingUnit || "小时")) +
+      "</span></div>";
+    if (!sections.length) {
+      return (
+        head +
+        '<p class="mcj-po-standard-empty">该陪玩暂未填写此项目的详细服务标准。按' +
+        esc(svc.pricingUnit || "小时") +
+        "计费；如需确认服务内容，可下单前联系客服。</p>"
+      );
+    }
+    return (
+      head +
+      '<dl class="mcj-po-standard-list">' +
+      sections
+        .map(function (s) {
+          return "<div><dt>" + esc(s.label) + "</dt><dd>" + esc(s.value) + "</dd></div>";
+        })
+        .join("") +
+      "</dl>" +
+      '<p class="mcj-po-standard-foot">下单后将以此标准保存到订单，陪玩后续修改不影响本单。</p>'
+    );
+  }
+  function refreshServiceStandard() {
+    var mask = activeMask();
+    var box = mask && mask.querySelector("[data-po-standard]");
+    if (box) box.innerHTML = serviceStandardHtml(selectedServiceItem());
   }
   function resolveServices(companion) {
     companion = companion || {};
@@ -759,6 +847,7 @@
       var unitLabel = mask.querySelector(".mcj-po-price-row small");
       if (unitLabel && state.companion) unitLabel.textContent = "/ " + (state.companion.pricingUnit || "小时");
     }
+    refreshServiceStandard();
     refreshTotals();
     syncInheritedGameIdField();
   }
@@ -805,6 +894,7 @@
     // hide legacy custom input if present
     var customWrap = mask.querySelector("[data-po-custom-service]");
     if (customWrap) customWrap.classList.remove("show");
+    refreshServiceStandard();
   }
   function hydrateFromCatalog(companionId) {
     companionId = String(companionId || (state.companion && state.companion.companionId) || "").trim();
@@ -903,11 +993,9 @@
     return (n < 10 ? "0" : "") + n;
   }
   function defaultStartTime() {
-    var d = new Date();
-    d.setSeconds(0, 0);
-    d.setMinutes(0);
-    d.setHours(d.getHours() + 1);
-    return pad2(d.getHours()) + ":" + pad2(d.getMinutes());
+    // Next full hour on the platform clock (Asia/Kuala_Lumpur, UTC+8), independent of device timezone.
+    var d = new Date(Date.now() + 288e5);
+    return pad2((d.getUTCHours() + 1) % 24) + ":00";
   }
   function normalizeTimeValue(v) {
     if (window.MCJTimePicker && typeof window.MCJTimePicker.normalize === "function") {
@@ -1097,6 +1185,29 @@
     }
   }
 
+  /** Draft prefill only (per game); the order snapshot on the server is the record. */
+  function rememberedBossRank(game) {
+    try {
+      return String(localStorage.getItem("mcjBossRank:" + String(game || "").trim()) || "").slice(0, 30);
+    } catch (e) {
+      return "";
+    }
+  }
+  document.addEventListener("input", function (e) {
+    if (e.target && e.target.matches && e.target.matches("[data-po-boss-rank]")) {
+      state.bossRank = String(e.target.value || "").slice(0, 30);
+    }
+  });
+  function readBossRank() {
+    var el = qs("[data-po-boss-rank]");
+    var v = el ? String(el.value || "").trim().slice(0, 30) : String(state.bossRank || "");
+    state.bossRank = v;
+    try {
+      if (v) localStorage.setItem("mcjBossRank:" + currentServiceLabel(), v);
+    } catch (e) {}
+    return v;
+  }
+
   function gameIdFieldHtml() {
     var inherited = inheritedAccountId();
     var showInherited = !!(inherited && !state.editingGameId);
@@ -1235,7 +1346,11 @@
       '">' +
       esc(c.availabilityText || (c.online ? "在线可接单" : "离线")) +
       "</span>" +
-      "</div></div></div>" +
+      "</div>" +
+      (companionUnavailableText()
+        ? '<div class="mcj-po-avail-note" data-po-avail-note role="status">' + esc(companionUnavailableText()) + "</div>"
+        : "") +
+      "</div></div>" +
       '<button type="button" class="mcj-po-close" data-po-close aria-label="关闭">×</button>' +
       "</div></div>" +
       '<div class="mcj-po-scroll">' +
@@ -1250,6 +1365,9 @@
       "</strong></div></div>" +
       '<div class="mcj-po-field"><span class="mcj-po-label">游戏/服务项目</span><div class="mcj-po-chips" role="group">' +
       serviceChips +
+      "</div>" +
+      '<div class="mcj-po-standard" data-po-standard aria-live="polite">' +
+      serviceStandardHtml(selectedServiceItem()) +
       "</div></div>" +
       '<div class="mcj-po-field"><span class="mcj-po-label">数量或时长</span><div class="mcj-po-chips" role="radiogroup">' +
       hourChips +
@@ -1263,6 +1381,9 @@
       esc(state.quantity) +
       '"></label>' +
       gameIdFieldHtml() +
+      '<label>我的段位（选填，陪玩接单前可见）<input data-po-boss-rank maxlength="30" autocomplete="off" placeholder="例如：钻石 2 / 星耀 / 无段位" value="' +
+      esc(state.bossRank || rememberedBossRank(currentServiceLabel())) +
+      '"></label>' +
       '<div class="mcj-po-field mcj-po-schedule-field"><span class="mcj-po-label">服务时间 *</span>' +
       '<div class="mcj-po-time-row">' +
       '<div class="mcj-po-time-col mcj-po-time-start"><span class="mcj-po-time-cap">开始时间</span>' +
@@ -1578,6 +1699,7 @@
     team.applyShared({
       gameId: readModalGameId(),
       idContext: currentIdContext(),
+      bossRank: readBossRank(),
       notes: notesEl ? String(notesEl.value || "").trim() : "",
       startTime: readStartTimeFromDom(activeMask()) || state.startTime,
       voiceMode: state.voiceMode,
@@ -1819,6 +1941,7 @@
             quantity: quantity,
             totalAmount: total,
             gameId: gameId,
+            bossRank: readBossRank(),
             notes: noteParts.join("；"),
             paymentMethod: "catfood",
             voiceMode: state.voiceMode || "game_mic",
@@ -1837,11 +1960,13 @@
             serviceType: currentServiceLabel(),
             service: currentServiceLabel(),
             game: currentServiceLabel(),
+            serviceId: /^[0-9a-f-]{36}$/i.test(String(state.selectedServiceId || "")) ? state.selectedServiceId : "",
             unitPrice: money(c.unitPrice),
             hours: hours,
             quantity: quantity,
             totalAmount: total,
             gameId: gameId,
+            bossRank: readBossRank(),
             schedule: schedule,
             startTime: startTime,
             endTime: endTime,

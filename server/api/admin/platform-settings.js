@@ -177,7 +177,15 @@ const DEFAULT_SETTINGS = {
   /** Homepage「组队大厅」singleton — enable + jump URL (Discord or other). */
   teamLobbyEnabled: false,
   teamLobbyLink: "",
+  /** Boss-facing CS online window (HH:MM, business timezone). */
+  csOnlineHoursStart: "09:00",
+  csOnlineHoursEnd: "12:00",
 };
+
+function hhmmOr(value, fallback) {
+  const s = String(value || "").trim();
+  return /^([01]\d|2[0-3]):[0-5]\d$/.test(s) ? s : fallback;
+}
 
 function json(res, status, data) {
   return res.status(status).json(data);
@@ -355,6 +363,8 @@ function normalizeSettings(input = {}) {
     teamLobbyEnabled: bool(input.teamLobbyEnabled, false),
     /** Keep teamLobbyLink synced so older team-lobby readers still work. */
     teamLobbyLink: communityUrl || sanitizeCommunityHttpUrl(input.teamLobbyLink || ""),
+    csOnlineHoursStart: hhmmOr(input.csOnlineHoursStart, DEFAULT_SETTINGS.csOnlineHoursStart),
+    csOnlineHoursEnd: hhmmOr(input.csOnlineHoursEnd, DEFAULT_SETTINGS.csOnlineHoursEnd),
   };
 }
 
@@ -365,10 +375,12 @@ async function loadSettingsRow() {
 
 async function saveSettings(settings, adminId) {
   const now = new Date().toISOString();
+  // platform_settings.data also holds keys owned by other modules (e.g. csCommission); keep them.
+  const prevData = (await loadSettingsRow())?.data || {};
   const rows = await supabaseJson(restUrl("platform_settings", "?on_conflict=id"), {
     method: "POST",
     headers: serviceHeaders({ Prefer: "resolution=merge-duplicates,return=representation" }),
-    body: JSON.stringify({ id: "global", data: settings, updated_at: now, updated_by: adminId || null }),
+    body: JSON.stringify({ id: "global", data: { ...prevData, ...settings }, updated_at: now, updated_by: adminId || null }),
   });
   return normalizeSettings((rows[0] && rows[0].data) || settings);
 }
