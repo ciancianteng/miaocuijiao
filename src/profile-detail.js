@@ -53,29 +53,26 @@
     }, 1800);
   }
   function copyProfileLink(url) {
-    function legacy() {
-      return new Promise(function (resolve, reject) {
-        try {
-          var ta = document.createElement("textarea");
-          ta.value = url;
-          ta.setAttribute("readonly", "");
-          ta.style.position = "fixed";
-          ta.style.left = "-9999px";
-          document.body.appendChild(ta);
-          ta.select();
-          var ok = document.execCommand("copy");
-          ta.remove();
-          if (ok) resolve();
-          else reject(new Error("copy"));
-        } catch (e) {
-          reject(e);
-        }
-      });
-    }
+    try {
+      var ta = document.createElement("textarea");
+      ta.value = url;
+      ta.setAttribute("readonly", "");
+      ta.style.position = "fixed";
+      ta.style.top = "0";
+      ta.style.left = "0";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      ta.setSelectionRange(0, String(url).length);
+      var ok = document.execCommand("copy");
+      ta.remove();
+      if (ok) return Promise.resolve();
+    } catch (e) {}
     if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
-      return navigator.clipboard.writeText(url).catch(legacy);
+      return navigator.clipboard.writeText(url);
     }
-    return legacy();
+    return Promise.reject(new Error("copy"));
   }
   function shareProfileLink(btn) {
     var url = btn ? String(btn.getAttribute("data-share-url") || "") : "";
