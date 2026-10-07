@@ -3215,6 +3215,12 @@ import './mcj-chat-realtime.js';
       '<div class="cs-info-list" data-order-service-standard>'+rows+'</div>'+
       '<p class="cs-note" style="margin:6px 0 0">老板下单时看到的标准，陪玩之后修改不会影响本单；售后判定以此为准。</p>';
   }
+  function orderEarlyPending(o){
+    if(!o)return false;
+    if(o.completionPending)return true;
+    var kids=o.children||o.allocations||[];
+    return kids.some(function(c){return c&&(c.completionPending||c.earlyFinishPending);});
+  }
   function orderRow(o){
     var actions=[];
     var st=String(o.status||'');
@@ -3247,11 +3253,11 @@ import './mcj-chat-realtime.js';
       actions.push('<button class="cs-btn warn" data-urge-companion="'+esc(o.id)+'">催单</button>');
       actions.push('<button class="cs-btn ghost" data-return-grab-hall="'+esc(o.id)+'">返回抢单大厅</button>');
       actions.push('<button class="cs-btn danger" data-cancel-order="'+esc(o.id)+'">取消订单</button>');
-    }else if(st==='confirmed'||st==='in_progress'){
+    }else if(st==='confirmed'||st==='in_progress'||orderEarlyPending(o)){
       actions.push('<button class="cs-btn ghost" data-order-detail="'+esc(o.id)+'" data-detail-mode="detail">查看订单</button>');
       actions.push('<button class="cs-btn ghost" data-open-order-chat="'+esc(o.id)+'">打开会话</button>');
       if(canApplyCompensation(o))actions.push('<button class="cs-btn warn" data-route="/customer-service/compensation" type="button">申请补偿</button>');
-      actions.push('<button class="cs-btn primary" data-complete-order="'+esc(o.id)+'">提前结束订单</button>');
+      actions.push('<button class="cs-btn primary" data-complete-order="'+esc(o.id)+'">'+(orderEarlyPending(o)?'确认提前结束':'提前结束订单')+'</button>');
     }else if(st==='completed'||st==='reviewed'){
       actions.push('<button class="cs-btn ghost" data-order-detail="'+esc(o.id)+'" data-detail-mode="detail">查看详情</button>');
       actions.push('<button class="cs-btn ghost" data-open-order-chat="'+esc(o.id)+'">查看聊天记录</button>');
@@ -3281,6 +3287,9 @@ import './mcj-chat-realtime.js';
       actions=['<span class="cs-note">该订单正在由【'+esc(orderConv.assignedCsName||orderConv.currentServiceName||'其他客服')+'】处理中，当前仅可查看。</span>'];
       if(inGrabHall)actions.push('<button class="cs-btn ghost" data-view-grabs="'+esc(o.id)+'">查看抢单人数('+(o.grabCount||0)+')</button>');
       else actions.push('<button class="cs-btn ghost" data-order-detail="'+esc(o.id)+'" data-detail-mode="detail">查看详情</button>');
+      if(st==='confirmed'||st==='in_progress'||orderEarlyPending(o)){
+        actions.push('<button class="cs-btn primary" data-complete-order="'+esc(o.id)+'">'+(orderEarlyPending(o)?'确认提前结束':'提前结束订单')+'</button>');
+      }
     }
 
     var statusLabel=o.paymentReview?'待人工审核':(inGrabHall?'抢单中':(st==='claimed'?'待陪玩确认':(o.statusText||st)));
@@ -3288,7 +3297,7 @@ import './mcj-chat-realtime.js';
     var companionCell=isMultiParentRow
       ?('多人主订单'+(o.title||o.description?'<br><small>'+esc(String(o.title||o.description||'').slice(0,36))+'</small>':''))
       :esc(o.companionName||'-');
-    var statusCell=esc(statusLabel)+(o.needsReassign?'<br><small style="color:#f59e0b">'+(esc(o.reassignHint||'待重新安排'))+'</small>':'')+(inGrabHall?'<br><small>抢单 '+(o.grabCount||0)+' 人</small>':'')+(o.preferredCompanionId?'<br><small style="color:#60a5fa">老板意向已提交</small>':'')+(isMultiParentRow?'<br><small>子订单见详情</small>':'')+proofBlock;
+    var statusCell=esc(statusLabel)+(orderEarlyPending(o)?'<br><small data-early-pending>待处理提前结束</small>':'')+(o.needsReassign?'<br><small style="color:#f59e0b">'+(esc(o.reassignHint||'待重新安排'))+'</small>':'')+(inGrabHall?'<br><small>抢单 '+(o.grabCount||0)+' 人</small>':'')+(o.preferredCompanionId?'<br><small style="color:#60a5fa">老板意向已提交</small>':'')+(isMultiParentRow?'<br><small>子订单见详情</small>':'')+proofBlock;
     return '<tr'+(o.needsReassign?' style="background:rgba(245,158,11,.08)"':'')+(inGrabHall?' data-grab-hall="1"':'')+(isMultiParentRow?' data-multi-parent="1"':'')+' data-order-status="'+esc(st)+'"><td class="cs-col-no">'+esc(o.orderNo)+(isMultiParentRow?'<br><small>多人</small>':'')+'</td><td class="cs-col-boss">'+esc(sanitizeBossLabel(o.bossName,publicBossCode(o)))+(publicBossCode(o)?'<br><small>'+esc(publicBossCode(o))+'</small>':'')+'</td><td class="cs-col-companion">'+companionCell+'</td><td class="cs-col-game">'+esc(o.game||'-')+'</td><td class="cs-col-amount">'+money(o.totalAmount)+'</td><td class="cs-col-status">'+statusCell+'</td><td class="cs-col-time">'+esc(fmtOrderDateTime(o.createdAt))+'</td><td class="cs-col-actions"><div class="cs-actions">'+actions.join('')+'</div></td></tr>';
   }
   function createOrderHtml(){

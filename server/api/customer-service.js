@@ -685,6 +685,24 @@ async function loadOpenConversationByOrderId(orderId) {
   );
   return (rows || []).find((r) => String(r.conversation_type || "") !== "companion_support" && r.boss_id) || null;
 }
+/** Early finish is a desk settlement, not a chat mutation. Active CS may confirm or reject it even when another CS owns the order chat. */
+function assertCsEarlyFinishRole(serviceProfile) {
+  if (isAdminLike(serviceProfile)) return { ok: true, adminOverride: true };
+  const role = String(serviceProfile?.role || "");
+  if (!SERVICE_ROLES.has(role)) {
+    const err = new Error("无权处理提前结束。");
+    err.status = 403;
+    err.code = "CS_EARLY_FINISH_FORBIDDEN";
+    throw err;
+  }
+  if (serviceProfile.status && serviceProfile.status !== "active") {
+    const err = new Error("该客服账号已被停用，请联系管理员。");
+    err.status = 403;
+    err.code = "CS_EARLY_FINISH_FORBIDDEN";
+    throw err;
+  }
+  return { ok: true };
+}
 async function assertOrderMutationAllowed(order, serviceProfile, { requireOwner = false } = {}) {
   try {
     return await assertCanMutateOrder({
@@ -4536,9 +4554,9 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
         return json(res, 200, { ok: true, preview });
       }
       try {
-        await assertOrderMutationAllowed(order, service.profile);
+        assertCsEarlyFinishRole(service.profile);
       } catch (err) {
-        return json(res, err.status || 403, { ok: false, message: err.message || CS_LOCK_DENIED, code: err.code || "CS_SESSION_LOCKED" });
+        return json(res, err.status || 403, { ok: false, message: err.message || "无权处理提前结束。", code: err.code || "CS_EARLY_FINISH_FORBIDDEN" });
       }
       const operator = { id: service.profile.id, name: csDisplayName(service.profile) };
       const addSystemMessage = async (ord, actorId, content) => {
