@@ -14,7 +14,7 @@ globalThis.fetch = async () => {
   throw new Error("network disabled in offline verify");
 };
 
-const { resolveCommissionBadge, badgeSnapshotFrom, readOrderBadgeSnapshot } = await import("../server/api/_cert-badge-ledger.js");
+const { resolveCommissionBadge, badgeSnapshotFrom, readOrderBadgeSnapshot, historicalSettlementLocked } = await import("../server/api/_cert-badge-ledger.js");
 const { orderFigures, sumFigures, rangeBounds, monthlyRows, parseClawbacks, inRange } = await import("../server/api/_cert-badge-stats.js");
 const { createOrderCompleteHelpers } = await import("../server/api/_order-complete.js");
 
@@ -271,6 +271,38 @@ await settleOrder(childB);
 }
 
 check("快照解析拒绝无效 JSON", readOrderBadgeSnapshot({ cert_badge_snapshot: "{bad" }) === null);
+check("已结算且没有徽章快照的旧单禁止回填", historicalSettlementLocked({ settlement_status: "settled", status: "completed", companion_income: 80 }));
+check("未结算订单仍允许冻结徽章快照", historicalSettlementLocked({ status: "in_progress" }) === false);
+{
+  const historical = {
+    id: "hist-80",
+    companion_id: PW_A.user,
+    order_no: "MCJ-OLD-80",
+    status: "completed",
+    settlement_status: "settled",
+    order_type: "standard",
+    total_amount: 100,
+    companion_income: 80,
+    platform_fee: 20,
+    platform_fee_rate: 20,
+    companion_commission_rate_snapshot: 80,
+    settlement_note: 'MCJ_SETTLEMENT:{"commissionSource":"system"}',
+    cert_badge_snapshot: null,
+  };
+  const income = [{ order_id: "hist-80", user_id: PW_A.user, status: "completed", amount: 80, note: "" }];
+  check("旧单按默认 80% 结算且无快照时不归入任何徽章", orderFigures(historical, income, []) === null);
+  const stamped = {
+    ...historical,
+    id: "hist-80b",
+    cert_badge_snapshot: snapFor(PW_A),
+  };
+  const fig = orderFigures(stamped, [{ ...income[0], order_id: "hist-80b" }], []);
+  check(
+    "旧单实际分成仍是 80% 时不把佣金记到后来的徽章",
+    fig && fig.companionShareRate === 80 && fig.commissionBadgeId === "" && fig.commissionSource === "system",
+    JSON.stringify(fig && { share: fig.companionShareRate, badge: fig.commissionBadgeId, source: fig.commissionSource })
+  );
+}
 
 console.log(`\nTotal ${pass + fail}  PASS ${pass}  FAIL ${fail}`);
 if (process.argv.includes("--json")) console.log(JSON.stringify({ total: pass + fail, pass, fail, results }, null, 2));

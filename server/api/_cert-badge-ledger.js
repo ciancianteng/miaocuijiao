@@ -315,6 +315,15 @@ export async function buildBadgeSnapshot({ companionUserId = "", companionProfil
   return badgeSnapshotFrom({ openRows, catalog, companionUserId, companionProfileId: pid, stage });
 }
 
+/** Settled before a badge snapshot existed: keep the original rule, do not backfill. */
+export function historicalSettlementLocked(row = {}) {
+  if (readOrderBadgeSnapshot(row)) return false;
+  if (String(row.settlement_status || "") === "settled") return true;
+  const status = String(row.status || "");
+  const income = row.companion_income;
+  return income != null && income !== "" && ["completed", "reviewed", "refunded"].includes(status);
+}
+
 export function readOrderBadgeSnapshot(order = {}) {
   let snap = order?.cert_badge_snapshot;
   if (typeof snap === "string") {
@@ -351,6 +360,9 @@ export async function ensureOrderBadgeSnapshot(order, { stage = "bind", companio
     if (String(row.order_type || "") === "multi_group") return null;
     // Companion was replaced: re-freeze for the new companion, but never after settlement.
     if (current && String(row.settlement_status || "") === "settled") return current;
+    // A settled order with no badge snapshot was settled under the old default/level rule.
+    // Never stamp the companion's current badges onto it.
+    if (!current && historicalSettlementLocked(row)) return null;
     const snap = await buildBadgeSnapshot({ companionUserId: cid, companionProfileId, stage });
     if (!snap && !current) return null;
     const guard = current

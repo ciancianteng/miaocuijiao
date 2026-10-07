@@ -12,6 +12,7 @@
 import { restUrl, supabaseJson, serviceHeaders } from "./_wallet.js";
 import { companionDb } from "./_companion-media-store.js";
 import { resolveEffectiveCompanionCommission } from "./_commission-rates.js";
+import { ensureOrderBadgeSnapshot, historicalSettlementLocked, readOrderBadgeSnapshot } from "./_cert-badge-ledger.js";
 import { readLocalLevels } from "./_companion-levels-store.js";
 import { writeOrderStatusLog } from "./_order-status.js";
 import {
@@ -106,7 +107,7 @@ export function computeEarlyFinish(order, { servedHours, companionShareRate = 0 
   };
 }
 
-/** Same share resolution as settlement (order snapshot → gameplay fee snapshot → profile/level). */
+/** Same share resolution as settlement (settlement snapshot → gameplay fee snapshot → frozen badge → profile/level). */
 export async function estimateCompanionShare(order) {
   if (order?.companion_commission_rate_snapshot != null && order.companion_commission_rate_snapshot !== "") {
     return money(order.companion_commission_rate_snapshot);
@@ -115,6 +116,12 @@ export async function estimateCompanionShare(order) {
   if (isGameplay && order?.platform_fee_rate != null && order.platform_fee_rate !== "") {
     return money(100 - Math.min(100, Math.max(0, money(order.platform_fee_rate))));
   }
+  let badgeSnap = readOrderBadgeSnapshot(order);
+  if (!badgeSnap && order?.id && !historicalSettlementLocked(order)) {
+    badgeSnap = await ensureOrderBadgeSnapshot(order, { stage: "early_finish" }).catch(() => null);
+  }
+  const badgeShare = badgeSnap?.commission?.companionShareRate;
+  if (badgeShare != null && badgeShare !== "") return money(badgeShare);
   if (!order?.companion_id) return 0;
   const cp =
     (
