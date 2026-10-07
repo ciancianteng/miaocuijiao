@@ -434,7 +434,7 @@ async function patchReceiptReview(receiptId, patch) {
   }
 }
 
-async function supersedePendingReceipts(orderId) {
+export async function supersedePendingReceipts(orderId) {
   const active = await companionDb(
     "payment_receipts",
     `?order_id=eq.${encodeURIComponent(orderId)}&status=eq.pending&limit=5`

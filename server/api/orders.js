@@ -3142,6 +3142,10 @@ export default async function handler(req, res) {
 
       let order = await patchCancel(id);
       let cancelledChildren = [];
+      if (hadActiveHold) {
+        const { supersedePendingReceipts } = await import("./_payment-receipts.js");
+        await supersedePendingReceipts(before.id).catch(() => {});
+      }
 
       // Multi parent (unpaid): cancel entire group so children cannot still pay/accept.
       if (isMultiGroupParent(before)) {
