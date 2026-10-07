@@ -1366,6 +1366,10 @@
       return true;
     }
 
+    if (/\/companion\/pw\d+\/?$/i.test(p)) {
+      clearPendingAuthGate();
+      return true;
+    }
     if (/\/companion(\/|$)/i.test(p)) {
       if (!hasPortalSession("companion")) return denyUnauthed("/companion/login/", returnPath());
       clearPendingAuthGate();
