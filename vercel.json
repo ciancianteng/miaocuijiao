@@ -247,6 +247,8 @@
     { "source": "/companion/login/", "destination": "/companion/login/index.html" },
     { "source": "/companion", "destination": "/companion/index.html" },
     { "source": "/companion/", "destination": "/companion/index.html" },
+    { "source": "/companion/:code([Pp][Ww][0-9]+)", "destination": "/profile.html" },
+    { "source": "/companion/:code([Pp][Ww][0-9]+)/", "destination": "/profile.html" },
     { "source": "/companion/:path*", "destination": "/companion/index.html" },
     { "source": "/customer-service/login", "destination": "/customer-service/login/index.html" },
     { "source": "/customer-service/login/", "destination": "/customer-service/login/index.html" },

@@ -427,6 +427,13 @@
       return true;
     }
 
+    // Public boss-facing card. /companion/PW00021 rewrites to profile.html.
+    // Guests may browse; order and chat still follow the page's own auth rules.
+    if (/\/companion\/pw\d+\/?$/i.test(p)) {
+      revealShell();
+      return true;
+    }
+
     // —— Companion ——
     if (/\/companion(\/|$)/i.test(p)) {
       hideShell();

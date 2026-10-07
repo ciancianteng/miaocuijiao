@@ -363,8 +363,23 @@
     ) / 100;
   }
 
+  function dropStoredSelection() {
+    try {
+      sessionStorage.removeItem(STORAGE_KEY);
+      sessionStorage.removeItem(PICKING_KEY);
+    } catch (e1) {}
+    try {
+      localStorage.removeItem(STORAGE_KEY);
+      localStorage.removeItem(PICKING_KEY);
+    } catch (e2) {}
+  }
+
   function persist() {
     try {
+      if (!state.lines.length) {
+        dropStoredSelection();
+        return;
+      }
       var payload = {
         bossKey: bossKey(),
         lines: state.lines.map(function (l) {
@@ -397,16 +412,28 @@
         paymentMethod: state.paymentMethod || "",
       };
       sessionStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+      try {
+        // sessionStorage is the source of truth. Drop a different legacy localStorage copy.
+        if (localStorage.getItem(STORAGE_KEY) !== sessionStorage.getItem(STORAGE_KEY)) {
+          localStorage.removeItem(STORAGE_KEY);
+        }
+      } catch (eLocal) {}
     } catch (e) {}
   }
 
   function restore() {
     try {
       var raw = sessionStorage.getItem(STORAGE_KEY);
-      if (!raw) return;
+      if (!raw) {
+        try {
+          localStorage.removeItem(STORAGE_KEY);
+          localStorage.removeItem(PICKING_KEY);
+        } catch (eLocal) {}
+        return;
+      }
       var data = JSON.parse(raw);
       if (!data || !canKeepDraft(data.bossKey)) {
-        sessionStorage.removeItem(STORAGE_KEY);
+        dropStoredSelection();
         return;
       }
       state.lines = Array.isArray(data.lines)
@@ -470,10 +497,7 @@
     state.paymentMethod = "";
     state.expanded = false;
     // Keep pendingIdempotencyKey so back/retry cannot mint a second parent.
-    try {
-      sessionStorage.removeItem(STORAGE_KEY);
-      sessionStorage.removeItem(PICKING_KEY);
-    } catch (e) {}
+    dropStoredSelection();
     renderBar();
     closeSheet();
   }
@@ -520,7 +544,9 @@
         document.querySelector(".profile-bottom-bar.pd-bottom-bar"),
         document.querySelector(".profile-bottom-bar"),
         document.querySelector(".mobile-bottom-nav.mcj-app-tabbar"),
+        document.querySelector(".bottom-nav.mcj-app-tabbar"),
         document.querySelector(".mcj-app-tabbar"),
+        document.querySelector(".bottom-nav"),
       ];
       var actions = null;
       for (var i = 0; i < candidates.length; i++) {

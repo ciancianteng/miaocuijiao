@@ -460,7 +460,7 @@ test("TEST multi confirm navigates to payment-confirm (not inline debit)", () =>
   assert.doesNotMatch(teamSrc, /action:\s*["']pay_order["']/);
   // Must not jump straight to orders success after create
   const submitIdx = teamSrc.indexOf("function submitTeam");
-  const submitChunk = teamSrc.slice(submitIdx, submitIdx + 4500);
+  const submitChunk = teamSrc.slice(submitIdx, submitIdx + 5200);
   assert.match(submitChunk, /payment-confirm\.html\?order=/);
   assert.doesNotMatch(submitChunk, /orders\.html\?id=/);
 });

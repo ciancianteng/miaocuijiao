@@ -21,14 +21,93 @@
     if (window.MCJCurrency) return window.MCJCurrency.formatRate(v, unit || "小时");
     return money(v).replace(/\s*猫粮$/, "") + " 猫粮/" + (unit || "小时");
   }
+  function pathPublicId() {
+    var m = String(location.pathname || "").match(/\/companion\/(PW\d+)\/?$/i);
+    return m ? String(m[1] || "").toUpperCase() : "";
+  }
   function param() {
+    var fromPath = pathPublicId();
+    if (fromPath) return fromPath;
     var p = new URLSearchParams(location.search);
     return p.get("player") || p.get("id") || p.get("uid") || p.get("code") || p.get("publicId") || "";
+  }
+  function exclusiveProfileUrl(publicId) {
+    var id = String(publicId || "").trim().toUpperCase();
+    if (!/^PW\d+$/.test(id)) return "";
+    return location.origin + "/companion/" + id;
+  }
+  function profileToast(msg) {
+    var el = document.querySelector("[data-pd-toast]");
+    if (!el) {
+      el = document.createElement("div");
+      el.className = "pd-share-toast";
+      el.setAttribute("data-pd-toast", "1");
+      el.setAttribute("role", "status");
+      document.body.appendChild(el);
+    }
+    el.textContent = msg;
+    el.classList.add("is-on");
+    clearTimeout(el._pdToast);
+    el._pdToast = setTimeout(function () {
+      el.classList.remove("is-on");
+    }, 1800);
+  }
+  function copyProfileLink(url) {
+    function legacy() {
+      return new Promise(function (resolve, reject) {
+        try {
+          var ta = document.createElement("textarea");
+          ta.value = url;
+          ta.setAttribute("readonly", "");
+          ta.style.position = "fixed";
+          ta.style.left = "-9999px";
+          document.body.appendChild(ta);
+          ta.select();
+          var ok = document.execCommand("copy");
+          ta.remove();
+          if (ok) resolve();
+          else reject(new Error("copy"));
+        } catch (e) {
+          reject(e);
+        }
+      });
+    }
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+      return navigator.clipboard.writeText(url).catch(legacy);
+    }
+    return legacy();
+  }
+  function shareProfileLink(btn) {
+    var url = btn ? String(btn.getAttribute("data-share-url") || "") : "";
+    var name = btn ? String(btn.getAttribute("data-share-name") || "陪玩") : "陪玩";
+    var publicId = btn ? String(btn.getAttribute("data-share-id") || "") : "";
+    if (!url) {
+      profileToast("专属链接暂不可用");
+      return;
+    }
+    var text = "来看看 MEOW CUI JIAO 的陪玩 " + name + (publicId ? " " + publicId : "");
+    function copied() {
+      profileToast("专属链接已复制");
+    }
+    if (navigator.share) {
+      navigator
+        .share({ title: "MEOW CUI JIAO · " + name, text: text, url: url })
+        .catch(function (err) {
+          if (err && err.name === "AbortError") return;
+          copyProfileLink(url).then(copied).catch(function () {
+            profileToast("复制失败");
+          });
+        });
+      return;
+    }
+    copyProfileLink(url).then(copied).catch(function () {
+      profileToast("复制失败");
+    });
   }
   function lookupCandidates() {
     var p = new URLSearchParams(location.search);
     var primary = param();
-    var extras = [p.get("code"), p.get("publicId"), p.get("player"), p.get("uid"), p.get("id")].filter(Boolean);
+    var extras = [pathPublicId(), p.get("code"), p.get("publicId"), p.get("player"), p.get("uid"), p.get("id")].filter(Boolean);
     var out = [];
     [primary].concat(extras).forEach(function (v) {
       var s = String(v || "").trim();
@@ -596,7 +675,24 @@
     var newcomerBadge = isNewcomer ? '<span class="pd-newcomer-badge">新人陪玩</span>' : "";
 
     s.setAttribute("data-companion-level", c.levelId || "");
+    var shareName = String(c.name || c.nickname || "陪玩").trim() || "陪玩";
+    var shareUrl = exclusiveProfileUrl(publicId);
+    var shareBtn =
+      '<button type="button" class="pd-share-btn"' +
+      (shareUrl
+        ? ' data-profile-share data-share-url="' +
+          esc(shareUrl) +
+          '" data-share-name="' +
+          esc(shareName) +
+          '" data-share-id="' +
+          esc(String(publicId || "").toUpperCase()) +
+          '"'
+        : " disabled") +
+      ' aria-label="分享陪玩专属链接"><span>分享</span><svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true" focusable="false"><path d="M7 17 17 7M9 7h8v8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>';
     s.innerHTML =
+      '<div class="pd-share-bar"><button type="button" class="pd-share-back" data-profile-back>← 返回</button>' +
+      shareBtn +
+      "</div>" +
       '<section class="profile-hero detail-card" data-companion-level="' +
       esc(c.levelId || "") +
       '"><div class="profile-avatar-wrap"><img class="profile-avatar" src="' +
@@ -1257,6 +1353,29 @@
   }
 
   document.addEventListener("click", function (e) {
+    if (e.target.closest("[data-profile-back]")) {
+      e.preventDefault();
+      var ref = "";
+      try {
+        ref = document.referrer || "";
+      } catch (eRef) {}
+      var sameOrigin = false;
+      try {
+        sameOrigin = !!ref && new URL(ref).origin === location.origin;
+      } catch (eUrl) {}
+      if (sameOrigin && window.history.length > 1) {
+        history.back();
+        return;
+      }
+      location.href = "/companion-center.html";
+      return;
+    }
+    var shareBtn = e.target.closest("[data-profile-share]");
+    if (shareBtn) {
+      e.preventDefault();
+      shareProfileLink(shareBtn);
+      return;
+    }
     var expandBtn = e.target.closest("[data-review-expand]");
     if (expandBtn) {
       e.preventDefault();

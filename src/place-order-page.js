@@ -665,6 +665,36 @@
       });
   }
 
+  function dropCompanionFromMultiSelection(companionId) {
+    var id = String(companionId || "");
+    if (window.MCJMultiCompanionTeam && typeof window.MCJMultiCompanionTeam.remove === "function") {
+      window.MCJMultiCompanionTeam.remove(id);
+      return;
+    }
+    try {
+      var raw = sessionStorage.getItem("mcjMultiTeamSelection");
+      if (!raw) {
+        localStorage.removeItem("mcjMultiTeamSelection");
+        localStorage.removeItem("mcjMultiTeamPicking");
+        return;
+      }
+      var data = JSON.parse(raw);
+      var lines = Array.isArray(data.lines) ? data.lines : [];
+      data.lines = lines.filter(function (l) {
+        return String((l && l.companionId) || "") !== id;
+      });
+      if (!data.lines.length) {
+        sessionStorage.removeItem("mcjMultiTeamSelection");
+        sessionStorage.removeItem("mcjMultiTeamPicking");
+        localStorage.removeItem("mcjMultiTeamSelection");
+        localStorage.removeItem("mcjMultiTeamPicking");
+        return;
+      }
+      sessionStorage.setItem("mcjMultiTeamSelection", JSON.stringify(data));
+      localStorage.removeItem("mcjMultiTeamSelection");
+    } catch (e) {}
+  }
+
   function submitOrder() {
     if (state.submitting) return;
     if (!requireLogin()) return;
@@ -741,6 +771,7 @@
         var order = body.order || {};
         var oid = order.id || "";
         if (!oid) throw new Error("订单创建失败");
+        dropCompanionFromMultiSelection(c.companionId);
         // Never auto-pay after create — shared payment-confirm owns pay_order.
         location.href = "payment-confirm.html?order=" + encodeURIComponent(oid);
       })

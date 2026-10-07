@@ -308,6 +308,7 @@
 
   function inferPortalFromPage() {
     var p = path();
+    if (/\/companion\/pw\d+\/?$/i.test(p)) return "";
     if (/\/companion(\/|$)/i.test(p)) return "companion";
     if (/\/customer-service(\/|$)/i.test(p)) return "customer_service";
     if (/\/admin(\/|\.html|$)/i.test(p)) return "admin";

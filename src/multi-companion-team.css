@@ -34,7 +34,7 @@
   left: 12px;
   right: 12px;
   /* Sit fully above the real bottom action bar (measured via --mcj-bottom-actions-h). */
-  bottom: calc(var(--mcj-bottom-actions-h, 64px) + 8px);
+  bottom: calc(var(--mcj-bottom-actions-h, calc(64px + env(safe-area-inset-bottom, 0px))) + 8px);
   z-index: 9000;
   display: flex;
   flex-wrap: wrap;

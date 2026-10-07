@@ -54,6 +54,9 @@
     } catch (e) {
       p = "/";
     }
+    if (/^\/companion\/pw\d+\/?$/i.test(p)) {
+      return { key: "boss", manifest: "/manifest.webmanifest", title: "妙脆角老板" };
+    }
     if (/^\/companion(\/|$)/i.test(p) || /^\/companion-apply\.html$/i.test(p)) {
       return { key: "companion", manifest: "/manifest-companion.webmanifest", title: "妙脆角陪玩" };
     }

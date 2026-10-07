@@ -303,11 +303,6 @@
       return;
     }
     btn.setAttribute("aria-busy", "false");
-    if (teamDraftShouldAbsorbCurrentCompanion()) {
-      btn.disabled = false;
-      btn.textContent = "加入一起下单";
-      return;
-    }
     if (state.payMethodsLoading) {
       btn.disabled = true;
       btn.textContent = "支付方式加载中…";
@@ -1640,6 +1635,22 @@
     });
   }
 
+  function commitSelectionAfterCreatedOrder(order) {
+    var team = window.MCJMultiCompanionTeam;
+    if (!team) return;
+    var type = String((order && (order.orderTypeKey || order.order_type || order.orderType)) || "");
+    var multi = !!(
+      order &&
+      (order.isMultiGroupParent || type === "multi_group" || order.order_type === "multi_group")
+    );
+    if (multi) {
+      if (typeof team.clear === "function") team.clear();
+      return;
+    }
+    var cid = currentCompanionId();
+    if (cid && typeof team.remove === "function") team.remove(cid);
+  }
+
   function goPaymentPage(order) {
     var oid = order && order.id ? order.id : "";
     close();
@@ -1837,12 +1848,10 @@
         return;
       }
 
-      // Existing multi draft / 继续选: never create a standalone single order.
-      // 第2位必须直接加入同一 draft，显示已选2人；老板再选「继续选」或「确认并支付」。
-      if (teamDraftShouldAbsorbCurrentCompanion()) {
-        absorbCurrentCompanionIntoTeam();
-        return;
-      }
+      // Existing multi draft stays until this independent order is created successfully.
+      // 立即下单 / 确认订单并付款 always calls place_order.
+      // 再加一位陪玩 is the only path that joins the multi draft.
+      // Opening this modal, leaving it, or a failed create must not clear the selection.
 
       if (!requireLogin()) return;
 
@@ -2003,6 +2012,9 @@
           var order = body.order || {};
           var oid = order.id || "";
           if (!oid) throw new Error("订单创建失败");
+          // Commit selection only after the create API returns an order id.
+          // SINGLE: drop this companion. MULTI parent: clear the whole draft.
+          commitSelectionAfterCreatedOrder(order);
           // Single-order must reuse the same payment-confirm path as multi-order.
           // pay_order only runs after boss confirms payment on that page.
           goPaymentPage(order);

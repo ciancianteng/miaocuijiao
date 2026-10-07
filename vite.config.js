@@ -171,6 +171,11 @@ function localRouteAliases() {
       server.middlewares.use((req, _res, next) => {
         const requestUrl = new URL(req.url || "/", "http://localhost");
         const pathname = requestUrl.pathname.replace(/\/+$/, "") || "/";
+        if (/^\/companion\/pw\d+$/i.test(pathname)) {
+          req.url = `/profile.html${requestUrl.search}`;
+          next();
+          return;
+        }
         const target = aliases.get(pathname);
         if (target) req.url = `${target}${requestUrl.search}`;
         next();
