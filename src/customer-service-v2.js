@@ -1908,7 +1908,7 @@ import './mcj-chat-realtime.js';
         :takenByOther
         ?'<button class="cs-btn" type="button" disabled>只读 · '+esc(active.assignedCsName||active.currentServiceName||'其他客服')+'</button>'+(isAdminSession()?'<button class="cs-btn primary" type="button" data-admin-takeover="'+esc(active.id)+'">管理员接管</button>':'')
         :(takenByMe
-          ?'<button class="cs-btn" type="button" data-transfer-cs="'+esc(active.id)+'">转交客服</button><button class="cs-btn danger" type="button" data-end="'+esc(active.id)+'">结束对话</button>'
+          ?'<span class="cs-chat-head-actions"><button class="cs-btn cs-icon-btn" type="button" data-transfer-cs="'+esc(active.id)+'" title="转交客服">转交</button><button class="cs-btn cs-icon-btn danger" type="button" data-end="'+esc(active.id)+'" title="结束对话">结束</button></span>'
           :(!active.currentServiceId
             ?'<button class="cs-btn primary" type="button" data-take="'+esc(active.id)+'"'+(state.acceptingId===active.id?' disabled data-taking="1"':'')+'>'+(state.acceptingId===active.id?'接待中…':'开始接待')+'</button>'
             :''));
@@ -2825,7 +2825,7 @@ import './mcj-chat-realtime.js';
       :takenByOther
       ?'<button class="cs-btn" type="button" disabled>只读 · '+esc(active.assignedCsName||active.currentServiceName||'其他客服')+'</button>'+(isAdminSession()?'<button class="cs-btn primary" type="button" data-admin-takeover="'+esc(active.id)+'">管理员接管</button>':'')
       :(takenByMe
-        ?'<button class="cs-btn" type="button" data-transfer-cs="'+esc(active.id)+'">转交客服</button><button class="cs-btn danger" type="button" data-end="'+esc(active.id)+'">结束对话</button>'
+        ?'<span class="cs-chat-head-actions"><button class="cs-btn cs-icon-btn" type="button" data-transfer-cs="'+esc(active.id)+'" title="转交客服">转交</button><button class="cs-btn cs-icon-btn danger" type="button" data-end="'+esc(active.id)+'" title="结束对话">结束</button></span>'
         :(!active.currentServiceId
           ?'<button class="cs-btn primary" type="button" data-take="'+esc(active.id)+'"'+(state.acceptingId===active.id?' disabled data-taking="1"':'')+'>'+(state.acceptingId===active.id?'接待中…':'开始接待')+'</button>'
           :''))):'';
@@ -2844,6 +2844,7 @@ import './mcj-chat-realtime.js';
         '<div class="mcj-composer-tools">'+
         '<button class="mcj-composer-tool" type="button" data-cs-emoji'+(canReply?'':' disabled')+' aria-label="表情">😊</button>'+
         '<button class="mcj-composer-tool mcj-composer-tool-img" type="button" data-cs-image'+(canReply?'':' disabled')+' aria-label="图片/相册" title="图片/相册">图片</button>'+
+        '<button class="mcj-composer-tool" type="button" data-cs-quick'+(canReply?'':' disabled')+' title="快捷回复">快捷</button>'+
         '</div>'+
         '<textarea name="content" data-cs-composer rows="1" placeholder="'+esc(canReply?'输入消息，Enter 发送，Shift+Enter 换行':(blockReason||'无法回复'))+'" autocomplete="off" maxlength="2000"'+(canReply?'':' disabled readonly')+'></textarea>'+
         '<button class="cs-btn primary cs-send-btn" type="button" data-cs-send'+(canReply&&String(state.composerDraft||'').trim()?'':' disabled')+'>发送</button>'+
@@ -2852,6 +2853,7 @@ import './mcj-chat-realtime.js';
       :'';
     var listHtml='<aside class="cs-chat-list'+(listOpen?' is-open':'')+'" data-cs-chat-list>'+
       '<div class="cs-chat-list-head"><strong>会话列表</strong><div class="cs-actions">'+
+      '<button class="cs-btn cs-icon-btn" type="button" data-cs-notices>通知'+(((state.data&&state.data.notifications)||[]).filter(function(n){return !n.readAt;}).length?'<em class="cs-conv-unread">'+((state.data.notifications||[]).filter(function(n){return !n.readAt;}).length)+'</em>':'')+'</button>'+
       '<button class="cs-btn" type="button" data-refresh>刷新</button>'+
       '<button class="cs-btn cs-list-close" type="button" data-close-conv-list>关闭</button>'+
       '</div></div>'+
@@ -2892,7 +2894,7 @@ import './mcj-chat-realtime.js';
       (active
         ?('<header class="cs-chat-head">'+
           '<div class="cs-chat-head-main">'+
-          '<button class="cs-btn cs-back-list" type="button" data-open-conv-list>会话列表</button>'+
+          '<button class="cs-btn cs-icon-btn cs-back-list" type="button" data-open-conv-list>列表</button>'+
           '<div><h2>'+esc(activeTitle||'老板')+'</h2>'+
           '<p>'+(bossLabel?'编号 '+esc(bossLabel)+' · ':'')+(active.orderNo?'订单 '+esc(active.orderNo)+' · ':'')+esc(isClosed?'已结束':(active.currentServiceId?(active.currentServiceName||'接待中'):'待接待'))+'</p></div></div>'+
           takeBtn+
@@ -3211,6 +3213,12 @@ import './mcj-chat-realtime.js';
       ?s.sections.map(function(sec){return '<div><span>'+esc(sec.label)+'</span><strong style="white-space:pre-wrap;font-weight:500;text-align:left">'+esc(sec.value)+'</strong></div>';}).join('')
       :'<div><span>服务标准</span><strong>下单时陪玩未填写详细标准（按'+esc(s.pricingUnit||'小时')+'计费）</strong></div>';
     if(s.bossRank&&s.bossRank.rank)rows='<div data-order-boss-rank><span>老板段位</span><strong>'+esc((s.bossRank.game?s.bossRank.game+' · ':'')+s.bossRank.rank)+'</strong></div>'+rows;
+    if(s.requirements&&s.requirements.length){
+      rows=(s.requirements.map(function(field){
+        var val=Array.isArray(field.value)?field.value.join('、'):String(field.value||'');
+        return '<div data-order-requirement><span>'+esc(field.name)+'</span><strong style="white-space:pre-wrap">'+esc(val||'-')+'</strong></div>';
+      }).join(''))+rows;
+    }
     return '<h4 style="margin:14px 0 6px">服务标准（下单时快照）· '+esc(s.serviceName||o.game||'-')+'</h4>'+
       '<div class="cs-info-list" data-order-service-standard>'+rows+'</div>'+
       '<p class="cs-note" style="margin:6px 0 0">老板下单时看到的标准，陪玩之后修改不会影响本单；售后判定以此为准。</p>';
@@ -3417,7 +3425,41 @@ import './mcj-chat-realtime.js';
       toast('图片发送失败，请重试');
     });
   }
-  function sendChatMessage(){
+  function openQuickReplies(){
+    var wrap=root.querySelector('[data-cs-composer-wrap]');
+    if(!wrap)return;
+    var panel=root.querySelector('[data-cs-quick-panel]');
+    if(!panel){
+      panel=document.createElement('div');
+      panel.setAttribute('data-cs-quick-panel','1');
+      panel.className='cs-quick-panel';
+      wrap.insertBefore(panel, wrap.querySelector('form'));
+    }
+    panel.hidden=false;
+    panel.innerHTML='<p class="cs-note">读取快捷回复…</p>';
+    api('list_quick_replies').then(function(res){
+      var replies=(res.replies||[]).filter(function(item){return item.enabled!==false;});
+      state.quickReplies=res.replies||[];
+      panel.innerHTML='<div class="cs-quick-list">'+(replies.length?replies.map(function(item){
+        return '<button type="button" data-quick-send="'+esc(item.content)+'">'+esc(item.title)+'</button>';
+      }).join(''):'<p class="cs-note">还没有启用的快捷回复</p>')+'</div>'+
+        '<div class="cs-quick-edit"><input data-quick-title placeholder="标题，例如付款提醒"><textarea data-quick-content placeholder="回复内容"></textarea><button type="button" class="cs-btn" data-quick-save>保存快捷回复</button></div>';
+    }).catch(function(err){panel.innerHTML='<p class="cs-note">'+esc(err.message||'读取失败')+'</p>';});
+  }
+  function saveQuickReplyFromPanel(){
+    var panel=root.querySelector('[data-cs-quick-panel]');
+    if(!panel)return;
+    var title=(panel.querySelector('[data-quick-title]')||{}).value||'';
+    var content=(panel.querySelector('[data-quick-content]')||{}).value||'';
+    if(!String(title).trim()||!String(content).trim()){toast('请填写标题和内容');return;}
+    var replies=(state.quickReplies||[]).slice();
+    replies.push({title:String(title).trim(),content:String(content).trim(),enabled:true,sort:replies.length});
+    api('save_quick_replies',{replies:replies}).then(function(){
+      toast('快捷回复已保存');
+      openQuickReplies();
+    }).catch(function(err){toast(err.message||'保存失败')});
+  }
+  function sendChatMessage(overrideText){
     if(state.sendingChat)return;
     var conv=activeConversation();
     if(!composerCanReply(conv)){
@@ -3426,7 +3468,8 @@ import './mcj-chat-realtime.js';
       return;
     }
     var input=root.querySelector(COMPOSER_SEL);
-    var content=String((input&&input.value)||state.composerDraft||'');
+    var forced=overrideText!=null;
+    var content=forced?String(overrideText):String((input&&input.value)||state.composerDraft||'');
     // Keep exact draft for failure restore; only trim for empty check / API.
     var trimmed=content.trim();
     if(!trimmed||!state.activeConversation)return;
@@ -3440,13 +3483,15 @@ import './mcj-chat-realtime.js';
       messageType:'text',content:trimmed,createdAt:new Date().toISOString()
     };
     state.sendingChat=true;
-    state.composerDraft='';
-    if(state.composerDrafts)state.composerDrafts[cid]='';
-    state.composerFocused=true;
-    if(input){
-      input.value='';
-      try{input.style.height='';}catch(e){}
+    if(!forced){
+      state.composerDraft='';
+      if(state.composerDrafts)state.composerDrafts[cid]='';
+      if(input){
+        input.value='';
+        try{input.style.height='';}catch(e){}
+      }
     }
+    state.composerFocused=true;
     if(!state.data)state.data=emptyDashboardData();
     if(!state.data.messages)state.data.messages=[];
     state.data.messages.push(optimistic);
@@ -3603,6 +3648,37 @@ import './mcj-chat-realtime.js';
     if(e.target.closest('[data-clock-out]')){
       e.preventDefault();
       runClock('clock_out');
+      return;
+    }
+    if(e.target.closest('[data-cs-notices]')){
+      e.preventDefault();
+      var notes=(state.data&&state.data.notifications)||[];
+      var unread=notes.filter(function(n){return !n.readAt;});
+      modal('<div class="cs-dialog-head"><h3>通知</h3><button class="cs-btn ghost" type="button" data-close-modal>关闭</button></div><div class="cs-info-list">'+
+        (notes.length?notes.slice(0,30).map(function(n){
+          return '<a href="'+esc(n.href||'#')+'"><span>'+esc(n.title||'通知')+(n.readAt?'':' · 未读')+'</span><strong>'+esc(n.body||'')+'</strong></a>';
+        }).join(''):'<div><span>通知</span><strong>暂无通知</strong></div>')+
+        '</div><p class="cs-note">未读 '+unread.length+'。刷新页面后仍然保留。</p>');
+      return;
+    }
+    if(e.target.closest('[data-cs-quick]')){
+      e.preventDefault();
+      openQuickReplies();
+      return;
+    }
+    var quickSend=e.target.closest('[data-quick-send]');
+    if(quickSend){
+      e.preventDefault();
+      if(state.sendingChat)return;
+      quickSend.disabled=true;
+      sendChatMessage(quickSend.getAttribute('data-quick-send')||'');
+      var panel=root.querySelector('[data-cs-quick-panel]');
+      if(panel)panel.hidden=true;
+      return;
+    }
+    if(e.target.closest('[data-quick-save]')){
+      e.preventDefault();
+      saveQuickReplyFromPanel();
       return;
     }
     if(e.target.closest('[data-cs-send]')){

@@ -290,8 +290,18 @@ async function listServices() {
     };
   }
   try {
+    const services = await listFromDb();
+    try {
+      const { loadAllOrderFieldConfigs, normalizeOrderFields } = await import("../_order-requirements.js");
+      const map = await loadAllOrderFieldConfigs();
+      services.forEach((item) => {
+        item.orderFields = normalizeOrderFields(map[item.id] || []);
+      });
+    } catch (fieldErr) {
+      console.warn("[admin/services] order fields", fieldErr?.message || fieldErr);
+    }
     return {
-      services: await listFromDb(),
+      services,
       categories: categoryResult.categories,
       icons: DEFAULT_ICONS,
       positions: DISPLAY_POSITIONS,
@@ -453,6 +463,13 @@ export default async function handler(req, res) {
     const body = await parseBody(req);
     const action = String(body.action || "save");
     const categories = (await listCategories()).categories;
+
+    if (action === "save_order_fields") {
+      const serviceId = String(body.id || body.serviceId || "").trim();
+      const { saveOrderFieldsForService } = await import("../_order-requirements.js");
+      const orderFields = await saveOrderFieldsForService(serviceId, body.orderFields || body.fields || []);
+      return json(res, 200, { ok: true, message: "订单要求已保存", orderFields });
+    }
 
     if (action === "save" || action === "create") {
       const result = await saveService(body, categories);

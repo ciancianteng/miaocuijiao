@@ -750,6 +750,7 @@ export default async function handler(req, res) {
           rejectReason: "",
           status: "pending",
           statusText: "待审核",
+          orderStatus: row.order?.status || "",
         })),
         rejectedPaymentProofs: (rejectedPaymentProofs || []).map((row) => ({
           id: row.id,

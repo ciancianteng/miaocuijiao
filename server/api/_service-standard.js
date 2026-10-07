@@ -202,7 +202,13 @@ export async function buildServiceSnapshotForCompanion(companionUserId, opts = {
   } catch (e) {
     console.warn("[service-standard] load for snapshot", String(e?.message || e).slice(0, 160));
   }
-  return buildServiceSnapshot({ ...opts, standards, companionId: companionUserId });
+  const snap = buildServiceSnapshot({ ...opts, standards, companionId: companionUserId });
+  if (opts.captureRequirements || Array.isArray(opts.orderRequirements)) {
+    const { loadOrderFieldsForService, captureRequirementAnswers } = await import("./_order-requirements.js");
+    const fields = await loadOrderFieldsForService(opts.serviceId || snap.serviceId);
+    snap.requirements = captureRequirementAnswers(fields, opts.orderRequirements || []);
+  }
+  return snap;
 }
 
 /** Write snapshot once; skips when the order already has one or the column is missing. */
@@ -248,6 +254,16 @@ export function viewServiceSnapshot(row = {}) {
     hasStandard: hasStandardContent(std),
     sections: standardSections(std),
     bossRank: viewBossRank(snap, row),
+    requirements: Array.isArray(snap.requirements?.fields)
+      ? snap.requirements.fields
+          .map((field) => ({
+            id: String(field?.id || ""),
+            name: String(field?.name || "").trim(),
+            kind: String(field?.kind || "text"),
+            value: Array.isArray(field?.value) ? field.value.map((item) => String(item || "")) : String(field?.value ?? ""),
+          }))
+          .filter((field) => field.name)
+      : [],
   };
 }
 

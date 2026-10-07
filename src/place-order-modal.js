@@ -850,6 +850,76 @@
     refreshServiceStandard();
     refreshTotals();
     syncInheritedGameIdField();
+    loadOrderRequirementFields();
+  }
+  function loadOrderRequirementFields() {
+    var host = document.querySelector("[data-po-requirements]");
+    if (!host) return;
+    var sid = String(state.selectedServiceId || "").trim();
+    if (!/^[0-9a-f-]{36}$/i.test(sid)) {
+      host.innerHTML = "";
+      state.orderFields = [];
+      return;
+    }
+    fetch("/api/platform/services?scope=order", { headers: { Accept: "application/json" }, cache: "no-store" })
+      .then(function (res) { return res.json(); })
+      .then(function (body) {
+        var live = document.querySelector("[data-po-requirements]");
+        if (!live || String(state.selectedServiceId || "") !== sid) return;
+        var services = (body && body.services) || [];
+        var match = services.find(function (item) { return String(item.id) === sid; });
+        var fields = (match && match.orderFields) || [];
+        state.orderFields = fields.filter(function (field) { return field && field.enabled !== false && field.name; });
+        live.innerHTML = state.orderFields.map(function (field) {
+          var required = field.required !== false;
+          var label = esc(field.name) + (required ? " *" : "");
+          var placeholder = esc(field.placeholder || "");
+          var common = ' data-po-req="' + esc(field.id) + '" data-po-req-kind="' + esc(field.kind || "text") + '"' + (required ? " data-po-req-required" : "");
+          if (field.kind === "textarea") {
+            return '<label><span class="mcj-po-label">' + label + '</span><textarea' + common + ' maxlength="500" placeholder="' + placeholder + '"></textarea></label>';
+          }
+          if (field.kind === "select") {
+            var options = (field.options || []).map(function (option) {
+              return '<option value="' + esc(option) + '">' + esc(option) + "</option>";
+            }).join("");
+            return '<label><span class="mcj-po-label">' + label + '</span><select' + common + '><option value="">' + (placeholder || "请选择") + "</option>" + options + "</select></label>";
+          }
+          if (field.kind === "multiselect") {
+            var checks = (field.options || []).map(function (option) {
+              return '<label style="display:flex;gap:6px;align-items:center;margin:4px 0"><input type="checkbox" data-po-req-check="' + esc(field.id) + '" value="' + esc(option) + '">' + esc(option) + "</label>";
+            }).join("");
+            return '<div class="mcj-po-field"' + common + '><span class="mcj-po-label">' + label + "</span>" + checks + "</div>";
+          }
+          var inputType = field.kind === "number" ? "number" : "text";
+          return '<label><span class="mcj-po-label">' + label + '</span><input type="' + inputType + '"' + common + ' maxlength="80" placeholder="' + placeholder + '"></label>';
+        }).join("");
+      })
+      .catch(function () {});
+  }
+  function readOrderRequirements() {
+    var host = document.querySelector("[data-po-requirements]");
+    var fields = state.orderFields || [];
+    if (!host || !fields.length) return [];
+    return fields.map(function (field) {
+      if (field.kind === "multiselect") {
+        var values = [];
+        host.querySelectorAll('[data-po-req-check="' + field.id + '"]:checked').forEach(function (box) {
+          values.push(box.value);
+        });
+        if (field.required !== false && !values.length) {
+          failValidate("请填写" + field.name, "[data-po-requirements]");
+          return null;
+        }
+        return { fieldId: field.id, value: values };
+      }
+      var el = host.querySelector('[data-po-req="' + field.id + '"]');
+      var value = el ? String(el.value || "").trim() : "";
+      if (field.required !== false && !value) {
+        failValidate("请填写" + field.name, "[data-po-req=\"" + field.id + "\"]");
+        return null;
+      }
+      return { fieldId: field.id, value: value };
+    });
   }
   function remountServiceChips() {
     var mask = activeMask();
@@ -1381,6 +1451,7 @@
       esc(state.quantity) +
       '"></label>' +
       gameIdFieldHtml() +
+      '<div data-po-requirements></div>' +
       '<label>我的段位（选填，陪玩接单前可见）<input data-po-boss-rank maxlength="30" autocomplete="off" placeholder="例如：钻石 2 / 星耀 / 无段位" value="' +
       esc(state.bossRank || rememberedBossRank(currentServiceLabel())) +
       '"></label>' +
@@ -1495,6 +1566,7 @@
       history.replaceState(Object.assign({}, history.state || {}, { mcjPoModal: 1 }), "");
     } catch (e) {}
 
+    loadOrderRequirementFields();
     mask.addEventListener("click", function (e) {
       if (e.target === mask) close();
     });
@@ -1885,6 +1957,8 @@
         failValidate("请填写自定义服务内容", "[data-po-custom-service-input]");
         return;
       }
+      var orderRequirements = readOrderRequirements();
+      if (orderRequirements.some(function (item) { return !item; })) return;
       if (qtyEl) state.quantity = Math.max(1, Math.floor(money(qtyEl.value) || 1));
       if (couponEl) state.couponCode = String(couponEl.value || "").trim();
       var hours = currentHours();
@@ -1942,6 +2016,7 @@
             totalAmount: total,
             gameId: gameId,
             bossRank: readBossRank(),
+            orderRequirements: orderRequirements,
             notes: noteParts.join("；"),
             paymentMethod: "catfood",
             voiceMode: state.voiceMode || "game_mic",
@@ -1967,6 +2042,7 @@
             totalAmount: total,
             gameId: gameId,
             bossRank: readBossRank(),
+            orderRequirements: orderRequirements,
             schedule: schedule,
             startTime: startTime,
             endTime: endTime,

@@ -885,4 +885,40 @@ export async function listCompanionNotificationEmails({ limit = 100, status = ""
   }
 }
 
+/** Paid public hall order → one persistent inbox row per active companion. */
+export async function notifyCompanionsGrabOpen(order) {
+  const orderId = String(order?.id || "").trim();
+  if (!orderId || order?.companion_id) return { inserted: 0 };
+  const no = orderNoOf(order);
+  let rows = [];
+  try {
+    rows = await supabaseJson(
+      restUrl("profiles", "?role=eq.companion&status=eq.active&select=id&limit=80"),
+      { headers: serviceHeaders() }
+    );
+  } catch {
+    rows = [];
+  }
+  let inserted = 0;
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const companionId = String(row?.id || "").trim();
+    if (!companionId || companionId === String(order.boss_id || "")) continue;
+    try {
+      const key = await insertCompanionNotification({
+        companionUserId: companionId,
+        category: "order",
+        title: "新的可抢订单",
+        body: `订单 ${no} 已进入抢单大厅。`,
+        href: "/companion/hall",
+        noticeKey: `grab-open:${orderId}:${companionId}`,
+        notificationType: "grab_open",
+      });
+      if (key) inserted += 1;
+    } catch {
+      /* one companion must not block the rest */
+    }
+  }
+  return { inserted };
+}
+
 export { buildNotificationKey, MAIL_TYPE_LABEL };

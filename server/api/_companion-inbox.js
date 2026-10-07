@@ -253,13 +253,25 @@ export async function notifyCompanionReviewResult(
 export async function loadCompanionNotifications(companionUserId) {
   const uid = String(companionUserId || "").trim();
   if (!uid) return [];
-  const rows = await supabaseJson(
-    restUrl(
-      "companion_notifications",
-      `?companion_id=eq.${encodeURIComponent(uid)}&order=created_at.desc&limit=100&select=id,notice_key,category,title,body,href,created_at,notification_type`
-    ),
-    { headers: serviceHeaders() }
-  ).catch(() => []);
+  let rows = [];
+  try {
+    rows = await supabaseJson(
+      restUrl(
+        "companion_notifications",
+        `?companion_id=eq.${encodeURIComponent(uid)}&order=created_at.desc&limit=100&select=id,notice_key,category,title,body,href,created_at,notification_type`
+      ),
+      { headers: serviceHeaders() }
+    );
+  } catch (err) {
+    if (!/notification_type|column|schema|PGRST/i.test(String(err?.message || ""))) return [];
+    rows = await supabaseJson(
+      restUrl(
+        "companion_notifications",
+        `?companion_id=eq.${encodeURIComponent(uid)}&order=created_at.desc&limit=100&select=id,notice_key,category,title,body,href,created_at`
+      ),
+      { headers: serviceHeaders() }
+    ).catch(() => []);
+  }
   return (Array.isArray(rows) ? rows : [])
     .map((row) => {
       const key = String(row.notice_key || row.id || "");

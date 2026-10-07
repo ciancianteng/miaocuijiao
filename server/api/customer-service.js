@@ -2924,6 +2924,16 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
         },
       });
     }
+    if (action === "list_quick_replies") {
+      const { listQuickReplies } = await import("./_quick-replies.js");
+      const replies = await listQuickReplies();
+      return json(res, 200, { ok: true, replies });
+    }
+    if (action === "save_quick_replies") {
+      const { saveQuickReplies } = await import("./_quick-replies.js");
+      const replies = await saveQuickReplies(body.replies || []);
+      return json(res, 200, { ok: true, message: "快捷回复已保存", replies });
+    }
     if (action === "send_message") {
       const conversation = (await tableRows("conversations", `?id=eq.${encodeURIComponent(String(body.conversation_id || body.id || ""))}&limit=1`))[0];
       if (!conversation) return json(res, 404, { ok: false, message: "会话不存在。" });
@@ -3237,7 +3247,7 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
         hours,
         unit_price: unit,
         total_amount: total,
-        status: "awaiting_payment",
+        status: companionId ? "claimed" : "awaiting_payment",
         created_at: nowIso(),
       };
       // Optional appointment / headcount / note fields when columns exist.
@@ -3298,47 +3308,21 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
       const companionLabel = companionId
         ? (await profileById(companionId).then((p) => p?.display_name).catch(() => "")) || "指定陪玩"
         : "未指定（公开抢单）";
+      const createdCopy = companionId
+        ? `新订单已创建，等待陪玩确认。陪玩确认接单时才会扣除老板猫粮。订单：${order.order_no} / ${order.game} / ${money(order.total_amount).toFixed(2)} 猫粮。指定陪玩：${companionLabel}。`
+        : `新订单已提交，尚未扣款。订单：${order.order_no} / ${order.game} / ${money(order.total_amount).toFixed(2)} 猫粮。`;
+      await addMessage(conversation, service.profile.id, "customer_service", createdCopy, "system", order.id);
       await addMessage(
         conversation,
         service.profile.id,
         "customer_service",
-        `新订单已提交，等待支付，指定陪玩为 ${companionLabel}。订单：${order.order_no} / ${order.game} / ${money(order.total_amount).toFixed(2)} 猫粮。`,
-        "system",
-        order.id
-      );
-      await addMessage(
-        conversation,
-        service.profile.id,
-        "customer_service",
-        `订单卡片：${order.order_no} / ${order.game} / ${money(order.total_amount).toFixed(2)} 猫粮。请确认付款。`,
+        `订单卡片：${order.order_no} / ${order.game} / ${money(order.total_amount).toFixed(2)} 猫粮。${companionId ? "等待陪玩确认后扣款。" : "发布到抢单大厅前不会扣款。"}`,
         "order_card",
         order.id
       );
       if (autoPublish) {
-        // Create + publish to hall in one step when CS explicitly requests it.
+        // Publish without charging. The boss is charged only when a companion confirms.
         body.id = order.id;
-        body.action = "confirm_payment";
-        // Fall through by recursive-style inline: reuse confirm_payment path via status patch below.
-        try {
-          const walletApi = await import("./_wallet.js");
-          await walletApi
-            .debitWallet({
-              bossId: order.boss_id,
-              amount: money(order.total_amount),
-              transactionType: "order_payment",
-              idempotencyKey: `order-pay:${order.order_no || order.id}`,
-              reason: `客服代下单发送抢单大厅 ${order.order_no || order.id}`,
-              relatedOrderId: order.id,
-              operatorId: service.profile.id,
-            })
-            .catch((e) => {
-              if (!/insufficient|余额不足|not enough|idempotency|duplicate|already/i.test(String(e?.message || e || ""))) {
-                throw e;
-              }
-            });
-        } catch (_) {
-          /* offline / ops confirm allowed */
-        }
         const { transitionOrderStatus } = await import("./_order-status.js");
         const patched =
           (await transitionOrderStatus(
@@ -3377,7 +3361,7 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
           conversation,
           service.profile.id,
           "customer_service",
-          "客服已发送订单至抢单大厅。",
+          "客服已发送订单至抢单大厅。尚未扣除老板猫粮，陪玩确认接单时才会扣款。",
           "system",
           order.id
         );
@@ -3390,7 +3374,7 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
       }
       return json(res, 200, {
         ok: true,
-        message: companionId ? "订单已创建，进入待付款。" : "订单已创建。请点击「发送到抢单大厅」完成发布。",
+        message: companionId ? "订单已创建，等待陪玩确认。确认接单时才会扣除老板猫粮。" : "订单已创建。请点击「发送到抢单大厅」完成发布。发布时不会扣款。",
         order,
         needsSendToHall: !companionId,
       });
@@ -3719,6 +3703,14 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
             `?order_id=eq.${encodeURIComponent(order.id)}&payment_status=eq.paid&limit=1`
           ).catch(() => [])
         )?.[0] || null;
+      const proxyUnpaidHall =
+        (action === "push_to_grab_hall" || action === "send_to_grab_hall") &&
+        !isAssignedPath &&
+        !isMultiParent &&
+        !pendingReceipt &&
+        !existingManualPayment &&
+        !order.paid_at &&
+        !(money(order.paid_cat_food) > 0);
       // Manual rails: refuse CS approve without proof record (server-side).
       try {
         const { assertManualProofBeforeCsApprove } = await import("./_payment-gates.js");
@@ -3749,7 +3741,7 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
           console.warn("[cs/confirm_payment] recoverApprovedWithoutTx", err?.message || err);
           return null;
         });
-        if (!recovered?.transaction) {
+        if (!recovered?.transaction && !proxyUnpaidHall) {
           return json(res, 400, {
             ok: false,
             message: "老板尚未上传付款截图。请等待付款凭证进入「待人工审核」后再确认收款。",
@@ -3812,10 +3804,12 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
             : money(existingManualPayment?.gross_amount) > 0
               ? money(existingManualPayment.gross_amount)
               : amount;
-        const paidStamp = {
-          paid_at: nowIso(),
-          paid_cat_food: approvedAmt,
-        };
+        const paidStamp = proxyUnpaidHall
+          ? {}
+          : {
+              paid_at: nowIso(),
+              paid_cat_food: approvedAmt,
+            };
         const tryPatch = async (patch) =>
           transitionOrderStatus(
             { restUrl, supabaseJson, serviceHeaders },
@@ -3879,7 +3873,7 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
       }
       if (!patched) {
         try {
-          patched = await patchOrder(order.id, { status: next, ...basePatch, paid_at: nowIso() });
+          patched = await patchOrder(order.id, proxyUnpaidHall ? { status: next, ...basePatch } : { status: next, ...basePatch, paid_at: nowIso() });
         } catch (err) {
           if (/paid_at|PGRST204|schema cache/i.test(String(err?.message || err))) {
             patched = await patchOrder(order.id, { status: next, ...basePatch });
@@ -3955,9 +3949,11 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
           ? walletSkipped
             ? "客服已确认线下付款（未扣钱包余额），订单已支付，正在等待陪玩确认接单。"
             : "客服已确认付款，订单已支付，正在等待陪玩确认接单。"
-          : walletSkipped
-            ? "客服已确认线下付款（未扣钱包余额），订单已发布到抢单大厅。"
-            : "客服已确认付款，订单已发布到抢单大厅。";
+          : proxyUnpaidHall
+            ? "客服已发送订单至抢单大厅。尚未扣除老板猫粮，陪玩确认接单时才会扣款。"
+            : walletSkipped
+              ? "客服已确认线下付款（未扣钱包余额），订单已发布到抢单大厅。"
+              : "客服已确认付款，订单已发布到抢单大厅。";
       await addMessage(conversation, service.profile.id, "customer_service", sysMsg, "system", order.id);
 
       let reward = null;
@@ -3982,7 +3978,7 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
         console.warn("[cs/confirm_payment] discord voice", String(err?.message || err).slice(0, 160));
       }
 
-      const paidAtIso = patched.paid_at || nowIso();
+      const paidAtIso = proxyUnpaidHall ? "" : patched.paid_at || nowIso();
       let cascadedChildren = [];
       if (isMultiParent) {
         try {

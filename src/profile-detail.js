@@ -603,27 +603,30 @@
       esc(image) +
       '" alt="' +
       esc(c.name) +
-      ' 头像" onerror="this.onerror=null;this.src=\'/default-avatar.png\'">' +
-      (popBadges ? '<div class="profile-pop-badges" style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;justify-content:center">' + popBadges + "</div>" : "") +
-      '</div><div class="profile-info-panel"><p class="detail-label">MEOW CUI JIAO</p>' +
+      ' 头像" onerror="this.onerror=null;this.src=\'/default-avatar.png\'"></div><div class="profile-info-panel"><p class="detail-label">MEOW CUI JIAO</p>' +
       '<div class="pd-name-row"><h1>' +
       esc(c.name || c.nickname || "陪玩") +
       "</h1>" +
-      (certHtml || "") +
       (newcomerBadge || "") +
       '</div><div class="profile-id">ID：' +
       esc(publicId || "待生成") +
-      '</div><p class="profile-bio' +
+      "</div>" +
+      (voiceLineRaw ? '<p class="pd-voice-line">声线：' + esc(voiceLineRaw) + "</p>" : "") +
+      '<div class="pd-hero-actions"><a class="pd-btn pd-btn-secondary" href="support.html?start=1">咨询客服</a><button type="button" class="pd-btn pd-btn-primary" data-open-order>立即下单</button></div>' +
+      "</div></section>" +
+      '<section class="detail-card pd-about"><div class="section-head"><h2>关于TA</h2></div><p class="profile-bio' +
       (bioEmpty ? " is-empty" : "") +
       '">' +
       esc(bioText) +
-      "</p>" +
-      serviceChipsHtml +
-      '<div class="detail-card price-card pd-voice-card pd-voice-in-hero' +
+      "</p></section>" +
+      ((certHtml || popBadges)
+        ? '<section class="detail-card pd-honors"><div class="section-head"><h2>荣誉</h2></div><div class="pd-honor-row">' + (certHtml || "") + (popBadges || "") + "</div></section>"
+        : "") +
+      '<section class="detail-card pd-offers" id="pdOffers"><div class="section-head"><h2>TA可以提供的服务</h2></div><div class="pd-offer-grid" data-pd-offers><p class="pd-offer-empty">正在读取服务…</p></div></section>' +
+      '<section class="detail-card pd-voice-card' +
       (hasVoice ? "" : " is-empty") +
       '"><div class="section-head"><h2>语音介绍</h2></div><div class="pd-voice-body">' +
       voiceBody +
-      "</div></div>" +
       "</div></section>" +
       albumSectionHtml +
       videoSectionHtml +
@@ -700,6 +703,8 @@
       "</div></section>";
 
     bindReviewExpand(s.querySelector("#realReviewList"));
+    ensureProfileSkin();
+    loadProfileOffers(c);
 
     if (window.MCJCompanionIdentity && typeof window.MCJCompanionIdentity.bindAlbum === "function") {
       window.MCJCompanionIdentity.bindAlbum(s.querySelector("[data-profile-album]"), galleryUrls);
@@ -773,7 +778,48 @@
       });
   }
 
-  function openOrderSheet() {
+  function ensureProfileSkin() {
+    if (document.getElementById("pdSkin")) return;
+    var style = document.createElement("style");
+    style.id = "pdSkin";
+    style.textContent =
+      ".profile-detail-page{overflow-x:hidden}.profile-detail-shell{max-width:100%}" +
+      ".profile-hero,.pd-about,.pd-offers,.pd-voice-card{overflow:hidden}" +
+      ".profile-info-panel h1,.profile-bio,.pd-offer-card{overflow-wrap:anywhere}" +
+      ".pd-voice-line{margin:8px 0 0;color:#f3d5e4;font-weight:700}" +
+      ".pd-hero-actions{display:flex;gap:8px;margin-top:14px}.pd-hero-actions .pd-btn{flex:1;min-height:42px;border-radius:12px;border:0;font-weight:800}" +
+      ".pd-btn-primary{background:linear-gradient(180deg,#ffe2f0,#e99ac4);color:#1b0712}" +
+      ".pd-btn-secondary{display:grid;place-items:center;text-decoration:none;color:#ffe8f4;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12)!important}" +
+      ".pd-offer-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;padding:14px}" +
+      ".pd-offer-card{display:grid;gap:4px;text-align:left;padding:12px;border-radius:14px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.04);color:#fff;cursor:pointer}" +
+      ".pd-offer-card small{color:#c9b3c0}.pd-offer-empty{padding:14px;color:#c9b3c0}" +
+      ".profile-bottom-bar.pd-bottom-bar{grid-template-columns:1fr 1fr;height:auto;bottom:max(10px,env(safe-area-inset-bottom))}" +
+      ".profile-bottom-bar.pd-bottom-bar a,.profile-bottom-bar.pd-bottom-bar button{min-height:44px}" +
+      ".pd-honor-row{display:flex;flex-wrap:wrap;gap:8px;padding:14px}" +
+      "@media(max-width:430px){.profile-detail-shell{width:calc(100% - 16px)}.profile-hero{grid-template-columns:1fr}.profile-avatar{max-height:420px}.profile-info-panel h1{font-size:28px}}";
+    document.head.appendChild(style);
+  }
+  function loadProfileOffers(c) {
+    var host = document.querySelector("[data-pd-offers]");
+    var userId = c && (c.userId || c.user_id || c.id || c.uid);
+    if (!host || !userId) return;
+    fetch("/api/companion-offers?userId=" + encodeURIComponent(userId), { cache: "no-store" })
+      .then(function (res) { return res.json(); })
+      .then(function (body) {
+        var offers = (body && body.offers) || [];
+        if (!offers.length) {
+          host.innerHTML = '<p class="pd-offer-empty">这位陪玩还没有添加可展示的服务。</p>';
+          return;
+        }
+        host.innerHTML = offers.map(function (item) {
+          return '<button type="button" class="pd-offer-card" data-pd-offer data-kind="' + esc(item.kind) + '" data-id="' + esc(item.id) + '" data-name="' + esc(item.name) + '"><strong>' + esc(item.name) + '</strong><small>' + esc(item.kind === "product" ? "更多玩法" : "服务") + "</small></button>";
+        }).join("");
+      })
+      .catch(function () {
+        host.innerHTML = '<p class="pd-offer-empty">服务列表暂时读取失败。</p>';
+      });
+  }
+  function openOrderSheet(pref) {
     var c = state.companion;
     if (!c) {
       alert("陪玩资料尚未加载完成");
@@ -800,8 +846,8 @@
         window.MCJPlaceOrder.openFromCompanion(c, {
           companionId: c.id || c.uid,
           companionName: c.name || c.nickname,
-          service: "",
-          requireServicePick: true,
+          service: pref && pref.name ? pref.name : "",
+          requireServicePick: !(pref && pref.name),
           unitPrice: Number(c.priceValue != null ? c.priceValue : c.price) || 0,
           services: Array.isArray(c.services) ? c.services : [],
           serviceIds: c.serviceIds || c.service_ids || [],
@@ -1271,6 +1317,20 @@
     if (e.target.closest("[data-profile-reload]")) {
       e.preventDefault();
       load();
+      return;
+    }
+    var offerCard = e.target.closest("[data-pd-offer]");
+    if (offerCard) {
+      e.preventDefault();
+      var kind = offerCard.getAttribute("data-kind");
+      var offerId = offerCard.getAttribute("data-id");
+      var offerName = offerCard.getAttribute("data-name") || "";
+      var companionId = (state.companion && (state.companion.id || state.companion.uid)) || "";
+      if (kind === "product") {
+        location.href = "gameplay-product.html?id=" + encodeURIComponent(offerId) + "&companion=" + encodeURIComponent(companionId);
+        return;
+      }
+      openOrderSheet({ name: offerName, id: offerId });
       return;
     }
     if (e.target.closest("[data-open-order]")) {

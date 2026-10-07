@@ -2657,8 +2657,8 @@ async function bootstrapData(profile, companion) {
     else permissions.withdrawLockReason = permissions.lockReason || "暂不可提现";
   }
 
-  const feePercent = money(cfg.withdraw_fee_percent);
-  const feeFixed = money(cfg.withdraw_fee_rm);
+  const feePercent = 0;
+  const feeFixed = 0.8;
   // Companion self bootstrap: return full account details for the owner.
   // Boss/public APIs never use this payload — keep masking only on admin default + public strippers.
   const approvedAccounts = paymentAccounts
@@ -3359,6 +3359,7 @@ async function viewCompanionWithdrawal(w) {
     grossAmountRm: money(w.gross_amount_rm),
     feeRm: money(w.fee_rm),
     netAmountRm: money(w.net_amount_rm),
+    sourceOrderIds: Array.isArray(w.source_order_ids) ? w.source_order_ids : [],
     bankName: w.bank_name || "",
     accountName: w.account_name || w.account_holder || "",
     accountLast4: w.account_last4 || "",
@@ -4179,8 +4180,8 @@ export default async function handler(req, res) {
             remainingThisMonth: Math.max(0, monthlyLimit - usedThisMonth),
             minAmount: money(cfg.min_withdraw_cat_food),
             exchangeRate: money(cfg.cat_food_to_rm_rate) || 1,
-            feeRm: money(cfg.withdraw_fee_rm),
-            feePercent: money(cfg.withdraw_fee_percent),
+            feeRm: 0.8,
+            feePercent: 0,
             currentAccount: payment ? formatSettlementAccountLabel(payment) : "",
           currentAccountMasked: payment
             ? formatSettlementAccountMasked(payment, maskBankAccount)
@@ -4298,7 +4299,18 @@ export default async function handler(req, res) {
       const name = String(auth.profile.display_name || companion.nickname || "陪玩").trim() || "陪玩";
       const beforeRows = await supabaseJson(restUrl("orders", `?id=eq.${encodeURIComponent(id)}&companion_id=eq.${encodeURIComponent(auth.profile.id)}&limit=1`), { headers: serviceHeaders() });
       const before = beforeRows?.[0];
-      if (!before || before.status !== "claimed") return json(res, 409, { ok: false, message: "当前订单不能确认接单" });
+      if (!before) return json(res, 409, { ok: false, message: "当前订单不能确认接单" });
+      if (before.status === "in_progress" || before.status === "confirmed") {
+        const lockedByUs = String(before.note || "").includes("[[ACCEPT_PAY_LOCK]]");
+        if (before.status === "in_progress" || (before.status === "confirmed" && !lockedByUs)) {
+          if (before.status === "in_progress") {
+            return json(res, 200, { ok: true, duplicate: true, message: "已确认接单，订单进入进行中", order: viewOrder(before) });
+          }
+          return json(res, 409, { ok: false, message: "当前订单不能确认接单" });
+        }
+      } else if (before.status !== "claimed") {
+        return json(res, 409, { ok: false, message: "当前订单不能确认接单" });
+      }
       // Multi / manual rails: refuse companion confirm if CS never approved payment.
       try {
         const gates = await import("./_payment-gates.js");
@@ -4350,13 +4362,94 @@ export default async function handler(req, res) {
         console.warn("[companion/accept] discord gate", String(discordErr?.message || discordErr).slice(0, 160));
       }
       const now = nowIso();
-      const order = await patchOwnOrder(
-        auth.profile,
-        id,
-        "claimed",
-        { status: "in_progress", accepted_at: now, started_at: now },
-        `陪玩 ${name} 已确认接单，订单进入进行中。`
-      );
+      const payApi = await import("./_order-payment-facts.js");
+      const payFacts = await payApi.loadOrderMoneyFacts(before);
+      const mustCharge = payApi.needsProxyCharge(before, payFacts) || String(before.note || "").includes("[[ACCEPT_PAY_LOCK]]");
+      async function casOwn(fromStatus, patch) {
+        const rows = await supabaseJson(
+          restUrl("orders", `?id=eq.${encodeURIComponent(id)}&companion_id=eq.${encodeURIComponent(auth.profile.id)}&status=eq.${encodeURIComponent(fromStatus)}`),
+          { method: "PATCH", headers: serviceHeaders(), body: JSON.stringify(patch) }
+        );
+        return Array.isArray(rows) ? rows[0] || null : null;
+      }
+      let order;
+      let chargedNow = false;
+      if (mustCharge) {
+        let working = before;
+        if (working.status === "claimed") {
+          const note = `${String(working.note || "").trim()}\n[[ACCEPT_PAY_LOCK]]`.trim();
+          const locked = await casOwn("claimed", { status: "confirmed", accepted_at: now, note }).catch(() => null);
+          if (!locked) {
+            const again = (await supabaseJson(restUrl("orders", `?id=eq.${encodeURIComponent(id)}&limit=1`), { headers: serviceHeaders() }))?.[0];
+            if (again?.status === "in_progress") {
+              return json(res, 200, { ok: true, duplicate: true, message: "已确认接单，订单进入进行中", order: viewOrder(again) });
+            }
+            if (again?.status !== "confirmed" || !String(again.note || "").includes("[[ACCEPT_PAY_LOCK]]")) {
+              return json(res, 409, { ok: false, message: "订单状态已变化，请刷新后重试。" });
+            }
+            working = again;
+          } else {
+            working = locked;
+          }
+        }
+        const charge = await payApi.chargeProxyOrderOnConfirm(working, { operatorId: auth.profile.id });
+        if (!charge.ok) {
+          await casOwn("confirmed", { status: "claimed" }).catch(() => null);
+          return json(res, 400, {
+            ok: false,
+            code: charge.code || "PAYMENT_FAILED",
+            message: charge.message || "老板余额不足，付款失败，订单未成立。",
+          });
+        }
+        chargedNow = !!charge.charged;
+        const payAmount = charge.amount || money(working.total_amount);
+        const paidPatch = {
+          status: "in_progress",
+          accepted_at: working.accepted_at || now,
+          started_at: now,
+          paid_at: now,
+          paid_cat_food: payAmount,
+        };
+        order = await casOwn("confirmed", paidPatch).catch(async (err) => {
+          if (/paid_at|paid_cat_food|column|schema cache|PGRST/i.test(String(err?.message || err))) {
+            return casOwn("confirmed", { status: "in_progress", accepted_at: working.accepted_at || now, started_at: now });
+          }
+          throw err;
+        });
+        if (!order) {
+          const latest = (await supabaseJson(restUrl("orders", `?id=eq.${encodeURIComponent(id)}&limit=1`), { headers: serviceHeaders() }))?.[0];
+          if (latest?.status === "in_progress") {
+            order = latest;
+          } else {
+            const { creditWallet } = await import("./_wallet.js");
+            await creditWallet({
+              bossId: working.boss_id,
+              transactionType: "order_refund",
+              amount: payAmount,
+              balanceType: "paid",
+              idempotencyKey: `order-accept-pay-revert:${working.order_no || working.id}`,
+              reason: `接单未完成，撤销扣款 ${working.order_no || working.id}`,
+              relatedOrderId: working.id,
+              operatorId: auth.profile.id,
+            }).catch(() => null);
+            await casOwn("confirmed", { status: "claimed" }).catch(() => null);
+            return json(res, 409, { ok: false, code: "ACCEPT_ABORTED", message: "接单未完成，已撤销本次扣款。" });
+          }
+        }
+        await writeOrderStatusLog(
+          { restUrl, supabaseJson, serviceHeaders },
+          { orderId: id, fromStatus: "confirmed", toStatus: "in_progress", operatorRole: "companion", operatorId: auth.profile.id, note: `accept_direct pay ${payAmount}` }
+        ).catch(() => {});
+        await addSystemMessage(order, auth.profile.id, "companion", `陪玩 ${name} 已确认接单，已扣除老板 ${payAmount} 猫粮，订单进入进行中。`).catch(() => {});
+      } else {
+        order = await patchOwnOrder(
+          auth.profile,
+          id,
+          "claimed",
+          { status: "in_progress", accepted_at: now, started_at: now },
+          `陪玩 ${name} 已确认接单，订单进入进行中。`
+        );
+      }
 
       try {
         const { notifyBossOrderEvent } = await import("./_boss-order-notify.js");
@@ -6624,24 +6717,48 @@ return json(res, 200, {
       return json(res, 200, { ok: true, message: "已标记已读" });
     }
 
+    if (action === "my_offers") {
+      const { listCompanionOffers } = await import("./_companion-offers.js");
+      const data = await listCompanionOffers(auth.profile.id);
+      return json(res, 200, { ok: true, ...data });
+    }
+    if (action === "save_offers") {
+      try {
+        assertCompanionBusinessAccess(auth.profile, companion || {});
+      } catch (err) {
+        return isolationForbiddenResponse(res, err);
+      }
+      const { saveCompanionOffers } = await import("./_companion-offers.js");
+      const data = await saveCompanionOffers(auth.profile.id, body.offers || []);
+      return json(res, 200, { ok: true, message: "我的服务已保存", ...data });
+    }
+
     if (action === "request_withdrawal") {
       try {
         assertCompanionBusinessAccess(auth.profile, companion || {});
       } catch (err) {
         return isolationForbiddenResponse(res, err);
       }
-      const amount = money(body.amount || body.cat_food_amount || body.catFoodAmount);
+      let amount = money(body.amount || body.cat_food_amount || body.catFoodAmount);
+      const requestedOrderId = String(body.orderId || body.order_id || "").trim();
       const remark = String(body.remark || body.note || "").trim();
       const accountId = String(body.paymentAccountId || body.payment_account_id || "").trim();
       const data = await bootstrapData(auth.profile, companion);
+      if (!requestedOrderId) {
+        const earlyRate = money(data.withdrawalRules.exchangeRate) || 1;
+        const earlyCents = Math.round(amount * earlyRate * 100);
+        if (earlyCents > 0 && earlyCents <= 80) {
+          return json(res, 400, { ok: false, message: "可提现金额必须高于 RM0.80" });
+        }
+      }
       if (!data.permissions.canWithdraw) {
         return json(res, 400, { ok: false, message: data.permissions.withdrawLockReason || "暂不可提现" });
       }
-      if (!(amount > 0)) return json(res, 400, { ok: false, message: "提现金额必须大于 0" });
-      if (amount < money(data.withdrawalRules.minAmount)) {
+      if (!requestedOrderId && !(amount > 0)) return json(res, 400, { ok: false, message: "提现金额必须大于 0" });
+      if (!requestedOrderId && amount < money(data.withdrawalRules.minAmount)) {
         return json(res, 400, { ok: false, message: `最低提现 ${data.withdrawalRules.minAmount} 猫粮` });
       }
-      if (amount > money(data.earnings.withdrawable)) {
+      if (!requestedOrderId && amount > money(data.earnings.withdrawable)) {
         return json(res, 400, { ok: false, message: "可提现余额不足" });
       }
       if (Number(data.withdrawalRules.remainingThisWeek ?? data.withdrawalRules.remainingThisMonth ?? 0) <= 0) {
@@ -6695,10 +6812,70 @@ return json(res, 200, {
       const weeklyCfg = await loadFinanceWeeklySettings(companionDb).catch(() => mergeWeeklySettings({}));
       const settlementDate = computeSettlementDate(new Date(), weeklyCfg);
 
+      let lockedOrderId = "";
+      if (requestedOrderId) {
+        const orderRows = await companionDb(
+          "orders",
+          `?id=eq.${encodeURIComponent(requestedOrderId)}&companion_id=eq.${encodeURIComponent(auth.profile.id)}&select=id,status,order_no,companion_income,total_amount&limit=1`
+        ).catch(() => []);
+        const orderRow = orderRows?.[0];
+        if (!orderRow) return json(res, 400, { ok: false, message: "订单不存在或不属于你" });
+        if (!/completed|reviewed/.test(String(orderRow.status || ""))) {
+          return json(res, 400, { ok: false, message: "只有已完成订单可以按单提现" });
+        }
+        let income = money(orderRow.companion_income);
+        if (!(income > 0)) {
+          const txs = await companionDb(
+            "transactions",
+            `?order_id=eq.${encodeURIComponent(requestedOrderId)}&user_id=eq.${encodeURIComponent(auth.profile.id)}&transaction_type=eq.companion_income&select=amount,status&limit=20`
+          ).catch(() => []);
+          income = (Array.isArray(txs) ? txs : [])
+            .filter((row) => String(row.status || "") !== "cancelled")
+            .reduce((sum, row) => sum + money(row.amount), 0);
+          income = money(income);
+        }
+        if (!(income > 0)) return json(res, 400, { ok: false, message: "该订单没有可提现收益" });
+        const prior = await companionDb(
+          "companion_withdrawals",
+          `?companion_id=eq.${encodeURIComponent(auth.profile.id)}&select=id,status,source_order_ids,remark&order=created_at.desc&limit=100`
+        ).catch(() => []);
+        const taken = (Array.isArray(prior) ? prior : []).some((row) => {
+          if (/rejected|cancelled|pay_failed|failed/.test(String(row.status || ""))) return false;
+          const ids = Array.isArray(row.source_order_ids) ? row.source_order_ids.map(String) : [];
+          return ids.includes(requestedOrderId) || String(row.remark || "").includes(`[[order:${requestedOrderId}]]`);
+        });
+        if (taken) return json(res, 409, { ok: false, message: "该订单收益已提现或正在处理，不能重复提现" });
+        amount = income;
+        lockedOrderId = requestedOrderId;
+      }
+      if (!(amount > 0)) return json(res, 400, { ok: false, message: "提现金额必须大于 0" });
+      if (amount > money(data.earnings.withdrawable) + 0.001) {
+        return json(res, 400, { ok: false, message: "可提现余额不足" });
+      }
+
       const rate = money(data.withdrawalRules.exchangeRate) || 1;
-      const gross = Math.round(amount * rate * 100) / 100;
-      const fee = Math.round((money(data.withdrawalRules.feeRm) + gross * (money(data.withdrawalRules.feePercent) / 100)) * 100) / 100;
-      const net = Math.max(0, Math.round((gross - fee) * 100) / 100);
+      const grossCents = Math.round(amount * rate * 100);
+      const feeCents = 80;
+      if (grossCents <= feeCents) {
+        return json(res, 400, { ok: false, message: "可提现金额必须高于 RM0.80" });
+      }
+      const gross = grossCents / 100;
+      const fee = feeCents / 100;
+      const net = (grossCents - feeCents) / 100;
+      if (lockedOrderId) {
+        try {
+          await lockPayoutSources(companionDb, {
+            applicantId: auth.profile.id,
+            sources: [{ kind: "order", id: `order-income:${lockedOrderId}` }],
+            relatedTable: "orders",
+            relatedRecordId: lockedOrderId,
+          });
+        } catch (lockErr) {
+          if (lockErr?.code === "SOURCE_LOCKED") {
+            return json(res, 409, { ok: false, message: "该订单收益已提现或正在处理，不能重复提现" });
+          }
+        }
+      }
       const rawAccount = String(full.bank_account || full.tng_account || full.alipay_account || "").replace(/\s+/g, "");
       const last4 = full.account_last4 || (rawAccount ? rawAccount.slice(-4) : maskBankAccount(full.bank_account).slice(-4));
       const holder = String(full.account_name || full.account_holder || auth.profile.display_name || "").trim();
@@ -6728,11 +6905,11 @@ return json(res, 200, {
         account_holder: holder,
         account_number: accountNumber,
         account_last4: last4,
-        remark,
+        remark: lockedOrderId ? `[[order:${lockedOrderId}]] ${remark}`.trim() : remark,
         status: "pending_friday",
         settlement_date: settlementDate,
         source_ledger_ids: [],
-        source_order_ids: [],
+        source_order_ids: lockedOrderId ? [lockedOrderId] : [],
         currency: "CAT_FOOD",
         payout_method: full.tng_account ? "tng" : "bank",
         tng_account: full.tng_account ? `****${String(full.tng_account).slice(-4)}` : "",
@@ -6831,7 +7008,16 @@ return json(res, 200, {
           }
         }
       }
-      if (!item) return json(res, 500, { ok: false, message: "提现申请写入失败，请稍后重试" });
+      if (!item) {
+        if (lockedOrderId) {
+          await companionDb(
+            "payout_source_locks",
+            `?source_kind=eq.order&source_id=eq.${encodeURIComponent(`order-income:${lockedOrderId}`)}`,
+            { method: "DELETE" }
+          ).catch(() => null);
+        }
+        return json(res, 500, { ok: false, message: "提现申请写入失败，请稍后重试" });
+      }
 
       let freezeTxId = null;
       try {
@@ -6866,7 +7052,7 @@ return json(res, 200, {
 
       // Anti-duplicate: period-level lock for this withdrawal row (amount freeze via freeze_tx).
       const sourceLedgerIds = freezeTxId ? [String(freezeTxId)] : [];
-      const sourceOrderIds = [];
+      const sourceOrderIds = lockedOrderId ? [lockedOrderId] : [];
 
       const payoutRow = await upsertPayoutRequest(companionDb, {
         payoutNo: item.withdrawal_no,

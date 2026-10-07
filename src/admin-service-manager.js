@@ -236,6 +236,7 @@
       '"></label>' +
       renderIconPicker(d.icon || "🎮") +
       renderPositions(d.displayPositions || []) +
+      renderOrderFields(d.orderFields || []) +
       '<div class="admin-service-switches">' +
       switchEnabled +
       switchHome +
@@ -249,6 +250,66 @@
       '</button><button class="btn" type="button" data-service-cancel>取消</button></div>' +
       "</form></div>"
     );
+  }
+
+  function orderFieldRow(field) {
+    field = field || {};
+    var kind = field.kind || "text";
+    var options = Array.isArray(field.options) ? field.options.join(",") : "";
+    function opt(value, label) {
+      return '<option value="' + value + '"' + (kind === value ? " selected" : "") + ">" + label + "</option>";
+    }
+    return (
+      '<div class="admin-service-span-2" data-order-field style="display:grid;gap:6px;padding:8px 0;border-top:1px solid rgba(255,255,255,.08)">' +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
+      '<input data-of-name maxlength="40" placeholder="字段名称" value="' + esc(field.name || "") + '" style="flex:1;min-width:120px">' +
+      '<select data-of-kind>' +
+      opt("text", "文本") +
+      opt("number", "数字") +
+      opt("select", "单选") +
+      opt("multiselect", "多选") +
+      opt("textarea", "长文本") +
+      "</select>" +
+      '<label><input type="checkbox" data-of-required' + (field.required === false ? "" : " checked") + ">必填</label>" +
+      '<label><input type="checkbox" data-of-enabled' + (field.enabled === false ? "" : " checked") + ">启用</label>" +
+      '<button class="btn" type="button" data-of-up>上移</button>' +
+      '<button class="btn" type="button" data-of-remove>删除</button>' +
+      "</div>" +
+      '<input data-of-placeholder maxlength="80" placeholder="placeholder" value="' + esc(field.placeholder || "") + '">' +
+      '<input data-of-options maxlength="400" placeholder="单选/多选选项，用逗号分隔" value="' + esc(options) + '">' +
+      "</div>"
+    );
+  }
+
+  function renderOrderFields(fields) {
+    var rows = (Array.isArray(fields) ? fields : []).map(orderFieldRow).join("");
+    return (
+      '<div class="admin-service-span-2" data-order-fields-wrap>' +
+      "<span>订单要求配置</span>" +
+      '<p class="admin-sync-note">老板下单时按这里的字段填写。保存后只影响新订单，已有订单保留下单当时的内容。</p>' +
+      '<div data-order-fields>' +
+      rows +
+      "</div>" +
+      '<button class="btn" type="button" data-of-add>添加字段</button>' +
+      "</div>"
+    );
+  }
+
+  function readOrderFields(form) {
+    if (!form) return [];
+    return Array.prototype.map.call(form.querySelectorAll("[data-order-field]"), function (row, index) {
+      return {
+        name: (row.querySelector("[data-of-name]") || {}).value || "",
+        kind: (row.querySelector("[data-of-kind]") || {}).value || "text",
+        required: !!(row.querySelector("[data-of-required]") || {}).checked,
+        enabled: !!(row.querySelector("[data-of-enabled]") || {}).checked,
+        placeholder: (row.querySelector("[data-of-placeholder]") || {}).value || "",
+        options: (row.querySelector("[data-of-options]") || {}).value || "",
+        sort: index,
+      };
+    }).filter(function (field) {
+      return String(field.name || "").trim();
+    });
   }
 
   function renderRows() {
@@ -412,11 +473,19 @@
       alert("请至少勾选一个显示位置");
       return;
     }
+    var orderFields = readOrderFields(form);
     state.saving = true;
     render();
     apiPost({ action: "save", id: payload.id, service: payload })
       .then(function (res) {
-        alert(res.message || "服务已保存，全站已同步。");
+        var serviceId = (res.service && res.service.id) || payload.id;
+        if (!serviceId) return res;
+        return apiPost({ action: "save_order_fields", id: serviceId, orderFields: orderFields }).then(function () {
+          return res;
+        });
+      })
+      .then(function (res) {
+        alert((res && res.message) || "服务已保存，全站已同步。");
         if (window.MCJAdminOverlay && window.MCJAdminOverlay.isOpen && window.MCJAdminOverlay.isOpen()) {
           window.MCJAdminOverlay.close();
         } else {
@@ -515,6 +584,23 @@
       }
       if (e.target.closest("[data-service-cancel]")) {
         closeForm();
+        return;
+      }
+      if (e.target.closest("[data-of-add]")) {
+        var host = document.querySelector("[data-order-fields]");
+        if (host) host.insertAdjacentHTML("beforeend", orderFieldRow({ required: true, enabled: true, kind: "text" }));
+        return;
+      }
+      var removeField = e.target.closest("[data-of-remove]");
+      if (removeField) {
+        var row = removeField.closest("[data-order-field]");
+        if (row) row.remove();
+        return;
+      }
+      var upField = e.target.closest("[data-of-up]");
+      if (upField) {
+        var current = upField.closest("[data-order-field]");
+        if (current && current.previousElementSibling) current.parentNode.insertBefore(current, current.previousElementSibling);
         return;
       }
       var editBtn = e.target.closest("[data-service-edit]");

@@ -94,7 +94,17 @@ async function fetchDbServices() {
       body,
     });
   }
-  return (Array.isArray(body) ? body : []).map(view);
+  const rows = (Array.isArray(body) ? body : []).map(view);
+  try {
+    const { loadAllOrderFieldConfigs, normalizeOrderFields } = await import("../_order-requirements.js");
+    const map = await loadAllOrderFieldConfigs();
+    rows.forEach((item) => {
+      item.orderFields = normalizeOrderFields(map[item.id] || []).filter((field) => field.enabled);
+    });
+  } catch (error) {
+    console.warn("[platform/services] order fields", error?.message || error);
+  }
+  return rows;
 }
 
 export async function loadPublicServices() {
@@ -139,7 +149,7 @@ function filterByScope(services, scope) {
 
 export default async function handler(req, res) {
   // Public read-mostly catalog — short edge cache. Never used for auth/order/OTP.
-  res.setHeader("Cache-Control", "public, max-age=30, s-maxage=60, stale-while-revalidate=120");
+  res.setHeader("Cache-Control", "no-store");
   if (req.method !== "GET") {
     res.setHeader("Allow", "GET");
     return json(res, 405, { ok: false, message: "Method Not Allowed" });
