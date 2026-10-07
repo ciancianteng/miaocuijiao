@@ -154,17 +154,24 @@
       });
     });
   }
-  function fmtOrderTime(v){
+  /** Platform clock = Asia/Kuala_Lumpur (UTC+8, no DST). Returns a Date whose getUTC* fields are KL wall-clock.
+   *  Zoned strings (Z / ±hh:mm) are converted; zone-less strings are already KL wall-clock and kept as-is. */
+  function klDate(v){
+    if(v==null||v==='')return null;
+    if(typeof v==='number'||v instanceof Date){var t=new Date(v);return isNaN(t.getTime())?null:new Date(t.getTime()+288e5);}
+    var s=String(v).trim();
+    var n=s.match(/^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2}))?(?:\.\d+)?)?$/);
+    if(n)return new Date(Date.UTC(+n[1],+n[2]-1,+n[3],+(n[4]||0),+(n[5]||0),+(n[6]||0)));
+    var d=new Date(s.replace(/^(\d{4}-\d{2}-\d{2}) /,'$1T').replace(/([+-]\d{2})(\d{2})$/,'$1:$2').replace(/([+-]\d{2})$/,'$1:00'));
+    return isNaN(d.getTime())?null:new Date(d.getTime()+288e5);
+  }
+  function fmtOrderTime(v,withSeconds){
     var s=String(v||'').trim();
     if(!s||s==='-')return '-';
-    var m=s.match(/^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2})/);
-    if(m)return m[1]+' '+m[2];
-    try{
-      var d=new Date(s);
-      if(isNaN(d.getTime()))return s;
-      function p(n){return n<10?'0'+n:String(n)}
-      return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())+' '+p(d.getHours())+':'+p(d.getMinutes());
-    }catch(e){return s}
+    var d=klDate(s);
+    if(!d)return s;
+    function p(n){return n<10?'0'+n:String(n)}
+    return d.getUTCFullYear()+'-'+p(d.getUTCMonth()+1)+'-'+p(d.getUTCDate())+' '+p(d.getUTCHours())+':'+p(d.getUTCMinutes())+(withSeconds?':'+p(d.getUTCSeconds()):'');
   }
   function orderStatusSelectValue(current){
     var s=String(current||'');
@@ -269,6 +276,40 @@
       rows.map(function(r){return '<div><span>'+esc(r[0])+'</span><strong>'+(r[2]?r[1]:esc(r[1]))+'</strong></div>'}).join('')+
       '</div></div>';
   }
+  function earlyFinishSection(o){
+    var ef=o&&o.earlyFinish,rj=o&&o.earlyFinishReject,rows=[];
+    if(ef){
+      rows.push(['状态',ef.status==='done'?'已提前结束':'处理中'+(ef.refundError?'（退款未完成：'+ef.refundError+'）':'')]);
+      rows.push(['发起人',(ef.initiator&&ef.initiator.label)||'-']);
+      rows.push(['确认人',ef.confirmedByName||'-']);
+      rows.push(['实际时长',ef.servedHours+' 小时 / 预约 '+ef.bookedHours+' 小时']);
+      rows.push(['结算',money(ef.settleAmount)]);
+      rows.push(['退款（猫粮余额）',money(ef.refundAmount)]);
+      rows.push(['陪玩收入',money(ef.companionIncome)]);
+      rows.push(['平台抽成',money(ef.platformCommission)]);
+      rows.push(['原因',ef.reason||'-']);
+      if(ef.completedAt)rows.push(['确认时间',fmtOrderTime(ef.completedAt)]);
+    }
+    if(rj)rows.push(['拒绝陪玩提前结束',(rj.rejectedByName||'客服')+' · '+fmtOrderTime(rj.at)+'：'+(rj.reason||'')]);
+    (o&&o.children||[]).forEach(function(c){
+      var cf=c&&c.earlyFinish;if(!cf)return;
+      rows.push(['子单 '+(c.orderNo||c.order_no||'')+' · '+(c.companionName||c.playerName||'陪玩'),
+        (cf.status==='done'?'已提前结束':'处理中')+'：实际 '+cf.servedHours+'/'+cf.bookedHours+' 小时，结算 '+money(cf.settleAmount)+'，退款 '+money(cf.refundAmount)+'，陪玩收入 '+money(cf.companionIncome)+'，抽成 '+money(cf.platformCommission)+'，确认人 '+(cf.confirmedByName||'-')+'，原因 '+(cf.reason||'-')]);
+    });
+    return rows.length?detailSection('提前结束',rows):'';
+  }
+  function serviceStandardSection(o){
+    var s=o&&o.serviceSnapshot;
+    if(!s)return '';
+    var rows=[['项目',s.serviceName||o.serviceContent||'-'],['下单时单价',money(s.unitPrice)+' / '+(s.pricingUnit||'小时')]];
+    if(s.bossRank&&s.bossRank.rank)rows.push(['老板段位',(s.bossRank.game?s.bossRank.game+' · ':'')+s.bossRank.rank]);
+    if(s.sections&&s.sections.length){
+      s.sections.forEach(function(sec){rows.push([sec.label,esc(sec.value).replace(/\n/g,'<br>'),true]);});
+    }else{
+      rows.push(['服务标准','下单时陪玩未填写详细标准']);
+    }
+    return detailSection('③-2 服务标准（下单时快照）',rows);
+  }
   function showOrderDetail(orderId){
     var o=ordersById[orderId];
     if(!o){toast('未找到订单');return}
@@ -284,7 +325,9 @@
     try{(window.__adminPendingProofs||[]).forEach(function(p){if(p.orderId)proofByOrder[String(p.orderId)]=p;});}catch(e){}
     var pending=proofByOrder[String(o.id)]||null;
     var proofUrl=o.paymentProofUrl||(pending&&pending.proofUrl)||'';
-    var proofHtml=proofUrl
+    var proofHtml=o.paymentWalletHold&&!proofUrl
+      ?'猫粮支付（已冻结，无需截图）'
+      :proofUrl
       ?('<button type="button" class="admin-order-proof-thumb-btn" data-admin-proof-preview="'+esc(proofUrl)+'" style="border:0;padding:0;background:transparent;cursor:zoom-in"><img class="admin-order-proof-thumb" src="'+esc(proofUrl)+'" alt="付款截图"></button>')
       :'暂无付款截图';
     var reviewName=o.paymentReviewedByName||o.paymentReviewerName||'-';
@@ -314,6 +357,8 @@
         ['陪玩编号',o.companionCode||o.playerUid||'-'],
         ['服务项目',o.serviceContent||o.game||'-']
       ])+
+      serviceStandardSection(o)+
+      earlyFinishSection(o)+
       detailSection('④ 老板付款信息',[
         ['支付方式',o.paymentMethod||(pending&&pending.paymentMethod)||'-'],
         ['应付金额',money(o.totalAmount)],
@@ -358,6 +403,14 @@
       var body=lb.querySelector('[data-admin-order-review="'+String(o.id).replace(/"/g,'')+'"]');
       if(!st||!body||!res||!res.order)return;
       var rv=res.order.review;
+      var kids=Array.isArray(res.order.childReviews)?res.order.childReviews:null;
+      if(!rv&&kids){
+        st.textContent=kids.length?(res.order.reviewStatus||'已评价'):'未评价';
+        body.innerHTML=kids.length?kids.map(function(k){
+          return '<span data-admin-child-review="'+esc(k.orderId)+'" style="display:block;margin-bottom:6px">'+esc(k.companionName+' · ★'+(k.rating||0)+(k.content?' · '+k.content:''))+reviewImagesHtml(k.images)+'</span>';
+        }).join(''):'-';
+        return;
+      }
       st.textContent=rv?'已评价':'未评价';
       body.innerHTML=rv?(esc('★'+(rv.rating||0)+(rv.content?' · '+rv.content:''))+reviewImagesHtml(rv.images)):'-';
     }).catch(function(){});
@@ -466,7 +519,7 @@
   }
   function fmtGrabTime(v){
     if(!v)return '-';
-    try{return new Date(v).toLocaleString('zh-CN',{hour12:false})}catch(e){return String(v)}
+    return fmtOrderTime(v,true);
   }
   function ensureGrabModalHost(){
     var box=document.getElementById('adminOrderGrabModal');

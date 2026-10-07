@@ -6,6 +6,13 @@ import { readLocalLevels } from "./_companion-levels-store.js";
 import { priceForGame } from "./_game-prices.js";
 import { resolveOrderUnitPrice } from "./_admin-service-prices.js";
 import {
+  buildServiceSnapshot,
+  buildServiceSnapshotForCompanion,
+  cleanRank,
+  persistOrderServiceSnapshot,
+  viewServiceSnapshot,
+} from "./_service-standard.js";
+import {
   ORDER_STATUS_LABELS,
   allowPreviewTestPay,
   bossFacingStatusText,
@@ -21,6 +28,7 @@ import { companionDb } from "./_companion-media-store.js";
 import { listPendingForCs, latestRejectedForOrders, latestApprovedForOrders, signedProofUrl, uploadProof, receiptReviewerFields } from "./_payment-receipts.js";
 import { loadPlatformPayQr, listBossOrderPaymentMethods, normalizePaymentChannelId, isWalletPayEnabled, loadPaymentChannelsContext } from "./_platform-pay-qr.js";
 import { stripInternalOrderMarkers } from "./_order-grabs.js";
+import { sanitizeOrderText, scrubInternalOutput } from "./_output-sanitize.js";
 import { fromDbRow as gameplayProductFromDbRow, isJunkGameplayProduct } from "./_gameplay-products-store.js";
 import { gameplayNoTakerRuleLine } from "./_order-confirm-timeout.js";
 import {
@@ -70,7 +78,7 @@ const ORDER_TYPE_TEXT = {
   multi_group: "多人订单（主单）",
 };
 
-function json(res, status, data) { res.status(status).json(data); }
+function json(res, status, data) { res.status(status).json(scrubInternalOutput(data)); }
 function hasDb() { return REQUIRED_ENV.every((key) => envValue(key)); }
 function anonHeaders(extra = {}) { return { apikey: envValue("SUPABASE_ANON_KEY"), "Content-Type": "application/json", ...extra }; }
 function serviceHeaders(extra = {}) {
@@ -447,7 +455,7 @@ function acceptStatusLabel(row = {}) {
   if (s === "cancelled") return "已取消";
   return bossFacingStatusText(row);
 }
-function viewOrder(row = {}) {
+export function viewOrder(row = {}) {
   const reviewed = !!(row.reviewed || row.review_id || row.reviewId);
   const status = reviewed && row.status === "completed" ? "reviewed" : row.status || "awaiting_payment";
   const description = String(row.description || "");
@@ -491,7 +499,7 @@ function viewOrder(row = {}) {
     }
     return "";
   })();
-  const bossNotes = String(row.notes || "").trim() || notesFromDesc;
+  const bossNotes = sanitizeOrderText(String(row.notes || "").trim() || notesFromDesc);
   const completionPending =
     String(row.note || "").includes("[[COMPLETION_PENDING]]") ||
     String(row.description || "").includes("[[COMPLETION_PENDING]]");
@@ -526,8 +534,8 @@ function viewOrder(row = {}) {
   } else if (status === "awaiting_payment" && row.paymentRejectReason) {
     statusText = "待付款";
   }
-  const cleanDescription = stripInternalOrderMarkers(description);
-  const cleanNote = stripInternalOrderMarkers(String(row.note || ""));
+  const cleanDescription = sanitizeOrderText(stripInternalOrderMarkers(description));
+  const cleanNote = sanitizeOrderText(stripInternalOrderMarkers(String(row.note || "")));
   // Sync confirmation chip for multi children (viewOrder stays sync).
   let companionConfirm = null;
   if (row.parent_order_id) {
@@ -578,6 +586,7 @@ function viewOrder(row = {}) {
     bossNotes,
     serviceType: serviceName || row.game || "",
     serviceName: serviceName || row.game || "",
+    serviceSnapshot: viewServiceSnapshot(row),
     gameId,
     game_id: gameId,
     paymentMethod: paymentMethod || "线下确认",
@@ -774,7 +783,10 @@ async function loadOrders(profile, id = "") {
   let rows;
   let usedSelect = selectRich;
   let lastSelectErr = null;
-  for (const sel of selectCandidates) {
+  // service_snapshot rides on every fallback; it is dropped only when that column itself is missing.
+  let withSnapshot = true;
+  for (const base of selectCandidates) {
+    let sel = withSnapshot ? `${base},service_snapshot` : base;
     try {
       rows = await supabaseJson(restUrl(TABLE, queryOf(sel)), { headers: serviceHeaders() });
       usedSelect = sel;
@@ -782,7 +794,21 @@ async function loadOrders(profile, id = "") {
       break;
     } catch (err) {
       lastSelectErr = err;
-      if (!/column|schema cache|PGRST|parent_order|paid_/i.test(String(err?.message || ""))) throw err;
+      const msg = String(err?.message || "");
+      if (!/column|schema cache|PGRST|parent_order|paid_/i.test(msg)) throw err;
+      if (withSnapshot && /service_snapshot/i.test(msg)) {
+        withSnapshot = false;
+        sel = base;
+        try {
+          rows = await supabaseJson(restUrl(TABLE, queryOf(sel)), { headers: serviceHeaders() });
+          usedSelect = sel;
+          lastSelectErr = null;
+          break;
+        } catch (err2) {
+          lastSelectErr = err2;
+          if (!/column|schema cache|PGRST|parent_order|paid_/i.test(String(err2?.message || ""))) throw err2;
+        }
+      }
     }
   }
   if (lastSelectErr) throw lastSelectErr;
@@ -1356,6 +1382,8 @@ export default async function handler(req, res) {
       let totalAmount = 0;
       let noTakerProductId = "";
       let productCompanionName = "";
+      let serviceSnapshot = null;
+      const bossRank = cleanRank(order.bossRank || order.boss_rank || body.bossRank || "");
 
       if (companionId) {
         let companions = await supabaseJson(restUrl("profiles", `?id=eq.${encodeURIComponent(companionId)}&limit=1`), { headers: serviceHeaders() });
@@ -1427,6 +1455,15 @@ export default async function handler(req, res) {
           return json(res, 400, { ok: false, message: `价格已变化，请刷新后重试（应付 ${totalAmount}）` });
         }
         if (!(totalAmount > 0)) return json(res, 400, { ok: false, message: "订单金额无效。" });
+        serviceSnapshot = await buildServiceSnapshotForCompanion(companionId, {
+          serviceId: serviceId || resolved?.serviceRow?.service_id || "",
+          serviceName: serviceType,
+          unitPrice,
+          pricingUnit: String(order.pricingUnit || order.pricing_unit || cp.pricing_unit || "小时"),
+          hours,
+          quantity,
+          bossRank,
+        });
       } else {
         if (!order.game || (!order.description && !order.requirements && !order.title)) {
           return json(res, 400, { ok: false, message: "请填写游戏和需求说明。" });
@@ -1552,6 +1589,19 @@ export default async function handler(req, res) {
       if (productCommissionSnapshot != null) {
         enriched.platform_fee_rate = productCommissionSnapshot;
       }
+      if (!serviceSnapshot && bossRank) {
+        serviceSnapshot = buildServiceSnapshot({
+          serviceName: serviceType || game,
+          unitPrice,
+          pricingUnit: String(order.pricingUnit || order.pricing_unit || "小时"),
+          hours,
+          quantity,
+          companionId: companionId || "",
+          bossRank,
+          bossRankGame: String(order.game || game || "").trim(),
+        });
+      }
+      if (serviceSnapshot) enriched.service_snapshot = serviceSnapshot;
       let rows;
       try {
         rows = await supabaseJson(restUrl(TABLE), { method: "POST", headers: serviceHeaders(), body: JSON.stringify(enriched) });
@@ -1616,6 +1666,7 @@ export default async function handler(req, res) {
         }
       }
       let saved = rows?.[0] || enriched;
+      if (serviceSnapshot && rows?.[0]) await persistOrderServiceSnapshot(saved, serviceSnapshot);
 
       const companionLabel = productCompanionName || companionName || companionId || "未指定（公开抢单）";
       const notify = `新订单已提交，等待支付，指定陪玩为 ${companionLabel}。支付方式：${(/^acct-/.test(paymentMethod) && payGate.label) || paymentMethodLabel(paymentMethod)}；服务：${serviceType}；时长：${hours}小时；金额：${totalAmount} 猫粮。`;
@@ -1747,7 +1798,7 @@ export default async function handler(req, res) {
         order: {
           ...viewOrder({ ...saved, paymentReceipt: result.receipt, paymentProofUrl: proofUrl || "", status: "awaiting_payment" }),
           paymentReview: true,
-          paymentProofUrl: proofUrl || result.receipt?.storage_path || "",
+          paymentProofUrl: proofUrl || "",
           statusText: "待客服审核",
           paymentStatus: "待客服审核",
         },
@@ -1828,11 +1879,12 @@ export default async function handler(req, res) {
 
       let usedTestPay = false;
       let usedCatfoodHold = false;
+      let holdResult = null;
       if (isWalletMethod(paymentMethod) && !previewTest) {
         try {
           const walletApi = await import("./_wallet.js");
           // Cat-food: HOLD only (not final debit). Finalize on COMPLETE; release on cancel.
-          await walletApi.holdWalletForOrder({
+          holdResult = await walletApi.holdWalletForOrder({
             bossId: profile.id,
             orderId: before.id,
             orderNo: before.order_no || before.id,
@@ -1926,6 +1978,80 @@ export default async function handler(req, res) {
       }
 
       // —— Multi-group parent already rejected above; single-order continues. ——
+
+      // Cat-food is held, not approved: order stays awaiting_payment until CS confirm_payment
+      // moves it to claimed/pending and notifies the companion.
+      if (isWalletMethod(paymentMethod) && !previewTest) {
+        const holdStatus = String(holdResult?.hold?.status || "").toLowerCase();
+        if (usedCatfoodHold && holdResult?.duplicate && holdStatus && holdStatus !== "held") {
+          return json(res, 409, {
+            ok: false,
+            code: "WALLET_HOLD_NOT_ACTIVE",
+            message: "该订单的猫粮冻结已释放，无法再次提交付款审核。请取消后重新下单，或联系客服。",
+            order: viewOrder(before),
+          });
+        }
+        let reviewReceipt = null;
+        let reviewDuplicate = false;
+        let reviewError = null;
+        const { createPendingWalletReceipt, listPendingForCs } = await import("./_payment-receipts.js");
+        try {
+          const created = await createPendingWalletReceipt({
+            order: before,
+            bossId: profile.id,
+            paymentMethod,
+          });
+          reviewReceipt = created?.receipt || null;
+          reviewDuplicate = !!created?.duplicate;
+        } catch (err) {
+          reviewError = err;
+          // Concurrent pay click lost the one-pending-receipt-per-order race: reuse the winner.
+          if (/duplicate|unique|one_pending_per_order/i.test(String(err?.message || ""))) {
+            reviewReceipt = (await listPendingForCs({ orderIds: [before.id] }).catch(() => []))?.[0] || null;
+            reviewDuplicate = !!reviewReceipt;
+          }
+        }
+        if (!reviewReceipt) {
+          return json(res, reviewError?.status || 500, {
+            ok: false,
+            code: reviewError?.code || "PAYMENT_REVIEW_SUBMIT_FAILED",
+            message: reviewError?.message || "提交付款审核失败，请重试。",
+            order: viewOrder(before),
+          });
+        }
+        if (!reviewDuplicate) {
+          await addSystemMessage(
+            before,
+            profile.id,
+            "老板已使用猫粮付款（已冻结），等待客服审核。审核通过前不会通知陪玩、不会进入等待陪玩确认。"
+          ).catch(() => {});
+          try {
+            const { notifyBossOrderEvent } = await import("./_boss-order-notify.js");
+            await notifyBossOrderEvent(before, {
+              title: "待客服审核",
+              body: "猫粮已冻结，等待客服审核通过后才会进入等待陪玩确认。",
+              kind: "payment_review",
+            });
+          } catch (err) {
+            console.warn("[orders/pay_order] catfood review boss push", err?.message || err);
+          }
+        }
+        return json(res, 200, {
+          ok: true,
+          testPay: false,
+          paymentReview: true,
+          message: "猫粮已冻结，等待客服审核。审核通过前不会进入等待陪玩确认。",
+          receipt: reviewReceipt ? { id: reviewReceipt.id, receiptNo: reviewReceipt.receipt_no } : undefined,
+          order: {
+            ...viewOrder({ ...before, paymentReceipt: reviewReceipt, status: "awaiting_payment" }),
+            paymentReview: true,
+            statusText: "待客服审核",
+            paymentStatus: "待客服审核",
+          },
+          children: [],
+          allowTestPay: previewAllowed,
+        });
+      }
 
       const nextStatus = before.companion_id ? "claimed" : "pending";
       // Companion must confirm before accepted_at / start — never pre-stamp on pay.
@@ -2731,6 +2857,16 @@ export default async function handler(req, res) {
         throw cerr;
       }
       if (!child?.id) return json(res, 500, { ok: false, message: "补位子订单创建失败。" });
+      await persistOrderServiceSnapshot(
+        child,
+        await buildServiceSnapshotForCompanion(companionId, {
+          serviceId: serviceId || resolved?.serviceRow?.service_id || "",
+          serviceName: serviceType,
+          unitPrice,
+          hours,
+          bossRank: cleanRank(body.bossRank || body.boss_rank || "") || viewServiceSnapshot(exited)?.bossRank?.rank || "",
+        })
+      );
       // Stamp exited slot as replaced (keep history row).
       try {
         const prevNote = String(exited.note || "");
@@ -3017,6 +3153,10 @@ export default async function handler(req, res) {
 
       let order = await patchCancel(id);
       let cancelledChildren = [];
+      if (hadActiveHold) {
+        const { supersedePendingReceipts } = await import("./_payment-receipts.js");
+        await supersedePendingReceipts(before.id).catch(() => {});
+      }
 
       // Multi parent (unpaid): cancel entire group so children cannot still pay/accept.
       if (isMultiGroupParent(before)) {

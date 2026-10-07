@@ -18,10 +18,6 @@ import {
   writeAdminLog,
 } from "../_wallet.js";
 import { requireAdmin } from "../_admin-auth.js";
-import { staffReviewerNameFromProfile } from "../_payment-receipts.js";
-import { companionDb, createSignedUrl } from "../_companion-media-store.js";
-import { bankMethodLabels } from "../_payment-bank-accounts.js";
-
 const ADMIN_ROLES = new Set(["admin", "super_admin", "finance_admin"]);
 
 function json(res, status, data) {
@@ -81,101 +77,11 @@ export default async function handler(req, res) {
         return json(res, 200, { ok: true, items: Array.isArray(rows) ? rows : [] });
       }
       if (action === "pending_recharges" || action === "list_pending_recharges") {
-        const statusFilter = String(req.query.status || "pending_review").trim();
-        let rows = [];
-        try {
-          if (statusFilter === "pending_all" || statusFilter === "queue") {
-            // Review queue: awaiting payment proof review (and legacy pending_payment shells).
-            let a = [];
-            try {
-              a = await supabaseJson(
-                restUrl("payment_orders", `?status=eq.pending_review&order=submitted_at.desc.nullslast,created_at.desc&limit=200`),
-                { headers: serviceHeaders() }
-              );
-            } catch {
-              a = [];
-            }
-            let b = [];
-            try {
-              b = await supabaseJson(
-                restUrl("payment_orders", `?status=eq.pending_payment&order=created_at.desc&limit=100`),
-                { headers: serviceHeaders() }
-              );
-            } catch {
-              b = [];
-            }
-            rows = [...(Array.isArray(a) ? a : []), ...(Array.isArray(b) ? b : [])];
-          } else if (statusFilter && statusFilter !== "all") {
-            const query = `?status=eq.${encodeURIComponent(statusFilter)}&order=created_at.desc&limit=200`;
-            rows = await supabaseJson(restUrl("payment_orders", query), { headers: serviceHeaders() });
-          } else {
-            rows = await supabaseJson(restUrl("payment_orders", "?order=created_at.desc&limit=200"), {
-              headers: serviceHeaders(),
-            });
-          }
-        } catch (e) {
-          if (isMissingRelation(e)) rows = [];
-          else throw e;
-        }
-        const list = Array.isArray(rows) ? rows : [];
-        const bossIds = [...new Set(list.map((r) => r.boss_id).filter(Boolean))];
-        const profileMap = {};
-        await Promise.all(
-          bossIds.map(async (id) => {
-            try {
-              const profiles = await supabaseJson(restUrl("profiles", `?id=eq.${encodeURIComponent(id)}&select=id,display_name,nickname,email,phone&limit=1`), {
-                headers: serviceHeaders(),
-              });
-              profileMap[id] = profiles?.[0] || null;
-            } catch {
-              profileMap[id] = null;
-            }
-          })
-        );
-        const items = [];
-        const bankLabels = await bankMethodLabels(list.map((row) => row.payment_method)).catch(() => ({}));
-        for (const row of list) {
-          const p = profileMap[row.boss_id] || {};
-          const raw = row.raw_response && typeof row.raw_response === "object" ? row.raw_response : {};
-          const storedUrl = String(row.proof_url || raw.proofUrl || "").trim();
-          const bucket = String(row.proof_bucket || raw.proofBucket || "companion-payment-proofs").trim();
-          const objectPath = String(row.proof_path || raw.proofPath || "").trim();
-          let proofUrl = "";
-          if (bucket && objectPath) {
-            try {
-              proofUrl = (await createSignedUrl(bucket, objectPath, 60 * 60)) || "";
-            } catch {
-              proofUrl = "";
-            }
-          } else if (/^https?:\/\//i.test(storedUrl)) {
-            proofUrl = storedUrl;
-          }
-          items.push({
-            id: row.id,
-            paymentNo: row.payment_no || row.id,
-            bossId: row.boss_id || "",
-            bossName: p.display_name || p.nickname || p.email || "老板",
-            bossEmail: p.email || "",
-            amountRm: money(row.amount),
-            catFoodAmount: money(row.cat_food_amount || row.paid_cat_food),
-            paidCatFood: money(row.paid_cat_food || row.cat_food_amount),
-            bonusCatFood: money(row.bonus_cat_food),
-            totalCatFood: money(row.cat_food_amount) || money(row.paid_cat_food) + money(row.bonus_cat_food),
-            paymentMethod: row.payment_method || "",
-            paymentMethodName: bankLabels[String(row.payment_method || "").toLowerCase()] || "",
-            status: row.status || "pending_payment",
-            paymentUrl: row.payment_url || "",
-            proofUrl,
-            proofPath: objectPath,
-            rejectReason: String(row.reject_reason || raw.rejectReason || "").trim(),
-            reviewedByStaffId: row.reviewed_by_staff_id || raw.reviewedByStaffId || "",
-            reviewedByStaffName: String(row.reviewed_by_staff_name || raw.reviewedByStaffName || "").trim(),
-            reviewedAt: row.reviewed_at || raw.reviewedAt || "",
-            submittedAt: row.submitted_at || raw.submittedAt || "",
-            createdAt: row.created_at || "",
-            creditedAt: row.credited_at || "",
-          });
-        }
+        const { listRecharges } = await import("../_recharge-review.js");
+        const items = await listRecharges({
+          status: String(req.query.status || "pending_review").trim(),
+          includeProofPath: true,
+        });
         return json(res, 200, { ok: true, items });
       }
       if (!bossId) return json(res, 400, { ok: false, message: "缺少 bossId" });
@@ -473,244 +379,26 @@ export default async function handler(req, res) {
     }
 
     if (action === "confirm_manual_recharge") {
-      const paymentNo = String(body.paymentNo || body.payment_no || body.id || "").trim();
-      if (!paymentNo) return json(res, 400, { ok: false, message: "缺少 paymentNo" });
-      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(paymentNo);
-      const match = isUuid
-        ? `or=(payment_no.eq.${encodeURIComponent(paymentNo)},id.eq.${encodeURIComponent(paymentNo)})`
-        : `payment_no=eq.${encodeURIComponent(paymentNo)}`;
-      const orderRows = await supabaseJson(restUrl("payment_orders", `?${match}&limit=1`), {
-        headers: serviceHeaders(),
-      });
-      const order = orderRows?.[0];
-      if (!order) return json(res, 404, { ok: false, message: "充值订单不存在" });
-      const st = String(order.status || "").toLowerCase();
-      if (st === "paid" || st === "credited") {
-        return json(res, 200, { ok: true, message: "该充值单已到账", paymentNo: order.payment_no, duplicate: true });
-      }
-      if (!/pending|pending_payment|pending_review|awaiting|unpaid|manual/i.test(st)) {
-        return json(res, 400, { ok: false, message: `当前状态不可确认到账：${order.status || "-"}` });
-      }
-      const raw = order.raw_response && typeof order.raw_response === "object" ? order.raw_response : {};
-      const hasProof = !!(order.proof_path || order.proof_url || raw.proofPath || raw.proofUrl);
-      if (!hasProof && st === "pending_review") {
-        return json(res, 400, { ok: false, message: "该充值单缺少付款截图，不能审核通过" });
-      }
-      // Do not overwrite first reviewer on already-reviewed rows.
-      if (order.reviewed_by_staff_id && String(order.reviewed_by_staff_id) !== String(operatorId || "")) {
-        return json(res, 409, {
-          ok: false,
-          message: "该充值单已由其他审核人处理，不可覆盖审核人。",
-          reviewedByStaffId: order.reviewed_by_staff_id,
-          reviewedByStaffName: order.reviewed_by_staff_name || "",
-        });
-      }
-      const staffName = staffReviewerNameFromProfile(admin);
-      if (!staffName) {
-        return json(res, 400, {
-          ok: false,
-          message: "当前账号未设置真实显示名称，请先在资料中填写姓名后再审核。",
-        });
-      }
-      const reviewedAt = new Date().toISOString();
-      const reviewPatch = {
-        reviewed_by_staff_id: operatorId,
-        reviewed_by_staff_name: staffName,
-        reviewed_at: reviewedAt,
-        review_remark: String(body.reason || "审核通过"),
-        updated_at: reviewedAt,
-      };
-      try {
-        await supabaseJson(restUrl("payment_orders", `?id=eq.${encodeURIComponent(order.id)}`), {
-          method: "PATCH",
-          headers: serviceHeaders(),
-          body: JSON.stringify(reviewPatch),
-        });
-      } catch (err) {
-        // Columns may be missing before migration — still credit, keep name in raw_response.
-        const rawKeep = order.raw_response && typeof order.raw_response === "object" ? { ...order.raw_response } : {};
-        rawKeep.reviewedByStaffId = operatorId;
-        rawKeep.reviewedByStaffName = staffName;
-        rawKeep.reviewedAt = reviewedAt;
-        await supabaseJson(restUrl("payment_orders", `?id=eq.${encodeURIComponent(order.id)}`), {
-          method: "PATCH",
-          headers: serviceHeaders(),
-          body: JSON.stringify({ raw_response: rawKeep, updated_at: reviewedAt }),
-        }).catch(() => null);
-      }
-      try {
-        await companionDb("payment_review_history", "", {
-          method: "POST",
-          body: JSON.stringify({
-            source_table: "payment_orders",
-            source_id: order.id,
-            action: "approved",
-            reviewed_by_staff_id: operatorId,
-            reviewed_by_staff_name: staffName,
-            review_status: "approved",
-            review_remark: String(body.reason || "审核通过"),
-            reviewed_at: reviewedAt,
-            created_at: reviewedAt,
-          }),
-        });
-      } catch {
-        /* optional history */
-      }
-      const tradeNo = String(body.tradeNo || body.trade_no || body.providerTradeNo || `MANUAL-${Date.now()}`).trim();
-      const result = await creditRechargePayment(order.payment_no, tradeNo, `admin-confirm:${order.payment_no}`);
-      await writeAdminLog({
-        module: "wallet",
-        action: "confirm_manual_recharge",
-        targetType: "payment_order",
-        targetId: order.payment_no,
-        operatorId,
+      const { approveRecharge } = await import("../_recharge-review.js");
+      const out = await approveRecharge({
+        paymentNo: String(body.paymentNo || body.payment_no || body.id || "").trim(),
+        reviewer: admin,
+        reason: String(body.reason || ""),
+        tradeNo: String(body.tradeNo || body.trade_no || body.providerTradeNo || "").trim(),
         operatorRole: admin.role || "admin",
-        reason: String(body.reason || "确认线下转账到账"),
-        after: { ...result, reviewedByStaffId: operatorId, reviewedByStaffName: staffName },
       });
-      if (!result?.duplicate) {
-        // Inbox row is written by mcj_wallet_credit_recharge; only fan out Web Push here.
-        try {
-          const { fanoutWebPush } = await import("../_web-push.js");
-          fanoutWebPush(order.boss_id, {
-            title: "充值到账",
-            body: `充值成功，订单 ${order.payment_no} 猫粮已入账。`,
-            url: "/recharge.html",
-            notificationType: "recharge",
-            entityId: order.payment_no,
-            tag: "boss-recharge-" + order.payment_no,
-          });
-        } catch {
-          /* optional */
-        }
-      }
-      return json(res, 200, {
-        ok: true,
-        message: result?.duplicate ? "已到账（重复确认被忽略）" : "已确认到账，猫粮已入账",
-        result,
-        paymentNo: order.payment_no,
-        reviewedByStaffId: operatorId,
-        reviewedByStaffName: staffName,
-        reviewedAt,
-      });
+      return json(res, out.status, out.body);
     }
 
     if (action === "reject_manual_recharge" || action === "reject_recharge") {
-      const paymentNo = String(body.paymentNo || body.payment_no || body.id || "").trim();
-      const reason = String(body.reason || body.rejectReason || body.reject_reason || "").trim();
-      if (!paymentNo) return json(res, 400, { ok: false, message: "缺少 paymentNo" });
-      if (!reason) return json(res, 400, { ok: false, message: "请填写拒绝原因" });
-      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(paymentNo);
-      const match = isUuid
-        ? `or=(payment_no.eq.${encodeURIComponent(paymentNo)},id.eq.${encodeURIComponent(paymentNo)})`
-        : `payment_no=eq.${encodeURIComponent(paymentNo)}`;
-      const orderRows = await supabaseJson(restUrl("payment_orders", `?${match}&limit=1`), {
-        headers: serviceHeaders(),
-      });
-      const order = orderRows?.[0];
-      if (!order) return json(res, 404, { ok: false, message: "充值订单不存在" });
-      const st = String(order.status || "").toLowerCase();
-      if (st === "paid" || st === "credited") {
-        return json(res, 409, { ok: false, message: "已到账订单不能拒绝" });
-      }
-      if (!/pending_review|pending_payment|pending/i.test(st)) {
-        return json(res, 400, { ok: false, message: `当前状态不可拒绝：${order.status || "-"}` });
-      }
-      const raw = order.raw_response && typeof order.raw_response === "object" ? { ...order.raw_response } : {};
-      if (order.reviewed_by_staff_id && String(order.reviewed_by_staff_id) !== String(operatorId || "")) {
-        return json(res, 409, {
-          ok: false,
-          message: "该充值单已由其他审核人处理，不可覆盖审核人。",
-        });
-      }
-      const staffName = staffReviewerNameFromProfile(admin);
-      if (!staffName) {
-        return json(res, 400, {
-          ok: false,
-          message: "当前账号未设置真实显示名称，请先在资料中填写姓名后再审核。",
-        });
-      }
-      const reviewedAt = new Date().toISOString();
-      raw.rejectReason = reason;
-      raw.rejectedAt = reviewedAt;
-      raw.reviewedByStaffId = operatorId;
-      raw.reviewedByStaffName = staffName;
-      raw.reviewedAt = reviewedAt;
-      const patch = {
-        status: "rejected",
-        raw_response: raw,
-        reject_reason: reason,
-        reviewed_by_staff_id: operatorId,
-        reviewed_by_staff_name: staffName,
-        reviewed_at: reviewedAt,
-        review_remark: reason,
-      };
-      let saved = null;
-      try {
-        const rows = await supabaseJson(restUrl("payment_orders", `?id=eq.${encodeURIComponent(order.id)}`), {
-          method: "PATCH",
-          headers: serviceHeaders(),
-          body: JSON.stringify({ ...patch, updated_at: reviewedAt }),
-        });
-        saved = rows?.[0] || null;
-      } catch (err) {
-        if (!/column|schema cache|PGRST/i.test(String(err?.message || ""))) throw err;
-        const rows = await supabaseJson(restUrl("payment_orders", `?id=eq.${encodeURIComponent(order.id)}`), {
-          method: "PATCH",
-          headers: serviceHeaders(),
-          body: JSON.stringify({ status: "rejected", raw_response: raw, updated_at: reviewedAt }),
-        });
-        saved = rows?.[0] || null;
-      }
-      try {
-        await companionDb("payment_review_history", "", {
-          method: "POST",
-          body: JSON.stringify({
-            source_table: "payment_orders",
-            source_id: order.id,
-            action: "rejected",
-            reviewed_by_staff_id: operatorId,
-            reviewed_by_staff_name: staffName,
-            review_status: "rejected",
-            reject_reason: reason,
-            review_remark: reason,
-            reviewed_at: reviewedAt,
-            created_at: reviewedAt,
-          }),
-        });
-      } catch {
-        /* optional */
-      }
-      await writeAdminLog({
-        module: "wallet",
-        action: "reject_manual_recharge",
-        targetType: "payment_order",
-        targetId: order.payment_no,
-        operatorId,
+      const { rejectRecharge } = await import("../_recharge-review.js");
+      const out = await rejectRecharge({
+        paymentNo: String(body.paymentNo || body.payment_no || body.id || "").trim(),
+        reviewer: admin,
+        reason: String(body.reason || body.rejectReason || body.reject_reason || "").trim(),
         operatorRole: admin.role || "admin",
-        reason,
-        after: saved,
       });
-      try {
-        await notifyBoss(
-          order.boss_id,
-          "充值审核未通过",
-          `充值单 ${order.payment_no} 未通过（审核客服：${staffName}）：${reason}`,
-          "wallet",
-          order.payment_no
-        );
-      } catch {
-        /* optional */
-      }
-      return json(res, 200, {
-        ok: true,
-        message: "已拒绝该充值申请",
-        paymentNo: order.payment_no,
-        reason,
-        reviewedByStaffId: operatorId,
-        reviewedByStaffName: staffName,
-        reviewedAt,
-      });
+      return json(res, out.status, out.body);
     }
 
     if (action === "cleanup_test_recharges") {

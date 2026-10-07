@@ -1,12 +1,26 @@
 (function(){
   var root=document.getElementById('companionApp');
   if(!root)return;
+  /** Platform clock = Asia/Kuala_Lumpur (UTC+8, no DST). Returns a Date whose getUTC* fields are KL wall-clock.
+   *  Zoned strings (Z / ±hh:mm) are converted; zone-less strings are already KL wall-clock and kept as-is. */
+  function klDate(v){
+    if(v==null||v==='')return null;
+    if(typeof v==='number'||v instanceof Date){var t=new Date(v);return isNaN(t.getTime())?null:new Date(t.getTime()+288e5);}
+    var s=String(v).trim();
+    var n=s.match(/^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2}))?(?:\.\d+)?)?$/);
+    if(n)return new Date(Date.UTC(+n[1],+n[2]-1,+n[3],+(n[4]||0),+(n[5]||0),+(n[6]||0)));
+    var d=new Date(s.replace(/^(\d{4}-\d{2}-\d{2}) /,'$1T').replace(/([+-]\d{2})(\d{2})$/,'$1:$2').replace(/([+-]\d{2})$/,'$1:00'));
+    return isNaN(d.getTime())?null:new Date(d.getTime()+288e5);
+  }
+  function klFmt(v,withSeconds){
+    var d=klDate(v);
+    if(!d)return v?String(v):'';
+    function p(n){return n<10?'0'+n:String(n)}
+    return d.getUTCFullYear()+'-'+p(d.getUTCMonth()+1)+'-'+p(d.getUTCDate())+' '+p(d.getUTCHours())+':'+p(d.getUTCMinutes())+(withSeconds?':'+p(d.getUTCSeconds()):'');
+  }
   function fmtContentTime(v){
-    if(window.MCJContentTime&&window.MCJContentTime.fmtContentTime)return window.MCJContentTime.fmtContentTime(v);
     if(!v)return '';
-    try{
-      return new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Kuala_Lumpur',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(v)).replace(' ',' ');
-    }catch(e){return String(v).slice(0,16).replace('T',' ')}
+    return klFmt(v);
   }
   var ROUTES={
     '/companion/':'dashboard','/companion/login':'login','/companion/dashboard':'dashboard',
@@ -1694,6 +1708,7 @@
       }
       bindCompanionChatRealtime();
       bindCompanionOrdersRealtime();
+      bindCompanionInboxRealtime();
       if(state._focusOrderId){
         setTimeout(function(){
           var el=document.querySelector('[data-order-focus="1"]')||document.getElementById('order-'+state._focusOrderId);
@@ -1770,6 +1785,15 @@
         }
         state._prevDesignated=designated;
         updateTabBadge(designated);
+        if(state.route!=='messages'&&(!state._inboxRtReady||tick%5===0)){
+          api('inbox',inboxQueryParams({light:'1',include_messages:'0'}),'GET').then(function(res){
+            if(!res||!res.ok)return;
+            var before=num(state.inbox&&state.inbox.unreadTotal);
+            applyInboxPayload(res.data||res.inbox||null);
+            if(num(state.inbox&&state.inbox.unreadTotal)>before)announceCsMessage();
+            refreshUnreadChrome();
+          }).catch(function(){});
+        }
         if(editingLive||isEditingLiveForm())return;
         if(state.route==='messages'){
           return api('inbox',inboxQueryParams({light:'1',include_messages:'0'}),'GET').then(function(res){
@@ -1909,23 +1933,86 @@
           var MediaPrev=window.MCJChatMedia;
           convs[i].lastMessage=(MediaPrev&&MediaPrev.isImageMessage(view))?'[图片]':String(view.content||'').slice(0,80);
           convs[i].lastTime=view.createdAt||'';
-          if(role!=='companion'&&state.route==='messages'&&state.chatSession==='cs'){
-            /* active thread is open — unread stays 0 via mark read */
-          }else if(role!=='companion'){
-            convs[i].unread=num(convs[i].unread)+1;
-          }
           break;
         }
       }catch(e){}
-      if(role!=='companion')playCue('message');
-      try{
-        if(state.data&&state.data.summary){
-          state.data.summary.unreadMessages=num(state.data.summary.unreadMessages)+1;
-          updateTabBadge(state.data.summary.waitingConfirm||state.data.summary.designatedPending);
-        }
-      }catch(e){}
+      onCompanionCsMessage(row);
       if(state.route==='messages')paint();
     }).catch(function(){ state._rtBoundCid=''; });
+  }
+  function recomputeInboxUnread(){
+    if(!state.inbox)return;
+    var csUnread=csConvList(state.inbox).reduce(function(sum,c){return sum+num(c.unread)},0);
+    var sys=(state.inbox.systemNotices||[]).filter(function(n){return n.unread}).length;
+    state.inbox.unreadTotal=csUnread+sys;
+    state.inbox.unreadMessages=state.inbox.unreadTotal;
+    if(state.data&&state.data.summary)state.data.summary.unreadMessages=state.inbox.unreadTotal;
+  }
+  function onCompanionCsMessage(row){
+    if(!row||!row.id)return;
+    if(String(row.sender_role||'')!=='customer_service'||String(row.message_type||'')==='system')return;
+    if(String(row.sender_id||'')===companionUserId())return;
+    var seen=state._rtSeenCsMsg||(state._rtSeenCsMsg={});
+    if(seen[row.id])return;
+    seen[row.id]=1;
+    var cid=String(row.conversation_id||'');
+    var conv=csConvList(state.inbox).find(function(c){return String(c.id)===cid});
+    if(!conv){
+      // Unknown thread (new consult / other room): server list is the privacy-filtered truth.
+      var now=Date.now();
+      if(now-num(state._rtUnknownReloadAt)<8000)return;
+      state._rtUnknownReloadAt=now;
+      var before=num(state.inbox&&state.inbox.unreadTotal);
+      reloadInbox({paint:false}).then(function(){
+        if(num(state.inbox&&state.inbox.unreadTotal)>before)announceCsMessage();
+        refreshUnreadChrome();
+      });
+      return;
+    }
+    var viewing=state.route==='messages'&&state.chatSession!=='system'&&companionCsConversationId()===cid&&!document.hidden;
+    if(viewing){
+      clearTimeout(state._rtMarkReadTimer);
+      state._rtMarkReadTimer=setTimeout(function(){markActiveChatSessionRead({skipReload:true,paint:false})},600);
+      return;
+    }
+    conv.unread=num(conv.unread)+1;
+    (state.inbox.conversations||[]).forEach(function(c){if(c!==conv&&c.type==='cs'&&String(c.id)===cid)c.unread=conv.unread});
+    recomputeInboxUnread();
+    announceCsMessage();
+    refreshUnreadChrome();
+  }
+  function announceCsMessage(){
+    playCue('message');
+    if(state.route!=='messages')toast('客服发来新消息');
+  }
+  function refreshUnreadChrome(){
+    var s=(state.data||{}).summary||{};
+    updateTabBadge(s.waitingConfirm||s.designatedPending);
+    if(!isEditingLiveForm())paint({preserveScroll:true});
+  }
+  function bindCompanionInboxRealtime(){
+    var RT=window.MCJChatRealtime;
+    var token=state.session&&state.session.token;
+    var uid=companionUserId();
+    if(!RT||!token||!uid||typeof RT.subscribeConversations!=='function')return;
+    if(state._rtInboxUid===uid)return;
+    state._rtInboxUid=uid;
+    RT.subscribeConversations(token,{
+      onReady:function(){state._inboxRtReady=true},
+      onError:function(){state._inboxRtReady=false},
+      onMessage:onCompanionCsMessage
+    }).catch(function(){state._rtInboxUid='';state._inboxRtReady=false});
+  }
+  function applyConversationFromQuery(){
+    if(state.route!=='messages')return;
+    try{
+      var q=new URLSearchParams(location.search||'');
+      var cid=String(q.get('conversation')||'').trim();
+      if(!cid)return;
+      state.chatConversationId=cid;
+      state.chatSession='cs';
+      history.replaceState(null,'','/companion/messages');
+    }catch(e){}
   }
   function init(){
     state.settings=readSettings();
@@ -1936,6 +2023,7 @@
     }
     state.route=route();
     applyFocusOrderFromQuery();
+    applyConversationFromQuery();
     // Capture Boss invite code for companion register (from /invite.html or ?code=).
     try{
       var q=new URLSearchParams(location.search||'');
@@ -1960,6 +2048,7 @@
         startPoll();
         bindCompanionChatRealtime();
         bindCompanionOrdersRealtime();
+        bindCompanionInboxRealtime();
         var s=(state.data||{}).summary||{};
         updateTabBadge(s.waitingConfirm||s.designatedPending);
         try{
@@ -2232,7 +2321,7 @@
       ['平台抽成猫粮',s.platformCommissionCatFood],
       ['邀请返点/其他扣除',s.rebateOrOtherDeduction||0],
       ['陪玩实际到账猫粮',s.companionNetCatFood],
-      ['完成时间',s.completedAt||'-'],
+      ['完成时间',s.completedAt?fmtTime(s.completedAt):'-'],
       ['结算状态',s.settlementStatus||'已结算']
     ];
     var note=s.bossCommissionTransparencyNote||'老板直属分成由平台抽成支付，不扣陪玩收入';
@@ -2247,7 +2336,13 @@
       }
       var inset=Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
       document.documentElement.style.setProperty('--pw-keyboard-inset', inset+'px');
+      document.documentElement.classList.toggle('pw-kb-open', inset>80);
     }catch(e){}
+  }
+  function autoSizeChatInput(ta){
+    if(!ta)return;
+    ta.style.height='auto';
+    ta.style.height=Math.min(120, Math.max(44, ta.scrollHeight))+'px';
   }
   function bindPwKeyboardInset(){
     if(state._kbBound)return;
@@ -2397,7 +2492,7 @@
         infoRow('老板昵称',boss.displayName||'-')+
         infoRow('老板 UID',boss.bossUid||'-')+
         infoRow('状态',boss.status==='active'?'生效中':(boss.status||'-'))+
-        infoRow('绑定时间',boss.boundAt?String(boss.boundAt).replace('T',' ').slice(0,19):'-')+
+        infoRow('绑定时间',boss.boundAt?fmtTime(boss.boundAt):'-')+
         '</div><p class="pw-note" style="margin-top:10px;margin-bottom:0">只读。换绑 / 解绑由后台操作。老板分成由平台抽成支付，不扣陪玩收入。</p>';
     }).catch(function(){
       if(!mount.isConnected)return;
@@ -2880,7 +2975,7 @@
     var one=normOne(s);
     return /^\d{2}:\d{2}$/.test(one)?one:s.replace(/\s*-\s*/g,' – ');
   }
-  function fmtTime(v){if(!v)return '-';try{return new Date(v).toLocaleString('zh-CN',{hour12:false})}catch(e){return String(v)}}
+  function fmtTime(v){if(!v)return '-';return klFmt(v,true)||'-';}
   var REJECT_REASONS=['正在服务其他订单','时间无法配合','临时有事','不接该项目','其他'];
   function voiceModeLabel(o){
     var m=String((o&&(o.voiceMode||o.voice_mode))||'game_mic').toLowerCase();
@@ -2995,7 +3090,30 @@
           (o.paymentReviewedByName?'<div><span>审核客服</span><strong>'+esc(o.paymentReviewedByName)+'</strong></div>':'')+
           (o.paymentReviewedAt?'<div><span>审核时间</span><strong>'+esc(fmtTime(o.paymentReviewedAt))+'</strong></div>':''))
         :'')+
-      '</div>'+peerHtml+'<footer class="pw-actions">'+orderActions(o)+'</footer></article>';
+      bossRankMetaHtml(o)+earlyFinishMetaHtml(o)+'</div>'+orderServiceStandardHtml(o)+peerHtml+'<footer class="pw-actions">'+orderActions(o)+'</footer></article>';
+  }
+  /** Boss rank frozen in the order snapshot at create time. */
+  function earlyFinishMetaHtml(o){
+    var ef=o&&o.earlyFinish,rj=o&&o.earlyFinishReject,out='';
+    if(ef)out+='<div data-early-finish><span>提前结束</span><strong>实际 '+esc(ef.servedHours)+' / 预约 '+esc(ef.bookedHours)+' 小时 · 结算 '+money(ef.settleAmount)+' · 我的收入 '+money(ef.companionIncome)+(Number(ef.refundAmount)>0?' · 退老板 '+money(ef.refundAmount):'')+'</strong></div>'+(ef.reason?'<div><span>提前结束原因</span><strong>'+esc((ef.initiatorLabel?ef.initiatorLabel+'：':'')+ef.reason)+'</strong></div>':'');
+    if(rj&&!ef)out+='<div data-early-finish-rejected><span>提前结束申请</span><strong>客服未同意（'+esc(fmtContentTime(rj.at))+'）：'+esc(rj.reason||'')+'</strong></div>';
+    return out;
+  }
+  function bossRankMetaHtml(o){
+    var r=o&&o.serviceSnapshot&&o.serviceSnapshot.bossRank;
+    if(!r||!r.rank)return '';
+    return '<div data-boss-rank><span>老板段位</span><strong>'+esc((r.game?r.game+' · ':'')+r.rank)+'</strong></div>';
+  }
+  function orderServiceStandardHtml(o){
+    var s=o&&o.serviceSnapshot;
+    if(!s)return '';
+    var raw=String(o.status||o.rawStatus||'');
+    var open=raw==='claimed'||raw==='confirmed'||raw==='in_progress';
+    var body=s.sections&&s.sections.length
+      ?'<dl>'+s.sections.map(function(sec){return '<div><dt>'+esc(sec.label)+'</dt><dd>'+esc(sec.value)+'</dd></div>';}).join('')+'</dl>'
+      :'<p class="pw-note">下单时你尚未填写该项目的服务标准（按'+esc(s.pricingUnit||'小时')+'计费）。可在「编辑资料 → 游戏与价格」补充，之后的新订单会带上。</p>';
+    return '<details class="pw-order-std"'+(open?' open':'')+'><summary>本单服务标准（下单时快照）· '+esc(s.serviceName||o.serviceName||'-')+'</summary>'+
+      body+'<p class="pw-order-std-foot">老板下单时看到的就是这份标准；之后修改服务标准不会改变本单。</p></details>';
   }
   function ordersHtml(){
     var rows=(state.data&&state.data.myOrders)||[];
@@ -3321,7 +3439,7 @@
         '<button class="mcj-composer-tool" type="button" data-pw-emoji '+(busy?'disabled':'')+' aria-label="表情">😊</button>'+
         '<button class="mcj-composer-tool" type="button" data-pw-image '+(busy?'disabled':'')+' aria-label="图片">🖼</button>'+
         '</div>'+
-        '<textarea name="content" placeholder="输入消息，Enter 发送，Shift+Enter 换行" data-chat-input '+(busy?'disabled':'')+'></textarea>'+
+        '<textarea name="content" rows="1" maxlength="2000" enterkeyhint="send" placeholder="输入消息…" data-chat-input '+(busy?'disabled':'')+'></textarea>'+
         '<div class="pw-send-line"><span class="mcj-upload-status" data-pw-upload-status>'+(busy?'发送中…':'')+'</span><button class="pw-btn primary" type="submit" '+(busy?'disabled':'')+'>发送</button></div>'+
         '</form>';
     }
@@ -3339,14 +3457,11 @@
   }
   function fmtSessionTime(v){
     if(!v)return '';
-    try{
-      var d=new Date(v);
-      if(isNaN(d.getTime()))return '';
-      var now=new Date();
-      var sameDay=d.toDateString()===now.toDateString();
-      if(sameDay)return d.toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit',hour12:false});
-      return d.toLocaleDateString('zh-CN',{month:'2-digit',day:'2-digit'})+' '+d.toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit',hour12:false});
-    }catch(e){return ''}
+    var full=klFmt(v);
+    if(!klDate(v))return '';
+    var today=klFmt(Date.now()).slice(0,10);
+    if(full.slice(0,10)===today)return full.slice(11,16);
+    return full.slice(5,7)+'/'+full.slice(8,10)+' '+full.slice(11,16);
   }
   function messagesHtml(){
     var inbox=state.inbox;
@@ -3607,6 +3722,72 @@
       (busy?'<p class="pw-media-status" data-gallery-status>'+statusText+'</p>':'')+
       '</div>';
   }
+  var SHOWCASE_VIDEO_ACCEPT='video/*,.mp4,.mov,.m4v,.webm,.3gp';
+  var SHOWCASE_VIDEO_MAX_BYTES=50*1024*1024;
+  var SHOWCASE_VIDEO_MAX_SECONDS=30;
+  function showcasePendingList(kind){
+    state.showcasePending=state.showcasePending||{video:[],achievement:[]};
+    if(!Array.isArray(state.showcasePending[kind]))state.showcasePending[kind]=[];
+    return state.showcasePending[kind];
+  }
+  function showcaseSaved(kind){
+    var media=(state.data&&state.data.media)||[];
+    return media.filter(function(m){
+      return m&&m.mediaType===kind&&m.id&&!/^legacy-/.test(String(m.id));
+    });
+  }
+  function showcaseStatusText(m){
+    var s=String((m&&m.status)||'pending').toLowerCase();
+    if(s==='approved')return '已通过';
+    if(s==='rejected')return '未通过'+(m.rejectReason?('：'+m.rejectReason):'');
+    return '审核中';
+  }
+  function pwShowcaseItemHtml(kind,item){
+    var pendingId=item._localId?String(item._localId):'';
+    var uploading=!!item._uploading;
+    var failed=!!item._failed;
+    var isVid=pendingId?!!item._isVideo:(kind==='video'||/^video\//i.test(String(item.contentType||item.content_type||'')));
+    var url=String(item.url||'');
+    var body=isVid
+      ? (url?'<video src="'+esc(url)+'" controls playsinline preload="metadata"></video>':'<div class="pw-showcase-ph">视频</div>')
+      : '<button type="button" class="pw-media-thumb-hit" '+(uploading||failed||!url?'disabled':'data-gallery-preview="'+esc(url)+'"')+' aria-label="预览战绩图片">'+
+        (url?'<img src="'+esc(url)+'" alt="游戏战绩">':'<div class="pw-showcase-ph">图片</div>')+'</button>';
+    var status=uploading
+      ? ('上传中…'+(item._progress?(' '+item._progress+'%'):''))
+      : (failed?('上传失败'+(item._error?('：'+item._error):'')):showcaseStatusText(item));
+    var st=String(item.status||'').toLowerCase();
+    var cls=failed||(!pendingId&&st==='rejected')?' is-fail':(!pendingId&&st==='approved'?' is-ok':'');
+    var del=pendingId
+      ? 'data-showcase-dismiss="'+esc(kind+'|'+pendingId)+'"'
+      : 'data-delete-showcase="'+esc(item.id||'')+'"';
+    return '<article class="pw-media-thumb pw-showcase-item'+(isVid?' is-video':'')+(uploading?' is-uploading':'')+(failed?' is-fail':'')+'" data-showcase-kind="'+esc(kind)+'"'+(pendingId?' data-showcase-pending="'+esc(pendingId)+'"':' data-showcase-id="'+esc(item.id||'')+'"')+'>'+
+      body+
+      '<span class="pw-showcase-status'+cls+'" data-showcase-status>'+esc(status)+'</span>'+
+      (uploading?'':'<div class="pw-media-thumb-tools"><button type="button" class="pw-media-icon-btn danger" '+del+' title="删除" aria-label="删除">×</button></div>')+
+      '</article>';
+  }
+  function pwShowcaseUploadHtml(kind){
+    var isVid=kind==='video';
+    var pending=showcasePendingList(kind).filter(Boolean);
+    var busy=pending.some(function(p){return p._uploading})||state._showcaseDeleting===kind;
+    var display=showcaseSaved(kind).concat(pending);
+    var items=display.map(function(it){return pwShowcaseItemHtml(kind,it)}).join('');
+    var label='<label class="pw-media-chip primary pw-gallery-pick-label'+(busy?' is-busy':'')+'" data-pw-showcase-label="'+kind+'">'+
+      (busy?'请稍候…':(isVid?'＋ 上传视频':'＋ 添加战绩图'))+
+      '<input type="file" accept="'+(isVid?SHOWCASE_VIDEO_ACCEPT:'image/*')+'" multiple data-pw-showcase-input="'+kind+'" '+
+      (busy?'disabled ':'')+
+      'class="pw-gallery-native-input" tabindex="-1" aria-hidden="true">'+
+      '</label>';
+    var hint=isVid
+      ? '选填，可多个。支持 mp4 / mov / m4v / 3gp / webm，单个最长 30 秒、不超过 50MB；审核通过后老板端可见。'
+      : '选填，可多选。支持 jpg / png / webp；上传后老板可在陪玩详情「游戏战绩」查看，审核未通过会自动隐藏。';
+    return '<div class="pw-media-block pw-showcase-block" data-showcase-block="'+kind+'">'+
+      '<p class="pw-field-hint">'+hint+'</p>'+
+      (items?'<div class="pw-gallery-grid pw-showcase-grid" data-showcase-list="'+kind+'">'+items+'</div>':'')+
+      '<div class="pw-gallery-actions">'+label+'</div>'+
+      (state._showcaseDeleting===kind?'<p class="pw-media-status">正在删除…</p>':'')+
+      '</div>';
+  }
   function isPlayableMediaUrl(u){
     return /^(https?:\/\/|blob:|data:audio\/)/i.test(String(u||'').trim());
   }
@@ -3801,6 +3982,88 @@
       '</div></div>';
   }
 
+  var SERVICE_STANDARD_FIELDS_FALLBACK=[
+    {key:'content',label:'服务内容'},{key:'process',label:'执行标准'},{key:'includes',label:'包含'},
+    {key:'excludes',label:'不包含'},{key:'billing',label:'计费标准'},{key:'notes',label:'注意事项'}
+  ];
+  function serviceStandardFields(){
+    var f=state.data&&state.data.levelInfo&&state.data.levelInfo.serviceStandardFields;
+    return Array.isArray(f)&&f.length?f:SERVICE_STANDARD_FIELDS_FALLBACK;
+  }
+  function serviceStandardFor(sid,name){
+    var map=(state.data&&state.data.levelInfo&&state.data.levelInfo.serviceStandards)||{};
+    if(map[sid])return map[sid];
+    var want=String(name||'').replace(/\s+/g,'').toLowerCase();
+    var hit=Object.keys(map).filter(function(k){return map[k]&&String(map[k].name||'').replace(/\s+/g,'').toLowerCase()===want})[0];
+    return hit?map[hit]:null;
+  }
+  function serviceStandardRowsHtml(selected){
+    var rows=selected.length?selected.map(function(s){
+      var std=serviceStandardFor(s.id,s.name)||{};
+      var filled=serviceStandardFields().filter(function(f){return String(std[f.key]||'').trim()}).length;
+      return '<div class="pw-std-row'+(filled?' is-filled':'')+'">'+
+        '<div><strong>'+esc(s.name)+(std.rank?' · 段位 '+esc(std.rank):'')+'</strong><span>'+(filled?('已填写 '+filled+'/'+serviceStandardFields().length+' 项'):'未填写，老板下单时只能看到项目名和价格')+'</span></div>'+
+        '<button type="button" class="pw-btn'+(filled?'':' primary')+'" data-std-edit="'+esc(s.id)+'" data-std-name="'+esc(s.name)+'">'+(filled?'查看/修改':'填写标准 / 段位')+'</button>'+
+        '</div>';
+    }).join(''):'<p class="pw-field-hint">先勾选可接游戏并保存，再为每个项目填写服务标准。</p>';
+    return '<div class="pw-field" data-field="service_standard">'+fieldLabel('服务标准（老板下单时可见）',false)+
+      '<div class="pw-std-list">'+rows+'</div>'+
+      '<p class="pw-field-hint">写清服务内容、执行标准、包含/不包含、计费标准和注意事项。老板点项目时立即看到；下单后本单标准固定保存，之后修改只影响新订单。</p></div>';
+  }
+  function closeServiceStandardEditor(){
+    var m=document.querySelector('[data-std-modal]');
+    if(m&&m.parentNode)m.parentNode.removeChild(m);
+  }
+  function openServiceStandardEditor(sid,name){
+    closeServiceStandardEditor();
+    var std=serviceStandardFor(sid,name)||{};
+    var wrap=document.createElement('div');
+    wrap.className='pw-std-modal';
+    wrap.setAttribute('data-std-modal','1');
+    wrap.innerHTML='<div class="pw-std-dialog" role="dialog" aria-modal="true" aria-label="服务标准">'+
+      '<header><div><h3>服务标准 · '+esc(name)+'</h3><p>老板点这个项目时会看到以下内容</p></div><button type="button" class="pw-std-close" data-std-cancel aria-label="关闭">×</button></header>'+
+      '<form data-std-form>'+
+      '<label class="pw-field"><span class="pw-field-label">我在「'+esc(name)+'」的段位（选填，老板卡面显示）</span>'+
+      '<input name="rank" maxlength="30" autocomplete="off" placeholder="例如：钻石 2 / 超凡 / 战神" value="'+esc(std.rank||'')+'"></label>'+
+      serviceStandardFields().map(function(f){
+        return '<label class="pw-field"><span class="pw-field-label">'+esc(f.label)+'</span>'+
+          '<textarea name="'+esc(f.key)+'" rows="3" maxlength="500" placeholder="'+esc(f.placeholder||'')+'">'+esc(std[f.key]||'')+'</textarea></label>';
+      }).join('')+
+      '<p class="pw-std-error" data-std-error hidden></p>'+
+      '<footer><button type="button" class="pw-btn" data-std-cancel>取消</button><button type="submit" class="pw-btn primary" data-std-save>保存服务标准</button></footer>'+
+      '</form></div>';
+    document.body.appendChild(wrap);
+    var form=wrap.querySelector('[data-std-form]');
+    wrap.addEventListener('click',function(e){
+      if(e.target===wrap||e.target.closest('[data-std-cancel]'))closeServiceStandardEditor();
+    });
+    form.addEventListener('submit',function(e){
+      e.preventDefault();
+      var standard={};
+      serviceStandardFields().forEach(function(f){var el=form.elements[f.key];standard[f.key]=el?String(el.value||''):'';});
+      var rankEl=form.elements.rank;
+      var btn=form.querySelector('[data-std-save]');
+      var errBox=form.querySelector('[data-std-error]');
+      btn.disabled=true;btn.textContent='保存中…';errBox.hidden=true;
+      api('save_service_standard',{serviceId:sid,standard:standard,rank:rankEl?String(rankEl.value||'').trim():''}).then(function(res){
+        if(state.data&&state.data.levelInfo)state.data.levelInfo.serviceStandards=res.serviceStandards||{};
+        closeServiceStandardEditor();
+        toast(res.message||'服务标准已保存');
+        paint({preserveScroll:true});
+      }).catch(function(err){
+        errBox.textContent=(err&&err.message)||'保存失败，请稍后重试';errBox.hidden=false;
+        btn.disabled=false;btn.textContent='保存服务标准';
+      });
+    });
+    var first=form.querySelector('textarea');
+    if(first)try{first.focus({preventScroll:true})}catch(eF){}
+  }
+  document.addEventListener('click',function(e){
+    var btn=e.target.closest&&e.target.closest('[data-std-edit]');
+    if(!btn)return;
+    e.preventDefault();
+    openServiceStandardEditor(btn.getAttribute('data-std-edit')||'',btn.getAttribute('data-std-name')||'');
+  });
   function profileHtml(){
     var p=(state.data&&state.data.player)||{};
     var raw=p.raw||{};
@@ -3925,13 +4188,14 @@
         (needsReset?'<div class="pw-field-error">有价格超出等级范围，请按游戏重新设置</div>':'')+
         '</div>'+
         '<div class="pw-game-price-grid" data-game-price-grid>'+priceRows+'</div>'+fieldErr('price')+'</div>'+
+        serviceStandardRowsHtml(serviceOptions.filter(function(s){return selectedIds.indexOf(s.id)!==-1}))+
         '<div class="pw-two-col">'+
         '<div class="pw-field">'+fieldLabel('游戏 ID',true)+'<input name="game_id" value="'+esc(gameId)+'" placeholder="游戏内昵称或 ID">'+fieldErr('game_id')+'</div>'+
         '<div class="pw-field">'+fieldLabel('段位',false)+'<input name="rank" value="'+esc(rankVal)+'" placeholder="例如：超凡 2"></div>'+
         '</div>'+
         '<div class="pw-field">'+fieldLabel('擅长位置',false)+'<input name="position" value="'+esc(positionVal)+'" placeholder="例如：决斗 / 烟位"></div>'
       , false)+
-      pwAccHtml('profile-media','展示资料','相册 · 语音试听',
+      pwAccHtml('profile-media','展示资料','相册 · 语音试听 · 视频 · 战绩',
         '<div class="pw-field pw-upload-block'+(state.profileErrors&&state.profileErrors.gallery?' is-missing':'')+'" data-field="gallery">'+
         fieldLabel('相册照片',true)+
         pwGalleryUploadHtml(gallery,uploadBusy)+
@@ -3941,6 +4205,14 @@
         fieldLabel('语音试听',true)+
         pwVoiceUploadHtml(p,raw,uploadBusy)+
         fieldErr('voice')+
+        '</div>'+
+        '<div class="pw-field pw-upload-block" data-field="showcase_video">'+
+        fieldLabel('展示视频',false)+
+        pwShowcaseUploadHtml('video')+
+        '</div>'+
+        '<div class="pw-field pw-upload-block" data-field="game_records">'+
+        fieldLabel('游戏战绩',false)+
+        pwShowcaseUploadHtml('achievement')+
         '</div>'
       , false)+
       '</div>'+
@@ -4021,7 +4293,7 @@
         var orderNo=o.orderNo||humanId(o.id)||'-';
         var created=o.createdAt||o.appointmentAt||'';
         var createdLabel=created?fmtTime(created):'-';
-        return '<article class="pw-grab-card'+(hallState==='settled'?' is-settled':'')+'" data-order-id="'+esc(o.id)+'"><header><div><span class="pw-type">'+esc(o.orderType||o.orderSource||'订单')+'</span>'+hallBadge+'<h3>'+esc(o.game||'-')+'</h3><p>'+esc(serviceText)+'</p></div><strong>'+money(o.amount||o.budget||0)+'</strong></header><div class="pw-order-meta"><div><span>订单编号</span><strong>'+esc(orderNo)+'</strong></div><div><span>服务类型</span><strong>'+esc(o.serviceType||o.serviceName||o.orderType||'-')+'</strong></div><div><span>游戏</span><strong>'+esc(o.game||'-')+'</strong></div>'+(o.gameId?'<div><span>老板游戏ID</span><strong>'+esc(o.gameId)+'</strong></div>':'')+(o.serviceSchedule||o.schedule?'<div><span>服务时段</span><strong>'+esc(formatSchedule24h(o.serviceSchedule||o.schedule))+'</strong></div>':(o.gameServer&&o.gameServer!=='-'?'<div><span>区服</span><strong>'+esc(o.gameServer)+'</strong></div>':''))+'<div><span>单价</span><strong>'+money(o.unitPrice||0)+'</strong></div><div><span>时长/局数</span><strong>'+esc(o.duration||'-')+'</strong></div><div><span>老板备注</span><strong>'+esc(o.bossNotes||o.remark||'-')+'</strong></div><div><span>下单时间</span><strong>'+esc(createdLabel)+'</strong></div><div><span>订单来源</span><strong>'+esc(o.orderSource||o.orderType||'-')+'</strong></div><div><span>预计收入</span><strong>'+money(o.playerIncome||0)+'</strong></div><div><span>抢单人数</span><strong>'+esc(grabCount)+'</strong></div><div><span>当前状态</span><strong>'+esc(o.hallStateLabel||o.statusText||o.orderStatus||'待抢单')+'</strong></div></div><footer><button class="pw-btn primary" data-accept-order="'+esc(o.id)+'" '+(disabled?'disabled':'')+'>'+esc(btnLabel)+'</button></footer></article>';
+        return '<article class="pw-grab-card'+(hallState==='settled'?' is-settled':'')+'" data-order-id="'+esc(o.id)+'"><header><div><span class="pw-type">'+esc(o.orderType||o.orderSource||'订单')+'</span>'+hallBadge+'<h3>'+esc(o.game||'-')+'</h3><p>'+esc(serviceText)+'</p></div><strong>'+money(o.amount||o.budget||0)+'</strong></header><div class="pw-order-meta"><div><span>订单编号</span><strong>'+esc(orderNo)+'</strong></div><div><span>服务类型</span><strong>'+esc(o.serviceType||o.serviceName||o.orderType||'-')+'</strong></div><div><span>游戏</span><strong>'+esc(o.game||'-')+'</strong></div>'+(o.gameId?'<div><span>老板游戏ID</span><strong>'+esc(o.gameId)+'</strong></div>':'')+bossRankMetaHtml(o)+(o.serviceSchedule||o.schedule?'<div><span>服务时段</span><strong>'+esc(formatSchedule24h(o.serviceSchedule||o.schedule))+'</strong></div>':(o.gameServer&&o.gameServer!=='-'?'<div><span>区服</span><strong>'+esc(o.gameServer)+'</strong></div>':''))+'<div><span>单价</span><strong>'+money(o.unitPrice||0)+'</strong></div><div><span>时长/局数</span><strong>'+esc(o.duration||'-')+'</strong></div><div><span>老板备注</span><strong>'+esc(o.bossNotes||o.remark||'-')+'</strong></div><div><span>下单时间</span><strong>'+esc(createdLabel)+'</strong></div><div><span>订单来源</span><strong>'+esc(o.orderSource||o.orderType||'-')+'</strong></div><div><span>预计收入</span><strong>'+money(o.playerIncome||0)+'</strong></div><div><span>抢单人数</span><strong>'+esc(grabCount)+'</strong></div><div><span>当前状态</span><strong>'+esc(o.hallStateLabel||o.statusText||o.orderStatus||'待抢单')+'</strong></div></div><footer><button class="pw-btn primary" data-accept-order="'+esc(o.id)+'" '+(disabled?'disabled':'')+'>'+esc(btnLabel)+'</button></footer></article>';
       }).join(''):'<div class="pw-empty"><strong>暂无可抢订单</strong><span>'+(locked?auditHint():(!online?'请先切换为在线接单。':'客服发布订单后会自动显示，或调整筛选条件。'))+'</span></div>')+'</section>';
   }
   function accountDocCard(opts){
@@ -4089,7 +4361,7 @@
       return '<div class="pw-page-head"><div><h2>我的礼物</h2><p>客服审核通过后到账的礼物。</p></div></div><section class="pw-card pad"><p class="pw-note">'+esc(state.giftsError||state.myGiftsError)+'</p><button class="pw-btn" type="button" data-gifts-reload>重试</button></section>';
     }
     var hist=list.length?list.map(function(g){
-      return '<div class="pw-gift-row"><div class="pw-gift-ico">'+(g.giftImage?'<img src="'+esc(g.giftImage)+'" alt="">':'🎁')+'</div><div><strong>'+esc(g.giftName||'礼物')+'</strong><span>×'+esc(g.quantity||1)+' · '+esc(String(g.createdAt||'').slice(0,16).replace('T',' '))+'</span></div></div>';
+      return '<div class="pw-gift-row"><div class="pw-gift-ico">'+(g.giftImage?'<img src="'+esc(g.giftImage)+'" alt="">':'🎁')+'</div><div><strong>'+esc(g.giftName||'礼物')+'</strong><span>×'+esc(g.quantity||1)+' · '+esc(fmtContentTime(g.createdAt))+'</span></div></div>';
     }).join(''):'<p class="pw-note">还没有收到礼物</p>';
     var wallHtml=wall.length?wall.map(function(w){
       return '<div class="pw-gift-chip">'+(w.giftImage?'<img src="'+esc(w.giftImage)+'" alt="">':'🎁')+'<strong>'+esc(w.giftName||'礼物')+'</strong><em>×'+esc(w.totalQuantity||0)+'</em></div>';
@@ -5323,6 +5595,22 @@
       deletePrivateDoc(delDoc.getAttribute('data-delete-doc')||'');
       return;
     }
+    var scDismiss=e.target.closest('[data-showcase-dismiss]');
+    if(scDismiss){
+      e.preventDefault();
+      var dParts=String(scDismiss.getAttribute('data-showcase-dismiss')||'').split('|');
+      var dList=showcasePendingList(dParts[0]==='video'?'video':'achievement');
+      for(var di=dList.length-1;di>=0;di--){if(dList[di]&&dList[di]._localId===dParts[1])dList.splice(di,1)}
+      captureLiveForms(true);
+      paint({preserveScroll:true});
+      return;
+    }
+    var scDel=e.target.closest('[data-delete-showcase]');
+    if(scDel){
+      e.preventDefault();
+      deleteShowcaseMedia(scDel);
+      return;
+    }
     var del=e.target.closest('[data-delete-media]');
     if(del){
       if(state.uploadBusy){toast('请等待当前操作完成');return}
@@ -5576,6 +5864,212 @@
       toast(humanizeClientError((err&&err.message)||'上传失败，请重试'));
     }).finally(function(){
       state._galleryUploadStop=false;
+    });
+  }
+  var _videoUploaderPromise=null;
+  function ensureVideoUploader(){
+    if(window.McjCompanionVideoUpload&&typeof window.McjCompanionVideoUpload.upload==='function'){
+      return Promise.resolve(window.McjCompanionVideoUpload);
+    }
+    if(_videoUploaderPromise)return _videoUploaderPromise;
+    _videoUploaderPromise=new Promise(function(resolve,reject){
+      var s=document.createElement('script');
+      s.src='/src/mcj-companion-video-upload.js?v=20261006-showcase';
+      s.async=true;
+      s.onload=function(){
+        if(window.McjCompanionVideoUpload&&typeof window.McjCompanionVideoUpload.upload==='function'){
+          resolve(window.McjCompanionVideoUpload);
+        }else{
+          _videoUploaderPromise=null;
+          reject(new Error('视频直传组件未加载，请刷新后重试'));
+        }
+      };
+      s.onerror=function(){
+        _videoUploaderPromise=null;
+        reject(new Error('视频直传组件加载失败，请检查网络后重试'));
+      };
+      document.head.appendChild(s);
+    });
+    return _videoUploaderPromise;
+  }
+  function guessVideoMime(file){
+    var type=String(file&&file.type||'').toLowerCase();
+    if(/^video\//.test(type))return type;
+    var name=String(file&&file.name||'');
+    if(/\.mov$/i.test(name))return 'video/quicktime';
+    if(/\.m4v$/i.test(name))return 'video/x-m4v';
+    if(/\.3gp$/i.test(name))return 'video/3gpp';
+    if(/\.webm$/i.test(name))return 'video/webm';
+    return 'video/mp4';
+  }
+  function probeVideoDuration(file){
+    return new Promise(function(resolve){
+      var url='';
+      try{url=URL.createObjectURL(file)}catch(e){resolve(null);return}
+      var v=document.createElement('video');
+      var done=false;
+      function fin(d){
+        if(done)return;
+        done=true;
+        try{URL.revokeObjectURL(url)}catch(e){}
+        resolve(d);
+      }
+      v.preload='metadata';
+      v.muted=true;
+      v.onloadedmetadata=function(){var d=Number(v.duration||0);fin(isFinite(d)&&d>0?d:null)};
+      v.onerror=function(){fin(null)};
+      setTimeout(function(){fin(null)},8000);
+      v.src=url;
+    });
+  }
+  function validateShowcaseFile(kind,file){
+    if(kind==='video'){
+      var name=String(file&&file.name||'');
+      var type=String(file&&file.type||'').toLowerCase();
+      if(type&&!/^video\//.test(type)&&!/\.(mp4|mov|m4v|webm|3gp)$/i.test(name))return '仅支持 mp4 / mov / m4v / 3gp / webm 视频';
+      if(file.size>SHOWCASE_VIDEO_MAX_BYTES)return '视频不能超过 50MB';
+      return '';
+    }
+    if(window.MCJUpload&&window.MCJUpload.validateFile){
+      var check=window.MCJUpload.validateFile(file,'image');
+      if(!check.ok)return check.error||'仅支持 jpg / png / webp 图片';
+    }
+    return '';
+  }
+  function uploadOneShowcaseVideo(p){
+    var file=p.file;
+    var mime=guessVideoMime(file);
+    var dur=null;
+    return probeVideoDuration(file).then(function(d){
+      dur=d;
+      if(dur&&dur>SHOWCASE_VIDEO_MAX_SECONDS+0.5)throw new Error('视频最长 30 秒，请裁剪后再上传');
+      return Promise.all([ensureVideoUploader(),ensureFreshCompanionSession()]);
+    }).then(function(r){
+      var uploader=r[0];
+      var session=r[1]||state.session||readSession()||{};
+      return api('prepare_video_upload',{
+        filename:file.name||'showcase.mp4',
+        content_type:mime,
+        byte_length:file.size,
+        duration_seconds:dur!=null?Math.round(dur*10)/10:undefined
+      }).then(function(prep){
+        if(!prep||!prep.path||!prep.signedUrl)throw new Error('直传凭证签发失败，请稍后重试');
+        return uploader.upload({
+          file:file,
+          prep:prep,
+          accessToken:session.token||'',
+          onProgress:function(pct){
+            p._progress=pct;
+            var el=document.querySelector('[data-showcase-pending="'+p._localId+'"] [data-showcase-status]');
+            if(el)el.textContent='上传中… '+pct+'%';
+          }
+        }).then(function(){
+          return api('upload_media',{
+            media_type:'video',
+            storage_path:prep.path,
+            storage_bucket:prep.bucket||'companion-video',
+            content_type:prep.contentType||mime,
+            filename:file.name||'showcase.mp4',
+            byte_length:file.size,
+            duration_seconds:dur!=null?Math.round(dur*10)/10:undefined
+          });
+        });
+      });
+    });
+  }
+  function uploadOneShowcaseImage(p){
+    var file=p.file;
+    var prep=window.MCJUpload&&typeof window.MCJUpload.compressImageFile==='function'
+      ? window.MCJUpload.compressImageFile(file)
+      : readFileAsDataUrl(file,'image');
+    return ensureFreshCompanionSession().then(function(){
+      return withTimeout(prep.then(function(dataUrl){
+        return api('upload_media',{
+          media_type:'achievement',
+          data_url:dataUrl,
+          filename:file.name||('record-'+Date.now()+'.jpg')
+        });
+      }),45000,'上传超时，请检查网络后重试');
+    });
+  }
+  function uploadShowcaseFiles(kind,files){
+    var list=(files||[]).filter(Boolean);
+    if(!list.length)return Promise.resolve();
+    captureLiveForms(true);
+    var stamp=Date.now();
+    var queue=showcasePendingList(kind);
+    var items=list.map(function(file,i){
+      var err=validateShowcaseFile(kind,file);
+      var p={_localId:'sc-'+kind+'-'+stamp+'-'+i,_isVideo:kind==='video',_uploading:!err,_failed:!!err,_error:err,_progress:0,file:file,url:''};
+      if(!err){
+        try{p.url=URL.createObjectURL(file)}catch(e){}
+      }
+      queue.push(p);
+      return p;
+    });
+    paint({preserveScroll:true});
+    var ok=0;
+    var failed=items.filter(function(p){return p._failed}).length;
+    var chain=Promise.resolve();
+    items.forEach(function(p){
+      if(p._failed)return;
+      chain=chain.then(function(){
+        return (kind==='video'?uploadOneShowcaseVideo(p):uploadOneShowcaseImage(p)).then(function(res){
+          if(!res||res.ok===false)throw new Error((res&&res.message)||'上传失败');
+          ok+=1;
+          var q=showcasePendingList(kind);
+          var idx=q.indexOf(p);
+          if(idx>=0)q.splice(idx,1);
+          try{if(p.url&&/^blob:/.test(p.url))URL.revokeObjectURL(p.url)}catch(e){}
+          if(res.media&&state.data&&Array.isArray(state.data.media)){
+            state.data.media=state.data.media.concat([{
+              id:res.media.id,
+              mediaType:kind,
+              status:'pending',
+              url:res.url||res.media.url||'',
+              contentType:kind==='video'?guessVideoMime(p.file):(p.file&&p.file.type)||'image/jpeg'
+            }]);
+          }
+        }).catch(function(err){
+          failed+=1;
+          p._uploading=false;
+          p._failed=true;
+          p._error=humanizeClientError((err&&err.message)||'上传失败，请重试');
+          try{console.error('[companion-media] showcase '+kind+' failed',err)}catch(e){}
+        }).then(function(){
+          paint({preserveScroll:true});
+        });
+      });
+    });
+    return chain.then(function(){
+      var noun=kind==='video'?'个视频':'张战绩图';
+      if(ok&&!failed)toast('已上传 '+ok+' '+noun+'，等待审核');
+      else if(ok&&failed)toast('成功 '+ok+' '+noun+'，失败 '+failed+'（可删除后重试）');
+      else if(failed)toast('上传失败：'+((items.filter(function(p){return p._error})[0]||{})._error||'请重试'));
+      if(ok)return loadData({soft:true,forcePaint:true,preserveScroll:true});
+    });
+  }
+  function deleteShowcaseMedia(btn){
+    var id=String(btn.getAttribute('data-delete-showcase')||'');
+    var card=btn.closest('[data-showcase-kind]');
+    var kind=card&&card.getAttribute('data-showcase-kind')==='video'?'video':'achievement';
+    if(!id)return;
+    if(state._showcaseDeleting){toast('请等待当前操作完成');return}
+    if(!window.confirm(kind==='video'?'确定删除这个展示视频？':'确定删除这张战绩图？'))return;
+    captureLiveForms(true);
+    state._showcaseDeleting=kind;
+    paint({preserveScroll:true});
+    api('delete_media',{media_id:id}).then(function(x){
+      if(state.data&&Array.isArray(state.data.media)){
+        state.data.media=state.data.media.filter(function(m){return !m||String(m.id)!==id});
+      }
+      toast((x&&x.message)||'已删除');
+      return loadData({soft:true,forcePaint:true,preserveScroll:true});
+    }).catch(function(err){
+      toast(humanizeClientError((err&&err.message)||'删除失败'));
+    }).finally(function(){
+      state._showcaseDeleting='';
+      paint({preserveScroll:true});
     });
   }
   function clearVoiceLocal(){
@@ -5942,6 +6436,14 @@
       uploadGalleryFiles(multiFiles);
       return;
     }
+    var showcaseInput=e.target.closest('[data-pw-showcase-input]');
+    if(showcaseInput&&showcaseInput.files&&showcaseInput.files.length){
+      var scFiles=Array.prototype.slice.call(showcaseInput.files);
+      var scKind=showcaseInput.getAttribute('data-pw-showcase-input')==='video'?'video':'achievement';
+      showcaseInput.value='';
+      uploadShowcaseFiles(scKind,scFiles);
+      return;
+    }
     var galleryInput=e.target.closest('[data-upload-gallery]');
     if(galleryInput&&galleryInput.files&&galleryInput.files.length){
       var gFiles=Array.prototype.slice.call(galleryInput.files);
@@ -5977,6 +6479,9 @@
       }catch(err){}
     },280);
   });
+  document.addEventListener('input',function(e){
+    if(e.target&&e.target.matches&&e.target.matches('[data-chat-input]'))autoSizeChatInput(e.target);
+  });
   document.addEventListener('keydown',function(e){
     if(e.key==='Escape'){
       if(state.drawerOpen||root.querySelector('.pw-account.open')){
@@ -5986,6 +6491,7 @@
     }
     var input=e.target.closest('[data-chat-input]');
     if(!input)return;
+    if(e.isComposing||e.keyCode===229)return;
     if(e.key==='Enter'&&!e.shiftKey){
       e.preventDefault();
       var form=input.closest('form');
@@ -6314,7 +6820,7 @@
         messageType:'text',content:content,createdAt:new Date().toISOString()
       };
       state.chatBusy=true;
-      if(ta)ta.value='';
+      if(ta){ta.value='';autoSizeChatInput(ta);}
       state.inbox.messages=(state.inbox.messages||[]).concat([optimistic]);
       paint({preserveScroll:true});
       api('send_cs_message',{content:content,consult_type:consultType,conversation_id:cid,forceNew:forceNew}).then(function(){

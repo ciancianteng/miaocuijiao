@@ -201,7 +201,7 @@ export async function ensureCompanionBuckets() {
   ]);
   await ensurePrivateBucket(
     PRIVATE_BUCKETS.video,
-    ["video/mp4", "video/quicktime", "video/webm", "video/x-m4v", "application/octet-stream"],
+    ["video/mp4", "video/quicktime", "video/webm", "video/x-m4v", "video/3gpp", "application/octet-stream"],
     50 * 1024 * 1024
   );
   await ensurePrivateBucket(PRIVATE_BUCKETS.payment, ["image/jpeg", "image/png", "image/webp", "application/pdf"]);
@@ -219,6 +219,7 @@ const ALLOWED_VIDEO_MIME = new Set([
   "video/quicktime",
   "video/webm",
   "video/x-m4v",
+  "video/3gpp",
   "application/octet-stream",
 ]);
 

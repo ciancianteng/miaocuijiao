@@ -88,6 +88,20 @@
     return "gm_" + Date.now() + "_" + Math.random().toString(16).slice(2);
   }
 
+  // Same (method, gift, companion, qty) reuses its key until the whole batch succeeds, so a retry after
+  // a timeout / partial failure replays on the server instead of charging or creating twice.
+  var batchKeys = {};
+  function batchKey(method, giftId, companionId, qty) {
+    var sig = [method, giftId, companionId, qty].join("|");
+    if (!batchKeys[sig]) batchKeys[sig] = idem();
+    return batchKeys[sig];
+  }
+  function clearBatchKeys(method) {
+    Object.keys(batchKeys).forEach(function (sig) {
+      if (sig.indexOf(method + "|") === 0) delete batchKeys[sig];
+    });
+  }
+
   function escapeHtml(s) {
     return String(s == null ? "" : s)
       .replace(/&/g, "&amp;")
@@ -532,7 +546,7 @@
             companionId: companion.id,
             giftId: state.selectedGift.id,
             quantity: state.quantity,
-            idempotencyKey: idem(),
+            idempotencyKey: batchKey("wallet", state.selectedGift.id, companion.id, state.quantity),
           }),
         });
         var data = await res.json().catch(function () {
@@ -563,6 +577,7 @@
         }
         okCount += 1;
       }
+      clearBatchKeys("wallet");
       closePay();
       showStatus("礼物已送出", "猫粮余额支付成功，已送达 " + okCount + " 位陪玩礼物墙");
       state.selectedCompanions = [];
@@ -585,6 +600,7 @@
       var recipients = selectedCompanions().slice();
       var first = null;
       var firstPay = null;
+      var queue = [];
       for (var i = 0; i < recipients.length; i++) {
         var companion = recipients[i];
         var res = await fetch("/api/boss/gift-orders", {
@@ -596,7 +612,7 @@
             companionId: companion.id,
             giftId: state.selectedGift.id,
             quantity: state.quantity,
-            idempotencyKey: idem(),
+            idempotencyKey: batchKey("external", state.selectedGift.id, companion.id, state.quantity),
           }),
         });
         var data = await res.json().catch(function () {
@@ -609,16 +625,20 @@
         if (!first) {
           first = data.order;
           firstPay = data.payInfo;
+        } else {
+          queue.push({ order: data.order, payInfo: data.payInfo || firstPay });
         }
       }
+      clearBatchKeys("external");
+      state.proofQueue = queue;
+      state.proofQueueTotal = recipients.length;
+      openPay(first, firstPay);
       if (recipients.length === 1) {
-        openPay(first, firstPay);
         showStatus("订单已创建", "请完成付款并上传截图，客服审核通过后才会到账");
       } else {
-        closePay();
         showStatus(
           "已创建 " + recipients.length + " 笔礼物订单",
-          "请到消息/订单中心为每笔外部支付上传付款截图；客服审核通过后才会到账"
+          "请逐笔完成付款并上传截图（第 1/" + recipients.length + " 笔）；客服审核通过后才会到账"
         );
         state.selectedCompanions = [];
       }
@@ -694,10 +714,21 @@
         return;
       }
       state.order = data.order || state.order;
+      var doneNo = state.order.orderNo || state.order.id;
+      var next = Array.isArray(state.proofQueue) && state.proofQueue.length ? state.proofQueue.shift() : null;
+      if (next) {
+        var total = state.proofQueueTotal || 0;
+        var idx = total - state.proofQueue.length;
+        state.uploading = false;
+        openPay(next.order, next.payInfo);
+        showStatus("付款凭证已提交（订单 " + doneNo + "）", "请继续上传第 " + idx + "/" + total + " 笔礼物订单的付款截图");
+        toast("已提交，请继续上传第 " + idx + "/" + total + " 笔");
+        return;
+      }
       closePay();
       showStatus(
         "付款凭证已提交，等待客服审核",
-        "订单 " + (state.order.orderNo || state.order.id) + " · 审核通过前不算真正到账"
+        "订单 " + doneNo + " · 审核通过前不算真正到账"
       );
       toast("付款凭证已提交，等待客服审核");
     } catch (e) {

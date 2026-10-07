@@ -248,6 +248,7 @@
           : Array.isArray(normalized.certificationTags)
             ? normalized.certificationTags
             : [],
+        gameRanks: Array.isArray(normalized.gameRanks) ? normalized.gameRanks : [],
         desc: normalized.desc || normalized.description || ""
       };
     }).filter(function (item) {
@@ -456,8 +457,17 @@
           .filter(Boolean);
     if (!list.length) list = ["未设置游戏"];
     return list.slice(0, 4).map(function (game) {
-      return '<span class="mcj-service-tag companion-game-chip">' + esc(game) + "</span>";
+      var rank = rankForGame(item, game);
+      return '<span class="mcj-service-tag companion-game-chip"' + (rank ? ' data-game-rank="' + esc(rank) + '"' : "") + ">" +
+        esc(game) + (rank ? " · " + esc(rank) : "") + "</span>";
     }).join("");
+  }
+  function rankForGame(item, game) {
+    var want = String(game || "").replace(/\s+/g, "").toLowerCase();
+    var hit = (item.gameRanks || []).filter(function (r) {
+      return r && String(r.name || "").replace(/\s+/g, "").toLowerCase() === want;
+    })[0];
+    return hit ? String(hit.rank || "").trim() : "";
   }
   /** Hall cards: do not show redundant 已认证 badge (#218). */
   function verifiedBadgeHtml() {

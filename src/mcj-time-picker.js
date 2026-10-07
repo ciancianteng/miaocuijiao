@@ -124,8 +124,18 @@
     );
   }
 
+  function ensureCss() {
+    if (document.querySelector('link[href*="mcj-time-picker.css"], link[data-mcj-time-picker-css]')) return;
+    var link = document.createElement("link");
+    link.rel = "stylesheet";
+    link.href = "/src/mcj-time-picker.css?v=20261005tp1";
+    link.setAttribute("data-mcj-time-picker-css", "1");
+    document.head.appendChild(link);
+  }
+
   function open(opts) {
     opts = opts || {};
+    ensureCss();
     closeExisting();
     var step = opts.minuteStep != null ? opts.minuteStep : MINUTE_STEP_DEFAULT;
     var mins = minuteOptions(step);
@@ -146,6 +156,10 @@
     mask.setAttribute("role", "dialog");
     mask.setAttribute("aria-modal", "true");
     mask.setAttribute("aria-label", opts.title || "选择时间");
+    // Stay above any order modal even before the stylesheet arrives (pages that forgot the <link>).
+    mask.style.position = "fixed";
+    mask.style.inset = "0";
+    mask.style.zIndex = "100050";
 
     mask.innerHTML =
       '<div class="mcj-tp-sheet" data-tp-sheet="1">' +

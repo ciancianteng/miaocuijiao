@@ -33,7 +33,8 @@ import {
   publicDisplayName,
   resolveCompanionPublicCode,
 } from "../_account-codes.js";
-import { exportCsv as exportPaymentReceiptsCsv, listPaidForAdmin, listPendingForAdmin, listRejectedForAdmin, enrichReceiptAudit, approveAndLedger, rejectProof, staffReviewerNameFromProfile, stripReviewStaffMark } from "../_payment-receipts.js";
+import { scrubInternalOutput } from "../_output-sanitize.js";
+import { exportCsv as exportPaymentReceiptsCsv, listPaidForAdmin, listPendingForAdmin, listRejectedForAdmin, enrichReceiptAudit, approveAndLedger, rejectProof, staffReviewerNameFromProfile, stripReviewStaffMark, isTerminalOrderStatus, terminalOrderReviewText } from "../_payment-receipts.js";
 import { normalizeAdminRole } from "../_admin-auth.js";
 
 const FINANCE_BUCKET = "finance-receipts";
@@ -78,7 +79,7 @@ const WITHDRAW_STATUS = {
 const PAYROLL_STATUS = { ...WITHDRAW_STATUS, draft: "待结算", completed: "已完成" };
 
 function json(res, status, data) {
-  res.status(status).json(data);
+  res.status(status).json(scrubInternalOutput(data));
 }
 
 async function assertFinanceAdmin(req) {
@@ -831,6 +832,15 @@ export default async function handler(req, res) {
 
         // Idempotent: already approved / left awaiting_payment → return current state (no double ledger).
         if (order.status !== "awaiting_payment") {
+          if (isTerminalOrderStatus(order.status)) {
+            return json(res, 409, {
+              ok: false,
+              code: "ORDER_TERMINAL_NO_PAYMENT_APPROVE",
+              message: `${terminalOrderReviewText(order.status)}，不能再审核付款。`,
+              orderId: order.id,
+              status: order.status,
+            });
+          }
           return json(res, 200, {
             ok: true,
             duplicate: true,
@@ -887,6 +897,7 @@ export default async function handler(req, res) {
         const isMultiParent =
           isMultiGroupParent(order) || String(order.order_type || "").toLowerCase() === ORDER_TYPE_MULTI_GROUP;
         let approvedReceiptSnapshot = null;
+        let ledgerReplay = false;
         if (String(receipt.status || "pending") === "pending") {
           const ledged = await approveAndLedger({
             order,
@@ -896,6 +907,7 @@ export default async function handler(req, res) {
             reviewerRole: "admin",
           });
           approvedReceiptSnapshot = ledged?.receipt || null;
+          ledgerReplay = !!ledged?.duplicate;
         } else if (String(receipt.status || "") === "approved") {
           approvedReceiptSnapshot = receipt;
         }
@@ -930,15 +942,23 @@ export default async function handler(req, res) {
           }
         }
         if (!patched || patched.status === "awaiting_payment") {
-          try {
-            patched = (
-              await companionDb("orders", `?id=eq.${encodeURIComponent(order.id)}`, {
-                method: "PATCH",
-                body: JSON.stringify({ status: next }),
-              })
-            )?.[0];
-          } catch (err2) {
-            throw Object.assign(new Error(err2?.message || "订单状态更新失败"), { status: 500 });
+          const fresh = (
+            await companionDb("orders", `?id=eq.${encodeURIComponent(order.id)}&limit=1`).catch(() => [])
+          )?.[0];
+          if (fresh && fresh.status === next && !ledgerReplay) {
+            patched = fresh;
+          } else if (fresh && fresh.status !== "awaiting_payment") {
+            const terminal = isTerminalOrderStatus(fresh.status);
+            return json(res, terminal ? 409 : 200, {
+              ok: !terminal,
+              duplicate: !terminal,
+              code: terminal ? "ORDER_TERMINAL_NO_PAYMENT_APPROVE" : undefined,
+              message: terminal
+                ? `${terminalOrderReviewText(fresh.status)}，不能再审核付款。`
+                : "订单已审核处理，无需重复操作。",
+              orderId: fresh.id,
+              status: fresh.status,
+            });
           }
         }
         if (!patched || patched.status === "awaiting_payment") {

@@ -1,5 +1,8 @@
 import { ORDER_STATUS_LABELS, fetchOrdersActivityDesc, sortOrdersByActivityDesc } from "../_order-status.js";
 import { normalizeReviewImages } from "../_review-images.js";
+import { viewServiceSnapshot } from "../_service-standard.js";
+import { readEarlyFinish, readEarlyFinishReject } from "../_order-early-finish.js";
+import { sanitizeOrderText, scrubInternalOutput } from "../_output-sanitize.js";
 import {
   completionCountdown,
   formatRemainingLabel,
@@ -14,11 +17,14 @@ import {
 } from "../_account-codes.js";
 import {
   hydrateReceiptReviewers,
+  isTerminalOrderStatus,
+  isWalletHoldReceipt,
   latestApprovedForOrders,
   latestRejectedForOrders,
   receiptReviewerFields,
   signedProofUrl,
   staffReviewerNameFromProfile,
+  terminalOrderReviewText,
 } from "../_payment-receipts.js";
 import {
   excludeTestTouchedOnProduction,
@@ -55,7 +61,7 @@ const UI_ACTION_MAP = {
 };
 
 function json(res, status, data) {
-  return res.status(status).json(data);
+  return res.status(status).json(scrubInternalOutput(data));
 }
 function hasDb() {
   return REQUIRED_ENV.every((key) => process.env[key]);
@@ -155,12 +161,15 @@ function paymentStatusLabel(status, reviewStatus, row = {}) {
   if (row.parent_order_id) {
     const st = String(status || "");
     if (st === "awaiting_payment") return "待主单付款";
-    if (st === "cancelled" || st === "refunded") return "已取消";
+    if (st === "cancelled") return "已取消";
+    if (st === "refunded") return "已退款";
     return "主单已付·分配";
   }
   const st = String(status || "");
   const rv = String(reviewStatus || "").toLowerCase();
-  if (rv === "approved") return "已支付";
+  if (st === "refunded") return "已退款";
+  if (rv === "pending" && isTerminalOrderStatus(st)) return terminalOrderReviewText(st);
+  if (rv === "approved") return st === "cancelled" ? "已支付·订单已取消" : "已支付";
   if (rv === "rejected") return "付款已拒绝";
   if (rv === "pending") return "待审核付款";
   if (st === "awaiting_payment") return "待付款";
@@ -168,10 +177,11 @@ function paymentStatusLabel(status, reviewStatus, row = {}) {
   if (st && !["awaiting_payment", "cancelled"].includes(st)) return "已支付";
   return "未支付";
 }
-function reviewResultLabel(reviewStatus) {
+function reviewResultLabel(reviewStatus, orderStatus = "") {
   const rv = String(reviewStatus || "").toLowerCase();
   if (rv === "approved") return "已通过";
   if (rv === "rejected") return "已拒绝";
+  if (rv === "pending" && isTerminalOrderStatus(orderStatus)) return terminalOrderReviewText(orderStatus);
   if (rv === "pending") return "待审核";
   return "";
 }
@@ -216,7 +226,7 @@ async function loadPaymentReviewMap(orderIds = []) {
   }
   return map;
 }
-function safeOrder(row, profiles, extras = {}) {
+export function safeOrder(row, profiles, extras = {}) {
   const boss = profiles[row.boss_id] || {};
   const companion = profiles[row.companion_id] || {};
   const service = profiles[row.customer_service_id] || {};
@@ -284,7 +294,11 @@ function safeOrder(row, profiles, extras = {}) {
     serviceCode,
     serviceStaffCode: serviceCode,
     game: row.game || companionExtra.game || "",
-    serviceContent: row.service_name || row.title || companionExtra.main_service || row.description || "-",
+    serviceContent:
+      row.service_name || row.title || companionExtra.main_service || sanitizeOrderText(row.description || "") || "-",
+    serviceSnapshot: viewServiceSnapshot(row),
+    earlyFinish: readEarlyFinish(row),
+    earlyFinishReject: readEarlyFinishReject(row),
     amount: money(row.total_amount),
     totalAmount: money(row.total_amount),
     paymentMethod: row.parent_order_id ? "主单分配" : paymentMethodFrom(row, receipt),
@@ -298,6 +312,7 @@ function safeOrder(row, profiles, extras = {}) {
     paymentProofUrl: extras.paymentProofUrl || "",
     paymentUploadedAt: receipt?.uploaded_at || receipt?.created_at || "",
     paymentReceiptId: receipt?.id || "",
+    paymentWalletHold: !!receipt && isWalletHoldReceipt(receipt),
     paymentReviewedByStaffId: review.paymentReviewedByStaffId || "",
     paymentReviewedByName: reviewerName,
     paymentReviewerName: reviewerName,
@@ -305,7 +320,7 @@ function safeOrder(row, profiles, extras = {}) {
     paymentReviewerCode: reviewerCode,
     paymentReviewedAt: review.paymentReviewedAt || "",
     paymentReviewStatus: reviewStatus,
-    paymentReviewResult: reviewResultLabel(reviewStatus),
+    paymentReviewResult: reviewResultLabel(reviewStatus, status),
     paymentReviewerRole: review.paymentReviewerRole || review.reviewerRole || "",
     reviewerRole: review.paymentReviewerRole || review.reviewerRole || "",
     paymentRejectReason: review.paymentRejectReason || "",
@@ -334,7 +349,7 @@ function safeOrder(row, profiles, extras = {}) {
     cancelledAt: row.cancelled_at || "",
     assignedAt: row.accepted_at || row.claimed_at || "",
     serviceTime: row.scheduled_at || row.started_at || "-",
-    description: row.description || "",
+    description: sanitizeOrderText(row.description || ""),
     orderType: row.order_type || "普通陪玩订单",
     type: row.order_type || "普通陪玩订单",
     companion_id: row.companion_id || "",
@@ -812,6 +827,54 @@ export default async function handler(req, res) {
           viewed.reviewStatus = "未评价";
         }
         viewed.reviews = reviews;
+        const { isMultiGroupParent } = await import("../_order-group.js");
+        if (isMultiGroupParent(order)) {
+          const kids = await supabaseJson(
+            restUrl("orders", `?parent_order_id=eq.${encodeURIComponent(id)}&select=id,companion_id,order_no&limit=20`),
+            { headers: serviceHeaders() }
+          ).catch(() => []);
+          const kidList = Array.isArray(kids) ? kids : [];
+          const kidRows = kidList.length
+            ? await supabaseJson(
+                restUrl(
+                  "companion_reviews",
+                  `?order_id=in.(${kidList.map((k) => encodeURIComponent(k.id)).join(",")})&select=*&order=created_at.desc&limit=40`
+                ),
+                { headers: serviceHeaders() }
+              ).catch(() => [])
+            : [];
+          const kidCompanionIds = [...new Set(kidList.map((k) => k.companion_id).filter((v) => v && !map[v]))];
+          const kidProfiles = kidCompanionIds.length
+            ? await supabaseJson(
+                restUrl("profiles", `?id=in.(${kidCompanionIds.map(encodeURIComponent).join(",")})&select=id,display_name,email`),
+                { headers: serviceHeaders() }
+              ).catch(() => [])
+            : [];
+          for (const p of Array.isArray(kidProfiles) ? kidProfiles : []) map[p.id] = p;
+          const seen = new Set();
+          viewed.childReviews = (Array.isArray(kidRows) ? kidRows : [])
+            .filter((r) => (seen.has(r.order_id) ? false : seen.add(r.order_id)))
+            .map((r) => {
+              const kid = kidList.find((k) => k.id === r.order_id) || {};
+              const cp = map[r.companion_id || kid.companion_id] || {};
+              return {
+                id: r.id,
+                orderId: r.order_id,
+                orderNo: kid.order_no || "",
+                companionId: r.companion_id || kid.companion_id || "",
+                companionName: cp.display_name || cp.email || "-",
+                rating: Number(r.rating) || 0,
+                content: r.content || "",
+                images: normalizeReviewImages(r.image_urls),
+                createdAt: r.created_at || "",
+              };
+            });
+          viewed.childReviewTotal = kidList.filter((k) => k.companion_id).length;
+          if (!latest && viewed.childReviews.length) {
+            viewed.reviewed = true;
+            viewed.reviewStatus = `已评价 ${viewed.childReviews.length}/${viewed.childReviewTotal || viewed.childReviews.length}`;
+          }
+        }
         return json(res, 200, { ok: true, configured: true, order: viewed, reviews });
       }
       const [ordersRaw, profiles] = await Promise.all([

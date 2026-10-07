@@ -199,11 +199,30 @@
     return (Number.isFinite(v) ? v : 0).toFixed(2).replace(/\.00$/, "") + " 猫粮";
   }
 
+  // Start times are business-local (Asia/Kuala_Lumpur) regardless of the device timezone.
+  function myLocalInputValue(ms) {
+    var parts = {};
+    new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Kuala_Lumpur",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+    })
+      .formatToParts(new Date(ms))
+      .forEach(function (p) {
+        parts[p.type] = p.value;
+      });
+    return parts.year + "-" + parts.month + "-" + parts.day + "T" + parts.hour + ":" + parts.minute;
+  }
   function defaultStartTime() {
-    var d = new Date(Date.now() + 60 * 60 * 1000);
-    d.setMinutes(0, 0, 0);
-    var pad = function (n) { return String(n).padStart(2, "0"); };
-    return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()) + "T" + pad(d.getHours()) + ":" + pad(d.getMinutes());
+    var hour = 60 * 60 * 1000;
+    return myLocalInputValue(Math.ceil((Date.now() + hour) / hour) * hour);
+  }
+  function minStartTime() {
+    return myLocalInputValue(Date.now());
   }
 
   function safeCoverUrl(p) {
@@ -356,12 +375,14 @@
       '<input name="quantity" type="number" min="1" max="99" value="' + esc(qty()) + '">' +
       '<button type="button" data-gp-qty="1" aria-label="增加">+</button></div></div>' +
       '<div class="gameplay-product-field"><span>开始时间</span>' +
-      '<input name="startTime" type="datetime-local" value="' + esc(state.startTime || defaultStartTime()) + '" required></div>' +
+      '<input name="startTime" type="datetime-local" min="' + esc(minStartTime()) + '" value="' + esc(state.startTime || defaultStartTime()) + '" required></div>' +
       '<div class="gameplay-product-field"><span>游戏ID <i class="req">*</i></span>' +
       '<input id="gpGameId" name="gameId" type="text" maxlength="64" placeholder="请填写游戏 ID" value="' + esc(state.gameId) + '" required autocomplete="off"></div>' +
       (showServer
         ? '<div class="gameplay-product-field"><span>区服</span><input name="server" type="text" maxlength="64" placeholder="例如：亚服 / 国服" value="' + esc(state.server) + '"></div>'
         : "") +
+      '<div class="gameplay-product-field"><span>我的段位（选填，陪玩接单前可见）</span>' +
+      '<input name="bossRank" type="text" maxlength="30" placeholder="例如：钻石 2 / 星耀 / 无段位" value="' + esc(state.bossRank || "") + '" autocomplete="off"></div>' +
       '<div class="gameplay-product-field"><span>备注</span>' +
       '<textarea name="remark" rows="3" placeholder="段位目标、联系方式偏好等">' + esc(state.remark) + "</textarea></div>" +
       '<div class="gameplay-product-field"><span>优惠码</span>' +
@@ -459,6 +480,7 @@
     state.gameId = String(fd.get("gameId") || "").trim();
     state.server = String(fd.get("server") || "").trim();
     state.remark = String(fd.get("remark") || "").trim();
+    state.bossRank = String(fd.get("bossRank") || "").trim().slice(0, 30);
     state.couponCode = String(fd.get("couponCode") || "").trim();
     state.companionId = String(fd.get("companionId") || "").trim();
   }
@@ -496,6 +518,11 @@
     }
     if (!state.startTime) {
       state.message = "请选择开始时间";
+      render();
+      return;
+    }
+    if (state.startTime < myLocalInputValue(Date.now() - 5 * 60 * 1000)) {
+      state.message = "开始时间不能早于现在（马来西亚时间），请重新选择";
       render();
       return;
     }
@@ -553,6 +580,7 @@
           service_type: (pkg && pkg.name) || p.name || p.category || "更多玩法",
           description: description,
           notes: state.remark,
+          bossRank: state.bossRank || "",
           gameId: state.gameId,
           game_id: state.gameId,
           server: state.server,

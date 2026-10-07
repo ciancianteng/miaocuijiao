@@ -82,6 +82,7 @@ export function sanitizeHallOrderView(viewed = {}) {
       .slice(0, 240),
     serviceName: viewed.serviceName,
     serviceType: viewed.serviceType,
+    serviceSnapshot: viewed.serviceSnapshot?.bossRank ? { bossRank: viewed.serviceSnapshot.bossRank } : null,
     duration: viewed.duration,
     hours: viewed.hours,
     unitPrice: viewed.unitPrice,

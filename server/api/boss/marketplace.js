@@ -7,6 +7,7 @@ import { debitWallet, getWallet, money as walletMoney, writeAdminLog } from "../
 import { scheduleRecomputeSoft } from "../_popularity.js";
 import { servicesFromGamePrices, readGamePrices } from "../_game-prices.js";
 import { resolveEffectiveServicePrice } from "../_resolve-effective-service-price.js";
+import { pickServiceStandard, publicStandard, rankForService, readServiceStandards } from "../_service-standard.js";
 import { hasBossRole } from "../_account-roles.js";
 import { allocateOrderNo, resolveCompanionPublicCode } from "../_account-codes.js";
 import {
@@ -130,6 +131,16 @@ async function loadCompanion(userId) {
 }
 
 async function loadCompanionServices(companionUserId, companionRow) {
+  const standards = readServiceStandards(companionRow || {});
+  const withStandard = (svc) => ({
+    ...svc,
+    standard: publicStandard(pickServiceStandard(standards, { serviceId: svc.serviceId, name: svc.name })),
+    companionRank: rankForService(standards, { serviceId: svc.serviceId, name: svc.name }),
+  });
+  return (await loadCompanionServicesRaw(companionUserId, companionRow)).map(withStandard);
+}
+
+async function loadCompanionServicesRaw(companionUserId, companionRow) {
   let rows = [];
   try {
     rows = await companionDb(

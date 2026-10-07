@@ -34,6 +34,7 @@ const adminGiftsApi = read("server/api/admin/gifts.js");
 const mall = read("src/gifts-mall.js");
 const giftOrders = read("server/api/_gift-orders.js");
 const marketplace = read("server/api/boss/marketplace.js");
+const catfoodGift = read("server/api/_send-catfood-gift.js");
 const profile = read("src/profile-detail.js");
 const cs = read("src/customer-service-v2.js");
 const migration = read("supabase/migrations/20260912_gift_orders_payment_review.sql");
@@ -88,11 +89,12 @@ test("TEST 5 Multi recipient (N independent sends/orders)", () => {
 });
 
 // TEST 6 — 钱包支付只扣一次（per recipient idempotency key）
-test("TEST 6 Wallet pay uses unique idempotencyKey per send", () => {
-  assert.match(mall, /idempotencyKey:\s*idem\(\)/);
-  assert.match(marketplace, /idempotencyKey:\s*`gift:\$\{idempotencyKey\}`/);
+test("TEST 6 Wallet pay uses one idempotencyKey per recipient send (stable across retries)", () => {
+  assert.match(mall, /idempotencyKey:\s*batchKey\("wallet", state\.selectedGift\.id, companion\.id, state\.quantity\)/);
   assert.match(marketplace, /action === "send_gift"/);
-  assert.match(marketplace, /transactionType: action === "send_gift" \? "gift" : "tip"/);
+  assert.match(marketplace, /sendCatfoodGift/);
+  assert.match(catfoodGift, /const debitKey = `gift:\$\{key\}`;/);
+  assert.match(catfoodGift, /transactionType: kind === "gift" \? "gift" : "tip"/);
 });
 
 // TEST 7 — 外部支付 proof 上传
@@ -137,7 +139,7 @@ test("TEST 9 Approve fulfillment idempotency", () => {
 test("TEST 10 Gift wall update paths", () => {
   assert.match(giftOrders, /recordCompanionGiftWallHit/);
   assert.match(giftOrders, /upsertGiftWall/);
-  assert.match(marketplace, /recordCompanionGiftWallHit/);
+  assert.match(catfoodGift, /recordCompanionGiftWallHit/);
   assert.match(profile, /pd-gift-wall/);
   assert.match(profile, /giftWall/);
   assert.match(profile, /pd-gift-empty-state/);
@@ -155,15 +157,16 @@ test("TEST 11 Duplicate approve guarded + CS review UI", () => {
 // TEST 12 — 旧订单 / 财务隔离不受礼物破坏
 test("TEST 12 Gift income isolated from order settlement + points", () => {
   assert.match(giftOrders, /礼物收益：/);
-  assert.match(marketplace, /礼物收益：/);
+  assert.match(catfoodGift, /礼物收益：/);
   assert.match(giftOrders, /MCJ_GIFT:/);
-  assert.match(marketplace, /MCJ_GIFT:/);
-  assert.match(marketplace, /creditCompanionIncome\(companionId,\s*companionIncome/);
+  assert.match(catfoodGift, /MCJ_GIFT:/);
+  assert.match(catfoodGift, /creditCompanionIncome\(companion,\s*companionIncome/);
   assert.match(giftOrders, /creditCompanionIncome\(\s*working\.receiver_companion_id/);
   assert.doesNotMatch(marketplace, /MCJ_SETTLEMENT:\{/);
+  assert.doesNotMatch(catfoodGift, /MCJ_SETTLEMENT:\{/);
   assert.doesNotMatch(giftOrders, /MCJ_SETTLEMENT:\{/);
   // Wallet gift debit must use gift: idempotency prefix (not order settlement keys)
-  assert.match(marketplace, /idempotencyKey:\s*`gift:\$\{idempotencyKey\}`/);
+  assert.match(catfoodGift, /idempotencyKey: debitKey/);
   assert.ok(isGiftOrRewardNote("礼物收益：猫爪"));
   assert.equal(
     classifyCompanionIncomeTx(
