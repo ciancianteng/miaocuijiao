@@ -2995,7 +2995,18 @@
           (o.paymentReviewedByName?'<div><span>审核客服</span><strong>'+esc(o.paymentReviewedByName)+'</strong></div>':'')+
           (o.paymentReviewedAt?'<div><span>审核时间</span><strong>'+esc(fmtTime(o.paymentReviewedAt))+'</strong></div>':''))
         :'')+
-      '</div>'+peerHtml+'<footer class="pw-actions">'+orderActions(o)+'</footer></article>';
+      '</div>'+orderServiceStandardHtml(o)+peerHtml+'<footer class="pw-actions">'+orderActions(o)+'</footer></article>';
+  }
+  function orderServiceStandardHtml(o){
+    var s=o&&o.serviceSnapshot;
+    if(!s)return '';
+    var raw=String(o.status||o.rawStatus||'');
+    var open=raw==='claimed'||raw==='confirmed'||raw==='in_progress';
+    var body=s.sections&&s.sections.length
+      ?'<dl>'+s.sections.map(function(sec){return '<div><dt>'+esc(sec.label)+'</dt><dd>'+esc(sec.value)+'</dd></div>';}).join('')+'</dl>'
+      :'<p class="pw-note">下单时你尚未填写该项目的服务标准（按'+esc(s.pricingUnit||'小时')+'计费）。可在「编辑资料 → 游戏与价格」补充，之后的新订单会带上。</p>';
+    return '<details class="pw-order-std"'+(open?' open':'')+'><summary>本单服务标准（下单时快照）· '+esc(s.serviceName||o.serviceName||'-')+'</summary>'+
+      body+'<p class="pw-order-std-foot">老板下单时看到的就是这份标准；之后修改服务标准不会改变本单。</p></details>';
   }
   function ordersHtml(){
     var rows=(state.data&&state.data.myOrders)||[];
@@ -3801,6 +3812,84 @@
       '</div></div>';
   }
 
+  var SERVICE_STANDARD_FIELDS_FALLBACK=[
+    {key:'content',label:'服务内容'},{key:'process',label:'执行标准'},{key:'includes',label:'包含'},
+    {key:'excludes',label:'不包含'},{key:'billing',label:'计费标准'},{key:'notes',label:'注意事项'}
+  ];
+  function serviceStandardFields(){
+    var f=state.data&&state.data.levelInfo&&state.data.levelInfo.serviceStandardFields;
+    return Array.isArray(f)&&f.length?f:SERVICE_STANDARD_FIELDS_FALLBACK;
+  }
+  function serviceStandardFor(sid,name){
+    var map=(state.data&&state.data.levelInfo&&state.data.levelInfo.serviceStandards)||{};
+    if(map[sid])return map[sid];
+    var want=String(name||'').replace(/\s+/g,'').toLowerCase();
+    var hit=Object.keys(map).filter(function(k){return map[k]&&String(map[k].name||'').replace(/\s+/g,'').toLowerCase()===want})[0];
+    return hit?map[hit]:null;
+  }
+  function serviceStandardRowsHtml(selected){
+    var rows=selected.length?selected.map(function(s){
+      var std=serviceStandardFor(s.id,s.name)||{};
+      var filled=serviceStandardFields().filter(function(f){return String(std[f.key]||'').trim()}).length;
+      return '<div class="pw-std-row'+(filled?' is-filled':'')+'">'+
+        '<div><strong>'+esc(s.name)+'</strong><span>'+(filled?('已填写 '+filled+'/'+serviceStandardFields().length+' 项'):'未填写，老板下单时只能看到项目名和价格')+'</span></div>'+
+        '<button type="button" class="pw-btn'+(filled?'':' primary')+'" data-std-edit="'+esc(s.id)+'" data-std-name="'+esc(s.name)+'">'+(filled?'查看/修改':'填写服务标准')+'</button>'+
+        '</div>';
+    }).join(''):'<p class="pw-field-hint">先勾选可接游戏并保存，再为每个项目填写服务标准。</p>';
+    return '<div class="pw-field" data-field="service_standard">'+fieldLabel('服务标准（老板下单时可见）',false)+
+      '<div class="pw-std-list">'+rows+'</div>'+
+      '<p class="pw-field-hint">写清服务内容、执行标准、包含/不包含、计费标准和注意事项。老板点项目时立即看到；下单后本单标准固定保存，之后修改只影响新订单。</p></div>';
+  }
+  function closeServiceStandardEditor(){
+    var m=document.querySelector('[data-std-modal]');
+    if(m&&m.parentNode)m.parentNode.removeChild(m);
+  }
+  function openServiceStandardEditor(sid,name){
+    closeServiceStandardEditor();
+    var std=serviceStandardFor(sid,name)||{};
+    var wrap=document.createElement('div');
+    wrap.className='pw-std-modal';
+    wrap.setAttribute('data-std-modal','1');
+    wrap.innerHTML='<div class="pw-std-dialog" role="dialog" aria-modal="true" aria-label="服务标准">'+
+      '<header><div><h3>服务标准 · '+esc(name)+'</h3><p>老板点这个项目时会看到以下内容</p></div><button type="button" class="pw-std-close" data-std-cancel aria-label="关闭">×</button></header>'+
+      '<form data-std-form>'+serviceStandardFields().map(function(f){
+        return '<label class="pw-field"><span class="pw-field-label">'+esc(f.label)+'</span>'+
+          '<textarea name="'+esc(f.key)+'" rows="3" maxlength="500" placeholder="'+esc(f.placeholder||'')+'">'+esc(std[f.key]||'')+'</textarea></label>';
+      }).join('')+
+      '<p class="pw-std-error" data-std-error hidden></p>'+
+      '<footer><button type="button" class="pw-btn" data-std-cancel>取消</button><button type="submit" class="pw-btn primary" data-std-save>保存服务标准</button></footer>'+
+      '</form></div>';
+    document.body.appendChild(wrap);
+    var form=wrap.querySelector('[data-std-form]');
+    wrap.addEventListener('click',function(e){
+      if(e.target===wrap||e.target.closest('[data-std-cancel]'))closeServiceStandardEditor();
+    });
+    form.addEventListener('submit',function(e){
+      e.preventDefault();
+      var standard={};
+      serviceStandardFields().forEach(function(f){var el=form.elements[f.key];standard[f.key]=el?String(el.value||''):'';});
+      var btn=form.querySelector('[data-std-save]');
+      var errBox=form.querySelector('[data-std-error]');
+      btn.disabled=true;btn.textContent='保存中…';errBox.hidden=true;
+      api('save_service_standard',{serviceId:sid,standard:standard}).then(function(res){
+        if(state.data&&state.data.levelInfo)state.data.levelInfo.serviceStandards=res.serviceStandards||{};
+        closeServiceStandardEditor();
+        toast(res.message||'服务标准已保存');
+        paint({preserveScroll:true});
+      }).catch(function(err){
+        errBox.textContent=(err&&err.message)||'保存失败，请稍后重试';errBox.hidden=false;
+        btn.disabled=false;btn.textContent='保存服务标准';
+      });
+    });
+    var first=form.querySelector('textarea');
+    if(first)try{first.focus({preventScroll:true})}catch(eF){}
+  }
+  document.addEventListener('click',function(e){
+    var btn=e.target.closest&&e.target.closest('[data-std-edit]');
+    if(!btn)return;
+    e.preventDefault();
+    openServiceStandardEditor(btn.getAttribute('data-std-edit')||'',btn.getAttribute('data-std-name')||'');
+  });
   function profileHtml(){
     var p=(state.data&&state.data.player)||{};
     var raw=p.raw||{};
@@ -3925,6 +4014,7 @@
         (needsReset?'<div class="pw-field-error">有价格超出等级范围，请按游戏重新设置</div>':'')+
         '</div>'+
         '<div class="pw-game-price-grid" data-game-price-grid>'+priceRows+'</div>'+fieldErr('price')+'</div>'+
+        serviceStandardRowsHtml(serviceOptions.filter(function(s){return selectedIds.indexOf(s.id)!==-1}))+
         '<div class="pw-two-col">'+
         '<div class="pw-field">'+fieldLabel('游戏 ID',true)+'<input name="game_id" value="'+esc(gameId)+'" placeholder="游戏内昵称或 ID">'+fieldErr('game_id')+'</div>'+
         '<div class="pw-field">'+fieldLabel('段位',false)+'<input name="rank" value="'+esc(rankVal)+'" placeholder="例如：超凡 2"></div>'+
