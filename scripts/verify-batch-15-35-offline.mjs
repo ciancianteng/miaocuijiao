@@ -283,32 +283,42 @@ await test("#15 CS routes/actions + admin wallet delegate to the shared module",
 // ---------- #16 staff notification on proof upload ----------
 await test("#16 notify: one unread row per staff per record; falls back when optional columns are missing", async () => {
   const { notifyCustomerServiceStaff } = await import("../server/api/_staff-notify.js");
-  const inserts = [];
-  let extendedTried = 0;
-  const fake = fakeRest([
-    [/\/profiles\?role=eq\.customer_service/, { method: "GET", run: () => [{ id: "cs-a" }, { id: "cs-b" }] }],
-    [/\/staff_notifications\?staff_id=eq\.cs-a/, { method: "GET", run: () => [{ id: "n1" }] }],
-    [/\/staff_notifications\?staff_id=eq\.cs-b/, { method: "GET", run: () => [] }],
-    [/\/staff_notifications$/, {
-      method: "POST",
-      run: ({ body }) => {
-        if ("notice_key" in body) {
-          extendedTried += 1;
-          return { __error: { status: 400, code: "PGRST204", message: "Could not find the 'notice_key' column of 'staff_notifications' in the schema cache" } };
-        }
-        inserts.push(body);
-        return null;
-      },
-    }],
-  ]);
-  const out = await withFetch(fake, () =>
-    notifyCustomerServiceStaff({ kind: "recharge_proof", relatedId: "PAY-T1", title: "新的充值凭证待审核", href: "/customer-service/recharges" })
-  );
-  assert.deepEqual(out, { inserted: 1, skipped: 1 });
-  assert.equal(extendedTried, 1);
-  assert.equal(inserts.length, 1);
-  assert.deepEqual(Object.keys(inserts[0]).sort(), ["body", "kind", "related_id", "staff_id", "title"]);
-  assert.equal(inserts[0].staff_id, "cs-b");
+  async function runShape(drop) {
+    const inserts = [];
+    const fake = fakeRest([
+      [/\/profiles\?role=eq\.customer_service/, { method: "GET", run: () => [{ id: "cs-a" }, { id: "cs-b" }] }],
+      [/\/staff_notifications\?staff_id=eq\.cs-a/, { method: "GET", run: () => [{ id: "n1" }] }],
+      [/\/staff_notifications\?staff_id=eq\.cs-b/, { method: "GET", run: () => [] }],
+      [/\/staff_notifications$/, {
+        method: "POST",
+        run: ({ body }) => {
+          const missing = drop.find((col) => Object.prototype.hasOwnProperty.call(body, col));
+          if (missing) {
+            return { __error: { status: 400, code: "PGRST204", message: `Could not find the '${missing}' column of 'staff_notifications' in the schema cache` } };
+          }
+          inserts.push(body);
+          return null;
+        },
+      }],
+    ]);
+    const out = await withFetch(fake, () =>
+      notifyCustomerServiceStaff({ kind: "recharge_proof", relatedId: "PAY-T1", title: "新的充值凭证待审核", href: "/customer-service/recharges?paymentNo=PAY-T1" })
+    );
+    return { out, inserts };
+  }
+  const staging = await runShape(["kind", "related_id", "read_at"]);
+  assert.deepEqual(staging.out, { inserted: 1, skipped: 1 });
+  assert.equal(staging.inserts.length, 1);
+  assert.equal(staging.inserts[0].staff_id, "cs-b");
+  assert.equal(staging.inserts[0].category, "recharge_proof");
+  assert.equal(staging.inserts[0].notice_key, "recharge_proof:PAY-T1:cs-b");
+  assert.equal(staging.inserts[0].kind, undefined);
+  assert.equal(staging.inserts[0].related_id, undefined);
+  const migrated = await runShape(["notice_key", "category", "href"]);
+  assert.deepEqual(migrated.out, { inserted: 1, skipped: 1 });
+  assert.equal(migrated.inserts.length, 1);
+  assert.deepEqual(Object.keys(migrated.inserts[0]).sort(), ["body", "kind", "related_id", "staff_id", "title"]);
+  assert.equal(migrated.inserts[0].staff_id, "cs-b");
 });
 await test("#16 recharge + gift proof uploads notify CS; review notices stay out of 工资通知", () => {
   assert.match(read("server/api/recharge.js"), /kind: "recharge_proof"/);

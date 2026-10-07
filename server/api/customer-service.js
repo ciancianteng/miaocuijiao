@@ -3515,15 +3515,16 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
       return json(res, out.status, out.body);
     }
     if (action === "review_badges" || action === "pending_review_counts") {
-      const [{ countPendingRechargeReviews }, gifts] = await Promise.all([
+      const [{ countPendingRechargeReviews, latestPendingRechargePaymentNo }, gifts] = await Promise.all([
         import("./_recharge-review.js"),
         import("./_gift-orders.js"),
       ]);
-      const [recharges, giftOrders] = await Promise.all([
+      const [recharges, giftOrders, latestRechargePaymentNo] = await Promise.all([
         countPendingRechargeReviews(),
         gifts.countPendingGiftOrderReviews ? gifts.countPendingGiftOrderReviews() : 0,
+        latestPendingRechargePaymentNo().catch(() => ""),
       ]);
-      return json(res, 200, { ok: true, counts: { recharges, giftOrders } });
+      return json(res, 200, { ok: true, counts: { recharges, giftOrders }, latestRechargePaymentNo: latestRechargePaymentNo || "" });
     }
     if (action === "mark_staff_notifications_read") {
       const { markStaffNotificationsRead } = await import("./_staff-notify.js");

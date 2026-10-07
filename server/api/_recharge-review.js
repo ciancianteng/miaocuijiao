@@ -53,6 +53,15 @@ async function signedProofUrl(row) {
   return /^https?:\/\//i.test(storedUrl) ? storedUrl : "";
 }
 
+export async function latestPendingRechargePaymentNo() {
+  try {
+    const rows = await listPendingReviewRows(1);
+    return String(rows?.[0]?.payment_no || "");
+  } catch {
+    return "";
+  }
+}
+
 export async function countPendingRechargeReviews() {
   try {
     const res = await fetch(restUrl("payment_orders", `?status=eq.${RECHARGE_PENDING_REVIEW}&select=id`), {

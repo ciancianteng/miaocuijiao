@@ -1231,21 +1231,29 @@ import './mcj-chat-realtime.js';
   function go(path){
     if(isLoginView())captureLoginDraft();
     var raw=String(path||'');
-    var clean=raw.replace(/\\/g,'/').replace(/\/$/,'')||'/customer-service';
+    var hash='';
+    var search='';
+    var base=raw;
+    var hi=base.indexOf('#');
+    if(hi>=0){hash=base.slice(hi);base=base.slice(0,hi);}
+    var qi=base.indexOf('?');
+    if(qi>=0){search=base.slice(qi);base=base.slice(0,qi);}
+    var clean=base.replace(/\\/g,'/').replace(/\/$/,'')||'/customer-service';
     // Full navigation only for login page.
     if(/\/customer-service\/login$/i.test(clean)){
-      location.assign('/customer-service/login/');
+      location.assign('/customer-service/login/'+search+hash);
       return;
     }
     // SPA route switch — keep URL + in-memory route in sync, never hard-jump away from chats while typing.
+    // Query (paymentNo) is matched off the path, then put back so a notice opens that recharge row.
     var next=ROUTES[clean]||'dashboard';
-    var url=raw;
-    if(next==='dashboard')url='/customer-service/dashboard/';
-    else if(next==='conversations')url='/customer-service/conversations';
-    else if(next==='orders')url='/customer-service/orders';
-    else if(next==='giftOrders')url='/customer-service/gift-orders';
-    else if(next==='recharges')url='/customer-service/recharges';
-    else if(next==='profile')url='/customer-service/profile';
+    var url=clean+search+hash;
+    if(next==='dashboard')url='/customer-service/dashboard/'+search+hash;
+    else if(next==='conversations')url='/customer-service/conversations'+search+hash;
+    else if(next==='orders')url='/customer-service/orders'+search+hash;
+    else if(next==='giftOrders')url='/customer-service/gift-orders'+search+hash;
+    else if(next==='recharges')url='/customer-service/recharges'+search+hash;
+    else if(next==='profile')url='/customer-service/profile'+search+hash;
     history.pushState(null,'',url);
     state.route=next;
     // Defer remount so the same click cannot "ghost click" 工作台 after buttons regenerate.
@@ -3041,7 +3049,10 @@ import './mcj-chat-realtime.js';
       var c=(res&&res.counts)||{};
       var nextRecharge=Number(c.recharges||0)||0, nextGift=Number(c.giftOrders||0)||0;
       if(reviewBadges.loaded){
-        if(nextRecharge>reviewBadges.recharges&&state.route!=='recharges')showReviewNotice('新的充值凭证待审核（'+nextRecharge+'）','/customer-service/recharges');
+        if(nextRecharge>reviewBadges.recharges&&state.route!=='recharges'){
+          var pno=String((res&&res.latestRechargePaymentNo)||'');
+          showReviewNotice('新的充值凭证待审核（'+nextRecharge+'）',pno?('/customer-service/recharges?paymentNo='+encodeURIComponent(pno)):'/customer-service/recharges');
+        }
         else if(nextGift>reviewBadges.giftOrders&&state.route!=='giftOrders')showReviewNotice('新的礼物付款待审核（'+nextGift+'）','/customer-service/gift-orders');
       }
       reviewBadges.recharges=nextRecharge;reviewBadges.giftOrders=nextGift;reviewBadges.loaded=true;
