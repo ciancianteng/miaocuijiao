@@ -1464,6 +1464,53 @@ async function loadBootstrap(serviceProfile) {
   const dockRewardCatFood = settledRewards.reduce((sum, r) => sum + money(r.amount_cat_food), 0);
   summary.dockRewardCatFood = dockRewardCatFood;
   summary.dockRewardCount = settledRewards.length;
+  let dockLedgerTx = [];
+  try {
+    dockLedgerTx = await maybeRows(
+      "wallet_transactions",
+      `?boss_id=eq.${encodeURIComponent(serviceProfile.id)}&transaction_type=in.(cs_dock_reward,cs_dock_clawback)&select=id,transaction_type,direction,amount,related_order_id,idempotency_key&order=created_at.asc&limit=500`,
+    );
+  } catch {
+    dockLedgerTx = [];
+  }
+  const creditedOrderIds = new Set(
+    (dockLedgerTx || [])
+      .filter((row) => row.transaction_type === "cs_dock_reward" && row.direction === "credit")
+      .map((row) => String(row.related_order_id || "")),
+  );
+  const missingCredit = settledRewards.filter(
+    (row) => money(row.amount_cat_food) > 0 && !creditedOrderIds.has(String(row.order_id || "")),
+  );
+  if (missingCredit.length) {
+    try {
+      await (await import("./_cs-dock-rewards.js")).reconcileSettledDockRewards({ serviceId: serviceProfile.id });
+      dockLedgerTx = await maybeRows(
+        "wallet_transactions",
+        `?boss_id=eq.${encodeURIComponent(serviceProfile.id)}&transaction_type=in.(cs_dock_reward,cs_dock_clawback)&select=id,transaction_type,direction,amount,related_order_id,idempotency_key&order=created_at.asc&limit=500`,
+      );
+    } catch {
+      /* leave the mismatch visible; the next load can retry the same idempotent credit */
+    }
+  }
+  const creditedCatFood = (dockLedgerTx || [])
+    .filter((row) => row.transaction_type === "cs_dock_reward" && row.direction === "credit")
+    .reduce((sum, row) => sum + money(row.amount), 0);
+  const clawedCatFood = (dockLedgerTx || [])
+    .filter((row) => row.transaction_type === "cs_dock_clawback" && row.direction === "debit")
+    .reduce((sum, row) => sum + money(row.amount), 0);
+  let dockWallet = null;
+  try {
+    const wallets = await maybeRows(
+      "wallets",
+      `?boss_id=eq.${encodeURIComponent(serviceProfile.id)}&select=bonus_balance,total_balance&limit=1`,
+    );
+    dockWallet = Array.isArray(wallets) ? wallets[0] || null : null;
+  } catch {
+    dockWallet = null;
+  }
+  summary.dockRewardCreditedCatFood = money(creditedCatFood - clawedCatFood);
+  summary.dockRewardWalletBonus = dockWallet ? money(dockWallet.bonus_balance) : 0;
+  summary.dockRewardLedgerMismatch = money(dockRewardCatFood) !== summary.dockRewardCreditedCatFood;
   summary.incomeToday = workData?.summary?.incomeToday || 0;
   summary.incomeMonth = workData?.summary?.incomeMonth || 0;
   summary.incomeTotal = workData?.summary?.incomeTotal || 0;
@@ -1520,6 +1567,9 @@ async function loadBootstrap(serviceProfile) {
       status: r.status,
       settledAt: r.settled_at || "",
       clawbackAt: r.clawback_at || "",
+      credited: (dockLedgerTx || []).some(
+        (row) => row.transaction_type === "cs_dock_reward" && String(row.related_order_id || "") === String(r.order_id || ""),
+      ),
     })),
     commissionSettlements,
     notifications: (staffNotifications || []).map((n) => ({

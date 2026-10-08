@@ -29,7 +29,26 @@ const VALID_PAID = new Set([
   "reviewed",
 ]);
 
-const INVALID = new Set(["awaiting_payment", "cancelled", "refund_requested", "refunded"]);
+const INVALID = new Set(["awaiting_payment", "cancelled", "canceled", "refund_requested", "refunded"]);
+
+export function dockRewardCreditKey(orderId) {
+  return `cs-dock-reward:${String(orderId || "").trim()}`;
+}
+
+export function dockRewardClawbackKey(orderId) {
+  return `cs-dock-clawback:${String(orderId || "").trim()}`;
+}
+
+/** Settled dock rewards credit bonus cat-food once. Refunded or cancelled orders stay uncredited. */
+export function shouldCreditDockReward(reward, order) {
+  if (!reward || String(reward.status || "") !== "settled") return false;
+  if (!(num(reward.amount_cat_food) > 0)) return false;
+  if (!String(reward.order_id || "").trim() || !String(reward.service_id || "").trim()) return false;
+  if (!order) return false;
+  const status = normalizeOrderStatus(order.status);
+  if (!status || INVALID.has(status) || status === "awaiting_payment") return false;
+  return true;
+}
 
 function nowIso() {
   return new Date().toISOString();
@@ -320,7 +339,15 @@ export async function trySettleDockReward(order, { source = "auto", forceService
   const existing = await getRewardByOrderId(order.id);
   if (existing) {
     if (existing.status === "settled") {
-      return { ok: true, code: "ALREADY_SETTLED", message: "该订单奖励已结算过。", reward: existing, duplicate: true };
+      const ledger = await ensureDockRewardCredited(existing);
+      return {
+        ok: ledger.ok !== false,
+        code: ledger.code === "CREDITED" ? "LEDGER_REPAIRED" : "ALREADY_SETTLED",
+        message: ledger.code === "CREDITED" ? `该订单奖励此前未入账，已补入 ${num(existing.amount_cat_food)} 猫粮。` : "该订单奖励已结算过。",
+        reward: existing,
+        duplicate: ledger.code !== "CREDITED",
+        ledger,
+      };
     }
     if (existing.status === "clawed_back" || existing.status === "cancelled") {
       return { ok: false, code: "CLOSED", message: "该订单奖励已取消或扣回，不可再发。", reward: existing };
@@ -382,35 +409,155 @@ export async function trySettleDockReward(order, { source = "auto", forceService
         method: "PATCH",
         body: JSON.stringify(row),
       });
+      const saved = Array.isArray(patched) ? patched[0] : patched;
+      const ledger = await ensureDockRewardCredited(saved || { ...existing, ...row });
       return {
         ok: true,
         code: "SETTLED",
         message: `本次对接成功，已结算 ${settings.amountCatFood} 猫粮。`,
-        reward: Array.isArray(patched) ? patched[0] : patched,
+        reward: saved,
         amount: settings.amountCatFood,
+        ledger,
       };
     }
     const created = await sb(rest("cs_dock_rewards"), {
       method: "POST",
       body: JSON.stringify({ ...row, created_at: nowIso() }),
     });
+    const saved = Array.isArray(created) ? created[0] : created;
+    const ledger = await ensureDockRewardCredited(saved || row);
     return {
       ok: true,
       code: "SETTLED",
       message: `本次对接成功，已结算 ${settings.amountCatFood} 猫粮。`,
-      reward: Array.isArray(created) ? created[0] : created,
+      reward: saved,
       amount: settings.amountCatFood,
+      ledger,
     };
   } catch (err) {
     if (/duplicate|unique|23505/i.test(String(err.message || ""))) {
       const again = await getRewardByOrderId(order.id);
-      return { ok: true, code: "ALREADY_SETTLED", message: "该订单奖励已结算过。", reward: again, duplicate: true };
+      const ledger = again?.status === "settled" ? await ensureDockRewardCredited(again) : null;
+      return { ok: true, code: "ALREADY_SETTLED", message: "该订单奖励已结算过。", reward: again, duplicate: true, ledger };
     }
     if (isMissingTable(err)) {
       return { ok: false, code: "TABLE_MISSING", message: "奖励表未创建，请执行 cs_dock_rewards 迁移。" };
     }
     throw err;
   }
+}
+
+async function walletTxByKey(key) {
+  if (!key) return null;
+  const rows = await sb(
+    rest(
+      "wallet_transactions",
+      `?idempotency_key=eq.${encodeURIComponent(key)}&select=id,amount,direction,transaction_type,boss_id,idempotency_key,related_order_id&limit=1`,
+    ),
+  );
+  return Array.isArray(rows) ? rows[0] || null : null;
+}
+
+export async function ensureDockRewardCredited(reward) {
+  if (!reward || String(reward.status || "") !== "settled") return { ok: false, code: "NOT_SETTLED", credited: false };
+  const amount = num(reward.amount_cat_food);
+  if (!(amount > 0)) return { ok: true, code: "ZERO", credited: false };
+  const orderId = String(reward.order_id || "").trim();
+  const serviceId = String(reward.service_id || "").trim();
+  if (!orderId || !serviceId) return { ok: false, code: "MISSING_IDS", credited: false };
+  let order = null;
+  try {
+    const rows = await sb(rest("orders", `?id=eq.${encodeURIComponent(orderId)}&select=id,status,order_no&limit=1`));
+    order = Array.isArray(rows) ? rows[0] : null;
+  } catch {
+    order = null;
+  }
+  if (!shouldCreditDockReward(reward, order)) return { ok: true, code: "INELIGIBLE", credited: false };
+  const prior = await sb(
+    rest(
+      "wallet_transactions",
+      `?related_order_id=eq.${encodeURIComponent(orderId)}&transaction_type=eq.cs_dock_reward&select=id,amount,boss_id,idempotency_key&limit=5`,
+    ),
+  );
+  const credits = Array.isArray(prior) ? prior : [];
+  const foreign = credits.find((row) => String(row.boss_id || "") !== serviceId || String(row.idempotency_key || "") !== dockRewardCreditKey(orderId));
+  if (foreign) {
+    return { ok: false, code: "ANOMALY_FOREIGN_CREDIT", credited: false, transaction: foreign };
+  }
+  const { creditWallet } = await import("./_wallet.js");
+  const result = await creditWallet({
+    bossId: serviceId,
+    transactionType: "cs_dock_reward",
+    amount,
+    balanceType: "bonus",
+    idempotencyKey: dockRewardCreditKey(orderId),
+    reason: `客服对接奖励 ${reward.order_no || order?.order_no || orderId}`,
+    internalNote: `cs_dock_rewards:${reward.id || ""}`,
+    relatedOrderId: orderId,
+  });
+  return {
+    ok: true,
+    code: result?.duplicate ? "ALREADY_CREDITED" : "CREDITED",
+    credited: !result?.duplicate,
+    duplicate: !!result?.duplicate,
+    transaction: result?.transaction || null,
+    amount,
+  };
+}
+
+export async function ensureDockRewardClawed(reward) {
+  if (!reward || String(reward.status || "") !== "clawed_back") return { ok: true, code: "SKIP", debited: false };
+  const amount = num(reward.amount_cat_food);
+  if (!(amount > 0)) return { ok: true, code: "ZERO", debited: false };
+  const orderId = String(reward.order_id || "").trim();
+  const serviceId = String(reward.service_id || "").trim();
+  if (!orderId || !serviceId) return { ok: false, code: "MISSING_IDS", debited: false };
+  const credit = await walletTxByKey(dockRewardCreditKey(orderId));
+  if (!credit || String(credit.boss_id || "") !== serviceId) return { ok: true, code: "NO_CREDIT", debited: false };
+  const bare = dockRewardClawbackKey(orderId);
+  const existing = (await walletTxByKey(bare)) || (await walletTxByKey(`${bare}:bonus`)) || (await walletTxByKey(`${bare}:paid`));
+  if (existing) return { ok: true, code: "ALREADY_DEBITED", debited: false, duplicate: true, transaction: existing };
+  const { debitWallet } = await import("./_wallet.js");
+  const result = await debitWallet({
+    bossId: serviceId,
+    transactionType: "cs_dock_clawback",
+    amount,
+    preferBalanceType: "bonus",
+    idempotencyKey: bare,
+    reason: `客服对接奖励扣回 ${reward.order_no || orderId}`,
+    internalNote: `cs_dock_rewards:${reward.id || ""}`,
+    relatedOrderId: orderId,
+  });
+  return {
+    ok: true,
+    code: result?.duplicate ? "ALREADY_DEBITED" : "DEBITED",
+    debited: !result?.duplicate,
+    duplicate: !!result?.duplicate,
+    transaction: result?.transaction || result?.transactions?.[0] || null,
+    amount,
+  };
+}
+
+export async function reconcileSettledDockRewards({ serviceId = "" } = {}) {
+  const filter = serviceId ? `&service_id=eq.${encodeURIComponent(serviceId)}` : "";
+  const rewards = [];
+  for (let offset = 0; ; offset += 200) {
+    const rows = await sb(
+      rest("cs_dock_rewards", `?select=id,order_id,order_no,service_id,amount_cat_food,status,settled_at&order=settled_at.asc&limit=200&offset=${offset}${filter}`),
+    );
+    const list = Array.isArray(rows) ? rows : [];
+    rewards.push(...list);
+    if (list.length < 200) break;
+  }
+  const results = [];
+  for (const reward of rewards) {
+    if (reward.status === "settled") {
+      results.push({ reward, ledger: await ensureDockRewardCredited(reward) });
+    } else if (reward.status === "clawed_back") {
+      results.push({ reward, ledger: await ensureDockRewardClawed(reward) });
+    }
+  }
+  return results;
 }
 
 export async function clawbackOrCancelReward(order, { reason = "", mode = "auto" } = {}) {
@@ -421,7 +568,10 @@ export async function clawbackOrCancelReward(order, { reason = "", mode = "auto"
 
   if (status === "cancelled" || mode === "cancel") {
     if (!settings.cancelOnCancel && mode === "auto") return { ok: true, code: "SKIP", message: "设置未开启取消订单取消奖励。" };
-    if (existing.status === "cancelled" || existing.status === "clawed_back") return { ok: true, code: "DONE", reward: existing };
+    if (existing.status === "cancelled" || existing.status === "clawed_back") {
+      const ledger = existing.status === "clawed_back" ? await ensureDockRewardClawed(existing) : null;
+      return { ok: true, code: "DONE", reward: existing, ledger };
+    }
     const patched = await sb(rest("cs_dock_rewards", `?id=eq.${encodeURIComponent(existing.id)}`), {
       method: "PATCH",
       body: JSON.stringify({
@@ -432,11 +582,17 @@ export async function clawbackOrCancelReward(order, { reason = "", mode = "auto"
         updated_at: nowIso(),
       }),
     });
-    return { ok: true, code: "CANCELLED", reward: Array.isArray(patched) ? patched[0] : patched };
+    const saved = Array.isArray(patched) ? patched[0] : patched;
+    const ledger = saved?.status === "clawed_back" ? await ensureDockRewardClawed(saved) : null;
+    return { ok: true, code: "CANCELLED", reward: saved, ledger };
   }
 
   if (status === "refunded" || status === "refund_requested" || mode === "refund") {
     if (!settings.clawbackOnRefund && mode === "auto") return { ok: true, code: "SKIP", message: "设置未开启退款扣回。" };
+    if (existing.status === "clawed_back") {
+      const ledger = await ensureDockRewardClawed(existing);
+      return { ok: true, code: "DONE", reward: existing, ledger };
+    }
     if (existing.status !== "settled") {
       const patched = await sb(rest("cs_dock_rewards", `?id=eq.${encodeURIComponent(existing.id)}`), {
         method: "PATCH",
@@ -453,7 +609,9 @@ export async function clawbackOrCancelReward(order, { reason = "", mode = "auto"
         updated_at: nowIso(),
       }),
     });
-    return { ok: true, code: "CLAWED", reward: Array.isArray(patched) ? patched[0] : patched };
+    const saved = Array.isArray(patched) ? patched[0] : patched;
+    const ledger = await ensureDockRewardClawed(saved || { ...existing, status: "clawed_back" });
+    return { ok: true, code: "CLAWED", reward: saved, ledger };
   }
 
   return { ok: true, code: "NOOP", reward: existing };
