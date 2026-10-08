@@ -297,11 +297,12 @@ import './mcj-chat-realtime.js';
   }
   function attRowView(r){
     var date=String(r.reportDate||r.date||'-');
-    var inText=fmtAttDateTime(r.clockInText,r.clockInAt)||'-';
+    var backfill=!!r.backfill||/管理员补卡/.test(String(r.attendanceStatus||''));
+    var inText=r.hideClockIn?'未记录':(fmtAttDateTime(r.clockInText,r.clockInAt)||'-');
     var outRaw=fmtAttDateTime(r.clockOutText,r.clockOutAt);
-    var onDuty=!!(r.clockInAt||r.clockInText)&&!(r.clockOutAt||r.clockOutText);
-    var outText=onDuty?'上班中':(outRaw||'-');
-    var hours=onDuty?'—':(r.workHours!=null&&r.workHours!==''?String(r.workHours)+' 小时':'-');
+    var onDuty=!backfill&&!!(r.clockInAt||r.clockInText)&&!(r.clockOutAt||r.clockOutText);
+    var outText=r.hideClockOut?'未记录':(onDuty?'上班中':(outRaw||'-'));
+    var hours=r.hideClockOut?'未知':(onDuty?'—':(r.workHours!=null&&r.workHours!==''?String(r.workHours)+' 小时':'-'));
     var status=r.attendanceStatus||(onDuty?'上班中':(r.clockOutAt?'已下班':'未打卡'));
     return {date:date,inText:inText,outText:outText,hours:hours,status:status,onDuty:onDuty};
   }
