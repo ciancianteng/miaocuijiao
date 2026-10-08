@@ -476,24 +476,62 @@ function sessionWorkDate(row) {
   return String(row?.work_date || row?.workDate || "").slice(0, 10);
 }
 
-/** Close a forgotten open session from an earlier day so today can clock in. Same-day open rows are left alone. */
+const BACKFILL_MARK = "admin_fault_backfill";
+const BACKFILL_REASON = "因妙脆角打卡功能异常，管理员根据实际出勤记录补录。";
+
+export function readBackfill(row = {}) {
+  const admin = String(row.admin_note || row.adminNote || "");
+  if (!admin.includes(BACKFILL_MARK)) return null;
+  return {
+    verifiedIn: /verified_in=1/.test(admin),
+    verifiedOut: /verified_out=1/.test(admin),
+  };
+}
+
+export function backfillAdminNote({ verifiedIn = false, verifiedOut = false, source = "" } = {}) {
+  return [
+    BACKFILL_MARK,
+    `verified_in=${verifiedIn ? 1 : 0}`,
+    `verified_out=${verifiedOut ? 1 : 0}`,
+    source ? `source=${String(source).slice(0, 80)}` : "",
+    BACKFILL_REASON,
+  ].filter(Boolean).join(" ");
+}
+
+/** Close a forgotten open session without inventing a clock-out time. */
 async function closeStaleOpenSession(open, workDate) {
   if (!open?.id) return null;
   const openDate = sessionWorkDate(open);
   if (!openDate || openDate === workDate) return null;
   const ended = nowIso();
-  const mins = durationMinutes(open.clock_in_at, ended);
+  const before = {
+    clockInAt: open.clock_in_at || "",
+    clockOutAt: open.clock_out_at || "",
+    status: open.status || "",
+    durationMinutes: open.duration_minutes || 0,
+    adminNote: open.admin_note || "",
+  };
   const rows = await supabaseJson(
     restUrl("cs_attendance_sessions", `?id=eq.${encodeURIComponent(open.id)}&status=eq.open`),
     {
       method: "PATCH",
       headers: serviceHeaders(),
       body: JSON.stringify({
-        clock_out_at: ended,
-        status: "closed",
-        duration_minutes: mins,
+        clock_out_at: null,
+        status: "adjusted",
+        duration_minutes: 0,
+        early_leave_minutes: 0,
         updated_at: ended,
-        admin_note: "auto_close_previous_day",
+        admin_note: backfillAdminNote({ verifiedIn: true, verifiedOut: false, source: "stale_open_session" }),
+        note: JSON.stringify({
+          kind: "attendance_audit",
+          reason: BACKFILL_REASON,
+          source: "stale_open_session",
+          operator: "clock-in",
+          at: ended,
+          before,
+          after: { status: "adjusted", clockOutAt: null, durationMinutes: 0 },
+        }),
       }),
     }
   );
@@ -529,47 +567,65 @@ function inferSessionType(config, workDate, priorClosedCount, clockInAt) {
   return "normal";
 }
 
-function viewSession(row = {}, config = {}) {
+export function viewSession(row = {}, config = {}) {
   const workDate = String(row.work_date || row.workDate || todayKey());
   const clockInAt = row.clock_in_at || row.clockInAt || "";
   const clockOutAt = row.clock_out_at || row.clockOutAt || "";
   const sessionType = String(row.session_type || row.sessionType || "normal");
-  const mins =
-    num(row.duration_minutes || row.durationMinutes) ||
-    durationMinutes(clockInAt, clockOutAt);
+  const backfill = readBackfill(row);
+  const mins = backfill && !backfill.verifiedOut
+    ? 0
+    : num(row.duration_minutes || row.durationMinutes) || durationMinutes(clockInAt, clockOutAt);
   const hours = Math.round((mins / 60) * 100) / 100;
   const shiftStart = `${workDate}T${config.shiftStart || "09:00"}:00+08:00`;
   const shiftEnd = `${workDate}T${config.shiftEnd || "18:00"}:00+08:00`;
   const attend = isAttendanceDay(config, workDate);
   const lateMinutes =
-    attend && sessionType === "normal" && clockInAt
+    attend && sessionType === "normal" && clockInAt && !(backfill && !backfill.verifiedIn)
       ? Math.max(0, Math.round((Date.parse(clockInAt) - Date.parse(shiftStart)) / 60000) - num(config.graceMinutes || 0))
       : 0;
   const earlyLeaveMinutes =
-    attend && sessionType === "normal" && clockOutAt
+    attend && sessionType === "normal" && clockOutAt && !(backfill && !backfill.verifiedOut)
       ? Math.max(0, Math.round((Date.parse(shiftEnd) - Date.parse(clockOutAt)) / 60000))
       : 0;
-  const open = String(row.status || "") === "open" || (!!clockInAt && !clockOutAt);
+  const storedLate = num(row.late_minutes != null ? row.late_minutes : lateMinutes);
+  const storedEarly = num(row.early_leave_minutes != null ? row.early_leave_minutes : earlyLeaveMinutes);
+  const late = backfill && !backfill.verifiedIn ? 0 : storedLate;
+  const early = backfill && !backfill.verifiedOut ? 0 : storedEarly;
+  const open = !backfill && (String(row.status || "") === "open" || (!!clockInAt && !clockOutAt));
+  const showIn = !backfill || backfill.verifiedIn;
+  const showOut = !backfill || backfill.verifiedOut;
   return {
     id: row.id || "",
     serviceId: row.service_id || row.serviceId || "",
     reportDate: workDate,
     workDate,
-    clockInAt,
-    clockOutAt,
+    clockInAt: showIn ? clockInAt : "",
+    clockOutAt: showOut ? clockOutAt : "",
     sessionType,
     sessionTypeLabel: sessionTypeLabel(sessionType),
     durationMinutes: mins,
-    workHours: hours,
+    workHours: backfill && !backfill.verifiedOut ? null : hours,
     status: open ? "open" : row.status || "closed",
-    attendanceStatus: open ? "上班中" : clockOutAt ? (sessionType === "overtime" ? "加班已下班" : "已下班") : "未打卡",
-    dutyStatus: open ? "on_duty" : clockOutAt ? "off_duty" : "none",
-    lateMinutes: num(row.late_minutes != null ? row.late_minutes : lateMinutes),
-    earlyLeaveMinutes: num(row.early_leave_minutes != null ? row.early_leave_minutes : earlyLeaveMinutes),
-    isLate: (num(row.late_minutes != null ? row.late_minutes : lateMinutes) || 0) > 0,
-    isEarlyLeave: (num(row.early_leave_minutes != null ? row.early_leave_minutes : earlyLeaveMinutes) || 0) > 0,
-    clockInText: timeText(clockInAt),
-    clockOutText: timeText(clockOutAt),
+    attendanceStatus: backfill
+      ? "管理员补卡 / 系统故障补录"
+      : open
+        ? "上班中"
+        : clockOutAt
+          ? sessionType === "overtime"
+            ? "加班已下班"
+            : "已下班"
+          : "未打卡",
+    dutyStatus: open ? "on_duty" : showOut && clockOutAt ? "off_duty" : "none",
+    lateMinutes: late,
+    earlyLeaveMinutes: early,
+    isLate: late > 0,
+    isEarlyLeave: early > 0,
+    backfill: !!backfill,
+    hideClockIn: !!backfill && !backfill.verifiedIn,
+    hideClockOut: !!backfill && !backfill.verifiedOut,
+    clockInText: showIn ? timeText(clockInAt) : "",
+    clockOutText: showOut ? timeText(clockOutAt) : "",
     note: row.note || "",
     adminNote: row.admin_note || row.adminNote || "",
   };
@@ -848,7 +904,7 @@ export async function clockInService(serviceId, opts = {}) {
         saved = retry?.[0] || null;
       }
     }
-    // Table missing → fall back to legacy single-day row
+    // Table missing — fall back to legacy single-day row
     if (/cs_attendance_sessions|PGRST|schema cache|does not exist/i.test(String(err?.message || ""))) {
       return clockInServiceLegacy(serviceId, opts);
     }
