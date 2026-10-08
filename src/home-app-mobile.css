@@ -37,12 +37,14 @@
 
 html {
   max-width: 100%;
-  overflow-x: hidden;
+  overflow-x: clip;
+  overflow-y: auto;
 }
 
 body.mcj-app-shell {
   max-width: 100%;
-  overflow-x: hidden;
+  overflow-x: clip;
+  overflow-y: visible;
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
   /* pageIn animation leaves transform matrix and breaks position:fixed tabbar */

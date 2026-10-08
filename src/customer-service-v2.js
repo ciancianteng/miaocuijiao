@@ -1,5 +1,6 @@
 import './mcj-chat-media.js';
 import './mcj-chat-realtime.js';
+import { captureChatScroll, restoreChatScroll, keyboardInsetPx, virtStartIndex } from './scroll-keep.js';
 
 (function(){
   var root=document.getElementById('serviceApp');
@@ -572,7 +573,7 @@ import './mcj-chat-realtime.js';
     if(total<=40){
       return (total?list.map(function(c){return conversationCardHtml(c,active,data)}).join(''):'<div class="cs-empty">该分类暂无会话</div>');
     }
-    var start=Math.max(0,Math.floor((scrollTop||0)/CONV_ROW_H)-CONV_OVERSCAN);
+    var start=virtStartIndex(scrollTop, CONV_ROW_H, CONV_OVERSCAN);
     var visible=Math.ceil((viewportH||600)/CONV_ROW_H)+CONV_OVERSCAN*2;
     var end=Math.min(total,start+visible);
     state.virtStart=start;
@@ -588,15 +589,26 @@ import './mcj-chat-realtime.js';
     if(!scroller||scroller.dataset.virtBound==='1')return;
     scroller.dataset.virtBound='1';
     scroller.addEventListener('scroll',function(){
-      state.listScrollTop=scroller.scrollTop||0;
+      if(state._virtPainting)return;
+      var y=scroller.scrollTop||0;
+      state.listScrollTop=y;
       if(state.route!=='conversations')return;
       var full=filteredConversations();
       if(full.length<=40)return;
-      // Re-window without resetting scroll.
       var body=listEl.querySelector('[data-cs-virt-body]');
       if(!body)return;
+      var start=virtStartIndex(y, CONV_ROW_H, CONV_OVERSCAN);
+      if(start===state.virtStart)return;
+      state._virtPainting=true;
       var active=((state.data&&state.data.conversations)||[]).find(function(c){return c.id===state.activeConversation})||null;
-      body.innerHTML=virtualListHtml(full,active,state.data||{},state.listScrollTop,scroller.clientHeight);
+      body.innerHTML=virtualListHtml(full,active,state.data||{},y,scroller.clientHeight);
+      scroller.scrollTop=y;
+      state.listScrollTop=y;
+      requestAnimationFrame(function(){
+        if(scroller.isConnected!==false)scroller.scrollTop=y;
+        state.listScrollTop=scroller.scrollTop||y;
+        state._virtPainting=false;
+      });
     },{passive:true});
   }
   function bindPoolRealtime(force){
@@ -872,11 +884,12 @@ import './mcj-chat-realtime.js';
         document.documentElement.style.setProperty('--cs-keyboard-inset','0px');
         return;
       }
-      var inset=Math.max(0,window.innerHeight-vv.height-vv.offsetTop);
+      var inset=keyboardInsetPx(window);
       document.documentElement.style.setProperty('--cs-keyboard-inset',inset+'px');
-      if(inset>40&&state.composerFocused){
-        var box=root.querySelector('.cs-chat-messages');
-        if(box)box.scrollTop=box.scrollHeight;
+      var box=root.querySelector('.cs-chat-messages');
+      if(inset>0&&state.composerFocused&&box){
+        var snap=captureChatScroll(box);
+        if(snap&&snap.near)restoreChatScroll(box,snap,true);
       }
     }catch(e){}
   }
@@ -885,7 +898,6 @@ import './mcj-chat-realtime.js';
     window.__MCJCsKeyboardBound=true;
     if(window.visualViewport){
       window.visualViewport.addEventListener('resize',syncKeyboardInset);
-      window.visualViewport.addEventListener('scroll',syncKeyboardInset);
     }
     window.addEventListener('resize',syncKeyboardInset);
     syncKeyboardInset();
@@ -1810,10 +1822,12 @@ import './mcj-chat-realtime.js';
     }
     var msgs=(data.messages||[]).filter(function(m){return active&&m.conversationId===active.id});
     var lockedActive=isLockedByOther(active);
-    var wasNearBottom=true;
-    try{wasNearBottom=(box.scrollHeight-box.scrollTop-box.clientHeight)<80;}catch(e){}
+    var snap=null;
+    try{snap=captureChatScroll(box);}catch(e){}
+    var stick=!!state.chatStickBottom||!!(snap&&snap.near);
     box.innerHTML=(lockedActive?lockPanelHtml(active):'')+(msgs.length?msgs.map(messageHtml).join(''):(lockedActive?'':'<div class="cs-empty">暂无消息</div>'));
-    if(wasNearBottom){try{box.scrollTop=box.scrollHeight;}catch(e){}}
+    try{restoreChatScroll(box,snap,stick);}catch(e){}
+    if(stick)state.chatStickBottom=false;
     if(listEl){
       var scroller=listEl.querySelector('[data-cs-virt-body]')||listEl;
       var savedScroll=typeof state.listScrollTop==='number'?state.listScrollTop:(scroller.scrollTop||0);
@@ -1829,8 +1843,10 @@ import './mcj-chat-realtime.js';
       }
       var body=listEl.querySelector('[data-cs-virt-body]');
       if(body){
+        state._virtPainting=true;
         body.innerHTML=virtualListHtml(list,active,data,savedScroll,body.clientHeight||600);
         try{body.scrollTop=savedScroll;state.listScrollTop=savedScroll;}catch(e){}
+        requestAnimationFrame(function(){state._virtPainting=false;});
         bindListScroll(listEl);
       }else{
         var headHtml='<div class="cs-chat-list-head"><strong>会话列表</strong><div class="cs-actions"><button class="cs-btn" type="button" data-refresh>刷新</button><button class="cs-btn cs-list-close" type="button" data-close-conv-list>关闭</button></div></div>'+
@@ -3206,6 +3222,7 @@ import './mcj-chat-realtime.js';
     if(!state.data)state.data=emptyDashboardData();
     if(!state.data.messages)state.data.messages=[];
     state.data.messages.push(optimistic);
+    state.chatStickBottom=true;
     var box=root.querySelector('.cs-chat-messages');
     if(box){
       var empty=box.querySelector('.cs-empty');
@@ -3268,6 +3285,7 @@ import './mcj-chat-realtime.js';
     if(!state.data)state.data=emptyDashboardData();
     if(!state.data.messages)state.data.messages=[];
     state.data.messages.push(optimistic);
+    state.chatStickBottom=true;
     var list=state.data.conversations||[];
     var cIdx=list.findIndex(function(c){return c.id===cid});
     if(cIdx>=0){

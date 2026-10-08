@@ -1988,11 +1988,60 @@
       loadData({soft:true});
     }
   });
+  function capturePwChatScroll(box){
+    if(!box)return null;
+    var nodes=box.querySelectorAll('[data-msg-id]');
+    var anchor=null;
+    var viewTop=box.scrollTop||0;
+    var i;
+    for(i=0;i<nodes.length;i++){
+      var el=nodes[i];
+      var id=el.getAttribute('data-msg-id');
+      if(!id)continue;
+      var top=el.offsetTop||0;
+      if(top+(el.offsetHeight||0)>viewTop+4){
+        anchor={id:id,offset:top-viewTop};
+        break;
+      }
+    }
+    return {
+      top:viewTop,
+      near:(box.scrollHeight||0)-(box.scrollTop||0)-(box.clientHeight||0)<96,
+      anchor:anchor
+    };
+  }
+  function restorePwChatScroll(box,snap,stick){
+    if(!box)return;
+    function apply(){
+      if(!box.isConnected)return;
+      if(stick||(snap&&snap.near)){
+        box.scrollTop=box.scrollHeight;
+        return;
+      }
+      if(snap&&snap.anchor&&snap.anchor.id){
+        var safe=String(snap.anchor.id).replace(/\\/g,'\\\\').replace(/"/g,'\\"');
+        var el=box.querySelector('[data-msg-id="'+safe+'"]');
+        if(el){
+          box.scrollTop=Math.max(0,(el.offsetTop||0)-(snap.anchor.offset||0));
+          return;
+        }
+      }
+      box.scrollTop=snap&&snap.top?snap.top:0;
+    }
+    apply();
+  }
   function captureScrollPos(){
     var page=document.querySelector('.pw-page');
+    var msgs=document.querySelector('[data-pw-messages]');
+    var sessions=document.querySelector('.pw-session-list');
+    var notices=document.querySelector('.pw-notice-list');
     return {
       winY:window.scrollY||document.documentElement.scrollTop||document.body.scrollTop||0,
-      pageY:page?page.scrollTop:0
+      pageY:page?page.scrollTop:0,
+      chat:capturePwChatScroll(msgs),
+      sessionY:sessions?sessions.scrollTop||0:0,
+      noticeY:notices?notices.scrollTop||0:0,
+      stickChat:!!state.chatStickBottom
     };
   }
   function applyScrollPos(pos){
@@ -2003,6 +2052,21 @@
       if(document.documentElement)document.documentElement.scrollTop=pos.winY||0;
       if(document.body)document.body.scrollTop=pos.winY||0;
     }catch(e){}
+    var msgs=document.querySelector('[data-pw-messages]');
+    if(msgs)restorePwChatScroll(msgs,pos.chat,!!pos.stickChat);
+    var sessions=document.querySelector('.pw-session-list');
+    if(sessions)sessions.scrollTop=pos.sessionY||0;
+    var notices=document.querySelector('.pw-notice-list');
+    if(notices)notices.scrollTop=pos.noticeY||0;
+    if(pos.stickChat&&msgs)state.chatStickBottom=false;
+    requestAnimationFrame(function(){
+      if(page&&pos.pageY!=null)page.scrollTop=pos.pageY;
+      try{window.scrollTo(0,pos.winY||0);}catch(e){}
+      var again=document.querySelector('[data-pw-messages]');
+      if(again)restorePwChatScroll(again,pos.chat,!!pos.stickChat);
+      var sessions2=document.querySelector('.pw-session-list');
+      if(sessions2)sessions2.scrollTop=pos.sessionY||0;
+    });
   }
   /** Route-enter: reset scroll once with the content swap (no animation / no rAF bounce). */
   function resetRouteScroll(){
@@ -2245,7 +2309,8 @@
         document.documentElement.style.setProperty('--pw-keyboard-inset','0px');
         return;
       }
-      var inset=Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+      var inset=Math.max(0,Math.round(window.innerHeight-vv.height));
+      if(inset<80)inset=0;
       document.documentElement.style.setProperty('--pw-keyboard-inset', inset+'px');
     }catch(e){}
   }
@@ -2255,7 +2320,6 @@
     syncPwKeyboardInset();
     if(window.visualViewport){
       window.visualViewport.addEventListener('resize',syncPwKeyboardInset);
-      window.visualViewport.addEventListener('scroll',syncPwKeyboardInset);
     }
     window.addEventListener('resize',syncPwKeyboardInset);
   }
@@ -6278,6 +6342,7 @@
         return;
       }
       state.chatBusy=true;
+      state.chatStickBottom=true;
       paint({preserveScroll:true});
       api('send_cs_message',{content:isoContent,consult_type:'profile_audit',conversation_id:isoCid}).then(function(){
         e.target.reset();
@@ -6314,6 +6379,7 @@
         messageType:'text',content:content,createdAt:new Date().toISOString()
       };
       state.chatBusy=true;
+      state.chatStickBottom=true;
       if(ta)ta.value='';
       state.inbox.messages=(state.inbox.messages||[]).concat([optimistic]);
       paint({preserveScroll:true});
@@ -6405,6 +6471,7 @@
               return Promise.resolve();
             }
             state.chatBusy=true;
+            state.chatStickBottom=true;
             if(statusEl)statusEl.textContent='发送中…';
             var localId='local-img-'+Date.now();
             if(state.inbox){
