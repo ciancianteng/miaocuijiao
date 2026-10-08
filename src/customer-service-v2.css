@@ -18,7 +18,7 @@
 .cs-conv-tab{flex:1;height:28px;border-radius:8px;border:1px solid rgba(255,255,255,.1);background:transparent;color:#9ca3af;font-size:11px;font-weight:700;padding:0 4px;cursor:pointer}
 .cs-conv-tab em{font-style:normal;opacity:.85}
 .cs-conv-tab.active{color:#fff;border-color:rgba(255,143,197,.45);background:rgba(255,143,197,.12)}
-[data-cs-virt-body]{flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
+[data-cs-virt-body]{flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:clip;overflow-anchor:none;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
 /* WeChat / Discord / Slack style conversation rows — fixed height, no field dump */
 .cs-conversation{
   --cs-row-h:92px;
@@ -763,7 +763,8 @@
 /* ===== Orders table layout (UI only) — keep page from horizontal overflow ===== */
 .cs-page[data-route="orders"],
 .cs-page:has(.cs-orders-table-wrap){
-  overflow-x:hidden;
+  overflow-x:clip;
+  overflow-y:auto;
   max-width:100%;
   min-width:0;
 }
