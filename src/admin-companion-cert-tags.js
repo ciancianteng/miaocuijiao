@@ -37,14 +37,25 @@
     orderFilter: "all",
     exportYear: now.getFullYear(),
     exportMonth: now.getMonth() + 1,
+    tab: "overview",
+    moreId: "",
+    overview: null,
+    overviewError: "",
   };
 
+  var PAGE_TABS = [
+    ["overview", "数据总览"],
+    ["badges", "勋章管理"],
+    ["orders", "订单统计"],
+    ["settings", "系统设置"],
+  ];
+
   var RANGES = [
-    ["today", "今日"],
+    ["today", "今天"],
     ["week", "本周"],
     ["month", "本月"],
-    ["custom", "自定义"],
-    ["all", "全部"],
+    ["custom", "自定义日期"],
+    ["all", "全部时间"],
   ];
 
   function esc(v) {
@@ -71,6 +82,54 @@
 
   function target() {
     return document.getElementById(TARGET_ID);
+  }
+
+  function scroller() {
+    var nodes = [document.querySelector(".admin-main"), document.body, document.scrollingElement, document.documentElement];
+    for (var i = 0; i < nodes.length; i++) {
+      var node = nodes[i];
+      if (node && node.scrollHeight > node.clientHeight + 2) return node;
+    }
+    return document.scrollingElement || document.documentElement;
+  }
+
+  function ensureCss() {
+    if (document.getElementById("cert-admin-tabs-css")) return;
+    var s = document.createElement("style");
+    s.id = "cert-admin-tabs-css";
+    s.textContent =
+      "#companionCertTagManagement{max-width:100%;overflow-x:clip;word-break:keep-all;overflow-wrap:break-word;padding-bottom:calc(16px + env(safe-area-inset-bottom));}" +
+      "#companionCertTagManagement .cert-tabs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;margin:0 0 12px;}" +
+      "#companionCertTagManagement .cert-tabs button{min-height:36px;padding:8px 4px;border-radius:10px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);color:#f5d6e6;font-size:13px;font-weight:700;white-space:nowrap;cursor:pointer;}" +
+      "#companionCertTagManagement .cert-tabs button.active{background:linear-gradient(180deg,#ff7eb3,#c86bff);color:#1a0b14;border-color:transparent;}" +
+      "#companionCertTagManagement .cert-tabs button:active,#companionCertTagManagement .cert-badge-card button:active,#companionCertTagManagement .cert-export button:active{transform:scale(.98);opacity:.86;}" +
+      "#companionCertTagManagement .cert-kpi{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:10px!important;margin:0 0 12px;}" +
+      "#companionCertTagManagement .cert-stat{padding:12px;border-radius:14px;min-width:0;}" +
+      "#companionCertTagManagement .cert-stat::after{display:none!important;content:none!important;}" +
+      "#companionCertTagManagement .cert-stat span{display:block;font-size:12px;line-height:1.35;color:#cbb8c4;}" +
+      "#companionCertTagManagement .cert-stat strong{display:block;margin-top:6px;font-size:22px;line-height:1.15;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:visible;color:#fff;}" +
+      "#companionCertTagManagement .cert-stat small{display:block;margin-top:4px;font-size:11px;line-height:1.35;color:#9f949c;}" +
+      "#companionCertTagManagement .cert-badge-list,#companionCertTagManagement .cert-settings-list,#companionCertTagManagement .cert-break-list{display:grid;grid-template-columns:1fr;gap:12px;}" +
+      "#companionCertTagManagement .cert-badge-card{padding:14px;border-radius:14px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.03);min-width:0;}" +
+      "#companionCertTagManagement .cert-badge-card .cert-card-top{display:flex;justify-content:space-between;align-items:center;gap:8px;}" +
+      "#companionCertTagManagement .cert-badge-card .cert-card-meta{display:grid;gap:4px;margin:10px 0;color:#d9ccd4;font-size:14px;line-height:1.4;}" +
+      "#companionCertTagManagement .cert-actions{display:flex;flex-wrap:wrap;gap:8px;}" +
+      "#companionCertTagManagement .cert-actions .mini-btn,#companionCertTagManagement .cert-actions .primary-btn{flex:1 1 120px;min-height:36px;white-space:nowrap;}" +
+      "#companionCertTagManagement .cert-more{position:relative;margin-top:8px;}" +
+      "#companionCertTagManagement .cert-more>button{width:100%;min-height:36px;}" +
+      "#companionCertTagManagement .cert-more-menu{display:flex;flex-direction:column;gap:6px;margin-top:8px;}" +
+      "#companionCertTagManagement .cert-export{margin-top:12px;padding:12px;border-radius:14px;border:1px solid rgba(255,255,255,.1);}" +
+      "#companionCertTagManagement .cert-link{margin-top:4px;}" +
+      "#companionCertTagManagement .table-wrap{max-width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch;}" +
+      "#companionCertTagManagement .toolbar select,#companionCertTagManagement .toolbar input,#companionCertTagManagement .table-tools select{min-width:0;max-width:100%;}" +
+      "@media(max-width:640px){#companionCertTagManagement .cert-tabs{grid-template-columns:repeat(2,minmax(0,1fr));}#companionCertTagManagement .cert-stat strong{font-size:20px;}}" +
+      "@media(min-width:900px){#companionCertTagManagement .cert-kpi{grid-template-columns:repeat(3,minmax(0,1fr))!important;}}" +
+      "@media(max-width:767px){body.mcj-cert-admin .admin-header{height:auto!important;min-height:0!important;max-height:none!important;padding:6px 12px!important;gap:8px;}body.mcj-cert-admin .admin-header h1{font-size:16px;line-height:1.2;}body.mcj-cert-admin .admin-header .admin-breadcrumb{display:none;}body.mcj-cert-admin .admin-content{padding:12px!important;}}";
+    document.head.appendChild(s);
+  }
+
+  function setCertBody(on) {
+    if (document.body) document.body.classList.toggle("mcj-cert-admin", !!on);
   }
 
   function apiGet(query) {
@@ -258,7 +317,7 @@
 
   function kpiCard(label, value, sub) {
     return (
-      '<div class="metric-card" style="padding:12px 14px">' +
+      '<div class="metric-card cert-stat">' +
       '<span style="font-size:12px">' +
       esc(label) +
       "</span>" +
@@ -278,7 +337,7 @@
       kpiCard("接单数量", String(k.takenCount || 0), "接单总金额 " + money(k.takenAmount)) +
       kpiCard("已完成订单", String(k.completedCount || 0)) +
       kpiCard("订单总金额", money(k.gross), "已完成订单金额") +
-      kpiCard("总利润", money(k.platformCommission), "平台佣金") +
+      kpiCard("平台佣金", money(k.platformCommission), "按绑定快照") +
       kpiCard("实际结算", money(k.actualSettled)) +
       kpiCard("陪玩收入", money(k.companionIncome)) +
       kpiCard("退款金额", money(k.refundAmount), (k.refundedOrders || 0) + " 单含退款") +
@@ -332,14 +391,14 @@
       '<div class="toolbar" style="margin:0 0 10px;flex-wrap:wrap;gap:8px">' +
       "<span>勋章</span>" +
       '<select data-cert-filter-tag style="min-width:0;flex:1 1 140px"><option value="">全部勋章</option>' +
-      state.tags
+      visibleTags()
         .map(function (t) {
           return '<option value="' + esc(t.id) + '"' + (String(state.tagFilter) === String(t.id) ? " selected" : "") + ">" + esc(t.name) + "</option>";
         })
         .join("") +
       "</select>" +
-      "<span>持有人 / 陪玩</span>" +
-      '<input data-cert-filter-companion placeholder="UID（PW 编号）/ 昵称" style="min-width:0;flex:1 1 160px" value="' +
+      "<span>陪玩 UID / 昵称</span>" +
+      '<input data-cert-filter-companion placeholder="UID（PW 编号）或昵称" style="min-width:0;flex:1 1 160px" value="' +
       esc(state.companionQuery) +
       '">' +
       '<button class="mini-btn" type="button" data-cert-filter-apply>筛选</button>' +
@@ -357,49 +416,89 @@
     );
   }
 
-  function statCell(label, valueHtml) {
-    return '<div>' + esc(label) + '<br><b style="color:#fff;font-size:14px;font-variant-numeric:tabular-nums">' + valueHtml + "</b></div>";
+  function visibleTags() {
+    var seen = {};
+    var out = [];
+    state.tags.forEach(function (t) {
+      var id = String((t && t.id) || "");
+      if (id && seen[id]) return;
+      if (id) seen[id] = 1;
+      out.push(t);
+    });
+    return out;
   }
 
-  function badgeCardsHtml() {
-    var list = (state.stats && state.stats.badges) || [];
-    if (!list.length) return '<div class="empty">暂无认证勋章统计。</div>';
+  function duplicateNameNote() {
+    var names = {};
+    var hits = [];
+    visibleTags().forEach(function (t) {
+      var key = String(t.name || "").trim().toLowerCase();
+      if (!key) return;
+      if (names[key]) hits.push(t.name);
+      names[key] = (names[key] || 0) + 1;
+    });
+    if (!hits.length) return "";
+    return '<div class="admin-sync-note" style="color:#e0b15a">发现同名勋章：' + esc(hits.join("、")) + "。页面按勋章 ID 分开显示，没有删除任何记录。</div>";
+  }
+
+  function holderCount(tag) {
+    var sources = [(state.overview && state.overview.badges) || [], (state.stats && state.stats.badges) || []];
+    for (var i = 0; i < sources.length; i++) {
+      var hit = sources[i].find(function (b) {
+        return String(b.id) === String(tag.id);
+      });
+      if (hit && hit.holders != null) return hit.holders;
+    }
+    return null;
+  }
+
+  function statusPill(enabled) {
+    return '<span class="status ' + (enabled !== false ? "ok" : "wait") + '">' + (enabled !== false ? "已启用" : "已停用") + "</span>";
+  }
+
+  function manageCardsHtml() {
+    var tags = visibleTags();
+    if (!tags.length) return '<div class="empty">暂无认证勋章。</div>';
     return (
-      '<div class="panel-grid" style="margin:10px 0">' +
-      list
-        .map(function (b) {
-          var mo = b.month || {};
+      '<div class="cert-badge-list">' +
+      tags
+        .map(function (tag) {
+          var holders = holderCount(tag);
+          var open = String(state.moreId) === String(tag.id);
           return (
-            '<div class="panel" role="button" tabindex="0" style="padding:12px 14px;cursor:pointer" data-cert-detail="' +
-            esc(b.id) +
-            '">' +
-            '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">' +
-            badgePreviewHtml(b) +
-            '<span class="status ' +
-            (b.enabled !== false ? "ok" : "wait") +
-            '">' +
-            (b.enabled !== false ? "启用" : "停用") +
-            "</span></div>" +
-            '<div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px 10px;margin-top:10px;font-size:12px;color:var(--muted)">' +
-            statCell("持有人数", esc(b.holders) + (b.pendingRemoval ? '<small style="color:var(--yellow)"> (' + esc(b.pendingRemoval) + " 待取消)</small>" : "")) +
-            statCell("接单数量", esc(b.takenCount || 0)) +
-            statCell("已完成订单", esc(b.completedCount || 0)) +
-            statCell("接单总金额", money(b.takenAmount)) +
-            statCell("订单总金额", money(b.gross)) +
-            statCell("总利润", money(b.platformCommission)) +
+            '<article class="cert-badge-card">' +
+            '<div class="cert-card-top">' +
+            badgePreviewHtml(tag) +
+            statusPill(tag.enabled) +
             "</div>" +
-            '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px;font-size:12px;color:var(--muted)">' +
-            "<span>本月 接单 " +
-            esc(mo.takenCount || 0) +
-            " · 完成 " +
-            esc(mo.completedCount || 0) +
-            " · 利润 " +
-            money(mo.platformCommission) +
-            " · 统一分成 " +
-            esc(pct(b.companionShareRate)) +
-            "</span>" +
-            '<span class="mini-btn">查看持有人与订单 ›</span>' +
-            "</div></div>"
+            '<div class="cert-card-meta"><div>持有人：' +
+            esc(holders == null ? "…" : holders) +
+            "</div><div>统一佣金：" +
+            esc(pct(tag.companionShareRate)) +
+            "</div></div>" +
+            '<div class="cert-actions">' +
+            '<button class="mini-btn" type="button" data-cert-detail="' +
+            esc(tag.id) +
+            '">查看详情</button>' +
+            '<button class="mini-btn" type="button" data-cert-tag-edit="' +
+            esc(tag.id) +
+            '">编辑</button></div>' +
+            '<div class="cert-more" data-cert-more-root>' +
+            '<button class="mini-btn" type="button" data-cert-more="' +
+            esc(tag.id) +
+            '">更多操作 ⋯</button>' +
+            (open
+              ? '<div class="cert-more-menu"><button class="mini-btn" type="button" data-cert-tag-toggle="' +
+                esc(tag.id) +
+                '" data-enabled="' +
+                (tag.enabled !== false ? "false" : "true") +
+                '">' +
+                (tag.enabled !== false ? "停用" : "启用") +
+                '</button><button class="mini-btn" type="button" data-cert-tag-delete="' +
+                esc(tag.id) +
+                '">删除</button></div>'
+              : "") +
+            "</div></article>"
           );
         })
         .join("") +
@@ -411,7 +510,7 @@
     var years = [];
     for (var y = now.getFullYear(); y >= now.getFullYear() - 3; y--) years.push(y);
     return (
-      '<div class="table-tools" style="justify-content:flex-start;flex-wrap:wrap;gap:8px">' +
+      '<div class="table-tools cert-export" style="justify-content:flex-start;flex-wrap:wrap;gap:8px">' +
       "<span>月报导出</span>" +
       '<select data-cert-export-year>' +
       years
@@ -430,7 +529,7 @@
       '<button type="button" data-cert-export="' +
       esc(tagId || "") +
       '">' +
-      (tagId ? "导出本勋章 CSV / Excel" : "导出全部勋章 CSV / Excel") +
+      (tagId ? "导出本勋章 Excel / CSV" : "导出 Excel / CSV") +
       "</button></div>"
     );
   }
@@ -456,52 +555,164 @@
   }
 
   function settingsCardsHtml() {
-    if (!state.tags.length) return '<div class="empty">暂无认证徽章。</div>';
-    return state.tags
-      .map(function (tag) {
-        return cardHtml(
-          badgePreviewHtml(tag) + '<span class="status ' + (tag.enabled !== false ? "ok" : "wait") + '">' + (tag.enabled !== false ? "启用显示" : "已停用") + "</span>",
-          [
-            ["排序", esc(tag.sort)],
-            ["颜色", esc(tag.color || "-")],
-            ["统一陪玩分成", esc(pct(tag.companionShareRate))],
-            ["佣金优先级", esc(tag.commissionPriority == null ? 100 : tag.commissionPriority)],
-          ],
-          tagOpsHtml(tag)
-        );
-      })
-      .join("");
+    var tags = visibleTags();
+    if (!tags.length) return '<div class="empty">暂无认证勋章。</div>';
+    return (
+      '<div class="cert-settings-list">' +
+      tags
+        .map(function (tag) {
+          return (
+            '<article class="cert-badge-card">' +
+            '<div class="cert-card-top">' +
+            badgePreviewHtml(tag) +
+            statusPill(tag.enabled) +
+            "</div>" +
+            '<div class="cert-card-meta"><div>排序：' +
+            esc(tag.sort) +
+            "</div><div>颜色：" +
+            esc(tag.color || "-") +
+            "</div><div>统一陪玩分成：" +
+            esc(pct(tag.companionShareRate)) +
+            "</div><div>佣金优先级：" +
+            esc(tag.commissionPriority == null ? 100 : tag.commissionPriority) +
+            "</div></div>" +
+            '<div class="cert-actions"><button class="mini-btn" type="button" data-cert-tag-edit="' +
+            esc(tag.id) +
+            '">编辑</button></div></article>'
+          );
+        })
+        .join("") +
+      "</div>"
+    );
   }
 
-  function listPageHtml() {
-    var s = state.stats;
+  function overviewKpiHtml(k) {
+    k = k || {};
     return (
-      '<div class="content-admin-head"><div><h3>认证勋章统计与统一佣金</h3><p>点击任一勋章查看持有人、每位持有人的接单 / 完成 / 金额 / 利润与订单明细；可按勋章、持有人和日期筛选。</p></div>' +
-      '<button class="primary-btn" type="button" data-cert-tag-add>新增认证徽章</button></div>' +
+      '<div class="metric-grid cert-kpi">' +
+      kpiCard("持有人数", String(k.holders || 0), "同一人多枚勋章只计 1 人") +
+      kpiCard("接单数量", String(k.takenCount || 0), "按接单时间，订单去重") +
+      kpiCard("已完成订单", String(k.completedCount || 0), "只计已结算") +
+      kpiCard("订单总金额", money(k.gross), "已结算，按订单去重") +
+      kpiCard("平台总佣金", money(k.platformCommission), "按绑定快照，不重算") +
+      kpiCard("陪玩总收入", money(k.companionIncome), "已结算订单") +
+      "</div>" +
+      '<button class="primary-btn cert-link" type="button" data-cert-page="orders">查看详细统计</button>'
+    );
+  }
+
+  function ordersKpiHtml(k) {
+    k = k || {};
+    return (
+      '<div class="metric-grid cert-kpi">' +
+      kpiCard("持有人数", String(k.holders || 0), "当前筛选下去重") +
+      kpiCard("接单数量", String(k.takenCount || 0), "按接单时间") +
+      kpiCard("已完成订单", String(k.completedCount || 0), "只计已结算") +
+      kpiCard("接单总金额", money(k.takenAmount), "符合条件的接单") +
+      kpiCard("已完成订单金额", money(k.gross), "已结算订单") +
+      kpiCard("平台佣金", money(k.platformCommission), "历史快照，不重算") +
+      kpiCard("实际结算", money(k.actualSettled)) +
+      kpiCard("陪玩收入", money(k.companionIncome)) +
+      kpiCard("退款金额", money(k.refundAmount), (k.refundedOrders || 0) + " 单含退款") +
+      "</div>"
+    );
+  }
+
+  function ordersBreakdownHtml() {
+    var list = (state.stats && state.stats.badges) || [];
+    if (state.tagFilter || list.length < 2) return "";
+    return (
+      '<h4 style="margin:14px 0 6px">各勋章明细</h4>' +
+      '<p class="admin-sync-note" style="margin:0 0 8px;font-size:12px">顶部合计按订单去重。同一订单若归属多个勋章，会分别出现在下面各勋章中，所以各勋章相加可以大于顶部合计。这不是重复入账。</p>' +
+      '<div class="cert-break-list">' +
+      list
+        .map(function (b) {
+          return (
+            '<article class="cert-badge-card"><div class="cert-card-top">' +
+            badgePreviewHtml(b) +
+            statusPill(b.enabled) +
+            '</div><div class="cert-card-meta"><div>持有人：' +
+            esc(b.holders || 0) +
+            "</div><div>接单：" +
+            esc(b.takenCount || 0) +
+            " · 完成：" +
+            esc(b.completedCount || 0) +
+            "</div><div>已完成金额：" +
+            money(b.gross) +
+            "</div><div>平台佣金：" +
+            money(b.platformCommission) +
+            " · 陪玩收入：" +
+            money(b.companionIncome) +
+            "</div></div></article>"
+          );
+        })
+        .join("") +
+      "</div>"
+    );
+  }
+
+  function noticesHtml() {
+    return (
       (state.error ? '<div class="admin-sync-note" style="color:#c00">' + esc(state.error) + "</div>" : "") +
       (state.message ? '<div class="admin-sync-note">' + esc(state.message) + "</div>" : "") +
-      (state.formOpen && state.editing && !(window.MCJAdminOverlay && window.MCJAdminOverlay.isOpen && window.MCJAdminOverlay.isOpen())
-        ? '<div class="panel" style="margin:12px 0">' + formHtml(state.editing) + "</div>"
-        : "") +
+      duplicateNameNote()
+    );
+  }
+
+  function tabBarHtml() {
+    var active = state.view === "detail" || (state.view === "holder" && state.holderBack === "detail") ? "badges" : state.tab;
+    return (
+      '<div class="cert-tabs" role="tablist">' +
+      PAGE_TABS.map(function (t) {
+        return '<button type="button" role="tab" data-cert-page="' + t[0] + '" class="' + (active === t[0] ? "active" : "") + '" aria-selected="' + (active === t[0] ? "true" : "false") + '">' + t[1] + "</button>";
+      }).join("") +
+      "</div>"
+    );
+  }
+
+  function overviewPageHtml() {
+    var s = state.overview;
+    return (
+      '<div class="content-admin-head"><div><h3>数据总览</h3><p>全部时间、全部勋章。顶部数字按订单去重，同一人持有多枚勋章只计一次。</p></div></div>' +
+      (state.overviewError ? '<div class="admin-sync-note" style="color:#c00">' + esc(state.overviewError) + "</div>" : "") +
+      (s ? overviewKpiHtml(s.kpis) : '<div class="content-loading">正在统计...</div>')
+    );
+  }
+
+  function badgesPageHtml() {
+    return '<div class="content-admin-head"><div><h3>勋章管理</h3><p>查看持有人与订单，或编辑、启用、停用。删除需要再次确认，已有授予或订单的勋章不能删除。</p></div></div>' + manageCardsHtml();
+  }
+
+  function ordersPageHtml() {
+    var s = state.stats;
+    return (
+      '<div class="content-admin-head"><div><h3>订单统计</h3><p>只统计当前筛选范围内的订单。已结算金额使用绑定时的佣金快照。</p></div></div>' +
       rangeToolbarHtml() +
       listFiltersHtml() +
       (state.statsError ? '<div class="admin-sync-note" style="color:#c00">' + esc(state.statsError) + "</div>" : "") +
-      (s
-        ? kpiGridHtml(s.kpis, kpiCard("持有人数（去重）", String((s.kpis && s.kpis.holders) || 0), (s.kpis && s.kpis.badges) + " 个勋章")) +
-          '<p class="admin-sync-note" style="margin:0 0 6px;font-size:12px">' +
-          esc(s.note || "") +
-          "</p>" +
-          badgeCardsHtml()
-        : '<div class="content-loading">正在统计...</div>') +
-      exportToolbarHtml("") +
-      '<h4 style="margin:16px 0 8px">勋章设置（前台卡片）</h4>' +
-      '<div class="table-wrap capp-table-wrap"><table class="data-table"><thead><tr><th>前台预览</th><th>图标</th><th>颜色</th><th>排序</th><th>统一陪玩分成</th><th>佣金优先级</th><th>展示</th><th>操作</th></tr></thead><tbody>' +
-      rowsHtml() +
-      "</tbody></table></div>" +
-      '<div class="capp-mobile-cards">' +
-      settingsCardsHtml() +
-      "</div>"
+      (s ? ordersKpiHtml(s.kpis) + '<p class="admin-sync-note" style="margin:0 0 8px;font-size:12px">' + esc(s.note || "") + "</p>" + ordersBreakdownHtml() : '<div class="content-loading">正在统计...</div>') +
+      exportToolbarHtml(state.tagFilter || "")
     );
+  }
+
+  function settingsPageHtml() {
+    var fallback =
+      state.formOpen && state.editing && !(window.MCJAdminOverlay && window.MCJAdminOverlay.isOpen && window.MCJAdminOverlay.isOpen())
+        ? '<div class="panel" style="margin:12px 0">' + formHtml(state.editing) + "</div>"
+        : "";
+    return (
+      '<div class="content-admin-head"><div><h3>系统设置</h3><p>前台卡片、排序、颜色、启用状态、统一陪玩分成和佣金优先级。点编辑后在面板里修改，不会把表单铺在页面上。</p></div>' +
+      '<button class="primary-btn" type="button" data-cert-tag-add>新增认证勋章</button></div>' +
+      fallback +
+      settingsCardsHtml()
+    );
+  }
+
+  function listPageHtml() {
+    if (state.tab === "badges") return badgesPageHtml();
+    if (state.tab === "orders") return ordersPageHtml();
+    if (state.tab === "settings") return settingsPageHtml();
+    return overviewPageHtml();
   }
 
   function memberStatus(row) {
@@ -552,7 +763,7 @@
     var rows = d.members || [];
     if (!rows.length) return '<div class="empty">暂无持有人。可在上方输入 PW 编号授予。</div>';
     var table =
-      '<div class="table-wrap capp-table-wrap"><table class="data-table" style="min-width:1280px"><thead><tr><th>陪玩名称 / 昵称</th><th>UID</th><th>徽章名称</th><th>获得徽章时间 / 授予人</th><th>状态</th><th class="amount">接单数量</th><th class="amount">已完成订单</th><th class="amount">接单总金额</th><th class="amount">订单总金额</th><th class="amount">接单总利润</th><th class="amount">陪玩收入</th><th>取消记录</th><th>操作</th></tr></thead><tbody>' +
+      '<div class="table-wrap capp-table-wrap"><table class="data-table" style="min-width:1280px"><thead><tr><th>陪玩名称 / 昵称</th><th>UID</th><th>徽章名称</th><th>获得徽章时间 / 授予人</th><th>状态</th><th class="amount">接单数量</th><th class="amount">已完成订单</th><th class="amount">接单总金额</th><th class="amount">订单总金额</th><th class="amount">平台佣金</th><th class="amount">陪玩收入</th><th>取消记录</th><th>操作</th></tr></thead><tbody>' +
       rows
         .map(function (r) {
           return (
@@ -602,7 +813,7 @@
               ["已完成订单", esc(r.completedCount || 0)],
               ["接单总金额", money(r.takenAmount)],
               ["订单总金额", money(r.gross)],
-              ["接单总利润", money(r.platformCommission)],
+              ["平台佣金", money(r.platformCommission)],
               ["陪玩收入", money(r.companionIncome)],
             ].concat(r.removalRequestedAt ? [["取消记录", removalHtml(r)]] : []),
             memberOpsHtml(r)
@@ -730,7 +941,7 @@
     var rows = d.monthly || [];
     if (!rows.length) return '<div class="empty">暂无月度数据。</div>';
     return (
-      '<div class="table-wrap"><table class="data-table" style="min-width:900px"><thead><tr><th>月份</th><th class="amount">接单数量</th><th class="amount">接单总金额</th><th class="amount">已完成订单</th><th class="amount">订单总金额</th><th class="amount">实际结算</th><th class="amount">陪玩收入</th><th class="amount">总利润</th><th class="amount">退款</th></tr></thead><tbody>' +
+      '<div class="table-wrap"><table class="data-table" style="min-width:900px"><thead><tr><th>月份</th><th class="amount">接单数量</th><th class="amount">接单总金额</th><th class="amount">已完成订单</th><th class="amount">订单总金额</th><th class="amount">实际结算</th><th class="amount">陪玩收入</th><th class="amount">平台佣金</th><th class="amount">退款</th></tr></thead><tbody>' +
       rows
         .map(function (r) {
           return (
@@ -825,7 +1036,7 @@
         esc((d.month && d.month.completedCount) || 0) +
         " 单 · 订单总金额 " +
         money(d.month && d.month.gross) +
-        " · 总利润 " +
+        " · 平台佣金 " +
         money(d.month && d.month.platformCommission) +
         "</p>" +
         '<div class="tabs" style="flex-wrap:wrap">' +
@@ -936,7 +1147,7 @@
       esc(all.completedCount || 0) +
       " 单 · 订单总金额 " +
       money(all.gross) +
-      " · 总利润 " +
+      " · 平台佣金 " +
       money(all.platformCommission) +
       "</p>" +
       ((h.badges || []).length
@@ -958,11 +1169,14 @@
 
   function pageHtml() {
     if (state.loading) return '<div class="content-loading">正在读取认证徽章...</div>';
-    if (state.view === "holder") return holderPageHtml();
-    return state.view === "detail" ? detailPageHtml() : listPageHtml();
+    var body = state.view === "holder" ? holderPageHtml() : state.view === "detail" ? detailPageHtml() : listPageHtml();
+    return tabBarHtml() + noticesHtml() + body;
   }
 
-  function render() {
+  function render(opts) {
+    ensureCss();
+    var box = scroller();
+    var y = box ? box.scrollTop : 0;
     var el = target();
     if (!el) return;
     el.innerHTML = pageHtml();
@@ -976,11 +1190,19 @@
         },
       });
     }
+    if (!box) return;
+    if (opts && opts.toTop) {
+      var header = document.querySelector(".admin-header");
+      var headerH = header ? header.offsetHeight : 0;
+      var top = el.getBoundingClientRect().top - box.getBoundingClientRect().top + box.scrollTop;
+      box.scrollTop = Math.max(0, top - headerH - 8);
+      return;
+    }
+    box.scrollTop = y;
   }
 
   function toTop() {
-    var el = target();
-    if (el && el.scrollIntoView) el.scrollIntoView({ block: "start" });
+    render({ toTop: true });
   }
 
   function listQuery() {
@@ -991,7 +1213,23 @@
   }
 
   /** Filters fire overlapping requests; only the latest response per view may render. */
-  var reqSeq = { stats: 0, detail: 0, holder: 0 };
+  var reqSeq = { stats: 0, detail: 0, holder: 0, overview: 0 };
+
+  function loadOverview() {
+    var my = ++reqSeq.overview;
+    state.overviewError = "";
+    return apiGet("action=stats&range=all")
+      .then(function (body) {
+        if (my !== reqSeq.overview) return;
+        state.overview = body;
+        if (!state.formOpen && state.view === "list" && (state.tab === "overview" || state.tab === "badges")) render();
+      })
+      .catch(function (err) {
+        if (my !== reqSeq.overview) return;
+        state.overviewError = err.message || "统计读取失败";
+        if (!state.formOpen && state.view === "list" && (state.tab === "overview" || state.tab === "badges")) render();
+      });
+  }
 
   function loadStats() {
     var my = ++reqSeq.stats;
@@ -1000,12 +1238,12 @@
       .then(function (body) {
         if (my !== reqSeq.stats) return;
         state.stats = body;
-        render();
+        if (!state.formOpen && state.view === "list" && (state.tab === "orders" || state.tab === "badges")) render();
       })
       .catch(function (err) {
         if (my !== reqSeq.stats) return;
         state.statsError = err.message || "统计读取失败";
-        render();
+        if (!state.formOpen && state.view === "list" && state.tab === "orders") render();
       });
   }
 
@@ -1069,7 +1307,8 @@
         state.tags = body.items || body.tags || [];
         state.loading = false;
         render();
-        refreshCurrent();
+        loadOverview();
+        loadStats();
       })
       .catch(function (err) {
         state.loading = false;
@@ -1103,6 +1342,7 @@
   function afterMutation(body) {
     state.message = (body && body.message) || "已更新";
     if (body && body.items) state.tags = body.items;
+    loadOverview();
     refreshCurrent();
   }
 
@@ -1149,6 +1389,24 @@
 
   document.addEventListener("click", function (e) {
     if (!e.target || !e.target.closest) return;
+    var pageBtn = e.target.closest("[data-cert-page]");
+    if (pageBtn && !e.target.closest("[data-cert-more],[data-cert-tag-edit],[data-cert-tag-toggle],[data-cert-tag-delete],[data-cert-detail]")) {
+      state.tab = pageBtn.getAttribute("data-cert-page") || "overview";
+      state.view = "list";
+      state.moreId = "";
+      render({ toTop: true });
+      if (state.tab === "overview" && !state.overview) loadOverview();
+      if (state.tab === "orders" && !state.stats) loadStats();
+      return;
+    }
+    var moreBtn = e.target.closest("[data-cert-more]");
+    if (moreBtn) {
+      var mid = moreBtn.getAttribute("data-cert-more");
+      state.moreId = String(state.moreId) === String(mid) ? "" : mid;
+      render();
+      return;
+    }
+    if (state.moreId && !e.target.closest("[data-cert-more-root]")) state.moreId = "";
     var rangeBtn = e.target.closest("[data-cert-range]");
     if (rangeBtn) {
       state.range = rangeBtn.getAttribute("data-cert-range");
@@ -1218,6 +1476,8 @@
     var detailBtn = e.target.closest("[data-cert-detail]");
     if (detailBtn && !e.target.closest("[data-cert-tag-edit],[data-cert-tag-toggle],[data-cert-tag-delete]")) {
       state.view = "detail";
+      state.tab = "badges";
+      state.moreId = "";
       state.detailId = detailBtn.getAttribute("data-cert-detail");
       state.detail = null;
       state.detailTab = "members";
@@ -1230,8 +1490,10 @@
     }
     if (e.target.closest("[data-cert-back]")) {
       state.view = "list";
+      state.tab = "badges";
       state.detail = null;
       state.message = "";
+      state.moreId = "";
       render();
       loadStats();
       toTop();
@@ -1319,6 +1581,7 @@
     }
     var toggle = e.target.closest("[data-cert-tag-toggle]");
     if (toggle) {
+      state.moreId = "";
       var tid = toggle.getAttribute("data-cert-tag-toggle");
       var en = toggle.getAttribute("data-enabled") === "true";
       apiPost({ action: en ? "enable" : "disable", id: tid })
@@ -1330,6 +1593,7 @@
     }
     var del = e.target.closest("[data-cert-tag-delete]");
     if (del) {
+      state.moreId = "";
       if (!confirm("确认删除该认证徽章？已有授予记录或订单归属的勋章不能删除，请改为停用。")) return;
       apiPost({ action: "delete", id: del.getAttribute("data-cert-tag-delete") })
         .then(afterMutation)
@@ -1421,11 +1685,15 @@
 
   document.addEventListener("mcj:admin-section", function (e) {
     var section = e && e.detail && e.detail.section;
+    setCertBody(section === "companion-cert-tags");
     if (section === "companion-cert-tags") load();
   });
 
   function boot() {
+    ensureCss();
     if (!target()) return;
+    var shown = document.getElementById("section-companion-cert-tags");
+    if (shown && shown.offsetParent !== null) setCertBody(true);
     load();
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot);
