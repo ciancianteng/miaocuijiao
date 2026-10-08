@@ -1408,6 +1408,9 @@ function viewOrder(row = {}, boss = {}, settlement = null) {
   return {
     id: row.id,
     orderNo: row.order_no || row.id,
+    isRenewal: row.is_renewal === true || row.is_renewal === "true",
+    renewalOfOrderId: row.renewal_of_order_id || "",
+    renewalSourceOrderNo: row.renewal_source_order_no || "",
     orderType: ORDER_TYPE_TEXT[orderTypeKey] || orderTypeKey,
     orderTypeKey,
     orderSource: ORDER_TYPE_TEXT[orderTypeKey] || orderTypeKey,

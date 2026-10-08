@@ -488,6 +488,9 @@ export function safeOrder(row, profiles = {}, extras = {}) {
   return {
     id: row.id,
     orderNo: row.order_no || row.id,
+    isRenewal: row.is_renewal === true || row.is_renewal === "true",
+    renewalOfOrderId: row.renewal_of_order_id || "",
+    renewalSourceOrderNo: row.renewal_source_order_no || "",
     bossId: row.boss_id || "",
     bossUid,
     bossName: bossInfo.bossName,

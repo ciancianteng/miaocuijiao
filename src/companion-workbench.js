@@ -3156,7 +3156,9 @@
     return out.join('')||'<span class="pw-note">无可用操作</span>';
   }
   function designatedOrderCard(o){
-    var banner=o.status==='claimed'?'<div class="pw-order-banner">你有新的指定订单</div>':'';
+    var banner=o.isRenewal
+      ?'<div class="pw-order-banner">老板申请续单</div>'
+      :(o.status==='claimed'?'<div class="pw-order-banner">你有新的指定订单</div>':'');
     var focused=state._focusOrderId&&String(o.id)===String(state._focusOrderId);
     var peers=Array.isArray(o.groupPeers)?o.groupPeers:[];
     var isGroup=!!(o.isMultiGroupChild||o.parentOrderId||peers.length);
@@ -3181,6 +3183,7 @@
       '<header><div><h3>'+esc(humanOrderNo(o))+'</h3><p>'+esc(o.game||o.serviceName||'-')+' / '+esc(o.serviceName||o.serviceContent||'-')+'</p></div><span class="pw-status info">'+esc(orderStatus(o))+'</span></header>'+
       '<div class="pw-order-meta">'+
       '<div><span>老板昵称/编号</span><strong>'+esc((o.bossName||'-')+(o.bossUid?' / '+o.bossUid:''))+'</strong></div>'+
+      (o.isRenewal?'<div><span>原订单号</span><strong>'+esc(o.renewalSourceOrderNo||'-')+'</strong></div><div><span>新订单号</span><strong>'+esc(humanOrderNo(o))+'</strong></div>':'')+
       '<div><span>你的服务</span><strong>'+esc(o.serviceName||o.game||'-')+'</strong></div>'+
       '<div><span>数量/预计时长</span><strong>'+esc(o.duration||(o.hours?o.hours+'小时':'-'))+'</strong></div>'+
       '<div><span>陪玩单价</span><strong>'+money(o.unitPrice||0)+'</strong></div>'+

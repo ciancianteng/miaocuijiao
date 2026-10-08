@@ -77,8 +77,12 @@
   }
   function displayOrderNo(o){
     var no=String((o&&(o.orderNo||o.order_no||o.orderNoDisplay))||'').trim();
-    if(no==='历史订单'||!no||isUuid(no))return shortOrderRef(o&&(o.id||o.orderId));
-    return no;
+    var base=(no==='历史订单'||!no||isUuid(no))?shortOrderRef(o&&(o.id||o.orderId)):no;
+    if(o&&o.isRenewal){
+      var src=String(o.renewalSourceOrderNo||'').trim();
+      return base+' · 续单'+(src?(' · 原'+src):'');
+    }
+    return base;
   }
   function displayProofOrderNo(r){
     var no=String((r&&r.orderNo)||'').trim();
@@ -349,6 +353,7 @@
     var html=
       detailSection('① 订单信息',[
         ['订单号',displayOrderNo(o)],
+        ...(o.isRenewal?[['续单','是'+(o.renewalSourceOrderNo?' · 原订单 '+o.renewalSourceOrderNo:'')]]:[]),
         ['订单类型',o.orderType||o.type||'-'],
         ['人数',memberCount?String(memberCount):'-'],
         ['金额',money(o.totalAmount)],

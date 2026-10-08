@@ -3190,6 +3190,7 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, virtStartIndex }
     var title=mode==='cancel'?'取消原因':(mode==='refund'?'退款详情':(mode==='pay'?'付款记录':(mode==='review'?'评价':'订单详情')));
     var rows=[
       ['订单编号',o.orderNo||'-'],
+      ...(o.isRenewal?[['续单','是'+(o.renewalSourceOrderNo?' · 原订单 '+o.renewalSourceOrderNo:'')],['服务小时',o.hours!=null?String(o.hours):'-']]:[]),
       ['状态',o.statusText||o.status||'-'],
       ['老板',sanitizeBossLabel(o.bossName,publicBossCode(o))],
       ['陪玩',o.companionName||'-'],
@@ -3323,7 +3324,7 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, virtStartIndex }
       ?('多人主订单'+(o.title||o.description?'<br><small>'+esc(String(o.title||o.description||'').slice(0,36))+'</small>':''))
       :esc(o.companionName||'-');
     var statusCell=esc(statusLabel)+(orderEarlyPending(o)?'<br><small data-early-pending>待处理提前结束</small>':'')+(o.needsReassign?'<br><small style="color:#f59e0b">'+(esc(o.reassignHint||'待重新安排'))+'</small>':'')+(inGrabHall?'<br><small>抢单 '+(o.grabCount||0)+' 人</small>':'')+(o.preferredCompanionId?'<br><small style="color:#60a5fa">老板意向已提交</small>':'')+(isMultiParentRow?'<br><small>子订单见详情</small>':'')+proofBlock;
-    return '<tr'+(o.needsReassign?' style="background:rgba(245,158,11,.08)"':'')+(inGrabHall?' data-grab-hall="1"':'')+(isMultiParentRow?' data-multi-parent="1"':'')+' data-order-status="'+esc(st)+'"><td class="cs-col-no">'+esc(o.orderNo)+(isMultiParentRow?'<br><small>多人</small>':'')+'</td><td class="cs-col-boss">'+esc(sanitizeBossLabel(o.bossName,publicBossCode(o)))+(publicBossCode(o)?'<br><small>'+esc(publicBossCode(o))+'</small>':'')+'</td><td class="cs-col-companion">'+companionCell+'</td><td class="cs-col-game">'+esc(o.game||'-')+'</td><td class="cs-col-amount">'+money(o.totalAmount)+'</td><td class="cs-col-status">'+statusCell+'</td><td class="cs-col-time">'+esc(fmtOrderDateTime(o.createdAt))+'</td><td class="cs-col-actions"><div class="cs-actions">'+actions.join('')+'</div></td></tr>';
+    return '<tr'+(o.needsReassign?' style="background:rgba(245,158,11,.08)"':'')+(inGrabHall?' data-grab-hall="1"':'')+(isMultiParentRow?' data-multi-parent="1"':'')+(o.isRenewal?' data-renewal="1"':'')+' data-order-status="'+esc(st)+'"><td class="cs-col-no">'+esc(o.orderNo)+(o.isRenewal?'<br><small>续单'+(o.renewalSourceOrderNo?' · 原'+esc(o.renewalSourceOrderNo):'')+'</small>':'')+(isMultiParentRow?'<br><small>多人</small>':'')+'</td><td class="cs-col-boss">'+esc(sanitizeBossLabel(o.bossName,publicBossCode(o)))+(publicBossCode(o)?'<br><small>'+esc(publicBossCode(o))+'</small>':'')+'</td><td class="cs-col-companion">'+companionCell+'</td><td class="cs-col-game">'+esc(o.game||'-')+'</td><td class="cs-col-amount">'+money(o.totalAmount)+'</td><td class="cs-col-status">'+statusCell+'</td><td class="cs-col-time">'+esc(fmtOrderDateTime(o.createdAt))+'</td><td class="cs-col-actions"><div class="cs-actions">'+actions.join('')+'</div></td></tr>';
   }
   function createOrderHtml(){
     var bosses=(state.data&&state.data.bosses)||[];

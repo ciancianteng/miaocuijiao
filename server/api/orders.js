@@ -576,6 +576,9 @@ export function viewOrder(row = {}) {
   return {
     id: row.id,
     parentOrderId: row.parent_order_id || null,
+    isRenewal: row.is_renewal === true || row.is_renewal === "true",
+    renewalOfOrderId: row.renewal_of_order_id || "",
+    renewalSourceOrderNo: row.renewal_source_order_no || "",
     isMultiGroupParent: String(row.order_type || "").toLowerCase() === "multi_group" && !row.parent_order_id,
     isMultiGroupChild: !!row.parent_order_id,
     companionConfirm,
@@ -743,7 +746,8 @@ async function loadOrders(profile, id = "") {
     selectVoiceCore;
   const selectWithPaid = selectBase + ",paid_cat_food,paid_at";
   const selectWithNote = selectWithPaid + ",note";
-  const selectRich = selectWithNote + ",cancel_reason";
+  const selectRenewal = ",is_renewal,renewal_of_order_id,renewal_source_order_no";
+  const selectRich = selectWithNote + ",cancel_reason" + selectRenewal;
   // Same richness without paid_* (Prod pending-prod/07 not applied yet).
   const selectBaseNoPaid = selectBase;
   const selectWithNoteNoPaid = selectBaseNoPaid + ",note";
@@ -1300,6 +1304,50 @@ export default async function handler(req, res) {
           ok: false,
           message: PROD_TEST_ACCOUNT_BLOCK_MESSAGE,
           code: "PROD_TEST_ACCOUNT_BLOCKED",
+        });
+      }
+    }
+    if (action === "preview_renewal" || action === "create_renewal") {
+      const renewal = await import("./_order-renewal.js");
+      const db = {
+        restUrl,
+        supabaseJson,
+        serviceHeaders,
+        nextOrderNo,
+        assertCompanionOrderable,
+        buildServiceSnapshotForCompanion,
+      };
+      try {
+        if (action === "preview_renewal") {
+          const quote = await renewal.previewRenewal({ profile, body, db });
+          return json(res, 200, {
+            ok: true,
+            quote: {
+              sourceOrderId: quote.sourceOrderId,
+              sourceOrderNo: quote.sourceOrderNo,
+              companionId: quote.companionId,
+              game: quote.game,
+              serviceName: quote.serviceName,
+              hours: quote.hours,
+              unitPrice: quote.unitPrice,
+              totalAmount: quote.totalAmount,
+              openRenewalId: quote.openRenewal?.id || "",
+              openRenewalNo: quote.openRenewal?.order_no || "",
+            },
+          });
+        }
+        const created = await renewal.createRenewalOrder({ profile, body, db });
+        return json(res, 200, {
+          ok: true,
+          deduped: !!created.deduped,
+          message: created.deduped ? "已有未完成的续单，未重复创建。" : "续单已创建，请完成付款。",
+          order: viewOrder(created.order),
+        });
+      } catch (err) {
+        return json(res, err.status || 500, {
+          ok: false,
+          code: err.code || "RENEWAL_FAILED",
+          message: err.message || "续单失败",
         });
       }
     }

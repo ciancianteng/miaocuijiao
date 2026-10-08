@@ -29,6 +29,7 @@
     */
     #detailModal.modal,
     #reviewModal.modal,
+    #renewModal.modal,
     #multiReviewPickModal.modal{
       position:fixed !important;
       inset:0 !important;
@@ -42,6 +43,7 @@
     }
     #detailModal.modal.open,
     #reviewModal.modal.open,
+    #renewModal.modal.open,
     #multiReviewPickModal.modal.open{
       display:flex !important;
     }
@@ -174,7 +176,7 @@
     .review-modal .review-meta{margin:0 0 14px;color:#9ca3af;font-size:13px;line-height:1.45}
     .review-modal .form-grid{display:grid;gap:12px}
     .review-modal label{display:grid;gap:7px;color:#ffd6e7;font-weight:800}
-    .review-modal textarea,.review-modal select{border:1px solid rgba(255,255,255,.12);border-radius:10px;background:rgba(0,0,0,.24);color:#fff;padding:10px 12px;font:inherit}
+    .review-modal textarea,.review-modal select,.review-modal input{border:1px solid rgba(255,255,255,.12);border-radius:10px;background:rgba(0,0,0,.24);color:#fff;padding:10px 12px;font:inherit}
     .review-modal textarea{min-height:96px;resize:vertical}
     .review-stars{display:flex;gap:6px;flex-wrap:wrap}
     .review-star{width:42px;height:42px;border:1px solid rgba(255,255,255,.16);border-radius:10px;background:rgba(255,255,255,.06);color:#9ca3af;font-size:20px;cursor:pointer;line-height:1}
@@ -205,6 +207,28 @@
       <div class="modal-head"><h2>订单详情</h2><button class="close" type="button" data-close aria-label="关闭">×</button></div>
       <div class="modal-scroll" id="detailBody"></div>
       <div class="modal-footer" id="detailFooter"></div>
+    </div>
+  </div>
+  <div class="modal" id="renewModal" aria-hidden="true">
+    <div class="modal-box review-modal">
+      <div class="modal-head"><h2>续单</h2><button class="close" type="button" data-renew-close aria-label="关闭">×</button></div>
+      <p class="review-meta" id="renewMeta">沿用原订单的游戏、陪玩和单价，只改服务小时数。</p>
+      <div class="form-grid">
+        <p id="renewSummary" class="order-hint"></p>
+        <label>服务小时数
+          <span style="display:flex;gap:8px;align-items:center;max-width:100%">
+            <button class="order-btn" type="button" id="renewMinus" aria-label="减少小时">-</button>
+            <input id="renewHours" inputmode="numeric" readonly value="1" style="width:4.5rem;text-align:center;min-width:0">
+            <button class="order-btn" type="button" id="renewPlus" aria-label="增加小时">+</button>
+          </span>
+        </label>
+        <p id="renewTotal" style="margin:0;font-weight:700"></p>
+        <p id="renewError" class="order-hint" style="color:#ff8aa0"></p>
+      </div>
+      <div class="review-actions">
+        <button class="order-btn primary" type="button" id="renewSubmit">立即续单</button>
+        <button class="order-btn" type="button" data-renew-close>取消</button>
+      </div>
     </div>
   </div>
   <div class="modal" id="reviewModal" aria-hidden="true">
@@ -746,6 +770,13 @@
         if(!blocks)return '';
         return '<div class="od-module"><h3>服务标准（下单时快照）</h3><div class="od-fields">'+blocks+'</div><p class="order-hint">以下为下单时该项目的服务内容与执行标准；陪玩之后修改不会影响本单。</p></div>';
       }
+      function renewButton(o){
+        if(!o||isMultiParent(o))return '';
+        var s=String(o.status||'');
+        if(s!=='completed'&&s!=='reviewed')return '';
+        if(!(o.companionId||o.companion_id))return '';
+        return '<button class="order-btn" type="button" data-renew-order="'+esc(o.id)+'">续单</button>';
+      }
       function actions(o){
         var out=['<button class="order-btn" data-detail="'+esc(o.id)+'" type="button">查看详情</button>'];
         var s=String(o.status||'');
@@ -798,15 +829,20 @@
         }else if(canReview(o)&&!multiParent){
           out.push('<button class="order-btn primary" data-review-order="'+esc(o.id)+'" type="button">评价陪玩</button>');
           out.push('<button class="order-btn" data-action="request_refund" data-id="'+esc(o.id)+'">申请售后</button>');
+          out.push(renewButton(o));
         }else if(multiParent&&(String(o.status||'')==='completed'||String(o.status||'')==='reviewed'||o.reviewed)&&canOpenReviewFlow(o)){
           out.push('<button class="order-btn primary" data-review-order="'+esc(o.id)+'" type="button">'+esc(reviewCtaLabel(o)||'评价陪玩')+'</button>');
           out.push('<button class="order-btn" data-detail="'+esc(o.id)+'" type="button">查看子订单售后</button>');
         }else if(o.reviewed||s==='reviewed'){
           out.push('<button class="order-btn is-disabled" type="button" disabled aria-disabled="true">已评价</button>');
           if(!multiParent)out.push('<button class="order-btn" data-action="request_refund" data-id="'+esc(o.id)+'">申请售后</button>');
+          if(!multiParent)out.push(renewButton(o));
         }else if(s==='completed'){
           if(multiParent)out.push('<button class="order-btn" data-detail="'+esc(o.id)+'" type="button">查看子订单售后</button>');
-          else out.push('<button class="order-btn" data-action="request_refund" data-id="'+esc(o.id)+'">申请售后</button>');
+          else {
+            out.push('<button class="order-btn" data-action="request_refund" data-id="'+esc(o.id)+'">申请售后</button>');
+            out.push(renewButton(o));
+          }
         }else if(s==='cancelled'){
           out.push('<button class="order-btn is-disabled" type="button" disabled aria-disabled="true">已取消</button>');
         }else if(s==='refunded'){
@@ -822,6 +858,7 @@
         var kids=isMultiParent(o)?childrenOf(o.id):[];
         var memberCount=kids.length;
         var multiBadge=isMultiParent(o)?('<div class="order-multi-badge">多人陪玩订单 · 共'+memberCount+'位陪玩</div>'):'';
+        var renewBadge=o.isRenewal?('<div class="order-multi-badge">续单'+(o.renewalSourceOrderNo?' · 原订单 '+esc(o.renewalSourceOrderNo):'')+'</div>'):'';
         var serviceLabel=isMultiParent(o)?((o.serviceType||o.game||'多人服务')+' · '+memberCount+'位陪玩 · 一次付款'):(o.serviceType||o.game||'-');
         var companionLabel=isMultiParent(o)?multiCompanionLabel(kids):companionName(o);
         var statusShown=isMultiParent(o)?multiParentStatusLabel(o,kids):orderLabel(o);
@@ -832,7 +869,7 @@
           var icon=ck==='accepted'?'✅':(ck==='pending'?'⏱':(ck==='exited'||ck==='exited_kept'?'❌':'·'));
           return '<div class="order-multi-mini-row">'+companionAvatarHtml(ch)+'<span>'+esc(companionName(ch))+'</span><span>'+icon+' '+(ck==='accepted'?'已确认':(ck==='pending'?'等待确认':(ck==='exited'||ck==='exited_kept'?'不可接单':'—')))+'</span></div>';
         }).join('')+'</div>'):'';
-        return '<article class="order-card" data-order-id="'+esc(o.id)+'"'+(isMultiParent(o)?' data-multi-parent="1" data-member-count="'+memberCount+'"':'')+(isMultiChild(o)?' data-multi-child="1" hidden':'')+'><header><div><h3>'+esc(isMultiParent(o)?('多人陪玩订单 · '+(o.orderNo||o.order_no||o.id)):(o.orderNo||o.order_no||o.id))+'</h3><p>'+esc(o.createdAt?date(o.createdAt):'-')+'</p>'+multiBadge+'</div><span class="order-status">'+esc(statusShown)+'</span></header><div class="order-grid"><div><span>游戏/服务</span><strong title="'+esc(serviceLabel)+'">'+esc(serviceLabel)+'</strong></div><div><span>'+(isMultiParent(o)?'陪玩':'陪玩昵称')+'</span><strong title="'+esc(companionLabel)+'">'+esc(companionLabel)+'</strong></div><div><span>'+(isMultiParent(o)?'总消费':'消费')+'</span><strong>'+moneyEmoji(o.totalAmount||o.amount)+'</strong></div><div><span>当前状态</span><strong>'+esc(statusShown)+'</strong></div>'+grabHint+'<div><span>创建时间</span><strong>'+esc(date(o.createdAt))+'</strong></div>'+(confirmMini?'<div class="order-multi-mini-wrap">'+confirmMini+'</div>':'')+'<div class="order-actions">'+actions(o)+'</div></div></article>';
+        return '<article class="order-card" data-order-id="'+esc(o.id)+'"'+(isMultiParent(o)?' data-multi-parent="1" data-member-count="'+memberCount+'"':'')+(isMultiChild(o)?' data-multi-child="1" hidden':'')+'><header><div><h3>'+esc(isMultiParent(o)?('多人陪玩订单 · '+(o.orderNo||o.order_no||o.id)):(o.orderNo||o.order_no||o.id))+'</h3><p>'+esc(o.createdAt?date(o.createdAt):'-')+'</p>'+multiBadge+renewBadge+'</div><span class="order-status">'+esc(statusShown)+'</span></header><div class="order-grid"><div><span>游戏/服务</span><strong title="'+esc(serviceLabel)+'">'+esc(serviceLabel)+'</strong></div><div><span>'+(isMultiParent(o)?'陪玩':'陪玩昵称')+'</span><strong title="'+esc(companionLabel)+'">'+esc(companionLabel)+'</strong></div><div><span>'+(isMultiParent(o)?'总消费':'消费')+'</span><strong>'+moneyEmoji(o.totalAmount||o.amount)+'</strong></div><div><span>当前状态</span><strong>'+esc(statusShown)+'</strong></div>'+grabHint+'<div><span>创建时间</span><strong>'+esc(date(o.createdAt))+'</strong></div>'+(confirmMini?'<div class="order-multi-mini-wrap">'+confirmMini+'</div>':'')+'<div class="order-actions">'+actions(o)+'</div></div></article>';
       }
       function detail(o,openReview){
         var boss=bossProfile();
@@ -840,6 +877,7 @@
           '<div class="od-col">'+
             '<div class="od-module"><h3>订单信息</h3><div class="od-fields">'+
               field('订单编号',esc(o.orderNo||o.order_no||o.id))+
+              (o.isRenewal?field('续单','是'+(o.renewalSourceOrderNo?' · 原订单 '+esc(o.renewalSourceOrderNo):'')):'')+
               field('订单类型',esc(isMultiParent(o)?'多人陪玩订单':'普通订单'))+
               field('订单状态',esc(isMultiParent(o)?multiParentStatusLabel(o,childrenOf(o.id)):orderLabel(o)))+
               field('付款状态',esc(isPaymentReview(o)?'待客服审核':(o.paymentStatus||(o.status==='awaiting_payment'?'待付款':'已付款（整组一次）'))))+
@@ -927,6 +965,7 @@
             footer+='<button class="order-btn is-disabled" type="button" disabled aria-disabled="true">已评价</button>';
           }
           footer+='<button class="order-btn" type="button" data-action="request_refund" data-id="'+esc(o.id)+'">申请售后</button>';
+          if(!isMultiParent(o))footer+=renewButton(o);
           footer+='<a class="order-btn primary" href="support.html?order='+encodeURIComponent(o.id)+'">联系客服</a>';
         }else{
           footer+='<a class="order-btn primary" href="support.html?order='+encodeURIComponent(o.id)+'">联系客服</a>';
@@ -1285,6 +1324,80 @@
         reviewModal.setAttribute('aria-hidden','true');
         reviewOrderId='';
       }
+      var renewDraft=null;
+      var renewModal=document.getElementById('renewModal');
+      function closeRenewModal(){
+        if(!renewModal)return;
+        renewModal.classList.remove('open');
+        renewModal.setAttribute('aria-hidden','true');
+        renewDraft=null;
+      }
+      function paintRenew(){
+        if(!renewDraft)return;
+        var hours=renewDraft.hours;
+        var unit=Number(renewDraft.unitPrice)||0;
+        var total=Math.round(unit*hours*100)/100;
+        var hoursEl=document.getElementById('renewHours');
+        var summary=document.getElementById('renewSummary');
+        var totalEl=document.getElementById('renewTotal');
+        if(hoursEl)hoursEl.value=String(hours);
+        if(summary)summary.textContent=(renewDraft.serviceName||'服务')+' · 陪玩 '+(renewDraft.companionName||'')+' · 单价 '+money(unit);
+        if(totalEl)totalEl.textContent='应付猫粮 '+money(total);
+      }
+      async function openRenew(orderId){
+        var o=findOrderById(orderId)||state.orders.find(function(x){return String(x.id)===String(orderId)});
+        if(!o){alert('订单不存在，请刷新后重试');return}
+        var hours=Math.max(1,Math.min(24,Math.round(Number(o.hours||o.quantity)||1)||1));
+        renewDraft={sourceId:o.id,hours:hours,unitPrice:Number(o.unitPrice||o.unit_price)||0,serviceName:o.serviceName||o.service_name||o.game||'',companionName:companionName(o)};
+        var errEl=document.getElementById('renewError');
+        if(errEl)errEl.textContent='';
+        paintRenew();
+        if(renewModal){renewModal.classList.add('open');renewModal.setAttribute('aria-hidden','false')}
+        try{
+          var res=await fetch('/api/orders',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token()},body:JSON.stringify({action:'preview_renewal',sourceOrderId:o.id,hours:hours})});
+          var body=await res.json().catch(function(){return{}});
+          if(!res.ok||body.ok===false){
+            if(errEl)errEl.textContent=(body&&body.message)||'暂时不能续单';
+            return;
+          }
+          var quote=body.quote||body;
+          renewDraft.unitPrice=Number(quote.unitPrice)||renewDraft.unitPrice;
+          renewDraft.hours=Number(quote.hours)||renewDraft.hours;
+          renewDraft.serviceName=quote.serviceName||renewDraft.serviceName;
+          renewDraft.companionName=quote.companionName||renewDraft.companionName;
+          if(quote.openRenewalId){
+            if(errEl)errEl.textContent='已有未完成的续单 '+(quote.openRenewalNo||'')+'，提交会打开那一张，不会再新建。';
+          }
+          paintRenew();
+        }catch(err){
+          if(errEl)errEl.textContent='报价加载失败，请稍后重试';
+        }
+      }
+      async function submitRenew(){
+        if(!renewDraft)return;
+        var btn=document.getElementById('renewSubmit');
+        var errEl=document.getElementById('renewError');
+        if(btn)btn.disabled=true;
+        try{
+          var res=await fetch('/api/orders',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token()},body:JSON.stringify({action:'create_renewal',sourceOrderId:renewDraft.sourceId,hours:renewDraft.hours,unitPrice:renewDraft.unitPrice,totalAmount:Math.round((Number(renewDraft.unitPrice)||0)*renewDraft.hours*100)/100})});
+          var body=await res.json().catch(function(){return{}});
+          if(!res.ok||body.ok===false){
+            if(errEl)errEl.textContent=(body&&body.message)||'续单失败';
+            return;
+          }
+          var created=body.order||{};
+          if(!created.id){if(errEl)errEl.textContent='续单已创建，但没有返回订单号';return}
+          if(created.status&&created.status!=='awaiting_payment'){
+            location.href='orders.html';
+            return;
+          }
+          location.href='payment-confirm.html?order='+encodeURIComponent(created.id);
+        }catch(err){
+          if(errEl)errEl.textContent='续单提交失败，请稍后重试';
+        }finally{
+          if(btn)btn.disabled=false;
+        }
+      }
       function maybeOpenPendingReview(){
         if(!pendingOpenReviewId)return;
         var id=pendingOpenReviewId;
@@ -1359,6 +1472,12 @@
         }
       }
       document.addEventListener('click',function(e){
+        if(e.target.closest('[data-renew-close]')||e.target===renewModal){closeRenewModal();return}
+        if(e.target.closest('#renewMinus')&&renewDraft){renewDraft.hours=Math.max(1,renewDraft.hours-1);paintRenew();return}
+        if(e.target.closest('#renewPlus')&&renewDraft){renewDraft.hours=Math.min(24,renewDraft.hours+1);paintRenew();return}
+        if(e.target.closest('#renewSubmit')){submitRenew();return}
+        var renewOpen=e.target.closest('[data-renew-order]');
+        if(renewOpen){openRenew(renewOpen.getAttribute('data-renew-order'));return}
         var discordRetryBtn=e.target.closest('[data-discord-retry]');
         if(discordRetryBtn){
           e.preventDefault();
