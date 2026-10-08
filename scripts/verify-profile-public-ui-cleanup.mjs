@@ -60,16 +60,15 @@ test("keeps bottom CTAs 咨询客服 + 立即下单", () => {
 });
 
 test("cache bust updated on profile.html", () => {
-  assert.match(html, /profile-detail\.js\?v=20260921profileClean2/);
-  assert.match(html, /profile\.css\?v=20260921profileClean2/);
+  assert.match(html, /profile-detail\.js\?v=20261008voice3/);
+  assert.match(html, /profile\.css\?v=20261008voice3/);
   assert.match(html, /multi-companion-team\.js/);
 });
 
-test("always renders 陪玩相册 section (not only when gallery has items)", () => {
-  assert.match(js, /陪玩相册/);
+test("always renders photo album section", () => {
+  assert.match(js, /照片相册/);
   assert.match(js, /data-pd-album-section/);
-  assert.match(js, /暂无相册内容/);
-  // Must not gate the whole section on galleryList.length alone (empty → disappear)
+  assert.match(js, /暂无照片/);
   assert.match(js, /albumSectionHtml/);
 });
 
@@ -77,6 +76,41 @@ test("album section placed before 数据表现", () => {
   const albumIdx = js.indexOf("albumSectionHtml");
   const perfIdx = js.indexOf("<h2>数据表现</h2>");
   assert.ok(albumIdx > 0 && perfIdx > albumIdx, "albumSectionHtml must appear before 数据表现 markup");
+});
+
+test("detail page has one order bar and the new section order", () => {
+  assert.doesNotMatch(js, /pd-hero-actions/);
+  assert.doesNotMatch(js, /pd-newcomer-badge/);
+  assert.doesNotMatch(js, /真实订单评价/);
+  assert.doesNotMatch(js, /<h2>荣誉<\/h2>/);
+  assert.match(js, /<h2>评价<\/h2>/);
+  assert.match(js, /<h2>数据表现<\/h2>/);
+  const nameAt = js.indexOf('class="pd-name-row"');
+  const aboutAt = js.indexOf("<h2>关于TA</h2>");
+  assert.match(js, /class="pd-name-row"><h1>' \+[\s\S]{0,240}voiceBody \+/);
+  assert.doesNotMatch(js, /data-pd-voice-section/);
+  const albumAt = js.indexOf("albumSectionHtml +");
+  const serviceAt = js.indexOf("<h2>TA可以提供的服务</h2>");
+  const recordAt = js.indexOf("achievementSectionHtml +");
+  const statAt = js.indexOf("<h2>数据表现</h2>");
+  const giftAt = js.indexOf("<h2>礼物墙</h2>");
+  const reviewAt = js.indexOf("<h2>评价</h2>");
+  assert.ok(nameAt > 0 && nameAt < aboutAt, "name row sits above 关于TA");
+  assert.ok(aboutAt < albumAt && albumAt < serviceAt && serviceAt < recordAt, "about, album, services, records stay in order");
+  assert.ok(recordAt < statAt && statAt < giftAt && giftAt < reviewAt, "records, stats, gifts, reviews stay in order");
+  const cta = js.split("咨询客服").length - 1;
+  assert.equal(cta, 1);
+});
+
+test("voice player is only the round toggle", () => {
+  assert.match(js, /data-voice-toggle/);
+  assert.match(js, /data-voice-glyph/);
+  assert.doesNotMatch(js, /pd-voice-range/);
+  assert.doesNotMatch(js, /pd-voice-time/);
+  assert.doesNotMatch(js, /data-voice-range/);
+  assert.match(css, /\.pd-voice-toggle\{[\s\S]*?width:42px !important/);
+  assert.match(css, /\.pd-name-row\{[\s\S]*?flex-wrap:nowrap/);
+  assert.doesNotMatch(css, /\.pd-voice-range/);
 });
 
 test("does not restore removed duplicate meta", () => {

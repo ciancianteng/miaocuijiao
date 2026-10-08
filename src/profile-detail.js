@@ -288,6 +288,7 @@
   }
 
   function render(c) {
+    stopProfileVoices();
     var s = shell();
     if (!s) return;
     if (window.MCJCompanionLevels && window.MCJCompanionLevels.normalizeCompanion) {
@@ -313,10 +314,12 @@
     }
     var hasVoice = isPlayableVoice(c.voiceUrl);
     var voiceBody = hasVoice
-      ? '<div class="pd-voice-player"><audio controls preload="none" src="' +
+      ? '<div class="pd-voice" data-pd-voice>' +
+        '<button type="button" class="pd-voice-toggle is-paused" data-voice-toggle aria-label="播放语音"><span data-voice-glyph>▶</span></button>' +
+        '<audio preload="metadata" src="' +
         esc(c.voiceUrl) +
         '"></audio></div>'
-      : '<p class="pd-voice-empty">暂未上传语音介绍</p>';
+      : "";
     var videoUrl = String(c.videoUrl || c.showcaseVideoUrl || "").trim();
     var hasVideo = !!(videoUrl && /^https?:\/\//i.test(videoUrl));
     var videoList = Array.isArray(c.videos)
@@ -453,7 +456,6 @@
     var galleryWall =
       galleryList.length > 0
         ? galleryList
-            .slice(0, 12)
             .map(function (g, idx) {
               var url = String(g.url || "");
               var isVideo = /\.(mp4|webm|mov)(\?|$)/i.test(url) || /video/i.test(String(g.mediaType || g.media_type || g.type || ""));
@@ -480,24 +482,18 @@
             })
             .join("")
         : '<p class="pd-album-empty">暂无相册内容</p>';
-    var albumSectionHtml =
-      '<section class="detail-card game-wall pd-album-card" data-pd-album-section>' +
-      '<div class="section-head"><h2>照片</h2>' +
-      (galleryList.length ? "<span>" + galleryList.length + " 张</span>" : "") +
-      "</div>" +
-      (galleryList.length
-        ? '<div class="wall-grid pd-media-rail" data-profile-album>' + galleryWall + "</div>" +
-          (galleryList.length > 12
-            ? '<button type="button" class="pd-album-more" data-pd-album-more>查看更多（' +
-              galleryList.length +
-              "）</button>"
-            : "")
-        : '<div class="pd-album-empty-wrap">' + galleryWall + "</div>") +
-      "</section>";
+    var albumSectionHtml = galleryList.length
+      ? '<section class="pd-block" data-pd-album-section>' +
+        '<div class="pd-head"><h2>照片相册</h2><span>' +
+        galleryList.length +
+        " 张</span></div>" +
+        '<div class="pd-rail" data-profile-album>' +
+        galleryWall +
+        "</div></section>"
+      : '<section class="pd-block" data-pd-album-section><div class="pd-head"><h2>照片相册</h2></div><p class="pd-empty">暂无照片</p></section>';
     var achievementWall =
       achievementList.length > 0
         ? achievementList
-            .slice(0, 12)
             .map(function (g, idx) {
               var url = String(g.url || "");
               var isVideo =
@@ -506,7 +502,7 @@
                 /video/i.test(String(g.mediaType || g.media_type || ""));
               if (isVideo) {
                 return (
-                  '<button type="button" class="mcj-album-thumb mcj-album-thumb--video" data-achieve-index="' +
+                  '<button type="button" class="mcj-album-thumb mcj-album-thumb--video" data-album-index="' +
                   idx +
                   '" data-album-url="' +
                   esc(url) +
@@ -518,7 +514,7 @@
                 );
               }
               return (
-                '<img class="mcj-album-thumb" data-achieve-index="' +
+                '<img class="mcj-album-thumb" data-album-index="' +
                 idx +
                 '" src="' +
                 esc(url) +
@@ -527,17 +523,17 @@
             })
             .join("")
         : '<p class="pd-album-empty">暂无游戏战绩</p>';
-    var achievementSectionHtml =
-      '<section class="detail-card game-wall pd-album-card" data-pd-achieve-section>' +
-      '<div class="section-head"><h2>游戏战绩</h2>' +
-      (achievementList.length ? "<span>" + achievementList.length + " 个</span>" : "") +
-      "</div>" +
-      (achievementList.length
-        ? '<div class="wall-grid pd-media-rail" data-profile-achieve>' + achievementWall + "</div>"
-        : '<div class="pd-album-empty-wrap">' + achievementWall + "</div>") +
-      "</section>";
+    var achievementSectionHtml = achievementList.length
+      ? '<section class="pd-block" data-pd-achieve-section>' +
+        '<div class="pd-head"><h2>游戏战绩</h2><span>' +
+        achievementList.length +
+        " 个</span></div>" +
+        '<div class="pd-rail" data-profile-achieve>' +
+        achievementWall +
+        "</div></section>"
+      : '<section class="pd-block" data-pd-achieve-section><div class="pd-head"><h2>游戏战绩</h2></div><p class="pd-empty">暂无游戏战绩</p></section>';
     var videoSectionHtml = videoList.length
-      ? '<section class="detail-card pd-video-card"><div class="section-head"><h2>视频</h2><span>' +
+      ? '<section class="pd-block"><div class="pd-head"><h2>视频</h2><span>' +
         videoList.length +
         " 个</span></div>" +
         videoHtml +
@@ -580,7 +576,11 @@
             var when = reviewDate(r.createdAt);
             var badge = reviewBadge(n);
             var avatarUrl = String(r.avatarUrl || r.bossAvatar || "").trim();
-            var content = String(r.content || "").trim() || "老板已完成真实订单评价";
+            var content = String(r.content || "").trim();
+            var metaBits = [];
+            if (orderShown && orderShown !== "-") metaBits.push("订单 " + orderShown);
+            if (gameLabel && gameLabel !== "-") metaBits.push(gameLabel);
+            if (when) metaBits.push(when);
             var images = (Array.isArray(r.images) ? r.images : [])
               .filter(function (u) {
                 return /^https:\/\//i.test(String(u || ""));
@@ -614,38 +614,26 @@
               : '<span class="pd-review-avatar is-letter">' + letter + "</span>";
             return (
               '<article class="pd-review-item">' +
-              '<p class="pd-review-stars" aria-label="' +
+              '<div class="pd-review-top">' +
+              avatarHtml +
+              '<div class="pd-review-who"><span class="pd-review-boss-code">' +
+              esc(bossLabel) +
+              '</span><span class="pd-review-stars" aria-label="' +
               n +
               ' 星">' +
               esc(stars) +
-              "</p>" +
+              "</span></div></div>" +
               (badge ? '<p class="pd-review-badge">' + esc(badge) + "</p>" : "") +
-              '<div class="pd-review-boss">' +
-              avatarHtml +
-              '<span class="pd-review-boss-code">' +
-              esc(bossLabel) +
-              "</span></div>" +
-              '<p class="pd-review-order" title="' +
-              esc(orderFull) +
-              '">订单：' +
-              esc(orderShown) +
-              "</p>" +
-              '<p class="pd-review-game">' +
-              esc(gameLabel) +
-              "</p>" +
-              (when ? '<p class="pd-review-time">' + esc(when) + "</p>" : "") +
               '<p class="pd-review-body">' +
               esc(content) +
               '</p><button type="button" class="pd-review-expand" data-review-expand hidden aria-expanded="false">展开↓</button>' +
+              (metaBits.length ? '<p class="pd-review-meta">' + esc(metaBits.join(" · ")) + "</p>" : "") +
               imagesHtml +
               "</article>"
             );
           })
           .join("")
-      : '<div class="pd-review-empty" role="status">' +
-        '<p class="pd-review-empty-title">暂无评价</p>' +
-        '<p class="pd-review-empty-sub">完成订单后将展示老板的真实评价与排名</p>' +
-        "</div>";
+      : '<p class="pd-empty">暂无评价</p>';
     var hasRating = c.rating != null && Number(c.rating) > 0;
     var ratingText = hasRating
       ? Number(c.rating).toFixed(1) + "（" + reviewCount + " 条）"
@@ -669,129 +657,162 @@
     var weeklyRankText = rankText(weeklyRank);
     var monthlyRankText = rankText(monthlyRank);
     var popScoreText = plainEmptyMetric(popScore);
-    var newcomerBadge = isNewcomer ? '<span class="pd-newcomer-badge">新人陪玩</span>' : "";
+    var tagSeen = {};
+    var profileTags = [];
+    function addProfileTag(text) {
+      var label = String(text || "").replace(/\s+/g, " ").trim();
+      if (!label || /^(无|暂无|未设置|-|—|新人陪玩)$/.test(label)) return;
+      var key = label.toLowerCase();
+      if (tagSeen[key]) return;
+      tagSeen[key] = 1;
+      profileTags.push(label);
+    }
+    voiceLineRaw.split(/[、,，/|]+/).forEach(addProfileTag);
+    (c.certTags || c.certificationTags || []).forEach(function (tag) {
+      addProfileTag(typeof tag === "string" ? tag : (tag && (tag.name || tag.title)) || "");
+    });
+    (Array.isArray(c.tags) ? c.tags : []).forEach(function (tag) {
+      addProfileTag(typeof tag === "string" ? tag : (tag && (tag.name || tag.title)) || "");
+    });
+    if (pop && pop.weekly) {
+      var honorRank = Number(pop.weekly.rank || 0);
+      if (honorRank === 1) addProfileTag("冠军");
+      else if (honorRank === 2) addProfileTag("亚军");
+      else if (honorRank === 3) addProfileTag("季军");
+      else if (honorRank > 0 && honorRank <= 10) addProfileTag("TOP " + honorRank);
+      if (honorRank > 0 && honorRank <= 20) addProfileTag("热门陪玩");
+    }
+    if (gameChipLabel) addProfileTag(gameChipLabel);
+    (Array.isArray(c.gameRanks) ? c.gameRanks : []).forEach(function (rankRow) {
+      if (!rankRow || !String(rankRow.rank || "").trim() || !String(rankRow.name || "").trim()) return;
+      addProfileTag(String(rankRow.name).trim() + " " + String(rankRow.rank).trim());
+    });
+    if (levelChipLabel && !/^(未设置|-|—)$/.test(levelChipLabel)) addProfileTag(levelChipLabel);
+    profileTags = profileTags.filter(function (label, index, list) {
+      return !list.some(function (other, otherIndex) {
+        return otherIndex !== index && other.indexOf(label) === 0 && other.length > label.length;
+      });
+    });
+    var tagsHtml = profileTags.length
+      ? '<div class="pd-tags">' +
+        profileTags
+          .map(function (label) {
+            return '<span class="pd-tag">' + esc(label) + "</span>";
+          })
+          .join("") +
+        "</div>"
+      : "";
+    var orderStat = completedOrders > 0 ? String(completedOrders) : "—";
+    var rateStat = "—";
+    if (reviewCount > 0) {
+      var rate = Number(c.goodRate);
+      if (!Number.isFinite(rate) && c.goodReviewCount != null && Number.isFinite(Number(c.goodReviewCount))) {
+        rate = Math.round((Number(c.goodReviewCount) / reviewCount) * 1000) / 10;
+      }
+      if (Number.isFinite(rate)) {
+        if (rate < 0) rate = 0;
+        if (rate > 100) rate = 100;
+        rateStat = String(Math.round(rate * 10) / 10).replace(/\.0$/, "") + "%";
+      }
+    }
+    var scoreStat = hasRating ? Number(c.rating).toFixed(1) : "—";
 
     s.setAttribute("data-companion-level", c.levelId || "");
     var shareName = String(c.name || c.nickname || "陪玩").trim() || "陪玩";
     var shareUrl = exclusiveProfileUrl(publicId);
-    var shareBtn =
-      '<button type="button" class="pd-share-btn"' +
-      (shareUrl
-        ? ' data-profile-share data-share-url="' +
-          esc(shareUrl) +
-          '" data-share-name="' +
-          esc(shareName) +
-          '" data-share-id="' +
-          esc(String(publicId || "").toUpperCase()) +
-          '"'
-        : " disabled") +
-      ' aria-label="分享陪玩专属链接"><span>分享</span><svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true" focusable="false"><path d="M7 17 17 7M9 7h8v8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>';
+    var shareAttrs = shareUrl
+      ? ' data-profile-share data-share-url="' +
+        esc(shareUrl) +
+        '" data-share-name="' +
+        esc(shareName) +
+        '" data-share-id="' +
+        esc(String(publicId || "").toUpperCase()) +
+        '"'
+      : " disabled";
+    var shareIcon =
+      '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false"><path d="M12 16V4M12 4 8 8M12 4l4 4M6 20h12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+    var backIcon =
+      '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false"><path d="M14.5 6 8.5 12l6 6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
     s.innerHTML =
-      '<div class="pd-share-bar"><button type="button" class="pd-share-back" data-profile-back>← 返回</button>' +
-      shareBtn +
-      "</div>" +
-      '<section class="profile-hero detail-card" data-companion-level="' +
-      esc(c.levelId || "") +
-      '"><div class="profile-avatar-wrap"><img class="profile-avatar" src="' +
+      '<figure class="pd-cover">' +
+      '<img src="' +
       esc(image) +
       '" alt="' +
-      esc(c.name) +
-      ' 头像" onerror="this.onerror=null;this.src=\'/default-avatar.png\'"></div><div class="profile-info-panel"><p class="detail-label">MEOW CUI JIAO</p>' +
-      '<div class="pd-name-row"><h1>' +
+      esc(c.name || "陪玩") +
+      '" width="900" height="882" onerror="this.onerror=null;this.src=\'/default-avatar.png\'">' +
+      '<div class="pd-nav"><button type="button" class="pd-icon-btn" data-profile-back aria-label="返回">' +
+      backIcon +
+      '</button><button type="button" class="pd-icon-btn" aria-label="分享陪玩专属链接"' +
+      shareAttrs +
+      ">" +
+      shareIcon +
+      "</button></div></figure>" +
+      '<header class="pd-identity"><div class="pd-name-row"><h1>' +
       esc(c.name || c.nickname || "陪玩") +
       "</h1>" +
-      (newcomerBadge || "") +
-      '</div><div class="profile-id">ID：' +
-      esc(publicId || "待生成") +
+      voiceBody +
       "</div>" +
-      (voiceLineRaw ? '<p class="pd-voice-line">声线：' + esc(voiceLineRaw) + "</p>" : "") +
-      '<div class="pd-hero-actions"><a class="pd-btn pd-btn-secondary" href="support.html?start=1">咨询客服</a><button type="button" class="pd-btn pd-btn-primary" data-open-order>立即下单</button></div>' +
-      "</div></section>" +
-      '<section class="detail-card pd-about"><div class="section-head"><h2>关于TA</h2></div><p class="profile-bio' +
+      tagsHtml +
+      '<p class="pd-id">ID：' +
+      esc(publicId || "待生成") +
+      "</p></header>" +
+      '<section class="pd-block"><h2>关于TA</h2><p class="pd-copy' +
       (bioEmpty ? " is-empty" : "") +
       '">' +
       esc(bioText) +
       "</p></section>" +
-      ((certHtml || popBadges)
-        ? '<section class="detail-card pd-honors"><div class="section-head"><h2>荣誉</h2></div><div class="pd-honor-row">' + (certHtml || "") + (popBadges || "") + "</div></section>"
-        : "") +
-      '<section class="detail-card pd-offers" id="pdOffers"><div class="section-head"><h2>TA可以提供的服务</h2></div><div class="pd-offer-grid" data-pd-offers><p class="pd-offer-empty">正在读取服务…</p></div></section>' +
-      '<section class="detail-card pd-voice-card' +
-      (hasVoice ? "" : " is-empty") +
-      '"><div class="section-head"><h2>语音介绍</h2></div><div class="pd-voice-body">' +
-      voiceBody +
-      "</div></section>" +
       albumSectionHtml +
       videoSectionHtml +
+      '<section class="pd-block" id="pdOffers"><div class="pd-head"><h2>TA可以提供的服务</h2></div><div data-pd-offers><p class="pd-empty">正在读取服务…</p></div></section>' +
       achievementSectionHtml +
-      '<section class="detail-card info-card pd-info-card pd-info-card--full"><div class="section-head"><h2>数据表现</h2></div>' +
-      (function () {
-        var hasAny =
-          hasRating ||
-          goodCount > 0 ||
-          favCount > 0 ||
-          completedOrders > 0 ||
-          Number(popScore) > 0 ||
-          Number(weeklyRank) > 0 ||
-          Number(monthlyRank) > 0;
-        if (!hasAny) {
-          return '<p class="pd-perf-empty">暂无数据，完成订单后将逐步生成表现数据。</p>';
-        }
-        return (
-          '<div class="pd-meta-list">' +
-          metaRow("评分", esc(ratingText), !hasRating) +
-          metaRow("好评数", esc(goodText), !(goodCount > 0)) +
-          metaRow("收藏", esc(favText), !(favCount > 0)) +
-          metaRow("完成订单", esc(plainEmptyMetric(completedOrders)), !(completedOrders > 0)) +
-          metaRow("人气值", esc(popScoreText), !(Number(popScore) > 0)) +
-          metaRow("本周排名", esc(weeklyRankText), !(Number(weeklyRank) > 0)) +
-          metaRow("本月排名", esc(monthlyRankText), !(Number(monthlyRank) > 0)) +
-          "</div>"
-        );
-      })() +
-      giftActions +
-      "</section>" +
+      '<section class="pd-block"><h2>数据表现</h2><div class="pd-stat-row">' +
+      '<div><strong>' +
+      esc(orderStat) +
+      '</strong><span>完成订单</span></div>' +
+      '<div><strong>' +
+      esc(rateStat) +
+      '</strong><span>好评率</span></div>' +
+      '<div><strong>' +
+      esc(scoreStat) +
+      '</strong><span>综合评分</span></div>' +
+      "</div></section>" +
       (function () {
         var wall = Array.isArray(c.giftWall) ? c.giftWall : Array.isArray(c.gift_wall) ? c.gift_wall : [];
         var chips = wall.length
-          ? wall
+          ? '<div class="pd-gift-row">' +
+            wall
               .map(function (w) {
                 var img = w.giftImage || w.gift_image_url || w.image || "";
                 var name = w.giftName || w.gift_name || "礼物";
-                var qty = w.totalQuantity != null ? w.totalQuantity : w.total_quantity || 0;
+                var qtyRaw = w.totalQuantity != null ? w.totalQuantity : w.total_quantity;
+                var qty = qtyRaw != null && Number.isFinite(Number(qtyRaw)) ? Number(qtyRaw) : null;
                 return (
-                  '<div class="pd-gift-chip">' +
+                  '<div class="pd-gift">' +
                   (img
-                    ? '<img src="' + esc(img) + '" alt="" loading="lazy" />'
-                    : '<span class="pd-gift-emoji" aria-hidden="true">🎁</span>') +
+                    ? '<img src="' + esc(img) + '" alt="" loading="lazy">'
+                    : '<span class="pd-gift-fallback" aria-hidden="true">礼</span>') +
                   "<strong>" +
                   esc(name) +
-                  "</strong><em>×" +
-                  esc(qty) +
-                  "</em></div>"
+                  "</strong>" +
+                  (qty == null ? "" : "<em>×" + esc(qty) + "</em>") +
+                  "</div>"
                 );
               })
-              .join("")
-          : '<div class="pd-gift-empty-state">' +
-            "<p><strong>还没有收到礼物</strong></p>" +
-            "<p>成为第一个送 TA 礼物的老板吧</p>" +
-            (giftActions
-              ? '<button type="button" class="mcj-primary pd-gift-cta" data-open-gift>送TA礼物</button>'
-              : '<a class="mcj-primary pd-gift-cta" href="login.html">登录后送TA礼物</a>') +
-            "</div>";
+              .join("") +
+            "</div>"
+          : '<p class="pd-empty">还没有收到礼物</p>';
         return (
-          '<section class="detail-card pd-gift-wall" id="pdGiftWall">' +
-          '<div class="section-head"><h2>礼物墙</h2><span>老板们送给 TA 的心意</span></div>' +
-          '<div class="pd-gift-wall-grid">' +
+          '<section class="pd-block" id="pdGiftWall"><div class="pd-head"><h2>礼物墙</h2><span class="pd-head-actions">' +
+          '<button type="button" class="pd-text-btn" data-open-gift>送TA礼物</button>' +
+          (token() ? '<button type="button" class="pd-text-btn" data-open-tip>打赏</button>' : "") +
+          "</span></div>" +
           chips +
-          "</div></section>"
+          "</section>"
         );
       })() +
-      '<section class="detail-card real-review-wall"><div class="section-head"><h2>真实订单评价</h2><span>' +
-      (isNewcomer
-        ? "新人陪玩"
-        : "好评 " + esc(goodText) + " · 共 " + esc(reviewCount) + " 条") +
-      '</span></div><div class="review-list" id="realReviewList">' +
+      '<section class="pd-block"><div class="pd-head"><h2>评价</h2>' +
+      (reviewCount > 0 ? "<span>" + esc(reviewCount) + "</span>" : "") +
+      '</div><div class="pd-reviews" id="realReviewList">' +
       reviewHtml +
       "</div></section>";
 
@@ -801,6 +822,10 @@
 
     if (window.MCJCompanionIdentity && typeof window.MCJCompanionIdentity.bindAlbum === "function") {
       window.MCJCompanionIdentity.bindAlbum(s.querySelector("[data-profile-album]"), galleryUrls);
+      var achieveUrls = achievementList.map(function (g) {
+        return g.url;
+      });
+      window.MCJCompanionIdentity.bindAlbum(s.querySelector("[data-profile-achieve]"), achieveUrls);
     }
 
     var b = bottom();
@@ -818,21 +843,7 @@
       }
     }
 
-    // Empty / corrupt voice files must not leave a dead 0:00/0:00 control.
-    s.querySelectorAll(".pd-voice-player audio").forEach(function (audio) {
-      var card = audio.closest(".pd-voice-card");
-      var body = audio.closest(".pd-voice-body");
-      function showVoiceEmpty() {
-        if (!body) return;
-        body.innerHTML = '<p class="pd-voice-empty">暂未上传语音介绍</p>';
-        if (card) card.classList.add("is-empty");
-      }
-      audio.addEventListener("error", showVoiceEmpty);
-      audio.addEventListener("loadedmetadata", function () {
-        var d = Number(audio.duration);
-        if (!Number.isFinite(d) || d <= 0.05) showVoiceEmpty();
-      });
-    });
+    bindVoicePlayers(s);
   }
 
   function closeSheet() {
@@ -871,25 +882,77 @@
       });
   }
 
+  function stopProfileVoices() {
+    document.querySelectorAll("[data-pd-voice] audio").forEach(function (audio) {
+      try {
+        audio.pause();
+      } catch (err) {}
+    });
+  }
+  function bindVoiceLeave() {
+    if (bindVoiceLeave.done) return;
+    bindVoiceLeave.done = true;
+    window.addEventListener("pagehide", stopProfileVoices);
+    document.addEventListener("visibilitychange", function () {
+      if (document.hidden) stopProfileVoices();
+    });
+  }
+  function bindVoicePlayers(root) {
+    if (!root) return;
+    bindVoiceLeave();
+    root.querySelectorAll("[data-pd-voice]").forEach(function (box) {
+      var audio = box.querySelector("audio");
+      var btn = box.querySelector("[data-voice-toggle]");
+      var glyph = btn && btn.querySelector("[data-voice-glyph]");
+      if (!audio || !btn || !glyph) return;
+      function hideBroken() {
+        if (box.parentNode) box.remove();
+      }
+      function paint() {
+        var paused = audio.paused || audio.ended;
+        glyph.textContent = paused ? "▶" : "⏸";
+        btn.classList.toggle("is-paused", paused);
+        btn.setAttribute("aria-label", paused ? "播放语音" : "暂停语音");
+      }
+      btn.addEventListener("click", function () {
+        if (audio.paused || audio.ended) {
+          document.querySelectorAll("[data-pd-voice] audio").forEach(function (other) {
+            if (other !== audio) {
+              try {
+                other.pause();
+              } catch (err) {}
+            }
+          });
+          if (audio.ended) {
+            try {
+              audio.currentTime = 0;
+            } catch (err) {}
+          }
+          audio.play().catch(function () {});
+        } else audio.pause();
+      });
+      audio.addEventListener("play", paint);
+      audio.addEventListener("pause", paint);
+      audio.addEventListener("ended", function () {
+        try {
+          audio.currentTime = 0;
+        } catch (err) {}
+        paint();
+      });
+      audio.addEventListener("loadedmetadata", function () {
+        var d = Number(audio.duration);
+        if (!Number.isFinite(d) || d <= 0.05) hideBroken();
+        else paint();
+      });
+      audio.addEventListener("error", hideBroken);
+      paint();
+    });
+  }
   function ensureProfileSkin() {
     if (document.getElementById("pdSkin")) return;
     var style = document.createElement("style");
     style.id = "pdSkin";
-    style.textContent =
-      ".profile-detail-page{overflow-x:hidden}.profile-detail-shell{max-width:100%}" +
-      ".profile-hero,.pd-about,.pd-offers,.pd-voice-card{overflow:hidden}" +
-      ".profile-info-panel h1,.profile-bio,.pd-offer-card{overflow-wrap:anywhere}" +
-      ".pd-voice-line{margin:8px 0 0;color:#f3d5e4;font-weight:700}" +
-      ".pd-hero-actions{display:flex;gap:8px;margin-top:14px}.pd-hero-actions .pd-btn{flex:1;min-height:42px;border-radius:12px;border:0;font-weight:800}" +
-      ".pd-btn-primary{background:linear-gradient(180deg,#ffe2f0,#e99ac4);color:#1b0712}" +
-      ".pd-btn-secondary{display:grid;place-items:center;text-decoration:none;color:#ffe8f4;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12)!important}" +
-      ".pd-offer-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;padding:14px}" +
-      ".pd-offer-card{display:grid;gap:4px;text-align:left;padding:12px;border-radius:14px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.04);color:#fff;cursor:pointer}" +
-      ".pd-offer-card small{color:#c9b3c0}.pd-offer-empty{padding:14px;color:#c9b3c0}" +
-      ".profile-bottom-bar.pd-bottom-bar{grid-template-columns:1fr 1fr;height:auto;bottom:max(10px,env(safe-area-inset-bottom))}" +
-      ".profile-bottom-bar.pd-bottom-bar a,.profile-bottom-bar.pd-bottom-bar button{min-height:44px}" +
-      ".pd-honor-row{display:flex;flex-wrap:wrap;gap:8px;padding:14px}" +
-      "@media(max-width:430px){.profile-detail-shell{width:calc(100% - 16px)}.profile-hero{grid-template-columns:1fr}.profile-avatar{max-height:420px}.profile-info-panel h1{font-size:28px}}";
+    style.textContent = ".profile-detail-page{overflow-x:clip}.profile-detail-shell{max-width:100%;min-width:0}";
     document.head.appendChild(style);
   }
   function loadProfileOffers(c) {
@@ -901,15 +964,31 @@
       .then(function (body) {
         var offers = (body && body.offers) || [];
         if (!offers.length) {
-          host.innerHTML = '<p class="pd-offer-empty">这位陪玩还没有添加可展示的服务。</p>';
+          host.innerHTML = '<p class="pd-empty">暂无可展示的服务</p>';
           return;
         }
-        host.innerHTML = offers.map(function (item) {
-          return '<button type="button" class="pd-offer-card" data-pd-offer data-kind="' + esc(item.kind) + '" data-id="' + esc(item.id) + '" data-name="' + esc(item.name) + '"><strong>' + esc(item.name) + '</strong><small>' + esc(item.kind === "product" ? "更多玩法" : "服务") + "</small></button>";
-        }).join("");
+        host.innerHTML = offers
+          .map(function (item) {
+            var price = Number(item.price);
+            var priceHtml = Number.isFinite(price) && price > 0 ? '<span class="pd-offer-price">' + esc(money(price)) + "</span>" : "";
+            return (
+              '<button type="button" class="pd-offer" data-pd-offer data-kind="' +
+              esc(item.kind) +
+              '" data-id="' +
+              esc(item.id) +
+              '" data-name="' +
+              esc(item.name) +
+              '"><strong>' +
+              esc(item.name) +
+              "</strong>" +
+              priceHtml +
+              "</button>"
+            );
+          })
+          .join("");
       })
       .catch(function () {
-        host.innerHTML = '<p class="pd-offer-empty">服务列表暂时读取失败。</p>';
+        host.innerHTML = '<p class="pd-empty">服务暂时读取失败</p>';
       });
   }
   function openOrderSheet(pref) {

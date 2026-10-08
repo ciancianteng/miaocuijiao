@@ -374,7 +374,7 @@ textarea {
 }
 
 /* mcj-design-system hard override: visible, visual-only unification */
-button:not(.modal-close):not(.close):not(.ad-dot):not(.mcj-hero-arrow):not(.mcj-hero-dot):not(.mcj-po-chip):not(.mcj-po-close):not(.mcj-po-cancel-link):not(.mcj-po-submit):not(.mcj-po-pay-card):not(.cs-conversation):not(.support-session):not(.pw-btn):not(.pw-status-btn):not(.companion-card-action),
+button:not(.modal-close):not(.close):not(.ad-dot):not(.mcj-hero-arrow):not(.mcj-hero-dot):not(.mcj-po-chip):not(.mcj-po-close):not(.mcj-po-cancel-link):not(.mcj-po-submit):not(.mcj-po-pay-card):not(.cs-conversation):not(.support-session):not(.pw-btn):not(.pw-status-btn):not(.companion-card-action):not(.pd-icon-btn):not(.pd-text-btn):not(.pd-voice-toggle):not(.pd-offer):not(.pd-bottom-primary):not(.pd-bottom-secondary),
 a.btn,
 .btn,
 .mcj-btn,
@@ -429,7 +429,7 @@ a.btn,
   transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease, background .18s ease !important;
 }
 
-button:not(.modal-close):not(.close):not(.ad-dot):not(.mcj-hero-arrow):not(.mcj-hero-dot):not(.mcj-po-chip):not(.mcj-po-close):not(.mcj-po-cancel-link):not(.mcj-po-submit):not(.mcj-po-pay-card):not(.cs-conversation):not(.support-session):not(.pw-btn):not(.pw-status-btn):not(.companion-card-action):hover,
+button:not(.modal-close):not(.close):not(.ad-dot):not(.mcj-hero-arrow):not(.mcj-hero-dot):not(.mcj-po-chip):not(.mcj-po-close):not(.mcj-po-cancel-link):not(.mcj-po-submit):not(.mcj-po-pay-card):not(.cs-conversation):not(.support-session):not(.pw-btn):not(.pw-status-btn):not(.companion-card-action):not(.pd-icon-btn):not(.pd-text-btn):not(.pd-voice-toggle):not(.pd-offer):not(.pd-bottom-primary):not(.pd-bottom-secondary):hover,
 a.btn:hover,
 .btn:hover,
 .mcj-btn:hover,
