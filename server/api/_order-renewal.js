@@ -212,19 +212,23 @@ export async function createRenewalOrder({ profile, body, db }) {
   return inserted;
 }
 
-const OPTIONAL_INSERT_COLUMNS = [
-  "service_snapshot",
-  "voice_mode",
-  "game_id_value",
-  "notes",
-  "quantity",
-  "pricing_unit",
-  "customer_service_id",
-];
+const REQUIRED_INSERT_COLUMNS = new Set([
+  "order_no",
+  "boss_id",
+  "companion_id",
+  "status",
+  "hours",
+  "unit_price",
+  "total_amount",
+  "created_at",
+  "is_renewal",
+  "renewal_of_order_id",
+  "renewal_source_order_no",
+]);
 
 async function insertRenewalRow(db, row, source, profile, preview) {
   const payload = { ...row };
-  for (let attempt = 0; attempt < OPTIONAL_INSERT_COLUMNS.length + 1; attempt += 1) {
+  for (let attempt = 0; attempt < 12; attempt += 1) {
     try {
       const rows = await db.supabaseJson(db.restUrl("orders"), {
         method: "POST",
@@ -246,7 +250,7 @@ async function insertRenewalRow(db, row, source, profile, preview) {
         throw fail(503, "RENEWAL_SCHEMA", "续单字段尚未就绪，请先执行订单续单 migration。原订单未修改。");
       }
       const missing = (msg.match(/'([a-z0-9_]+)' column/i) || msg.match(/column "([a-z0-9_]+)"/i) || [])[1];
-      if (missing && OPTIONAL_INSERT_COLUMNS.includes(missing) && Object.prototype.hasOwnProperty.call(payload, missing)) {
+      if (missing && !REQUIRED_INSERT_COLUMNS.has(missing) && Object.prototype.hasOwnProperty.call(payload, missing)) {
         delete payload[missing];
         continue;
       }
