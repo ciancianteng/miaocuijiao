@@ -3151,7 +3151,7 @@
       var wd=orderWithdrawState(o);
       if(wd==='done')out.push('<span class="pw-note">已提现</span>');
       else if(wd==='pending')out.push('<span class="pw-note">提现处理中</span>');
-      else if(income>0.8)out.push('<button class="pw-btn primary" type="button" data-order-withdraw="'+id+'" data-order-income="'+esc(income)+'" data-order-no="'+esc(o.orderNo||o.order_no||'')+'">提现</button>');
+      else if(income>0)out.push('<button class="pw-btn primary" type="button" data-balance-withdraw="1">去提现</button>');
     }
     return out.join('')||'<span class="pw-note">无可用操作</span>';
   }
@@ -3359,16 +3359,19 @@
     return lockBanner+
       '<form class="pw-card pad pw-form" data-withdraw-form novalidate>'+
       '<div class="pw-info-list" style="margin-bottom:14px">'+
-      infoRow('可提现余额',money(num(available)))+
-      (state.withdrawOrder?'<div data-withdraw-order>'+infoRow('订单收益','RM '+num(state.withdrawOrder.amount).toFixed(2))+infoRow('提现服务费','-RM 0.80')+infoRow('实际到账','RM '+Math.max(0,num(state.withdrawOrder.amount)-0.8).toFixed(2))+'</div>':'')+
-      infoRow('提现服务费','每次固定 RM 0.80')+
+      '<div><span>可提现工资</span><strong data-wd-available>RM '+esc(num(available).toFixed(2))+'</strong></div>'+
       infoRow('最低提现金额',(rules.minAmount||0)+' 猫粮')+
       infoRow('预计发放日期',(rules.nextSettlementDate||'-')+(rules.nextSettlementDate?'（星期五）':''))+
       infoRow('提现账户',rules.currentAccount||'未绑定')+
       infoRow('本周剩余次数',(rules.remainingThisWeek!=null?rules.remainingThisWeek:rules.remainingThisMonth||0)+' / '+(rules.weeklyLimit!=null?rules.weeklyLimit:rules.monthlyLimit||0))+
       '</div>'+
-      (state.withdrawOrder?'<input type="hidden" name="amount" value="'+esc(state.withdrawOrder.amount)+'">':'<label>提现猫粮数量<input name="amount" type="number" inputmode="decimal" step="0.01" placeholder="请输入数量" '+(can?'':'disabled')+'></label>')+
-      '<p class="pw-note" data-withdraw-preview>提现金额、服务费 RM0.80 与实际到账以提交后服务端计算为准。</p>'+
+      '<label>本次申请提现<input name="amount" type="number" inputmode="decimal" min="0.81" step="0.01" placeholder="请输入本次申请金额" '+(can?'':'disabled')+'></label>'+
+      '<div class="pw-info-list" style="margin:12px 0">'+
+      '<div><span>本次申请提现</span><strong data-wd-request>RM 0.00</strong></div>'+
+      '<div><span>固定手续费</span><strong data-wd-fee>RM 0.80</strong></div>'+
+      '<div><span>预计实际到账</span><strong data-wd-net>—</strong></div>'+
+      '</div>'+
+      '<p class="pw-note" data-withdraw-preview>实际到账 = 本次申请提现金额 - RM0.80。手续费在每次提现时收取一次，不从单笔订单收入里预扣。</p>'+
       '<label>备注（可选）<input name="remark" placeholder="可选" '+(can?'':'disabled')+'></label>'+
       '<button class="pw-btn primary" type="submit" '+(can?'':'disabled')+'>'+(state.withdrawBusy?'提交中…':'提交提现申请')+'</button>'+
       '</form>'+
@@ -3390,8 +3393,8 @@
         '</summary>'+
         '<div class="pw-info-list pw-record-body">'+
           infoRow('单号',x.withdrawalNo||humanId(x.id))+
-          infoRow('订单收益',money(num(x.grossAmountRm||x.catFoodAmount||x.amount)))+
-          infoRow('提现服务费','RM '+num(x.feeRm||0).toFixed(2))+
+          infoRow('申请提现',money(num(x.catFoodAmount||x.amount)))+
+          infoRow('固定手续费','RM '+num(x.feeRm||0).toFixed(2))+
           infoRow('实际到账','RM '+num(x.netAmountRm||0).toFixed(2))+
           infoRow('预计发放日期',x.settlementDate?(String(x.settlementDate).slice(0,10)+'（星期五）'):'-')+
           infoRow('当前状态',statusCn)+
@@ -5578,13 +5581,9 @@
       }).catch(function(err){toast(err.message||'保存失败')});
       return;
     }
-    var orderWithdraw=e.target.closest('[data-order-withdraw]');
-    if(orderWithdraw){
-      state.withdrawOrder={
-        id:orderWithdraw.getAttribute('data-order-withdraw'),
-        amount:num(orderWithdraw.getAttribute('data-order-income')),
-        orderNo:orderWithdraw.getAttribute('data-order-no')||''
-      };
+    var balanceWithdraw=e.target.closest('[data-balance-withdraw],[data-order-withdraw]');
+    if(balanceWithdraw){
+      state.withdrawOrder=null;
       state.earningsTab='withdraw';
       go('/companion/withdraw');
       return;
@@ -5821,7 +5820,29 @@
       return;
     }
   });
+  function paintWithdrawQuote(form,raw){
+    if(!form)return;
+    var requested=num(raw);
+    var fee=0.8;
+    var ok=requested>fee;
+    var net=ok?Math.round((requested-fee)*100)/100:0;
+    var requestEl=form.querySelector('[data-wd-request]');
+    var netEl=form.querySelector('[data-wd-net]');
+    var note=form.querySelector('[data-withdraw-preview]');
+    if(requestEl)requestEl.textContent='RM '+requested.toFixed(2);
+    if(netEl)netEl.textContent=ok?('RM '+net.toFixed(2)):'—';
+    if(note){
+      note.textContent=ok
+        ?'实际到账 = 本次申请提现金额 - RM0.80。手续费由服务端计算，每次提现只收取一次。'
+        :(requested>0?'本次申请金额必须高于 RM0.80':'实际到账 = 本次申请提现金额 - RM0.80。手续费在每次提现时收取一次，不从单笔订单收入里预扣。');
+    }
+  }
   document.addEventListener('input',function(e){
+    var withdrawAmount=e.target.closest('[data-withdraw-form] input[name="amount"]');
+    if(withdrawAmount){
+      paintWithdrawQuote(withdrawAmount.closest('[data-withdraw-form]'),withdrawAmount.value);
+      return;
+    }
     var profileField=e.target.closest('.pw-profile-form input,.pw-profile-form textarea,.pw-profile-form select');
     if(profileField){
       var form=profileField.closest('[data-profile-form]');
@@ -6891,16 +6912,20 @@
       if(!/^\d+(\.\d+)?$/.test(amountRaw)){toast('提现金额必须是正数');return}
       var amount=Number(amountRaw);
       if(!(amount>0)){toast('提现金额必须大于 0');return}
+      if(!(amount>0.8)){toast('本次申请金额必须高于 RM0.80');return}
       if(minAmount>0&&amount<minAmount){toast('提现金额不能低于最低提现额 '+minAmount+' 猫粮');return}
-      if(amount>available){toast('提现金额不能超过可提现余额 '+available+' 猫粮');return}
+      if(amount>available+0.001){toast('提现金额不能超过可提现工资 '+available+' 猫粮');return}
       if(!accountId&&!accountLabel){toast('请先在账号中心绑定并审核通过提现账户');return}
       if(num(rules.remainingThisWeek!=null?rules.remainingThisWeek:rules.remainingThisMonth)<=0){toast('本周提现次数已用完');return}
       state.withdrawBusy=true;
       paint();
-      var orderId=state.withdrawOrder&&state.withdrawOrder.id||'';
-      if(orderId)amount=num(state.withdrawOrder.amount);
-      api('request_withdrawal',{amount:amount,remark:remark,paymentAccountId:accountId,orderId:orderId}).then(function(res){
+      if(!state.withdrawIdempotencyKey){
+        state.withdrawIdempotencyKey=(window.crypto&&crypto.randomUUID)?crypto.randomUUID():('wd'+Date.now().toString(16)+Math.random().toString(16).slice(2,10));
+      }
+      var idempotencyKey=state.withdrawIdempotencyKey;
+      api('request_withdrawal',{amount:amount,remark:remark,paymentAccountId:accountId,idempotencyKey:idempotencyKey}).then(function(res){
         state.withdrawBusy=false;
+        state.withdrawIdempotencyKey='';
         state.withdrawOrder=null;
         var item=res&&(res.item||res.withdrawal||(res.data&&res.data.item));
         var preview=res&&res.preview;
@@ -6924,6 +6949,9 @@
         return loadData({soft:true});
       }).catch(function(err){
         state.withdrawBusy=false;
+        var status=Number(err&&err.status)||0;
+        var ended=/已结束/.test(String((err&&err.message)||''));
+        if((status>=400&&status<500&&status!==409)||ended)state.withdrawIdempotencyKey='';
         toast(err.message||'提现失败');
         paint();
       });

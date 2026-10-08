@@ -116,6 +116,7 @@ import {
   lockPayoutSources,
   upsertPayoutRequest,
 } from "./_payout-requests.js";
+import { assessWithdrawalRequest } from "./_withdraw-fee.js";
 import { listDepositPaymentMethods } from "./_platform-pay-qr.js";
 import {
   normalizeSettlementMethod,
@@ -238,7 +239,37 @@ const WITHDRAW_STATUS_TEXT = {
   cancelled: "已取消",
 };
 const WITHDRAW_FROZEN = PAYOUT_FROZEN_STATUSES;
-const WITHDRAW_ACTIVE = new Set([...WITHDRAW_FROZEN, "completed", "paid"]);
+const WITHDRAW_RELEASED = new Set(["rejected", "cancelled", "canceled", "pay_failed", "failed"]);
+const WITHDRAW_ACTIVE = new Set(
+  [...WITHDRAW_FROZEN, "completed", "paid"].filter((status) => !WITHDRAW_RELEASED.has(status))
+);
+const WITHDRAW_OPEN_RE =
+  /^(submitted|pending_friday|reviewing|pending|pending_review|rolled_over|approved|pending_payment|processing|paying|approved_pending_pay|paid_pending_receipt)$/;
+
+function withdrawalIdempotencyMarker(key) {
+  return `[[idem:${key}]]`;
+}
+
+async function findCompanionWithdrawalByIdempotency(db, companionId, key) {
+  const marker = withdrawalIdempotencyMarker(key);
+  const select =
+    "id,status,remark,cat_food_amount,amount,gross_amount_rm,fee_rm,net_amount_rm,withdrawal_no,settlement_date,account_last4,bank_name,created_at";
+  const rows = await db(
+    "companion_withdrawals",
+    `?companion_id=eq.${encodeURIComponent(companionId)}&select=${select}&order=created_at.desc&limit=80`
+  ).catch(() => []);
+  const hit = (Array.isArray(rows) ? rows : []).find((row) => String(row.remark || "").includes(marker));
+  if (hit) return hit;
+  try {
+    const byCol = await db(
+      "companion_withdrawals",
+      `?companion_id=eq.${encodeURIComponent(companionId)}&idempotency_key=eq.${encodeURIComponent(key)}&select=${select}&limit=1`
+    );
+    return byCol?.[0] || null;
+  } catch {
+    return null;
+  }
+}
 const SETTLEMENT_PREFIX = "MCJ_SETTLEMENT:";
 
 const REQUIRED_ENV = ["SUPABASE_URL", "SUPABASE_ANON_KEY", "SUPABASE_SERVICE_ROLE_KEY"];
@@ -2212,7 +2243,7 @@ function summaryFrom(myOrders, transactions, withdrawals = [], linkedOrders = []
   });
   // §8 freeze: in-flight withdrawals lock balance until REJECTED / CANCELED / PAID settles.
   const frozen = (withdrawals || [])
-    .filter((w) => WITHDRAW_FROZEN.has(w.status))
+    .filter((w) => WITHDRAW_FROZEN.has(w.status) && !WITHDRAW_RELEASED.has(w.status))
     .reduce((n, w) => n + money(w.cat_food_amount || w.amount), 0);
   const withdrawn = (withdrawals || [])
     .filter((w) => w.status === "completed")
@@ -2611,10 +2642,12 @@ async function bootstrapData(profile, companion) {
   const usedThisWeek = withdrawalRows.filter(
     (w) =>
       String(w.settlement_date || "").slice(0, 10) === nextSettlement &&
-      !/rejected|cancelled|pay_failed/.test(String(w.status || ""))
+      !/rejected|cancelled|pay_failed|failed/.test(String(w.status || ""))
   ).length;
   const usedThisMonth = withdrawalRows.filter(
-    (w) => String(w.submitted_at || "").slice(0, 7) === month && !/rejected|cancelled|pay_failed/.test(String(w.status || ""))
+    (w) =>
+      String(w.submitted_at || "").slice(0, 7) === month &&
+      !/rejected|cancelled|pay_failed|failed/.test(String(w.status || ""))
   ).length;
   const weeklyLimit = Number(weeklyCfg.max_withdrawals_per_week || cfg.max_withdrawals_per_month || 2);
   const monthlyLimit = Number(cfg.max_withdrawals_per_month || 8);
@@ -2625,9 +2658,7 @@ async function bootstrapData(profile, companion) {
   const accountOk = profile.status === "active" && !companionRow?.withdraw_frozen;
   const authModeWd = resolveCredentialMode(companionRow, deposit);
   const credentialOk = authModeWd === "deposit" ? depositOk : true;
-  const openPending = withdrawalRows.some((w) =>
-    /^(submitted|pending_friday|reviewing|pending|pending_review|rolled_over)$/.test(String(w.status || ""))
-  );
+  const openPending = withdrawalRows.some((w) => WITHDRAW_OPEN_RE.test(String(w.status || "")));
   const canWithdrawNow =
     canWork(profile, companionRow, deposit, identity) &&
     credentialOk &&
@@ -6740,25 +6771,48 @@ return json(res, 200, {
         return isolationForbiddenResponse(res, err);
       }
       let amount = money(body.amount || body.cat_food_amount || body.catFoodAmount);
-      const requestedOrderId = String(body.orderId || body.order_id || "").trim();
+      const idempotencyKey = String(body.idempotencyKey || body.idempotency_key || "").trim();
       const remark = String(body.remark || body.note || "").trim();
       const accountId = String(body.paymentAccountId || body.payment_account_id || "").trim();
-      const data = await bootstrapData(auth.profile, companion);
-      if (!requestedOrderId) {
-        const earlyRate = money(data.withdrawalRules.exchangeRate) || 1;
-        const earlyCents = Math.round(amount * earlyRate * 100);
-        if (earlyCents > 0 && earlyCents <= 80) {
-          return json(res, 400, { ok: false, message: "可提现金额必须高于 RM0.80" });
+      let data = await bootstrapData(auth.profile, companion);
+      if (!/^[A-Za-z0-9:_-]{8,80}$/.test(idempotencyKey)) {
+        return json(res, 400, { ok: false, message: "缺少提现幂等标识，请刷新页面后重新提交" });
+      }
+      const existingEarly = await findCompanionWithdrawalByIdempotency(
+        companionDb,
+        auth.profile.id,
+        idempotencyKey
+      );
+      if (existingEarly) {
+        if (WITHDRAW_RELEASED.has(String(existingEarly.status || ""))) {
+          return json(res, 409, { ok: false, message: "该提现申请已结束，请重新提交" });
         }
+        return json(res, 200, {
+          ok: true,
+          duplicate: true,
+          message: "提现申请已提交",
+          item: existingEarly,
+          preview: {
+            catFoodAmount: money(existingEarly.cat_food_amount || existingEarly.amount),
+            amount: money(existingEarly.amount || existingEarly.cat_food_amount),
+            grossAmountRm: money(existingEarly.gross_amount_rm || existingEarly.amount),
+            feeRm: money(existingEarly.fee_rm),
+            netAmountRm: money(existingEarly.net_amount_rm),
+            withdrawalNo: existingEarly.withdrawal_no,
+            settlementDate: existingEarly.settlement_date,
+            status: existingEarly.status,
+            statusText: WITHDRAW_STATUS_TEXT[existingEarly.status] || existingEarly.status,
+          },
+        });
       }
       if (!data.permissions.canWithdraw) {
         return json(res, 400, { ok: false, message: data.permissions.withdrawLockReason || "暂不可提现" });
       }
-      if (!requestedOrderId && !(amount > 0)) return json(res, 400, { ok: false, message: "提现金额必须大于 0" });
-      if (!requestedOrderId && amount < money(data.withdrawalRules.minAmount)) {
+      if (!(amount > 0)) return json(res, 400, { ok: false, message: "提现金额必须大于 0" });
+      if (amount < money(data.withdrawalRules.minAmount)) {
         return json(res, 400, { ok: false, message: `最低提现 ${data.withdrawalRules.minAmount} 猫粮` });
       }
-      if (!requestedOrderId && amount > money(data.earnings.withdrawable)) {
+      if (amount > money(data.earnings.withdrawable) + 0.001) {
         return json(res, 400, { ok: false, message: "可提现余额不足" });
       }
       if (Number(data.withdrawalRules.remainingThisWeek ?? data.withdrawalRules.remainingThisMonth ?? 0) <= 0) {
@@ -6775,16 +6829,6 @@ return json(res, 200, {
       const full = fullAccounts?.[0];
       if (!full || !/approved|verified/.test(String(full.status || ""))) {
         return json(res, 400, { ok: false, message: "结款账户未审核通过" });
-      }
-
-      const pendingDup = (data.withdrawals || []).find((w) =>
-        /^(submitted|pending_friday|reviewing|pending|pending_review|rolled_over)$/.test(String(w.status || ""))
-      );
-      if (pendingDup) {
-        return json(res, 400, {
-          ok: false,
-          message: "已有待周五结算的提现申请，请等待后台处理后再提交",
-        });
       }
 
       // Block withdraw while companion has orders in Friday refund queue / open refund
@@ -6811,71 +6855,106 @@ return json(res, 200, {
 
       const weeklyCfg = await loadFinanceWeeklySettings(companionDb).catch(() => mergeWeeklySettings({}));
       const settlementDate = computeSettlementDate(new Date(), weeklyCfg);
-
-      let lockedOrderId = "";
-      if (requestedOrderId) {
-        const orderRows = await companionDb(
-          "orders",
-          `?id=eq.${encodeURIComponent(requestedOrderId)}&companion_id=eq.${encodeURIComponent(auth.profile.id)}&select=id,status,order_no,companion_income,total_amount&limit=1`
-        ).catch(() => []);
-        const orderRow = orderRows?.[0];
-        if (!orderRow) return json(res, 400, { ok: false, message: "订单不存在或不属于你" });
-        if (!/completed|reviewed/.test(String(orderRow.status || ""))) {
-          return json(res, 400, { ok: false, message: "只有已完成订单可以按单提现" });
-        }
-        let income = money(orderRow.companion_income);
-        if (!(income > 0)) {
-          const txs = await companionDb(
-            "transactions",
-            `?order_id=eq.${encodeURIComponent(requestedOrderId)}&user_id=eq.${encodeURIComponent(auth.profile.id)}&transaction_type=eq.companion_income&select=amount,status&limit=20`
-          ).catch(() => []);
-          income = (Array.isArray(txs) ? txs : [])
-            .filter((row) => String(row.status || "") !== "cancelled")
-            .reduce((sum, row) => sum + money(row.amount), 0);
-          income = money(income);
-        }
-        if (!(income > 0)) return json(res, 400, { ok: false, message: "该订单没有可提现收益" });
-        const prior = await companionDb(
-          "companion_withdrawals",
-          `?companion_id=eq.${encodeURIComponent(auth.profile.id)}&select=id,status,source_order_ids,remark&order=created_at.desc&limit=100`
-        ).catch(() => []);
-        const taken = (Array.isArray(prior) ? prior : []).some((row) => {
-          if (/rejected|cancelled|pay_failed|failed/.test(String(row.status || ""))) return false;
-          const ids = Array.isArray(row.source_order_ids) ? row.source_order_ids.map(String) : [];
-          return ids.includes(requestedOrderId) || String(row.remark || "").includes(`[[order:${requestedOrderId}]]`);
+      const inflightId = `withdraw-inflight:${auth.profile.id}`;
+      let inflightHeld = false;
+      const releaseInflight = async () => {
+        if (!inflightHeld) return;
+        inflightHeld = false;
+        await companionDb(
+          "payout_source_locks",
+          `?source_kind=eq.period&source_id=eq.${encodeURIComponent(inflightId)}`,
+          { method: "DELETE" }
+        ).catch(() => null);
+      };
+      const acquireInflight = async () => {
+        const locked = await lockPayoutSources(companionDb, {
+          applicantId: auth.profile.id,
+          sources: [{ kind: "period", id: inflightId }],
+          relatedTable: "profiles",
+          relatedRecordId: auth.profile.id,
         });
-        if (taken) return json(res, 409, { ok: false, message: "该订单收益已提现或正在处理，不能重复提现" });
-        amount = income;
-        lockedOrderId = requestedOrderId;
-      }
-      if (!(amount > 0)) return json(res, 400, { ok: false, message: "提现金额必须大于 0" });
-      if (amount > money(data.earnings.withdrawable) + 0.001) {
-        return json(res, 400, { ok: false, message: "可提现余额不足" });
-      }
+        inflightHeld = Array.isArray(locked) && locked.some(Boolean);
+      };
 
-      const rate = money(data.withdrawalRules.exchangeRate) || 1;
-      const grossCents = Math.round(amount * rate * 100);
-      const feeCents = 80;
-      if (grossCents <= feeCents) {
-        return json(res, 400, { ok: false, message: "可提现金额必须高于 RM0.80" });
-      }
-      const gross = grossCents / 100;
-      const fee = feeCents / 100;
-      const net = (grossCents - feeCents) / 100;
-      if (lockedOrderId) {
+      let rate = 1;
+      let gross = 0;
+      let fee = 0;
+      let net = 0;
+      try {
         try {
-          await lockPayoutSources(companionDb, {
-            applicantId: auth.profile.id,
-            sources: [{ kind: "order", id: `order-income:${lockedOrderId}` }],
-            relatedTable: "orders",
-            relatedRecordId: lockedOrderId,
-          });
+          await acquireInflight();
         } catch (lockErr) {
-          if (lockErr?.code === "SOURCE_LOCKED") {
-            return json(res, 409, { ok: false, message: "该订单收益已提现或正在处理，不能重复提现" });
+          if (lockErr?.code !== "SOURCE_LOCKED") throw lockErr;
+          const held = await companionDb(
+            "payout_source_locks",
+            `?source_kind=eq.period&source_id=eq.${encodeURIComponent(inflightId)}&select=id,created_at&limit=1`
+          ).catch(() => []);
+          const created = Date.parse(held?.[0]?.created_at || "");
+          if (!(Number.isFinite(created) && Date.now() - created > 120000)) {
+            return json(res, 409, { ok: false, message: "已有提现正在提交，请勿重复操作" });
+          }
+          await companionDb(
+            "payout_source_locks",
+            `?source_kind=eq.period&source_id=eq.${encodeURIComponent(inflightId)}`,
+            { method: "DELETE" }
+          ).catch(() => null);
+          try {
+            await acquireInflight();
+          } catch (retryErr) {
+            if (retryErr?.code === "SOURCE_LOCKED") {
+              return json(res, 409, { ok: false, message: "已有提现正在提交，请勿重复操作" });
+            }
+            throw retryErr;
           }
         }
-      }
+
+        const fresh = await bootstrapData(auth.profile, companion);
+        const existing = await findCompanionWithdrawalByIdempotency(
+          companionDb,
+          auth.profile.id,
+          idempotencyKey
+        );
+        if (existing) {
+          if (WITHDRAW_RELEASED.has(String(existing.status || ""))) {
+            return json(res, 409, { ok: false, message: "该提现申请已结束，请重新提交" });
+          }
+          return json(res, 200, {
+            ok: true,
+            duplicate: true,
+            message: "提现申请已提交",
+            item: existing,
+            preview: {
+              catFoodAmount: money(existing.cat_food_amount || existing.amount),
+              amount: money(existing.amount || existing.cat_food_amount),
+              grossAmountRm: money(existing.gross_amount_rm || existing.amount),
+              feeRm: money(existing.fee_rm),
+              netAmountRm: money(existing.net_amount_rm),
+              withdrawalNo: existing.withdrawal_no,
+              settlementDate: existing.settlement_date,
+              status: existing.status,
+              statusText: WITHDRAW_STATUS_TEXT[existing.status] || existing.status,
+            },
+          });
+        }
+        const openCount = (fresh.withdrawals || []).filter((row) =>
+          WITHDRAW_OPEN_RE.test(String(row.status || ""))
+        ).length;
+        const assessment = assessWithdrawalRequest({
+          amount,
+          exchangeRate: fresh.withdrawalRules?.exchangeRate || 1,
+          withdrawable: fresh.earnings?.withdrawable,
+          openWithdrawalCount: openCount,
+          idempotencyKey,
+          existingByKey: null,
+        });
+        if (!assessment.ok) {
+          return json(res, assessment.status || 400, { ok: false, message: assessment.message });
+        }
+        rate = money(fresh.withdrawalRules?.exchangeRate) || 1;
+        gross = assessment.gross;
+        fee = assessment.fee;
+        net = assessment.net;
+        data = fresh;
       const rawAccount = String(full.bank_account || full.tng_account || full.alipay_account || "").replace(/\s+/g, "");
       const last4 = full.account_last4 || (rawAccount ? rawAccount.slice(-4) : maskBankAccount(full.bank_account).slice(-4));
       const holder = String(full.account_name || full.account_holder || auth.profile.display_name || "").trim();
@@ -6905,11 +6984,12 @@ return json(res, 200, {
         account_holder: holder,
         account_number: accountNumber,
         account_last4: last4,
-        remark: lockedOrderId ? `[[order:${lockedOrderId}]] ${remark}`.trim() : remark,
+        remark: `${withdrawalIdempotencyMarker(idempotencyKey)} ${remark}`.trim(),
+        idempotency_key: idempotencyKey,
         status: "pending_friday",
         settlement_date: settlementDate,
         source_ledger_ids: [],
-        source_order_ids: lockedOrderId ? [lockedOrderId] : [],
+        source_order_ids: [],
         currency: "CAT_FOOD",
         payout_method: full.tng_account ? "tng" : "bank",
         tng_account: full.tng_account ? `****${String(full.tng_account).slice(-4)}` : "",
@@ -7009,13 +7089,6 @@ return json(res, 200, {
         }
       }
       if (!item) {
-        if (lockedOrderId) {
-          await companionDb(
-            "payout_source_locks",
-            `?source_kind=eq.order&source_id=eq.${encodeURIComponent(`order-income:${lockedOrderId}`)}`,
-            { method: "DELETE" }
-          ).catch(() => null);
-        }
         return json(res, 500, { ok: false, message: "提现申请写入失败，请稍后重试" });
       }
 
@@ -7030,7 +7103,7 @@ return json(res, 200, {
             transaction_type: "withdrawal",
             amount,
             status: "pending",
-            note: `提现申请冻结 ${item?.withdrawal_no || ""} 预计发放 ${settlementDate}`.trim(),
+            note: `提现申请冻结 ${item?.withdrawal_no || ""} 申请 ${amount} 手续费 RM${Number(fee).toFixed(2)} 预计到账 RM${Number(net).toFixed(2)} 发放 ${settlementDate}`.trim(),
             created_at: nowIso(),
           }),
         });
@@ -7052,7 +7125,7 @@ return json(res, 200, {
 
       // Anti-duplicate: period-level lock for this withdrawal row (amount freeze via freeze_tx).
       const sourceLedgerIds = freezeTxId ? [String(freezeTxId)] : [];
-      const sourceOrderIds = lockedOrderId ? [lockedOrderId] : [];
+      const sourceOrderIds = [];
 
       const payoutRow = await upsertPayoutRequest(companionDb, {
         payoutNo: item.withdrawal_no,
@@ -7129,6 +7202,9 @@ return json(res, 200, {
           settlementDate,
         },
       });
+      } finally {
+        await releaseInflight();
+      }
     }
 
     return json(res, 400, { ok: false, message: "未知陪玩端操作" });
