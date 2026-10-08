@@ -747,7 +747,7 @@ async function loadOrders(profile, id = "") {
   const selectWithPaid = selectBase + ",paid_cat_food,paid_at";
   const selectWithNote = selectWithPaid + ",note";
   const selectRenewal = ",is_renewal,renewal_of_order_id,renewal_source_order_no";
-  const selectRich = selectWithNote + ",cancel_reason" + selectRenewal;
+  const selectRich = selectWithNote + ",cancel_reason";
   // Same richness without paid_* (Prod pending-prod/07 not applied yet).
   const selectBaseNoPaid = selectBase;
   const selectWithNoteNoPaid = selectBaseNoPaid + ",note";
@@ -799,10 +799,13 @@ async function loadOrders(profile, id = "") {
   let rows;
   let usedSelect = selectRich;
   let lastSelectErr = null;
-  // service_snapshot rides on every fallback; it is dropped only when that column itself is missing.
+  // Optional columns ride on every fallback and are dropped only when that column itself is missing.
   let withSnapshot = true;
+  let withRenewal = true;
+  const composeSelect = (base) =>
+    base + (withSnapshot ? ",service_snapshot" : "") + (withRenewal ? selectRenewal : "");
   for (const base of selectCandidates) {
-    let sel = withSnapshot ? `${base},service_snapshot` : base;
+    let sel = composeSelect(base);
     try {
       rows = await supabaseJson(restUrl(TABLE, queryOf(sel)), { headers: serviceHeaders() });
       usedSelect = sel;
@@ -812,17 +815,23 @@ async function loadOrders(profile, id = "") {
       lastSelectErr = err;
       const msg = String(err?.message || "");
       if (!/column|schema cache|PGRST|parent_order|paid_/i.test(msg)) throw err;
-      if (withSnapshot && /service_snapshot/i.test(msg)) {
-        withSnapshot = false;
-        sel = base;
-        try {
-          rows = await supabaseJson(restUrl(TABLE, queryOf(sel)), { headers: serviceHeaders() });
-          usedSelect = sel;
-          lastSelectErr = null;
-          break;
-        } catch (err2) {
-          lastSelectErr = err2;
-          if (!/column|schema cache|PGRST|parent_order|paid_/i.test(String(err2?.message || ""))) throw err2;
+      if (withSnapshot && /service_snapshot/i.test(msg)) withSnapshot = false;
+      if (withRenewal && /is_renewal|renewal_of_order_id|renewal_source_order_no/i.test(msg)) withRenewal = false;
+      if (withSnapshot || withRenewal) {
+        sel = composeSelect(base);
+        if (sel !== composeSelect(base) || /service_snapshot|is_renewal|renewal_of_order_id|renewal_source_order_no/i.test(msg)) {
+          try {
+            rows = await supabaseJson(restUrl(TABLE, queryOf(composeSelect(base))), { headers: serviceHeaders() });
+            usedSelect = composeSelect(base);
+            lastSelectErr = null;
+            break;
+          } catch (err2) {
+            lastSelectErr = err2;
+            const msg2 = String(err2?.message || "");
+            if (!/column|schema cache|PGRST|parent_order|paid_/i.test(msg2)) throw err2;
+            if (withSnapshot && /service_snapshot/i.test(msg2)) withSnapshot = false;
+            if (withRenewal && /is_renewal|renewal_of_order_id|renewal_source_order_no/i.test(msg2)) withRenewal = false;
+          }
         }
       }
     }

@@ -267,7 +267,8 @@ async function main() {
 
   const bossAgain = await login(boss.email, "boss");
   const reread = await api(`/api/orders?id=${encodeURIComponent(renewal.id)}`, bossAgain.token, null, "GET");
-  const fresh = orderList(reread.json)[0] || reread.json.order || {};
+  const rereadRows = orderList(reread.json);
+  const fresh = rereadRows.find((row) => row.id === renewal.id) || reread.json.order || {};
   const sourceRead = await api(`/api/orders?id=${encodeURIComponent(source.id)}`, bossAgain.token, null, "GET");
   const sourceNow = orderList(sourceRead.json)[0] || {};
   record(
@@ -299,19 +300,19 @@ async function main() {
     `again=${settledAgain.json.order?.status || settledAgain.status} duplicate=${!!settledAgain.json.duplicate}`
   );
 
-  const second = await api("/api/orders", boss.token, {
+  const unpaidCreate = await api("/api/orders", boss.token, {
     action: "create_renewal",
     sourceOrderId: source.id,
     hours: nextHours === 2 ? 1 : 2,
   });
-  const unpaid = second.json.order || {};
+  const unpaid = unpaidCreate.json.order || {};
   const cancelled = unpaid.id
     ? await api("/api/orders", boss.token, { action: "cancel_order", id: unpaid.id, reason: "renewal acceptance cancel before payment" })
-    : { ok: false, json: second.json, status: second.status };
+    : { ok: false, json: unpaidCreate.json, status: unpaidCreate.status };
   record(
     "15-cancel-unpaid",
-    second.ok && unpaid.orderNo && unpaid.orderNo !== before.orderNo && unpaid.orderNo !== renewal.orderNo && cancelled.ok && cancelled.json.order?.status === "cancelled" && cancelled.json.code !== "PAID_CANCEL_USE_REFUND",
-    `new=${unpaid.orderNo || second.json.code || second.status} cancel=${cancelled.json.order?.status || cancelled.json.code || cancelled.status}`
+    unpaidCreate.ok && unpaid.orderNo && unpaid.orderNo !== before.orderNo && unpaid.orderNo !== renewal.orderNo && cancelled.ok && cancelled.json.order?.status === "cancelled" && cancelled.json.code !== "PAID_CANCEL_USE_REFUND",
+    `new=${unpaid.orderNo || unpaidCreate.json.code || unpaidCreate.status} cancel=${cancelled.json.order?.status || cancelled.json.code || cancelled.status}`
   );
 
   report.sessions = {
