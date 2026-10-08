@@ -18,6 +18,8 @@ import { resolveCompanionPublicCode } from "./_account-codes.js";
 import { isTestAccountRecord } from "./_test-accounts.js";
 import { isRealCompletedOrder } from "./_business-order-stats.js";
 import { isMultiGroupParent } from "./_order-group.js";
+import { servicesFromGamePrices } from "./_game-prices.js";
+import { loadPublicServices } from "./platform/services.js";
 
 const TZ = "Asia/Kuala_Lumpur";
 const BRUSH_ORDER_LIMIT_24H = 5;
@@ -646,6 +648,67 @@ function weekIsoBounds(bounds) {
   return { start, end };
 }
 
+function hallServicesFromProfile(row = {}, catalog = []) {
+  const view = servicesFromGamePrices(
+    {
+      ...row,
+      service_ids: undefined,
+      game: row.game || "",
+      main_service: row.main_service || row.game || "",
+      price: row.price,
+      pricing_unit: row.pricing_unit || "小时",
+    },
+    catalog
+  ).filter((s) => s && s.name && !/^(陪玩|护航|跑刀|代肝|自定义)$/.test(String(s.name)));
+  const game = view.map((s) => s.name).filter(Boolean).join("、") || row.game || row.main_service || "";
+  return { services: view, game };
+}
+
+async function loadServiceCatalog() {
+  try {
+    const bundle = await loadPublicServices();
+    return Array.isArray(bundle?.services) ? bundle.services : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Rank math stays on the caller. Profile, avatar, price, status, and services come from the hall card. */
+async function withHallDisplay(items) {
+  const list = Array.isArray(items) ? items : [];
+  const ids = list.map((item) => item.companionId).filter(Boolean);
+  if (!ids.length) return list;
+  let cards = {};
+  try {
+    const mod = await import("./public/companions.js");
+    cards = await mod.hallDisplayByUserIds(ids);
+  } catch (err) {
+    console.warn("[popularity] hall display", err?.message || err);
+    return list;
+  }
+  return list.map((item) => {
+    const card = cards[item.companionId];
+    if (!card) return item;
+    return {
+      ...item,
+      publicId: card.publicId || item.publicId || "",
+      nickname: card.nickname || card.name || item.nickname,
+      avatar: card.avatar || item.avatar,
+      cover: card.cover || item.cover,
+      level: card.level || item.level,
+      levelId: card.levelId || item.levelId || "",
+      mainService: card.game || card.mainGame || "",
+      game: card.game || "",
+      services: Array.isArray(card.services) ? card.services : [],
+      serviceIds: Array.isArray(card.serviceIds) ? card.serviceIds : [],
+      price: card.price,
+      pricingUnit: card.pricingUnit || item.pricingUnit || "小时",
+      availabilityStatus: card.availabilityStatus || item.availabilityStatus,
+      availabilityText: card.availabilityText || item.availabilityText,
+    };
+  });
+}
+
 export async function listWeeklyCompletedTop({ limit = 3 } = {}) {
   const displayLimit = Math.min(10, Math.max(1, Number(limit) || 3));
   const bounds = periodBounds("weekly");
@@ -850,9 +913,11 @@ export async function listWeeklyCompletedTop({ limit = 3 } = {}) {
     })
     .slice(0, displayLimit);
 
+  const catalog = await loadServiceCatalog();
   const items = ranked.map((r, idx) => {
     const c = cMap[r.companionId] || {};
     const p = pMap[r.companionId] || {};
+    const hallSvc = hallServicesFromProfile(c, catalog);
     const availRaw = String(c.availability_status || c.online_status || "offline").toLowerCase();
     const availabilityStatus =
       availRaw === "online" ? "online" : availRaw === "busy" ? "busy" : availRaw === "paused" ? "paused" : "offline";
@@ -865,8 +930,10 @@ export async function listWeeklyCompletedTop({ limit = 3 } = {}) {
       cover: resolveCompanionCover(p, c),
       level: c.level_name || "未设置等级",
       levelId: c.level_id || "",
-      mainService: c.main_service || c.game || "",
-      game: c.game || "",
+      mainService: hallSvc.game || c.main_service || c.game || "",
+      game: hallSvc.game || c.game || "",
+      services: hallSvc.services,
+      serviceIds: hallSvc.services.map((s) => s.serviceId || s.id).filter(Boolean),
       price: money(c.price),
       pricingUnit: c.pricing_unit || "小时",
       availabilityStatus,
@@ -899,7 +966,7 @@ export async function listWeeklyCompletedTop({ limit = 3 } = {}) {
     periodStart: bounds.periodStart,
     periodEnd: bounds.periodEnd,
     gameKey: "",
-    items,
+    items: await withHallDisplay(items),
     rules: {
       showScore: false,
       showOrders: true,
@@ -1007,6 +1074,7 @@ export async function listBoard({ period = "weekly", gameKey = "", limit, online
   if (level) items = items.filter((i) => String(i.level).includes(String(level)) || String(i.levelId) === String(level));
 
   items = items.slice(0, displayLimit);
+  items = await withHallDisplay(items);
   return {
     ok: true,
     enabled: true,

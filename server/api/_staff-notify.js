@@ -29,6 +29,18 @@ export async function listActiveCustomerServiceIds() {
   return (Array.isArray(rows) ? rows : []).map((r) => r?.id).filter(Boolean);
 }
 
+async function listActiveStaffAndAdminIds() {
+  const [staff, admins, supers] = await Promise.all([
+    listActiveCustomerServiceIds(),
+    companionDb("profiles", "?role=eq.admin&select=id&limit=20").catch(() => []),
+    companionDb("profiles", "?role=eq.super_admin&select=id&limit=20").catch(() => []),
+  ]);
+  const adminIds = [...(Array.isArray(admins) ? admins : []), ...(Array.isArray(supers) ? supers : [])]
+    .map((row) => row?.id)
+    .filter(Boolean);
+  return [...new Set([...staff, ...adminIds])];
+}
+
 async function lookupRows(query) {
   const rows = await companionDb("staff_notifications", query);
   return Array.isArray(rows) ? rows : [];
@@ -89,7 +101,7 @@ export async function notifyCustomerServiceStaff({ kind, relatedId, title, body 
   const k = String(kind || "").trim();
   const rid = String(relatedId || "").trim();
   if (!k || !rid) return { inserted: 0, skipped: 0 };
-  const ids = Array.isArray(staffIds) ? staffIds.filter(Boolean) : await listActiveCustomerServiceIds();
+  const ids = Array.isArray(staffIds) ? staffIds.filter(Boolean) : await listActiveStaffAndAdminIds();
   let inserted = 0;
   let skipped = 0;
   for (const staffId of ids) {
@@ -128,6 +140,56 @@ export async function notifyCustomerServiceStaff({ kind, relatedId, title, body 
     }
   }
   return { inserted, skipped };
+}
+
+function viewStaffNotice(row) {
+  const kind = String(row?.kind || row?.category || "system");
+  return {
+    id: row?.id || "",
+    key: row?.notice_key || "",
+    kind,
+    title: row?.title || "系统通知",
+    body: row?.body || "",
+    href: row?.href || "/admin.html#orders",
+    relatedId: row?.related_id || "",
+    readAt: row?.read_at || "",
+    at: row?.created_at || "",
+  };
+}
+
+export async function listStaffNotifications(staffId, limit = 40) {
+  const id = String(staffId || "").trim();
+  if (!id) return [];
+  const cap = Math.max(1, Math.min(80, Number(limit) || 40));
+  try {
+    const rows = await lookupRows(
+      `?staff_id=eq.${encodeURIComponent(id)}&order=created_at.desc&limit=${cap}`
+    );
+    return rows.map(viewStaffNotice);
+  } catch (err) {
+    if (columnMismatch(err) || isMissingRelation(err)) return [];
+    throw err;
+  }
+}
+
+export async function markStaffNotificationRead(staffId, noticeId) {
+  const id = String(staffId || "").trim();
+  const nid = String(noticeId || "").trim();
+  if (!id || !nid) return 0;
+  try {
+    const rows = await companionDb(
+      "staff_notifications",
+      `?id=eq.${encodeURIComponent(nid)}&staff_id=eq.${encodeURIComponent(id)}`,
+      {
+        method: "PATCH",
+        headers: { Prefer: "return=representation" },
+        body: JSON.stringify({ read_at: new Date().toISOString() }),
+      }
+    );
+    return Array.isArray(rows) ? rows.length : 0;
+  } catch {
+    return 0;
+  }
 }
 
 /** Mark unread staff notices of the given kinds as read for one staff member. */

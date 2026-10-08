@@ -11,6 +11,7 @@
 import { normalizeOrderStatus, writeOrderStatusLog } from "./_order-status.js";
 import { restUrl, supabaseJson, serviceHeaders, releaseWalletHold } from "./_wallet.js";
 import { companionDb } from "./_companion-media-store.js";
+import { loadOrderMoneyFacts } from "./_order-payment-facts.js";
 
 export const CS_CANCEL_MARKER = "[[CS_CANCEL_REFUND]]";
 const NO_TAKER_MARKER = "[[NO_TAKER_REFUND]]";
@@ -35,13 +36,23 @@ function fail(status, code, message, extra = {}) {
 }
 const db = { restUrl, supabaseJson, serviceHeaders };
 
+/** @deprecated Price and status are not payment. Use loadOrderMoneyFacts. */
 export function isPaidOrder(order = {}) {
-  const st = normalizeOrderStatus(order.status);
-  return st !== "awaiting_payment" || money(order.paid_cat_food) > 0 || !!order.paid_at;
+  return money(order.paid_cat_food) > 0 && !!order.paid_at;
 }
 
-export function refundableAmount(order = {}) {
-  return money(order.paid_cat_food) || money(order.total_amount);
+export async function refundCapturedAmount(order, { reason, operator, amount } = {}) {
+  const facts = await loadOrderMoneyFacts(order);
+  if (!(facts.refundable > 0)) {
+    return { ok: false, code: "NOTHING_TO_REFUND", message: "订单没有成功付款，不能退款。", facts, amount: 0 };
+  }
+  const requested = money(amount);
+  const pay = requested > 0 ? Math.min(requested, facts.refundable) : facts.refundable;
+  if (!(pay > 0)) {
+    return { ok: false, code: "NOTHING_TO_REFUND", message: "订单没有可退金额。", facts, amount: 0 };
+  }
+  const moved = await refundToCatfood(order, pay, reason, operator);
+  return { ...moved, amount: pay, facts };
 }
 
 async function loadOrder(id) {
@@ -216,9 +227,11 @@ export async function csCancelOrRefundOrder(order, { intent = "cancel", reason =
   if (!resuming && !CS_CANCELLABLE.includes(st)) return fail(409, "NOT_CANCELLABLE", `当前状态不可取消：${st}`, { order });
 
   const stamp = `${CS_CANCEL_MARKER}${nowIso()}|${role}:${operator.id || ""}|${why}`;
+  const facts = await loadOrderMoneyFacts(order);
+  const captured = facts.refundable > 0;
 
-  // ---------- unpaid ----------
-  if (!resuming && !isPaidOrder(order)) {
+  // ---------- no successful payment: cancel, never credit the order price ----------
+  if (!resuming && !captured && !facts.hasActiveHold) {
     if (intent === "refund") return fail(409, "NOTHING_TO_REFUND", "订单尚未付款，无需退款，请直接取消。", { order });
     const receipts = await pendingReceipts(order.id);
     if (receipts.some((r) => !isWalletHoldReceipt(r))) {
@@ -226,7 +239,7 @@ export async function csCancelOrRefundOrder(order, { intent = "cancel", reason =
     }
     const at = nowIso();
     const cancelNote = `${note}\n[客服取消] ${why}`.trim();
-    const saved = await casPatch(order.id, "awaiting_payment", [
+    const saved = await casPatch(order.id, st, [
       { status: "cancelled", cancelled_at: at, cancel_reason: why, cancelled_by: operator.id || null, customer_service_id: operator.id || null, note: cancelNote },
       { status: "cancelled", cancelled_at: at, customer_service_id: operator.id || null, note: cancelNote },
       { status: "cancelled", note: cancelNote },
@@ -234,59 +247,84 @@ export async function csCancelOrRefundOrder(order, { intent = "cancel", reason =
     if (!saved) {
       const latest = await loadOrder(order.id);
       if (latest && ["cancelled", "refunded"].includes(normalizeOrderStatus(latest.status))) {
-        return { ok: true, status: 200, duplicate: true, message: "订单已取消。", order: latest };
+        return { ok: true, status: 200, duplicate: true, message: normalizeOrderStatus(latest.status) === "refunded" ? "订单已退款。" : "订单已取消。", order: latest };
       }
       return fail(409, "STATUS_CHANGED", "订单状态已变化，请刷新后重试。", { order: latest || order });
     }
-    const released = await tryReleaseHold(order, `客服取消释放冻结 ${no}`, operator.id);
+    await tryReleaseHold(order, `客服取消释放冻结 ${no}`, operator.id);
     await supersedeReceipts(receipts);
-    await writeOrderStatusLog(db, { orderId: order.id, fromStatus: "awaiting_payment", toStatus: "cancelled", operatorRole: role, operatorId: operator.id, note: `cs_cancel:${released ? "hold_release" : "unpaid"}:${why}` });
-    const mode = released ? "hold_release" : "unpaid";
-    const amount = released ? refundableAmount(order) : 0;
-    const notice = await sideEffects(saved, { finalStatus: "cancelled", reason: why, mode, amount, operator });
-    return { ok: true, status: 200, message: released ? `订单已取消，冻结的 ${amount} 猫粮已退回老板余额。` : "订单已取消（未付款，无需退款）。", order: saved, mode, amount, notice };
+    await writeOrderStatusLog(db, { orderId: order.id, fromStatus: st, toStatus: "cancelled", operatorRole: role, operatorId: operator.id, note: `cs_cancel:unpaid:${why}` });
+    const notice = await sideEffects(saved, { finalStatus: "cancelled", reason: why, mode: "unpaid", amount: 0, operator });
+    return { ok: true, status: 200, message: "订单已取消（未付款，无需退款）。", order: saved, mode: "unpaid", amount: 0, notice };
   }
 
-  // ---------- paid: lock → move money → finalize ----------
+  // ---------- captured payment or an active hold: lock → move only real money → finalize ----------
   let locked = order;
   if (!resuming) {
     locked = await casPatch(order.id, st, [{ status: "refund_requested", note: `${note}\n${stamp}`.trim() }, { status: "refund_requested" }]);
     if (!locked) {
       const latest = await loadOrder(order.id);
       const lst = normalizeOrderStatus(latest?.status);
-      if (lst === "cancelled" || lst === "refunded") return { ok: true, status: 200, duplicate: true, message: "订单已处理。", order: latest };
+      if (lst === "cancelled" || lst === "refunded") return { ok: true, status: 200, duplicate: true, message: lst === "refunded" ? "订单已退款。" : "订单已取消。", order: latest };
       return fail(409, "STATUS_CHANGED", "订单状态已变化，请刷新后重试。", { order: latest || order });
     }
     await writeOrderStatusLog(db, { orderId: order.id, fromStatus: st, toStatus: "refund_requested", operatorRole: role, operatorId: operator.id, note: `cs_${intent}_lock:${why}` });
   }
-  const amount = refundableAmount(order);
+  const amount = facts.refundable;
   let mode = "";
   let duplicate = false;
-  let finalStatus = "refunded";
+  let finalStatus = captured ? "refunded" : "cancelled";
   if (await tryReleaseHold(order, `客服${intent === "refund" ? "退款" : "取消"}释放冻结 ${no}`, operator.id)) {
     mode = "hold_release";
-    finalStatus = intent === "refund" ? "refunded" : "cancelled";
-    const at = nowIso();
-    const fin = await casPatch(order.id, "refund_requested", [
-      { status: finalStatus, cancelled_at: at, cancel_reason: why, customer_service_id: operator.id || null },
-      { status: finalStatus, cancelled_at: at },
-      { status: finalStatus },
-    ]).catch(() => null);
-    duplicate = !fin;
-    try {
-      const settleApi = await import("./_cs-commission-settle.js");
-      await settleApi.clawbackCsOrderIncome({ ...locked, status: finalStatus, refund_amount: amount, refundAmount: amount }, { mode: "refund", reason: `客服${intent === "refund" ? "退款" : "取消"}冲销提成` });
-    } catch (err) {
-      console.warn("[order-cancel] cs clawback", String(err?.message || err).slice(0, 160));
+    // A hold is not a completed payment. Credit only a real captured amount, and only once.
+    finalStatus = "cancelled";
+    if (captured) {
+      const r = await refundToCatfood(locked, amount, `客服${intent === "refund" ? "退款" : "取消订单"}：${why}`, operator);
+      if (r.ok) {
+        mode = "catfood_credit";
+        duplicate = r.duplicate;
+        finalStatus = "refunded";
+      } else {
+        console.warn("[order-cancel] refund after hold", r.message);
+      }
+    }
+    if (captured && finalStatus !== "refunded") {
+      mode = "";
+    } else if (mode === "hold_release" || finalStatus === "refunded") {
+      const at = nowIso();
+      const fin = await casPatch(order.id, "refund_requested", [
+        { status: finalStatus, cancelled_at: at, cancel_reason: why, customer_service_id: operator.id || null },
+        { status: finalStatus, cancelled_at: at },
+        { status: finalStatus },
+      ]).catch(() => null);
+      if (mode === "hold_release") duplicate = !fin;
+      if (captured && finalStatus === "refunded") {
+        try {
+          const settleApi = await import("./_cs-commission-settle.js");
+          await settleApi.clawbackCsOrderIncome({ ...locked, status: finalStatus, refund_amount: amount, refundAmount: amount }, { mode: "refund", reason: `客服${intent === "refund" ? "退款" : "取消"}冲销提成` });
+        } catch (err) {
+          console.warn("[order-cancel] cs clawback", String(err?.message || err).slice(0, 160));
+        }
+      }
     }
   } else if (amount > 0) {
     const r = await refundToCatfood(locked, amount, `客服${intent === "refund" ? "退款" : "取消订单"}：${why}`, operator);
     if (r.ok) {
       mode = "catfood_credit";
       duplicate = r.duplicate;
+      finalStatus = "refunded";
     } else {
       console.warn("[order-cancel] refund", r.message);
     }
+  } else {
+    mode = "unpaid";
+    finalStatus = "cancelled";
+    const at = nowIso();
+    const fin = await casPatch(order.id, "refund_requested", [
+      { status: "cancelled", cancelled_at: at, cancel_reason: why },
+      { status: "cancelled" },
+    ]).catch(() => null);
+    duplicate = !fin;
   }
   if (!mode) {
     return {
@@ -312,7 +350,9 @@ export async function csCancelOrRefundOrder(order, { intent = "cancel", reason =
     order: view,
     notice,
     message: duplicate
-      ? "该订单已退款，未重复退回。"
-      : `订单已${finalStatus === "cancelled" ? "取消" : "退款"}，${amount} 猫粮已退回老板余额。`,
+      ? (finalStatus === "cancelled" ? "订单已取消。" : "该订单已退款，未重复退回。")
+      : finalStatus === "cancelled"
+        ? (mode === "hold_release" ? "订单已取消，冻结的猫粮已退回。" : "订单已取消（未付款，无需退款）。")
+        : `订单已退款，${amount} 猫粮已退回老板余额。`,
   };
 }

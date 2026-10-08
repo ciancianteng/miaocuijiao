@@ -7,6 +7,7 @@ import {
   openDiscordInvite,
   refreshDiscordInviteFromPlatform,
 } from './discord-community-config.js';
+import { captureChatScroll, restoreChatScroll, keyboardInsetPx } from './scroll-keep.js';
 
 (function () {
   var root = document.getElementById("supportApp");
@@ -584,13 +585,12 @@ import {
     opts = opts || {};
     var box = root.querySelector("[data-messages]");
     if (!box) return false;
-    var prevBottom = box.scrollHeight - box.scrollTop;
-    var stickBottom = !opts.keepScroll || prevBottom < 96;
+    var snap = captureChatScroll(box);
+    var stick = !!opts.stickBottom || !opts.keepScroll || !!(snap && snap.near);
     box.innerHTML = state.messages.length
       ? state.messages.map(msgHtml).join("")
       : '<div class="support-list-empty">发送第一条消息开始沟通。</div>';
-    if (stickBottom) box.scrollTop = box.scrollHeight;
-    else box.scrollTop = Math.max(0, box.scrollHeight - prevBottom);
+    restoreChatScroll(box, snap, stick);
     return true;
   }
   function parseCompanionCard(raw) {
@@ -1533,7 +1533,10 @@ import {
   }
   function patchSessionList() {
     var list = root.querySelector(".support-session-list");
-    if (list) list.innerHTML = listHtml();
+    if (!list) return;
+    var y = list.scrollTop || 0;
+    list.innerHTML = listHtml();
+    list.scrollTop = y;
   }
   function patchMain() {
     var main = root.querySelector(".support-main");
@@ -1649,16 +1652,10 @@ import {
       patchSessionList();
 
       if (needFullMain) {
-        var box = messagesBox;
-        var prevBottom = box ? box.scrollHeight - box.scrollTop : 0;
-        var stickBottom = !opts.keepScroll || prevBottom < 96;
-        var prevScroll = box ? box.scrollTop : 0;
+        var snap = captureChatScroll(messagesBox);
+        var stick = !!opts.stickBottom || !opts.keepScroll || !!(snap && snap.near);
         patchMain();
-        var next = root.querySelector("[data-messages]");
-        if (next) {
-          if (stickBottom) next.scrollTop = next.scrollHeight;
-          else next.scrollTop = Math.max(0, prevScroll);
-        }
+        restoreChatScroll(root.querySelector("[data-messages]"), snap, stick);
         syncComposerChrome();
         return;
       }
@@ -1676,6 +1673,9 @@ import {
     captureComposer();
     syncChatChrome();
     var keepFocus = !!state.composerFocused;
+    var prior = root.querySelector("[data-messages]");
+    var snap = captureChatScroll(prior);
+    var stick = !!opts.stickBottom || !opts.keepScroll || !!(snap && snap.near);
     root.innerHTML =
       '<section class="support-layout' +
       (state.mobileDetail ? " mobile-detail" : "") +
@@ -1698,8 +1698,7 @@ import {
       mainHtml() +
       "</div>" +
       "</section>";
-    var next = root.querySelector("[data-messages]");
-    if (next) next.scrollTop = next.scrollHeight;
+    restoreChatScroll(root.querySelector("[data-messages]"), snap, stick);
     syncComposerChrome();
     if (keepFocus) {
       state.composerFocused = true;
@@ -2333,17 +2332,17 @@ import {
         document.documentElement.style.setProperty("--support-keyboard-inset", "0px");
         return;
       }
-      var inset = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+      var inset = keyboardInsetPx(window);
       document.documentElement.style.setProperty("--support-keyboard-inset", inset + "px");
-      if (inset > 40 && state.composerFocused) {
-        var messages = root.querySelector("[data-messages]");
-        if (messages) messages.scrollTop = messages.scrollHeight;
+      var messages = root.querySelector("[data-messages]");
+      if (inset > 0 && state.composerFocused && messages) {
+        var snap = captureChatScroll(messages);
+        if (snap && snap.near) restoreChatScroll(messages, snap, true);
       }
     } catch (e) {}
   }
   if (window.visualViewport) {
     window.visualViewport.addEventListener("resize", syncKeyboardInset);
-    window.visualViewport.addEventListener("scroll", syncKeyboardInset);
   }
   window.addEventListener("resize", syncKeyboardInset);
   syncKeyboardInset();

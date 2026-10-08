@@ -291,7 +291,9 @@ export async function refundGameplayNoTaker(db, order, { reason = "抢单大厅3
     });
   }
   const no = order.order_no || order.id;
-  const amount = money(order.paid_cat_food) || money(order.total_amount);
+  const { loadOrderMoneyFacts } = await import("./_order-payment-facts.js");
+  const facts = await loadOrderMoneyFacts(order);
+  const amount = facts.refundable;
   let mode = "";
   let refund = null;
   // Only the run that actually moved the money / status announces it.
@@ -313,8 +315,9 @@ export async function refundGameplayNoTaker(db, order, { reason = "抢单大厅3
   }
 
   if (mode === "hold_release") {
+    const holdStatus = facts.hasSuccessfulPayment ? "refunded" : "cancelled";
     won = !!(await patchFirstAccepted(db, `?id=eq.${encodeURIComponent(order.id)}&status=eq.refund_requested`, [
-      { status: "refunded" },
+      { status: holdStatus },
     ]).catch(() => null));
     // CS order commission is booked at pay time; reverse it like the refund-request path does.
     try {
@@ -326,7 +329,7 @@ export async function refundGameplayNoTaker(db, order, { reason = "抢单大厅3
     } catch (err) {
       console.warn("[gameplay-timeout] cs clawback", String(err?.message || err).slice(0, 160));
     }
-  } else if (amount > 0) {
+  } else if (amount > 0 && facts.hasSuccessfulPayment) {
     try {
       const { companionDb } = await import("./_companion-media-store.js");
       const refundApi = await import("./_boss-refund-payout.js");
@@ -373,14 +376,26 @@ export async function refundGameplayNoTaker(db, order, { reason = "抢单大厅3
     }
   }
 
+  if (!mode && !facts.hasSuccessfulPayment) {
+    won = !!(await patchFirstAccepted(db, `?id=eq.${encodeURIComponent(order.id)}&status=eq.refund_requested`, [
+      { status: "cancelled" },
+    ]).catch(() => null));
+    if (won) mode = "unpaid_cancel";
+  }
+
   const resumed = order.status === "refund_requested";
+  const finalStatus = mode === "unpaid_cancel" || (mode === "hold_release" && !facts.hasSuccessfulPayment)
+    ? "cancelled"
+    : mode
+      ? "refunded"
+      : "refund_requested";
   if (!mode && resumed) return { order: locked, mode: "manual_review", amount, refund };
-  if (mode && !won) return { order: { ...locked, status: "refunded" }, mode, amount, refund, duplicate: true };
+  if (mode && !won) return { order: { ...locked, status: finalStatus }, mode, amount, refund, duplicate: true };
   if (mode) {
     await db.writeOrderStatusLog(db, {
       orderId: order.id,
       fromStatus: "refund_requested",
-      toStatus: "refunded",
+      toStatus: finalStatus,
       operatorRole: "system",
       operatorId: null,
       note: `gameplay_no_taker_refund:${mode}:${amount}`,
@@ -392,14 +407,19 @@ export async function refundGameplayNoTaker(db, order, { reason = "抢单大厅3
   } catch {
     /* best-effort */
   }
-  const finalStatus = mode ? "refunded" : "refund_requested";
   const view = { ...locked, status: finalStatus };
-  const bossBody = mode
-    ? `订单 ${no} 30分钟内无人接单，已自动全额退款 ${amount} 猫粮至您的猫粮余额。`
-    : `订单 ${no} 30分钟内无人接单，已转为售后退款，客服将尽快为您退回猫粮余额。`;
+  const bossBody = finalStatus === "cancelled"
+    ? `订单 ${no} 30分钟内无人接单，订单已取消。未付款，不会退款。`
+    : mode
+      ? `订单 ${no} 30分钟内无人接单，已退回实际支付的 ${amount} 猫粮。`
+      : `订单 ${no} 30分钟内无人接单，已转为售后退款，客服将尽快为您退回猫粮余额。`;
   try {
     const { notifyBossOrderEvent } = await import("./_boss-order-notify.js");
-    await notifyBossOrderEvent(view, { title: mode ? "无人接单，已自动退款" : "无人接单，退款处理中", body: bossBody, kind: "order_refunded" });
+    await notifyBossOrderEvent(view, {
+      title: finalStatus === "cancelled" ? "无人接单，订单已取消" : mode ? "无人接单，已自动退款" : "无人接单，退款处理中",
+      body: bossBody,
+      kind: finalStatus === "cancelled" ? "order_cancelled" : "order_refunded",
+    });
   } catch {
     /* best-effort */
   }

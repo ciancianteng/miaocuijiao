@@ -394,6 +394,9 @@ function bossHint(row = {}) {
     return "请尽快完成付款并上传凭证。";
   }
   if (status === "claimed") {
+    if (!row.paid_at && !(money(row.paid_cat_food) > 0)) {
+      return "等待陪玩确认接单。确认后才会扣除猫粮。";
+    }
     return reviewerName
       ? `已由客服 ${reviewerName} 审核通过，正在等待陪玩确认接单`
       : "订单已付款，正在等待陪玩确认接单";
@@ -415,6 +418,9 @@ function bossHint(row = {}) {
   if (status === "pending" && /陪玩确认超时|确认超时/.test(note)) return "陪玩暂未响应，客服正在处理中";
   if (status === "pending" && /无法接单|拒单/.test(note)) return "陪玩暂时无法接单，订单已重新进入抢单大厅";
   if (status === "pending") {
+    if (!row.paid_at && !(money(row.paid_cat_food) > 0)) {
+      return "已进入抢单大厅，尚未扣款。陪玩确认接单后才会扣除猫粮。";
+    }
     return reviewerName
       ? `已由客服 ${reviewerName} 审核通过，待派单/抢单。`
       : "付款已确认，待客服处理派单。";
@@ -430,7 +436,8 @@ function paymentStatusLabel(row = {}) {
   if (row.parent_order_id) {
     const s = String(row.status || "");
     if (s === "awaiting_payment") return "待主单付款";
-    if (s === "cancelled" || s === "refunded") return "已取消";
+    if (s === "cancelled") return "已取消";
+    if (s === "refunded") return "已退款";
     return "主单已付·分配";
   }
   const s = row.status || "";
@@ -438,6 +445,10 @@ function paymentStatusLabel(row = {}) {
     return row.paymentReceipt ? "待客服审核" : "待付款";
   }
   if (s === "cancelled") return "已取消";
+  if (s === "refunded") return "已退款";
+  if ((s === "pending" || s === "claimed" || s === "waiting_boss_confirm") && !row.paid_at && !(money(row.paid_cat_food) > 0)) {
+    return "未付款";
+  }
   return "已付款";
 }
 function acceptStatusLabel(row = {}) {
@@ -453,6 +464,7 @@ function acceptStatusLabel(row = {}) {
   if (s === "pending" && /无法接单|拒单/.test(note)) return "陪玩无法接单，等待重新安排";
   if (s === "pending") return "待客服处理";
   if (s === "cancelled") return "已取消";
+  if (s === "refunded") return "已退款";
   return bossFacingStatusText(row);
 }
 export function viewOrder(row = {}) {
@@ -1188,6 +1200,9 @@ export default async function handler(req, res) {
         const r = refundByOrder[o.id];
         if (!r) return o;
         const paid = !!r.alreadyRefunded || r.status === "paid";
+        if (o.status === "cancelled") {
+          return { ...o, status: "cancelled", refundAlreadyPaid: false, refundCatFood: 0 };
+        }
         return {
           ...o,
           // 若退款已入账但订单行尚未刷到 refunded，对老板端按已退款展示
@@ -1455,15 +1470,22 @@ export default async function handler(req, res) {
           return json(res, 400, { ok: false, message: `价格已变化，请刷新后重试（应付 ${totalAmount}）` });
         }
         if (!(totalAmount > 0)) return json(res, 400, { ok: false, message: "订单金额无效。" });
-        serviceSnapshot = await buildServiceSnapshotForCompanion(companionId, {
-          serviceId: serviceId || resolved?.serviceRow?.service_id || "",
-          serviceName: serviceType,
-          unitPrice,
-          pricingUnit: String(order.pricingUnit || order.pricing_unit || cp.pricing_unit || "小时"),
-          hours,
-          quantity,
-          bossRank,
-        });
+        try {
+          serviceSnapshot = await buildServiceSnapshotForCompanion(companionId, {
+            serviceId: serviceId || resolved?.serviceRow?.service_id || "",
+            serviceName: serviceType,
+            unitPrice,
+            pricingUnit: String(order.pricingUnit || order.pricing_unit || cp.pricing_unit || "小时"),
+            hours,
+            quantity,
+            bossRank,
+            captureRequirements: true,
+            orderRequirements: order.orderRequirements || order.order_requirements || [],
+          });
+        } catch (reqErr) {
+          if (reqErr?.status === 400) return json(res, 400, { ok: false, message: reqErr.message || "请完整填写订单要求" });
+          throw reqErr;
+        }
       } else {
         if (!order.game || (!order.description && !order.requirements && !order.title)) {
           return json(res, 400, { ok: false, message: "请填写游戏和需求说明。" });
@@ -1671,6 +1693,34 @@ export default async function handler(req, res) {
       const companionLabel = productCompanionName || companionName || companionId || "未指定（公开抢单）";
       const notify = `新订单已提交，等待支付，指定陪玩为 ${companionLabel}。支付方式：${(/^acct-/.test(paymentMethod) && payGate.label) || paymentMethodLabel(paymentMethod)}；服务：${serviceType}；时长：${hours}小时；金额：${totalAmount} 猫粮。`;
       await addSystemMessage(saved, profile.id, notify);
+      try {
+        const { notifyCustomerServiceStaff } = await import("./_staff-notify.js");
+        await notifyCustomerServiceStaff({
+          kind: "new_order",
+          relatedId: saved.order_no || saved.id,
+          title: "新订单",
+          body: `${saved.order_no || "新订单"} 已提交，金额 ${totalAmount}，服务 ${serviceType}。`,
+          href: "/admin.html#orders",
+        });
+      } catch (notifyErr) {
+        console.warn("[orders] staff notify", notifyErr?.message || notifyErr);
+      }
+      if (saved.companion_id) {
+        try {
+          const { insertCompanionNotification } = await import("./_companion-inbox.js");
+          await insertCompanionNotification({
+            companionUserId: saved.companion_id,
+            category: "order",
+            title: "老板指定下单",
+            body: `订单 ${saved.order_no || ""} 已提交，等待老板付款。`,
+            href: `/companion/orders?focus=${encodeURIComponent(saved.id)}`,
+            noticeKey: `order-designated-unpaid:${saved.id}:${saved.companion_id}`,
+            notificationType: "order_designated",
+          });
+        } catch (notifyErr) {
+          console.warn("[orders] companion designated notify", notifyErr?.message || notifyErr);
+        }
+      }
       const okMessage = useWallet ? "订单已创建，请完成支付。" : "订单已提交，请完成支付。";
       return json(res, 200, {
         ok: true,
@@ -2167,6 +2217,12 @@ export default async function handler(req, res) {
           });
         } catch (err) {
           console.warn("[orders/pay_order] upsertListing", err?.message || err);
+        }
+        try {
+          const { notifyCompanionsGrabOpen } = await import("./_companion-order-notify.js");
+          await notifyCompanionsGrabOpen(saved || before);
+        } catch (err) {
+          console.warn("[orders/pay_order] grab notify", err?.message || err);
         }
       }
       if (nextStatus === "claimed" && before.companion_id) {
@@ -3074,7 +3130,7 @@ export default async function handler(req, res) {
 
       // Release the hold only for statuses that can actually be cancelled below;
       // otherwise the boss gets the cat-food back while the order keeps running.
-      if (!["awaiting_payment", "claimed", "pending"].includes(before.status)) {
+      if (!["awaiting_payment", "claimed", "pending", "waiting_boss_confirm"].includes(before.status)) {
         return json(res, 409, {
           ok: false,
           code: "PAID_CANCEL_USE_REFUND",
@@ -3107,12 +3163,9 @@ export default async function handler(req, res) {
         !holdReleased.skipped &&
         (holdReleased.hold?.status === "released" || holdReleased.duplicate);
 
-      if (
-        !hadActiveHold &&
-        (beforeStatus !== "awaiting_payment" ||
-          money(before.paid_cat_food) > 0 ||
-          !!before.paid_at)
-      ) {
+      const { loadOrderMoneyFacts } = await import("./_order-payment-facts.js");
+      const payFacts = await loadOrderMoneyFacts(before);
+      if (!hadActiveHold && payFacts.hasSuccessfulPayment) {
         return json(res, 409, {
           ok: false,
           code: "PAID_CANCEL_USE_REFUND",
@@ -3125,8 +3178,8 @@ export default async function handler(req, res) {
       }
 
       // Held cat-food cancel may be claimed/pending — allow those statuses when hold released.
-      const cancelAllowedStatuses = hadActiveHold
-        ? ["awaiting_payment", "claimed", "pending"]
+      const cancelAllowedStatuses = hadActiveHold || !payFacts.hasSuccessfulPayment
+        ? ["awaiting_payment", "claimed", "pending", "waiting_boss_confirm"]
         : ["awaiting_payment"];
 
       const { isMultiGroupParent } = await import("./_order-group.js");
@@ -3204,6 +3257,29 @@ export default async function handler(req, res) {
       } catch (err) {
         console.warn("[orders/cancel_order] boss push", err?.message || err);
       }
+      if (before.companion_id) {
+        try {
+          const { notifyCompanionOrderStatusChange } = await import("./_companion-order-notify.js");
+          await notifyCompanionOrderStatusChange(
+            { ...(order || before), companion_id: before.companion_id, status: "cancelled" },
+            { status: "cancelled" }
+          );
+        } catch (err) {
+          console.warn("[orders/cancel_order] companion notify", err?.message || err);
+        }
+      }
+      try {
+        const { notifyCustomerServiceStaff } = await import("./_staff-notify.js");
+        await notifyCustomerServiceStaff({
+          kind: "order_cancelled",
+          relatedId: (order || before).order_no || before.id,
+          title: "订单已取消",
+          body: `${(order || before).order_no || "订单"} 已取消。`,
+          href: "/admin.html#orders",
+        });
+      } catch (err) {
+        console.warn("[orders/cancel_order] staff notify", err?.message || err);
+      }
       return json(res, 200, {
         ok: true,
         message: cancelledChildren.length
@@ -3241,11 +3317,22 @@ export default async function handler(req, res) {
           });
         }
       }
+      const { loadOrderMoneyFacts } = await import("./_order-payment-facts.js");
+      const payFacts = await loadOrderMoneyFacts(before || { id });
+      if (!payFacts.hasSuccessfulPayment || !(payFacts.refundable > 0)) {
+        return json(res, 409, {
+          ok: false,
+          code: "NOTHING_TO_REFUND",
+          message: "订单尚未成功付款，不能申请退款。",
+          order: before ? viewOrder(before) : undefined,
+        });
+      }
       const order = await patchOwnedOrder(profile, id, ["confirmed", "in_progress", "completed"], { status: "refund_requested" }, "老板已申请退款，等待后台审核。审核通过并确认后，退款将退回猫粮余额（不退现金）。");
       let refund = null;
       try {
         const refundApi = await import("./_boss-refund-payout.js");
-        const amount = money(body.amount != null ? body.amount : order?.total_amount || before?.total_amount || order?.paid_cat_food);
+        const asked = money(body.amount != null ? body.amount : payFacts.refundable);
+        const amount = Math.min(asked > 0 ? asked : payFacts.refundable, payFacts.refundable);
         const created = await refundApi.createBossRefundRequest(companionDb, {
           order: order || before || { id, boss_id: profile.id, total_amount: amount, order_no: before?.order_no },
           boss: profile,

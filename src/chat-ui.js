@@ -106,20 +106,25 @@
     if (!detail) return false;
     var composer = detail.querySelector(".mcj-chat-send textarea");
     var draft = composer ? composer.value : "";
+    var oldList = detail.querySelector(".mcj-message-list");
+    var prevTop = oldList ? oldList.scrollTop : 0;
+    var near = oldList ? oldList.scrollHeight - oldList.scrollTop - oldList.clientHeight < 96 : true;
     detail.innerHTML = chatDetail(inst);
     var next = detail.querySelector(".mcj-chat-send textarea");
     if (next && draft) next.value = draft;
     var msgList = detail.querySelector(".mcj-message-list");
-    if (msgList) msgList.scrollTop = msgList.scrollHeight;
+    if (msgList) msgList.scrollTop = near || !oldList ? msgList.scrollHeight : prevTop;
     return true;
   }
 
-  function patchMessagesOnly(id) {
+  function patchMessagesOnly(id, forceBottom) {
     var inst = instances[id];
     var list = inst.target.querySelector(".mcj-message-list");
     if (!list) return false;
+    var prevTop = list.scrollTop;
+    var near = list.scrollHeight - list.scrollTop - list.clientHeight < 96;
     list.innerHTML = messageList(inst);
-    list.scrollTop = list.scrollHeight;
+    list.scrollTop = forceBottom || near ? list.scrollHeight : prevTop;
     return true;
   }
 
@@ -283,7 +288,7 @@
       created_at: new Date().toISOString()
     };
     inst.messages = (inst.messages || []).concat([optimistic]);
-    if (!patchMessagesOnly(inst.id)) patchDetail(inst.id);
+    if (!patchMessagesOnly(inst.id, true)) patchDetail(inst.id);
     var res = await api.uploadMedia(inst.role, conversationId, input.files[0], "image");
     if (!res.ok) {
       inst.messages = (inst.messages || []).map(function (m) {
@@ -326,7 +331,7 @@
     inst.messages = (inst.messages || []).concat([optimistic]);
     var submitBtn = form.querySelector('button[type="submit"]');
     if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = "发送中…"; }
-    if (!patchMessagesOnly(inst.id)) patchDetail(inst.id);
+    if (!patchMessagesOnly(inst.id, true)) patchDetail(inst.id);
     try {
       var res = await api.sendMessage(inst.role, conversationId, {
         message_type: "text",

@@ -55,6 +55,11 @@
   }
 
   function unlockScroll() {
+    var restoreY = 0;
+    try {
+      var rawTop = (document.body && document.body.style && document.body.style.top) || "";
+      if (/^-?\d+/.test(rawTop)) restoreY = Math.abs(parseInt(rawTop, 10) || 0);
+    } catch (e) {}
     try {
       if (window.MCJModal && typeof window.MCJModal.unlockBodyScroll === "function") {
         window.MCJModal.unlockBodyScroll();
@@ -83,6 +88,9 @@
     document.body.style.width = "";
     delete document.documentElement.dataset.mcjPoScrollLocked;
     delete document.documentElement.dataset.mcjPoScrollY;
+    if (restoreY) {
+      try { window.scrollTo(0, restoreY); } catch (e) {}
+    }
   }
 
   function clearStuck(el) {

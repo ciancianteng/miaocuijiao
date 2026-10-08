@@ -1399,9 +1399,8 @@ export default async function handler(req, res) {
       await addSystem(before, admin.id, "后台已解除订单冻结。");
       return json(res, 200, { ok: true, message: "已解除冻结。" });
     } else if (action === "cancel") {
-      patch.status = "cancelled";
-      patch.cancelled_at = new Date().toISOString();
-      // Cat-food HOLD lives on payment owner (parent / standalone). Never release on child cancel alone.
+      const { loadOrderMoneyFacts } = await import("../_order-payment-facts.js");
+      const facts = await loadOrderMoneyFacts(before);
       if (!before.parent_order_id) {
         try {
           const walletApi = await import("../_wallet.js");
@@ -1418,6 +1417,21 @@ export default async function handler(req, res) {
           }
         }
       }
+      if (!before.parent_order_id && facts.refundable > 0) {
+        const { refundCapturedAmount } = await import("../_order-cancel.js");
+        const refunded = await refundCapturedAmount(before, {
+          reason: String(payload.reason || body.reason || "后台取消已付款订单"),
+          operator: { id: admin.id, name: admin.display_name || admin.email || "admin", role: "admin" },
+          amount: facts.refundable,
+        });
+        if (!refunded.ok) {
+          return json(res, 409, { ok: false, code: refunded.code || "REFUND_FAILED", message: refunded.message || "已付款订单取消退款失败，订单未改成已取消。" });
+        }
+        patch.status = "refunded";
+      } else {
+        patch.status = "cancelled";
+        patch.cancelled_at = new Date().toISOString();
+      }
     } else if (action === "refund") {
       // P0：同意退款 = 确认退款猫粮（真实入账），禁止仅改状态
       try {
@@ -1427,12 +1441,25 @@ export default async function handler(req, res) {
           "boss_refund_requests",
           `?order_id=eq.${encodeURIComponent(id)}&status=neq.rejected&status=neq.cancelled&order=created_at.desc&limit=5`
         ).catch(() => []);
+        const { loadOrderMoneyFacts } = await import("../_order-payment-facts.js");
+        const facts = await loadOrderMoneyFacts(before);
+        const alreadyPaid = (refundRows || []).find((r) => r.status === "paid");
+        if (!facts.hasSuccessfulPayment || !(facts.refundable > 0)) {
+          if (alreadyPaid) {
+            return json(res, 200, { ok: true, duplicate: true, message: "该订单已退款，未重复退回。", refund: alreadyPaid });
+          }
+          return json(res, 409, { ok: false, code: "NOTHING_TO_REFUND", message: "订单没有成功付款记录，不能退款。" });
+        }
+        const refundAmount = Math.min(
+          money(body.amount != null ? body.amount : facts.refundable) || facts.refundable,
+          facts.refundable
+        );
         let refundRow = (refundRows || []).find((r) => r.status === "paid") || (refundRows || [])[0];
         if (!refundRow) {
           const created = await refundApi.createBossRefundRequest(companionDb, {
             order: before,
             boss: { id: before.boss_id, display_name: "", public_uid: "" },
-            amount: body.amount != null ? body.amount : before.paid_cat_food || before.total_amount,
+            amount: refundAmount,
             reason: String(payload.reason || body.reason || "后台同意退款"),
           });
           if (!created.ok) return json(res, 400, created);
@@ -1453,7 +1480,7 @@ export default async function handler(req, res) {
         }
         const result = await refundApi.confirmBossCatFoodRefund(companionDb, {
           refundId: refundRow.id,
-          amount: body.amount != null ? body.amount : refundRow.amount_rm,
+          amount: refundAmount,
           adminId: admin.id,
           adminName: admin.display_name || admin.email || "",
           reason: String(payload.reason || body.reason || "后台确认退款猫粮"),

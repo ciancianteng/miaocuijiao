@@ -2077,11 +2077,60 @@
       loadData({soft:true});
     }
   });
+  function capturePwChatScroll(box){
+    if(!box)return null;
+    var nodes=box.querySelectorAll('[data-msg-id]');
+    var anchor=null;
+    var viewTop=box.scrollTop||0;
+    var i;
+    for(i=0;i<nodes.length;i++){
+      var el=nodes[i];
+      var id=el.getAttribute('data-msg-id');
+      if(!id)continue;
+      var top=el.offsetTop||0;
+      if(top+(el.offsetHeight||0)>viewTop+4){
+        anchor={id:id,offset:top-viewTop};
+        break;
+      }
+    }
+    return {
+      top:viewTop,
+      near:(box.scrollHeight||0)-(box.scrollTop||0)-(box.clientHeight||0)<96,
+      anchor:anchor
+    };
+  }
+  function restorePwChatScroll(box,snap,stick){
+    if(!box)return;
+    function apply(){
+      if(!box.isConnected)return;
+      if(stick||(snap&&snap.near)){
+        box.scrollTop=box.scrollHeight;
+        return;
+      }
+      if(snap&&snap.anchor&&snap.anchor.id){
+        var safe=String(snap.anchor.id).replace(/\\/g,'\\\\').replace(/"/g,'\\"');
+        var el=box.querySelector('[data-msg-id="'+safe+'"]');
+        if(el){
+          box.scrollTop=Math.max(0,(el.offsetTop||0)-(snap.anchor.offset||0));
+          return;
+        }
+      }
+      box.scrollTop=snap&&snap.top?snap.top:0;
+    }
+    apply();
+  }
   function captureScrollPos(){
     var page=document.querySelector('.pw-page');
+    var msgs=document.querySelector('[data-pw-messages]');
+    var sessions=document.querySelector('.pw-session-list');
+    var notices=document.querySelector('.pw-notice-list');
     return {
       winY:window.scrollY||document.documentElement.scrollTop||document.body.scrollTop||0,
-      pageY:page?page.scrollTop:0
+      pageY:page?page.scrollTop:0,
+      chat:capturePwChatScroll(msgs),
+      sessionY:sessions?sessions.scrollTop||0:0,
+      noticeY:notices?notices.scrollTop||0:0,
+      stickChat:!!state.chatStickBottom
     };
   }
   function applyScrollPos(pos){
@@ -2092,6 +2141,21 @@
       if(document.documentElement)document.documentElement.scrollTop=pos.winY||0;
       if(document.body)document.body.scrollTop=pos.winY||0;
     }catch(e){}
+    var msgs=document.querySelector('[data-pw-messages]');
+    if(msgs)restorePwChatScroll(msgs,pos.chat,!!pos.stickChat);
+    var sessions=document.querySelector('.pw-session-list');
+    if(sessions)sessions.scrollTop=pos.sessionY||0;
+    var notices=document.querySelector('.pw-notice-list');
+    if(notices)notices.scrollTop=pos.noticeY||0;
+    if(pos.stickChat&&msgs)state.chatStickBottom=false;
+    requestAnimationFrame(function(){
+      if(page&&pos.pageY!=null)page.scrollTop=pos.pageY;
+      try{window.scrollTo(0,pos.winY||0);}catch(e){}
+      var again=document.querySelector('[data-pw-messages]');
+      if(again)restorePwChatScroll(again,pos.chat,!!pos.stickChat);
+      var sessions2=document.querySelector('.pw-session-list');
+      if(sessions2)sessions2.scrollTop=pos.sessionY||0;
+    });
   }
   /** Route-enter: reset scroll once with the content swap (no animation / no rAF bounce). */
   function resetRouteScroll(){
@@ -2334,7 +2398,8 @@
         document.documentElement.style.setProperty('--pw-keyboard-inset','0px');
         return;
       }
-      var inset=Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+      var inset=Math.max(0,Math.round(window.innerHeight-vv.height));
+      if(inset<80)inset=0;
       document.documentElement.style.setProperty('--pw-keyboard-inset', inset+'px');
       document.documentElement.classList.toggle('pw-kb-open', inset>80);
     }catch(e){}
@@ -2350,7 +2415,6 @@
     syncPwKeyboardInset();
     if(window.visualViewport){
       window.visualViewport.addEventListener('resize',syncPwKeyboardInset);
-      window.visualViewport.addEventListener('scroll',syncPwKeyboardInset);
     }
     window.addEventListener('resize',syncPwKeyboardInset);
   }
@@ -2408,7 +2472,10 @@
       if(!isolated&&window.MCJCompanionAnnouncements){
         if(window.MCJCompanionAnnouncements.onShellPaint)window.MCJCompanionAnnouncements.onShellPaint();
       }
-      if(state.route==='profile')restoreProfileFocus();
+      if(state.route==='profile'){
+      restoreProfileFocus();
+      mountOfferManager();
+    }
       if(isAccountRoute()){
         restoreAccountFocus();
         mountCompanionAccountSecurity();
@@ -2440,7 +2507,7 @@
       '</div>'+
       '<div class="pw-top-titles"><h1>'+title()+'</h1><p class="pw-top-sub">'+subtitle+'</p></div>'+
       '</div>'+
-      '<div class="pw-account"><button type="button" class="pw-avatar" data-account-toggle aria-label="账号菜单">'+esc(String(player.name||player.uid||'P').slice(0,1).toUpperCase())+'</button><div class="pw-menu">'+accountMenu+'</div></div>'+
+      '<div class="pw-account"><button type="button" class="pw-btn" data-route="/companion/messages" aria-label="通知" style="min-width:44px;position:relative">🔔'+(unread?'<em class="pw-nav-badge">'+esc(unread>99?'99+':unread)+'</em>':'')+'</button><button type="button" class="pw-avatar" data-account-toggle aria-label="账号菜单">'+esc(String(player.name||player.uid||'P').slice(0,1).toUpperCase())+'</button><div class="pw-menu">'+accountMenu+'</div></div>'+
       '</header>'+
       (isolated?'':(window.MCJCompanionAnnouncements&&window.MCJCompanionAnnouncements.hostHtml?window.MCJCompanionAnnouncements.hostHtml():'<div class="pw-announcement-host" data-pw-announcement-host hidden></div>'))+
       '<main class="pw-page">'+pageHtml()+'</main></section>'+bottomNavHtml()+
@@ -2453,12 +2520,40 @@
     }
     bindPwKeyboardInset();
     syncPwKeyboardInset();
-    if(state.route==='profile')restoreProfileFocus();
+    if(state.route==='profile'){
+      restoreProfileFocus();
+      mountOfferManager();
+    }
     if(isAccountRoute()){
       restoreAccountFocus();
       mountCompanionAccountSecurity();
       mountDirectBossCard();
     }
+  }
+  function mountOfferManager(){
+    var host=document.getElementById('pwOfferManager');
+    if(!host||host.dataset.loaded==='1')return;
+    host.dataset.loaded='1';
+    api('my_offers').then(function(res){
+      var selected={};
+      (res.offers||[]).forEach(function(item){selected[item.kind+':'+item.id]=item;});
+      var catalog=((res.catalog&&res.catalog.services)||[]).map(function(item){return Object.assign({kind:'service'},item);})
+        .concat(((res.catalog&&res.catalog.products)||[]).map(function(item){return Object.assign({kind:'product'},item);}));
+      if(!catalog.length){
+        host.innerHTML='<p class="pw-note">平台还没有可添加的服务或玩法。</p>';
+        return;
+      }
+      host.innerHTML='<div class="pw-list">'+catalog.map(function(item){
+        var key=item.kind+':'+item.id;
+        var on=!!selected[key];
+        var enabled=on&&selected[key].enabled!==false;
+        return '<label class="pw-card pad" style="display:grid;gap:6px;margin-bottom:8px"><span><input type="checkbox" data-offer-pick data-kind="'+esc(item.kind)+'" data-id="'+esc(item.id)+'"'+(on?' checked':'')+'> '+esc(item.name||'-')+' <small>'+esc(item.kind==='product'?'更多玩法':'服务')+'</small></span>'+
+          '<span><input type="checkbox" data-offer-enabled'+(enabled?' checked':'')+'> 在主页显示</span></label>';
+      }).join('')+'</div><button class="pw-btn primary" type="button" data-save-offers>保存我的服务</button>';
+    }).catch(function(err){
+      host.dataset.loaded='';
+      host.innerHTML='<p class="pw-note">'+esc(err.message||'读取失败')+'</p>';
+    });
   }
   function mountDirectBossCard(){
     var mount=document.getElementById('pwDirectBossCard');
@@ -3018,6 +3113,17 @@
     }
     return '<div><span>Discord 语音房</span><strong>准备中 <button class="pw-btn" type="button" data-discord-retry="'+esc(o.id)+'">开启语音房</button></strong></div>';
   }
+  function orderWithdrawState(o){
+    var rows=(state.data&&state.data.withdrawals)||[];
+    var hit=rows.find(function(w){
+      if(/rejected|cancelled|pay_failed|failed/.test(String(w.status||'')))return false;
+      var ids=w.sourceOrderIds||[];
+      return ids.indexOf(o.id)>=0||String(w.remark||'').indexOf('[[order:'+o.id+']]')>=0;
+    });
+    if(!hit)return 'open';
+    if(/completed|paid/.test(String(hit.status||'')))return 'done';
+    return 'pending';
+  }
   function orderActions(o){
     var s=orderStatus(o),id=esc(o.id);var raw=o.status||o.rawStatus||'';var out=[];
     // Open-grab applicant: never show 开始订单 until boss selected (confirmed).
@@ -3041,6 +3147,11 @@
     if(o.completionPending&&raw==='in_progress')out.push('<span class="pw-note">已申请完成，等待老板确认'+(o.autoConfirmPaused?'（自动确认已暂停）':(o.autoConfirmRemainingLabel?(' · '+o.autoConfirmRemainingLabel+'后自动确认'):''))+'</span>');
     if(raw==='completed'||s==='已完成'){
       out.push('<button class="pw-btn" type="button" data-view-settlement="'+id+'">查看结算详情</button>');
+      var income=num(o.playerIncome||o.companionIncome||0);
+      var wd=orderWithdrawState(o);
+      if(wd==='done')out.push('<span class="pw-note">已提现</span>');
+      else if(wd==='pending')out.push('<span class="pw-note">提现处理中</span>');
+      else if(income>0.8)out.push('<button class="pw-btn primary" type="button" data-order-withdraw="'+id+'" data-order-income="'+esc(income)+'" data-order-no="'+esc(o.orderNo||o.order_no||'')+'">提现</button>');
     }
     return out.join('')||'<span class="pw-note">无可用操作</span>';
   }
@@ -3090,7 +3201,7 @@
           (o.paymentReviewedByName?'<div><span>审核客服</span><strong>'+esc(o.paymentReviewedByName)+'</strong></div>':'')+
           (o.paymentReviewedAt?'<div><span>审核时间</span><strong>'+esc(fmtTime(o.paymentReviewedAt))+'</strong></div>':''))
         :'')+
-      bossRankMetaHtml(o)+earlyFinishMetaHtml(o)+'</div>'+orderServiceStandardHtml(o)+peerHtml+'<footer class="pw-actions">'+orderActions(o)+'</footer></article>';
+      bossRankMetaHtml(o)+orderRequirementHtml(o)+earlyFinishMetaHtml(o)+'</div>'+orderServiceStandardHtml(o)+peerHtml+'<footer class="pw-actions">'+orderActions(o)+'</footer></article>';
   }
   /** Boss rank frozen in the order snapshot at create time. */
   function earlyFinishMetaHtml(o){
@@ -3103,6 +3214,14 @@
     var r=o&&o.serviceSnapshot&&o.serviceSnapshot.bossRank;
     if(!r||!r.rank)return '';
     return '<div data-boss-rank><span>老板段位</span><strong>'+esc((r.game?r.game+' · ':'')+r.rank)+'</strong></div>';
+  }
+  function orderRequirementHtml(o){
+    var fields=o&&o.serviceSnapshot&&o.serviceSnapshot.requirements;
+    if(!fields||!fields.length)return '';
+    return fields.map(function(f){
+      var val=Array.isArray(f.value)?f.value.join('、'):String(f.value||'');
+      return '<div data-order-requirement><span>'+esc(f.name)+'</span><strong>'+esc(val||'-')+'</strong></div>';
+    }).join('');
   }
   function orderServiceStandardHtml(o){
     var s=o&&o.serviceSnapshot;
@@ -3241,12 +3360,15 @@
       '<form class="pw-card pad pw-form" data-withdraw-form novalidate>'+
       '<div class="pw-info-list" style="margin-bottom:14px">'+
       infoRow('可提现余额',money(num(available)))+
+      (state.withdrawOrder?'<div data-withdraw-order>'+infoRow('订单收益','RM '+num(state.withdrawOrder.amount).toFixed(2))+infoRow('提现服务费','-RM 0.80')+infoRow('实际到账','RM '+Math.max(0,num(state.withdrawOrder.amount)-0.8).toFixed(2))+'</div>':'')+
+      infoRow('提现服务费','每次固定 RM 0.80')+
       infoRow('最低提现金额',(rules.minAmount||0)+' 猫粮')+
       infoRow('预计发放日期',(rules.nextSettlementDate||'-')+(rules.nextSettlementDate?'（星期五）':''))+
       infoRow('提现账户',rules.currentAccount||'未绑定')+
       infoRow('本周剩余次数',(rules.remainingThisWeek!=null?rules.remainingThisWeek:rules.remainingThisMonth||0)+' / '+(rules.weeklyLimit!=null?rules.weeklyLimit:rules.monthlyLimit||0))+
       '</div>'+
-      '<label>提现猫粮数量<input name="amount" type="number" inputmode="decimal" step="1" placeholder="请输入数量" '+(can?'':'disabled')+'></label>'+
+      (state.withdrawOrder?'<input type="hidden" name="amount" value="'+esc(state.withdrawOrder.amount)+'">':'<label>提现猫粮数量<input name="amount" type="number" inputmode="decimal" step="0.01" placeholder="请输入数量" '+(can?'':'disabled')+'></label>')+
+      '<p class="pw-note" data-withdraw-preview>提现金额、服务费 RM0.80 与实际到账以提交后服务端计算为准。</p>'+
       '<label>备注（可选）<input name="remark" placeholder="可选" '+(can?'':'disabled')+'></label>'+
       '<button class="pw-btn primary" type="submit" '+(can?'':'disabled')+'>'+(state.withdrawBusy?'提交中…':'提交提现申请')+'</button>'+
       '</form>'+
@@ -3268,8 +3390,9 @@
         '</summary>'+
         '<div class="pw-info-list pw-record-body">'+
           infoRow('单号',x.withdrawalNo||humanId(x.id))+
-          infoRow('提现金额',money(num(x.catFoodAmount||x.amount)))+
-          infoRow('到账金额',money(num(x.netAmountRm||0))+' RM')+
+          infoRow('订单收益',money(num(x.grossAmountRm||x.catFoodAmount||x.amount)))+
+          infoRow('提现服务费','RM '+num(x.feeRm||0).toFixed(2))+
+          infoRow('实际到账','RM '+num(x.netAmountRm||0).toFixed(2))+
           infoRow('预计发放日期',x.settlementDate?(String(x.settlementDate).slice(0,10)+'（星期五）'):'-')+
           infoRow('当前状态',statusCn)+
           infoRow('收款账户',last4?('尾号 '+last4):'-')+
@@ -4195,6 +4318,8 @@
         '</div>'+
         '<div class="pw-field">'+fieldLabel('擅长位置',false)+'<input name="position" value="'+esc(positionVal)+'" placeholder="例如：决斗 / 烟位"></div>'
       , false)+
+      pwAccHtml('profile-offers','我的服务 / 更多玩法','添加到个人主页，老板打开主页就能看到',
+        '<div id="pwOfferManager"><p class="pw-note">正在读取平台服务…</p></div>', false)+
       pwAccHtml('profile-media','展示资料','相册 · 语音试听 · 视频 · 战绩',
         '<div class="pw-field pw-upload-block'+(state.profileErrors&&state.profileErrors.gallery?' is-missing':'')+'" data-field="gallery">'+
         fieldLabel('相册照片',true)+
@@ -4293,7 +4418,7 @@
         var orderNo=o.orderNo||humanId(o.id)||'-';
         var created=o.createdAt||o.appointmentAt||'';
         var createdLabel=created?fmtTime(created):'-';
-        return '<article class="pw-grab-card'+(hallState==='settled'?' is-settled':'')+'" data-order-id="'+esc(o.id)+'"><header><div><span class="pw-type">'+esc(o.orderType||o.orderSource||'订单')+'</span>'+hallBadge+'<h3>'+esc(o.game||'-')+'</h3><p>'+esc(serviceText)+'</p></div><strong>'+money(o.amount||o.budget||0)+'</strong></header><div class="pw-order-meta"><div><span>订单编号</span><strong>'+esc(orderNo)+'</strong></div><div><span>服务类型</span><strong>'+esc(o.serviceType||o.serviceName||o.orderType||'-')+'</strong></div><div><span>游戏</span><strong>'+esc(o.game||'-')+'</strong></div>'+(o.gameId?'<div><span>老板游戏ID</span><strong>'+esc(o.gameId)+'</strong></div>':'')+bossRankMetaHtml(o)+(o.serviceSchedule||o.schedule?'<div><span>服务时段</span><strong>'+esc(formatSchedule24h(o.serviceSchedule||o.schedule))+'</strong></div>':(o.gameServer&&o.gameServer!=='-'?'<div><span>区服</span><strong>'+esc(o.gameServer)+'</strong></div>':''))+'<div><span>单价</span><strong>'+money(o.unitPrice||0)+'</strong></div><div><span>时长/局数</span><strong>'+esc(o.duration||'-')+'</strong></div><div><span>老板备注</span><strong>'+esc(o.bossNotes||o.remark||'-')+'</strong></div><div><span>下单时间</span><strong>'+esc(createdLabel)+'</strong></div><div><span>订单来源</span><strong>'+esc(o.orderSource||o.orderType||'-')+'</strong></div><div><span>预计收入</span><strong>'+money(o.playerIncome||0)+'</strong></div><div><span>抢单人数</span><strong>'+esc(grabCount)+'</strong></div><div><span>当前状态</span><strong>'+esc(o.hallStateLabel||o.statusText||o.orderStatus||'待抢单')+'</strong></div></div><footer><button class="pw-btn primary" data-accept-order="'+esc(o.id)+'" '+(disabled?'disabled':'')+'>'+esc(btnLabel)+'</button></footer></article>';
+        return '<article class="pw-grab-card'+(hallState==='settled'?' is-settled':'')+'" data-order-id="'+esc(o.id)+'"><header><div><span class="pw-type">'+esc(o.orderType||o.orderSource||'订单')+'</span>'+hallBadge+'<h3>'+esc(o.game||'-')+'</h3><p>'+esc(serviceText)+'</p></div><strong>'+money(o.amount||o.budget||0)+'</strong></header><div class="pw-order-meta"><div><span>订单编号</span><strong>'+esc(orderNo)+'</strong></div><div><span>服务类型</span><strong>'+esc(o.serviceType||o.serviceName||o.orderType||'-')+'</strong></div><div><span>游戏</span><strong>'+esc(o.game||'-')+'</strong></div>'+(o.gameId?'<div><span>老板游戏ID</span><strong>'+esc(o.gameId)+'</strong></div>':'')+bossRankMetaHtml(o)+orderRequirementHtml(o)+(o.serviceSchedule||o.schedule?'<div><span>服务时段</span><strong>'+esc(formatSchedule24h(o.serviceSchedule||o.schedule))+'</strong></div>':(o.gameServer&&o.gameServer!=='-'?'<div><span>区服</span><strong>'+esc(o.gameServer)+'</strong></div>':''))+'<div><span>单价</span><strong>'+money(o.unitPrice||0)+'</strong></div><div><span>时长/局数</span><strong>'+esc(o.duration||'-')+'</strong></div><div><span>老板备注</span><strong>'+esc(o.bossNotes||o.remark||'-')+'</strong></div><div><span>下单时间</span><strong>'+esc(createdLabel)+'</strong></div><div><span>订单来源</span><strong>'+esc(o.orderSource||o.orderType||'-')+'</strong></div><div><span>预计收入</span><strong>'+money(o.playerIncome||0)+'</strong></div><div><span>抢单人数</span><strong>'+esc(grabCount)+'</strong></div><div><span>当前状态</span><strong>'+esc(o.hallStateLabel||o.statusText||o.orderStatus||'待抢单')+'</strong></div></div><footer><button class="pw-btn primary" data-accept-order="'+esc(o.id)+'" '+(disabled?'disabled':'')+'>'+esc(btnLabel)+'</button></footer></article>';
       }).join(''):'<div class="pw-empty"><strong>暂无可抢订单</strong><span>'+(locked?auditHint():(!online?'请先切换为在线接单。':'客服发布订单后会自动显示，或调整筛选条件。'))+'</span></div>')+'</section>';
   }
   function accountDocCard(opts){
@@ -5434,6 +5559,35 @@
     if(e.target.closest('[data-close-settlement]')){
       if(e.target.closest('[data-settlement-dialog]')&&!e.target.closest('.pw-dialog-head [data-close-settlement],.pw-actions [data-close-settlement]'))return;
       state.settlement=null;paint();return;
+    }
+    if(e.target.closest('[data-save-offers]')){
+      var host=document.getElementById('pwOfferManager');
+      var offers=[];
+      if(host){
+        host.querySelectorAll('[data-offer-pick]').forEach(function(box,index){
+          if(!box.checked)return;
+          var card=box.closest('label');
+          var enabled=card&&card.querySelector('[data-offer-enabled]');
+          offers.push({kind:box.getAttribute('data-kind'),id:box.getAttribute('data-id'),enabled:!(enabled&&!enabled.checked),sort:index});
+        });
+      }
+      api('save_offers',{offers:offers}).then(function(res){
+        toast(res.message||'已保存');
+        if(host)host.dataset.loaded='';
+        mountOfferManager();
+      }).catch(function(err){toast(err.message||'保存失败')});
+      return;
+    }
+    var orderWithdraw=e.target.closest('[data-order-withdraw]');
+    if(orderWithdraw){
+      state.withdrawOrder={
+        id:orderWithdraw.getAttribute('data-order-withdraw'),
+        amount:num(orderWithdraw.getAttribute('data-order-income')),
+        orderNo:orderWithdraw.getAttribute('data-order-no')||''
+      };
+      state.earningsTab='withdraw';
+      go('/companion/withdraw');
+      return;
     }
     var viewSettle=e.target.closest('[data-view-settlement]');
     if(viewSettle){
@@ -6743,8 +6897,11 @@
       if(num(rules.remainingThisWeek!=null?rules.remainingThisWeek:rules.remainingThisMonth)<=0){toast('本周提现次数已用完');return}
       state.withdrawBusy=true;
       paint();
-      api('request_withdrawal',{amount:amount,remark:remark,paymentAccountId:accountId}).then(function(res){
+      var orderId=state.withdrawOrder&&state.withdrawOrder.id||'';
+      if(orderId)amount=num(state.withdrawOrder.amount);
+      api('request_withdrawal',{amount:amount,remark:remark,paymentAccountId:accountId,orderId:orderId}).then(function(res){
         state.withdrawBusy=false;
+        state.withdrawOrder=null;
         var item=res&&(res.item||res.withdrawal||(res.data&&res.data.item));
         var preview=res&&res.preview;
         if(item&&state.data){
@@ -6784,6 +6941,7 @@
         return;
       }
       state.chatBusy=true;
+      state.chatStickBottom=true;
       paint({preserveScroll:true});
       api('send_cs_message',{content:isoContent,consult_type:'profile_audit',conversation_id:isoCid}).then(function(){
         e.target.reset();
@@ -6820,6 +6978,7 @@
         messageType:'text',content:content,createdAt:new Date().toISOString()
       };
       state.chatBusy=true;
+      state.chatStickBottom=true;
       if(ta){ta.value='';autoSizeChatInput(ta);}
       state.inbox.messages=(state.inbox.messages||[]).concat([optimistic]);
       paint({preserveScroll:true});
@@ -6911,6 +7070,7 @@
               return Promise.resolve();
             }
             state.chatBusy=true;
+            state.chatStickBottom=true;
             if(statusEl)statusEl.textContent='发送中…';
             var localId='local-img-'+Date.now();
             if(state.inbox){

@@ -5,12 +5,16 @@
 
 html {
   max-width: 100%;
-  overflow-x: hidden;
+  /* clip does not force overflow-y to auto. hidden on one axis does, and
+     that second scrollport is what snaps iOS/Android back to the top. */
+  overflow-x: clip;
+  overflow-y: auto;
 }
 
 body.mcj-boss-shell {
   max-width: 100%;
-  overflow-x: hidden;
+  overflow-x: clip;
+  overflow-y: visible;
 }
 
 header.mcj-boss-header {

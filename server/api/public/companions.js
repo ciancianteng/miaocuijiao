@@ -852,6 +852,48 @@ async function loadCompanions(id = "", opts = {}) {
   return attachReviews(mapped, { summaryOnly: !String(id || "").trim() });
 }
 
+/**
+ * Current hall card for specific companions.
+ * Ranking must keep its own score/rank and only borrow this view for nickname, avatar, services, price, and status.
+ */
+export async function hallDisplayByUserIds(userIds = []) {
+  const ids = [...new Set((userIds || []).map((id) => String(id || "").trim()).filter(Boolean))];
+  if (!ids.length || !hasDb()) return {};
+  const inList = ids.map(encodeURIComponent).join(",");
+  const [rows, profiles, levels, servicesBundle] = await Promise.all([
+    supabaseJson(restUrl("companion_profiles", `?user_id=in.(${inList})&select=*&limit=500`), { headers: headers() }).catch(
+      () => []
+    ),
+    supabaseJson(
+      restUrl("profiles", `?id=in.(${inList})&select=id,display_name,avatar_url,email,status,role,is_test_account&limit=500`),
+      { headers: headers() }
+    ).catch(async () =>
+      supabaseJson(
+        restUrl("profiles", `?id=in.(${inList})&select=id,display_name,avatar_url,email,status,role&limit=500`),
+        { headers: headers() }
+      ).catch(() => [])
+    ),
+    readLocalLevels().catch(() => []),
+    loadPublicServices().catch(() => ({ services: [] })),
+  ]);
+  const catalog = Array.isArray(servicesBundle?.services) ? servicesBundle.services : [];
+  const levelList = Array.isArray(levels) ? levels.map((l) => toPublicLevel(l)) : [];
+  const profileMap = Object.fromEntries((profiles || []).map((row) => [row.id, row]));
+  const profileIds = (rows || []).map((row) => row.id).filter(Boolean);
+  const mediaMap = await mediaExtrasByProfile(profileIds, { listMode: true }).catch(() => ({}));
+  const out = {};
+  for (const row of rows || []) {
+    if (!row?.user_id) continue;
+    const profile = profileMap[row.user_id] || {};
+    // Hall list omits service_ids. Ranking must use that same card, not a stricter detail projection.
+    const listRow = { ...row };
+    delete listRow.service_ids;
+    const card = publicCompanion(listRow, profile, levelList, catalog, mediaMap[row.id] || {}, []);
+    out[row.user_id] = card;
+  }
+  return out;
+}
+
 export default async function handler(req, res) {
   const lookup = String(req.query.id || req.query.uid || req.query.player || "").trim();
   // List is public + slowly changing; allow short edge cache (overridden only if vercel.json permits).

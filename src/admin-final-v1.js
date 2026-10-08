@@ -85,11 +85,16 @@
     if(no==='历史订单'||!no||isUuid(no))return shortOrderRef(r&&(r.orderId||r.id));
     return no;
   }
+  var reviewSectionOpen=false;
+  function isTerminalQueueStatus(st){
+    return /^(cancelled|canceled|refunded|expired|closed)$/.test(String(st||'').toLowerCase());
+  }
   function orderMatchesFilter(o,filter,proofByOrder){
     if(!filter||filter==='all')return true;
     var st=String((o&&o.status)||'').toLowerCase();
     var pay=String((o&&o.paymentStatus)||'');
     var text=String((o&&(o.statusText||o.orderStatus))||'');
+    if((filter==='pending_review'||filter==='waiting_confirm'||filter==='in_progress')&&isTerminalQueueStatus(st))return false;
     if(filter==='pending_review'){
       return !!(proofByOrder&&proofByOrder[String(o.id)])||/待审核|付款审核|等待审核/.test(pay)||st==='awaiting_payment';
     }
@@ -303,6 +308,10 @@
     if(!s)return '';
     var rows=[['项目',s.serviceName||o.serviceContent||'-'],['下单时单价',money(s.unitPrice)+' / '+(s.pricingUnit||'小时')]];
     if(s.bossRank&&s.bossRank.rank)rows.push(['老板段位',(s.bossRank.game?s.bossRank.game+' · ':'')+s.bossRank.rank]);
+    (s.requirements||[]).forEach(function(field){
+      var val=Array.isArray(field.value)?field.value.join('、'):String(field.value||'');
+      rows.push([field.name||'订单要求', val||'-']);
+    });
     if(s.sections&&s.sections.length){
       s.sections.forEach(function(sec){rows.push([sec.label,esc(sec.value).replace(/\n/g,'<br>'),true]);});
     }else{
@@ -426,7 +435,12 @@
     var target=document.getElementById('orderManagement');
     if(!target)return;
     var rows=ordersCache.rows||[];
-    var pendingProofs=ordersCache.pendingProofs||[];
+    var pendingProofs=(ordersCache.pendingProofs||[]).filter(function(p){
+      var order=(ordersCache.rows||[]).find(function(row){return String(row.id)===String(p.orderId);});
+      if(isTerminalQueueStatus(p.orderStatus))return false;
+      if(!order)return true;
+      return !isTerminalQueueStatus(order.status);
+    });
     var proofByOrder={};
     pendingProofs.forEach(function(p){if(p.orderId)proofByOrder[String(p.orderId)]=p;});
     closeOrderManageMenu();
@@ -482,7 +496,7 @@
       '<div class="admin-orders-page">'+
       '<div class="admin-orders-toolbar"><button class="mini-btn" type="button" data-admin-final-refresh="orders">刷新</button></div>'+
       filtersHtml+
-      (showReview?'<section class="admin-orders-review"><h3 class="admin-orders-section-title">待付款审核'+(pendingProofs.length?' · '+pendingProofs.length:'')+'</h3><div class="admin-orders-cards">'+reviewCards+'</div></section>':'')+
+      (showReview&&pendingProofs.length?'<section class="admin-orders-review"><h3 class="admin-orders-section-title">待付款审核 · '+pendingProofs.length+' <button type="button" class="mini-btn" data-admin-review-toggle>'+(reviewSectionOpen?'收起':'展开')+'</button></h3>'+(reviewSectionOpen?'<div class="admin-orders-cards">'+reviewCards+'</div>':'')+'</section>':'')+
       '<section class="admin-orders-list"><h3 class="admin-orders-section-title">订单列表'+(filtered.length?' · '+filtered.length:'')+'</h3><div class="admin-orders-cards">'+listCards+'</div></section>'+
       '</div><div id="adminProofLightbox" class="admin-proof-lightbox" hidden></div>';
     ensureGrabModalHost();
@@ -789,6 +803,12 @@
     if(e.target.closest('[data-admin-final-refresh="orders"]'))renderOrders();
     if(e.target.closest('[data-admin-final-refresh="reports"]'))renderReports();
     if(e.target.closest('[data-admin-final-refresh="dashboard"]'))renderDashboard();
+    var reviewToggle=e.target.closest('[data-admin-review-toggle]');
+    if(reviewToggle){
+      reviewSectionOpen=!reviewSectionOpen;
+      paintOrdersPage();
+      return;
+    }
     var filterBtn=e.target.closest('[data-admin-orders-filter]');
     if(filterBtn){
       e.preventDefault();
@@ -999,5 +1019,38 @@
       row.hidden=hay.indexOf(q)<0;
     });
   });
-  document.addEventListener('DOMContentLoaded',function(){if(!Auth)return;Auth.ensureValidToken().then(function(){ensureGrabModalHost();renderDashboard();renderOrders();renderReports();renderContent()}).catch(function(){})});
+  function mountAdminNotices(){
+    var bar=document.querySelector('.topbar-actions');
+    if(!bar||document.getElementById('adminNoticeBtn'))return;
+    var wrap=document.createElement('div');
+    wrap.style.position='relative';
+    wrap.innerHTML='<button class="admin-text-btn" type="button" id="adminNoticeBtn" aria-label="通知">通知 <em id="adminNoticeBadge" hidden style="font-style:normal;color:#ff7ab8"></em></button><div id="adminNoticePanel" hidden style="position:absolute;right:0;top:110%;z-index:50;width:min(360px,82vw);max-height:420px;overflow:auto;background:#140c18;border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:8px"></div>';
+    bar.insertBefore(wrap, bar.firstChild);
+  }
+  function paintAdminNotices(items){
+    var badge=document.getElementById('adminNoticeBadge');
+    var panel=document.getElementById('adminNoticePanel');
+    var unread=(items||[]).filter(function(n){return !n.readAt}).length;
+    if(badge){badge.hidden=unread<1;badge.textContent=unread>99?'99+':String(unread);}
+    if(!panel)return;
+    panel.innerHTML=(items&&items.length)?items.map(function(n){
+      return '<a href="'+esc(n.href||'/admin.html#orders')+'" data-admin-notice="'+esc(n.id)+'" style="display:block;padding:8px 10px;border-radius:8px;color:inherit;text-decoration:none;'+(n.readAt?'opacity:.6':'')+'"><strong style="font-size:13px">'+esc(n.title)+'</strong><div style="font-size:12px;opacity:.78;margin-top:2px">'+esc(n.body)+'</div><div style="font-size:11px;opacity:.5;margin-top:2px">'+esc(n.at||'')+(n.relatedId?' · '+esc(n.relatedId):'')+'</div></a>';
+    }).join(''):'<div style="padding:12px;opacity:.7">暂无通知</div>';
+  }
+  function loadAdminNotices(){
+    if(!Auth)return;
+    get('/api/admin/notifications').then(function(res){paintAdminNotices(res.notifications||[])}).catch(function(){});
+  }
+  document.addEventListener('click',function(e){
+    var btn=e.target.closest&&e.target.closest('#adminNoticeBtn');
+    var panel=document.getElementById('adminNoticePanel');
+    if(btn&&panel){panel.hidden=!panel.hidden;return;}
+    var link=e.target.closest&&e.target.closest('[data-admin-notice]');
+    if(link){
+      post('/api/admin/notifications',{action:'mark_read',id:link.getAttribute('data-admin-notice')}).catch(function(){});
+      return;
+    }
+    if(panel&&!panel.hidden&&!(e.target.closest&&e.target.closest('#adminNoticePanel')))panel.hidden=true;
+  });
+  document.addEventListener('DOMContentLoaded',function(){if(!Auth)return;Auth.ensureValidToken().then(function(){ensureGrabModalHost();mountAdminNotices();loadAdminNotices();renderDashboard();renderOrders();renderReports();renderContent()}).catch(function(){})});
 })();

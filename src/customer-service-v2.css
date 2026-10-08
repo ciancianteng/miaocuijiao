@@ -152,7 +152,7 @@
 .cs-chat-head h2{margin:0;font-size:16px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .cs-chat-head p{margin:2px 0 0;color:#9ca3af;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .cs-back-list{flex:0 0 auto}
-.cs-chat-messages{overflow-y:auto;overflow-x:hidden;padding:12px;display:flex;flex:1 1 auto;flex-direction:column;gap:10px;min-height:0;overscroll-behavior:contain}
+.cs-chat-messages{overflow-y:auto;overflow-x:clip;overflow-anchor:none;padding:12px;display:flex;flex:1 1 auto;flex-direction:column;gap:10px;min-height:0;overscroll-behavior:contain}
 .cs-msg{max-width:65%;padding:10px 14px;border-radius:12px;background:rgba(255,255,255,.08);align-self:flex-start;font-size:14px;line-height:1.4}
 .cs-msg.mine{align-self:flex-end;background:rgba(255,143,197,.16);border:1px solid rgba(255,143,197,.25)}
 .cs-msg.system{align-self:center;max-width:92%;text-align:center;background:rgba(255,255,255,.04);border:1px dashed rgba(255,255,255,.14);color:#c8cad4}
@@ -932,3 +932,17 @@
 .cs-ef-actions{justify-content:flex-end;margin-top:10px}
 .cs-ef-actions .cs-btn{min-height:44px}
 @media (max-width:640px){.cs-ef-actions{flex-direction:column-reverse}.cs-ef-actions .cs-btn{width:100%}[data-ef-modal] input,[data-ef-modal] select,[data-ef-modal] textarea{font-size:16px}}
+.cs-chat-head{align-items:center;gap:8px;padding:8px 10px}
+.cs-chat-head h2{font-size:16px;margin:0}
+.cs-chat-head p{margin:2px 0 0;font-size:12px;opacity:.75}
+.cs-chat-head-actions{display:flex;gap:6px;margin-left:auto}
+.cs-icon-btn{min-height:32px;height:32px;padding:0 10px;font-size:12px;border-radius:999px}
+.cs-msg.system{justify-content:center;background:transparent;border:0;box-shadow:none}
+.cs-msg.system p{margin:0;color:#b7a8b2;font-size:12px;text-align:center}
+.cs-quick-panel{display:grid;gap:8px;padding:8px 0}
+.cs-quick-list{display:flex;flex-wrap:wrap;gap:6px}
+.cs-quick-list button{border-radius:999px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);color:#ffe8f4;padding:6px 10px;cursor:pointer}
+.cs-quick-edit{display:grid;gap:6px}
+.cs-chat-layout{min-width:0}
+.cs-chat-messages{min-height:240px}
+@media(max-width:760px){.cs-chat-side{display:none}.cs-chat-head-main{min-width:0}.cs-chat-head h2,.cs-chat-head p{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}

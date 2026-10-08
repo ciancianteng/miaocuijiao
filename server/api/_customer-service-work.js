@@ -472,6 +472,34 @@ async function openSessionForService(serviceId) {
   return rows[0] || null;
 }
 
+function sessionWorkDate(row) {
+  return String(row?.work_date || row?.workDate || "").slice(0, 10);
+}
+
+/** Close a forgotten open session from an earlier day so today can clock in. Same-day open rows are left alone. */
+async function closeStaleOpenSession(open, workDate) {
+  if (!open?.id) return null;
+  const openDate = sessionWorkDate(open);
+  if (!openDate || openDate === workDate) return null;
+  const ended = nowIso();
+  const mins = durationMinutes(open.clock_in_at, ended);
+  const rows = await supabaseJson(
+    restUrl("cs_attendance_sessions", `?id=eq.${encodeURIComponent(open.id)}&status=eq.open`),
+    {
+      method: "PATCH",
+      headers: serviceHeaders(),
+      body: JSON.stringify({
+        clock_out_at: ended,
+        status: "closed",
+        duration_minutes: mins,
+        updated_at: ended,
+        admin_note: "auto_close_previous_day",
+      }),
+    }
+  );
+  return rows?.[0] || null;
+}
+
 function sessionTypeLabel(type) {
   const t = String(type || "normal").toLowerCase();
   if (t === "overtime") return "加班";
@@ -753,14 +781,19 @@ export async function clockInService(serviceId, opts = {}) {
   const workDate = todayKey();
   const config = defaultClockConfig(opts.config);
   const open = await openSessionForService(serviceId);
-  if (open?.id) {
+  if (open?.id && sessionWorkDate(open) === workDate) {
     const sessions = await listSessionsForService(serviceId, { workDate });
+    const meta = aggregateTodaySessions(config, sessions.length ? sessions : [open], workDate);
+    if (!meta.clockInAt) meta.clockInAt = open.clock_in_at || "";
     return {
       row: open,
-      meta: aggregateTodaySessions(config, sessions, workDate),
+      meta,
       already: true,
       elapsedMs: Date.now() - t0,
     };
+  }
+  if (open?.id) {
+    await closeStaleOpenSession(open, workDate);
   }
   const todaySessions = await listSessionsForService(serviceId, { workDate });
   const priorClosed = todaySessions.filter((s) => s.clock_out_at || s.status === "closed").length;
@@ -799,9 +832,20 @@ export async function clockInService(serviceId, opts = {}) {
   } catch (err) {
     if (/23505|duplicate key|one_open/i.test(String(err?.message || ""))) {
       const raced = await openSessionForService(serviceId);
-      if (raced?.id) {
+      if (raced?.id && sessionWorkDate(raced) === workDate) {
         const sessions = await listSessionsForService(serviceId, { workDate });
-        return { row: raced, meta: aggregateTodaySessions(config, sessions, workDate), already: true, elapsedMs: Date.now() - t0 };
+        const meta = aggregateTodaySessions(config, sessions.length ? sessions : [raced], workDate);
+        if (!meta.clockInAt) meta.clockInAt = raced.clock_in_at || "";
+        return { row: raced, meta, already: true, elapsedMs: Date.now() - t0 };
+      }
+      if (raced?.id) {
+        await closeStaleOpenSession(raced, workDate);
+        const retry = await supabaseJson(restUrl("cs_attendance_sessions"), {
+          method: "POST",
+          headers: serviceHeaders(),
+          body: JSON.stringify(payload),
+        });
+        saved = retry?.[0] || null;
       }
     }
     // Table missing → fall back to legacy single-day row

@@ -186,13 +186,42 @@ async function targetView(row) {
   };
 }
 
+async function asGroup(order) {
+  if (order?.parent_order_id) return { isMulti: false, parentId: String(order.parent_order_id), rows: [order] };
+  const kids = order?.id ? await loadChildren(order.id) : [];
+  if ((kids && kids.length) || isMultiParent(order)) {
+    return { isMulti: true, parentId: String(order.id), rows: kids || [] };
+  }
+  return { isMulti: false, parentId: "", rows: [order] };
+}
+
+async function syncParentFromChildren(parentId, operatorId) {
+  if (!parentId) return null;
+  const { refreshParentOrderStatus } = await import("./_order-group.js");
+  return refreshParentOrderStatus(parentId, {
+    loadOrder,
+    loadChildren,
+    patchOrder: async (pid, patch) => {
+      const rows = await supabaseJson(restUrl("orders", `?id=eq.${encodeURIComponent(pid)}`), {
+        method: "PATCH",
+        headers: serviceHeaders(),
+        body: JSON.stringify(patch),
+      });
+      return rows?.[0] || null;
+    },
+    operatorId: operatorId || null,
+  }).catch(() => null);
+}
+
 export async function earlyFinishPreview(order) {
   if (!order?.id) throw fail(404, "ORDER_NOT_FOUND", "订单不存在。");
-  if (isMultiParent(order)) {
-    const kids = await loadChildren(order.id);
-    return { orderId: order.id, orderNo: order.order_no || "", isMulti: true, targets: await Promise.all(kids.map(targetView)) };
-  }
-  return { orderId: order.id, orderNo: order.order_no || "", isMulti: false, targets: [await targetView(order)] };
+  const group = await asGroup(order);
+  return {
+    orderId: order.id,
+    orderNo: order.order_no || "",
+    isMulti: group.isMulti,
+    targets: await Promise.all(group.rows.map(targetView)),
+  };
 }
 
 async function claim(order, data) {
@@ -361,14 +390,22 @@ export async function executeEarlyFinish(order, opts = {}) {
   const reason = String(opts.reason || "").trim().slice(0, 200);
   if (!reason) throw fail(400, "REASON_REQUIRED", "请填写提前结束原因。");
   const operator = opts.operator || {};
-  let targets;
-  if (isMultiParent(order)) {
-    const kids = await loadChildren(order.id);
+  const group = await asGroup(order);
+  let targets = group.rows;
+  if (group.isMulti) {
     const wanted = Array.isArray(opts.childIds) && opts.childIds.length ? new Set(opts.childIds.map(String)) : null;
-    targets = kids.filter((k) => (wanted ? wanted.has(String(k.id)) : eligibility(k).eligible || readEarlyFinish(k)?.status === "processing"));
+    targets = group.rows.filter((k) => (wanted ? wanted.has(String(k.id)) : eligibility(k).eligible || readEarlyFinish(k)?.status === "processing"));
     if (!targets.length) throw fail(409, "NO_ELIGIBLE_CHILD", "没有可提前结束的子订单（需为服务中）。");
-  } else {
-    targets = [order];
+  }
+  const blockers = [];
+  for (const t of targets) {
+    const marker = readEarlyFinish(t);
+    if (marker?.status === "done" || marker?.status === "processing") continue;
+    const el = eligibility(t);
+    if (!el.eligible) blockers.push(`${t.order_no || t.id} ${el.reason}`);
+  }
+  if (blockers.length) {
+    throw fail(409, "NOT_EARLY_FINISHABLE", `未改任何订单：${blockers.join("；")}`);
   }
   const results = [];
   for (const t of targets) {
@@ -382,10 +419,12 @@ export async function executeEarlyFinish(order, opts = {}) {
       results.push({ ok: true, ...r });
     } catch (err) {
       results.push({ orderId: t.id, orderNo: t.order_no, ok: false, code: err.code || "", message: err.message || "提前结束失败" });
+      break;
     } finally {
       LOCKS.delete(t.id);
     }
   }
+  if (group.parentId) await syncParentFromChildren(group.parentId, operator.id);
   return { ok: results.every((r) => r.ok), results };
 }
 
@@ -394,7 +433,8 @@ export async function rejectEarlyFinish(order, { reason, operator = {}, childIds
   if (!order?.id) throw fail(404, "ORDER_NOT_FOUND", "订单不存在。");
   const why = String(reason || "").trim().slice(0, 200);
   if (!why) throw fail(400, "REASON_REQUIRED", "请填写拒绝原因。");
-  const pool = isMultiParent(order) ? await loadChildren(order.id) : [order];
+  const group = await asGroup(order);
+  const pool = group.rows;
   const wanted = childIds.length ? new Set(childIds.map(String)) : null;
   const targets = pool.filter((r) => (!wanted || wanted.has(String(r.id))) && String(r.status) === "in_progress" && orderHasCompletionPending(r));
   if (!targets.length) throw fail(409, "NO_PENDING_REQUEST", "没有待处理的陪玩提前结束申请。");

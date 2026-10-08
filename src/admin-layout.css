@@ -7,12 +7,13 @@ html,
 body {
   height: 100%;
   margin: 0;
-  overflow-x: hidden;
+  overflow: hidden;
+  overflow-x: clip;
 }
 
 body {
   overflow: hidden;
-  overflow-x: hidden;
+  overflow-x: clip;
   background: #060507;
   color: #fff5fa;
 }

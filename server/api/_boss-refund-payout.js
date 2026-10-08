@@ -294,6 +294,26 @@ export async function confirmBossCatFoodRefund(db, {
 
   const idempotencyKey = `refund-meow:${row.id}`;
   const walletApi = await import("./_wallet.js");
+  let paymentFacts = null;
+  if (!row.order_id) {
+    return { ok: false, code: "NOTHING_TO_REFUND", message: "退款缺少订单，不能按金额入账。" };
+  }
+  try {
+    const { loadOrderMoneyFacts } = await import("./_order-payment-facts.js");
+    paymentFacts = await loadOrderMoneyFacts({ id: row.order_id });
+  } catch (err) {
+    return { ok: false, code: "PAYMENT_LOOKUP_FAILED", message: "无法核对付款记录，已停止退款。" };
+  }
+  if (!paymentFacts?.hasSuccessfulPayment || !(paymentFacts.refundable > 0)) {
+    return { ok: false, code: "NOTHING_TO_REFUND", message: "订单没有成功付款记录，不能退款。" };
+  }
+  if (creditAmount > paymentFacts.refundable + 0.001) {
+    return {
+      ok: false,
+      code: "REFUND_EXCEEDS_PAID",
+      message: `可退 ${paymentFacts.refundable} 猫粮，不能按订单标价退 ${creditAmount}。`,
+    };
+  }
   let creditResult;
   try {
     creditResult = await walletApi.creditWallet({
@@ -359,7 +379,9 @@ export async function confirmBossCatFoodRefund(db, {
       const ors = await db("orders", `?id=eq.${encodeURIComponent(saved.order_id)}&select=id,total_amount,paid_cat_food&limit=1`).catch(() =>
         db("orders", `?id=eq.${encodeURIComponent(saved.order_id)}&select=id,total_amount&limit=1`)
       );
-      const paidGross = money(ors?.[0]?.paid_cat_food || ors?.[0]?.total_amount || 0);
+      const paidGross = paymentFacts?.actualPaid > 0
+        ? paymentFacts.actualPaid
+        : money(ors?.[0]?.paid_cat_food || 0);
       if (paidGross > 0 && !(money(orderGrossHint) > 0)) orderGross = paidGross;
       const prior = await db(
         "boss_refund_requests",
