@@ -230,9 +230,11 @@ async function main() {
     const confirmed = await api("/api/customer-service", cs.token, { action: "confirm_payment", id: renewal.id });
     const again = await api("/api/customer-service", cs.token, { action: "confirm_payment", id: renewal.id });
     record(
-      "4-cs-confirm",
-      confirmed.ok && (confirmed.json.order?.status === "claimed" || confirmed.json.path === "assigned_confirm"),
-      `status=${confirmed.json.order?.status || confirmed.status} path=${confirmed.json.path || ""} again=${again.json.order?.status || again.status}`
+    "4-cs-confirm",
+    confirmed.ok &&
+      (confirmed.json.order?.status === "claimed" || confirmed.json.path === "assigned_confirm") &&
+      (again.json.duplicate === true || again.json.already === true || again.json.order?.status === "claimed"),
+    `status=${confirmed.json.order?.status || confirmed.status} path=${confirmed.json.path || ""} again=${again.json.order?.status || again.status} duplicate=${!!(again.json.duplicate || again.json.already)}`
     );
   } else {
     record("3-cs-sees-renewal", false, "no customer-service login");
@@ -280,6 +282,36 @@ async function main() {
       Number(sourceNow.totalAmount || sourceNow.total_amount) === Number(before.total) &&
       Number(sourceNow.hours) === Number(before.hours),
     `status=${sourceNow.status} hours=${sourceNow.hours} total=${sourceNow.totalAmount || sourceNow.total_amount}`
+  );
+
+  const requested = await api("/api/companion", companion.token, { action: "complete_order", id: renewal.id });
+  const settled = await api("/api/orders", boss.token, { action: "confirm_completion", id: renewal.id });
+  const settledStatus = settled.json.order?.status || "";
+  record(
+    "13-settle",
+    requested.ok && requested.json.awaitingBossConfirm === true && settled.ok && settledStatus === "completed" && !!settled.json.settlement,
+    `request=${requested.json.message || requested.status} settle=${settledStatus || settled.status} settlement=${settled.json.settlement ? "yes" : "no"} duplicate=${!!settled.json.duplicate}`
+  );
+  const settledAgain = await api("/api/orders", boss.token, { action: "confirm_completion", id: renewal.id });
+  record(
+    "14-settle-once",
+    settledAgain.ok && (settledAgain.json.duplicate === true || settledAgain.json.order?.status === "completed"),
+    `again=${settledAgain.json.order?.status || settledAgain.status} duplicate=${!!settledAgain.json.duplicate}`
+  );
+
+  const second = await api("/api/orders", boss.token, {
+    action: "create_renewal",
+    sourceOrderId: source.id,
+    hours: nextHours === 2 ? 1 : 2,
+  });
+  const unpaid = second.json.order || {};
+  const cancelled = unpaid.id
+    ? await api("/api/orders", boss.token, { action: "cancel_order", id: unpaid.id, reason: "renewal acceptance cancel before payment" })
+    : { ok: false, json: second.json, status: second.status };
+  record(
+    "15-cancel-unpaid",
+    second.ok && unpaid.orderNo && unpaid.orderNo !== before.orderNo && unpaid.orderNo !== renewal.orderNo && cancelled.ok && cancelled.json.order?.status === "cancelled" && cancelled.json.code !== "PAID_CANCEL_USE_REFUND",
+    `new=${unpaid.orderNo || second.json.code || second.status} cancel=${cancelled.json.order?.status || cancelled.json.code || cancelled.status}`
   );
 
   report.sessions = {
