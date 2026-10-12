@@ -24,6 +24,11 @@
     return '<span class="ops-chip ' + kind + '">' + esc(text) + "</span>";
   }
 
+  function actionLabel(action) {
+    var map = { submit: "提交申请", approve: "审核通过", reject: "已拒绝", need_more: "要求补充资料", exam_pass: "考核通过", exam_fail: "考核不通过", revoke_badge: "撤销徽章" };
+    return map[action] || action;
+  }
+
   function statusMeta(status) {
     var map = {
       pending: ["待审核", "wait"],
@@ -223,9 +228,9 @@
     var root = $("opsRequirements");
     if (!root) return;
     var current = state.services.find(function (item) { return item.id === ui.requirementId; });
-    root.innerHTML = '<div class="ops-page"><div><h2>订单要求配置</h2><p class="ops-note">每个服务有自己的字段。老板填写的内容会随订单快照保存，之后改字段不会改写旧订单。</p></div><div class="ops-grid-2"><div class="ops-card"><h3>选择服务</h3><div class="ops-actions">' + (state.services.map(function (service) {
+    root.innerHTML = '<div class="ops-page"><div class="ops-toolbar"><div><h2>订单要求配置</h2><p class="ops-note">每个服务有自己的字段。老板填写的内容会随订单快照保存，之后改字段不会改写旧订单。</p></div></div><div class="ops-card"><h3>选择服务</h3><div class="ops-actions">' + (state.services.map(function (service) {
       return '<button class="ops-btn' + (service.id === ui.requirementId ? " primary" : "") + '" type="button" data-ops="pick-requirement" data-id="' + esc(service.id) + '">' + esc(service.name) + "</button>";
-    }).join("") || "还没有服务") + '</div></div><div class="ops-card"><h3>' + esc(current ? current.name : "字段") + '</h3><div id="fieldEditor"></div></div></div></div>';
+    }).join("") || "还没有服务") + '</div></div><div class="ops-card"><h3>' + esc(current ? current.name : "字段") + '</h3><div id="fieldEditor"></div></div></div>';
     renderFieldEditor();
   }
 
@@ -336,8 +341,8 @@
     var reviews = state.reviews.filter(function (entry) { return entry.applicationId === id; });
     var badge = state.badges.find(function (entry) { return entry.applicationId === id && entry.active; });
     var meta = statusMeta(item.status);
-    openModal('<div class="ops-page"><div class="ops-split"><h2>认证申请详情</h2>' + chip(meta[0], meta[1]) + "</div><div class='ops-grid-2'><article class='ops-card'><h3>" + esc(companionName(item.companionId)) + "</h3><p>游戏：" + esc(item.game) + "</p><p>项目：" + esc(item.certItem) + "</p><p>技术等级：" + esc(item.techLevel) + "</p><p>考核备注：" + esc(item.examNote) + "</p><p>申请说明：" + esc(item.description || "无") + "</p><p>证明资料：" + esc(item.proof || "未上传") + "</p></article><article class='ops-card'><h3>审核记录</h3>" + (reviews.length ? reviews.map(function (review) {
-      return "<p><b>" + esc(review.action) + "</b> · " + esc(review.createdAt) + "<br>" + esc(review.reason || "无备注") + "</p>";
+    openModal('<div class="ops-page"><div class="ops-split"><h2>认证申请详情</h2><div class="ops-actions">' + chip(meta[0], meta[1]) + '<button class="ops-btn" type="button" data-ops="close-modal">关闭</button></div></div><div class="ops-grid-2"><article class="ops-card"><h3>' + esc(companionName(item.companionId)) + "</h3><p>游戏：" + esc(item.game) + "</p><p>项目：" + esc(item.certItem) + "</p><p>技术等级：" + esc(item.techLevel) + "</p><p>考核备注：" + esc(item.examNote) + "</p><p>申请说明：" + esc(item.description || "无") + "</p><p>证明资料：" + esc(item.proof || "未上传") + "</p></article><article class='ops-card'><h3>审核记录</h3>" + (reviews.length ? reviews.map(function (review) {
+      return "<p><b>" + esc(actionLabel(review.action)) + "</b> · " + esc(review.createdAt) + "<br>" + esc(review.reason || "无备注") + "</p>";
     }).join("") : "<p>还没有审核记录。</p>") + "</article></div><label class='ops-field'><span class='ops-label'>原因（拒绝、补充、考核不通过、撤销时必填）</span><textarea id='reviewReason'></textarea></label><div class='ops-actions'><button class='ops-btn primary' type='button' data-ops='review' data-action='approve' data-id='" + esc(item.id) + "'>审核通过</button><button class='ops-btn danger' type='button' data-ops='review' data-action='reject' data-id='" + esc(item.id) + "'>拒绝</button><button class='ops-btn' type='button' data-ops='review' data-action='need_more' data-id='" + esc(item.id) + "'>要求补充资料</button><button class='ops-btn primary' type='button' data-ops='review' data-action='exam_pass' data-id='" + esc(item.id) + "'>考核通过并发放徽章</button><button class='ops-btn danger' type='button' data-ops='review' data-action='exam_fail' data-id='" + esc(item.id) + "'>考核不通过</button>" + (badge ? "<button class='ops-btn danger' type='button' data-ops='review' data-action='revoke_badge' data-id='" + esc(item.id) + "'>撤销徽章</button>" : "") + "</div></div>");
   }
 
@@ -364,7 +369,7 @@
       field("QQ", '<input name="qq">') + field("Telegram", '<input name="telegram">') +
       field("考核说明", '<textarea name="examNote"></textarea>', true) +
       '<label class="ops-switch wide"><span>启用</span><input name="enabled" type="checkbox" checked></label><div class="wide"><button class="ops-btn primary" type="submit">保存考官</button></div></form><div class="ops-grid-2">' + state.examiners.map(function (item) {
-        return '<article class="ops-card"><div class="ops-split"><h3>' + esc(item.name) + "</h3>" + (item.enabled ? chip("启用", "ok") : chip("关闭", "bad")) + "</div><p>" + esc(item.game) + "</p><p>微信 " + esc(item.wechat || "-") + " · WhatsApp " + esc(item.whatsapp || "-") + "</p><p>QQ " + esc(item.qq || "-") + " · Telegram " + esc(item.telegram || "-") + "</p><p>" + esc(item.examNote || "未填写考核说明") + '</p><div class="ops-actions"><button class="ops-btn" type="button" data-ops="toggle-examiner" data-id="' + esc(item.id) + '" data-enabled="' + (item.enabled ? "0" : "1") + '">' + (item.enabled ? "关闭" : "启用") + "</button></div></article>";
+        return '<article class="ops-card"><div class="ops-split"><h3>' + esc(item.name) + "</h3>" + (item.enabled ? chip("启用", "ok") : chip("关闭", "bad")) + "</div><p>" + esc(item.game) + "</p><p>微信 " + esc(item.wechat || "-") + " · WhatsApp " + esc(item.whatsapp || "-") + "</p><p>QQ " + esc(item.qq || "-") + " · Telegram " + esc(item.telegram || "-") + "</p><p>" + esc(item.examNote || "未填写考核说明") + '</p><div class="ops-actions"><button class="ops-btn" type="button" data-ops="toggle-examiner" data-id="' + esc(item.id) + '" data-enabled="' + (item.enabled ? "0" : "1") + '">' + (item.enabled ? "停用" : "启用") + "</button></div></article>";
       }).join("") + "</div></div>";
     $("examinerForm").addEventListener("submit", async function (event) {
       event.preventDefault();

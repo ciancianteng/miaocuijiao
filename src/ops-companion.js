@@ -85,7 +85,7 @@
       return '<button class="ops-btn' + (item.id === service.id ? " primary" : "") + '" type="button" data-open-service="' + esc(item.id) + '">' + esc(item.name) + "</button>";
     }).join("") + '</div><form id="offerForm" class="ops-card ops-form" data-service="' + esc(service.id) + '"><div class="wide"><h2>服务展示与接单</h2><p>' + esc(service.name) + " · 允许 " + esc(ops.formatRange(service.priceMin, service.priceMax, service.unit) || "价格未设置") + "</p></div>" +
       '<label class="ops-field"><span class="ops-label">我的报价</span><input name="quotePrice" type="number" min="0" step="0.01" value="' + esc(offer.quotePrice === null || offer.quotePrice === undefined ? "" : offer.quotePrice) + '"></label>' +
-      '<label class="ops-field"><span class="ops-label">服务介绍</span><textarea name="intro">' + esc(offer.intro || "") + "</textarea></label>" +
+      '<label class="ops-field wide"><span class="ops-label">服务介绍</span><textarea name="intro">' + esc(offer.intro || "") + "</textarea></label>" +
       toggle("showOnCard", "展示在我的个人卡片", offer.showOnCard, settings.allowShowOnCard) +
       toggle("showPrice", "展示服务价格", offer.showPrice, settings.allowShowPrice) +
       toggle("showIntro", "展示服务介绍", offer.showIntro, settings.allowShowIntro) +
@@ -124,7 +124,8 @@
     var labels = { pending: "待审核", approved: "申请已通过，等待考核", rejected: "已拒绝", need_more: "请补充资料", exam_passed: "考核通过，已发徽章", exam_failed: "考核未通过，不发徽章" };
     return state.applications.map(function (item) {
       var reviews = state.reviews.filter(function (review) { return review.applicationId === item.id; });
-      return '<article class="ops-card"><h3>' + esc(item.game) + " · " + esc(item.certItem) + '</h3><p><span class="ops-chip info">' + esc(labels[item.status] || item.status) + "</span></p><p>" + esc(item.techLevel) + "</p><p>" + reviews.map(function (review) { return esc(review.action) + "：" + esc(review.reason || "已记录"); }).join("<br>") + "</p></article>";
+      var actionNames = { submit: "提交申请", approve: "审核通过", reject: "已拒绝", need_more: "要求补充资料", exam_pass: "考核通过", exam_fail: "考核不通过", revoke_badge: "撤销徽章" };
+      return '<article class="ops-card"><h3>' + esc(item.game) + " · " + esc(item.certItem) + '</h3><p><span class="ops-chip info">' + esc(labels[item.status] || item.status) + "</span></p><p>" + esc(item.techLevel) + "</p><p>" + reviews.map(function (review) { return esc(actionNames[review.action] || review.action) + "：" + esc(review.reason || "已记录"); }).join("<br>") + "</p></article>";
     }).join("");
   }
 
@@ -259,6 +260,14 @@
       selectedOrder = orderBtn.dataset.order;
       render();
     }
+  });
+
+  window.addEventListener("hashchange", function () {
+    view = (location.hash || "#services").slice(1) || "services";
+    document.querySelectorAll("[data-view]").forEach(function (button) {
+      button.classList.toggle("active", button.dataset.view === view);
+    });
+    render();
   });
 
   document.addEventListener("DOMContentLoaded", function () {

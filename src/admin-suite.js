@@ -236,9 +236,13 @@
       app.classList.toggle('sidebar-collapsed');
       collapse.textContent=sidebar.classList.contains('collapsed')?'展开':'收起菜单';
     });
-    var initial=(location.hash||'#dashboard').slice(1);
-    var initialBtn=document.querySelector('[data-section="'+initial+'"]');
-    if(initialBtn)initialBtn.click();else setTitle('dashboard');
+    function openFromHash(){
+      var name=(location.hash||'#dashboard').slice(1);
+      var initialBtn=document.querySelector('[data-section="'+name+'"]');
+      if(initialBtn)initialBtn.click();else setTitle('dashboard');
+    }
+    window.addEventListener('hashchange', openFromHash);
+    openFromHash();
   }
   function initTableSearch(){
     document.querySelectorAll('[data-table-search]').forEach(function(input){
