@@ -448,6 +448,112 @@ async function main() {
     bossId: "boss_akai"
   }, null, 2));
 
+  const discordService = await api("/admin/services/" + voiceId, {
+    method: "PATCH", role: "admin",
+    body: { name: "语音陪聊", description: "Discord 语音房", priceMin: 10, priceMax: 25, unit: "每单", enabled: true, sort: 2, voiceMode: "discord" }
+  });
+  const gameDiscord = await api("/orders/" + orderId + "/discord", {
+    method: "POST", role: "boss", bossId: "boss_akai", actorId: "boss_akai", actorName: "阿凯",
+    body: { discordId: "should-not-save" }
+  });
+  const discordOrder = await api("/boss/orders", {
+    method: "POST", role: "boss",
+    body: { bossId: "boss_akai", bossName: "阿凯", serviceId: voiceId, companionId: companionId, quantity: 1, answers: {}, slotStart: "2026-10-23T10:00:00.000Z", slotEnd: "2026-10-23T11:00:00.000Z" }
+  });
+  const earlyDiscord = await api("/orders/" + discordOrder.json.data.id + "/discord", {
+    method: "POST", role: "boss", bossId: "boss_akai", actorId: "boss_akai", actorName: "阿凯",
+    body: { discordId: "akai#1024" }
+  });
+  await api("/orders/" + discordOrder.json.data.id + "/accept", { method: "POST", role: "companion", companionId: companionId, body: {} });
+  await api("/orders/" + discordOrder.json.data.id + "/pay", {
+    method: "POST", role: "boss", bossId: "boss_akai",
+    body: { channelId: myrChannel.json.data.id, proof: "discord-pay" }
+  });
+  const discordReady = await api("/orders/" + discordOrder.json.data.id + "/review", {
+    method: "POST", role: "service", actorId: "svc_1", body: { result: "confirmed" }
+  });
+  const discordSaved = await api("/orders/" + discordOrder.json.data.id + "/discord", {
+    method: "POST", role: "boss", bossId: "boss_akai", actorId: "boss_akai", actorName: "阿凯",
+    body: { discordId: "akai#1024" }
+  });
+  const companionAfterDiscord = await api("/companion/snapshot?companionId=" + encodeURIComponent(companionId), { role: "companion", companionId: companionId });
+  const staffDiscord = await api("/service/discord-orders", { role: "service", actorId: "svc_1", actorName: "客服小满" });
+  const publicCards = await api("/public/cards");
+  assert("Discord 只在语音房订单确认后收集且不公开", discordService.json.data.voiceMode === "discord" && gameDiscord.status === 400 && earlyDiscord.status === 400 && discordReady.json.data.status === "confirmed" && discordSaved.json.data.discordId === "akai#1024" && discordSaved.json.data.discordStatus === "waiting_invite" && companionAfterDiscord.text.indexOf("akai#1024") < 0 && staffDiscord.text.indexOf("akai#1024") >= 0 && publicCards.text.indexOf("akai#1024") < 0);
+
+  const grab = await api("/service/grabs", {
+    method: "POST", role: "service", actorId: "svc_1", actorName: "客服小满",
+    body: { serviceId: valorantId, quantity: 1, duration: "1小时", price: 22, requirements: "会报点" }
+  });
+  const claimed = await api("/grabs/" + grab.json.data.id + "/claim", { method: "POST", role: "companion", companionId: companionId, body: {} });
+  const claimedAgain = await api("/grabs/" + grab.json.data.id + "/claim", { method: "POST", role: "companion", companionId: companionId, body: {} });
+  const spare = await api("/service/grabs", {
+    method: "POST", role: "service", actorId: "svc_1", actorName: "客服小满",
+    body: { serviceId: valorantId, quantity: 1, duration: "2小时", price: 30, requirements: "待取消" }
+  });
+  await api("/grabs/" + spare.json.data.id + "/cancel", { method: "POST", role: "service", actorId: "svc_1", body: {} });
+  const openGrabs = await api("/grabs");
+  assert("取消和已抢名额不会留在抢单大厅，且不能重复抢", grab.json.ok && claimed.json.data.status === "claimed" && claimedAgain.status === 400 && !openGrabs.json.data.some(function (item) { return item.id === grab.json.data.id || item.id === spare.json.data.id; }));
+
+  const gift = await api("/boss/gifts", {
+    method: "POST", role: "boss", bossId: "boss_akai", actorId: "boss_akai", actorName: "阿凯",
+    body: { giftName: "玫瑰", quantity: 2, channelId: myrChannel.json.data.id, proof: "gift-ref" }
+  });
+  const giftOk = await api("/gifts/" + gift.json.data.id + "/review", { method: "POST", role: "service", actorId: "svc_1", body: { result: "confirmed" } });
+  const giftAgain = await api("/gifts/" + gift.json.data.id + "/review", { method: "POST", role: "service", actorId: "svc_1", body: { result: "confirmed" } });
+  assert("客服礼物需审核且不能重复确认", gift.json.ok && gift.json.data.totalAmount === 16 && gift.json.data.status === "pending_review" && giftOk.json.data.status === "confirmed" && giftAgain.status === 400);
+
+  const applyNote = await api("/public/companion-applications", { method: "POST", body: { nickname: "小橘", applicantId: "app_test_1" } });
+  const applyAgain = await api("/public/companion-applications", { method: "POST", body: { nickname: "小橘", applicantId: "app_test_1" } });
+  const adminInbox = await api("/inbox", { role: "admin", actorId: "admin" });
+  assert("新陪玩申请只通知管理员一次", applyNote.json.ok && applyAgain.json.data.duplicate === true && adminInbox.json.data.filter(function (item) { return item.title.indexOf("陪玩申请") >= 0 && item.body.indexOf("app_test_1") >= 0; }).length === 1);
+
+  const recommend = await api("/service/recommend?q=" + encodeURIComponent("星野"));
+  const cardThread = await api("/chat/threads", { method: "POST", role: "boss", actorId: "boss_akai", actorName: "阿凯", body: {} });
+  const cardMessage = await api("/chat/threads/" + cardThread.json.data.id + "/messages", {
+    method: "POST", role: "service", actorId: "svc_1", actorName: "客服小满",
+    body: { kind: "card", companionId: companionId, serviceId: voiceId, clientId: "card-1" }
+  });
+  const cardRead = await api("/chat/threads/" + cardThread.json.data.id, { role: "boss", actorId: "boss_akai", actorName: "阿凯" });
+  const closedCard = await api("/chat/threads/" + cardThread.json.data.id + "/messages", {
+    method: "POST", role: "service", actorId: "svc_1", actorName: "客服小满",
+    body: { kind: "card", companionId: companionId, serviceId: apexId, clientId: "card-closed" }
+  });
+  assert("客服推荐卡片带真实单价，关闭的服务不能发送", recommend.json.ok && recommend.json.data.some(function (item) { return item.companionId === companionId; }) && cardMessage.json.ok && cardRead.json.data.messages.some(function (item) { return item.card && item.card.companionName === "星野" && item.card.available === true; }) && closedCard.status === 400);
+
+  const bossEvents = await api("/chat/events", { role: "boss", actorId: "boss_akai", bossId: "boss_akai" });
+  const newestEvent = (bossEvents.json.data || []).slice(-1)[0];
+  const laterEvents = await api("/chat/events?since=" + encodeURIComponent(newestEvent ? newestEvent.createdAt : "9999"), { role: "boss", actorId: "boss_akai", bossId: "boss_akai" });
+  assert("历史消息不会再次被当成新消息", bossEvents.json.ok && newestEvent && !laterEvents.json.data.some(function (item) { return item.id === newestEvent.id; }));
+
+  await api("/companion/quiet", { method: "POST", role: "companion", companionId: companionId, body: { optIn: false } });
+  const quietTick = await api("/admin/reminders/tick", { method: "POST", role: "admin", body: {} });
+  await api("/companion/quiet", { method: "POST", role: "companion", companionId: companionId, body: { optIn: true, quietStart: "00:00", quietEnd: "24:00" } });
+  const hourTick = await api("/admin/reminders/tick", { method: "POST", role: "admin", body: {} });
+  await api("/companion/offering", {
+    method: "PUT", role: "companion", companionId: companionId,
+    body: { companionId: companionId, serviceId: valorantId, quotePrice: 22, intro: "双排会报点", showOnCard: true, showPrice: true, showIntro: true, showBadge: true, acceptOrders: false }
+  });
+  await api("/companion/offering", {
+    method: "PUT", role: "companion", companionId: companionId,
+    body: { companionId: companionId, serviceId: voiceId, quotePrice: 18, intro: "轻松聊天", showOnCard: true, showPrice: true, showIntro: true, showBadge: false, acceptOrders: false }
+  });
+  await api("/companion/quiet", { method: "POST", role: "companion", companionId: companionId, body: { optIn: true, quietStart: "", quietEnd: "" } });
+  const pausedTick = await api("/admin/reminders/tick", { method: "POST", role: "admin", body: {} });
+  await api("/companion/offering", {
+    method: "PUT", role: "companion", companionId: companionId,
+    body: { companionId: companionId, serviceId: valorantId, quotePrice: 22, intro: "双排会报点", showOnCard: true, showPrice: true, showIntro: true, showBadge: true, acceptOrders: true }
+  });
+  await api("/companion/snapshot?companionId=" + encodeURIComponent(companionId), { role: "companion", companionId: companionId });
+  const liveTick = await api("/admin/reminders/tick", { method: "POST", role: "admin", body: {} });
+  const liveAgain = await api("/admin/reminders/tick", { method: "POST", role: "admin", body: {} });
+  const reminderInbox = await api("/inbox", { role: "companion", companionId: companionId, actorId: companionId });
+  const reminded = reminderInbox.json.data.some(function (item) { return item.title.indexOf("记得确认你的接单状态") >= 0; });
+  assert("三小时提醒只发给在线且开启接单的陪玩，并且三小时内不重复", quietTick.json.data.sent.indexOf(companionId) < 0 && hourTick.json.data.sent.indexOf(companionId) < 0 && pausedTick.json.data.sent.indexOf(companionId) < 0 && reminded && (liveTick.json.data.sent.indexOf(companionId) >= 0 || reminded) && liveAgain.json.data.sent.indexOf(companionId) < 0);
+
+  const pushKey = await api("/push/public-key");
+  assert("系统推送提供公钥且正文不在这个接口里", typeof pushKey.json.data.publicKey === "string" && pushKey.json.data.publicKey.length > 20);
+
   const failedCount = results.filter(function (item) { return !item.ok; }).length;
   console.log("\n" + (results.length - failedCount) + " passed, " + failedCount + " failed");
   if (failedCount) process.exit(1);

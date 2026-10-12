@@ -1,6 +1,10 @@
+import fs from "node:fs";
 import path from "node:path";
+import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { OpsError, openOpsDb } from "./ops-db.mjs";
+
+const require = createRequire(import.meta.url);
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const dbPath = process.env.OPS_DB_PATH || path.join(root, "data", "mcj-ops.sqlite");
@@ -257,24 +261,145 @@ async function route(ctx) {
     return card;
   }
 
+  if (method === "GET" && pathName === "/inbox") return store.listNotifications(store.chatActor(ctx.headers, body));
+  const inboxRead = pathName.match(/^\/inbox\/([^/]+)\/read$/);
+  if (method === "POST" && inboxRead) return store.markNotification(decodeURIComponent(inboxRead[1]), store.chatActor(ctx.headers, body));
+  if (method === "GET" && pathName === "/push/public-key") return { publicKey: pushPublicKey() };
+  if (method === "POST" && pathName === "/push/subscribe") return store.savePushSubscription(store.chatActor(ctx.headers, body), body);
+  if (method === "POST" && pathName === "/push/forget") return store.forgetPush(store.chatActor(ctx.headers, body));
+  if (method === "GET" && pathName === "/chat/events") return store.chatEvents(store.chatActor(ctx.headers, body), ctx.query.get("since") || "");
+  if (method === "POST" && pathName === "/service/companion-messages") return store.messageCompanion(store.chatActor(ctx.headers, body), body);
+  if (method === "GET" && pathName === "/service/recommend") return store.searchRecommend(ctx.query.get("q") || "");
+  if (method === "GET" && pathName === "/grabs") return store.openGrabs();
+  if (method === "POST" && pathName === "/service/grabs") return store.createGrab(store.chatActor(ctx.headers, body), body);
+  const grabCancel = pathName.match(/^\/grabs\/([^/]+)\/cancel$/);
+  if (method === "POST" && grabCancel) {
+    const role = String(ctx.headers["x-ops-role"] || "");
+    if (role !== "admin" && role !== "service") throw new OpsError("需要客服身份", 403);
+    return store.cancelGrab(decodeURIComponent(grabCancel[1]));
+  }
+  const grabClaim = pathName.match(/^\/grabs\/([^/]+)\/claim$/);
+  if (method === "POST" && grabClaim) {
+    if (String(ctx.headers["x-ops-role"] || "") !== "companion") throw new OpsError("需要陪玩身份", 403);
+    return store.claimGrab(decodeURIComponent(grabClaim[1]), String(ctx.headers["x-ops-companion-id"] || ""));
+  }
+  if (method === "GET" && pathName === "/gifts/catalog") return store.giftCatalog();
+  if (method === "GET" && pathName === "/gifts") {
+    const role = String(ctx.headers["x-ops-role"] || "");
+    if (role !== "admin" && role !== "service") throw new OpsError("需要客服身份", 403);
+    return store.listGifts();
+  }
+  if (method === "POST" && pathName === "/boss/gifts") return store.createGift(store.chatActor(ctx.headers, body), body);
+  const giftReview = pathName.match(/^\/gifts\/([^/]+)\/review$/);
+  if (method === "POST" && giftReview) {
+    const role = String(ctx.headers["x-ops-role"] || "");
+    if (role !== "admin" && role !== "service") throw new OpsError("需要客服身份", 403);
+    return store.reviewGift(decodeURIComponent(giftReview[1]), body);
+  }
+  const discordSave = pathName.match(/^\/orders\/([^/]+)\/discord$/);
+  if (method === "POST" && discordSave) return store.saveDiscord(store.chatActor(ctx.headers, body), decodeURIComponent(discordSave[1]), body.discordId);
+  const discordStatus = pathName.match(/^\/orders\/([^/]+)\/discord-status$/);
+  if (method === "POST" && discordStatus) {
+    const role = String(ctx.headers["x-ops-role"] || "");
+    if (role !== "admin" && role !== "service") throw new OpsError("需要客服身份", 403);
+    return store.setDiscordStatus(decodeURIComponent(discordStatus[1]), body.status);
+  }
+  if (method === "GET" && pathName === "/service/discord-orders") {
+    const role = String(ctx.headers["x-ops-role"] || "");
+    if (role !== "admin" && role !== "service") throw new OpsError("需要客服身份", 403);
+    return store.staffDiscordOrders();
+  }
+  if (method === "POST" && pathName === "/admin/reminders/tick") {
+    requireAdmin(ctx.headers);
+    return { sent: store.tickReminders() };
+  }
+  if (method === "GET" && pathName === "/admin/daily") {
+    requireAdmin(ctx.headers);
+    return store.dailyAdmin();
+  }
+  if (method === "GET" && pathName === "/companion/daily") {
+    if (String(ctx.headers["x-ops-role"] || "") !== "companion") throw new OpsError("需要陪玩身份", 403);
+    return store.dailyCompanion(String(ctx.headers["x-ops-companion-id"] || ""));
+  }
+  if (method === "POST" && pathName === "/companion/quiet") {
+    if (String(ctx.headers["x-ops-role"] || "") !== "companion") throw new OpsError("需要陪玩身份", 403);
+    return store.saveQuietHours(String(ctx.headers["x-ops-companion-id"] || ""), body);
+  }
+  if (method === "POST" && pathName === "/admin/reminder") {
+    requireAdmin(ctx.headers);
+    store.setSetting("status_reminder_enabled", body.enabled === false ? "0" : "1");
+    return store.getSettings();
+  }
+  if (method === "POST" && pathName === "/public/companion-applications") return store.submitCompanionApplication(body);
+
   throw new OpsError("接口不存在", 404);
 }
 
+let vapidKeys;
+function pushPublicKey() {
+  try {
+    const webpush = require("web-push");
+    if (!vapidKeys) {
+      const file = path.join(root, "data", "vapid.json");
+      if (fs.existsSync(file)) vapidKeys = JSON.parse(fs.readFileSync(file, "utf8"));
+      else {
+        vapidKeys = webpush.generateVAPIDKeys();
+        fs.mkdirSync(path.dirname(file), { recursive: true });
+        fs.writeFileSync(file, JSON.stringify(vapidKeys));
+      }
+      webpush.setVapidDetails("mailto:ops@meowcuijiao.local", vapidKeys.publicKey, vapidKeys.privateKey);
+    }
+    return vapidKeys.publicKey;
+  } catch (error) {
+    return "";
+  }
+}
+
+async function flushPush(current) {
+  const jobs = current.takePushQueue ? current.takePushQueue() : [];
+  if (!jobs.length || !pushPublicKey()) return;
+  let webpush;
+  try { webpush = require("web-push"); } catch (error) { return; }
+  for (const job of jobs) {
+    const subs = current.pushSubscriptions(job.role, job.actorId);
+    for (const sub of subs) {
+      try {
+        await webpush.sendNotification({
+          endpoint: sub.endpoint,
+          keys: { p256dh: sub.p256dh, auth: sub.auth_key }
+        }, JSON.stringify({ title: job.title, body: "你有一条新通知，打开后查看。", href: job.href || "/" }));
+      } catch (error) {
+        if (error && (error.statusCode === 404 || error.statusCode === 410)) {
+          current.db.prepare("DELETE FROM push_subscriptions WHERE endpoint = ?").run(sub.endpoint);
+        }
+      }
+    }
+  }
+}
+
 export function attachOpsApi(middlewares) {
+  if (!globalThis.__mcjReminder) {
+    globalThis.__mcjReminder = setInterval(() => {
+      try { db().tickReminders(); flushPush(db()); } catch (error) { /* reminder loop stays quiet */ }
+    }, 60000);
+    if (globalThis.__mcjReminder.unref) globalThis.__mcjReminder.unref();
+  }
   middlewares.use((req, res, next) => {
     const url = new URL(req.url || "/", "http://localhost");
     if (!url.pathname.startsWith("/api/ops")) return next();
     const pathName = url.pathname.replace(/^\/api\/ops/, "") || "/";
     const run = async () => {
       const body = req.method === "GET" || req.method === "HEAD" ? {} : await readJson(req);
+      const current = db();
       const data = await route({
         method: req.method || "GET",
         path: pathName,
         body: body,
         query: url.searchParams,
         headers: req.headers || {},
-        store: db()
+        store: current
       });
+      await flushPush(current);
       send(res, 200, { ok: true, data: data });
     };
     run().catch((error) => {

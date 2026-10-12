@@ -87,7 +87,8 @@
     if (inst.messageError) return '<div class="mcj-chat-state"><strong>请求失败</strong><span>' + esc(inst.messageError) + '</span></div>';
     var c = inst.currentConversation;
     if (!c) return '<div class="mcj-chat-state"><strong>请选择会话</strong><span>点击左侧会话进入聊天窗口</span></div>';
-    return '<header class="mcj-chat-head"><div class="mcj-chat-peer"><button class="mcj-chat-icon-btn" data-chat-back type="button">返回</button><img src="' + esc(c.peer_avatar || defaultAvatar(c.peer_role)) + '" alt=""><div><h2>' + esc(c.peer_name) + '</h2><span>' + esc(roleLabel(c.peer_role)) + ' · ' + esc(c.peer_status || "离线") + (c.order_no ? ' · ' + esc(c.order_no) : '') + '</span></div></div><div class="mcj-chat-more"><button data-chat-more="profile">查看资料</button><button data-chat-more="order">查看订单</button><button data-chat-more="search">搜索记录</button><button data-chat-more="mute">' + (c.is_muted ? "取消免打扰" : "免打扰") + '</button><button data-chat-more="pin">' + (c.is_pinned ? "取消置顶" : "置顶") + '</button></div></header><section class="mcj-message-list">' + messageList(inst) + '</section><div class="mcj-chat-risk">请勿发送违规或敏感内容。</div><form class="mcj-chat-send" data-chat-send="' + esc(c.id) + '"><button class="mcj-chat-icon-btn" type="button" data-chat-voice>语音</button><textarea name="message" rows="1" placeholder="输入消息，Enter 发送，Shift+Enter 换行"></textarea><button class="mcj-chat-icon-btn" type="button" data-chat-image>图片</button><button class="mcj-chat-icon-btn" type="button" data-chat-extra>更多</button><button class="primary" type="submit">发送</button><input type="file" accept="image/*" hidden data-chat-image-input></form>';
+    var giftBtn = inst.role === "customer" ? '<button class="mcj-chat-icon-btn" type="button" data-boss-gift>送礼</button>' : "";
+    return '<header class="mcj-chat-head"><div class="mcj-chat-peer"><button class="mcj-chat-icon-btn" data-chat-back type="button">返回</button><img src="' + esc(c.peer_avatar || defaultAvatar(c.peer_role)) + '" alt=""><div><h2>' + esc(c.peer_name) + '</h2><span>' + esc(roleLabel(c.peer_role)) + ' · ' + esc(c.peer_status || "离线") + (c.order_no ? ' · ' + esc(c.order_no) : '') + '</span></div></div><div class="mcj-chat-more"><button data-chat-more="profile">查看资料</button><button data-chat-more="order">查看订单</button><button data-chat-more="search">搜索记录</button><button data-chat-more="mute">' + (c.is_muted ? "取消免打扰" : "免打扰") + '</button><button data-chat-more="pin">' + (c.is_pinned ? "取消置顶" : "置顶") + '</button></div></header><section class="mcj-message-list">' + messageList(inst) + '</section><div class="mcj-chat-risk">请勿发送违规或敏感内容。</div><form class="mcj-chat-send" data-chat-send="' + esc(c.id) + '"><button class="mcj-chat-icon-btn" type="button" data-chat-voice>语音</button><textarea name="message" rows="1" placeholder="输入消息，Enter 发送，Shift+Enter 换行"></textarea><button class="mcj-chat-icon-btn" type="button" data-chat-image>图片</button>' + giftBtn + '<button class="mcj-chat-icon-btn" type="button" data-chat-extra>更多</button><button class="primary" type="submit">发送</button><input type="file" accept="image/*" hidden data-chat-image-input></form>';
   }
 
   function messageList(inst) {
@@ -106,6 +107,42 @@
     if (m.message_type === "order_card") return '<div class="mcj-order-card-msg"><b>订单卡片</b><span>订单编号：' + esc(m.order_id || "-") + '</span><button class="mcj-chat-icon-btn" data-chat-order="' + esc(m.order_id || "") + '" type="button">查看订单</button></div>';
     if (m.message_type === "refund_card") return '<div class="mcj-order-card-msg"><b>退款状态</b><span>' + esc(m.text_content || "") + '</span><button class="mcj-chat-icon-btn" data-chat-refund="' + esc(m.refund_request_id || "") + '" type="button">查看退款详情</button></div>';
     return esc(m.text_content || "");
+  }
+
+  function openBossGift() {
+    var old = document.getElementById("bossGift");
+    if (old) old.remove();
+    var node = document.createElement("form");
+    node.id = "bossGift";
+    node.style.cssText = "position:fixed;right:12px;bottom:calc(12px + env(safe-area-inset-bottom));z-index:80;width:min(360px,calc(100% - 24px));background:#160d16;color:#fff;padding:16px;border-radius:16px;border:1px solid rgba(255,190,224,.35)";
+    node.innerHTML = '<h3>给客服送礼</h3><p>确认到账后才算赠送成功。金额按礼物抽成入账，不会直接打给客服。</p><label>礼物<select name="giftName"><option>玫瑰</option><option>奶茶</option><option>粉色火箭</option></select></label><label>数量<input name="quantity" type="number" min="1" value="1"></label><div data-gift-channels>正在读取收款渠道…</div><label>凭证<input name="proof" required></label><button type="submit">提交付款凭证</button> <button type="button" data-close-gift>关闭</button>';
+    document.body.appendChild(node);
+    fetch("/api/ops/public/channels", { cache: "no-store" }).then(function (res) { return res.json(); }).then(function (payload) {
+      var channels = (payload && payload.data) || [];
+      node.querySelector("[data-gift-channels]").innerHTML = '<label><input type="radio" name="giftChannel" value="wallet"> 猫粮余额</label>' + channels.map(function (item) {
+        return '<label><input type="radio" name="giftChannel" value="' + esc(item.id) + '"> ' + esc(item.name) + "</label>";
+      }).join("");
+    }).catch(function () { node.querySelector("[data-gift-channels]").textContent = "渠道读取失败"; });
+    node.addEventListener("click", function (event) {
+      if (event.target.closest("[data-close-gift]")) node.remove();
+    });
+    node.addEventListener("submit", function (event) {
+      event.preventDefault();
+      var selected = node.querySelector("input[name=giftChannel]:checked");
+      if (!selected) { alert("请选择付款方式"); return; }
+      var bossId = localStorage.getItem("mcjOpsBossId") || "boss_web";
+      var body = { giftName: node.elements.giftName.value, quantity: node.elements.quantity.value, proof: node.elements.proof.value, channelId: selected.value };
+      if (selected.value === "wallet") body.method = "wallet";
+      fetch("/api/ops/boss/gifts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-ops-role": "boss", "x-ops-boss-id": bossId, "x-ops-actor-id": bossId, "x-ops-actor-name": encodeURIComponent("老板") },
+        body: JSON.stringify(body)
+      }).then(function (res) { return res.json(); }).then(function (payload) {
+        if (!payload.ok) { alert((payload && payload.error) || "礼物没有提交"); return; }
+        alert("已提交付款资料，客服确认到账后才会显示赠送成功。");
+        node.remove();
+      }).catch(function () { alert("礼物没有提交"); });
+    });
   }
 
   function scheduleRefresh(id) {
@@ -135,6 +172,7 @@
       alert("语音录制需要浏览器麦克风权限和后端媒体存储，接口已预留。");
       return;
     }
+    if (e.target.closest("[data-boss-gift]") && inst.role === "customer") { openBossGift(); return; }
     var more = e.target.closest("[data-chat-more]");
     if (more) {
       alert("该操作会调用真实会话设置接口：" + more.dataset.chatMore);

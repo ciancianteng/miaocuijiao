@@ -39,13 +39,20 @@
 
   async function loadConversations(id) {
     var inst = instances[id];
-    inst.target.innerHTML = '<div class="mcj-chat-state mcj-chat-card"><strong>加载中...</strong><span>正在读取消息</span></div>';
-    var res = await api.listConversations("customer", { search: inst.search, filter: "service" });
-    inst.conversations = res.conversations || [];
-    if (!inst.activeConversationId && inst.conversations.length) inst.activeConversationId = inst.conversations[0].id;
-    draw(id);
-    if (inst.activeConversationId) await loadMessages(id, inst.activeConversationId);
-    schedule(id);
+    var quiet = !!inst.target.querySelector("[data-customer-chat]");
+    var typing = document.activeElement && document.activeElement.closest && document.activeElement.closest("[data-customer-send]");
+    if (typing) { schedule(id); return; }
+    if (!quiet) inst.target.innerHTML = '<div class="mcj-chat-state mcj-chat-card"><strong>加载中...</strong><span>正在读取消息</span></div>';
+    try {
+      var res = await api.listConversations("customer", { search: inst.search, filter: "service" });
+      inst.conversations = res.conversations || [];
+      if (!inst.activeConversationId && inst.conversations.length) inst.activeConversationId = inst.conversations[0].id;
+      draw(id);
+      if (inst.activeConversationId) await loadMessages(id, inst.activeConversationId);
+      schedule(id);
+    } catch (error) {
+      if (!quiet) inst.target.innerHTML = '<div class="mcj-chat-state mcj-chat-card" data-customer-chat="' + esc(id) + '"><strong>消息没有载入</strong><span>' + esc(error.message || "请重试") + '</span><button type="button" data-retry-customer-chat>重试</button></div>';
+    }
   }
 
   async function loadMessages(id, conversationId) {
@@ -128,7 +135,9 @@
       var system = m.sender_role === "system" || m.message_type === "system";
       var text = m.message_type === "image"
         ? '<img src="' + esc(m.media_url) + '" alt="图片消息" style="max-width:220px;border-radius:12px">'
-        : esc(m.text_content || "");
+        : m.card
+          ? '<a href="' + esc(m.card.href || "#") + '"><b>' + esc(m.card.companionName) + '</b></a><br>' + esc((m.card.badges || []).join("、")) + '<br>' + esc(m.card.serviceName) + ' · ' + esc(m.card.priceText) + '<br>' + (m.card.available ? "查看主页并预约" : "这个服务已经关闭，不能下单")
+          : esc(m.text_content || "");
       return [
         '<div class="mcj-message-row ' + (me ? "me" : "") + (system ? " system-row" : "") + '">',
         system ? '' : '<img class="mcj-bubble-avatar" src="' + esc(avatar(m.sender_avatar)) + '" alt="">',
@@ -154,6 +163,7 @@
     if (!root) return;
     var inst = instances[root.dataset.customerChat];
     if (!inst) return;
+    if (event.target.closest("[data-retry-customer-chat]")) { loadConversations(inst.id); return; }
     var item = event.target.closest("[data-customer-conversation]");
     if (item) {
       loadMessages(inst.id, item.dataset.customerConversation);

@@ -419,6 +419,11 @@
     db.logs.unshift({ id: uid("LOG"), action: "提交陪玩申请", targetId: id, createdAt: now(), ip: "local-preview" });
     writeDB(db);
     syncPlatform(db);
+    fetch("/api/ops/public/companion-applications", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ nickname: (draft.data && draft.data.nickname) || user.name || "申请人", applicantId: applicantId() })
+    }).catch(function () {});
     showSuccess();
   }
   function showSuccess() {

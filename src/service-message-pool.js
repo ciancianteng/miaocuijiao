@@ -220,7 +220,9 @@
       var fromService = message.sender_role === "customer_service";
       var content = message.message_type === "image"
         ? '<img class="svc-message-image" src="' + esc(message.media_url || "") + '" alt="图片消息">'
-        : esc(message.text_content || "");
+        : message.card
+          ? '<b>' + esc(message.card.companionName) + '</b><br>' + esc(message.card.serviceName) + '<br>' + esc(message.card.priceText) + '<br>' + (message.card.available ? "可以预约" : "服务已关闭")
+          : esc(message.text_content || "");
       return [
         '<article class="svc-message ' + (system ? "system" : (fromService ? "service" : "boss")) + '">',
         system ? '' : '<img src="' + esc(message.sender_avatar || (fromService ? "../assets/cat-neon-avatar.png" : "../assets/cat-neon-avatar.png")) + '" alt="">',
@@ -244,6 +246,7 @@
       '<form class="svc-reply-box" data-svc-send="' + esc(conversation.id) + '">',
       '<textarea name="message" placeholder="输入回复内容"></textarea>',
       '<button type="button" data-svc-image>图片</button>',
+      '<button type="button" data-svc-card>陪玩卡片</button>',
       '<button type="submit">发送</button>',
       '<input type="file" accept="image/*" hidden data-svc-image-input>',
       '</form>'
@@ -331,6 +334,7 @@
             sender_role: message.sender_role === "service" || message.sender_role === "customer_service" ? "customer_service" : message.sender_role,
             sender_name: message.sender_name,
             text_content: message.text_content,
+            card: message.card || null,
             created_at: message.created_at,
             message_type: message.message_type || "text"
           };
@@ -367,6 +371,23 @@
       if (end) { endConversation(end.dataset.svcEnd); render(target); return; }
       var reopen = event.target.closest("[data-svc-reopen]");
       if (reopen) { reopenConversation(reopen.dataset.svcReopen); render(target); return; }
+      var cardBtn = event.target.closest("[data-svc-card]");
+      if (cardBtn) {
+        var query = window.prompt("搜索陪玩昵称、编号或服务", "") || "";
+        fetch("/api/ops/service/recommend?q=" + encodeURIComponent(query), { cache: "no-store" }).then(function (res) { return res.json(); }).then(function (payload) {
+          var rows = (payload && payload.data) || [];
+          if (!rows.length) { alert("没有可推荐的陪玩"); return; }
+          var choice = window.prompt(rows.map(function (item, index) { return (index + 1) + ". " + item.companionName + " / " + item.serviceName + " / " + item.priceText; }).join("\n") + "\n输入序号", "1");
+          var picked = rows[Number(choice) - 1];
+          if (!picked) return;
+          var form = cardBtn.closest("form");
+          window.MCJChatAPI.sendMessage("customer_service", form.dataset.svcSend, { text_content: picked.companionName, message_type: "card", companionId: picked.companionId, serviceId: picked.serviceId }).then(function () {
+            paintSignature = "";
+            loadRemote(target);
+          });
+        });
+        return;
+      }
       var image = event.target.closest("[data-svc-image]");
       if (image) {
         var input = image.closest("form").querySelector("[data-svc-image-input]");

@@ -110,7 +110,15 @@
     var root = $("opsDashboard");
     if (!root || !state) return;
     var stats = state.stats || {};
-    root.innerHTML = '<div class="ops-home"><section class="ops-hero"><div><span class="ops-kicker">MEOW CUI JIAO</span><h2>运营总览</h2><p>服务、价格、订单要求和认证都来自同一套 SQLite 数据库。老板端和陪玩端不会再使用另一份缓存。</p></div><div class="ops-actions"><a class="ops-btn" href="boss-order.html" target="_blank">打开老板端</a><a class="ops-btn" href="companion-studio.html" target="_blank">打开陪玩端</a><button class="ops-btn primary" type="button" data-ops="reload">刷新数据</button></div></section><section class="ops-metrics"><article class="ops-metric"><span>启用服务</span><strong>' + stats.services + '</strong></article><article class="ops-metric"><span>在册陪玩</span><strong>' + stats.companions + '</strong></article><article class="ops-metric"><span>待处理认证</span><strong>' + stats.pendingCerts + '</strong></article><article class="ops-metric"><span>订单快照</span><strong>' + stats.orders + '</strong></article><article class="ops-metric"><span>有效徽章</span><strong>' + stats.activeBadges + '</strong></article></section><section class="ops-grid-2"><article class="ops-card"><h3>最近订单</h3>' + orderTable(state.orders.slice(0, 6)) + '</article><article class="ops-card"><h3>价格检查</h3>' + priceWarnings() + '</article></section></div>';
+    root.innerHTML = '<div class="ops-home"><section class="ops-hero"><div><span class="ops-kicker">MEOW CUI JIAO</span><h2>运营总览</h2><p>服务、价格、订单要求和认证都来自同一套 SQLite 数据库。老板端和陪玩端不会再使用另一份缓存。</p></div><div class="ops-actions"><a class="ops-btn" href="boss-order.html" target="_blank">打开老板端</a><a class="ops-btn" href="companion-studio.html" target="_blank">打开陪玩端</a><button class="ops-btn primary" type="button" data-ops="reload">刷新数据</button></div></section><section class="ops-card" id="opsDaily"><h3>今日数据</h3><div data-daily>正在读取…</div></section><section class="ops-metrics"><article class="ops-metric"><span>启用服务</span><strong>' + stats.services + '</strong></article><article class="ops-metric"><span>在册陪玩</span><strong>' + stats.companions + '</strong></article><article class="ops-metric"><span>待处理认证</span><strong>' + stats.pendingCerts + '</strong></article><article class="ops-metric"><span>订单快照</span><strong>' + stats.orders + '</strong></article><article class="ops-metric"><span>有效徽章</span><strong>' + stats.activeBadges + '</strong></article></section><section class="ops-grid-2"><article class="ops-card"><h3>最近订单</h3>' + orderTable(state.orders.slice(0, 6)) + '</article><article class="ops-card"><h3>价格检查</h3>' + priceWarnings() + '</article></section></div>';
+    ops.admin("/admin/daily").then(function (daily) {
+      var box = root.querySelector("[data-daily]");
+      if (!box || !daily) return;
+      box.innerHTML = "今日订单 " + esc(daily.orders) + " · 成交额 " + esc(ops.formatMoney(daily.turnover) || "RM0.00") + " · 待审核付款 " + esc(daily.pendingPayments) + " · 新陪玩申请 " + esc(daily.applications) + " · 在线陪玩 " + esc(daily.onlineCompanions) + " · 待处理客服 " + esc(daily.pendingChats) + '<div class="ops-actions"><button class="ops-btn" type="button" data-ops="reminder" data-enabled="1">开启三小时提醒</button><button class="ops-btn" type="button" data-ops="reminder" data-enabled="0">关闭三小时提醒</button></div>';
+    }).catch(function () {
+      var box = root.querySelector("[data-daily]");
+      if (box) box.textContent = "今日数据暂时读不到";
+    });
   }
 
   function orderTable(orders) {
@@ -197,6 +205,7 @@
       field("最高价格", '<input name="priceMax" type="number" min="0" step="0.01" required value="' + esc(service && service.priceMax != null ? service.priceMax : "") + '">') +
       field("计费单位", '<select name="unit">' + units + "</select>") +
       field("排序", '<input name="sort" type="number" value="' + esc(service ? service.sort : state.services.length + 1) + '">') +
+      field("语音方式", '<select name="voiceMode"><option value="">不使用语音房</option><option value="game"' + (service && service.voiceMode === "game" ? " selected" : "") + '>游戏麦</option><option value="discord"' + (service && service.voiceMode === "discord" ? " selected" : "") + ">Discord 语音房</option></select>") +
       '<label class="ops-switch wide"><span>启用服务。关闭后新订单不能再选。</span><input name="enabled" type="checkbox"' + (!service || service.enabled ? " checked" : "") + "></label>" +
       '<div class="wide ops-actions"><button class="ops-btn" type="button" data-ops="close-modal">取消</button><button class="ops-btn primary" type="submit">' + (service ? "保存修改" : "创建服务") + "</button></div></form>");
     var form = $("serviceForm");
@@ -230,6 +239,7 @@
       priceMin: form.elements.priceMin.value,
       priceMax: form.elements.priceMax.value,
       unit: form.elements.unit.value,
+      voiceMode: form.elements.voiceMode.value,
       sort: form.elements.sort.value,
       enabled: form.elements.enabled.checked
     };
@@ -499,6 +509,9 @@
     if (type === "delete-announcement") ops.admin("/admin/announcements/" + encodeURIComponent(action.dataset.id), { method: "DELETE" }).then(function () { toast("success", "公告已删除"); return reload(); }).catch(function (error) { toast("error", error.message); });
     if (type === "order-review") reviewOrder(action.dataset.id, action.dataset.result);
     if (type === "order-step") ops.admin("/orders/" + encodeURIComponent(action.dataset.id) + "/" + action.dataset.step, { method: "POST", body: {} }).then(function () { toast("success", "订单状态已更新"); return reload(); }).catch(function (error) { toast("error", error.message); });
+    if (type === "copy-discord" && navigator.clipboard) navigator.clipboard.writeText(action.dataset.discord || "").then(function () { toast("success", "Discord ID 已复制"); });
+    if (type === "discord-arranged") ops.admin("/orders/" + encodeURIComponent(action.dataset.id) + "/discord-status", { method: "POST", body: { status: "arranged" } }).then(function () { toast("success", "已标记语音房"); return reload(); }).catch(function (error) { toast("error", error.message); });
+    if (type === "reminder") ops.admin("/admin/reminder", { method: "POST", body: { enabled: action.dataset.enabled !== "0" } }).then(function () { toast("success", action.dataset.enabled === "0" ? "三小时提醒已关闭" : "三小时提醒已开启"); }).catch(function (error) { toast("error", error.message); });
     if (type === "deposit-review") {
       var reason = action.dataset.status === "rejected" ? (window.prompt("拒绝原因") || "") : "";
       if (action.dataset.status === "rejected" && !reason.trim()) return;
@@ -606,7 +619,12 @@
       }
       if (order.status === "confirmed") actions = "<button class='ops-btn primary' type='button' data-ops='order-step' data-id='" + esc(order.id) + "' data-step='start'>开始服务</button>";
       if (order.status === "in_service") actions = "<button class='ops-btn primary' type='button' data-ops='order-step' data-id='" + esc(order.id) + "' data-step='complete'>完成结算</button>";
-      return "<tr><td data-label='订单'>" + esc(order.id) + "<br>" + esc(order.bossName) + "</td><td data-label='服务'>" + esc((order.serviceSnapshot || {}).name || "") + "</td><td data-label='金额'>" + esc(ops.formatMoney(order.totalPrice)) + "</td><td data-label='状态'>" + chip(meta[0], meta[1]) + "</td><td data-label='操作'>" + actions + "</td></tr>";
+      var voice = (order.serviceSnapshot || {}).voiceMode === "discord" && ["confirmed", "in_service", "completed"].indexOf(order.status) >= 0;
+      var discordLabel = "";
+      if (voice) discordLabel = order.discordId ? (order.discordStatus === "arranged" ? "已安排语音房" : "等待客服邀请") : "待填写 Discord ID";
+      if (order.discordId) actions += " <button class='ops-btn' type='button' data-ops='copy-discord' data-discord='" + esc(order.discordId) + "'>复制 Discord ID</button>";
+      if (order.discordId && order.discordStatus !== "arranged") actions += " <button class='ops-btn primary' type='button' data-ops='discord-arranged' data-id='" + esc(order.id) + "'>标记已安排</button>";
+      return "<tr><td data-label='订单'>" + esc(order.id) + "<br>" + esc(order.bossName) + (order.discordId ? "<br>Discord " + esc(order.discordId) : "") + "</td><td data-label='服务'>" + esc((order.serviceSnapshot || {}).name || "") + "</td><td data-label='金额'>" + esc(ops.formatMoney(order.totalPrice)) + "</td><td data-label='状态'>" + chip(meta[0], meta[1]) + (discordLabel ? "<br>" + esc(discordLabel) : "") + "</td><td data-label='操作'>" + actions + "</td></tr>";
     }).join("");
     fill(["opsOrders"], '<div class="ops-page"><div class="ops-toolbar"><div><h2>预约订单</h2></div><button class="ops-btn" type="button" data-ops="help-flow">流程说明</button></div>' + (rows ? '<div class="ops-table-wrap"><table class="ops-table"><thead><tr><th>订单</th><th>服务</th><th>金额</th><th>状态</th><th></th></tr></thead><tbody>' + rows + "</tbody></table></div>" : '<div class="ops-empty">还没有预约。</div>') + "</div>");
   }

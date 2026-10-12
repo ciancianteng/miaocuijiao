@@ -29,10 +29,28 @@
 
   async function load() {
     if (!id()) return;
-    state = await ops.companion("/companion/snapshot?companionId=" + encodeURIComponent(id()), {}, id());
-    if (!selectedService && state.services[0]) selectedService = state.services[0].id;
-    if (!selectedOrder && state.orders[0]) selectedOrder = state.orders[0].id;
-    render();
+    var root = document.getElementById("studioMain");
+    var cacheKey = "mcj-ops-snap-" + id();
+    if (!state) {
+      try { state = JSON.parse(sessionStorage.getItem(cacheKey) || "null"); } catch (e) { state = null; }
+      if (state) render();
+      else root.innerHTML = '<div class="ops-card"><h2>正在读取工作台</h2><p class="ops-note">先显示已有内容，最新资料马上补上。</p></div>';
+    }
+    var ctrl = new AbortController();
+    var timer = setTimeout(function () { ctrl.abort(); }, 12000);
+    try {
+      state = await ops.companion("/companion/snapshot?companionId=" + encodeURIComponent(id()), { signal: ctrl.signal }, id());
+      sessionStorage.setItem(cacheKey, JSON.stringify(state));
+      if (!selectedService && state.services[0]) selectedService = state.services[0].id;
+      if (!selectedOrder && state.orders[0]) selectedOrder = state.orders[0].id;
+      render();
+    } catch (error) {
+      if (!state) {
+        root.innerHTML = '<div class="ops-card"><h2>工作台没有载入</h2><p>' + esc(error.message || "请求超时") + '</p><button class="ops-btn primary" type="button" data-retry-studio>重试</button></div>';
+      } else toast("error", "刷新失败，先显示上次的内容");
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   function render() {
@@ -45,9 +63,53 @@
       root.innerHTML = '<div class="ops-card">正在读取我的服务…</div>';
       return;
     }
-    var views = { services: servicesView, display: displayView, orders: ordersView, apply: applyView, status: statusView, examiner: examinerView, card: cardView };
+    var views = { services: servicesView, display: displayView, orders: ordersView, apply: applyView, status: statusView, examiner: examinerView, card: cardView, grab: grabView, messages: messagesView, today: todayView };
     root.innerHTML = (views[view] || servicesView)();
     bindForms();
+    if (view === "grab") loadGrab();
+    if (view === "messages") loadCompanionMessages();
+    if (view === "today") loadToday();
+  }
+
+  function grabView() { return '<div id="grabMount" class="ops-card">正在读取可抢订单…</div>'; }
+  function messagesView() { return '<div id="msgMount" class="ops-card">正在读取客服消息…</div>'; }
+  function todayView() {
+    return '<form id="quietForm" class="ops-card ops-form"><div class="wide"><h2>今日数据</h2><div id="todayMount">正在读取…</div></div><label class="ops-field"><span class="ops-label">免打扰开始</span><input name="quietStart" placeholder="22:00"></label><label class="ops-field"><span class="ops-label">免打扰结束</span><input name="quietEnd" placeholder="08:00"></label><label class="ops-check wide"><span>接收接单状态提醒</span><input name="optIn" type="checkbox" checked></label><div class="wide"><button class="ops-btn primary" type="submit">保存提醒</button></div></form>';
+  }
+  function loadGrab() {
+    ops.request("/grabs").then(function (rows) {
+      var mount = document.getElementById("grabMount");
+      if (!mount) return;
+      mount.outerHTML = (rows || []).map(function (item) {
+        return '<article class="ops-card"><div class="ops-split"><b>' + esc(item.id) + '</b><span class="ops-chip ok">可抢</span></div><p>' + esc(item.serviceName) + ' · RM' + Number(item.price).toFixed(2) + ' · ' + esc(item.duration || "时长未填") + '</p><button class="ops-btn primary" type="button" data-claim-grab="' + esc(item.id) + '">抢单</button><details><summary>查看详情</summary><p>' + esc(item.requirements || "没有额外要求") + '</p></details></article>';
+      }).join("") || '<div class="ops-card">现在没有可抢的订单。</div>';
+    }).catch(function (error) {
+      var mount = document.getElementById("grabMount");
+      if (mount) mount.innerHTML = '<p>' + esc(error.message) + '</p><button class="ops-btn" type="button" data-retry-grab>重试</button>';
+    });
+  }
+  function loadCompanionMessages() {
+    ops.companion("/chat/threads", {}, id()).then(function (rows) {
+      var mount = document.getElementById("msgMount");
+      if (!mount) return;
+      if (!rows || !rows.length) { mount.textContent = "还没有客服消息。"; return; }
+      var first = rows[0];
+      ops.companion("/chat/threads/" + encodeURIComponent(first.id), {}, id()).then(function (thread) {
+        mount.innerHTML = (thread.messages || []).map(function (item) {
+          return "<p><b>" + esc(item.senderName) + "</b> " + esc(item.body) + "</p>";
+        }).join("") || "还没有消息。";
+      });
+    }).catch(function (error) {
+      var mount = document.getElementById("msgMount");
+      if (mount) mount.textContent = error.message;
+    });
+  }
+  function loadToday() {
+    ops.companion("/companion/daily", {}, id()).then(function (data) {
+      var mount = document.getElementById("todayMount");
+      if (!mount || !data) return;
+      mount.innerHTML = "<p>今日完成 " + data.orders + " 单 · 快照收入 RM" + Number(data.income).toFixed(2) + "</p><p>待接单 " + data.pending + " · 未读 " + data.unread + " · " + (data.accepting ? "接单中" : "已暂停") + "</p>";
+    });
   }
 
   function profileForm(companion) {
@@ -164,6 +226,12 @@
     });
     var cert = document.getElementById("certForm");
     if (cert) cert.addEventListener("submit", saveCert);
+    var quiet = document.getElementById("quietForm");
+    if (quiet) quiet.addEventListener("submit", function (event) {
+      event.preventDefault();
+      ops.companion("/companion/quiet", { method: "POST", body: { quietStart: quiet.elements.quietStart.value, quietEnd: quiet.elements.quietEnd.value, optIn: quiet.elements.optIn.checked } }, id())
+        .then(function () { toast("success", "提醒设置已保存"); });
+    });
     if (view === "card") {
       ops.request("/public/cards/" + encodeURIComponent(id())).then(function (card) {
         var node = document.getElementById("liveCard");
@@ -271,6 +339,15 @@
     if (orderBtn) {
       selectedOrder = orderBtn.dataset.order;
       render();
+      return;
+    }
+    if (event.target.closest("[data-retry-studio]")) { state = null; load(); return; }
+    if (event.target.closest("[data-retry-grab]")) { loadGrab(); return; }
+    var claim = event.target.closest("[data-claim-grab]");
+    if (claim) {
+      ops.companion("/grabs/" + encodeURIComponent(claim.dataset.claimGrab) + "/claim", { method: "POST" }, id())
+        .then(function () { toast("success", "已抢到，等待后续付款审核"); loadGrab(); })
+        .catch(function (error) { toast("error", error.message || "没有抢到"); loadGrab(); });
       return;
     }
     var orderAction = event.target.closest("[data-order-action]");

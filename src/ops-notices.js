@@ -24,9 +24,9 @@
         return "<article><b>" + item.title + "</b><p>" + (item.body || "") + "</p></article>";
       }).join("") || "<p>暂无公告</p>";
     }
-    var popup = list.find(function (item) { return item.forcePopup && !sessionStorage.getItem("mcj-notice-" + item.id); });
+    var popup = list.find(function (item) { return item.forcePopup && !localStorage.getItem("mcj-notice-" + item.id); });
     if (popup) {
-      sessionStorage.setItem("mcj-notice-" + popup.id, "1");
+      localStorage.setItem("mcj-notice-" + popup.id, "1");
       window.alert(popup.title + (popup.body ? "\n" + popup.body : ""));
     }
   }

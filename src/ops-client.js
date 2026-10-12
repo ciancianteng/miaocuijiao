@@ -46,7 +46,8 @@
       method: options.method || "GET",
       headers: headers,
       body: options.body ? JSON.stringify(options.body) : undefined,
-      cache: "no-store"
+      cache: "no-store",
+      signal: options.signal
     }).then(function (res) {
       return res.json().catch(function () { return { ok: false, error: "服务器没有返回 JSON" }; }).then(function (payload) {
         if (!res.ok || !payload.ok) throw new Error((payload && payload.error) || "请求失败");

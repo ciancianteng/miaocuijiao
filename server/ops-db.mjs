@@ -197,8 +197,17 @@ function migrate(db) {
     accept_timeout_minutes: "30",
     pay_timeout_minutes: "30",
     deposit_myr: "100",
-    deposit_cny: "180"
+    deposit_cny: "180",
+    status_reminder_enabled: "1"
   };
+  ensureColumn(db, "services", "voice_mode", "TEXT NOT NULL DEFAULT ''");
+  ensureColumn(db, "orders", "discord_id", "TEXT NOT NULL DEFAULT ''");
+  ensureColumn(db, "orders", "discord_status", "TEXT NOT NULL DEFAULT ''");
+  ensureColumn(db, "companions", "last_seen_at", "TEXT NOT NULL DEFAULT ''");
+  ensureColumn(db, "companions", "quiet_start", "TEXT NOT NULL DEFAULT ''");
+  ensureColumn(db, "companions", "quiet_end", "TEXT NOT NULL DEFAULT ''");
+  ensureColumn(db, "companions", "reminder_opt_in", "INTEGER NOT NULL DEFAULT 1");
+  ensureColumn(db, "companions", "last_reminder_at", "TEXT NOT NULL DEFAULT ''");
   ensureColumn(db, "services", "category", "TEXT NOT NULL DEFAULT ''");
   ensureColumn(db, "orders", "slot_start", "TEXT NOT NULL DEFAULT ''");
   ensureColumn(db, "orders", "slot_end", "TEXT NOT NULL DEFAULT ''");
@@ -274,10 +283,63 @@ function migrate(db) {
       body TEXT NOT NULL,
       created_at TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS inbox_notifications (
+      id TEXT PRIMARY KEY,
+      audience TEXT NOT NULL,
+      actor_id TEXT NOT NULL DEFAULT '',
+      dedupe_key TEXT,
+      title TEXT NOT NULL,
+      body TEXT NOT NULL DEFAULT '',
+      href TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL,
+      read_at TEXT NOT NULL DEFAULT ''
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS inbox_dedupe ON inbox_notifications(dedupe_key);
+    CREATE TABLE IF NOT EXISTS push_subscriptions (
+      id TEXT PRIMARY KEY,
+      role TEXT NOT NULL,
+      actor_id TEXT NOT NULL,
+      endpoint TEXT NOT NULL UNIQUE,
+      p256dh TEXT NOT NULL,
+      auth_key TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS grab_posts (
+      id TEXT PRIMARY KEY,
+      service_id TEXT NOT NULL,
+      service_name TEXT NOT NULL,
+      quantity REAL NOT NULL,
+      duration TEXT NOT NULL DEFAULT '',
+      price REAL NOT NULL,
+      requirements TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'open',
+      claimed_by TEXT NOT NULL DEFAULT '',
+      created_by TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS service_gifts (
+      id TEXT PRIMARY KEY,
+      boss_id TEXT NOT NULL,
+      boss_name TEXT NOT NULL,
+      gift_name TEXT NOT NULL,
+      quantity INTEGER NOT NULL,
+      total_amount REAL NOT NULL,
+      currency TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending_review',
+      proof TEXT NOT NULL DEFAULT '',
+      pay_snapshot_json TEXT NOT NULL,
+      review_note TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
     CREATE UNIQUE INDEX IF NOT EXISTS orders_idempotency ON orders(idempotency_key);
     CREATE UNIQUE INDEX IF NOT EXISTS chat_client_id ON chat_messages(client_id);
     CREATE INDEX IF NOT EXISTS chat_thread_time ON chat_messages(thread_id, created_at);
   `);
+  ensureColumn(db, "chat_threads", "target_role", "TEXT NOT NULL DEFAULT 'boss'");
+  ensureColumn(db, "chat_threads", "target_id", "TEXT NOT NULL DEFAULT ''");
+  ensureColumn(db, "chat_messages", "kind", "TEXT NOT NULL DEFAULT 'text'");
+  ensureColumn(db, "chat_messages", "payload_json", "TEXT NOT NULL DEFAULT ''");
   const insert = db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)");
   Object.keys(defaults).forEach(function (key) {
     insert.run(key, defaults[key]);
@@ -292,7 +354,7 @@ class OpsStore {
   reset() {
     this.db.exec("BEGIN");
     try {
-      ["chat_messages", "chat_threads", "deposit_submissions", "announcements", "payment_channels", "orders", "offerings", "requirement_fields", "badges", "cert_reviews", "cert_applications", "examiners", "services", "companions", "settings"].forEach((table) => {
+      ["service_gifts", "grab_posts", "push_subscriptions", "inbox_notifications", "chat_messages", "chat_threads", "deposit_submissions", "announcements", "payment_channels", "orders", "offerings", "requirement_fields", "badges", "cert_reviews", "cert_applications", "examiners", "services", "companions", "settings"].forEach((table) => {
         this.db.exec("DELETE FROM " + table);
       });
       this.db.exec("COMMIT");
@@ -324,7 +386,8 @@ class OpsStore {
       acceptTimeoutMinutes: Number(this.setting("accept_timeout_minutes") || 30),
       payTimeoutMinutes: Number(this.setting("pay_timeout_minutes") || 30),
       depositMyr: Number(this.setting("deposit_myr") || 100),
-      depositCny: Number(this.setting("deposit_cny") || 180)
+      depositCny: Number(this.setting("deposit_cny") || 180),
+      statusReminderEnabled: this.setting("status_reminder_enabled") !== "0"
     };
   }
 
@@ -388,6 +451,7 @@ class OpsStore {
       priceMin: row.price_min === null || row.price_min === undefined ? null : Number(row.price_min),
       priceMax: row.price_max === null || row.price_max === undefined ? null : Number(row.price_max),
       unit: row.unit || "",
+      voiceMode: row.voice_mode || "",
       createdAt: row.created_at,
       updatedAt: row.updated_at
     };
@@ -463,6 +527,8 @@ class OpsStore {
       payProof: row.pay_proof || "",
       paySnapshot: parseJson(row.pay_snapshot_json, null),
       reviewNote: row.review_note || "",
+      discordId: row.discord_id || "",
+      discordStatus: row.discord_status || "",
       log: parseJson(row.log_json, [])
     };
   }
@@ -552,20 +618,21 @@ class OpsStore {
     if (priceMin > priceMax) throw new OpsError("最低价格不能高于最高价格");
     const unit = this.ensureUnit(input.unit || "每小时");
     const category = String(input.category || "").trim();
+    const voiceMode = ["", "game", "discord"].indexOf(String(input.voiceMode || "")) >= 0 ? String(input.voiceMode || "") : "";
     const enabled = input.enabled === undefined ? 1 : flag(input.enabled);
     const sort = Number.isFinite(Number(input.sort)) ? Number(input.sort) : 0;
     const ts = now();
     if (!id) {
       id = uid("svc");
       this.db.prepare(`INSERT INTO services
-        (id, name, description, enabled, sort_order, price_min, price_max, unit, category, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(id, name, description, enabled, sort, priceMin, priceMax, unit, category, ts, ts);
+        (id, name, description, enabled, sort_order, price_min, price_max, unit, category, voice_mode, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(id, name, description, enabled, sort, priceMin, priceMax, unit, category, voiceMode, ts, ts);
     } else {
       const current = this.getService(id);
       if (!current) throw new OpsError("服务不存在", 404);
       this.db.prepare(`UPDATE services
-        SET name = ?, description = ?, enabled = ?, sort_order = ?, price_min = ?, price_max = ?, unit = ?, category = ?, updated_at = ?
-        WHERE id = ?`).run(name, description, enabled, sort, priceMin, priceMax, unit, category, ts, id);
+        SET name = ?, description = ?, enabled = ?, sort_order = ?, price_min = ?, price_max = ?, unit = ?, category = ?, voice_mode = ?, updated_at = ?
+        WHERE id = ?`).run(name, description, enabled, sort, priceMin, priceMax, unit, category, voiceMode, ts, id);
     }
     return this.getService(id);
   }
@@ -764,7 +831,8 @@ class OpsStore {
       priceMin: service.priceMin,
       priceMax: service.priceMax,
       unit: service.unit,
-      quotePrice: unitPrice
+      quotePrice: unitPrice,
+      voiceMode: service.voiceMode || ""
     };
     const id = uid("ord");
     const ts = now();
@@ -948,9 +1016,11 @@ class OpsStore {
   }
 
   orderForCompanion(order) {
-    return Object.assign({}, order, {
+    const copy = Object.assign({}, order, {
       requirements: (order.requirements || []).filter((item) => item.showCompanion !== false)
     });
+    delete copy.discordId;
+    return copy;
   }
 
   orderForBoss(order) {
@@ -988,8 +1058,10 @@ class OpsStore {
   companionSnapshot(companionId) {
     const companion = this.getCompanion(companionId);
     if (!companion) throw new OpsError("陪玩不存在", 404);
+    this.db.prepare("UPDATE companions SET last_seen_at = ? WHERE id = ?").run(new Date().toISOString(), companionId);
     const settings = this.getSettings();
-    const orders = this.listOrders().filter((order) => order.companionId === companionId).map((order) => this.orderForCompanion(order));
+    if (typeof this.expireOrders === "function") this.expireOrders();
+    const orders = this.db.prepare("SELECT * FROM orders WHERE companion_id = ? ORDER BY created_at DESC LIMIT 40").all(companionId).map((row) => this.orderForCompanion(this.mapOrder(row)));
     return {
       companion: companion,
       settings: {

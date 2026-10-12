@@ -124,6 +124,7 @@
       sender_name: row.sender_name || row.fromName || "",
       sender_avatar: row.sender_avatar || "",
       message_type: row.message_type || row.type || "text",
+      card: row.card || null,
       text_content: row.text_content || row.text || "",
       media_url: row.media_url || "",
       media_duration: row.media_duration || "",
@@ -392,7 +393,7 @@
           return {
             conversation: normalizeConversation({ id: thread.id, peer_name: thread.bossName, peer_role: "customer", boss_name: thread.bossName, boss_user_id: thread.bossId, status: thread.status === "closed" ? "已结束" : (thread.assigneeName ? "已被客服接待" : "未接待"), assigned_service_name: thread.assigneeName || "", assigned_service_id: thread.assigneeName || "" }),
             messages: (thread.messages || []).map(function (item) {
-              return normalizeMessage({ id: item.id, sender_role: item.senderRole === "boss" ? "customer" : item.senderRole, sender_name: item.senderName, text_content: item.body, created_at: item.createdAt, send_status: "sent" });
+              return normalizeMessage({ id: item.id, sender_role: item.senderRole === "boss" ? "customer" : item.senderRole, sender_name: item.senderName, text_content: item.body, message_type: item.kind || "text", card: item.card || null, created_at: item.createdAt, send_status: "sent" });
             })
           };
         }
@@ -410,7 +411,7 @@
       if (res.ok) return res;
       var ops = await opsChat("/threads/" + encodeURIComponent(conversationId) + "/messages", {
         method: "POST",
-        body: { body: (payload && (payload.text_content || payload.body)) || "", clientId: payload && payload.client_message_id }
+        body: { body: (payload && (payload.text_content || payload.body)) || "", clientId: payload && payload.client_message_id, kind: payload && payload.message_type === "card" ? "card" : "text", companionId: payload && payload.companionId, serviceId: payload && payload.serviceId }
       }, role);
       if (ops.ok) return { ok: true, data: { message: { id: ops.data.id, text_content: payload.text_content, sender_role: role } } };
       return localSendMessage(role, conversationId, payload || {});
