@@ -1,3 +1,4 @@
+import { installFlow } from "./ops-flow.mjs";
 import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
@@ -66,6 +67,11 @@ export function openOpsDb(dbPath) {
   db.exec("PRAGMA journal_mode = WAL");
   migrate(db);
   return new OpsStore(db);
+}
+
+function ensureColumn(db, table, column, ddl) {
+  const cols = db.prepare("PRAGMA table_info(" + table + ")").all();
+  if (!cols.some((col) => col.name === column)) db.exec("ALTER TABLE " + table + " ADD COLUMN " + column + " " + ddl);
 }
 
 function migrate(db) {
@@ -187,8 +193,91 @@ function migrate(db) {
     allow_show_intro: "1",
     allow_show_badge: "1",
     allow_accept_orders: "1",
-    units: JSON.stringify(["每小时", "每局", "每单"])
+    units: JSON.stringify(["每小时", "每局", "每单"]),
+    accept_timeout_minutes: "30",
+    pay_timeout_minutes: "30",
+    deposit_myr: "100",
+    deposit_cny: "180"
   };
+  ensureColumn(db, "services", "category", "TEXT NOT NULL DEFAULT ''");
+  ensureColumn(db, "orders", "slot_start", "TEXT NOT NULL DEFAULT ''");
+  ensureColumn(db, "orders", "slot_end", "TEXT NOT NULL DEFAULT ''");
+  ensureColumn(db, "orders", "pay_channel_id", "TEXT NOT NULL DEFAULT ''");
+  ensureColumn(db, "orders", "pay_currency", "TEXT NOT NULL DEFAULT ''");
+  ensureColumn(db, "orders", "pay_amount", "REAL");
+  ensureColumn(db, "orders", "pay_proof", "TEXT NOT NULL DEFAULT ''");
+  ensureColumn(db, "orders", "pay_snapshot_json", "TEXT NOT NULL DEFAULT ''");
+  ensureColumn(db, "orders", "review_note", "TEXT NOT NULL DEFAULT ''");
+  ensureColumn(db, "orders", "updated_at", "TEXT NOT NULL DEFAULT ''");
+  ensureColumn(db, "orders", "accept_deadline", "TEXT NOT NULL DEFAULT ''");
+  ensureColumn(db, "orders", "pay_deadline", "TEXT NOT NULL DEFAULT ''");
+  ensureColumn(db, "orders", "log_json", "TEXT NOT NULL DEFAULT '[]'");
+  ensureColumn(db, "orders", "idempotency_key", "TEXT");
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS payment_channels (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      currency TEXT NOT NULL,
+      payee TEXT NOT NULL DEFAULT '',
+      bank TEXT NOT NULL DEFAULT '',
+      account TEXT NOT NULL DEFAULT '',
+      qr_url TEXT NOT NULL DEFAULT '',
+      instructions TEXT NOT NULL DEFAULT '',
+      enabled INTEGER NOT NULL DEFAULT 1,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      updated_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS announcements (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      body TEXT NOT NULL DEFAULT '',
+      audience TEXT NOT NULL DEFAULT 'home',
+      pinned INTEGER NOT NULL DEFAULT 0,
+      scrolling INTEGER NOT NULL DEFAULT 0,
+      force_popup INTEGER NOT NULL DEFAULT 0,
+      enabled INTEGER NOT NULL DEFAULT 1,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      starts_at TEXT NOT NULL DEFAULT '',
+      ends_at TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS deposit_submissions (
+      id TEXT PRIMARY KEY,
+      companion_id TEXT NOT NULL DEFAULT '',
+      applicant_name TEXT NOT NULL DEFAULT '',
+      channel_id TEXT NOT NULL,
+      currency TEXT NOT NULL,
+      amount REAL NOT NULL,
+      proof TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'pending',
+      review_note TEXT NOT NULL DEFAULT '',
+      channel_snapshot_json TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS chat_threads (
+      id TEXT PRIMARY KEY,
+      boss_id TEXT NOT NULL,
+      boss_name TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'open',
+      assignee_name TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS chat_messages (
+      id TEXT PRIMARY KEY,
+      thread_id TEXT NOT NULL,
+      client_id TEXT,
+      sender_role TEXT NOT NULL,
+      sender_name TEXT NOT NULL,
+      body TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS orders_idempotency ON orders(idempotency_key);
+    CREATE UNIQUE INDEX IF NOT EXISTS chat_client_id ON chat_messages(client_id);
+    CREATE INDEX IF NOT EXISTS chat_thread_time ON chat_messages(thread_id, created_at);
+  `);
   const insert = db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)");
   Object.keys(defaults).forEach(function (key) {
     insert.run(key, defaults[key]);
@@ -203,7 +292,7 @@ class OpsStore {
   reset() {
     this.db.exec("BEGIN");
     try {
-      ["orders", "offerings", "requirement_fields", "badges", "cert_reviews", "cert_applications", "examiners", "services", "companions", "settings"].forEach((table) => {
+      ["chat_messages", "chat_threads", "deposit_submissions", "announcements", "payment_channels", "orders", "offerings", "requirement_fields", "badges", "cert_reviews", "cert_applications", "examiners", "services", "companions", "settings"].forEach((table) => {
         this.db.exec("DELETE FROM " + table);
       });
       this.db.exec("COMMIT");
@@ -231,7 +320,11 @@ class OpsStore {
       allowShowIntro: this.setting("allow_show_intro") !== "0",
       allowShowBadge: this.setting("allow_show_badge") !== "0",
       allowAcceptOrders: this.setting("allow_accept_orders") !== "0",
-      units: Array.isArray(units) ? units : ["每小时", "每局", "每单"]
+      units: Array.isArray(units) ? units : ["每小时", "每局", "每单"],
+      acceptTimeoutMinutes: Number(this.setting("accept_timeout_minutes") || 30),
+      payTimeoutMinutes: Number(this.setting("pay_timeout_minutes") || 30),
+      depositMyr: Number(this.setting("deposit_myr") || 100),
+      depositCny: Number(this.setting("deposit_cny") || 180)
     };
   }
 
@@ -253,7 +346,23 @@ class OpsStore {
     this.setSetting("allow_show_badge", next.allowShowBadge ? "1" : "0");
     this.setSetting("allow_accept_orders", next.allowAcceptOrders ? "1" : "0");
     this.setSetting("units", JSON.stringify(next.units));
+    this.setSetting("accept_timeout_minutes", String(this.minuteSetting(next.acceptTimeoutMinutes, 30)));
+    this.setSetting("pay_timeout_minutes", String(this.minuteSetting(next.payTimeoutMinutes, 30)));
+    this.setSetting("deposit_myr", String(this.positiveMoney(next.depositMyr, 100, "MYR 押金")));
+    this.setSetting("deposit_cny", String(this.positiveMoney(next.depositCny, 180, "CNY 押金")));
     return this.getSettings();
+  }
+
+  minuteSetting(value, fallback) {
+    const n = Number(value);
+    if (!Number.isFinite(n) || n < 0 || n > 10080) throw new OpsError("超时时间需要在 0 到 10080 分钟之间");
+    return Math.round(Number.isFinite(n) ? n : fallback);
+  }
+
+  positiveMoney(value, fallback, label) {
+    const n = Number(value === undefined ? fallback : value);
+    if (!Number.isFinite(n) || n <= 0) throw new OpsError(label + "必须是大于 0 的数字");
+    return Math.round(n * 100) / 100;
   }
 
   ensureUnit(unit) {
@@ -272,6 +381,7 @@ class OpsStore {
     return {
       id: row.id,
       name: row.name,
+      category: row.category || "",
       description: row.description || "",
       enabled: !!row.enabled,
       sort: Number(row.sort_order || 0),
@@ -341,7 +451,19 @@ class OpsStore {
       serviceSnapshot: parseJson(row.service_snapshot_json, {}),
       requirements: parseJson(row.requirements_json, []),
       status: row.status,
-      createdAt: row.created_at
+      createdAt: row.created_at,
+      updatedAt: row.updated_at || row.created_at,
+      slotStart: row.slot_start || "",
+      slotEnd: row.slot_end || "",
+      acceptDeadline: row.accept_deadline || "",
+      payDeadline: row.pay_deadline || "",
+      payChannelId: row.pay_channel_id || "",
+      payCurrency: row.pay_currency || "",
+      payAmount: row.pay_amount === null || row.pay_amount === undefined ? null : Number(row.pay_amount),
+      payProof: row.pay_proof || "",
+      paySnapshot: parseJson(row.pay_snapshot_json, null),
+      reviewNote: row.review_note || "",
+      log: parseJson(row.log_json, [])
     };
   }
 
@@ -429,20 +551,21 @@ class OpsStore {
     if (priceMin === null || priceMax === null) throw new OpsError("最低价格和最高价格都要填写");
     if (priceMin > priceMax) throw new OpsError("最低价格不能高于最高价格");
     const unit = this.ensureUnit(input.unit || "每小时");
+    const category = String(input.category || "").trim();
     const enabled = input.enabled === undefined ? 1 : flag(input.enabled);
     const sort = Number.isFinite(Number(input.sort)) ? Number(input.sort) : 0;
     const ts = now();
     if (!id) {
       id = uid("svc");
       this.db.prepare(`INSERT INTO services
-        (id, name, description, enabled, sort_order, price_min, price_max, unit, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(id, name, description, enabled, sort, priceMin, priceMax, unit, ts, ts);
+        (id, name, description, enabled, sort_order, price_min, price_max, unit, category, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(id, name, description, enabled, sort, priceMin, priceMax, unit, category, ts, ts);
     } else {
       const current = this.getService(id);
       if (!current) throw new OpsError("服务不存在", 404);
       this.db.prepare(`UPDATE services
-        SET name = ?, description = ?, enabled = ?, sort_order = ?, price_min = ?, price_max = ?, unit = ?, updated_at = ?
-        WHERE id = ?`).run(name, description, enabled, sort, priceMin, priceMax, unit, ts, id);
+        SET name = ?, description = ?, enabled = ?, sort_order = ?, price_min = ?, price_max = ?, unit = ?, category = ?, updated_at = ?
+        WHERE id = ?`).run(name, description, enabled, sort, priceMin, priceMax, unit, category, ts, id);
     }
     return this.getService(id);
   }
@@ -590,6 +713,7 @@ class OpsStore {
   }
 
   listOrders() {
+    if (typeof this.expireOrders === "function") this.expireOrders();
     return this.db.prepare("SELECT * FROM orders ORDER BY created_at DESC").all().map((row) => this.mapOrder(row));
   }
 
@@ -621,6 +745,16 @@ class OpsStore {
         showOrderDetail: field.showOrderDetail
       };
     }).filter((item) => hasAnswer(item.value) || item.showOrderDetail);
+    const slotStart = String(input.slotStart || "").trim();
+    const slotEnd = String(input.slotEnd || "").trim();
+    if ((slotStart && !slotEnd) || (!slotStart && slotEnd)) throw new OpsError("预约开始和结束时间需要一起填写");
+    if (slotStart && slotEnd && slotStart >= slotEnd) throw new OpsError("预约结束时间必须晚于开始时间");
+    const idempotencyKey = String(input.idempotencyKey || "").trim();
+    if (idempotencyKey) {
+      const existing = this.db.prepare("SELECT * FROM orders WHERE idempotency_key = ?").get(idempotencyKey);
+      if (existing) return this.mapOrder(existing);
+    }
+    if (slotStart) this.assertSlotFree(companion.id, slotStart, slotEnd, "");
     const unitPrice = offering.quotePrice;
     const totalPrice = Math.round(unitPrice * quantity * 100) / 100;
     const snapshot = {
@@ -633,11 +767,14 @@ class OpsStore {
       quotePrice: unitPrice
     };
     const id = uid("ord");
+    const ts = now();
+    const acceptDeadline = new Date(Date.now() + this.getSettings().acceptTimeoutMinutes * 60000).toISOString();
     this.db.prepare(`INSERT INTO orders
-      (id, boss_id, boss_name, companion_id, service_id, quantity, unit_price, total_price, unit, service_snapshot_json, requirements_json, status, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_payment', ?)`).run(
+      (id, boss_id, boss_name, companion_id, service_id, quantity, unit_price, total_price, unit, service_snapshot_json, requirements_json, status, created_at, updated_at, slot_start, slot_end, accept_deadline, idempotency_key, log_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_accept', ?, ?, ?, ?, ?, ?, ?)`).run(
       id, bossId, bossName, companion.id, service.id, quantity, unitPrice, totalPrice, service.unit,
-      JSON.stringify(snapshot), JSON.stringify(requirements), now()
+      JSON.stringify(snapshot), JSON.stringify(requirements), ts, ts, slotStart, slotEnd, acceptDeadline,
+      idempotencyKey || null, JSON.stringify([{ action: "reserve", at: ts, actor: "boss" }])
     );
     return this.mapOrder(this.db.prepare("SELECT * FROM orders WHERE id = ?").get(id));
   }
@@ -816,6 +953,12 @@ class OpsStore {
     });
   }
 
+  orderForBoss(order) {
+    return Object.assign({}, order, {
+      requirements: (order.requirements || []).filter((item) => item.showOrderDetail !== false || item.showBoss !== false)
+    });
+  }
+
   adminSnapshot() {
     const orders = this.listOrders();
     return {
@@ -825,6 +968,9 @@ class OpsStore {
       companions: this.listCompanions(),
       offerings: this.listOfferings(),
       orders: orders,
+      channels: this.listChannels(),
+      announcements: this.listAnnouncements(),
+      deposits: this.listDeposits(),
       applications: this.listApplications(),
       reviews: this.listReviews(),
       examiners: this.listExaminers(),
@@ -960,6 +1106,8 @@ function hasAnswer(value) {
   if (Array.isArray(value)) return value.length > 0;
   return value !== null && value !== undefined && String(value).trim() !== "";
 }
+
+installFlow(OpsStore, OpsError);
 
 export function assertNoSecrets(payload, secrets) {
   const text = JSON.stringify(payload);

@@ -15,6 +15,24 @@
     return a + " – " + b + (unit ? " / " + unit : "");
   }
 
+  function statusLabel(status) {
+    var map = {
+      pending_accept: "待接单",
+      rejected: "已拒单",
+      accept_timeout: "接单超时",
+      pending_payment: "待付款",
+      payment_timeout: "付款超时",
+      pending_review: "待核实",
+      review_failed: "审核未通过",
+      payment_exception: "异常付款",
+      confirmed: "已确认",
+      in_service: "服务中",
+      completed: "已完成",
+      cancelled: "已取消"
+    };
+    return map[status] || status || "";
+  }
+
   function esc(value) {
     return String(value == null ? "" : value).replace(/[&<>"']/g, function (ch) {
       return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch];
@@ -54,12 +72,15 @@
 
   function boss(path, options) {
     options = options || {};
-    options.headers = Object.assign({ "x-ops-role": "boss" }, options.headers || {});
+    var bossId = "";
+    try { bossId = localStorage.getItem("mcjOpsBossId") || ""; } catch (e) { bossId = ""; }
+    options.headers = Object.assign({ "x-ops-role": "boss", "x-ops-boss-id": bossId }, options.headers || {});
     return request(path, options);
   }
 
   window.MCJOps = {
     formatMoney: formatMoney,
+    statusLabel: statusLabel,
     formatRange: formatRange,
     esc: esc,
     request: request,

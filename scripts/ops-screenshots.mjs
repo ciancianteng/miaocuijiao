@@ -14,6 +14,7 @@ const browser = await puppeteer.launch({
 
 async function prepare(page, width, height) {
   await page.setViewport({ width: width, height: height, deviceScaleFactor: 1 });
+  page.on("dialog", (dialog) => dialog.accept());
   page.on("pageerror", (error) => console.log("PAGEERROR", error.message));
   page.on("console", (msg) => {
     if (msg.type() === "error") console.log("CONSOLE", msg.text());
@@ -101,7 +102,7 @@ await desktop.waitForFunction(() => document.body.innerText.includes("星野") &
 await shot(desktop, "11-boss-public-card");
 
 await desktop.goto(base + "/companion-studio.html?companion=" + fixtures.companionId + "#services", { waitUntil: "networkidle0" });
-await desktop.waitForFunction(() => document.body.innerText.includes("我的报价"));
+await desktop.waitForFunction(() => document.body.innerText.includes("展开设置"));
 await shot(desktop, "12-companion-services");
 
 await desktop.goto(base + "/companion-studio.html?companion=" + fixtures.companionId + "#display", { waitUntil: "networkidle0" });
@@ -109,6 +110,8 @@ await desktop.waitForFunction(() => document.body.innerText.includes("展示在�
 await shot(desktop, "13-companion-toggles");
 
 await desktop.goto(base + "/companion-studio.html?companion=" + fixtures.companionId + "#orders", { waitUntil: "networkidle0" });
+await desktop.waitForFunction(() => document.body.innerText.includes("接受") || document.body.innerText.includes("pending_accept"));
+await desktop.click("[data-order='" + fixtures.orderId + "']");
 await desktop.waitForFunction(() => document.body.innerText.includes("MCJ-ID-88"));
 await shot(desktop, "14-companion-order");
 
@@ -155,6 +158,95 @@ await shot(mobile, "m-companion-toggles", false);
 await mobile.goto(base + "/public-card.html?id=" + fixtures.companionId, { waitUntil: "networkidle0" });
 await mobile.waitForFunction(() => document.body.innerText.includes("星野"));
 await shot(mobile, "m-public-card", false);
+
+await desktop.goto(base + "/admin.html#dashboard", { waitUntil: "networkidle0" });
+await desktop.waitForFunction(() => document.body.innerText.includes("运营总览"));
+await showAdmin(desktop, "ops-orders", "预约订单");
+await shot(desktop, "19-admin-orders");
+await showAdmin(desktop, "ops-payments", "支付渠道");
+await shot(desktop, "20-admin-payments");
+await showAdmin(desktop, "ops-announcements", "首页夜场已更新");
+await shot(desktop, "21-admin-announcements");
+await showAdmin(desktop, "ops-deposits", "押金审核");
+await shot(desktop, "22-admin-deposits");
+await showAdmin(desktop, "ops-settlement", "周五结算");
+await shot(desktop, "23-admin-settlement");
+
+await desktop.goto(base + "/index.html", { waitUntil: "domcontentloaded" });
+await desktop.waitForFunction(() => document.body.innerText.includes("点击我"));
+await shot(desktop, "24-home-apply-nudge", false);
+
+await desktop.goto(base + "/miao-coin.html", { waitUntil: "domcontentloaded" });
+await desktop.waitForFunction(() => document.body.innerText.includes("支付宝企业号") && document.body.innerText.includes("猫粮余额") && !document.body.innerText.includes("DuitNow"));
+await shot(desktop, "25-boss-recharge");
+
+await desktop.evaluate(() => {
+  localStorage.setItem("mcjCompanionApplicationDraft.v1", JSON.stringify({
+    step: 4,
+    rulesAgreement: { accepted: true },
+    data: { nickname: "星野", age: "22", gender: "女", region: "吉隆坡", phone: "0123456789", email: "a@b.c", personalTags: ["温柔"], mainGames: ["Valorant"], positions: ["指挥"], modes: ["排位"], rank: "钻石", voiceType: "少女音", onlineStart: "20:00", onlineEnd: "24:00" },
+    uploads: { avatar: "x", cover: "x" },
+    voice: { confirmed: true },
+    identity: {}
+  }));
+});
+await desktop.goto(base + "/companion-apply.html", { waitUntil: "domcontentloaded" });
+await desktop.waitForFunction(() => document.body.innerText.includes("认证押金") && document.body.innerText.includes("微信支付"));
+await desktop.select("select[name='depositMethod']", "微信支付 · CNY");
+await desktop.waitForFunction(() => document.body.innerText.includes("¥180") && document.body.innerText.includes("mcj-wechat"));
+await shot(desktop, "26-companion-deposit");
+
+await fetch(base + "/api/ops/chat/threads/" + fixtures.threadId + "/reopen", {
+  method: "POST",
+  headers: { "Content-Type": "application/json", "x-ops-role": "service", "x-ops-actor-id": "svc_1", "x-ops-actor-name": encodeURIComponent("客服小满") },
+  body: "{}"
+});
+await desktop.goto(base + "/customer-service/index.html", { waitUntil: "domcontentloaded" });
+await desktop.evaluate(() => {
+  localStorage.setItem("customerServiceAuthToken", "customer_service_session_v3_screenshot");
+  localStorage.setItem("customerServiceUser", JSON.stringify({ id: "svc_1", user_id: "svc_1", name: "客服小满", role: "customer_service" }));
+});
+await desktop.goto(base + "/customer-service/index.html", { waitUntil: "domcontentloaded" });
+await desktop.click("[data-service-view='messages']");
+await desktop.waitForFunction(() => document.body.innerText.includes("阿凯") && document.body.innerText.includes("新的时间"));
+await shot(desktop, "27-service-chat");
+
+await desktop.goto(base + "/companion-studio.html?companion=" + fixtures.companionId + "#services", { waitUntil: "domcontentloaded" });
+await desktop.click("details summary");
+await desktop.waitForFunction(() => document.body.innerText.includes("开启接单"));
+await shot(desktop, "28-companion-service-open");
+
+await desktop.goto(base + "/boss-order.html?service=" + fixtures.voiceId + "&companion=" + fixtures.companionId, { waitUntil: "domcontentloaded" });
+await desktop.waitForSelector("#orderForm");
+await desktop.click("#orderForm button[type='submit']");
+await desktop.waitForFunction(() => document.body.innerText.includes("pending_accept"));
+const freshId = await desktop.evaluate(() => {
+  const text = document.body.innerText;
+  const match = text.match(/ord_[0-9a-f]+/);
+  return match ? match[0] : "";
+});
+console.log("fresh order", freshId);
+await fetch(base + "/api/ops/orders/" + freshId + "/accept", {
+  method: "POST",
+  headers: { "Content-Type": "application/json", "x-ops-role": "companion", "x-ops-companion-id": fixtures.companionId },
+  body: "{}"
+});
+await desktop.click("[data-refresh-order]");
+await desktop.waitForFunction(() => document.body.innerText.includes("支付宝企业号") && document.body.innerText.includes("猫粮余额"));
+await shot(desktop, "29-boss-pay");
+
+await mobile.goto(base + "/index.html", { waitUntil: "domcontentloaded" });
+await mobile.waitForFunction(() => document.body.innerText.includes("点击我"));
+await shot(mobile, "m-home-nudge", false);
+await mobile.goto(base + "/customer-service/index.html", { waitUntil: "domcontentloaded" });
+await mobile.evaluate(() => {
+  localStorage.setItem("customerServiceAuthToken", "customer_service_session_v3_screenshot");
+  localStorage.setItem("customerServiceUser", JSON.stringify({ id: "svc_1", user_id: "svc_1", name: "客服小满", role: "customer_service" }));
+});
+await mobile.goto(base + "/customer-service/index.html", { waitUntil: "domcontentloaded" });
+await mobile.click("[data-service-view='messages']");
+await mobile.waitForFunction(() => document.body.innerText.includes("阿凯"));
+await shot(mobile, "m-service-chat", false);
 
 await browser.close();
 console.log("done");

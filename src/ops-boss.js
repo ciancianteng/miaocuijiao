@@ -34,6 +34,7 @@
     }
     if (result) {
       root.innerHTML = successView();
+      bindPay();
       return;
     }
     var service = currentService();
@@ -64,7 +65,7 @@
       '<label class="ops-field"><span class="ops-label">老板昵称</span><input name="bossName" required value="' + esc(bossName) + '"></label>' +
       '<label class="ops-field"><span class="ops-label">数量（' + esc(service.unit) + '）</span><input name="quantity" type="number" min="0.5" step="0.5" value="1" required></label>' +
       service.fields.map(control).join("") +
-      '<div class="wide ops-card"><span class="ops-label">订单总价</span><strong id="orderTotal" class="ops-price"></strong></div><div class="wide ops-actions"><button class="ops-btn" type="button" data-step="companion">返回</button><button class="ops-btn primary" type="submit">提交订单</button></div></form>';
+      '<div class="wide ops-card"><span class="ops-label">订单总价</span><strong id="orderTotal" class="ops-price"></strong></div><div class="wide ops-actions"><button class="ops-btn" type="button" data-step="companion">返回</button><button class="ops-btn primary" type="submit">提交预约</button></div></form>';
   }
 
   function control(field) {
@@ -97,7 +98,10 @@
       var value = Array.isArray(item.value) ? item.value.join("、") : item.value;
       return "<p><span class='ops-muted'>" + esc(item.label) + "</span><br><b>" + esc(value) + "</b></p>";
     }).join("");
-    return '<section class="ops-card"><h2>订单已保存</h2><p>订单号 ' + esc(result.id) + "</p><p>单价快照 " + esc(ops.formatMoney(result.unitPrice)) + " / " + esc(result.unit) + "</p><p>总价 " + esc(ops.formatMoney(result.totalPrice)) + "</p><p class='ops-note'>之后如果后台调整价格，这张订单仍使用上面的快照。</p>" + lines + '<button class="ops-btn" type="button" data-step="service">继续下单</button></section>';
+    var pay = (result.status === "pending_payment" || result.status === "review_failed")
+      ? '<form id="payForm" class="ops-card"><h3>付款</h3><div id="payChannels">正在读取收款渠道…</div><label class="ops-field"><span class="ops-label">付款参考</span><input name="proof" placeholder="转账参考号或凭证链接"></label><button class="ops-btn primary" type="submit">提交付款，等待客服核实</button></form>'
+      : "";
+    return '<section class="ops-card"><h2>预约 ' + esc(ops.statusLabel(result.status)) + '</h2><p>订单号 ' + esc(result.id) + "</p><p>单价快照 " + esc(ops.formatMoney(result.unitPrice)) + " / " + esc(result.unit) + "</p><p>总价 " + esc(ops.formatMoney(result.totalPrice)) + "</p>" + lines + '<button class="ops-btn" type="button" data-refresh-order>刷新状态</button></section>' + pay;
   }
 
   function answersFrom(form, service) {
@@ -167,12 +171,48 @@
     }).then(function (order) {
       if (!localStorage.getItem("mcjOpsBossId")) localStorage.setItem("mcjOpsBossId", order.bossId);
       result = order;
-      toast("success", "订单已创建");
+      toast("success", "预约已提交，等待陪玩接单");
       render();
     }).catch(function (error) {
       toast("error", error.message || "下单失败");
       button.disabled = false;
     });
+  });
+
+  function bindPay() {
+    var box = document.getElementById("payChannels");
+    if (box) {
+      ops.request("/public/channels").then(function (channels) {
+        var wallet = '<label class="ops-check"><span>猫粮余额 · 内部钱包</span><input type="radio" name="channel" value="wallet"></label>';
+        box.innerHTML = wallet + (channels || []).map(function (item) {
+          return '<label class="ops-check"><span>' + esc(item.name) + " · " + esc(item.currency) + " · " + esc(item.payee || "") + " " + esc(item.account || "") + '</span><input type="radio" name="channel" value="' + esc(item.id) + '"></label>' + (item.qrUrl ? '<img alt="收款码" src="' + esc(item.qrUrl) + '" style="width:120px;height:120px;object-fit:cover;border-radius:12px">' : "") + "<p>" + esc(item.instructions || "") + "</p>";
+        }).join("");
+      }).catch(function () { box.textContent = "渠道读取失败"; });
+    }
+    var form = document.getElementById("payForm");
+    if (!form) return;
+    form.addEventListener("submit", function (event) {
+      event.preventDefault();
+      var selected = form.querySelector("input[name=channel]:checked");
+      if (!selected) { toast("error", "请选择付款方式"); return; }
+      ops.boss("/orders/" + encodeURIComponent(result.id) + "/pay", {
+        method: "POST",
+        body: { channelId: selected.value, method: selected.value === "wallet" ? "wallet" : "external", proof: form.elements.proof.value }
+      }).then(function (order) {
+        result = order;
+        toast("success", "已提交付款，等待客服核实到账");
+        render();
+      }).catch(function (error) { toast("error", error.message || "付款提交失败"); });
+    });
+  }
+
+  document.addEventListener("click", function (event) {
+    if (!event.target.closest("[data-refresh-order]") || !result) return;
+    ops.boss("/boss/orders?bossId=" + encodeURIComponent(result.bossId)).then(function (orders) {
+      var found = (orders || []).find(function (item) { return item.id === result.id; });
+      if (found) result = found;
+      render();
+    }).catch(function (error) { toast("error", error.message || "刷新失败"); });
   });
 
   document.addEventListener("DOMContentLoaded", function () {

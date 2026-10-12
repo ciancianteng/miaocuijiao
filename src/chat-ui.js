@@ -42,7 +42,8 @@
 
   async function loadConversations(id) {
     var inst = instances[id];
-    inst.target.innerHTML = '<div class="mcj-chat-state mcj-chat-card"><strong>加载中...</strong><span>正在读取会话数据</span></div>';
+    var quiet = !!inst.target.querySelector("[data-chat-instance]");
+    if (!quiet) inst.target.innerHTML = '<div class="mcj-chat-state mcj-chat-card"><strong>加载中...</strong><span>正在读取会话数据</span></div>';
     var res = await api.listConversations(inst.role, { filter: inst.filter, search: inst.search });
     inst.conversations = res.conversations || [];
     inst.error = res.error || "";
@@ -56,7 +57,9 @@
     var inst = instances[id];
     inst.activeConversationId = conversationId;
     var body = inst.target.querySelector("[data-chat-detail]");
-    if (body && !keepShell) body.innerHTML = '<div class="mcj-chat-state"><strong>加载中...</strong><span>正在读取聊天记录</span></div>';
+    var typing = body && body.querySelector("textarea") && document.activeElement === body.querySelector("textarea");
+    if (typing) return;
+    if (body && !keepShell && !body.querySelector(".mcj-message-list")) body.innerHTML = '<div class="mcj-chat-state"><strong>加载中...</strong><span>正在读取聊天记录</span></div>';
     var res = await api.getConversation(inst.role, conversationId);
     inst.currentConversation = res.conversation;
     inst.messages = res.messages || [];
@@ -188,6 +191,17 @@
       client_message_id: "web-" + Date.now() + "-" + Math.random().toString(16).slice(2)
     });
     if (!res.ok) alert(res.error || "发送失败");
+    else {
+      var list = root.querySelector(".mcj-message-list");
+      if (list && res.data && res.data.message) {
+        var row = document.createElement("div");
+        row.className = "mcj-message-row me";
+        row.innerHTML = '<div class="mcj-bubble-wrap"><div class="mcj-bubble">' + text.replace(/[&<>]/g, function (ch) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;" }[ch]; }) + "</div></div>";
+        list.appendChild(row);
+        list.scrollTop = list.scrollHeight;
+        return;
+      }
+    }
     loadMessages(inst.id, form.dataset.chatSend);
   });
 

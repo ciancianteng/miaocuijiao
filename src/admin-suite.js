@@ -168,7 +168,12 @@
     'ops-certs':['认证申请审核','技术认证申请、考核和历史记录'],
     'ops-examiners':['考官联系方式','审核通过后才对陪玩可见'],
     'ops-badges':['认证徽章','考核通过后发放，可撤销'],
-    'ops-settings':['系统设置','展示权限和计费单位'],
+    'ops-settings':['系统设置','展示权限、超时和押金'],
+    'ops-orders':['预约订单','接单、付款和客服审核'],
+    'ops-payments':['支付渠道','充值和订单付款共用'],
+    'ops-announcements':['公告','首页、陪玩端和客服端'],
+    'ops-deposits':['押金审核','MYR 与 CNY 独立金额'],
+    'ops-settlement':['周五结算','已完成订单快照汇总'],
     'legacy-dashboard':['旧版本地数据','原有本地模块，不作为服务与认证的数据来源'],
     bosses:['老板管理','老板账号、钱包、订单与邀请关系'],
     players:['陪玩管理','陪玩资料、等级、审核、接单状态与收益'],
@@ -353,14 +358,14 @@
       refunds:[{key:'id',label:'退款单号'},{key:'order_id',label:'订单号'},{key:'user',label:'用户'},{key:'amount',label:'金额'},{key:'status',label:'状态',type:'status'},{key:'actions',label:'操作',type:'actions'}],
       role_permissions:[{key:'role',label:'角色'},{key:'scope',label:'权限范围'},{key:'actions',label:'操作',type:'actions'}]
     };
-    Object.keys(tables).forEach(function(key){var target=document.getElementById('table-'+key);if(target)renderGenericTable(key,target,tables[key]);});
+    Object.keys(tables).forEach(function(key){if(key==='announcements')return;var target=document.getElementById('table-'+key);if(target)renderGenericTable(key,target,tables[key]);});
     var rechargeAlt=document.getElementById('table-recharge_requests_alt');if(rechargeAlt)renderGenericTable('recharge_requests',rechargeAlt,tables.recharge_requests);
     var logsFull=document.getElementById('table-admin_logs_full');if(logsFull)renderGenericTable('admin_logs',logsFull,tables.admin_logs);
     var dashboardBosses=document.getElementById('table-dashboard-bosses');
     if(dashboardBosses)renderGenericTable('bosses',dashboardBosses,tables.bosses);
     var dashboardPlayers=document.getElementById('table-dashboard-players');
     if(dashboardPlayers)renderGenericTable('players',dashboardPlayers,tables.players);
-    ['banners','players','announcements'].forEach(function(key){var t=document.getElementById('crud-'+key);if(t)renderCrud(key,t)});
+    ['banners','players'].forEach(function(key){var t=document.getElementById('crud-'+key);if(t)renderCrud(key,t)});
     [
       ['crud-ads','暂无广告位数据'],
       ['table-meow_butler','暂无喵管家配置'],

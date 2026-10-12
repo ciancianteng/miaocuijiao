@@ -54,7 +54,10 @@
     return new Date().toLocaleString("zh-CN");
   }
 
+  var remoteChatDown = false;
+
   async function request(path, options, role) {
+    if (remoteChatDown) return { ok: false, error: "聊天后端 API 尚未连接" };
     var config = Object.assign({
       method: "GET",
       headers: {
@@ -71,7 +74,10 @@
       var text = await res.text();
       var contentType = res.headers.get("content-type") || "";
       var data = text && contentType.indexOf("application/json") >= 0 ? JSON.parse(text) : null;
-      if (!res.ok) throw new Error((data && data.message) || "聊天后端 API 尚未连接");
+      if (!res.ok) {
+        if (res.status === 404) remoteChatDown = true;
+        throw new Error((data && data.message) || "聊天后端 API 尚未连接");
+      }
       if (text && contentType.indexOf("application/json") < 0) throw new Error("聊天后端 API 尚未连接");
       return { ok: true, data: data };
     } catch (error) {
@@ -304,10 +310,71 @@
     });
   }
 
+  function opsRole(role) {
+    if (role === "customer_service") return "service";
+    if (role === "super_admin") return "admin";
+    return "boss";
+  }
+
+  function opsIdentity(role) {
+    var user = currentUser(role);
+    var id = user.serviceId || user.user_id || user.customer_id || user.id || "";
+    if (role === "customer") {
+      try { id = localStorage.getItem("mcjOpsBossId") || id || "boss_web"; } catch (e) { id = id || "boss_web"; }
+    }
+    if (!id) id = role + "_web";
+    return {
+      role: opsRole(role),
+      id: id,
+      name: user.name || user.nickname || (role === "customer_service" ? "客服" : "老板")
+    };
+  }
+
+  async function opsChat(path, options, role) {
+    var who = opsIdentity(role);
+    var res = await fetch("/api/ops/chat" + path, {
+      method: (options && options.method) || "GET",
+      headers: {
+        "Content-Type": "application/json",
+        "x-ops-role": who.role,
+        "x-ops-actor-id": who.id,
+        "x-ops-actor-name": encodeURIComponent(who.name)
+      },
+      body: options && options.body ? JSON.stringify(options.body) : undefined,
+      cache: "no-store"
+    });
+    var payload = await res.json().catch(function () { return { ok: false }; });
+    if (!res.ok || !payload.ok) return { ok: false, error: payload.error || "会话接口失败" };
+    return { ok: true, data: payload.data };
+  }
+
+  async function opsChatList(role) {
+    var res = await opsChat("/threads", null, role);
+    if (!res.ok) return res;
+    var conversations = (res.data || []).map(function (item) {
+      var status = item.status === "closed" ? "已结束" : (item.lastRole === "service" ? "等待老板回复" : (item.assigneeName ? "已被客服接待" : "未接待"));
+      return normalizeConversation({
+        id: item.id,
+        conversation_type: "customer_service",
+        peer_name: item.bossName,
+        peer_role: "customer",
+        boss_user_id: item.bossId,
+        boss_name: item.bossName,
+        last_message_text: item.lastMessage,
+        last_message_at: item.updatedAt,
+        status: status,
+        assigned_service_name: item.assigneeName || "",
+        assigned_service_id: item.assigneeName || ""
+      });
+    });
+    return { ok: true, data: { conversations: conversations, unread_total: 0 } };
+  }
+
   window.MCJChatAPI = {
     listConversations: async function (role, filters) {
       var query = new URLSearchParams(Object.assign({ role: role }, filters || {})).toString();
       var res = await request("/conversations" + (query ? "?" + query : ""), null, role);
+      if (!res.ok) res = await opsChatList(role);
       if (res.ok) {
         return {
           conversations: ((res.data && res.data.conversations) || []).map(normalizeConversation),
@@ -318,6 +385,18 @@
     },
     getConversation: async function (role, conversationId) {
       var res = await request("/conversations/" + encodeURIComponent(conversationId), null, role);
+      if (!res.ok) {
+        var ops = await opsChat("/threads/" + encodeURIComponent(conversationId), null, role);
+        if (ops.ok) {
+          var thread = ops.data || {};
+          return {
+            conversation: normalizeConversation({ id: thread.id, peer_name: thread.bossName, peer_role: "customer", boss_name: thread.bossName, boss_user_id: thread.bossId, status: thread.status === "closed" ? "已结束" : (thread.assigneeName ? "已被客服接待" : "未接待"), assigned_service_name: thread.assigneeName || "", assigned_service_id: thread.assigneeName || "" }),
+            messages: (thread.messages || []).map(function (item) {
+              return normalizeMessage({ id: item.id, sender_role: item.senderRole === "boss" ? "customer" : item.senderRole, sender_name: item.senderName, text_content: item.body, created_at: item.createdAt, send_status: "sent" });
+            })
+          };
+        }
+      }
       if (res.ok) {
         return {
           conversation: normalizeConversation((res.data && res.data.conversation) || res.data),
@@ -329,6 +408,11 @@
     sendMessage: async function (role, conversationId, payload) {
       var res = await request("/conversations/" + encodeURIComponent(conversationId) + "/messages", { method: "POST", body: payload }, role);
       if (res.ok) return res;
+      var ops = await opsChat("/threads/" + encodeURIComponent(conversationId) + "/messages", {
+        method: "POST",
+        body: { body: (payload && (payload.text_content || payload.body)) || "", clientId: payload && payload.client_message_id }
+      }, role);
+      if (ops.ok) return { ok: true, data: { message: { id: ops.data.id, text_content: payload.text_content, sender_role: role } } };
       return localSendMessage(role, conversationId, payload || {});
     },
     markRead: async function (role, conversationId, messageId) {
@@ -336,9 +420,14 @@
       if (res.ok) return res;
       return localMarkRead(role, conversationId);
     },
+    threadAction: async function (role, conversationId, action, data) {
+      return opsChat("/threads/" + encodeURIComponent(conversationId) + "/" + action, { method: "POST", body: data || {} }, role);
+    },
     createCustomerServiceConversation: async function (role, data) {
       var res = await request("/customer-service-conversations", { method: "POST", body: data || {} }, role);
       if (res.ok) return res;
+      var ops = await opsChat("/threads", { method: "POST", body: data || {} }, role);
+      if (ops.ok) return { ok: true, data: { conversation_id: ops.data.id, conversation: ops.data } };
       return localCreateCustomerServiceConversation(data || {});
     },
     updateConversationSetting: async function (role, conversationId, data) {

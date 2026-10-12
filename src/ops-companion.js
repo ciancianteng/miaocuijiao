@@ -68,12 +68,28 @@
     };
   }
 
+  function offerFields(service, offer) {
+    var settings = state.settings || {};
+    return '<label class="ops-field"><span class="ops-label">我的报价</span><input name="quotePrice" type="number" min="0" step="0.01" value="' + esc(offer.quotePrice === null || offer.quotePrice === undefined ? "" : offer.quotePrice) + '"></label>' +
+      '<label class="ops-field wide"><span class="ops-label">服务介绍</span><textarea name="intro">' + esc(offer.intro || "") + "</textarea></label>" +
+      toggle("showOnCard", "展示在我的个人卡片", offer.showOnCard, settings.allowShowOnCard) +
+      toggle("showPrice", "展示服务价格", offer.showPrice, settings.allowShowPrice) +
+      toggle("showIntro", "展示服务介绍", offer.showIntro, settings.allowShowIntro) +
+      toggle("showBadge", "展示技术认证徽章", offer.showBadge, settings.allowShowBadge) +
+      toggle("acceptOrders", "开启接单", offer.acceptOrders, settings.allowAcceptOrders);
+  }
+
   function servicesView() {
-    return profileForm(state.companion) + '<div class="ops-grid-2">' + state.services.map(function (service) {
+    return profileForm(state.companion) + '<div class="service-stack">' + state.services.map(function (service) {
       var offer = offering(service);
       var range = ops.formatRange(service.priceMin, service.priceMax, service.unit);
-      return '<article class="ops-card"><div class="ops-split"><h3>' + esc(service.name) + "</h3>" + (service.enabled ? '<span class="ops-chip ok">可配置</span>' : '<span class="ops-chip bad">已关闭</span>') + "</div><p>" + esc(service.description || "暂无说明") + "</p><p>允许范围 " + esc(range || "未设置") + '</p><p>我的报价 <b class="ops-price">' + esc(ops.formatMoney(offer.quotePrice) || "未报价") + "</b></p><button class='ops-btn' type='button' data-open-service='" + esc(service.id) + "'>设置展示与报价</button></article>";
+      var paused = !offer.acceptOrders;
+      return '<article class="ops-card"><div class="ops-split"><h3>' + esc(service.name) + "</h3>" + (service.enabled ? (paused ? chipText("已暂停", "wait") : chipText("接单中", "ok")) : chipText("已关闭", "bad")) + '</div><p>' + esc(service.category || "未分类") + " · " + esc(range || "未设置") + '</p><p>报价 <b class="ops-price">' + esc(ops.formatMoney(offer.quotePrice) || "未报价") + '</b></p><details><summary>展开设置</summary><form data-offer-form data-service="' + esc(service.id) + '">' + offerFields(service, offer) + '<button class="ops-btn primary" type="submit">保存</button></form></details></article>';
     }).join("") + "</div>";
+  }
+
+  function chipText(text, kind) {
+    return '<span class="ops-chip ' + kind + '">' + esc(text) + "</span>";
   }
 
   function displayView() {
@@ -83,14 +99,8 @@
     var settings = state.settings || {};
     return '<div class="ops-actions">' + state.services.map(function (item) {
       return '<button class="ops-btn' + (item.id === service.id ? " primary" : "") + '" type="button" data-open-service="' + esc(item.id) + '">' + esc(item.name) + "</button>";
-    }).join("") + '</div><form id="offerForm" class="ops-card ops-form" data-service="' + esc(service.id) + '"><div class="wide"><h2>服务展示与接单</h2><p>' + esc(service.name) + " · 允许 " + esc(ops.formatRange(service.priceMin, service.priceMax, service.unit) || "价格未设置") + "</p></div>" +
-      '<label class="ops-field"><span class="ops-label">我的报价</span><input name="quotePrice" type="number" min="0" step="0.01" value="' + esc(offer.quotePrice === null || offer.quotePrice === undefined ? "" : offer.quotePrice) + '"></label>' +
-      '<label class="ops-field wide"><span class="ops-label">服务介绍</span><textarea name="intro">' + esc(offer.intro || "") + "</textarea></label>" +
-      toggle("showOnCard", "展示在我的个人卡片", offer.showOnCard, settings.allowShowOnCard) +
-      toggle("showPrice", "展示服务价格", offer.showPrice, settings.allowShowPrice) +
-      toggle("showIntro", "展示服务介绍", offer.showIntro, settings.allowShowIntro) +
-      toggle("showBadge", "展示技术认证徽章", offer.showBadge, settings.allowShowBadge) +
-      toggle("acceptOrders", "开启接单", offer.acceptOrders, settings.allowAcceptOrders) +
+    }).join("") + '</div><form id="offerForm" class="ops-card ops-form" data-offer-form data-service="' + esc(service.id) + '"><div class="wide"><h2>服务展示与接单</h2><p>' + esc(service.name) + " · 允许 " + esc(ops.formatRange(service.priceMin, service.priceMax, service.unit) || "价格未设置") + "</p></div>" +
+      offerFields(service, offer) +
       '<div class="wide"><button class="ops-btn primary" type="submit">保存勾选</button></div></form>';
   }
 
@@ -106,7 +116,8 @@
         var value = Array.isArray(item.value) ? item.value.join("、") : item.value;
         return "<p><span class='ops-muted'>" + esc(item.label) + "</span><br><b>" + esc(value) + "</b></p>";
       }).join("") || "<p>这张订单没有对陪玩展示的要求。</p>";
-      return '<article class="ops-card"><button class="ops-btn" type="button" data-order="' + esc(order.id) + '">' + esc((order.serviceSnapshot || {}).name || "订单") + " · " + esc(order.id) + '</button><p>老板 ' + esc(order.bossName) + " · 快照单价 " + esc(ops.formatMoney(order.unitPrice)) + " / " + esc(order.unit) + " · 总价 " + esc(ops.formatMoney(order.totalPrice)) + "</p>" + (open ? requirements : "") + "</article>";
+      var actions = order.status === "pending_accept" ? '<div class="ops-actions"><button class="ops-btn primary" type="button" data-order-action="accept" data-id="' + esc(order.id) + '">接受</button><button class="ops-btn danger" type="button" data-order-action="reject" data-id="' + esc(order.id) + '">拒绝</button></div>' : "";
+      return '<article class="ops-card"><button class="ops-btn" type="button" data-order="' + esc(order.id) + '">' + esc((order.serviceSnapshot || {}).name || "订单") + " · " + esc(order.id) + '</button><p>老板 ' + esc(order.bossName) + " · " + esc(ops.statusLabel(order.status)) + " · 快照单价 " + esc(ops.formatMoney(order.unitPrice)) + " / " + esc(order.unit) + " · 总价 " + esc(ops.formatMoney(order.totalPrice)) + "</p>" + actions + (open ? requirements : "") + "</article>";
     }).join("");
   }
 
@@ -148,8 +159,9 @@
   function bindForms() {
     var profile = document.getElementById("profileForm");
     if (profile) profile.addEventListener("submit", saveProfile);
-    var offer = document.getElementById("offerForm");
-    if (offer) offer.addEventListener("submit", saveOffer);
+    document.querySelectorAll("[data-offer-form]").forEach(function (offer) {
+      offer.addEventListener("submit", saveOffer);
+    });
     var cert = document.getElementById("certForm");
     if (cert) cert.addEventListener("submit", saveCert);
     if (view === "card") {
@@ -259,6 +271,15 @@
     if (orderBtn) {
       selectedOrder = orderBtn.dataset.order;
       render();
+      return;
+    }
+    var orderAction = event.target.closest("[data-order-action]");
+    if (orderAction) {
+      var reason = orderAction.dataset.orderAction === "reject" ? (window.prompt("拒单原因") || "") : "";
+      if (orderAction.dataset.orderAction === "reject" && !reason.trim()) return;
+      ops.companion("/orders/" + encodeURIComponent(orderAction.dataset.id) + "/" + orderAction.dataset.orderAction, { method: "POST", body: { reason: reason } }, id())
+        .then(function () { toast("success", "已更新预约"); return load(); })
+        .catch(function (error) { toast("error", error.message || "操作失败"); });
     }
   });
 

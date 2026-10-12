@@ -46,18 +46,18 @@
     return '<label class="ops-field' + (wide ? " wide" : "") + '"><span class="ops-label">' + label + "</span>" + html + "</label>";
   }
 
-  function openModal(html) {
+  function openModal(html, drawer) {
     var modal = $("opsModal");
     if (!modal) {
       modal = document.createElement("div");
       modal.id = "opsModal";
-      modal.className = "ops-modal";
       modal.innerHTML = '<div class="ops-modal-card" role="dialog"><div id="opsModalBody"></div></div>';
       document.body.appendChild(modal);
       modal.addEventListener("click", function (event) {
         if (event.target === modal) closeModal();
       });
     }
+    modal.className = drawer ? "ops-modal drawer" : "ops-modal";
     $("opsModalBody").innerHTML = html;
     modal.hidden = false;
   }
@@ -93,6 +93,11 @@
     renderExaminers();
     renderBadges();
     renderSettings();
+    renderOrdersBoard();
+    renderChannels();
+    renderAnnouncements();
+    renderDeposits();
+    renderSettlement();
     var legacy = $("table-price_table");
     if (legacy) {
       legacy.innerHTML = state.services.length ? '<div class="ops-table-wrap"><table class="ops-table"><thead><tr><th>服务</th><th>价格范围</th><th>单位</th><th>状态</th></tr></thead><tbody>' + state.services.map(function (service) {
@@ -137,7 +142,7 @@
     if (!services.length) return '<div class="ops-card ops-empty">还没有服务。点击「新增服务」写入数据库。</div>';
     return '<div class="ops-table-wrap"><table class="ops-table"><thead><tr><th>服务</th><th>说明</th><th>价格范围</th><th>状态</th><th></th></tr></thead><tbody>' + services.map(function (service) {
       var range = ops.formatRange(service.priceMin, service.priceMax, service.unit);
-      return "<tr><td data-label='服务'><b>" + esc(service.name) + "</b></td><td data-label='说明'>" + esc(service.description || "未填写") + "</td><td data-label='价格'>" + esc(range || "未设置") + "</td><td data-label='状态'>" + (service.enabled ? chip("启用", "ok") : chip("已关闭", "bad")) + "</td><td data-label='操作'><button class='ops-btn' type='button' data-ops='edit-service' data-id='" + esc(service.id) + "'>编辑与价格</button></td></tr>";
+      return "<tr><td data-label='服务'><b>" + esc(service.name) + "</b><br><span class='ops-muted'>" + esc(service.category || "未分类") + "</span></td><td data-label='说明'>" + esc(service.description || "未填写") + "</td><td data-label='价格'>" + esc(range || "未设置") + "</td><td data-label='状态'>" + (service.enabled ? chip("启用", "ok") : chip("已关闭", "bad")) + "</td><td data-label='操作'><button class='ops-btn' type='button' data-ops='edit-service' data-id='" + esc(service.id) + "'>编辑</button> <button class='ops-btn danger' type='button' data-ops='delete-service' data-id='" + esc(service.id) + "'>删除</button></td></tr>";
     }).join("") + "</tbody></table></div>";
   }
 
@@ -186,6 +191,7 @@
     }).join("");
     openModal('<form id="serviceForm" class="ops-form"><div class="wide"><h2>' + (service ? "编辑服务与价格" : "新增服务") + '</h2><p class="ops-note">保存后立即写入数据库。</p></div>' +
       field("服务名称", '<input name="name" required value="' + esc(service ? service.name : "") + '">', true) +
+      field("分类", '<input name="category" value="' + esc(service ? service.category : "") + '">') +
       field("服务说明", '<textarea name="description">' + esc(service ? service.description : "") + "</textarea>", true) +
       field("最低价格", '<input name="priceMin" type="number" min="0" step="0.01" required value="' + esc(service && service.priceMin != null ? service.priceMin : "") + '">') +
       field("最高价格", '<input name="priceMax" type="number" min="0" step="0.01" required value="' + esc(service && service.priceMax != null ? service.priceMax : "") + '">') +
@@ -200,12 +206,26 @@
     });
   }
 
+  async function deleteService(id) {
+    var service = state.services.find(function (item) { return item.id === id; });
+    if (!service || !window.confirm("删除「" + service.name + "」后，新订单不能再选。已有订单仍保留原快照。")) return;
+    toast("loading", "正在删除服务…");
+    try {
+      await ops.admin("/admin/services/" + encodeURIComponent(id), { method: "DELETE" });
+      toast("success", "服务已删除");
+      await reload();
+    } catch (error) {
+      toast("error", error.message || "删除失败");
+    }
+  }
+
   async function submitService(form, id) {
     var button = form.querySelector("button[type=submit]");
     button.disabled = true;
     toast("loading", "正在保存服务…");
     var body = {
       name: form.elements.name.value,
+      category: form.elements.category.value,
       description: form.elements.description.value,
       priceMin: form.elements.priceMin.value,
       priceMax: form.elements.priceMax.value,
@@ -249,11 +269,12 @@
           return '<option value="' + pair[0] + '"' + (fieldItem.type === pair[0] ? " selected" : "") + ">" + pair[1] + "</option>";
         }).join("") + "</select>") +
         field("选项（用逗号分隔）", '<input data-field-key="optionsText" value="' + esc(fieldItem.optionsText || "") + '">', true) +
+        '<div class="ops-checks wide">' +
         check("必填", "required", fieldItem.required) +
         check("老板端显示", "showBoss", fieldItem.showBoss) +
         check("陪玩端显示", "showCompanion", fieldItem.showCompanion) +
         check("订单详情显示", "showOrderDetail", fieldItem.showOrderDetail) +
-        "</div></div>";
+        "</div></div></div>";
     }).join("") + '<div class="ops-actions"><button class="ops-btn" type="button" data-ops="add-field">新增字段</button><button class="ops-btn primary" type="button" data-ops="save-fields">保存字段配置</button></div>';
   }
 
@@ -412,7 +433,12 @@
       switchRow("allowShowIntro", "展示服务介绍", settings.allowShowIntro) +
       switchRow("allowShowBadge", "展示技术认证徽章", settings.allowShowBadge) +
       switchRow("allowAcceptOrders", "开启接单", settings.allowAcceptOrders) +
-      '</section><section class="ops-group"><h3>计费单位</h3><div id="unitList">' + settings.units.map(function (unit, index) {
+      '</section><section class="ops-group"><h3>时间与押金</h3>' +
+      field("接单超时（分钟）", '<input name="acceptTimeoutMinutes" type="number" min="0" step="1" value="' + esc(settings.acceptTimeoutMinutes) + '">') +
+      field("付款超时（分钟）", '<input name="payTimeoutMinutes" type="number" min="0" step="1" value="' + esc(settings.payTimeoutMinutes) + '">') +
+      field("押金 MYR", '<input name="depositMyr" type="number" min="0.01" step="0.01" value="' + esc(settings.depositMyr) + '">') +
+      field("押金 CNY", '<input name="depositCny" type="number" min="0.01" step="0.01" value="' + esc(settings.depositCny) + '">') +
+      '<button class="ops-btn" type="button" data-ops="help-rules">规则说明</button></section><section class="ops-group"><h3>计费单位</h3><div id="unitList">' + settings.units.map(function (unit, index) {
         return '<div class="ops-split"><input data-unit value="' + esc(unit) + '"><button class="ops-btn danger" type="button" data-ops="remove-unit" data-index="' + index + '">删除</button></div>';
       }).join("") + '</div><div class="ops-actions"><input id="newUnit" placeholder="例如：每小时"><button class="ops-btn" type="button" data-ops="add-unit">添加单位</button></div><button class="ops-btn primary" type="submit">保存设置</button></section></form></div>';
     $("settingsForm").addEventListener("submit", saveSettings);
@@ -436,6 +462,10 @@
           allowShowIntro: form.elements.allowShowIntro.checked,
           allowShowBadge: form.elements.allowShowBadge.checked,
           allowAcceptOrders: form.elements.allowAcceptOrders.checked,
+          acceptTimeoutMinutes: form.elements.acceptTimeoutMinutes.value,
+          payTimeoutMinutes: form.elements.payTimeoutMinutes.value,
+          depositMyr: form.elements.depositMyr.value,
+          depositCny: form.elements.depositCny.value,
           units: units
         }
       });
@@ -461,8 +491,25 @@
     if (!action) return;
     var type = action.dataset.ops;
     if (type === "reload") reload().catch(function (error) { toast("error", error.message); });
+    if (type === "new-channel") channelForm(null);
+    if (type === "edit-channel") channelForm((state.channels || []).find(function (item) { return item.id === action.dataset.id; }));
+    if (type === "delete-channel") ops.admin("/admin/channels/" + encodeURIComponent(action.dataset.id), { method: "DELETE" }).then(function () { toast("success", "渠道已删除"); return reload(); }).catch(function (error) { toast("error", error.message); });
+    if (type === "new-announcement") announcementForm(null);
+    if (type === "edit-announcement") announcementForm((state.announcements || []).find(function (item) { return item.id === action.dataset.id; }));
+    if (type === "delete-announcement") ops.admin("/admin/announcements/" + encodeURIComponent(action.dataset.id), { method: "DELETE" }).then(function () { toast("success", "公告已删除"); return reload(); }).catch(function (error) { toast("error", error.message); });
+    if (type === "order-review") reviewOrder(action.dataset.id, action.dataset.result);
+    if (type === "order-step") ops.admin("/orders/" + encodeURIComponent(action.dataset.id) + "/" + action.dataset.step, { method: "POST", body: {} }).then(function () { toast("success", "订单状态已更新"); return reload(); }).catch(function (error) { toast("error", error.message); });
+    if (type === "deposit-review") {
+      var reason = action.dataset.status === "rejected" ? (window.prompt("拒绝原因") || "") : "";
+      if (action.dataset.status === "rejected" && !reason.trim()) return;
+      ops.admin("/admin/deposits/" + encodeURIComponent(action.dataset.id) + "/review", { method: "POST", body: { status: action.dataset.status, reason: reason } }).then(function () { toast("success", "押金审核已记录"); return reload(); }).catch(function (error) { toast("error", error.message); });
+    }
+    if (type === "help-rules") openModal('<div class="ops-page"><h2>规则说明</h2><p>接单超时和付款超时只影响还没完成的预约。已创建订单的价格快照不会被改价影响。押金 MYR 与 CNY 独立配置，不自动换汇。</p><button class="ops-btn" type="button" data-ops="close-modal">关闭</button></div>');
+    if (type === "help-flow") openModal('<div class="ops-page"><h2>订单流程</h2><p>预约 → 陪玩接单或拒单 → 老板付款 → 客服核对到账 → 确认 → 开始服务 → 完成。截图不会自动确认到账。</p><button class="ops-btn" type="button" data-ops="close-modal">关闭</button></div>');
+    if (type === "help-finance") openModal('<div class="ops-page"><h2>结算说明</h2><p>这里只汇总已完成订单的快照金额。退款、工资和抽成仍按原有财务规则计算，这个面板不改金额。</p><button class="ops-btn" type="button" data-ops="close-modal">关闭</button></div>');
     if (type === "new-service") serviceForm(null);
     if (type === "edit-service") serviceForm(state.services.find(function (item) { return item.id === action.dataset.id; }));
+    if (type === "delete-service") deleteService(action.dataset.id);
     if (type === "close-modal") closeModal();
     if (type === "pick-requirement") {
       ui.fieldDraft = readFieldDraftFromDom();
@@ -533,8 +580,136 @@
     }
   }
 
+  function orderStatus(status) {
+    var map = {
+      pending_accept: ["待接单", "wait"], rejected: ["已拒单", "bad"], accept_timeout: ["接单超时", "bad"],
+      pending_payment: ["待付款", "wait"], payment_timeout: ["付款超时", "bad"], pending_review: ["待核实", "info"],
+      review_failed: ["审核未通过", "bad"], payment_exception: ["异常付款", "wait"], confirmed: ["已确认", "ok"],
+      in_service: ["服务中", "ok"], completed: ["已完成", "ok"], cancelled: ["已取消", "bad"], pending_payment_legacy: ["待付款", "wait"]
+    };
+    return map[status] || [status, "info"];
+  }
+
+  function fill(ids, html) {
+    ids.forEach(function (id) {
+      var node = $(id);
+      if (node) node.innerHTML = html;
+    });
+  }
+
+  function renderOrdersBoard() {
+    var rows = (state.orders || []).map(function (order) {
+      var meta = orderStatus(order.status);
+      var actions = "";
+      if (order.status === "pending_review" || order.status === "payment_exception") {
+        actions = "<button class='ops-btn primary' type='button' data-ops='order-review' data-id='" + esc(order.id) + "' data-result='confirmed'>确认到账</button> <button class='ops-btn danger' type='button' data-ops='order-review' data-id='" + esc(order.id) + "' data-result='review_failed'>审核失败</button> <button class='ops-btn' type='button' data-ops='order-review' data-id='" + esc(order.id) + "' data-result='payment_exception'>异常核对</button>";
+      }
+      if (order.status === "confirmed") actions = "<button class='ops-btn primary' type='button' data-ops='order-step' data-id='" + esc(order.id) + "' data-step='start'>开始服务</button>";
+      if (order.status === "in_service") actions = "<button class='ops-btn primary' type='button' data-ops='order-step' data-id='" + esc(order.id) + "' data-step='complete'>完成结算</button>";
+      return "<tr><td data-label='订单'>" + esc(order.id) + "<br>" + esc(order.bossName) + "</td><td data-label='服务'>" + esc((order.serviceSnapshot || {}).name || "") + "</td><td data-label='金额'>" + esc(ops.formatMoney(order.totalPrice)) + "</td><td data-label='状态'>" + chip(meta[0], meta[1]) + "</td><td data-label='操作'>" + actions + "</td></tr>";
+    }).join("");
+    fill(["opsOrders"], '<div class="ops-page"><div class="ops-toolbar"><div><h2>预约订单</h2></div><button class="ops-btn" type="button" data-ops="help-flow">流程说明</button></div>' + (rows ? '<div class="ops-table-wrap"><table class="ops-table"><thead><tr><th>订单</th><th>服务</th><th>金额</th><th>状态</th><th></th></tr></thead><tbody>' + rows + "</tbody></table></div>" : '<div class="ops-empty">还没有预约。</div>') + "</div>");
+  }
+
+  function channelForm(item) {
+    openModal('<form id="channelForm" class="ops-form"><div class="wide"><h2>' + (item ? "编辑渠道" : "新增渠道") + "</h2></div>" +
+      field("名称", '<input name="name" required value="' + esc(item ? item.name : "") + '">') +
+      field("币种", '<select name="currency"><option value="MYR">MYR</option><option value="CNY">CNY</option></select>') +
+      field("收款人", '<input name="payee" value="' + esc(item ? item.payee : "") + '">') +
+      field("银行", '<input name="bank" value="' + esc(item ? item.bank : "") + '">') +
+      field("账号", '<input name="account" value="' + esc(item ? item.account : "") + '">', true) +
+      field("二维码地址", '<input name="qrUrl" value="' + esc(item ? item.qrUrl : "") + '">', true) +
+      field("付款说明", '<textarea name="instructions">' + esc(item ? item.instructions : "") + "</textarea>", true) +
+      '<label class="ops-switch wide"><span>启用</span><input name="enabled" type="checkbox"' + (!item || item.enabled ? " checked" : "") + "></label>" +
+      '<div class="wide"><button class="ops-btn primary" type="submit">保存渠道</button></div></form>', true);
+    var form = $("channelForm");
+    if (item) form.elements.currency.value = item.currency;
+    form.addEventListener("submit", async function (event) {
+      event.preventDefault();
+      toast("loading", "正在保存渠道…");
+      try {
+        await ops.admin(item ? "/admin/channels/" + encodeURIComponent(item.id) : "/admin/channels", {
+          method: item ? "PATCH" : "POST",
+          body: { name: form.elements.name.value, currency: form.elements.currency.value, payee: form.elements.payee.value, bank: form.elements.bank.value, account: form.elements.account.value, qrUrl: form.elements.qrUrl.value, instructions: form.elements.instructions.value, enabled: form.elements.enabled.checked }
+        });
+        closeModal();
+        toast("success", "渠道已保存");
+        await reload();
+      } catch (error) { toast("error", error.message || "保存失败"); }
+    });
+  }
+
+  function renderChannels() {
+    var cards = (state.channels || []).map(function (item) {
+      return '<article class="ops-card"><div class="ops-split"><h3>' + esc(item.name) + "</h3>" + (item.enabled ? chip(item.currency, "ok") : chip("已关闭", "bad")) + "</div><p>" + esc(item.payee || "未填收款人") + " · " + esc(item.bank || "未填银行") + "</p><p>" + esc(item.account || "未填账号") + "</p>" + (item.qrUrl ? '<img alt="收款码" src="' + esc(item.qrUrl) + '" style="width:96px;height:96px;object-fit:cover;border-radius:12px">' : "") + '<div class="ops-actions"><button class="ops-btn" type="button" data-ops="edit-channel" data-id="' + esc(item.id) + '">编辑</button><button class="ops-btn danger" type="button" data-ops="delete-channel" data-id="' + esc(item.id) + '">删除</button></div></article>';
+    }).join("");
+    var html = '<div class="ops-page"><div class="ops-toolbar"><div><h2>支付渠道</h2></div><button class="ops-btn primary" type="button" data-ops="new-channel">新增渠道</button></div><p class="ops-note">充值和订单付款只显示这里启用的渠道。猫粮余额单独保留。</p><div class="ops-grid-2">' + (cards || '<div class="ops-empty">还没有外部渠道。老板端不会显示 DuitNow 或支付宝。</div>') + "</div></div>";
+    fill(["opsPayments", "paymentSettings"], html);
+  }
+
+  function announcementForm(item) {
+    openModal('<form id="announcementForm" class="ops-form"><div class="wide"><h2>' + (item ? "编辑公告" : "新增公告") + "</h2></div>" +
+      field("标题", '<input name="title" required value="' + esc(item ? item.title : "") + '">', true) +
+      field("内容", '<textarea name="body">' + esc(item ? item.body : "") + "</textarea>", true) +
+      field("分类", '<select name="audience"><option value="home">首页</option><option value="companion">陪玩端</option><option value="service">客服端</option><option value="all">全部</option></select>') +
+      field("排序", '<input name="sort" type="number" value="' + esc(item ? item.sort : 0) + '">') +
+      '<label class="ops-switch"><span>置顶</span><input name="pinned" type="checkbox"' + (item && item.pinned ? " checked" : "") + "></label>" +
+      '<label class="ops-switch"><span>滚动</span><input name="scrolling" type="checkbox"' + (item && item.scrolling ? " checked" : "") + "></label>" +
+      '<label class="ops-switch"><span>强制弹出</span><input name="forcePopup" type="checkbox"' + (item && item.forcePopup ? " checked" : "") + "></label>" +
+      '<label class="ops-switch"><span>启用</span><input name="enabled" type="checkbox"' + (!item || item.enabled ? " checked" : "") + "></label>" +
+      '<div class="wide"><button class="ops-btn primary" type="submit">发布</button></div></form>', true);
+    var form = $("announcementForm");
+    if (item) form.elements.audience.value = item.audience;
+    form.addEventListener("submit", async function (event) {
+      event.preventDefault();
+      toast("loading", "正在发布公告…");
+      try {
+        await ops.admin(item ? "/admin/announcements/" + encodeURIComponent(item.id) : "/admin/announcements", {
+          method: item ? "PATCH" : "POST",
+          body: { title: form.elements.title.value, body: form.elements.body.value, audience: form.elements.audience.value, sort: form.elements.sort.value, pinned: form.elements.pinned.checked, scrolling: form.elements.scrolling.checked, forcePopup: form.elements.forcePopup.checked, enabled: form.elements.enabled.checked }
+        });
+        closeModal();
+        toast("success", "公告已更新");
+        await reload();
+      } catch (error) { toast("error", error.message || "保存失败"); }
+    });
+  }
+
+  function renderAnnouncements() {
+    var rows = (state.announcements || []).map(function (item) {
+      return "<tr><td data-label='标题'><b>" + esc(item.title) + "</b><br><span class='ops-muted'>" + esc(item.audience) + "</span></td><td data-label='状态'>" + (item.enabled ? chip(item.pinned ? "置顶" : "启用", "ok") : chip("关闭", "bad")) + (item.forcePopup ? " " + chip("强制", "info") : "") + "</td><td data-label='操作'><button class='ops-btn' type='button' data-ops='edit-announcement' data-id='" + esc(item.id) + "'>编辑</button> <button class='ops-btn danger' type='button' data-ops='delete-announcement' data-id='" + esc(item.id) + "'>删除</button></td></tr>";
+    }).join("");
+    fill(["opsAnnouncements", "table-announcements"], '<div class="ops-page"><div class="ops-toolbar"><div><h2>公告</h2></div><button class="ops-btn primary" type="button" data-ops="new-announcement">新增公告</button></div>' + (rows ? '<div class="ops-table-wrap"><table class="ops-table"><thead><tr><th>标题</th><th>状态</th><th></th></tr></thead><tbody>' + rows + "</tbody></table></div>" : '<div class="ops-empty">还没有公告。</div>') + "</div>");
+  }
+
+  function renderDeposits() {
+    var rows = (state.deposits || []).map(function (item) {
+      var actions = item.status === "pending" ? "<button class='ops-btn primary' type='button' data-ops='deposit-review' data-id='" + esc(item.id) + "' data-status='approved'>通过</button> <button class='ops-btn danger' type='button' data-ops='deposit-review' data-id='" + esc(item.id) + "' data-status='rejected'>拒绝</button>" : esc(item.reviewNote || "");
+      return "<tr><td>" + esc(item.applicantName || item.companionId) + "</td><td>" + esc(item.currency) + " " + esc(item.amount) + "</td><td>" + esc(item.status) + "</td><td>" + actions + "</td></tr>";
+    }).join("");
+    fill(["opsDeposits", "table-companion_deposit"], '<div class="ops-page"><h2>押金审核</h2><p class="ops-note">MYR ' + esc(state.settings.depositMyr) + " · CNY " + esc(state.settings.depositCny) + "，两个金额独立，不换算。</p>" + (rows ? '<div class="ops-table-wrap"><table class="ops-table"><thead><tr><th>申请人</th><th>金额</th><th>状态</th><th></th></tr></thead><tbody>' + rows + "</tbody></table></div>" : '<div class="ops-empty">还没有押金提交。</div>') + "</div>");
+  }
+
+  function renderSettlement() {
+    var done = (state.orders || []).filter(function (order) { return order.status === "completed"; });
+    var total = done.reduce(function (sum, order) { return sum + Number(order.totalPrice || 0); }, 0);
+    var html = '<div class="ops-page"><div class="ops-toolbar"><div><h2>周五结算</h2></div><button class="ops-btn" type="button" data-ops="help-finance">说明</button></div><section class="ops-metrics"><article class="ops-metric"><span>已完成订单</span><strong>' + done.length + '</strong></article><article class="ops-metric"><span>快照总额</span><strong>' + esc(ops.formatMoney(total) || "RM0.00") + "</strong></article></section></div>";
+    fill(["opsSettlement"], html);
+  }
+
+  async function reviewOrder(id, result) {
+    var reason = result === "confirmed" ? "" : window.prompt("请填写原因") || "";
+    if (result !== "confirmed" && !reason.trim()) return;
+    toast("loading", "正在提交审核…");
+    try {
+      await ops.admin("/orders/" + encodeURIComponent(id) + "/review", { method: "POST", body: { result: result, reason: reason } });
+      toast("success", "审核已记录");
+      await reload();
+    } catch (error) { toast("error", error.message || "审核失败"); }
+  }
+
   document.addEventListener("DOMContentLoaded", function () {
-    ["opsDashboard", "opsServices", "opsPrices", "opsRequirements", "opsCompanions", "opsCerts", "opsExaminers", "opsBadges", "opsSettings"].forEach(function (id) {
+    ["opsDashboard", "opsServices", "opsPrices", "opsRequirements", "opsCompanions", "opsCerts", "opsExaminers", "opsBadges", "opsSettings", "opsOrders", "opsPayments", "opsAnnouncements", "opsDeposits", "opsSettlement"].forEach(function (id) {
       var node = $(id);
       if (node) node.innerHTML = '<div class="ops-empty">正在加载数据库…</div>';
     });

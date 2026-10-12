@@ -6,7 +6,7 @@
   <title>陪玩工作台 | MEOW CUI JIAO</title>
   <link rel="stylesheet" href="src/ops-ui.css">
 </head>
-<body class="portal">
+<body class="portal" data-ops-audience="companion">
   <header class="portal-top">
     <a class="portal-brand" href="index.html"><img src="assets/meow-cuijiao-brand.jpg" alt=""><span>陪玩工作台</span></a>
     <a class="ops-btn" href="companion-center.html">返回大厅</a>
@@ -29,6 +29,8 @@
     <button type="button" data-view="orders">订单</button>
     <button type="button" data-view="apply">认证</button>
   </nav>
+  <div class="announcement-strip" data-ops-notice hidden><span></span></div>
+  <script src="src/ops-notices.js"></script>
   <script src="src/ops-client.js"></script>
   <script src="src/ops-companion.js"></script>
 </body>

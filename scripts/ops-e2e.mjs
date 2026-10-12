@@ -11,6 +11,9 @@ async function api(path, options) {
   const headers = { "Content-Type": "application/json" };
   if (options.role) headers["x-ops-role"] = options.role;
   if (options.companionId) headers["x-ops-companion-id"] = options.companionId;
+  if (options.bossId) headers["x-ops-boss-id"] = options.bossId;
+  if (options.actorId) headers["x-ops-actor-id"] = options.actorId;
+  if (options.actorName) headers["x-ops-actor-name"] = encodeURIComponent(options.actorName);
   const response = await fetch(base + "/api/ops" + path, {
     method: options.method || "GET",
     headers: headers,
@@ -131,7 +134,7 @@ async function main() {
     method: "POST", role: "boss",
     body: { bossId: "boss_akai", bossName: "阿凯", serviceId: valorantId, companionId: companionId, quantity: 2, answers: answers }
   });
-  assert("老板下单成功并计算总价", order.json.ok && order.json.data.unitPrice === 22 && order.json.data.totalPrice === 44);
+  assert("老板下单成功并计算总价", order.json.ok && order.json.data.status === "pending_accept" && order.json.data.unitPrice === 22 && order.json.data.totalPrice === 44);
   const orderId = order.json.data.id;
 
   const renamed = await api("/admin/services/" + valorantId, {
@@ -237,6 +240,196 @@ async function main() {
   const blobs = [finalCard.text, finalCatalog.text, visible.text];
   assert("最终页面数据没有 RM-", blobs.every(function (text) { return text.indexOf("RM-") < 0; }));
 
+  const emptyChannels = await api("/public/channels");
+  assert("未配置渠道时不会出现 DuitNow 或重复支付宝", emptyChannels.json.ok && emptyChannels.json.data.length === 0 && emptyChannels.text.indexOf("DuitNow") < 0 && emptyChannels.text.indexOf("支付宝") < 0);
+
+  const myrChannel = await api("/admin/channels", {
+    method: "POST", role: "admin",
+    body: { name: "支付宝", currency: "MYR", payee: "MEOW", bank: "Alipay", account: "meow@alipay", qrUrl: "assets/meow-cuijiao-brand.jpg", instructions: "备注老板昵称", enabled: true, sort: 1 }
+  });
+  const cnyChannel = await api("/admin/channels", {
+    method: "POST", role: "admin",
+    body: { name: "微信支付", currency: "CNY", payee: "妙脆角", bank: "WeChat", account: "mcj-wechat", qrUrl: "assets/meow-cuijiao-brand.jpg", instructions: "付款后等待客服核对", enabled: true, sort: 2 }
+  });
+  const hiddenChannel = await api("/admin/channels", {
+    method: "POST", role: "admin",
+    body: { name: "已关闭渠道", currency: "MYR", payee: "停用", bank: "", account: "off", qrUrl: "", instructions: "", enabled: false, sort: 3 }
+  });
+  const publicChannels = await api("/public/channels");
+  assert("充值与订单只读取已启用渠道", myrChannel.json.ok && cnyChannel.json.ok && publicChannels.json.data.length === 2 && !publicChannels.json.data.some(function (item) { return item.name === "已关闭渠道" || item.name === "DuitNow"; }));
+
+  const depositInfo = await api("/public/deposit");
+  assert("押金 MYR 与 CNY 独立配置", depositInfo.json.data.myr === 100 && depositInfo.json.data.cny === 180);
+
+  const paused = await api("/companion/offering", {
+    method: "PUT", role: "companion", companionId: companionId,
+    body: { companionId: companionId, serviceId: valorantId, quotePrice: 22, intro: "双排会报点", showOnCard: true, showPrice: true, showIntro: true, showBadge: true, acceptOrders: false }
+  });
+  const pausedOrder = await api("/boss/orders", {
+    method: "POST", role: "boss",
+    body: { bossId: "boss_akai", bossName: "阿凯", serviceId: valorantId, companionId: companionId, quantity: 1, answers: answers }
+  });
+  assert("暂停接单后不能创建新的指定预约", paused.json.ok && paused.json.data.acceptOrders === false && pausedOrder.status === 400);
+  await api("/companion/offering", {
+    method: "PUT", role: "companion", companionId: companionId,
+    body: { companionId: companionId, serviceId: valorantId, quotePrice: 22, intro: "双排会报点", showOnCard: true, showPrice: true, showIntro: true, showBadge: true, acceptOrders: true }
+  });
+
+  const slotA = "2026-10-20T10:00:00.000Z";
+  const slotB = "2026-10-20T12:00:00.000Z";
+  const booked = await api("/boss/orders", {
+    method: "POST", role: "boss",
+    body: { bossId: "boss_akai", bossName: "阿凯", serviceId: voiceId, companionId: companionId, quantity: 1, answers: {}, slotStart: slotA, slotEnd: slotB, idempotencyKey: "voice-slot-1" }
+  });
+  const sameKey = await api("/boss/orders", {
+    method: "POST", role: "boss",
+    body: { bossId: "boss_akai", bossName: "阿凯", serviceId: voiceId, companionId: companionId, quantity: 1, answers: {}, slotStart: slotA, slotEnd: slotB, idempotencyKey: "voice-slot-1" }
+  });
+  const overlap = await api("/boss/orders", {
+    method: "POST", role: "boss",
+    body: { bossId: "boss_akai", bossName: "阿凯", serviceId: voiceId, companionId: companionId, quantity: 1, answers: {}, slotStart: "2026-10-20T11:00:00.000Z", slotEnd: "2026-10-20T13:00:00.000Z" }
+  });
+  assert("重复提交返回同一张预约且时段冲突会被拒绝", booked.json.ok && sameKey.json.data.id === booked.json.data.id && overlap.status === 400);
+
+  const accepted = await api("/orders/" + booked.json.data.id + "/accept", { method: "POST", role: "companion", companionId: companionId, body: {} });
+  const acceptAgain = await api("/orders/" + booked.json.data.id + "/accept", { method: "POST", role: "companion", companionId: companionId, body: {} });
+  assert("陪玩接单后进入付款", accepted.json.ok && accepted.json.data.status === "pending_payment" && acceptAgain.status === 400);
+
+  const paid = await api("/orders/" + booked.json.data.id + "/pay", {
+    method: "POST", role: "boss", bossId: "boss_akai",
+    body: { channelId: myrChannel.json.data.id, proof: "已转账" }
+  });
+  const paidAgain = await api("/orders/" + booked.json.data.id + "/pay", {
+    method: "POST", role: "boss", bossId: "boss_akai",
+    body: { channelId: myrChannel.json.data.id, proof: "已转账" }
+  });
+  assert("付款后等待客服核对且不能重复付款", paid.json.ok && paid.json.data.status === "pending_review" && paid.json.data.paySnapshot.name === "支付宝" && paidAgain.status === 400);
+  await api("/admin/channels/" + myrChannel.json.data.id, {
+    method: "PATCH", role: "admin",
+    body: { name: "支付宝企业号", currency: "MYR", payee: "MEOW", bank: "Alipay", account: "meow@alipay", qrUrl: "assets/meow-cuijiao-brand.jpg", instructions: "备注老板昵称", enabled: true, sort: 1 }
+  });
+  const history = await api("/admin/snapshot", { role: "admin" });
+  const paidOrder = history.json.data.orders.find(function (item) { return item.id === booked.json.data.id; });
+  assert("历史付款快照不受渠道改名影响", paidOrder.paySnapshot.name === "支付宝");
+
+  const failedReview = await api("/orders/" + booked.json.data.id + "/review", {
+    method: "POST", role: "service", actorId: "svc_1",
+    body: { result: "review_failed", reason: "金额不符" }
+  });
+  const repaid = await api("/orders/" + booked.json.data.id + "/pay", {
+    method: "POST", role: "boss", bossId: "boss_akai",
+    body: { channelId: myrChannel.json.data.id, proof: "已补齐" }
+  });
+  const confirmed = await api("/orders/" + booked.json.data.id + "/review", {
+    method: "POST", role: "service", actorId: "svc_1",
+    body: { result: "confirmed" }
+  });
+  const reviewAgain = await api("/orders/" + booked.json.data.id + "/review", {
+    method: "POST", role: "service", actorId: "svc_1",
+    body: { result: "confirmed" }
+  });
+  const started = await api("/orders/" + booked.json.data.id + "/start", { method: "POST", role: "service", actorId: "svc_1", body: {} });
+  const completed = await api("/orders/" + booked.json.data.id + "/complete", { method: "POST", role: "service", actorId: "svc_1", body: {} });
+  assert("客服核对、开始和完成只生效一次", failedReview.json.data.status === "review_failed" && repaid.json.data.status === "pending_review" && confirmed.json.data.status === "confirmed" && reviewAgain.status === 400 && started.json.data.status === "in_service" && completed.json.data.status === "completed");
+
+  const rejectable = await api("/boss/orders", {
+    method: "POST", role: "boss",
+    body: { bossId: "boss_akai", bossName: "阿凯", serviceId: voiceId, companionId: companionId, quantity: 1, answers: {}, slotStart: "2026-10-21T10:00:00.000Z", slotEnd: "2026-10-21T11:00:00.000Z" }
+  });
+  const rejected = await api("/orders/" + rejectable.json.data.id + "/reject", {
+    method: "POST", role: "companion", companionId: companionId,
+    body: { reason: "时间冲突" }
+  });
+  assert("陪玩可以拒单", rejected.json.ok && rejected.json.data.status === "rejected");
+
+  await api("/admin/settings", {
+    method: "PUT", role: "admin",
+    body: { allowShowIntro: true, allowShowOnCard: true, allowShowPrice: true, allowShowBadge: true, allowAcceptOrders: true, units: ["每小时", "每局", "每单"], acceptTimeoutMinutes: 0, payTimeoutMinutes: 30, depositMyr: 100, depositCny: 180 }
+  });
+  const expired = await api("/boss/orders", {
+    method: "POST", role: "boss",
+    body: { bossId: "boss_akai", bossName: "阿凯", serviceId: voiceId, companionId: companionId, quantity: 1, answers: {}, slotStart: "2026-10-22T10:00:00.000Z", slotEnd: "2026-10-22T11:00:00.000Z" }
+  });
+  const expiredList = await api("/admin/snapshot", { role: "admin" });
+  const expiredOrder = expiredList.json.data.orders.find(function (item) { return item.id === expired.json.data.id; });
+  assert("接单超时由后台分钟数控制", expired.json.ok && expiredOrder.status === "accept_timeout");
+  await api("/admin/settings", {
+    method: "PUT", role: "admin",
+    body: { allowShowIntro: true, allowShowOnCard: true, allowShowPrice: true, allowShowBadge: true, allowAcceptOrders: true, units: ["每小时", "每局", "每单"], acceptTimeoutMinutes: 30, payTimeoutMinutes: 30, depositMyr: 100, depositCny: 180 }
+  });
+
+  const homeNotice = await api("/admin/announcements", {
+    method: "POST", role: "admin",
+    body: { title: "首页夜场开放", body: "今晚 8 点开场", audience: "home", pinned: true, scrolling: true, forcePopup: true, enabled: true, sort: 1 }
+  });
+  const companionNotice = await api("/admin/announcements", {
+    method: "POST", role: "admin",
+    body: { title: "陪玩排班更新", body: "请查看本周班表", audience: "companion", pinned: false, scrolling: false, forcePopup: false, enabled: true, sort: 2 }
+  });
+  await api("/admin/announcements", {
+    method: "POST", role: "admin",
+    body: { title: "客服交接", body: "晚班提前 10 分钟", audience: "service", enabled: true, sort: 3 }
+  });
+  const draft = await api("/admin/announcements", {
+    method: "POST", role: "admin",
+    body: { title: "草稿公告", body: "不应展示", audience: "home", enabled: false, sort: 9 }
+  });
+  await api("/admin/announcements/" + homeNotice.json.data.id, {
+    method: "PATCH", role: "admin",
+    body: { title: "首页夜场已更新", body: "今晚 9 点开场", audience: "home", pinned: true, scrolling: true, forcePopup: true, enabled: true, sort: 1 }
+  });
+  const homeFeed = await api("/public/announcements?audience=home");
+  const companionFeed = await api("/public/announcements?audience=companion");
+  await api("/admin/announcements/" + draft.json.data.id, { method: "DELETE", role: "admin" });
+  const afterDelete = await api("/public/announcements?audience=home");
+  assert("公告按分类发布、修改和删除", homeNotice.json.ok && companionNotice.json.ok && homeFeed.text.indexOf("首页夜场已更新") >= 0 && homeFeed.text.indexOf("陪玩排班更新") < 0 && homeFeed.text.indexOf("草稿公告") < 0 && companionFeed.text.indexOf("陪玩排班更新") >= 0 && afterDelete.text.indexOf("草稿公告") < 0);
+
+  const deposit = await api("/companion/deposits", {
+    method: "POST", role: "companion", companionId: companionId,
+    body: { companionId: companionId, applicantName: "星野", channelId: cnyChannel.json.data.id, proof: "已付人民币押金" }
+  });
+  const depositReview = await api("/admin/deposits/" + deposit.json.data.id + "/review", {
+    method: "POST", role: "admin",
+    body: { status: "approved", reason: "" }
+  });
+  const depositAgain = await api("/admin/deposits/" + deposit.json.data.id + "/review", {
+    method: "POST", role: "admin",
+    body: { status: "approved" }
+  });
+  assert("押金按渠道币种入账且不能重复审核", deposit.json.ok && deposit.json.data.currency === "CNY" && deposit.json.data.amount === 180 && depositReview.json.data.status === "approved" && depositAgain.status === 400);
+
+  const thread = await api("/chat/threads", { method: "POST", role: "boss", actorId: "boss_akai", actorName: "阿凯", body: {} });
+  const threadId = thread.json.data.id;
+  const bossMsg = await api("/chat/threads/" + threadId + "/messages", {
+    method: "POST", role: "boss", actorId: "boss_akai", actorName: "阿凯",
+    body: { body: "你好，我想改预约时间", clientId: "boss-msg-1" }
+  });
+  const bossDup = await api("/chat/threads/" + threadId + "/messages", {
+    method: "POST", role: "boss", actorId: "boss_akai", actorName: "阿凯",
+    body: { body: "你好，我想改预约时间", clientId: "boss-msg-1" }
+  });
+  await api("/chat/threads/" + threadId + "/claim", { method: "POST", role: "service", actorId: "svc_1", actorName: "客服小满", body: {} });
+  const reply = await api("/chat/threads/" + threadId + "/messages", {
+    method: "POST", role: "service", actorId: "svc_1", actorName: "客服小满",
+    body: { body: "可以，请告诉我新的时间", clientId: "svc-msg-1" }
+  });
+  const seen = await api("/chat/threads/" + threadId, { role: "boss", actorId: "boss_akai", actorName: "阿凯" });
+  const serviceList = await api("/chat/threads", { role: "service", actorId: "svc_1", actorName: "客服小满" });
+  await api("/chat/threads/" + threadId + "/close", { method: "POST", role: "service", actorId: "svc_1", actorName: "客服小满", body: {} });
+  const afterClose = await api("/chat/threads/" + threadId + "/messages", {
+    method: "POST", role: "boss", actorId: "boss_akai", actorName: "阿凯",
+    body: { body: "结束了还想发", clientId: "boss-msg-2" }
+  });
+  assert("客服会话发送、去重、回复和结束后不可再发", thread.json.ok && bossMsg.json.ok && bossDup.json.data.duplicate === true && reply.json.ok && seen.json.data.messages.length === 2 && serviceList.json.data.some(function (item) { return item.id === threadId && item.lastMessage.indexOf("新的时间") >= 0; }) && afterClose.status === 400);
+
+  const temp = await api("/admin/services", {
+    method: "POST", role: "admin",
+    body: { name: "临时删除服务", description: "用于删除测试", priceMin: 1, priceMax: 2, unit: "每单", enabled: true, sort: 9 }
+  });
+  const removed = await api("/admin/services/" + temp.json.data.id, { method: "DELETE", role: "admin" });
+  const catalogFinal = await api("/boss/catalog");
+  assert("删除服务后老板端不再显示", removed.json.ok && !catalogFinal.json.data.services.some(function (item) { return item.id === temp.json.data.id; }));
+
   const fs = await import("node:fs");
   fs.mkdirSync("artifacts", { recursive: true });
   fs.writeFileSync("artifacts/ops-fixtures.json", JSON.stringify({
@@ -245,6 +438,10 @@ async function main() {
     voiceId: voiceId,
     apexId: apexId,
     orderId: orderId,
+    payOrderId: booked.json.data.id,
+    channelId: myrChannel.json.data.id,
+    cnyChannelId: cnyChannel.json.data.id,
+    threadId: threadId,
     valAppId: valApp.json.data.id,
     apexAppId: apexApp.json.data.id,
     lolAppId: lolApp.json.data.id,
