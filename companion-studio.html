@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>陪玩工作台 | MEOW CUI JIAO</title>
+  <link rel="stylesheet" href="src/ops-ui.css">
+</head>
+<body class="portal">
+  <header class="portal-top">
+    <a class="portal-brand" href="index.html"><img src="assets/meow-cuijiao-brand.jpg" alt=""><span>陪玩工作台</span></a>
+    <a class="ops-btn" href="companion-center.html">返回大厅</a>
+  </header>
+  <main class="portal-app">
+    <aside class="portal-side">
+      <button class="ops-btn active" type="button" data-view="services">我的服务</button>
+      <button class="ops-btn" type="button" data-view="display">展示勾选</button>
+      <button class="ops-btn" type="button" data-view="orders">订单要求</button>
+      <button class="ops-btn" type="button" data-view="apply">申请技术认证</button>
+      <button class="ops-btn" type="button" data-view="status">审核状态</button>
+      <button class="ops-btn" type="button" data-view="examiner">考官联系方式</button>
+      <button class="ops-btn" type="button" data-view="card">个人卡片</button>
+    </aside>
+    <section class="portal-main" id="studioMain"></section>
+  </main>
+  <nav class="portal-tabbar">
+    <button type="button" data-view="services">服务</button>
+    <button type="button" data-view="display">勾选</button>
+    <button type="button" data-view="orders">订单</button>
+    <button type="button" data-view="apply">认证</button>
+  </nav>
+  <script src="src/ops-client.js"></script>
+  <script src="src/ops-companion.js"></script>
+</body>
+</html>

@@ -1,6 +1,7 @@
 import { cpSync, existsSync, mkdirSync, rmSync } from "node:fs";
 import { resolve } from "node:path";
 import { defineConfig } from "vite";
+import { attachOpsApi } from "./server/ops-http.mjs";
 
 const pages = [
   "index.html",
@@ -32,7 +33,10 @@ const pages = [
   "support.html",
   "tasks.html",
   "team-lobby.html",
-  "vip.html"
+  "vip.html",
+  "boss-order.html",
+  "companion-studio.html",
+  "public-card.html"
 ];
 
 function copyRuntimeSource() {
@@ -48,8 +52,20 @@ function copyRuntimeSource() {
   };
 }
 
+function opsApiPlugin() {
+  return {
+    name: "ops-api",
+    configureServer(server) {
+      attachOpsApi(server.middlewares);
+    },
+    configurePreviewServer(server) {
+      attachOpsApi(server.middlewares);
+    }
+  };
+}
+
 export default defineConfig({
-  plugins: [copyRuntimeSource()],
+  plugins: [opsApiPlugin(), copyRuntimeSource()],
   appType: "mpa",
   build: {
     rollupOptions: {
