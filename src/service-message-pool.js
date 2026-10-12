@@ -220,7 +220,9 @@
       var fromService = message.sender_role === "customer_service";
       var content = message.message_type === "image"
         ? '<img class="svc-message-image" src="' + esc(message.media_url || "") + '" alt="图片消息">'
-        : esc(message.text_content || "");
+        : message.card
+          ? '<b>' + esc(message.card.companionName) + '</b><br>' + esc(message.card.serviceName) + '<br>' + esc(message.card.priceText) + '<br>' + (message.card.available ? "可以预约" : "服务已关闭")
+          : esc(message.text_content || "");
       return [
         '<article class="svc-message ' + (system ? "system" : (fromService ? "service" : "boss")) + '">',
         system ? '' : '<img src="' + esc(message.sender_avatar || (fromService ? "../assets/cat-neon-avatar.png" : "../assets/cat-neon-avatar.png")) + '" alt="">',
@@ -244,30 +246,109 @@
       '<form class="svc-reply-box" data-svc-send="' + esc(conversation.id) + '">',
       '<textarea name="message" placeholder="输入回复内容"></textarea>',
       '<button type="button" data-svc-image>图片</button>',
+      '<button type="button" data-svc-card>陪玩卡片</button>',
       '<button type="submit">发送</button>',
       '<input type="file" accept="image/*" hidden data-svc-image-input>',
       '</form>'
     ].join("");
   }
 
-  function render(target) {
-    if (!target) return;
-    addStyle();
-    var db = readDb();
-    ensureActive(db);
+  var remoteOn = false;
+  var remoteMessages = [];
+  var paintSignature = "";
+
+  function fromApiConversation(item) {
+    var me = currentService();
+    var assignee = item.assigned_service_name || "";
+    return {
+      id: item.id,
+      boss_name: item.boss_name || item.peer_name || "老板",
+      boss_user_id: item.boss_user_id || "",
+      boss_avatar: item.peer_avatar || "",
+      status: item.status || "未接待",
+      assigned_service_name: assignee,
+      assigned_service_id: assignee && assignee === me.name ? me.id : assignee,
+      last_message_text: item.last_message_text || "",
+      last_message_at: item.last_message_at || "",
+      order_no: item.order_no || ""
+    };
+  }
+
+  function dbSignature(db) {
+    return db.serviceConversations.map(function (item) {
+      return [item.id, item.status, item.last_message_text, item.assigned_service_name].join(":");
+    }).join("|") + "#" + db.serviceMessages.map(function (item) { return item.id || item.text_content; }).join(",");
+  }
+
+  function paintDb(target, db) {
+    var next = dbSignature(db);
+    if (next === paintSignature && target.querySelector("[data-svc-pool]")) return;
+    paintSignature = next;
+    var search = state.search || "";
     target.innerHTML = [
       '<div class="svc-message-pool" data-svc-pool>',
       '<aside class="svc-pool-sidebar">',
       '<div class="svc-pool-title"><h2>统一客服消息池</h2><p>所有客服账号共用同一套老板咨询列表</p></div>',
-      '<input class="svc-pool-search" data-svc-search placeholder="搜索老板、老板ID、订单号、客服">',
+      '<input class="svc-pool-search" data-svc-search placeholder="搜索老板、老板ID、订单号、客服" value="' + esc(search) + '">',
       '<div class="svc-pool-filters">' + filterTabsHtml() + '</div>',
       '<div class="svc-pool-list">' + conversationListHtml(db) + '</div>',
       '</aside>',
       '<main class="svc-pool-main">' + detailHtml(db) + '</main>',
       '</div>'
     ].join("");
+    var box = target.querySelector(".svc-pool-messages");
+    if (box) box.scrollTop = box.scrollHeight;
     bind(target);
+  }
+
+  function render(target) {
+    if (!target) return;
+    addStyle();
+    watchKeyboard();
+    if (window.MCJChatAPI) {
+      remoteOn = true;
+      loadRemote(target);
+      return;
+    }
+    var db = readDb();
+    ensureActive(db);
+    paintDb(target, db);
     schedule(target);
+  }
+
+  function loadRemote(target) {
+    var typing = document.activeElement && document.activeElement.closest && document.activeElement.closest("[data-svc-send]");
+    if (typing) { schedule(target); return; }
+    window.MCJChatAPI.listConversations("customer_service", {}).then(function (res) {
+      var conversations = (res.conversations || []).map(fromApiConversation);
+      if (!state.activeId || !conversations.some(function (item) { return item.id === state.activeId; })) {
+        state.activeId = conversations[0] ? conversations[0].id : "";
+      }
+      var db = { serviceConversations: conversations, serviceMessages: [] };
+      if (!state.activeId) { paintDb(target, db); schedule(target); return null; }
+      return window.MCJChatAPI.getConversation("customer_service", state.activeId).then(function (detail) {
+        remoteMessages = (detail.messages || []).map(function (message) {
+          return {
+            id: message.id,
+            conversation_id: state.activeId,
+            sender_role: message.sender_role === "service" || message.sender_role === "customer_service" ? "customer_service" : message.sender_role,
+            sender_name: message.sender_name,
+            text_content: message.text_content,
+            card: message.card || null,
+            created_at: message.created_at,
+            message_type: message.message_type || "text"
+          };
+        });
+        db.serviceMessages = remoteMessages;
+        paintDb(target, db);
+        schedule(target);
+      });
+    }).catch(function () {
+      remoteOn = false;
+      var db = readDb();
+      ensureActive(db);
+      paintDb(target, db);
+    });
   }
 
   function bind(target) {
@@ -290,6 +371,23 @@
       if (end) { endConversation(end.dataset.svcEnd); render(target); return; }
       var reopen = event.target.closest("[data-svc-reopen]");
       if (reopen) { reopenConversation(reopen.dataset.svcReopen); render(target); return; }
+      var cardBtn = event.target.closest("[data-svc-card]");
+      if (cardBtn) {
+        var query = window.prompt("搜索陪玩昵称、编号或服务", "") || "";
+        fetch("/api/ops/service/recommend?q=" + encodeURIComponent(query), { cache: "no-store" }).then(function (res) { return res.json(); }).then(function (payload) {
+          var rows = (payload && payload.data) || [];
+          if (!rows.length) { alert("没有可推荐的陪玩"); return; }
+          var choice = window.prompt(rows.map(function (item, index) { return (index + 1) + ". " + item.companionName + " / " + item.serviceName + " / " + item.priceText; }).join("\n") + "\n输入序号", "1");
+          var picked = rows[Number(choice) - 1];
+          if (!picked) return;
+          var form = cardBtn.closest("form");
+          window.MCJChatAPI.sendMessage("customer_service", form.dataset.svcSend, { text_content: picked.companionName, message_type: "card", companionId: picked.companionId, serviceId: picked.serviceId }).then(function () {
+            paintSignature = "";
+            loadRemote(target);
+          });
+        });
+        return;
+      }
       var image = event.target.closest("[data-svc-image]");
       if (image) {
         var input = image.closest("form").querySelector("[data-svc-image-input]");
@@ -333,6 +431,15 @@
   }
 
   function claimConversation(id, force) {
+    if (remoteOn && window.MCJChatAPI) {
+      window.MCJChatAPI.threadAction("customer_service", id, "claim", { force: !!force }).then(function (res) {
+        if (!res.ok) alert(res.error || "接待失败");
+        paintSignature = "";
+        var target = document.querySelector("[data-service-panel='messages']");
+        if (target) loadRemote(target);
+      });
+      return;
+    }
     var db = readDb();
     var conversation = findConversation(db, id);
     if (!conversation) return;
@@ -398,6 +505,14 @@
   }
 
   function releaseConversation(id) {
+    if (remoteOn && window.MCJChatAPI) {
+      window.MCJChatAPI.threadAction("customer_service", id, "release", {}).then(function () {
+        paintSignature = "";
+        var target = document.querySelector("[data-service-panel='messages']");
+        if (target) loadRemote(target);
+      });
+      return;
+    }
     var db = readDb();
     var conversation = findConversation(db, id);
     if (!conversation) return;
@@ -415,6 +530,14 @@
   }
 
   function endConversation(id) {
+    if (remoteOn && window.MCJChatAPI) {
+      window.MCJChatAPI.threadAction("customer_service", id, "close", {}).then(function () {
+        paintSignature = "";
+        var target = document.querySelector("[data-service-panel='messages']");
+        if (target) loadRemote(target);
+      });
+      return;
+    }
     var db = readDb();
     var conversation = findConversation(db, id);
     if (!conversation || !canReply(conversation)) return;
@@ -427,6 +550,14 @@
   }
 
   function reopenConversation(id) {
+    if (remoteOn && window.MCJChatAPI) {
+      window.MCJChatAPI.threadAction("customer_service", id, "reopen", {}).then(function () {
+        paintSignature = "";
+        var target = document.querySelector("[data-service-panel='messages']");
+        if (target) loadRemote(target);
+      });
+      return;
+    }
     var db = readDb();
     var conversation = findConversation(db, id);
     if (!conversation) return;
@@ -440,6 +571,21 @@
 
   function sendMessage(id, text, type, mediaUrl) {
     if (!text && type !== "image") return;
+    if (remoteOn && window.MCJChatAPI && type !== "image") {
+      var clientId = createId("cli");
+      window.MCJChatAPI.sendMessage("customer_service", id, { text_content: text, client_message_id: clientId }).then(function (res) {
+        if (!res.ok) { alert(res.error || "发送失败"); return; }
+        var list = document.querySelector(".svc-pool-messages");
+        if (list) {
+          var empty = list.querySelector(".svc-pool-empty");
+          if (empty) empty.remove();
+          list.insertAdjacentHTML("beforeend", '<article class="svc-message service"><img src="../assets/cat-neon-avatar.png" alt=""><div><small>客服 · 刚刚</small><p>' + esc(text) + '</p></div></article>');
+          list.scrollTop = list.scrollHeight;
+        }
+        paintSignature = "";
+      });
+      return;
+    }
     var db = readDb();
     var conversation = findConversation(db, id);
     if (!conversation) return;
@@ -474,6 +620,17 @@
     writeDb(db);
   }
 
+  function watchKeyboard() {
+    if (watchKeyboard.bound || !window.visualViewport) return;
+    watchKeyboard.bound = true;
+    window.visualViewport.addEventListener("resize", function () {
+      var box = document.querySelector(".svc-reply-box, .mcj-chat-send");
+      if (!box) return;
+      var overlap = Math.max(0, window.innerHeight - window.visualViewport.height - window.visualViewport.offsetTop);
+      box.style.marginBottom = overlap ? overlap + "px" : "";
+    });
+  }
+
   function schedule(target) {
     if (refreshTimer) clearTimeout(refreshTimer);
     refreshTimer = setTimeout(function () {
@@ -496,7 +653,7 @@
       ".svc-pool-detail,.svc-pool-detail-empty{height:100%;display:grid;grid-template-rows:auto 1fr auto}.svc-pool-detail-empty{place-items:center;color:rgba(255,230,243,.62);text-align:center;padding:28px}.svc-pool-detail-empty strong{color:#fff;font-size:20px}",
       ".svc-pool-chat-head{display:grid;grid-template-columns:1fr auto;gap:12px;padding:14px;border-bottom:1px solid rgba(255,190,224,.12)}.svc-boss-info{display:flex;gap:12px;align-items:center}.svc-boss-info img{width:52px;height:52px;border-radius:50%;object-fit:cover}.svc-boss-info h2{margin:0;color:#fff;font-size:19px}.svc-boss-info p{margin:4px 0 0;color:rgba(255,230,243,.66);font-size:12px}.svc-chat-meta{display:grid;justify-items:end;gap:4px;color:rgba(255,230,243,.58);font-size:12px}.svc-chat-actions{grid-column:1/-1;display:flex;gap:8px;flex-wrap:wrap}.svc-action{border:1px solid rgba(255,190,224,.22);background:rgba(255,255,255,.045);color:#ffe3f0;border-radius:999px;padding:8px 12px;font-weight:900;cursor:pointer}.svc-action.primary{background:linear-gradient(135deg,#ffd2e6,#ff7fbd);color:#17070f;border:0}.svc-action.danger{color:#ffd1dd;border-color:rgba(255,86,124,.38);background:rgba(255,86,124,.10)}",
       ".svc-pool-messages{overflow:auto;padding:18px;display:flex;flex-direction:column;gap:12px}.svc-message{display:grid;grid-template-columns:38px minmax(0,max-content);gap:9px;max-width:78%;align-self:flex-start}.svc-message.service{grid-template-columns:minmax(0,max-content) 38px;align-self:flex-end}.svc-message.service img{grid-column:2;grid-row:1}.svc-message.service div{grid-column:1;grid-row:1}.svc-message.system{display:flex;align-self:center;max-width:90%;text-align:center}.svc-message>img{width:38px;height:38px;border-radius:50%;object-fit:cover}.svc-message small{display:block;margin:0 0 4px;color:rgba(255,230,243,.46);font-size:11px}.svc-message p{margin:0;border:1px solid rgba(255,190,224,.14);border-radius:16px;background:rgba(255,255,255,.055);color:#fff;padding:10px 12px;white-space:pre-wrap;overflow-wrap:anywhere}.svc-message.service p{border-color:rgba(255,142,199,.34);background:rgba(255,142,199,.15)}.svc-message.system p{border-radius:999px;color:rgba(255,230,243,.64);font-size:12px}.svc-message-image{max-width:240px;border-radius:14px;border:1px solid rgba(255,190,224,.16)}",
-      ".svc-reply-box{display:grid;grid-template-columns:1fr auto auto;gap:8px;padding:12px;border-top:1px solid rgba(255,190,224,.12)}.svc-reply-box textarea{width:100%;min-height:44px;max-height:120px;resize:vertical;border-radius:14px;border:1px solid rgba(255,190,224,.20);background:rgba(255,255,255,.055);color:#fff;padding:10px 12px;outline:0}.svc-reply-box button{border:1px solid rgba(255,190,224,.22);background:rgba(255,255,255,.045);color:#ffe3f0;border-radius:14px;padding:0 14px;font-weight:900;cursor:pointer}.svc-reply-box button[type=submit]{border:0;background:linear-gradient(135deg,#ffd2e6,#ff7fbd);color:#17070f}.svc-reply-lock{padding:14px;text-align:center;color:#ffd8e7;border-top:1px solid rgba(255,190,224,.12);background:rgba(255,255,255,.035)}.svc-pool-empty{border:1px dashed rgba(255,190,224,.24);border-radius:16px;padding:18px;text-align:center;color:rgba(255,230,243,.62)}",
+      ".svc-reply-box{position:sticky;bottom:0;z-index:6;display:grid;grid-template-columns:1fr auto auto;gap:8px;padding:12px;padding-bottom:calc(12px + env(safe-area-inset-bottom));border-top:1px solid rgba(255,190,224,.12);background:#120910}.svc-reply-box textarea{width:100%;min-height:44px;max-height:120px;resize:vertical;border-radius:14px;border:1px solid rgba(255,190,224,.20);background:rgba(255,255,255,.055);color:#fff;padding:10px 12px;outline:0}.svc-reply-box button{border:1px solid rgba(255,190,224,.22);background:rgba(255,255,255,.045);color:#ffe3f0;border-radius:14px;padding:0 14px;font-weight:900;cursor:pointer}.svc-reply-box button[type=submit]{border:0;background:linear-gradient(135deg,#ffd2e6,#ff7fbd);color:#17070f}.svc-reply-lock{padding:14px;text-align:center;color:#ffd8e7;border-top:1px solid rgba(255,190,224,.12);background:rgba(255,255,255,.035)}.svc-pool-empty{border:1px dashed rgba(255,190,224,.24);border-radius:16px;padding:18px;text-align:center;color:rgba(255,230,243,.62)}.svc-pool-messages{min-height:180px;max-height:min(560px,calc(100dvh - 280px))}",
       "@media(max-width:860px){.svc-message-pool{grid-template-columns:1fr}.svc-pool-chat-head{grid-template-columns:1fr}.svc-chat-meta{justify-items:start}.svc-message{max-width:94%}.svc-reply-box{grid-template-columns:1fr auto}.svc-reply-box button[type=button]{display:none}}"
     ].join("\n");
     document.head.appendChild(style);

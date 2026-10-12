@@ -116,15 +116,22 @@
   }
 
   function card(item) {
-    return '<article class="card player-card" data-player data-name="' + esc(item.name) + '" data-game="' + esc(item.game) + '" data-tags="' + esc(item.tags.join(",")) + '" data-price="' + esc(item.priceValue) + '" data-online="' + esc(item.status) + '" data-score="' + esc(item.rating) + '" data-gender="' + esc(item.gender) + '">' +
+    var price = item.price ? '<span class="price">' + esc(item.price) + "</span>" : "";
+    var badges = (item.badges || []).map(function (badge) {
+      return "<span>" + esc(badge.label || badge) + "</span>";
+    }).join("");
+    var actions = item.ops
+      ? '<a class="btn" href="public-card.html?id=' + encodeURIComponent(item.companionId) + '">个人卡片</a>' + (item.serviceId ? '<a class="btn primary" href="boss-order.html?service=' + encodeURIComponent(item.serviceId) + "&companion=" + encodeURIComponent(item.companionId) + '">立即下单</a>' : "")
+      : '<button class="btn primary" data-book type="button">立即下单</button>';
+    return '<article class="card player-card" data-player data-name="' + esc(item.name) + '" data-game="' + esc(item.game) + '" data-tags="' + esc((item.tags || []).join(",")) + '" data-price="' + esc(item.priceValue) + '" data-online="' + esc(item.status) + '" data-score="' + esc(item.rating) + '" data-gender="' + esc(item.gender) + '">' +
       '<img src="' + esc(item.image) + '" alt="' + esc(item.name) + '" style="width:100%;aspect-ratio:16/10;object-fit:cover;border-radius:8px">' +
-      '<div class="row companion-card-head"><h3>' + esc(item.name) + '</h3><span class="price">' + esc(item.price) + '</span></div>' +
-      '<p class="muted companion-id">陪玩 ID：' + esc(item.id || "未生成") + '</p>' +
-      '<div class="companion-meta"><span>' + esc(item.level) + '</span><span>' + esc(item.game) + '</span><span>' + esc(item.status) + '</span></div>' +
-      (item.desc ? '<p class="muted">' + esc(item.desc) + '</p>' : '') +
-      '<div class="tag-row">' + item.tags.map(function (tag) { return '<span>' + esc(tag) + '</span>'; }).join("") + '</div>' +
-      '<button class="btn primary" data-book type="button">立即下单</button>' +
-      '</article>';
+      '<div class="row companion-card-head"><h3>' + esc(item.name) + "</h3>" + price + "</div>" +
+      '<p class="muted companion-id">陪玩 ID：' + esc(item.id || "未生成") + "</p>" +
+      '<div class="companion-meta"><span>' + esc(item.level) + "</span><span>" + esc(item.game) + "</span><span>" + esc(item.status) + "</span></div>" +
+      (item.desc ? '<p class="muted">' + esc(item.desc) + "</p>" : "") +
+      '<div class="tag-row">' + (item.tags || []).map(function (tag) { return "<span>" + esc(tag) + "</span>"; }).join("") + badges + "</div>" +
+      actions +
+      "</article>";
   }
 
   function render() {
@@ -169,8 +176,42 @@
     });
   }
 
-  function init() {
-    state.items = readItems();
+  async function loadOpsCards() {
+    if (!window.MCJOps) return [];
+    try {
+      var cards = await window.MCJOps.request("/public/cards");
+      return (cards || []).map(function (card) {
+        var primary = (card.services || []).find(function (service) { return service.acceptOrders && service.priceText; }) || (card.services || [])[0];
+        if (!primary) return null;
+        return {
+          id: card.companion.id,
+          companionId: card.companion.id,
+          serviceId: primary.acceptOrders ? primary.serviceId : "",
+          name: card.companion.name,
+          game: primary.name,
+          price: primary.priceText || "",
+          priceValue: Number(primary.quotePrice || 0),
+          rating: "5.0",
+          level: "服务卡片",
+          levelId: "",
+          levelNumber: 1,
+          gender: "",
+          status: primary.acceptOrders ? "可接单" : "未接单",
+          image: card.companion.avatar || "assets/meow-cuijiao-brand.jpg",
+          tags: (card.badges || []).map(function (badge) { return badge.label; }),
+          badges: card.badges || [],
+          desc: card.companion.bio || primary.intro || "",
+          ops: true
+        };
+      }).filter(Boolean);
+    } catch (error) {
+      return [];
+    }
+  }
+
+  async function init() {
+    var opsCards = await loadOpsCards();
+    state.items = readItems().concat(opsCards);
     setupFilters(state.items);
     bind();
     render();

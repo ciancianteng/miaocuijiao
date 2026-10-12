@@ -2,14 +2,14 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>客服端 | MEOW CUI JIAO</title>
   <link rel="stylesheet" href="../src/theme.css">
   <link rel="stylesheet" href="../src/chat-ui.css">
   <link rel="stylesheet" href="../src/customer-service.css">
   <link rel="stylesheet" href="../src/design-system.css">
 </head>
-<body>
+<body data-ops-audience="service">
   <section class="mcj-login" data-service-login>
     <div class="mcj-login-card mcj-card">
       <h1>MEOW CUI JIAO 客服端</h1>
@@ -36,6 +36,7 @@
         </nav>
       </div>
     </header>
+    <div class="announcement-strip" data-ops-notice hidden><span></span></div>
     <main class="mcj-shell">
       <section class="service-view active" id="service-home" data-service-panel="home"></section>
       <section class="service-view" id="service-pending" data-service-panel="pending"></section>
@@ -53,12 +54,15 @@
   <script src="../src/unified-api.js"></script>
   <script src="../src/role-gates.js"></script>
   <script src="../src/customer-service-header.js"></script>
+  <script src="../src/ops-notices.js"></script>
   <script src="../src/chat-api.js"></script>
   <script src="../src/service-message-pool.js"></script>
   <script src="../src/chat-ui.js"></script>
   <script src="../src/customer-service-api.js"></script>
   <script src="../src/dropdown-system.js"></script>
   <script src="../src/customer-service-app.js"></script>
+  <script src="../src/ops-inbox.js"></script>
+  <script src="../src/ops-service-desk.js"></script>
   <script src="../src/date-flow-filter.js"></script>
   <script src="../src/design-system.js"></script>
 </body>

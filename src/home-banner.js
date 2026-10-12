@@ -39,6 +39,7 @@
   }
 
   function getAnnouncements() {
+    if (window.MCJOpsNotices) return window.MCJOpsNotices.titles("home");
     var db = readStore();
     var list = (((db.contents || {}).notices) || []).filter(function (item) {
       return item && item.enabled !== false && inSchedule(item);

@@ -9,7 +9,7 @@
   <link rel="stylesheet" href="src/design-system.css">
   <link rel="stylesheet" href="src/companion-hall.css">
 </head>
-<body>
+<body data-ops-audience="companion">
   <header class="topbar">
     <div class="topbar-inner">
       <a class="brand" href="index.html">
@@ -24,11 +24,13 @@
     </div>
   </header>
 
+  <div class="announcement-strip" data-ops-notice hidden style="margin:12px auto;width:min(1180px,calc(100% - 28px));padding:10px 14px;border-radius:14px;background:rgba(255,119,184,.12);color:#ffe3f0"><span></span></div>
   <main class="page companion-hall-page">
     <section class="hero companion-hall-hero">
       <div>
         <h1>陪玩大厅</h1>
         <p>搜索昵称、游戏和标签，快速找到合适的陪玩</p>
+        <p><a href="companion-studio.html">陪玩工作台</a></p>
       </div>
     </section>
 
@@ -124,6 +126,8 @@
   <script src="src/dropdown-system.js" defer></script>
   <script src="src/design-system.js" defer></script>
   <script src="src/site-data.js" defer></script>
+  <script src="src/ops-client.js"></script>
+  <script src="src/ops-notices.js"></script>
   <script src="src/companion-hall.js" defer></script>
   <script src="src/notify-system.js" defer></script>
   <script src="src/launch-readiness-fixes.js" defer></script>

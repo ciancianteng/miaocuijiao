@@ -221,8 +221,13 @@
   color: #ffd2e6;
 }
 .mcj-chat-send {
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
   border-top: 1px solid rgba(255,190,224,.12);
   padding: 12px;
+  padding-bottom: calc(12px + env(safe-area-inset-bottom));
+  background: #120910;
   display: grid;
   grid-template-columns: auto 1fr auto auto auto;
   gap: 8px;

@@ -2281,6 +2281,8 @@ label{
 @media(max-width:680px){.quick-entry-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}}
 /* companion-apply-cta-v2 */
 .companion-apply-guide{margin-top:clamp(12px,1.8vh,22px)!important;margin-bottom:clamp(18px,2.5vh,34px)!important}
+.apply-nudge{display:inline-flex;align-items:center;margin:0 0 10px;padding:8px 14px;border-radius:999px;color:#1b0712;background:linear-gradient(180deg,#ffe2ef,#ff9ecf);font-weight:900;text-decoration:none;animation:nudge 1.4s ease-in-out infinite;box-shadow:0 0 18px rgba(255,158,207,.45)}
+@keyframes nudge{50%{transform:translateY(-4px)}}
 .companion-apply-guide-card{
   min-height:118px;
   display:grid!important;
@@ -3291,6 +3293,7 @@ label{
     </section>
 
     <section class="section companion-apply-guide">
+      <a class="apply-nudge" href="companion-apply.html">点击我 👆</a>
       <div class="neon-card companion-apply-guide-card">
         <div class="companion-apply-guide-icon" aria-hidden="true"><img src="assets/companion-apply-cat-logo.png" alt=""></div>
         <div>
@@ -3370,10 +3373,6 @@ label{
   <div class="modal" id="modal"><div class="dialog"><button class="close" data-close>×</button><div id="modalBody"></div></div></div>
   
 
-  <script src="src/platform-contract.js"></script>
-  <script src="src/unified-config.js"></script>
-  <script src="src/commission-engine.js"></script>
-  <script src="src/unified-api.js"></script>
   <script src="src/role-gates.js"></script>
   <script>
     const modal=document.getElementById('modal');const modalBody=document.getElementById('modalBody');
@@ -3589,7 +3588,7 @@ label{
   <script src="src/site-data.js"></script>
   <script src="src/home-banner.js"></script>
   <script src="src/home-daily-stats.js"></script>
-  <script src="src/companion-application.js"></script>
+  <script src="src/ops-notices.js"></script>
   <script>
     (function(){
       function safeText(text){return String(text||'').replace(/[&<>"']/g,function(ch){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]})}

@@ -48,15 +48,22 @@
   function uid(prefix) { return prefix + "-" + Date.now().toString(36).toUpperCase() + Math.random().toString(16).slice(2, 6).toUpperCase(); }
   function readRaw(key) { try { return JSON.parse(localStorage.getItem(key) || "{}") || {}; } catch (e) { return {}; } }
   function writeRaw(key, data) { localStorage.setItem(key, JSON.stringify(data || {})); }
+  function channelDetailHtml(method) {
+    var channels = (depositSettings().channels || []);
+    var found = channels.find(function (item) { return item.label === method || item.id === method; });
+    if (!found) return '<p>请选择已启用的收款渠道。没有启用渠道时，这里不会显示 DuitNow 或支付宝。</p>';
+    return '<div class="ops-card"><p>' + esc(found.currency) + ' ' + esc(found.amountLabel || '') + '</p><p>' + esc(found.payee || '') + ' · ' + esc(found.bank || '') + ' · ' + esc(found.account || '') + '</p>' + (found.qrUrl ? '<img alt="收款码" src="' + esc(found.qrUrl) + '" style="width:140px;height:140px;object-fit:cover;border-radius:12px">' : '<p>这个渠道还没有二维码。</p>') + '<p>' + esc(found.instructions || '') + '</p></div>';
+  }
   function defaultDeposit() {
     return {
       amount: 100,
       currency: "MYR",
       enabled: true,
-      methods: ["TNG", "DuitNow", "Alipay"],
-      chinaRateSource: "支付页面实时汇率",
-      manualCnyRate: 1.55,
-      description: "认证押金用于保障平台服务秩序，最终支付金额以支付页面显示为准。",
+      methods: [],
+      channels: [],
+      chinaRateSource: "",
+      manualCnyRate: 0,
+      description: "押金金额按所选渠道的币种显示。MYR 与 CNY 不自动换算。",
       refundRule: "退出俱乐部并完成全部订单结算后，可按平台规则申请退还押金。",
       allowAdminWaive: false
     };
@@ -270,10 +277,11 @@
       selectField("documentType", "证件类型", id.documentType, ["马来西亚身份证", "中国大陆身份证"]) +
       fileField("idFront", "身份证 / 证件正面", "image/*", id.idFront) +
       fileField("idBack", "身份证 / 证件背面", "image/*", id.idBack) +
-      '</form></div><div class="apply-subcard"><h3>认证押金：RM' + Number(set.amount || 100).toFixed(0) + '</h3><ul><li>提交押金付款凭证后进入后台人工审核</li><li>中国大陆用户根据支付页面实时汇率换算</li><li>审核通过后才可正式使用陪玩端</li></ul><p>' + esc(set.description || "") + '</p><form class="apply-grid">' +
-      selectField("depositMethod", "押金支付方式", id.depositMethod, set.methods || ["TNG", "DuitNow", "Alipay"]) +
+      '</form></div><div class="apply-subcard"><h3>认证押金</h3><ul><li>提交凭证后由后台人工审核</li><li>MYR 与 CNY 分开计价</li></ul><p>' + esc(set.description || "") + '</p><form class="apply-grid">' +
+      selectField("depositMethod", "押金支付方式", id.depositMethod, set.methods || []) +
+      channelDetailHtml(id.depositMethod) +
       fileField("depositProof", "押金付款凭证", "image/*", id.depositProof) +
-      selectField("settlementMethod", "结款方式", id.settlementMethod, ["银行卡", "DuitNow", "TNG Wallet", "支付宝"]) +
+      selectField("settlementMethod", "结款方式", id.settlementMethod, ["银行卡", "支付宝", "微信"]) +
       field("settlementName", "结款户名", "text", id.settlementName) +
       field("settlementAccount", "结款账号", "text", id.settlementAccount) +
       '</form><div class="deposit-status"><strong>' + esc(dep.status || "待后台审核") + '</strong><p>提交后由超级管理员审核身份资料、押金凭证与结款资料。</p></div></div></div></section>';
@@ -411,6 +419,11 @@
     db.logs.unshift({ id: uid("LOG"), action: "提交陪玩申请", targetId: id, createdAt: now(), ip: "local-preview" });
     writeDB(db);
     syncPlatform(db);
+    fetch("/api/ops/public/companion-applications", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ nickname: (draft.data && draft.data.nickname) || user.name || "申请人", applicantId: applicantId() })
+    }).catch(function () {});
     showSuccess();
   }
   function showSuccess() {
@@ -669,7 +682,7 @@
       if (clear) { e.preventDefault(); e.stopPropagation(); clearUpload(clear.dataset.clearUpload); }
     });
     document.addEventListener("change", async function (e) {
-      if (e.target.matches("[data-file-field]")) { await collect(root); render(Number(root.dataset.step || 0)); }
+      if (e.target.matches("[data-file-field]") || e.target.name === "depositMethod") { await collect(root); render(Number(root.dataset.step || 0)); }
       if (e.target.matches("[data-tag-field]")) {
         var picker = e.target.closest("[data-tag-picker]");
         var limit = Number(picker.dataset.tagLimit || 99);
@@ -708,6 +721,18 @@
     ensureDefaultApplicationConfig();
     initHomeEntry();
     if (document.getElementById("companionApplyRoot")) { render(readDraft().step || 0); bind(); }
+    fetch("/api/ops/public/deposit", { cache: "no-store" }).then(function (res) { return res.json(); }).then(function (payload) {
+      var config = payload && payload.data;
+      if (!config) return;
+      var db = readDB();
+      var channels = (config.channels || []).map(function (item) {
+        return Object.assign({}, item, { label: item.name + " · " + item.currency, amountLabel: item.currency === "CNY" ? ("¥" + config.cny) : ("RM" + config.myr) });
+      });
+      db.depositSettings = Object.assign(defaultDeposit(), db.depositSettings || {}, { amount: config.myr, methods: channels.map(function (item) { return item.label; }), channels: channels });
+      writeDB(db);
+      var root = document.getElementById("companionApplyRoot");
+      if (root) render(Number(root.dataset.step || 0));
+    }).catch(function () {});
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
   else init();

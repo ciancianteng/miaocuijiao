@@ -2,10 +2,11 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>超级管理员后台 | MEOW CUI JIAO</title>
   <link rel="stylesheet" href="src/admin-suite.css">
   <link rel="stylesheet" href="src/design-system.css">
+  <link rel="stylesheet" href="src/ops-ui.css">
   <script src="src/companion-levels.js"></script>
 </head>
 <body data-allowed-roles="super_admin" data-default-role="super_admin">
@@ -20,10 +21,26 @@
       </div>
       <button class="collapse-btn" type="button" data-collapse-sidebar>收起菜单</button>
       <nav class="side-nav" aria-label="超级管理员菜单">
-        <button class="active" type="button" data-section="dashboard">仪表盘</button>
+        <button class="active" type="button" data-section="dashboard">运营总览</button>
+        <button class="nav-parent" type="button" data-toggle-group="ops">运营中台</button>
+        <div class="nav-group open" data-group="ops">
+          <button type="button" data-section="ops-services">服务管理</button>
+          <button type="button" data-section="ops-prices">价格管理</button>
+          <button type="button" data-section="ops-requirements">订单要求配置</button>
+          <button type="button" data-section="ops-companions">陪玩资料管理</button>
+          <button type="button" data-section="ops-certs">认证申请审核</button>
+          <button type="button" data-section="ops-examiners">考官联系方式</button>
+          <button type="button" data-section="ops-badges">认证徽章</button>
+          <button type="button" data-section="ops-orders">预约订单</button>
+          <button type="button" data-section="ops-payments">支付渠道</button>
+          <button type="button" data-section="ops-announcements">公告</button>
+          <button type="button" data-section="ops-deposits">押金审核</button>
+          <button type="button" data-section="ops-settlement">周五结算</button>
+          <button type="button" data-section="ops-settings">系统设置</button>
+        </div>
 
         <button class="nav-parent" type="button" data-toggle-group="users">用户管理</button>
-        <div class="nav-group open" data-group="users">
+        <div class="nav-group" data-group="users">
           <button type="button" data-section="bosses">老板管理</button>
           <button type="button" data-section="players">陪玩管理</button>
           <button type="button" data-section="service">客服管理</button>
@@ -32,7 +49,7 @@
         <button type="button" data-section="orders">订单管理</button>
 
         <button class="nav-parent" type="button" data-toggle-group="finance">财务中心</button>
-        <div class="nav-group open" data-group="finance">
+        <div class="nav-group" data-group="finance">
           <button type="button" data-section="recharge-center">充值中心</button>
           <button type="button" data-section="finance">财务流水</button>
           <button type="button" data-section="recharges">充值记录</button>
@@ -42,7 +59,7 @@
         </div>
 
         <button class="nav-parent" type="button" data-toggle-group="content">平台内容</button>
-        <div class="nav-group open" data-group="content">
+        <div class="nav-group" data-group="content">
           <button type="button" data-section="banners">Banner 管理</button>
           <button type="button" data-section="announcements">公告管理</button>
           <button type="button" data-section="ads">广告位管理</button>
@@ -62,7 +79,8 @@
         <button type="button" data-section="statistics">统计中心</button>
 
         <button class="nav-parent" type="button" data-toggle-group="security">安全系统</button>
-        <div class="nav-group open" data-group="security">
+        <div class="nav-group" data-group="security">
+          <button type="button" data-section="legacy-dashboard">旧版本地数据</button>
           <button type="button" data-section="admin-accounts">管理员账号</button>
           <button type="button" data-section="permissions">权限系统</button>
           <button type="button" data-section="logs">操作日志</button>
@@ -81,6 +99,7 @@
           <p id="pageSubtitle">平台核心数据与待处理事项</p>
         </div>
         <div class="topbar-actions">
+          <button class="ghost-btn ops-menu-btn" type="button" data-ops-menu>菜单</button>
           <button class="notice-pill" type="button" data-section="messages">消息 <b id="adminNoticeCount">0</b></button>
           <span id="adminClock"></span>
           <span id="adminName">admin_demo</span>
@@ -89,7 +108,21 @@
       </header>
 
       <section id="adminContent" class="content-area" aria-live="polite">
-        <section class="section active" id="section-dashboard">
+        <section class="section active" id="section-dashboard"><div id="opsDashboard"></div></section>
+        <section class="section" id="section-ops-services"><div id="opsServices"></div></section>
+        <section class="section" id="section-ops-prices"><div id="opsPrices"></div></section>
+        <section class="section" id="section-ops-requirements"><div id="opsRequirements"></div></section>
+        <section class="section" id="section-ops-companions"><div id="opsCompanions"></div></section>
+        <section class="section" id="section-ops-certs"><div id="opsCerts"></div></section>
+        <section class="section" id="section-ops-examiners"><div id="opsExaminers"></div></section>
+        <section class="section" id="section-ops-badges"><div id="opsBadges"></div></section>
+        <section class="section" id="section-ops-settings"><div id="opsSettings"></div></section>
+        <section class="section" id="section-ops-orders"><div id="opsOrders"></div></section>
+        <section class="section" id="section-ops-payments"><div id="opsPayments"></div></section>
+        <section class="section" id="section-ops-announcements"><div id="opsAnnouncements"></div></section>
+        <section class="section" id="section-ops-deposits"><div id="opsDeposits"></div></section>
+        <section class="section" id="section-ops-settlement"><div id="opsSettlement"></div></section>
+        <section class="section" id="section-legacy-dashboard">
           <div id="superStats"></div>
           <div class="panel-grid">
             <section class="panel"><h2>待处理事项</h2><div id="dashboardPending"></div></section>
@@ -144,5 +177,8 @@
   </div>
 
   <script src="src/admin-suite.js"></script>
+  <script src="src/ops-client.js"></script>
+  <script src="src/ops-admin.js"></script>
+  <script src="src/ops-inbox.js"></script>
 </body>
 </html>
