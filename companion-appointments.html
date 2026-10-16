@@ -20,9 +20,10 @@
     .detail-wrap{margin-top:16px;padding:14px;border-radius:16px;background:#101014;border:1px solid rgba(244,166,200,.35);min-width:0}
     .appt-list{display:flex;flex-direction:column;gap:10px}
     .appt-card{padding:12px;border-radius:12px;background:#07070a;border:1px solid rgba(244,166,200,.28);min-width:0}
-    .summary{display:grid;grid-template-columns:4.75em minmax(0,1fr);gap:3px 8px;margin:0}
+    .summary{display:flex;flex-direction:column;gap:4px;margin:0}
+    .summary div{display:grid;grid-template-columns:4.75em minmax(0,1fr);column-gap:8px;align-items:start}
     .summary dt{color:#F4A6C8;font-size:12px;font-weight:700}
-    .summary dd{margin:0;font-size:14px;line-height:1.4;overflow-wrap:anywhere;word-break:break-word}
+    .summary dd{margin:0;min-width:0;font-size:14px;line-height:1.4;overflow-wrap:anywhere;word-break:break-word}
     .more{display:none;margin-top:8px}
     .more.is-open{display:block}
     .actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
