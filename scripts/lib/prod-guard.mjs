@@ -39,21 +39,35 @@ export function supabaseProjectRef(url = "") {
   return m ? m[1] : "";
 }
 
+function refFromUserAndHost(user, host) {
+  const direct = String(host || "")
+    .toLowerCase()
+    .replace(/:\d+$/, "")
+    .match(/^db\.([a-z0-9]+)\.supabase\.co$/);
+  if (direct) return direct[1];
+  const fromUser = String(user || "").match(/^postgres\.([a-z0-9]+)$/i);
+  return fromUser ? fromUser[1].toLowerCase() : "";
+}
+
 /** Project ref from a Postgres URL. Empty when the URL cannot be confirmed. */
 export function databaseProjectRef(dbUrl = "") {
   const raw = String(dbUrl || "").trim();
   if (!raw) return "";
   try {
     const u = new URL(raw);
-    const host = String(u.hostname || "").toLowerCase();
-    const direct = host.match(/^db\.([a-z0-9]+)\.supabase\.co$/i);
-    if (direct) return direct[1].toLowerCase();
-    const user = decodeURIComponent(u.username || "");
-    const fromUser = user.match(/^postgres\.([a-z0-9]+)$/i);
-    if (fromUser) return fromUser[1].toLowerCase();
-    return "";
+    return refFromUserAndHost(decodeURIComponent(u.username || ""), u.hostname || "");
   } catch {
-    return "";
+    // Passwords may contain [] and make URL parsing throw. Read only the username
+    // and host, never the password. Anything else stays unconfirmed.
+    const m = raw.match(/^postgres(?:ql)?:\/\/([^:@/?#]+)(?::[^@]*)?@([^/?#]+)/i);
+    if (!m) return "";
+    let user = m[1];
+    try {
+      user = decodeURIComponent(user);
+    } catch {
+      return "";
+    }
+    return refFromUserAndHost(user, m[2]);
   }
 }
 

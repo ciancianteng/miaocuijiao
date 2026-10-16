@@ -116,6 +116,15 @@ step("same_project_mismatch_refused", () => {
   assert.equal(gate.databaseRef, PRODUCTION_SUPABASE_REF);
 });
 
+step("bracket_password_uses_username_ref", () => {
+  const db = `postgresql://postgres.${STAGING_SUPABASE_REF}:a[b]@aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres`;
+  assert.equal(databaseProjectRef(db), STAGING_SUPABASE_REF);
+  assert.equal(assertSameSupabaseProject(`https://${STAGING_SUPABASE_REF}.supabase.co`, db).ok, true);
+  const bare = "postgresql://postgres:a[b]@aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres";
+  assert.equal(databaseProjectRef(bare), "");
+  assert.equal(assertSameSupabaseProject(`https://${PRODUCTION_SUPABASE_REF}.supabase.co`, bare).ok, false);
+});
+
 step("same_project_unparseable_refused", () => {
   assert.equal(databaseProjectRef("postgresql://postgres:bad[pass]@aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres"), "");
   assert.equal(databaseProjectRef(""), "");
