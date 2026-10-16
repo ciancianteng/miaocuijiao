@@ -1,20 +1,27 @@
 /**
- * Super-admin: apply 20260807_chat_side_isolation.sql to the acceptance Supabase.
- * Hard-guards project ref so we never touch a non-staging DB.
+ * Super-admin: apply 20260807_chat_side_isolation.sql on the current environment.
+ * Staging cfccwysniduwkjskiqgy and Production jqfaknpmcnqwqvatrwgo are separate.
+ * SQL runs only when SUPABASE_URL and DATABASE_URL resolve to that same project.
+ * An unparseable project ref refuses SQL. It does not switch the target.
  *
- * - With DATABASE_URL matching the same project: run full SQL (data scrub + RLS).
+ * - With a matching DATABASE_URL: run full SQL (data scrub + RLS).
  * - Without DATABASE_URL: scrub mislinked companion_id / types via service-role REST only;
  *   RLS policies still require SQL Editor (reported clearly in the response).
  */
 import fs from "node:fs";
 import path from "node:path";
 import { loadLocalEnv } from "../_load-env.js";
+import {
+  STAGING_SUPABASE_REF,
+  PRODUCTION_SUPABASE_REF,
+  supabaseProjectRef,
+  assertSameSupabaseProject,
+} from "../../../scripts/lib/prod-guard.mjs";
 
 loadLocalEnv();
 
 const ADMIN_ROLES = new Set(["super_admin", "admin"]);
-/** Fixed acceptance / staging Supabase project — refuse anything else. */
-const EXPECTED_PROJECT_REF = "jqfaknpmcnqwqvatrwgo";
+const KNOWN_PROJECT_REFS = new Set([STAGING_SUPABASE_REF, PRODUCTION_SUPABASE_REF]);
 const MIGRATION_REL = "supabase/migrations/20260807_chat_side_isolation.sql";
 
 function json(res, status, data) {
@@ -24,32 +31,6 @@ function json(res, status, data) {
 function envValue(key) {
   if (key === "SUPABASE_URL") return process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "";
   return process.env[key] || "";
-}
-
-function projectRefFromUrl(url) {
-  try {
-    const host = new URL(String(url || "")).hostname || "";
-    const m = host.match(/^([a-z0-9]+)\.supabase\.co$/i);
-    return m ? m[1].toLowerCase() : "";
-  } catch {
-    return "";
-  }
-}
-
-function projectRefFromDatabaseUrl(dbUrl) {
-  try {
-    const u = new URL(String(dbUrl || ""));
-    const host = (u.hostname || "").toLowerCase();
-    // db.<ref>.supabase.co or pooler username postgres.<ref>
-    const direct = host.match(/^db\.([a-z0-9]+)\.supabase\.co$/i);
-    if (direct) return direct[1].toLowerCase();
-    const user = decodeURIComponent(u.username || "");
-    const fromUser = user.match(/^postgres\.([a-z0-9]+)$/i);
-    if (fromUser) return fromUser[1].toLowerCase();
-    return "";
-  } catch {
-    return "";
-  }
 }
 
 function serviceHeaders(extra = {}) {
@@ -240,12 +221,12 @@ export default async function handler(req, res) {
   }
 
   const supabaseUrl = envValue("SUPABASE_URL");
-  const ref = projectRefFromUrl(supabaseUrl);
-  if (!ref || ref !== EXPECTED_PROJECT_REF) {
+  const ref = supabaseProjectRef(supabaseUrl);
+  if (!KNOWN_PROJECT_REFS.has(ref)) {
     return json(res, 409, {
       ok: false,
-      message: `拒绝执行：当前 SUPABASE_URL 项目不是验收库 ${EXPECTED_PROJECT_REF}（got ${ref || "empty"}）`,
-      expectedProjectRef: EXPECTED_PROJECT_REF,
+      message: `拒绝执行：当前 SUPABASE_URL 不是 Staging（${STAGING_SUPABASE_REF}）或 Production（${PRODUCTION_SUPABASE_REF}）`,
+      supabaseProjectRef: ref,
       supabaseHost: (() => {
         try {
           return new URL(supabaseUrl).hostname;
@@ -265,15 +246,15 @@ export default async function handler(req, res) {
   }));
 
   const databaseUrl = String(process.env.DATABASE_URL || process.env.SUPABASE_DB_URL || process.env.POSTGRES_URL || "").trim();
-  const dbRef = databaseUrl ? projectRefFromDatabaseUrl(databaseUrl) : "";
 
   if (databaseUrl) {
-    if (dbRef && dbRef !== EXPECTED_PROJECT_REF) {
+    const same = assertSameSupabaseProject(supabaseUrl, databaseUrl);
+    if (!same.ok || !KNOWN_PROJECT_REFS.has(same.databaseRef)) {
       return json(res, 409, {
         ok: false,
-        message: `拒绝执行：DATABASE_URL 指向其他项目 ${dbRef}，不是验收库 ${EXPECTED_PROJECT_REF}`,
-        expectedProjectRef: EXPECTED_PROJECT_REF,
-        databaseProjectRef: dbRef,
+        message: "拒绝执行 SQL：DATABASE_URL 与当前 SUPABASE_URL 不是同一个 Staging 或 Production 项目，或项目号无法确认",
+        supabaseProjectRef: same.supabaseRef,
+        databaseProjectRef: same.databaseRef,
       });
     }
     try {
@@ -290,7 +271,7 @@ export default async function handler(req, res) {
         after,
         sqlResult,
         adminId: admin.id,
-        message: "已在验收库执行完整 chat_side_isolation migration（数据清理 + RLS）。",
+        message: "已在当前项目执行完整 chat_side_isolation migration（数据清理 + RLS）。",
       });
     } catch (err) {
       return json(res, 500, {
@@ -318,7 +299,7 @@ export default async function handler(req, res) {
       scrub,
       adminId: admin.id,
       message:
-        "验收库历史越权 companion_id 已清理；但本环境未配置 DATABASE_URL，RLS 策略未能自动创建。请在 Supabase SQL Editor（项目 jqfaknpmcnqwqvatrwgo）执行 supabase/migrations/20260807_chat_side_isolation.sql。",
+        `历史越权 companion_id 已清理；但本环境未配置 DATABASE_URL，RLS 策略未能自动创建。请在当前项目 ${ref} 的 Supabase SQL Editor 执行 supabase/migrations/20260807_chat_side_isolation.sql。`,
       manualSqlRequired: true,
       sqlFile: MIGRATION_REL,
     });

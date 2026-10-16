@@ -1,5 +1,6 @@
 ﻿import crypto from "node:crypto";
 import { loadLocalEnv } from "../_load-env.js";
+import { assertSameSupabaseProject } from "../../../scripts/lib/prod-guard.mjs";
 
 loadLocalEnv();
 
@@ -1109,6 +1110,18 @@ async function handler(req, res) {
             "payment_channels 尚未创建。服务端未配置 DATABASE_URL，无法自动执行 DDL。请在 Supabase SQL Editor 执行 supabase/migrations/20260731_payment_settings.sql。保存接口已可写入 platform_settings 兜底。",
           migration: "supabase/migrations/20260731_payment_settings.sql",
           probeError,
+        });
+      }
+      const same = assertSameSupabaseProject(process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "", dbUrl);
+      if (!same.ok) {
+        return json(res, 409, {
+          ok: false,
+          tableReady: false,
+          applied: false,
+          message: "拒绝执行 SQL：DATABASE_URL 与当前 SUPABASE_URL 不是同一个 Supabase 项目，或项目号无法确认",
+          supabaseProjectRef: same.supabaseRef,
+          databaseProjectRef: same.databaseRef,
+          migration: "supabase/migrations/20260731_payment_settings.sql",
         });
       }
       try {
