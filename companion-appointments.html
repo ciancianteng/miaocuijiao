@@ -5,24 +5,35 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>我的预约 | 陪玩端</title>
   <style>
+    *{box-sizing:border-box}
+    html,body{max-width:100%}
     body{margin:0;background:#07070a;color:#fff4fa;font-family:"Microsoft YaHei",sans-serif}
     main{max-width:1080px;margin:0 auto;padding:18px 14px 48px}
     a{color:#F4A6C8}
-    h1{margin:8px 0 16px}
+    h1{margin:8px 0 16px;font-size:28px;line-height:1.2}
+    h2{margin:0 0 8px;font-size:18px;line-height:1.3}
     .status-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
-    .status-card{display:flex;flex-direction:column;align-items:flex-start;gap:8px;width:100%;min-height:108px;padding:16px;border-radius:16px;border:1px solid rgba(244,166,200,.45);background:#101014;color:#fff4fa;text-align:left;cursor:pointer}
+    .status-card{display:flex;flex-direction:column;align-items:flex-start;gap:8px;width:100%;min-width:0;min-height:108px;padding:16px;border-radius:16px;border:1px solid rgba(244,166,200,.45);background:#101014;color:#fff4fa;text-align:left;cursor:pointer}
     .status-card strong{font-size:28px;line-height:1;color:#F4A6C8}
-    .status-card span{font-size:14px;font-weight:700}
+    .status-card span{font-size:14px;font-weight:700;line-height:1.35;white-space:normal;overflow-wrap:anywhere}
     .status-card.is-active{border-color:#F4A6C8;box-shadow:0 0 0 1px #F4A6C8}
-    .detail-wrap{margin-top:16px;padding:14px;border-radius:16px;background:#101014;border:1px solid rgba(244,166,200,.35)}
-    .detail{margin-top:8px;padding:10px 12px;border-radius:12px;background:#07070a;border:1px solid rgba(244,166,200,.28)}
-    .detail span{display:block;color:#F4A6C8;font-size:12px;font-weight:700}
-    .detail p{margin:4px 0 10px;white-space:pre-wrap;line-height:1.5}
-    button.act,button.ghost{border-radius:999px;padding:8px 14px;margin:4px 6px 0 0;font-weight:700;cursor:pointer}
+    .detail-wrap{margin-top:16px;padding:14px;border-radius:16px;background:#101014;border:1px solid rgba(244,166,200,.35);min-width:0}
+    .detail,.meta{margin-top:8px;padding:10px 12px;border-radius:12px;background:#07070a;border:1px solid rgba(244,166,200,.28);min-width:0}
+    .detail span,.meta span{display:block;color:#F4A6C8;font-size:12px;font-weight:700}
+    .detail p,.meta p{margin:4px 0 10px;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;line-height:1.5}
+    button.act,button.ghost{border-radius:999px;padding:8px 14px;margin:4px 6px 0 0;font-weight:700;cursor:pointer;min-height:40px}
     button.act{border:0;background:#F4A6C8;color:#1a1020}
     button.ghost{border:1px solid #F4A6C8;background:transparent;color:#F4A6C8}
-    @media (max-width:900px){.status-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
-    @media (max-width:560px){.status-grid{grid-template-columns:1fr}}
+    @media (max-width:900px){
+      main{padding:12px 10px 36px}
+      h1{font-size:22px}
+      .status-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+      .status-card{min-height:72px;padding:10px 8px;gap:4px;border-radius:12px}
+      .status-card strong{font-size:22px}
+      .status-card span{font-size:12px}
+      .detail-wrap,.detail,.meta{padding:10px}
+      button.act,button.ghost{min-height:44px;padding:10px 14px}
+    }
   </style>
 </head>
 <body>
@@ -74,7 +85,8 @@
     var items=(rows||[]).filter(function(r){return r.status===selected;});
     document.getElementById("detail").innerHTML='<section class="detail-wrap"><h2>'+esc(title)+'（'+items.length+'）</h2>'+(items.length?items.map(function(r){
       var text=appointmentText(r);
-      return '<article><p><span class="status">'+esc(labels[r.status]||r.status)+'</span> · '+esc(r.serviceName)+'</p><p>'+esc(r.startAt)+' · '+esc(r.hours)+' 小时 · '+esc(r.totalAmount)+' 猫粮</p><div class="detail"><span>服务需求</span><p>'+esc(text.requirements)+'</p><span>备注</span><p>'+esc(text.note)+'</p></div>'+(r.status==="pending"?'<button class="act" type="button" data-act="accept" data-id="'+esc(r.id)+'">接受预约</button><button class="ghost" type="button" data-act="reject" data-id="'+esc(r.id)+'">拒绝预约</button>':"")+'</article>';
+      var pay=r.charged?"已扣款":"未扣款";
+      return '<article><p><span class="status">'+esc(labels[r.status]||r.status)+'</span> · '+esc(r.serviceName)+'</p><div class="meta"><span>预约编号</span><p>'+esc(r.id)+'</p><span>老板</span><p>'+esc(r.bossId||"无")+'</p><span>开始</span><p>'+esc(r.startAt)+'</p><span>结束</span><p>'+esc(r.endAt)+'</p><span>时长</span><p>'+esc(r.hours)+' 小时</p><span>金额</span><p>'+esc(r.totalAmount)+' 猫粮</p><span>付款状态</span><p>'+pay+'（'+esc(r.chargeState||"none")+'）</p><span>正式订单</span><p>未生成。预约记录不是正式订单，提交预约不会扣款。</p></div><div class="detail"><span>服务需求</span><p>'+esc(text.requirements)+'</p><span>备注</span><p>'+esc(text.note)+'</p></div>'+(r.status==="pending"?'<button class="act" type="button" data-act="accept" data-id="'+esc(r.id)+'">接受预约</button><button class="ghost" type="button" data-act="reject" data-id="'+esc(r.id)+'">拒绝预约</button>':"")+'</article>';
     }).join("<hr>"):'<p>暂无</p>')+'</section>';
   }
   function load(){
