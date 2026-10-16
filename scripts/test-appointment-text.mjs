@@ -27,7 +27,17 @@ assert.equal(companion.includes("接受预约"), true);
 assert.equal(companion.includes("拒绝预约"), true);
 assert.equal(book.includes('id="req"'), true);
 assert.equal(book.includes('id="note"'), true);
-assert.equal(book.includes("#09070d"), true);
-assert.equal(companion.includes("#ff6ea8"), true);
+assert.equal(companion.includes("预约设置"), false);
+assert.equal(companion.includes("save_settings"), false);
+assert.equal(companion.includes("repeat(4,minmax(0,1fr))"), true);
+assert.equal(companion.includes("#F4A6C8"), true);
+assert.equal(companion.includes("#ff6ea8"), false);
+assert.equal(book.includes("#F4A6C8"), true);
+assert.equal(book.includes("#ff6ea8"), false);
+assert.equal(book.includes("#c46bff"), false);
+assert.equal(admin.includes("#F4A6C8"), true);
+for (const name of ["待确认预约","已确认预约","待老板确认支付","已拒绝预约","已取消预约","已完成预约","已过期","进行中"]) {
+  assert.equal(companion.includes(name), true);
+}
 
 console.log("appointment text ok");

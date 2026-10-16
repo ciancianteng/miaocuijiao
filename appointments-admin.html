@@ -5,18 +5,19 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>预约状态 | 客服 / 管理</title>
   <style>
-    body{margin:0;background:#09070d;color:#fff4fa;font-family:"Microsoft YaHei",sans-serif}
-    main{max-width:860px;margin:0 auto;padding:18px}
-    table{width:100%;border-collapse:collapse;font-size:13px}
-    td,th{border-bottom:1px solid rgba(255,183,216,.2);padding:8px;text-align:left;vertical-align:top}
-    td.note{white-space:pre-wrap;max-width:240px}
+    body{margin:0;background:#07070a;color:#fff4fa;font-family:"Microsoft YaHei",sans-serif}
+    main{max-width:1080px;margin:0 auto;padding:18px}
+    h1{color:#fff4fa}
+    .appt{margin:12px 0;padding:14px;border-radius:16px;background:#101014;border:1px solid rgba(244,166,200,.35)}
+    .appt p{margin:6px 0;white-space:pre-wrap;line-height:1.5}
+    .appt span{display:inline-block;min-width:4.5em;color:#F4A6C8;font-weight:700}
   </style>
 </head>
 <body>
 <main>
   <h1>预约状态</h1>
   <p id="msg">读取中…</p>
-  <table id="rows"></table>
+  <div id="rows"></div>
 </main>
 <script>
 (function(){
@@ -45,9 +46,9 @@
     if(!body.ok){document.getElementById("msg").textContent=body.message||"无权查看";return;}
     var rows=body.appointments||[];
     document.getElementById("msg").textContent="共 "+rows.length+" 条。预约不会进入抢单大厅，也不会扣猫粮。";
-    document.getElementById("rows").innerHTML="<tr><th>状态</th><th>服务</th><th>时间</th><th>金额</th><th>服务需求</th><th>备注</th><th>扣款</th></tr>"+rows.map(function(r){
+    document.getElementById("rows").innerHTML=rows.map(function(r){
       var text=appointmentText(r);
-      return "<tr><td>"+esc(r.status)+"</td><td>"+esc(r.serviceName)+"</td><td>"+esc(r.startAt)+"</td><td>"+esc(r.totalAmount)+"</td><td class=\"note\">"+esc(text.requirements)+"</td><td class=\"note\">"+esc(text.note)+"</td><td>"+(r.charged?"已扣":"未扣")+"</td></tr>";
+      return '<article class="appt"><p><span>状态</span>'+esc(r.status)+'</p><p><span>服务</span>'+esc(r.serviceName)+'</p><p><span>时间</span>'+esc(r.startAt)+'</p><p><span>金额</span>'+esc(r.totalAmount)+'</p><p><span>服务需求</span>'+esc(text.requirements)+'</p><p><span>备注</span>'+esc(text.note)+'</p><p><span>扣款</span>'+(r.charged?"已扣":"未扣")+'</p></article>';
     }).join("");
   });
 })();
