@@ -39,6 +39,37 @@ export function supabaseProjectRef(url = "") {
   return m ? m[1] : "";
 }
 
+/** Project ref from a Postgres URL. Empty when the URL cannot be confirmed. */
+export function databaseProjectRef(dbUrl = "") {
+  const raw = String(dbUrl || "").trim();
+  if (!raw) return "";
+  try {
+    const u = new URL(raw);
+    const host = String(u.hostname || "").toLowerCase();
+    const direct = host.match(/^db\.([a-z0-9]+)\.supabase\.co$/i);
+    if (direct) return direct[1].toLowerCase();
+    const user = decodeURIComponent(u.username || "");
+    const fromUser = user.match(/^postgres\.([a-z0-9]+)$/i);
+    if (fromUser) return fromUser[1].toLowerCase();
+    return "";
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * Fail closed unless both URLs identify the same Supabase project.
+ * Does not authorize a Production write by itself.
+ */
+export function assertSameSupabaseProject(supabaseUrl = "", databaseUrl = "") {
+  const supabaseRef = supabaseProjectRef(supabaseUrl);
+  const databaseRef = databaseProjectRef(databaseUrl);
+  if (!supabaseRef || !databaseRef || supabaseRef !== databaseRef) {
+    return { ok: false, supabaseRef, databaseRef };
+  }
+  return { ok: true, supabaseRef, databaseRef };
+}
+
 export function hostnameOf(urlOrHost = "") {
   const raw = String(urlOrHost || "").trim();
   if (!raw) return "";

@@ -1,7 +1,8 @@
 /**
  * Super-admin only: apply companion order notify SQL when DATABASE_URL is present.
- * Safe to call repeatedly.
+ * Safe to call repeatedly. SQL runs only when DATABASE_URL and SUPABASE_URL match.
  */
+import { assertSameSupabaseProject } from "../../../scripts/lib/prod-guard.mjs";
 const ADMIN_ROLES = new Set(["super_admin", "admin"]);
 
 function json(res, status, data) {
@@ -23,6 +24,17 @@ export default async function handler(req, res) {
       ok: false,
       skipped: true,
       message: "未配置 DATABASE_URL，无法在线执行 DDL。请在 Supabase SQL 执行 migrations/20260806_companion_order_realtime_notify.sql。广播+轮询兜底仍可用。",
+      adminId: admin.id,
+    });
+  }
+
+  const same = assertSameSupabaseProject(process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "", databaseUrl);
+  if (!same.ok) {
+    return json(res, 409, {
+      ok: false,
+      message: "拒绝执行 SQL：DATABASE_URL 与当前 SUPABASE_URL 不是同一个 Supabase 项目，或项目号无法确认",
+      supabaseProjectRef: same.supabaseRef,
+      databaseProjectRef: same.databaseRef,
       adminId: admin.id,
     });
   }

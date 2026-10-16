@@ -1,7 +1,9 @@
 /**
  * Super-admin only: apply companion media video SQL when DATABASE_URL is present.
  * Also ensures Storage companion-video bucket via service role (no DB required).
+ * SQL runs only when DATABASE_URL and SUPABASE_URL are the same Supabase project.
  */
+import { assertSameSupabaseProject } from "../../../scripts/lib/prod-guard.mjs";
 const ADMIN_ROLES = new Set(["super_admin", "admin"]);
 
 function json(res, status, data) {
@@ -43,6 +45,18 @@ export default async function handler(req, res) {
 
   if (action !== "ensure_companion_video_media" && action !== "apply_migration") {
     return json(res, 400, { ok: false, message: "未知 action" });
+  }
+
+  const same = assertSameSupabaseProject(process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "", databaseUrl);
+  if (!same.ok) {
+    out.ok = false;
+    out.ddl = {
+      ok: false,
+      message: "拒绝执行 SQL：DATABASE_URL 与当前 SUPABASE_URL 不是同一个 Supabase 项目，或项目号无法确认",
+      supabaseProjectRef: same.supabaseRef,
+      databaseProjectRef: same.databaseRef,
+    };
+    return json(res, 409, out);
   }
 
   try {

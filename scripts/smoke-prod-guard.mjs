@@ -13,6 +13,8 @@ import {
   isStagingOrPreviewAppBase,
   assertNonProductionSupabase,
   assertSmokeTargetAllowed,
+  databaseProjectRef,
+  assertSameSupabaseProject,
 } from "./lib/prod-guard.mjs";
 
 const results = [];
@@ -92,6 +94,37 @@ step("refuse_production_database_url", () => {
       databaseUrl: `postgresql://postgres.${PRODUCTION_SUPABASE_REF}:x@aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres`,
     })
   );
+});
+
+step("same_project_match", () => {
+  const stagingUrl = `https://${STAGING_SUPABASE_REF}.supabase.co`;
+  const productionUrl = `https://${PRODUCTION_SUPABASE_REF}.supabase.co`;
+  const stagingDb = `postgresql://postgres.${STAGING_SUPABASE_REF}:secret@db.${STAGING_SUPABASE_REF}.supabase.co:5432/postgres`;
+  const productionDb = `postgresql://postgres.${PRODUCTION_SUPABASE_REF}:secret@aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres`;
+  assert.equal(assertSameSupabaseProject(stagingUrl, stagingDb).ok, true);
+  assert.equal(assertSameSupabaseProject(productionUrl, productionDb).ok, true);
+  assert.equal(assertSameSupabaseProject(stagingUrl, stagingDb).supabaseRef, STAGING_SUPABASE_REF);
+});
+
+step("same_project_mismatch_refused", () => {
+  const gate = assertSameSupabaseProject(
+    `https://${STAGING_SUPABASE_REF}.supabase.co`,
+    `postgresql://postgres.${PRODUCTION_SUPABASE_REF}:secret@db.${PRODUCTION_SUPABASE_REF}.supabase.co:5432/postgres`
+  );
+  assert.equal(gate.ok, false);
+  assert.equal(gate.supabaseRef, STAGING_SUPABASE_REF);
+  assert.equal(gate.databaseRef, PRODUCTION_SUPABASE_REF);
+});
+
+step("same_project_unparseable_refused", () => {
+  assert.equal(databaseProjectRef("postgresql://postgres:bad[pass]@aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres"), "");
+  assert.equal(databaseProjectRef(""), "");
+  const gate = assertSameSupabaseProject(
+    `https://${PRODUCTION_SUPABASE_REF}.supabase.co`,
+    "not a database url"
+  );
+  assert.equal(gate.ok, false);
+  assert.equal(gate.databaseRef, "");
 });
 
 step("override_requires_dual_flags", () => {

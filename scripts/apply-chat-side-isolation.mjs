@@ -1,6 +1,8 @@
 /**
  * Apply 20260807_chat_side_isolation.sql locally when DATABASE_URL is present.
- * Hard-refuses any project other than jqfaknpmcnqwqvatrwgo (staging/验收).
+ * Staging cfccwysniduwkjskiqgy and Production jqfaknpmcnqwqvatrwgo stay separate.
+ * SQL runs only when the database project ref parses and matches SUPABASE_URL
+ * when that URL is set. An unparseable ref refuses execution.
  *
  * Usage: node scripts/apply-chat-side-isolation.mjs
  */
@@ -8,9 +10,15 @@ import fs from "node:fs";
 import path from "node:path";
 import pg from "pg";
 import { fileURLToPath } from "node:url";
+import {
+  STAGING_SUPABASE_REF,
+  PRODUCTION_SUPABASE_REF,
+  supabaseProjectRef,
+  databaseProjectRef,
+} from "./lib/prod-guard.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const EXPECTED_REF = "jqfaknpmcnqwqvatrwgo";
+const KNOWN_PROJECT_REFS = new Set([STAGING_SUPABASE_REF, PRODUCTION_SUPABASE_REF]);
 const SQL_REL = "supabase/migrations/20260807_chat_side_isolation.sql";
 
 function loadEnv() {
@@ -28,51 +36,19 @@ function loadEnv() {
   }
 }
 
-function refFromSupabaseUrl(url) {
-  try {
-    const host = new URL(url).hostname;
-    const m = host.match(/^([a-z0-9]+)\.supabase\.co$/i);
-    return m ? m[1].toLowerCase() : "";
-  } catch {
-    return "";
-  }
-}
-
-function refFromDatabaseUrl(dbUrl) {
-  try {
-    const u = new URL(dbUrl);
-    const direct = u.hostname.match(/^db\.([a-z0-9]+)\.supabase\.co$/i);
-    if (direct) return direct[1].toLowerCase();
-    const user = decodeURIComponent(u.username || "");
-    const fromUser = user.match(/^postgres\.([a-z0-9]+)$/i);
-    if (fromUser) return fromUser[1].toLowerCase();
-    return "";
-  } catch {
-    return "";
-  }
-}
-
 loadEnv();
 
 const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "";
 const dbUrl = process.env.DATABASE_URL || process.env.SUPABASE_DB_URL || process.env.POSTGRES_URL || "";
-const urlRef = refFromSupabaseUrl(supabaseUrl);
-const dbRef = refFromDatabaseUrl(dbUrl);
+const urlRef = supabaseProjectRef(supabaseUrl);
+const dbRef = databaseProjectRef(dbUrl);
 
 if (!dbUrl) {
-  console.error("FAIL: DATABASE_URL missing — cannot apply SQL. Use admin /api/admin/chat-side-isolation for REST scrub, or paste SQL in Supabase SQL Editor.");
+  console.error("FAIL: DATABASE_URL missing — cannot apply SQL. Use admin /api/admin/chat-side-isolation for REST scrub, or paste SQL in the current project's Supabase SQL Editor.");
   process.exit(2);
 }
-if (urlRef && urlRef !== EXPECTED_REF) {
-  console.error(`FAIL: SUPABASE_URL project ${urlRef} != expected ${EXPECTED_REF}`);
-  process.exit(2);
-}
-if (dbRef && dbRef !== EXPECTED_REF) {
-  console.error(`FAIL: DATABASE_URL project ${dbRef} != expected ${EXPECTED_REF}`);
-  process.exit(2);
-}
-if (!urlRef && !dbRef) {
-  console.error("FAIL: cannot confirm project ref from SUPABASE_URL / DATABASE_URL");
+if (!dbRef || !KNOWN_PROJECT_REFS.has(dbRef) || (urlRef && urlRef !== dbRef)) {
+  console.error("FAIL: DATABASE_URL 与 SUPABASE_URL 不是同一个 Staging 或 Production 项目，或项目号无法确认");
   process.exit(2);
 }
 
