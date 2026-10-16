@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>我的预约 | 陪玩端</title>
+  <style>
+    body{margin:0;background:#09070d;color:#fff4fa;font-family:"Microsoft YaHei",sans-serif}
+    main{max-width:720px;margin:0 auto;padding:18px 14px 48px}
+    a{color:#ffd0e8}
+    .card{background:#140e1c;border:1px solid rgba(255,183,216,.24);border-radius:16px;padding:14px;margin:12px 0}
+    button{border:0;border-radius:999px;padding:8px 14px;margin:4px 6px 0 0;background:#ff6ea8;color:#fff;font-weight:700}
+    button.ghost{background:#2a2033}
+    label{display:block;margin:8px 0;font-size:13px}
+    input{margin-left:8px;padding:8px;border-radius:10px;border:1px solid rgba(255,183,216,.3);background:#100b16;color:#fff}
+    .status{font-weight:800}
+    .detail{margin-top:8px;padding:10px 12px;border-radius:12px;background:#100b16;border:1px solid rgba(255,183,216,.24)}
+    .detail span{display:block;color:#ffd0e8;font-size:12px;font-weight:700}
+    .detail p{margin:4px 0 10px;white-space:pre-wrap;line-height:1.5}
+  </style>
+</head>
+<body>
+<main>
+  <p><a href="/companion/dashboard">返回陪玩工作台</a></p>
+  <h1>我的预约</h1>
+  <section class="card" id="settings">正在读取预约设置…</section>
+  <section id="list"></section>
+</main>
+<script>
+(function(){
+  function session(){try{return JSON.parse(localStorage.getItem("mcjCompanionSession")||sessionStorage.getItem("mcjCompanionSession")||"null");}catch(e){return null;}}
+  function token(){var s=session();return s&&s.token||"";}
+  function esc(s){return String(s||"").replace(/[&<>"']/g,function(c){return({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"})[c];});}
+  var labels={pending:"待确认",confirmed:"已确认",rejected:"已拒绝",cancelled:"已取消",awaiting_payment:"待老板确认支付",in_progress:"进行中",completed:"已完成",expired:"已过期"};
+  if(!token()){location.href="/companion/login/";return;}
+  function beat(){
+    var intent="online";
+    try{intent=sessionStorage.getItem("mcjCompanionPresenceIntent")||"online";}catch(e){}
+    if(intent==="offline")return;
+    fetch("/api/companion",{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+token()},body:JSON.stringify({action:"set_online_status",online_status:intent,heartbeat:1})}).catch(function(){});
+  }
+  beat();
+  setInterval(beat,20000);
+  function api(action,body,method){
+    var opts={method:method||"POST",headers:{Authorization:"Bearer "+token(),"Content-Type":"application/json"}};
+    if(opts.method==="GET")return fetch("/api/appointments?action="+encodeURIComponent(action),opts).then(function(r){return r.json();});
+    opts.body=JSON.stringify(Object.assign({action:action},body||{}));
+    return fetch("/api/appointments",opts).then(function(r){return r.json();});
+  }
+  function paintSettings(s){
+    s=s||{};
+    var dates=Array.isArray(s.available_dates)?s.available_dates.join(","):"";
+    var range=(Array.isArray(s.time_ranges)&&s.time_ranges[0])||{start:"10:00",end:"22:00"};
+    document.getElementById("settings").innerHTML=
+      '<h2>预约设置</h2>'+
+      '<label><input id="accept" type="checkbox" '+(s.accept_booking===false?"":"checked")+'>接受预约</label>'+
+      '<label>可预约日期（YYYY-MM-DD，逗号分隔，留空表示不限）<input id="dates" value="'+esc(dates)+'"></label>'+
+      '<label>可预约时段 <input id="from" type="time" value="'+esc(range.start||"10:00")+'"> 至 <input id="to" type="time" value="'+esc(range.end||"22:00")+'"></label>'+
+      '<button type="button" id="save">保存设置</button><p id="setmsg"></p>';
+    document.getElementById("save").onclick=function(){
+      var dates=document.getElementById("dates").value.split(/[,，\s]+/).filter(Boolean);
+      api("save_settings",{
+        acceptBooking:document.getElementById("accept").checked,
+        availableDates:dates,
+        timeRanges:[{start:document.getElementById("from").value,end:document.getElementById("to").value}]
+      }).then(function(res){document.getElementById("setmsg").textContent=res.ok?"已保存":(res.message||"保存失败");load();});
+    };
+  }
+  function appointmentText(r){
+    var req=String((r&&r.requirements)||"");
+    var note=String((r&&r.note)||"");
+    if(!note){
+      var matched=req.match(/^服务需求：([\s\S]*?)\n备注：([\s\S]*)$/);
+      if(matched){req=matched[1].trim();note=matched[2].trim();}
+    }
+    return {requirements:req.trim()||"无",note:note.trim()||"无"};
+  }
+  function paintList(rows){
+    var groups=[["pending","待确认预约"],["confirmed","已确认预约"],["awaiting_payment","待老板确认支付"],["rejected","已拒绝预约"],["cancelled","已取消预约"],["completed","已完成预约"],["expired","已过期"],["in_progress","进行中"]];
+    document.getElementById("list").innerHTML=groups.map(function(g){
+      var items=(rows||[]).filter(function(r){return r.status===g[0];});
+      return '<section class="card"><h2>'+g[1]+'（'+items.length+'）</h2>'+(items.length?items.map(function(r){
+        var text=appointmentText(r);
+        return '<article><p><span class="status">'+esc(labels[r.status]||r.status)+'</span> · '+esc(r.serviceName)+'</p><p>'+esc(r.startAt)+' · '+esc(r.hours)+' 小时 · '+esc(r.totalAmount)+' 猫粮</p><div class="detail"><span>服务需求</span><p>'+esc(text.requirements)+'</p><span>备注</span><p>'+esc(text.note)+'</p></div>'+(r.status==="pending"?'<button type="button" data-act="accept" data-id="'+esc(r.id)+'">接受预约</button><button class="ghost" type="button" data-act="reject" data-id="'+esc(r.id)+'">拒绝预约</button>':"")+'</article>';
+      }).join("<hr>"):'<p>暂无</p>')+'</section>';
+    }).join("");
+  }
+  function load(){
+    api("settings",null,"GET").then(function(res){paintSettings(res.settings||{});});
+    api("mine",null,"GET").then(function(res){paintList(res.appointments||[]);});
+  }
+  document.body.addEventListener("click",function(e){
+    var btn=e.target.closest("[data-act]");
+    if(!btn)return;
+    api(btn.getAttribute("data-act"),{id:btn.getAttribute("data-id")}).then(function(res){
+      if(!res.ok)alert(res.message||"操作失败");
+      load();
+    });
+  });
+  load();
+})();
+</script>
+</body>
+</html>

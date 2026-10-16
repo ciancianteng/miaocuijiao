@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>预约状态 | 客服 / 管理</title>
+  <style>
+    body{margin:0;background:#09070d;color:#fff4fa;font-family:"Microsoft YaHei",sans-serif}
+    main{max-width:860px;margin:0 auto;padding:18px}
+    table{width:100%;border-collapse:collapse;font-size:13px}
+    td,th{border-bottom:1px solid rgba(255,183,216,.2);padding:8px;text-align:left;vertical-align:top}
+    td.note{white-space:pre-wrap;max-width:240px}
+  </style>
+</head>
+<body>
+<main>
+  <h1>预约状态</h1>
+  <p id="msg">读取中…</p>
+  <table id="rows"></table>
+</main>
+<script>
+(function(){
+  var keys=["mcjAuthAccessToken","customerServiceAuthToken"];
+  var token=localStorage.getItem("mcjAuthAccessToken")||"";
+  try{
+    var cs=JSON.parse(localStorage.getItem("mcjCustomerServiceSession")||sessionStorage.getItem("mcjCustomerServiceSession")||"null");
+    if(cs&&cs.token)token=cs.token;
+  }catch(e){}
+  try{
+    var admin=JSON.parse(localStorage.getItem("mcjAdminSession")||sessionStorage.getItem("mcjAdminSession")||"null");
+    if(admin&&(admin.token||admin.accessToken))token=admin.token||admin.accessToken;
+  }catch(e){}
+  if(!token){document.getElementById("msg").textContent="请先登录客服或管理员账号";return;}
+  function esc(s){return String(s||"").replace(/[&<>"']/g,function(c){return({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"})[c];});}
+  function appointmentText(r){
+    var req=String((r&&r.requirements)||"");
+    var note=String((r&&r.note)||"");
+    if(!note){
+      var matched=req.match(/^服务需求：([\s\S]*?)\n备注：([\s\S]*)$/);
+      if(matched){req=matched[1].trim();note=matched[2].trim();}
+    }
+    return {requirements:req.trim()||"无",note:note.trim()||"无"};
+  }
+  fetch("/api/appointments?action=staff",{headers:{Authorization:"Bearer "+token}}).then(function(r){return r.json();}).then(function(body){
+    if(!body.ok){document.getElementById("msg").textContent=body.message||"无权查看";return;}
+    var rows=body.appointments||[];
+    document.getElementById("msg").textContent="共 "+rows.length+" 条。预约不会进入抢单大厅，也不会扣猫粮。";
+    document.getElementById("rows").innerHTML="<tr><th>状态</th><th>服务</th><th>时间</th><th>金额</th><th>服务需求</th><th>备注</th><th>扣款</th></tr>"+rows.map(function(r){
+      var text=appointmentText(r);
+      return "<tr><td>"+esc(r.status)+"</td><td>"+esc(r.serviceName)+"</td><td>"+esc(r.startAt)+"</td><td>"+esc(r.totalAmount)+"</td><td class=\"note\">"+esc(text.requirements)+"</td><td class=\"note\">"+esc(text.note)+"</td><td>"+(r.charged?"已扣":"未扣")+"</td></tr>";
+    }).join("");
+  });
+})();
+</script>
+</body>
+</html>

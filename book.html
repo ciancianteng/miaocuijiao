@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>预约陪玩 | Meow Cui Jiao</title>
+  <style>
+    body{margin:0;background:#09070d;color:#fff4fa;font-family:"Microsoft YaHei",sans-serif}
+    main{max-width:480px;margin:0 auto;padding:20px 16px 40px}
+    a{color:#ffd0e8}
+    .card{background:linear-gradient(165deg,rgba(46,28,64,.94),rgba(14,9,20,.96));border:1px solid rgba(255,183,216,.28);border-radius:18px;padding:16px}
+    .who{display:flex;gap:12px;align-items:center;margin-bottom:14px}
+    img{width:64px;height:80px;object-fit:cover;border-radius:12px;background:#1a1024}
+    label{display:block;margin:10px 0;font-size:13px;color:#ffd6ea}
+    input,select,textarea{width:100%;box-sizing:border-box;margin-top:6px;padding:10px;border-radius:12px;border:1px solid rgba(255,183,216,.28);background:#120c16;color:#fff}
+    button{width:100%;margin-top:12px;height:42px;border:0;border-radius:999px;font-weight:800;color:#fff;background:linear-gradient(90deg,#ff6ea8,#c46bff)}
+    .price{font-size:18px;font-weight:800}
+    .note{font-size:12px;color:#ffd0e4;line-height:1.5}
+    .err{color:#ffb4c8}
+  </style>
+</head>
+<body>
+<main>
+  <p><a href="companion-center.html">返回陪玩大厅</a></p>
+  <div class="card" id="app">正在读取陪玩…</div>
+</main>
+<script>
+(function(){
+  var params=new URLSearchParams(location.search);
+  var id=params.get("companion")||params.get("id")||"";
+  var app=document.getElementById("app");
+  function esc(s){return String(s||"").replace(/[&<>"']/g,function(c){return({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"})[c];});}
+  function token(){return localStorage.getItem("mcjAuthAccessToken")||"";}
+  function today(){return new Date().toISOString().slice(0,10);}
+  fetch("/api/public/companions?id="+encodeURIComponent(id),{cache:"no-store"}).then(function(r){return r.json();}).then(function(body){
+    var c=(body&&body.companions&&body.companions[0])||null;
+    if(!c){app.textContent="找不到这位陪玩";return;}
+    var services=(c.services&&c.services.length?c.services:[{name:c.game||"陪玩服务",price:c.priceValue||c.price}]).filter(function(s){return s&&s.name;});
+    app.innerHTML=
+      '<div class="who"><img alt="" src="'+esc(c.avatar||c.cover||"/default-avatar.png")+'"><div><strong>'+esc(c.name)+'</strong><div class="note">'+esc(c.availabilityText||"")+'</div></div></div>'+
+      '<label>服务名称<select id="svc">'+services.map(function(s){return '<option value="'+esc(s.name)+'" data-price="'+esc(s.price||c.priceValue||0)+'">'+esc(s.name)+'</option>';}).join("")+'</select></label>'+
+      '<p>服务价格 <span class="price" id="unit">'+esc(c.priceValue||c.price||0)+'</span> 猫粮 / 小时</p>'+
+      '<label>预约日期<input id="date" type="date" min="'+today()+'"></label>'+
+      '<label>预约时间<input id="time" type="time"></label>'+
+      '<label>预计时长（小时）<input id="hours" type="number" min="0.5" max="24" step="0.5" value="1"></label>'+
+      '<label>服务需求<textarea id="req" maxlength="320" placeholder="想怎么玩、语音要求等"></textarea></label>'+
+      '<label>备注<textarea id="note" maxlength="180" placeholder="其他想告诉陪玩的话"></textarea></label>'+
+      '<p>预计总价 <span class="price" id="total">0</span> 猫粮</p>'+
+      '<p class="note">提交后先由陪玩确认。确认前不会扣除猫粮，也不会生成支付订单。</p>'+
+      '<button type="button" id="go">提交预约申请</button><p class="err" id="msg"></p>';
+    var unit=Number(c.priceValue||c.price||0);
+    function paint(){
+      var opt=document.getElementById("svc").selectedOptions[0];
+      unit=Number(opt&&opt.getAttribute("data-price")||c.priceValue||0);
+      var hours=Number(document.getElementById("hours").value||0);
+      document.getElementById("unit").textContent=unit;
+      document.getElementById("total").textContent=Math.round(unit*hours*100)/100;
+    }
+    ["svc","hours"].forEach(function(n){document.getElementById(n).addEventListener("input",paint);});
+    paint();
+    document.getElementById("go").onclick=function(){
+      var msg=document.getElementById("msg");
+      if(!token()){location.href="login.html?next="+encodeURIComponent(location.pathname+location.search);return;}
+      var date=document.getElementById("date").value;
+      var time=document.getElementById("time").value;
+      var hours=Number(document.getElementById("hours").value||0);
+      if(!date||!time){msg.textContent="请选择预约日期和时间";return;}
+      var start=new Date(date+"T"+time+":00");
+      if(start.getTime()<=Date.now()){msg.textContent="不能选择已经过去的时间";return;}
+      var service=document.getElementById("svc").value;
+      msg.textContent="正在核对价格…";
+      var quoteUrl="/api/appointments?action=quote&companion="+encodeURIComponent(c.id||id)+"&service="+encodeURIComponent(service)+"&hours="+encodeURIComponent(hours);
+      fetch(quoteUrl,{cache:"no-store"}).then(function(r){return r.json();}).then(function(quote){
+        if(!quote.ok){msg.textContent=quote.message||"无法读取价格";return;}
+        if(quote.acceptsBooking===false){msg.textContent="该陪玩已关闭预约";return;}
+        unit=Number(quote.unitPrice||0);
+        var total=Number(quote.totalAmount||0);
+        document.getElementById("unit").textContent=unit;
+        document.getElementById("total").textContent=total;
+        msg.textContent="提交中…";
+      fetch("/api/appointments",{
+        method:"POST",
+        headers:{"Content-Type":"application/json",Authorization:"Bearer "+token()},
+        body:JSON.stringify({
+          action:"create",
+          companionId:c.id||id,
+          serviceName:service,
+          hours:hours,
+          unitPrice:unit,
+          totalAmount:total,
+          startAt:start.toISOString(),
+          requirements:document.getElementById("req").value,
+          note:document.getElementById("note").value,
+          idempotencyKey:"book-"+Date.now()+"-"+Math.random().toString(36).slice(2,8)
+        })
+      }).then(function(r){return r.json();}).then(function(res){
+        msg.textContent=res.message||(res.ok?"已提交":"失败");
+        if(!res.ok)return;
+        msg.textContent=(res.message||"预约申请已提交")+" 预约号 "+(res.appointment&&res.appointment.id||"");
+      }).catch(function(){msg.textContent="提交失败";});
+      }).catch(function(){msg.textContent="价格核对失败";});
+    };
+  }).catch(function(){app.textContent="读取失败";});
+})();
+</script>
+</body>
+</html>
