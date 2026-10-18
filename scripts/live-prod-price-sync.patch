@@ -1,0 +1,197 @@
+--- a/server/api/_game-prices.js
++++ b/server/api/_game-prices.js
+@@ -142,6 +142,72 @@
+   return /^[0-9a-f-]{36}$/i.test(String(key || ""));
+ }
+ 
++function serviceNames(companion = {}) {
++  return splitGames(companion.game || companion.main_service);
++}
++
++function nameMatches(left = "", right = "") {
++  const a = String(left || "").trim();
++  const b = String(right || "").trim();
++  return !!a && !!b && (a === b || a.includes(b) || b.includes(a));
++}
++
++/**
++ * Admin unit price is companion_profiles.price.
++ * A single service, or several services that still share one stored price, follows that unit price.
++ * A service with its own different price is left unchanged.
++ * Historical orders are not represented here and are never rewritten.
++ */
++export function reconcileAdminServicePrices(companion = {}, nextPrice) {
++  const next = money(nextPrice);
++  const current = readGamePrices(companion);
++  if (!(next > 0)) return { ...current };
++  const ids = parseServiceIds(companion.service_ids);
++  const names = serviceNames(companion);
++  const distinct = new Set(Object.values(current).filter((v) => v > 0));
++  const uniform = distinct.size <= 1;
++  const single = ids.length <= 1;
++  const selected = new Set(ids.filter(Boolean));
++  names.forEach((name) => selected.add(name));
++  Object.keys(current).forEach((key) => {
++    if (names.some((name) => nameMatches(name, key)) || ids.some((id) => id && key === id)) selected.add(key);
++  });
++  const out = { ...current };
++  if (single || uniform) {
++    selected.forEach((key) => {
++      out[key] = next;
++    });
++    if (uniform) {
++      Object.keys(out).forEach((key) => {
++        out[key] = next;
++      });
++    }
++    return out;
++  }
++  const primaryId = ids[0] || "";
++  const primaryName = names[0] || "";
++  if (primaryId) out[primaryId] = next;
++  if (primaryName) out[primaryName] = next;
++  Object.keys(current).forEach((key) => {
++    if (ids.includes(key) && key !== primaryId) return;
++    if (nameMatches(primaryName, key)) out[key] = next;
++  });
++  return out;
++}
++
++/** A resubmitted stale game_prices value must not replace the admin unit price. */
++export function acceptSubmittedServicePrice(companion = {}, serviceId = "", serviceName = "", submitted) {
++  const next = money(submitted);
++  const listing = money(companion.price);
++  const stored = readGamePrices(companion);
++  const storedVal = money((serviceId && stored[serviceId]) || (serviceName && stored[serviceName]) || 0);
++  if (!(listing > 0) || !(storedVal > 0) || storedVal === listing || next !== storedVal) return next;
++  const reconciled = reconcileAdminServicePrices(companion, listing);
++  const target = money((serviceId && reconciled[serviceId]) || (serviceName && reconciled[serviceName]) || 0);
++  if (target === listing && target !== storedVal) return listing;
++  return next;
++}
++
+ /**
+  * A companion with one service can still have an old game_prices value after
+  * the hall price was saved. That old map must not outvote the hall price.
+@@ -167,11 +233,28 @@
+   return listing;
+ }
+ 
++/**
++ * Several services that still share one stale price follow a lower hall price.
++ * A higher custom map, a differentiated map, and a listing that is only the level base stay put.
++ */
++function uniformListingOverStaleMap(companion = {}, level = null) {
++  const listing = money(companion.price);
++  const prices = readGamePrices(companion);
++  const vals = Object.keys(prices)
++    .map((key) => money(prices[key]))
++    .filter((value) => value > 0);
++  if (vals.length < 2 || !vals.every((value) => value === vals[0])) return 0;
++  if (!(listing > 0) || listing >= vals[0]) return 0;
++  const base = money(level?.basePrice ?? level?.base_price ?? level?.base ?? 0);
++  if (base > 0 && listing === base) return 0;
++  return listing;
++}
++
+ /** Public/read copy. Does not write the database. */
+ export function projectGamePrices(companion = {}, level = null) {
+   const prices = { ...readGamePrices(companion) };
+   const sample = Object.values(prices).map((v) => money(v)).find((v) => v > 0) || 0;
+-  const listing = listingPriceOverStaleMap(companion, sample, level);
++  const listing = listingPriceOverStaleMap(companion, sample, level) || uniformListingOverStaleMap(companion, level);
+   if (!(listing > 0)) return prices;
+   Object.keys(prices).forEach((k) => {
+     if (money(prices[k]) > 0) prices[k] = listing;
+--- a/server/api/_resolve-effective-service-price.js
++++ b/server/api/_resolve-effective-service-price.js
+@@ -15,7 +15,13 @@
+  *
+  * Never trusts client-submitted unit amounts — call sites snapshot server result.
+  */
+-import { compactServiceKey, listingPriceOverStaleMap, priceForGame } from "./_game-prices.js";
++import {
++  compactServiceKey,
++  listingPriceOverStaleMap,
++  priceForGame,
++  projectGamePrices,
++  stripGamePricesMarker,
++} from "./_game-prices.js";
+ 
+ const APPROVED_STATUSES = new Set(["approved", "active"]);
+ const LEVEL_SEED_SOURCES = new Set(["level_default", "level_base_price"]);
+@@ -119,9 +125,17 @@
+   void env; // flag no longer flips service-vs-level priority; SoT is always service ?? level
+   const cid = String(companionId || companion?.user_id || companion?.id || "") || null;
+   const lid = String(level?.id || level?.code || "") || null;
+-  const legacy = money(priceForGame(companion || {}, gameName, serviceId));
++  const rawLegacy = money(priceForGame(companion || {}, gameName, serviceId));
++  const projected = projectGamePrices(companion || {}, level);
++  const legacy = money(
++    priceForGame(
++      { ...(companion || {}), game_prices: projected, tags: stripGamePricesMarker(companion?.tags) },
++      gameName,
++      serviceId
++    )
++  );
+   const base = levelBasePrice(level);
+-  const listing = listingPriceOverStaleMap(companion || {}, legacy, level);
++  const listing = listingPriceOverStaleMap(companion || {}, rawLegacy, level);
+   if (listing > 0) {
+     return {
+       price: listing,
+--- a/server/api/admin/players.js
++++ b/server/api/admin/players.js
+@@ -45,6 +45,7 @@
+   loadCompanionServiceRows,
+   parseServicePricesPayload,
+ } from "../_admin-service-prices.js";
++import { writeGamePricesMarker } from "../_game-prices.js";
+ 
+ // PERMANENT: price / hall-critical checks apply only to new submit + first approval.
+ // Admin edits of already-approved companions must never be blocked by this.
+@@ -2229,7 +2230,12 @@
+             levelMeta
+           );
+           if (applied?.profilesPatch) {
+-            if (applied.profilesPatch.game_prices) companionPatch.game_prices = applied.profilesPatch.game_prices;
++            if (applied.profilesPatch.game_prices) {
++              companionPatch.game_prices = applied.profilesPatch.game_prices;
++              // Column updates alone lose to a stale [[MCJ_PRICES:]] marker on the next read.
++              const tagBase = companionPatch.tags != null ? companionPatch.tags : companion.tags;
++              companionPatch.tags = writeGamePricesMarker(tagBase, applied.profilesPatch.game_prices);
++            }
+             if (applied.profilesPatch.price != null) companionPatch.price = applied.profilesPatch.price;
+           }
+         } catch (priceErr) {
+--- a/server/api/companion.js
++++ b/server/api/companion.js
+@@ -31,6 +31,8 @@
+   parseCompletionMethod,
+ } from "./_order-complete.js";
+ import {
++  acceptSubmittedServicePrice,
++  projectGamePrices,
+   readGamePrices,
+   writeGamePricesMarker,
+   stripGamePricesMarker,
+@@ -3163,7 +3165,7 @@
+         : "请先联系后台设置等级",
+       priceInRange: levelBundle.priceInRange,
+       priceNeedsReset: levelBundle.priceNeedsReset,
+-      gamePrices: readGamePrices(companion || {}),
++      gamePrices: projectGamePrices(companion || {}, levelBundle.level),
+       serviceStandards: readServiceStandards(companion || {}),
+       serviceStandardFields: SERVICE_STANDARD_FIELDS,
+       effectiveAt: companion?.commission_effective_at || companion?.level_effective_at || "",
+@@ -5067,7 +5069,9 @@
+         if (!/^\d+(\.\d{1,2})?$/.test(rawG)) {
+           return json(res, 400, { ok: false, message: `${name} 单价只能输入有效数字，最多保留 2 位小数`, field: "price" });
+         }
+-        const pv = roundMoney(rawG);
++        let pv = roundMoney(rawG);
++        const snapped = acceptSubmittedServicePrice(companion, id, name, pv);
++        if (snapped !== pv && snapped >= min && (levelBundle.maxPlus || snapped <= max)) pv = snapped;
+         if (pv < min || (!levelBundle.maxPlus && pv > max)) {
+           return json(res, 400, {
+             ok: false,
