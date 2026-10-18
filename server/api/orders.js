@@ -103,6 +103,24 @@ async function loadCompanionPricingRow(userId) {
   return null;
 }
 
+async function loadApprovedServicePrices(userId) {
+  const id = String(userId || "").trim();
+  if (!id) return [];
+  try {
+    const rows = await supabaseJson(
+      restUrl(
+        "companion_services",
+        `?companion_id=eq.${encodeURIComponent(id)}&enabled=eq.true&review_status=eq.approved&select=service_id,service_name,price,enabled,review_status`
+      ),
+      { headers: serviceHeaders() }
+    );
+    return Array.isArray(rows) ? rows : [];
+  } catch (error) {
+    if (/42703|column|schema cache|PGRST|does not exist|relation/i.test(String(error?.message || error || ""))) return [];
+    throw error;
+  }
+}
+
 async function loadCompanionMediaExtras(companionProfileId) {
   const pid = String(companionProfileId || "").trim();
   if (!pid) return {};
@@ -1097,7 +1115,7 @@ export default async function handler(req, res) {
 
       if (action === "place_order") {
         if (!gameId) return json(res, 400, { ok: false, message: "请填写游戏 ID。" });
-        // Server-authoritative unit price from companion_profiles — never trust client unit/total.
+        // Server prices the selected service. Client unit/total are only a mismatch check.
         const orderable = await assertCompanionOrderable(companionId);
         if (!orderable.ok) {
           return json(res, 400, { ok: false, message: orderable.message || "该陪玩暂不可下单" });
@@ -1105,21 +1123,10 @@ export default async function handler(req, res) {
         const cp = orderable.cp;
         const serviceId = String(order.serviceId || order.service_id || "").trim();
         const gameHint = String(order.gameName || order.game_name || order.mainGame || order.main_game || game || "").trim();
-        unitPrice = money(priceForGame(cp, gameHint, serviceId));
-        if (!(unitPrice > 0)) unitPrice = money(cp.price);
+        const serviceRows = await loadApprovedServicePrices(cp.user_id || companionId);
+        unitPrice = money(priceForGame(cp, gameHint, serviceId, serviceRows));
         if (!(unitPrice > 0)) {
-          // Prefer first positive game_prices entry when service/game labels don't match keys.
-          const gp = cp.game_prices && typeof cp.game_prices === "object" ? cp.game_prices : {};
-          for (const k of Object.keys(gp)) {
-            const v = money(gp[k]);
-            if (v > 0) {
-              unitPrice = v;
-              break;
-            }
-          }
-        }
-        if (!(unitPrice > 0)) {
-          return json(res, 400, { ok: false, message: "该陪玩尚未设置单价" });
+          return json(res, 400, { ok: false, message: "该陪玩尚未设置有效服务报价" });
         }
         totalAmount = Math.round(unitPrice * hours * 100) / 100;
         const clientUnit = money(order.unit_price || order.unitPrice || order.price || order.budget || 0);

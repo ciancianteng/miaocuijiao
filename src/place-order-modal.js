@@ -1306,6 +1306,7 @@
         companionName: c.companionName,
         serviceType: currentServiceLabel(),
         service: currentServiceLabel(),
+        serviceId: state.selectedServiceId || "",
         game: currentServiceLabel(),
         unitPrice: money(c.unitPrice),
         hours: hours,

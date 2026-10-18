@@ -3,7 +3,7 @@ import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import playwright from "/tmp/mcj-pay-verify/node_modules/playwright-core/index.js";
+import playwright from "/tmp/mcj-pay-verify/node_modules/playwright-core/index.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 process.env.SUPABASE_URL = "https://mock.supabase.co";
@@ -91,6 +91,72 @@ const homeSource = fs.readFileSync(path.join(root, "src/home-announcements.js"),
 const adminSource = fs.readFileSync(path.join(root, "src/admin-final-v1.js"), "utf8");
 assert.equal(homeSource.includes("PLATFORM_DEFAULT_HOME_ANNOUNCEMENTS"), false);
 assert.equal(adminSource.includes("a.category==='companion'?'companion':'home'"), false);
+assert.equal(adminSource.includes("category')==='customer_service'?'customer_service':'home'"), true);
+
+const { announcementItem, matchesAnnouncementAudience } = await import("../server/api/platform/content.js");
+const homeOnly = announcementItem({
+  id: "home-only",
+  title: "仅首页通知",
+  content: "只在官网首页",
+  category: "homepage_only",
+  audience: "home",
+  is_active: true,
+});
+assert.equal(homeOnly.category, "homepage_only");
+assert.equal(homeOnly.audience, "home");
+assert.equal(matchesAnnouncementAudience(homeOnly, "home"), true);
+assert.equal(matchesAnnouncementAudience(homeOnly, "boss"), false);
+assert.equal(matchesAnnouncementAudience(homeOnly, "companion"), false);
+const csItem = announcementItem({
+  id: "cs-1",
+  title: "客服通知",
+  content: "客服可见",
+  category: "customer_service",
+  audience: "customer_service",
+  is_active: true,
+});
+assert.equal(csItem.category, "customer_service");
+assert.equal(csItem.audience, "customer_service");
+assert.equal(matchesAnnouncementAudience(csItem, "home"), false);
+assert.equal(matchesAnnouncementAudience(csItem, "customer_service"), true);
+const companionItem = announcementItem({
+  id: "pw-1",
+  title: "陪玩通知",
+  content: "陪玩可见",
+  category: "companion",
+  audience: "companion",
+  is_active: true,
+});
+assert.equal(matchesAnnouncementAudience(companionItem, "companion"), true);
+assert.equal(matchesAnnouncementAudience(companionItem, "home"), false);
+
+calls.length = 0;
+handler = async (url, init) => {
+  if (init.method === "POST") {
+    const sent = JSON.parse(init.body);
+    return new Response(JSON.stringify([dbRow({ category: sent.category, audience: sent.audience, title: sent.title })]), {
+      status: 201,
+      headers: { "content-type": "application/json" },
+    });
+  }
+  return new Response("[]", { status: 200, headers: { "content-type": "application/json" } });
+};
+for (const [category, audience] of [
+  ["homepage_only", "home"],
+  ["customer_service", "customer_service"],
+  ["companion", "companion"],
+]) {
+  calls.length = 0;
+  const saved = await saveAnnouncement({ title: `${category}标题`, content: `${category}正文`, category, audience });
+  const post = calls.find((call) => call.init.method === "POST");
+  const sent = JSON.parse(post.init.body);
+  assert.equal(sent.category, category);
+  assert.equal(sent.audience, audience);
+  assert.equal(saved.category, category);
+  assert.equal(saved.audience, audience);
+  assert.ok(saved.id);
+  assert.ok(saved.updated_at);
+}
 
 const fixture = `<!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8">
