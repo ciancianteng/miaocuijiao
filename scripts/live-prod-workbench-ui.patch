@@ -185,12 +185,11 @@
    --pw-dim:rgba(255,255,255,.38);
    --pw-ok:#5ee0a1;
    --pw-warn:#f4c76b;
-@@ -1247,4 +1247,156 @@
+@@ -1247,4 +1247,199 @@
  .pw-my-service-status{color:#ff8fc7!important}
  .pw-my-service .pw-btn{height:36px;border-radius:999px;justify-self:start;padding:0 14px}
  .pw-rm{display:inline-flex;align-items:center;gap:6px;color:#ff8fc7}
 -.pw-rm input{width:96px;height:36px;border-radius:10px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);color:#fff;padding:0 8px}
-\ No newline at end of file
 +.pw-rm input{width:96px;height:36px;border-radius:10px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);color:#fff;padding:0 8px}
 +
 +/* Companion dashboard visual — black / pink, mobile first. Later rules win over compact overrides. */
@@ -200,10 +199,10 @@
 +  display:grid;
 +  grid-template-columns:minmax(0,1fr) auto;
 +  align-items:center;
-+  gap:10px 12px;
-+  margin:0 0 14px;
-+  padding:16px !important;
-+  border-radius:18px;
++  gap:2px 12px;
++  margin:0 0 10px;
++  padding:10px 14px !important;
++  border-radius:16px;
 +  background:#19141F;
 +  border:1px solid rgba(244,166,200,.18);
 +  box-shadow:none;
@@ -211,19 +210,20 @@
 +.pw-status-panel.compact .pw-status-current{
 +  margin:0 !important;
 +  display:grid;
-+  gap:4px;
++  gap:1px;
 +  min-width:0;
 +}
 +.pw-status-panel.compact .pw-status-current span{
 +  font-size:12px;
 +  font-weight:600;
 +  color:#AFA6B5;
++  line-height:1.2;
 +}
 +.pw-status-panel.compact .pw-status-current strong{
-+  font-size:18px !important;
++  font-size:16px !important;
 +  font-weight:720;
 +  color:#fff;
-+  line-height:1.25;
++  line-height:1.2;
 +}
 +.pw-status-toggle{
 +  height:36px;
@@ -241,24 +241,41 @@
 +.pw-status-emoji{display:none}
 +.pw-grid--dash{
 +  grid-template-columns:1fr 1fr;
-+  gap:10px;
++  gap:8px;
++  align-items:stretch;
 +}
 +.pw-grid--dash .pw-metric{
-+  display:grid;
-+  align-content:space-between;
-+  min-height:96px !important;
-+  padding:14px !important;
++  display:flex;
++  flex-direction:column;
++  justify-content:space-between;
++  height:80px;
++  min-height:80px !important;
++  max-height:80px;
++  padding:10px 12px !important;
 +  border-radius:16px;
 +  background:#241D2B !important;
 +  border:1px solid rgba(244,166,200,.1) !important;
 +  box-shadow:none;
++  overflow:hidden;
++  box-sizing:border-box;
 +}
-+.pw-grid--dash .pw-metric span{font-size:12px;color:#AFA6B5}
++.pw-grid--dash .pw-metric span{
++  font-size:12px;
++  line-height:1.2;
++  color:#AFA6B5;
++  white-space:nowrap;
++  overflow:hidden;
++  text-overflow:ellipsis;
++}
 +.pw-grid--dash .pw-metric strong{
 +  font-size:26px !important;
 +  font-weight:720 !important;
++  line-height:1;
 +  color:#fff;
 +  letter-spacing:-.02em;
++  white-space:nowrap;
++  overflow:hidden;
++  text-overflow:ellipsis;
 +}
 +.pw-grid--dash .pw-metric.is-zero strong{color:rgba(255,255,255,.72) !important}
 +.pw-grid--dash .pw-metric.is-clickable{cursor:pointer}
@@ -266,26 +283,51 @@
 +  display:flex;
 +  align-items:center;
 +  justify-content:space-between;
-+  gap:12px;
-+  margin:14px 0 0;
-+  padding:16px;
-+  border-radius:18px;
++  gap:10px;
++  margin:10px 0 0;
++  padding:10px 12px;
++  border-radius:16px;
 +  background:#19141F;
 +  border:1px solid #F4A6C8;
 +}
-+.pw-designated-copy{display:grid;gap:2px;min-width:0}
-+.pw-designated-copy p{margin:0;color:#AFA6B5;font-size:13px}
-+.pw-designated-copy strong{font-size:28px;line-height:1.05;color:#F4A6C8;font-weight:760}
-+.pw-designated-copy span{color:#AFA6B5;font-size:12px}
++.pw-designated-copy{display:grid;gap:0;min-width:0}
++.pw-designated-copy p{margin:0;color:#AFA6B5;font-size:12px;line-height:1.2}
++.pw-designated-copy strong{font-size:22px;line-height:1.05;color:#F4A6C8;font-weight:760}
++.pw-designated-copy span{color:#AFA6B5;font-size:12px;line-height:1.2}
 +.pw-designated-card .pw-btn.primary{
 +  flex:0 0 auto;
-+  height:42px;
-+  padding:0 14px;
-+  border-radius:14px;
++  height:36px;
++  padding:0 12px;
++  border-radius:12px;
 +  background:#F4A6C8;
 +  color:#1a1016;
 +  font-weight:760;
 +  white-space:nowrap;
++}
++.pw-action-grid{gap:8px;margin-top:10px}
++.pw-action-tile{
++  min-height:56px;
++  padding:8px 12px;
++  gap:2px;
++  border-radius:14px;
++}
++.pw-action-tile strong{font-size:14px;line-height:1.2}
++.pw-action-tile span{font-size:12px;line-height:1.25}
++.pw-tutorial-tile{margin-top:8px}
++.pw-announcement-host{margin:0 14px 6px}
++.pw-announcement-host #homeAnnouncementBar.home-announcement-bar.announcement-strip,
++.pw-announcement-host .home-announcement-bar.announcement-strip{
++  height:34px !important;
++  min-height:34px !important;
++  max-height:34px !important;
++  margin:0 !important;
++  padding:0 12px !important;
++}
++.pw-announcement-host .home-announcement-bar .home-announcement-track-wrap,
++.pw-announcement-host .home-announcement-bar .home-announcement-static,
++.pw-announcement-host .home-announcement-bar .home-announcement-seg,
++.pw-announcement-host .home-announcement-bar .home-announcement-track{
++  line-height:34px !important;
 +}
 +.pw-tab-ico{width:20px;height:20px;display:block}
 +.pw-tab-label{display:block;font-size:11px;line-height:1.1;font-weight:650}
@@ -315,7 +357,7 @@
 +  }
 +  .pw-avatar{width:40px;height:40px;background:#241D2B}
 +  .pw-shell{padding-bottom:calc(96px + env(safe-area-inset-bottom))}
-+  .pw-page{padding-bottom:calc(36px + env(safe-area-inset-bottom))}
++  .pw-page{padding:12px 14px calc(28px + env(safe-area-inset-bottom))}
 +  .pw-order-actions{bottom:calc(96px + env(safe-area-inset-bottom))}
 +  .pw-bottom-nav{
 +    background:rgba(11,10,16,.96);
@@ -339,9 +381,8 @@
 +  }
 +  .pw-toast{bottom:calc(108px + env(safe-area-inset-bottom))}
 +}
-+@media (max-width:390px){
-+  .pw-grid--dash .pw-metric strong{font-size:24px !important}
-+  .pw-designated-card{align-items:flex-start}
-+  .pw-designated-card .pw-btn.primary{height:40px;padding:0 12px;font-size:13px}
++@media (max-width:430px){
++  .pw-grid--dash{grid-template-columns:1fr 1fr;gap:8px}
++  .pw-grid--dash .pw-metric{height:80px;min-height:80px !important;max-height:80px}
++  .pw-grid--dash .pw-metric strong{font-size:26px !important}
 +}
-\ No newline at end of file
