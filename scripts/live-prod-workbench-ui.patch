@@ -71,6 +71,15 @@
        '</div>'+
        '<div class="pw-top-titles"><h1>'+title()+'</h1><p class="pw-top-sub">'+subtitle+'</p></div>'+
        '</div>'+
+@@ -2917,7 +2929,7 @@
+     var label=document.querySelector('[data-current-status-label]');
+     if(label){
+       var m=STATUS_META[next]||{};
+-      label.textContent=(m.emoji?m.emoji+' ':'')+(m.label||next);
++      label.textContent=m.label||next;
+     }
+   }
+   function commitOnlineStatus(next){
 @@ -2932,6 +2944,7 @@
          state.data.player.workStatus=state.data.player.onlineStatusLabel;
        }
