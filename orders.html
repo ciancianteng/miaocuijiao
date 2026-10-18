@@ -206,6 +206,7 @@
         if(state.error&&!state.orders.length)return failHtml();
         if(state.loading&&!state.orders.length)return skeletonHtml();
         var sync=state.syncing||(state.loading&&state.orders.length)?'<p class="order-sync">'+(state.fromCache?'已显示缓存，正在更新…':'正在同步最新订单…')+'</p>':'';
+        if(state.focusNote)sync='<p class="order-sync">'+esc(state.focusNote)+'</p>'+sync;
         var rows=visibleOrders();
         return sync+'<section class="order-list" aria-label="订单列表">'+(rows.length?rows.map(card).join(''):'<div class="order-empty"><strong>暂无订单</strong><p>下单成功后，订单会出现在这里。</p></div>')+'</section>';
       }
@@ -479,6 +480,7 @@
               }else{
                 var el2=document.querySelector('[data-order-id="'+String(focusId).replace(/"/g,'')+'"]');
                 if(el2)el2.scrollIntoView({behavior:'smooth',block:'center'});
+                else state.focusNote='没有找到这条订单，已留在订单列表。';
               }
             }
             return;

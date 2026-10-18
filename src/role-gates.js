@@ -1,4 +1,10 @@
 (function () {
+  if (!window.MCJNotifyTarget && document.head) {
+    var notifyTargetScript = document.createElement("script");
+    notifyTargetScript.src = "/src/notify-target.js";
+    notifyTargetScript.async = false;
+    document.head.appendChild(notifyTargetScript);
+  }
   var SESSION_VERSION = "v4";
   var routes = {
     customer: { token: "customerAuthToken", user: "customerUser", login: "/login.html", allowed: [/\/index\.html$/, /\/$/, /\/login\.html$/, /\/mine\.html$/, /\/companion-center\.html$/, /\/profile\.html$/, /\/orders\.html$/, /\/messages\.html$/, /\/custom-order\.html$/, /\/order-confirm\.html$/, /\/payment-confirm\.html$/, /\/recharge\.html$/, /\/gifts\.html$/, /\/support\.html$/, /\/favorites\.html$/, /\/leaderboard\.html$/, /\/ranking\.html$/, /\/more-gameplays\.html$/, /\/gameplay-product\.html$/, /\/fixed-order\.html$/, /\/team-lobby\.html$/, /\/companion-apply\.html$/, /\/activities\.html$/] },
@@ -923,6 +929,34 @@
     }
   }
 
+  function portalReturnAllowedSync(role, pending, origin) {
+    var raw = String(pending || "").trim();
+    if (!raw) return "";
+    var base = origin || "https://meow.local";
+    var url;
+    try {
+      url = new URL(raw, base);
+    } catch (e) {
+      return "";
+    }
+    if (url.origin !== new URL(base).origin) return "";
+    var pathName = url.pathname || "/";
+    var roleName = String(role || "").trim().toLowerCase();
+    if (roleName === "player") roleName = "companion";
+    if (roleName === "cs" || roleName === "service") roleName = "customer_service";
+    if (roleName === "companion") {
+      return /^\/companion\//i.test(pathName) ? url.pathname + url.search + url.hash : "";
+    }
+    if (roleName === "customer_service") {
+      return /^\/customer-service\//i.test(pathName) ? url.pathname + url.search + url.hash : "";
+    }
+    if (roleName === "boss") {
+      if (/^\/(companion|customer-service|admin)(\/|$)/i.test(pathName)) return "";
+      return url.pathname + url.search + url.hash;
+    }
+    return "";
+  }
+
   function afterAuthSuccess(result, options) {
     options = options || {};
     if (window.__mcjAfterAuthBusy) return;
@@ -966,8 +1000,17 @@
       localStorage.removeItem("mcjAfterLoginRedirect");
     } catch (e2) {}
     var roleHome = result.redirect || routeFor(role);
-    // Boss may resume a pending page; other roles always land on their portal.
-    var redirect = profileRole(role) === "boss" && pending ? pending : roleHome;
+    var checkedReturn = "";
+    try {
+      var returnChecker =
+        window.MCJNotifyTarget && window.MCJNotifyTarget.portalReturnAllowed
+          ? window.MCJNotifyTarget.portalReturnAllowed
+          : portalReturnAllowedSync;
+      checkedReturn = returnChecker(profileRole(role), pending, location.origin) || "";
+    } catch (eReturn) {
+      checkedReturn = "";
+    }
+    var redirect = checkedReturn || roleHome;
     var here = String(location.pathname || "").replace(/\/+$/, "") || "/";
     var dest = String(redirect || "/").replace(/\/+$/, "") || "/";
     // Never reopen login/register after success (clear #login / #register).
