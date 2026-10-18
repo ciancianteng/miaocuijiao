@@ -21,7 +21,7 @@
   uploadPrivateObject,
 } from "./_companion-media-store.js";
 import { companionPopularityMe, recordOnlineSession, scheduleRecomputeSoft } from "./_popularity.js";
-import { classifyPresenceWrite, loadCompanionPresence, savePresenceRev } from "./_companion-presence.js";
+import { classifyPresenceWrite, loadCompanionPresence, presenceUpdatedAt, savePresenceRev } from "./_companion-presence.js";
 import { readLocalLevels, toPublicLevel } from "./_companion-levels-store.js";
 import { resolvePlatformCommission } from "./_commission-rates.js";
 import { writeOrderStatusLog, COMPANION_STATUS_LABELS } from "./_order-status.js";
@@ -4153,7 +4153,7 @@ export default async function handler(req, res) {
         online_status: status,
         availability_status: status,
         status_updated_at: nowIso(),
-        updated_at: nowIso(),
+        updated_at: presenceUpdatedAt(decision.presenceRev),
       };
       if (status === "online") patch.last_online_at = nowIso();
       try {
@@ -4183,7 +4183,7 @@ export default async function handler(req, res) {
         const rows = await supabaseJson(restUrl("companion_profiles", `?user_id=eq.${encodeURIComponent(auth.profile.id)}`), {
           method: "PATCH",
           headers: serviceHeaders(),
-          body: JSON.stringify({ online_status: status, updated_at: nowIso() }),
+          body: JSON.stringify({ online_status: status, updated_at: presenceUpdatedAt(decision.presenceRev) }),
         });
         await recordOnlineSession(auth.profile.id, status === "online" ? "online" : "offline");
         await savePresenceRev(decision.presenceRev, (rev) =>

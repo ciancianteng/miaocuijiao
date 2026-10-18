@@ -48,8 +48,8 @@ assert.equal(explicitOn.onlineStatus, "online");
 const legacyOn = classifyPresenceWrite({ onlineStatus: "offline", presenceRev: 0 }, { online_status: "online" });
 assert.equal(legacyOn.write, true);
 
-const legacyBlocked = classifyPresenceWrite(offline, { online_status: "online" });
-assert.equal(legacyBlocked.write, false);
-assert.equal(legacyBlocked.code, "PRESENCE_STALE");
+const legacyButton = classifyPresenceWrite(offline, { online_status: "online" });
+assert.equal(legacyButton.write, true);
+assert.equal(legacyButton.code, "PRESENCE_EXPLICIT");
 
 console.log("companion presence rules ok");

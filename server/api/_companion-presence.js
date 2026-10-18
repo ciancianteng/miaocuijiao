@@ -32,7 +32,8 @@ export function classifyPresenceWrite(current = {}, body = {}) {
   if (kind === "lifecycle" || (status === "offline" && kind !== "explicit")) {
     return { ...base, write: false, code: "PRESENCE_LIFECYCLE_IGNORED" };
   }
-  const stale = storedRev > 0 && (!rev || rev < storedRev);
+  // Missing rev is a legacy client. Only a real older revision loses to a newer one.
+  const stale = rev > 0 && storedRev > 0 && rev < storedRev;
   if (kind === "heartbeat") {
     if (cur === "offline") {
       return { ...base, write: false, code: "PRESENCE_HEARTBEAT_RESPECTS_OFFLINE" };
@@ -56,10 +57,17 @@ export function classifyPresenceWrite(current = {}, body = {}) {
   };
 }
 
+export function presenceUpdatedAt(rev, now = Date.now()) {
+  const n = Number(rev) || 0;
+  if (n > 1e12 && n <= now + 60_000) return new Date(n).toISOString();
+  return new Date(now).toISOString();
+}
+
 export async function loadCompanionPresence(userId, query) {
   const selects = [
-    "online_status,availability_status,presence_rev",
-    "online_status,availability_status",
+    "online_status,availability_status,presence_rev,updated_at",
+    "online_status,availability_status,updated_at",
+    "online_status,updated_at",
     "online_status",
   ];
   for (const select of selects) {
@@ -67,9 +75,11 @@ export async function loadCompanionPresence(userId, query) {
       const rows = await query(select);
       const row = Array.isArray(rows) ? rows[0] : null;
       if (!row) return { onlineStatus: "offline", presenceRev: 0 };
+      const columnRev = Number(row.presence_rev) || 0;
+      const updatedMs = Date.parse(row.updated_at || "");
       return {
         onlineStatus: row.availability_status || row.online_status || "offline",
-        presenceRev: Number(row.presence_rev) || 0,
+        presenceRev: columnRev || (Number.isFinite(updatedMs) ? updatedMs : 0),
       };
     } catch (error) {
       const msg = String(error?.message || error || "");
