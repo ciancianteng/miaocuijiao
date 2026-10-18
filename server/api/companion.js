@@ -43,6 +43,12 @@ import {
 } from "./_game-prices.js";
 import { loadPublicServices } from "./platform/services.js";
 import {
+  SERVICE_STANDARD_FIELDS,
+  hasStandardContent,
+  normalizeServiceStandard,
+  readServiceStandards,
+} from "./_service-standard.js";
+import {
   anonymousBossLabel,
   allocateWithdrawalNo,
   resolveBossPublicCode,
@@ -882,6 +888,8 @@ function safePlayer(profile = {}, companion = {}) {
     rawPrice: money(companion.price),
     price: money(companion.price),
     gamePrices,
+    serviceStandards: readServiceStandards(companion),
+    serviceStandardFields: SERVICE_STANDARD_FIELDS,
     publicTags,
     voiceType: String(companion.voice_type || "").trim(),
     voice_type: String(companion.voice_type || "").trim(),
@@ -2771,6 +2779,11 @@ async function loadCompanionReviews(companionUserId) {
 
 async function ensureCompanionRow(profile, companion) {
   if (companion?.id) return companion;
+  const existing = await companionDb(
+    "companion_profiles",
+    `?user_id=eq.${encodeURIComponent(profile.id)}&order=updated_at.desc&limit=1`
+  ).catch(() => []);
+  if (existing?.[0]?.id) return existing[0];
   const rows = await supabaseJson(restUrl("companion_profiles"), {
     method: "POST",
     headers: serviceHeaders(),
@@ -2811,8 +2824,20 @@ async function upsertByCompanion(table, companionId, userId, payload) {
     throw Object.assign(new Error(`${table} 写入失败（列不兼容）`), { status: 500 });
   }
 
-  if (existing?.[0]) {
-    return write({ ...payload, updated_at: nowIso() }, "PATCH", `?id=eq.${encodeURIComponent(existing[0].id)}`);
+  let current = existing?.[0] || null;
+  if (!current && userId) {
+    const byUser = await companionDb(table, `?user_id=eq.${encodeURIComponent(userId)}&order=updated_at.desc&limit=1`).catch((e) => {
+      if (isMissingRelation(e)) throw Object.assign(new Error("请先执行 supabase/companion-admin-data.sql"), { status: 503 });
+      throw e;
+    });
+    current = byUser?.[0] || null;
+  }
+  if (current) {
+    return write(
+      { ...payload, companion_profile_id: companionId, user_id: userId, updated_at: nowIso() },
+      "PATCH",
+      `?id=eq.${encodeURIComponent(current.id)}`
+    );
   }
   return write(
     {
@@ -4205,6 +4230,40 @@ export default async function handler(req, res) {
         });
       }
     }
+    if (action === "save_service_standard") {
+      const serviceId = String(body.serviceId || body.service_id || "").trim();
+      if (!serviceId) return json(res, 400, { ok: false, message: "请选择服务项目", field: "serviceId" });
+      const servicesBundle = await loadPublicServices().catch(() => ({ services: [] }));
+      const svc = (Array.isArray(servicesBundle?.services) ? servicesBundle.services : []).find(
+        (item) => String(item.id) === serviceId
+      );
+      if (!svc) return json(res, 400, { ok: false, message: "服务项目不存在或已下架", field: "serviceId" });
+      const current = readServiceStandards(companion);
+      const norm = normalizeServiceStandard(body.standard || body);
+      const next = { ...current };
+      let saved = null;
+      if (hasStandardContent(norm)) {
+        saved = {
+          name: String(svc.name || svc.title || "").trim(),
+          ...norm,
+          updatedAt: new Date().toISOString(),
+        };
+        next[serviceId] = saved;
+      } else {
+        delete next[serviceId];
+      }
+      await patchCompanionProfile(`?user_id=eq.${encodeURIComponent(auth.profile.id)}`, {
+        service_standards: next,
+        updated_at: nowIso(),
+      });
+      return json(res, 200, {
+        ok: true,
+        message: saved ? "服务标准已保存，老板下单时可查看" : "已清空该项目的服务标准",
+        serviceId,
+        standard: saved,
+        serviceStandards: next,
+      });
+    }
     if (action === "update_profile") {
       if (body.privacy_only) {
         const privacyContact = String(body.contact_phone || body.phone || "").trim();
@@ -4787,7 +4846,7 @@ export default async function handler(req, res) {
         await supabaseJson(restUrl("companion_profiles", `?id=eq.${encodeURIComponent(row.id)}`), {
           method: "PATCH",
           headers: serviceHeaders(),
-          body: JSON.stringify({ deposit_status: "pending", updated_at: nowIso() }),
+          body: JSON.stringify({ deposit_status: "unpaid", updated_at: nowIso() }),
         });
         return json(res, 200, { ok: true, message: "已删除付款凭证" });
       }
@@ -5675,6 +5734,17 @@ export default async function handler(req, res) {
         }
       } catch {
         /* optional */
+      }
+      try {
+        const { notifyAdminsOfCompanionApplication } = await import("./_companion-apply-notify.js");
+        await notifyAdminsOfCompanionApplication(companionDb, {
+          companionId: row.id,
+          nickname: patch.nickname || row.nickname || auth.profile.display_name || "",
+          submittedAt: patch.application_submitted_at || nowIso(),
+          authMode,
+        });
+      } catch (notifyErr) {
+        console.warn("[companion] apply notify", notifyErr?.message || notifyErr);
       }
       return json(res, 200, { ok: true, message: "申请已提交，等待后台审核。" });
     }

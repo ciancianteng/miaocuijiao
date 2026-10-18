@@ -948,6 +948,9 @@
     var audit=playerValue(player,['audit','auditStatus','audit_status','reviewStatus'],'未审核');
     var identity=playerValue(player,['identityStatus','identity_status','id_card','realNameStatus'],'未认证');
     var deposit=playerValue(player,['depositStatus','deposit_status','deposit'],'未缴纳');
+    var applicationPhase=player.applicationPhase||'';
+    var identityPhase=player.identityPhase||'';
+    var depositPhase=player.depositPhase||'';
     var account=playerValue(player,['accountStatus','account_status','status'],'正常');
     var online=playerValue(player,['onlineStatus','online_status','order_status','workStatus'],'离线');
     var registered=playerValue(player,['registered_at','registeredAt','created_at','createdAt'],'-');
@@ -956,13 +959,62 @@
     var name=playerValue(player,['name','nickname','displayName'],'-');
     var tags=playerArrayValue(player.tags||player.serviceTags||player.labels||'');
     var search=[id,playerId,player.uid,name,player.phone,player.email,mainGame,gameId,levelText,audit,identity,deposit,account,tags.join(' ')].join(' ').toLowerCase();
-    return {raw:player,id:id,uid:player.uid||playerId,playerId:playerId,name:name,phone:player.phone||player.contact_phone||'-',email:player.email||'-',avatar:player.avatar||player.avatar_url||'assets/meow-cuijiao-brand.jpg',mainGame:mainGame,gameId:gameId,levelRaw:levelRaw,levelText:levelText,audit:audit,identity:identity,deposit:deposit,account:account,online:online,updated:updated,price:playerValue(player,['price','current_price','defaultPrice'],'-'),commission:normalizePercent(playerValue(player,['orderCommissionRate','order_commission_rate','commission','commissionRate'],'-'),'-'),giftCommission:normalizePercent(playerValue(player,['giftCommissionRate','gift_commission_rate'],'-'),'-'),directRebate:normalizePercent(playerValue(player,['directRebateRate','direct_rebate_rate','directRebate','direct_rebate','rebateRate'],'-'),'-'),totalOrders:playerValue(player,['totalOrders','total_orders','orders'],'0'),todayOrders:playerValue(player,['todayOrders','today_orders'],'0'),refundOrders:playerValue(player,['refundOrders','refund_orders'],'0'),totalIncome:playerValue(player,['total_income','totalIncome','income'],'RM0'),platformShare:playerValue(player,['platformShare','platform_share','platformCommission'],'RM0'),withdrawable:playerValue(player,['withdrawable','withdrawableAmount','withdrawable_amount'],'RM0'),withdrawn:playerValue(player,['totalWithdraw','total_withdraw','withdrawnAmount','withdrawn_amount'],'RM0'),withdrawStatus:playerValue(player,['withdrawStatus','withdraw_status','payoutStatus','settlementStatus','settlement_status'],'无提现'),registered:registered,lastLogin:lastLogin,tags:tags,featured:normalizeBool(player.featured||player.isFeatured||player.homeRecommended),pinned:normalizeBool(player.pinned||player.isPinned),bank:playerValue(player,['bank','bankAccount','bank_account','settlementAccount'],'-'),search:search};
+    return {raw:player,id:id,uid:player.uid||playerId,playerId:playerId,name:name,phone:player.phone||player.contact_phone||'-',email:player.email||'-',avatar:player.avatar||player.avatar_url||'assets/meow-cuijiao-brand.jpg',mainGame:mainGame,gameId:gameId,levelRaw:levelRaw,levelText:levelText,audit:audit,identity:identity,deposit:deposit,applicationPhase:applicationPhase,identityPhase:identityPhase,depositPhase:depositPhase,account:account,online:online,updated:updated,price:playerValue(player,['price','current_price','defaultPrice'],'-'),commission:normalizePercent(playerValue(player,['orderCommissionRate','order_commission_rate','commission','commissionRate'],'-'),'-'),giftCommission:normalizePercent(playerValue(player,['giftCommissionRate','gift_commission_rate'],'-'),'-'),directRebate:normalizePercent(playerValue(player,['directRebateRate','direct_rebate_rate','directRebate','direct_rebate','rebateRate'],'-'),'-'),totalOrders:playerValue(player,['totalOrders','total_orders','orders'],'0'),todayOrders:playerValue(player,['todayOrders','today_orders'],'0'),refundOrders:playerValue(player,['refundOrders','refund_orders'],'0'),totalIncome:playerValue(player,['total_income','totalIncome','income'],'RM0'),platformShare:playerValue(player,['platformShare','platform_share','platformCommission'],'RM0'),withdrawable:playerValue(player,['withdrawable','withdrawableAmount','withdrawable_amount'],'RM0'),withdrawn:playerValue(player,['totalWithdraw','total_withdraw','withdrawnAmount','withdrawn_amount'],'RM0'),withdrawStatus:playerValue(player,['withdrawStatus','withdraw_status','payoutStatus','settlementStatus','settlement_status'],'无提现'),registered:registered,lastLogin:lastLogin,tags:tags,featured:normalizeBool(player.featured||player.isFeatured||player.homeRecommended),pinned:normalizeBool(player.pinned||player.isPinned),bank:playerValue(player,['bank','bankAccount','bank_account','settlementAccount'],'-'),search:search};
   }
   function renderPlayerFilterOptions(){
     var gameSelect=document.querySelector('[data-player-filter="game"]');
     var levelSelect=document.querySelector('[data-player-filter="level"]');
     if(gameSelect){var current=gameSelect.value;var games=[];(playerAdminState.rows||[]).map(normalizePlayerAdmin).forEach(function(item){if(item.mainGame&&item.mainGame!=='-'&&games.indexOf(item.mainGame)<0)games.push(item.mainGame);});gameSelect.innerHTML='<option value="">游戏筛选</option>'+games.sort().map(function(game){return '<option '+(game===current?'selected':'')+'>'+esc(game)+'</option>'}).join('');}
     if(levelSelect){var currentLevel=levelSelect.value;levelSelect.innerHTML='<option value="">等级筛选</option>'+getLevels().map(function(level){var value=level.id||level.code||level.name;var label=(level.code?level.code+' ':'')+(level.name||value);return '<option value="'+esc(value)+'" '+(String(value)===currentLevel?'selected':'')+'>'+esc(label)+'</option>';}).join('');}
+  }
+  function playerAuditMatches(filter,item){
+    if(!filter)return true;
+    if(filter==='已停用')return /冻结|封禁|停用|禁用/.test(String(item.account||''));
+    var phase=item.applicationPhase;
+    if(!phase){
+      if(/待审核|审核中|未审核/.test(item.audit))phase='pending';
+      else if(/已通过|已认证/.test(item.audit))phase='approved';
+      else if(/已拒绝|已驳回/.test(item.audit))phase='rejected';
+      else if(/草稿/.test(item.audit))phase='draft';
+    }
+    if(filter==='未审核'||filter==='待审核'||filter==='审核中')return phase==='pending';
+    if(filter==='已通过')return phase==='approved';
+    if(filter==='已拒绝')return phase==='rejected';
+    return false;
+  }
+  function playerIdentityMatches(filter,item){
+    if(!filter)return true;
+    var phase=item.identityPhase;
+    if(!phase){
+      if(item.identity==='已通过'||item.identity==='已认证'||item.identity==='已缴纳')phase='approved';
+      else if(item.identity==='待审核'||item.identity==='审核中')phase='pending';
+      else if(item.identity==='已上传')phase='uploaded';
+      else if(item.identity==='已拒绝'||item.identity==='已驳回'||item.identity==='待补充')phase='rejected';
+      else phase='missing';
+    }
+    if(filter==='已认证')return phase==='approved';
+    if(filter==='已上传')return phase==='uploaded';
+    if(filter==='审核中')return phase==='pending';
+    if(filter==='未认证')return phase==='missing';
+    if(filter==='待补充')return phase==='rejected';
+    return false;
+  }
+  function playerDepositMatches(filter,item){
+    if(!filter)return true;
+    var phase=item.depositPhase;
+    if(!phase){
+      if(item.deposit==='已缴纳'||item.deposit==='已到账'||item.deposit==='已通过')phase='approved';
+      else if(item.deposit==='待审核'||item.deposit==='审核中')phase='pending';
+      else if(item.deposit==='已上传')phase='uploaded';
+      else if(item.deposit==='已退回')phase='refunded';
+      else if(item.deposit==='已拒绝'||item.deposit==='已驳回')phase='rejected';
+      else phase='missing';
+    }
+    if(filter==='已缴纳'||filter==='已到账')return phase==='approved';
+    if(filter==='待审核')return phase==='pending'||phase==='uploaded';
+    if(filter==='未缴纳')return phase==='missing';
+    if(filter==='已退回')return phase==='refunded';
+    return false;
   }
   function visiblePlayerRows(){
     var keyword=((document.querySelector('[data-player-search]')||{}).value||'').trim().toLowerCase();
@@ -971,10 +1023,10 @@
       var ok=!keyword||item.search.indexOf(keyword)>-1;
       if(ok&&filters.game)ok=item.mainGame===filters.game;
       if(ok&&filters.level)ok=(item.levelRaw===filters.level||item.levelText.indexOf(filters.level)>-1);
-      if(ok&&filters.audit)ok=item.audit.indexOf(filters.audit)>-1;
-      if(ok&&filters.identity)ok=item.identity.indexOf(filters.identity)>-1;
-      if(ok&&filters.deposit)ok=item.deposit.indexOf(filters.deposit)>-1;
-      if(ok&&filters.account)ok=item.account.indexOf(filters.account)>-1;
+      if(ok&&filters.audit)ok=playerAuditMatches(filters.audit,item);
+      if(ok&&filters.identity)ok=playerIdentityMatches(filters.identity,item);
+      if(ok&&filters.deposit)ok=playerDepositMatches(filters.deposit,item);
+      if(ok&&filters.account)ok=item.account===filters.account;
       return ok;
     });
   }
@@ -991,6 +1043,9 @@
     return idLine;
   }
   function renderPlayerTableRows(){
+    var previousScroller=document.querySelector('#playerManagementTable .player-table-wrap');
+    var previousScroll=previousScroller?{top:previousScroller.scrollTop,left:previousScroller.scrollLeft}:null;
+    var previousPage=playerAdminState.paintedPage||playerAdminState.page;
     closePlayerMoreMenu();
     var box=document.getElementById('playerManagementTable');if(!box)return;
     if(!playerAdminState.loaded){
@@ -1011,7 +1066,7 @@
     var pageRows=rows.slice(start,start+playerAdminState.pageSize);
     var headers=['头像','昵称','陪玩ID','主接游戏','等级','实名状态','押金状态','抽成比例','直属陪返点','账号状态','注册时间','操作'];
     var body=pageRows.map(function(item){return '<tr class="player-list-row" data-player-open="'+esc(item.id)+'">'+
-      '<td data-label="头像" class="avatar-cell"><button class="player-avatar-btn" type="button" data-player-action="view" data-player-id="'+esc(item.id)+'"><img class="avatar player-avatar" src="'+esc(playerAvatarSrc(item))+'" alt="" onerror="this.onerror=null;this.src=\'/assets/meow-cuijiao-brand.jpg\'"></button></td>'+
+      '<td data-label="头像" class="avatar-cell"><button class="player-avatar-btn" type="button" data-player-action="view" data-player-id="'+esc(item.id)+'"><img class="avatar player-avatar" src="'+esc(playerAvatarSrc(item))+'" alt="" loading="lazy" decoding="async" onerror="this.onerror=null;this.src=\'/assets/meow-cuijiao-brand.jpg\'"></button></td>'+
       '<td data-label="昵称" class="player-name-cell" title="'+esc(item.name)+'"><button class="player-name-link" type="button" data-player-action="view" data-player-id="'+esc(item.id)+'">'+esc(item.name)+'</button><span class="player-name-meta">'+playerContactLine(item)+'</span></td>'+
       playerTableCell('陪玩ID',esc(item.playerId))+
       playerTableCell('主接游戏',esc(item.mainGame))+
@@ -1026,8 +1081,20 @@
     '</tr>';}).join('');
     if(!body)body='<tr><td colspan="'+headers.length+'"><div class="player-table-empty"><strong>暂无陪玩数据</strong><span>当前没有符合条件的陪玩记录。</span></div></td></tr>';
     box.innerHTML='<div class="table-wrap player-table-wrap"><table class="player-data-table"><thead><tr>'+headers.map(function(h){return '<th>'+esc(h)+'</th>'}).join('')+'</tr></thead><tbody>'+body+'</tbody></table></div><div class="player-pagination compact"><span>共 '+total+' 条 · 第 '+playerAdminState.page+' / '+pages+' 页</span><div><select data-player-page-size><option value="20" '+(playerAdminState.pageSize===20?'selected':'')+'>20 条/页</option><option value="50" '+(playerAdminState.pageSize===50?'selected':'')+'>50 条/页</option><option value="100" '+(playerAdminState.pageSize===100?'selected':'')+'>100 条/页</option></select><button class="mini-btn" type="button" data-player-page="prev" '+(playerAdminState.page<=1?'disabled':'')+'>上一页</button><input data-player-page-jump value="'+playerAdminState.page+'" inputmode="numeric" aria-label="页码"><button class="mini-btn" type="button" data-player-page-go>跳转</button><button class="mini-btn" type="button" data-player-page="next" '+(playerAdminState.page>=pages?'disabled':'')+'>下一页</button></div></div>';
+    var scroller=box.querySelector('.player-table-wrap');
+    if(scroller){
+      if(playerAdminState.resetScroll||playerAdminState.page!==previousPage){
+        scroller.scrollTop=0;
+        scroller.scrollLeft=0;
+        playerAdminState.resetScroll=false;
+      }else if(previousScroll){
+        scroller.scrollTop=previousScroll.top||0;
+        scroller.scrollLeft=previousScroll.left||0;
+      }
+    }
+    playerAdminState.paintedPage=playerAdminState.page;
   }
-  function filterPlayerManagement(){playerAdminState.page=1;renderPlayerTableRows();}
+  function filterPlayerManagement(){playerAdminState.page=1;playerAdminState.resetScroll=true;renderPlayerTableRows();}
   function exportPlayerRows(){
     var rows=visiblePlayerRows();
     var headers=['头像','陪玩名字','陪玩ID','主接游戏','等级','资料审核状态','实名状态','押金状态','当前抽成','直属陪返点','总收入','可提现余额','账号状态'];
@@ -1061,6 +1128,8 @@
   function openPlayerDetail(playerId,mode,focus){
     var drawer=document.getElementById('playerDetailDrawer');
     if(!drawer)return;
+    var main=document.querySelector('.admin-main');
+    if(main)playerAdminState.mainScroll=main.scrollTop;
     drawer.hidden=false;
     drawer.classList.add('open');
     drawer.innerHTML='<div class="player-drawer-head"><div><h2>陪玩详情</h2><p>正在读取真实资料…</p></div><button class="mini-btn" type="button" data-player-drawer-close>关闭</button></div><div class="admin-sync-note">资料加载中，请稍候。</div>';
@@ -1076,7 +1145,7 @@
         var item=normalizePlayerAdmin(detail);
         drawer.innerHTML=playerDetailHtml(item,mode||'view',focus||'');
       }
-      if(focus){var section=drawer.querySelector('[data-player-detail-section="'+focus+'"]');if(section)section.scrollIntoView({block:'start'});}
+      if(focus){var section=drawer.querySelector('[data-player-detail-section="'+focus+'"]');if(section)drawer.scrollTop=section.offsetTop||0;}
     };
     if(Detail&&Detail.fetchDetail){
       Detail.fetchDetail(playerId).then(function(res){
@@ -1096,7 +1165,7 @@
     reloadDetail:function(id,mode){openPlayerDetail(id,mode||'view');},
     reloadList:function(){loadPlayerAdminRows();}
   };
-  function closePlayerDrawer(){var drawer=document.getElementById('playerDetailDrawer');if(drawer){drawer.hidden=true;drawer.classList.remove('open');drawer.innerHTML='';}}
+  function closePlayerDrawer(){var drawer=document.getElementById('playerDetailDrawer');if(drawer){drawer.hidden=true;drawer.classList.remove('open');drawer.innerHTML='';}var main=document.querySelector('.admin-main');if(main&&playerAdminState.mainScroll!=null)main.scrollTop=playerAdminState.mainScroll;}
   var playerMorePopover={el:null,anchor:null,home:null,onScroll:null,bound:false};
   function clearPlayerMoreMenuInlineStyles(menu){
     if(!menu||!menu.style)return;
@@ -2153,7 +2222,7 @@
       var profileToggle=e.target.closest('[data-admin-profile-toggle]');if(profileToggle){profileToggle.closest('.admin-profile-menu').classList.toggle('open');return;}
       if(!e.target.closest('.admin-profile-menu'))document.querySelectorAll('.admin-profile-menu.open').forEach(function(menu){menu.classList.remove('open')});
       var profileJump=e.target.closest('.admin-profile-dropdown [data-section]');if(profileJump){var menu=profileJump.closest('.admin-profile-menu');if(menu)menu.classList.remove('open');if(window.MCJAdminActivateSection)window.MCJAdminActivateSection(profileJump.dataset.section);return;}
-      var jump=e.target.closest('.todo-item[data-section],.activity-item[data-section]');if(jump){var nav=document.querySelector('.side-nav [data-section="'+jump.dataset.section+'"]');if(nav)nav.click();return;}
+      var jump=e.target.closest('.todo-item[data-section],.activity-item[data-section]');if(jump){var sectionName=jump.dataset.section;if(window.MCJAdminActivateSection)window.MCJAdminActivateSection(sectionName);else{var nav=document.querySelector('.side-nav [data-section="'+sectionName+'"]');if(nav)nav.click();}var openId=jump.getAttribute('data-player-id');if(openId){setTimeout(function(){if(window.MCJAdminPlayerBridge&&window.MCJAdminPlayerBridge.reloadDetail)window.MCJAdminPlayerBridge.reloadDetail(openId,'edit');},60);}return;}
       var bossMore=e.target.closest('[data-boss-more]');
       if(bossMore){
         e.preventDefault();
@@ -2223,7 +2292,7 @@
       var whsave=e.target.closest('[data-webhook-save]');if(whsave){alert('Webhook Secret 只能保存到服务器安全环境，当前未写入浏览器本地数据。');return;}
       var whtest=e.target.closest('[data-webhook-test]');if(whtest){alert('Webhook 测试不会修改真实订单或余额。当前支付安全接口未连接，未发送。');return;}
     });
-    document.addEventListener('input',function(e){if(e.target.matches('[data-admin-chat-search]'))filterAdminChats();if(e.target.matches('[data-service-record-search]')){serviceRecordState.keyword=e.target.value||'';serviceRecordState.page=1;renderServiceRecordRows();}if(e.target.matches('[data-order-search]'))filterOrders();if(e.target.matches('[data-boss-search]'))filterBossManagement();if(e.target.matches('[data-player-search]'))filterPlayerManagement();if(e.target.matches('[data-coupon-search]')){couponState.keyword=e.target.value||'';var target=document.getElementById('couponManagement');if(target)target.innerHTML=couponPageHtml();}if(e.target.matches('[data-content-search]'))filterPlatformContentRows(e.target);});
+    document.addEventListener('input',function(e){if(e.target.matches('[data-admin-chat-search]'))filterAdminChats();if(e.target.matches('[data-service-record-search]')){serviceRecordState.keyword=e.target.value||'';serviceRecordState.page=1;renderServiceRecordRows();}if(e.target.matches('[data-order-search]'))filterOrders();if(e.target.matches('[data-boss-search]'))filterBossManagement();if(e.target.matches('[data-player-search]')){clearTimeout(playerAdminState.searchTimer);playerAdminState.searchTimer=setTimeout(filterPlayerManagement,160);}if(e.target.matches('[data-coupon-search]')){couponState.keyword=e.target.value||'';var target=document.getElementById('couponManagement');if(target)target.innerHTML=couponPageHtml();}if(e.target.matches('[data-content-search]'))filterPlatformContentRows(e.target);});
     document.addEventListener('change',function(e){if(e.target.matches('[data-boss-check]'))updateBossBulkState();if(e.target.matches('[data-boss-filter]'))filterBossManagement();if(e.target.matches('[data-boss-page-size]')){bossAdminState.pageSize=Number(e.target.value)||20;bossAdminState.page=1;renderBossTableRows();}if(e.target.matches('[data-order-filter]'))filterOrders();if(e.target.matches('[data-content-upload]'))uploadPlatformContentFile(e.target);if(e.target.matches('[data-player-quick-field]')){var quickPayload={};quickPayload[e.target.dataset.playerQuickField]=e.target.value;savePlayerAdminChanges('quick-edit',e.target.dataset.playerId,quickPayload);return;}if(e.target.matches('[data-player-filter]'))filterPlayerManagement();if(e.target.matches('[data-player-page-size]')){playerAdminState.pageSize=Number(e.target.value)||20;playerAdminState.page=1;renderPlayerTableRows();}if(e.target.matches('[data-coupon-filter]')){couponState.filter=e.target.value||'';var target=document.getElementById('couponManagement');if(target)target.innerHTML=couponPageHtml();}});
     document.addEventListener('keydown',function(e){
       if(e.key==='Escape'){
@@ -2398,6 +2467,32 @@
       '<span>暂无待办统计数据。上方真实统计卡片来自 Dashboard API；本区不展示硬编码 0，也不读取本地假数据。</span>'+
       '</div>';
   }
+  function loadDashboardApplicationTodos(){
+    var pending=document.getElementById('dashboardPending');
+    if(!pending)return;
+    adminFetch('/api/admin/players',{headers:{'x-mcj-admin-role':getRole(),Accept:'application/json'}}).then(function(res){
+      var ct=res.headers.get('content-type')||'';
+      if(ct.indexOf('application/json')<0)throw new Error('not-json');
+      return res.json();
+    }).then(function(result){
+      if(!result||result.ok===false||result.configured===false)throw new Error('unconfigured');
+      var rows=(result.players||[]).filter(function(row){return row&&row.applicationPhase==='pending'&&row.id;});
+      pending.dataset.pendingSource='companion-applications';
+      pending.dataset.realOnly='1';
+      if(!rows.length){
+        pending.innerHTML='<div class="dashboard-pending-empty dashboard-chart-empty" role="status"><strong>暂无未审核陪玩申请</strong><span>新的入驻申请会显示申请人、时间和类型，并可以打开详情。</span></div>';
+        return;
+      }
+      pending.innerHTML='<div class="activity-list">'+rows.slice(0,12).map(function(row){
+        var when=row.applicationSubmittedAt||row.application_submitted_at||row.created_at||'';
+        var mode=String(row.credential_mode||'');
+        var typeName=mode==='id_card'?'身份证认证':(mode==='deposit'?'押金认证':'入驻申请');
+        return '<button class="todo-item" type="button" data-section="companion-applications" data-player-id="'+esc(row.id)+'"><strong>'+esc(row.nickname||row.name||'未命名申请人')+'</strong><span>'+esc(typeName)+' · '+esc(when||'时间未记录')+'</span><small>未审核 '+rows.length+' 条 · 打开详情</small></button>';
+      }).join('')+'</div>';
+    }).catch(function(){
+      paintDashboardPendingEmpty(pending);
+    });
+  }
   function paintDashboardTrendsEmpty(dash){
     if(!dash)return;
     var existing=dash.querySelector('.dashboard-trends');
@@ -2518,9 +2613,8 @@
     if(dash && !dash.getAttribute('data-admin-final-owned')){
       dash.setAttribute('data-admin-final-owned','1');
     }
-    // Pending todos / 7-day trends: empty/unwired state only (see paintDashboardPendingEmpty).
-    // Do not paint hardcoded 0 counts that look like real aggregation results.
-    paintDashboardPendingEmpty(document.getElementById('dashboardPending'));
+    // Pending applications come from the same player list. Empty only when the request fails.
+    loadDashboardApplicationTodos();
     var tables={
       bosses:[{key:'nickname',label:'老板昵称'},{key:'uid',label:'系统 UID'},{key:'phone',label:'手机号'},{key:'email',label:'邮箱'},{key:'game',label:'游戏'},{key:'gameId',label:'游戏 ID / 游戏昵称'},{key:'registered_at',label:'注册时间'},{key:'vip',label:'VIP等级'},{key:'total_spent',label:'累计消费'},{key:'balance',label:'当前余额'},{key:'status',label:'账号状态',type:'status'},{key:'invite',label:'邀请人'},{key:'actions',label:'详情',type:'actions'}],
       players:[{key:'avatar',label:'头像',type:'avatar'},{key:'name',label:'陪玩昵称'},{key:'uid',label:'UID'},{key:'phone',label:'联系电话'},{key:'id_card',label:'身份证资料'},{key:'bank',label:'结款银行账户'},{key:'audit',label:'审核状态',type:'status'},{key:'order_status',label:'接单状态',type:'status'},{key:'total_income',label:'总收入'},{key:'withdrawable',label:'可提现金额'},{key:'club',label:'所属俱乐部'},{key:'actions',label:'详情',type:'actions'}],
