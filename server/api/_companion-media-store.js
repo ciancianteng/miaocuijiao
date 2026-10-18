@@ -339,11 +339,22 @@ export function publicObjectUrl(bucket, objectPath) {
   return `${process.env.SUPABASE_URL}/storage/v1/object/public/${bucket}/${String(objectPath).replace(/^\/+/, "")}`;
 }
 
+export function mediaTypeConstraintFallback(requestedType, error) {
+  const type = String(requestedType || "");
+  if (type !== "cover" && type !== "video") return false;
+  const body = error?.body;
+  const msg = `${error?.message || ""} ${typeof body === "string" ? body : JSON.stringify(body || "")}`;
+  return /media_type/i.test(msg) && (/23514|check constraint/i.test(msg));
+}
+
 export function assertImageUpload(decoded) {
   if (!decoded || !decoded.buffer) {
     throw Object.assign(new Error("文件格式无效，请选择 jpg / png / webp 图片"), { status: 400 });
   }
   const mime = String(decoded.contentType || "").toLowerCase();
+  if (/image\/hei[cf]|heic|heif/.test(mime)) {
+    throw Object.assign(new Error("不支持 HEIC/HEIF，请改用 JPG、PNG 或 WebP 后再上传"), { status: 400 });
+  }
   const normalized = mime === "image/jpg" ? "image/jpeg" : mime;
   if (!ALLOWED_IMAGE_MIME.has(normalized) && !ALLOWED_IMAGE_MIME.has(mime)) {
     throw Object.assign(new Error("仅支持 jpg、jpeg、png、webp 格式"), { status: 400 });

@@ -3073,14 +3073,22 @@
       '<button type="button" class="pw-media-icon-btn danger" '+delAttr+' title="删除" aria-label="删除">×</button>'+
       '</div></article>';
   }
+  function isPersonalAlbumPhoto(m){
+    if(!m||m.mediaType!=='gallery')return false;
+    var ctype=String(m.contentType||m.content_type||'').toLowerCase();
+    if(/^video\//.test(ctype))return false;
+    var path=String(m.storagePath||m.storage_path||'');
+    if(/\/video\//i.test(path))return false;
+    return true;
+  }
   function savedGalleryCount(){
-    return ((state.data&&state.data.media)||[]).filter(function(m){return m.mediaType==='gallery'}).length;
+    return ((state.data&&state.data.media)||[]).filter(isPersonalAlbumPhoto).length;
   }
   function reconcileProfileMediaFlags(){
     var p=(state.data&&state.data.player)||{};
     var media=(state.data&&state.data.media)||[];
     var hasAvatar=media.some(function(m){return m.mediaType==='avatar'&&(m.url||m.storagePath||m.storage_path)})||!!(p.hasCustomAvatar&&p.avatar&&p.avatar!=='/default-avatar.png');
-    var hasGallery=media.some(function(m){return m.mediaType==='gallery'&&(m.url||m.storagePath||m.storage_path)})||
+    var hasGallery=media.some(function(m){return isPersonalAlbumPhoto(m)&&(m.url||m.storagePath||m.storage_path)})||
       (state.galleryPending||[]).some(function(g){return g&&!g._failed&&(g.url||g._uploading||g._done)});
     var voiceMedia=media.some(function(m){return m.mediaType==='voice'&&(m.url||m.storagePath||m.storage_path)});
     var rawVoice=p.raw&&(p.raw.voice_url||p.raw.voiceUrl);
@@ -3344,7 +3352,7 @@
     var level=(state.data&&state.data.levelInfo)||{};
     var media=(state.data&&state.data.media)||[];
     var avatarMedia=media.filter(function(m){return m.mediaType==='avatar'})[0];
-    var gallery=media.filter(function(m){return m.mediaType==='gallery'}).slice().sort(function(a,b){return (a.sortOrder||0)-(b.sortOrder||0)});
+    var gallery=media.filter(isPersonalAlbumPhoto).slice().sort(function(a,b){return (a.sortOrder||0)-(b.sortOrder||0)});
     var avatarUrl=avatarMedia&&avatarMedia.url?avatarMedia.url:(p.hasCustomAvatar?p.avatar:'');
     var displayAvatar=avatarUrl||'/default-avatar.png';
     var gender=draft&&draft.gender!=null&&draft.gender!==''?String(draft.gender):String(raw.gender||'');
@@ -3908,11 +3916,38 @@
       Promise.resolve(promise).then(function(v){if(done)return;done=true;clearTimeout(t);resolve(v)},function(err){if(done)return;done=true;clearTimeout(t);reject(err)});
     });
   }
+  function uploadTimedOut(err){
+    var name=String(err&&err.name||'');
+    var msg=String(err&&err.message||'');
+    return name==='AbortError'||/超时|AbortError/i.test(msg);
+  }
+  function confirmUploadAfterTimeout(mediaType,beforeIds){
+    return loadData({soft:true,forcePaint:true,preserveScroll:true}).then(function(){
+      var media=(state.data&&state.data.media)||[];
+      var landed=media.some(function(m){
+        if(!m||beforeIds.indexOf(String(m.id))>=0)return false;
+        if(m.mediaType===mediaType)return true;
+        return (mediaType==='cover'||mediaType==='video')&&m.mediaType==='gallery';
+      });
+      state.uploadBusy='';
+      if(landed){
+        toast('上传已写入，请在列表中确认，不要重复上传');
+      }else{
+        toast('上传超时，列表里没有新记录，请确认网络后再试');
+      }
+      paint({preserveScroll:true});
+    }).catch(function(){
+      state.uploadBusy='';
+      toast('上传超时，暂时无法核对是否已保存，请刷新后再决定是否重试');
+      paint({preserveScroll:true});
+    });
+  }
   function uploadImage(mediaType,file){
     if(state.uploadBusy){toast('请等待当前上传完成');return Promise.resolve()}
     // Always freeze in-progress fields before any re-render triggered by upload.
     captureLiveForms(true);
     state.uploadBusy=mediaType;
+    var beforeIds=((state.data&&state.data.media)||[]).filter(function(m){return m&&m.mediaType===mediaType}).map(function(m){return String(m.id)});
     var localPreview='';
     paint();
     var prepare=mediaType==='voice'?normalizeVoiceUploadFile(file):Promise.resolve(file);
@@ -3941,7 +3976,14 @@
           else list.appendChild(tmp);
         }
       }
-      return api('upload_media',{media_type:mediaType,data_url:dataUrl,filename:file.name||(mediaType==='voice'?'voice.webm':mediaType+'.jpg')});
+      var prepared=mediaType==='voice'?Promise.resolve(dataUrl):(window.MCJUpload&&window.MCJUpload.compressImageFile?window.MCJUpload.compressImageFile(file):compressImageDataUrl(dataUrl,1600,0.82));
+      return prepared.then(function(payload){
+        var bodyUrl=payload||dataUrl;
+        if(mediaType!=='voice'&&String(bodyUrl).length>3200000){
+          throw new Error('图片仍然过大，请改用 JPG、PNG 或 WebP 并缩小后再上传');
+        }
+        return api('upload_media',{media_type:mediaType,data_url:bodyUrl,filename:file.name||(mediaType==='voice'?'voice.webm':mediaType+'.jpg')});
+      });
     }),45000,'上传超时，请检查网络后重试');
     }).then(function(res){
       toast(res.message||'上传成功');
@@ -3979,6 +4021,7 @@
         return res;
       }).then(function(){return res});
     }).catch(function(err){
+      if(uploadTimedOut(err))return confirmUploadAfterTimeout(mediaType,beforeIds);
       state.uploadBusy='';
       captureLiveForms(true);
       paint({preserveScroll:true});
@@ -4054,7 +4097,7 @@
     var media=(state.data&&state.data.media)||[];
     var pendingGal=(state.galleryPending||[]).filter(function(g){return g&&!g._failed&&(g.url||g._uploading||g._done)});
     var hasAvatar=media.some(function(m){return m.mediaType==='avatar'&&(m.url||m.storagePath||m.storage_path)})||!!(p.hasCustomAvatar&&p.avatar&&p.avatar!=='/default-avatar.png');
-    var hasGallery=media.some(function(m){return m.mediaType==='gallery'&&(m.url||m.storagePath||m.storage_path)})||pendingGal.length>0;
+    var hasGallery=media.some(function(m){return isPersonalAlbumPhoto(m)&&(m.url||m.storagePath||m.storage_path)})||pendingGal.length>0;
     var voiceMedia=media.filter(function(m){return m.mediaType==='voice'&&(m.url||m.storagePath||m.storage_path)})[0];
     var rawVoice=p.raw&&(p.raw.voice_url||p.raw.voiceUrl);
     var hasVoice=!!(voiceMedia)||!!(p.voiceUrl&&String(p.voiceUrl).trim())||!!(rawVoice&&String(rawVoice).trim());
@@ -4123,7 +4166,7 @@
     }
   }
   function reorderGallery(mediaId,delta){
-    var media=((state.data&&state.data.media)||[]).filter(function(m){return m.mediaType==='gallery'}).slice().sort(function(a,b){return (a.sortOrder||0)-(b.sortOrder||0)});
+    var media=((state.data&&state.data.media)||[]).filter(isPersonalAlbumPhoto).slice().sort(function(a,b){return (a.sortOrder||0)-(b.sortOrder||0)});
     var idx=media.findIndex(function(m){return String(m.id)===String(mediaId)});
     if(idx<0)return;
     var next=idx+delta;

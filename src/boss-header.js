@@ -3,6 +3,12 @@
 
   if (window.__MCJBossHeaderLoaded) return;
   window.__MCJBossHeaderLoaded = true;
+  if (!window.MCJNotifyTarget && document.head) {
+    var notifyTargetScript = document.createElement("script");
+    notifyTargetScript.src = "/src/notify-target.js";
+    notifyTargetScript.async = false;
+    document.head.appendChild(notifyTargetScript);
+  }
 
   var notifyState = {
     items: [],
@@ -603,6 +609,10 @@
           (item.read ? "" : " unread") +
           '" data-mcj-notify-item="' +
           esc(item.id) +
+          '" data-mcj-notify-kind="' +
+          esc(item.kind || "") +
+          '" data-mcj-notify-related="' +
+          esc(item.relatedId || "") +
           '"><strong>' +
           esc(item.title || "通知") +
           "</strong><span>" +
@@ -948,6 +958,29 @@
       if (notifyItem) {
         e.preventDefault();
         markOneRead(notifyItem.getAttribute("data-mcj-notify-item"));
+        var targetApi = window.MCJNotifyTarget;
+        var decision = targetApi && targetApi.bossNotifyTarget
+          ? targetApi.bossNotifyTarget({
+              kind: notifyItem.getAttribute("data-mcj-notify-kind") || "",
+              relatedId: notifyItem.getAttribute("data-mcj-notify-related") || "",
+            })
+          : { ok: false, message: "这条通知暂时无法打开，已保持在当前页。" };
+        if (!decision.ok || !decision.url) {
+          notifyState.error = decision.message || "这条通知没有可打开的页面，已保持在当前页。";
+          notifyState.open = true;
+          renderNotifyPanel();
+          return;
+        }
+        notifyState.open = false;
+        renderNotifyPanel();
+        if (decision.url === location.pathname + location.search) return;
+        try {
+          location.assign(decision.url);
+        } catch (navErr) {
+          notifyState.error = "无法打开目标页面，请稍后重试。";
+          notifyState.open = true;
+          renderNotifyPanel();
+        }
         return;
       }
 
