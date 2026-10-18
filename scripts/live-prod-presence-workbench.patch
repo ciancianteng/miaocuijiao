@@ -1,0 +1,86 @@
+--- /tmp/mcj-wb.js	2026-10-18 09:41:00.789889187 +0000
++++ /tmp/mcj-prod-integrate-d7fnk/src/companion-workbench.js	2026-10-18 10:10:07.749261330 +0000
+@@ -1738,22 +1738,50 @@
+       }
+     });
+   }
++  function readPresenceChoice(){
++    try{
++      var raw=JSON.parse(localStorage.getItem('mcjCompanionPresence')||'null');
++      var status=String(raw&&raw.status||'').toLowerCase();
++      if(raw&&STATUS_META[status])return {status:status,rev:Number(raw.rev)||0};
++    }catch(e){}
++    return null;
++  }
++  function writePresenceChoice(status){
++    var prev=0;
++    var cur=readPresenceChoice();
++    if(cur)prev=cur.rev||0;
++    var rev=Date.now();
++    if(rev<=prev)rev=prev+1;
++    var choice={status:status,rev:rev};
++    try{
++      localStorage.setItem('mcjCompanionPresence',JSON.stringify(choice));
++      sessionStorage.setItem('mcjCompanionPresenceIntent',status);
++    }catch(e){}
++    return choice;
++  }
++  function presenceBody(status,kind,rev){
++    var body={online_status:status,presenceKind:kind,presenceRev:rev||0};
++    if(kind==='heartbeat')body.heartbeat=1;
++    if(kind==='explicit')body.explicit=1;
++    return body;
++  }
+   function sendPresenceHeartbeat(){
+     if(!state.session||!state.session.token||document.hidden||state.statusBusy)return;
+-    var status=currentOnlineStatus();
+-    try{sessionStorage.setItem('mcjCompanionPresenceIntent',status);}catch(e){}
+-    if(status==='offline')return;
+-    api('set_online_status',{online_status:status,heartbeat:1}).catch(function(){});
++    var choice=readPresenceChoice();
++    var status=choice?choice.status:currentOnlineStatus();
++    if(!status||status==='offline')return;
++    api('set_online_status',presenceBody(status,'heartbeat',choice?choice.rev:0)).catch(function(){});
+   }
+-  function beaconPresenceOffline(){
++  function beaconExplicitOffline(){
+     var session=state.session||readSession();
+     if(!session||!session.token)return;
++    var choice=writePresenceChoice('offline');
+     try{
+       fetch('/api/companion',{
+         method:'POST',
+         keepalive:true,
+         headers:{'Content-Type':'application/json',Authorization:'Bearer '+session.token,'x-mcj-companion-token':session.token},
+-        body:JSON.stringify({action:'set_online_status',online_status:'offline'})
++        body:JSON.stringify(Object.assign({action:'set_online_status'},presenceBody('offline','explicit',choice.rev)))
+       });
+     }catch(e){}
+   }
+@@ -1765,7 +1793,6 @@
+       document.addEventListener('visibilitychange',function(){
+         if(!document.hidden)sendPresenceHeartbeat();
+       });
+-      window.addEventListener('pagehide',beaconPresenceOffline);
+     }
+     // 12s polling backup when realtime is up; 8s when realtime not ready.
+     var intervalMs=state._ordersRtReady?12000:8000;
+@@ -2896,7 +2923,8 @@
+   function commitOnlineStatus(next){
+     state.statusBusy=true;
+     state.pendingOnlineStatus=null;
+-    api('set_online_status',{online_status:next}).then(function(x){
++    var choice=writePresenceChoice(next);
++    api('set_online_status',presenceBody(next,'explicit',choice.rev)).then(function(x){
+       var saved=x.onlineStatus||next;
+       if(state.data&&state.data.player){
+         state.data.player.onlineStatus=saved;
+@@ -5621,7 +5649,7 @@
+       location.href=BOSS_PORTAL_HREF;
+       return;
+     }
+-    if(e.target.closest('[data-logout]')){beaconPresenceOffline();clearSession();location.replace('/companion/login/');return}
++    if(e.target.closest('[data-logout]')){beaconExplicitOffline();clearSession();location.replace('/companion/login/');return}
+     if(e.target.closest('[data-pwa-install-guide]')){
+       e.preventDefault();
+       openPwaInstallGuide();

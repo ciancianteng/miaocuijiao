@@ -60,10 +60,12 @@
   var rows=[];
   if(!token()){location.href="/companion/login/";return;}
   function beat(){
-    var intent="online";
-    try{intent=sessionStorage.getItem("mcjCompanionPresenceIntent")||"online";}catch(e){}
-    if(intent==="offline")return;
-    fetch("/api/companion",{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+token()},body:JSON.stringify({action:"set_online_status",online_status:intent,heartbeat:1})}).catch(function(){});
+    var choice=null;
+    try{choice=JSON.parse(localStorage.getItem("mcjCompanionPresence")||"null");}catch(e){}
+    var intent=choice&&choice.status?String(choice.status):"";
+    if(!intent){try{intent=sessionStorage.getItem("mcjCompanionPresenceIntent")||"";}catch(e){}}
+    if(!intent||intent==="offline")return;
+    fetch("/api/companion",{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+token()},body:JSON.stringify({action:"set_online_status",online_status:intent,heartbeat:1,presenceKind:"heartbeat",presenceRev:Number(choice&&choice.rev)||0})}).catch(function(){});
   }
   beat();
   setInterval(beat,20000);
