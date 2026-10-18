@@ -718,7 +718,7 @@
     return String(state.service || "").trim() || "未选择服务";
   }
   function currentQuantity() {
-    return Math.max(1, Math.floor(money(state.quantity) || 1));
+    return 1;
   }
   function totalAmount() {
     var c = state.companion;
@@ -800,16 +800,14 @@
   function refreshTotals() {
     var c = state.companion;
     var hours = currentHours();
-    var qty = currentQuantity();
     var total = moneyText(totalAmount());
     var unit = c ? moneyText(c.unitPrice) : moneyText(0);
     var map = {
       "[data-po-footer-total]": total,
       "[data-po-total]": total,
       "[data-po-footer-unit]": unit,
-      "[data-po-footer-qty]": hours + " × " + qty,
       "[data-po-footer-discount]": moneyText(0),
-      "[data-po-hours-label]": hours + " 小时 × " + qty,
+      "[data-po-hours-label]": hours + " 小时",
     };
     Object.keys(map).forEach(function (sel) {
       var el = document.querySelector(sel);
@@ -947,7 +945,7 @@
       '<div class="mcj-po-field"><span class="mcj-po-label">游戏/服务项目</span><div class="mcj-po-chips" role="group">' +
       serviceChips +
       "</div></div>" +
-      '<div class="mcj-po-field"><span class="mcj-po-label">数量或时长</span><div class="mcj-po-chips" role="radiogroup">' +
+      '<div class="mcj-po-field"><span class="mcj-po-label">时长</span><div class="mcj-po-chips" role="radiogroup">' +
       hourChips +
       "</div>" +
       '<div class="mcj-po-custom-hours' +
@@ -955,9 +953,6 @@
       '" data-po-custom-hours><input type="number" min="0.5" step="0.5" data-po-custom-hours-input value="' +
       esc(state.hours) +
       '" placeholder="小时数"></div></div>' +
-      '<label>数量<input type="number" min="1" step="1" data-po-quantity value="' +
-      esc(state.quantity) +
-      '"></label>' +
       '<label>游戏 ID *<input data-po-game-id required placeholder="必填，用于开局" autocomplete="off"></label>' +
       '<label>区服<input data-po-region placeholder="例如：亚服 / 国服 / 欧服"></label>' +
       '<label>联系方式<input data-po-contact placeholder="手机号 / WhatsApp / Discord"></label>' +
@@ -975,9 +970,6 @@
       '<div class="mcj-po-footer-breakdown">' +
       "<div>单价 <strong data-po-footer-unit>" +
       esc(moneyText(c.unitPrice)) +
-      "</strong></div>" +
-      "<div>数量 <strong data-po-footer-qty>" +
-      esc(currentHours() + " × " + currentQuantity()) +
       "</strong></div>" +
       "<div>优惠金额 <strong data-po-footer-discount>" +
       esc(moneyText(0)) +
@@ -1087,13 +1079,6 @@
     if (customHoursInput) {
       customHoursInput.addEventListener("input", function () {
         state.hours = Math.max(0.5, money(customHoursInput.value) || 1);
-        refreshTotals();
-      });
-    }
-    var qtyInput = mask.querySelector("[data-po-quantity]");
-    if (qtyInput) {
-      qtyInput.addEventListener("input", function () {
-        state.quantity = Math.max(1, Math.floor(money(qtyInput.value) || 1));
         refreshTotals();
       });
     }
@@ -1228,7 +1213,6 @@
       var gameIdEl = qs("[data-po-game-id]");
       var notesEl = qs("[data-po-notes]");
       var couponEl = qs("[data-po-coupon]");
-      var qtyEl = qs("[data-po-quantity]");
       var contactEl = qs("[data-po-contact]");
       var regionEl = qs("[data-po-region]");
       var scheduleEl = qs("[data-po-schedule]");
@@ -1263,7 +1247,7 @@
         failValidate("请填写自定义服务内容", "[data-po-custom-service-input]");
         return;
       }
-      if (qtyEl) state.quantity = Math.max(1, Math.floor(money(qtyEl.value) || 1));
+      state.quantity = 1;
       if (couponEl) state.couponCode = String(couponEl.value || "").trim();
       var hours = currentHours();
       var quantity = currentQuantity();
