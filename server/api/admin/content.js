@@ -313,17 +313,22 @@ async function listAnnouncements() {
   }
   return (Array.isArray(rows) ? rows : []).filter(isAdminManagedAnnouncement).map(mapAnnouncement);
 }
+function storedAnnouncementRow(rows) {
+  const row = Array.isArray(rows) ? rows[0] : null;
+  if (!row || !row.id || !row.updated_at) return null;
+  return row;
+}
+
 async function saveAnnouncement(input = {}) {
   const id = String(input.id || "").trim();
   let previous = null;
   if (id) {
-    try {
-      const rows = await supabaseJson(restUrl("announcements", `?id=eq.${encodeURIComponent(id)}&limit=1`), {
-        headers: serviceHeaders(),
-      });
-      previous = Array.isArray(rows) ? rows[0] : null;
-    } catch {
-      previous = null;
+    const existing = await supabaseJson(restUrl("announcements", `?id=eq.${encodeURIComponent(id)}&limit=1`), {
+      headers: serviceHeaders(),
+    });
+    previous = storedAnnouncementRow(existing);
+    if (!previous) {
+      throw Object.assign(new Error("公告不存在，未更新任何记录。"), { status: 404 });
     }
   }
   const payload = announcementPayload(input, previous);
@@ -337,15 +342,24 @@ async function saveAnnouncement(input = {}) {
           headers: serviceHeaders(),
           body: JSON.stringify(body),
         });
-        return mapAnnouncement(rows?.[0] || { ...body, id });
+        const saved = storedAnnouncementRow(rows);
+        if (!saved) {
+          throw Object.assign(new Error("公告未更新：没有匹配到记录。"), { status: 409, noRetry: true });
+        }
+        return mapAnnouncement(saved);
       }
       const rows = await supabaseJson(restUrl("announcements"), {
         method: "POST",
         headers: serviceHeaders(),
         body: JSON.stringify({ ...body, created_at: new Date().toISOString() }),
       });
-      return mapAnnouncement(rows?.[0] || body);
+      const saved = storedAnnouncementRow(rows);
+      if (!saved) {
+        throw Object.assign(new Error("公告未创建：数据库没有返回新记录。"), { status: 502, noRetry: true });
+      }
+      return mapAnnouncement(saved);
     } catch (error) {
+      if (error?.noRetry) throw error;
       lastError = error;
       const msg = String(error?.message || error?.body?.message || "");
       // Retry only when PostgREST rejects unknown columns / schema cache.
@@ -354,6 +368,8 @@ async function saveAnnouncement(input = {}) {
   }
   throw lastError || Object.assign(new Error("公告保存失败。"), { status: 500 });
 }
+
+export { saveAnnouncement };
 
 export default async function handler(req, res) {
   if (!hasDb()) {
@@ -415,7 +431,16 @@ export default async function handler(req, res) {
     }
     if (action === "save_announcement") {
       const announcement = await saveAnnouncement(body.announcement || body);
-      return json(res, 200, { ok: true, message: "公告已保存，对应端将实时同步显示。", announcement });
+      if (!announcement?.id || !announcement?.updated_at) {
+        return json(res, 502, { ok: false, message: "公告未写入：数据库没有返回记录。" });
+      }
+      return json(res, 200, {
+        ok: true,
+        message: "公告已保存，对应端将实时同步显示。",
+        id: announcement.id,
+        updated_at: announcement.updated_at,
+        announcement,
+      });
     }
     if (action === "delete_announcement") {
       await supabaseJson(restUrl("announcements", `?id=eq.${encodeURIComponent(String(body.id || ""))}`), {

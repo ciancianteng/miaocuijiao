@@ -1,9 +1,8 @@
 /**
- * Companion announcement ticker — same platform announcements as homepage/boss.
- * Data: /api/platform/content?types=announcements&audience=home
- * Style: home-announcements.css (.home-announcement-bar)
- * Rotates ALL published home announcements in admin sort order (not first-only).
- * Does NOT load companion-only / quote-style audience=companion rows.
+ * Companion announcement ticker.
+ * Product rule: 陪玩公告（仅陪玩端）; 首页公告 stays on the homepage and boss side.
+ * Data: /api/platform/content?types=announcements&audience=companion
+ * Keeps enabled and schedule filters. Hides customer-service and homepage-only rows.
  */
 (function () {
   "use strict";
@@ -19,6 +18,7 @@
     rotateTimer: null,
     pollTimer: 0,
     started: false,
+    loadError: false,
   };
 
   var PX_PER_SEC = 50;
@@ -79,13 +79,27 @@
     };
   }
 
-  function isPlatformHomeAnn(item) {
-    var aud = String(item.audience || "home").toLowerCase();
-    var cat = String(item.category || "home").toLowerCase();
-    // Platform / homepage announcements only — exclude companion quotes & CS-only.
-    if (aud === "companion" || cat === "companion") return false;
-    if (aud === "customer_service" || cat === "customer_service") return false;
-    return true;
+  function isCompanionAnnouncement(item) {
+    var aud = String(item.audience || "").toLowerCase();
+    var cat = String(item.category || "").toLowerCase();
+    if (cat === "customer_service" || aud === "customer_service") return false;
+    if (cat === "companion" || aud === "companion" || aud === "all") return true;
+    return false;
+  }
+
+  function isHardcodedFallback(row) {
+    if (!row || row.platformDefault === true) return true;
+    return String(row.id || "") === "mcj-default-home-ops-announcement";
+  }
+
+  function dedupeById(list) {
+    var seen = {};
+    return (list || []).filter(function (item) {
+      var id = String((item && item.id) || "");
+      if (!id || seen[id]) return false;
+      seen[id] = true;
+      return true;
+    });
   }
 
   function sortItems(list) {
@@ -292,7 +306,8 @@
     var items = state.items;
     var item = currentItem();
     var empty = !items.length;
-    var text = empty ? "暂无最新公告。" : itemLine(item);
+    var failed = empty && !!state.loadError;
+    var text = failed ? "公告加载失败，请稍后重试。" : empty ? "暂无最新公告。" : itemLine(item);
     var useEllipsis = !empty && preferEllipsis(item);
 
     if (h) h.hidden = false;
@@ -312,8 +327,9 @@
       '<div class="home-announcement-label"><span aria-hidden="true">📢</span><strong>官方公告</strong></div>' +
       '<div class="home-announcement-track-wrap" data-announcement-open' +
       (empty ? ' data-empty="1"' : ' tabindex="0"') +
+      (failed ? ' data-load-error="1"' : "") +
       ' role="button" aria-label="' +
-      (empty ? "暂无最新公告" : "查看公告详情") +
+      (failed ? "公告加载失败" : empty ? "暂无最新公告" : "查看公告详情") +
       '">' +
       (empty || useEllipsis
         ? '<span class="home-announcement-static">' + esc(text) + "</span>"
@@ -359,20 +375,23 @@
   }
 
   function applyRows(rows) {
-    var nextItems = sortItems(
+    var hadError = !!state.loadError;
+    state.loadError = false;
+    var nextItems = dedupeById(sortItems(
       (rows || [])
+        .filter(function (row) { return !isHardcodedFallback(row); })
         .map(normalize)
         .filter(function (item) {
           return (
             item.enabled !== false &&
             (item.title || item.content) &&
             inSchedule(item) &&
-            isPlatformHomeAnn(item) &&
+            isCompanionAnnouncement(item) &&
             item.kind !== "forced" &&
             !item.requiresAck
           );
         })
-    );
+    ));
     var sig = itemsSignature(nextItems);
     var changed = sig !== state.itemsSig;
     state.items = nextItems;
@@ -380,7 +399,7 @@
     state.loaded = true;
     syncIndexToCurrentId();
     var bar = strip();
-    if (changed || !bar || !bar.querySelector(".home-announcement-track, .home-announcement-static")) {
+    if (hadError || changed || !bar || !bar.querySelector(".home-announcement-track, .home-announcement-static")) {
       render(false);
     } else {
       bar.dataset.announcementCount = String(state.items.length);
@@ -391,35 +410,31 @@
     }
   }
 
+  function announcementRows(body) {
+    if (!body || body.ok === false || !body.byType || !Array.isArray(body.byType.announcements)) {
+      var invalid = new Error("公告加载失败");
+      invalid.loadError = true;
+      throw invalid;
+    }
+    return body.byType.announcements;
+  }
+
   function load() {
-    return fetch("/api/platform/content?types=announcements&audience=home", {
+    return fetch("/api/platform/content?types=announcements&audience=companion", {
       headers: { Accept: "application/json" },
       cache: "no-store",
     })
       .then(function (res) {
-        return res.json().catch(function () {
-          return { byType: { announcements: [] } };
+        if (!res.ok) {
+          var failed = new Error("公告加载失败");
+          failed.loadError = true;
+          throw failed;
+        }
+        return res.json().then(announcementRows, function () {
+          var failed = new Error("公告加载失败");
+          failed.loadError = true;
+          throw failed;
         });
-      })
-      .then(function (body) {
-        var rows = (((body || {}).byType || {}).announcements) || [];
-        if (rows.length) return rows;
-        return fetch("/api/platform/content?types=announcements", {
-          headers: { Accept: "application/json" },
-          cache: "no-store",
-        })
-          .then(function (res2) {
-            return res2.json().catch(function () {
-              return { byType: { announcements: [] } };
-            });
-          })
-          .then(function (body2) {
-            return ((((body2 || {}).byType || {}).announcements) || []).filter(function (row) {
-              var cat = String(row.category || "home").toLowerCase();
-              var aud = String(row.audience || "home").toLowerCase();
-              return cat !== "companion" && aud !== "companion" && aud !== "customer_service";
-            });
-          });
       })
       .then(function (rows) {
         applyRows(rows);
@@ -431,6 +446,7 @@
         state.loaded = true;
         state.index = 0;
         state.currentId = "";
+        state.loadError = true;
         render(false);
         return [];
       });
