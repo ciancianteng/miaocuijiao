@@ -453,7 +453,7 @@ header.mcj-boss-header .mcj-mnav-toggle:focus-visible {
 
 .mcj-mnav-drawer {
   position: absolute;
-  top: calc(62px + env(safe-area-inset-top, 0px));
+  top: calc(62px + var(--mcj-sat, env(safe-area-inset-top, 0px)));
   right: 0;
   bottom: 0;
   z-index: 1;
@@ -461,8 +461,8 @@ header.mcj-boss-header .mcj-mnav-toggle:focus-visible {
   width: min(320px, calc(100vw - 48px));
   max-width: 100%;
   height: auto;
-  max-height: calc(100% - 62px - env(safe-area-inset-top, 0px));
-  padding: 12px 14px calc(16px + env(safe-area-inset-bottom, 0px));
+  max-height: calc(100% - 62px - var(--mcj-sat, env(safe-area-inset-top, 0px)));
+  padding: 12px 14px calc(16px + var(--mcj-sab, env(safe-area-inset-bottom, 0px)));
   border-left: 1px solid rgba(255, 140, 200, 0.28);
   border-top: 1px solid rgba(255, 140, 200, 0.18);
   border-radius: 16px 0 0 0;
