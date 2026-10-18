@@ -10,7 +10,7 @@ assert.equal(api.includes("end_at: end.toISOString()"), true);
 assert.equal(api.includes("requirements: packAppointmentText"), true);
 assert.equal(api.includes('status: "pending"'), true);
 assert.equal(api.includes('charge_state: "none"'), true);
-assert.equal(api.includes("order_id"), false);
+assert.equal(api.includes("order_id: order.id"), true);
 assert.equal(api.includes("payment_status"), false);
 assert.equal(api.includes("if (!isStaff(profile))"), true);
 assert.equal(api.includes("String(row.companion_id) !== String(profile.id)"), true);

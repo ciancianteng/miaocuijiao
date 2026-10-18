@@ -29,8 +29,37 @@ function json(res, status, data) {
 }
 
 function envValue(key) {
-  if (key === "SUPABASE_URL") return process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "";
   return process.env[key] || "";
+}
+
+function resolvedSupabaseUrl() {
+  const primary = String(process.env.SUPABASE_URL || "").trim();
+  const vite = String(process.env.VITE_SUPABASE_URL || "").trim();
+  const primaryRef = supabaseProjectRef(primary);
+  const viteRef = supabaseProjectRef(vite);
+  if (primary && vite && primaryRef && viteRef && primaryRef !== viteRef) {
+    return { ok: false };
+  }
+  if (primary && !primaryRef && vite) return { ok: false };
+  const supabaseUrl = primary || vite;
+  return { ok: true, supabaseUrl, ref: supabaseProjectRef(supabaseUrl) };
+}
+
+function jwtProjectRef(token) {
+  const part = String(token || "").split(".")[1] || "";
+  if (!part) return "";
+  try {
+    const json = JSON.parse(Buffer.from(part, "base64url").toString("utf8"));
+    return String(json.ref || "").toLowerCase();
+  } catch {
+    return "";
+  }
+}
+
+function publicError(err) {
+  return String(err?.message || err)
+    .replace(/postgres(?:ql)?:\/\/\S+/gi, "[redacted]")
+    .slice(0, 240);
 }
 
 function serviceHeaders(extra = {}) {
@@ -45,8 +74,8 @@ function serviceHeaders(extra = {}) {
   return base;
 }
 
-function restUrl(table, query = "") {
-  return `${envValue("SUPABASE_URL").replace(/\/$/, "")}/rest/v1/${table}${query}`;
+function restUrl(supabaseUrl, table, query = "") {
+  return `${String(supabaseUrl || "").replace(/\/$/, "")}/rest/v1/${table}${query}`;
 }
 
 async function supabaseJson(url, init = {}) {
@@ -74,9 +103,10 @@ function isBossCsType(row) {
   return !t || t === "order_support" || t === "general_support";
 }
 
-async function countLeakedBossRooms() {
+async function countLeakedBossRooms(supabaseUrl) {
   const rows = await supabaseJson(
     restUrl(
+      supabaseUrl,
       "conversations",
       "?select=id,boss_id,companion_id,conversation_type&boss_id=not.is.null&companion_id=not.is.null&limit=2000"
     ),
@@ -87,7 +117,7 @@ async function countLeakedBossRooms() {
   return { scanned: list.length, leaked: leaked.length, sampleIds: leaked.slice(0, 8).map((r) => r.id) };
 }
 
-async function scrubViaRest() {
+async function scrubViaRest(supabaseUrl) {
   const report = {
     detachedCompanionFromBossRooms: 0,
     typedCompanionSupport: 0,
@@ -97,6 +127,7 @@ async function scrubViaRest() {
   // 1) Detach companions from boss↔CS rooms
   const stamped = await supabaseJson(
     restUrl(
+      supabaseUrl,
       "conversations",
       "?select=id,boss_id,companion_id,conversation_type&boss_id=not.is.null&companion_id=not.is.null&limit=5000"
     ),
@@ -105,7 +136,7 @@ async function scrubViaRest() {
   const toDetach = (Array.isArray(stamped) ? stamped : []).filter(isBossCsType);
   for (const row of toDetach) {
     try {
-      const saved = await supabaseJson(restUrl("conversations", `?id=eq.${encodeURIComponent(row.id)}`), {
+      const saved = await supabaseJson(restUrl(supabaseUrl, "conversations", `?id=eq.${encodeURIComponent(row.id)}`), {
         method: "PATCH",
         headers: serviceHeaders(),
         body: JSON.stringify({ companion_id: null, updated_at: new Date().toISOString() }),
@@ -119,6 +150,7 @@ async function scrubViaRest() {
   // 2) Type companion-only rows as companion_support when type is empty
   const companionOnly = await supabaseJson(
     restUrl(
+      supabaseUrl,
       "conversations",
       "?select=id,boss_id,companion_id,conversation_type&companion_id=not.is.null&boss_id=is.null&or=(conversation_type.is.null,conversation_type.eq.)&limit=5000"
     ),
@@ -127,7 +159,7 @@ async function scrubViaRest() {
   const toType = (Array.isArray(companionOnly) ? companionOnly : []).filter((r) => !String(r.conversation_type || "").trim());
   for (const row of toType) {
     try {
-      const saved = await supabaseJson(restUrl("conversations", `?id=eq.${encodeURIComponent(row.id)}`), {
+      const saved = await supabaseJson(restUrl(supabaseUrl, "conversations", `?id=eq.${encodeURIComponent(row.id)}`), {
         method: "PATCH",
         headers: serviceHeaders(),
         body: JSON.stringify({ conversation_type: "companion_support", updated_at: new Date().toISOString() }),
@@ -220,8 +252,15 @@ export default async function handler(req, res) {
     return json(res, err.status || 403, { ok: false, message: err.message || "无权" });
   }
 
-  const supabaseUrl = envValue("SUPABASE_URL");
-  const ref = supabaseProjectRef(supabaseUrl);
+  const resolved = resolvedSupabaseUrl();
+  if (!resolved.ok) {
+    return json(res, 409, {
+      ok: false,
+      message: "拒绝执行：SUPABASE_URL 与 VITE_SUPABASE_URL 不是同一个项目，禁止跨环境回退",
+    });
+  }
+  const supabaseUrl = resolved.supabaseUrl;
+  const ref = resolved.ref;
   if (!KNOWN_PROJECT_REFS.has(ref)) {
     return json(res, 409, {
       ok: false,
@@ -237,12 +276,22 @@ export default async function handler(req, res) {
     });
   }
 
-  if (!envValue("SUPABASE_SERVICE_ROLE_KEY")) {
+  const serviceKey = envValue("SUPABASE_SERVICE_ROLE_KEY");
+  if (!serviceKey) {
     return json(res, 503, { ok: false, message: "缺少 SUPABASE_SERVICE_ROLE_KEY" });
   }
+  const keyRef = jwtProjectRef(serviceKey);
+  if (keyRef && keyRef !== ref) {
+    return json(res, 409, {
+      ok: false,
+      message: "拒绝执行：service role 不属于当前 SUPABASE_URL 项目",
+      supabaseProjectRef: ref,
+      serviceRoleProjectRef: keyRef,
+    });
+  }
 
-  const before = await countLeakedBossRooms().catch((err) => ({
-    error: String(err.message || err).slice(0, 160),
+  const before = await countLeakedBossRooms(supabaseUrl).catch((err) => ({
+    error: publicError(err),
   }));
 
   const databaseUrl = String(process.env.DATABASE_URL || process.env.SUPABASE_DB_URL || process.env.POSTGRES_URL || "").trim();
@@ -259,7 +308,7 @@ export default async function handler(req, res) {
     }
     try {
       const sqlResult = await applySqlMigration(databaseUrl);
-      const after = await countLeakedBossRooms().catch(() => null);
+      const after = await countLeakedBossRooms(supabaseUrl).catch(() => null);
       return json(res, 200, {
         ok: true,
         migration: MIGRATION_REL,
@@ -276,7 +325,7 @@ export default async function handler(req, res) {
     } catch (err) {
       return json(res, 500, {
         ok: false,
-        message: `SQL migration 失败：${String(err.message || err).slice(0, 240)}`,
+        message: `SQL migration 失败：${publicError(err)}`,
         projectRef: ref,
         before,
       });
@@ -285,8 +334,8 @@ export default async function handler(req, res) {
 
   // No DATABASE_URL on Vercel — scrub data via service role; RLS must be applied in SQL Editor.
   try {
-    const scrub = await scrubViaRest();
-    const after = await countLeakedBossRooms().catch(() => null);
+    const scrub = await scrubViaRest(supabaseUrl);
+    const after = await countLeakedBossRooms(supabaseUrl).catch(() => null);
     return json(res, 200, {
       ok: true,
       migration: MIGRATION_REL,
@@ -306,7 +355,7 @@ export default async function handler(req, res) {
   } catch (err) {
     return json(res, 500, {
       ok: false,
-      message: String(err.message || err).slice(0, 240),
+      message: publicError(err),
       projectRef: ref,
       before,
     });

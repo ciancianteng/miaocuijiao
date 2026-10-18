@@ -5,8 +5,8 @@
  */
 import { hasBossRole } from "./_account-roles.js";
 import { insertCompanionNotification } from "./_companion-inbox.js";
-import { readGamePrices } from "./_game-prices.js";
-import { effectiveAvailabilityCode } from "./_companion-public-map.js";
+import { priceForGame } from "./_game-prices.js";
+import { availabilityCode } from "./_companion-public-map.js";
 import { notifyBoss, restUrl, serviceHeaders, supabaseJson } from "./_wallet.js";
 import { loadPublicServices } from "./platform/services.js";
 import { packAppointmentText, unpackAppointmentText } from "./_appointment-text.js";
@@ -122,16 +122,7 @@ async function loadSettings(companionId) {
 }
 
 function quoteFromCompanion(row, serviceName) {
-  const prices = readGamePrices(row);
-  const want = String(serviceName || "").trim();
-  let unit = 0;
-  if (want && prices[want] > 0) unit = prices[want];
-  if (!unit && want) {
-    const key = Object.keys(prices).find((k) => k && (want.includes(k) || k.includes(want)));
-    if (key) unit = prices[key];
-  }
-  if (!unit) unit = money(row.price);
-  return money(unit);
+  return money(priceForGame(row, serviceName, ""));
 }
 
 async function assertServiceEnabled(serviceName) {
@@ -175,7 +166,25 @@ async function assertNoConflict(companionId, startIso, endIso) {
   }
 }
 
-function publicAppointment(row) {
+export function appointmentOrderKey(id) {
+  return `appt:${String(id || "").trim()}`.slice(0, 80);
+}
+
+export function appointmentOrderBlocked(order, action) {
+  if (String(order?.order_type || order?.orderType || "") !== "appointment") return null;
+  if (action === "pay_order") return { status: 409, message: "预约订单请提交付款凭证，不能直接扣款。" };
+  if (action === "reject_direct_order" || action === "return_to_grab_hall") {
+    return { status: 409, message: "预约订单不能退回抢单大厅。" };
+  }
+  return null;
+}
+
+export function appointmentRefundBlocked(order) {
+  if (String(order?.order_type || order?.orderType || "") !== "appointment") return null;
+  return { status: 409, message: "预约订单不走普通退款，请按预约单处理。重复提交也不会退款。" };
+}
+
+function publicAppointment(row, order) {
   return {
     id: row.id,
     bossId: row.boss_id,
@@ -190,28 +199,211 @@ function publicAppointment(row) {
     status: row.status,
     chargeState: row.charge_state || "none",
     charged: false,
+    orderId: row.order_id || order?.id || null,
+    orderStatus: order?.status || null,
+    orderType: order?.order_type || null,
     createdAt: row.created_at,
   };
 }
 
+async function findAppointmentOrder(appointmentId) {
+  const key = appointmentOrderKey(appointmentId);
+  if (!key || key === "appt:") return null;
+  const rows = await supabaseJson(
+    restUrl("orders", `?idempotency_key=eq.${encodeURIComponent(key)}&limit=1`),
+    { headers: serviceHeaders() }
+  );
+  return rows?.[0] || null;
+}
+
+async function ordersForAppointments(rows) {
+  const keys = (rows || []).map((row) => appointmentOrderKey(row.id)).filter((key) => key && key !== "appt:");
+  const map = new Map();
+  if (!keys.length) return map;
+  const or = keys.map((key) => `idempotency_key.eq.${encodeURIComponent(key)}`).join(",");
+  const found = await supabaseJson(
+    restUrl("orders", `?or=(${or})&select=id,status,order_type,idempotency_key,companion_id,assignment_type`),
+    { headers: serviceHeaders() }
+  );
+  for (const order of found || []) {
+    const key = String(order.idempotency_key || "");
+    if (key.startsWith("appt:")) map.set(key.slice(5), order);
+  }
+  return map;
+}
+
+async function createAppointmentOrder(row) {
+  const existing = await findAppointmentOrder(row.id);
+  if (existing) {
+    if (String(existing.order_type || "") !== "appointment") {
+      throw Object.assign(new Error("预约关联到了非预约订单，已停止。"), { status: 409 });
+    }
+    if (existing.status !== "awaiting_payment") {
+      throw Object.assign(new Error("预约订单已进入后续状态，不能重复接受。"), { status: 409 });
+    }
+    return existing;
+  }
+  const serviceName = String(row.service_name || "陪玩服务");
+  const payload = {
+    order_no: `MCJA${String(row.id || "").replace(/[^a-zA-Z0-9]/g, "").slice(0, 16) || Date.now()}`,
+    boss_id: row.boss_id,
+    companion_id: row.companion_id,
+    order_type: "appointment",
+    assignment_type: "assigned",
+    game: serviceName,
+    title: `预约 · ${serviceName}`,
+    description: String(row.requirements || ""),
+    service_name: serviceName,
+    hours: Number(row.hours),
+    unit_price: money(row.unit_price),
+    total_amount: money(row.total_amount),
+    status: "awaiting_payment",
+    idempotency_key: appointmentOrderKey(row.id),
+    payment_method: "manual",
+    created_at: nowIso(),
+    updated_at: nowIso(),
+  };
+  try {
+    const created = await supabaseJson(restUrl("orders"), {
+      method: "POST",
+      headers: serviceHeaders(),
+      body: JSON.stringify(payload),
+    });
+    return created?.[0] || created;
+  } catch (err) {
+    const text = String(err?.message || err || "");
+    if (/duplicate|23505/i.test(text)) {
+      const again = await findAppointmentOrder(row.id);
+      if (again) return again;
+    }
+    if (/check constraint|23514|invalid input value for enum/i.test(text)) {
+      throw Object.assign(new Error("数据库尚未允许订单类型 appointment，已停止建单。"), { status: 503 });
+    }
+    throw err;
+  }
+}
+
+function appointmentLinkOk(row, order) {
+  if (!order) return !row?.order_id;
+  if (String(order.order_type || "") !== "appointment") return false;
+  if (String(order.idempotency_key || "") !== appointmentOrderKey(row?.id)) return false;
+  if (row?.order_id && String(row.order_id) !== String(order.id)) return false;
+  return true;
+}
+
+async function cancelLinkedOrder(appointmentId) {
+  const order = await findAppointmentOrder(appointmentId);
+  if (!order) return { ok: true, order: null, code: "none" };
+  if (String(order.order_type || "") !== "appointment") {
+    return { ok: false, status: 409, code: "type", message: "关联订单类型异常，已停止取消。" };
+  }
+  if (String(order.idempotency_key || "") !== appointmentOrderKey(appointmentId)) {
+    return { ok: false, status: 409, code: "mismatch", message: "预约与订单关联不一致，已停止取消。" };
+  }
+  if (order.status === "cancelled") return { ok: true, order, code: "cancelled" };
+  if (order.status !== "awaiting_payment") {
+    return { ok: false, status: 409, code: "later_status", message: "预约订单已进入后续状态，不能取消。" };
+  }
+  const saved = await supabaseJson(
+    restUrl("orders", `?id=eq.${encodeURIComponent(order.id)}&status=eq.awaiting_payment&order_type=eq.appointment`),
+    {
+      method: "PATCH",
+      headers: serviceHeaders(),
+      body: JSON.stringify({ status: "cancelled", updated_at: nowIso() }),
+    }
+  );
+  if (saved?.[0]) return { ok: true, order: saved[0], code: "cancelled" };
+  const fresh = await findAppointmentOrder(appointmentId);
+  if (
+    fresh?.status === "cancelled" &&
+    String(fresh.order_type || "") === "appointment" &&
+    String(fresh.idempotency_key || "") === appointmentOrderKey(appointmentId)
+  ) {
+    return { ok: true, order: fresh, code: "cancelled" };
+  }
+  if (fresh && fresh.status !== "awaiting_payment") {
+    return { ok: false, status: 409, code: "later_status", message: "预约订单状态已变化，不能取消。" };
+  }
+  return { ok: false, status: 409, code: "conflict", message: "预约订单状态已变化，不能取消。" };
+}
+
+async function releaseClosedAppointmentOrder(appointmentId) {
+  const rows = await supabaseJson(
+    restUrl("companion_appointments", `?id=eq.${encodeURIComponent(appointmentId)}&select=id,status&limit=1`),
+    { headers: serviceHeaders() }
+  );
+  const status = rows?.[0]?.status;
+  if (status !== "cancelled" && status !== "rejected") return { released: false };
+  return { released: true, status, linkedCancel: await cancelLinkedOrder(appointmentId) };
+}
+
+export async function confirmAppointmentForPaidOrder(order) {
+  if (String(order?.order_type || "") !== "appointment") return null;
+  if (String(order.status || "") !== "confirmed") return null;
+  const key = String(order.idempotency_key || "");
+  if (!key.startsWith("appt:")) return null;
+  const appointmentId = key.slice(5);
+  const saved = await supabaseJson(
+    restUrl("companion_appointments", `?id=eq.${encodeURIComponent(appointmentId)}&status=eq.awaiting_payment`),
+    {
+      method: "PATCH",
+      headers: serviceHeaders(),
+      body: JSON.stringify({ status: "confirmed", updated_at: nowIso(), charge_state: "none" }),
+    }
+  );
+  return saved?.[0] || null;
+}
+
+async function markAppointmentExpired(row) {
+  const saved = await supabaseJson(
+    restUrl("companion_appointments", `?id=eq.${encodeURIComponent(row.id)}&status=eq.${encodeURIComponent(row.status)}`),
+    {
+      method: "PATCH",
+      headers: serviceHeaders(),
+      body: JSON.stringify({ status: "expired", updated_at: nowIso() }),
+    }
+  );
+  if (saved?.[0]?.status === "expired") {
+    row.status = "expired";
+    return true;
+  }
+  return false;
+}
+
+async function expireOne(row) {
+  const order = await findAppointmentOrder(row.id);
+  if (!appointmentLinkOk(row, order)) return;
+  if (order && order.status === "awaiting_payment") {
+    const cancel = await cancelLinkedOrder(row.id);
+    if (!cancel.ok) return;
+  }
+  await markAppointmentExpired(row);
+}
+
+async function retryExpiredPayable(row) {
+  const order = await findAppointmentOrder(row.id);
+  if (!order || order.status !== "awaiting_payment") return;
+  if (!appointmentLinkOk(row, order)) return;
+  await cancelLinkedOrder(row.id);
+}
+
 async function expireStale(rows) {
   const now = Date.now();
-  const stale = (rows || []).filter((row) => {
-    if (!["pending", "confirmed"].includes(row.status)) return false;
-    return Date.parse(row.end_at) < now;
-  });
   await Promise.all(
-    stale.map((row) =>
-      supabaseJson(restUrl("companion_appointments", `?id=eq.${encodeURIComponent(row.id)}&status=eq.${row.status}`), {
-        method: "PATCH",
-        headers: serviceHeaders(),
-        body: JSON.stringify({ status: "expired", updated_at: nowIso() }),
-      }).catch(() => null)
-    )
+    (rows || []).map(async (row) => {
+      try {
+        if (row.status === "expired") {
+          await retryExpiredPayable(row);
+          return;
+        }
+        if (!["pending", "confirmed"].includes(row.status)) return;
+        if (!(Date.parse(row.end_at) < now)) return;
+        await expireOne(row);
+      } catch {
+        /* Keep the current appointment status so a later list can retry the cancel. */
+      }
+    })
   );
-  stale.forEach((row) => {
-    row.status = "expired";
-  });
 }
 
 async function findByIdempotency(bossId, key) {
@@ -244,7 +436,7 @@ export default async function handler(req, res) {
         hours,
         totalAmount: money(unit * (hours || 0)),
         acceptsBooking: settings.accept_booking !== false,
-        availabilityStatus: effectiveAvailabilityCode(row),
+        availabilityStatus: availabilityCode(row),
         chargeState: "none",
       });
     }
@@ -292,7 +484,8 @@ export default async function handler(req, res) {
       }
       const rows = await supabaseJson(restUrl("companion_appointments", query), { headers: serviceHeaders() });
       await expireStale(rows);
-      return json(res, 200, { ok: true, appointments: (rows || []).map(publicAppointment) });
+      const linked = await ordersForAppointments(rows);
+      return json(res, 200, { ok: true, appointments: (rows || []).map((row) => publicAppointment(row, linked.get(row.id))) });
     }
 
     if (action === "create") {
@@ -380,28 +573,82 @@ export default async function handler(req, res) {
 
     if (action === "accept" || action === "reject") {
       if (String(row.companion_id) !== String(profile.id)) return json(res, 403, { ok: false, message: "不能修改别人的预约" });
-      if (row.status !== "pending") return json(res, 409, { ok: false, message: "该预约已处理" });
-      const next = action === "accept" ? "confirmed" : "rejected";
+      if (row.status !== "pending") {
+        if (row.status === "cancelled" || row.status === "rejected") {
+          const released = await releaseClosedAppointmentOrder(id);
+          if (released.released && !released.linkedCancel.ok) {
+            return json(res, released.linkedCancel.status || 409, { ok: false, message: released.linkedCancel.message });
+          }
+        }
+        return json(res, 409, { ok: false, message: "该预约已处理" });
+      }
+      if (action === "reject") {
+        const saved = await supabaseJson(
+          restUrl("companion_appointments", `?id=eq.${encodeURIComponent(id)}&status=eq.pending`),
+          {
+            method: "PATCH",
+            headers: serviceHeaders(),
+            body: JSON.stringify({ status: "rejected", updated_at: nowIso(), charge_state: "none" }),
+          }
+        );
+        const updated = saved?.[0];
+        if (!updated) return json(res, 409, { ok: false, message: "该预约已处理" });
+        const linkedCancel = await cancelLinkedOrder(id);
+        if (!linkedCancel.ok) {
+          return json(res, linkedCancel.status || 409, { ok: false, message: linkedCancel.message });
+        }
+        await notifyBoss(row.boss_id, "预约已拒绝", "陪玩已拒绝这次预约。没有产生扣款，也没有创建订单。", "appointment", updated.id);
+        return json(res, 200, { ok: true, appointment: publicAppointment(updated) });
+      }
+      const order = await createAppointmentOrder(row);
+      if (!order?.id || String(order?.order_type || "") !== "appointment" || String(order?.companion_id || "") !== String(row.companion_id)) {
+        return json(res, 409, { ok: false, message: "预约订单未绑定已接受的陪玩，已停止。" });
+      }
+      if (order.assignment_type && order.assignment_type !== "assigned") {
+        return json(res, 409, { ok: false, message: "预约订单分配类型异常，已停止。" });
+      }
       const saved = await supabaseJson(
-        restUrl("companion_appointments", `?id=eq.${encodeURIComponent(id)}&status=eq.pending`),
+        restUrl(
+          "companion_appointments",
+          `?id=eq.${encodeURIComponent(id)}&status=eq.${encodeURIComponent(row.status)}`
+        ),
         {
           method: "PATCH",
           headers: serviceHeaders(),
-          body: JSON.stringify({ status: next, updated_at: nowIso(), charge_state: "none" }),
+          body: JSON.stringify({
+            status: "awaiting_payment",
+            order_id: order.id,
+            updated_at: nowIso(),
+            charge_state: "none",
+          }),
         }
       );
       const updated = saved?.[0];
-      if (!updated) return json(res, 409, { ok: false, message: "该预约已处理" });
+      if (!updated || updated.status !== "awaiting_payment" || String(updated.order_id || "") !== String(order.id)) {
+        const released = await releaseClosedAppointmentOrder(id);
+        if (released.released) {
+          if (!released.linkedCancel.ok) {
+            return json(res, released.linkedCancel.status || 409, { ok: false, message: released.linkedCancel.message });
+          }
+          const message = released.status === "rejected"
+            ? "预约已拒绝，关联订单已停止付款。"
+            : "预约已取消，关联订单已停止付款。";
+          return json(res, 409, { ok: false, message });
+        }
+        return json(res, 409, { ok: false, message: "预约状态已变化，未标记接受。" });
+      }
       await notifyBoss(
         row.boss_id,
-        next === "confirmed" ? "预约已确认" : "预约已拒绝",
-        next === "confirmed"
-          ? "陪玩已确认预约。请在预约页确认。当前不会扣除猫粮，也不会生成支付订单。"
-          : "陪玩已拒绝这次预约。没有产生扣款。",
+        "预约已接受",
+        `陪玩已接受预约。请对订单 ${order.id} 提交付款凭证。确认前不会扣除猫粮。`,
         "appointment",
         updated.id
       );
-      return json(res, 200, { ok: true, appointment: publicAppointment(updated) });
+      return json(res, 200, {
+        ok: true,
+        appointment: publicAppointment(updated, order),
+        message: "预约已接受。请提交付款凭证，审核通过前服务不会开始。",
+      });
     }
 
     if (action === "cancel") {
@@ -411,32 +658,23 @@ export default async function handler(req, res) {
       if (!["pending", "confirmed", "awaiting_payment"].includes(row.status)) {
         return json(res, 409, { ok: false, message: "当前状态不能取消" });
       }
-      const saved = await supabaseJson(restUrl("companion_appointments", `?id=eq.${encodeURIComponent(id)}`), {
-        method: "PATCH",
-        headers: serviceHeaders(),
-        body: JSON.stringify({ status: "cancelled", updated_at: nowIso(), charge_state: "none" }),
-      });
-      return json(res, 200, { ok: true, appointment: publicAppointment(saved?.[0] || row), charged: false });
-    }
-
-    if (action === "ack") {
-      if (String(row.boss_id) !== String(profile.id)) return json(res, 403, { ok: false, message: "不能确认别人的预约" });
-      if (row.status !== "confirmed") return json(res, 409, { ok: false, message: "请等待陪玩确认后再确认预约" });
+      const linkedCancel = await cancelLinkedOrder(id);
+      if (!linkedCancel.ok) return json(res, linkedCancel.status || 409, { ok: false, message: linkedCancel.message });
       const saved = await supabaseJson(
-        restUrl("companion_appointments", `?id=eq.${encodeURIComponent(id)}&status=eq.confirmed`),
+        restUrl("companion_appointments", `?id=eq.${encodeURIComponent(id)}&status=eq.${encodeURIComponent(row.status)}`),
         {
           method: "PATCH",
           headers: serviceHeaders(),
-          body: JSON.stringify({ status: "awaiting_payment", updated_at: nowIso(), charge_state: "none" }),
+          body: JSON.stringify({ status: "cancelled", updated_at: nowIso(), charge_state: "none" }),
         }
       );
       const updated = saved?.[0];
       if (!updated) return json(res, 409, { ok: false, message: "预约状态已变化" });
-      return json(res, 200, {
-        ok: true,
-        appointment: publicAppointment(updated),
-        message: "预约已确认。支付规则尚未开启，本次没有扣除猫粮，也没有创建支付订单。",
-      });
+      return json(res, 200, { ok: true, appointment: publicAppointment(updated, linkedCancel.order), charged: false });
+    }
+
+    if (action === "ack") {
+      return json(res, 409, { ok: false, message: "请通过预约订单提交付款凭证。此操作不会改变预约状态，也不会扣款。" });
     }
 
     return json(res, 400, { ok: false, message: "未知操作" });

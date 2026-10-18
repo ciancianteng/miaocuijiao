@@ -3333,6 +3333,11 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
       }
 
       if (order.status !== "awaiting_payment") {
+        if (String(order.order_type || "") === "appointment" && order.status === "confirmed" && action === "confirm_payment") {
+          const { confirmAppointmentForPaidOrder } = await import("./appointments.js");
+          await confirmAppointmentForPaidOrder(order);
+          return json(res, 200, { ok: true, duplicate: true, message: "预约订单已审核，服务尚未开始。" });
+        }
         return json(res, 400, {
           ok: false,
           message: "只有待付款确认订单可以确认付款 / 发送到抢单大厅。",
@@ -3410,16 +3415,31 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
         walletSkipped = true;
       }
 
-      /* A 指定陪玩 → claimed（待陪玩确认，永不进大厅）；B 公开抢单 → pending + listing */
-      const next = isAssignedPath ? "claimed" : "pending";
+      /* A 指定陪玩 → claimed（待陪玩确认，永不进大厅）；B 公开抢单 → pending + listing。
+         预约订单不走这两条：审核通过后进入 confirmed，保留陪玩，不写 started_at。 */
+      const isAppointmentOrder = String(order.order_type || "") === "appointment";
+      if (isAppointmentOrder && !assignedCompanionId) {
+        return json(res, 409, { ok: false, message: "预约订单缺少已接受的陪玩，不能审核。" });
+      }
+      if (isAppointmentOrder && (action === "push_to_grab_hall" || action === "send_to_grab_hall")) {
+        return json(res, 409, { ok: false, message: "预约订单不能发送到抢单大厅。" });
+      }
+      const next = isAppointmentOrder ? "confirmed" : isAssignedPath ? "claimed" : "pending";
       const { transitionOrderStatus } = await import("./_order-status.js");
-      const basePatch = {
-        customer_service_id: service.profile.id,
-        assignment_type: isAssignedPath ? "assigned" : "public",
-        ...(isAssignedPath
-          ? { order_type: order.order_type || "direct_companion", companion_id: assignedCompanionId }
-          : { order_type: order.order_type || "open_grab", companion_id: null }),
-      };
+      const basePatch = isAppointmentOrder
+        ? {
+            customer_service_id: service.profile.id,
+            assignment_type: "assigned",
+            order_type: "appointment",
+            companion_id: assignedCompanionId,
+          }
+        : {
+            customer_service_id: service.profile.id,
+            assignment_type: isAssignedPath ? "assigned" : "public",
+            ...(isAssignedPath
+              ? { order_type: order.order_type || "direct_companion", companion_id: assignedCompanionId }
+              : { order_type: order.order_type || "open_grab", companion_id: null }),
+          };
 
       async function transitionWithOptionalPaidAt() {
         const tryPatch = async (patch) =>
@@ -3484,6 +3504,13 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
       if (!patched || patched.status === "awaiting_payment") {
         return json(res, 409, { ok: false, message: "订单状态已变更，请刷新后重试。" });
       }
+      if (isAppointmentOrder) {
+        if (patched.status !== "confirmed" || String(patched.companion_id || assignedCompanionId) !== String(assignedCompanionId)) {
+          return json(res, 409, { ok: false, message: "预约订单审核结果异常，已停止。" });
+        }
+        const { confirmAppointmentForPaidOrder } = await import("./appointments.js");
+        await confirmAppointmentForPaidOrder({ ...order, ...patched, idempotency_key: order.idempotency_key, order_type: "appointment", status: "confirmed" });
+      }
 
       // Harden routing fields if soft path dropped them.
       if (!isAssignedPath) {
@@ -3536,7 +3563,9 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
         customer_service_id: service.profile.id,
         order_id: order.id,
       });
-      const sysMsg = isAssignedPath
+      const sysMsg = isAppointmentOrder
+        ? "客服已确认预约付款。预约已成立，服务尚未开始，不会进入抢单大厅。"
+        : isAssignedPath
         ? walletSkipped
           ? "客服已确认线下付款（未扣钱包余额），订单已支付，正在等待陪玩确认接单。"
           : "客服已确认付款，订单已支付，正在等待陪玩确认接单。"
@@ -4187,6 +4216,9 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
     if (action === "refund_decision") {
       const order = await orderById(String(body.id || body.order_id || ""));
       if (!order || order.status !== "refund_requested") return json(res, 400, { ok: false, message: "只有退款申请中的订单可以处理退款。" });
+      const { appointmentRefundBlocked } = await import("./appointments.js");
+      const appointmentRefund = appointmentRefundBlocked(order);
+      if (appointmentRefund) return json(res, appointmentRefund.status, { ok: false, message: appointmentRefund.message });
       try {
         await assertOrderMutationAllowed(order, service.profile);
       } catch (err) {
@@ -4616,6 +4648,8 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
     if (action === "return_to_grab_hall" || action === "reopen_grab_hall") {
       const order = await orderById(String(body.id || body.order_id || ""));
       if (!order) return json(res, 404, { ok: false, message: "订单不存在。" });
+      const appointmentHallBlock = (await import("./appointments.js")).appointmentOrderBlocked(order, "return_to_grab_hall");
+      if (appointmentHallBlock) return json(res, appointmentHallBlock.status, { ok: false, message: appointmentHallBlock.message });
       try {
         await assertOrderMutationAllowed(order, service.profile);
       } catch (err) {

@@ -10,6 +10,12 @@ import {
 import { readLocalLevels } from "../_companion-levels-store.js";
 import { resolvePlatformCommission } from "../_commission-rates.js";
 import { resolveCompanionAvatar, resolveCompanionCover } from "../_companion-public-map.js";
+import {
+  readGamePrices,
+  reconcileAdminServicePrices,
+  stripGamePricesMarker,
+  writeGamePricesMarker,
+} from "../_game-prices.js";
 import { requireAdmin as requireAdminJwt, ADMIN_ROLES as SHARED_ADMIN_ROLES } from "../_admin-auth.js";
 
 const ADMIN_ROLES = SHARED_ADMIN_ROLES;
@@ -751,6 +757,51 @@ function companionEditablePatch(payload = {}) {
   return patch;
 }
 
+function withSyncedAdminPrice(companion = {}, patch = {}) {
+  if (patch.price == null || !(money(patch.price) > 0)) return patch;
+  const nextPrice = money(patch.price);
+  const synced = reconcileAdminServicePrices(companion, nextPrice);
+  const next = { ...patch, price: nextPrice, game_prices: synced };
+  const submitted = stripGamePricesMarker(String(patch.tags != null ? patch.tags : companion.tags || ""));
+  const gallery = (String(companion.tags || "").match(/\[\[MCJ_GALLERY:[\s\S]*?\]\]/) || [])[0] || "";
+  let baseTags = submitted.replace(/\[\[MCJ_GALLERY:[\s\S]*?\]\]/g, "").trim();
+  if (gallery && !baseTags.includes("[[MCJ_GALLERY:")) {
+    baseTags = `${baseTags}${baseTags ? "," : ""}${gallery}`;
+  }
+  next.tags = writeGamePricesMarker(baseTags, synced);
+  return next;
+}
+
+async function syncCompanionServiceRows(companion = {}, nextPrice) {
+  const userId = String(companion.user_id || "").trim();
+  const price = money(nextPrice);
+  if (!userId || !(price > 0)) return;
+  const before = readGamePrices(companion);
+  const after = reconcileAdminServicePrices(companion, price);
+  let rows = [];
+  try {
+    rows = await companionDb(
+      "companion_services",
+      `?companion_id=eq.${encodeURIComponent(userId)}&select=id,service_id,service_name,price`
+    );
+  } catch (error) {
+    if (isMissingRelation(error) || /column|schema cache|PGRST|does not exist/i.test(String(error?.message || error || ""))) return;
+    throw error;
+  }
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const sid = String(row.service_id || "").trim();
+    const name = String(row.service_name || "").trim();
+    const target = sid && after[sid] != null ? money(after[sid]) : name && after[name] != null ? money(after[name]) : 0;
+    if (!(target > 0) || target !== price || money(row.price) === target) continue;
+    const previous = money((sid && before[sid]) || (name && before[name]) || 0);
+    if (previous > 0 && money(row.price) !== previous && money(row.price) !== money(companion.price)) continue;
+    await companionDb("companion_services", `?id=eq.${encodeURIComponent(row.id)}&companion_id=eq.${encodeURIComponent(userId)}`, {
+      method: "PATCH",
+      body: JSON.stringify({ price: target, updated_at: new Date().toISOString() }),
+    });
+  }
+}
+
 function profileEditablePatch(payload = {}) {
   const patch = {};
   if (payload.nickname != null) patch.display_name = String(payload.nickname || "").trim();
@@ -1173,7 +1224,7 @@ export default async function handler(req, res) {
       const reason = String(payload.reason || "").trim();
       if (!levelId && !levelNameRaw) return json(res, 400, { ok: false, message: "请选择等级" });
       const meta = await resolveLevelMeta(levelId || levelNameRaw);
-      const after = await patchCompanionRow(id, {
+      const levelPatch = withSyncedAdminPrice(companion, {
         level_id: meta?.id || levelId || levelNameRaw,
         level_name: meta
           ? `${meta.code || ""} ${meta.name || ""}`.trim() || meta.name || levelNameRaw || levelId
@@ -1181,6 +1232,8 @@ export default async function handler(req, res) {
         level_effective_at: new Date().toISOString(),
         ...(payload.price != null ? { price: money(payload.price) } : meta?.min != null && !(money(companion.price) > 0) ? { price: money(meta.min) } : {}),
       });
+      const after = await patchCompanionRow(id, levelPatch);
+      if (levelPatch.price != null) await syncCompanionServiceRows(companion, levelPatch.price);
       await logOperation(
         req,
         "set_level",
@@ -1330,7 +1383,7 @@ export default async function handler(req, res) {
     }
 
     // default save / edit / quick-edit
-    const companionPatch = companionEditablePatch(payload);
+    const companionPatch = withSyncedAdminPrice(companion, companionEditablePatch(payload));
     if (companionPatch.commission_rate != null) {
       companionPatch.commission_rate = resolvePlatformCommission(companionPatch.commission_rate).platformRate;
     }
@@ -1357,6 +1410,7 @@ export default async function handler(req, res) {
 
     companionPatch.updated_at = new Date().toISOString();
     const rows = await patchCompanionRow(id, companionPatch);
+    if (companionPatch.price != null) await syncCompanionServiceRows(companion, companionPatch.price);
 
     const profilePatch = profileEditablePatch(payload);
     if (Object.keys(profilePatch).length && companion.user_id) {

@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>预约陪玩 | Meow Cui Jiao</title>
   <style>
+    *{box-sizing:border-box}
+    html,body{max-width:100%}
     body{margin:0;background:#07070a;color:#fff4fa;font-family:"Microsoft YaHei",sans-serif}
     main{max-width:480px;margin:0 auto;padding:20px 16px 40px}
     a{color:#F4A6C8}
@@ -13,7 +15,8 @@
     img{width:64px;height:80px;object-fit:cover;border-radius:12px;background:#07070a}
     label{display:block;margin:10px 0;font-size:13px;color:#F4A6C8}
     input,select,textarea{width:100%;box-sizing:border-box;margin-top:6px;padding:10px;border-radius:12px;border:1px solid rgba(244,166,200,.45);background:#07070a;color:#fff}
-    button{width:100%;margin-top:12px;height:42px;border:0;border-radius:999px;font-weight:800;color:#1a1020;background:#F4A6C8}
+    button{width:100%;margin-top:12px;min-height:44px;border:0;border-radius:999px;font-weight:800;color:#1a1020;background:#F4A6C8}
+    button:disabled{opacity:.55}
     .price{font-size:18px;font-weight:800;color:#F4A6C8}
     .note{font-size:12px;color:#F4A6C8;line-height:1.5}
     .err{color:#F4A6C8}
@@ -58,27 +61,36 @@
     }
     ["svc","hours"].forEach(function(n){document.getElementById(n).addEventListener("input",paint);});
     paint();
+    var pending=false;
+    var idem="";
     document.getElementById("go").onclick=function(){
       var msg=document.getElementById("msg");
+      var button=document.getElementById("go");
+      if(pending)return;
       if(!token()){location.href="login.html?next="+encodeURIComponent(location.pathname+location.search);return;}
       var date=document.getElementById("date").value;
       var time=document.getElementById("time").value;
       var hours=Number(document.getElementById("hours").value||0);
       if(!date||!time){msg.textContent="请选择预约日期和时间";return;}
+      if(!(hours>=0.5)||hours>24){msg.textContent="预约时长需在 0.5 到 24 小时之间";return;}
       var start=new Date(date+"T"+time+":00");
-      if(start.getTime()<=Date.now()){msg.textContent="不能选择已经过去的时间";return;}
+      if(!Number.isFinite(start.getTime())||start.getTime()<=Date.now()){msg.textContent="不能选择已经过去的时间";return;}
       var service=document.getElementById("svc").value;
+      if(!service){msg.textContent="请选择服务";return;}
+      if(!idem)idem="book-"+Date.now()+"-"+Math.random().toString(36).slice(2,8);
+      pending=true;
+      button.disabled=true;
       msg.textContent="正在核对价格…";
       var quoteUrl="/api/appointments?action=quote&companion="+encodeURIComponent(c.id||id)+"&service="+encodeURIComponent(service)+"&hours="+encodeURIComponent(hours);
       fetch(quoteUrl,{cache:"no-store"}).then(function(r){return r.json();}).then(function(quote){
-        if(!quote.ok){msg.textContent=quote.message||"无法读取价格";return;}
-        if(quote.acceptsBooking===false){msg.textContent="该陪玩已关闭预约";return;}
+        if(!quote.ok){pending=false;button.disabled=false;msg.textContent=quote.message||"无法读取价格";return;}
+        if(quote.acceptsBooking===false){pending=false;button.disabled=false;msg.textContent="该陪玩已关闭预约";return;}
         unit=Number(quote.unitPrice||0);
         var total=Number(quote.totalAmount||0);
         document.getElementById("unit").textContent=unit;
         document.getElementById("total").textContent=total;
         msg.textContent="提交中…";
-      fetch("/api/appointments",{
+      return fetch("/api/appointments",{
         method:"POST",
         headers:{"Content-Type":"application/json",Authorization:"Bearer "+token()},
         body:JSON.stringify({
@@ -91,14 +103,18 @@
           startAt:start.toISOString(),
           requirements:document.getElementById("req").value,
           note:document.getElementById("note").value,
-          idempotencyKey:"book-"+Date.now()+"-"+Math.random().toString(36).slice(2,8)
+          idempotencyKey:idem
         })
       }).then(function(r){return r.json();}).then(function(res){
-        msg.textContent=res.message||(res.ok?"已提交":"失败");
-        if(!res.ok)return;
-        msg.textContent=(res.message||"预约申请已提交")+" 预约号 "+(res.appointment&&res.appointment.id||"");
-      }).catch(function(){msg.textContent="提交失败";});
-      }).catch(function(){msg.textContent="价格核对失败";});
+        if(!res||!res.ok||!res.appointment){
+          pending=false;button.disabled=false;
+          msg.textContent=(res&&res.message)||"预约提交失败";
+          return;
+        }
+        var done=res.message||(res.duplicate?"预约已存在，未重复创建":"预约申请已提交");
+        msg.textContent=done+" 预约号 "+res.appointment.id;
+      });
+      }).catch(function(){pending=false;button.disabled=false;msg.textContent="提交失败，请重试";});
     };
   }).catch(function(){app.textContent="读取失败";});
 })();

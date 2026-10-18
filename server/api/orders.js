@@ -1317,6 +1317,8 @@ export default async function handler(req, res) {
       const beforeRows = await supabaseJson(restUrl(TABLE, `?id=eq.${encodeURIComponent(id)}&boss_id=eq.${encodeURIComponent(profile.id)}&limit=1`), { headers: serviceHeaders() });
       const before = Array.isArray(beforeRows) ? beforeRows[0] : null;
       if (!before) return json(res, 404, { ok: false, message: "订单不存在。" });
+      const appointmentPayBlock = (await import("./appointments.js")).appointmentOrderBlocked(before, "pay_order");
+      if (appointmentPayBlock) return json(res, appointmentPayBlock.status, { ok: false, message: appointmentPayBlock.message, order: viewOrder(before) });
       if (normalizeOrderStatus(before.status) !== "awaiting_payment") {
         return json(res, 409, { ok: false, message: "当前订单无需再次支付。", order: viewOrder(before) });
       }

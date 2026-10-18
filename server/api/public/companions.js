@@ -3,6 +3,7 @@ import { readLocalLevels, toPublicLevel } from "../_companion-levels-store.js";
 import { resolvePlatformCommission } from "../_commission-rates.js";
 import {
   readGamePrices,
+  reconcileAdminServicePrices,
   stripGamePricesMarker,
   parseServiceIds,
   parseServiceTypes,
@@ -252,7 +253,7 @@ function publicCompanion(row = {}, profile = {}, levels = [], catalog = [], medi
     price: money(row.price),
     priceValue: money(row.price),
     hourlyPrice: money(row.price),
-    gamePrices: readGamePrices(row),
+    gamePrices: money(row.price) > 0 ? reconcileAdminServicePrices(row, row.price) : readGamePrices(row),
     pricingUnit: row.pricing_unit || "小时",
     availabilityStatus: avail,
     availabilityText: availabilityText(avail),
