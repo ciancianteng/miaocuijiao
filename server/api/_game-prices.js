@@ -134,8 +134,75 @@ export function parseServiceTypes(value, { fallbackPlayWhenGame = false, hasGame
   return types;
 }
 
+function serviceNames(companion = {}) {
+  return splitGames(companion.game || companion.main_service);
+}
+
+function nameMatches(left = "", right = "") {
+  const a = String(left || "").trim();
+  const b = String(right || "").trim();
+  return !!a && !!b && (a === b || a.includes(b) || b.includes(a));
+}
+
+/**
+ * Admin unit price is companion_profiles.price.
+ * A single service, or several services that still share one stored price, follows that unit price.
+ * A service with its own different price is left unchanged.
+ * Historical orders are not represented here and are never rewritten.
+ */
+export function reconcileAdminServicePrices(companion = {}, nextPrice) {
+  const next = money(nextPrice);
+  const current = readGamePrices(companion);
+  if (!(next > 0)) return { ...current };
+  const ids = parseServiceIds(companion.service_ids);
+  const names = serviceNames(companion);
+  const distinct = new Set(Object.values(current).filter((v) => v > 0));
+  const uniform = distinct.size <= 1;
+  const single = ids.length <= 1;
+  const selected = new Set(ids.filter(Boolean));
+  names.forEach((name) => selected.add(name));
+  Object.keys(current).forEach((key) => {
+    if (names.some((name) => nameMatches(name, key)) || ids.some((id) => id && key === id)) selected.add(key);
+  });
+  const out = { ...current };
+  if (single || uniform) {
+    selected.forEach((key) => {
+      out[key] = next;
+    });
+    if (uniform) {
+      Object.keys(out).forEach((key) => {
+        out[key] = next;
+      });
+    }
+    return out;
+  }
+  const primaryId = ids[0] || "";
+  const primaryName = names[0] || "";
+  if (primaryId) out[primaryId] = next;
+  if (primaryName) out[primaryName] = next;
+  Object.keys(current).forEach((key) => {
+    if (ids.includes(key) && key !== primaryId) return;
+    if (nameMatches(primaryName, key)) out[key] = next;
+  });
+  return out;
+}
+
+/** A resubmitted stale game_prices value must not replace the admin unit price. */
+export function acceptSubmittedServicePrice(companion = {}, serviceId = "", serviceName = "", submitted) {
+  const next = money(submitted);
+  const listing = money(companion.price);
+  const stored = readGamePrices(companion);
+  const storedVal = money((serviceId && stored[serviceId]) || (serviceName && stored[serviceName]) || 0);
+  if (!(listing > 0) || !(storedVal > 0) || storedVal === listing || next !== storedVal) return next;
+  const reconciled = reconcileAdminServicePrices(companion, listing);
+  const target = money((serviceId && reconciled[serviceId]) || (serviceName && reconciled[serviceName]) || 0);
+  if (target === listing && target !== storedVal) return listing;
+  return next;
+}
+
 export function priceForGame(companion = {}, gameName = "", serviceId = "") {
-  const prices = readGamePrices(companion);
+  const listing = money(companion.price);
+  const prices = listing > 0 ? reconcileAdminServicePrices(companion, listing) : readGamePrices(companion);
   const id = String(serviceId || "").trim();
   if (id && prices[id] > 0) return prices[id];
   const name = String(gameName || "").trim();
@@ -143,11 +210,11 @@ export function priceForGame(companion = {}, gameName = "", serviceId = "") {
   // fuzzy match (LOL / 王者 etc.)
   const key = Object.keys(prices).find((k) => name && (name.includes(k) || k.includes(name)));
   if (key && prices[key] > 0) return prices[key];
-  const games = splitGames(companion.game || companion.main_service);
+  const games = serviceNames(companion);
   for (const g of games) {
     if (prices[g] > 0) return prices[g];
   }
-  return money(companion.price);
+  return listing;
 }
 
 export function servicesFromGamePrices(companion = {}, catalog = []) {
