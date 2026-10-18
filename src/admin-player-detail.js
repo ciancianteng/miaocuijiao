@@ -217,6 +217,10 @@
         "</div>";
     }
 
+    var credential = d.credential || {};
+    var credentialNote = credential.summary
+      ? '<div class="admin-sync-note" data-credential-summary>' + esc(credential.summary) + "</div>"
+      : "";
     var applicationHtml = app.empty
       ? emptyText("尚未提交陪玩申请资料")
       : rows([
@@ -234,8 +238,8 @@
     if (edit) applicationHtml += reviewBox("application", app.status);
 
     var identityHtml = identity.empty
-      ? emptyText("尚未上传身份证")
-      : rows([
+      ? credentialNote + emptyText(identity.statusLabel || "尚未上传身份证（必填）")
+      : credentialNote + rows([
           ["真实姓名", identity.realName || "—"],
           {
             0: "身份证号码",
@@ -426,8 +430,8 @@
           ? [deposit]
           : [];
     var depositHtml = deposit.empty && !depositHistory.length
-      ? emptyText("尚未缴纳押金")
-      : rows([
+      ? credentialNote + emptyText(deposit.statusLabel || "尚未上传押金（必填）")
+      : credentialNote + rows([
           ["记录编号", deposit.recordNo || "—"],
           ["应缴押金", "RM" + (deposit.requiredAmount != null ? deposit.requiredAmount : 100)],
           ["已缴金额", "RM" + (deposit.paidAmount != null ? deposit.paidAmount : 0)],

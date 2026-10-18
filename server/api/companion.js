@@ -2771,6 +2771,11 @@ async function loadCompanionReviews(companionUserId) {
 
 async function ensureCompanionRow(profile, companion) {
   if (companion?.id) return companion;
+  const existing = await companionDb(
+    "companion_profiles",
+    `?user_id=eq.${encodeURIComponent(profile.id)}&order=updated_at.desc&limit=1`
+  ).catch(() => []);
+  if (existing?.[0]?.id) return existing[0];
   const rows = await supabaseJson(restUrl("companion_profiles"), {
     method: "POST",
     headers: serviceHeaders(),
@@ -2811,8 +2816,20 @@ async function upsertByCompanion(table, companionId, userId, payload) {
     throw Object.assign(new Error(`${table} 写入失败（列不兼容）`), { status: 500 });
   }
 
-  if (existing?.[0]) {
-    return write({ ...payload, updated_at: nowIso() }, "PATCH", `?id=eq.${encodeURIComponent(existing[0].id)}`);
+  let current = existing?.[0] || null;
+  if (!current && userId) {
+    const byUser = await companionDb(table, `?user_id=eq.${encodeURIComponent(userId)}&order=updated_at.desc&limit=1`).catch((e) => {
+      if (isMissingRelation(e)) throw Object.assign(new Error("请先执行 supabase/companion-admin-data.sql"), { status: 503 });
+      throw e;
+    });
+    current = byUser?.[0] || null;
+  }
+  if (current) {
+    return write(
+      { ...payload, companion_profile_id: companionId, user_id: userId, updated_at: nowIso() },
+      "PATCH",
+      `?id=eq.${encodeURIComponent(current.id)}`
+    );
   }
   return write(
     {
@@ -4787,7 +4804,7 @@ export default async function handler(req, res) {
         await supabaseJson(restUrl("companion_profiles", `?id=eq.${encodeURIComponent(row.id)}`), {
           method: "PATCH",
           headers: serviceHeaders(),
-          body: JSON.stringify({ deposit_status: "pending", updated_at: nowIso() }),
+          body: JSON.stringify({ deposit_status: "unpaid", updated_at: nowIso() }),
         });
         return json(res, 200, { ok: true, message: "已删除付款凭证" });
       }
@@ -5675,6 +5692,17 @@ export default async function handler(req, res) {
         }
       } catch {
         /* optional */
+      }
+      try {
+        const { notifyAdminsOfCompanionApplication } = await import("./_companion-apply-notify.js");
+        await notifyAdminsOfCompanionApplication(companionDb, {
+          companionId: row.id,
+          nickname: patch.nickname || row.nickname || auth.profile.display_name || "",
+          submittedAt: patch.application_submitted_at || nowIso(),
+          authMode,
+        });
+      } catch (notifyErr) {
+        console.warn("[companion] apply notify", notifyErr?.message || notifyErr);
       }
       return json(res, 200, { ok: true, message: "申请已提交，等待后台审核。" });
     }

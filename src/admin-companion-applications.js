@@ -48,21 +48,39 @@
     if (!key || /^[a-z][a-z0-9_]*$/i.test(key)) return "-";
     return String(code);
   }
-  function isApplicationQueue(row) {
+  function applicationPhase(row) {
+    if (row && row.applicationPhase) return String(row.applicationPhase);
     var code = statusCode(row);
-    if (/approved|verified|passed/.test(code) && !row.application_submitted_at && !row.applicationSubmittedAt) {
-      /* still show if they have submitted_at */
-    }
-    return !!row.id && (row.application_submitted_at || row.applicationSubmittedAt || row.game || row.mainGame || row.main_service || /pending|resubmit|rejected|approved|review|submitted/.test(code));
+    var submitted = !!(row && (row.application_submitted_at || row.applicationSubmittedAt));
+    if (/approved|verified|passed|已通过/.test(code)) return "approved";
+    if (/reject|已拒绝|已驳回/.test(code)) return "rejected";
+    if (/resubmit|need_more|补资料/.test(code)) return "resubmit";
+    if (/draft|archived|deleted/.test(code)) return "draft";
+    if (/pending|review|submit|待审核|审核中|未审核/.test(code)) return "pending";
+    if (!submitted) return "draft";
+    return "pending";
+  }
+  function isApplicationQueue(row) {
+    if (!row || !row.id) return false;
+    var phase = applicationPhase(row);
+    return phase === "pending" || phase === "resubmit" || phase === "rejected" || phase === "approved";
+  }
+  function authTypeLabel(row) {
+    var mode = String((row && (row.credential_mode || row.credentialMode)) || "");
+    var note = String((row && (row.application_note || row.applicationNote || (row.application && row.application.note))) || "");
+    var tagged = mode || ((note.match(/\[AUTH_MODE:(id_card|deposit)\]/i) || [])[1] || "");
+    if (tagged === "id_card") return "身份证认证";
+    if (tagged === "deposit") return "押金认证";
+    return "入驻申请";
   }
   function filteredRows() {
     var list = (state.rows || []).filter(isApplicationQueue);
     var f = state.filter || "all";
     if (f === "all") return list;
-    if (f === "pending") return list.filter(function (r) { return /pending|review|submitted/.test(statusCode(r)); });
-    if (f === "resubmit") return list.filter(function (r) { return /resubmit|need_more/.test(statusCode(r)); });
-    if (f === "approved") return list.filter(function (r) { return /approved|verified|passed/.test(statusCode(r)); });
-    if (f === "rejected") return list.filter(function (r) { return /rejected/.test(statusCode(r)); });
+    if (f === "pending") return list.filter(function (r) { return applicationPhase(r) === "pending"; });
+    if (f === "resubmit") return list.filter(function (r) { return applicationPhase(r) === "resubmit"; });
+    if (f === "approved") return list.filter(function (r) { return applicationPhase(r) === "approved"; });
+    if (f === "rejected") return list.filter(function (r) { return applicationPhase(r) === "rejected"; });
     return list;
   }
   function paint() {
@@ -80,10 +98,14 @@
       return;
     }
     var rows = filteredRows();
+    var pendingCount = (state.rows || []).filter(function (row) {
+      return isApplicationQueue(row) && applicationPhase(row) === "pending";
+    }).length;
     var body = rows
       .map(function (item) {
         var code = statusCode(item);
         var id = item.id || item.playerId || "";
+        var submitted = item.application_submitted_at || item.applicationSubmittedAt || item.created_at || "-";
         return (
           "<tr>" +
           "<td>" +
@@ -95,7 +117,11 @@
           "</td><td>" +
           esc(item.game || item.mainGame || item.main_service || "-") +
           "</td><td>" +
-          esc(statusLabel(code)) +
+          esc(authTypeLabel(item)) +
+          "</td><td>" +
+          esc(submitted) +
+          "</td><td>" +
+          esc(statusLabel(applicationPhase(item) === "pending" ? "pending" : code)) +
           "</td><td>" +
           esc(item.depositStatus || item.deposit_status || "-") +
           "</td><td>" +
@@ -116,7 +142,9 @@
       })
       .join("");
     box.innerHTML =
-      '<div class="admin-section-head compact"><div><h3>陪玩申请审核</h3><p>查看申请人完整资料、媒体与敏感认证信息；通过后开通陪玩端登录（默认离线，须完成身份与押金后才可接单）。</p></div>' +
+      '<div class="admin-section-head compact"><div><h3>陪玩申请审核</h3><p>未审核 ' +
+      pendingCount +
+      ' 条。查看申请人昵称、申请时间与认证方式；通过后开通陪玩端登录（默认离线）。身份证或押金审核通过其中一项即可接单。</p></div>' +
       '<div class="content-admin-toolbar compact"><select data-capp-filter>' +
       [
         ["pending", "审核中"],
@@ -139,8 +167,8 @@
         .join("") +
       '</select><button class="mini-btn" type="button" data-capp-reload>刷新</button></div></div>' +
       (state.message ? '<div class="admin-sync-note">' + esc(state.message) + "</div>" : "") +
-      '<div class="table-wrap"><table><thead><tr><th>申请ID</th><th>昵称</th><th>联系方式</th><th>游戏</th><th>申请状态</th><th>押金</th><th>操作</th></tr></thead><tbody>' +
-      (body || '<tr><td colspan="7">暂无陪玩申请</td></tr>') +
+      '<div class="table-wrap"><table><thead><tr><th>申请ID</th><th>昵称</th><th>联系方式</th><th>游戏</th><th>申请类型</th><th>申请时间</th><th>申请状态</th><th>押金</th><th>操作</th></tr></thead><tbody>' +
+      (body || '<tr><td colspan="9">暂无陪玩申请</td></tr>') +
       "</tbody></table></div>";
   }
   function load() {
@@ -200,7 +228,7 @@
       if (!confirm("确认通过该陪玩申请？通过后可登录陪玩端，默认离线。")) return;
       review(approve.getAttribute("data-capp-approve"), "approved", "")
         .then(function () {
-          alert("已通过。申请人可登录陪玩端；完成身份认证与押金审核后才可接单。");
+          alert("已通过。申请人可登录陪玩端；身份证或押金审核通过其中一项后才可接单。");
         })
         .catch(function (err) {
           alert(err.message || "操作失败");

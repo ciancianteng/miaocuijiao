@@ -17,6 +17,12 @@ import {
   writeGamePricesMarker,
 } from "../_game-prices.js";
 import { requireAdmin as requireAdminJwt, ADMIN_ROLES as SHARED_ADMIN_ROLES } from "../_admin-auth.js";
+import {
+  applicationPhase,
+  hasDepositProof,
+  hasIdentityFile,
+  reviewCredential,
+} from "../_credential-review.js";
 
 const ADMIN_ROLES = SHARED_ADMIN_ROLES;
 const PLAYER_TABLE = "companion_profiles";
@@ -259,6 +265,12 @@ function mapListPlayer(row = {}, profile = {}) {
     mediaStatus: labelStatus(mediaRaw),
     application_status: applicationRaw,
     applicationStatus: labelStatus(applicationRaw),
+    application_submitted_at: row.application_submitted_at || "",
+    applicationSubmittedAt: row.application_submitted_at || "",
+    applicationPhase: applicationPhase(row),
+    credential_mode: row.credential_mode || "",
+    companion_code: row.companion_code || "",
+    companionCode: row.companion_code || "",
     online_status: (() => {
       const verified = /approved|verified|passed/.test(String(row.verification_status || applicationRaw || ""));
       if (!verified) return "offline";
@@ -288,14 +300,51 @@ function mapListPlayer(row = {}, profile = {}) {
   };
 }
 
+function preferCredentialRow(rows, hasFile) {
+  const list = (Array.isArray(rows) ? rows : []).filter(Boolean);
+  const rank = (row) => {
+    const status = String(row.status || "").toLowerCase();
+    const file = hasFile(row) ? 2 : 0;
+    const approved = /^(approved|verified|passed|paid|received)$/.test(status) ? 40 : 0;
+    const pending = /pending|review|submit/.test(status) ? 20 : 0;
+    const rejected = /reject/.test(status) ? 10 : 0;
+    const stamp = Date.parse(row.updated_at || row.created_at || "") || 0;
+    return approved + pending + rejected + file * 5 + stamp / 1e15;
+  };
+  return list.slice().sort((a, b) => rank(b) - rank(a))[0] || null;
+}
+
+async function loadCredentialRows(table, companionId, userId) {
+  const [byProfile, byUser] = await Promise.all([
+    companionId
+      ? companionDb(table, `?companion_profile_id=eq.${encodeURIComponent(companionId)}&order=updated_at.desc&limit=20`).catch((e) => {
+          if (isMissingRelation(e)) return [];
+          throw e;
+        })
+      : [],
+    userId
+      ? companionDb(table, `?user_id=eq.${encodeURIComponent(userId)}&order=updated_at.desc&limit=20`).catch((e) => {
+          if (isMissingRelation(e)) return [];
+          throw e;
+        })
+      : [],
+  ]);
+  const seen = new Set();
+  const merged = [];
+  for (const row of [...(byProfile || []), ...(byUser || [])]) {
+    const key = String(row?.id || "");
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    merged.push(row);
+  }
+  return merged;
+}
+
 async function loadRelated(profileId, companionId) {
   const empty = { identity: null, payment: null, media: [], deposit: null, deposits: [], orders: [], income: [], reviews: [] };
   try {
     const [identityRows, paymentRows, mediaRows, depositRows, orderRows, txRows, reviewRows] = await Promise.all([
-      companionDb("companion_identity_verifications", `?companion_profile_id=eq.${encodeURIComponent(companionId)}&limit=1`).catch((e) => {
-        if (isMissingRelation(e)) return [];
-        throw e;
-      }),
+      loadCredentialRows("companion_identity_verifications", companionId, profileId),
       companionDb("companion_payment_accounts", `?companion_profile_id=eq.${encodeURIComponent(companionId)}&limit=1`).catch((e) => {
         if (isMissingRelation(e)) return [];
         throw e;
@@ -307,12 +356,7 @@ async function loadRelated(profileId, companionId) {
         if (isMissingRelation(e)) return [];
         throw e;
       }),
-      companionDb("companion_deposits", `?companion_profile_id=eq.${encodeURIComponent(companionId)}&order=created_at.desc&limit=50`).catch(
-        (e) => {
-          if (isMissingRelation(e)) return [];
-          throw e;
-        }
-      ),
+      loadCredentialRows("companion_deposits", companionId, profileId),
       companionDb("orders", `?companion_id=eq.${encodeURIComponent(profileId)}&order=created_at.desc&limit=20`).catch(() => []),
       companionDb(
         "transactions",
@@ -327,12 +371,13 @@ async function loadRelated(profileId, companionId) {
       }),
     ]);
     const deposits = Array.isArray(depositRows) ? depositRows : [];
-    const paid = deposits.find((d) => /^(paid|approved|verified|passed|received)$/i.test(String(d.status || ""))) || null;
+    const identity = preferCredentialRow(identityRows, hasIdentityFile);
+    const deposit = preferCredentialRow(deposits, hasDepositProof);
     return {
-      identity: identityRows?.[0] || null,
+      identity,
       payment: paymentRows?.[0] || null,
       media: Array.isArray(mediaRows) ? mediaRows : [],
-      deposit: paid || deposits[0] || null,
+      deposit,
       deposits,
       orders: Array.isArray(orderRows) ? orderRows : [],
       income: Array.isArray(txRows) ? txRows : [],
@@ -487,16 +532,28 @@ async function buildDetail(row, profile, opts = {}) {
   const avgRating = reviewCount ? Math.round((reviewRatings.reduce((n, v) => n + v, 0) / reviewCount) * 10) / 10 : 0;
   const goodReviewCount = reviewRatings.filter((n) => n >= 4).length;
 
+  const credential = reviewCredential({
+    identityStatus: identity?.status || "",
+    identityFile: hasIdentityFile(identity),
+    depositStatus: deposit?.status || "",
+    depositFile: hasDepositProof(deposit),
+  });
   const base = mapListPlayer(
     {
       ...row,
-      identity_status: identity?.status || row.verification_status,
+      identity_status: credential.identity.phase,
       application_status: row.application_status || row.verification_status,
-      deposit_status: deposit?.status || row.deposit_status,
+      deposit_status: credential.deposit.phase,
       media_status: row.media_status,
     },
     profile
   );
+  base.identityStatus = credential.identity.shortLabel;
+  base.depositStatus = credential.deposit.shortLabel;
+  base.identityPhase = credential.identity.phase;
+  base.depositPhase = credential.deposit.phase;
+  base.credentialSatisfied = credential.satisfied;
+  base.credentialSummary = credential.summary;
 
   let hasPassword = profile?.has_password === true;
   let mustChangePassword = profile?.must_change_password === true;
@@ -568,16 +625,20 @@ async function buildDetail(row, profile, opts = {}) {
           hasHandheld: !!identity.id_handheld_path,
           submittedAt: identity.submitted_at || identity.created_at,
           status: identity.status,
-          statusLabel: labelStatus(identity.status),
+          statusLabel: credential.identity.label,
+          phase: credential.identity.phase,
+          required: credential.identity.required,
           reviewedBy: identity.reviewed_by || "",
           reviewedAt: identity.reviewed_at || "",
           rejectReason: identity.reject_reason || "",
-          empty: false,
+          empty: credential.identity.phase === "missing",
         }
       : {
           empty: true,
-          status: "unverified",
-          statusLabel: "尚未上传身份证",
+          status: "missing",
+          phase: credential.identity.phase,
+          required: credential.identity.required,
+          statusLabel: credential.identity.label,
           hasFront: false,
           hasBack: false,
           hasHandheld: false,
@@ -631,7 +692,9 @@ async function buildDetail(row, profile, opts = {}) {
           proofUrl,
           hasProof: !!deposit.proof_path,
           status: deposit.status,
-          statusLabel: labelStatus(deposit.status),
+          statusLabel: credential.deposit.label,
+          phase: credential.deposit.phase,
+          required: credential.deposit.required,
           refundStatus: deposit.refund_status || "none",
           refundStatusLabel: labelStatus(deposit.refund_status || "none", "无"),
           refundedAt: deposit.refunded_at || "",
@@ -641,15 +704,19 @@ async function buildDetail(row, profile, opts = {}) {
           reviewedBy: deposit.reviewed_by || "",
           reviewedByName: reviewerMap[deposit.reviewed_by] || deposit.reviewed_by || "",
           channel: depositSnap,
-          empty: false,
+          empty: credential.deposit.phase === "missing",
         }
       : {
           empty: true,
-          statusLabel: "尚未缴纳押金",
+          status: "missing",
+          phase: credential.deposit.phase,
+          required: credential.deposit.required,
+          statusLabel: credential.deposit.label,
           requiredAmount: 100,
           paidAmount: 0,
           hasProof: false,
         },
+    credential,
     deposits: depositHistory,
     depositHistory,
     stats: {
@@ -818,16 +885,55 @@ function profileEditablePatch(payload = {}) {
   return patch;
 }
 
+function indexCredentialRows(rows, hasFile) {
+  const map = new Map();
+  for (const row of Array.isArray(rows) ? rows : []) {
+    for (const key of [row.companion_profile_id, row.user_id]) {
+      if (!key) continue;
+      const prev = map.get(key);
+      map.set(key, preferCredentialRow([prev, row].filter(Boolean), hasFile));
+    }
+  }
+  return map;
+}
+
 async function listPlayers() {
-  const [companions, profiles] = await Promise.all([
+  const [companions, profiles, identityRows, depositRows] = await Promise.all([
     companionDb(PLAYER_TABLE, "?order=updated_at.desc,created_at.desc&limit=500"),
     companionDb("profiles", "?role=eq.companion&limit=800").catch(() => []),
+    companionDb(
+      "companion_identity_verifications",
+      "?select=id,companion_profile_id,user_id,status,id_front_path,id_back_path,id_handheld_path,updated_at&order=updated_at.desc&limit=2000"
+    ).catch(() => []),
+    companionDb(
+      "companion_deposits",
+      "?select=id,companion_profile_id,user_id,status,proof_path,created_at,updated_at&order=created_at.desc&limit=2000"
+    ).catch(() => []),
   ]);
   const profileMap = (Array.isArray(profiles) ? profiles : []).reduce((m, p) => {
     m[p.id] = p;
     return m;
   }, {});
-  return (Array.isArray(companions) ? companions : []).map((row) => mapListPlayer(row, profileMap[row.user_id] || {}));
+  const identityMap = indexCredentialRows(identityRows, hasIdentityFile);
+  const depositMap = indexCredentialRows(depositRows, hasDepositProof);
+  return (Array.isArray(companions) ? companions : []).map((row) => {
+    const player = mapListPlayer(row, profileMap[row.user_id] || {});
+    const identity = identityMap.get(row.id) || identityMap.get(row.user_id) || null;
+    const deposit = depositMap.get(row.id) || depositMap.get(row.user_id) || null;
+    const snap = reviewCredential({
+      identityStatus: identity?.status || "",
+      identityFile: hasIdentityFile(identity),
+      depositStatus: deposit?.status || "",
+      depositFile: hasDepositProof(deposit),
+    });
+    player.identityPhase = snap.identity.phase;
+    player.identityStatus = snap.identity.shortLabel;
+    player.depositPhase = snap.deposit.phase;
+    player.depositStatus = snap.deposit.shortLabel;
+    player.credentialSatisfied = snap.satisfied;
+    player.applicationPhase = applicationPhase(row);
+    return player;
+  });
 }
 
 async function reviewIdentity(req, companion, payload) {
@@ -944,10 +1050,7 @@ async function reviewDeposit(req, companion, payload, admin = null) {
   if ((status === "rejected" || status === "resubmit") && !reason) {
     throw Object.assign(new Error("驳回押金时必须填写原因。"), { status: 400 });
   }
-  const rows = await companionDb(
-    "companion_deposits",
-    `?companion_profile_id=eq.${encodeURIComponent(companion.id)}&order=created_at.desc&limit=20`
-  ).catch((e) => {
+  const rows = await loadCredentialRows("companion_deposits", companion.id, companion.user_id).catch((e) => {
     if (isMissingRelation(e)) throw Object.assign(new Error("请先执行 supabase/companion-admin-data.sql"), { status: 503 });
     throw e;
   });
@@ -956,7 +1059,11 @@ async function reviewDeposit(req, companion, payload, admin = null) {
   const before =
     (targetId && list.find((r) => String(r.id) === targetId)) ||
     list.find((r) => /pending|review|submit|resubmit/i.test(String(r.status || ""))) ||
-    list[0];
+    list.find((r) => hasDepositProof(r)) ||
+    null;
+  if (!before) {
+    throw Object.assign(new Error("该陪玩尚未上传押金资料。"), { status: 404 });
+  }
   const mapped =
     status === "approved" ? "paid" : status === "unpaid" ? "unpaid" : status === "refunded" ? "refunded" : status;
   if (before) {
@@ -1127,7 +1234,14 @@ export default async function handler(req, res) {
         }
       }
       const players = await listPlayers();
-      return json(res, 200, { ok: true, configured: true, players, table: PLAYER_TABLE });
+      const pendingApplications = players.filter((row) => row.applicationPhase === "pending").length;
+      return json(res, 200, {
+        ok: true,
+        configured: true,
+        players,
+        pendingApplications,
+        table: PLAYER_TABLE,
+      });
     }
 
     if (req.method !== "POST") return json(res, 405, { ok: false, message: "Method Not Allowed" });
