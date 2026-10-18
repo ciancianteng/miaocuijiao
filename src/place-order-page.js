@@ -543,6 +543,31 @@
       });
   }
 
+  function reusePageAttemptKey(parts) {
+    var fingerprint = parts
+      .map(function (part) {
+        return String(part == null ? "" : part).trim();
+      })
+      .join("|");
+    var storageKey = "mcjPoPageAttempt:" + fingerprint;
+    try {
+      var prev = sessionStorage.getItem(storageKey);
+      if (prev) return { key: prev, storageKey: storageKey };
+    } catch (eRead) {}
+    var key = "po-page-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
+    try {
+      sessionStorage.setItem(storageKey, key);
+    } catch (eWrite) {}
+    return { key: key, storageKey: storageKey };
+  }
+
+  function clearPageAttemptKey(storageKey) {
+    if (!storageKey) return;
+    try {
+      sessionStorage.removeItem(storageKey);
+    } catch (eClear) {}
+  }
+
   function submitOrder() {
     if (state.submitting) return;
     if (!requireLogin()) return;
@@ -571,6 +596,18 @@
     var contactEl = root.querySelector("[data-po-contact]");
     var scheduleEl = root.querySelector("[data-po-schedule]");
     var btn = root.querySelector("[data-po-submit]");
+    var hours = currentHours();
+    var quantity = currentQuantity();
+    var total = totalAmount();
+    var attempt = reusePageAttemptKey([
+      c.companionId,
+      currentServiceLabel(),
+      hours,
+      quantity,
+      state.payment,
+      gameId,
+      total,
+    ]);
     state.submitting = true;
     setError("");
     if (btn) {
@@ -581,15 +618,15 @@
       method: "POST",
       headers: authHeaders(),
       body: JSON.stringify({
-        action: "create_order",
+        action: "place_order",
         companionId: c.companionId,
         serviceType: currentServiceLabel(),
         service: currentServiceLabel(),
         game: currentServiceLabel(),
-        hours: currentHours(),
-        quantity: currentQuantity(),
+        hours: hours,
+        quantity: quantity,
         unitPrice: c.unitPrice,
-        totalAmount: totalAmount(),
+        totalAmount: total,
         gameId: gameId,
         region: regionEl ? regionEl.value : "",
         contact: contactEl ? contactEl.value : "",
@@ -597,7 +634,7 @@
         notes: notesEl ? notesEl.value : "",
         couponCode: state.couponCode,
         paymentMethod: state.payment,
-        idempotencyKey: "po-page-" + c.companionId + "-" + Date.now(),
+        idempotencyKey: attempt.key,
       }),
     })
       .then(function (res) {
@@ -610,22 +647,17 @@
         var order = body.order || {};
         var oid = order.id || "";
         if (!oid) throw new Error("订单创建失败");
-        if (/cat.?food|wallet|猫粮|余额/.test(String(state.payment || ""))) {
-          return fetch("/api/orders", {
-            method: "POST",
-            headers: authHeaders(),
-            body: JSON.stringify({ action: "pay_order", id: oid, paymentMethod: state.payment }),
-          })
-            .then(function (res) {
-              return res.json().then(function (paid) {
-                if (!res.ok || paid.ok === false) throw Object.assign(new Error(paid.message || "支付失败"), paid);
-                return paid;
-              });
-            })
-            .then(function () {
-              location.href = "orders.html?id=" + encodeURIComponent(oid);
-            });
-        }
+        clearPageAttemptKey(attempt.storageKey);
+        try {
+          var cachePayload = JSON.stringify({
+            id: oid,
+            status: "awaiting_payment",
+            paymentMethod: state.payment,
+            totalAmount: order.totalAmount || total,
+          });
+          sessionStorage.setItem("mcjOrderCache:" + oid, cachePayload);
+          localStorage.setItem("mcjOrderCache:" + oid, cachePayload);
+        } catch (eCache) {}
         location.href = "payment-confirm.html?order=" + encodeURIComponent(oid);
       })
       .catch(function (err) {
