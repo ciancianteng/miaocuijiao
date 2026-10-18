@@ -224,7 +224,7 @@
     if (document.querySelector('link[data-mcj-team-css]')) return;
     var link = document.createElement("link");
     link.rel = "stylesheet";
-    link.href = "/src/multi-companion-team.css?v=20260924csMultiConfirm1";
+    link.href = "/src/multi-companion-team.css?v=20261018teamSheet1";
     link.setAttribute("data-mcj-team-css", "1");
     document.head.appendChild(link);
   }

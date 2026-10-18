@@ -4,7 +4,7 @@
   if (window.__MCJCompanionWechatLoaded) return;
   window.__MCJCompanionWechatLoaded = true;
 
-  var REMARK = "陪玩嘻嘻";
+  var REMARK = "陪玩";
   var GROUP_NICK = "陪玩嘻嘻｜你的陪玩昵称（或陪玩ID）";
   var QR_SRC = "/companion-wechat-admin-qr.jpg";
   var PAGE_TITLES = { "工作台": 1, "审核状态": 1 };
