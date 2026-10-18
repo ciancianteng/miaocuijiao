@@ -539,6 +539,17 @@
     }catch(e){return ''}
   }
   function categoryLabel(v){return ({companion:'陪玩公告',customer_service:'客服公告',homepage_only:'仅首页',home:'首页公告（首页/老板端）'})[v]||v||'首页公告'}
+  function storedAnnouncementCategory(v){
+    v=String(v||'');
+    return ({home:1,homepage_only:1,companion:1,customer_service:1})[v]?v:'home';
+  }
+  function storedAnnouncementAudience(v, category){
+    v=String(v||'');
+    if(({home:1,boss:1,companion:1,customer_service:1,all:1})[v]) return v;
+    if(category==='companion') return 'companion';
+    if(category==='customer_service') return 'customer_service';
+    return 'home';
+  }
   function audienceLabel(v){
     return ({home:'首页',boss:'老板端',companion:'陪玩端',customer_service:'客服端',all:'全平台'})[v]||v||'首页';
   }
@@ -818,9 +829,11 @@
       var af=document.querySelector('[data-announcement-form]');
       if(af){
         af.elements.id.value=a.id||'';
-        if(af.elements.category)af.elements.category.value=a.category==='companion'?'companion':'home';
+        var storedCategory=storedAnnouncementCategory(a.category);
+        var storedAudience=storedAnnouncementAudience(a.audience, storedCategory);
+        if(af.elements.category)af.elements.category.value=storedCategory;
         if(af.elements.kind)af.elements.kind.value=a.kind==='forced'?'forced':'normal';
-        if(af.elements.audience)af.elements.audience.value=a.audience||(a.category==='companion'?'companion':'home');
+        if(af.elements.audience)af.elements.audience.value=storedAudience;
         af.elements.title.value=a.title||'';
         af.elements.content.value=a.content||'';
         if(af.elements.sort_order)af.elements.sort_order.value=a.sort_order==null?100:a.sort_order;
@@ -831,6 +844,8 @@
         if(af.elements.is_scrolling)af.elements.is_scrolling.value=a.is_scrolling===false?'false':'true';
         af.elements.is_active.value=a.is_active===false?'false':'true';
         if(window.MCJAdminForms&&window.MCJAdminForms.enhance)window.MCJAdminForms.enhance(af);
+        if(af.elements.category)af.elements.category.value=storedCategory;
+        if(af.elements.audience)af.elements.audience.value=storedAudience;
         af.elements.is_pinned.dispatchEvent(new Event('change',{bubbles:true}));
         if(af.elements.is_scrolling)af.elements.is_scrolling.dispatchEvent(new Event('change',{bubbles:true}));
         af.elements.is_active.dispatchEvent(new Event('change',{bubbles:true}));
