@@ -141,9 +141,6 @@
       toastTimer = null;
     }, 3200);
   }
-  function isWalletPayment(method) {
-    return /cat.?food|wallet|猫粮|余额/.test(String(method || "").toLowerCase());
-  }
   function activeMask() {
     return document.querySelector("[data-mcj-po-mask]");
   }
@@ -1147,45 +1144,29 @@
     });
   }
 
-  function payCreatedOrder(orderId, paymentMethod) {
-    return fetch("/api/orders", {
-      method: "POST",
-      headers: authHeaders(),
-      body: JSON.stringify({
-        action: "pay_order",
-        id: orderId,
-        paymentMethod: paymentMethod,
-        preview_test: isWalletPayment(paymentMethod) ? "" : "1",
-      }),
-    }).then(parseApiJson);
+  function reusePlaceAttemptKey(parts) {
+    var fingerprint = parts
+      .map(function (part) {
+        return String(part == null ? "" : part).trim();
+      })
+      .join("|");
+    var storageKey = "mcjPoAttempt:" + fingerprint;
+    try {
+      var prev = sessionStorage.getItem(storageKey);
+      if (prev) return { key: prev, storageKey: storageKey };
+    } catch (eRead) {}
+    var key = "po-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
+    try {
+      sessionStorage.setItem(storageKey, key);
+    } catch (eWrite) {}
+    return { key: key, storageKey: storageKey };
   }
 
-  function goOrderSuccess(order) {
-    var oid = order && order.id ? order.id : "";
-    close();
-    toast("下单成功");
-    if (oid) {
-      try {
-        var list = [];
-        try {
-          list = JSON.parse(localStorage.getItem("mcjBossOrdersCache") || "[]");
-          if (!Array.isArray(list)) list = [];
-        } catch (eList) {
-          list = [];
-        }
-        var row = Object.assign({}, order || {}, {
-          id: oid,
-          status: order && order.status ? order.status : "awaiting_payment",
-          statusText: (order && order.statusText) || "待付款",
-          createdAt: (order && (order.createdAt || order.created_at)) || new Date().toISOString(),
-        });
-        list = [row].concat(list.filter(function (x) { return String(x.id) !== String(oid); }));
-        localStorage.setItem("mcjBossOrdersCache", JSON.stringify(list.slice(0, 80)));
-      } catch (eCache) {}
-      location.href = "orders.html?id=" + encodeURIComponent(oid);
-      return;
-    }
-    location.href = "orders.html";
+  function clearPlaceAttemptKey(storageKey) {
+    if (!storageKey) return;
+    try {
+      sessionStorage.removeItem(storageKey);
+    } catch (eClear) {}
   }
 
   function goPaymentPage(order) {
@@ -1291,12 +1272,7 @@
         failValidate("订单金额无效");
         return;
       }
-      if (isWalletPayment(payment)) {
-        if (state.walletBalance != null && !(state.walletBalance + 1e-9 >= total)) {
-          failValidate("猫粮余额不足，请改用其他支付方式或先充值");
-          return;
-        }
-      }
+      // Payment page owns balance, QR, and proof. Creating the order must not debit.
 
       state.submitting = true;
       state.submitStartedAt = Date.now();
@@ -1315,6 +1291,15 @@
       if (schedule) noteParts.push("服务时间：" + schedule);
       if (contact) noteParts.push("联系方式：" + contact);
 
+      var attempt = reusePlaceAttemptKey([
+        c.companionId,
+        currentServiceLabel(),
+        hours,
+        quantity,
+        payment,
+        gameId,
+        total,
+      ]);
       var payload = {
         action: "place_order",
         companionId: c.companionId,
@@ -1333,8 +1318,7 @@
         contact: contact,
         notes: noteParts.join("；"),
         paymentMethod: payment,
-        idempotencyKey:
-          "po-" + c.companionId + "-" + Date.now() + "-" + Math.random().toString(36).slice(2, 8),
+        idempotencyKey: attempt.key,
       };
 
       fetch("/api/orders", {
@@ -1347,12 +1331,7 @@
           var order = body.order || {};
           var oid = order.id || "";
           if (!oid) throw new Error("订单创建失败");
-          if (isWalletPayment(payment)) {
-            setSubmitLoading(true);
-            return payCreatedOrder(oid, payment).then(function (paid) {
-              goOrderSuccess(paid.order || order);
-            });
-          }
+          clearPlaceAttemptKey(attempt.storageKey);
           goPaymentPage(order);
         })
         .catch(function (err) {
