@@ -43,12 +43,6 @@ import {
 } from "./_game-prices.js";
 import { loadPublicServices } from "./platform/services.js";
 import {
-  SERVICE_STANDARD_FIELDS,
-  hasStandardContent,
-  normalizeServiceStandard,
-  readServiceStandards,
-} from "./_service-standard.js";
-import {
   anonymousBossLabel,
   allocateWithdrawalNo,
   resolveBossPublicCode,
@@ -888,8 +882,6 @@ function safePlayer(profile = {}, companion = {}) {
     rawPrice: money(companion.price),
     price: money(companion.price),
     gamePrices,
-    serviceStandards: readServiceStandards(companion),
-    serviceStandardFields: SERVICE_STANDARD_FIELDS,
     publicTags,
     voiceType: String(companion.voice_type || "").trim(),
     voice_type: String(companion.voice_type || "").trim(),
@@ -4229,40 +4221,6 @@ export default async function handler(req, res) {
           profile: rows?.[0] || null,
         });
       }
-    }
-    if (action === "save_service_standard") {
-      const serviceId = String(body.serviceId || body.service_id || "").trim();
-      if (!serviceId) return json(res, 400, { ok: false, message: "请选择服务项目", field: "serviceId" });
-      const servicesBundle = await loadPublicServices().catch(() => ({ services: [] }));
-      const svc = (Array.isArray(servicesBundle?.services) ? servicesBundle.services : []).find(
-        (item) => String(item.id) === serviceId
-      );
-      if (!svc) return json(res, 400, { ok: false, message: "服务项目不存在或已下架", field: "serviceId" });
-      const current = readServiceStandards(companion);
-      const norm = normalizeServiceStandard(body.standard || body);
-      const next = { ...current };
-      let saved = null;
-      if (hasStandardContent(norm)) {
-        saved = {
-          name: String(svc.name || svc.title || "").trim(),
-          ...norm,
-          updatedAt: new Date().toISOString(),
-        };
-        next[serviceId] = saved;
-      } else {
-        delete next[serviceId];
-      }
-      await patchCompanionProfile(`?user_id=eq.${encodeURIComponent(auth.profile.id)}`, {
-        service_standards: next,
-        updated_at: nowIso(),
-      });
-      return json(res, 200, {
-        ok: true,
-        message: saved ? "服务标准已保存，老板下单时可查看" : "已清空该项目的服务标准",
-        serviceId,
-        standard: saved,
-        serviceStandards: next,
-      });
     }
     if (action === "update_profile") {
       if (body.privacy_only) {
