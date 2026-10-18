@@ -69,12 +69,12 @@ header.mcj-boss-header .mcj-header-brand {
   flex: 0 0 auto;
   flex-shrink: 0;
   align-items: center;
-  gap: 10px;
-  min-width: 0;
-  max-width: min(280px, 46vw);
+  gap: 0;
+  min-width: max-content;
+  max-width: none;
   margin: 0;
   padding: 0;
-  color: #fff7fb;
+  color: #ffffff;
   text-decoration: none;
   visibility: visible !important;
   opacity: 1 !important;
@@ -83,21 +83,21 @@ header.mcj-boss-header .mcj-header-brand {
   overflow: visible;
 }
 
-header.mcj-boss-header .mcj-header-brand-logo {
-  display: block !important;
-  flex: 0 0 40px;
-  width: 40px;
-  height: 40px;
-  min-width: 40px;
-  min-height: 40px;
-  max-width: 40px;
-  max-height: 40px;
-  border-radius: 10px;
-  object-fit: cover;
-  border: 1px solid rgba(255, 158, 207, 0.35);
-  box-shadow: 0 0 14px rgba(255, 105, 180, 0.22);
-  visibility: visible !important;
-  opacity: 1 !important;
+header.mcj-boss-header .mcj-header-brand-logo,
+header.mcj-boss-header .mcj-header-brand img {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  max-width: 0 !important;
+  max-height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  flex: 0 0 0 !important;
+  overflow: hidden !important;
+  visibility: hidden !important;
 }
 
 header.mcj-boss-header .mcj-header-brand-text {
@@ -112,27 +112,26 @@ header.mcj-boss-header .mcj-header-brand-text {
 
 header.mcj-boss-header .mcj-header-brand-en {
   display: block;
-  max-width: 100%;
+  max-width: none;
   color: #ffffff;
-  font-size: 15px;
-  font-weight: 900;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  font-size: 14px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  overflow: visible;
+  text-overflow: clip;
 }
 
 header.mcj-boss-header .mcj-header-brand-zh {
   display: block;
-  max-width: 100%;
+  max-width: none;
   color: rgba(255, 214, 234, 0.78);
-  font-size: 12px;
-  font-weight: 700;
+  font-size: 11px;
+  font-weight: 600;
   letter-spacing: 0.08em;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  overflow: visible;
+  text-overflow: clip;
 }
 
 /* ---------- Shared nav chrome: compact frosted chips ---------- */
@@ -263,8 +262,9 @@ header.mcj-boss-header .mcj-mnav-toggle:focus-visible {
   }
 
   header.mcj-boss-header .mcj-header-brand-en {
-    font-size: 16px;
-    letter-spacing: 0.08em;
+    font-size: 15px;
+    font-weight: 650;
+    letter-spacing: 0.04em;
   }
 
   header.mcj-boss-header .mcj-header-brand-zh {
@@ -323,11 +323,12 @@ header.mcj-boss-header .mcj-mnav-toggle:focus-visible {
   /* Hamburger stays in header row — never over Banner, never full-width */
   header.mcj-boss-header .mcj-header-brand {
     display: flex !important;
-    flex: 1 1 auto !important;
-    flex-grow: 1 !important;
+    flex: 0 0 auto !important;
+    flex-grow: 0 !important;
+    flex-shrink: 0 !important;
     order: 0 !important;
     max-width: none !important;
-    min-width: 0 !important;
+    min-width: max-content !important;
     pointer-events: auto !important;
     margin: 0 !important;
   }
@@ -367,31 +368,22 @@ header.mcj-boss-header .mcj-mnav-toggle:focus-visible {
   }
 
   @media (max-width: 520px) {
-    /* Keep English brand visible on mobile (Meow Cui Jiao) */
     header.mcj-boss-header .mcj-header-brand-en {
       display: block;
-      font-size: 11px;
-      font-weight: 900;
+      font-size: 13px;
+      font-weight: 650;
       letter-spacing: 0.04em;
-      line-height: 1.1;
-      max-width: 11em;
+      line-height: 1.15;
+      max-width: none;
+      overflow: visible;
+      text-overflow: clip;
     }
 
     header.mcj-boss-header .mcj-header-brand-zh {
-      font-size: 14px;
-      font-weight: 950;
-      color: #fff7fb;
-      letter-spacing: 0.02em;
-    }
-
-    header.mcj-boss-header .mcj-header-brand-logo {
-      flex-basis: 36px;
-      width: 36px;
-      height: 36px;
-      min-width: 36px;
-      min-height: 36px;
-      max-width: 36px;
-      max-height: 36px;
+      font-size: 11px;
+      font-weight: 600;
+      color: rgba(255, 214, 234, 0.78);
+      letter-spacing: 0.06em;
     }
   }
 

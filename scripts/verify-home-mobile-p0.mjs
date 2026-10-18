@@ -30,7 +30,7 @@ for (const w of widths) {
     const inner = document.querySelector(".mcj-boss-header-inner");
     const toggle = document.querySelector("[data-mcj-mnav-toggle]");
     const brand = document.querySelector(".mcj-header-brand");
-    const logo = document.querySelector(".mcj-header-brand-logo");
+    const logo = document.querySelector(".mcj-header-brand-en");
     const hero = document.querySelector(".mcj-home-hero, [data-mcj-home-hero]");
     const ann = document.querySelector("#homeAnnouncementBar");
     const card = document.querySelector(".home-daily-card");
@@ -49,7 +49,7 @@ for (const w of widths) {
       toggleLeft: tr ? Math.round(tr.left) : null,
       brandLeft: br ? Math.round(br.left) : null,
       logoLeft: lr ? Math.round(lr.left) : null,
-      toggleBeforeLogo: !!(tr && lr && tr.right <= lr.left + 2),
+      toggleBeforeLogo: !!(tr && br && tr.left >= br.right - 2),
       overlapLogo: !!overlapLogo,
       overBanner: !!overBanner,
       heroTop: her ? Math.round(her.top) : null,

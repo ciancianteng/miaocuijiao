@@ -48,6 +48,9 @@ for (const w of widths) {
       brandOpacity: bs && bs.opacity,
       logoVisible: !!(logo && getComputedStyle(logo).display !== "none" && logo.getBoundingClientRect().width > 0),
       logoH: logo ? Math.round(logo.getBoundingClientRect().height) : 0,
+      enWeight: en ? getComputedStyle(en).fontWeight : "",
+      enColor: en ? getComputedStyle(en).color : "",
+      enFull: en ? en.scrollWidth <= en.clientWidth + 1 : false,
       enText: en && en.textContent.trim(),
       enVisible: !!(en && getComputedStyle(en).display !== "none" && en.getBoundingClientRect().height > 0),
       zhText: zh && zh.textContent.trim(),
@@ -82,17 +85,18 @@ for (const w of widths) {
     info.brandDisplay !== "none" &&
     info.brandVisibility !== "hidden" &&
     Number(info.brandOpacity) > 0 &&
-    info.logoVisible &&
-    info.logoH >= 36 &&
-    info.logoH <= 44 &&
+    !info.logoVisible &&
+    info.enVisible &&
+    info.enText === "MEOW CUI JIAO" &&
+    info.enFull &&
     info.zhVisible &&
     info.zhText === "妙脆角" &&
     (info.brandHref === "/" || /index\.html/.test(String(info.brandHref || ""))) &&
     !info.hScroll &&
     (info.heroTop == null || info.headerBottom <= info.heroTop + 1) &&
     (w >= 900
-      ? info.deskVisible && info.enVisible && info.enText === "MEOW CUI JIAO" && !info.toggleVisible
-      : info.toggleVisible && menuOk && (w > 520 ? info.enVisible : true));
+      ? info.deskVisible && !info.toggleVisible
+      : info.toggleVisible && menuOk);
 
   results.push({ w, pass, menuOk, info, shot });
   await context.close();
