@@ -460,6 +460,9 @@
     state.loadError = false;
     var all = sortItems(
       (rows || []).filter(function (row) { return !isHardcodedFallback(row); }).map(normalize).filter(function (item) {
+        var cat = String(item.category || "");
+        var aud = String(item.audience || "");
+        if (cat === "companion" || cat === "customer_service" || aud === "companion" || aud === "customer_service") return false;
         return item.enabled !== false && (item.title || item.content) && inSchedule(item);
       })
     );

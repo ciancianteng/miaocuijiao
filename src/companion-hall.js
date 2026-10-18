@@ -101,9 +101,10 @@
     if (raw && raw !== "未设置等级" && raw !== "未设置") return raw;
     return id ? String(id) : "未设置等级";
   }
-  function formatHourlyPrice(value) {
-    if (window.MCJCurrency) return window.MCJCurrency.formatRate(value, "小时");
-    return priceNumber(value) + " 猫粮/小时";
+  function formatStartingPrice(item) {
+    var quoted = item && item.priceState !== "no_quote" && priceNumber(item.priceValue) > 0;
+    if (!quoted) return "暂无报价";
+    return priceNumber(item.priceValue) + " 猫粮起";
   }
   function formatHourlyPriceFx(value) {
     if (window.MCJCurrency && typeof window.MCJCurrency.formatCatFoodWithFx === "function") {
@@ -151,15 +152,19 @@
     return dataItems.map(function (item) {
       var normalized = levelApi && levelApi.normalizeCompanion ? levelApi.normalizeCompanion(item) : item;
       var levelId = String(normalized.levelId || item.levelId || levelIdFrom(normalized.level || normalized.rank || normalized.levelName || item.level) || "").trim();
-      // Prefer API/admin-saved price; do not invent prices from level bands.
-      var apiPrice = priceNumber(item.priceValue != null ? item.priceValue : item.price || item.hourlyPrice || item.servicePrice);
-      var priceValue = apiPrice > 0 ? apiPrice : priceNumber(normalized.priceValue || normalized.price || normalized.servicePrice || normalized.hourlyPrice);
+      // Hall price is the minimum valid service quote. A missing quote stays empty.
+      var priceState = item.priceState || normalized.priceState || "";
+      var apiPrice = priceNumber(item.priceValue != null ? item.priceValue : item.startingPrice);
+      var priceValue = priceState === "no_quote" || !(apiPrice > 0) ? 0 : apiPrice;
       return {
         id: normalized.uid || normalized.companionId || normalized.id || "",
         name: normalized.name || normalized.nickname || "未命名陪玩",
         game: normalized.game || normalized.mainGame || "未设置游戏",
-        price: formatHourlyPrice(priceValue || normalized.price || normalized.servicePrice || normalized.hourlyPrice),
+        price: priceValue > 0 ? formatStartingPrice({ priceValue: priceValue, priceState: "quoted" }) : "暂无报价",
         priceValue: priceValue,
+        priceState: priceValue > 0 ? "quoted" : "no_quote",
+        priceLabel: item.priceLabel || (priceValue > 0 ? priceValue + " 猫粮起" : "暂无报价"),
+        serviceQuoteCount: Number(item.serviceQuoteCount || normalized.serviceQuoteCount || 0),
         rating: normalized.rating || normalized.score || "0",
         level: levelLabel(Object.assign({}, normalized, { levelId: levelId })),
         levelId: levelId,
@@ -361,7 +366,7 @@
         var range = String(price).split("-").map(Number);
         var lo = Number(range[0]) || 0;
         var hi = Number(range[1]) || 0;
-        ok = ok && item.priceValue >= lo && item.priceValue <= hi;
+        ok = ok && item.priceValue > 0 && item.priceValue >= lo && item.priceValue <= hi;
       }
       if (online) ok = ok && item.status === online;
       if (score) ok = ok && Number(item.rating) >= score;
@@ -372,8 +377,12 @@
     var sort = value("sortFilter");
     items.sort(function (a, b) {
       if (sort === "ratingDesc") return Number(b.rating) - Number(a.rating);
-      if (sort === "priceAsc") return a.priceValue - b.priceValue;
-      if (sort === "priceDesc") return b.priceValue - a.priceValue;
+      if (sort === "priceAsc" || sort === "priceDesc") {
+        var aQuoted = a.priceValue > 0;
+        var bQuoted = b.priceValue > 0;
+        if (aQuoted !== bQuoted) return aQuoted ? -1 : 1;
+        return sort === "priceAsc" ? a.priceValue - b.priceValue : b.priceValue - a.priceValue;
+      }
       if (sort === "levelDesc") return Number(b.levelNumber || 0) - Number(a.levelNumber || 0);
       return Number(b.levelNumber || 0) - Number(a.levelNumber || 0);
     });
@@ -453,7 +462,7 @@
         identityRow +
         gamesRow +
         priceHtml +
-        '<div class="companion-card-actions"><a class="companion-card-action" href="' + esc(detailHref) + '">查看详情</a><button type="button" class="companion-card-action primary" data-hall-order="' + esc(uuid) + '" data-hall-name="' + esc(item.name || "") + '" data-hall-price="' + esc(item.priceValue || "") + '" data-hall-level="' + esc(item.levelId || "") + '" data-hall-game="' + esc(item.game || "") + '" data-hall-avatar="' + esc(item.image || "") + '" data-hall-public-id="' + esc(publicId || "") + '" data-hall-status="' + esc(item.availabilityStatus || "") + '" data-hall-status-text="' + esc(item.status || "") + '">立即下单</button></div>' +
+        '<div class="companion-card-actions"><a class="companion-card-action" href="' + esc(detailHref) + '">查看详情</a><button type="button" class="companion-card-action primary" data-hall-order="' + esc(uuid) + '" data-hall-name="' + esc(item.name || "") + '" data-hall-price="' + esc(Number(item.serviceQuoteCount) === 1 ? item.priceValue : "") + '" data-hall-level="' + esc(item.levelId || "") + '" data-hall-game="' + esc(item.game || "") + '" data-hall-avatar="' + esc(item.image || "") + '" data-hall-public-id="' + esc(publicId || "") + '" data-hall-status="' + esc(item.availabilityStatus || "") + '" data-hall-status-text="' + esc(item.status || "") + '">立即下单</button></div>' +
       '</div>' +
     '</article>';
   }

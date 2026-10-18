@@ -5,7 +5,7 @@
 import { resolveCompanionAvatar, resolveCompanionCover } from "../_companion-public-map.js";
 import { debitWallet, getWallet, money as walletMoney, writeAdminLog } from "../_wallet.js";
 import { scheduleRecomputeSoft } from "../_popularity.js";
-import { servicesFromGamePrices, readGamePrices } from "../_game-prices.js";
+import { servicesFromGamePrices, quoteForService } from "../_game-prices.js";
 import { hasBossRole } from "../_account-roles.js";
 import { allocateOrderNo } from "../_account-codes.js";
 
@@ -135,16 +135,22 @@ async function loadCompanionServices(companionUserId, companionRow) {
     if (!isMissingRelation(e)) throw e;
   }
   if (rows?.length) {
-    return rows.map((r) => ({
-      id: r.id,
-      serviceId: r.service_id || "",
-      name: r.service_name || "服务",
-      price: money(r.price),
-      pricingUnit: r.pricing_unit || "小时",
-      specs: Array.isArray(r.specs) && r.specs.length ? r.specs : defaultSpecs(r.pricing_unit),
-      requiresGameId: r.requires_game_id !== false,
-      customFields: Array.isArray(r.custom_fields) ? r.custom_fields : [],
-    }));
+    return rows
+      .map((r) => ({
+        id: r.id,
+        serviceId: r.service_id || "",
+        name: r.service_name || "服务",
+        price: quoteForService(companionRow || {}, {
+          serviceId: r.service_id || "",
+          serviceName: r.service_name || "",
+          rowPrice: r.price,
+        }),
+        pricingUnit: r.pricing_unit || "小时",
+        specs: Array.isArray(r.specs) && r.specs.length ? r.specs : defaultSpecs(r.pricing_unit),
+        requiresGameId: r.requires_game_id !== false,
+        customFields: Array.isArray(r.custom_fields) ? r.custom_fields : [],
+      }))
+      .filter((service) => money(service.price) > 0);
   }
   // Fallback: one service per game with its own price (boss picks game → auto price)
   const fromGames = servicesFromGamePrices(companionRow || {});
@@ -235,6 +241,16 @@ export default async function handler(req, res) {
         profile = null;
       }
       const services = await loadCompanionServices(companionId, companion);
+      const quoted = services.map((service) => money(service.price)).filter((price) => price > 0);
+      const lowest = quoted.length ? Math.round(Math.min(...quoted) * 100) / 100 : 0;
+      const priceSummary = quoted.length
+        ? {
+            price: lowest,
+            label: `${Number.isInteger(lowest) ? String(lowest) : String(lowest)} 猫粮起`,
+            state: "quoted",
+            quotes: services,
+          }
+        : { price: 0, label: "暂无报价", state: "no_quote", quotes: [] };
       let gifts = [];
       try {
         gifts = await companionDb("gifts", "?enabled=eq.true&deleted_at=is.null&order=sort_order.asc&limit=100");
@@ -252,8 +268,14 @@ export default async function handler(req, res) {
           level: companion.level_name || "",
           avatar: resolveCompanionAvatar(profile || {}, companion),
           cover: resolveCompanionCover(profile || {}, companion),
-          price: money(companion.price),
-          gamePrices: readGamePrices(companion),
+          price: priceSummary.price,
+          priceLabel: priceSummary.label,
+          priceState: priceSummary.state,
+          gamePrices: priceSummary.quotes.reduce((map, quote) => {
+            if (quote.id) map[quote.id] = quote.price;
+            if (quote.name) map[quote.name] = quote.price;
+            return map;
+          }, {}),
           pricingUnit: companion.pricing_unit || "小时",
           availabilityStatus: avail,
           availabilityText: availabilityText(avail),

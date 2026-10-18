@@ -618,7 +618,7 @@
           kind:ad.get('kind')||'normal',
           requires_ack:String(ad.get('kind')||'')==='forced',
           category:ad.get('category')||'home',
-          audience:ad.get('audience')||(ad.get('category')==='companion'?'companion':'home'),
+          audience:ad.get('audience')||(ad.get('category')==='companion'?'companion':ad.get('category')==='customer_service'?'customer_service':'home'),
           title:ad.get('title'),
           content:ad.get('content'),
           start_at:ad.get('start_at'),

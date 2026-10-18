@@ -2960,10 +2960,25 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
         ).catch(() => []);
         const cp = Array.isArray(cpRows) ? cpRows[0] : null;
         const gameName = String(o.game || "").trim();
-        unit = money(priceForGame(cp || {}, gameName, String(o.service_id || o.serviceId || "").trim()));
-        if (!(unit > 0)) unit = money(cp?.price);
+        let serviceRows = [];
+        try {
+          serviceRows = await supabaseJson(
+            restUrl(
+              "companion_services",
+              `?companion_id=eq.${encodeURIComponent(companionId)}&enabled=eq.true&review_status=eq.approved&select=service_id,service_name,price,enabled,review_status`
+            ),
+            { headers: serviceHeaders() }
+          );
+        } catch (error) {
+          if (!/42703|column|schema cache|PGRST|does not exist|relation/i.test(String(error?.message || error || ""))) throw error;
+          serviceRows = [];
+        }
+        unit = money(priceForGame(cp || {}, gameName, String(o.service_id || o.serviceId || "").trim(), Array.isArray(serviceRows) ? serviceRows : []));
+        if (!(unit > 0)) {
+          return json(res, 400, { ok: false, message: "该陪玩尚未设置有效服务报价" });
+        }
       }
-      // Without companion catalog price, CS may quote — but total is always recomputed server-side from unit×hours.
+      // Without a companion, CS may quote. A companion order never uses the submitted display price.
       if (!(unit > 0)) unit = money(o.unit_price || o.unitPrice || o.price);
       const total = Math.round(unit * hours * 100) / 100;
       if (!o.game || (!o.description && !o.title) || total <= 0 || !(unit > 0)) {

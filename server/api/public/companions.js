@@ -2,13 +2,12 @@
 import { readLocalLevels, toPublicLevel } from "../_companion-levels-store.js";
 import { resolvePlatformCommission } from "../_commission-rates.js";
 import {
-  readGamePrices,
-  reconcileAdminServicePrices,
+  quotedServicePrices,
+  hallPriceSummary,
   stripGamePricesMarker,
   parseServiceIds,
   parseServiceTypes,
   splitGames,
-  servicesFromGamePrices,
 } from "../_game-prices.js";
 import { loadPublicServices } from "../platform/services.js";
 import {
@@ -182,7 +181,7 @@ function resolveCompanionServiceIds(row = {}, catalog = []) {
     .filter((svc) => names.has(String(svc.name || svc.title || "").trim()))
     .map((svc) => String(svc.id));
 }
-function publicCompanion(row = {}, profile = {}, levels = [], catalog = [], mediaExtras = {}) {
+function publicCompanion(row = {}, profile = {}, levels = [], catalog = [], mediaExtras = {}, serviceRows = []) {
   const base = mapCompanionPublicFields(row, profile, mediaExtras);
   const avail = base.availabilityStatus || availabilityCode(row);
   const publicId = base.publicId || (row.companion_uid ? `P${row.companion_uid}` : "");
@@ -236,24 +235,58 @@ function publicCompanion(row = {}, profile = {}, levels = [], catalog = [], medi
     serviceTypes,
     service_ids: serviceIds,
     serviceIds,
-    services: servicesFromGamePrices(
-      {
-        ...row,
-        service_ids: serviceIds,
-        game: gameDisplay || row.game || "",
-        main_service: gameDisplay || row.game || "",
-        price: row.price,
-        pricing_unit: row.pricing_unit || "小时",
-      },
-      catalog
-    ).filter((s) => s && s.name && !/^(陪玩|护航|跑刀|代肝|自定义)$/.test(String(s.name))),
+    services: (() => {
+      const summary = hallPriceSummary(
+        {
+          ...row,
+          service_ids: serviceIds,
+          game: gameDisplay || row.game || "",
+          main_service: gameDisplay || row.game || "",
+          price: row.price,
+          pricing_unit: row.pricing_unit || "小时",
+        },
+        serviceRows
+      );
+      return summary.quotes
+        .map((quote, idx) => ({
+          id: quote.id || (quote.name ? `game:${encodeURIComponent(quote.name)}` : `service:${idx}`),
+          serviceId: quote.id || "",
+          name: quote.name || "服务",
+          price: quote.price,
+          pricingUnit: row.pricing_unit || "小时",
+          sort: idx,
+        }))
+        .filter((service) => service.name && !/^(陪玩|护航|跑刀|代肝|自定义)$/.test(String(service.name)));
+    })(),
     level: levelName,
     levelName,
     levelId: level?.id || row.level_id || "",
-    price: money(row.price),
-    priceValue: money(row.price),
-    hourlyPrice: money(row.price),
-    gamePrices: money(row.price) > 0 ? reconcileAdminServicePrices(row, row.price) : readGamePrices(row),
+    ...(() => {
+      const summary = hallPriceSummary(
+        {
+          ...row,
+          service_ids: serviceIds,
+          game: gameDisplay || row.game || "",
+          main_service: gameDisplay || row.game || "",
+          price: row.price,
+        },
+        serviceRows
+      );
+      return {
+        price: summary.price,
+        priceValue: summary.price,
+        hourlyPrice: summary.price,
+        priceLabel: summary.label,
+        priceState: summary.state,
+        serviceQuoteCount: summary.count,
+        gamePrices: quotedServicePrices({
+          ...row,
+          service_ids: serviceIds,
+          game: gameDisplay || row.game || "",
+          main_service: gameDisplay || row.game || "",
+        }),
+      };
+    })(),
     pricingUnit: row.pricing_unit || "小时",
     availabilityStatus: avail,
     availabilityText: availabilityText(avail),
@@ -524,6 +557,30 @@ async function resolveCompanionProfileRows(idRaw = "") {
   return [];
 }
 
+async function loadServiceRowsByUser(userIds = []) {
+  if (!userIds.length) return {};
+  try {
+    const rows = await supabaseJson(
+      restUrl(
+        "companion_services",
+        `?companion_id=in.(${userIds.map(encodeURIComponent).join(",")})&enabled=eq.true&review_status=eq.approved&select=id,companion_id,service_id,service_name,price,enabled,review_status`
+      ),
+      { headers: headers() }
+    );
+    const grouped = {};
+    for (const row of Array.isArray(rows) ? rows : []) {
+      const key = String(row.companion_id || "");
+      if (!key) continue;
+      if (!grouped[key]) grouped[key] = [];
+      grouped[key].push(row);
+    }
+    return grouped;
+  } catch (error) {
+    if (/column|schema cache|PGRST|does not exist|relation/i.test(String(error?.message || error || ""))) return {};
+    throw error;
+  }
+}
+
 async function loadCompanions(id = "") {
   let companions;
   if (id) {
@@ -538,7 +595,7 @@ async function loadCompanions(id = "") {
   const userIds = [...new Set(companions.map((row) => row.user_id).filter(Boolean))];
   if (!userIds.length) return [];
   const profileIds = companions.map((row) => row.id).filter(Boolean);
-  const [profiles, levels, servicesBundle, mediaMap] = await Promise.all([
+  const [profiles, levels, servicesBundle, mediaMap, serviceRowsByUser] = await Promise.all([
     supabaseJson(
       restUrl("profiles", `?id=in.(${userIds.map(encodeURIComponent).join(",")})&role=eq.companion&status=eq.active&select=id,display_name,avatar_url,email,status,role`),
       { headers: headers() }
@@ -546,6 +603,7 @@ async function loadCompanions(id = "") {
     readLocalLevels().catch(() => []),
     loadPublicServices().catch(() => ({ services: [] })),
     mediaExtrasByProfile(profileIds).catch(() => ({})),
+    loadServiceRowsByUser(userIds),
   ]);
   const catalog = Array.isArray(servicesBundle?.services) ? servicesBundle.services : [];
   const profileMap = Object.fromEntries((profiles || []).map((row) => [row.id, row]));
@@ -586,7 +644,7 @@ async function loadCompanions(id = "") {
     // Only hard-block non-approved / disabled / banned / rejected. Keep audit-approved real profiles.
     if (!gate.adminApproved || !gate.accountEnabled) continue;
     if (gate.blockReasons.some((r) => /封禁|停用|驳回|归档/.test(r))) continue;
-    mapped.push(publicCompanion(row, profile, levelList, catalog, media));
+    mapped.push(publicCompanion(row, profile, levelList, catalog, media, serviceRowsByUser[row.user_id] || []));
   }
   return attachReviews(mapped);
 }

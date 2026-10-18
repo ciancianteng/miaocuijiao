@@ -121,8 +121,27 @@ async function loadSettings(companionId) {
   }
 }
 
-function quoteFromCompanion(row, serviceName) {
-  return money(priceForGame(row, serviceName, ""));
+async function loadApprovedServicePrices(userId) {
+  const id = String(userId || "").trim();
+  if (!id) return [];
+  try {
+    const rows = await supabaseJson(
+      restUrl(
+        "companion_services",
+        `?companion_id=eq.${encodeURIComponent(id)}&enabled=eq.true&review_status=eq.approved&select=service_id,service_name,price,enabled,review_status`
+      ),
+      { headers: serviceHeaders() }
+    );
+    return Array.isArray(rows) ? rows : [];
+  } catch (error) {
+    if (/42703|column|schema cache|PGRST|does not exist|relation/i.test(String(error?.message || error || ""))) return [];
+    throw error;
+  }
+}
+
+async function quoteFromCompanion(row, serviceName) {
+  const rows = await loadApprovedServicePrices(row?.user_id || "");
+  return money(priceForGame(row, serviceName, "", rows));
 }
 
 async function assertServiceEnabled(serviceName) {
@@ -429,7 +448,7 @@ export default async function handler(req, res) {
       const row = await loadCompanion(companionId);
       if (!row) return json(res, 404, { ok: false, message: "陪玩不存在" });
       const settings = await loadSettings(companionId).catch(() => ({ accept_booking: true }));
-      const unit = quoteFromCompanion(row, serviceName);
+      const unit = await quoteFromCompanion(row, serviceName);
       return json(res, 200, {
         ok: true,
         unitPrice: unit,
@@ -510,7 +529,7 @@ export default async function handler(req, res) {
       await assertServiceEnabled(serviceName);
       assertWindow(settings, start, end);
       await assertNoConflict(companionId, start.toISOString(), end.toISOString());
-      const unit = quoteFromCompanion(companion, serviceName);
+      const unit = await quoteFromCompanion(companion, serviceName);
       if (!(unit > 0)) return json(res, 400, { ok: false, message: "陪玩未设置可预约价格" });
       const clientUnit = body.unitPrice != null ? money(body.unitPrice) : unit;
       const total = money(unit * hours);

@@ -111,12 +111,13 @@ function bannerItem(row) {
     updated_at: row.updated_at || null,
   };
 }
-function announcementItem(row) {
+export function announcementItem(row) {
   const title = stripMcjMarker(row.title || "");
   const rawCat = String(row.category || "").trim().toLowerCase();
   let category = "home";
-  if (rawCat === "companion" || rawCat === "player") category = "companion";
-  else if (rawCat === "customer_service" || rawCat === "cs" || rawCat === "service") category = "customer_service";
+  if (rawCat === "homepage_only" || rawCat === "home_only" || rawCat === "仅首页" || rawCat === "only_home") category = "homepage_only";
+  else if (rawCat === "companion" || rawCat === "player") category = "companion";
+  else if (rawCat === "customer_service" || rawCat === "cs" || rawCat === "service" || rawCat === "客服" || rawCat === "客服公告") category = "customer_service";
   let audience = String(row.audience || "").trim().toLowerCase();
   if (audience === "homepage" || audience === "index") audience = "home";
   if (audience === "cs" || audience === "service") audience = "customer_service";
@@ -171,7 +172,7 @@ function inAnnouncementSchedule(row, now = Date.now()) {
   }
   return true;
 }
-function matchesAnnouncementAudience(item, audience) {
+export function matchesAnnouncementAudience(item, audience) {
   const want = String(audience || "").trim().toLowerCase();
   if (!want || want === "all") return true;
   const itemAudience = String(item.audience || "").toLowerCase();
