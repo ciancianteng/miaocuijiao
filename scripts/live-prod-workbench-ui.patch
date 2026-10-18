@@ -1,0 +1,338 @@
+--- a/src/companion-workbench.js
++++ b/src/companion-workbench.js
+@@ -90,7 +90,7 @@
+     }catch(e){return false}
+   }
+   var HIDDEN_MVP_ROUTES={};
+-  var state={route:'dashboard',session:null,data:null,notice:'',loading:false,error:'',walletWarning:'',authTab:'login',loginMethod:'otp',loginError:'',loginBusy:false,registerToken:'',registerVerifiedEmail:'',registerCooldownUntil:0,registerBusy:false,inviteCode:'',forgotStep:'',forgotAccount:'',forgotBusy:false,forgotMsg:'',forgotResetToken:'',profileServices:[],profileVoiceTypes:[],profileCompanionTags:[],profileErrors:{},profileDraft:null,accountDraft:null,uploadBusy:'',galleryPending:[],statusBusy:false,pendingOnlineStatus:null,settlement:null,orderFilter:'all',pollTimer:null,rulesPollTimer:null,ordersCacheAt:0,msgFilter:'all',settings:null,earningsTab:'overview',chatSession:'cs',chatConversationId:'',msgThreadOpen:false,chatBusy:false,withdrawBusy:false,inbox:null,inboxError:'',hallOrderType:'all',hallGame:'all',drawerOpen:false,_prevDesignated:null,_prevAuditLocked:null,_toastTimer:null,_ordersRtReady:false,_alertedOrderIds:null,_baseDocTitle:'',_focusOrderId:'',myGifts:null,myGiftsBusy:false,myGiftsError:'',giftWall:[],_giftPopupShown:false};
++  var state={route:'dashboard',session:null,data:null,notice:'',loading:false,error:'',walletWarning:'',authTab:'login',loginMethod:'otp',loginError:'',loginBusy:false,registerToken:'',registerVerifiedEmail:'',registerCooldownUntil:0,registerBusy:false,inviteCode:'',forgotStep:'',forgotAccount:'',forgotBusy:false,forgotMsg:'',forgotResetToken:'',profileServices:[],profileVoiceTypes:[],profileCompanionTags:[],profileErrors:{},profileDraft:null,accountDraft:null,uploadBusy:'',galleryPending:[],statusBusy:false,pendingOnlineStatus:null,statusPickerOpen:false,settlement:null,orderFilter:'all',pollTimer:null,rulesPollTimer:null,ordersCacheAt:0,msgFilter:'all',settings:null,earningsTab:'overview',chatSession:'cs',chatConversationId:'',msgThreadOpen:false,chatBusy:false,withdrawBusy:false,inbox:null,inboxError:'',hallOrderType:'all',hallGame:'all',drawerOpen:false,_prevDesignated:null,_prevAuditLocked:null,_toastTimer:null,_ordersRtReady:false,_alertedOrderIds:null,_baseDocTitle:'',_focusOrderId:'',myGifts:null,myGiftsBusy:false,myGiftsError:'',giftWall:[],_giftPopupShown:false};
+   var IMAGE_ACCEPT='image/jpeg,image/jpg,image/png,image/webp,image/*';
+   /** Fallback only when platform voice_types empty — admin「声线管理」is SoT. */
+   var FIXED_VOICE_OPTIONS=['甜妹','御姐','少御','萝莉','温柔','清冷','慵懒','磁性','少年','青叔','大叔','其他'];
+@@ -2247,13 +2247,13 @@
+     var lock=(state.data&&state.data.permissions&&state.data.permissions.lockReason)||'';
+     var subtitle=isolated
+       ? isolationHint()
+-      : (lock?String(lock):'抢单 → 服务 → 完成订单 → 收益提现');
++      : (lock?String(lock):(state.route==='dashboard'?'管理状态 · 接单 · 查看收益':'抢单 → 服务 → 完成订单 → 收益提现'));
+     var h1=root.querySelector('.pw-top-titles h1');
+     var sub=root.querySelector('.pw-top-sub')||root.querySelector('.pw-top p');
+     var pageLabel=root.querySelector('.pw-top-page');
+     var pageTitle=title();
+     if(h1)h1.textContent=pageTitle;
+-    if(pageLabel)pageLabel.textContent=pageTitle;
++    if(pageLabel)pageLabel.textContent=(!isolated&&state.route==='dashboard')?'管理状态 · 接单 · 查看收益':pageTitle;
+     if(sub)sub.textContent=subtitle;
+     root.querySelectorAll('.pw-nav [data-route], .pw-bottom-nav [data-route]').forEach(function(btn){
+       var path=btn.getAttribute('data-route')||'';
+@@ -2442,11 +2442,23 @@
+   }
+   function title(){return ({dashboard:'工作台',hall:'抢单大厅',orders:'我的订单',earnings:'收益中心',wallet:'收益中心',profile:isIsolationMode()?'申请资料':'编辑公开资料',services:'我的服务',account:isIsolationMode()?'账号资料':'账号中心（隐私）',mine:'账号中心（隐私）',gifts:'我的礼物',withdraw:'提现',messages:'消息中心',settings:'设置',popularity:'我的人气',rules:'陪玩规则','review-status':'审核状态'})[state.route]||'陪玩端'}
+   function maintenanceHtml(name){return '<div class="pw-page-head"><div><h2>'+esc(name||'模块已合并')+'</h2><p>该模块已合并到工作台其他页面，请从工作台进入相应功能。</p></div><button class="pw-btn primary" type="button" data-route="/companion/dashboard">返回工作台</button></div>'}
++  function navIcon(key){
++    var paths={
++      dashboard:'M4 11 12 4l8 7v9H4z',
++      hall:'M5 7h14M5 12h14M5 17h9',
++      orders:'M7 3h10v18l-5-3-5 3z',
++      earnings:'M12 4v16M8 8h6.5a2.2 2.2 0 0 1 0 4.4H9.2A2.2 2.2 0 0 0 9.2 17H16',
++      account:'M12 12a3.2 3.2 0 1 0 0-6.4A3.2 3.2 0 0 0 12 12zm-6.2 8.2a6.2 6.2 0 0 1 12.4 0',
++      'review-status':'M6 4h12v16H6z',
++      profile:'M6 4h12v16H6z'
++    };
++    return '<svg class="pw-tab-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="'+(paths[key]||paths.dashboard)+'" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>';
++  }
+   function bottomNavHtml(){
+     var items=isIsolationMode()?ISOLATION_BOTTOM_NAV:BOTTOM_NAV;
+-    return '<nav class="pw-bottom-nav">'+items.map(function(n){
++    return '<nav class="pw-bottom-nav" aria-label="陪玩工作台">'+items.map(function(n){
+       var active=state.route===n[0]||(n[0]==='account'&&(state.route==='mine'||state.route==='verification'))||(n[0]==='earnings'&&state.route==='wallet');
+-      return '<button type="button" class="'+(active?'active':'')+'" data-route="'+n[2]+'">'+n[1]+'</button>';
++      return '<button type="button" class="'+(active?'active':'')+'" data-route="'+n[2]+'">'+navIcon(n[0])+'<span class="pw-tab-label">'+n[1]+'</span></button>';
+     }).join('')+'</nav>';
+   }
+   function settlementModalHtml(){
+@@ -2509,7 +2521,7 @@
+     }catch(e){}
+     var subtitle=isolated
+       ? isolationHint()
+-      : (lock?esc(lock):'抢单 → 服务 → 完成订单 → 收益提现');
++      : (lock?esc(lock):(state.route==='dashboard'?'管理状态 · 接单 · 查看收益':'抢单 → 服务 → 完成订单 → 收益提现'));
+     // Account dropdown: secondary only. Primary destinations live in side drawer / bottom nav.
+     var switchBossBtn='<button type="button" data-switch-boss="menu">切换到老板端</button>';
+     var accountMenu=isolated
+@@ -2578,8 +2590,8 @@
+       '<button type="button" class="pw-drawer-toggle" data-pw-drawer-toggle aria-expanded="false" aria-controls="pwSideNav" aria-label="打开菜单"><span class="pw-drawer-toggle-bars" aria-hidden="true"></span></button>'+
+       '<div class="pw-top-brand" aria-label="妙脆角陪玩端">'+
+       '<strong class="pw-top-logo">MEOW CUI JIAO</strong>'+
+-      '<span class="pw-top-brand-cn">妙脆角 · 陪玩端</span>'+
+-      '<span class="pw-top-page">'+esc(title())+'</span>'+
++      '<span class="pw-top-brand-cn">陪玩工作台</span>'+
++      '<span class="pw-top-page">'+esc((!isolated&&state.route==='dashboard')?'管理状态 · 接单 · 查看收益':title())+'</span>'+
+       '</div>'+
+       '<div class="pw-top-titles"><h1>'+title()+'</h1><p class="pw-top-sub">'+subtitle+'</p></div>'+
+       '</div>'+
+@@ -2932,6 +2944,7 @@
+         state.data.player.workStatus=state.data.player.onlineStatusLabel;
+       }
+       applyOnlineStatusUi(saved);
++      state.statusPickerOpen=false;
+       toast(x.message||'状态已更新');
+     }).catch(function(err){
+       toast(err.message||'状态更新失败');
+@@ -2952,10 +2965,12 @@
+     var locked=isAuditLocked();
+     var metaCur=STATUS_META[cur]||STATUS_META.offline;
+     var lockLabel=todayStatusLockLabel();
+-    var label=lockLabel||(metaCur.emoji+' '+metaCur.label);
+-    return '<div class="pw-status-panel '+(extraClass||'')+(state.statusBusy?' is-busy':'')+(locked?' is-locked':'')+(isForcedAckLocked()?' is-forced-ack':'')+'" data-status-lock="'+(isForcedAckLocked()?'forced':(lockLabel?'review':'none'))+'">'+
+-      '<div class="pw-status-current">今日状态：<strong data-current-status-label>'+esc(label)+'</strong></div>'+
+-      '<div class="pw-status-switch" role="radiogroup" aria-label="接单状态">'+
++    var label=lockLabel||metaCur.label;
++    var open=!!state.statusPickerOpen;
++    return '<div class="pw-status-panel '+(extraClass||'')+(open?' is-open':'')+(state.statusBusy?' is-busy':'')+(locked?' is-locked':'')+(isForcedAckLocked()?' is-forced-ack':'')+'" data-status-lock="'+(isForcedAckLocked()?'forced':(lockLabel?'review':'none'))+'">'+
++      '<div class="pw-status-current"><span>当前状态</span><strong data-current-status-label>'+esc(label)+'</strong></div>'+
++      '<button type="button" class="pw-status-toggle" data-status-toggle aria-expanded="'+(open?'true':'false')+'">'+(open?'收起':'切换状态')+'</button>'+
++      '<div class="pw-status-switch" role="radiogroup" aria-label="接单状态"'+(open?'':' hidden')+'>'+
+       ['online','busy','paused','offline'].map(function(key){
+         var meta=STATUS_META[key];
+         var active=!locked&&cur===key;
+@@ -3112,26 +3127,23 @@
+     }else{
+       reviewBanner=reviewStatusBannerHtml();
+     }
+-    var showDesignated=!locked&&designated>0&&approved;
+-    var extra=showDesignated
+-      ?'<div class="pw-alert designated" role="status"><strong>你有新的指定订单</strong><span>共 '+esc(designated)+' 单等待确认接单</span><button class="pw-btn primary" type="button" data-route="/companion/orders" data-order-filter="waiting_confirm">去处理</button></div>'
+-      :'';
+     var earnings=(state.data&&state.data.earnings)||{};
+     var withdrawable=earnings.availableWithdrawable!=null?earnings.availableWithdrawable:(earnings.available!=null?earnings.available:(earnings.withdrawable!=null?earnings.withdrawable:(earnings.balance||0)));
+     var running=num(s.runningOrders)+num(s.waitingStart);
+-    return '<div class="pw-page-head pw-page-head--compact"><div><h2>工作台</h2><p>切换状态 · 处理待办 · 进入抢单</p></div></div>'+
+-      publishBanner+
+-      reviewBanner+
+-      extra+
+-      depositBadgeHtml()+
+-      statusSwitcherHtml('compact')+
++    var withdrawText=String(money(num(withdrawable))).replace(/\s*猫粮$/,'').trim();
++    var designatedCard='<section class="pw-designated-card" role="status"><div class="pw-designated-copy"><p>新的指定订单</p><strong>'+esc(designated)+'</strong><span>待确认</span></div><button class="pw-btn primary" type="button" data-route="/companion/orders" data-order-filter="waiting_confirm">查看待确认订单</button></section>';
++    return statusSwitcherHtml('compact')+
+       (!locked&&!online?'<div class="pw-note" style="margin:0 0 12px">请先切换为在线接单。</div>':'')+
+       '<section class="pw-grid pw-grid--dash">'+
+       metric('待确认',num(s.waitingConfirm),'/companion/orders','waiting_confirm')+
+       metric('进行中',running,'/companion/orders','running')+
+       metric('今日完成',num(s.todayCompleted),'/companion/orders','completed')+
+-      metric('当前可提现',money(num(withdrawable)),'/companion/earnings')+
++      metric('可提现猫粮',withdrawText,'/companion/earnings')+
+       '</section>'+
++      designatedCard+
++      publishBanner+
++      reviewBanner+
++      depositBadgeHtml()+
+       actionGridHtml([
+         {route:'/companion/orders',label:'我的订单',sub:'待确认 / 进行中'},
+         {route:'/companion/order-hall',label:'抢单大厅',sub:locked?'暂不可抢':'去接新单'},
+@@ -5902,6 +5914,19 @@
+       }).catch(function(err){toast(err.message)});
+       return;
+     }
++    var statusToggle=e.target.closest('[data-status-toggle]');
++    if(statusToggle){
++      state.statusPickerOpen=!state.statusPickerOpen;
++      var panel=statusToggle.closest('.pw-status-panel');
++      if(panel){
++        panel.classList.toggle('is-open',!!state.statusPickerOpen);
++        var box=panel.querySelector('.pw-status-switch');
++        if(box)box.hidden=!state.statusPickerOpen;
++      }
++      statusToggle.setAttribute('aria-expanded',state.statusPickerOpen?'true':'false');
++      statusToggle.textContent=state.statusPickerOpen?'收起':'切换状态';
++      return;
++    }
+     var online=e.target.closest('[data-online-status]');
+     if(online){
+       if(isAuditLocked()){toast(auditHint());return}
+--- a/src/companion-workbench.css
++++ b/src/companion-workbench.css
+@@ -1,13 +1,13 @@
+ :root{
+-  --pw-bg:#0b0a0d;
+-  --pw-panel:#121016;
+-  --pw-panel-2:#17131b;
+-  --pw-line:rgba(255,255,255,.1);
+-  --pw-line-pink:rgba(255,145,195,.26);
+-  --pw-pink:#ff8fc5;
+-  --pw-pink-soft:rgba(255,143,197,.12);
+-  --pw-text:#f8f7fb;
+-  --pw-muted:rgba(255,255,255,.58);
++  --pw-bg:#0B0A10;
++  --pw-panel:#19141F;
++  --pw-panel-2:#241D2B;
++  --pw-line:rgba(244,166,200,.16);
++  --pw-line-pink:rgba(244,166,200,.38);
++  --pw-pink:#F4A6C8;
++  --pw-pink-soft:rgba(244,166,200,.14);
++  --pw-text:#f7f4f8;
++  --pw-muted:#AFA6B5;
+   --pw-dim:rgba(255,255,255,.38);
+   --pw-ok:#5ee0a1;
+   --pw-warn:#f4c76b;
+@@ -1247,4 +1247,156 @@
+ .pw-my-service-status{color:#ff8fc7!important}
+ .pw-my-service .pw-btn{height:36px;border-radius:999px;justify-self:start;padding:0 14px}
+ .pw-rm{display:inline-flex;align-items:center;gap:6px;color:#ff8fc7}
+-.pw-rm input{width:96px;height:36px;border-radius:10px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);color:#fff;padding:0 8px}
+\ No newline at end of file
++.pw-rm input{width:96px;height:36px;border-radius:10px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);color:#fff;padding:0 8px}
++
++/* Companion dashboard visual — black / pink, mobile first. Later rules win over compact overrides. */
++.pw-app{background:#0B0A10}
++.pw-status-switch[hidden]{display:none !important}
++.pw-status-panel.compact{
++  display:grid;
++  grid-template-columns:minmax(0,1fr) auto;
++  align-items:center;
++  gap:10px 12px;
++  margin:0 0 14px;
++  padding:16px !important;
++  border-radius:18px;
++  background:#19141F;
++  border:1px solid rgba(244,166,200,.18);
++  box-shadow:none;
++}
++.pw-status-panel.compact .pw-status-current{
++  margin:0 !important;
++  display:grid;
++  gap:4px;
++  min-width:0;
++}
++.pw-status-panel.compact .pw-status-current span{
++  font-size:12px;
++  font-weight:600;
++  color:#AFA6B5;
++}
++.pw-status-panel.compact .pw-status-current strong{
++  font-size:18px !important;
++  font-weight:720;
++  color:#fff;
++  line-height:1.25;
++}
++.pw-status-toggle{
++  height:36px;
++  padding:0 14px;
++  border-radius:999px;
++  border:1px solid rgba(244,166,200,.55);
++  background:transparent;
++  color:#F4A6C8;
++  font-size:13px;
++  font-weight:700;
++}
++.pw-status-panel:not(.is-open) .pw-status-hint{display:none}
++.pw-status-panel.is-open .pw-status-switch,
++.pw-status-panel.is-open .pw-status-hint{grid-column:1 / -1}
++.pw-status-emoji{display:none}
++.pw-grid--dash{
++  grid-template-columns:1fr 1fr;
++  gap:10px;
++}
++.pw-grid--dash .pw-metric{
++  display:grid;
++  align-content:space-between;
++  min-height:96px !important;
++  padding:14px !important;
++  border-radius:16px;
++  background:#241D2B !important;
++  border:1px solid rgba(244,166,200,.1) !important;
++  box-shadow:none;
++}
++.pw-grid--dash .pw-metric span{font-size:12px;color:#AFA6B5}
++.pw-grid--dash .pw-metric strong{
++  font-size:26px !important;
++  font-weight:720 !important;
++  color:#fff;
++  letter-spacing:-.02em;
++}
++.pw-grid--dash .pw-metric.is-zero strong{color:rgba(255,255,255,.72) !important}
++.pw-grid--dash .pw-metric.is-clickable{cursor:pointer}
++.pw-designated-card{
++  display:flex;
++  align-items:center;
++  justify-content:space-between;
++  gap:12px;
++  margin:14px 0 0;
++  padding:16px;
++  border-radius:18px;
++  background:#19141F;
++  border:1px solid #F4A6C8;
++}
++.pw-designated-copy{display:grid;gap:2px;min-width:0}
++.pw-designated-copy p{margin:0;color:#AFA6B5;font-size:13px}
++.pw-designated-copy strong{font-size:28px;line-height:1.05;color:#F4A6C8;font-weight:760}
++.pw-designated-copy span{color:#AFA6B5;font-size:12px}
++.pw-designated-card .pw-btn.primary{
++  flex:0 0 auto;
++  height:42px;
++  padding:0 14px;
++  border-radius:14px;
++  background:#F4A6C8;
++  color:#1a1016;
++  font-weight:760;
++  white-space:nowrap;
++}
++.pw-tab-ico{width:20px;height:20px;display:block}
++.pw-tab-label{display:block;font-size:11px;line-height:1.1;font-weight:650}
++@media (max-width:760px){
++  .pw-app,.pw-shell,.pw-main,.pw-top{background:#0B0A10}
++  .pw-top{background:rgba(11,10,16,.94)}
++  .pw-top-logo{font-size:13px;letter-spacing:.08em;font-weight:800}
++  .pw-top-brand-cn{font-size:15px;font-weight:720;color:#fff;line-height:1.25}
++  .pw-top-page{
++    display:block;
++    margin-top:2px;
++    font-size:12px;
++    color:#AFA6B5;
++    white-space:normal;
++    overflow:visible;
++    text-overflow:clip;
++    line-height:1.35;
++  }
++  .pw-header-bell{
++    width:40px;
++    min-width:40px;
++    height:40px;
++    padding:0;
++    border-radius:12px;
++    border-color:rgba(244,166,200,.22);
++    background:#19141F;
++  }
++  .pw-avatar{width:40px;height:40px;background:#241D2B}
++  .pw-shell{padding-bottom:calc(96px + env(safe-area-inset-bottom))}
++  .pw-page{padding-bottom:calc(36px + env(safe-area-inset-bottom))}
++  .pw-order-actions{bottom:calc(96px + env(safe-area-inset-bottom))}
++  .pw-bottom-nav{
++    background:rgba(11,10,16,.96);
++    border-top:1px solid rgba(244,166,200,.16);
++    padding:6px max(6px,env(safe-area-inset-left)) calc(8px + env(safe-area-inset-bottom)) max(6px,env(safe-area-inset-right));
++  }
++  .pw-bottom-nav button{
++    height:58px;
++    display:flex;
++    flex-direction:column;
++    align-items:center;
++    justify-content:center;
++    gap:3px;
++    border-radius:14px;
++    color:#AFA6B5;
++    background:transparent;
++  }
++  .pw-bottom-nav button.active{
++    color:#F4A6C8;
++    background:rgba(244,166,200,.1);
++  }
++  .pw-toast{bottom:calc(108px + env(safe-area-inset-bottom))}
++}
++@media (max-width:390px){
++  .pw-grid--dash .pw-metric strong{font-size:24px !important}
++  .pw-designated-card{align-items:flex-start}
++  .pw-designated-card .pw-btn.primary{height:40px;padding:0 12px;font-size:13px}
++}
+\ No newline at end of file
