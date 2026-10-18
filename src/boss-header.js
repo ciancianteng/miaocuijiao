@@ -3,6 +3,12 @@
 
   if (window.__MCJBossHeaderLoaded) return;
   window.__MCJBossHeaderLoaded = true;
+  if (!window.__MCJSafeAreaBoot && document.head) {
+    var satScript = document.createElement("script");
+    satScript.src = "/src/mcj-safe-area.js?v=20261018sat1";
+    satScript.async = false;
+    document.head.appendChild(satScript);
+  }
   if (!window.MCJNotifyTarget && document.head) {
     var notifyTargetScript = document.createElement("script");
     notifyTargetScript.src = "/src/notify-target.js";
