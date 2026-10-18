@@ -9,69 +9,96 @@
    var IMAGE_ACCEPT='image/jpeg,image/jpg,image/png,image/webp,image/*';
    /** Fallback only when platform voice_types empty — admin「声线管理」is SoT. */
    var FIXED_VOICE_OPTIONS=['甜妹','御姐','少御','萝莉','温柔','清冷','慵懒','磁性','少年','青叔','大叔','其他'];
-@@ -2247,13 +2247,13 @@
+@@ -2247,13 +2247,30 @@
      var lock=(state.data&&state.data.permissions&&state.data.permissions.lockReason)||'';
      var subtitle=isolated
        ? isolationHint()
 -      : (lock?String(lock):'抢单 → 服务 → 完成订单 → 收益提现');
-+      : (lock?String(lock):(state.route==='dashboard'?'管理状态 · 接单 · 查看收益':'抢单 → 服务 → 完成订单 → 收益提现'));
++      : (lock?String(lock):(state.route==='dashboard'?'':'抢单 → 服务 → 完成订单 → 收益提现'));
      var h1=root.querySelector('.pw-top-titles h1');
      var sub=root.querySelector('.pw-top-sub')||root.querySelector('.pw-top p');
      var pageLabel=root.querySelector('.pw-top-page');
      var pageTitle=title();
      if(h1)h1.textContent=pageTitle;
 -    if(pageLabel)pageLabel.textContent=pageTitle;
-+    if(pageLabel)pageLabel.textContent=(!isolated&&state.route==='dashboard')?'管理状态 · 接单 · 查看收益':pageTitle;
++    if(pageLabel){
++      var hideDashLabel=!isolated&&state.route==='dashboard';
++      pageLabel.hidden=hideDashLabel;
++      pageLabel.textContent=hideDashLabel?'':pageTitle;
++    }
++    var avatarBtn=root.querySelector('.pw-avatar[data-account-toggle]');
++    if(avatarBtn){
++      var avatarPlayer=(state.data&&state.data.player)||(state.session&&state.session.user)||{};
++      var avatarSrc=avatarPlayer.avatar||'/default-avatar.png';
++      var avatarImg=avatarBtn.querySelector('img');
++      if(!avatarImg){
++        avatarBtn.textContent='';
++        avatarImg=document.createElement('img');
++        avatarImg.alt='';
++        avatarBtn.appendChild(avatarImg);
++      }
++      if(avatarImg.getAttribute('src')!==avatarSrc)avatarImg.setAttribute('src',avatarSrc);
++    }
      if(sub)sub.textContent=subtitle;
      root.querySelectorAll('.pw-nav [data-route], .pw-bottom-nav [data-route]').forEach(function(btn){
        var path=btn.getAttribute('data-route')||'';
-@@ -2442,11 +2442,23 @@
+@@ -2442,11 +2459,28 @@
    }
    function title(){return ({dashboard:'工作台',hall:'抢单大厅',orders:'我的订单',earnings:'收益中心',wallet:'收益中心',profile:isIsolationMode()?'申请资料':'编辑公开资料',services:'我的服务',account:isIsolationMode()?'账号资料':'账号中心（隐私）',mine:'账号中心（隐私）',gifts:'我的礼物',withdraw:'提现',messages:'消息中心',settings:'设置',popularity:'我的人气',rules:'陪玩规则','review-status':'审核状态'})[state.route]||'陪玩端'}
    function maintenanceHtml(name){return '<div class="pw-page-head"><div><h2>'+esc(name||'模块已合并')+'</h2><p>该模块已合并到工作台其他页面，请从工作台进入相应功能。</p></div><button class="pw-btn primary" type="button" data-route="/companion/dashboard">返回工作台</button></div>'}
 +  function navIcon(key){
-+    var paths={
-+      dashboard:'M4 11 12 4l8 7v9H4z',
-+      hall:'M5 7h14M5 12h14M5 17h9',
-+      orders:'M7 3h10v18l-5-3-5 3z',
-+      earnings:'M12 4v16M8 8h6.5a2.2 2.2 0 0 1 0 4.4H9.2A2.2 2.2 0 0 0 9.2 17H16',
-+      account:'M12 12a3.2 3.2 0 1 0 0-6.4A3.2 3.2 0 0 0 12 12zm-6.2 8.2a6.2 6.2 0 0 1 12.4 0',
-+      'review-status':'M6 4h12v16H6z',
-+      profile:'M6 4h12v16H6z'
++    var icons={
++      dashboard:'<path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/><path d="M3 10a2 2 0 0 1 .709-1.528l7-6a2 2 0 0 1 2.582 0l7 6A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
++      hall:'<path d="M3 6h18"/><path d="M7 12h10"/><path d="M10 18h4"/>',
++      orders:'<rect width="8" height="4" x="8" y="2" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/><path d="M8 11h.01"/><path d="M8 16h.01"/>',
++      earnings:'<path d="M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1"/><path d="M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4"/>',
++      account:'<circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 0 0-16 0"/>',
++      'review-status':'<path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/><path d="M3 10a2 2 0 0 1 .709-1.528l7-6a2 2 0 0 1 2.582 0l7 6A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
++      profile:'<circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 0 0-16 0"/>'
 +    };
-+    return '<svg class="pw-tab-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="'+(paths[key]||paths.dashboard)+'" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>';
++    return '<svg class="pw-tab-ico" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">'+(icons[key]||icons.dashboard)+'</svg>';
++  }
++  function headerAvatarHtml(player){
++    var src=(player&&player.avatar)||'/default-avatar.png';
++    return '<button type="button" class="pw-avatar" data-account-toggle aria-label="账号菜单"><img src="'+esc(src)+'" alt="" onerror="this.onerror=null;this.src=\'/default-avatar.png\'"></button>';
 +  }
    function bottomNavHtml(){
      var items=isIsolationMode()?ISOLATION_BOTTOM_NAV:BOTTOM_NAV;
 -    return '<nav class="pw-bottom-nav">'+items.map(function(n){
++    var iconOnly=!isIsolationMode();
 +    return '<nav class="pw-bottom-nav" aria-label="陪玩工作台">'+items.map(function(n){
        var active=state.route===n[0]||(n[0]==='account'&&(state.route==='mine'||state.route==='verification'))||(n[0]==='earnings'&&state.route==='wallet');
 -      return '<button type="button" class="'+(active?'active':'')+'" data-route="'+n[2]+'">'+n[1]+'</button>';
-+      return '<button type="button" class="'+(active?'active':'')+'" data-route="'+n[2]+'">'+navIcon(n[0])+'<span class="pw-tab-label">'+n[1]+'</span></button>';
++      return '<button type="button" class="'+(active?'active':'')+'" data-route="'+n[2]+'" aria-label="'+esc(n[1])+'" title="'+esc(n[1])+'">'+navIcon(n[0])+(iconOnly?'':'<span class="pw-tab-label">'+esc(n[1])+'</span>')+'</button>';
      }).join('')+'</nav>';
    }
    function settlementModalHtml(){
-@@ -2509,7 +2521,7 @@
+@@ -2509,7 +2543,7 @@
      }catch(e){}
      var subtitle=isolated
        ? isolationHint()
 -      : (lock?esc(lock):'抢单 → 服务 → 完成订单 → 收益提现');
-+      : (lock?esc(lock):(state.route==='dashboard'?'管理状态 · 接单 · 查看收益':'抢单 → 服务 → 完成订单 → 收益提现'));
++      : (lock?esc(lock):(state.route==='dashboard'?'':'抢单 → 服务 → 完成订单 → 收益提现'));
      // Account dropdown: secondary only. Primary destinations live in side drawer / bottom nav.
      var switchBossBtn='<button type="button" data-switch-boss="menu">切换到老板端</button>';
      var accountMenu=isolated
-@@ -2578,8 +2590,8 @@
+@@ -2578,12 +2612,12 @@
        '<button type="button" class="pw-drawer-toggle" data-pw-drawer-toggle aria-expanded="false" aria-controls="pwSideNav" aria-label="打开菜单"><span class="pw-drawer-toggle-bars" aria-hidden="true"></span></button>'+
        '<div class="pw-top-brand" aria-label="妙脆角陪玩端">'+
        '<strong class="pw-top-logo">MEOW CUI JIAO</strong>'+
 -      '<span class="pw-top-brand-cn">妙脆角 · 陪玩端</span>'+
 -      '<span class="pw-top-page">'+esc(title())+'</span>'+
 +      '<span class="pw-top-brand-cn">陪玩工作台</span>'+
-+      '<span class="pw-top-page">'+esc((!isolated&&state.route==='dashboard')?'管理状态 · 接单 · 查看收益':title())+'</span>'+
++      '<span class="pw-top-page"'+((!isolated&&state.route==='dashboard')?' hidden':'')+'>'+esc((!isolated&&state.route==='dashboard')?'':title())+'</span>'+
        '</div>'+
        '<div class="pw-top-titles"><h1>'+title()+'</h1><p class="pw-top-sub">'+subtitle+'</p></div>'+
        '</div>'+
-@@ -2917,7 +2929,7 @@
+-      '<div class="pw-account">'+headerBellHtml()+'<button type="button" class="pw-avatar" data-account-toggle aria-label="账号菜单">'+esc(String(player.name||player.uid||'P').slice(0,1).toUpperCase())+'</button><div class="pw-menu">'+accountMenu+'</div></div>'+
++      '<div class="pw-account">'+headerBellHtml()+headerAvatarHtml(player)+'<div class="pw-menu">'+accountMenu+'</div></div>'+
+       '</header>'+
+       (isolated?'':(window.MCJCompanionAnnouncements&&window.MCJCompanionAnnouncements.hostHtml?window.MCJCompanionAnnouncements.hostHtml():'<div class="pw-announcement-host" data-pw-announcement-host hidden></div>'))+
+       '<main class="pw-page">'+pageHtml()+'</main></section>'+bottomNavHtml()+
+@@ -2917,7 +2951,7 @@
      var label=document.querySelector('[data-current-status-label]');
      if(label){
        var m=STATUS_META[next]||{};
@@ -80,7 +107,7 @@
      }
    }
    function commitOnlineStatus(next){
-@@ -2932,6 +2944,7 @@
+@@ -2932,6 +2966,7 @@
          state.data.player.workStatus=state.data.player.onlineStatusLabel;
        }
        applyOnlineStatusUi(saved);
@@ -88,7 +115,7 @@
        toast(x.message||'状态已更新');
      }).catch(function(err){
        toast(err.message||'状态更新失败');
-@@ -2952,10 +2965,12 @@
+@@ -2952,10 +2987,12 @@
      var locked=isAuditLocked();
      var metaCur=STATUS_META[cur]||STATUS_META.offline;
      var lockLabel=todayStatusLockLabel();
@@ -105,7 +132,16 @@
        ['online','busy','paused','offline'].map(function(key){
          var meta=STATUS_META[key];
          var active=!locked&&cur===key;
-@@ -3112,26 +3127,23 @@
+@@ -2972,7 +3009,7 @@
+     var missing=Array.isArray(state.data&&state.data.publishMissing)?state.data.publishMissing:(gate.missing||[]);
+     var status=String((state.data&&state.data.publishStatus)||gate.statusLabel||'');
+     if(gate.publishReady||gate.ok){
+-      return '<div class="pw-note" style="margin:0 0 14px" role="status">老板端可见：已满足上架条件。认证标签由后台分配，陪玩不可自行修改。</div>';
++      return '';
+     }
+     var missText=missing.length?missing.join('、'):(status||'资料不完整');
+     return '<div class="pw-alert" role="status"><strong>尚未对老板公开</strong><span>'+esc(status||'资料不完整')+'：'+esc(missText)+'。完善并审核通过后才会出现在首页/大厅，且老板才能下单。</span><button class="pw-btn" type="button" data-route="/companion/profile">去完善资料</button></div>';
+@@ -3112,26 +3149,23 @@
      }else{
        reviewBanner=reviewStatusBannerHtml();
      }
@@ -140,7 +176,7 @@
        actionGridHtml([
          {route:'/companion/orders',label:'我的订单',sub:'待确认 / 进行中'},
          {route:'/companion/order-hall',label:'抢单大厅',sub:locked?'暂不可抢':'去接新单'},
-@@ -5902,6 +5914,19 @@
+@@ -5902,6 +5936,19 @@
        }).catch(function(err){toast(err.message)});
        return;
      }
@@ -185,11 +221,12 @@
    --pw-dim:rgba(255,255,255,.38);
    --pw-ok:#5ee0a1;
    --pw-warn:#f4c76b;
-@@ -1247,4 +1247,286 @@
+@@ -1247,4 +1247,295 @@
  .pw-my-service-status{color:#ff8fc7!important}
  .pw-my-service .pw-btn{height:36px;border-radius:999px;justify-self:start;padding:0 14px}
  .pw-rm{display:inline-flex;align-items:center;gap:6px;color:#ff8fc7}
 -.pw-rm input{width:96px;height:36px;border-radius:10px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);color:#fff;padding:0 8px}
+\ No newline at end of file
 +.pw-rm input{width:96px;height:36px;border-radius:10px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);color:#fff;padding:0 8px}
 +
 +/* Companion dashboard visual — black / pink, mobile first. Later rules win over compact overrides. */
@@ -419,6 +456,8 @@
 +    text-overflow:ellipsis;
 +    line-height:1.2;
 +  }
++  .pw-top-page[hidden]{display:none !important}
++  .pw-avatar img{width:100%;height:100%;object-fit:cover;border-radius:50%;display:block}
 +  .pw-drawer-toggle,
 +  .pw-header-bell,
 +  .pw-avatar{
@@ -435,30 +474,37 @@
 +    box-sizing:border-box;
 +  }
 +  .pw-avatar{border-radius:50%;color:#F8F5F8}
-+  .pw-shell{padding-bottom:calc(96px + env(safe-area-inset-bottom))}
++  .pw-shell{padding-bottom:calc(72px + env(safe-area-inset-bottom))}
 +  .pw-page{padding:8px 12px calc(16px + env(safe-area-inset-bottom))}
-+  .pw-order-actions{bottom:calc(96px + env(safe-area-inset-bottom))}
++  .pw-order-actions{bottom:calc(72px + env(safe-area-inset-bottom))}
 +  .pw-bottom-nav{
-+    background:rgba(11,10,16,.96);
-+    border-top:1px solid rgba(244,166,200,.16);
-+    padding:6px max(6px,env(safe-area-inset-left)) calc(8px + env(safe-area-inset-bottom)) max(6px,env(safe-area-inset-right));
++    background:#0B0A10;
++    border-top:1px solid rgba(244,166,200,.14);
++    gap:0;
++    padding:4px max(8px,env(safe-area-inset-left)) calc(6px + env(safe-area-inset-bottom)) max(8px,env(safe-area-inset-right));
++    box-shadow:none;
 +  }
-+  .pw-bottom-nav button{
-+    height:58px;
++  .pw-app .pw-bottom-nav button{
++    height:48px;
++    min-height:44px;
++    min-width:44px;
 +    display:flex;
-+    flex-direction:column;
 +    align-items:center;
 +    justify-content:center;
-+    gap:3px;
-+    border-radius:14px;
-+    color:#AFA6B5;
-+    background:transparent;
++    gap:0;
++    padding:0 !important;
++    border:0 !important;
++    border-radius:0 !important;
++    background:transparent !important;
++    box-shadow:none !important;
++    color:#C9C3D0;
 +  }
-+  .pw-bottom-nav button.active{
++  .pw-app .pw-bottom-nav button.active{
 +    color:#F4A6C8;
-+    background:rgba(244,166,200,.1);
++    background:transparent !important;
 +  }
-+  .pw-toast{bottom:calc(108px + env(safe-area-inset-bottom))}
++  .pw-tab-ico{width:22px;height:22px}
++  .pw-toast{bottom:calc(84px + env(safe-area-inset-bottom))}
 +}
 +@media (max-width:430px){
 +  .pw-grid--dash{grid-template-columns:1fr 1fr;gap:8px}
@@ -473,3 +519,4 @@
 +  .pw-grid--dash .pw-metric strong{font-size:23px !important;line-height:1 !important}
 +  .pw-top-page{white-space:nowrap}
 +}
+\ No newline at end of file
