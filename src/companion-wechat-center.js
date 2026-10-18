@@ -13,7 +13,7 @@
     if (document.querySelector("link[data-pw-wx-css]")) return;
     var link = document.createElement("link");
     link.rel = "stylesheet";
-    link.href = "/src/companion-wechat-center.css?v=20261018wx1";
+    link.href = "/src/companion-wechat-center.css?v=20261018wx2";
     link.setAttribute("data-pw-wx-css", "");
     document.head.appendChild(link);
   }
