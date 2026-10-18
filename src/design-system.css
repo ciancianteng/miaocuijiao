@@ -678,20 +678,24 @@ body {
   gap: 12px !important;
   min-height: 68px !important;
   margin: 0 52px 0 0 !important;
-  color: #ffe4f1 !important;
-  font-size: 18px !important;
-  font-weight: 850 !important;
+  color: #ffffff !important;
+  font-size: 15px !important;
+  font-weight: 650 !important;
+  letter-spacing: 0.04em !important;
   line-height: 1 !important;
   white-space: nowrap !important;
   text-decoration: none !important;
 }
 
 :where(.topbar > .brand img, .topbar-inner > .brand img, .header-inner > .brand img) {
-  width: 40px !important;
-  height: 40px !important;
-  flex: 0 0 40px !important;
-  border-radius: 12px !important;
-  object-fit: cover !important;
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+  flex: 0 0 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  overflow: hidden !important;
 }
 
 :where(.topbar .brand span, .site-header .brand span) {

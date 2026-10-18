@@ -473,9 +473,8 @@
   function brandHtml() {
     return (
       '<a class="mcj-header-brand" href="/" aria-label="MEOW CUI JIAO 妙脆角 首页">' +
-      '<img class="mcj-header-brand-logo" src="/src/assets/meow-cuijiao-brand.jpg" alt="MEOW CUI JIAO" width="40" height="40" decoding="async" data-mcj-brand-logo="1">' +
       '<span class="mcj-header-brand-text">' +
-      '<span class="mcj-header-brand-en">Meow Cui Jiao</span>' +
+      '<span class="mcj-header-brand-en">MEOW CUI JIAO</span>' +
       '<span class="mcj-header-brand-zh">妙脆角</span>' +
       "</span></a>"
     );
