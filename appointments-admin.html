@@ -51,7 +51,7 @@
     document.getElementById("rows").innerHTML=rows.map(function(r){
       var text=appointmentText(r);
       var pay=r.charged?"已扣款":"未扣款";
-      return '<article class="appt"><p><span>预约编号</span>'+esc(r.id)+'</p><p><span>老板</span>'+esc(r.bossId)+'</p><p><span>陪玩</span>'+esc(r.companionId)+'</p><p><span>状态</span>'+esc(r.status)+'</p><p><span>服务</span>'+esc(r.serviceName)+'</p><p><span>开始</span>'+esc(r.startAt)+'</p><p><span>结束</span>'+esc(r.endAt)+'</p><p><span>时长</span>'+esc(r.hours)+' 小时</p><p><span>金额</span>'+esc(r.totalAmount)+' 猫粮</p><p><span>服务需求</span>'+esc(text.requirements)+'</p><p><span>备注</span>'+esc(text.note)+'</p><p><span>付款</span>'+pay+'（'+esc(r.chargeState||"none")+'）</p><p><span>正式订单</span>未生成。当前表没有订单关联字段，预约与正式订单不是同一条记录。</p></article>';
+      return '<article class="appt"><p><span>预约编号</span>'+esc(r.id)+'</p><p><span>老板</span>'+esc(r.bossId)+'</p><p><span>陪玩</span>'+esc(r.companionId)+'</p><p><span>状态</span>'+esc(r.status)+'</p><p><span>服务</span>'+esc(r.serviceName)+'</p><p><span>开始</span>'+esc(r.startAt)+'</p><p><span>结束</span>'+esc(r.endAt)+'</p><p><span>时长</span>'+esc(r.hours)+' 小时</p><p><span>金额</span>'+esc(r.totalAmount)+' 猫粮</p><p><span>服务需求</span>'+esc(text.requirements)+'</p><p><span>备注</span>'+esc(text.note)+'</p><p><span>付款</span>'+pay+'（'+esc(r.chargeState||"none")+'）</p><p><span>关联订单</span>'+esc(r.orderId||"未生成")+'</p><p><span>订单状态</span>'+esc(r.orderStatus||"无")+'</p><p><span>正式订单</span>预约审核通过前不是进行中的正式服务。预约订单不会进入抢单大厅，也不会扣猫粮。</p></article>';
     }).join("");
   });
 })();

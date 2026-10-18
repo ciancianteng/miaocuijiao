@@ -94,11 +94,11 @@
       var text=appointmentText(r);
       var pay=r.charged?"已扣款":"未扣款";
       var actions=r.status==="pending"?'<button class="act" type="button" data-act="accept" data-id="'+esc(r.id)+'">接受预约</button><button class="ghost" type="button" data-act="reject" data-id="'+esc(r.id)+'">拒绝预约</button>':"";
-      return '<article class="appt-card"><dl class="summary">'+line("预约编号",r.id)+line("预约状态",labels[r.status]||r.status)+line("预约时间",r.startAt)+line("服务名称",r.serviceName)+line("金额",String(r.totalAmount||"")+" 猫粮")+'</dl><div class="actions">'+actions+'<button class="ghost" type="button" data-fold="1">查看详情</button></div><div class="more"><dl class="summary">'+line("老板",r.bossId||"无")+line("陪玩",r.companionId||"无")+line("结束时间",r.endAt||"无")+line("时长",String(r.hours||"")+" 小时")+line("付款状态",pay+"（"+(r.chargeState||"none")+"）")+line("服务需求",text.requirements)+line("备注",text.note)+line("正式订单","未生成。预约记录不是正式订单，提交预约不会扣款。")+'</dl></div></article>';
+      return '<article class="appt-card"><dl class="summary">'+line("预约编号",r.id)+line("预约状态",labels[r.status]||r.status)+line("预约时间",r.startAt)+line("服务名称",r.serviceName)+line("金额",String(r.totalAmount||"")+" 猫粮")+'</dl><div class="actions">'+actions+'<button class="ghost" type="button" data-fold="1">查看详情</button></div><div class="more"><dl class="summary">'+line("老板",r.bossId||"无")+line("陪玩",r.companionId||"无")+line("结束时间",r.endAt||"无")+line("时长",String(r.hours||"")+" 小时")+line("付款状态",pay+"（"+(r.chargeState||"none")+"）")+line("服务需求",text.requirements)+line("备注",text.note)+line("关联订单", r.orderId||"未生成")+line("订单状态", r.orderStatus||"无")+line("正式订单","预约审核通过前不是进行中的正式服务，提交预约不会扣款。")+'</dl></div></article>';
     }).join("")+'</div>':'<p>暂无</p>')+'</section>';
   }
   function load(){
-    api("mine",null,"GET").then(function(res){rows=res.appointments||[];paint();});
+    return api("mine",null,"GET").then(function(res){rows=res.appointments||[];paint();});
   }
   document.body.addEventListener("click",function(e){
     var card=e.target.closest("[data-status]");
@@ -112,11 +112,12 @@
       return;
     }
     var btn=e.target.closest("[data-act]");
-    if(!btn)return;
+    if(!btn||btn.disabled)return;
+    btn.disabled=true;
     api(btn.getAttribute("data-act"),{id:btn.getAttribute("data-id")}).then(function(res){
-      if(!res.ok)alert(res.message||"操作失败");
-      load();
-    });
+      if(!res||!res.ok)alert((res&&res.message)||"操作失败");
+      return load();
+    }).catch(function(){alert("操作失败");});
   });
   load();
 })();

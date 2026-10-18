@@ -31,6 +31,8 @@ import {
 } from "./_order-complete.js";
 import {
   readGamePrices,
+  reconcileAdminServicePrices,
+  acceptSubmittedServicePrice,
   writeGamePricesMarker,
   stripGamePricesMarker,
   splitGames,
@@ -2684,7 +2686,9 @@ async function bootstrapData(profile, companion) {
         : "请先联系后台设置等级",
       priceInRange: levelBundle.priceInRange,
       priceNeedsReset: levelBundle.priceNeedsReset,
-      gamePrices: readGamePrices(companion || {}),
+      gamePrices: money(companion?.price) > 0
+        ? reconcileAdminServicePrices(companion || {}, companion.price)
+        : readGamePrices(companion || {}),
       effectiveAt: companion?.commission_effective_at || companion?.level_effective_at || "",
     },
     companionLevel: levelBundle.level,
@@ -3833,6 +3837,8 @@ export default async function handler(req, res) {
       if (!reason) return json(res, 400, { ok: false, message: "请选择无法接单的原因", reasons: REJECT_REASONS });
       const beforeRows = await supabaseJson(restUrl("orders", `?id=eq.${encodeURIComponent(id)}&companion_id=eq.${encodeURIComponent(auth.profile.id)}&limit=1`), { headers: serviceHeaders() });
       const before = beforeRows?.[0];
+      const appointmentHallBlock = (await import("./appointments.js")).appointmentOrderBlocked(before, "reject_direct_order");
+      if (appointmentHallBlock) return json(res, appointmentHallBlock.status, { ok: false, message: appointmentHallBlock.message });
       if (!before || before.status !== "claimed") return json(res, 409, { ok: false, message: "当前订单不能拒绝" });
       const name = String(auth.profile.display_name || companion.nickname || "陪玩").trim() || "陪玩";
       const note = `陪玩无法接单|原因:${reason}|原陪玩:${auth.profile.id}|${nowIso()}`;
@@ -4250,7 +4256,7 @@ export default async function handler(req, res) {
         if (!/^\d+(\.\d{1,2})?$/.test(rawG)) {
           return json(res, 400, { ok: false, message: `${name} 单价只能输入有效数字，最多保留 2 位小数`, field: "price" });
         }
-        const pv = roundMoney(rawG);
+        const pv = acceptSubmittedServicePrice(companion, id, name, roundMoney(rawG));
         if (pv < min || (!levelBundle.maxPlus && pv > max)) {
           return json(res, 400, {
             ok: false,
