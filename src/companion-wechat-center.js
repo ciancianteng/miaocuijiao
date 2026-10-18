@@ -4,7 +4,7 @@
   if (window.__MCJCompanionWechatLoaded) return;
   window.__MCJCompanionWechatLoaded = true;
 
-  var REMARK = "陪玩嘻嘻";
+  var REMARK = "陪玩";
   var GROUP_NICK = "陪玩嘻嘻｜你的陪玩昵称（或陪玩ID）";
   var QR_SRC = "/companion-wechat-admin-qr.jpg";
   var PAGE_TITLES = { "工作台": 1, "审核状态": 1 };
@@ -13,7 +13,7 @@
     if (document.querySelector("link[data-pw-wx-css]")) return;
     var link = document.createElement("link");
     link.rel = "stylesheet";
-    link.href = "/src/companion-wechat-center.css?v=20261018wx1";
+    link.href = "/src/companion-wechat-center.css?v=20261018wx2";
     link.setAttribute("data-pw-wx-css", "");
     document.head.appendChild(link);
   }

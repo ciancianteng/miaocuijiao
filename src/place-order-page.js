@@ -138,7 +138,7 @@
     return Math.max(0.5, money(state.hours) || 1);
   }
   function currentQuantity() {
-    return Math.max(1, Math.floor(money(state.quantity) || 1));
+    return 1;
   }
   function currentServiceLabel() {
     return String(state.service || "").trim() || "未选择服务";
@@ -286,11 +286,9 @@
     var c = state.companion;
     if (!c) return;
     var unit = root.querySelector("[data-po-footer-unit]");
-    var qty = root.querySelector("[data-po-footer-qty]");
     var total = root.querySelector("[data-po-footer-total]");
     var hero = root.querySelector("[data-po-price-hero]");
     if (unit) unit.textContent = moneyText(c.unitPrice);
-    if (qty) qty.textContent = currentHours() + " × " + currentQuantity();
     if (total) total.textContent = moneyText(totalAmount());
     if (hero) hero.textContent = moneyText(c.unitPrice);
     var preview = root.querySelector("[data-po-service-preview]");
@@ -389,7 +387,7 @@
       '<div class="mcj-po-field"><span class="mcj-po-label">游戏/服务项目</span><div class="mcj-po-chips" role="group">' +
       serviceChips +
       "</div></div>" +
-      '<div class="mcj-po-field"><span class="mcj-po-label">数量或时长</span><div class="mcj-po-chips" role="radiogroup">' +
+      '<div class="mcj-po-field"><span class="mcj-po-label">时长</span><div class="mcj-po-chips" role="radiogroup">' +
       hourChips +
       "</div>" +
       '<div class="mcj-po-custom-hours' +
@@ -397,9 +395,6 @@
       '" data-po-custom-hours><input type="number" min="0.5" step="0.5" data-po-custom-hours-input value="' +
       esc(state.hours) +
       '" placeholder="小时数"></div></div>' +
-      '<label>数量<input type="number" min="1" step="1" data-po-quantity value="' +
-      esc(state.quantity) +
-      '"></label>' +
       '<label>游戏 ID *<input data-po-game-id required placeholder="必填，用于开局" autocomplete="off"></label>' +
       '<label>区服<input data-po-region placeholder="例如：亚服 / 国服 / 欧服"></label>' +
       '<label>联系方式<input data-po-contact placeholder="手机号 / WhatsApp / Discord"></label>' +
@@ -417,9 +412,6 @@
       '<div class="mcj-po-footer-breakdown">' +
       "<div>单价 <strong data-po-footer-unit>" +
       esc(moneyText(c.unitPrice)) +
-      "</strong></div>" +
-      "<div>数量 <strong data-po-footer-qty>" +
-      esc(currentHours() + " × " + currentQuantity()) +
       "</strong></div>" +
       "<div>合计 <strong data-po-footer-total>" +
       esc(moneyText(totalAmount())) +
@@ -475,13 +467,6 @@
     if (customHoursInput) {
       customHoursInput.addEventListener("input", function () {
         state.hours = Math.max(0.5, money(customHoursInput.value) || 1);
-        refreshTotals();
-      });
-    }
-    var qtyInput = root.querySelector("[data-po-quantity]");
-    if (qtyInput) {
-      qtyInput.addEventListener("input", function () {
-        state.quantity = Math.max(1, Math.floor(money(qtyInput.value) || 1));
         refreshTotals();
       });
     }

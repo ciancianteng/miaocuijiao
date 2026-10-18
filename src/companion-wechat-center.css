@@ -208,9 +208,14 @@
   gap:8px;
   margin-top:14px;
 }
-.pw-wx-actions .pw-btn,
-.pw-wx-copy{
+.pw-wx-actions .pw-btn{
   min-height:44px;
+}
+.pw-wx-copy{
+  height:34px;
+  min-height:34px;
+  padding:0 12px;
+  border-radius:12px;
 }
 .pw-wx-copy.is-copied{
   border-color:#5ee0a1;
