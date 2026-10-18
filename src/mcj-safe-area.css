@@ -270,6 +270,13 @@ header.topbar:not(.mcj-boss-header):not(.companion-market-header) {
   .mcj-app-tabbar {
     bottom: max(10px, var(--mcj-sab)) !important;
   }
+
+  /* Production home tabbar sets inset:auto 0 0 and already pads by env().
+     Lift the bar once and keep the 8px inner padding, so a real inset is not added twice. */
+  html body nav.mobile-bottom-nav.mcj-app-tabbar {
+    bottom: var(--mcj-sab) !important;
+    padding-bottom: 8px !important;
+  }
 }
 
 @media (max-width: 760px) {
@@ -296,11 +303,21 @@ header.topbar:not(.mcj-boss-header):not(.companion-market-header) {
   }
 }
 
-header.site-header:not(.mcj-boss-header) {
+header.site-header:not(.mcj-boss-header),
+header.m-top {
   box-sizing: border-box !important;
   top: 0 !important;
   height: auto !important;
+  min-height: calc(58px + var(--mcj-sat)) !important;
   padding-top: var(--mcj-sat) !important;
+}
+
+.m-float {
+  bottom: calc(14px + var(--mcj-sab)) !important;
+}
+
+.m-box {
+  padding-bottom: calc(18px + var(--mcj-sab)) !important;
 }
 
 .support-aside-head,
