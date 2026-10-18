@@ -18,8 +18,12 @@ header.mcj-boss-header {
   width: 100%;
   max-width: 100vw;
   margin: 0;
+  /* One inset only: the row below stays 62px. Do not also offset `top`. */
   padding: 0;
-  padding-top: env(safe-area-inset-top, 0px);
+  padding-top: var(--mcj-sat, env(safe-area-inset-top, 0px)) !important;
+  height: auto !important;
+  min-height: calc(62px + var(--mcj-sat, env(safe-area-inset-top, 0px))) !important;
+  max-height: none !important;
   position: sticky;
   top: 0;
   z-index: 1000;

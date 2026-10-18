@@ -30,8 +30,7 @@ header.mcj-boss-header.topbar {
   height: auto !important;
   min-height: calc(62px + var(--mcj-sat)) !important;
   max-height: none !important;
-  padding-top: constant(safe-area-inset-top) !important;
-  padding-top: env(safe-area-inset-top, 0px) !important;
+  padding-top: var(--mcj-sat, env(safe-area-inset-top, 0px)) !important;
   padding-bottom: 0 !important;
   padding-left: 0 !important;
   padding-right: 0 !important;
@@ -81,8 +80,7 @@ body.mcj-boss-shell .channel-directory {
   box-sizing: border-box;
   min-height: calc(64px + var(--mcj-sat));
   height: auto;
-  padding-top: constant(safe-area-inset-top);
-  padding-top: env(safe-area-inset-top, 0px);
+  padding-top: var(--mcj-sat, env(safe-area-inset-top, 0px));
   padding-left: max(16px, calc(var(--mcj-sal) + var(--mcj-header-brand-inset)));
   padding-right: max(16px, calc(var(--mcj-sar) + 12px));
   padding-bottom: 0;
@@ -128,8 +126,7 @@ body.mcj-boss-shell .channel-directory {
   box-sizing: border-box;
   min-height: calc(64px + var(--mcj-sat));
   height: auto;
-  padding-top: constant(safe-area-inset-top);
-  padding-top: env(safe-area-inset-top, 0px);
+  padding-top: var(--mcj-sat, env(safe-area-inset-top, 0px));
   padding-left: max(16px, calc(var(--mcj-sal) + var(--mcj-header-brand-inset)));
   padding-right: max(16px, calc(var(--mcj-sar) + 12px));
   padding-bottom: 0;
@@ -149,8 +146,7 @@ body.mcj-boss-shell .channel-directory {
 @media (max-width: 980px) {
   .pw-top {
     min-height: calc(64px + var(--mcj-sat));
-    padding-top: constant(safe-area-inset-top);
-    padding-top: env(safe-area-inset-top, 0px);
+    padding-top: var(--mcj-sat, env(safe-area-inset-top, 0px));
     padding-left: max(16px, calc(var(--mcj-sal) + var(--mcj-header-brand-inset)));
     padding-right: max(14px, calc(var(--mcj-sar) + 10px));
     align-items: center;
@@ -163,8 +159,7 @@ body.mcj-boss-shell .channel-directory {
   height: auto;
   min-height: calc(72px + var(--mcj-sat));
   max-height: none;
-  padding-top: constant(safe-area-inset-top);
-  padding-top: env(safe-area-inset-top, 0px);
+  padding-top: var(--mcj-sat, env(safe-area-inset-top, 0px));
   padding-left: max(16px, calc(var(--mcj-sal) + var(--mcj-header-brand-inset)));
   padding-right: max(16px, calc(var(--mcj-sar) + 12px));
   padding-bottom: 0;
@@ -189,8 +184,7 @@ body.mcj-boss-shell .channel-directory {
 @media (max-width: 1100px) {
   .admin-header {
     min-height: calc(64px + var(--mcj-sat)) !important;
-    padding-top: constant(safe-area-inset-top) !important;
-    padding-top: env(safe-area-inset-top, 0px) !important;
+    padding-top: var(--mcj-sat, env(safe-area-inset-top, 0px)) !important;
     padding-left: max(16px, calc(var(--mcj-sal) + var(--mcj-header-brand-inset))) !important;
     padding-right: max(14px, calc(var(--mcj-sar) + 10px)) !important;
     padding-bottom: 12px !important;
