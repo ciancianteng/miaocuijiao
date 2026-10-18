@@ -137,17 +137,12 @@
       if (file.size > MAX_VIDEO_BYTES) return { ok: false, error: "视频不能超过 50MB" };
       return { ok: true, maxSeconds: MAX_VIDEO_SECONDS };
     }
-    var imageOk =
-      IMAGE_MIME[mime] ||
-      mime === "image/jpg" ||
-      !mime ||
-      mime === "application/octet-stream" ||
-      /\.(jpe?g|png|webp)$/i.test(name) ||
-      ext === "jpg" ||
-      ext === "jpeg" ||
-      ext === "png" ||
-      ext === "webp";
-    if (!imageOk) return { ok: false, error: "仅支持 jpg / png / webp 图片" };
+    if (/image\/hei[cf]/.test(mime) || ext === "heic" || ext === "heif") {
+      return { ok: false, error: "不支持 HEIC/HEIF，请改用 JPG、PNG 或 WebP 后再上传" };
+    }
+    var knownMime = !!(IMAGE_MIME[mime] || mime === "image/jpg");
+    var knownExt = ext === "jpg" || ext === "jpeg" || ext === "png" || ext === "webp";
+    if (!knownMime && !knownExt) return { ok: false, error: "仅支持 jpg / png / webp 图片" };
     if (file.size > MAX_IMAGE_BYTES) return { ok: false, error: "单张图片不能超过 10MB" };
     return { ok: true };
   }

@@ -4,6 +4,7 @@
   MAX_VIDEO_BYTES,
   assertAudioUpload,
   assertImageUpload,
+  mediaTypeConstraintFallback,
   assertVideoUpload,
   assertVideoMeta,
   assertStorageObjectPresent,
@@ -4981,6 +4982,12 @@ export default async function handler(req, res) {
       await ensureCompanionBuckets();
       let mediaType = String(body.media_type || body.mediaType || "gallery");
       if (mediaType === "card" || mediaType === "card_image") mediaType = "cover";
+      if (mediaType === "achievement") {
+        return json(res, 400, {
+          ok: false,
+          message: "战绩截图暂不能写入：当前环境未启用该媒体类型，未改存到相册。",
+        });
+      }
       if (!["avatar", "cover", "gallery", "voice", "video"].includes(mediaType)) {
         return json(res, 400, { ok: false, message: "不支持的媒体类型" });
       }
@@ -5148,12 +5155,8 @@ export default async function handler(req, res) {
           });
           mediaRow = Array.isArray(mediaRows) ? mediaRows[0] : mediaRows;
         } catch (insertErr) {
-          // Legacy DB check only allows avatar|gallery|voice — store cover as gallery sort 1 so admin still sees it.
-          const insertMsg = `${insertErr?.message || ""} ${JSON.stringify(insertErr?.body || "")}`;
-          if (
-            (mediaType === "cover" || mediaType === "video") &&
-            /media_type|check|23514|violates/i.test(insertMsg)
-          ) {
+          // Only a media_type check on cover/video may be stored as gallery. Achievement never falls back.
+          if (mediaTypeConstraintFallback(mediaType, insertErr)) {
             persistedMediaType = "gallery";
             const fallbackPayload = {
               ...mediaPayload,
@@ -5166,7 +5169,11 @@ export default async function handler(req, res) {
             });
             mediaRow = Array.isArray(mediaRows) ? mediaRows[0] : mediaRows;
           } else {
-            throw insertErr;
+            const reason = stringifyApiErrorValue(insertErr?.message || insertErr, "").trim();
+            const leaked = /jwt|token|schema cache|PGRST|permission denied|password|supabase/i.test(reason);
+            throw Object.assign(new Error(leaked || !reason ? "媒体写入失败，未改存到其他类型。" : reason), {
+              status: Number(insertErr?.status) || 500,
+            });
           }
         }
       } catch (error) {
