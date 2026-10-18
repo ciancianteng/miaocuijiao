@@ -21,6 +21,7 @@
   uploadPrivateObject,
 } from "./_companion-media-store.js";
 import { companionPopularityMe, recordOnlineSession, scheduleRecomputeSoft } from "./_popularity.js";
+import { classifyPresenceWrite, loadCompanionPresence, savePresenceRev } from "./_companion-presence.js";
 import { readLocalLevels, toPublicLevel } from "./_companion-levels-store.js";
 import { resolvePlatformCommission } from "./_commission-rates.js";
 import { writeOrderStatusLog, COMPANION_STATUS_LABELS } from "./_order-status.js";
@@ -4091,7 +4092,35 @@ export default async function handler(req, res) {
     if (action === "set_online_status") {
       const allowed = new Set(["online", "busy", "paused", "offline"]);
       const raw = String(body.online_status || body.availability_status || body.status || "offline").toLowerCase();
-      const status = allowed.has(raw) ? raw : "offline";
+      const requested = allowed.has(raw) ? raw : "offline";
+      const currentPresence = await loadCompanionPresence(auth.profile.id, (select) =>
+        supabaseJson(
+          restUrl("companion_profiles", `?user_id=eq.${encodeURIComponent(auth.profile.id)}&select=${select}&limit=1`),
+          { headers: serviceHeaders() }
+        )
+      );
+      const decision = classifyPresenceWrite(
+        { onlineStatus: currentPresence.onlineStatus, presenceRev: currentPresence.presenceRev },
+        { ...body, online_status: requested }
+      );
+      if (!decision.write) {
+        return json(res, 200, {
+          ok: true,
+          ignored: true,
+          code: decision.code,
+          message:
+            decision.code === "PRESENCE_STALE"
+              ? "已忽略过期的在线状态请求"
+              : decision.code === "PRESENCE_HEARTBEAT_RESPECTS_OFFLINE"
+                ? "已保持主动离线"
+                : "已忽略页面关闭带来的离线请求",
+          onlineStatus: decision.onlineStatus,
+          onlineStatusLabel: statusLabel(decision.onlineStatus),
+          presenceKind: decision.presenceKind,
+          presenceRev: decision.presenceRev || 0,
+        });
+      }
+      const status = decision.onlineStatus;
       if (auth.profile.status !== "active") return json(res, 403, { ok: false, message: "账号已停用，不能接单" });
       try {
         assertCompanionBusinessAccess(auth.profile, companion || {});
@@ -4134,11 +4163,20 @@ export default async function handler(req, res) {
           body: JSON.stringify(patch),
         });
         await recordOnlineSession(auth.profile.id, status);
+        await savePresenceRev(decision.presenceRev, (rev) =>
+          supabaseJson(restUrl("companion_profiles", `?user_id=eq.${encodeURIComponent(auth.profile.id)}`), {
+            method: "PATCH",
+            headers: serviceHeaders(),
+            body: JSON.stringify({ presence_rev: rev }),
+          })
+        );
         return json(res, 200, {
           ok: true,
           message: ({ online: "已设为在线可接单", busy: "已设为忙碌", paused: "已暂停接单", offline: "已离线" })[status],
           onlineStatus: status,
           onlineStatusLabel: statusLabel(status),
+          presenceKind: decision.presenceKind,
+          presenceRev: decision.presenceRev || 0,
           profile: rows?.[0] || null,
         });
       } catch (e) {
@@ -4148,11 +4186,20 @@ export default async function handler(req, res) {
           body: JSON.stringify({ online_status: status, updated_at: nowIso() }),
         });
         await recordOnlineSession(auth.profile.id, status === "online" ? "online" : "offline");
+        await savePresenceRev(decision.presenceRev, (rev) =>
+          supabaseJson(restUrl("companion_profiles", `?user_id=eq.${encodeURIComponent(auth.profile.id)}`), {
+            method: "PATCH",
+            headers: serviceHeaders(),
+            body: JSON.stringify({ presence_rev: rev }),
+          })
+        );
         return json(res, 200, {
           ok: true,
           message: ({ online: "已设为在线可接单", busy: "已设为忙碌", paused: "已暂停接单", offline: "已离线" })[status],
           onlineStatus: status,
           onlineStatusLabel: statusLabel(status),
+          presenceKind: decision.presenceKind,
+          presenceRev: decision.presenceRev || 0,
           profile: rows?.[0] || null,
         });
       }

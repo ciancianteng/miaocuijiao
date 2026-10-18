@@ -2293,10 +2293,51 @@
       label.textContent=(m.emoji?m.emoji+' ':'')+(m.label||next);
     }
   }
+  function readPresenceChoice(){
+    try{
+      var raw=JSON.parse(localStorage.getItem('mcjCompanionPresence')||'null');
+      var status=String(raw&&raw.status||'').toLowerCase();
+      if(raw&&STATUS_META[status])return {status:status,rev:Number(raw.rev)||0};
+    }catch(e){}
+    return null;
+  }
+  function writePresenceChoice(status){
+    var prev=0;
+    var cur=readPresenceChoice();
+    if(cur)prev=cur.rev||0;
+    var rev=Date.now();
+    if(rev<=prev)rev=prev+1;
+    var choice={status:status,rev:rev};
+    try{
+      localStorage.setItem('mcjCompanionPresence',JSON.stringify(choice));
+      sessionStorage.setItem('mcjCompanionPresenceIntent',status);
+    }catch(e){}
+    return choice;
+  }
+  function presenceBody(status,kind,rev){
+    var body={online_status:status,presenceKind:kind,presenceRev:rev||0};
+    if(kind==='heartbeat')body.heartbeat=1;
+    if(kind==='explicit')body.explicit=1;
+    return body;
+  }
+  function beaconExplicitOffline(){
+    var session=state.session||readSession();
+    if(!session||!session.token)return;
+    var choice=writePresenceChoice('offline');
+    try{
+      fetch('/api/companion',{
+        method:'POST',
+        keepalive:true,
+        headers:{'Content-Type':'application/json',Authorization:'Bearer '+session.token,'x-mcj-companion-token':session.token},
+        body:JSON.stringify(Object.assign({action:'set_online_status'},presenceBody('offline','explicit',choice.rev)))
+      });
+    }catch(e){}
+  }
   function commitOnlineStatus(next){
     state.statusBusy=true;
     state.pendingOnlineStatus=null;
-    api('set_online_status',{online_status:next}).then(function(x){
+    var choice=writePresenceChoice(next);
+    api('set_online_status',presenceBody(next,'explicit',choice.rev)).then(function(x){
       var saved=x.onlineStatus||next;
       if(state.data&&state.data.player){
         state.data.player.onlineStatus=saved;
@@ -4298,7 +4339,7 @@
       if(willOpen)account.classList.add('open');
       return;
     }
-    if(e.target.closest('[data-logout]')){clearSession();location.replace('/companion/login/');return}
+    if(e.target.closest('[data-logout]')){beaconExplicitOffline();clearSession();location.replace('/companion/login/');return}
     if(e.target.closest('[data-reload-inbox]')){reloadInbox().then(function(){return loadActiveThread({force:true});});return}
     if(e.target.closest('[data-reload-thread]')){loadActiveThread({force:true,clear:false});return}
     if(e.target.closest('[data-forgot-dialog] [data-forgot-close]')|| (e.target.closest('[data-forgot-close]')&&!e.target.closest('[data-forgot-dialog]'))){
