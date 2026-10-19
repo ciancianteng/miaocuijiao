@@ -164,6 +164,7 @@ function serviceView(row, policy, saved, { standards = {}, gamePrices = {}, leve
     platform: quote.platform,
     placeLabel: offerPlaceLabel(row, policy),
     description: quote.description,
+    requirements: String(policy.requirements || "").trim(),
     content,
     sections: standard?.sections || [],
     unit: quote.unit,

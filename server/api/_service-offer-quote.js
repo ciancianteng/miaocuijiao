@@ -46,6 +46,7 @@ export function normalizePricePolicy(raw = {}) {
     gameName: clip(raw.gameName ?? raw.game_name, 40),
     platform: clip(raw.platform ?? raw.serverName ?? raw.server_name, 60),
     description: clipBlock(raw.description ?? raw.intro ?? raw.content, 500),
+    requirements: clipBlock(raw.requirements ?? raw.requirement ?? raw.serviceRequirements, 800),
   };
 }
 

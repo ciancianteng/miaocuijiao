@@ -257,6 +257,10 @@ test("陪玩卡片和老板资料不再拼出 RM-", () => {
   assert.match(workbench, /开启接单/);
   assert.match(workbench, /平台尚未配置价格/);
   assert.match(workbench, /此项目由平台统一定价。/);
+  assert.match(workbench, /data-offer-fold/);
+  assert.match(workbench, /后台尚未填写服务要求/);
+  assert.match(workbench, /offerSaving/);
+  assert.match(admin, /服务要求/);
   assert.doesNotMatch(workbench, /平台允许价格|修改价格|我的价格：RM/);
   assert.match(profile, /lockOfferServices/);
   assert.match(profile, /orderable === true/);

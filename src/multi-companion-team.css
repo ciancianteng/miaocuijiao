@@ -335,8 +335,15 @@ body:has(.mcj-team-bar) #playerList.companion-hall-grid {
   padding: 12px;
   background: rgba(255, 255, 255, 0.03);
   display: grid;
-  gap: 10px;
+  gap: 0;
 }
+.mcj-team-line.is-editing { gap: 8px; }
+.mcj-team-line-actions{margin-left:auto;display:flex;gap:6px;flex:0 0 auto}
+.mcj-team-edit{height:32px;padding:0 10px;border-radius:999px;border:1px solid rgba(255,214,235,.4);background:rgba(255,255,255,.04);color:#ffdceb;font-size:12px;font-weight:800;cursor:pointer}
+.mcj-team-line-edit{display:grid;grid-template-rows:0fr;transition:grid-template-rows .24s ease}
+.mcj-team-line-edit.is-open{grid-template-rows:1fr}
+.mcj-team-line-edit-inner{overflow:hidden;min-height:0;display:grid;gap:10px}
+.mcj-team-line-edit.is-open .mcj-team-line-edit-inner{padding-top:8px}
 .mcj-team-line-head {
   display: flex;
   align-items: center;
@@ -373,9 +380,12 @@ body:has(.mcj-team-bar) #playerList.companion-hall-grid {
   display: block;
   font-size: 14px;
 }
+.mcj-team-line-head > div { min-width: 0; flex: 1; }
 .mcj-team-line-head span {
+  display: block;
   font-size: 12px;
   color: rgba(255, 214, 235, 0.7);
+  line-height: 1.35;
 }
 .mcj-team-line-head em {
   font-style: normal;

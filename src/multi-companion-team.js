@@ -20,6 +20,7 @@
     lines: [],
     expanded: false,
     sheetOpen: false,
+    editingLineId: "",
     submitting: false,
     sharedGameId: "",
     sharedIdContext: { serviceKey: "", game: "", server: "", platform: "" },
@@ -225,7 +226,7 @@
     if (document.querySelector('link[data-mcj-team-css]')) return;
     var link = document.createElement("link");
     link.rel = "stylesheet";
-    link.href = "/src/multi-companion-team.css?v=20261019multi1";
+    link.href = "/src/multi-companion-team.css?v=20261019svc1";
     link.setAttribute("data-mcj-team-css", "1");
     document.head.appendChild(link);
   }
@@ -1002,6 +1003,8 @@
     var total = groupTotal();
     var el = document.querySelector("[data-mcj-team-sheet-total]");
     if (el) el.textContent = String(total) + " 猫粮";
+    var headTotal = document.querySelector("[data-mcj-team-head-total]");
+    if (headTotal) headTotal.textContent = String(total);
     var btn = document.querySelector("[data-mcj-team-submit]");
     if (btn) {
       var ok = state.lines.length >= 2;
@@ -1077,8 +1080,11 @@
             );
           })
           .join("");
+        var editing = String(state.editingLineId || "") === String(l.companionId || "");
         return (
-          '<article class="mcj-team-line" data-line="' +
+          '<article class="mcj-team-line' +
+          (editing ? " is-editing" : "") +
+          '" data-line="' +
           esc(l.companionId) +
           '">' +
           '<div class="mcj-team-line-head">' +
@@ -1087,39 +1093,31 @@
           '" alt="">' +
           "<div><strong>" +
           esc(l.companionName) +
-          "</strong><span>单价 " +
+          "</strong><span>" +
+          esc(l.service || "未选择") +
+          " · 单价 RM " +
           esc(String(l.unitPrice)) +
+          "</span><span>" +
+          esc(String(l.hours || 1)) +
+          "小时 × " +
+          esc(String(l.quantity || 1)) +
           " · 小计 <em data-line-sub>" +
           esc(String(lineSubtotal(l))) +
           "</em></span></div>" +
+          '<div class="mcj-team-line-actions">' +
+          '<button type="button" class="mcj-team-edit" data-mcj-team-edit="' +
+          esc(l.companionId) +
+          '">' +
+          (editing ? "收起" : "编辑") +
+          "</button>" +
           '<button type="button" class="mcj-team-remove" data-mcj-team-remove="' +
           esc(l.companionId) +
-          '">移除</button>' +
+          '">移除</button></div>' +
           "</div>" +
-          '<dl class="mcj-team-line-meta">' +
-          "<div><dt>服务项目</dt><dd>" +
-          esc(l.service || "未选择") +
-          "</dd></div>" +
-          "<div><dt>开始</dt><dd data-line-start>" +
-          esc(ensureSharedStartTime()) +
-          "</dd></div>" +
-          "<div><dt>结束</dt><dd data-line-end data-line-hours=\"" +
-          esc(String(l.hours || 1)) +
-          "\">" +
-          esc(addHoursToTime(ensureSharedStartTime(), l.hours || 1)) +
-          "</dd></div>" +
-          "<div><dt>时长</dt><dd>" +
-          esc(String(l.hours || 1)) +
-          " 小时</dd></div>" +
-          "<div><dt>单价</dt><dd>" +
-          esc(String(l.unitPrice)) +
-          "</dd></div>" +
-          "<div><dt>小计</dt><dd>" +
-          esc(String(lineSubtotal(l))) +
-          "</dd></div>" +
-          "<div><dt>确认状态</dt><dd>待提交</dd></div>" +
-          "</dl>" +
-          '<div class="mcj-team-field"><span>游戏/服务</span><div class="mcj-team-chips">' +
+          '<div class="mcj-team-line-edit' +
+          (editing ? " is-open" : "") +
+          '"><div class="mcj-team-line-edit-inner">' +
+          '<div class="mcj-team-field"><span>服务</span><div class="mcj-team-chips">' +
           chips +
           "</div></div>" +
           '<div class="mcj-team-field"><span>时长</span><div class="mcj-team-chips">' +
@@ -1130,44 +1128,24 @@
           '" data-mcj-team-qty="' +
           esc(l.companionId) +
           '"></div>' +
-          "</article>"
+          "</div></div></article>"
         );
       })
       .join("");
 
     var total = groupTotal();
-    var summaryRows = state.lines
-      .map(function (l, idx) {
-        return (
-          '<div class="mcj-team-summary-row">' +
-          "<span>陪玩" +
-          (idx + 1) +
-          " · " +
-          esc(l.companionName) +
-          "</span>" +
-          "<span>服务：" +
-          esc(l.service || "-") +
-          "</span>" +
-          "<strong>小计：" +
-          esc(String(lineSubtotal(l))) +
-          "猫粮</strong>" +
-          "</div>"
-        );
-      })
-      .join("");
     mask.innerHTML =
       '<div class="mcj-team-sheet" role="dialog" aria-modal="true" aria-label="多人陪玩订单确认">' +
       '<div class="mcj-team-sheet-head">' +
       "<div><h3>多人陪玩订单确认</h3>" +
       '<p class="mcj-team-sheet-sub">已选择 ' +
       state.lines.length +
-      " 位陪玩</p></div>" +
+      ' 位陪玩 · 总金额 <strong data-mcj-team-head-total>' +
+      esc(String(total)) +
+      "</strong> 猫粮</p></div>" +
       '<button type="button" class="mcj-team-sheet-close" data-mcj-team-sheet-close aria-label="关闭">×</button>' +
       "</div>" +
       '<div class="mcj-team-sheet-scroll">' +
-      '<div class="mcj-team-summary">' +
-      summaryRows +
-      "</div>" +
       rows +
       '<div class="mcj-team-field"><span>游戏ID *（共用）</span><input type="text" data-mcj-team-game-id value="' +
       esc(state.sharedGameId) +
@@ -1907,6 +1885,14 @@
       e.preventDefault();
       state.expanded = !state.expanded;
       renderBar();
+      return;
+    }
+    var editLine = e.target.closest("[data-mcj-team-edit]");
+    if (editLine) {
+      e.preventDefault();
+      var editId = String(editLine.getAttribute("data-mcj-team-edit") || "");
+      state.editingLineId = state.editingLineId === editId ? "" : editId;
+      paintSheet();
       return;
     }
     var rm = e.target.closest("[data-mcj-team-remove]");
