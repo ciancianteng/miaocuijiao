@@ -853,76 +853,9 @@
         throw new Error("Discord 授权地址缺失");
       });
   }
-  /** Pre-pay: tiny hint only. Post-pay: invite CTA or connect Discord. Never block payment. */
-  function discordPanelHtml(order) {
-    var mode = orderVoiceMode(order);
-    if (mode !== "discord") return "";
-    var bound = !!(discordStatus.bound || order.discordBound);
-    var name = discordStatus.username || order.discordUsername || "";
-    var invite =
-      (discordStatus.voice && (discordStatus.voice.discordInviteUrl || discordStatus.voice.discordChannelUrl)) ||
-      order.discordInviteUrl ||
-      order.discord_invite_url ||
-      order.discordChannelUrl ||
-      order.discord_channel_url ||
-      "";
-    var st = String(
-      (discordStatus.voice && discordStatus.voice.discordChannelStatus) ||
-        order.discordChannelStatus ||
-        order.discord_channel_status ||
-        ""
-    );
-
-    if (isPrePay(order)) {
-      return (
-        '<p class="pay-voice-hint">支付成功后可连接 Discord，并进入本单私人语音房。</p>'
-      );
-    }
-
-    if (invite && st !== "deleted" && st !== "closed") {
-      return (
-        '<div class="pay-discord is-bound" data-discord-panel="1">' +
-        '<p class="pay-discord-title">🎙️ Discord 订单语音房已就绪</p>' +
-        (bound && name ? '<p class="pay-discord-desc">已连接：' + esc(name) + "</p>" : "") +
-        '<div class="pay-actions pay-discord-actions">' +
-        '<a class="pay-btn primary" href="' +
-        esc(invite) +
-        '" target="_blank" rel="noopener">🎙️ 进入 Discord 订单语音房</a>' +
-        '<a class="pay-btn" href="orders.html?id=' +
-        encodeURIComponent(order.id) +
-        '">查看订单</a></div></div>'
-      );
-    }
-
-    if (bound) {
-      return (
-        '<div class="pay-discord is-bound" data-discord-panel="1">' +
-        '<p class="pay-discord-title">Discord 已连接' +
-        (name ? "：" + esc(name) : "") +
-        "</p>" +
-        '<p class="pay-discord-desc">点击开启本单私人语音房。</p>' +
-        '<div class="pay-actions pay-discord-actions">' +
-        '<button type="button" class="pay-btn primary" data-discord-retry="' +
-        esc(order.id) +
-        '">开启语音房</button>' +
-        '<a class="pay-btn" href="orders.html?id=' +
-        encodeURIComponent(order.id) +
-        '">查看订单</a></div></div>'
-      );
-    }
-
-    return (
-      '<div class="pay-discord" data-discord-panel="1">' +
-      '<p class="pay-discord-title">连接 Discord</p>' +
-      '<p class="pay-discord-desc">你已选择 Discord语音房，请先连接 Discord，以便进入本单私人语音房。</p>' +
-      '<div class="pay-actions pay-discord-actions">' +
-      '<button type="button" class="pay-btn primary" data-discord-connect="' +
-      esc(order.id) +
-      '">连接 Discord</button>' +
-      '<a class="pay-btn" href="orders.html?id=' +
-      encodeURIComponent(order.id) +
-      '">稍后再说</a></div></div>'
-    );
+  /** Voice method is saved on the order. Discord username is collected only after CS confirms payment. */
+  function discordPanelHtml() {
+    return "";
   }
   async function refreshDiscordStatus(order) {
     var mode = orderVoiceMode(order);
@@ -1602,7 +1535,15 @@
       } catch (e) {}
       writeCache(orderId, nextOrder);
       renderOrder(nextOrder);
-      goMyOrdersReview(orderId);
+      var reviewHref = "orders.html?filter=payment_review&id=" + encodeURIComponent(orderId);
+      if (window.MCJDiscordDesk && typeof window.MCJDiscordDesk.showPaymentThanks === "function") {
+        if (redirectTimer) clearTimeout(redirectTimer);
+        window.MCJDiscordDesk.showPaymentThanks(function () {
+          location.replace(reviewHref);
+        });
+      } else {
+        goMyOrdersReview(orderId);
+      }
     } catch (err) {
       proofDraft.uploading = false;
       proofDraft.progress = 0;

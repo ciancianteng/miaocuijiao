@@ -31,6 +31,7 @@ import { bossForCs } from "./_privacy.js";
 import { sendEmailOtp, mailProviderStatus } from "./_mail.js";
 import { sanitizeOrderText, scrubInternalOutput } from "./_output-sanitize.js";
 import { readEarlyFinish, readEarlyFinishReject } from "./_order-early-finish.js";
+import { discordDeskPublic, readDiscordDesk, stripDiscordDeskMarker, upsertDiscordDesk } from "./_discord-desk.js";
 import {
   conversationLockedByOther as lockOwnedByOther,
   consultTypeLabel,
@@ -495,7 +496,10 @@ export function safeOrder(row, profiles = {}, extras = {}) {
     bossUid,
     bossName: bossInfo.bossName,
     companionId: row.companion_id || "",
-    companionName: String(companion.display_name || companion.nickname || "").trim() || "-",
+    companionName: String(companion.display_name || companion.nickname || extras.companionNickname || "").trim() || "-",
+    companionCode: extras.companionCode || "",
+    voiceMode: String(row.voice_mode || "game_mic").trim() || "game_mic",
+    ...discordDeskPublic(row),
     serviceId: row.customer_service_id || "",
     serviceName: csDisplayName(service),
     orderType: row.order_type || "custom",
@@ -545,7 +549,7 @@ export function safeOrder(row, profiles = {}, extras = {}) {
     completionPending:
       String(row.note || "").includes("[[COMPLETION_PENDING]]") ||
       String(row.description || "").includes("[[COMPLETION_PENDING]]"),
-    note: sanitizeOrderText(note),
+    note: sanitizeOrderText(stripDiscordDeskMarker(note)),
     paymentReview: !!extras.paymentReceipt && !isTerminalOrderStatus(row.status),
     paymentReviewNote:
       extras.paymentReceipt && String(extras.paymentReceipt.status || "pending") === "pending"
@@ -1261,6 +1265,17 @@ async function loadBootstrap(serviceProfile) {
     })
   );
   const signedByOrder = Object.fromEntries(signedPairs);
+  let companionCodeByUser = {};
+  try {
+    const companionIds = [...new Set((ordersRaw || []).map((row) => row.companion_id).filter(isUuid))].slice(0, 80);
+    if (companionIds.length) {
+      const cps = await maybeRows(
+        "companion_profiles",
+        `?user_id=in.(${companionIds.map(encodeURIComponent).join(",")})&select=user_id,companion_code,nickname&limit=80`
+      );
+      companionCodeByUser = Object.fromEntries((cps || []).map((row) => [row.user_id, row]));
+    }
+  } catch (_) {}
   const paidIds = (ordersRaw || [])
     .filter((row) => row.status && row.status !== "awaiting_payment" && row.status !== "cancelled")
     .map((row) => row.id)
@@ -1271,10 +1286,13 @@ async function loadBootstrap(serviceProfile) {
     const receipt = receiptByOrder[row.id] || null;
     const approved = approvedByOrder[row.id] || null;
     const reviewFields = approved ? receiptReviewerFields(approved) : {};
+    const companionRow = companionCodeByUser[row.companion_id] || {};
     return safeOrder(row, profiles, {
       grabCount: extra.grabCount || 0,
       grabs: extra.grabs || [],
       bossIntent: extra.bossIntent || null,
+      companionCode: companionRow.companion_code || "",
+      companionNickname: companionRow.nickname || "",
       flowStatus: toFlowStatus(row.status),
       paymentReceipt: receipt,
       paymentProofUrl: receipt
@@ -3664,6 +3682,45 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
       });
     }
 
+    if (action === "discord_mark_invited") {
+      const order = await orderById(String(body.id || body.order_id || ""));
+      if (!order) return json(res, 404, { ok: false, message: "订单不存在。" });
+      try {
+        await assertOrderMutationAllowed(order, service.profile);
+      } catch (err) {
+        return json(res, err.status || 403, { ok: false, message: err.message || CS_LOCK_DENIED, code: err.code || "CS_SESSION_LOCKED" });
+      }
+      const phase = discordDeskPublic(order);
+      if (phase.discordDeskPhase === "none") {
+        return json(res, 409, { ok: false, message: "本单不是 Discord 语音房。" });
+      }
+      if (phase.discordDeskPhase !== "waiting_invite" && phase.discordDeskPhase !== "arranged") {
+        return json(res, 409, { ok: false, message: "老板还未提交 Discord 用户名。" });
+      }
+      const current = readDiscordDesk(`${order.note || ""}\n${order.description || ""}`);
+      const nextNote = upsertDiscordDesk(order.note || "", {
+        ...current,
+        status: "arranged",
+        invitedAt: current.invitedAt || new Date().toISOString(),
+      });
+      const saved = await patchOrder(order.id, { note: nextNote });
+      const row = saved || { ...order, note: nextNote };
+      const profiles = await profileMap([row.boss_id, row.companion_id, service.profile.id]);
+      let companionCode = "";
+      try {
+        const cps = await maybeRows(
+          "companion_profiles",
+          `?user_id=eq.${encodeURIComponent(row.companion_id || "")}&select=user_id,companion_code,nickname&limit=1`
+        );
+        companionCode = cps?.[0]?.companion_code || "";
+      } catch (_) {}
+      return json(res, 200, {
+        ok: true,
+        message: "已标记为已安排语音房。",
+        order: safeOrder(row, profiles, { companionCode }),
+      });
+    }
+
     if (action === "confirm_payment" || action === "push_to_grab_hall" || action === "send_to_grab_hall") {
       const order = await orderById(String(body.id || body.order_id || ""));
       if (!order) return json(res, 404, { ok: false, message: "订单不存在。" });
@@ -4090,19 +4147,8 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
         );
       } catch (_) {}
 
-      // Discord voice room after CS confirms payment (soft-fail).
-      try {
-        const paidRow = { ...order, ...patched, status: next };
-        if (String(paidRow.voice_mode || "").toLowerCase() === "discord") {
-          const { maybeEnsureDiscordAfterPaid } = await import("./_discord-voice-orders.js");
-          await maybeEnsureDiscordAfterPaid(paidRow, {
-            bossUserId: order.boss_id,
-            companionUserId: isMultiParent ? undefined : assignedCompanionId || order.companion_id || undefined,
-          });
-        }
-      } catch (err) {
-        console.warn("[cs/confirm_payment] discord voice", String(err?.message || err).slice(0, 160));
-      }
+      // Payment confirmation does not open the Discord room. The boss fills a username
+      // after this point, and a staff member marks the invite separately.
 
       const paidAtIso = proxyUnpaidHall ? "" : patched.paid_at || nowIso();
       let cascadedChildren = [];

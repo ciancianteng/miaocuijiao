@@ -319,6 +319,7 @@
   <script src="src/boss-forced-ack.js?v=20260803rules1" defer></script>
   <script src="src/currency.js"></script>
   <script src="src/order-status.js"></script>
+  <script src="src/boss-discord-desk.js?v=20261019discord1"></script>
   <script>
     (function(){
       var root=document.getElementById('ordersApp'),modal=document.getElementById('detailModal'),detailBody=document.getElementById('detailBody'),detailFooter=document.getElementById('detailFooter');
@@ -730,7 +731,7 @@
       }
       function skeletonHtml(){return '<div class="order-skel" aria-busy="true">'+[0,1,2].map(function(){return '<div class="order-skel-card"><div class="order-skel-line lg"></div><div class="order-skel-line"></div><div class="order-skel-line"></div></div>'}).join('')+'</div><p class="order-empty">正在读取订单…</p>'}
       function failHtml(){return '<div class="order-alert"><strong>订单加载失败，请重试</strong><p style="margin:8px 0 0;color:#ffd6e8">'+esc(state.error||'请检查网络后重试')+'</p><button class="order-btn primary" type="button" data-refresh>重新加载</button></div>'}
-      function paint(){root.innerHTML='<section class="orders-head"><div><h1>我的订单</h1><p>只显示当前老板账号的真实订单。</p></div><button class="order-btn" data-refresh type="button">刷新</button></section><div class="tabs">'+tabs.map(function(t){return '<button class="tab '+(state.filter===t[0]?'active':'')+'" type="button" data-filter="'+t[0]+'">'+t[1]+'</button>'}).join('')+'</div>'+bodyHtml()}
+      function paint(){root.innerHTML='<section class="orders-head"><div><h1>我的订单</h1><p>只显示当前老板账号的真实订单。</p></div><button class="order-btn" data-refresh type="button">刷新</button></section><div class="tabs">'+tabs.map(function(t){return '<button class="tab '+(state.filter===t[0]?'active':'')+'" type="button" data-filter="'+t[0]+'">'+t[1]+'</button>'}).join('')+'</div>'+bodyHtml();try{if(window.MCJDiscordDesk)window.MCJDiscordDesk.sync(state.orders||[])}catch(err){}}
       function bodyHtml(){
         if(!token())return '<div class="order-alert">请先登录后查看我的订单。</div>';
         if(state.error&&!state.orders.length)return failHtml();
@@ -959,21 +960,8 @@
               field('负责客服',esc(serviceName(o)))+
               field('支付方式',esc(o.paymentMethod||o.payment_method||'-'))+
               field('语音方式',esc(voiceModeLabel(o)))+
-              (String(o.voiceMode||o.voice_mode||'')==='discord'
-                ? (function(){
-                    var invite=o.discordInviteUrl||o.discord_invite_url||o.discordChannelUrl||o.discord_channel_url||'';
-                    var st=String(o.discordChannelStatus||o.discord_channel_status||'');
-                    if(st==='deleted'||st==='closed'){
-                      return field('Discord 语音房','订单已结束，语音房入口已关闭');
-                    }
-                    if(invite){
-                      return field('Discord 语音房','<a class="order-btn" style="display:inline-flex;width:auto;padding:6px 10px" href="'+esc(invite)+'" target="_blank" rel="noopener">🎙️ 进入 Discord 订单语音房</a>');
-                    }
-                    if(st==='error'){
-                      return field('Discord 语音','语音房创建失败 · <button class="order-btn" type="button" data-discord-retry="'+esc(o.id)+'">重试创建</button>');
-                    }
-                    return field('Discord 语音','准备中 · <button class="order-btn" type="button" data-discord-retry="'+esc(o.id)+'">开启语音房</button>');
-                  })()
+              (String(o.voiceMode||o.voice_mode||'')==='discord'&&o.discordDeskStatus
+                ? field('Discord 对接',esc(o.discordDeskStatus))+(o.discordUsername?field('Discord ID',esc(o.discordUsername)):'')
                 : '')+
             '</div></div>'+
             serviceStandardModule(o)+

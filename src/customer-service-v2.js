@@ -3347,13 +3347,27 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, virtStartIndex }
       if(o.paymentRejectReason)rows.push(['拒绝原因',o.paymentRejectReason]);
     }
     if(mode==='review')rows.push(['评价',o.reviewText||o.rating||'暂无评价']);
+    if(String(o.voiceMode||o.voice_mode||'')==='discord'){
+      rows.push(['语音方式','Discord 语音房']);
+      rows.push(['老板账号 ID',o.bossUid||'-']);
+      rows.push(['陪玩 ID',o.companionCode||'-']);
+      rows.push(['Discord ID',o.discordUsername||'未填写']);
+      rows.push(['Discord 对接状态',o.discordDeskStatus||'未到填写阶段']);
+    }
     var hasProof=!(o.paymentWalletHold&&!o.paymentProofUrl)&&((o.paymentProofUrl&&!/^proof:/i.test(String(o.paymentProofUrl||'')))||o.paymentReceiptId||o.paymentReview);
     var proof=(mode==='pay'||mode==='refund')&&hasProof
       ?('<div style="margin-top:12px"><button type="button" class="cs-btn ghost" data-proof-lightbox="'+(esc(o.paymentProofUrl||''))+'" data-proof-order-id="'+esc(o.id)+'" data-proof-receipt-id="'+esc(o.paymentReceiptId||'')+'">查看凭证图片</button></div>')
       :'';
+    var discordActions='';
+    if(String(o.voiceMode||o.voice_mode||'')==='discord'){
+      var discordName=String(o.discordUsername||'').trim();
+      var discordCopy=discordName?'<button type="button" class="cs-btn" data-discord-copy="'+esc(discordName)+'">复制 Discord ID</button>':'';
+      var discordInvite=o.discordDeskPhase==='waiting_invite'?'<button type="button" class="cs-btn primary" data-discord-invited="'+esc(o.id)+'">已邀请进入语音房</button>':'';
+      if(discordCopy||discordInvite)discordActions='<div class="cs-actions" style="margin-top:12px">'+discordCopy+discordInvite+'</div>';
+    }
     modal('<div class="cs-dialog-head"><h3>'+esc(title)+'</h3><button class="cs-btn ghost" type="button" data-close-modal>关闭</button></div><div class="cs-info-list">'+
       rows.map(function(r){return '<div><span>'+esc(r[0])+'</span><strong>'+esc(String(r[1]==null?'-':r[1]))+'</strong></div>';}).join('')+
-      '</div>'+(mode==='detail'?earlyFinishDetailHtml(o)+orderServiceStandardHtml(o):'')+proof, 'cs-sheet');
+      '</div>'+discordActions+(mode==='detail'?earlyFinishDetailHtml(o)+orderServiceStandardHtml(o):'')+proof, 'cs-sheet');
   }
   function orderServiceStandardHtml(o){
     var s=o&&o.serviceSnapshot;
@@ -3482,7 +3496,27 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, virtStartIndex }
   function orderRow(o){
     var v=orderView(o);
     var row=v.o;
-    return '<tr data-order-search="'+esc(orderSearchText(row,v.statusLabel))+'"'+(row.needsReassign?' style="background:rgba(245,158,11,.08)"':'')+(v.inGrabHall?' data-grab-hall="1"':'')+(v.isMultiParentRow?' data-multi-parent="1"':'')+(row.isRenewal?' data-renewal="1"':'')+' data-order-status="'+esc(v.st)+'"><td class="cs-col-no">'+esc(row.orderNo)+(row.isRenewal?'<br><small>续单'+(row.renewalSourceOrderNo?' · 原'+esc(row.renewalSourceOrderNo):'')+'</small>':'')+(v.isMultiParentRow?'<br><small>多人</small>':'')+'</td><td class="cs-col-boss">'+esc(sanitizeBossLabel(row.bossName,publicBossCode(row)))+(publicBossCode(row)?'<br><small>'+esc(publicBossCode(row))+'</small>':'')+'</td><td class="cs-col-companion">'+v.companionCell+'</td><td class="cs-col-game">'+esc(row.game||'-')+'</td><td class="cs-col-amount">'+money(row.totalAmount)+'</td><td class="cs-col-status">'+v.statusCell+'</td><td class="cs-col-time">'+esc(fmtOrderDateTime(row.createdAt))+'</td><td class="cs-col-actions"><div class="cs-actions">'+v.actions.join('')+'</div></td></tr>';
+    var search=esc(orderSearchText(row,v.statusLabel));
+    var desk=discordDeskHtml(row);
+    var main='<tr data-order-search="'+search+'"'+(row.needsReassign?' style="background:rgba(245,158,11,.08)"':'')+(v.inGrabHall?' data-grab-hall="1"':'')+(v.isMultiParentRow?' data-multi-parent="1"':'')+(row.isRenewal?' data-renewal="1"':'')+' data-order-status="'+esc(v.st)+'"><td class="cs-col-no">'+esc(row.orderNo)+(row.isRenewal?'<br><small>续单'+(row.renewalSourceOrderNo?' · 原'+esc(row.renewalSourceOrderNo):'')+'</small>':'')+(v.isMultiParentRow?'<br><small>多人</small>':'')+'</td><td class="cs-col-boss">'+esc(sanitizeBossLabel(row.bossName,publicBossCode(row)))+(publicBossCode(row)?'<br><small>'+esc(publicBossCode(row))+'</small>':'')+'</td><td class="cs-col-companion">'+v.companionCell+'</td><td class="cs-col-game">'+esc(row.game||'-')+'</td><td class="cs-col-amount">'+money(row.totalAmount)+'</td><td class="cs-col-status">'+v.statusCell+'</td><td class="cs-col-time">'+esc(fmtOrderDateTime(row.createdAt))+'</td><td class="cs-col-actions"><div class="cs-actions">'+v.actions.join('')+'</div></td></tr>';
+    var extra=desk?'<tr data-discord-desk-row="1" data-order-search="'+search+'" data-order-status="'+esc(v.st)+'"><td colspan="8">'+desk+'</td></tr>':'';
+    return main+extra;
+  }
+  function discordDeskHtml(o){
+    if(String(o.voiceMode||o.voice_mode||'')!=='discord')return '';
+    var name=String(o.discordUsername||'').trim();
+    var status=o.discordDeskStatus||'未到填写阶段';
+    var copy=name?'<button type="button" class="cs-btn" data-discord-copy="'+esc(name)+'">复制 Discord ID</button>':'';
+    var invite=o.discordDeskPhase==='waiting_invite'?'<button type="button" class="cs-btn primary" data-discord-invited="'+esc(o.id)+'">已邀请进入语音房</button>':'';
+    return '<div class="cs-order-note" data-discord-desk="1">'+
+      '<div>老板：'+esc((o.bossName||'-')+' / '+(o.bossUid||'-'))+'</div>'+
+      '<div>陪玩：'+esc((o.companionName||'-')+' / '+(o.companionCode||'-'))+'</div>'+
+      '<div>订单编号：'+esc(o.orderNo||'-')+'</div>'+
+      '<div>语音方式：Discord 语音房</div>'+
+      '<div>Discord ID：'+esc(name||'未填写')+'</div>'+
+      '<div>Discord 对接状态：'+esc(status)+'</div>'+
+      (copy||invite?'<div class="cs-actions" style="margin-top:8px">'+copy+invite+'</div>':'')+
+      '</div>';
   }
   function orderCard(o){
     var v=orderView(o);
@@ -3500,6 +3534,7 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, virtStartIndex }
     return '<article class="cs-order-card" data-order-search="'+esc(orderSearchText(row,v.statusLabel))+'" data-order-status="'+esc(v.st)+'">'+
       '<div class="cs-order-top"><strong>'+esc(row.orderNo||'-')+'</strong><span class="cs-order-tag cs-tag-'+orderStatusTone(row,v.st,v.inGrabHall)+'">'+esc(v.statusLabel)+'</span></div>'+
       '<div class="cs-order-meta"><span>金额 <b>'+money(row.totalAmount)+'</b></span><span>老板 <b>'+esc(sanitizeBossLabel(row.bossName,publicBossCode(row))||'-')+'</b></span><span>陪玩 <b>'+(v.isMultiParentRow?'多人主订单':esc(row.companionName||'未指定'))+'</b></span>'+(row.game?'<span>项目 <b>'+esc(row.game)+'</b></span>':'')+'</div>'+
+      discordDeskHtml(row)+
       (notes.length?'<p class="cs-order-note">'+esc(notes.join(' · '))+'</p>':'')+
       (v.proofBlock||'')+
       '<div class="cs-order-actions">'+detailBtn+moreBtn+'</div>'+
@@ -4345,6 +4380,45 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, virtStartIndex }
         return;
       }
       openProofLightbox(pUrl);
+      return;
+    }var discordCopy=e.target.closest('[data-discord-copy]');if(discordCopy){
+      var discordText=discordCopy.getAttribute('data-discord-copy')||'';
+      var markCopied=function(){discordCopy.textContent='已复制';toast('已复制 Discord ID');};
+      var copyFailed=function(){toast('复制失败，请长按 Discord ID 手动复制');};
+      var fallbackCopy=function(){
+        try{
+          var area=document.createElement('textarea');
+          area.value=discordText;
+          area.setAttribute('readonly','');
+          area.style.position='fixed';
+          area.style.left='-9999px';
+          document.body.appendChild(area);
+          area.select();
+          var ok=document.execCommand('copy');
+          area.remove();
+          if(ok)markCopied();else copyFailed();
+        }catch(err){copyFailed();}
+      };
+      if(navigator.clipboard&&navigator.clipboard.writeText){
+        navigator.clipboard.writeText(discordText).then(markCopied).catch(fallbackCopy);
+      }else fallbackCopy();
+      return;
+    }var discordInvited=e.target.closest('[data-discord-invited]');if(discordInvited){
+      var discordId=discordInvited.getAttribute('data-discord-invited')||'';
+      if(discordInvited.disabled)return;
+      discordInvited.disabled=true;
+      api('discord_mark_invited',{id:discordId}).then(function(res){
+        toast(res.message||'已安排语音房');
+        if(res.order&&state.data&&Array.isArray(state.data.orders)){
+          var idx=state.data.orders.findIndex(function(o){return o.id===discordId});
+          if(idx>=0)state.data.orders[idx]=Object.assign({},state.data.orders[idx],res.order);
+          state._ordersPollSig='';
+          paint();
+        }
+      }).catch(function(err){
+        discordInvited.disabled=false;
+        toast(err.message||'更新失败');
+      });
       return;
     }var pay=e.target.closest('[data-confirm-payment]');if(pay){
       var sendHall=pay.getAttribute('data-send-hall')==='1';
