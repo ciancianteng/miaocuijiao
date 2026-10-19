@@ -606,6 +606,11 @@ export function viewOrder(row = {}) {
     description: cleanDescription,
     notes: bossNotes,
     bossNotes,
+    serviceSchedule: (() => {
+      const blob = `${row.notes || ""}\n${description}`;
+      const matched = blob.match(/服务时段[：:]\s*([^\n；;]+)/i);
+      return matched ? String(matched[1] || "").trim() : "";
+    })(),
     serviceType: serviceName || row.game || "",
     serviceName: serviceName || row.game || "",
     serviceSnapshot: viewServiceSnapshot(row),

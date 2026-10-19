@@ -6,7 +6,7 @@
 (function () {
   "use strict";
 
-  var MINUTE_STEP_DEFAULT = 60;
+  var MINUTE_STEP_DEFAULT = 1;
   var ITEM_H = 44;
   var VISIBLE = 5;
   var PAD = Math.floor(VISIBLE / 2);
@@ -128,7 +128,7 @@
     if (document.querySelector('link[href*="mcj-time-picker.css"], link[data-mcj-time-picker-css]')) return;
     var link = document.createElement("link");
     link.rel = "stylesheet";
-    link.href = "/src/mcj-time-picker.css?v=20261005tp1";
+    link.href = "/src/mcj-time-picker.css?v=20261019min1";
     link.setAttribute("data-mcj-time-picker-css", "1");
     document.head.appendChild(link);
   }
@@ -166,6 +166,7 @@
       '<div class="mcj-tp-head"><strong>' +
       String(opts.title || "选择时间").replace(/</g, "&lt;") +
       "</strong></div>" +
+      '<div class="mcj-tp-caps" aria-hidden="true"><span>小时</span><span></span><span>分钟</span></div>' +
       '<div class="mcj-tp-body">' +
       '<div class="mcj-tp-highlight" aria-hidden="true"></div>' +
       buildCol("hour", hours, hour) +
