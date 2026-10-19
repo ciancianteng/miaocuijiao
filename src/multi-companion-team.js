@@ -1326,7 +1326,36 @@
     return true;
   }
 
+  function absorbOpenModalCompanion() {
+    var modal = window.MCJPlaceOrder;
+    if (!modal || typeof modal.currentDraftCompanion !== "function") return;
+    if (typeof modal.isOpen === "function" && !modal.isOpen()) return;
+    var raw = null;
+    try {
+      raw = modal.currentDraftCompanion();
+    } catch (e) {
+      return;
+    }
+    if (!raw || !raw.companionId) return;
+    if (findLine(raw.companionId)) {
+      updateLine(raw.companionId, {
+        service: raw.service,
+        serviceType: raw.serviceType || raw.service,
+        serviceId: raw.serviceId || "",
+        unitPrice: raw.unitPrice,
+        hours: raw.hours,
+        quantity: raw.quantity,
+      });
+      return;
+    }
+    var result = addCompanion(raw, { silent: true });
+    if (result && result.error === "need_service") {
+      addCompanion(Object.assign({}, raw, { service: "", serviceType: "" }), { silent: true, allowPendingService: true });
+    }
+  }
+
   function openCheckout() {
+    absorbOpenModalCompanion();
     if (!state.lines.length) {
       toast("请先加入陪玩");
       return;
@@ -1337,6 +1366,7 @@
       toast("多人下单至少选择 2 位陪玩");
       return;
     }
+    closeSingleOrderModal();
     hideToast();
     paintSheet();
     loadOrderPayMethods().then(function () {
@@ -2141,6 +2171,7 @@
     remove: removeCompanion,
     clear: clearTeam,
     openCheckout: openCheckout,
+    updateLine: updateLine,
     continueToHall: continueToHall,
     applyShared: applyShared,
     getSharedAccountId: getSharedAccountId,

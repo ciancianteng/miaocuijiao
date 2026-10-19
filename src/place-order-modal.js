@@ -1758,6 +1758,74 @@
     return String(c.companionId || c.id || c.uid || "").trim();
   }
 
+  function otherDraftCompanions() {
+    var team = window.MCJMultiCompanionTeam;
+    if (!team || typeof team.getLines !== "function") return [];
+    var cid = currentCompanionId();
+    return (team.getLines() || []).filter(function (line) {
+      return String(line.companionId || "") !== cid;
+    });
+  }
+
+  function currentDraftCompanion() {
+    if (!state.open || !state.companion) return null;
+    var c = state.companion;
+    var service = "";
+    try {
+      service = currentServiceLabel();
+    } catch (e) {
+      service = state.service || "";
+    }
+    return {
+      companionId: c.companionId || c.id || c.uid || "",
+      companionName: c.companionName || c.name || "陪玩",
+      avatar: c.avatar || c.image || "",
+      unitPrice: money(c.unitPrice),
+      service: service,
+      serviceType: service,
+      serviceId: state.selectedServiceId || "",
+      game: service,
+      hours: currentHours(),
+      quantity: currentQuantity(),
+      services: resolveServices(c),
+      online: c.online !== false,
+      status: c.availabilityStatus || "",
+      statusText: c.availabilityText || "",
+      gameId: readModalGameId(),
+    };
+  }
+
+  // The confirm button must not place_order for only the companion in this modal
+  // when other companions are already in the shared draft.
+  function mergeConfirmIntoTeam() {
+    if (!otherDraftCompanions().length) return false;
+    var team = window.MCJMultiCompanionTeam;
+    if (!team || typeof team.openCheckout !== "function") return false;
+    if (!requireModalGameId()) return true;
+    var cid = currentCompanionId();
+    var lines = typeof team.getLines === "function" ? team.getLines() : [];
+    var already = (lines || []).some(function (line) {
+      return String(line.companionId || "") === cid;
+    });
+    if (already && typeof team.updateLine === "function") {
+      team.updateLine(cid, {
+        service: currentServiceLabel(),
+        serviceType: currentServiceLabel(),
+        serviceId: state.selectedServiceId || "",
+        unitPrice: money(state.companion && state.companion.unitPrice),
+        hours: currentHours(),
+        quantity: currentQuantity(),
+      });
+    } else if (!already) {
+      var result = pushCurrentCompanionToTeam();
+      if (!result || (!result.ok && result.error !== "duplicate")) return true;
+    }
+    applyModalSharedToTeam();
+    close();
+    team.openCheckout();
+    return true;
+  }
+
   function teamDraftShouldAbsorbCurrentCompanion() {
     var team = window.MCJMultiCompanionTeam;
     if (!team) return false;
@@ -2138,6 +2206,10 @@
         replaceSlot.parentOrderId &&
         replaceSlot.replaceChildId;
 
+      // Existing multi draft stays intact. Confirming this modal must take the
+      // companion currently on screen into that draft instead of place_order alone.
+      if (!isReplacement && mergeConfirmIntoTeam()) return;
+
       var payload = isReplacement
         ? {
             action: "replace_companion",
@@ -2511,6 +2583,7 @@
     isOpen: function () {
       return !!state.open;
     },
+    currentDraftCompanion: currentDraftCompanion,
     submit: submitOrder,
     resolveServices: resolveServices,
     applySelectedService: applySelectedService,

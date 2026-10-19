@@ -524,6 +524,9 @@ test("TEST unified routeOrder keeps A,B,C on every 立即下单", () => {
   assert.match(teamSrc, /data-mcj-team-add-more/);
   assert.match(teamSrc, /incompleteLineNames/);
   assert.match(placeSrc, /team\.openCheckout\(\)/);
+  assert.match(placeSrc, /function mergeConfirmIntoTeam/);
+  assert.match(placeSrc, /if \(!isReplacement && mergeConfirmIntoTeam\(\)\) return;/);
+  assert.match(teamSrc, /function absorbOpenModalCompanion/);
   assert.doesNotMatch(placeSrc, /addAnotherCompanion[\s\S]{0,500}action:\s*"place_order"/);
 
   const store = {};
@@ -687,6 +690,32 @@ test("TEST unified routeOrder keeps A,B,C on every 立即下单", () => {
   assert.equal(dup.ok, false);
   assert.equal(dup.error, "duplicate");
   assert.equal(api.getCount(), 3);
+
+  api.clear();
+  api.add({ companionId: A, companionName: "1717", unitPrice: 45, service: "王者荣耀", serviceId: "svc-a", services: servicesA, online: true });
+  api.add({ companionId: B, companionName: "烦烦", unitPrice: 40, service: "和平精英", serviceId: "svc-b", services: servicesB, online: true });
+  sandbox.window.MCJPlaceOrder.isOpen = () => true;
+  sandbox.window.MCJPlaceOrder.currentDraftCompanion = () => ({
+    companionId: C,
+    companionName: "3m",
+    unitPrice: 35,
+    service: "三角洲",
+    serviceType: "三角洲",
+    serviceId: "svc-c1",
+    services: servicesC,
+    hours: 1,
+    quantity: 1,
+    online: true,
+  });
+  api.openCheckout();
+  assert.equal(api.getCount(), 3);
+  const confirmed = api.buildPayload();
+  assert.equal(confirmed.action, "place_multi_order");
+  assert.equal(confirmed.companions.map((row) => row.companionId).join(","), [A, B, C].join(","));
+  assert.equal(confirmed.companions[2].serviceName, "三角洲");
+  assert.equal(confirmed.companions[2].unitPrice, 35);
+  assert.equal(confirmed.companions[2].totalAmount, 35);
+  assert.equal(confirmed.companions.reduce((n, row) => n + row.totalAmount, 0), 120);
 });
 
 const failed = results.filter((r) => !r.ok);
