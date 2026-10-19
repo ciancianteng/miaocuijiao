@@ -77,27 +77,31 @@ test("允许自定义且价格在区间内", () => {
     service,
     policy: custom,
     saved: { id: "svc-1", accepting: true, price: 30 },
+    level: 5,
   });
   assert.equal(quote.canEditPrice, true);
   assert.equal(quote.effectivePrice, 30);
   assert.equal(quote.min, 20);
   assert.equal(quote.max, 40);
   assert.equal(quote.orderable, true);
+  assert.equal(quote.savedMarkup, 5);
 });
 
-test("自定义价格超出区间不可下单", () => {
+test("超过等级或后台上限的已存价格按合法上限计价", () => {
   const quote = quoteServiceOffer({
     service,
     policy: custom,
     saved: { id: "svc-1", accepting: true, price: 55 },
+    level: 5,
   });
-  assert.equal(quote.orderable, false);
-  assert.equal(quote.priceStatus, "out_of_range");
-  assert.match(quote.priceMessage, /20–40/);
+  assert.equal(quote.orderable, true);
+  assert.equal(quote.markupClamped, true);
+  assert.equal(quote.effectivePrice, 40);
+  assert.notEqual(quote.effectivePrice, 55);
 });
 
 test("未设置自定义单价不能下单", () => {
-  const quote = quoteServiceOffer({ service, policy: custom, saved: { id: "svc-1", accepting: true, price: null } });
+  const quote = quoteServiceOffer({ service, policy: custom, level: 5, saved: { id: "svc-1", accepting: true, price: null } });
   assert.equal(quote.orderable, false);
   assert.equal(quote.priceStatus, "unset");
 });
@@ -167,21 +171,21 @@ test("后台保存拒绝不完整自定义区间和非法价格", () => {
 
 test("后端拒绝超范围、统一定价改价、未设价开启", () => {
   assert.throws(
-    () => validateCompanionOfferSave({ service, policy: custom, next: { price: "80", accepting: true } }),
-    /20–40/
+    () => validateCompanionOfferSave({ service, policy: custom, level: 5, next: { price: "80", accepting: true } }),
+    /1–15/
   );
   assert.throws(
     () => validateCompanionOfferSave({ service, policy: fixed, next: { price: "30", accepting: true } }),
     /平台统一定价/
   );
   assert.throws(
-    () => validateCompanionOfferSave({ service, policy: custom, next: { price: "", accepting: true } }),
+    () => validateCompanionOfferSave({ service, policy: custom, level: 5, next: { price: "", accepting: true } }),
     /请先设置有效单价/
   );
   const on = validateCompanionOfferSave({ service, policy: fixed, next: { price: "", accepting: true } });
   assert.equal(on.accepting, true);
   assert.equal(on.price, null);
-  const priced = validateCompanionOfferSave({ service, policy: custom, next: { price: "28.5", accepting: true } });
+  const priced = validateCompanionOfferSave({ service, policy: custom, level: 5, next: { price: "28.5", accepting: true } });
   assert.equal(priced.price, 28.5);
 });
 
@@ -245,6 +249,10 @@ test("陪玩卡片和老板资料不再拼出 RM-", () => {
   const profile = read("src/profile-detail.js");
   const admin = read("src/admin-service-manager.js");
   assert.match(workbench, /后台标准价格：RM /);
+  assert.match(workbench, /当前等级：/);
+  assert.match(workbench, /等级允许加价/);
+  assert.match(workbench, /自定义加价/);
+  assert.match(workbench, /最终展示价格/);
   assert.match(workbench, /保存价格/);
   assert.match(workbench, /开启接单/);
   assert.match(workbench, /平台尚未配置价格/);

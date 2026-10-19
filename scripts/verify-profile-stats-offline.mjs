@@ -119,9 +119,17 @@ test("没有保存过服务开关时，只展示该陪玩已开启且能报价�
     gamePrices: { 王者荣耀: 20, 默认服务: 20 },
   });
   assert.deepEqual(seeded.map((row) => row.id), ["svc-king"]);
-  const quote = quoteServiceOffer({ service: king, policy: custom, saved: seeded[0] });
+  const sameAsStandard = quoteServiceOffer({ service: king, policy: custom, level: 3, saved: seeded[0] });
+  assert.equal(sameAsStandard.orderable, false);
+  assert.equal(sameAsStandard.priceStatus, "out_of_range");
+  const quote = quoteServiceOffer({
+    service: king,
+    policy: custom,
+    level: 3,
+    saved: { ...seeded[0], price: 25 },
+  });
   assert.equal(quote.orderable, true);
-  assert.equal(quote.effectivePrice, 20);
+  assert.equal(quote.effectivePrice, 25);
   assert.equal(quote.unit, "局");
 });
 

@@ -5,9 +5,14 @@
  * Rollback: delete the servicePricePolicy key from platform_settings.data.
  */
 import { companionDb } from "./_companion-media-store.js";
-import { assertPricePolicy, normalizePricePolicy } from "./_service-offer-quote.js";
+import {
+  assertLevelMarkupCaps,
+  assertPricePolicy,
+  normalizeLevelMarkupCaps,
+  normalizePricePolicy,
+} from "./_service-offer-quote.js";
 
-export { assertPricePolicy, normalizePricePolicy };
+export { assertLevelMarkupCaps, assertPricePolicy, normalizeLevelMarkupCaps, normalizePricePolicy };
 
 async function readSettingsData() {
   const rows = await companionDb("platform_settings", "?id=eq.global&select=data&limit=1").catch(() => []);
@@ -19,6 +24,23 @@ export async function loadAllPricePolicies() {
   const data = await readSettingsData();
   const map = data.servicePricePolicy;
   return map && typeof map === "object" && !Array.isArray(map) ? map : {};
+}
+
+export async function loadLevelMarkupCaps() {
+  const data = await readSettingsData();
+  return normalizeLevelMarkupCaps(data.levelMarkupCaps);
+}
+
+export async function saveLevelMarkupCaps(raw) {
+  const caps = assertLevelMarkupCaps(raw || {});
+  const prev = await readSettingsData();
+  const next = { ...prev, levelMarkupCaps: caps };
+  await companionDb("platform_settings", "?on_conflict=id", {
+    method: "POST",
+    headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+    body: JSON.stringify({ id: "global", data: next, updated_at: new Date().toISOString() }),
+  });
+  return caps;
 }
 
 export async function savePricePolicy(serviceId, raw) {

@@ -1252,6 +1252,13 @@ a.pw-btn{display:inline-flex;align-items:center;justify-content:center;text-deco
 .pw-my-service-line strong{color:#fff7fb;font-size:15px;font-weight:650;line-height:1.35}
 .pw-my-service-price{display:grid;gap:8px;padding-top:2px}
 .pw-my-service-price label{display:grid;gap:8px;color:#fff7fb;font-size:14px}
+.pw-my-service-final{margin:0;color:#ffd6ea;font-size:15px;font-weight:650;line-height:1.4}
+.pw-my-service-error{margin:0;min-height:1.2em;color:#ff8aa8;font-size:13px;line-height:1.45}
+@media (max-width:760px){
+  .pw-my-service-price .pw-rm{width:100%}
+  .pw-my-service-price .pw-rm input{flex:1;width:auto;min-width:0;max-width:none}
+  .pw-my-service .pw-btn{width:100%}
+}
 .pw-offer-switch-row{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:44px;margin-top:2px}
 .pw-offer-switch-row>span{font-size:14px;color:#fff7fb}
 .pw-offer-switch{position:relative;width:52px;height:32px;border:1px solid rgba(255,143,199,.45);border-radius:999px;background:rgba(255,255,255,.06);padding:0;flex:0 0 auto}

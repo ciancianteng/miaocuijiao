@@ -6,8 +6,10 @@
 import { companionDb } from "./_companion-media-store.js";
 import { readGamePrices } from "./_game-prices.js";
 import { loadCompanionServiceStandards, pickServiceStandard, publicStandard } from "./_service-standard.js";
+import { readLocalLevels } from "./_companion-levels-store.js";
 import {
   acceptedLegacyPrice,
+  levelIndexFrom,
   mergeOfferLists,
   offerPlaceLabel,
   parseMoneyStrict,
@@ -39,6 +41,7 @@ function cleanOffers(input) {
         enabled: accepting,
         accepting,
         price: cleanPrice(raw?.price),
+        markup: raw?.markup == null || String(raw.markup).trim() === "" ? null : String(raw.markup).trim(),
         sort: Number.isFinite(Number(raw?.sort)) ? Number(raw.sort) : index,
       };
     })
@@ -76,7 +79,67 @@ async function loadPolicies() {
   }
 }
 
-function serviceView(row, policy, saved, { standards = {}, gamePrices = {} } = {}) {
+async function loadMarkupCaps() {
+  try {
+    const { loadLevelMarkupCaps } = await import("./_service-price-policy.js");
+    return await loadLevelMarkupCaps();
+  } catch {
+    const { normalizeLevelMarkupCaps } = await import("./_service-offer-quote.js");
+    return normalizeLevelMarkupCaps(null);
+  }
+}
+
+async function remember(shared, key, loader) {
+  if (shared && shared[key] !== undefined) return shared[key];
+  const value = await loader();
+  if (shared) shared[key] = value;
+  return value;
+}
+
+function matchLevelRecord(levels, levelId, levelName) {
+  const key = String(levelId || levelName || "").trim().toLowerCase();
+  if (!key) return null;
+  return (
+    (levels || []).find((row) => {
+      const keys = [row.id, row.code, row.name, `${row.code || ""} ${row.name || ""}`.trim(), `lv${row.level || ""}`]
+        .map((item) => String(item || "").trim().toLowerCase())
+        .filter(Boolean);
+      return keys.includes(key);
+    }) || null
+  );
+}
+
+async function loadCompanionLevel(userId, shared) {
+  const id = String(userId || "").trim();
+  if (!id) return { index: null, label: "", id: "", name: "" };
+  if (shared?.levelByUser?.[id]) return shared.levelByUser[id];
+  let row = {};
+  try {
+    const rows = await companionDb(
+      "companion_profiles",
+      `?user_id=eq.${encodeURIComponent(id)}&select=level_id,level_name&limit=1`
+    );
+    row = rows?.[0] || {};
+  } catch (error) {
+    console.warn("[companion-offers] level read failed", error?.message || error);
+  }
+  const levels = await remember(shared, "levels", () => readLocalLevels().catch(() => []));
+  const found = matchLevelRecord(levels, row.level_id, row.level_name);
+  const index = levelIndexFrom(found) || levelIndexFrom({ level_name: row.level_name, code: row.level_id });
+  const info = {
+    index,
+    label: index ? `LV${index}` : "",
+    id: found?.id || row.level_id || "",
+    name: found?.name || row.level_name || "",
+  };
+  if (shared) {
+    shared.levelByUser = shared.levelByUser || {};
+    shared.levelByUser[id] = info;
+  }
+  return info;
+}
+
+function serviceView(row, policy, saved, { standards = {}, gamePrices = {}, level = null, markupCaps = null } = {}) {
   const legacy =
     saved && (saved.price == null || saved.price === "")
       ? acceptedLegacyPrice(gamePrices[String(row.id)] ?? gamePrices[String(row.name || "")], policy)
@@ -85,6 +148,8 @@ function serviceView(row, policy, saved, { standards = {}, gamePrices = {} } = {
     service: row,
     policy,
     saved: legacy != null ? { ...saved, price: legacy } : saved,
+    level,
+    markupCaps,
   });
   const standard = publicStandard(pickServiceStandard(standards, { serviceId: row.id, name: row.name }));
   const sectionContent = (standard?.sections || []).find((section) => section.key === "content")?.value || "";
@@ -102,9 +167,17 @@ function serviceView(row, policy, saved, { standards = {}, gamePrices = {} } = {
     content,
     sections: standard?.sections || [],
     unit: quote.unit,
-    price: quote.orderable ? quote.effectivePrice : quote.effectivePrice,
+    price: quote.effectivePrice,
     platformPrice: quote.standardPrice,
-    savedPrice: quote.savedPrice,
+    savedPrice: quote.markupClamped ? quote.effectivePrice : quote.savedPrice,
+    savedMarkup: quote.markupClamped ? quote.effectiveMarkup : quote.savedMarkup,
+    effectiveMarkup: quote.effectiveMarkup,
+    markupClamped: quote.markupClamped === true,
+    levelIndex: quote.levelIndex,
+    levelLabel: quote.levelLabel,
+    levelCap: quote.levelCap,
+    markupMin: quote.markupMin,
+    markupMax: quote.markupMax,
     accepting: quote.accepting,
     enabled: quote.orderable,
     orderable: quote.orderable,
@@ -125,6 +198,13 @@ function serviceView(row, policy, saved, { standards = {}, gamePrices = {} } = {
       platform: quote.platform,
       description: quote.description,
       standardPrice: quote.standardPrice,
+      allowedMin: quote.allowedMin,
+      allowedMax: quote.allowedMax,
+      levelIndex: quote.levelIndex,
+      levelLabel: quote.levelLabel,
+      levelCap: quote.levelCap,
+      markupMin: quote.markupMin,
+      markupMax: quote.markupMax,
       priceStatus: quote.priceStatus,
       priceMessage: quote.priceMessage,
     },
@@ -160,13 +240,15 @@ async function loadCompanionServiceRows(userId, profileId) {
   }
 }
 
-export async function listCompanionOffers(userId, { enabledOnly = false } = {}) {
+export async function listCompanionOffers(userId, { enabledOnly = false, shared = null } = {}) {
   const loaded = await loadCompanionServiceStandards(userId);
   const savedKey = catalogOffersWereSaved(loaded.standards, OFFER_KEY);
-  const [{ serviceRows, productRows }, policies, pricing] = await Promise.all([
-    catalog(),
-    loadPolicies(),
+  const [{ serviceRows, productRows }, policies, pricing, markupCaps, level] = await Promise.all([
+    remember(shared, "catalog", catalog),
+    remember(shared, "policies", loadPolicies),
     loadProfilePricing(userId),
+    remember(shared, "markupCaps", loadMarkupCaps),
+    loadCompanionLevel(userId, shared),
   ]);
   const gamePrices = pricing.gamePrices || {};
   const legacyRows = savedKey ? [] : await loadCompanionServiceRows(userId, pricing.profileId);
@@ -176,10 +258,11 @@ export async function listCompanionOffers(userId, { enabledOnly = false } = {}) 
   const saved = cleanOffers(raw);
   const savedService = new Map(saved.filter((item) => item.kind === "service").map((item) => [String(item.id), item]));
   const productMap = new Map(productRows.map((row) => [String(row.id), row]));
-  const viewContext = { standards: loaded.standards || {}, gamePrices };
+  const viewContext = { standards: loaded.standards || {}, gamePrices, level, markupCaps };
   const serviceOffers = serviceRows.map((row) =>
     serviceView(row, policies[String(row.id)] || {}, savedService.get(String(row.id)) || null, viewContext)
   );
+  if (savedKey) await persistClampedOffers(userId, loaded.standards, saved, serviceOffers);
   const productOffers = saved
     .filter((item) => item.kind === "product")
     .map((item) => {
@@ -198,6 +281,9 @@ export async function listCompanionOffers(userId, { enabledOnly = false } = {}) 
   const offers = serviceOffers.concat(productOffers);
   return {
     offers: enabledOnly ? offers.filter((item) => (item.kind === "product" ? item.enabled !== false : item.orderable === true)) : offers,
+    offersSaved: savedKey,
+    level,
+    markupCaps,
     catalog: {
       services: serviceOffers,
       products: productRows.map((row) => ({
@@ -211,6 +297,84 @@ export async function listCompanionOffers(userId, { enabledOnly = false } = {}) 
   };
 }
 
+async function persistClampedOffers(userId, standards, saved, serviceOffers) {
+  const byId = new Map(serviceOffers.map((item) => [String(item.id), item]));
+  let changed = false;
+  const nextOffers = saved.map((item) => {
+    if (item.kind !== "service") return item;
+    const view = byId.get(String(item.id));
+    if (!view || view.markupClamped !== true || !(Number(view.price) > 0)) return item;
+    if (Number(item.price) === Number(view.price)) return item;
+    changed = true;
+    return { ...item, price: Number(view.price) };
+  });
+  if (!changed) return;
+  try {
+    await companionDb("companion_profiles", `?user_id=eq.${encodeURIComponent(userId)}`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        service_standards: { ...standards, [OFFER_KEY]: nextOffers },
+        updated_at: new Date().toISOString(),
+      }),
+    });
+  } catch (error) {
+    console.warn("[companion-offers] clamp persist failed", error?.message || error);
+  }
+}
+
+export function applyQuotedOffersToCard(card, listed) {
+  if (!card || !listed || listed.offersSaved !== true) return card;
+  const services = (listed.offers || []).filter(
+    (item) => item && item.kind !== "product" && item.orderable === true && Number(item.price) > 0
+  );
+  if (!services.length) return card;
+  const nextServices = services.map((item, index) => ({
+    id: String(item.id),
+    serviceId: String(item.id),
+    name: item.name,
+    price: Number(item.price),
+    pricingUnit: item.unit || "局",
+    sort: index,
+  }));
+  const gamePrices = {};
+  nextServices.forEach((item) => {
+    gamePrices[item.id] = item.price;
+    if (item.name) gamePrices[item.name] = item.price;
+  });
+  const primary = nextServices[0];
+  return {
+    ...card,
+    services: nextServices,
+    serviceIds: nextServices.map((item) => item.id),
+    service_ids: nextServices.map((item) => item.id),
+    gamePrices,
+    price: primary.price,
+    priceValue: primary.price,
+    hourlyPrice: primary.price,
+    sellingPrice: primary.price,
+    pricingUnit: primary.pricingUnit,
+    lockOfferServices: true,
+  };
+}
+
+export async function overlayQuotedOfferPrices(cards) {
+  const list = Array.isArray(cards) ? cards : [];
+  const shared = {};
+  return Promise.all(
+    list.map(async (card) => {
+      const userId = String(card?.id || card?.uid || card?.user_id || "").trim();
+      if (!userId) return card;
+      try {
+        const listed = await listCompanionOffers(userId, { enabledOnly: false, shared });
+        return applyQuotedOffersToCard(card, listed);
+      } catch (error) {
+        console.warn("[companion-offers] public price overlay", error?.message || error);
+        return card;
+      }
+    })
+  );
+}
+
 export async function saveCompanionOffers(userId, offers) {
   const id = String(userId || "").trim();
   if (!id) throw Object.assign(new Error("缺少陪玩账号"), { status: 400 });
@@ -218,6 +382,10 @@ export async function saveCompanionOffers(userId, offers) {
     if (raw?.kind === "product") continue;
     const parsed = parseMoneyStrict(raw?.price);
     if (parsed.error) throw Object.assign(new Error(parsed.error), { status: 400 });
+    if (raw?.markup != null && String(raw.markup).trim() !== "") {
+      const markup = parseMoneyStrict(raw.markup);
+      if (markup.error) throw Object.assign(new Error(markup.error), { status: 400 });
+    }
   }
   const wanted = cleanOffers(offers);
   const { serviceRows, productRows } = await catalog();
@@ -235,7 +403,7 @@ export async function saveCompanionOffers(userId, offers) {
     throw Object.assign(new Error("陪玩资料尚未就绪，暂时不能保存服务"), { status: 503 });
   }
   const previous = cleanOffers(loaded.standards?.[OFFER_KEY]);
-  const policies = await loadPolicies();
+  const [policies, markupCaps, level] = await Promise.all([loadPolicies(), loadMarkupCaps(), loadCompanionLevel(id)]);
   const normalized = [];
   for (const item of wanted) {
     if (item.kind !== "service") {
@@ -250,9 +418,13 @@ export async function saveCompanionOffers(userId, offers) {
       policy: policies[item.id] || {},
       previous: prev,
       next: item,
+      level,
+      markupCaps,
     });
     normalized.push({
-      ...item,
+      kind: item.kind,
+      id: item.id,
+      sort: item.sort,
       price: decision.price,
       accepting: decision.accepting,
       enabled: decision.accepting,

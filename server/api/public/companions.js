@@ -28,6 +28,7 @@ import {
   mergeGiftWalls,
   reviewsGroupedByCompanion,
 } from "../_companion-profile-stats.js";
+import { overlayQuotedOfferPrices } from "../_companion-offers.js";
 
 /** Per-game ranks; a legacy single game_rank is only attributed when the companion offers exactly one game. */
 function publicGameRanks(row = {}, gameNames = []) {
@@ -867,8 +868,9 @@ async function loadCompanions(id = "", opts = {}) {
   }
 
   const mapped = (await Promise.all((companions || []).map((row) => enrichOne(row)))).filter(Boolean);
+  const priced = await overlayQuotedOfferPrices(mapped);
   // Hall list: summaryOnly (rating aggregates). Detail keeps full review bodies + joins.
-  const reviewed = await attachReviews(mapped, { summaryOnly: !String(id || "").trim() });
+  const reviewed = await attachReviews(priced, { summaryOnly: !String(id || "").trim() });
   return attachCompletedCounts(reviewed);
 }
 
@@ -921,7 +923,7 @@ export async function hallDisplayByUserIds(userIds = []) {
     mediaExtrasByProfile(profileIds, { listMode: true }).catch(() => ({})),
     resolveCertTagsForProfiles(profileIds).catch(() => ({})),
   ]);
-  const out = {};
+  const cards = [];
   for (const row of rows || []) {
     if (!row?.user_id) continue;
     const profile = profileMap[row.user_id] || {};
@@ -929,9 +931,10 @@ export async function hallDisplayByUserIds(userIds = []) {
     const listRow = { ...row };
     delete listRow.service_ids;
     const card = publicCompanion(listRow, profile, levelList, catalog, mediaMap[row.id] || {}, certMap[row.id] || []);
-    out[row.user_id] = card;
+    cards.push(card);
   }
-  return out;
+  const priced = await overlayQuotedOfferPrices(cards);
+  return Object.fromEntries(priced.map((card) => [card.id || card.uid, card]));
 }
 
 export default async function handler(req, res) {
