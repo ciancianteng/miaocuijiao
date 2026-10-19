@@ -3527,19 +3527,17 @@
     return lockBanner+
       '<form class="pw-card pad pw-form" data-withdraw-form novalidate>'+
       '<div class="pw-info-list" style="margin-bottom:14px">'+
-      '<div><span>可提现工资</span><strong data-wd-available>RM '+esc(num(available).toFixed(2))+'</strong></div>'+
-      infoRow('最低提现金额',(rules.minAmount||0)+' 猫粮')+
+      '<div><span>可提现余额</span><strong data-wd-available>RM '+esc(num(available).toFixed(2))+'</strong></div>'+
       infoRow('预计发放日期',(rules.nextSettlementDate||'-')+(rules.nextSettlementDate?'（星期五）':''))+
       infoRow('提现账户',rules.currentAccount||'未绑定')+
       infoRow('本周剩余次数',(rules.remainingThisWeek!=null?rules.remainingThisWeek:rules.remainingThisMonth||0)+' / '+(rules.weeklyLimit!=null?rules.weeklyLimit:rules.monthlyLimit||0))+
       '</div>'+
-      '<label>本次申请提现<input name="amount" type="number" inputmode="decimal" min="0.81" step="0.01" placeholder="请输入本次申请金额" '+(can?'':'disabled')+'></label>'+
+      '<label>提现金额<input name="amount" type="number" inputmode="decimal" min="0.81" step="0.01" placeholder="输入金额" '+(can?'':'disabled')+'></label>'+
       '<div class="pw-info-list" style="margin:12px 0">'+
-      '<div><span>本次申请提现</span><strong data-wd-request>RM 0.00</strong></div>'+
       '<div><span>固定手续费</span><strong data-wd-fee>RM 0.80</strong></div>'+
-      '<div><span>预计实际到账</span><strong data-wd-net>—</strong></div>'+
+      '<div><span>预计到账</span><strong data-wd-net>RM 0.00</strong></div>'+
       '</div>'+
-      '<p class="pw-note" data-withdraw-preview>实际到账 = 本次申请提现金额 - RM0.80。手续费在每次提现时收取一次，不从单笔订单收入里预扣。</p>'+
+      '<p class="pw-note" data-withdraw-preview>实际到账 = 申请提现金额 − RM 0.80。手续费每次提现只收取一次。</p>'+
       '<label>备注（可选）<input name="remark" placeholder="可选" '+(can?'':'disabled')+'></label>'+
       '<button class="pw-btn primary" type="submit" '+(can?'':'disabled')+'>'+(state.withdrawBusy?'提交中…':'提交提现申请')+'</button>'+
       '</form>'+
@@ -6094,18 +6092,21 @@
   function paintWithdrawQuote(form,raw){
     if(!form)return;
     var requested=num(raw);
-    var fee=0.8;
-    var ok=requested>fee;
-    var net=ok?Math.round((requested-fee)*100)/100:0;
-    var requestEl=form.querySelector('[data-wd-request]');
+    var grossCents=Math.round(requested*100);
+    var ok=Number.isFinite(grossCents)&&grossCents>80;
+    var netCents=ok?grossCents-80:0;
+    var availableEl=form.querySelector('[data-wd-available]');
+    var availableCents=Math.round(num(String(availableEl?availableEl.textContent:'').replace(/[^\d.-]/g,''))*100);
+    var over=ok&&Number.isFinite(availableCents)&&grossCents>availableCents;
     var netEl=form.querySelector('[data-wd-net]');
     var note=form.querySelector('[data-withdraw-preview]');
-    if(requestEl)requestEl.textContent='RM '+requested.toFixed(2);
-    if(netEl)netEl.textContent=ok?('RM '+net.toFixed(2)):'—';
+    if(netEl)netEl.textContent='RM '+(netCents/100).toFixed(2);
     if(note){
-      note.textContent=ok
-        ?'实际到账 = 本次申请提现金额 - RM0.80。手续费由服务端计算，每次提现只收取一次。'
-        :(requested>0?'本次申请金额必须高于 RM0.80':'实际到账 = 本次申请提现金额 - RM0.80。手续费在每次提现时收取一次，不从单笔订单收入里预扣。');
+      note.textContent=over
+        ?'申请提现金额不得超过可提现余额'
+        :(ok
+        ?'实际到账 = 申请提现金额 − RM 0.80。手续费由服务端计算，每次提现只收取一次。'
+        :(requested>0?'本次申请金额必须高于 RM0.80，实际到账须大于 RM0。':'实际到账 = 申请提现金额 − RM 0.80。手续费每次提现只收取一次。'));
     }
   }
   document.addEventListener('input',function(e){
@@ -7205,7 +7206,6 @@
       var perm=(state.data&&state.data.permissions)||{};
       var earnings=(state.data&&state.data.earnings)||{};
       var available=num(earnings.available!=null?earnings.available:earnings.withdrawable);
-      var minAmount=num(rules.minAmount||0);
       var accountId=(rules.approvedAccounts&&rules.approvedAccounts[0]&&rules.approvedAccounts[0].id)||'';
       var accountLabel=rules.currentAccount||'';
       if(!perm.canWithdraw){toast(perm.withdrawLockReason||'暂不可提现');return}
@@ -7213,9 +7213,10 @@
       if(!/^\d+(\.\d+)?$/.test(amountRaw)){toast('提现金额必须是正数');return}
       var amount=Number(amountRaw);
       if(!(amount>0)){toast('提现金额必须大于 0');return}
-      if(!(amount>0.8)){toast('本次申请金额必须高于 RM0.80');return}
-      if(minAmount>0&&amount<minAmount){toast('提现金额不能低于最低提现额 '+minAmount+' 猫粮');return}
-      if(amount>available+0.001){toast('提现金额不能超过可提现工资 '+available+' 猫粮');return}
+      var grossCents=Math.round(amount*100);
+      var availableCents=Math.round(available*100);
+      if(!(grossCents>80)){toast('本次申请金额必须高于 RM0.80');return}
+      if(grossCents>availableCents){toast('申请提现金额不得超过可提现余额');return}
       if(!accountId&&!accountLabel){toast('请先在账号中心绑定并审核通过提现账户');return}
       if(num(rules.remainingThisWeek!=null?rules.remainingThisWeek:rules.remainingThisMonth)<=0){toast('本周提现次数已用完');return}
       state.withdrawBusy=true;

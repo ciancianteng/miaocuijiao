@@ -27,6 +27,10 @@
     roleLabel: "",
   };
 
+  function rm2(v) {
+    var n = Number(v);
+    return Number.isFinite(n) ? n.toFixed(2) : "0.00";
+  }
   function esc(v) {
     return String(v == null ? "" : v).replace(/[&<>"']/g, function (c) {
       return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
@@ -378,13 +382,15 @@
           "<tr><td>" +
           esc(w.withdrawalNo) +
           "</td><td>" +
-          esc(w.companionName) +
+          esc(w.companionUid || w.companionCode || "—") +
           "<br><small>" +
-          esc(w.companionUid) +
-          "</small></td><td>" +
-          esc(w.catFoodAmount) +
-          "</td><td>" +
-          esc(w.netAmountRm) +
+          esc(w.companionName) +
+          "</small></td><td>RM " +
+          esc(rm2(w.grossAmountRm != null ? w.grossAmountRm : w.catFoodAmount)) +
+          "</td><td>RM " +
+          esc(rm2(w.feeRm)) +
+          "</td><td>RM " +
+          esc(rm2(w.netAmountRm)) +
           "</td><td>" +
           withdrawPayeeCard(w) +
           "</td><td>" +
@@ -422,8 +428,8 @@
       .join("");
     return (
       '<div class="admin-sync-note">流程：待审核 → 待打款 → 上传打款凭证并确认 → 已完成。无凭证不可标记完成。列表仅显示脱敏账号（*****后四位）；超级管理员/财务点击「查看完整账号」后才展示明文，并写入操作日志。</div>' +
-      '<div class="table-wrap"><table><thead><tr><th>提现单号</th><th>陪玩</th><th>提现猫粮</th><th>应付 RM</th><th>打款信息</th><th>状态</th><th>提交时间</th><th>操作</th></tr></thead><tbody>' +
-      (rows || '<tr><td colspan="8">暂无提现申请</td></tr>') +
+      '<div class="table-wrap"><table><thead><tr><th>提现单号</th><th>陪玩编号</th><th>申请提现金额</th><th>手续费</th><th>实际到账</th><th>打款信息</th><th>提现状态</th><th>申请时间</th><th>操作</th></tr></thead><tbody>' +
+      (rows || '<tr><td colspan="9">暂无提现申请</td></tr>') +
       "</tbody></table></div>"
     );
   }
@@ -1354,11 +1360,18 @@
             " / " +
             esc(w.companionUid || "-") +
             "</strong></div>" +
-            "<div><span style=\"color:#9ca3af\">应付金额</span><br><strong>RM " +
-            esc(w.netAmountRm != null ? w.netAmountRm : w.amountRm || "-") +
-            "（" +
-            esc(w.catFoodAmount != null ? w.catFoodAmount : "-") +
-            " 猫粮）</strong></div>" +
+            "<div><span style=\"color:#9ca3af\">申请提现金额</span><br><strong>RM " +
+            esc(rm2(w.grossAmountRm != null ? w.grossAmountRm : w.catFoodAmount)) +
+            "</strong></div>" +
+            "<div><span style=\"color:#9ca3af\">手续费</span><br><strong>RM " +
+            esc(rm2(w.feeRm)) +
+            "</strong></div>" +
+            "<div><span style=\"color:#9ca3af\">实际到账金额</span><br><strong>RM " +
+            esc(rm2(w.netAmountRm)) +
+            "</strong></div>" +
+            "<div><span style=\"color:#9ca3af\">申请时间</span><br><strong>" +
+            esc(w.submittedAt || w.requestedAt || "-") +
+            "</strong></div>" +
             '<div class="fin-payee-card payout-detail-card">' +
             '<div class="payout-field-label">收款方式</div><div class="payout-field-value">' +
             esc(paymentMethodLabel(a.method || w.payoutMethod || w.method || "")) +

@@ -120,7 +120,7 @@ import {
   lockPayoutSources,
   upsertPayoutRequest,
 } from "./_payout-requests.js";
-import { assessWithdrawalRequest } from "./_withdraw-fee.js";
+import { assessWithdrawalRequest, quoteWithdrawal, WITHDRAW_FEE_CENTS } from "./_withdraw-fee.js";
 import { listDepositPaymentMethods } from "./_platform-pay-qr.js";
 import {
   normalizeSettlementMethod,
@@ -1870,7 +1870,7 @@ async function financeSettings() {
     const rows = await companionDb("finance_settings", "?id=eq.1&limit=1");
     return (
       rows?.[0] || {
-        min_withdraw_cat_food: 50,
+        min_withdraw_cat_food: 0,
         max_withdrawals_per_month: 3,
         cat_food_to_rm_rate: 1,
         withdraw_fee_rm: 0,
@@ -1880,7 +1880,7 @@ async function financeSettings() {
   } catch (e) {
     if (isMissingRelation(e)) {
       return {
-        min_withdraw_cat_food: 50,
+        min_withdraw_cat_food: 0,
         max_withdrawals_per_month: 3,
         cat_food_to_rm_rate: 1,
         withdraw_fee_rm: 0,
@@ -2370,7 +2370,7 @@ async function bootstrapData(profile, companion) {
   const [cfg, levelBundle] = await Promise.all([
     isolated
       ? Promise.resolve({
-          min_withdraw_cat_food: 50,
+          min_withdraw_cat_food: 0,
           max_withdrawals_per_month: 3,
           cat_food_to_rm_rate: 1,
           withdraw_fee_rm: 0,
@@ -2379,7 +2379,7 @@ async function bootstrapData(profile, companion) {
       : financeSettings().catch((error) => {
           warnings.push(`finance_settings: ${error.message || error}`);
           return {
-            min_withdraw_cat_food: 50,
+            min_withdraw_cat_food: 0,
             max_withdrawals_per_month: 3,
             cat_food_to_rm_rate: 1,
             withdraw_fee_rm: 0,
@@ -2661,7 +2661,8 @@ async function bootstrapData(profile, companion) {
   ).length;
   const weeklyLimit = Number(weeklyCfg.max_withdrawals_per_week || cfg.max_withdrawals_per_month || 2);
   const monthlyLimit = Number(cfg.max_withdrawals_per_month || 8);
-  const minAmount = money(cfg.min_withdraw_cat_food);
+  const withdrawableCents = Math.round(Number(summary.withdrawable) * 100);
+  const canCoverWithdrawFee = Number.isFinite(withdrawableCents) && withdrawableCents > WITHDRAW_FEE_CENTS;
   const rate = money(cfg.cat_food_to_rm_rate) || 1;
   const depositOk = depositApproved(companionRow, deposit);
   const bankOk = /approved|verified/.test(String(payment?.status || ""));
@@ -2674,7 +2675,7 @@ async function bootstrapData(profile, companion) {
     credentialOk &&
     bankOk &&
     accountOk &&
-    summary.withdrawable >= minAmount &&
+    canCoverWithdrawFee &&
     usedThisWeek < weeklyLimit &&
     !openPending;
   permissions.canWithdraw = canWithdrawNow;
@@ -2692,7 +2693,7 @@ async function bootstrapData(profile, companion) {
     else if (!bankOk) permissions.withdrawLockReason = "请先提交并等待结款账户审核通过";
     else if (companionRow?.withdraw_frozen) permissions.withdrawLockReason = "提现已被冻结";
     else if (openPending) permissions.withdrawLockReason = "已有待周五结算的提现申请，请等待处理后再提交";
-    else if (summary.withdrawable < minAmount) permissions.withdrawLockReason = `可提现余额不足（最低 ${minAmount}）`;
+    else if (!canCoverWithdrawFee) permissions.withdrawLockReason = "可提现余额不足，申请金额须高于 RM0.80";
     else if (usedThisWeek >= weeklyLimit) permissions.withdrawLockReason = "已达本周提现次数上限";
     else if (profile.status !== "active") permissions.withdrawLockReason = "账号状态异常";
     else permissions.withdrawLockReason = permissions.lockReason || "暂不可提现";
@@ -2992,7 +2993,7 @@ async function bootstrapData(profile, companion) {
           weeklyLimit,
           usedThisWeek,
           remainingThisWeek: Math.max(0, weeklyLimit - usedThisWeek),
-          minAmount,
+          minAmount: 0,
           exchangeRate: rate,
           feeRm: feeFixed,
           feePercent,
@@ -4173,7 +4174,7 @@ export default async function handler(req, res) {
       }
       const wallet = await loadWalletBundle(auth.profile, myOrders);
       const cfg = await financeSettings().catch(() => ({
-        min_withdraw_cat_food: 50,
+        min_withdraw_cat_food: 0,
         max_withdrawals_per_month: 3,
         cat_food_to_rm_rate: 1,
         withdraw_fee_rm: 0,
@@ -4223,7 +4224,7 @@ export default async function handler(req, res) {
             monthlyLimit,
             usedThisMonth,
             remainingThisMonth: Math.max(0, monthlyLimit - usedThisMonth),
-            minAmount: money(cfg.min_withdraw_cat_food),
+            minAmount: 0,
             exchangeRate: money(cfg.cat_food_to_rm_rate) || 1,
             feeRm: 0.8,
             feePercent: 0,
@@ -6798,10 +6799,15 @@ return json(res, 200, {
         return json(res, 400, { ok: false, message: data.permissions.withdrawLockReason || "暂不可提现" });
       }
       if (!(amount > 0)) return json(res, 400, { ok: false, message: "提现金额必须大于 0" });
-      if (amount < money(data.withdrawalRules.minAmount)) {
-        return json(res, 400, { ok: false, message: `最低提现 ${data.withdrawalRules.minAmount} 猫粮` });
+      const earlyQuote = quoteWithdrawal({
+        amount,
+        exchangeRate: money(data.withdrawalRules?.exchangeRate) || 1,
+      });
+      if (!earlyQuote.ok) {
+        return json(res, earlyQuote.status || 400, { ok: false, message: earlyQuote.message });
       }
-      if (amount > money(data.earnings.withdrawable) + 0.001) {
+      const availableCents = Math.round(Number(data.earnings?.withdrawable) * 100);
+      if (!Number.isFinite(availableCents) || earlyQuote.grossCents > availableCents) {
         return json(res, 400, { ok: false, message: "可提现余额不足" });
       }
       if (Number(data.withdrawalRules.remainingThisWeek ?? data.withdrawalRules.remainingThisMonth ?? 0) <= 0) {
