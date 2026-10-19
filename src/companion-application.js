@@ -1,0 +1,6279 @@
+(function () {
+  var DB_KEY = "mcjRealDB.v1";
+  var PLATFORM_KEY = "mcjPlatformData.v1";
+  /** @deprecated Unscoped draft key — never read for display; migrate-or-purge only. */
+  var DRAFT_KEY_LEGACY = "mcjCompanionApplicationDraft.v1";
+  var DRAFT_KEY_PREFIX = "mcjCompanionApplicationDraft.v1.u:";
+  var DRAFT_LAST_AUTH_UID = "mcjCompanionApplicationDraft.lastAuthUserId";
+  var APPLICANT_KEY = "mcjCompanionApplicantId.v1";
+  var MIN_VOICE_SECONDS = 10;
+  var MAX_VOICE_SECONDS = 60;
+  var VOICE_PHASE = {
+    IDLE: "idle",
+    REQUESTING: "requesting_permission",
+    RECORDING: "recording",
+    STOPPING: "stopping",
+    RECORDED: "recorded",
+    TOO_SHORT: "too_short",
+    UPLOADING: "uploading",
+    ERROR: "error",
+  };
+  var voicePhase = VOICE_PHASE.IDLE;
+  var recorder = null;
+  var activeMediaStream = null;
+  var chunks = [];
+  var recordTimer = null;
+  var recordStartedAt = 0;
+  var stopWatchdogTimer = null;
+  var voiceStopSeq = 0;
+  var suppressVoiceSave = false;
+  var uploadBusy = {};
+  var uploadErrors = {};
+  /** In-memory only: blob/data previews must NEVER be written to localStorage (QuotaExceeded). */
+  var livePreviews = {};
+  var liveVoiceBlob = null;
+  var liveVoiceObjectUrl = "";
+  var voiceReleaseBound = false;
+  /** Draft gate: prompt | editing | fresh | submitted | unknown */
+  var draftGateMode = "unknown";
+  var draftGeneration = 1;
+  var suppressEmptyPersist = false;
+  var allowServerHydrate = true;
+  var lastBootstrapPayload = null;
+  var DRAFT_GATE_SESSION_PREFIX = "mcjApplyDraftGate.v1.u:";
+  var DRAFT_DISCARD_FLAG_PREFIX = "mcjApplyDraftDiscarded.v1.u:";
+
+  function bumpDraftGeneration() {
+    draftGeneration += 1;
+    return draftGeneration;
+  }
+  function draftGateSessionKey(userId) {
+    var id = String(userId || "").trim();
+    if (!id) id = String(authUserId() || "").trim();
+    return id ? DRAFT_GATE_SESSION_PREFIX + id : "";
+  }
+  function draftDiscardFlagKey(userId) {
+    var id = String(userId || "").trim();
+    if (!id) id = String(authUserId() || "").trim();
+    return id ? DRAFT_DISCARD_FLAG_PREFIX + id : "";
+  }
+  function readDraftGateSession() {
+    var key = draftGateSessionKey();
+    if (!key) return "";
+    try {
+      return String(sessionStorage.getItem(key) || "").trim();
+    } catch (e) {
+      return "";
+    }
+  }
+  function writeDraftGateSession(mode) {
+    var key = draftGateSessionKey();
+    if (!key) return;
+    try {
+      if (!mode) sessionStorage.removeItem(key);
+      else sessionStorage.setItem(key, String(mode));
+    } catch (e) {}
+  }
+  function markDraftDiscardedFlag() {
+    var key = draftDiscardFlagKey();
+    if (!key) return;
+    try {
+      localStorage.setItem(key, JSON.stringify({ at: Date.now(), generation: draftGeneration }));
+    } catch (e) {}
+  }
+  function clearDraftDiscardedFlag() {
+    var key = draftDiscardFlagKey();
+    if (!key) return;
+    try {
+      localStorage.removeItem(key);
+    } catch (e) {}
+  }
+  function hasDraftDiscardedFlag() {
+    var key = draftDiscardFlagKey();
+    if (!key) return false;
+    try {
+      return !!localStorage.getItem(key);
+    } catch (e) {
+      return false;
+    }
+  }
+  function isDraftEffectivelyEmpty(draft) {
+    draft = draft || {};
+    var data = draft.data || {};
+    var uploads = draft.uploads || {};
+    var identity = draft.identity || {};
+    var voice = draft.voice || {};
+    var rules = draft.rulesAgreement || {};
+    if (draft.submitted || draft.status === "pending" || draft.status === "review") return false;
+    if (rules.accepted) return false;
+    if (String(draft.certification_method || identity.authMode || "").trim()) return false;
+    if (String(data.nickname || data.gender || data.region || data.bio || data.intro || data.gameId || "").trim()) return false;
+    if (Array.isArray(data.mainGames) && data.mainGames.length) return false;
+    if (Array.isArray(data.modes) && data.modes.length) return false;
+    if (Array.isArray(data.personalTags) && data.personalTags.length) return false;
+    if (Array.isArray(draft.gameCards) && draft.gameCards.length) return false;
+    if (typeof hasDurableUpload === "function") {
+      if (hasDurableUpload(uploads.avatar) || hasDurableUpload(uploads.showcaseVideo) || hasDurableUpload(uploads.records)) return false;
+      if (hasDurableUpload(voice) || hasDurableUpload(voice.url) || hasDurableUpload(voice.fileUpload)) return false;
+      if (hasDurableUpload(identity.idFront) || hasDurableUpload(identity.idBack) || hasDurableUpload(identity.depositProof)) return false;
+    }
+    if (typeof photoListOf === "function" && photoListOf(uploads).length) return false;
+    if (typeof videoListOf === "function" && videoListOf(uploads).length) return false;
+    if (typeof recordsListOf === "function" && recordsListOf(uploads).length) return false;
+    if (voice.hasLocal || liveVoiceBlob) return false;
+    if (String(identity.settlementAccount || identity.tngAccount || identity.alipayAccount || identity.realName || "").trim()) return false;
+    return true;
+  }
+  function draftHasMeaningfulContent(draft) {
+    return !isDraftEffectivelyEmpty(draft);
+  }
+  function bootstrapHasDraftContent(boot) {
+    if (!boot) return false;
+    var player = boot.player || {};
+    var st = String(player.auditStatus || player.applicationStatus || "").toLowerCase();
+    if (/pending|review|submitted|approved|verified|passed|resubmit|need_more|rejected/.test(st)) return false;
+    var media = Array.isArray(boot.media) ? boot.media : [];
+    if (media.length) return true;
+    if (String(player.voiceUrl || player.avatar || player.bio || player.gameId || "").trim()) return true;
+    var verification = boot.verification || {};
+    if (verification.idFrontUrl || verification.idBackUrl) return true;
+    var deposit = boot.deposit || {};
+    if (deposit.proofUrl) return true;
+    return false;
+  }
+  function noteUserEditedDraft() {
+    if (!suppressEmptyPersist && draftGateMode !== "fresh") return;
+    suppressEmptyPersist = false;
+    allowServerHydrate = false;
+    clearDraftDiscardedFlag();
+    if (draftGateMode === "fresh" || draftGateMode === "prompt") {
+      draftGateMode = "editing";
+      writeDraftGateSession("continue");
+    }
+  }
+
+  var steps = [
+    "认证",
+    "须知",
+    "资料",
+    "完成"
+  ];
+  var stepLabels = [
+    "选择认证并完成认证",
+    "阅读陪玩须知",
+    "填写资料并提交",
+    "申请已提交"
+  ];
+  var stepChipLabels = ["认证", "须知", "资料", "完成"];
+
+  var tagGroups = {
+    personalTags: {
+      "性格": ["随和", "高冷", "活泼", "幽默", "社恐", "社牛", "粘人", "高情商", "氛围感", "耐心", "话多"],
+      "陪玩风格": ["娱乐", "上分", "护航", "指挥", "教学", "技术流", "长期搭子", "深夜档", "全天在线"]
+    },
+    positions: { "擅长位置": ["指挥", "输出", "辅助", "打野", "中路", "射手", "坦克", "自由位", "狙击位", "突破位"] },
+    modes: { "可接模式": [] },
+    mainGames: { "主打服务": [] }
+  };
+
+  var rankOptions = ["青铜", "白银", "黄金", "铂金", "钻石", "星耀", "王者", "荣耀王者", "大师", "宗师", "超凡", "无畏战神", "其他"];
+
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+  function now() { return new Date().toLocaleString("zh-CN"); }
+  function uid(prefix) { return prefix + "-" + Date.now().toString(36).toUpperCase() + Math.random().toString(16).slice(2, 6).toUpperCase(); }
+  function readRaw(key) { try { return JSON.parse(localStorage.getItem(key) || "{}") || {}; } catch (e) { return {}; } }
+  function isEphemeralMediaUrl(v) {
+    return /^(data:|blob:|filesystem:|file:)/i.test(String(v || "").trim());
+  }
+  function scrubAssetForStorage(asset) {
+    if (!asset) return asset;
+    if (typeof asset === "string") {
+      return isEphemeralMediaUrl(asset) ? "" : asset;
+    }
+    if (Array.isArray(asset)) {
+      return asset.map(scrubAssetForStorage).filter(function (item) {
+        if (!item) return false;
+        if (typeof item === "string") return !!item;
+        return !!(item.url || item.path || item.id);
+      });
+    }
+    var out = Object.assign({}, asset);
+    if (isEphemeralMediaUrl(out.url)) out.url = "";
+    if (isEphemeralMediaUrl(out.path)) out.path = "";
+    if (isEphemeralMediaUrl(out.preview)) out.preview = "";
+    // Keep durable path/url/status only — never persist base64 payloads.
+    if (!out.url && !out.path && out.status === "uploading") {
+      return { status: "uploading" };
+    }
+    return out;
+  }
+  function scrubDraftForStorage(draft) {
+    draft = draft && typeof draft === "object" ? draft : {};
+    var next = Object.assign({}, draft);
+    next.uploads = Object.assign({}, draft.uploads || {});
+    // Deprecated card-cover upload removed from step 3/5 — drop from local draft.
+    delete next.uploads.cover;
+    delete next.uploads.cardCover;
+    delete next.uploads.card_cover;
+    delete next.uploads.profile_cover;
+    Object.keys(next.uploads).forEach(function (key) {
+      next.uploads[key] = scrubAssetForStorage(next.uploads[key]);
+    });
+    next.identity = Object.assign({}, draft.identity || {});
+    ["idFront", "idBack", "depositProof", "idHandheld"].forEach(function (key) {
+      if (next.identity[key]) next.identity[key] = scrubAssetForStorage(next.identity[key]);
+    });
+    next.voice = Object.assign({}, draft.voice || {});
+    if (isEphemeralMediaUrl(next.voice.url)) {
+      next.voice = Object.assign({}, next.voice, { url: "", hasLocal: true });
+    }
+    if (next.voice.fileUpload) next.voice.fileUpload = scrubAssetForStorage(next.voice.fileUpload);
+    return next;
+  }
+  function isDraftStorageKey(key) {
+    var k = String(key || "");
+    return k === DRAFT_KEY_LEGACY || k.indexOf(DRAFT_KEY_PREFIX) === 0;
+  }
+  function jwtSub(token) {
+    try {
+      var part = String(token || "").split(".")[1];
+      if (!part) return "";
+      var b64 = part.replace(/-/g, "+").replace(/_/g, "/");
+      while (b64.length % 4) b64 += "=";
+      var payload = JSON.parse(atob(b64));
+      return String((payload && (payload.sub || payload.user_id || payload.userId)) || "").trim();
+    } catch (e) {
+      return "";
+    }
+  }
+  function emptyDraft() {
+    return {
+      step: 0,
+      data: {},
+      uploads: {},
+      gameCards: [],
+      voice: {},
+      identity: {},
+      rulesAgreement: {},
+      certification_method: "",
+      ownerUserId: "",
+    };
+  }
+  /** Stable Supabase/auth user id for the current apply session. Empty = guest. */
+  function authUserId() {
+    try {
+      var session = readCompanionSession();
+      var fromComp =
+        session &&
+        session.user &&
+        (session.user.id || session.user.user_id || session.user.userId || "");
+      if (fromComp) return String(fromComp).trim();
+    } catch (e) {}
+    try {
+      var raw =
+        sessionStorage.getItem("customerUser") ||
+        localStorage.getItem("customerUser") ||
+        sessionStorage.getItem("mcjCurrentUser") ||
+        localStorage.getItem("mcjCurrentUser") ||
+        "";
+      if (raw) {
+        var u = JSON.parse(raw);
+        var fromBoss = u && (u.id || u.user_id || u.userId || "");
+        if (fromBoss) return String(fromBoss).trim();
+      }
+    } catch (e2) {}
+    try {
+      var tok =
+        (typeof companionToken === "function" ? companionToken() : "") ||
+        sessionStorage.getItem("mcjAuthAccessToken") ||
+        localStorage.getItem("mcjAuthAccessToken") ||
+        "";
+      var sub = jwtSub(tok);
+      if (sub) return sub;
+    } catch (e3) {}
+    return "";
+  }
+  function draftKeyForUser(userId) {
+    var id = String(userId || "").trim();
+    if (!id) return "";
+    return DRAFT_KEY_PREFIX + id;
+  }
+  function purgeUnscopedDraftKeys() {
+    try {
+      localStorage.removeItem(DRAFT_KEY_LEGACY);
+    } catch (e) {}
+    try {
+      sessionStorage.removeItem(DRAFT_KEY_LEGACY);
+    } catch (e2) {}
+  }
+  function clearLiveApplyMedia() {
+    Object.keys(livePreviews).forEach(function (key) {
+      clearLivePreview(key);
+    });
+    liveVoiceBlob = null;
+    if (liveVoiceObjectUrl) {
+      try {
+        URL.revokeObjectURL(liveVoiceObjectUrl);
+      } catch (e) {}
+      liveVoiceObjectUrl = "";
+    }
+  }
+  function migrateLegacyDraftForUser(userId) {
+    var uid = String(userId || "").trim();
+    if (!uid) {
+      purgeUnscopedDraftKeys();
+      return;
+    }
+    var scopedKey = draftKeyForUser(uid);
+    var hasScoped = false;
+    try {
+      hasScoped = !!localStorage.getItem(scopedKey);
+    } catch (e) {}
+    var legacyRaw = "";
+    try {
+      legacyRaw = localStorage.getItem(DRAFT_KEY_LEGACY) || sessionStorage.getItem(DRAFT_KEY_LEGACY) || "";
+    } catch (e2) {}
+    if (!hasScoped && legacyRaw) {
+      try {
+        var legacy = JSON.parse(legacyRaw) || {};
+        var owner = String(legacy.ownerUserId || "").trim();
+        var lastUid = "";
+        try {
+          lastUid = String(localStorage.getItem(DRAFT_LAST_AUTH_UID) || "").trim();
+        } catch (e3) {}
+        var canClaim = owner === uid || (!owner && lastUid === uid);
+        if (canClaim) {
+          legacy.ownerUserId = uid;
+          localStorage.setItem(scopedKey, JSON.stringify(scrubDraftForStorage(legacy)));
+        }
+      } catch (e4) {}
+    }
+    purgeUnscopedDraftKeys();
+  }
+  function writeDraftRecord(draft) {
+    var uid = authUserId();
+    if (!uid) {
+      // Guests must never persist apply drafts into shared localStorage.
+      purgeUnscopedDraftKeys();
+      return;
+    }
+    // After discard, ignore stale upload/autosave writes until user edits again.
+    if (suppressEmptyPersist && hasDraftDiscardedFlag()) {
+      return;
+    }
+    var incomingGen = Number((draft && draft._draftGeneration) || 0);
+    if (incomingGen && incomingGen < draftGeneration) {
+      return;
+    }
+    var payload = scrubDraftForStorage(
+      Object.assign({}, draft || {}, { ownerUserId: uid, _draftGeneration: draftGeneration })
+    );
+    if (suppressEmptyPersist && isDraftEffectivelyEmpty(payload)) {
+      try {
+        localStorage.removeItem(draftKeyForUser(uid));
+      } catch (eClear) {}
+      purgeUnscopedDraftKeys();
+      return;
+    }
+    var key = draftKeyForUser(uid);
+    var text = JSON.stringify(payload);
+    try {
+      localStorage.setItem(key, text);
+      localStorage.setItem(DRAFT_LAST_AUTH_UID, uid);
+    } catch (err) {
+      var msg = String((err && err.name) || "") + " " + String((err && err.message) || err || "");
+      if (/quota|QuotaExceeded|NS_ERROR_DOM_QUOTA/i.test(msg)) {
+        try {
+          localStorage.setItem(key, JSON.stringify(scrubDraftForStorage(payload)));
+          localStorage.setItem(DRAFT_LAST_AUTH_UID, uid);
+          return;
+        } catch (e2) {}
+        throw new Error(
+          "浏览器本地草稿空间已满（不是云端 Storage 配额）。已改为仅保存图片云端地址；请刷新后重新上传头像/相册。"
+        );
+      }
+      throw err;
+    }
+    purgeUnscopedDraftKeys();
+  }
+  function clearCurrentUserDraft() {
+    var uid = authUserId();
+    if (uid) {
+      try {
+        localStorage.removeItem(draftKeyForUser(uid));
+      } catch (e) {}
+      try {
+        sessionStorage.removeItem(draftKeyForUser(uid));
+      } catch (e2) {}
+      try {
+        sessionStorage.removeItem(draftGateSessionKey(uid));
+      } catch (e3) {}
+    }
+    purgeUnscopedDraftKeys();
+    clearLiveApplyMedia();
+    try {
+      sessionStorage.removeItem(SCROLL_KEY);
+    } catch (e4) {}
+  }
+  function writeRaw(key, data) {
+    if (isDraftStorageKey(key) || key === DRAFT_KEY_LEGACY) {
+      writeDraftRecord(data);
+      return;
+    }
+    var payload = data || {};
+    var text = JSON.stringify(payload);
+    try {
+      localStorage.setItem(key, text);
+    } catch (err) {
+      var msg = String((err && err.name) || "") + " " + String((err && err.message) || err || "");
+      if (/quota|QuotaExceeded|NS_ERROR_DOM_QUOTA/i.test(msg)) {
+        throw new Error(
+          "浏览器本地草稿空间已满（不是云端 Storage 配额）。已改为仅保存图片云端地址；请刷新后重新上传头像/相册。"
+        );
+      }
+      throw err;
+    }
+  }
+  function setLivePreview(key, url) {
+    if (livePreviews[key] && livePreviews[key] !== url && /^blob:/i.test(livePreviews[key])) {
+      try { URL.revokeObjectURL(livePreviews[key]); } catch (e) {}
+    }
+    if (url) livePreviews[key] = url;
+    else delete livePreviews[key];
+  }
+  function clearLivePreview(key) {
+    setLivePreview(key, "");
+  }
+  function defaultDeposit() {
+    return {
+      amount: 100,
+      currency: "MYR",
+      enabled: true,
+      methods: ["TNG", "DuitNow", "Alipay"],
+      chinaRateSource: "支付页面实时汇率",
+      manualCnyRate: 1.55,
+      description: "认证押金用于保障平台服务秩序，最终支付金额以支付页面显示为准。",
+      refundRule: "退出俱乐部并完成全部订单结算后，可按平台规则申请退还押金。",
+      allowAdminWaive: false
+    };
+  }
+  function baseDB() {
+    return { companionRules: [], voiceTypes: [], companionApplications: [], companionApplicationPayments: [], notifications: [], companions: [], logs: [], depositSettings: defaultDeposit() };
+  }
+  function readDB() { return Object.assign(baseDB(), readRaw(DB_KEY)); }
+  function writeDB(db) { writeRaw(DB_KEY, db); window.dispatchEvent(new CustomEvent("mcj:data-updated")); }
+  function readPlatform() { return Object.assign(baseDB(), readRaw(PLATFORM_KEY)); }
+  function syncPlatform(db) {
+    var p = readPlatform();
+    ["companionRules", "voiceTypes", "companionApplications", "companionApplicationPayments", "depositSettings", "notifications", "companions"].forEach(function (key) {
+      p[key] = db[key] || p[key];
+    });
+    writeRaw(PLATFORM_KEY, p);
+    window.dispatchEvent(new CustomEvent("mcj:platform-data-updated"));
+  }
+  function applicantId() {
+    var authId = authUserId();
+    if (authId) return authId;
+    // Guest-only ephemeral marker — never reuse a sticky boss_* across accounts.
+    var id = "";
+    try {
+      id = sessionStorage.getItem(APPLICANT_KEY) || "";
+    } catch (e) {}
+    if (!id) {
+      id = "guest_" + Date.now().toString(36);
+      try {
+        sessionStorage.setItem(APPLICANT_KEY, id);
+      } catch (e2) {}
+    }
+    return id;
+  }
+  function currentUser() {
+    try {
+      var authId = authUserId();
+      var u = JSON.parse(
+        sessionStorage.getItem("customerUser") ||
+          localStorage.getItem("customerUser") ||
+          localStorage.getItem("mcjCurrentUser") ||
+          "null"
+      );
+      if (authId || u) {
+        return {
+          id: authId || (u && (u.id || u.user_id)) || "",
+          name: (u && (u.name || u.nickname || u.email)) || "当前账号",
+        };
+      }
+    } catch (e) {}
+    return { id: "", name: "当前账号" };
+  }
+  function readDraft() {
+    var uid = authUserId();
+    if (!uid) {
+      // Guest / logged-out: never surface another account's draft.
+      purgeUnscopedDraftKeys();
+      return emptyDraft();
+    }
+    migrateLegacyDraftForUser(uid);
+    var scoped = readRaw(draftKeyForUser(uid));
+    var draft = Object.assign(emptyDraft(), scoped);
+    if (draft.ownerUserId && draft.ownerUserId !== uid) {
+      return emptyDraft();
+    }
+    draft.ownerUserId = uid;
+    // One-time cleanup of legacy base64 drafts that caused QuotaExceededError.
+    if (draft.uploads) {
+      delete draft.uploads.cover;
+      delete draft.uploads.cardCover;
+      delete draft.uploads.card_cover;
+      delete draft.uploads.profile_cover;
+    }
+    draft = scrubDraftForStorage(draft);
+    // Drop stale hasLocal markers when in-memory blob is gone (refresh / bfcache).
+    if (
+      draft.voice &&
+      draft.voice.hasLocal &&
+      !liveVoiceBlob &&
+      !liveVoiceObjectUrl &&
+      !hasDurableUpload(draft.voice) &&
+      !hasDurableUpload(draft.voice.url) &&
+      !hasDurableUpload(draft.voice.fileUpload)
+    ) {
+      draft.voice = Object.assign({}, draft.voice, {
+        hasLocal: false,
+        listened: false,
+        confirmed: false,
+        uploaded: false,
+        status: draft.voice.status && /失效|尚未/.test(String(draft.voice.status))
+          ? draft.voice.status
+          : "本地录音已失效，请重新录制",
+      });
+    }
+
+    // Apply flow V4: STEP1 cert+materials → STEP2 rules → STEP3 profile+games+submit → STEP4 done
+    if (draft && draft._applyStepsV4 !== true) {
+      var legacyStep = Number(draft.step || 0) || 0;
+      var mode0 = String(((draft.identity || {}).authMode) || draft.certification_method || "").trim();
+      var submitted = !!(draft.submitted || draft.status === "pending" || draft.status === "review");
+      if (submitted) {
+        draft.step = 3;
+      } else if (draft._applyStepsV3 === true) {
+        // prior 6-step: 0 cert,1 rules,2 basic,3 games,4 proof,5 confirm
+        if (!mode0) draft.step = 0;
+        else if (legacyStep <= 0) draft.step = 0;
+        else if (legacyStep === 1) draft.step = 1;
+        else if (legacyStep >= 2 && legacyStep <= 5) draft.step = 2;
+        else draft.step = 2;
+      } else if (draft._p2StepMigrated === true) {
+        // prior 4-step p2
+        if (!mode0) draft.step = 0;
+        else if (legacyStep <= 0) draft.step = ((draft.rulesAgreement || {}).accepted) ? 2 : 1;
+        else draft.step = 2;
+      } else {
+        if (!mode0) draft.step = 0;
+        else if (legacyStep <= 0) draft.step = ((draft.rulesAgreement || {}).accepted) ? 2 : 1;
+        else draft.step = 2;
+      }
+      draft._applyStepsV4 = true;
+      draft._applyStepsV3 = true;
+      draft._p2StepMigrated = true;
+    }
+    draft.identity = Object.assign({}, draft.identity || {});
+    if (draft.certification_method && !draft.identity.authMode) {
+      draft.identity.authMode = draft.certification_method;
+    }
+    if (draft.identity.authMode && !draft.certification_method) {
+      draft.certification_method = draft.identity.authMode;
+    }
+    draft.step = Math.max(0, Math.min(steps.length - 1, Number(draft.step || 0) || 0));
+    // Drop any leftover applicant price / level fields from local draft (UI must not revive them)
+    if (draft && draft.data) {
+      delete draft.data.hourlyPrice;
+      delete draft.data.gamePriceMap;
+      delete draft.data.price;
+      delete draft.data.basePrice;
+      delete draft.data.base_price;
+      delete draft.data.servicePrice;
+      delete draft.data.service_price;
+      delete draft.data.unitPrice;
+      delete draft.data.unit_price;
+      delete draft.data.level;
+      delete draft.data.levelId;
+      delete draft.data.level_id;
+      delete draft.data.companionLevel;
+      delete draft.data.companion_level;
+    }
+    if (draft) {
+      delete draft.level;
+      delete draft.levelId;
+      delete draft.level_id;
+      delete draft.companionLevel;
+      delete draft.companion_level;
+      delete draft.basePrice;
+      delete draft.base_price;
+      delete draft.price;
+    }
+    return draft;
+  }
+  function saveDraft(patch) {
+    if (draftGateMode === "prompt") return;
+    var draft = readDraft();
+    var patchGen = Number((patch && patch._draftGeneration) || 0);
+    if (patchGen && patchGen < draftGeneration) return;
+    Object.keys(patch || {}).forEach(function (key) {
+      if (key === "_draftGeneration") return;
+      if (typeof patch[key] === "object" && !Array.isArray(patch[key]) && patch[key] !== null) draft[key] = Object.assign(draft[key] || {}, patch[key]);
+      else draft[key] = patch[key];
+    });
+    draft._draftGeneration = draftGeneration;
+    writeDraftRecord(draft);
+  }
+  function publishedRule() {
+    if (remoteRuleCache && remoteRuleCache.body) return remoteRuleCache;
+    return null;
+  }
+  function depositSettings() {
+    return Object.assign(defaultDeposit(), readDB().depositSettings || readPlatform().depositSettings || {});
+  }
+
+  function depositChannels() {
+    return Array.isArray(remoteDepositPay.channels) ? remoteDepositPay.channels : [];
+  }
+
+  function applyDepositChannelsFromPayload(payload) {
+    if (!payload || typeof payload !== "object") return;
+    var list = payload.depositChannels || payload.channels || payload.methods || [];
+    if (!Array.isArray(list)) list = [];
+    remoteDepositPay.channels = list.filter(function (ch) {
+      if (!ch) return false;
+      var info = ch.payInfo || {};
+      return !!(info.qrUrl || info.bankAccount || info.duitnowId || info.phone || ch.qrUrl);
+    });
+    var amt = Number(payload.amountRm != null ? payload.amountRm : payload.requiredAmount);
+    if (amt > 0) remoteDepositPay.amountRm = amt;
+    remoteDepositPay.emptyMessage = String(payload.emptyMessage || "").trim();
+    remoteDepositPay.error = "";
+    remoteDepositPay.loaded = true;
+  }
+
+  function fetchDepositPayMethods(force) {
+    if (remoteDepositPay.loading) return Promise.resolve(remoteDepositPay);
+    if (remoteDepositPay.loaded && !force) return Promise.resolve(remoteDepositPay);
+    if (!companionToken()) {
+      remoteDepositPay.loaded = true;
+      remoteDepositPay.channels = [];
+      remoteDepositPay.emptyMessage = "请先登录陪玩账号后再查看押金收款信息。";
+      return Promise.resolve(remoteDepositPay);
+    }
+    remoteDepositPay.loading = true;
+    return fetch("/api/companion?action=deposit_pay_methods", {
+      headers: {
+        Accept: "application/json",
+        "x-mcj-companion-token": companionToken(),
+        Authorization: "Bearer " + companionToken(),
+      },
+      cache: "no-store",
+    })
+      .then(function (res) {
+        return res.json().then(function (body) {
+          if (!res.ok || body.ok === false) {
+            throw new Error((body && body.message) || "押金收款信息加载失败");
+          }
+          applyDepositChannelsFromPayload(body);
+          if (!remoteDepositPay.channels.length && !remoteDepositPay.emptyMessage) {
+            remoteDepositPay.emptyMessage = "平台暂未配置押金收款方式，请联系客服。";
+          }
+          return remoteDepositPay;
+        });
+      })
+      .catch(function (err) {
+        remoteDepositPay.loaded = true;
+        remoteDepositPay.error = String((err && err.message) || "押金收款信息加载失败");
+        if (!remoteDepositPay.channels.length) {
+          remoteDepositPay.emptyMessage = "平台暂未配置押金收款方式，请联系客服。";
+        }
+        return remoteDepositPay;
+      })
+      .finally(function () {
+        remoteDepositPay.loading = false;
+      });
+  }
+
+  function openApplyDepositQrLightbox(src) {
+    if (!src) return;
+    var box = document.getElementById("applyDepositQrLightbox");
+    if (!box) {
+      box = document.createElement("div");
+      box.id = "applyDepositQrLightbox";
+      box.className = "apply-deposit-qr-lightbox";
+      box.innerHTML =
+        '<div class="apply-deposit-qr-lightbox-panel" role="dialog" aria-modal="true" aria-label="收款二维码放大预览">' +
+        '<button type="button" class="apply-deposit-qr-lightbox-close" data-apply-deposit-qr-close aria-label="关闭">×</button>' +
+        '<img alt="收款二维码大图" data-apply-deposit-qr-lightbox-img="1" referrerpolicy="no-referrer">' +
+        '<p class="apply-note">点击遮罩或关闭按钮可关闭</p>' +
+        "</div>";
+      box.addEventListener("click", function (ev) {
+        if (ev.target === box || (ev.target && ev.target.closest && ev.target.closest("[data-apply-deposit-qr-close]"))) {
+          box.classList.remove("is-open");
+        }
+      });
+      document.body.appendChild(box);
+    }
+    var img = box.querySelector("[data-apply-deposit-qr-lightbox-img]");
+    if (img) img.src = src;
+    box.classList.add("is-open");
+  }
+  function voiceTypeOptions() {
+    var db = readDB();
+    var rows = (db.voiceTypes || readPlatform().voiceTypes || []).filter(function (item) { return item.enabled !== false; });
+    var names = rows.sort(function (a, b) { return Number(a.sort || 0) - Number(b.sort || 0); }).map(function (item) { return item.name || item.title; }).filter(Boolean);
+    return names.length ? names : ["甜妹", "御姐", "萝莉音", "少年音", "磁性", "温柔"];
+  }
+  function existingApplication() {
+    var id = applicantId();
+    return (readDB().companionApplications || []).find(function (a) { return a.applicantId === id; }) || null;
+  }
+  function ensureDefaultApplicationConfig() {
+    var db = readDB();
+    var changed = false;
+    // 陪玩制度仅以后台 / 数据库为准，不再写入本地写死文案
+    if (Array.isArray(db.companionRules) && db.companionRules.some(function (rule) { return String(rule.id || "").indexOf("RULE-DEFAULT") === 0 || rule.updatedBy === "system-default"; })) {
+      db.companionRules = (db.companionRules || []).filter(function (rule) {
+        return String(rule.id || "").indexOf("RULE-DEFAULT") !== 0 && rule.updatedBy !== "system-default";
+      });
+      changed = true;
+    }
+    if (!Array.isArray(db.voiceTypes) || !db.voiceTypes.length) {
+      db.voiceTypes = ["甜妹", "御姐", "萝莉音", "少年音", "磁性", "温柔"].map(function (name, index) {
+        return { id: "VOICE-" + (index + 1), name: name, sort: index + 1, enabled: true };
+      });
+      changed = true;
+    }
+    if (changed) {
+      writeDB(db);
+      syncPlatform(db);
+    }
+  }
+
+  function hasText(obj, key) {
+    return !!(obj && String(obj[key] == null ? "" : obj[key]).trim());
+  }
+  function hasArray(obj, key) {
+    return !!(obj && Array.isArray(obj[key]) && obj[key].length);
+  }
+  function U() {
+    return window.MCJUpload || null;
+  }
+  function normalizeUploadAsset(value) {
+    return U() ? U().normalizeAsset(value) : { url: String(value || ""), path: "", id: "", status: value ? "ok" : "" };
+  }
+  function assetPreview(value, liveKey) {
+    if (liveKey && livePreviews[liveKey]) return livePreviews[liveKey];
+    if (value && value.__liveKey && livePreviews[value.__liveKey]) return livePreviews[value.__liveKey];
+    return U() ? U().previewSrc(value) : String((value && value.url) || value || "");
+  }
+  function hasDurableUpload(value) {
+    if (U()) return U().hasDurableAsset(value);
+    var s = String((value && value.url) || (value && value.path) || value || "").trim();
+    return !!s && !/^data:/i.test(s) && !/^blob:/i.test(s);
+  }
+  function photoListOf(uploads) {
+    uploads = uploads || {};
+    if (Array.isArray(uploads.photos)) return uploads.photos.filter(Boolean);
+    if (Array.isArray(uploads.album)) return uploads.album.filter(Boolean);
+    if (uploads.photos) return [uploads.photos];
+    return [];
+  }
+  function mediaListOf(uploads, key) {
+    uploads = uploads || {};
+    var v = uploads[key];
+    if (Array.isArray(v)) return v.filter(Boolean);
+    if (v) return [v];
+    return [];
+  }
+  function videoListOf(uploads) {
+    var list = mediaListOf(uploads, "videos");
+    if (list.length) return list;
+    // legacy single showcaseVideo
+    if (uploads && uploads.showcaseVideo) return [uploads.showcaseVideo].filter(Boolean);
+    return [];
+  }
+  function recordsListOf(uploads) {
+    return mediaListOf(uploads, "records");
+  }
+  /** Merge a server media list into the local draft list by id/url/path, keeping local durable items. */
+  function mergeServerMediaList(localList, serverList) {
+    var out = (localList || []).filter(Boolean);
+    var seen = {};
+    function mark(item) {
+      if (item.id) seen["id:" + item.id] = true;
+      if (item.url) seen["url:" + item.url] = true;
+      if (item.path) seen["path:" + item.path] = true;
+    }
+    out.forEach(function (item) {
+      if (item) mark(item);
+    });
+    (serverList || []).forEach(function (item) {
+      if (!item) return;
+      var norm = typeof item === "string" ? { url: item, status: "ok" } : item;
+      if (!norm.url && !norm.path && !norm.id) return;
+      if (
+        (norm.id && seen["id:" + norm.id]) ||
+        (norm.url && seen["url:" + norm.url]) ||
+        (norm.path && seen["path:" + norm.path])
+      ) {
+        return;
+      }
+      mark(norm);
+      out.push(norm);
+    });
+    return out;
+  }
+  /** Keys whose uploads append into a list — never overwrite, never count-capped. */
+  function isMultiUploadKey(key) {
+    return key === "photos" || key === "videos" || key === "showcaseVideo" || key === "records";
+  }
+  function isVideoAsset(item) {
+    if (!item) return false;
+    var ctype = String(item.contentType || item.content_type || item.mime || "").toLowerCase();
+    if (/^video\//.test(ctype)) return true;
+    if (String(item.kind || item.mediaType || item.media_type || "").toLowerCase() === "video") return true;
+    var src = String(item.url || item.path || item || "");
+    return /\.(mp4|mov|webm|m4v)(\?|#|$)/i.test(src);
+  }
+  function isVideoFile(file) {
+    if (!file) return false;
+    if (/^video\//i.test(String(file.type || ""))) return true;
+    return /\.(mp4|mov|webm|m4v)$/i.test(String(file.name || ""));
+  }
+  function missingForStep(index, draft) {
+    draft = draft || readDraft();
+    var data = draft.data || {};
+    var uploads = draft.uploads || {};
+    var voice = draft.voice || {};
+    var identity = draft.identity || {};
+    var missing = [];
+    var mode = String(identity.authMode || draft.certification_method || "").trim();
+    if (index === 0) {
+      // STEP1: choose certification method + complete corresponding materials
+      if (mode !== "id_card" && mode !== "deposit") missing.push("选择认证方式（身份证或押金）");
+      if (mode === "id_card") {
+        if (!hasDurableUpload(identity.idFront)) missing.push("证件正面");
+        if (!hasDurableUpload(identity.idBack)) missing.push("证件背面");
+      }
+      if (mode === "deposit") {
+        if (!hasDurableUpload(identity.depositProof)) missing.push("押金付款凭证");
+        var chans = depositChannels();
+        if (chans.length) {
+          var chId = String(identity.depositChannelId || identity.depositMethod || "").trim();
+          var matched = chans.some(function (c) {
+            return String(c.id || c.code || "") === chId;
+          });
+          if (!matched && chans.length > 1) missing.push("选择押金收款渠道");
+        } else if (remoteDepositPay.loaded) {
+          missing.push(remoteDepositPay.emptyMessage || "平台暂未配置押金收款方式，请联系客服");
+        }
+      }
+      if (mode === "id_card" || mode === "deposit") {
+        [["settlementMethod", "结款方式"]].forEach(function (item) {
+          if (!hasText(identity, item[0])) missing.push(item[1]);
+        });
+        var settleMethod = String(identity.settlementMethod || "").trim();
+        if (isBankSettlementMethod(settleMethod)) {
+          if (!hasText(identity, "settlementName")) missing.push("银行户名");
+          if (!hasText(identity, "settlementAccount")) missing.push("银行账号");
+          var bankSel = String(identity.settlementBank || "").trim();
+          if (bankSel === SETTLEMENT_BANK_OTHER && !String(identity.settlementBankOther || "").trim()) {
+            missing.push("自定义银行名称");
+          } else if (!effectiveSettlementBankName(identity)) {
+            missing.push("银行名称");
+          }
+        } else if (isTngSettlementMethod(settleMethod)) {
+          if (!String(identity.tngAccount || identity.settlementAccount || "").trim()) {
+            missing.push("TNG 手机号码");
+          }
+        } else if (isAlipaySettlementMethod(settleMethod)) {
+          if (!String(identity.alipayAccount || identity.settlementAccount || "").trim()) {
+            missing.push("支付宝账号 / 手机号");
+          }
+        } else if (isDuitNowSettlementMethod(settleMethod)) {
+          if (!hasText(identity, "settlementAccount")) missing.push("DuitNow 账号");
+        } else if (settleMethod) {
+          if (!hasText(identity, "settlementAccount")) missing.push(settlementAccountLabel(settleMethod));
+        }
+      }
+      return missing;
+    }
+    if (index === 1) {
+      // STEP2: rules + agree
+      if (!publishedRule()) missing.push("后台暂未发布陪玩制度");
+      if (!((draft.rulesAgreement || {}).accepted)) missing.push("阅读并同意陪玩制度");
+      return missing;
+    }
+    if (index === 2) {
+      // STEP3: basic + games + media — no applicant prices/levels
+      [["nickname", "昵称"], ["age", "年龄"], ["gender", "性别"], ["region", "地区"], ["phone", "联系电话"], ["email", "邮箱"]].forEach(function (item) {
+        if (!hasText(data, item[0])) missing.push(item[1]);
+      });
+      if (!hasArray(data, "personalTags")) missing.push("个人标签");
+      if (!hasText(data, "gameNickname")) missing.push("游戏昵称");
+      if (!hasArray(data, "mainGames")) missing.push("主玩游戏");
+      if (!hasArray(data, "positions")) missing.push("擅长位置");
+      if (!hasArray(data, "modes")) missing.push("可接模式");
+      [["rank", "游戏段位"], ["voiceType", "声线"], ["onlineStart", "常在线开始时间"], ["onlineEnd", "常在线结束时间"], ["intro", "自我介绍"]].forEach(function (item) {
+        if (!hasText(data, item[0])) missing.push(item[1]);
+      });
+      if (!hasDurableUpload(uploads.avatar)) missing.push("头像");
+      if (!(voice.confirmed && (hasDurableUpload(voice) || hasDurableUpload(voice.url) || voice.storagePath || voice.path))) {
+        missing.push("语音介绍（需确认录音并上传成功）");
+      }
+      return missing;
+    }
+    if (index === 3) {
+      // STEP4 done page — no form fields
+      return missing;
+    }
+    return missing;
+  }
+  function showMissing(missing) {
+    missing = missing && missing.length ? missing : ["请按顺序完成前面的步骤"];
+    showApplyTip("请先补充以下内容：\n" + missing.map(function (item) { return "- " + item; }).join("\n"));
+  }
+  var applyTipTimer = null;
+  function showApplyTip(message, tone) {
+    tone = tone || "error";
+    var text = String(message || "").trim();
+    if (!text) return;
+    var host = document.getElementById("companionApplyRoot");
+    if (!host) {
+      try { console.warn("[apply]", text); } catch (e) {}
+      return;
+    }
+    var el = host.querySelector("[data-apply-tip]");
+    if (!el) {
+      el = document.createElement("div");
+      el.className = "apply-tip-banner";
+      el.setAttribute("data-apply-tip", "1");
+      host.insertBefore(el, host.firstChild);
+    }
+    el.className = "apply-tip-banner " + (tone === "ok" ? "is-ok" : "is-error");
+    el.textContent = text;
+    el.hidden = false;
+    try { el.scrollIntoView({ block: "nearest", behavior: "smooth" }); } catch (e2) {}
+    if (applyTipTimer) clearTimeout(applyTipTimer);
+    applyTipTimer = setTimeout(function () {
+      try { el.hidden = true; } catch (e3) {}
+    }, tone === "ok" ? 3200 : 8000);
+  }
+
+  var authUi = {
+    mode: "register", // register | login
+    // Only show email register/login when user explicitly opts out of the current boss account.
+    preferOtherAccount: false,
+    loginMethod: "password", // password | otp
+    emailVerified: false,
+    verifiedEmail: "",
+    draftEmail: "",
+    loginEmail: "",
+    registerToken: "",
+    cooldownUntil: 0,
+    loginCooldownUntil: 0,
+    busy: false,
+    message: "",
+    messageTone: "error",
+    bossSessionPending: false,
+  };
+
+  /** Live deposit pay channels from payment settings SoT (not player_deposit_settings). */
+  var remoteDepositPay = {
+    loaded: false,
+    loading: false,
+    amountRm: 100,
+    channels: [],
+    emptyMessage: "",
+    error: "",
+  };
+
+  function setAuthMessage(msg, tone) {
+    authUi.message = String(msg || "");
+    authUi.messageTone = tone === "ok" ? "ok" : "error";
+  }
+
+  function authCooldownLeft(until) {
+    return Math.max(0, Math.ceil((Number(until || 0) - Date.now()) / 1000));
+  }
+
+  function authMessageHtml() {
+    if (!authUi.message) return '<p class="apply-auth-msg" data-apply-auth-msg hidden></p>';
+    return '<p class="apply-auth-msg ' + (authUi.messageTone === "ok" ? "is-ok" : "is-error") + '" data-apply-auth-msg>' + esc(authUi.message) + "</p>";
+  }
+
+  function bossAccessToken() {
+    try {
+      if (window.MCJBossAuth && typeof window.MCJBossAuth.getAccessToken === "function") {
+        var fromAuth = String(window.MCJBossAuth.getAccessToken() || "").trim();
+        if (fromAuth) return fromAuth;
+      }
+      return (
+        sessionStorage.getItem("mcjAuthAccessToken") ||
+        localStorage.getItem("mcjAuthAccessToken") ||
+        ""
+      );
+    } catch (e) {
+      return "";
+    }
+  }
+
+  function bossRefreshToken() {
+    try {
+      if (window.MCJBossAuth && typeof window.MCJBossAuth.getRefreshToken === "function") {
+        var fromAuth = String(window.MCJBossAuth.getRefreshToken() || "").trim();
+        if (fromAuth) return fromAuth;
+      }
+      return (
+        sessionStorage.getItem("mcjAuthRefreshToken") ||
+        localStorage.getItem("mcjAuthRefreshToken") ||
+        ""
+      );
+    } catch (e) {
+      return "";
+    }
+  }
+
+  function looksLikeJwt(token) {
+    var t = String(token || "").trim();
+    if (!t || t.length < 20) return false;
+    var parts = t.split(".");
+    return parts.length === 3 && parts.every(function (part) {
+      return part.length > 0;
+    });
+  }
+
+  /**
+   * companion-apply is a boss-public page: header chrome reads mcjAuth* via MCJBossAuth,
+   * while the apply form may only retain the SAME Supabase JWT in mcjCompanionSession
+   * (after「使用当前老板账号申请」or a later boss-key wipe from failed refresh).
+   * Re-home those tokens into MCJBossAuth — not a second session.
+   */
+  function syncBossAuthFromCompanionTokens(session, remember) {
+    var s = session || readCompanionSession() || {};
+    var access = String(s.token || s.accessToken || s.access_token || "").trim();
+    var refresh = String(s.refreshToken || s.refresh_token || "").trim();
+    if (!access && !refresh) return false;
+    if (access && !looksLikeJwt(access) && !refresh) return false;
+    if (access && /^companion_session_/i.test(access) && !refresh) return false;
+    var expiresAt = s.expiresAt != null && s.expiresAt !== "" ? s.expiresAt : s.expires_at;
+    if ((expiresAt == null || expiresAt === "") && access) {
+      var exp = jwtExpSec(access);
+      if (exp) expiresAt = exp;
+    }
+    var persist = remember !== false;
+    if (window.MCJBossAuth && typeof window.MCJBossAuth.saveSession === "function") {
+      try {
+        window.MCJBossAuth.saveSession(
+          {
+            accessToken: access || undefined,
+            refreshToken: refresh || undefined,
+            expiresAt: expiresAt,
+          },
+          persist
+        );
+        return true;
+      } catch (e) {}
+    }
+    try {
+      var stores = persist ? [sessionStorage, localStorage] : [sessionStorage];
+      stores.forEach(function (store) {
+        try {
+          if (access) store.setItem("mcjAuthAccessToken", access);
+          if (refresh) store.setItem("mcjAuthRefreshToken", refresh);
+          if (expiresAt != null && expiresAt !== "") store.setItem("mcjAuthExpiresAt", String(expiresAt));
+        } catch (e2) {}
+      });
+      try {
+        window.dispatchEvent(
+          new CustomEvent("mcj:auth-updated", { detail: { reason: "sync-boss-from-companion" } })
+        );
+      } catch (e3) {}
+      return true;
+    } catch (e4) {
+      return false;
+    }
+  }
+
+  function hydrateBossAuthFromCompanionSession() {
+    if (bossAccessToken() || bossRefreshToken()) return false;
+    return syncBossAuthFromCompanionTokens(readCompanionSession(), true);
+  }
+
+  function hasBossSession() {
+    if (companionToken()) return false;
+    if (window.MCJBossAuth && typeof window.MCJBossAuth.canRestoreSession === "function") {
+      try {
+        if (window.MCJBossAuth.canRestoreSession()) return true;
+      } catch (e) {}
+    }
+    if (window.MCJBossAuth && typeof window.MCJBossAuth.hasValidAccessToken === "function") {
+      try {
+        if (window.MCJBossAuth.hasValidAccessToken()) return true;
+      } catch (e2) {}
+    }
+    return !!(bossAccessToken() || bossRefreshToken());
+  }
+
+  function ensureBossAuthModule() {
+    if (window.MCJBossAuth) return Promise.resolve(window.MCJBossAuth);
+    return new Promise(function (resolve) {
+      var existing = document.querySelector('script[data-mcj-boss-auth],script[src*="boss-auth-session.js"]');
+      var done = function () {
+        resolve(window.MCJBossAuth || null);
+      };
+      if (existing) {
+        var tries = 0;
+        var timer = setInterval(function () {
+          tries += 1;
+          if (window.MCJBossAuth || tries > 40) {
+            clearInterval(timer);
+            done();
+          }
+        }, 50);
+        return;
+      }
+      var s = document.createElement("script");
+      s.src = "/src/boss-auth-session.js?v=20260815applyBossHeader2";
+      s.setAttribute("data-mcj-boss-auth", "1");
+      s.onload = done;
+      s.onerror = done;
+      document.head.appendChild(s);
+    });
+  }
+
+  function ensureBossSessionForApply() {
+    authUi.bossSessionPending = true;
+    // Form may already hold the boss JWT only in mcjCompanionSession.
+    hydrateBossAuthFromCompanionSession();
+    return ensureBossAuthModule()
+      .then(function (Auth) {
+        if (Auth && typeof Auth.ensureSession === "function") {
+          return Auth.ensureSession().catch(function () {
+            // Failed boss refresh must not leave header guest while companion JWT remains.
+            hydrateBossAuthFromCompanionSession();
+            return null;
+          });
+        }
+        return null;
+      })
+      .finally(function () {
+        authUi.bossSessionPending = false;
+      });
+  }
+
+  function storageGet(key) {
+    try {
+      return sessionStorage.getItem(key) || localStorage.getItem(key) || "";
+    } catch (e) {
+      return "";
+    }
+  }
+
+  function storageSetBoth(key, value) {
+    try {
+      localStorage.setItem(key, value);
+    } catch (e) {}
+    try {
+      sessionStorage.setItem(key, value);
+    } catch (e2) {}
+  }
+
+  function readCompanionSession() {
+    try {
+      return (
+        JSON.parse(localStorage.getItem("mcjCompanionSession") || sessionStorage.getItem("mcjCompanionSession") || "null") ||
+        null
+      );
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function readAnyRefreshToken(session) {
+    var s = session || readCompanionSession() || {};
+    var fromSession = String(s.refreshToken || s.refresh_token || "").trim();
+    if (fromSession) return fromSession;
+    var mirrored = String(storageGet("mcjAuthRefreshToken") || "").trim();
+    if (mirrored) return mirrored;
+    try {
+      var boss = JSON.parse(localStorage.getItem("mcjBossSession") || sessionStorage.getItem("mcjBossSession") || "null") || {};
+      var fromBoss = String(boss.refreshToken || boss.refresh_token || "").trim();
+      if (fromBoss) return fromBoss;
+    } catch (e) {}
+    return "";
+  }
+
+  function readAnyExpiresAt(session) {
+    var s = session || readCompanionSession() || {};
+    var fromSession = s.expiresAt != null && s.expiresAt !== "" ? s.expiresAt : s.expires_at;
+    if (fromSession != null && fromSession !== "") return fromSession;
+    return storageGet("mcjAuthExpiresAt") || "";
+  }
+
+  function jwtExpSec(token) {
+    try {
+      var part = String(token || "").split(".")[1];
+      if (!part) return 0;
+      var b64 = part.replace(/-/g, "+").replace(/_/g, "/");
+      while (b64.length % 4) b64 += "=";
+      var payload = JSON.parse(atob(b64));
+      return Number(payload && payload.exp) || 0;
+    } catch (e) {
+      return 0;
+    }
+  }
+
+  function saveCompanionSession(session) {
+    if (!session) return;
+    var token = session.token || session.accessToken || session.access_token || "";
+    var refreshToken = String(session.refreshToken || session.refresh_token || readAnyRefreshToken(session) || "").trim();
+    var expiresAt = session.expiresAt || session.expires_at || readAnyExpiresAt(session) || "";
+    if (!expiresAt && token) {
+      var exp = jwtExpSec(token);
+      if (exp) expiresAt = exp;
+    }
+    var user = Object.assign({}, session.user || {}, { role: "companion" });
+    if (window.MCJRoleGate && typeof window.MCJRoleGate.writeCompanionPortalSession === "function") {
+      window.MCJRoleGate.writeCompanionPortalSession(
+        {
+          accessToken: token,
+          refreshToken: refreshToken,
+          expiresAt: expiresAt,
+          user: user,
+        },
+        session.remember !== false
+      );
+      return;
+    }
+    var normalized = {
+      token: token,
+      accessToken: token,
+      refreshToken: refreshToken,
+      expiresAt: expiresAt,
+      user: user,
+      remember: session.remember !== false,
+      portal: "companion",
+    };
+    var raw = JSON.stringify(normalized);
+    try {
+      localStorage.setItem("mcjCompanionSession", raw);
+    } catch (e) {}
+    try {
+      sessionStorage.setItem("mcjCompanionSession", raw);
+    } catch (e2) {}
+    try {
+      var soft = "companion_session_v4_" + Date.now();
+      localStorage.setItem("companionAuthToken", soft);
+      sessionStorage.setItem("companionAuthToken", soft);
+      localStorage.setItem("companionUser", JSON.stringify(user));
+      sessionStorage.setItem("companionUser", JSON.stringify(user));
+    } catch (e3) {}
+    // Do NOT mirror into boss mcjAuth* — portal isolation.
+  }
+
+  function companionToken() {
+    var session = readCompanionSession();
+    if (!session) return "";
+    return String(session.token || session.accessToken || "").trim();
+  }
+
+  function clearCompanionAccessOnly() {
+    // Drop expired access so auth gate can show; keep draft + refresh attempt already failed.
+    try {
+      var session = readCompanionSession() || {};
+      session.token = "";
+      session.accessToken = "";
+      var raw = JSON.stringify(session);
+      localStorage.setItem("mcjCompanionSession", raw);
+      sessionStorage.setItem("mcjCompanionSession", raw);
+    } catch (e) {}
+  }
+
+  var applyRefreshPromise = null;
+  function refreshApplySession() {
+    if (applyRefreshPromise) return applyRefreshPromise;
+    var session = readCompanionSession() || {};
+    var refreshToken = readAnyRefreshToken(session);
+    if (!refreshToken) {
+      return Promise.reject(new Error("登录状态已过期，请重新登录后继续。"));
+    }
+    applyRefreshPromise = fetch("/api/auth", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ action: "refresh", refreshToken: refreshToken }),
+    })
+      .then(function (res) {
+        return res.json().then(function (body) {
+          if (!res.ok || body.ok === false) {
+            throw new Error(body.message || "登录状态已过期，请重新登录后继续。");
+          }
+          var sess = body.session || {};
+          saveCompanionSession({
+            token: sess.accessToken || sess.token || "",
+            accessToken: sess.accessToken || sess.token || "",
+            refreshToken: sess.refreshToken || refreshToken,
+            expiresAt: sess.expiresAt || sess.expires_at || "",
+            user: sess.user || session.user || {},
+            remember: session.remember !== false,
+          });
+          // Keep boss header on the same refreshed JWT.
+          syncBossAuthFromCompanionTokens(
+            {
+              token: sess.accessToken || sess.token || "",
+              accessToken: sess.accessToken || sess.token || "",
+              refreshToken: sess.refreshToken || refreshToken,
+              expiresAt: sess.expiresAt || sess.expires_at || "",
+            },
+            session.remember !== false
+          );
+          return true;
+        });
+      })
+      .finally(function () {
+        applyRefreshPromise = null;
+      });
+    return applyRefreshPromise;
+  }
+
+  function ensureFreshApplySession() {
+    var session = readCompanionSession() || {};
+    var token = String(session.token || session.accessToken || "").trim();
+    if (!token) {
+      return Promise.reject(new Error("请先登录或注册陪玩账号后再提交，以便资料同步到后台。"));
+    }
+    var expRaw = readAnyExpiresAt(session);
+    var exp = Number(expRaw) || 0;
+    if (exp > 1e12) exp = Math.floor(exp / 1000);
+    if (!exp) exp = jwtExpSec(token);
+    var nowSec = Math.floor(Date.now() / 1000);
+    // Refresh when expired or within 90s of expiry (same policy as companion workbench).
+    if (exp && exp <= nowSec + 90) {
+      return refreshApplySession().then(function () {
+        return readCompanionSession();
+      });
+    }
+    // No expiry metadata but we have a refresh token: still OK to proceed; reactive refresh covers 401.
+    return Promise.resolve(session);
+  }
+
+  function postCompanion(action, payload, retried) {
+    function safeErrText(value, fallback) {
+      if (window.McjCompanionVideoUpload && typeof window.McjCompanionVideoUpload.safeErrText === "function") {
+        return window.McjCompanionVideoUpload.safeErrText(value, fallback || "");
+      }
+      if (value == null || value === "") return fallback || "";
+      if (typeof value === "string") return value;
+      if (typeof value === "number" || typeof value === "boolean") return String(value);
+      if (value && typeof value.message === "string") return value.message;
+      try {
+        var s = JSON.stringify(value);
+        if (s && s !== "{}" && s !== "null") return s.slice(0, 240);
+      } catch (e) {}
+      return fallback || "";
+    }
+    function humanize(msg, status) {
+      var text = safeErrText(msg, "").trim();
+      if (status === 413 || /413|Payload Too Large|request entity too large|entity too large|VERCEL_BODY_LIMIT/i.test(text)) {
+        return "视频文件过大或上传通道限制，请稍后重试。";
+      }
+      if (/invalid JWT|token is expired|unable to parse or verify|jwt|登录态无效|请先登录|登录已过期|refreshToken 已失效/i.test(text)) {
+        return "登录状态已过期，请重新登录后继续。";
+      }
+      if (/invalid input syntax for type uuid|22P02/i.test(text)) {
+        return "媒体数据异常，请刷新后重试。";
+      }
+      if (/HTTP\s*403|HTTP\s*401/i.test(text) || status === 401 || status === 403) {
+        return "登录状态已过期，请重新登录后继续。";
+      }
+      // Never surface raw JS runtime dumps on the apply page.
+      if (/Assignment to constant variable|TypeError|ReferenceError|SyntaxError|is not defined|Cannot read propert/i.test(text)) {
+        return "操作失败，请稍后重试。";
+      }
+      if (/\[object Object\]/i.test(text)) {
+        return status === 413 ? "视频文件过大或上传通道限制，请稍后重试。" : "操作失败，请稍后重试。";
+      }
+      return text || "提交失败";
+    }
+    function sendOnce() {
+      var token = companionToken();
+      if (!token) return Promise.reject(new Error("请先登录或注册陪玩账号后再提交，以便资料同步到后台。"));
+      var uploadUrl = "/api/companion";
+      return fetch(uploadUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+          "x-mcj-companion-token": token,
+          Authorization: "Bearer " + token,
+        },
+        body: JSON.stringify(Object.assign({ action: action }, payload || {})),
+      }).then(function (res) {
+        return res
+          .text()
+          .then(function (raw) {
+            var body = {};
+            if (raw) {
+              try {
+                body = JSON.parse(raw);
+              } catch (e) {
+                body = { message: String(raw).slice(0, 200) };
+              }
+            }
+            if (!res.ok || body.ok === false) {
+              var serverMsg = safeErrText(body && (body.message || body.error), "").trim();
+              var errMsg = humanize(serverMsg || "提交失败", res.status);
+              if (
+                (action === "upload_media" || action === "prepare_video_upload") &&
+                res.status &&
+                !/登录状态已过期|操作失败，请稍后重试|视频文件过大或上传通道限制/.test(errMsg)
+              ) {
+                errMsg = "HTTP " + res.status + (serverMsg ? " · " + serverMsg : " · 上传失败");
+                errMsg = humanize(errMsg, res.status);
+              }
+              var err = new Error(errMsg);
+              err.status = res.status;
+              err.uploadUrl = uploadUrl;
+              err.serverMessage = serverMsg;
+              throw err;
+            }
+            return body;
+          });
+      });
+    }
+    return ensureFreshApplySession()
+      .catch(function (freshErr) {
+        // If proactive refresh failed, still try once with current token then reactive path.
+        if (companionToken()) return null;
+        throw freshErr;
+      })
+      .then(function () {
+        return sendOnce().catch(function (err) {
+          var errMsg = humanize((err && err.message) || "", err && err.status);
+          if (!retried && /登录状态已过期/.test(errMsg)) {
+            return refreshApplySession()
+              .then(function () {
+                return postCompanion(action, payload, true);
+              })
+              .catch(function (refreshErr) {
+                clearCompanionAccessOnly();
+                throw new Error(humanize((refreshErr && refreshErr.message) || errMsg));
+              });
+          }
+          var out = new Error(errMsg);
+          out.status = err && err.status;
+          out.uploadUrl = err && err.uploadUrl;
+          out.serverMessage = err && err.serverMessage;
+          throw out;
+        });
+      });
+  }
+
+  function fetchCompanionBootstrap() {
+    function loadOnce() {
+      var token = companionToken();
+      if (!token) return Promise.resolve(null);
+      return fetch("/api/companion?action=bootstrap", {
+        headers: {
+          Accept: "application/json",
+          "x-mcj-companion-token": token,
+          Authorization: "Bearer " + token,
+        },
+        cache: "no-store",
+      }).then(function (res) {
+        return res.json().then(function (body) {
+          if (res.status === 401 || (body && /登录状态已过期|invalid JWT|token is expired/i.test(String(body.message || "")))) {
+            var err = new Error(body.message || "登录状态已过期，请重新登录后继续。");
+            err.status = 401;
+            throw err;
+          }
+          if (!res.ok || body.ok === false) return null;
+          return body.data || body;
+        });
+      });
+    }
+    return ensureFreshApplySession()
+      .catch(function () {
+        return null;
+      })
+      .then(function () {
+        return loadOnce().catch(function (err) {
+          if (err && (err.status === 401 || /登录状态已过期|jwt|token is expired/i.test(String(err.message || "")))) {
+            return refreshApplySession()
+              .then(function () {
+                return loadOnce();
+              })
+              .catch(function () {
+                clearCompanionAccessOnly();
+                return null;
+              });
+          }
+          return null;
+        });
+      });
+  }
+
+  function authGateHtml() {
+    if (companionToken()) return "";
+    var mode = authUi.mode === "login" ? "login" : "register";
+    var bossPresent = hasBossSession();
+    if (bossPresent && !authUi.preferOtherAccount) {
+      // Prefer upgrading the logged-in boss account instead of creating a second Auth user.
+      return (
+        '<section class="apply-panel apply-auth-gate" data-apply-auth-gate="boss">' +
+        "<h2>使用当前老板账号申请陪玩</h2>" +
+        "<p class=\"apply-note\">检测到你已登录老板端。将在<strong>同一 User ID</strong>下开通陪玩资料，不会新建账号，也不会丢失老板订单/充值/聊天。</p>" +
+        '<div class="apply-actions apply-auth-actions">' +
+        '<button class="apply-btn primary" type="button" data-apply-from-boss' +
+        (authUi.busy || authUi.bossSessionPending ? " disabled" : "") +
+        ">" +
+        (authUi.bossSessionPending ? "正在恢复登录…" : "使用当前账号申请陪玩") +
+        "</button>" +
+        '<button class="apply-btn" type="button" data-apply-prefer-other>改用其他陪玩账号登录</button>' +
+        "</div>" +
+        authMessageHtml() +
+        "</section>"
+      );
+    }
+    var loginMethod = authUi.loginMethod === "otp" ? "otp" : "password";
+    var regCooldown = authCooldownLeft(authUi.cooldownUntil);
+    var loginCooldown = authCooldownLeft(authUi.loginCooldownUntil);
+    var verified = !!authUi.emailVerified && !!authUi.registerToken;
+    var tabs =
+      '<div class="apply-auth-tabs" role="tablist">' +
+      '<button type="button" class="apply-auth-tab' + (mode === "register" ? " active" : "") + '" data-apply-auth-mode="register">注册新陪玩</button>' +
+      '<button type="button" class="apply-auth-tab' + (mode === "login" ? " active" : "") + '" data-apply-auth-mode="login">已有账号登录</button>' +
+      "</div>";
+
+    var registerPanel =
+      '<form class="apply-auth-form" data-apply-auth-form="register" data-apply-auth-panel="register"' + (mode === "register" ? "" : " hidden") + ' autocomplete="on">' +
+      '<label class="form-field">昵称<input name="authNickname" type="text" autocomplete="nickname" maxlength="40" placeholder="陪玩昵称" required></label>' +
+      '<div class="apply-auth-email-row form-field full">' +
+      "<label>邮箱" +
+      '<div class="apply-auth-inline">' +
+      '<input name="authEmail" type="email" inputmode="email" autocomplete="email" placeholder="name@example.com" required value="' + esc(authUi.verifiedEmail || authUi.draftEmail || "") + '"' + (verified ? " readonly" : "") + ">" +
+      '<button class="apply-btn apply-auth-send" type="button" data-apply-send-register-otp' + (regCooldown > 0 || verified || authUi.busy ? " disabled" : "") + ">" +
+      (verified ? "已验证" : regCooldown > 0 ? regCooldown + "s" : "获取验证码") +
+      "</button>" +
+      "</div></label></div>" +
+      '<label class="form-field full">邮箱验证码' +
+      '<div class="apply-auth-inline">' +
+      '<input name="authRegisterCode" type="text" inputmode="numeric" autocomplete="one-time-code" data-auth-code="1" data-auth-sensitive="1" maxlength="6" placeholder="6 位验证码" value=""' + (verified ? " disabled" : "") + ">" +
+      '<button class="apply-btn" type="button" data-apply-verify-register-otp' + (verified || authUi.busy ? " disabled" : "") + ">验证邮箱</button>" +
+      "</div></label>" +
+      (verified
+        ? '<p class="apply-auth-verified" data-apply-email-verified>邮箱已验证 · ' + esc(authUi.verifiedEmail) + "</p>"
+        : '<p class="apply-note full">请先验证邮箱，验证成功后才能设置密码并注册。</p>') +
+      '<label class="form-field">密码（至少 8 位）<input name="authPassword" type="password" autocomplete="new-password" minlength="8" required' + (verified ? "" : " disabled") + "></label>" +
+      '<label class="form-field">确认密码<input name="authPasswordConfirm" type="password" autocomplete="new-password" minlength="8" required' + (verified ? "" : " disabled") + "></label>" +
+      '<div class="apply-actions apply-auth-actions full">' +
+      '<button class="apply-btn primary" type="button" data-apply-register' + (!verified || authUi.busy ? " disabled" : "") + ">注册并继续申请</button>" +
+      "</div>" +
+      authMessageHtml() +
+      "</form>";
+
+    var loginTabs =
+      '<div class="apply-auth-tabs apply-auth-subtabs" role="tablist">' +
+      '<button type="button" class="apply-auth-tab' + (loginMethod === "password" ? " active" : "") + '" data-apply-login-method="password">密码登录</button>' +
+      '<button type="button" class="apply-auth-tab' + (loginMethod === "otp" ? " active" : "") + '" data-apply-login-method="otp">验证码登录</button>' +
+      "</div>";
+
+    var loginPwd =
+      '<form class="apply-auth-form" data-apply-auth-form="login-password" data-apply-auth-panel="login-password"' + (mode === "login" && loginMethod === "password" ? "" : " hidden") + ' autocomplete="on">' +
+      '<label class="form-field full">邮箱<input name="authEmail" type="email" inputmode="email" autocomplete="email" placeholder="name@example.com" required value="' + esc(authUi.loginEmail || "") + '"></label>' +
+      '<label class="form-field full">密码<input name="authPassword" type="password" autocomplete="current-password" data-auth-sensitive="1" required value=""></label>' +
+      '<div class="apply-actions apply-auth-actions full"><button class="apply-btn primary" type="button" data-apply-login-password' + (authUi.busy ? " disabled" : "") + ">登录并继续申请</button></div>" +
+      '<p class="apply-note"><button class="apply-btn" type="button" data-forgot-password data-forgot-role="companion">忘记密码</button></p>' +
+      "</form>";
+
+    var loginOtp =
+      '<form class="apply-auth-form" data-apply-auth-form="login-otp" data-apply-auth-panel="login-otp"' + (mode === "login" && loginMethod === "otp" ? "" : " hidden") + ' autocomplete="on">' +
+      '<div class="apply-auth-email-row form-field full">' +
+      "<label>邮箱" +
+      '<div class="apply-auth-inline">' +
+      '<input name="authEmail" type="email" inputmode="email" autocomplete="email" placeholder="name@example.com" required value="' + esc(authUi.loginEmail || "") + '">' +
+      '<button class="apply-btn apply-auth-send" type="button" data-apply-send-login-otp' + (loginCooldown > 0 || authUi.busy ? " disabled" : "") + ">" +
+      (loginCooldown > 0 ? loginCooldown + "s" : "发送验证码") +
+      "</button>" +
+      "</div></label></div>" +
+      '<label class="form-field full">邮箱验证码<input name="authLoginCode" type="text" inputmode="numeric" autocomplete="one-time-code" data-auth-code="1" data-auth-sensitive="1" maxlength="6" placeholder="6 位验证码" required value=""></label>' +
+      '<div class="apply-actions apply-auth-actions full"><button class="apply-btn primary" type="button" data-apply-login-otp' + (authUi.busy ? " disabled" : "") + ">验证码登录</button></div>" +
+      "</form>";
+
+    var backToBoss =
+      bossPresent
+        ? '<p class="apply-note"><button class="apply-btn" type="button" data-apply-use-current-boss>← 使用当前老板账号申请陪玩</button></p>'
+        : "";
+
+    return (
+      '<section class="apply-panel apply-auth-gate" data-apply-auth-gate="' + (bossPresent ? "other" : "guest") + '">' +
+      "<h2>" + (bossPresent ? "改用其他陪玩账号" : "先创建 / 登录陪玩账号") + "</h2>" +
+      "<p>" +
+      (bossPresent
+        ? "仅在你要换另一个账号申请时使用。同一邮箱请回到上方「使用当前老板账号」，避免误以为要注册第二个账号。"
+        : "申请资料会写入平台数据库，审核通过后可直接用此邮箱登录陪玩端。MVP 仅支持邮箱验证码，不再使用手机号。") +
+      "</p>" +
+      backToBoss +
+      tabs +
+      (mode === "register" ? registerPanel : loginTabs + loginPwd + loginOtp + authMessageHtml()) +
+      '<p class="apply-note">新用户：邮箱 → 发送验证码 → 验证成功 → 设置密码与昵称 → 注册并进入申请流程（共 4 步）。</p>' +
+      "</section>"
+    );
+  }
+  function isApplicationSubmitted(draft) {
+    draft = draft || readDraft();
+    if (draft.submitted || draft.status === "pending" || draft.status === "review") return true;
+    if (remoteStatus && /pending|review|submitted|approved|verified|passed|resubmit|need_more|rejected/.test(String(remoteStatus.applicationStatus || remoteStatus.application_status || ""))) {
+      return true;
+    }
+    return false;
+  }
+  function stepComplete(index, draft) {
+    draft = draft || readDraft();
+    if (index === 3) return isApplicationSubmitted(draft);
+    return missingForStep(index, draft).length === 0;
+  }
+
+  function maxReachableStep(draft) {
+    draft = draft || readDraft();
+    if (isApplicationSubmitted(draft)) {
+      return steps.length - 1; // allow STEP4 done page
+    }
+    var max = 0;
+    for (var i = 0; i < steps.length - 1; i++) { // never auto-unlock done page without submit
+      if (stepComplete(i, draft)) max = Math.min(i + 1, steps.length - 2);
+      else break;
+    }
+    return max;
+  }
+
+  function stepNav(index, draft) {
+    draft = draft || readDraft();
+    var reachable = maxReachableStep(draft);
+    var items = steps.map(function (s, i) {
+      var done = stepComplete(i, draft) || (i < index);
+      var locked = i > reachable;
+      var active = i === index;
+      var numberText = String(i + 1).padStart(2, "0");
+      var label = (typeof stepChipLabels !== "undefined" && stepChipLabels[i]) || s;
+      var stateClass = active ? " is-active" : done ? " is-done" : locked ? " is-todo is-locked" : " is-todo";
+      var dotInner = done && !active ? "✓" : "";
+      return (
+        '<li class="apply-stepper-item' +
+        stateClass +
+        '">' +
+        '<button class="apply-stepper-btn" data-apply-step="' +
+        i +
+        '" type="button" ' +
+        (locked ? 'aria-disabled="true" tabindex="-1"' : "") +
+        ' aria-current="' +
+        (active ? "step" : "false") +
+        '">' +
+        '<span class="apply-stepper-num">' +
+        esc(numberText) +
+        "</span>" +
+        '<span class="apply-stepper-dot" aria-hidden="true">' +
+        dotInner +
+        "</span>" +
+        '<span class="apply-stepper-label">' +
+        esc(label) +
+        "</span>" +
+        "</button></li>"
+      );
+    }).join("");
+    // Lightweight progress stepper: 01–04 + 认证/须知/资料/完成 (full labels, no truncation)
+    return (
+      '<nav class="apply-stepper" aria-label="申请进度">' +
+      '<ol class="apply-stepper-track">' +
+      items +
+      "</ol></nav>"
+    );
+  }
+
+  function stepSummaryLine(index, draft) {
+    draft = draft || readDraft();
+    var data = draft.data || {};
+    var identity = draft.identity || {};
+    var mode = String(identity.authMode || draft.certification_method || "").trim();
+    if (index === 0) {
+      if (mode === "id_card") return "身份证认证";
+      if (mode === "deposit") return "押金认证";
+      return "未选择";
+    }
+    if (index === 1) {
+      return (draft.rulesAgreement || {}).accepted ? "已阅读并同意" : "未确认";
+    }
+    if (index === 2) {
+      var bits = [data.nickname, data.gender, data.region].filter(Boolean);
+      var games = Array.isArray(data.mainGames) ? data.mainGames : [];
+      var line = bits.length ? bits.join(" · ") : "已填写";
+      if (games.length) line += " · " + games.slice(0, 2).join("、");
+      return line;
+    }
+    if (index === 3) {
+      return draft.submitted || draft.status === "pending" || draft.status === "review" ? "待审核" : "待提交";
+    }
+    return "";
+  }
+
+  function wizardStackHtml(activeIndex, draft) {
+    draft = draft || readDraft();
+    // Only render the active STEP body — no stacked accordion of all steps.
+    return (
+      '<div class="apply-wizard-stack apply-wizard-single">' +
+      '<section class="apply-wizard-item is-open" data-wizard-step="' +
+      activeIndex +
+      '">' +
+      '<div class="apply-wizard-item-body">' +
+      stepHtml(activeIndex, draft) +
+      "</div></section></div>"
+    );
+  }
+
+  function field(name, label, type, value, attrs) {
+    type = type || "text";
+    attrs = attrs || "";
+    if (type === "textarea") return '<label class="form-field full">' + esc(label) + '<textarea name="' + esc(name) + '" data-apply-field ' + attrs + '>' + esc(value || "") + '</textarea></label>';
+    return '<label class="form-field">' + esc(label) + '<input name="' + esc(name) + '" data-apply-field type="' + esc(type) + '" value="' + esc(value || "") + '" ' + attrs + '></label>';
+  }
+  function onlineTimeFieldsHtml(data) {
+    data = data || {};
+    var TP = window.MCJTimePicker;
+    if (TP && typeof TP.applyFieldHtml === "function") {
+      return (
+        '<div class="mcj-apply-time-stack">' +
+        '<p class="mcj-apply-time-heading">常在线时间</p>' +
+        TP.applyFieldHtml({
+          name: "onlineStart",
+          label: "开始时间",
+          icon: "🕐",
+          value: data.onlineStart,
+          pickerTitle: "选择开始时间",
+        }) +
+        '<div class="mcj-apply-time-to">至</div>' +
+        TP.applyFieldHtml({
+          name: "onlineEnd",
+          label: "结束时间",
+          icon: "🌙",
+          value: data.onlineEnd,
+          pickerTitle: "选择结束时间",
+        }) +
+        '<p class="apply-section-note">支持跨午夜，例如 23:00 至次日 04:00。</p>' +
+        "</div>"
+      );
+    }
+    return (
+      '<div class="mcj-apply-time-stack">' +
+      field("onlineStart", "常在线开始", "text", data.onlineStart, 'placeholder="23:00" inputmode="numeric"') +
+      field("onlineEnd", "常在线结束", "text", data.onlineEnd, 'placeholder="04:00" inputmode="numeric"') +
+      "</div>"
+    );
+  }
+  function selectField(name, label, value, options, opts) {
+    opts = opts || {};
+    var placeholder = opts.placeholder ? String(opts.placeholder) : "";
+    var html = '<label class="form-field' + (opts.full ? " full" : "") + '"' + (opts.hidden ? ' hidden' : "") + (opts.attrs || "") + ">" + esc(label) + '<select name="' + esc(name) + '" data-apply-field>';
+    if (placeholder) {
+      html += '<option value=""' + (!value ? " selected" : "") + ">" + esc(placeholder) + "</option>";
+    }
+    html += (options || []).map(function (o) {
+      return '<option value="' + esc(o) + '"' + (o === value ? " selected" : "") + ">" + esc(o) + "</option>";
+    }).join("") + "</select></label>";
+    return html;
+  }
+  /** Malaysia banks for companion settlement (银行卡). Last option is free-text「其他」. */
+  var SETTLEMENT_BANK_OTHER = "其他";
+  var SETTLEMENT_BANKS = [
+    "Maybank",
+    "CIMB Bank",
+    "Public Bank",
+    "RHB Bank",
+    "Hong Leong Bank",
+    "AmBank",
+    "Bank Islam",
+    "Bank Rakyat",
+    "BSN",
+    "Affin Bank",
+    "Alliance Bank",
+    "UOB Malaysia",
+    "OCBC Malaysia",
+    "HSBC Malaysia",
+    "Standard Chartered Malaysia",
+    SETTLEMENT_BANK_OTHER,
+  ];
+  var SETTLEMENT_METHODS = ["银行卡", "DuitNow", "TNG Wallet", "支付宝"];
+  function isBankSettlementMethod(method) {
+    return String(method || "").trim() === "银行卡" || /^bank$/i.test(String(method || "").trim());
+  }
+  function isTngSettlementMethod(method) {
+    var m = String(method || "").trim().toLowerCase();
+    return m === "tng wallet" || m === "tng" || m === "touch n go";
+  }
+  function isAlipaySettlementMethod(method) {
+    var m = String(method || "").trim().toLowerCase();
+    return m === "支付宝" || m === "alipay";
+  }
+  function isDuitNowSettlementMethod(method) {
+    var m = String(method || "").trim().toLowerCase();
+    return m === "duitnow" || m === "duit now";
+  }
+  function settlementAccountLabel(method) {
+    if (isTngSettlementMethod(method)) return "TNG 手机号码";
+    if (isAlipaySettlementMethod(method)) return "支付宝账号 / 手机号";
+    if (isDuitNowSettlementMethod(method)) return "DuitNow 账号";
+    return "银行账号";
+  }
+  function settlementNameLabel(method) {
+    if (isTngSettlementMethod(method) || isAlipaySettlementMethod(method) || isDuitNowSettlementMethod(method)) {
+      return "收款户名（选填）";
+    }
+    return "银行户名";
+  }
+  /** Normalize draft identity settlement fields into API/DB payload. */
+  function settlementPayloadFromIdentity(identity) {
+    identity = identity || {};
+    var method = String(identity.settlementMethod || "").trim() || "银行卡";
+    var bankName = isBankSettlementMethod(method) ? effectiveSettlementBankName(identity) : "";
+    var accountName = String(identity.settlementName || "").trim();
+    var tng = String(identity.tngAccount || identity.paymentPhone || "").trim();
+    var alipay = String(identity.alipayAccount || "").trim();
+    var bankAccount = String(identity.settlementAccount || "").trim();
+    if (isTngSettlementMethod(method)) {
+      tng = tng || bankAccount;
+      bankAccount = "";
+    } else if (isAlipaySettlementMethod(method)) {
+      alipay = alipay || bankAccount;
+      bankAccount = "";
+    } else if (isDuitNowSettlementMethod(method)) {
+      // DuitNow keeps account in bank_account / payment_account for compatibility.
+      bankAccount = bankAccount || tng || alipay;
+    }
+    var paymentAccount = bankAccount || tng || alipay || "";
+    var paymentPhone = isTngSettlementMethod(method) ? tng : (identity.paymentPhone || "");
+    return {
+      method: method,
+      settlementMethod: method,
+      payment_method: method,
+      bank_name: bankName,
+      bankName: bankName,
+      settlementBank: bankName,
+      account_name: accountName,
+      accountName: accountName,
+      settlementName: accountName,
+      bank_account: bankAccount,
+      bankAccount: bankAccount,
+      settlementAccount: bankAccount,
+      tng_account: tng,
+      tngAccount: tng,
+      alipay_account: alipay,
+      alipayAccount: alipay,
+      payment_account: paymentAccount,
+      paymentAccount: paymentAccount,
+      payment_phone: paymentPhone,
+      paymentPhone: paymentPhone,
+    };
+  }
+  /** Resolve select + optional「其他」into the bank_name string persisted to API/DB. */
+  function effectiveSettlementBankName(identity) {
+    identity = identity || {};
+    var sel = String(identity.settlementBank || "").trim();
+    var other = String(identity.settlementBankOther || "").trim();
+    if (sel === SETTLEMENT_BANK_OTHER) return other;
+    if (sel && SETTLEMENT_BANKS.indexOf(sel) >= 0) return sel;
+    // Legacy / resume: free-text bank_name not in the dropdown list.
+    return other || String(identity.bankName || "").trim() || sel;
+  }
+  /** Split a stored bank_name into dropdown value + optional custom text. */
+  function splitSettlementBankFields(storedName) {
+    var name = String(storedName || "").trim();
+    if (!name) return { settlementBank: "", settlementBankOther: "" };
+    if (name === SETTLEMENT_BANK_OTHER) {
+      return { settlementBank: SETTLEMENT_BANK_OTHER, settlementBankOther: "" };
+    }
+    if (SETTLEMENT_BANKS.indexOf(name) >= 0) {
+      return { settlementBank: name, settlementBankOther: "" };
+    }
+    // Alias older spellings from prior PR list → current options.
+    var aliases = {
+      Ambank: "AmBank",
+      "OCBC Bank": "OCBC Malaysia",
+      "UOB Bank": "UOB Malaysia",
+      "HSBC Bank": "HSBC Malaysia",
+      "Standard Chartered Bank": "Standard Chartered Malaysia",
+    };
+    if (aliases[name] && SETTLEMENT_BANKS.indexOf(aliases[name]) >= 0) {
+      return { settlementBank: aliases[name], settlementBankOther: "" };
+    }
+    return { settlementBank: SETTLEMENT_BANK_OTHER, settlementBankOther: name };
+  }
+  function fileField(name, label, opts) {
+    opts = opts || {};
+    var kind = opts.kind || "image";
+    var value = opts.value;
+    var status = uploadBusy[name] ? "uploading" : uploadErrors[name] ? "error" : "";
+    if (!status && hasDurableUpload(value)) status = "ok";
+    else if (!status && livePreviews[name]) status = uploadBusy[name] ? "uploading" : "ok";
+    var previewValue = livePreviews[name]
+      ? { url: livePreviews[name], status: status || "uploading" }
+      : value;
+    if (!U() || !U().renderCard) {
+      return '<label class="form-field upload-field">' + esc(label) + '<input name="' + esc(name) + '" data-file-field type="file" accept="' + esc(opts.accept || "image/jpeg,image/png,image/webp") + '"><span class="upload-card">' + (assetPreview(previewValue, name) ? '<img class="apply-preview" src="' + esc(assetPreview(previewValue, name)) + '" alt="">' : '<span class="upload-plus">＋</span>') + '</span></label>';
+    }
+    return U().renderCard({
+      key: name,
+      label: label,
+      kind: kind,
+      accept: opts.accept || (kind === "audio" ? undefined : "image/jpeg,image/png,image/webp"),
+      // 默认不强制相机；仅当 opts.capture === true 时才带 capture
+      capture: opts.capture === true,
+      multiple: !!opts.multiple,
+      value: previewValue,
+      status: status,
+      error: uploadErrors[name] || "",
+      busy: !!uploadBusy[name],
+      hint: opts.hint,
+    });
+  }
+  function galleryUploadHtml(uploads) {
+    var list = photoListOf(uploads);
+    var cards = list.map(function (item, idx) {
+      var liveKey = "photos:" + ((item && item.id) || idx);
+      var preview = assetPreview(item, liveKey) || assetPreview(item);
+      var id = (item && item.id) || idx;
+      var uploading = !!(item && (item.status === "uploading" || item.status === "pending"));
+      var failed = !!(item && (item.status === "error" || item.status === "failed"));
+      // Success = real thumbnail only. Never keep a permanent "上传成功" badge / size placeholder.
+      var badge = uploading
+        ? '<span class="mcj-upload-badge is-uploading">上传中</span>'
+        : failed
+          ? '<span class="mcj-upload-badge is-error">失败 · 重试</span>'
+          : "";
+      return '<div class="mcj-upload-preview-wrap apply-gallery-item' +
+        (preview ? " has-preview" : "") +
+        (uploading ? " is-uploading" : "") +
+        (failed ? " is-error" : "") +
+        '" data-gallery-item="' + esc(String(id)) + '">' +
+        (preview
+          ? '<img class="mcj-upload-preview" src="' + esc(preview) + '" alt="相册">'
+          : uploading
+            ? '<div class="mcj-upload-skeleton" aria-hidden="true"></div>'
+            : "") +
+        badge +
+        '<button type="button" class="mcj-upload-remove" data-clear-gallery="' + esc(String(idx)) + '" aria-label="删除">×</button>' +
+        "</div>";
+    }).join("");
+    // No count cap — the add card always stays available.
+    var addCard = fileField("photos", "＋ 添加照片", {
+      multiple: true,
+      accept: "image/*",
+      hint: "jpg / png / webp · 数量不限 · 可多选",
+      value: null,
+    });
+    return (
+      '<div class="form-field full apply-gallery-block">' +
+      '<span class="mcj-upload-label">个人展示照片</span>' +
+      '<div class="apply-gallery-grid">' +
+      cards +
+      "</div>" +
+      addCard +
+      "</div>"
+    );
+  }
+  // companion-application.css has no rule for the video overlay yet — keep it inline.
+  var PLAY_BADGE_HTML =
+    '<span class="apply-gallery-play" aria-hidden="true" style="position:absolute;left:50%;top:50%;' +
+    "transform:translate(-50%,-50%);width:34px;height:34px;border-radius:50%;display:flex;" +
+    'align-items:center;justify-content:center;background:rgba(0,0,0,.52);color:#fff;font-size:14px;pointer-events:none">▶</span>';
+  function videoGalleryHtml(uploads) {
+    var list = videoListOf(uploads);
+    var cards = list.map(function (item, idx) {
+      var liveKey = "videos:" + ((item && item.id) || idx);
+      var preview = assetPreview(item, liveKey) || assetPreview(item);
+      var id = (item && item.id) || idx;
+      var uploading = !!(item && (item.status === "uploading" || item.status === "pending"));
+      var failed = !!(item && (item.status === "error" || item.status === "failed"));
+      var badge = uploading
+        ? '<span class="mcj-upload-badge is-uploading">上传中</span>'
+        : failed
+          ? '<span class="mcj-upload-badge is-error">失败 · 重试</span>'
+          : "";
+      return '<div class="mcj-upload-preview-wrap apply-gallery-item apply-gallery-video' +
+        (preview ? " has-preview" : "") +
+        (uploading ? " is-uploading" : "") +
+        (failed ? " is-error" : "") +
+        '" data-video-item="' + esc(String(id)) + '">' +
+        (preview
+          ? '<video class="mcj-upload-preview" src="' + esc(preview) + '" preload="metadata" muted playsinline></video>' + PLAY_BADGE_HTML
+          : uploading
+            ? '<div class="mcj-upload-skeleton" aria-hidden="true"></div>'
+            : PLAY_BADGE_HTML) +
+        badge +
+        '<button type="button" class="mcj-upload-remove" data-clear-video="' + esc(String(idx)) + '" aria-label="删除">×</button>' +
+        "</div>";
+    }).join("");
+    var addCard = fileField("videos", "＋ 添加视频", {
+      kind: "video",
+      multiple: true,
+      accept: U() && U().VIDEO_ACCEPT ? U().VIDEO_ACCEPT : "video/mp4,video/quicktime,.mp4,.mov",
+      capture: false,
+      hint: "mp4 / mov，单条最长约 30 秒 · 数量不限 · 可多选",
+      value: null,
+    });
+    return (
+      '<div class="form-field full apply-gallery-block apply-video-block">' +
+      '<span class="mcj-upload-label">个人展示视频</span>' +
+      '<div class="apply-gallery-grid">' +
+      cards +
+      "</div>" +
+      addCard +
+      "</div>"
+    );
+  }
+  function recordsGalleryHtml(uploads) {
+    var list = recordsListOf(uploads);
+    var cards = list.map(function (item, idx) {
+      var liveKey = "records:" + ((item && item.id) || idx);
+      var preview = assetPreview(item, liveKey) || assetPreview(item);
+      var id = (item && item.id) || idx;
+      var uploading = !!(item && (item.status === "uploading" || item.status === "pending"));
+      var failed = !!(item && (item.status === "error" || item.status === "failed"));
+      var video = isVideoAsset(item);
+      var badge = uploading
+        ? '<span class="mcj-upload-badge is-uploading">上传中</span>'
+        : failed
+          ? '<span class="mcj-upload-badge is-error">失败 · 重试</span>'
+          : "";
+      return '<div class="mcj-upload-preview-wrap apply-gallery-item' +
+        (video ? " apply-gallery-video" : "") +
+        (preview ? " has-preview" : "") +
+        (uploading ? " is-uploading" : "") +
+        (failed ? " is-error" : "") +
+        '" data-records-item="' + esc(String(id)) + '">' +
+        (preview
+          ? video
+            ? '<video class="mcj-upload-preview" src="' + esc(preview) + '" preload="metadata" muted playsinline></video>' + PLAY_BADGE_HTML
+            : '<img class="mcj-upload-preview" src="' + esc(preview) + '" alt="游戏战绩">'
+          : uploading
+            ? '<div class="mcj-upload-skeleton" aria-hidden="true"></div>'
+            : "") +
+        badge +
+        '<button type="button" class="mcj-upload-remove" data-clear-records="' + esc(String(idx)) + '" aria-label="删除">×</button>' +
+        "</div>";
+    }).join("");
+    var addCard = fileField("records", "＋ 添加战绩截图 / 视频", {
+      multiple: true,
+      accept: "image/*,video/*",
+      hint: "图片或视频均可 · 数量不限 · 可多选",
+      value: null,
+    });
+    return (
+      '<div class="form-field full apply-gallery-block apply-records-block">' +
+      '<span class="mcj-upload-label">游戏截图 / 证明（选填）</span>' +
+      '<div class="apply-gallery-grid">' +
+      cards +
+      "</div>" +
+      addCard +
+      "</div>"
+    );
+  }
+  function tagPicker(fieldName, label, selected, groups, limit) {
+    selected = Array.isArray(selected) ? selected : [];
+    // 仅允许选择后台/系统已配置标签，禁止申请端自建任何自定义标签。
+    var allowed = {};
+    Object.keys(groups || {}).forEach(function (group) {
+      (groups[group] || []).forEach(function (tag) {
+        allowed[tag] = true;
+      });
+    });
+    selected = selected.filter(function (tag) {
+      return !!allowed[tag];
+    });
+    var body = Object.keys(groups || {}).map(function (group) {
+      return '<div class="tag-group"><b>' + esc(group) + '</b><div class="tag-list">' + groups[group].map(function (tag) {
+        return '<label class="tag-pill ' + (selected.indexOf(tag) >= 0 ? "checked" : "") + '"><input type="checkbox" data-tag-field="' + esc(fieldName) + '" value="' + esc(tag) + '" ' + (selected.indexOf(tag) >= 0 ? "checked" : "") + '> ' + esc(tag) + '</label>';
+      }).join("") + '</div></div>';
+    }).join("");
+    return '<div class="form-field full tag-picker" data-tag-picker="' + esc(fieldName) + '" data-tag-limit="' + (limit || 99) + '"><span>' + esc(label) + '</span>' + body + '<small>已选择 <em data-tag-count="' + esc(fieldName) + '">' + selected.length + '</em> / ' + (limit || 99) + '</small></div>';
+  }
+
+  function splitRulesChapters(rule) {
+    var body = String((rule && rule.body) || "").replace(/\r\n/g, "\n").trim();
+    var chapters = [];
+    var defaults = [
+      { id: "basic", title: "基本规范" },
+      { id: "order", title: "接单规范" },
+      { id: "service", title: "服务规范" },
+      { id: "income", title: "收益/结算规则" },
+      { id: "penalty", title: "违规处理" }
+    ];
+    if (!body) {
+      return defaults.map(function (d) {
+        return { id: d.id, title: d.title, body: "暂无内容" };
+      });
+    }
+    // Split on numbered / titled lines when possible
+    var parts = body.split(/\n(?=(?:[一二三四五六七八九十]+[、.．]|第[一二三四五六七八九十\d]+[章节条]|【[^】]+】|\d+[\.、]\s*\S))/);
+    if (parts.length >= 2) {
+      parts.forEach(function (part, i) {
+        var lines = String(part || "").trim().split("\n");
+        var title = String(lines[0] || "").trim().replace(/^【|】$/g, "").slice(0, 40) || ("章节 " + (i + 1));
+        var content = lines.slice(1).join("\n").trim() || String(part || "").trim();
+        chapters.push({ id: "ch" + i, title: title, body: content });
+      });
+    } else {
+      // Chunk long body into ~5 accordion panels
+      var paras = body.split(/\n{2,}/).filter(Boolean);
+      var chunkSize = Math.max(1, Math.ceil(paras.length / defaults.length));
+      defaults.forEach(function (d, i) {
+        var slice = paras.slice(i * chunkSize, (i + 1) * chunkSize);
+        if (!slice.length && i > 0) return;
+        chapters.push({
+          id: d.id,
+          title: d.title,
+          body: (slice.join("\n\n") || (i === 0 ? body : "暂无内容")).trim()
+        });
+      });
+      if (!chapters.length) chapters.push({ id: "all", title: "陪玩制度全文", body: body });
+    }
+    if (rule && rule.notes) chapters.push({ id: "notes", title: "注意事项", body: String(rule.notes) });
+    if (rule && rule.penaltyRules) chapters.push({ id: "penaltyExtra", title: "处罚规则", body: String(rule.penaltyRules) });
+    if (rule && rule.depositRules) chapters.push({ id: "depositExtra", title: "退款与押金规则", body: String(rule.depositRules) });
+    return chapters;
+  }
+  function rulesHtml(draft) {
+    var rule = publishedRule();
+    var agreed = draft.rulesAgreement && draft.rulesAgreement.accepted;
+    function termsShell(inner, agreeDisabled, agreeChecked) {
+      return (
+        '<section class="apply-terms">' +
+        '<header class="apply-terms-head"><h2>陪玩申请须知</h2>' +
+        '<p class="apply-terms-lead">申请前请阅读以下规则</p></header>' +
+        inner +
+        '<label class="apply-terms-agree">' +
+        '<input type="checkbox" ' +
+        (agreeDisabled ? "disabled " : "") +
+        'data-rule-agree ' +
+        (agreeChecked ? "checked" : "") +
+        ">" +
+        "<span>我已阅读并同意《陪玩申请须知》</span></label>" +
+        "</section>"
+      );
+    }
+    if (!remoteConfigLoaded && !rule) {
+      return termsShell('<p class="apply-terms-empty">正在加载制度…</p>', true, false);
+    }
+    if (!rule) {
+      return termsShell('<p class="apply-terms-empty">后台暂未发布陪玩制度，请稍后再试。</p>', true, false);
+    }
+    var ver = rule.version
+      ? ('<span class="apply-terms-ver">v' + esc(String(rule.version).replace(/^v/i, "")) + "</span>")
+      : "";
+    var chapters = splitRulesChapters(rule);
+    // Prefer cohesive sections: if splitter exploded into many tiny one-liners,
+    // rebuild from raw body using Chinese section headings only.
+    var tiny =
+      chapters.length > 4 &&
+      chapters.filter(function (ch) {
+        return /^\d+[\.、．]/.test(String(ch.title || "").trim()) || String(ch.body || "").trim().length < 48;
+      }).length >= Math.ceil(chapters.length * 0.6);
+    if (tiny) {
+      var raw = String(rule.body || "").replace(/\r\n/g, "\n").trim();
+      var blocks = raw.split(/\n(?=[一二三四五六七八九十]+[、.．]|第[一二三四五六七八九十\d]+[章节条]|【[^】]+】)/);
+      if (blocks.length >= 2) {
+        chapters = blocks.map(function (block, i) {
+          var lines = String(block || "")
+            .trim()
+            .split("\n")
+            .map(function (l) { return String(l || "").trim(); })
+            .filter(Boolean);
+          return {
+            id: "ch" + i,
+            title: (lines[0] || ("章节 " + (i + 1))).replace(/^【|】$/g, ""),
+            body: lines.slice(1).join("\n"),
+          };
+        });
+      } else {
+        chapters = [{ id: "all", title: rule.title || "陪玩申请须知", body: raw }];
+      }
+    }
+    var sections = chapters.map(function (ch, i) {
+      var num = String(i + 1).padStart(2, "0");
+      var title = String(ch.title || "").trim();
+      var rawBody = String(ch.body || "").replace(/\r\n/g, "\n").trim();
+      // Drop body lines that merely repeat the title.
+      var lines = rawBody
+        ? rawBody.split("\n").map(function (line) { return String(line || "").trim(); }).filter(function (line) {
+            return line && line !== title;
+          })
+        : [];
+      var bodyHtml;
+      if (!lines.length) {
+        bodyHtml = "";
+      } else {
+        bodyHtml =
+          "<ul>" +
+          lines
+            .map(function (line) {
+              return "<li>" + esc(line.replace(/^([•·\-*\d]+[\.\)、\s]+)/, "")) + "</li>";
+            })
+            .join("") +
+          "</ul>";
+      }
+      return (
+        '<section class="apply-terms-section">' +
+        '<h3 class="apply-terms-h"><span class="apply-terms-num">' +
+        num +
+        "</span><span>" +
+        esc(title) +
+        "</span></h3>" +
+        (bodyHtml ? '<div class="apply-terms-body">' + bodyHtml + "</div>" : "") +
+        "</section>"
+      );
+    }).join("");
+    return (
+      '<section class="apply-terms">' +
+      '<header class="apply-terms-head">' +
+      "<h2>陪玩申请须知" +
+      ver +
+      "</h2>" +
+      '<p class="apply-terms-lead">申请前请阅读以下规则</p>' +
+      "</header>" +
+      '<div class="apply-terms-list">' +
+      sections +
+      "</div>" +
+      '<label class="apply-terms-agree">' +
+      '<input type="checkbox" data-rule-agree ' +
+      (agreed ? "checked" : "") +
+      ">" +
+      "<span>我已阅读并同意《陪玩申请须知》</span></label>" +
+      "</section>"
+    );
+  }
+
+  function sectionShell(id, title, hint, bodyHtml) {
+    return (
+      '<section class="apply-section" data-apply-section="' + esc(id) + '">' +
+      '<div class="apply-section-head">' +
+      "<h3>" + esc(title) + "</h3>" +
+      (hint ? '<p class="apply-section-hint">' + hint + "</p>" : "") +
+      "</div>" +
+      '<div class="apply-section-body">' + bodyHtml + "</div>" +
+      "</section>"
+    );
+  }
+  function personalProfileHtml(data) {
+    data = data || {};
+    var body =
+      '<form class="apply-fields">' +
+      field("nickname", "昵称", "text", data.nickname, 'placeholder="展示给老板的名字"') +
+      '<div class="apply-fields-row">' +
+      field("age", "年龄", "number", data.age, 'min="16" max="60"') +
+      selectField("gender", "性别", data.gender, ["女", "男", "保密"]) +
+      "</div>" +
+      field("region", "地区", "text", data.region, 'placeholder="例如：Kuala Lumpur"') +
+      field("phone", "联系电话", "tel", data.phone, 'placeholder="0123456789"') +
+      field("email", "邮箱", "email", data.email, 'placeholder="name@email.com"') +
+      selectField("contactPublic", "联系方式是否公开", data.contactPublic, ["不公开，仅平台可见", "审核通过后公开给已下单老板"], { full: true }) +
+      tagPicker("personalTags", "个人标签（必填，最多 10 个）", data.personalTags, tagGroups.personalTags, 10) +
+      "</form>";
+    return sectionShell("personal", "个人资料", "基础信息，审核与接单都会用到", body);
+  }
+  function mediaShowcaseHtml(draft) {
+    var u = (draft && draft.uploads) || {};
+    var body =
+      '<form class="apply-fields apply-media-fields">' +
+      fileField("avatar", "头像（必填）", {
+        value: u.avatar,
+        accept: "image/*",
+        hint: "jpg / png / webp · 可相册选择或拍照 · 上传后可替换",
+      }) +
+      galleryUploadHtml(u) +
+      videoGalleryHtml(u) +
+      '<p class="apply-section-note">照片与视频数量不限，可继续添加；全部同步到后台审核与老板大厅展示。</p>' +
+      "</form>";
+    return sectionShell("photos", "展示资料", "让老板更了解你", body);
+  }
+  function gameProfileHtml(data, uploads) {
+    data = data || {};
+    uploads = uploads || {};
+    var body =
+      '<form class="apply-fields">' +
+      '<label class="form-field">游戏昵称<div class="copy-field"><input name="gameNickname" data-apply-field type="text" value="' +
+      esc(data.gameNickname || "") +
+      '"><button class="apply-btn small" type="button" data-copy-nickname>复制</button></div></label>' +
+      tagPicker("mainGames", "擅长游戏（多选）", data.mainGames, tagGroups.mainGames, 8) +
+      tagPicker("positions", "擅长位置（多选）", data.positions, tagGroups.positions, 8) +
+      tagPicker("modes", "可提供服务（多选）", data.modes, tagGroups.modes, 2) +
+      selectField("rank", "游戏段位", data.rank, rankOptions) +
+      selectField("voiceType", "声线", data.voiceType, voiceTypeOptions()) +
+      onlineTimeFieldsHtml(data) +
+      recordsGalleryHtml(uploads) +
+      pricingNoticeHtml() +
+      "</form>";
+    return sectionShell("games", "游戏资料", "帮助匹配更合适的老板订单", body);
+  }
+  function videoIntroHtml() {
+    // Videos moved into 展示资料 as an unlimited gallery; kept as a no-op for legacy callers.
+    return "";
+  }
+  function selfIntroHtml(data) {
+    data = data || {};
+    var body =
+      '<form class="apply-fields">' +
+      field("intro", "自我介绍", "textarea", data.intro, 'placeholder="简单介绍自己的游戏风格、接单习惯或声音特点…" rows="5"') +
+      "</form>";
+    return sectionShell("intro", "自我介绍", "展示在个人主页", body);
+  }
+  function basicHtml(data) {
+    // Legacy alias — Step 3 now uses profileStepHtml sections.
+    return personalProfileHtml(data);
+  }
+  function pricingNoticeHtml() {
+    return (
+      '<div class="form-field full apply-pricing-note" data-apply-pricing-notice>' +
+      "<span>接单价格说明</span>" +
+      '<p class="apply-note">申请阶段不设置接单价格。价格由管理员在审核通过时统一配置，申请人无需填写。</p>' +
+      "</div>"
+    );
+  }
+  function gameHtml(data) {
+    return gameProfileHtml(data);
+  }
+  function uploadHtml(draft) {
+    // Keep callable for any leftover callers; media is split across showcase/video/voice cards.
+    return mediaShowcaseHtml(draft) + voiceCardHtml(draft);
+  }
+
+  function voiceCardHtml(draft) {
+    // Premium Voice Card shell — reuses the same recorder/upload handlers as voiceHtml.
+    return (
+      '<section class="apply-section apply-voice-card" data-apply-section="voice" id="applyVoicePanel">' +
+      '<div class="apply-section-head">' +
+      "<h3>语音介绍</h3>" +
+      '<p class="apply-section-hint">录一段简单的自我介绍 · 必填，同步后台审核</p>' +
+      "</div>" +
+      '<div class="apply-section-body">' +
+      voiceHtml(draft) +
+      "</div></section>"
+    );
+  }
+  function voiceHtml(draft) {
+    var v = draft.voice || {};
+    var q = v.quality || {};
+    // Local blob lives only in memory — never treat draft.hasLocal alone as playable/uploadable.
+    var hasLiveLocal = !!(liveVoiceBlob || liveVoiceObjectUrl);
+    var voiceSrc = liveVoiceObjectUrl || (!isEphemeralMediaUrl(v.url) ? v.url : "") || "";
+    var staleLocal = !!(v.hasLocal && !hasLiveLocal && !hasDurableUpload(v) && !hasDurableUpload(v.url) && !hasDurableUpload(v.fileUpload));
+    var hasVoice = !!(voiceSrc || hasLiveLocal || hasDurableUpload(v) || hasDurableUpload(v.url) || hasDurableUpload(v.fileUpload));
+    var uploadedOk = !!(v.uploaded && (hasDurableUpload(v) || hasDurableUpload(v.url) || hasDurableUpload(v.fileUpload)));
+    var isLiveRec =
+      voicePhase === VOICE_PHASE.RECORDING ||
+      voicePhase === VOICE_PHASE.STOPPING ||
+      voicePhase === VOICE_PHASE.REQUESTING ||
+      !!(v.recording || (document.body && document.body.classList.contains("voice-recording-active")));
+    var durationSec = Math.max(0, Number(v.duration) || 0);
+    var tooShortFlag =
+      voicePhase === VOICE_PHASE.TOO_SHORT ||
+      v.tooShort === true ||
+      /时长不足|不足\s*10/.test(String(v.status || "")) ||
+      // Orphan duration after a failed finalize must not look like idle「未录制」.
+      (!hasLiveLocal && !uploadedOk && durationSec > 0 && durationSec < MIN_VOICE_SECONDS) ||
+      (hasLiveLocal && !uploadedOk && durationSec > 0 && durationSec < MIN_VOICE_SECONDS);
+    // Confirm only needs a live ≥10s take. Quality tips are advisory; listen is optional.
+    var durationOk = durationSec >= MIN_VOICE_SECONDS;
+    var canConfirm =
+      hasLiveLocal && !uploadedOk && durationOk && !tooShortFlag && !uploadBusy.voice;
+    var reasons = Array.isArray(q.reasons) ? q.reasons : [];
+    var template =
+      "大家好，我是" +
+      (draft.data.nickname || "你的昵称") +
+      "，主玩" +
+      (draft.data.mainGames || [draft.data.mainGame || "你的游戏"]).join("、") +
+      "，风格偏" +
+      (draft.data.personalTags || ["温柔", "娱乐"]).slice(0, 3).join("、") +
+      "。我可以陪你上分、娱乐或者聊天，希望能给你带来轻松开心的游戏体验。";
+
+    var liveSec = 0;
+    if (isLiveRec && recordStartedAt) {
+      liveSec = Math.max(0, Math.round((Date.now() - recordStartedAt) / 1000));
+    }
+    var timerLabel = isLiveRec
+      ? String(Math.floor(liveSec / 60)).padStart(2, "0") +
+        ":" +
+        String(Math.floor(liveSec % 60)).padStart(2, "0")
+      : durationSec
+        ? String(Math.floor(durationSec / 60)).padStart(2, "0") +
+          ":" +
+          String(Math.floor(durationSec % 60)).padStart(2, "0")
+        : "00:00";
+    var currentLabel = "00:00";
+
+    var phase = "idle";
+    if (uploadBusy.voice || voicePhase === VOICE_PHASE.UPLOADING) phase = "uploading";
+    else if (voicePhase === VOICE_PHASE.REQUESTING) phase = "requesting";
+    else if (voicePhase === VOICE_PHASE.STOPPING) phase = "stopping";
+    else if (voicePhase === VOICE_PHASE.RECORDING || isLiveRec) phase = "recording";
+    else if (uploadedOk) phase = "done";
+    // Any live blob after stop → pending_confirm (ready). Short takes stay ready with
+    // disabled confirm — never collapse to idle「未录制」+「开始录音」.
+    else if (
+      (voicePhase === VOICE_PHASE.RECORDED || voicePhase === VOICE_PHASE.TOO_SHORT) &&
+      hasLiveLocal
+    ) {
+      phase = "ready";
+    } else if (hasLiveLocal && !uploadedOk) phase = "ready";
+    else if (hasVoice && !tooShortFlag) phase = "ready";
+    else if (tooShortFlag) phase = "too_short";
+    else if (staleLocal) phase = "stale";
+
+    var statusLabel =
+      phase === "uploading"
+        ? "保存中…"
+        : phase === "requesting"
+          ? "请求麦克风…"
+          : phase === "stopping"
+            ? "停止中…"
+            : phase === "recording"
+              ? "录音中"
+              : phase === "done"
+                ? "已确认"
+                : phase === "ready"
+                  ? tooShortFlag
+                    ? "不足10秒"
+                    : "待确认"
+                  : phase === "too_short"
+                    ? "不足10秒"
+                    : phase === "stale"
+                      ? "需重录"
+                      : "未录制";
+
+    var fileUploadCard = fileField("voiceFile", "上传已有音频（备用）", {
+      kind: "audio",
+      value: (draft.voice && draft.voice.fileUpload) || null,
+      accept: U() ? U().AUDIO_ACCEPT : "audio/mpeg,audio/mp4,audio/aac,audio/wav,.mp3,.m4a,.aac,.wav",
+      capture: false,
+      hint: "支持 mp3 / m4a / aac / wav；浏览器不支持录音时可用此方式",
+    });
+
+    var topRight =
+      phase === "done"
+        ? '<span class="voice-card-status is-done" role="status" data-voice-status>已确认</span>'
+        : phase === "recording" || phase === "stopping" || phase === "requesting"
+          ? '<span class="voice-card-status is-live" role="status" data-voice-status>' + esc(statusLabel) + "</span>"
+          : phase === "uploading"
+            ? '<span class="voice-card-status is-busy" role="status" data-voice-status>保存中…</span>'
+            : phase === "too_short" || (phase === "ready" && tooShortFlag)
+              ? '<span class="voice-card-status is-warn" role="status" data-voice-status>不足10秒</span>'
+              : phase === "ready"
+                ? '<span class="voice-card-status is-live" role="status" data-voice-status>待确认</span>'
+                : '<span class="voice-card-status is-muted" data-voice-status>' + esc(statusLabel) + "</span>";
+
+    var playLabel = phase === "done" ? "播放" : "播放试听";
+    var playerHtml = "";
+    if (phase === "done" || phase === "ready") {
+      playerHtml =
+        '<div class="voice-card-player" data-voice-player>' +
+        '<button type="button" class="apply-btn apply-btn-ghost-soft voice-card-play-cta" data-record-play aria-label="' +
+        esc(playLabel) +
+        '">' +
+        '<span data-voice-play-icon aria-hidden="true">▶</span>' +
+        '<span data-voice-play-label>' +
+        esc(playLabel) +
+        "</span></button>" +
+        '<div class="voice-card-track" data-voice-seek hidden>' +
+        '<div class="voice-card-track-fill" data-voice-progress style="width:0%"></div>' +
+        "</div>" +
+        '<div class="voice-card-times" hidden><span data-voice-current>' +
+        esc(currentLabel) +
+        '</span><span data-voice-duration>' +
+        esc(timerLabel) +
+        "</span></div></div>";
+    } else if (phase === "recording" || phase === "stopping" || phase === "requesting") {
+      playerHtml =
+        '<div class="voice-card-live" aria-live="polite">' +
+        '<span class="voice-card-live-dot"></span>' +
+        '<strong id="voiceTimer">' +
+        esc(timerLabel) +
+        "</strong>" +
+        "<span>" +
+        (phase === "requesting" ? "正在请求麦克风…" : phase === "stopping" ? "正在停止…" : "正在录音…") +
+        "</span></div>";
+    } else if (phase === "too_short") {
+      playerHtml =
+        '<div class="voice-card-idle voice-card-too-short" role="alert">' +
+        "<p><strong>录音至少需要 10 秒，请重新录制。</strong></p>" +
+        "<p>刚才录了 " +
+        esc(timerLabel) +
+        "。</p>" +
+        "</div>";
+    } else {
+      playerHtml =
+        '<div class="voice-card-idle">' +
+        "<p>点击下方按钮录制 10～60 秒自我介绍</p>" +
+        "</div>";
+    }
+
+    var actionsHtml = "";
+    if (phase === "idle" || phase === "stale") {
+      actionsHtml =
+        '<button class="apply-btn primary" type="button" data-record-start>开始录音</button>';
+    } else if (phase === "too_short") {
+      actionsHtml =
+        '<button class="apply-btn primary" type="button" data-record-start>重新录制</button>';
+    } else if (phase === "requesting") {
+      actionsHtml =
+        '<button class="apply-btn primary" type="button" disabled aria-busy="true">请求权限中…</button>';
+    } else if (phase === "recording") {
+      actionsHtml =
+        '<button class="apply-btn primary" type="button" data-record-stop>停止录音</button>';
+    } else if (phase === "stopping") {
+      actionsHtml =
+        '<button class="apply-btn primary" type="button" data-record-stop disabled aria-busy="true">停止中…</button>';
+    } else if (phase === "ready") {
+      actionsHtml =
+        '<button class="apply-btn apply-btn-ghost-soft" type="button" data-record-reset>重新录制</button>' +
+        '<button class="apply-btn primary" type="button" data-record-confirm ' +
+        (!canConfirm ? "disabled" : "") +
+        ' aria-busy="' +
+        (uploadBusy.voice ? "true" : "false") +
+        '">' +
+        (uploadBusy.voice ? "保存中..." : "确认录音") +
+        "</button>";
+    } else if (phase === "uploading") {
+      actionsHtml =
+        '<button class="apply-btn primary" type="button" disabled aria-busy="true">保存中...</button>';
+    } else if (phase === "done") {
+      actionsHtml =
+        '<button class="apply-btn apply-btn-ghost-soft" type="button" data-record-reset>重新录制</button>';
+    }
+
+    var qualityHtml = "";
+    if (phase === "too_short" || (phase === "ready" && tooShortFlag)) {
+      qualityHtml =
+        '<div class="voice-card-quality"><span class="bad">录音至少需要 10 秒，请重新录制。</span></div>';
+    } else if ((phase === "ready" || phase === "stale") && reasons.length) {
+      qualityHtml =
+        '<div class="voice-card-quality">' +
+        reasons
+          .slice(0, 2)
+          .map(function (r) {
+            return '<span class="bad">' + esc(r) + "</span>";
+          })
+          .join("") +
+        "</div>";
+    }
+
+    return (
+      '<div class="voice-card" data-voice-card="1" data-voice-phase="' +
+      esc(phase) +
+      '">' +
+      '<div class="voice-card-main">' +
+      '<div class="voice-card-row">' +
+      '<div class="voice-card-icon" aria-hidden="true">🎙</div>' +
+      '<div class="voice-card-meta">' +
+      '<strong id="voiceState">' +
+      esc(timerLabel) +
+      "</strong>" +
+      (phase === "done" || phase === "ready"
+        ? ""
+        : '<span class="voice-card-caption">' +
+          (phase === "recording"
+            ? "录音中…"
+            : phase === "too_short"
+              ? "至少需要 10 秒"
+              : "10～60 秒即可") +
+          "</span>") +
+      "</div>" +
+      topRight +
+      "</div>" +
+      playerHtml +
+      '<div class="voice-card-actions">' +
+      actionsHtml +
+      "</div>" +
+      qualityHtml +
+      (uploadErrors.voice
+        ? '<p class="voice-card-error" role="alert">上传失败：' + esc(uploadErrors.voice) + "</p>"
+        : "") +
+      // Hidden native audio — custom player drives play/seek; never show browser controls.
+      '<audio id="voicePreview" preload="metadata" playsinline hidden aria-hidden="true"' +
+      (voiceSrc ? ' src="' + esc(voiceSrc) + '"' : '') +
+      '></audio>' +
+      "</div>" +
+      '<details class="voice-card-advanced">' +
+      "<summary>其他方式 / 参考模板</summary>" +
+      '<div class="voice-card-advanced-body">' +
+      '<div class="voice-alt-upload"><div class="voice-method-title">上传已有音频</div>' +
+      '<p class="apply-note">浏览器不支持录音时可用。</p>' +
+      '<div class="apply-fields">' +
+      fileUploadCard +
+      "</div></div>" +
+      '<div class="voice-template-card"><div><h3>参考模板</h3><p id="voiceTemplateText">' +
+      esc(template) +
+      '</p></div><button class="apply-btn small" type="button" data-copy-voice-template>复制模板</button></div>' +
+      '<form class="apply-fields">' +
+      field("voiceNote", "试音说明（选填）", "textarea", (draft.data || {}).voiceNote, 'placeholder="声音特点、聊天风格…" rows="3"') +
+      "</form></div></details></div>"
+    );
+  }
+
+
+  function depositPayeeHtml(set) {
+    var lines = [];
+    var payee = set.payeeName || set.accountName || set.receiverName || set.收款户名 || "";
+    var account = set.payeeAccount || set.accountNumber || set.receiverAccount || set.收款账号 || "";
+    var bank = set.payeeBank || set.bankName || set.收款银行 || "";
+    if (payee) lines.push("<li>收款户名：" + esc(payee) + "</li>");
+    if (account) lines.push("<li>收款账号：" + esc(account) + "</li>");
+    if (bank) lines.push("<li>收款银行 / 渠道：" + esc(bank) + "</li>");
+    if (set.payeeNote || set.paymentNote) lines.push("<li>" + esc(set.payeeNote || set.paymentNote) + "</li>");
+    return lines.length ? "<ul>" + lines.join("") + "</ul>" : "";
+  }
+
+  function depositChannelPayInfoHtml(channel, selectedId) {
+    if (!channel) return "";
+    var info = channel.payInfo || {};
+    var id = String(channel.id || channel.code || "").trim();
+    var checked = selectedId ? id === String(selectedId) : true;
+    var qr = String(info.qrUrl || channel.qrUrl || "").trim();
+    var accountLabel = /duitnow/i.test(id + String(channel.label || channel.name || ""))
+      ? "DuitNow ID"
+      : "银行账号 / 收款账号";
+    var accountVal = String(info.duitnowId || info.bankAccount || info.phone || "").trim();
+    return (
+      '<label class="apply-deposit-channel' +
+      (checked ? " is-active" : "") +
+      '" data-deposit-channel-card="' +
+      esc(id) +
+      '">' +
+      '<input type="radio" name="depositChannelId" data-deposit-channel value="' +
+      esc(id) +
+      '" ' +
+      (checked ? "checked" : "") +
+      " required>" +
+      '<div class="apply-deposit-channel-body">' +
+      "<strong>" +
+      esc(channel.label || channel.name || id) +
+      "</strong>" +
+      '<ul class="apply-deposit-info">' +
+      "<li>支付方式：" +
+      esc(channel.label || channel.name || "-") +
+      "</li>" +
+      "<li>收款人：" +
+      esc(info.receiverName || "-") +
+      "</li>" +
+      "<li>银行：" +
+      esc(info.bankName || "-") +
+      "</li>" +
+      "<li>" +
+      esc(accountLabel) +
+      "：" +
+      esc(accountVal || "-") +
+      "</li>" +
+      "<li>应付金额：RM " +
+      esc(String(info.amountRm != null ? info.amountRm : remoteDepositPay.amountRm || 100)) +
+      "</li>" +
+      "</ul>" +
+      (qr
+        ? '<div class="apply-deposit-qr"><p class="apply-note">收款二维码（点击可放大）</p>' +
+          '<button type="button" class="apply-deposit-qr-btn" data-apply-deposit-qr-zoom="' +
+          esc(qr) +
+          '" aria-label="放大收款二维码">' +
+          '<img src="' +
+          esc(qr) +
+          '" alt="押金收款二维码" referrerpolicy="no-referrer">' +
+          "</button></div>"
+        : '<p class="apply-note">该渠道暂无二维码，请按上方账号信息转账。</p>') +
+      (info.instructions ? '<p class="apply-note">' + esc(info.instructions) + "</p>" : "") +
+      "</div></label>"
+    );
+  }
+
+  function depositPayPanelHtml(id) {
+    var set = depositSettings();
+    var channels = depositChannels();
+    var amount = Number(remoteDepositPay.amountRm || set.amount || 100) || 100;
+    var currency = set.currency === "MYR" ? "RM" : set.currency || "RM";
+    var selectedId = String(id.depositChannelId || id.depositMethod || "").trim();
+    if (!selectedId && channels.length === 1) {
+      selectedId = String(channels[0].id || channels[0].code || "").trim();
+    }
+    var head =
+      "<h3>认证押金：" +
+      esc(currency) +
+      amount.toFixed(0) +
+      "</h3>" +
+      "<p class=\"apply-note\">请向平台收款账号转账后上传付款凭证。收款信息来自后台「支付设置」中已启用且支持押金的渠道。</p>";
+
+    if (remoteDepositPay.loading && !channels.length) {
+      return '<div class="apply-subcard apply-deposit-pay">' + head + '<p class="apply-note">正在加载平台收款信息…</p></div>';
+    }
+
+    if (!channels.length) {
+      var empty =
+        remoteDepositPay.emptyMessage ||
+        remoteDepositPay.error ||
+        "平台暂未配置押金收款方式，请联系客服。";
+      // Legacy player_deposit_settings payee text only as secondary hint when present.
+      var legacy = depositPayeeHtml(set);
+      return (
+        '<div class="apply-subcard apply-deposit-pay">' +
+        head +
+        '<p class="apply-deposit-empty" role="alert">' +
+        esc(empty) +
+        "</p>" +
+        (legacy ? '<div class="apply-note">备用说明：</div>' + legacy : "") +
+        '<form class="apply-grid">' +
+        fileField("depositProof", "押金付款凭证", { value: id.depositProof }) +
+        "</form></div>"
+      );
+    }
+
+    return (
+      '<div class="apply-subcard apply-deposit-pay">' +
+      head +
+      '<div class="apply-deposit-channels" data-deposit-channels>' +
+      channels
+        .map(function (ch) {
+          return depositChannelPayInfoHtml(ch, selectedId);
+        })
+        .join("") +
+      "</div>" +
+      '<form class="apply-grid">' +
+      fileField("depositProof", "押金付款凭证", { value: id.depositProof }) +
+      "</form></div>"
+    );
+  }
+
+  function certMethodHtml(draft) {
+    var id = draft.identity || {};
+    var mode = String(id.authMode || draft.certification_method || "").trim();
+    return (
+      '<section class="apply-panel apply-cert-method"><h2>请选择认证方式</h2>' +
+      '<p class="apply-note full">请二选一：身份证认证或押金认证。选择后请在本页完成对应资料，再点「保存并下一步」。</p>' +
+      '<div class="apply-cert-cards">' +
+      '<button class="apply-cert-card' + (mode === "id_card" ? " is-selected" : "") + '" type="button" data-auth-mode="id_card" aria-pressed="' + (mode === "id_card" ? "true" : "false") + '">' +
+      "<h3>身份证认证</h3><p>提交身份证资料进行认证</p><strong>" + (mode === "id_card" ? "已选择" : "点击选择") + "</strong></button>" +
+      '<button class="apply-cert-card' + (mode === "deposit" ? " is-selected" : "") + '" type="button" data-auth-mode="deposit" aria-pressed="' + (mode === "deposit" ? "true" : "false") + '">' +
+      "<h3>押金认证</h3><p>使用押金方式完成认证</p><strong>" + (mode === "deposit" ? "已选择" : "点击选择") + "</strong></button>" +
+      "</div></section>"
+    );
+  }
+  function identityHtml(draft) {
+    var id = draft.identity || {};
+    var mode = String(id.authMode || draft.certification_method || "").trim();
+    var modeLabel = mode === "id_card" ? "身份证认证" : mode === "deposit" ? "押金认证" : "未选择";
+    var modeForm = "";
+    if (mode === "id_card") {
+      modeForm =
+        '<div class="apply-subcard"><h3>身份证资料</h3><p>资料仅用于平台审核，不会在老板端公开。</p><form class="apply-grid">' +
+        selectField("documentType", "证件类型", id.documentType, ["马来西亚身份证", "中国大陆身份证"]) +
+        fileField("idFront", "身份证 / 证件正面", { value: id.idFront }) +
+        fileField("idBack", "身份证 / 证件背面", { value: id.idBack }) +
+        "</form></div>";
+    } else if (mode === "deposit") {
+      modeForm = depositPayPanelHtml(id);
+    } else {
+      modeForm = '<div class="apply-subcard"><p class="apply-note">请先在上方选择认证方式（身份证或押金）。</p></div>';
+    }
+    var settlement =
+      mode === "id_card" || mode === "deposit"
+        ? (function () {
+            var method = String(id.settlementMethod || "银行卡").trim() || "银行卡";
+            var bankBlock = "";
+            var accountBlock = "";
+            if (isBankSettlementMethod(method)) {
+              var split = splitSettlementBankFields(
+                id.settlementBank || id.bankName || ""
+              );
+              var bankSelect = String(id.settlementBank || "").trim();
+              var bankOther = String(id.settlementBankOther || "").trim();
+              if (!bankSelect && (id.bankName || split.settlementBank)) {
+                bankSelect = split.settlementBank;
+                if (!bankOther) bankOther = split.settlementBankOther;
+              } else if (bankSelect && SETTLEMENT_BANKS.indexOf(bankSelect) < 0) {
+                bankOther = bankOther || bankSelect;
+                bankSelect = SETTLEMENT_BANK_OTHER;
+              }
+              bankBlock =
+                selectField("settlementBank", "银行名称", bankSelect, SETTLEMENT_BANKS, {
+                  placeholder: "请选择银行",
+                }) +
+                (bankSelect === SETTLEMENT_BANK_OTHER
+                  ? field("settlementBankOther", "自定义银行名称", "text", bankOther)
+                  : "");
+              accountBlock =
+                field("settlementName", "银行户名", "text", id.settlementName) +
+                field("settlementAccount", "银行账号", "text", id.settlementAccount);
+            } else if (isTngSettlementMethod(method)) {
+              accountBlock =
+                field("tngAccount", "TNG 手机号码", "tel", id.tngAccount || id.settlementAccount || id.paymentPhone || "") +
+                field("settlementName", settlementNameLabel(method), "text", id.settlementName);
+            } else if (isAlipaySettlementMethod(method)) {
+              accountBlock =
+                field("alipayAccount", "支付宝账号 / 手机号", "text", id.alipayAccount || id.settlementAccount || "") +
+                field("settlementName", settlementNameLabel(method), "text", id.settlementName);
+            } else if (isDuitNowSettlementMethod(method)) {
+              accountBlock =
+                field("settlementAccount", "DuitNow 账号", "text", id.settlementAccount) +
+                field("settlementName", settlementNameLabel(method), "text", id.settlementName);
+            } else {
+              accountBlock =
+                field("settlementAccount", settlementAccountLabel(method), "text", id.settlementAccount) +
+                field("settlementName", settlementNameLabel(method), "text", id.settlementName);
+            }
+            var hint = isBankSettlementMethod(method)
+              ? "选择银行卡时须填写银行名称、银行户名与银行账号。"
+              : isTngSettlementMethod(method)
+                ? "选择 TNG Wallet 时请填写 TNG 绑定手机号码。"
+                : isAlipaySettlementMethod(method)
+                  ? "选择支付宝时请填写支付宝账号或手机号。"
+                  : "请按所选结款方式填写对应账号。";
+            return (
+              '<div class="apply-subcard"><h3>结款资料（必填）</h3><form class="apply-grid">' +
+              selectField("settlementMethod", "结款方式", method, SETTLEMENT_METHODS) +
+              bankBlock +
+              accountBlock +
+              '</form><div class="deposit-status"><strong>审核通过后即可成为陪玩</strong><p>当前认证方式：' +
+              esc(modeLabel) +
+              "。" +
+              hint +
+              "</p></div></div>"
+            );
+          })()
+        : "";
+    return (
+      '<section class="apply-panel apply-cert-materials"><h2>完成认证资料</h2>' +
+      '<p class="apply-note full">当前认证方式：<b>' + esc(modeLabel) + "</b>。可点上方卡片切换；切换后请重新上传对应资料。</p>" +
+      modeForm +
+      settlement +
+      "</section>"
+    );
+  }
+
+  function doneHtml(draft) {
+    draft = draft || readDraft();
+    var data = draft.data || {};
+    var identity = draft.identity || {};
+    var mode = String(identity.authMode || draft.certification_method || "").trim();
+    var modeLabel = mode === "id_card" ? "身份证认证" : mode === "deposit" ? "押金认证" : "";
+    var appId = String(draft.applicationId || draft.submittedId || "").trim();
+    var submittedAt = String(draft.submittedAt || "").trim();
+    function displayValue(value, loadingText) {
+      var v = String(value == null ? "" : value).trim();
+      if (v && v !== "—" && v !== "-") return esc(v);
+      return '<span class="apply-done-muted">' + esc(loadingText || "加载中…") + "</span>";
+    }
+    function row(label, valueHtml) {
+      return '<div class="apply-done-row"><span>' + esc(label) + "</span><strong>" + valueHtml + "</strong></div>";
+    }
+    return (
+      '<section class="apply-done-premium">' +
+      '<div class="apply-done-badge" aria-hidden="true">✓</div>' +
+      "<h2>申请已提交</h2>" +
+      "<p>我们已经收到你的陪玩申请<br>审核完成后会更新申请状态</p>" +
+      '<div class="apply-done-pill">待审核</div>' +
+      '<div class="apply-done-meta">' +
+      row("认证方式", displayValue(modeLabel, "未选择")) +
+      row("申请编号", displayValue(appId, "生成中…")) +
+      row("提交时间", displayValue(submittedAt, "同步中…")) +
+      (data.nickname ? row("昵称", displayValue(data.nickname, "同步中…")) : "") +
+      "</div>" +
+      '<div class="apply-done-actions">' +
+      '<a class="apply-btn primary" href="companion-apply.html">查看申请状态</a>' +
+      '<a class="apply-btn" href="companion/index.html">返回陪玩端</a>' +
+      "</div>" +
+      '<p class="apply-section-note">等级与基础价格由管理员审核时指定，申请人无需填写。</p>' +
+      "</section>"
+    );
+  }
+
+  function profileStepHtml(draft) {
+    draft = draft || readDraft();
+    var data = draft.data || {};
+    return (
+      '<div class="apply-profile-step" data-apply-profile-step="1">' +
+      '<header class="apply-profile-hero">' +
+      "<h2>填写完整资料</h2>" +
+      '<p>完成资料后即可提交审核。照片、语音、视频会同步到后台审核。</p>' +
+      "</header>" +
+      // Media first — never bury uploads under a long text form again.
+      mediaShowcaseHtml(draft) +
+      personalProfileHtml(data) +
+      gameProfileHtml(data, draft.uploads || {}) +
+      voiceCardHtml(draft) +
+      selfIntroHtml(data) +
+      "</div>"
+    );
+  }
+  function stepHtml(index, draft) {
+    if (index === 0) {
+      // STEP1: choose method + complete corresponding cert materials on the same page
+      return certMethodHtml(draft) + (String(((draft.identity || {}).authMode) || draft.certification_method || "").trim() ? identityHtml(draft) : "");
+    }
+    if (index === 1) return rulesHtml(draft);
+    if (index === 2) return profileStepHtml(draft);
+    return doneHtml(draft);
+  }
+  function draftGateHtml() {
+    if (draftGateMode !== "prompt") return "";
+    return (
+      '<section class="apply-draft-gate" data-apply-draft-gate role="dialog" aria-modal="true">' +
+      "<h2>检测到上次未完成的申请</h2>" +
+      "<p>自动保存的草稿可以继续编辑；也可以放弃后从零重新填写。放弃会清除本机与服务器上的未提交草稿，不会删除已正式提交的申请。</p>" +
+      '<div class="apply-draft-gate-actions">' +
+      '<button type="button" class="apply-btn primary" data-apply-draft-continue>继续编辑草稿</button>' +
+      '<button type="button" class="apply-btn apply-btn-ghost" data-apply-draft-discard>放弃草稿，重新填写</button>' +
+      "</div></section>"
+    );
+  }
+  function draftToolbarHtml(draft) {
+    draft = draft || readDraft();
+    if (isApplicationSubmitted(draft)) return "";
+    if (draftGateMode === "prompt") return "";
+    if (!(draftGateMode === "editing" || draftHasMeaningfulContent(draft))) return "";
+    return (
+      '<div class="apply-draft-toolbar">' +
+      '<span>草稿会自动保存。可随时清空后重新填写。</span>' +
+      '<button type="button" class="apply-btn apply-btn-ghost-soft" data-apply-draft-clear>清空草稿</button>' +
+      "</div>"
+    );
+  }
+  async function discardApplicationDraftFull(opts) {
+    opts = opts || {};
+    var gen = bumpDraftGeneration();
+    suppressEmptyPersist = true;
+    allowServerHydrate = false;
+    draftGateMode = "fresh";
+    markDraftDiscardedFlag();
+    clearCurrentUserDraft();
+    writeDraftGateSession("fresh");
+    if (companionToken()) {
+      try {
+        await postCompanion("discard_application_draft", { _draftGeneration: gen });
+      } catch (err) {
+        var msg = String((err && err.message) || "");
+        if (!/FORMAL_PROFILE_PROTECTED|SUBMITTED_PROTECTED|NOT_DRAFT|正式|已提交/.test(msg)) {
+          throw err;
+        }
+      }
+    }
+    lastBootstrapPayload = null;
+    if (!opts.silent) showApplyTip("草稿已清空，可重新填写。", "ok");
+    render(0, { alignStepNav: true });
+  }
+  function continueApplicationDraft() {
+    clearDraftDiscardedFlag();
+    suppressEmptyPersist = false;
+    allowServerHydrate = true;
+    draftGateMode = "editing";
+    writeDraftGateSession("continue");
+    if (lastBootstrapPayload) hydrateUploadsFromBootstrap(lastBootstrapPayload);
+    var step = Number((readDraft().step || 0) || 0);
+    render(step, { alignStepNav: true });
+    showApplyTip("已恢复草稿，可继续编辑。", "ok");
+  }
+  function resolveDraftGateAfterBootstrap(boot) {
+    lastBootstrapPayload = boot || null;
+    if (boot && boot.player) {
+      remoteStatus = {
+        applicationStatus: boot.player.auditStatus || boot.player.applicationStatus || "",
+        rejectReason: boot.player.applicationRejectReason || "",
+      };
+    }
+    if (isApplicationSubmitted()) {
+      draftGateMode = "submitted";
+      allowServerHydrate = true;
+      clearDraftDiscardedFlag();
+      applyBootstrap(boot);
+      return;
+    }
+    var sessionGate = readDraftGateSession();
+    if (sessionGate === "fresh" || hasDraftDiscardedFlag()) {
+      draftGateMode = "fresh";
+      allowServerHydrate = false;
+      suppressEmptyPersist = true;
+      clearCurrentUserDraft();
+      return;
+    }
+    if (sessionGate === "continue") {
+      draftGateMode = "editing";
+      allowServerHydrate = true;
+      applyBootstrap(boot);
+      return;
+    }
+    var localHas = draftHasMeaningfulContent(readDraft());
+    var serverHas = bootstrapHasDraftContent(boot);
+    if (localHas || serverHas) {
+      draftGateMode = "prompt";
+      allowServerHydrate = false;
+      return;
+    }
+    draftGateMode = "fresh";
+    allowServerHydrate = true;
+  }
+  function statusNotice() {
+    var code = remoteStatus && remoteStatus.applicationStatus;
+    var reason = remoteStatus && remoteStatus.rejectReason;
+    var local = existingApplication();
+    if (!code && local) code = local.status === "review" ? "pending" : local.status;
+    if (!code) return "";
+    var tip = "";
+    if (/resubmit|need_more/.test(String(code))) tip = "请按审核意见修改后重新提交。";
+    else if (/pending|review|submitted/.test(String(code))) tip = "请耐心等待后台审核，可刷新本页查看最新状态。";
+    else if (/approved|verified|passed/.test(String(code))) tip = "可前往陪玩端登录；所选认证方式审核通过后即可接单。";
+    else if (/rejected/.test(String(code))) tip = "如有疑问请联系平台客服。";
+    return '<div class="apply-status-note">当前申请状态：<b>' + esc(statusLabelOf(code)) + '</b>' +
+      (reason ? ' · 原因：' + esc(reason) : "") +
+      (tip ? '。<span>' + esc(tip) + "</span>" : "。") +
+      (/approved|verified|passed/.test(String(code)) ? ' <a class="apply-btn small" href="companion/index.html">进入陪玩端</a>' : "") +
+      "</div>";
+  }
+  function formatRulesUpdatedAt(v) {
+    if (!v) return "";
+    var d = new Date(v);
+    if (isNaN(d.getTime())) {
+      return String(v).replace("T", " ").replace(/\.\d+Z?$/, "").replace(/([+-]\d{2}:\d{2}|Z)$/, "").trim().slice(0, 16);
+    }
+    function pad(n) { return String(n).padStart(2, "0"); }
+    return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()) + " " + pad(d.getHours()) + ":" + pad(d.getMinutes());
+  }
+  function preservePageScroll(fn) {
+    var y = window.scrollY || window.pageYOffset || document.documentElement.scrollTop || 0;
+    var x = window.scrollX || window.pageXOffset || 0;
+    try { fn(); } finally {
+      requestAnimationFrame(function () {
+        try { window.scrollTo(x, y); } catch (e) {}
+        setTimeout(function () {
+          try { window.scrollTo(x, y); } catch (e2) {}
+        }, 0);
+      });
+    }
+  }
+  function syncStepNavOnly(root) {
+    if (!root) return;
+    var current = root.querySelector(".apply-step.active");
+    var list = root.querySelector(".apply-step-list") || root.querySelector(".apply-steps");
+    if (!current || !list) return;
+    try {
+      var left = current.offsetLeft - Math.max(0, (list.clientWidth - current.clientWidth) / 2);
+      list.scrollLeft = Math.max(0, left);
+    } catch (e) {}
+  }
+  function actionsHtml(activeIndex, draft) {
+    draft = draft || readDraft();
+    var submitted = !!(draft.submitted || draft.status === "pending" || draft.status === "review");
+    if (activeIndex === 3 || (submitted && activeIndex >= 3)) {
+      return "";
+    }
+    // STEP2 terms: only prev + agree CTA (auto-save tip, no draft button)
+    if (activeIndex === 1) {
+      var agreed = !!(draft.rulesAgreement && draft.rulesAgreement.accepted);
+      return (
+        '<div class="apply-actions apply-actions-terms">' +
+        '<button class="apply-btn apply-btn-ghost" data-apply-prev type="button">← 上一步</button>' +
+        '<button class="apply-btn primary apply-btn-cta" data-apply-next type="button" ' +
+        (agreed ? "" : "disabled") +
+        ">同意并继续 →</button></div>" +
+        '<p class="apply-note apply-note-soft">内容将自动保存</p>'
+      );
+    }
+    var nextLabel = "保存并下一步";
+    if (activeIndex === 2) nextLabel = "提交陪玩申请";
+    return (
+      '<div class="apply-actions">' +
+      '<button class="apply-btn" data-apply-prev type="button" ' +
+      (activeIndex === 0 ? "disabled" : "") +
+      ">上一步</button>" +
+      (activeIndex === 2
+        ? ""
+        : '<button class="apply-btn" data-apply-save type="button">保存草稿</button>') +
+      '<button class="apply-btn primary" data-apply-next type="button">' +
+      nextLabel +
+      "</button></div>" +
+      '<p class="apply-note">填写内容会自动保存草稿。等级与价格由管理员审核时指定，申请页不可填写。</p>'
+    );
+  }
+  function stripVoiceNativeControls() {
+    var vp = document.getElementById("voicePreview");
+    if (vp) {
+      vp.removeAttribute("controls");
+      vp.setAttribute("hidden", "");
+      vp.setAttribute("aria-hidden", "true");
+    }
+    document.querySelectorAll("#companionApplyRoot .voice-card audio, #companionApplyRoot audio#voicePreview").forEach(function (el) {
+      el.removeAttribute("controls");
+      el.setAttribute("hidden", "");
+    });
+  }
+
+  function render(index, opts) {
+    opts = opts || {};
+    var root = document.getElementById("companionApplyRoot");
+    if (!root) return;
+    var draft = readDraft();
+    if (isApplicationSubmitted(draft) && (index == null || Number(index) >= 3 || Number(draft.step) >= 3)) {
+      index = 3;
+      draft.step = 3;
+    }
+    var rawIndex = index == null ? draft.step : index;
+    var requestedIndex = Math.max(0, Math.min(steps.length - 1, Number(rawIndex || 0)));
+    var reachable = maxReachableStep(draft);
+    var activeIndex = Math.min(requestedIndex, reachable);
+    root.dataset.step = String(activeIndex);
+    if (draftGateMode !== "prompt") {
+      var stepProbe = Object.assign({}, readDraft(), { step: activeIndex });
+      if (!(suppressEmptyPersist && isDraftEffectivelyEmpty(stepProbe))) {
+        saveDraft({ step: activeIndex });
+      }
+    }
+    draft = draftGateMode === "prompt" ? emptyDraft() : readDraft();
+    preservePageScroll(function () {
+      var layoutHidden = !companionToken() || draftGateMode === "prompt";
+      root.innerHTML =
+        loadingBannerHtml() +
+        statusNotice() +
+        draftGateHtml() +
+        authGateHtml() +
+        '<div class="apply-layout"' +
+        (layoutHidden ? " hidden" : "") +
+        ">" +
+        stepNav(activeIndex, draft) +
+        '<div class="apply-main">' +
+        draftToolbarHtml(draft) +
+        wizardStackHtml(activeIndex, draft) +
+        actionsHtml(activeIndex, draft) +
+        "</div></div>";
+      if (opts.alignStepNav) syncStepNavOnly(root);
+      stripVoiceNativeControls();
+    });
+  }
+  function fileToDataURL(file) {
+    if (U() && U().readAsDataUrl) return U().readAsDataUrl(file);
+    return new Promise(function (resolve, reject) {
+      if (!file) return resolve("");
+      var reader = new FileReader();
+      reader.onload = function () { resolve(reader.result); };
+      reader.onerror = function () { reject(new Error("读取文件失败")); };
+      reader.readAsDataURL(file);
+    });
+  }
+  async function collect(root) {
+    if (draftGateMode === "prompt") return;
+    noteUserEditedDraft();
+    var draft = readDraft();
+    var data = draft.data || {};
+    var identity = draft.identity || {};
+    var uploads = draft.uploads || {};
+    var step = Number(root.dataset.step || 0);
+    Array.prototype.slice.call(root.querySelectorAll("[data-apply-field]")).forEach(function (el) { data[el.name] = el.value.trim(); });
+    // Pricing V2 P2: do not collect applicant price fields
+    Array.prototype.slice.call(root.querySelectorAll("[data-tag-picker]")).forEach(function (picker) {
+      var key = picker.dataset.tagPicker;
+      data[key] = Array.prototype.slice.call(picker.querySelectorAll("[data-tag-field]:checked")).map(function (el) { return el.value; });
+    });
+    // File uploads are handled immediately by MCJUpload → Storage; do not stash data URLs here.
+    Array.prototype.slice.call(root.querySelectorAll("select[name],input[name]:not([type=file]),textarea[name]")).forEach(function (el) {
+      if (step === 0) identity[el.name] = el.value.trim ? el.value.trim() : el.value;
+    });
+    if (step === 0) {
+      // Persist certification_method with STEP1 materials
+      if (identity.authMode === "id_card" || identity.authMode === "deposit") {
+        identity.certification_method = identity.authMode;
+      } else if (identity.certification_method === "id_card" || identity.certification_method === "deposit") {
+        identity.authMode = identity.certification_method;
+      }
+      // Keep bankName as the effective persisted label (dropdown value or「其他」custom text).
+      if (isBankSettlementMethod(identity.settlementMethod)) {
+        identity.bankName = effectiveSettlementBankName(identity);
+        identity.tngAccount = "";
+        identity.alipayAccount = "";
+        identity.paymentPhone = "";
+      } else if (isTngSettlementMethod(identity.settlementMethod)) {
+        identity.settlementBank = "";
+        identity.settlementBankOther = "";
+        identity.bankName = "";
+        identity.tngAccount = String(identity.tngAccount || identity.settlementAccount || "").trim();
+        identity.paymentPhone = identity.tngAccount;
+        identity.alipayAccount = "";
+        identity.settlementAccount = "";
+      } else if (isAlipaySettlementMethod(identity.settlementMethod)) {
+        identity.settlementBank = "";
+        identity.settlementBankOther = "";
+        identity.bankName = "";
+        identity.alipayAccount = String(identity.alipayAccount || identity.settlementAccount || "").trim();
+        identity.tngAccount = "";
+        identity.paymentPhone = "";
+        identity.settlementAccount = "";
+      } else {
+        identity.settlementBank = identity.settlementBank || "";
+        identity.settlementBankOther = "";
+        identity.bankName = "";
+        identity.tngAccount = "";
+        identity.alipayAccount = "";
+        identity.paymentPhone = "";
+      }
+    }
+    saveDraft({
+      data: data,
+      identity: identity,
+      uploads: uploads,
+      certification_method: identity.authMode || identity.certification_method || (readDraft().certification_method || ""),
+    });
+  }
+  function storagePayloadForSubmit(asset) {
+    var a = normalizeUploadAsset(asset);
+    function stripStoragePrefix(s) {
+      var t = String(s || "").trim();
+      if (/^storage:\/\//i.test(t)) return t.replace(/^storage:\/\/[^/]+\//i, "");
+      return t;
+    }
+    if (a.path && !/^https?:\/\//i.test(a.path) && !/^data:/i.test(a.path) && !/^blob:/i.test(a.path)) {
+      return stripStoragePrefix(a.path);
+    }
+    if (a.url && /^storage:\/\//i.test(a.url)) return stripStoragePrefix(a.url);
+    if (a.url && /^data:/i.test(a.url)) return a.url;
+    // Prefer durable path over ephemeral signed http URL (never submit signed URL alone).
+    return stripStoragePrefix(a.path) || "";
+  }
+  function needsMediaUpload(asset) {
+    var a = normalizeUploadAsset(asset);
+    return !!(a.url && /^data:/i.test(a.url));
+  }
+  function validateBeforeSubmit() {
+    var missing = [];
+    for (var i = 0; i < 3; i++) {
+      missingForStep(i, readDraft()).forEach(function (item) {
+        missing.push(stepLabels[i] + "：" + item);
+      });
+    }
+    return missing;
+  }
+  var remoteRuleCache = null;
+  var remoteStatus = null;
+  var remoteConfigLoaded = false;
+  var initLoading = true;
+  var initLoadError = "";
+  var initStarted = false;
+  var SCROLL_KEY = "mcjCompanionApplyScroll.v1";
+
+  function statusLabelOf(code) {
+    var key = String(code || "").toLowerCase().trim();
+    var map = {
+      draft: "草稿中",
+      pending: "审核中",
+      review: "审核中",
+      submitted: "审核中",
+      resubmit: "需要补资料",
+      need_more: "需要补资料",
+      approved: "审核通过",
+      verified: "审核通过",
+      passed: "审核通过",
+      rejected: "审核未通过",
+    };
+    if (map[key]) return map[key];
+    // Never leak raw English DB enums (draft/pending/…) to the UI.
+    if (!key || /^[a-z][a-z0-9_]*$/i.test(key)) return "草稿中";
+    return String(code);
+  }
+  function saveApplyScroll() {
+    try {
+      sessionStorage.setItem(SCROLL_KEY, String(window.scrollY || window.pageYOffset || 0));
+    } catch (e) {}
+  }
+  function restoreApplyScroll() {
+    var y = 0;
+    try { y = Number(sessionStorage.getItem(SCROLL_KEY) || 0) || 0; } catch (e) { y = 0; }
+    if (y <= 0) return;
+    requestAnimationFrame(function () {
+      try { window.scrollTo(0, y); } catch (e) {}
+      setTimeout(function () {
+        try { window.scrollTo(0, y); } catch (e2) {}
+      }, 40);
+    });
+  }
+  function loadingBannerHtml() {
+    if (initLoadError) {
+      return '<div class="apply-status-note apply-load-error" role="alert">资料加载失败，请重试 <button type="button" class="apply-btn small" data-apply-retry>重试</button></div>';
+    }
+    if (initLoading) {
+      return '<div class="apply-status-note apply-load-pending" aria-live="polite">正在加载申请资料…</div>';
+    }
+    return "";
+  }
+  function loadRemoteApplyConfig() {
+    return fetch("/api/platform/content?types=player_rules,voice_types,player_deposit_settings", {
+      headers: { Accept: "application/json" },
+      cache: "no-store",
+    })
+      .then(function (res) {
+        if (!res.ok) throw new Error("制度内容请求失败");
+        return res.json().catch(function () { throw new Error("制度内容解析失败"); });
+      })
+      .then(function (result) {
+        var byType = (result && result.byType) || {};
+        var rules = byType.player_rules || [];
+        var published = rules
+          .map(function (item) {
+            var d = Object.assign({}, item.published || {}, item.draft || {}, item);
+            var body = String(d.body || d.content || "").trim();
+            return {
+              id: item.id || d.id || "",
+              slug: item.slug || d.slug || "",
+              title: d.title || item.title || "陪玩制度",
+              subtitle: d.subtitle || d.versionNote || "",
+              body: body,
+              notes: d.notes || "",
+              penaltyRules: d.penaltyRules || "",
+              depositRules: d.depositRules || "",
+              version: d.version || d.versionNote || "1.0",
+              status: item.status === "published" || item.enabled !== false || d.enabled !== false ? "published" : "draft",
+              enabled: item.enabled !== false,
+              sort: Number(d.sort || item.sort || 0),
+              forceConfirm: d.forceConfirm === true || d.requiresAck === true,
+              updatedAt: item.updated_at || "",
+            };
+          })
+          .filter(function (r) { return r.status === "published" && r.enabled !== false && r.body; });
+        function preferApplyRule(list) {
+          if (!list.length) return null;
+          var bySlug = list.find(function (r) {
+            var slug = String(r.slug || "").toLowerCase();
+            var id = String(r.id || "");
+            return id === "pc-player-rules-default" || slug === "apply-step1" || slug === "apply" || /apply|申请/.test(slug);
+          });
+          if (bySlug) return bySlug;
+          var byTitle = list.find(function (r) {
+            var t = String(r.title || "");
+            return /陪玩制度|陪玩规则|申请/.test(t) && !/俱乐部等级|平台使用/.test(t);
+          });
+          if (byTitle) return byTitle;
+          var nonBoss = list.filter(function (r) {
+            return !r.forceConfirm && !/俱乐部等级|平台使用/.test(String(r.title || ""));
+          });
+          var pool = nonBoss.length ? nonBoss : list;
+          return pool.slice().sort(function (a, b) { return Number(b.sort || 0) - Number(a.sort || 0); })[0] || null;
+        }
+        var selected = preferApplyRule(published);
+        if (selected) {
+          remoteRuleCache = selected;
+          var agr = (readDraft().rulesAgreement || {});
+          if (agr.accepted && (String(agr.ruleId || "") !== String(selected.id) || String(agr.version || "") !== String(selected.version || ""))) {
+            saveDraft({
+              rulesAgreement: {
+                accepted: false,
+                version: selected.version,
+                ruleId: selected.id,
+                agreedAt: "",
+                applicantId: applicantId(),
+                device: navigator.userAgent,
+              },
+            });
+          }
+        } else {
+          remoteRuleCache = null;
+        }
+        var voices = byType.voice_types || [];
+        if (voices.length) {
+          var db = readDB();
+          db.voiceTypes = voices.map(function (item, index) {
+            var d = Object.assign({}, item.published || {}, item.draft || {}, item);
+            return { id: item.id || "VOICE-" + index, name: d.name || d.title || item.title, sort: Number(d.sort || index + 1), enabled: item.enabled !== false };
+          }).filter(function (v) { return v.name; });
+          writeDB(db);
+        }
+        var deposits = byType.player_deposit_settings || [];
+        if (deposits[0]) {
+          var dep = Object.assign({}, deposits[0].published || {}, deposits[0].draft || {}, deposits[0]);
+          var db2 = readDB();
+          db2.depositSettings = Object.assign(defaultDeposit(), {
+            amount: Number(dep.amount || 100),
+            currency: dep.currency || "MYR",
+            description: dep.paymentDescription || dep.description || defaultDeposit().description,
+            refundRule: dep.refundDescription || dep.refundTerms || defaultDeposit().refundRule,
+            methods: Array.isArray(dep.paymentMethod) ? dep.paymentMethod : String(dep.paymentMethod || "TNG,DuitNow,Alipay").split(/[,，]/).map(function (s) { return s.trim(); }).filter(Boolean),
+            payeeName: dep.payeeName || dep.accountName || dep.receiverName || "",
+            payeeAccount: dep.payeeAccount || dep.accountNumber || dep.receiverAccount || "",
+            payeeBank: dep.payeeBank || dep.bankName || "",
+            payeeNote: dep.payeeNote || dep.paymentNote || "",
+          });
+          writeDB(db2);
+          syncPlatform(db2);
+        }
+        remoteConfigLoaded = true;
+      });
+  }
+  function submitApplication() {
+    var missing = validateBeforeSubmit();
+    if (missing.length) { showApplyTip("还有以下资料没有完成：\n" + missing.join("\n")); return; }
+    var draft = readDraft();
+    var user = currentUser();
+    var identity = draft.identity || {};
+    var uploads = draft.uploads || {};
+    var voice = draft.voice || {};
+    var mainGames = draft.data.mainGames || [];
+    var modes = draft.data.modes || [];
+    var chain = Promise.resolve();
+    var authMode = String(identity.authMode || "").trim();
+    chain = chain.then(function () {
+      return postCompanion("submit_application", {
+        main_service: (mainGames[0] || ""),
+        main_game: mainGames.join("、"),
+        service_type: modes.join(","),
+        rank: draft.data.rank || "",
+        position: (draft.data.positions || [])[0] || "",
+        voice_type: draft.data.voiceType || "",
+        schedule: [draft.data.onlineStart, draft.data.onlineEnd].filter(Boolean).join(" - "),
+        bio: draft.data.intro || draft.data.bio || "",
+        description: draft.data.intro || draft.data.bio || "",
+        // Optional admin-only remark — never send self-intro as application note.
+        note: draft.data.remark || draft.data.applicationRemark || "",
+        tags: (draft.data.personalTags || []).join(","),
+        // Pricing V2 P2: never submit applicant price fields
+        nickname: draft.data.nickname || "",
+        age: draft.data.age || "",
+        gender: draft.data.gender || "",
+        region: draft.data.region || "",
+        phone: draft.data.phone || "",
+        email: draft.data.email || "",
+        contact_public: draft.data.contactPublic || "",
+        auth_mode: authMode,
+        credential_mode: authMode,
+        certification_method: authMode,
+      });
+    });
+    chain = chain.then(function () {
+      if (authMode !== "id_card") return null;
+      var pay = settlementPayloadFromIdentity(identity);
+      return postCompanion("submit_verification", {
+        real_name: identity.realName || identity.name || draft.data.realName || user.name || "",
+        identity_no: identity.idNumber || identity.identityNo || "",
+        id_front: storagePayloadForSubmit(identity.idFront),
+        id_back: storagePayloadForSubmit(identity.idBack),
+        id_handheld: storagePayloadForSubmit(identity.idHandheld),
+        bank_name: pay.bank_name,
+        account_name: pay.account_name,
+        bank_account: pay.bank_account,
+        tng_account: pay.tng_account,
+        alipay_account: pay.alipay_account,
+        payment_method: pay.payment_method,
+        payment_account: pay.payment_account,
+        payment_phone: pay.payment_phone,
+        method: pay.method,
+        settlementMethod: pay.settlementMethod,
+        settlementBank: pay.settlementBank,
+        phone: draft.data.phone || "",
+      });
+    });
+    if (needsMediaUpload(uploads.avatar)) {
+      chain = chain.then(function () {
+        return postCompanion("upload_media", { media_type: "avatar", data_url: normalizeUploadAsset(uploads.avatar).url, filename: "avatar.jpg" });
+      });
+    }
+    var photoList = photoListOf(uploads);
+    photoList.forEach(function (img) {
+      if (!needsMediaUpload(img)) return;
+      chain = chain.then(function () {
+        return postCompanion("upload_media", { media_type: "gallery", data_url: normalizeUploadAsset(img).url, filename: "gallery.jpg" });
+      });
+    });
+    recordsListOf(uploads).forEach(function (rec) {
+      if (!needsMediaUpload(rec)) return;
+      chain = chain.then(function () {
+        return postCompanion("upload_media", { media_type: "achievement", data_url: normalizeUploadAsset(rec).url, filename: "records.jpg" });
+      });
+    });
+    if (needsMediaUpload(voice.url) || (voice.url && /^data:/i.test(String(voice.url)))) {
+      chain = chain.then(function () {
+        return postCompanion("upload_media", {
+          media_type: "voice",
+          data_url: voice.url,
+          filename: "voice.webm",
+          duration_seconds: voice.seconds || voice.duration || null,
+        });
+      });
+    }
+    if (authMode === "deposit" && (hasDurableUpload(identity.depositProof) || needsMediaUpload(identity.depositProof))) {
+      chain = chain.then(function () {
+        var proof = storagePayloadForSubmit(identity.depositProof);
+        var pay = settlementPayloadFromIdentity(identity);
+        return postCompanion("submit_deposit_proof", {
+          paid_amount: (remoteDepositPay.amountRm || depositSettings().amount || 100),
+          payment_method: identity.depositMethod || identity.depositChannelId || "",
+          channel_id: identity.depositChannelId || identity.depositMethod || "",
+          channelId: identity.depositChannelId || identity.depositMethod || "",
+          proof_url: proof || "",
+          remark: "陪玩申请一并提交",
+          settlementMethod: pay.settlementMethod,
+          settlementName: pay.settlementName,
+          settlementAccount: pay.settlementAccount,
+          settlementBank: pay.settlementBank,
+          bank_name: pay.bank_name,
+          account_name: pay.account_name,
+          bank_account: pay.bank_account,
+          tng_account: pay.tng_account,
+          alipay_account: pay.alipay_account,
+          payment_account: pay.payment_account,
+          payment_phone: pay.payment_phone,
+          method: pay.method,
+        });
+      });
+    }
+    chain
+      .then(function () {
+        // keep local mirror for progress pages that still read localStorage
+        var db = readDB();
+        var id = "APP-" + Date.now();
+        var app = {
+          id: id,
+          applicantId: applicantId(),
+          accountName: user.name,
+          data: draft.data,
+          status: "review",
+          createdAt: now(),
+          synced: true,
+        };
+        db.companionApplications = (db.companionApplications || []).filter(function (x) { return x.applicantId !== app.applicantId; });
+        db.companionApplications.unshift(app);
+        writeDB(db);
+        syncPlatform(db);
+        // Formal submit: clear editable local draft so it won't look like a parallel draft.
+        remoteStatus = { applicationStatus: "pending", rejectReason: "" };
+        try {
+          saveDraft({
+            submitted: true,
+            status: "pending",
+            submittedAt: now(),
+            applicationId: id,
+            step: 3,
+          });
+        } catch (e) { /* ignore */ }
+        showSuccess(id);
+      })
+      .catch(function (err) {
+        showApplyTip(err.message || "提交失败。请先注册/登录陪玩端后再提交申请，以便写入数据库。");
+      });
+  }
+  function showSuccess(applicationId) {
+    // Land on STEP4 result page (no more form). Keep draft summary for display.
+    try {
+      var d = readDraft();
+      if (!d.applicationId && applicationId) d.applicationId = applicationId;
+      d.submitted = true;
+      d.status = "pending";
+      d.step = 3;
+      if (!d.submittedAt) d.submittedAt = now();
+      writeDraftRecord(d);
+    } catch (e) {}
+    render(3, { alignStepNav: true });
+    try { window.scrollTo(0, 0); } catch (e2) {}
+  }
+  function hasPlayableVoiceDraft() {
+    var v = readDraft().voice || {};
+    return !!(liveVoiceObjectUrl || liveVoiceBlob || hasDurableUpload(v) || hasDurableUpload(v.url) || hasDurableUpload(v.fileUpload));
+  }
+  /** Keep ▶ + label on one horizontal line; modes: idle | playing | paused */
+  function setVoicePlayUi(mode) {
+    var icon = document.querySelector("#companionApplyRoot [data-voice-play-icon]");
+    var label = document.querySelector("#companionApplyRoot [data-voice-play-label]");
+    var btn = document.querySelector("#companionApplyRoot [data-record-play]");
+    var next =
+      mode === "playing"
+        ? { icon: "⏸", label: "暂停试听" }
+        : mode === "paused"
+          ? { icon: "▶", label: "继续试听" }
+          : { icon: "▶", label: "播放试听" };
+    if (icon) icon.textContent = next.icon;
+    if (label) label.textContent = next.label;
+    if (btn) btn.setAttribute("aria-label", next.label);
+  }
+  function markVoiceListenedQuiet() {
+    var draft = readDraft();
+    draft.voice = draft.voice || {};
+    if (draft.voice.listened) return;
+    draft.voice.listened = true;
+    writeDraftRecord(draft);
+  }
+  function currentApplyStep() {
+    var root = document.getElementById("companionApplyRoot");
+    if (root && root.dataset && root.dataset.step != null && root.dataset.step !== "") {
+      return Number(root.dataset.step);
+    }
+    return Number((readDraft().step != null ? readDraft().step : 2) || 2);
+  }
+  function refreshVoiceUi(opts) {
+    opts = opts || {};
+    render(currentApplyStep(), opts);
+    if (opts.scrollVoice) {
+      try {
+        document.getElementById("applyVoicePanel")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      } catch (e) {}
+    }
+  }
+  function setVoiceState(text, seconds) {
+    var state = document.getElementById("voiceState");
+    var timer = document.getElementById("voiceTimer");
+    var status = document.querySelector("[data-voice-status]");
+    var clock =
+      seconds != null
+        ? String(Math.floor(seconds / 60)).padStart(2, "0") +
+          ":" +
+          String(Math.floor(seconds % 60)).padStart(2, "0")
+        : "";
+    // Left clock always shows elapsed time while recording.
+    if (state && clock) state.textContent = clock;
+    else if (state && text) state.textContent = text;
+    if (timer && clock) timer.textContent = clock;
+    if (status && text && /录音|请求|停止|保存|未录|待确认|已录|已确认|不足/.test(String(text))) {
+      status.textContent = text;
+      if (/录音中|请求|停止/.test(String(text))) {
+        status.className = "voice-card-status is-live";
+      } else if (/待确认/.test(String(text))) {
+        status.className = "voice-card-status is-live";
+      } else if (/不足/.test(String(text))) {
+        status.className = "voice-card-status is-warn";
+      } else if (/已确认|已录/.test(String(text))) {
+        status.className = "voice-card-status is-done";
+      }
+    }
+  }
+  function releaseMicTracks() {
+    try {
+      if (activeMediaStream) {
+        activeMediaStream.getTracks().forEach(function (t) {
+          try {
+            t.stop();
+          } catch (e) {}
+        });
+      }
+    } catch (e2) {}
+    activeMediaStream = null;
+    try {
+      if (recorder && recorder.stream) {
+        recorder.stream.getTracks().forEach(function (t) {
+          try {
+            t.stop();
+          } catch (e3) {}
+        });
+      }
+    } catch (e4) {}
+  }
+  function clearRecordTimer() {
+    if (recordTimer) {
+      clearInterval(recordTimer);
+      recordTimer = null;
+    }
+  }
+  function clearStopWatchdog() {
+    if (stopWatchdogTimer) {
+      clearTimeout(stopWatchdogTimer);
+      stopWatchdogTimer = null;
+    }
+  }
+  function withTimeout(promise, ms, fallbackValue) {
+    return new Promise(function (resolve) {
+      var settled = false;
+      var timer = setTimeout(function () {
+        if (settled) return;
+        settled = true;
+        resolve(fallbackValue);
+      }, ms);
+      Promise.resolve(promise)
+        .then(function (v) {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          resolve(v);
+        })
+        .catch(function () {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          resolve(fallbackValue);
+        });
+    });
+  }
+  function pickRecorderMime() {
+    var ua = String(navigator.userAgent || "");
+    var isApple =
+      /iPhone|iPad|iPod|Macintosh/i.test(ua) &&
+      /Safari/i.test(ua) &&
+      !/Chrom(e|ium)|CriOS|Edg|Android/i.test(ua);
+    var candidates = isApple
+      ? ["audio/mp4", "audio/aac", "audio/wav"]
+      : ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus", "audio/mp4", "audio/aac"];
+    for (var i = 0; i < candidates.length; i += 1) {
+      try {
+        if (window.MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(candidates[i])) {
+          return candidates[i];
+        }
+      } catch (err) {}
+    }
+    return "";
+  }
+  function friendlyMicError(err) {
+    var name = String((err && err.name) || "");
+    var msg = String((err && err.message) || "");
+    if (/NotAllowed|PermissionDenied|SecurityError/i.test(name) || /permission|denied|NotAllowed/i.test(msg)) {
+      return "无法使用麦克风，请在浏览器设置中允许妙脆角访问麦克风。";
+    }
+    if (/NotFound|DevicesNotFound/i.test(name)) {
+      return "未检测到麦克风。请检查设备，或改用下方「上传已有音频」。";
+    }
+    if (/NotReadable|TrackStart|AbortError/i.test(name)) {
+      return "麦克风被占用或暂时无法使用，请关闭其他录音应用后重试。";
+    }
+    if (/NotSupported|TypeError/i.test(name)) {
+      return "当前浏览器不支持网页录音。请改用下方「上传已有音频」，或更换 Safari / Chrome。";
+    }
+    return "无法开启麦克风，请允许权限后重试，或改用「上传已有音频」。";
+  }
+  function ensureVoiceReleaseHooks() {
+    if (voiceReleaseBound) return;
+    voiceReleaseBound = true;
+    window.addEventListener("pagehide", function () {
+      // Do NOT abort a user-initiated stop/finalize — Safari often fires pagehide
+      // around mic permission / UI reflow and was wiping pending_confirm to idle.
+      if (
+        voicePhase === VOICE_PHASE.STOPPING ||
+        voicePhase === VOICE_PHASE.RECORDED ||
+        voicePhase === VOICE_PHASE.UPLOADING ||
+        voicePhase === VOICE_PHASE.TOO_SHORT
+      ) {
+        return;
+      }
+      if (voicePhase === VOICE_PHASE.RECORDING) {
+        // Prefer finalize → pending_confirm over silent wipe (ghost 00:06 + 未录制).
+        try {
+          stopRecording();
+        } catch (eStopHide) {
+          abortVoiceRecording({ silent: false, preserveElapsed: true });
+        }
+        return;
+      }
+      if (voicePhase === VOICE_PHASE.REQUESTING) {
+        abortVoiceRecording({ silent: false });
+      }
+    });
+    document.addEventListener("visibilitychange", function () {
+      // Keep recording if user briefly switches apps; only hard-release on pagehide/unmount.
+    });
+  }
+  /** Hard abort: stop recorder + mic + timer. Used on leave / reset. */
+  function abortVoiceRecording(opts) {
+    opts = opts || {};
+    // If stop already in progress, never suppress the save/finalize path.
+    if (voicePhase === VOICE_PHASE.STOPPING || voicePhase === VOICE_PHASE.RECORDED) {
+      return;
+    }
+    var elapsed = recordStartedAt ? Math.max(0, Math.round((Date.now() - recordStartedAt) / 1000)) : 0;
+    clearRecordTimer();
+    clearStopWatchdog();
+    // When we already have chunks, let onstop finalize instead of suppress→idle.
+    if (opts.preserveElapsed && chunks && chunks.length && recorder) {
+      suppressVoiceSave = false;
+      voicePhase = VOICE_PHASE.STOPPING;
+      document.body.classList.remove("voice-recording-active");
+      var recKeep = recorder;
+      try {
+        if (typeof recKeep.requestData === "function" && recKeep.state === "recording") {
+          recKeep.requestData();
+        }
+      } catch (eReqAbort) {}
+      try {
+        if (recKeep.state && recKeep.state !== "inactive") recKeep.stop();
+      } catch (eStopAbort) {
+        suppressVoiceSave = true;
+        voicePhase = VOICE_PHASE.IDLE;
+        recorder = null;
+        releaseMicTracks();
+        refreshVoiceUi();
+      }
+      return;
+    }
+    suppressVoiceSave = true;
+    document.body.classList.remove("voice-recording-active");
+    var rec = recorder;
+    recorder = null;
+    if (rec && rec.state && rec.state !== "inactive") {
+      try {
+        rec.stop();
+      } catch (e) {}
+    }
+    releaseMicTracks();
+    // Never leave idle + orphan duration clock (setVoiceState ghost).
+    if (elapsed > 0 && elapsed < MIN_VOICE_SECONDS) {
+      suppressVoiceSave = false;
+      voicePhase = VOICE_PHASE.TOO_SHORT;
+      saveDraft({
+        voice: {
+          status: "时长不足，请重录",
+          url: "",
+          duration: elapsed,
+          confirmed: false,
+          listened: false,
+          uploaded: false,
+          hasLocal: false,
+          tooShort: true,
+        },
+      });
+      showApplyTip("录音至少需要 10 秒，请重新录制。");
+      refreshVoiceUi({ scrollVoice: true });
+      return;
+    }
+    voicePhase = VOICE_PHASE.IDLE;
+    if (!opts.silent) refreshVoiceUi();
+    else refreshVoiceUi();
+  }
+  /**
+   * Stop → pending_confirm. Always keep blob + preview URL.
+   * Short takes (<10s) stay pending with tooShort + disabled confirm.
+   */
+  async function enterPendingConfirmFromBlob(blob, duration, mimeType) {
+    duration = Math.max(0, Math.round(Number(duration) || 0));
+    var short = duration < MIN_VOICE_SECONDS;
+    var qualityFallback = {
+      duration: duration,
+      durationOk: !short && duration <= MAX_VOICE_SECONDS,
+      volumeOk: true,
+      humanVoice: true,
+      notBlank: true,
+      rms: 0,
+      peak: 0,
+      silenceRatio: 0,
+      waveform: [],
+      reasons: short ? ["录音至少需要 10 秒，请重新录制。"] : [],
+      passed: !short && duration <= MAX_VOICE_SECONDS,
+    };
+    var quality = await withTimeout(analyzeVoiceBlob(blob, duration), 2500, qualityFallback);
+    quality.durationOk = duration >= MIN_VOICE_SECONDS && duration <= MAX_VOICE_SECONDS;
+    quality.passed = !!quality.durationOk;
+    if (short && (!quality.reasons || !quality.reasons.length)) {
+      quality.reasons = ["录音至少需要 10 秒，请重新录制。"];
+    }
+    if (liveVoiceObjectUrl) {
+      try {
+        URL.revokeObjectURL(liveVoiceObjectUrl);
+      } catch (e) {}
+    }
+    liveVoiceBlob = blob;
+    liveVoiceObjectUrl = URL.createObjectURL(blob);
+    voicePhase = VOICE_PHASE.RECORDED;
+    var draftAfterRec = readDraft();
+    draftAfterRec.voice = {
+      status: short ? "不足10秒" : "待确认",
+      url: "",
+      path: "",
+      bucket: "",
+      hasLocal: true,
+      duration: Math.max(duration, Number(quality.duration) || 0),
+      confirmed: false,
+      listened: false,
+      uploaded: false,
+      uploadedAt: "",
+      tooShort: short,
+      mimeType: blob.type || mimeType || "",
+      size: blob.size,
+      quality: quality,
+    };
+    writeDraftRecord(draftAfterRec);
+    setVoiceState(short ? "不足10秒" : "待确认", draftAfterRec.voice.duration);
+    if (short) showApplyTip("录音至少需要 10 秒，请重新录制。");
+    refreshVoiceUi({ scrollVoice: true });
+  }
+  async function startRecording() {
+    ensureVoiceReleaseHooks();
+    if (
+      voicePhase === VOICE_PHASE.RECORDING ||
+      voicePhase === VOICE_PHASE.STOPPING ||
+      voicePhase === VOICE_PHASE.REQUESTING
+    ) {
+      return;
+    }
+    if (recorder && recorder.state && recorder.state !== "inactive") {
+      return;
+    }
+    if (!navigator.mediaDevices || !window.MediaRecorder) {
+      voicePhase = VOICE_PHASE.ERROR;
+      showApplyTip("当前浏览器不支持网页录音。请改用下方「上传已有音频」，或更换手机 Chrome / Safari 后重试。");
+      try {
+        document.getElementById("applyVoicePanel")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      } catch (e) {}
+      return;
+    }
+
+    voicePhase = VOICE_PHASE.REQUESTING;
+    chunks = [];
+    suppressVoiceSave = false;
+    clearStopWatchdog();
+    // Clear previous too-short / idle leftovers so UI doesn't stick on「不足10秒」.
+    try {
+      var draftStart = readDraft();
+      if (draftStart.voice && (draftStart.voice.tooShort || draftStart.voice.hasLocal)) {
+        draftStart.voice = Object.assign({}, draftStart.voice, {
+          tooShort: false,
+          hasLocal: false,
+          status: "请求麦克风…",
+          confirmed: false,
+          uploaded: false,
+        });
+        writeDraftRecord(draftStart);
+      }
+    } catch (eDraft) {}
+    refreshVoiceUi({ scrollVoice: true });
+
+    var stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (e) {
+      voicePhase = VOICE_PHASE.ERROR;
+      releaseMicTracks();
+      showApplyTip(friendlyMicError(e));
+      refreshVoiceUi({ scrollVoice: true });
+      return;
+    }
+
+    // User may have navigated away while permission dialog was open.
+    if (!document.getElementById("companionApplyRoot")) {
+      try {
+        stream.getTracks().forEach(function (t) {
+          t.stop();
+        });
+      } catch (eLeave) {}
+      voicePhase = VOICE_PHASE.IDLE;
+      return;
+    }
+
+    activeMediaStream = stream;
+    var mime = pickRecorderMime();
+    try {
+      recorder = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
+    } catch (errCreate) {
+      try {
+        recorder = new MediaRecorder(stream);
+      } catch (errCreate2) {
+        voicePhase = VOICE_PHASE.ERROR;
+        releaseMicTracks();
+        showApplyTip(friendlyMicError(errCreate2));
+        refreshVoiceUi({ scrollVoice: true });
+        return;
+      }
+    }
+
+    var thisStopSeq = ++voiceStopSeq;
+    recorder.ondataavailable = function (e) {
+      if (e.data && e.data.size) chunks.push(e.data);
+    };
+    recorder.onerror = function () {
+      showApplyTip("录音出错，请重试。");
+      abortVoiceRecording({ silent: false });
+    };
+    recorder.onstop = async function () {
+      if (thisStopSeq !== voiceStopSeq) return;
+      voiceStopSeq += 1; // invalidate duplicate onstop / watchdog
+      clearRecordTimer();
+      clearStopWatchdog();
+      releaseMicTracks();
+      var stoppedRec = recorder;
+      recorder = null;
+      document.body.classList.remove("voice-recording-active");
+
+      if (suppressVoiceSave) {
+        suppressVoiceSave = false;
+        var abortedElapsed = recordStartedAt
+          ? Math.max(0, Math.round((Date.now() - recordStartedAt) / 1000))
+          : 0;
+        var abortedBlob = chunks.length ? new Blob(chunks, { type: mime || "audio/webm" }) : null;
+        chunks = [];
+        if (abortedBlob && abortedBlob.size && abortedElapsed > 0) {
+          // Treat interrupted stop as a normal finalize — never idle+duration ghost.
+          await enterPendingConfirmFromBlob(abortedBlob, abortedElapsed, mime || "audio/webm");
+          return;
+        }
+        if (abortedElapsed > 0 && abortedElapsed < MIN_VOICE_SECONDS) {
+          voicePhase = VOICE_PHASE.TOO_SHORT;
+          saveDraft({
+            voice: {
+              status: "时长不足，请重录",
+              url: "",
+              duration: abortedElapsed,
+              confirmed: false,
+              listened: false,
+              uploaded: false,
+              hasLocal: false,
+              tooShort: true,
+            },
+          });
+          showApplyTip("录音至少需要 10 秒，请重新录制。");
+          refreshVoiceUi({ scrollVoice: true });
+          return;
+        }
+        voicePhase = VOICE_PHASE.IDLE;
+        refreshVoiceUi();
+        return;
+      }
+
+      var duration = Math.max(0, Math.round((Date.now() - recordStartedAt) / 1000));
+      var mimeType =
+        (stoppedRec && stoppedRec.mimeType) ||
+        (chunks[0] && chunks[0].type) ||
+        mime ||
+        "audio/webm";
+      var blob = new Blob(chunks, { type: mimeType });
+      chunks = [];
+
+      if (!blob.size) {
+        // Safari/iOS can deliver empty chunks when stop races pagehide or start()-without-timeslice.
+        // Never leave orphan duration + idle「未录制」.
+        if (duration > 0) {
+          voicePhase = VOICE_PHASE.TOO_SHORT;
+          liveVoiceBlob = null;
+          if (liveVoiceObjectUrl) {
+            try {
+              URL.revokeObjectURL(liveVoiceObjectUrl);
+            } catch (eEmptyRev) {}
+          }
+          liveVoiceObjectUrl = "";
+          saveDraft({
+            voice: {
+              status: duration < MIN_VOICE_SECONDS ? "时长不足，请重录" : "录音失败（无声音数据），请重录",
+              url: "",
+              duration: duration,
+              confirmed: false,
+              listened: false,
+              uploaded: false,
+              hasLocal: false,
+              tooShort: duration < MIN_VOICE_SECONDS,
+            },
+          });
+          showApplyTip(
+            duration < MIN_VOICE_SECONDS
+              ? "录音至少需要 10 秒，请重新录制。"
+              : "录音失败（无声音数据），请重新录制。"
+          );
+          refreshVoiceUi({ scrollVoice: true });
+          return;
+        }
+        voicePhase = VOICE_PHASE.ERROR;
+        saveDraft({
+          voice: {
+            status: "录音失败（无声音数据），请重录",
+            url: "",
+            duration: 0,
+            confirmed: false,
+            listened: false,
+            uploaded: false,
+            hasLocal: false,
+            tooShort: false,
+          },
+        });
+        setVoiceState("录音失败，请重录", 0);
+        showApplyTip("录音失败（无声音数据），请重新录制。");
+        refreshVoiceUi({ scrollVoice: true });
+        return;
+      }
+
+      await enterPendingConfirmFromBlob(blob, duration, mimeType);
+    };
+
+    recordStartedAt = Date.now();
+    try {
+      // Always use a short timeslice so stop always has chunks (Safari empty-Blob
+      // on start()-without-timeslice previously caused idle + duration ghost UI).
+      try {
+        recorder.start(250);
+      } catch (eSlice) {
+        recorder.start();
+      }
+    } catch (eStart) {
+      try {
+        recorder.start();
+      } catch (eStart2) {
+        voicePhase = VOICE_PHASE.ERROR;
+        releaseMicTracks();
+        recorder = null;
+        showApplyTip(friendlyMicError(eStart2));
+        refreshVoiceUi({ scrollVoice: true });
+        return;
+      }
+    }
+
+    voicePhase = VOICE_PHASE.RECORDING;
+    document.body.classList.add("voice-recording-active");
+    // CRITICAL: re-render so [data-record-stop] exists (previously missing →无法停止).
+    refreshVoiceUi({ scrollVoice: true });
+    setVoiceState("录音中", 0);
+    clearRecordTimer();
+    recordTimer = setInterval(function () {
+      if (voicePhase !== VOICE_PHASE.RECORDING) {
+        clearRecordTimer();
+        return;
+      }
+      var sec = Math.round((Date.now() - recordStartedAt) / 1000);
+      setVoiceState("录音中", sec);
+      if (sec >= MAX_VOICE_SECONDS) stopRecording();
+    }, 250);
+  }
+  function blobToDataURL(blob) {
+    return new Promise(function (resolve) {
+      var reader = new FileReader();
+      reader.onload = function () {
+        resolve(String(reader.result || ""));
+      };
+      reader.readAsDataURL(blob);
+    });
+  }
+  async function analyzeVoiceBlob(blob, fallbackDuration) {
+    var result = {
+      duration: fallbackDuration,
+      durationOk: fallbackDuration >= MIN_VOICE_SECONDS && fallbackDuration <= MAX_VOICE_SECONDS,
+      volumeOk: false,
+      humanVoice: false,
+      notBlank: false,
+      rms: 0,
+      peak: 0,
+      silenceRatio: 1,
+      waveform: [],
+      reasons: [],
+    };
+    try {
+      var audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      var buffer = await blob.arrayBuffer();
+      var decoded = await audioCtx.decodeAudioData(buffer.slice(0));
+      var channel = decoded.getChannelData(0);
+      var total = channel.length || 1;
+      var sum = 0;
+      var peak = 0;
+      var silent = 0;
+      var bars = 24;
+      var step = Math.max(1, Math.floor(total / bars));
+      for (var i = 0; i < total; i++) {
+        var abs = Math.abs(channel[i]);
+        sum += abs * abs;
+        if (abs > peak) peak = abs;
+        if (abs < 0.012) silent++;
+      }
+      for (var b = 0; b < bars; b++) {
+        var local = 0;
+        var count = 0;
+        for (var j = b * step; j < Math.min(total, (b + 1) * step); j++) {
+          local += Math.abs(channel[j]);
+          count++;
+        }
+        result.waveform.push(Math.round(Math.max(12, Math.min(56, (local / Math.max(1, count)) * 420))));
+      }
+      result.duration = Math.round(decoded.duration || fallbackDuration);
+      result.durationOk = result.duration >= MIN_VOICE_SECONDS && result.duration <= MAX_VOICE_SECONDS;
+      result.rms = Math.sqrt(sum / total);
+      result.peak = peak;
+      result.silenceRatio = silent / total;
+      result.volumeOk = result.rms >= 0.018 && peak >= 0.08;
+      result.notBlank = result.silenceRatio < 0.82;
+      result.humanVoice = result.volumeOk && result.notBlank && blob.size > 8000;
+      if (audioCtx.close) audioCtx.close();
+    } catch (e) {
+      result.volumeOk = blob.size > 12000;
+      result.notBlank = blob.size > 12000;
+      result.humanVoice = blob.size > 12000;
+      result.waveform = [18, 30, 44, 24, 38, 28, 48, 34, 42, 24, 36, 44];
+    }
+    if (!result.durationOk) result.reasons.push("录音时长需要保持在 10 到 60 秒之间。");
+    if (!result.humanVoice) result.reasons.push("没有检测到足够清晰的人声，请靠近麦克风重新录制。");
+    if (!result.volumeOk) result.reasons.push("音量偏低，请提高说话音量或检查麦克风。");
+    if (!result.notBlank) result.reasons.push("录音中静音比例过高，请重新录制完整自我介绍。");
+    result.passed = result.durationOk && result.humanVoice && result.volumeOk && result.notBlank;
+    return result;
+  }
+  function stopRecording() {
+    // Always allow stop — never block for min duration (validate after stop).
+    if (voicePhase === VOICE_PHASE.STOPPING) return;
+    if (
+      voicePhase !== VOICE_PHASE.RECORDING &&
+      !(recorder && recorder.state && recorder.state !== "inactive")
+    ) {
+      clearRecordTimer();
+      clearStopWatchdog();
+      releaseMicTracks();
+      voicePhase = VOICE_PHASE.IDLE;
+      document.body.classList.remove("voice-recording-active");
+      refreshVoiceUi();
+      return;
+    }
+
+    voicePhase = VOICE_PHASE.STOPPING;
+    clearRecordTimer();
+    document.body.classList.remove("voice-recording-active");
+    refreshVoiceUi();
+
+    var rec = recorder;
+    if (rec && rec.state && rec.state !== "inactive") {
+      try {
+        if (typeof rec.requestData === "function" && rec.state === "recording") {
+          try {
+            rec.requestData();
+          } catch (eReq) {}
+        }
+        rec.stop();
+      } catch (eStop) {
+        clearStopWatchdog();
+        releaseMicTracks();
+        recorder = null;
+        var failElapsed = recordStartedAt
+          ? Math.max(0, Math.round((Date.now() - recordStartedAt) / 1000))
+          : 0;
+        if (failElapsed > 0 && failElapsed < MIN_VOICE_SECONDS) {
+          voicePhase = VOICE_PHASE.TOO_SHORT;
+          saveDraft({
+            voice: {
+              status: "时长不足，请重录",
+              url: "",
+              duration: failElapsed,
+              confirmed: false,
+              listened: false,
+              uploaded: false,
+              hasLocal: false,
+              tooShort: true,
+            },
+          });
+          showApplyTip("录音至少需要 10 秒，请重新录制。");
+        } else {
+          voicePhase = VOICE_PHASE.IDLE;
+          showApplyTip("停止录音失败，请重试。");
+        }
+        refreshVoiceUi({ scrollVoice: true });
+        return;
+      }
+      // Safari/iOS occasionally never fires onstop — force finalize after 1.8s.
+      clearStopWatchdog();
+      stopWatchdogTimer = setTimeout(function () {
+        stopWatchdogTimer = null;
+        if (voicePhase !== VOICE_PHASE.STOPPING) return;
+        try {
+          if (typeof rec.requestData === "function" && rec.state === "recording") {
+            rec.requestData();
+          }
+        } catch (e2) {}
+        try {
+          if (rec.state && rec.state !== "inactive") rec.stop();
+        } catch (e3) {}
+        // If still stuck, synthesize onstop outcome from chunks.
+        if (voicePhase === VOICE_PHASE.STOPPING && recorder === rec) {
+          try {
+            if (typeof rec.onstop === "function") {
+              rec.onstop();
+            }
+          } catch (e4) {
+            releaseMicTracks();
+            recorder = null;
+            var wdElapsed = recordStartedAt
+              ? Math.max(0, Math.round((Date.now() - recordStartedAt) / 1000))
+              : 0;
+            if (wdElapsed > 0 && wdElapsed < MIN_VOICE_SECONDS) {
+              voicePhase = VOICE_PHASE.TOO_SHORT;
+              saveDraft({
+                voice: {
+                  status: "时长不足，请重录",
+                  url: "",
+                  duration: wdElapsed,
+                  confirmed: false,
+                  listened: false,
+                  uploaded: false,
+                  hasLocal: false,
+                  tooShort: true,
+                },
+              });
+              showApplyTip("录音至少需要 10 秒，请重新录制。");
+            } else {
+              voicePhase = VOICE_PHASE.IDLE;
+              showApplyTip("停止录音失败，请重试。");
+            }
+            refreshVoiceUi({ scrollVoice: true });
+          }
+        }
+      }, 1800);
+    } else {
+      clearStopWatchdog();
+      // Recorder already inactive — still finalize from any buffered chunks.
+      if (chunks && chunks.length) {
+        try {
+          if (typeof recorder !== "undefined" && recorder && typeof recorder.onstop === "function") {
+            recorder.onstop();
+            return;
+          }
+        } catch (eFinalize) {}
+      }
+      releaseMicTracks();
+      recorder = null;
+      var elapsed = recordStartedAt ? Math.max(0, Math.round((Date.now() - recordStartedAt) / 1000)) : 0;
+      if (elapsed > 0 && elapsed < MIN_VOICE_SECONDS) {
+        voicePhase = VOICE_PHASE.TOO_SHORT;
+        saveDraft({
+          voice: {
+            status: "时长不足，请重录",
+            url: "",
+            duration: elapsed,
+            confirmed: false,
+            listened: false,
+            uploaded: false,
+            hasLocal: false,
+            tooShort: true,
+          },
+        });
+        showApplyTip("录音至少需要 10 秒");
+      } else if (elapsed >= MIN_VOICE_SECONDS && chunks && chunks.length) {
+        try {
+          var orphanBlob = new Blob(chunks, { type: "audio/webm" });
+          chunks = [];
+          if (orphanBlob.size) {
+            enterPendingConfirmFromBlob(orphanBlob, elapsed, "audio/webm");
+            return;
+          }
+        } catch (eOrphan) {}
+        voicePhase = VOICE_PHASE.IDLE;
+      } else {
+        voicePhase = VOICE_PHASE.IDLE;
+      }
+      refreshVoiceUi({ scrollVoice: true });
+    }
+  }
+  function clearVoiceRecording() {
+    abortVoiceRecording({ silent: true });
+    chunks = [];
+    liveVoiceBlob = null;
+    if (liveVoiceObjectUrl) {
+      try {
+        URL.revokeObjectURL(liveVoiceObjectUrl);
+      } catch (e) {}
+      liveVoiceObjectUrl = "";
+    }
+    var draft = readDraft();
+    draft.voice = { status: "尚未录制", tooShort: false, duration: 0 };
+    writeDraftRecord(draft);
+    var db = readDB();
+    var app = (db.companionApplications || []).find(function (a) {
+      return a.applicantId === applicantId();
+    });
+    if (app && app.status !== "approved") {
+      app.voice = { status: "尚未录制" };
+      writeDB(db);
+      syncPlatform(db);
+    }
+    voicePhase = VOICE_PHASE.IDLE;
+    refreshVoiceUi({ scrollVoice: true });
+  }
+  function confirmVoice() {
+    try {
+      if (uploadBusy.voice) {
+        showApplyTip("录音正在保存中，请稍候…", "ok");
+        return;
+      }
+      var d = readDraft();
+      d.voice = d.voice || {};
+      var duration = Number((d.voice || {}).duration || 0);
+      if (duration < MIN_VOICE_SECONDS && !(liveVoiceBlob && duration >= MIN_VOICE_SECONDS)) {
+        // Prefer live blob duration if draft lagging.
+        if (liveVoiceBlob && recordStartedAt) {
+          duration = Math.max(duration, Math.round((Date.now() - recordStartedAt) / 1000));
+        }
+      }
+      if (duration < MIN_VOICE_SECONDS) {
+        showApplyTip("录音至少需要 10 秒，请重新录制。");
+        return;
+      }
+      if (!companionToken()) {
+        showApplyTip("请先登录陪玩账号后再确认录音。");
+        return;
+      }
+
+      var hasLive = !!(liveVoiceBlob || liveVoiceObjectUrl);
+      var alreadyDurable = !!(hasDurableUpload(d.voice) || hasDurableUpload(d.voice.url) || hasDurableUpload(d.voice.fileUpload));
+
+      // Only skip network upload when cloud asset already exists AND there is no new local blob to push.
+      if (alreadyDurable && !hasLive) {
+        d.voice.status = "已确认";
+        d.voice.confirmed = true;
+        d.voice.confirmedAt = now();
+        d.voice.uploaded = true;
+        d.voice.uploadedAt = now();
+        d.voice.hasLocal = false;
+        writeDraftRecord(d);
+        delete uploadErrors.voice;
+        voicePhase = VOICE_PHASE.IDLE;
+        showApplyTip("录音已保存", "ok");
+        refreshVoiceUi();
+        return;
+      }
+
+      if (!hasLive && !/^data:/i.test(String(d.voice.url || ""))) {
+        // Stale hasLocal after refresh/navigation — never silently no-op.
+        d.voice = Object.assign({}, d.voice, {
+          hasLocal: false,
+          listened: false,
+          confirmed: false,
+          uploaded: false,
+          status: "本地录音已失效，请重新录制",
+        });
+        writeDraftRecord(d);
+        showApplyTip("本地录音已失效（刷新后需重录）。请重新录制后再点「确认录音」。");
+        refreshVoiceUi();
+        return;
+      }
+
+      uploadBusy.voice = true;
+      voicePhase = VOICE_PHASE.UPLOADING;
+      delete uploadErrors.voice;
+      refreshVoiceUi();
+
+      var mime = String((d.voice && d.voice.mimeType) || (liveVoiceBlob && liveVoiceBlob.type) || "");
+      var baseMime = mime.split(";")[0].trim() || "audio/webm";
+      var filename = /mp4|aac|m4a/i.test(baseMime)
+        ? "voice.m4a"
+        : /ogg/i.test(baseMime)
+          ? "voice.ogg"
+          : /wav/i.test(baseMime)
+            ? "voice.wav"
+            : "voice.webm";
+      var uploadUrl = "/api/companion";
+      function normalizeVoiceBlob(blob) {
+        if (!blob) return blob;
+        var t = String(blob.type || "").split(";")[0].trim();
+        if (t && t !== blob.type) return new Blob([blob], { type: t });
+        return blob;
+      }
+      var dataUrlPromise = /^data:/i.test(String(d.voice.url || ""))
+        ? Promise.resolve(d.voice.url)
+        : liveVoiceBlob
+          ? fileToDataURL(normalizeVoiceBlob(liveVoiceBlob))
+          : fetch(liveVoiceObjectUrl)
+              .then(function (r) {
+                if (!r.ok) throw new Error("读取本地录音失败 HTTP " + r.status);
+                return r.blob();
+              })
+              .then(function (blob) {
+                if (!blob || !blob.size) throw new Error("录音文件为空，请重新录制");
+                liveVoiceBlob = blob;
+                return fileToDataURL(normalizeVoiceBlob(blob));
+              });
+
+      dataUrlPromise
+        .then(function (dataUrl) {
+          if (!dataUrl || !/^data:/i.test(String(dataUrl)) || String(dataUrl).indexOf(",") < 0) {
+            throw new Error("录音数据无效，请重新录制");
+          }
+          if (String(dataUrl).length < 1000) {
+            throw new Error("录音文件过小或为空，请重新录制");
+          }
+          var sizeApprox = Math.round((String(dataUrl).length - String(dataUrl).indexOf(",") - 1) * 0.75);
+          try {
+            console.info("[apply-voice] uploading", {
+              fileName: filename,
+              fileType: baseMime || mime || "(unknown)",
+              fileSize: sizeApprox,
+              uploadURL: uploadUrl,
+              action: "upload_media",
+              media_type: "voice",
+              duration: duration,
+            });
+          } catch (eLog) {}
+          return postCompanion("upload_media", {
+            media_type: "voice",
+            data_url: dataUrl,
+            filename: filename,
+            content_type: baseMime || mime || "",
+            duration_seconds: duration,
+          }).then(
+            function (res) {
+              return res;
+            },
+            function (err) {
+              try {
+                console.error("[apply-voice] upload failed", {
+                  fileName: filename,
+                  fileType: baseMime || mime || "(unknown)",
+                  fileSize: sizeApprox,
+                  uploadURL: (err && err.uploadUrl) || uploadUrl,
+                  responseStatus: (err && err.status) || null,
+                  serverErrorMessage: (err && (err.serverMessage || err.message)) || String(err || ""),
+                });
+              } catch (eDbg) {}
+              throw err;
+            }
+          );
+        })
+        .then(function (res) {
+          uploadBusy.voice = false;
+          delete uploadErrors.voice;
+          var next = readDraft();
+          var durableUrl =
+            (res && res.url) || (res && res.media && res.media.url) || "";
+          var durablePath =
+            (res && res.path) || (res && res.media && res.media.path) || "";
+          var durableBucket =
+            (res && res.bucket) || (res && res.media && res.media.bucket) || "";
+          if (!durablePath && !durableUrl) {
+            throw new Error("上传成功但未返回云端地址，请重试");
+          }
+          next.voice = Object.assign({}, next.voice || {}, {
+            status: "已确认",
+            confirmed: true,
+            confirmedAt: now(),
+            uploaded: true,
+            uploadedAt: now(),
+            hasLocal: false,
+            url: durableUrl,
+            path: durablePath,
+            bucket: durableBucket,
+            storageOk: true,
+            id: (res && res.media && res.media.id) || next.voice.id || "",
+          });
+          writeDraftRecord(next);
+          voicePhase = VOICE_PHASE.IDLE;
+          showApplyTip("录音已保存", "ok");
+          refreshVoiceUi();
+          liveVoiceBlob = null;
+          if (liveVoiceObjectUrl) {
+            try {
+              URL.revokeObjectURL(liveVoiceObjectUrl);
+            } catch (e) {}
+            liveVoiceObjectUrl = "";
+          }
+        })
+        .catch(function (err) {
+          uploadBusy.voice = false;
+          voicePhase = VOICE_PHASE.RECORDED;
+          var msg = (err && err.message) || "保存失败，请重试";
+          if (err && err.status && !/HTTP\s*\d+/.test(msg)) {
+            msg = "HTTP " + err.status + " · " + msg;
+          }
+          uploadErrors.voice = msg;
+          try {
+            console.error("[apply-voice] upload failed", {
+              fileName: filename,
+              fileType: baseMime || mime || "(unknown)",
+              fileSize: (liveVoiceBlob && liveVoiceBlob.size) || (d.voice && d.voice.size) || null,
+              uploadURL: (err && err.uploadUrl) || uploadUrl,
+              responseStatus: (err && err.status) || null,
+              serverErrorMessage: (err && (err.serverMessage || err.message)) || msg,
+            });
+          } catch (e2) {}
+          var next = readDraft();
+          next.voice = Object.assign({}, next.voice || {}, {
+            status: "保存失败，请重试确认",
+            confirmed: false,
+            uploaded: false,
+            hasLocal: !!(liveVoiceBlob || liveVoiceObjectUrl),
+          });
+          writeDraftRecord(next);
+          showApplyTip("保存失败，录音仍在，可重新点击确认：" + msg);
+          refreshVoiceUi();
+        });
+    } catch (err) {
+      uploadBusy.voice = false;
+      voicePhase = VOICE_PHASE.RECORDED;
+      var failMsg = (err && err.message) || "保存失败，请重试";
+      uploadErrors.voice = failMsg;
+      try {
+        console.error("[apply-voice] confirmVoice threw", err);
+      } catch (e3) {}
+      showApplyTip("保存失败，请重试：" + failMsg);
+      try {
+        refreshVoiceUi();
+      } catch (e4) {}
+    }
+  }
+  function clearUpload(key) {
+    var draft = readDraft();
+    draft.uploads = draft.uploads || {};
+    draft.identity = draft.identity || {};
+    draft.voice = draft.voice || {};
+    delete uploadErrors[key];
+    delete uploadBusy[key];
+    clearLivePreview(key);
+    var existing = null;
+    if (key === "voiceFile") {
+      existing = draft.voice.fileUpload;
+      delete draft.voice.fileUpload;
+      if (draft.voice.fromFile) {
+        draft.voice = { status: "尚未录制" };
+      }
+    } else if (key === "idFront" || key === "idBack" || key === "depositProof" || key === "idHandheld") {
+      existing = draft.identity[key];
+      delete draft.identity[key];
+    } else {
+      existing = draft.uploads[key];
+      delete draft.uploads[key];
+    }
+    writeDraftRecord(draft);
+    if (existing && (existing.id || key === "avatar") && companionToken()) {
+      var mt =
+        key === "avatar"
+          ? "avatar"
+          : key === "showcaseVideo" || key === "videos"
+            ? "video"
+            : key === "voiceFile"
+              ? "voice"
+              : key === "records"
+                ? "achievement"
+                : "gallery";
+      postCompanion("delete_media", {
+        media_id: existing.id || "",
+        media_type: mt,
+        id: existing.id || "",
+      }).catch(function () {});
+    }
+    render(Number(document.getElementById("companionApplyRoot").dataset.step || 0));
+  }
+  function isDuplicateAsset(list, safe) {
+    return (list || []).some(function (p) {
+      return (
+        (safe.id && p && p.id && String(p.id) === String(safe.id)) ||
+        (safe.path && p && p.path && String(p.path) === String(safe.path)) ||
+        (safe.url && p && p.url && String(p.url) === String(safe.url) && !/^data:/i.test(String(safe.url)))
+      );
+    });
+  }
+  function setUploadAsset(key, asset) {
+    var draft = readDraft();
+    draft.uploads = draft.uploads || {};
+    draft.identity = draft.identity || {};
+    draft.voice = draft.voice || {};
+    var safe = scrubAssetForStorage(asset);
+    if (key === "idFront" || key === "idBack" || key === "depositProof" || key === "idHandheld") {
+      draft.identity[key] = safe;
+    } else if (key === "voiceFile") {
+      draft.voice.fileUpload = safe;
+      draft.voice.url = safe.url || draft.voice.url;
+      draft.voice.path = safe.path || draft.voice.path;
+      draft.voice.confirmed = true;
+      draft.voice.listened = true;
+      draft.voice.uploaded = true;
+      draft.voice.fromFile = true;
+      draft.voice.hasLocal = false;
+      draft.voice.status = "已确认";
+      draft.voice.quality = Object.assign({}, draft.voice.quality || {}, {
+        passed: true,
+        volumeOk: true,
+        durationOk: true,
+        notBlank: true,
+        humanVoice: true,
+        duration: draft.voice.duration || 15,
+        reasons: [],
+      });
+      draft.voice.duration = draft.voice.duration || 15;
+    } else if (key === "photos") {
+      // No cap — append every uploaded photo.
+      var list = photoListOf(draft.uploads);
+      if (isDuplicateAsset(list, safe)) return;
+      list.push(safe);
+      draft.uploads.photos = list;
+    } else if (key === "videos" || key === "showcaseVideo") {
+      // Migrate the legacy single showcaseVideo into the unlimited videos list.
+      var vlist = videoListOf(draft.uploads);
+      if (isDuplicateAsset(vlist, safe)) return;
+      vlist.push(safe);
+      draft.uploads.videos = vlist;
+      delete draft.uploads.showcaseVideo;
+    } else if (key === "records") {
+      var rlist = recordsListOf(draft.uploads);
+      if (isDuplicateAsset(rlist, safe)) return;
+      rlist.push(safe);
+      draft.uploads.records = rlist;
+    } else if (key === "cover" || key === "cardCover" || key === "card_cover" || key === "profile_cover") {
+      // Cover upload removed — ignore.
+      return;
+    } else {
+      draft.uploads[key] = safe;
+    }
+    writeDraftRecord(draft);
+  }
+  function uploadKeyConfig(key) {
+    var map = {
+      avatar: { api: "upload_media", mediaType: "avatar", kind: "image" },
+      photos: { api: "upload_media", mediaType: "gallery", kind: "image" },
+      // records takes images and videos — kind is detected per file.
+      records: { api: "upload_media", mediaType: "achievement", kind: "auto" },
+      voiceFile: { api: "upload_media", mediaType: "voice", kind: "audio" },
+      videos: { api: "upload_media", mediaType: "video", kind: "video" },
+      showcaseVideo: { api: "upload_media", mediaType: "video", kind: "video" },
+      idFront: { api: "upload_private_doc", docType: "id_front", kind: "image" },
+      idBack: { api: "upload_private_doc", docType: "id_back", kind: "image" },
+      depositProof: { api: "upload_private_doc", docType: "deposit_proof", kind: "image" },
+    };
+    return map[key] || null;
+  }
+  function handleUploadPick(payload) {
+    var key = payload.key;
+    var files = payload.files || [];
+    var cfg = uploadKeyConfig(key);
+    if (!cfg) {
+      if (key === "cover" || key === "cardCover") {
+        showApplyTip("卡面封面已取消，请上传头像与相册即可。");
+      }
+      return Promise.resolve();
+    }
+    if (!companionToken()) {
+      showApplyTip("请先登录或注册陪玩账号后再上传，以便同步到云端存储。");
+      return Promise.resolve();
+    }
+    noteUserEditedDraft();
+    if (!payload._queued && Object.keys(uploadBusy).some(function (k) { return uploadBusy[k]; })) {
+      showApplyTip("请等待当前上传完成");
+      return Promise.resolve();
+    }
+    var file = files[0];
+    if (!file) return Promise.resolve();
+    var kind = cfg.kind === "auto" ? (isVideoFile(file) ? "video" : "image") : cfg.kind || payload.kind || "image";
+    var mediaType = cfg.mediaType;
+    var check = U() ? U().validateFile(file, kind) : { ok: true };
+    if (!check.ok) {
+      uploadErrors[key] = check.error || "文件格式不支持";
+      showApplyTip(uploadErrors[key]);
+      render(Number(document.getElementById("companionApplyRoot").dataset.step || 0));
+      return Promise.resolve();
+    }
+    function continueUpload(durationSeconds) {
+    uploadBusy[key] = true;
+    delete uploadErrors[key];
+    var step = Number(document.getElementById("companionApplyRoot").dataset.step || 0);
+    var localPreview = "";
+    try {
+      localPreview = URL.createObjectURL(file);
+      if (!isMultiUploadKey(key)) setLivePreview(key, localPreview);
+    } catch (e) {
+      localPreview = "";
+    }
+    render(step);
+
+    // Showcase video: browser → Supabase direct (signed PUT / TUS). Never POST binary via Vercel.
+    if (kind === "video" || mediaType === "video") {
+      var accessToken = companionToken();
+      return postCompanion("prepare_video_upload", {
+        filename: file.name || "showcase.mp4",
+        content_type: file.type || "video/mp4",
+        byte_length: file.size,
+        duration_seconds: durationSeconds != null ? durationSeconds : undefined,
+      })
+        .then(function (prep) {
+          if (!prep || !prep.path || !prep.signedUrl) {
+            throw new Error("直传凭证签发失败，请稍后重试");
+          }
+          if (!isMultiUploadKey(key)) {
+            setUploadAsset(key, { url: "", path: "", status: "uploading" });
+            render(step);
+          }
+          var uploader =
+            window.McjCompanionVideoUpload && typeof window.McjCompanionVideoUpload.upload === "function"
+              ? window.McjCompanionVideoUpload.upload
+              : null;
+          if (!uploader) throw new Error("视频直传组件未加载，请刷新后重试");
+          return uploader({
+            file: file,
+            prep: prep,
+            accessToken: accessToken,
+            onProgress: function () {},
+          }).then(function () {
+            return postCompanion("upload_media", {
+              media_type: mediaType === "achievement" ? "achievement" : "video",
+              storage_path: prep.path,
+              storage_bucket: prep.bucket || "companion-video",
+              content_type: prep.contentType || file.type || "video/mp4",
+              filename: file.name || "showcase.mp4",
+              byte_length: file.size,
+              duration_seconds: durationSeconds != null ? durationSeconds : undefined,
+            });
+          });
+        })
+        .then(function (res) {
+          uploadBusy[key] = false;
+          delete uploadErrors[key];
+          var asset = {
+            url: (res && res.url) || (res && res.media && res.media.url) || "",
+            path: (res && res.path) || (res && res.media && res.media.path) || "",
+            bucket: (res && res.bucket) || (res && res.media && res.media.bucket) || "",
+            id: (res && res.media && res.media.id) || "",
+            status: "ok",
+          };
+          if (!asset.url && !asset.path) throw new Error("上传成功但未返回地址，请重新上传");
+          if (asset.url && isEphemeralMediaUrl(asset.url) && !asset.path) {
+            throw new Error("云端未返回可访问地址，请重新上传");
+          }
+          if (asset.url && !isEphemeralMediaUrl(asset.url)) {
+            clearLivePreview(key);
+          }
+          setUploadAsset(key, Object.assign({ contentType: file.type || "video/mp4" }, asset));
+          showApplyTip(mediaType === "achievement" ? "战绩视频上传成功" : "展示视频上传成功");
+          render(Number(document.getElementById("companionApplyRoot").dataset.step || 0));
+        })
+        .catch(function (err) {
+          uploadBusy[key] = false;
+          var friendly = String((err && err.message) || "上传失败");
+          if (
+            err &&
+            (err.status === 413 || /413|Payload Too Large|上传通道限制|VERCEL_BODY_LIMIT/i.test(friendly))
+          ) {
+            friendly = "视频文件过大或上传通道限制，请稍后重试。";
+          }
+          if (/\[object Object\]/i.test(friendly)) {
+            friendly = "视频上传失败，请稍后重试。";
+          }
+          uploadErrors[key] = friendly;
+          clearLivePreview(key);
+          if (!isMultiUploadKey(key)) {
+            var du = readDraft();
+            du.uploads = du.uploads || {};
+            delete du.uploads[key];
+            writeDraftRecord(du);
+          }
+          showApplyTip("上传失败：" + friendly);
+          render(Number(document.getElementById("companionApplyRoot").dataset.step || 0));
+          return Promise.reject(err);
+        });
+    }
+
+    var prepare =
+      kind === "image" && U() && U().compressImageFile
+        ? U().compressImageFile(file)
+        : fileToDataURL(file);
+    return prepare
+      .then(function (dataUrl) {
+        if (!dataUrl || !/^data:/i.test(String(dataUrl))) {
+          throw new Error("读取图片失败，请重选后重试");
+        }
+        // Do NOT write dataUrl into localStorage — that caused QuotaExceededError on mobile.
+        if (!isMultiUploadKey(key)) {
+          setUploadAsset(key, { url: "", path: "", status: "uploading" });
+          render(step);
+        }
+        var body =
+          cfg.api === "upload_private_doc"
+            ? { doc_type: cfg.docType, data_url: dataUrl, filename: file.name || cfg.docType + ".jpg" }
+            : {
+                media_type: mediaType,
+                data_url: dataUrl,
+                filename: file.name || (mediaType === "voice" ? "voice.webm" : mediaType === "video" ? "showcase.mp4" : mediaType + ".jpg"),
+                duration_seconds: durationSeconds != null ? durationSeconds : undefined,
+              };
+        return postCompanion(cfg.api, body);
+      })
+      .then(function (res) {
+        uploadBusy[key] = false;
+        delete uploadErrors[key];
+        var asset = {
+          url: (res && res.url) || (res && res.media && res.media.url) || "",
+          path: (res && res.path) || (res && res.media && res.media.path) || "",
+          bucket: (res && res.bucket) || (res && res.media && res.media.bucket) || "",
+          id: (res && res.media && res.media.id) || "",
+          status: "ok",
+        };
+        if (!asset.url && !asset.path) throw new Error("上传成功但未返回地址，请重新上传");
+        if (asset.url && isEphemeralMediaUrl(asset.url) && !asset.path) {
+          throw new Error("云端未返回可访问地址，请重新上传");
+        }
+        // Prefer durable cloud URL for preview; drop temporary blob.
+        if (asset.url && !isEphemeralMediaUrl(asset.url)) {
+          clearLivePreview(key);
+        }
+        setUploadAsset(key, asset);
+        if (key === "avatar") showApplyTip("头像上传成功");
+        render(Number(document.getElementById("companionApplyRoot").dataset.step || 0));
+      })
+      .catch(function (err) {
+        uploadBusy[key] = false;
+        var friendly = String(err && err.message || "上传失败");
+        if (/quota has been exceeded|QuotaExceeded/i.test(friendly)) {
+          friendly =
+            "浏览器本地草稿空间已满（不是云端 Storage）。请刷新后重试；图片只会上传到云端，不再写入本地大图。";
+        }
+        if (err && err.status === 413) {
+          friendly = "视频文件过大或上传通道限制，请稍后重试。";
+        }
+        if (/\[object Object\]/i.test(friendly)) {
+          friendly = "上传失败，请稍后重试。";
+        }
+        uploadErrors[key] = friendly;
+        clearLivePreview(key);
+        if (key === "idFront" || key === "idBack" || key === "depositProof") {
+          var d = readDraft();
+          d.identity = d.identity || {};
+          delete d.identity[key];
+          writeDraftRecord(d);
+        } else if (key === "voiceFile") {
+          var dv = readDraft();
+          dv.voice = dv.voice || {};
+          delete dv.voice.fileUpload;
+          writeDraftRecord(dv);
+        } else if (!isMultiUploadKey(key)) {
+          var du2 = readDraft();
+          du2.uploads = du2.uploads || {};
+          delete du2.uploads[key];
+          writeDraftRecord(du2);
+        }
+        showApplyTip("上传失败：" + friendly);
+        render(Number(document.getElementById("companionApplyRoot").dataset.step || 0));
+        return Promise.reject(err);
+      });
+    }
+    if (kind === "video") {
+      return new Promise(function (resolve) {
+        var url = URL.createObjectURL(file);
+        var vid = document.createElement("video");
+        vid.preload = "metadata";
+        vid.onloadedmetadata = function () {
+          var dur = Number(vid.duration || 0);
+          try { URL.revokeObjectURL(url); } catch (e) {}
+          if (dur && dur > 30.5) {
+            uploadErrors[key] = "视频最长 30 秒";
+            showApplyTip("视频最长 30 秒，请裁剪后再上传");
+            resolve(Promise.resolve());
+            return;
+          }
+          resolve(continueUpload(dur || null));
+        };
+        vid.onerror = function () {
+          try { URL.revokeObjectURL(url); } catch (e) {}
+          resolve(continueUpload(null));
+        };
+        vid.src = url;
+      });
+    }
+    return continueUpload(null);
+  }
+  function handleUploadPickQueue(payload) {
+    var files = (payload.files || []).slice();
+    var chain = Promise.resolve();
+    files.forEach(function (file) {
+      chain = chain
+        .then(function () {
+          return handleUploadPick({ key: payload.key, files: [file], kind: payload.kind, input: null, _queued: true });
+        })
+        .catch(function () {
+          return null;
+        });
+    });
+    return chain;
+  }
+  function postAuthJson(action, payload) {
+    return fetch("/api/auth", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify(Object.assign({ action: action }, payload || {})),
+    }).then(function (res) {
+      return res.json().then(function (body) {
+        if (!res.ok || body.ok === false) {
+          var err = new Error((body && body.message) || "请求失败");
+          err.body = body;
+          err.status = res.status;
+          throw err;
+        }
+        return body;
+      });
+    });
+  }
+
+  function startAuthCooldown(kind, seconds) {
+    var until = Date.now() + Math.max(1, Number(seconds) || 60) * 1000;
+    if (kind === "login") authUi.loginCooldownUntil = until;
+    else authUi.cooldownUntil = until;
+    if (authUi._cooldownTimer) {
+      try { clearInterval(authUi._cooldownTimer); } catch (e) {}
+      authUi._cooldownTimer = null;
+    }
+    authUi._cooldownTimer = setInterval(function () {
+      if (companionToken()) {
+        try { clearInterval(authUi._cooldownTimer); } catch (e2) {}
+        authUi._cooldownTimer = null;
+        return;
+      }
+      var left = authCooldownLeft(kind === "login" ? authUi.loginCooldownUntil : authUi.cooldownUntil);
+      var sel = kind === "login" ? "[data-apply-send-login-otp]" : "[data-apply-send-register-otp]";
+      var btn = document.querySelector(sel);
+      if (left <= 0) {
+        try { clearInterval(authUi._cooldownTimer); } catch (e3) {}
+        authUi._cooldownTimer = null;
+        if (btn && !authUi.emailVerified) {
+          btn.disabled = false;
+          btn.textContent = "发送验证码";
+        }
+        return;
+      }
+      if (btn && !authUi.emailVerified) {
+        btn.disabled = true;
+        btn.textContent = left + "s";
+      }
+    }, 1000);
+  }
+
+  async function afterCompanionAuthSuccess(session, email, nickname) {
+    // Merge any existing boss/shared refresh token so long apply sessions can auto-refresh.
+    var merged = Object.assign({}, session || {});
+    if (!merged.refreshToken && !merged.refresh_token) {
+      merged.refreshToken = readAnyRefreshToken(merged);
+    }
+    if (merged.expiresAt == null || merged.expiresAt === "") {
+      merged.expiresAt = readAnyExpiresAt(merged);
+    }
+    saveCompanionSession(merged);
+    // Boss header reads mcjAuth*; apply-from-boss / companion login must keep
+    // the SAME JWT visible there (portal isolation still uses separate companion session object).
+    syncBossAuthFromCompanionTokens(merged, merged.remember !== false);
+    if (nickname || email) {
+      try { saveDraft({ data: { nickname: nickname || "", email: email || "" } }); } catch (e) {}
+    }
+    setAuthMessage("", "ok");
+    authUi.busy = false;
+    authUi.emailVerified = false;
+    authUi.registerToken = "";
+    authUi.cooldownUntil = 0;
+    authUi.loginCooldownUntil = 0;
+    if (authUi._cooldownTimer) {
+      try { clearInterval(authUi._cooldownTimer); } catch (e4) {}
+      authUi._cooldownTimer = null;
+    }
+    // Resume draft progress — never force restart at step 1 after re-login.
+    var resumeStep = 0;
+    try {
+      resumeStep = Math.max(0, Math.min(steps.length - 1, Number(readDraft().step || 0) || 0));
+    } catch (eStep) {
+      resumeStep = 0;
+    }
+    var hadProgress = false;
+    try {
+      var d0 = readDraft();
+      hadProgress =
+        resumeStep > 0 ||
+        !!(d0.rulesAgreement && d0.rulesAgreement.accepted) ||
+        !!(d0.data && (d0.data.nickname || d0.data.gender || d0.data.mainGames)) ||
+        !!(d0.uploads && (d0.uploads.avatar || (d0.uploads.photos && d0.uploads.photos.length)));
+    } catch (eProg) {}
+    try {
+      render(resumeStep, { alignStepNav: true });
+      showApplyTip("登录成功，请继续填写陪玩申请。", "ok");
+    } catch (renderErr) {
+      showApplyTip(renderErr.message || "登录成功，但页面刷新失败，请手动刷新。");
+    }
+    try {
+      var boot = await fetchCompanionBootstrap();
+      resolveDraftGateAfterBootstrap(boot);
+      try {
+        resumeStep =
+          draftGateMode === "prompt"
+            ? 0
+            : Math.max(0, Math.min(steps.length - 1, Number(readDraft().step || resumeStep) || 0));
+      } catch (eStep2) {}
+      render(resumeStep, { alignStepNav: true });
+    } catch (bootErr) {
+      try { console.warn("[apply-auth] bootstrap", bootErr); } catch (e5) {}
+    }
+  }
+
+  function activeAuthForm() {
+    if (authUi.mode === "register") return document.querySelector('[data-apply-auth-form="register"]');
+    if (authUi.loginMethod === "otp") return document.querySelector('[data-apply-auth-form="login-otp"]');
+    return document.querySelector('[data-apply-auth-form="login-password"]');
+  }
+
+  function authFormValue(form, name) {
+    if (!form) return "";
+    var el = form.querySelector('[name="' + name + '"]');
+    return el ? String(el.value || "").trim() : "";
+  }
+
+  function bind() {
+    var root = document.getElementById("companionApplyRoot");
+    if (!root) return;
+    if (U() && U().bind) {
+      U().bind(root, {
+        onPick: function (payload) {
+          if (isMultiUploadKey(payload.key) && payload.files && payload.files.length > 1) {
+            handleUploadPickQueue(payload);
+          } else {
+            handleUploadPick(payload);
+          }
+        },
+        onClear: function (payload) {
+          clearUpload(payload.key);
+        },
+      });
+    }
+    if (root.__mcjApplyBound) return;
+    root.__mcjApplyBound = true;
+    document.addEventListener("click", async function (e) {
+      if (!document.getElementById("companionApplyRoot")) return;
+      var timeOpen = e.target.closest("[data-apply-time-open]");
+      if (timeOpen) {
+        e.preventDefault();
+        var fieldName = timeOpen.getAttribute("data-apply-time-open");
+        var title = timeOpen.getAttribute("data-apply-time-title") || "选择时间";
+        var wrap = timeOpen.closest("[data-apply-time-field]");
+        var hidden = wrap && wrap.querySelector('input[name="' + fieldName + '"]');
+        var display = wrap && wrap.querySelector('[data-apply-time-display="' + fieldName + '"]');
+        var current = hidden ? hidden.value : "";
+        if (!window.MCJTimePicker || typeof window.MCJTimePicker.open !== "function") {
+          showApplyTip("时间选择器加载失败，请刷新后重试");
+          return;
+        }
+        window.MCJTimePicker.open({
+          title: title,
+          value: current,
+          minuteStep: 1,
+          onConfirm: function (value) {
+            if (hidden) hidden.value = value;
+            if (display) {
+              display.textContent = value;
+              display.classList.remove("is-empty");
+            }
+            timeOpen.setAttribute("aria-label", (fieldName === "onlineEnd" ? "结束时间 " : "开始时间 ") + value);
+            collect(root).catch(function () {});
+          },
+        });
+        return;
+      }
+      if (e.target.closest("[data-apply-retry]")) {
+        e.preventDefault();
+        initStarted = false;
+        runApplyBootstrap(true);
+        return;
+      }
+
+      var draftContinueBtn = e.target.closest("[data-apply-draft-continue]");
+      if (draftContinueBtn) {
+        e.preventDefault();
+        continueApplicationDraft();
+        return;
+      }
+      var draftDiscardBtn = e.target.closest("[data-apply-draft-discard], [data-apply-draft-clear]");
+      if (draftDiscardBtn) {
+        e.preventDefault();
+        if (isApplicationSubmitted()) {
+          showApplyTip("已提交的申请不能清空草稿。");
+          return;
+        }
+        var okDiscard = window.confirm("确定放弃当前草稿并重新填写吗？\n当前未提交的内容将被清除。");
+        if (!okDiscard) return;
+        draftDiscardBtn.disabled = true;
+        discardApplicationDraftFull()
+          .catch(function (err) {
+            showApplyTip((err && err.message) || "清空草稿失败，请重试。");
+          })
+          .finally(function () {
+            draftDiscardBtn.disabled = false;
+          });
+        return;
+      }
+
+      var authModeBtn = e.target.closest("[data-apply-auth-mode]");
+      if (authModeBtn) {
+        e.preventDefault();
+        authUi.mode = authModeBtn.getAttribute("data-apply-auth-mode") === "login" ? "login" : "register";
+        // Switching tabs inside the other-account UI must keep preferOtherAccount on.
+        if (hasBossSession()) authUi.preferOtherAccount = true;
+        setAuthMessage("");
+        render(Number(root.dataset.step || 0));
+        if (window.MCJAuthShell && window.MCJAuthShell.clearAuthFields) {
+          window.MCJAuthShell.clearAuthFields(root, { clearCode: true, clearPassword: true, clearAccount: false });
+        }
+        return;
+      }
+
+      if (e.target.closest("[data-apply-prefer-other]")) {
+        e.preventDefault();
+        authUi.preferOtherAccount = true;
+        authUi.mode = "login";
+        setAuthMessage("");
+        render(Number(root.dataset.step || 0));
+        if (window.MCJAuthShell && window.MCJAuthShell.clearAuthFields) {
+          window.MCJAuthShell.clearAuthFields(root, { clearCode: true, clearPassword: true, clearAccount: false });
+        }
+        return;
+      }
+
+      if (e.target.closest("[data-apply-use-current-boss]")) {
+        e.preventDefault();
+        authUi.preferOtherAccount = false;
+        authUi.mode = "register";
+        setAuthMessage("");
+        render(Number(root.dataset.step || 0));
+        return;
+      }
+
+      if (e.target.closest("[data-apply-from-boss]")) {
+        e.preventDefault();
+        authUi.busy = true;
+        setAuthMessage("正在恢复登录并开通陪玩资料…", "ok");
+        render(Number(root.dataset.step || 0));
+        ensureBossSessionForApply()
+          .then(function () {
+            var bossTok = bossAccessToken();
+            if (!bossTok) {
+              throw new Error("请先登录老板账号。");
+            }
+            var bossRefresh = bossRefreshToken() || readAnyRefreshToken();
+            var bossExpires = readAnyExpiresAt();
+            return fetch("/api/companion", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Accept: "application/json",
+                Authorization: "Bearer " + bossTok,
+                "x-mcj-companion-token": bossTok,
+              },
+              body: JSON.stringify({
+                action: "apply_companion_role",
+                refreshToken: bossRefresh,
+                expiresAt: bossExpires,
+              }),
+            }).then(function (res) {
+              return res.json().then(function (body) {
+                if (!res.ok || body.ok === false) throw new Error((body && body.message) || "申请失败");
+                return { body: body, bossTok: bossTok, bossRefresh: bossRefresh, bossExpires: bossExpires };
+              });
+            });
+          })
+          .then(function (pack) {
+            var body = pack.body;
+            var sess = body.session || {
+              token: pack.bossTok,
+              accessToken: pack.bossTok,
+              user: (body.session && body.session.user) || {},
+            };
+            if (!sess.refreshToken) sess.refreshToken = pack.bossRefresh;
+            if (sess.expiresAt == null || sess.expiresAt === "") sess.expiresAt = pack.bossExpires;
+            authUi.preferOtherAccount = false;
+            return afterCompanionAuthSuccess(sess, "", "");
+          })
+          .catch(function (err) {
+            authUi.busy = false;
+            setAuthMessage(err.message || "申请失败", "error");
+            render(Number(root.dataset.step || 0));
+          });
+        return;
+      }
+      var loginMethodBtn = e.target.closest("[data-apply-login-method]");
+      if (loginMethodBtn) {
+        e.preventDefault();
+        authUi.loginMethod = loginMethodBtn.getAttribute("data-apply-login-method") === "otp" ? "otp" : "password";
+        setAuthMessage("");
+        render(Number(root.dataset.step || 0));
+        if (window.MCJAuthShell && window.MCJAuthShell.clearAuthFields) {
+          window.MCJAuthShell.clearAuthFields(root, { clearCode: true, clearPassword: true, clearAccount: false });
+        }
+        return;
+      }
+
+      if (e.target.closest("[data-apply-send-register-otp]")) {
+        e.preventDefault();
+        var regForm = document.querySelector('[data-apply-auth-form="register"]');
+        var regEmail = authFormValue(regForm, "authEmail").toLowerCase();
+        authUi.draftEmail = regEmail;
+        if (!regEmail || !/^\S+@\S+\.\S+$/.test(regEmail)) {
+          setAuthMessage("请输入有效邮箱。");
+          render(Number(root.dataset.step || 0));
+          return;
+        }
+        if (authCooldownLeft(authUi.cooldownUntil) > 0) return;
+        authUi.busy = true;
+        setAuthMessage("正在发送验证码…", "ok");
+        render(Number(root.dataset.step || 0));
+        try {
+          var sent = await postAuthJson("send_register_otp", { email: regEmail, role: "companion" });
+          authUi.busy = false;
+          var delivered = sent && sent.delivery === "sent";
+          var tip = delivered
+            ? (sent.message || "验证码已发送")
+            : (sent.message || "如该邮箱可用，将收到验证码。");
+          if (sent.debugCode || sent.devCode) tip += "（调试 " + (sent.debugCode || sent.devCode) + "）";
+          setAuthMessage(tip, delivered ? "ok" : "");
+          // Cooldown only after provider-accepted send — never fake success.
+          if (delivered) startAuthCooldown("register", Number(sent.retryAfterSec) || 60);
+          render(Number(root.dataset.step || 0));
+        } catch (err) {
+          authUi.busy = false;
+          setAuthMessage(err.message || "发送失败");
+          render(Number(root.dataset.step || 0));
+        }
+        return;
+      }
+
+      if (e.target.closest("[data-apply-verify-register-otp]")) {
+        e.preventDefault();
+        var vForm = document.querySelector('[data-apply-auth-form="register"]');
+        var vEmail = authFormValue(vForm, "authEmail").toLowerCase();
+        authUi.draftEmail = vEmail;
+        var vCode = authFormValue(vForm, "authRegisterCode");
+        if (!vEmail || !/^\S+@\S+\.\S+$/.test(vEmail)) {
+          setAuthMessage("请输入有效邮箱。");
+          render(Number(root.dataset.step || 0));
+          return;
+        }
+        if (!/^\d{6}$/.test(vCode)) {
+          setAuthMessage("请输入 6 位邮箱验证码。");
+          render(Number(root.dataset.step || 0));
+          return;
+        }
+        authUi.busy = true;
+        setAuthMessage("正在验证…", "ok");
+        render(Number(root.dataset.step || 0));
+        try {
+          var verified = await postAuthJson("verify_register_otp", {
+            email: vEmail,
+            code: vCode,
+            role: "companion",
+          });
+          authUi.busy = false;
+          authUi.emailVerified = true;
+          authUi.verifiedEmail = vEmail;
+          authUi.registerToken = verified.registerToken || "";
+          setAuthMessage("邮箱已验证，请设置密码并填写昵称。", "ok");
+          render(Number(root.dataset.step || 0));
+        } catch (err) {
+          authUi.busy = false;
+          authUi.emailVerified = false;
+          authUi.registerToken = "";
+          setAuthMessage(err.message || "验证码错误或已过期");
+          render(Number(root.dataset.step || 0));
+        }
+        return;
+      }
+
+      if (e.target.closest("[data-apply-send-login-otp]")) {
+        e.preventDefault();
+        var loForm = document.querySelector('[data-apply-auth-form="login-otp"]');
+        var loEmail = authFormValue(loForm, "authEmail").toLowerCase();
+        authUi.loginEmail = loEmail;
+        if (!loEmail || !/^\S+@\S+\.\S+$/.test(loEmail)) {
+          setAuthMessage("请输入有效邮箱。");
+          render(Number(root.dataset.step || 0));
+          return;
+        }
+        if (authCooldownLeft(authUi.loginCooldownUntil) > 0) return;
+        authUi.busy = true;
+        setAuthMessage("正在发送登录验证码…", "ok");
+        render(Number(root.dataset.step || 0));
+        try {
+          var loginSent = await postAuthJson("send_login_otp", { email: loEmail, role: "companion" });
+          authUi.busy = false;
+          var loginDelivered = loginSent && loginSent.delivery === "sent";
+          var loginTip = loginDelivered
+            ? (loginSent.message || "验证码已发送")
+            : (loginSent.message || "如该邮箱已注册陪玩端，将收到验证码。");
+          if (loginSent.debugCode || loginSent.devCode) loginTip += "（调试 " + (loginSent.debugCode || loginSent.devCode) + "）";
+          setAuthMessage(loginTip, loginDelivered ? "ok" : "");
+          // Cooldown only after provider-accepted send — never fake success.
+          if (loginDelivered) startAuthCooldown("login", Number(loginSent.retryAfterSec) || 60);
+          render(Number(root.dataset.step || 0));
+        } catch (err) {
+          authUi.busy = false;
+          setAuthMessage(err.message || "发送失败");
+          render(Number(root.dataset.step || 0));
+        }
+        return;
+      }
+
+      if (e.target.closest("[data-apply-register]")) {
+        e.preventDefault();
+        var rForm = document.querySelector('[data-apply-auth-form="register"]');
+        if (!rForm) return;
+        var rEmail = (authUi.verifiedEmail || authFormValue(rForm, "authEmail")).toLowerCase();
+        var rPassword = authFormValue(rForm, "authPassword");
+        var rConfirm = authFormValue(rForm, "authPasswordConfirm");
+        var rNickname = authFormValue(rForm, "authNickname");
+        if (!authUi.emailVerified || !authUi.registerToken) {
+          setAuthMessage("请先完成邮箱验证。");
+          render(Number(root.dataset.step || 0));
+          return;
+        }
+        if (!rEmail || !/^\S+@\S+\.\S+$/.test(rEmail)) {
+          setAuthMessage("请输入有效邮箱。");
+          render(Number(root.dataset.step || 0));
+          return;
+        }
+        if (!rPassword || rPassword.length < 8 || !/[A-Za-z]/.test(rPassword) || !/\d/.test(rPassword)) {
+          setAuthMessage("密码至少 8 位，且需同时包含字母和数字。");
+          render(Number(root.dataset.step || 0));
+          return;
+        }
+        if (rPassword !== rConfirm) {
+          setAuthMessage("两次输入的密码不一致。");
+          render(Number(root.dataset.step || 0));
+          return;
+        }
+        if (!rNickname) {
+          setAuthMessage("请填写昵称。");
+          render(Number(root.dataset.step || 0));
+          return;
+        }
+        authUi.busy = true;
+        setAuthMessage("正在注册…", "ok");
+        render(Number(root.dataset.step || 0));
+        try {
+          var regRes = await fetch("/api/companion", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Accept: "application/json" },
+            body: JSON.stringify({
+              action: "register",
+              email: rEmail,
+              account: rEmail,
+              password: rPassword,
+              confirmPassword: rConfirm,
+              nickname: rNickname,
+              registerToken: authUi.registerToken,
+              remember: true,
+            }),
+          });
+          var regBody = await regRes.json().catch(function () { return {}; });
+          if (!regRes.ok || regBody.ok === false) throw new Error(regBody.message || "注册失败");
+          await afterCompanionAuthSuccess(regBody.session, rEmail, rNickname);
+        } catch (err) {
+          authUi.busy = false;
+          setAuthMessage(err.message || "注册失败");
+          render(Number(root.dataset.step || 0));
+        }
+        return;
+      }
+
+      if (e.target.closest("[data-apply-login-password]")) {
+        e.preventDefault();
+        var pForm = document.querySelector('[data-apply-auth-form="login-password"]');
+        var pEmail = authFormValue(pForm, "authEmail").toLowerCase();
+        authUi.loginEmail = pEmail;
+        var pPassword = authFormValue(pForm, "authPassword");
+        if (!pEmail || !/^\S+@\S+\.\S+$/.test(pEmail)) {
+          setAuthMessage("请输入有效邮箱。");
+          render(Number(root.dataset.step || 0));
+          return;
+        }
+        if (!pPassword) {
+          setAuthMessage("请填写密码。");
+          render(Number(root.dataset.step || 0));
+          return;
+        }
+        authUi.busy = true;
+        setAuthMessage("正在登录…", "ok");
+        render(Number(root.dataset.step || 0));
+        try {
+          var pwdRes = await fetch("/api/companion", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Accept: "application/json" },
+            body: JSON.stringify({
+              action: "login",
+              email: pEmail,
+              account: pEmail,
+              password: pPassword,
+              remember: true,
+            }),
+          });
+          var pwdBody = await pwdRes.json().catch(function () { return {}; });
+          if (!pwdRes.ok || pwdBody.ok === false) throw new Error(pwdBody.message || "登录失败");
+          await afterCompanionAuthSuccess(pwdBody.session, pEmail, "");
+        } catch (err) {
+          authUi.busy = false;
+          setAuthMessage(err.message || "登录失败");
+          render(Number(root.dataset.step || 0));
+        }
+        return;
+      }
+
+      if (e.target.closest("[data-apply-login-otp]")) {
+        e.preventDefault();
+        var oForm = document.querySelector('[data-apply-auth-form="login-otp"]');
+        var oEmail = authFormValue(oForm, "authEmail").toLowerCase();
+        authUi.loginEmail = oEmail;
+        var oCode = authFormValue(oForm, "authLoginCode");
+        if (!oEmail || !/^\S+@\S+\.\S+$/.test(oEmail)) {
+          setAuthMessage("请输入有效邮箱。");
+          render(Number(root.dataset.step || 0));
+          return;
+        }
+        if (!/^\d{6}$/.test(oCode)) {
+          setAuthMessage("请输入 6 位邮箱验证码。");
+          render(Number(root.dataset.step || 0));
+          return;
+        }
+        authUi.busy = true;
+        setAuthMessage("正在登录…", "ok");
+        render(Number(root.dataset.step || 0));
+        try {
+          var otpBody = await postAuthJson("login_with_otp", {
+            email: oEmail,
+            code: oCode,
+            role: "companion",
+          });
+          var session = otpBody.session || {};
+          await afterCompanionAuthSuccess(
+            {
+              token: session.accessToken || session.token || "",
+              accessToken: session.accessToken || session.token || "",
+              refreshToken: session.refreshToken || "",
+              expiresAt: session.expiresAt || "",
+              user: session.user || null,
+              remember: true,
+            },
+            oEmail,
+            ""
+          );
+        } catch (err) {
+          authUi.busy = false;
+          setAuthMessage(err.message || "验证码无效或已过期");
+          render(Number(root.dataset.step || 0));
+        }
+        return;
+      }
+
+      // legacy hooks removed — use dedicated password/otp buttons above
+      if (e.target.closest("[data-apply-login]") || e.target.closest("[data-apply-register]")) {
+        e.preventDefault();
+        return;
+      }
+      var stepBtn = e.target.closest("[data-apply-step]");
+      if (stepBtn) {
+        e.preventDefault();
+        var targetStep = Number(stepBtn.dataset.applyStep);
+        await collect(root);
+        var draftAfterClick = readDraft();
+        if (targetStep > maxReachableStep(draftAfterClick)) { showMissing(missingForStep(Number(root.dataset.step || 0), draftAfterClick)); return; }
+        render(targetStep, { alignStepNav: true });
+        return;
+      }
+      if (e.target.closest("[data-apply-next]")) {
+        e.preventDefault();
+        if (voicePhase === VOICE_PHASE.RECORDING || voicePhase === VOICE_PHASE.STOPPING || voicePhase === VOICE_PHASE.REQUESTING) {
+          abortVoiceRecording({ silent: true });
+        }
+        await collect(root);
+        var idx = Number(root.dataset.step || 0);
+        var missing = missingForStep(idx, readDraft());
+        if (missing.length) {
+          showMissing(missing);
+          return;
+        }
+        if (idx === 2) submitApplication();
+        else if (idx < 2) render(idx + 1, { alignStepNav: true });
+        return;
+      }
+      if (e.target.closest("[data-apply-prev]")) {
+        e.preventDefault();
+        if (voicePhase === VOICE_PHASE.RECORDING || voicePhase === VOICE_PHASE.STOPPING || voicePhase === VOICE_PHASE.REQUESTING) {
+          abortVoiceRecording({ silent: true });
+        }
+        await collect(root);
+        render(Math.max(0, Number(root.dataset.step || 0) - 1), { alignStepNav: true });
+        return;
+      }
+      if (e.target.closest("[data-rule-agree]")) {
+        var rule = publishedRule();
+        if (!rule) return;
+        saveDraft({ rulesAgreement: { accepted: e.target.checked, version: rule.version, ruleId: rule.id, agreedAt: e.target.checked ? now() : "", applicantId: applicantId(), device: navigator.userAgent } });
+        var mark = root.querySelector(".step-complete-mark");
+        if (mark) mark.textContent = stepComplete(Number(root.dataset.step || 0), readDraft()) ? "已完成 ✔" : "未完成 ○";
+        var nextCta = root.querySelector("[data-apply-next]");
+        if (nextCta) nextCta.disabled = !e.target.checked;
+        return;
+      }
+      if (e.target.closest("[data-record-start]")) {
+        e.preventDefault();
+        startRecording();
+        return;
+      }
+      if (e.target.closest("[data-record-stop]")) {
+        e.preventDefault();
+        stopRecording();
+        return;
+      }
+      if (e.target.closest("[data-record-play]")) {
+        var audio = document.getElementById("voicePreview");
+        var playSrc =
+          liveVoiceObjectUrl ||
+          (audio && audio.getAttribute("src")) ||
+          (audio && audio.src) ||
+          ((readDraft().voice || {}).url || "");
+        if (!audio || !playSrc) {
+          showApplyTip("请先完成录音。");
+          return;
+        }
+        var currentSrc = audio.getAttribute("src") || audio.src || "";
+        if (!currentSrc || (liveVoiceObjectUrl && currentSrc !== liveVoiceObjectUrl) || currentSrc !== playSrc) {
+          audio.setAttribute("src", playSrc);
+          audio.src = playSrc;
+          try {
+            audio.load();
+          } catch (eLoad) {}
+        }
+        audio.hidden = true;
+        audio.removeAttribute("controls");
+        if (audio.paused) {
+          audio.play().then(function () {
+            setVoicePlayUi("playing");
+          }).catch(function (err) {
+            setVoicePlayUi("idle");
+            showApplyTip("播放失败：" + ((err && err.message) || "请重试或改用上传已有音频"));
+          });
+        } else {
+          audio.pause();
+          setVoicePlayUi("paused");
+        }
+        return;
+      }
+      var seekEl = e.target.closest("[data-voice-seek]");
+      if (seekEl) {
+        var seekAudio = document.getElementById("voicePreview");
+        if (!seekAudio) return;
+        var dur = Number(seekAudio.duration || 0);
+        if (!(dur > 0)) return;
+        var rect = seekEl.getBoundingClientRect();
+        var ratio = rect.width ? Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width)) : 0;
+        seekAudio.currentTime = dur * ratio;
+        var fill = seekEl.querySelector("[data-voice-progress]");
+        if (fill) fill.style.width = ratio * 100 + "%";
+        return;
+      }
+      if (e.target.closest("[data-copy-voice-template]")) {
+        var text = document.getElementById("voiceTemplateText");
+        if (text && navigator.clipboard) navigator.clipboard.writeText(text.textContent || "");
+        showApplyTip("试音模板已复制", "ok");
+      }
+      if (e.target.closest("[data-record-reset]")) clearVoiceRecording();
+      if (e.target.closest("[data-record-delete]")) clearVoiceRecording();
+      if (e.target.closest("[data-record-confirm]")) {
+        e.preventDefault();
+        var confirmBtn = e.target.closest("[data-record-confirm]");
+        if (confirmBtn && confirmBtn.disabled) {
+          if (uploadBusy.voice) showApplyTip("录音正在保存中，请稍候…", "ok");
+          else showApplyTip("请先录满 10 秒并停止，再点击「确认录音」。");
+          return;
+        }
+        confirmVoice();
+        return;
+      }
+      if (e.target.closest("[data-apply-save]")) { e.preventDefault(); await collect(root); showApplyTip("草稿已保存", "ok"); return; }
+      if (e.target.closest("[data-copy-nickname]")) {
+        var nick = document.querySelector('input[name="gameNickname"]');
+        if (nick) navigator.clipboard && navigator.clipboard.writeText(nick.value || "");
+      }
+      var clear = e.target.closest("[data-clear-upload]");
+      if (clear) { e.preventDefault(); e.stopPropagation(); clearUpload(clear.dataset.clearUpload); }
+      var clearGallery = e.target.closest("[data-clear-gallery]");
+      if (clearGallery) {
+        e.preventDefault();
+        e.stopPropagation();
+        var gIdx = Number(clearGallery.getAttribute("data-clear-gallery"));
+        var gd = readDraft();
+        var glist = photoListOf(gd.uploads);
+        if (gIdx >= 0 && gIdx < glist.length) {
+          var removed = glist[gIdx];
+          glist.splice(gIdx, 1);
+          gd.uploads = gd.uploads || {};
+          gd.uploads.photos = glist;
+          writeDraftRecord(gd);
+          render(Number(root.dataset.step || 0));
+          if (removed && removed.id && companionToken()) {
+            postCompanion("delete_media", { media_id: removed.id, media_type: "gallery" }).catch(function () {});
+          }
+        }
+        return;
+      }
+      var clearVideo = e.target.closest("[data-clear-video]");
+      if (clearVideo) {
+        e.preventDefault();
+        e.stopPropagation();
+        var vIdx = Number(clearVideo.getAttribute("data-clear-video"));
+        var vd = readDraft();
+        var vlist = videoListOf(vd.uploads);
+        if (vIdx >= 0 && vIdx < vlist.length) {
+          var removedVideo = vlist[vIdx];
+          vlist.splice(vIdx, 1);
+          vd.uploads = vd.uploads || {};
+          vd.uploads.videos = vlist;
+          delete vd.uploads.showcaseVideo;
+          writeDraftRecord(vd);
+          render(Number(root.dataset.step || 0));
+          if (removedVideo && removedVideo.id && companionToken()) {
+            postCompanion("delete_media", { media_id: removedVideo.id, media_type: "video" }).catch(function () {});
+          }
+        }
+        return;
+      }
+      var clearRecords = e.target.closest("[data-clear-records]");
+      if (clearRecords) {
+        e.preventDefault();
+        e.stopPropagation();
+        var rIdx = Number(clearRecords.getAttribute("data-clear-records"));
+        var rd = readDraft();
+        var rlist = recordsListOf(rd.uploads);
+        if (rIdx >= 0 && rIdx < rlist.length) {
+          var removedRecord = rlist[rIdx];
+          rlist.splice(rIdx, 1);
+          rd.uploads = rd.uploads || {};
+          rd.uploads.records = rlist;
+          writeDraftRecord(rd);
+          render(Number(root.dataset.step || 0));
+          if (removedRecord && removedRecord.id && companionToken()) {
+            postCompanion("delete_media", { media_id: removedRecord.id, media_type: "achievement" }).catch(function () {});
+          }
+        }
+        return;
+      }
+      var rulesAccBtn = e.target.closest("[data-rules-acc-toggle]");
+      if (rulesAccBtn) {
+        e.preventDefault();
+        var accId = String(rulesAccBtn.getAttribute("data-rules-acc-toggle") || "").trim();
+        if (!accId) return;
+        var dAcc = readDraft();
+        dAcc.ui = Object.assign({}, dAcc.ui || {});
+        dAcc.ui.rulesOpenId = dAcc.ui.rulesOpenId === accId ? "" : accId;
+        writeDraftRecord(dAcc);
+        render(Number(root.dataset.step || 1));
+        return;
+      }
+      var authModeBtn = e.target.closest("[data-auth-mode]");
+      if (authModeBtn) {
+        e.preventDefault();
+        var nextMode = String(authModeBtn.getAttribute("data-auth-mode") || "").trim();
+        if (nextMode !== "id_card" && nextMode !== "deposit") return;
+        var cur = readDraft();
+        cur.identity = Object.assign({}, cur.identity || {});
+        cur.identity.authMode = nextMode;
+        cur.identity.certification_method = nextMode;
+        cur.certification_method = nextMode;
+        if (nextMode === "id_card") {
+          delete cur.identity.depositProof;
+          delete cur.identity.depositMethod;
+          delete cur.identity.depositChannelId;
+        } else {
+          delete cur.identity.idFront;
+          delete cur.identity.idBack;
+          delete cur.identity.documentType;
+        }
+        writeDraftRecord(cur);
+        // STEP1 selects certification_method and shows corresponding cert materials on the same page.
+        render(0);
+        return;
+      }
+      // QR zoom must run before channel-card selection: the QR button lives inside the
+      // channel <label>, so closest("[data-deposit-channel-card]") would otherwise steal
+      // the click, re-render, and never open the lightbox.
+      var qrZoomBtn = e.target.closest("[data-apply-deposit-qr-zoom]");
+      if (qrZoomBtn) {
+        e.preventDefault();
+        e.stopPropagation();
+        var src = qrZoomBtn.getAttribute("data-apply-deposit-qr-zoom") || "";
+        if (!src) {
+          var img = qrZoomBtn.querySelector("img");
+          src = (img && img.getAttribute("src")) || "";
+        }
+        if (src) openApplyDepositQrLightbox(src);
+        return;
+      }
+      var depositChannel = e.target.closest("[data-deposit-channel-card], [data-deposit-channel]");
+      if (depositChannel) {
+        var input =
+          depositChannel.matches && depositChannel.matches("[data-deposit-channel]")
+            ? depositChannel
+            : depositChannel.querySelector("[data-deposit-channel]");
+        var channelId = String((input && input.value) || depositChannel.getAttribute("data-deposit-channel-card") || "").trim();
+        if (channelId) {
+          var dCh = readDraft();
+          dCh.identity = Object.assign({}, dCh.identity || {});
+          dCh.identity.depositChannelId = channelId;
+          dCh.identity.depositMethod = channelId;
+          writeDraftRecord(dCh);
+          render(Number(root.dataset.step || 0));
+        }
+        return;
+      }
+    });
+    document.addEventListener("change", async function (e) {
+      if (e.target.matches("[data-tag-field]")) {
+        var picker = e.target.closest("[data-tag-picker]");
+        if (!picker || !root.contains(picker)) return;
+        var limit = Number(picker.dataset.tagLimit || 99);
+        var checked = picker.querySelectorAll("[data-tag-field]:checked");
+        if (checked.length > limit) {
+          e.target.checked = false;
+          showApplyTip("最多只能选择 " + limit + " 个标签");
+          return;
+        }
+        var pill = e.target.closest(".tag-pill");
+        if (pill) pill.classList.toggle("checked", !!e.target.checked);
+        var countEl = picker.querySelector('[data-tag-count="' + (picker.dataset.tagPicker || "") + '"]');
+        if (countEl) countEl.textContent = String(checked.length);
+        await collect(root);
+        if (picker.dataset.tagPicker === "mainGames") {
+
+          await collect(root);
+        }
+        var mark = root.querySelector(".step-complete-mark");
+        if (mark) mark.textContent = stepComplete(Number(root.dataset.step || 0), readDraft()) ? "已完成 ✔" : "未完成 ○";
+        // Do NOT full re-render — keeps scroll position on mobile.
+      }
+    });
+    document.addEventListener("input", function (e) {
+      if (e.target && e.target.closest && e.target.closest("#companionApplyRoot")) collect(root);
+    });
+    document.addEventListener("change", function (e) {
+      if (!(e.target && e.target.closest && e.target.closest("#companionApplyRoot"))) return;
+      var name = e.target.getAttribute("name") || "";
+      if (name === "settlementMethod") {
+        collect(root).then(function () {
+          var d = readDraft();
+          d.identity = d.identity || {};
+          var method = d.identity.settlementMethod || "";
+          if (!isBankSettlementMethod(method)) {
+            d.identity.settlementBank = "";
+            d.identity.settlementBankOther = "";
+            d.identity.bankName = "";
+          }
+          if (isTngSettlementMethod(method)) {
+            // Prefer dedicated tng field; migrate legacy shared settlementAccount if needed.
+            d.identity.tngAccount = String(d.identity.tngAccount || d.identity.settlementAccount || d.identity.paymentPhone || "").trim();
+            d.identity.paymentPhone = d.identity.tngAccount;
+            d.identity.settlementAccount = "";
+            d.identity.alipayAccount = "";
+          } else if (isAlipaySettlementMethod(method)) {
+            d.identity.alipayAccount = String(d.identity.alipayAccount || d.identity.settlementAccount || "").trim();
+            d.identity.settlementAccount = "";
+            d.identity.tngAccount = "";
+            d.identity.paymentPhone = "";
+          } else if (isBankSettlementMethod(method) || isDuitNowSettlementMethod(method)) {
+            d.identity.tngAccount = "";
+            d.identity.paymentPhone = "";
+            d.identity.alipayAccount = "";
+          } else {
+            if (!isTngSettlementMethod(method)) {
+              d.identity.tngAccount = "";
+              d.identity.paymentPhone = "";
+            }
+            if (!isAlipaySettlementMethod(method)) {
+              d.identity.alipayAccount = "";
+            }
+          }
+          writeDraftRecord(d);
+          render(Number(root.dataset.step || 0));
+        });
+        return;
+      }
+      if (name === "settlementBank") {
+        collect(root).then(function () {
+          var d = readDraft();
+          d.identity = d.identity || {};
+          if (d.identity.settlementBank !== SETTLEMENT_BANK_OTHER) {
+            d.identity.settlementBankOther = "";
+            writeDraftRecord(d);
+          }
+          render(Number(root.dataset.step || 0));
+        });
+        return;
+      }
+      if (name === "settlementBankOther" || name === "settlementName" || name === "settlementAccount" || name === "tngAccount" || name === "alipayAccount") {
+        collect(root);
+      }
+    });
+    document.addEventListener("ended", function (e) {
+      if (e.target && e.target.id === "voicePreview") {
+        markVoiceListenedQuiet();
+        setVoicePlayUi("idle");
+        var fillEnded = document.querySelector("[data-voice-progress]");
+        if (fillEnded) fillEnded.style.width = "100%";
+      }
+    }, true);
+    document.addEventListener("timeupdate", function (e) {
+      if (!(e.target && e.target.id === "voicePreview")) return;
+      var a = e.target;
+      var dur = Number(a.duration || 0);
+      var cur = Number(a.currentTime || 0);
+      var fill = document.querySelector("[data-voice-progress]");
+      var curEl = document.querySelector("[data-voice-current]");
+      var durEl = document.querySelector("[data-voice-duration]");
+      function fmt(sec) {
+        sec = Math.max(0, Math.floor(Number(sec) || 0));
+        return String(Math.floor(sec / 60)).padStart(2, "0") + ":" + String(sec % 60).padStart(2, "0");
+      }
+      if (fill && dur > 0) fill.style.width = Math.min(100, (cur / dur) * 100) + "%";
+      if (curEl) curEl.textContent = fmt(cur);
+      if (durEl && dur > 0) durEl.textContent = fmt(dur);
+      if (!(dur > 0 && cur / dur >= 0.85) && !(cur >= 8)) return;
+      markVoiceListenedQuiet();
+    }, true);
+    document.addEventListener("play", function (e) {
+      if (!(e.target && e.target.id === "voicePreview")) return;
+      setVoicePlayUi("playing");
+    }, true);
+    document.addEventListener("pause", function (e) {
+      if (!(e.target && e.target.id === "voicePreview")) return;
+      if (e.target.ended) {
+        setVoicePlayUi("idle");
+        return;
+      }
+      setVoicePlayUi("paused");
+    }, true);
+  }
+  function hydrateUploadsFromBootstrap(boot) {
+    if (!boot) return;
+    if (!allowServerHydrate || draftGateMode === "fresh" || draftGateMode === "prompt" || hasDraftDiscardedFlag()) {
+      return;
+    }
+    var draft = readDraft();
+    draft.uploads = draft.uploads || {};
+    draft.identity = draft.identity || {};
+    draft.voice = draft.voice || {};
+    var player = boot.player || {};
+    var verification = boot.verification || {};
+    var deposit = boot.deposit || {};
+    applyDepositChannelsFromPayload(deposit);
+    var mediaList = Array.isArray(boot.media) ? boot.media : [];
+    var mediaMap = {
+      avatarUrl: "",
+      coverUrl: "",
+      voiceUrl: "",
+      videoUrl: "",
+      gallery: [],
+      videos: [],
+      records: [],
+    };
+    mediaList.forEach(function (m) {
+      if (!m) return;
+      var mt = String(m.mediaType || m.media_type || "").toLowerCase();
+      var url = m.url || "";
+      if (!url) return;
+      var ctype = String(m.contentType || m.content_type || "").toLowerCase();
+      var isVideo = mt === "video" || (/^(gallery|achievement)$/.test(mt) && /^video\//.test(ctype));
+      if (mt === "avatar" && !mediaMap.avatarUrl) mediaMap.avatarUrl = url;
+      else if (mt === "cover" && !mediaMap.coverUrl) mediaMap.coverUrl = url;
+      else if (mt === "voice" && !mediaMap.voiceUrl) mediaMap.voiceUrl = url;
+      else if (mt === "achievement") mediaMap.records.push({ id: m.id || "", url: url, contentType: ctype, status: "ok" });
+      else if (isVideo) {
+        if (!mediaMap.videoUrl) mediaMap.videoUrl = url;
+        mediaMap.videos.push({ id: m.id || "", url: url, contentType: ctype || "video/mp4", status: "ok" });
+      } else if (mt === "gallery") mediaMap.gallery.push({ id: m.id || "", url: url, status: "ok" });
+    });
+    if (boot.media && !Array.isArray(boot.media)) {
+      mediaMap.avatarUrl = mediaMap.avatarUrl || boot.media.avatarUrl || "";
+      mediaMap.coverUrl = mediaMap.coverUrl || boot.media.coverUrl || "";
+      mediaMap.voiceUrl = mediaMap.voiceUrl || boot.media.voiceUrl || "";
+      mediaMap.videoUrl = mediaMap.videoUrl || boot.media.videoUrl || "";
+      if (Array.isArray(boot.media.gallery)) mediaMap.gallery = boot.media.gallery;
+      if (Array.isArray(boot.media.videos)) mediaMap.videos = boot.media.videos;
+      if (Array.isArray(boot.media.achievements)) mediaMap.records = boot.media.achievements;
+      if (!mediaMap.videos.length && mediaMap.videoUrl) {
+        mediaMap.videos = [{ id: "", url: mediaMap.videoUrl, contentType: "video/mp4", status: "ok" }];
+      }
+    }
+    if (!hasDurableUpload(draft.uploads.avatar) && (mediaMap.avatarUrl || player.avatar)) {
+      draft.uploads.avatar = { url: mediaMap.avatarUrl || player.avatar, status: "ok" };
+    }
+    // Card cover upload removed — do not hydrate into draft.uploads.cover.
+    // Media lists are unlimited: merge the whole server list by id/url instead of only filling an empty draft.
+    var mergedPhotos = mergeServerMediaList(photoListOf(draft.uploads), mediaMap.gallery);
+    if (mergedPhotos.length) draft.uploads.photos = mergedPhotos;
+    var mergedVideos = mergeServerMediaList(videoListOf(draft.uploads), mediaMap.videos);
+    if (mergedVideos.length) {
+      draft.uploads.videos = mergedVideos;
+      delete draft.uploads.showcaseVideo;
+    }
+    var mergedRecords = mergeServerMediaList(recordsListOf(draft.uploads), mediaMap.records);
+    if (mergedRecords.length) draft.uploads.records = mergedRecords;
+    if (!hasDurableUpload(draft.voice) && !hasDurableUpload(draft.voice.url) && (mediaMap.voiceUrl || player.voiceUrl)) {
+      draft.voice.url = mediaMap.voiceUrl || player.voiceUrl;
+      draft.voice.confirmed = true;
+      draft.voice.listened = true;
+      draft.voice.uploaded = true;
+      draft.voice.status = "已确认";
+    }
+    if (!hasDurableUpload(draft.identity.idFront) && verification.idFrontUrl) {
+      draft.identity.idFront = { url: verification.idFrontUrl, path: verification.idFrontPath || "", status: "ok" };
+    }
+    if (!hasDurableUpload(draft.identity.idBack) && verification.idBackUrl) {
+      draft.identity.idBack = { url: verification.idBackUrl, path: verification.idBackPath || "", status: "ok" };
+    }
+    if (!hasDurableUpload(draft.identity.depositProof) && (deposit.proofUrl || verification.depositProofUrl)) {
+      draft.identity.depositProof = {
+        url: deposit.proofUrl || verification.depositProofUrl,
+        path: deposit.proofPath || "",
+        status: "ok",
+      };
+    }
+    var payment = boot.payment || boot.paymentAccount || {};
+    if (!draft.identity.settlementMethod && (payment.method || payment.settlementMethod)) {
+      draft.identity.settlementMethod = payment.method || payment.settlementMethod || "";
+    }
+    if (!draft.identity.settlementBank && (payment.bankName || payment.bank_name)) {
+      var bankSplit = splitSettlementBankFields(payment.bankName || payment.bank_name || "");
+      draft.identity.settlementBank = bankSplit.settlementBank;
+      if (!draft.identity.settlementBankOther) {
+        draft.identity.settlementBankOther = bankSplit.settlementBankOther;
+      }
+      draft.identity.bankName = payment.bankName || payment.bank_name || "";
+    } else if (draft.identity.settlementBank && SETTLEMENT_BANKS.indexOf(String(draft.identity.settlementBank).trim()) < 0) {
+      // Draft already has a free-text bank as settlementBank (pre-dropdown) — coerce.
+      var coerce = splitSettlementBankFields(draft.identity.settlementBank);
+      draft.identity.settlementBank = coerce.settlementBank;
+      if (!draft.identity.settlementBankOther) draft.identity.settlementBankOther = coerce.settlementBankOther;
+    }
+    if (!draft.identity.settlementName && (payment.accountName || payment.account_name)) {
+      draft.identity.settlementName = payment.accountName || payment.account_name || "";
+    }
+    if (!draft.identity.settlementAccount && (payment.bankAccount || payment.bank_account)) {
+      draft.identity.settlementAccount = payment.bankAccount || payment.bank_account || "";
+    }
+    if (!draft.identity.tngAccount && (payment.tngAccount || payment.tng_account || payment.paymentPhone || payment.payment_phone)) {
+      draft.identity.tngAccount = payment.tngAccount || payment.tng_account || payment.paymentPhone || payment.payment_phone || "";
+      draft.identity.paymentPhone = draft.identity.tngAccount;
+    }
+    if (!draft.identity.alipayAccount && (payment.alipayAccount || payment.alipay_account)) {
+      draft.identity.alipayAccount = payment.alipayAccount || payment.alipay_account || "";
+    }
+    // Legacy: if method is TNG/支付宝 but value only lived in bank_account, hydrate method-specific fields.
+    if (isTngSettlementMethod(draft.identity.settlementMethod) && !draft.identity.tngAccount && draft.identity.settlementAccount) {
+      draft.identity.tngAccount = draft.identity.settlementAccount;
+      draft.identity.paymentPhone = draft.identity.settlementAccount;
+    }
+    if (isAlipaySettlementMethod(draft.identity.settlementMethod) && !draft.identity.alipayAccount && draft.identity.settlementAccount) {
+      draft.identity.alipayAccount = draft.identity.settlementAccount;
+    }
+    writeDraftRecord(draft);
+  }
+  function initHomeEntry() {
+    var entry = document.querySelector("[data-companion-entry]");
+    if (!entry) return;
+    var app = existingApplication();
+    if (app && app.status === "approved") {
+      entry.href = "companion/index.html";
+      entry.innerHTML = '<i>🐱</i><div><strong>陪玩中心</strong><span>进入工作台，开始接单</span></div>';
+    }
+  }
+  function applyRemoteTaxonomy() {
+    var taxonomy = window.MCJTaxonomy;
+    if (!taxonomy || !taxonomy.items) return;
+    var applyServices = (taxonomy.items("games") || []).slice();
+    if (!applyServices.length) applyServices = (taxonomy.items("services") || []).filter(function (item) {
+      var positions = item.displayPositions || [];
+      return item.allowApply !== false && positions.indexOf("companion_apply") >= 0;
+    });
+    var games = applyServices.map(function (item) {
+      return taxonomy.label(item);
+    }).filter(Boolean);
+    var orderServices = ["陪玩服务", "陪聊服务"];
+    var tags = taxonomy.items("companion_tags");
+    tagGroups.mainGames = { "可接游戏": games };
+    tagGroups.modes = { "可提供服务": orderServices };
+    if (tags.length) {
+      var grouped = {};
+      tags.forEach(function (item) {
+        var group = item.group || "平台标签";
+        var name = taxonomy.label(item);
+        if (!name) return;
+        grouped[group] = grouped[group] || [];
+        if (grouped[group].indexOf(name) < 0) grouped[group].push(name);
+      });
+      if (Object.keys(grouped).length) tagGroups.personalTags = grouped;
+    }
+  }
+  function applyBootstrap(boot) {
+    if (boot && boot.player) {
+      remoteStatus = {
+        applicationStatus: boot.player.auditStatus || boot.player.applicationStatus || "",
+        rejectReason: boot.player.applicationRejectReason || "",
+      };
+    }
+    hydrateUploadsFromBootstrap(boot);
+  }
+  function hydrateSessionRefreshFromMirrors() {
+    // Backfill refreshToken/expiresAt for older companion sessions created via boss upgrade without refresh.
+    var session = readCompanionSession();
+    if (!session || !(session.token || session.accessToken)) return;
+    var refresh = String(session.refreshToken || session.refresh_token || "").trim();
+    var exp = session.expiresAt != null && session.expiresAt !== "" ? session.expiresAt : session.expires_at;
+    var mirroredRefresh = readAnyRefreshToken(session);
+    var mirroredExp = readAnyExpiresAt(session);
+    if ((!refresh && mirroredRefresh) || ((exp == null || exp === "") && mirroredExp !== "")) {
+      saveCompanionSession({
+        token: session.token || session.accessToken || "",
+        accessToken: session.token || session.accessToken || "",
+        refreshToken: refresh || mirroredRefresh,
+        expiresAt: exp != null && exp !== "" ? exp : mirroredExp,
+        user: session.user || null,
+        remember: session.remember !== false,
+      });
+    }
+  }
+  function runApplyBootstrap(force) {
+    if (initStarted && !force) return;
+    initStarted = true;
+    initLoading = true;
+    initLoadError = "";
+    hydrateSessionRefreshFromMirrors();
+    render(readDraft().step || 0);
+    bind();
+    var taxonomyReady = window.MCJTaxonomy && window.MCJTaxonomy.load
+      ? window.MCJTaxonomy.load().then(function () { applyRemoteTaxonomy(); }).catch(function () {})
+      : Promise.resolve();
+    Promise.all([
+      taxonomyReady,
+      loadRemoteApplyConfig(),
+      fetchCompanionBootstrap(),
+    ]).then(function (results) {
+      resolveDraftGateAfterBootstrap(results[2]);
+      initLoading = false;
+      initLoadError = "";
+      remoteConfigLoaded = true;
+      render(draftGateMode === "prompt" ? 0 : readDraft().step || 0);
+      restoreApplyScroll();
+      var idMode = String(((readDraft().identity || {}).authMode) || "");
+      if (draftGateMode !== "prompt" && (idMode === "deposit" || Number(readDraft().step || 0) === 2)) {
+        return fetchDepositPayMethods(false).then(function () {
+          render(readDraft().step || 0);
+        });
+      }
+      return null;
+    }).catch(function () {
+      initLoading = false;
+      initLoadError = "资料加载失败，请重试";
+      remoteConfigLoaded = true;
+      render(readDraft().step || 0);
+    });
+  }
+  /** Guest must not stay on apply page — redirect to site login, then return here. */
+  function redirectGuestToLogin() {
+    var ret =
+      String(location.pathname || "/companion-apply.html") +
+      String(location.search || "") +
+      String(location.hash || "");
+    try {
+      sessionStorage.setItem("mcjAfterLoginRedirect", ret);
+    } catch (e) {}
+    location.replace("/login.html?return=" + encodeURIComponent(ret || "/companion-apply.html"));
+  }
+
+  function init() {
+    if (!document.getElementById("companionApplyRoot")) return;
+    // Auth guard (defense in depth with portal-early-gate): no companion JWT and no boss JWT → login.
+    if (!companionToken() && !hasBossSession() && !looksLikeJwt(bossAccessToken()) && !bossRefreshToken()) {
+      redirectGuestToLogin();
+      return;
+    }
+    ensureDefaultApplicationConfig();
+    initHomeEntry();
+    // Paint skeleton immediately — never wait for serial API chain.
+    initLoading = true;
+    initLoadError = "";
+    // Scoped drafts: purge legacy unscoped key; migrate only for the current auth user.
+    try {
+      var bootUid = authUserId();
+      if (bootUid) migrateLegacyDraftForUser(bootUid);
+      else purgeUnscopedDraftKeys();
+    } catch (eBootDraft) {}
+    render(readDraft().step || 0);
+    bind();
+    // Restore boss JWT (refresh if needed) BEFORE final auth-gate paint so logged-in
+    // bosses see「使用当前老板账号」instead of the register form.
+    ensureBossSessionForApply()
+      .then(function () {
+        // After refresh attempt, still no session → guest; leave apply page.
+        if (!companionToken() && !hasBossSession()) {
+          redirectGuestToLogin();
+          return null;
+        }
+        if (!companionToken() && hasBossSession()) {
+          authUi.preferOtherAccount = false;
+          render(readDraft().step || 0);
+        }
+        // Apply form restored boss session — keep header chrome in sync
+        // (「个人中心」+「退出登录」, not stale「登录」).
+        if (window.MCJBossHeader && typeof window.MCJBossHeader.sync === "function") {
+          return window.MCJBossHeader.sync();
+        }
+        try {
+          window.dispatchEvent(
+            new CustomEvent("mcj:auth-updated", { detail: { reason: "companion-apply-boss-sync" } })
+          );
+        } catch (eSync) {}
+        return null;
+      })
+      .catch(function () {})
+      .then(function () {
+        if (!companionToken() && !hasBossSession()) return;
+        runApplyBootstrap(false);
+      });
+  }
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
+  else init();
+  window.addEventListener("pagehide", saveApplyScroll);
+  window.addEventListener("pageshow", function (ev) {
+    if (ev.persisted) {
+      restoreApplyScroll();
+      return;
+    }
+    restoreApplyScroll();
+  });
+  function onApplyAuthIdentityChanged() {
+    if (!document.getElementById("companionApplyRoot")) return;
+    var uid = authUserId();
+    if (!uid) {
+      clearLiveApplyMedia();
+      purgeUnscopedDraftKeys();
+      try {
+        sessionStorage.removeItem(APPLICANT_KEY);
+      } catch (e) {}
+      // Logged out while on apply → leave page (do not show guest fill form).
+      if (!companionToken() && !hasBossSession()) {
+        redirectGuestToLogin();
+        return;
+      }
+      render(0);
+      return;
+    }
+    // Header guest + leftover same-user companion session should already be
+    // cleared on boss logout. If companion remains without boss, keep it only
+    // when it is an explicit apply-gate companion login (token present).
+    migrateLegacyDraftForUser(uid);
+    if (companionToken() || authUi.preferOtherAccount || authUi.busy) {
+      render(Number(document.getElementById("companionApplyRoot").dataset.step || readDraft().step || 0));
+      return;
+    }
+    if (hasBossSession()) {
+      render(Number(document.getElementById("companionApplyRoot").dataset.step || 0));
+    } else {
+      // No boss and no companion token path — show guest/boss gate, not draft.
+      render(0);
+    }
+  }
+  window.addEventListener("mcj:auth-updated", onApplyAuthIdentityChanged);
+  window.addEventListener("mcj:auth-changed", onApplyAuthIdentityChanged);
+  window.addEventListener("mcj:auth-expired", onApplyAuthIdentityChanged);
+  window.MCJCompanionApplyDraft = {
+    authUserId: authUserId,
+    readDraft: readDraft,
+    clearCurrentUserDraft: clearCurrentUserDraft,
+    discardApplicationDraftFull: discardApplicationDraftFull,
+    continueApplicationDraft: continueApplicationDraft,
+    isDraftEffectivelyEmpty: isDraftEffectivelyEmpty,
+    getDraftGateMode: function () { return draftGateMode; },
+    getDraftGeneration: function () { return draftGeneration; },
+    purgeUnscopedDraftKeys: purgeUnscopedDraftKeys,
+    draftKeyForUser: draftKeyForUser,
+    /** Capture/debug helper: jump to a step without chip lock checks. */
+    gotoStep: function (step, opts) {
+      render(Math.max(0, Math.min(steps.length - 1, Number(step) || 0)), opts || { alignStepNav: true });
+    },
+    /** Capture/debug helper: reload deposit pay channels then re-render. */
+    reloadDepositPayMethods: function () {
+      return fetchDepositPayMethods(true).then(function () {
+        render(Number((document.getElementById("companionApplyRoot") || {}).dataset.step || readDraft().step || 0), {
+          alignStepNav: true,
+        });
+        return remoteDepositPay;
+      });
+    },
+  };
+})();
+
+
+
+
+

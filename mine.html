@@ -1,0 +1,876 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <!-- mcj-pwa-meta:begin -->
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="妙脆角老板">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#0a0610">
+  <meta name="mobile-web-app-capable" content="yes">
+  <script src="/pwa-boot.js?v=20261009bell1" defer></script>
+  <!-- mcj-pwa-meta:end -->
+
+  <script src="/portal-early-gate.js?v=20260911authPerfP0"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>我的账号 - MEOW CUI JIAO</title>
+  <link rel="stylesheet" href="src/style.css">
+  <link rel="stylesheet" href="src/boss-header.css?v=20261018brand1">
+  <link rel="prefetch" href="/orders.html" as="document">
+  <link rel="prefetch" href="/messages.html" as="document">
+  <link rel="prefetch" href="/support.html" as="document">
+  <link rel="prefetch" href="/recharge.html" as="document">
+  <style>
+    :root{
+      --bg:#050505;
+      --card:#0d0d0f;
+      --text:#f5f5f7;
+      --muted:rgba(255,255,255,.48);
+      --line:rgba(232,154,196,.34);
+      --pink:#e89ac4;
+    }
+    body{
+      min-height:100vh;
+      background:#050505;
+      color:var(--text);
+    }
+    /* Header ~70px, small brand only */
+    .topbar{
+      min-height:70px;height:70px;display:flex;align-items:center;
+      padding:0 16px!important;margin:0;border:0!important;
+      background:transparent!important;box-shadow:none!important;
+    }
+    .topbar .brand{
+      display:inline-flex;align-items:center;gap:8px;text-decoration:none;color:var(--text);
+      font-size:12px;font-weight:700;letter-spacing:.04em;opacity:.85;
+    }
+    .topbar .brand img{width:24px;height:24px;border-radius:8px;object-fit:cover}
+    /* Perf Phase2: instant click feedback (<100ms) on full-page nav */
+    a,button{touch-action:manipulation}
+    a:active,button:active{opacity:.78}
+    .mine-quick a,.entry-trigger,.boss-nav a,.bca-quick-item,.bca-row{
+      transition:opacity .08s linear,transform .08s linear,background-color .12s ease;
+    }
+    .mine-quick a.is-nav-pending,.entry-trigger.is-nav-pending,.boss-nav a.is-nav-pending,.bca-quick-item.is-nav-pending,.bca-row.is-nav-pending{
+      opacity:.62;transform:scale(.98);
+    }
+    .topbar .boss-nav{display:none!important}
+    body.mcj-boss-shell header.mcj-boss-header{
+      min-height:70px!important;height:70px!important;padding:0 16px!important;
+      background:transparent!important;border:0!important;box-shadow:none!important;
+    }
+    body.mcj-boss-shell header.mcj-boss-header .mcj-header-brand-logo{width:24px!important;height:24px!important;border-radius:8px!important}
+    body.mcj-boss-shell header.mcj-boss-header .mcj-header-brand-en{font-size:12px!important;opacity:.85}
+    body.mcj-boss-shell header.mcj-boss-header .mcj-header-brand-zh{display:none!important}
+
+    .boss-shell{
+      width:min(400px,calc(100% - 28px));margin:0 auto;padding:8px 0 100px;box-sizing:border-box;
+    }
+    .empty-card{
+      border:1px solid var(--line);border-radius:18px;background:rgba(13,13,15,.92);
+      padding:28px 22px;
+    }
+    .empty-card h1{margin:0 0 8px;font-size:20px}
+    .empty-card p{margin:0 0 16px;color:var(--muted);line-height:1.5}
+
+    /* Boss identity card */
+    .boss-id{
+      display:flex;flex-direction:column;align-items:stretch;gap:14px;
+      padding:20px;margin:0 0 22px;
+      border-radius:22px;border:1px solid var(--line);
+      background:rgba(10,10,12,.88);
+      box-shadow:0 0 0 1px rgba(0,0,0,.4),0 12px 40px rgba(0,0,0,.35);
+    }
+    .boss-id-top{display:flex;align-items:center;gap:16px;min-width:0}
+    .boss-id-avatar{
+      width:72px;height:72px;flex:0 0 72px;border-radius:999px;overflow:hidden;
+      border:1px solid rgba(232,154,196,.4);
+      background:rgba(232,154,196,.08);
+      display:grid;place-items:center;color:#ffd6e7;font-weight:900;font-size:28px;
+    }
+    .boss-id-avatar img{width:100%;height:100%;object-fit:cover;display:block}
+    .boss-id-meta{min-width:0;flex:1}
+    .boss-id-meta h1{
+      margin:0;font-size:22px;line-height:1.2;font-weight:800;letter-spacing:.01em;
+    }
+    .boss-id-meta p{
+      margin:8px 0 0;color:var(--muted);font-size:13px;font-weight:600;line-height:1.35;
+    }
+    .boss-stats{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    .boss-stat{
+      display:flex;flex-direction:column;align-items:flex-start;justify-content:center;gap:6px;
+      min-height:72px;padding:12px 14px;border-radius:16px;
+      border:1px solid rgba(232,154,196,.34);
+      background:rgba(232,154,196,.06);
+      color:var(--text);text-decoration:none;font:inherit;
+      cursor:pointer;-webkit-tap-highlight-color:transparent;
+    }
+    .boss-stat:hover,.boss-stat:active{background:rgba(232,154,196,.1)}
+    .boss-stat-label{display:flex;align-items:center;gap:6px;color:#ffd6e7;font-size:13px;font-weight:700}
+    .boss-stat-value{font-size:22px;font-weight:800;line-height:1.1;letter-spacing:.01em}
+
+    /* 4 entry buttons — open modal, never inline expand */
+    .entry-stack{display:grid;gap:14px}
+    .entry{
+      border-radius:18px;border:1px solid var(--line);overflow:hidden;
+      background:rgba(10,10,12,.9);
+      box-shadow:0 10px 28px rgba(0,0,0,.28);
+    }
+    .entry a.entry-trigger{text-decoration:none;color:inherit;box-sizing:border-box}
+    .entry-trigger{
+      width:100%;min-height:70px;height:70px;padding:0 18px;
+      display:flex;align-items:center;justify-content:space-between;gap:12px;
+      border:0;background:transparent;color:var(--text);
+      font:inherit;font-size:16px;font-weight:750;letter-spacing:.01em;
+      text-align:left;cursor:pointer;-webkit-tap-highlight-color:transparent;
+    }
+    .entry-trigger:focus-visible{outline:2px solid rgba(232,154,196,.35);outline-offset:-3px}
+    .entry-title{min-width:0}
+    .entry-arrow{
+      flex:0 0 30px;width:30px;height:30px;border-radius:999px;
+      border:1px solid rgba(232,154,196,.4);
+      background:rgba(232,154,196,.08);
+      display:grid;place-items:center;
+    }
+    .entry-arrow::before{
+      content:"";width:7px;height:7px;
+      border-right:2px solid #ffd6e7;border-bottom:2px solid #ffd6e7;
+      transform:rotate(-45deg);
+    }
+
+    .entry-link{
+      display:flex;align-items:center;justify-content:space-between;gap:10px;
+      min-height:48px;padding:10px 6px;border:0;border-radius:12px;background:transparent;
+      color:var(--text);font:inherit;font-size:14px;font-weight:650;
+      text-decoration:none;cursor:pointer;text-align:left;width:100%;
+    }
+    .entry-link:hover,.entry-link:active{background:rgba(255,255,255,.03)}
+    .entry-link::after{
+      content:"";width:6px;height:6px;flex:0 0 6px;
+      border-right:1.5px solid rgba(255,255,255,.35);border-bottom:1.5px solid rgba(255,255,255,.35);
+      transform:rotate(-45deg);
+    }
+    .feature-modal-body{display:grid;gap:4px;max-height:min(70vh,560px);overflow:auto;padding-right:2px}
+    .feature-modal-note{margin:0 0 8px;color:var(--muted);font-size:13px;line-height:1.45}
+
+    #bossAccountSecurity{padding:2px 2px 6px}
+    #bossAccountSecurity .mcj-account-security{margin:0!important;padding:0!important;border:0!important;background:transparent!important;border-radius:0!important}
+    #bossAccountSecurity .mcj-account-security > h3{display:none}
+    #bossAccountSecurity .mcj-sec-grid{display:grid;gap:0;grid-template-columns:1fr!important}
+    #bossAccountSecurity .mcj-sec-grid div{
+      padding:12px 6px!important;border:0!important;border-radius:0!important;background:transparent!important;
+      border-bottom:1px solid rgba(255,255,255,.06)!important;
+    }
+    #bossAccountSecurity .mcj-sec-grid div:last-child{border-bottom:0!important}
+    #bossAccountSecurity .mcj-sec-form button,
+    #bossAccountSecurity .mcj-sec-actions button{
+      border:1px solid rgba(232,154,196,.28)!important;background:rgba(232,154,196,.08)!important;
+      color:var(--text)!important;border-radius:12px!important;min-height:42px!important;
+    }
+    #bossAccountSecurity .mcj-sec-link{border:0!important;background:transparent!important;width:100%;justify-content:flex-start;padding:10px 6px!important}
+
+    .mine-logout-wrap{margin-top:28px;display:flex;justify-content:center}
+    .mine-logout{
+      border:0;background:transparent;color:rgba(255,255,255,.4);
+      font:inherit;font-size:13px;font-weight:600;cursor:pointer;padding:10px 16px;
+    }
+    .mine-logout:hover{color:rgba(255,255,255,.62)}
+
+    .boss-btn{border:1px solid rgba(232,154,196,.35);border-radius:12px;background:rgba(232,154,196,.1);color:#fff;min-height:42px;padding:10px 14px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;text-decoration:none}
+    .boss-btn.ghost{background:transparent}
+    /* Beat global style.css `.modal{position:relative;z-index:1}` so overlays cover the page */
+    #featureModal.modal,
+    #editModal.modal{
+      position:fixed!important;inset:0!important;z-index:100000!important;
+      background:rgba(0,0,0,.72)!important;
+      display:none;align-items:center;justify-content:center;padding:18px;
+    }
+    #featureModal.modal.open,
+    #editModal.modal.open{display:flex!important}
+    #featureModal .modal-box,
+    #editModal .modal-box{
+      width:min(520px,100%);max-height:min(86vh,720px);overflow:auto;
+      border:1px solid rgba(232,154,196,.34);border-radius:18px;background:#111014;
+      padding:20px;box-sizing:border-box;box-shadow:0 18px 48px rgba(0,0,0,.55);
+    }
+    .modal-head{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:12px}
+    .modal-head h2{margin:0;font-size:18px}
+    .close{width:36px;height:36px;border:1px solid rgba(232,154,196,.28);border-radius:10px;background:rgba(232,154,196,.08);color:#fff;cursor:pointer;font-size:20px;line-height:1}
+    .form-grid{display:grid;gap:12px}
+    .form-grid label{display:grid;gap:7px;color:#ffd6e7;font-weight:700;font-size:13px}
+    .form-grid input{height:44px;border:1px solid rgba(255,255,255,.12);border-radius:12px;background:rgba(0,0,0,.28);color:#fff;padding:0 12px}
+    .avatar-edit{
+      display:flex;flex-direction:column;align-items:center;gap:12px;
+      padding:6px 0 10px;text-align:center;
+    }
+    .avatar-edit-preview{
+      width:88px;height:88px;flex:0 0 88px;border-radius:999px;overflow:hidden;
+      border:2px solid rgba(232,154,196,.45);background:rgba(232,154,196,.08);
+      box-shadow:0 0 0 4px rgba(232,154,196,.08);
+      display:grid;place-items:center;color:#ffd6e7;font-weight:900;font-size:32px;
+    }
+    .avatar-edit-preview img{width:100%;height:100%;object-fit:cover;display:block}
+    .avatar-edit-tools{display:grid;gap:6px;width:min(220px,100%);justify-items:center}
+    .avatar-edit-tools .boss-btn{
+      width:100%;justify-content:center;min-height:40px;border-radius:999px;
+      font-weight:700;letter-spacing:.02em;
+    }
+    .avatar-edit-hint{
+      margin:0;color:rgba(255,255,255,.38);font-size:11px;line-height:1.35;font-weight:500;
+      max-width:18em;
+    }
+    .state{margin-top:10px;color:#ffb9d6;min-height:20px}
+
+    /* App-style mine polish (features preserved) */
+    body{background:radial-gradient(ellipse 80% 40% at 50% -8%,rgba(255,126,189,.1),transparent 55%),#050505!important}
+    .boss-shell{width:min(430px,calc(100% - 24px));padding:4px 0 calc(28px + env(safe-area-inset-bottom,0px))}
+    .boss-id{gap:16px;padding:18px 16px;margin:0 0 16px;border-radius:20px;border:1px solid rgba(255,214,232,.14);background:linear-gradient(160deg,rgba(28,18,28,.95),rgba(10,10,12,.96));box-shadow:0 14px 36px rgba(0,0,0,.32)}
+    .boss-id-avatar{width:64px;height:64px;flex-basis:64px;border:2px solid rgba(255,158,207,.35)}
+    .boss-id-meta h1{font-size:20px}
+    .boss-stats{gap:8px}
+    .boss-stat{min-height:64px;border-radius:14px;padding:10px 12px;border-color:rgba(255,214,232,.16);background:rgba(255,255,255,.03)}
+    .boss-stat-value{font-size:20px}
+    .mine-quick{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:0 0 16px}
+    .mine-quick a,.mine-quick button{
+      display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;
+      min-height:84px;padding:12px 4px 10px;border-radius:16px;
+      border:1px solid rgba(255,255,255,.06);
+      background:rgba(255,255,255,.03);
+      color:#fff8fc;text-decoration:none;font:inherit;cursor:pointer;
+      -webkit-tap-highlight-color:transparent;
+      transition:background-color .15s ease,border-color .15s ease,transform .12s ease;
+    }
+    .mine-quick a:hover,.mine-quick button:hover{
+      background:rgba(255,158,207,.06);
+      border-color:rgba(255,158,207,.16);
+    }
+    .mine-quick a:active,.mine-quick button:active{
+      background:rgba(255,158,207,.10);
+      transform:scale(.98);
+    }
+    .mine-quick a:focus-visible,.mine-quick button:focus-visible{
+      outline:2px solid rgba(255,158,207,.55);
+      outline-offset:2px;
+    }
+    .mine-quick-ico{
+      width:42px;height:42px;border-radius:13px;
+      display:grid;place-items:center;
+      background:rgba(255,158,207,.08);
+      border:1px solid rgba(255,255,255,.04);
+      color:rgba(255,236,245,.92);
+      box-shadow:none;
+    }
+    .mine-quick-ico svg{
+      width:22px;height:22px;display:block;
+      pointer-events:none;
+    }
+    .mine-quick-label{
+      max-width:100%;
+      padding:0 2px;
+      font-size:11px;font-weight:700;letter-spacing:.01em;
+      line-height:1.2;text-align:center;
+      color:rgba(255,232,242,.84);
+      white-space:normal;overflow-wrap:anywhere;
+    }
+    html[lang="en"] .mine-quick-label{font-size:10px;letter-spacing:0;font-weight:650}
+    .mine-section-title{margin:4px 2px 8px;font-size:12px;font-weight:700;letter-spacing:.08em;color:rgba(255,214,232,.45);text-transform:uppercase}
+    .entry-stack{gap:10px}
+    .entry{border-radius:16px;border-color:rgba(255,214,232,.12);background:rgba(12,10,16,.92);box-shadow:none}
+    .entry-trigger{min-height:56px;height:56px;padding:0 14px;font-size:15px}
+    .entry-arrow{width:26px;height:26px;flex-basis:26px;border-color:rgba(255,214,232,.22)}
+    .empty-card{border-radius:18px;border-color:rgba(255,214,232,.14);background:rgba(14,12,18,.94)}
+
+    .review-tip{margin:0 0 14px;padding:12px 14px;border:1px solid rgba(232,154,196,.28);border-radius:14px;background:rgba(232,154,196,.08);color:#ffd6e7;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+    .review-tip p{margin:0;font-size:13px;line-height:1.45}
+    .review-tip .tip-actions{display:flex;gap:8px;align-items:center}
+    .review-tip .tip-link{border:0;background:transparent;color:#ffe6f2;font-weight:800;cursor:pointer;text-decoration:underline;padding:0;font:inherit}
+    .review-tip .tip-dismiss{width:32px;height:32px;border:1px solid rgba(255,255,255,.12);border-radius:10px;background:rgba(255,255,255,.05);color:#fff;cursor:pointer}
+  </style>
+</head>
+<body>
+  <header class="topbar"><a class="brand" href="index.html"><img src="assets/meow-cuijiao-brand-96.webp" alt="MEOW CUI JIAO" width="24" height="24" decoding="async" onerror="this.onerror=null;this.src='assets/meow-cuijiao-brand-96.jpg'"><span>MEOW CUI JIAO</span></a><nav class="boss-nav"><a href="index.html">首页</a><a href="companion-center.html">陪玩大厅</a><a href="/orders.html">我的订单</a><a href="support.html?start=1">在线客服</a></nav></header>
+  <main class="boss-shell" id="accountApp"></main>
+  <div class="modal" id="featureModal" aria-hidden="true">
+    <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="featureModalTitle">
+      <div class="modal-head"><h2 id="featureModalTitle">设置</h2><button class="close" type="button" data-close-feature aria-label="关闭">×</button></div>
+      <div class="feature-modal-body" id="featureModalBody"></div>
+    </div>
+  </div>
+  <div class="modal" id="editModal" aria-hidden="true">
+    <form class="modal-box" id="profileForm">
+      <div class="modal-head"><h2>编辑资料</h2><button class="close" type="button" data-close>×</button></div>
+      <div class="form-grid">
+        <div class="avatar-edit" data-avatar-edit>
+          <div class="avatar-edit-preview" id="avatarPreview" aria-label="当前头像">B</div>
+          <div class="avatar-edit-tools">
+            <button class="boss-btn" type="button" id="avatarPickBtn">更换头像</button>
+            <input type="file" id="avatarFileInput" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" hidden>
+            <input type="hidden" name="avatarUrl" id="avatarUrlField" value="">
+            <p class="avatar-edit-hint">支持 JPG / PNG / WEBP，最大 4MB</p>
+          </div>
+        </div>
+        <label>昵称<input name="displayName" maxlength="40" required></label>
+        <label>手机号<input name="phone" maxlength="30" autocomplete="tel"></label>
+        <button class="boss-btn" type="submit">保存资料</button>
+        <p class="state" id="editState"></p>
+      </div>
+    </form>
+  </div>
+  <link rel="stylesheet" href="/src/boss-vip-ui.css?v=20260920bossVipUi2">
+  <link rel="stylesheet" href="/src/boss-center-actions.css?v=20260926bossCenterActions1">
+  <script src="src/boss-auth-session.js?v=20260911authPerfP0"></script>
+  <script src="src/boss-profile-cache.js?v=20260911perfP2"></script>
+  <script src="src/boss-nav-prefetch.js?v=20261004navPerf1"></script>
+  <script src="src/role-gates.js?v=20260911authPerfP0"></script>
+  <script src="src/account-security.js?v=20260805acctSec1"></script>
+  <script src="src/boss-vip-ui.js?v=20260921bossVipProg1"></script>
+  <script src="src/boss-center-actions.js?v=20260926bossCenterActions1"></script>
+  <script src="src/boss-header.js" defer></script>
+  <script>
+    (function(){
+      var root=document.getElementById('accountApp');
+      var modal=document.getElementById('editModal');
+      var featureModal=document.getElementById('featureModal');
+      var featureModalTitle=document.getElementById('featureModalTitle');
+      var featureModalBody=document.getElementById('featureModalBody');
+      var form=document.getElementById('profileForm');
+      var editState=document.getElementById('editState');
+      var avatarPreview=document.getElementById('avatarPreview');
+      var avatarPickBtn=document.getElementById('avatarPickBtn');
+      var avatarFileInput=document.getElementById('avatarFileInput');
+      var avatarUrlField=document.getElementById('avatarUrlField');
+      var avatarUploading=false;
+      var state={loading:true,error:'',user:null,wallet:null,points:null,vip:null,directCount:null,passwordHint:'',pendingReviewTipId:'',openFeature:''};
+      var TIP_KEY='mcjBossPendingReviewTipShown';
+      function tipAlreadyShown(){try{return sessionStorage.getItem(TIP_KEY)==='1'}catch(e){return false}}
+      function markTipShown(){try{sessionStorage.setItem(TIP_KEY,'1')}catch(e){}}
+      async function checkPendingReviewTip(){
+        if(!token()||tipAlreadyShown()||state.pendingReviewTipId)return;
+        try{
+          var res=await fetch('/api/orders',{headers:{Accept:'application/json',Authorization:'Bearer '+token()},cache:'no-store'});
+          var body=await res.json().catch(function(){return{}});
+          if(!res.ok||body.ok===false)return;
+          var rows=Array.isArray(body.orders)?body.orders:[];
+          var pending=rows.find(function(o){
+            return !!(o&&(o.canReview||(o.status==='completed'&&!o.reviewed&&(o.companionId||(o.companion&&o.companion.id)||o.companion_id))));
+          });
+          if(pending&&pending.id){
+            state.pendingReviewTipId=pending.id;
+            markTipShown();
+            paint();
+          }
+        }catch(e){}
+      }
+      function token(){try{return sessionStorage.getItem('mcjAuthAccessToken')||localStorage.getItem('mcjAuthAccessToken')||''}catch(e){return ''}}
+      function fetchWithTimeout(url,opts,ms){
+        var ctrl=typeof AbortController!=='undefined'?new AbortController():null;
+        var timer=setTimeout(function(){try{ctrl&&ctrl.abort()}catch(e){}},ms||10000);
+        var o=Object.assign({},opts||{});
+        if(ctrl)o.signal=ctrl.signal;
+        return fetch(url,o).finally(function(){clearTimeout(timer)});
+      }
+      function esc(v){return String(v==null?'':v).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
+      function mineLocale(){
+        try{
+          var q=new URLSearchParams(location.search||'');
+          var lang=(q.get('lang')||localStorage.getItem('mcjLang')||document.documentElement.lang||'zh').toLowerCase();
+          if(lang.indexOf('en')===0) return 'en';
+          return 'zh';
+        }catch(e){return 'zh'}
+      }
+      function mineL(zh,en){return mineLocale()==='en'?en:zh}
+      function mineQuickIco(kind){
+        var common=' class="mine-quick-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"';
+        if(kind==='orders'){
+          return '<svg'+common+'><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 12h6M9 16h4"/></svg>';
+        }
+        if(kind==='messages'){
+          return '<svg'+common+'><path d="M21 11.5a8.5 8.5 0 0 1-8.5 8.5c-1.35 0-2.62-.3-3.76-.84L3 21l1.95-4.55A8.4 8.4 0 0 1 3.5 11.5 8.5 8.5 0 0 1 12 3a8.5 8.5 0 0 1 9 8.5z"/></svg>';
+        }
+        if(kind==='support'){
+          return '<svg'+common+'><path d="M4 13v-1a8 8 0 0 1 16 0v1"/><path d="M4 13a2.5 2.5 0 0 0 2.5 2.5H8v-5H6.5A2.5 2.5 0 0 0 4 13z"/><path d="M20 13a2.5 2.5 0 0 1-2.5 2.5H16v-5h1.5A2.5 2.5 0 0 1 20 13z"/><path d="M19 15.5V17a3 3 0 0 1-3 3h-2"/></svg>';
+        }
+        return '<svg'+common+'><rect x="3" y="6" width="18" height="13" rx="2.5"/><path d="M3 10h18"/><circle cx="16" cy="14.5" r="1.25"/></svg>';
+      }
+      function date(v){if(!v)return '-';try{return new Date(v).toLocaleString('zh-CN',{hour12:false})}catch(e){return v}}
+      function avatarHtml(user){var src=user&&user.avatarUrl;if(src)return '<img src="'+esc(src)+'" alt="头像">';var name=(user&&user.displayName)||'老板';return esc(name.slice(0,1)||'B')}
+      function statusText(s){return {active:'正常',disabled:'停用',pending:'待审核'}[s]||s||'-'}
+      function setAvatarPreview(url,displayName){
+        var src=String(url||'').trim();
+        if(avatarUrlField)avatarUrlField.value=src;
+        if(!avatarPreview)return;
+        if(src){avatarPreview.innerHTML='<img src="'+esc(src)+'" alt="当前头像">';return}
+        var name=String(displayName||(state.user&&state.user.displayName)||'老板');
+        avatarPreview.textContent=name.slice(0,1)||'B';
+      }
+      function fileToDataUrl(file){
+        return new Promise(function(resolve,reject){
+          var reader=new FileReader();
+          reader.onload=function(){resolve(String(reader.result||''))};
+          reader.onerror=function(){reject(new Error('读取图片失败'))};
+          reader.readAsDataURL(file);
+        });
+      }
+      async function uploadBossAvatar(file){
+        if(!file)throw new Error('请选择图片');
+        if(!/^image\/(jpeg|png|webp|jpg)$/i.test(file.type)&&!/\.(jpe?g|png|webp)$/i.test(file.name||'')){
+          throw new Error('仅支持 JPG、PNG、WEBP 格式');
+        }
+        if(file.size>4*1024*1024)throw new Error('头像不能超过 4MB');
+        var dataUrl=await fileToDataUrl(file);
+        var res=await fetch('/api/auth',{
+          method:'POST',
+          headers:{'Content-Type':'application/json',Authorization:'Bearer '+token()},
+          body:JSON.stringify({action:'upload_avatar',dataUrl:dataUrl,filename:file.name||'avatar.jpg',persist:true})
+        });
+        var body=await res.json().catch(function(){return{}});
+        if(!res.ok||!body.ok)throw new Error(body.message||'头像上传失败');
+        var url=body.avatarUrl||body.url||'';
+        if(!url)throw new Error('上传成功但未返回头像');
+        if(body.user)state.user=body.user;
+        else if(state.user)state.user=Object.assign({},state.user,{avatarUrl:url});
+        if(window.MCJRoleGate&&window.MCJRoleGate.saveSession){
+          window.MCJRoleGate.saveSession({user:state.user,accessToken:token(),refreshToken:sessionStorage.getItem('mcjAuthRefreshToken')||''},true);
+        }
+        setAvatarPreview(url,state.user&&state.user.displayName);
+        paint();
+        return url;
+      }
+
+      function bossVipCardHtml(){
+        if(window.MCJBossVipUI&&typeof window.MCJBossVipUI.renderPanel==='function'){
+          return window.MCJBossVipUI.renderPanel(state.vip||{});
+        }
+        var v=state.vip||{};
+        var name=v.currentLevelName||'普通会员';
+        var spend=v.confirmedSpend!=null?v.confirmedSpend:0;
+        var next=v.nextLevelName||'已是最高等级';
+        var nextTh=v.nextThreshold!=null?v.nextThreshold:'—';
+        var remain=v.isMaxLevel?0:(v.remaining!=null?v.remaining:0);
+        var benefits=v.benefits||'暂无';
+        return '<section class="boss-vip-card">'+
+          '<h2>我的 VIP</h2>'+
+          '<div class="boss-vip-row"><span>当前等级</span><strong>'+esc(name)+'</strong></div>'+
+          '<div class="boss-vip-row"><span>累计有效消费</span><strong>'+esc(spend)+' 猫粮</strong></div>'+
+          '<div class="boss-vip-row"><span>下一等级</span><strong>'+esc(next)+'</strong></div>'+
+          '<div class="boss-vip-row"><span>升级门槛</span><strong>'+esc(nextTh)+(v.nextThreshold!=null?' 猫粮':'')+'</strong></div>'+
+          '<div class="boss-vip-row"><span>还差</span><strong>'+esc(v.isMaxLevel?'—':(remain+' 猫粮'))+'</strong></div>'+
+          '<p class="boss-vip-benefits">福利：'+esc(benefits)+'</p>'+
+        '</section>';
+      }
+      function entryLink(opts){
+        var tag=opts.tag||'a';
+        return '<'+tag+' class="entry-link" '+(opts.attrs||'')+'>'+esc(opts.title)+'</'+tag+'>';
+      }
+      function entryRow(key,title){
+        return '<section class="entry">'+
+          '<button type="button" class="entry-trigger" data-mine-feature="'+esc(key)+'" aria-haspopup="dialog">'+
+          '<span class="entry-title">'+esc(title)+'</span>'+
+          '<span class="entry-arrow" aria-hidden="true"></span></button></section>';
+      }
+      function closeFeatureModal(){
+        state.openFeature='';
+        if(featureModal){
+          featureModal.classList.remove('open');
+          featureModal.setAttribute('aria-hidden','true');
+        }
+        if(featureModalBody)featureModalBody.innerHTML='';
+        document.body.style.overflow='';
+      }
+      function openFeatureModal(key){
+        var u=state.user||{};
+        var wallet=state.wallet||{};
+        var totalBal=wallet.totalBalance!=null?wallet.totalBalance:(wallet.balance!=null?wallet.balance:'-');
+        var paidBal=wallet.paidBalance!=null?wallet.paidBalance:'-';
+        var bonusBal=wallet.bonusBalance!=null?wallet.bonusBalance:'-';
+        var pointsBal=(state.points&&state.points.balance!=null)?state.points.balance:0;
+        var titles={profile:'编辑资料',assets:'我的资产',security:'账号安全'};
+        var body='';
+        if(key==='profile'){
+          body='<p class="feature-modal-note">上传头像、修改昵称与手机号。</p>'+
+            entryLink({tag:'button',title:'打开编辑资料',attrs:'type="button" data-edit'});
+        }else if(key==='assets'){
+          body='<p class="feature-modal-note">钱包与积分入口。</p>'+
+            '<p class="feature-modal-note">总猫粮 '+esc(totalBal)+' · 充值 '+esc(paidBal)+' · 赠送 '+esc(bonusBal)+' · 积分 '+esc(pointsBal)+'</p>'+
+            entryLink({tag:'a',title:'充值中心 / 钱包流水',attrs:'href="/recharge.html"'})+
+            entryLink({tag:'a',title:'我的积分',attrs:'href="points.html"'});
+        }else if(key==='security'){
+          body='<div id="bossAccountSecurity"></div>';
+        }else{
+          return;
+        }
+        state.openFeature=key;
+        if(featureModalTitle)featureModalTitle.textContent=titles[key]||'设置';
+        if(featureModalBody)featureModalBody.innerHTML=body;
+        if(featureModal){
+          featureModal.classList.add('open');
+          featureModal.setAttribute('aria-hidden','false');
+        }
+        document.body.style.overflow='hidden';
+        if(key==='security'&&window.MCJAccountSecurity){
+          window.MCJAccountSecurity.mount('#bossAccountSecurity',u,{role:'boss',passwordHint:state.passwordHint,onUpdated:function(data){if(data&&data.user)state.user=data.user;paint();if(state.openFeature==='security')openFeatureModal('security');}});
+        }
+      }
+      function paint(){
+        try{document.documentElement.lang=mineLocale()==='en'?'en':'zh-CN'}catch(e){}
+
+        if(!token()){
+          try{
+            if(String(new URLSearchParams(location.search).get('demo')||'')==='tutorialEntry'){
+              root.innerHTML=
+                '<section class="boss-id"><div class="boss-id-top"><div class="boss-id-avatar" aria-hidden="true">老</div><div class="boss-id-meta"><h1>老板账号（教学预览）</h1><p>入口预览 · 不改真实数据</p></div></div></section>'+
+                '<p class="mine-section-title">账户与服务</p>'+
+                '<div class="entry-stack">'+
+                '<section class="entry"><a class="entry-trigger" href="/guide.html?role=boss" data-boss-tutorial-entry="1"><span class="entry-title">老板使用教学</span><span class="entry-arrow" aria-hidden="true"></span></a></section>'+
+                '</div>';
+              return;
+            }
+          }catch(eDemo){}
+          root.innerHTML='<section class="empty-card"><h1>请先登录</h1><p style="color:#9ca3af">登录后可以查看账号资料、订单和在线客服。</p><a class="boss-btn" href="index.html">返回首页登录</a></section>';
+          return;
+        }
+        if(state.loading){root.innerHTML='<section class="empty-card">加载中…</section>';return}
+        if(state.error){root.innerHTML='<section class="empty-card"><h1>账号资料读取失败</h1><p style="color:#ffb9d6">'+esc(state.error)+'</p><button class="boss-btn" data-refresh>重试</button></section>';return}
+        var u=state.user||{};
+        var publicUid=u.bossUid||u.boss_uid||u.uid||'-';
+        var pointsBal=(state.points&&state.points.balance!=null)?state.points.balance:0;
+        var directCount=(state.directCount!=null)?state.directCount:0;
+        var setHint=u.hasPassword===true||u.has_password===true?'':'建议设置登录密码，便于下次邮箱+密码登录（不强制）。';
+        var tipHtml=state.pendingReviewTipId
+          ?('<div class="review-tip" role="status"><p>您有订单还未评价陪玩</p><div class="tip-actions"><button class="tip-link" type="button" data-open-pending-review>去评价</button><button class="tip-dismiss" type="button" data-dismiss-review-tip aria-label="关闭">×</button></div></div>')
+          :'';
+        root.innerHTML=tipHtml+
+          '<section class="boss-id">'+
+            '<div class="boss-id-top">'+
+              '<div class="boss-id-avatar">'+avatarHtml(u)+'</div>'+
+              '<div class="boss-id-meta">'+
+                '<h1>'+esc(u.displayName||'老板账号')+'</h1>'+
+                '<p>老板 UID '+esc(publicUid)+'</p>'+
+              '</div>'+
+            '</div>'+
+            '<div class="boss-stats">'+
+              '<a class="boss-stat" href="points.html"><span class="boss-stat-label">积分</span><strong class="boss-stat-value">'+esc(pointsBal)+'</strong></a>'+
+              '<a class="boss-stat" href="my-direct-companions.html"><span class="boss-stat-label">直属</span><strong class="boss-stat-value">'+esc(directCount)+'</strong></a>'+
+            '</div>'+
+          '</section>'+
+          bossVipCardHtml()+
+          (setHint?'<p style="margin:0 0 14px;color:#fbbf24;font-size:12px;line-height:1.45">'+esc(setHint)+'</p>':'')+
+          (window.MCJBossCenterActions&&typeof window.MCJBossCenterActions.render==='function'
+            ?window.MCJBossCenterActions.render({hasCompanion:!!u.hasCompanion})
+            :'')+
+          '<div id="mcjWebPushSettingsMount" class="mcj-webpush-mine-mount" hidden></div>'+
+          '<div class="mine-logout-wrap"><button class="mine-logout" type="button" data-logout>退出登录</button></div>';
+      }
+      function paintRegister(){
+        root.innerHTML='<section class="account-card"><h1>注册老板账号</h1><p style="color:#9ca3af">必须先完成邮箱验证码验证，成功后系统会自动分配老板 UID。密码至少 8 位且含字母和数字。</p><form class="form-grid" data-register-form style="margin-top:16px"><label>昵称<input name="displayName" maxlength="40" required placeholder="请输入昵称"></label><label>邮箱<div style="display:flex;gap:8px;align-items:center"><input name="email" type="email" inputmode="email" required autocomplete="email" style="flex:1"><button class="boss-btn ghost" type="button" data-mine-send-register-otp>获取验证码</button></div></label><label>邮箱验证码<div style="display:flex;gap:8px;align-items:center"><input name="otp" type="text" inputmode="numeric" maxlength="6" autocomplete="one-time-code" data-auth-code="1" placeholder="6 位验证码" style="flex:1"><button class="boss-btn ghost" type="button" data-mine-verify-register-otp>验证邮箱</button></div></label><input type="hidden" name="registerToken" value=""><p class="state" data-register-verified-hint style="color:#9ca3af">请先完成邮箱验证，验证成功后才能注册。</p><label>密码<input name="password" type="password" required minlength="8" autocomplete="new-password"></label><label>确认密码<input name="confirmPassword" type="password" required minlength="8" autocomplete="new-password"></label><button class="boss-btn" type="submit" data-register-submit disabled>注册</button><p class="state" data-register-state></p><p style="color:#9ca3af;font-size:13px">已有账号？<a href="index.html" style="color:#ffd6e7">返回登录</a></p></form></section>';
+      }
+async function load(){
+        var params=new URLSearchParams(location.search);
+        if(params.get('register')==='1'&&!token()){state.loading=false;paintRegister();return}
+        state.loading=true;state.error='';paint();
+        try{
+          var mePack=null;
+          if(window.MCJBossProfileCache&&typeof window.MCJBossProfileCache.getMe==='function'){
+            mePack=await window.MCJBossProfileCache.getMe({timeoutMs:10000});
+            if(!mePack||!mePack.ok||!mePack.user)throw new Error((mePack&&mePack.message)||'账号资料读取失败');
+            var body={ok:true,user:mePack.user,passwordHint:mePack.passwordHint||''};
+          }else{
+            var res=await fetchWithTimeout('/api/auth?action=me',{headers:{Authorization:'Bearer '+token()},cache:'no-store'},10000);
+            body=await res.json().catch(function(){return {}});
+            if(!res.ok||!body.ok)throw new Error(body.message||'账号资料读取失败');
+          }
+          if(!(body.user.hasBoss||body.user.role==='boss'||body.user.role==='customer'))throw new Error('当前账号不是老板角色。');
+          state.user=body.user;
+          state.passwordHint=body.passwordHint||'';
+          var saved=window.MCJRoleGate&&window.MCJRoleGate.saveSession;
+          if(saved)saved({user:body.user,accessToken:token()},true);
+          // First usable UI: paint identity shell immediately after /me.
+          // Non-critical wallet/points/direct/security must not block first paint.
+          state.loading=false;paint();
+          try{
+            if(window.MCJWebPush&&typeof window.MCJWebPush.maybePromptOnFirstVisit==='function'){
+              window.MCJWebPush.maybePromptOnFirstVisit({role:'boss'});
+            }
+          }catch(ePushPrompt){}
+          try{
+            if(window.MCJBossNavPrefetch) window.MCJBossNavPrefetch.run({delayMs:500});
+          }catch(ePrefetch){}
+          var authHdr={Authorization:'Bearer '+token(),Accept:'application/json'};
+          var secondary=Promise.all([
+            fetch('/api/auth',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token()},body:JSON.stringify({action:'account_security'}),cache:'no-store'})
+              .then(function(r){return r.json().then(function(b){return {r:r,b:b}})}).catch(function(){return null}),
+            fetch('/api/recharge',{headers:authHdr,cache:'no-store'})
+              .then(function(r){return r.json().then(function(b){return {r:r,b:b}})}).catch(function(){return null}),
+            fetch('/api/points?limit=1',{headers:authHdr,cache:'no-store'})
+              .then(function(r){return r.json().then(function(b){return {r:r,b:b}})}).catch(function(){return null}),
+            fetch('/api/boss/direct-companions',{headers:authHdr,cache:'no-store'})
+              .then(function(r){return r.json().then(function(b){return {r:r,b:b}})}).catch(function(){return null}),
+            fetch('/api/boss/vip',{headers:authHdr,cache:'no-store'})
+              .then(function(r){return r.json().then(function(b){return {r:r,b:b}})}).catch(function(){return null})
+          ]);
+          secondary.then(function(rows){
+            var sec=rows[0], wr=rows[1], pr=rows[2], dr=rows[3], vr=rows[4];
+            if(sec&&sec.r&&sec.r.ok&&sec.b&&sec.b.ok&&sec.b.user){
+              state.user=Object.assign({},state.user,sec.b.user);
+              state.passwordHint=sec.b.passwordHint||state.passwordHint;
+              if(window.MCJBossProfileCache){
+                try{
+                  window.MCJBossProfileCache.invalidate();
+                }catch(eInv){}
+              }
+            }
+            if(wr&&wr.r&&wr.r.ok&&wr.b&&wr.b.ok)state.wallet=wr.b.wallet||wr.b.summary||null;
+            else state.wallet=state.wallet||null;
+            if(pr&&pr.r&&pr.r.ok&&pr.b&&pr.b.ok)state.points=pr.b.account||{balance:0,lifetimeEarned:0};
+            else state.points=state.points||{balance:0,lifetimeEarned:0};
+            if(dr&&dr.r&&dr.r.ok&&dr.b&&dr.b.ok&&Array.isArray(dr.b.companions))state.directCount=dr.b.companions.length;
+            else state.directCount=state.directCount!=null?state.directCount:0;
+            if(vr&&vr.r&&vr.r.ok&&vr.b&&vr.b.ok)state.vip=vr.b.vip||null;
+            else state.vip=state.vip||null;
+            paint();
+            checkPendingReviewTip();
+          });
+          return;
+        }catch(err){
+          var msg=String((err&&err.name==='AbortError')?'加载超时，请重试':(err&&err.message)||'账号资料读取失败');
+          // Keep valid session on profile init failure — never treat as logged out.
+          if(/账号初始化失败|PROFILE_INIT_FAILED|未绑定平台资料/.test(msg)){
+            state.error='账号初始化失败，请刷新重试或联系客服。';
+          }else if(/未登录|登录已过期|401/.test(msg) && !token()){
+            state.error='请先登录';
+          }else{
+            state.error=msg;
+          }
+        }
+        state.loading=false;paint();checkPendingReviewTip();
+      }
+      document.addEventListener('click',async function(e){
+        var openTip=e.target.closest('[data-open-pending-review]');
+        if(openTip){
+          var oid=state.pendingReviewTipId;
+          state.pendingReviewTipId='';
+          if(oid)location.href='orders.html?openReview='+encodeURIComponent(oid);
+          else location.href='orders.html?filter=completed';
+          return;
+        }
+        if(e.target.closest('[data-dismiss-review-tip]')){state.pendingReviewTipId='';paint();return}
+        var sendBtn=e.target.closest('[data-mine-send-register-otp]');
+        var verifyBtn=e.target.closest('[data-mine-verify-register-otp]');
+        if(!sendBtn&&!verifyBtn)return;
+        var form=document.querySelector('[data-register-form]');
+        if(!form)return;
+        e.preventDefault();
+        var box=form.querySelector('[data-register-state]');
+        var hint=form.querySelector('[data-register-verified-hint]');
+        var submit=form.querySelector('[data-register-submit]');
+        var email=String(form.elements.email.value||'').trim().toLowerCase();
+        if(!email||!/^\S+@\S+\.\S+$/.test(email)){if(box)box.textContent='请输入有效邮箱。';return}
+        if(sendBtn){
+          if(sendBtn.disabled)return;
+          form.elements.registerToken.value='';
+          if(submit)submit.disabled=true;
+          if(hint)hint.textContent='请先完成邮箱验证，验证成功后才能注册。';
+          sendBtn.disabled=true;var old=sendBtn.textContent;sendBtn.textContent='发送中…';
+          try{
+            var res=await fetch('/api/auth',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'send_register_otp',email:email,role:'boss'})});
+            var body=await res.json().catch(function(){return {}});
+            if(!res.ok||!body.ok)throw new Error(body.message||'发送失败');
+            var tip=body.message||'验证码已发送';if(body.devCode)tip+='（测试 '+body.devCode+'）';
+            if(box)box.textContent=tip;
+            var left=Number(body.retryAfterSec)||60;sendBtn.textContent=left+'s';
+            var t=setInterval(function(){left-=1;if(left<=0){clearInterval(t);sendBtn.disabled=false;sendBtn.textContent=old||'获取验证码';}else sendBtn.textContent=left+'s';},1000);
+          }catch(err){sendBtn.disabled=false;sendBtn.textContent=old||'获取验证码';if(box)box.textContent=err.message||'发送失败'}
+          return;
+        }
+        if(verifyBtn){
+          var code=String(form.elements.otp.value||'').trim();
+          if(!/^\d{6}$/.test(code)){if(box)box.textContent='请输入 6 位邮箱验证码。';return}
+          verifyBtn.disabled=true;var oldV=verifyBtn.textContent;verifyBtn.textContent='验证中…';
+          try{
+            var vres=await fetch('/api/auth',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'verify_register_otp',email:email,code:code,role:'boss'})});
+            var vbody=await vres.json().catch(function(){return {}});
+            if(!vres.ok||!vbody.ok)throw new Error(vbody.message||'验证失败');
+            form.elements.registerToken.value=vbody.registerToken||'';
+            if(submit)submit.disabled=!form.elements.registerToken.value;
+            if(hint)hint.textContent='邮箱已验证 · '+(vbody.emailMasked||email)+'，请设置密码并注册。';
+            if(box)box.textContent=vbody.message||'邮箱已验证';
+            form.elements.otp.value='';
+          }catch(err){form.elements.registerToken.value='';if(submit)submit.disabled=true;if(box)box.textContent=err.message||'验证失败'}
+          finally{verifyBtn.disabled=false;verifyBtn.textContent=oldV||'验证邮箱'}
+        }
+      });
+      document.addEventListener('submit',async function(e){
+        var form=e.target.closest('[data-register-form]');
+        if(!form)return;
+        e.preventDefault();
+        var box=form.querySelector('[data-register-state]');
+        var token=String(form.elements.registerToken.value||'').trim();
+        var password=String(form.elements.password.value||'');
+        var confirmPassword=String(form.elements.confirmPassword.value||'');
+        if(!token){if(box)box.textContent='请先完成邮箱验证。';return}
+        if(password!==confirmPassword){if(box)box.textContent='两次输入的密码不一致。';return}
+        if(box)box.textContent='注册中...';
+        try{
+          var res=await fetch('/api/auth',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'register',email:form.elements.email.value,password:password,confirmPassword:confirmPassword,displayName:form.elements.displayName.value,registerToken:token,role:'boss'})});
+          var body=await res.json().catch(function(){return {}});
+          if(!res.ok||!body.ok)throw new Error(body.message||'注册失败');
+          var session=body.session||{};
+          if(window.MCJRoleGate&&window.MCJRoleGate.saveSession)window.MCJRoleGate.saveSession(session,true);
+          else if(session.accessToken){
+            try{
+              localStorage.setItem('mcjAuthAccessToken',session.accessToken);
+              if(session.refreshToken)localStorage.setItem('mcjAuthRefreshToken',session.refreshToken);
+              if(session.expiresAt)localStorage.setItem('mcjAuthExpiresAt',String(session.expiresAt));
+            }catch(e){}
+          }
+          if(box)box.textContent=body.message||('注册成功。您的老板 UID：'+(body.bossUid||''));
+          setTimeout(function(){location.href='mine.html'},800);
+        }catch(err){if(box)box.textContent=err.message||'注册失败'}
+      });
+      document.addEventListener('click',function(e){
+        var featureBtn=e.target.closest('[data-mine-feature]');
+        if(featureBtn){
+          var key=featureBtn.getAttribute('data-mine-feature')||'';
+          openFeatureModal(key);
+          return;
+        }
+        if(e.target.closest('[data-close-feature]')||e.target===featureModal){
+          closeFeatureModal();
+          return;
+        }
+        if(e.target.closest('[data-refresh]')){load();return}
+        if(e.target.closest('[data-edit]')){
+          var u=state.user||{};
+          setAvatarPreview(u.avatarUrl||'',u.displayName||'');
+          form.elements.displayName.value=u.displayName||'';
+          form.elements.phone.value=u.phone||'';
+          editState.textContent='';
+          closeFeatureModal();
+          modal.classList.add('open');
+          document.body.style.overflow='hidden';
+          return;
+        }
+        if(e.target.closest('#avatarPickBtn')||e.target.closest('[data-pick-avatar]')){
+          if(avatarUploading)return;
+          if(avatarFileInput)avatarFileInput.click();
+          return;
+        }
+        if(e.target.closest('[data-close]')||e.target===modal){
+          modal.classList.remove('open');
+          document.body.style.overflow='';
+          return;
+        }
+        if(e.target.closest('[data-switch-portal]')){
+          var portal=e.target.closest('[data-switch-portal]').getAttribute('data-switch-portal')||'companion';
+          if(window.MCJRoleGate&&typeof window.MCJRoleGate.switchActivePortal==='function'){
+            var sw=window.MCJRoleGate.switchActivePortal(portal);
+            if(sw&&sw.ok){location.href=sw.redirect||'/companion/login/';return}
+          }
+          location.href='/companion/login/';
+          return;
+        }
+        if(e.target.closest('[data-open-notify-settings]')){var mount=document.getElementById('mcjWebPushSettingsMount');if(mount){mount.hidden=false;}if(window.MCJWebPush&&typeof window.MCJWebPush.mountSettings==='function'){window.MCJWebPush.mountSettings(mount,{role:'boss'});}else if(window.MCJWebPush&&typeof window.MCJWebPush.showGuide==='function'){window.MCJWebPush.showGuide({force:true,role:'boss'});}return}if(e.target.closest('[data-pwa-install]')){if(window.MCJPwaInstall&&typeof window.MCJPwaInstall.open==='function'){window.MCJPwaInstall.open({force:true})}return}
+        if(e.target.closest('[data-logout]')){try{if(window.MCJWebPush&&window.MCJWebPush.disablePush)window.MCJWebPush.disablePush()}catch(err){} if(window.MCJBossAuth&&window.MCJBossAuth.clearSession)window.MCJBossAuth.clearSession();if(window.MCJRoleGate){window.MCJRoleGate.logout('boss');window.MCJRoleGate.logout('customer')}['mcjAuthAccessToken','mcjAuthRefreshToken','mcjAuthExpiresAt','customerAuthToken','customerUser','mcjCurrentUser','mcjRole'].forEach(function(k){try{localStorage.removeItem(k);sessionStorage.removeItem(k)}catch(e){}});location.href='index.html';return}
+      });
+      if(avatarFileInput){
+        avatarFileInput.addEventListener('change',async function(){
+          var file=avatarFileInput.files&&avatarFileInput.files[0];
+          avatarFileInput.value='';
+          if(!file)return;
+          avatarUploading=true;
+          if(avatarPickBtn){avatarPickBtn.disabled=true;avatarPickBtn.textContent='上传中…'}
+          editState.textContent='正在上传头像…';
+          try{
+            await uploadBossAvatar(file);
+            editState.textContent='头像已更新，可继续修改昵称/手机号后保存';
+          }catch(err){
+            editState.textContent=err.message||'头像上传失败';
+          }finally{
+            avatarUploading=false;
+            if(avatarPickBtn){avatarPickBtn.disabled=false;avatarPickBtn.textContent='更换头像'}
+          }
+        });
+      }
+      form.addEventListener('submit',async function(e){
+        e.preventDefault();
+        if(avatarUploading){editState.textContent='头像上传中，请稍候…';return}
+        editState.textContent='保存中...';
+        try{
+          var payload={
+            action:'update_profile',
+            displayName:form.elements.displayName.value,
+            phone:form.elements.phone.value
+          };
+          var avatarVal=avatarUrlField?String(avatarUrlField.value||'').trim():'';
+          if(avatarVal)payload.avatarUrl=avatarVal;
+          var res=await fetch('/api/auth',{
+            method:'POST',
+            headers:{'Content-Type':'application/json',Authorization:'Bearer '+token()},
+            body:JSON.stringify(payload)
+          });
+          var body=await res.json().catch(function(){return {}});
+          if(!res.ok||!body.ok)throw new Error(body.message||'保存失败');
+          state.user=body.user||Object.assign({},state.user,{
+            displayName:payload.displayName,
+            phone:payload.phone,
+            avatarUrl:avatarVal||(state.user&&state.user.avatarUrl)||''
+          });
+          if(window.MCJRoleGate&&window.MCJRoleGate.saveSession){
+            window.MCJRoleGate.saveSession({
+              user:state.user,
+              accessToken:token(),
+              refreshToken:sessionStorage.getItem('mcjAuthRefreshToken')||''
+            },true);
+          }
+          setAvatarPreview(state.user.avatarUrl||'',state.user.displayName||'');
+          editState.textContent='资料已保存';
+          setTimeout(function(){
+            modal.classList.remove('open');
+            document.body.style.overflow='';
+            paint();
+          },450);
+          // Re-fetch from API so refresh/login always matches DB.
+          try{
+            if(window.MCJBossProfileCache) window.MCJBossProfileCache.invalidate();
+            var mePack2=window.MCJBossProfileCache
+              ? await window.MCJBossProfileCache.getMe({force:true,timeoutMs:10000})
+              : null;
+            if(mePack2&&mePack2.ok&&mePack2.user){
+              state.user=mePack2.user;
+              if(window.MCJRoleGate&&window.MCJRoleGate.saveSession){
+                window.MCJRoleGate.saveSession({user:state.user,accessToken:token(),refreshToken:sessionStorage.getItem('mcjAuthRefreshToken')||''},true);
+              }
+              paint();
+            }else{
+              var me=await fetch('/api/auth?action=me',{headers:{Authorization:'Bearer '+token()},cache:'no-store'});
+              var meBody=await me.json().catch(function(){return{}});
+              if(me.ok&&meBody.ok&&meBody.user){
+                state.user=meBody.user;
+                if(window.MCJRoleGate&&window.MCJRoleGate.saveSession){
+                  window.MCJRoleGate.saveSession({user:state.user,accessToken:token(),refreshToken:sessionStorage.getItem('mcjAuthRefreshToken')||''},true);
+                }
+                paint();
+              }
+            }
+          }catch(syncErr){}
+        }catch(err){editState.textContent=err.message||'保存失败'}
+      });
+      // Instant visual feedback on full-page navigations (MPA).
+      document.addEventListener('pointerdown',function(e){
+        var a=e.target&&e.target.closest?e.target.closest('a[href]'):null;
+        if(!a)return;
+        var href=a.getAttribute('href')||'';
+        if(!href||href.charAt(0)==='#'||href.indexOf('javascript:')===0)return;
+        if(a.target==='_blank'||e.metaKey||e.ctrlKey||e.shiftKey||e.altKey)return;
+        a.classList.add('is-nav-pending');
+      },true);
+      load();
+    })();
+  </script>
+</body>
+</html>
+

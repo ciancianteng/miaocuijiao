@@ -1,0 +1,21 @@
+{
+  "mobile": {
+    "insideLabelLum": 65,
+    "gapLum": 10,
+    "wrapEdgeLum": 10,
+    "wrapContentLum": 243,
+    "gapCss": 10,
+    "clipPath": "inset(0px 10px)",
+    "labelW": 76
+  },
+  "desktop": {
+    "insideLabelLum": 64,
+    "gapLum": 9,
+    "wrapEdgeLum": 9,
+    "wrapContentLum": 243,
+    "gapCss": 12,
+    "clipPath": "inset(0px 12px)",
+    "labelW": 110
+  },
+  "at": "2026-08-03T20:13:36.531Z"
+}

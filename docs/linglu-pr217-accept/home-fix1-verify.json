@@ -1,0 +1,234 @@
+{
+  "base": "http://127.0.0.1:5173",
+  "note": "Companion cards verified with Production /api/public/companions JSON fulfilled into local PR UI (no fake rows). Preview Staging still returns 0 after fixture isolation.",
+  "mobile": {
+    "snacksVisible": 3,
+    "snackInfo": [
+      {
+        "src": "mcj-snack-chip.svg",
+        "op": 0.95,
+        "w": 73,
+        "visible": true
+      },
+      {
+        "src": "mcj-snack-chip-pink.svg",
+        "op": 0.9,
+        "w": 47,
+        "visible": true
+      },
+      {
+        "src": "mcj-snack-chip.svg",
+        "op": 0.95,
+        "w": 62,
+        "visible": true
+      }
+    ],
+    "banner": {
+      "w": 362,
+      "h": 200,
+      "ratio": 1.81
+    },
+    "bannerNat": {
+      "w": 1717,
+      "h": 916
+    },
+    "slides": 3,
+    "dots": 3,
+    "cards": [
+      {
+        "name": "小宏",
+        "game": "王者荣耀、三角洲 手游 国服、三角洲陪跑刀 一千万",
+        "level": "Lv2 灵喵",
+        "status": "在线可接单",
+        "tags": [
+          "幽默",
+          "搞笑",
+          "温柔",
+          "技术",
+          "+3"
+        ],
+        "avatar": "https://jqfaknpmcnqwqvatrwgo.supabase.co/storage/v1/object/public/companion-publ",
+        "hasDefaultAvatar": false
+      },
+      {
+        "name": "瑞秋",
+        "game": "无畏契约 端游",
+        "level": "Lv3 猎喵",
+        "status": "在线可接单",
+        "tags": [
+          "御姐",
+          "幽默",
+          "搞笑",
+          "温柔",
+          "+2"
+        ],
+        "avatar": "https://jqfaknpmcnqwqvatrwgo.supabase.co/storage/v1/object/public/companion-publ",
+        "hasDefaultAvatar": false
+      },
+      {
+        "name": "许拓",
+        "game": "三角洲 端游",
+        "level": "Lv4 喵神",
+        "status": "离线",
+        "tags": [
+          "猛男",
+          "温柔",
+          "技术"
+        ],
+        "avatar": "https://jqfaknpmcnqwqvatrwgo.supabase.co/storage/v1/object/public/companion-publ",
+        "hasDefaultAvatar": false
+      },
+      {
+        "name": "凝梦",
+        "game": "无畏契约 端游 国际服、三角洲 端游 国服",
+        "level": "Lv3 猎喵",
+        "status": "离线",
+        "tags": [
+          "搞笑",
+          "娱乐"
+        ],
+        "avatar": "https://jqfaknpmcnqwqvatrwgo.supabase.co/storage/v1/object/public/companion-publ",
+        "hasDefaultAvatar": false
+      },
+      {
+        "name": "1717",
+        "game": "三角洲 端游",
+        "level": "Lv3 猎喵",
+        "status": "离线",
+        "tags": [
+          "甜妹"
+        ],
+        "avatar": "https://jqfaknpmcnqwqvatrwgo.supabase.co/storage/v1/object/public/companion-publ",
+        "hasDefaultAvatar": false
+      },
+      {
+        "name": "哦嗯调",
+        "game": "三角洲 手游 国服",
+        "level": "Lv4 喵神",
+        "status": "离线",
+        "tags": [
+          "甜妹",
+          "幽默",
+          "娱乐",
+          "夜猫子",
+          "+1"
+        ],
+        "avatar": "https://jqfaknpmcnqwqvatrwgo.supabase.co/storage/v1/object/public/companion-publ",
+        "hasDefaultAvatar": false
+      },
+      {
+        "name": "奈一",
+        "game": "三角洲陪跑刀 一千万",
+        "level": "Lv2 灵喵",
+        "status": "离线",
+        "tags": [
+          "甜妹",
+          "温柔",
+          "娱乐",
+          "连麦"
+        ],
+        "avatar": "https://jqfaknpmcnqwqvatrwgo.supabase.co/storage/v1/object/public/companion-publ",
+        "hasDefaultAvatar": false
+      }
+    ],
+    "apiHint": "7"
+  },
+  "desktop": {
+    "snacksVisible": 5,
+    "snackInfo": [
+      {
+        "src": "mcj-snack-chip.svg",
+        "op": 0.92,
+        "w": 94,
+        "visible": true
+      },
+      {
+        "src": "mcj-snack-chip-pink.svg",
+        "op": 0.78,
+        "w": 61,
+        "visible": true
+      },
+      {
+        "src": "mcj-snack-chip.svg",
+        "op": 0.9,
+        "w": 84,
+        "visible": true
+      },
+      {
+        "src": "mcj-snack-chip-pink.svg",
+        "op": 0.84,
+        "w": 66,
+        "visible": true
+      },
+      {
+        "src": "mcj-snack-chip.svg",
+        "op": 0.9,
+        "w": 79,
+        "visible": true
+      },
+      {
+        "src": "mcj-snack-chip-pink.svg",
+        "op": 0.68,
+        "w": 55,
+        "visible": false
+      }
+    ],
+    "banner": {
+      "w": 860,
+      "h": 484,
+      "ratio": 1.778
+    },
+    "bannerNat": {
+      "w": 1717,
+      "h": 916
+    },
+    "slides": 3,
+    "dots": 3,
+    "cards": [
+      {
+        "name": "小宏",
+        "game": "王者荣耀、三角洲 手游 国服、三角洲陪跑刀 一千万",
+        "level": "Lv2 灵喵",
+        "status": "在线可接单",
+        "tags": [
+          "幽默",
+          "搞笑",
+          "温柔",
+          "技术",
+          "+3"
+        ],
+        "avatar": "https://jqfaknpmcnqwqvatrwgo.supabase.co/storage/v1/object/public/companion-publ",
+        "hasDefaultAvatar": false
+      },
+      {
+        "name": "瑞秋",
+        "game": "无畏契约 端游",
+        "level": "Lv3 猎喵",
+        "status": "在线可接单",
+        "tags": [
+          "御姐",
+          "幽默",
+          "搞笑",
+          "温柔",
+          "+2"
+        ],
+        "avatar": "https://jqfaknpmcnqwqvatrwgo.supabase.co/storage/v1/object/public/companion-publ",
+        "hasDefaultAvatar": false
+      },
+      {
+        "name": "许拓",
+        "game": "三角洲 端游",
+        "level": "Lv4 喵神",
+        "status": "离线",
+        "tags": [
+          "猛男",
+          "温柔",
+          "技术"
+        ],
+        "avatar": "https://jqfaknpmcnqwqvatrwgo.supabase.co/storage/v1/object/public/companion-publ",
+        "hasDefaultAvatar": false
+      }
+    ],
+    "apiHint": "7"
+  }
+}

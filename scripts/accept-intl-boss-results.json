@@ -1,0 +1,44 @@
+{
+  "meta": {
+    "base": "https://meow-cuijiao-homepage-m2sli1qgj-ciancianteng-4581s-projects.vercel.app",
+    "email": "boss.intl.cn.1785716278594@meow.test",
+    "password": "McjTest@12345678",
+    "country": "CN",
+    "dial": "+86",
+    "bossUid": "MCJ00002",
+    "profile": {
+      "id": "797481c1-a5f1-4665-86f5-4c6c17ddc8ae",
+      "role": "boss",
+      "country_code": "CN",
+      "phone": "13800138000",
+      "phone_e164": "+8613800138000",
+      "boss_uid": "MCJ00002"
+    },
+    "orderId": "7b2293e3-098c-4ac9-ac9a-b5b1b1b54783"
+  },
+  "results": {
+    "01_home_assets": {
+      "status": "PASS",
+      "note": "mcj-countries loaded; no MY-only copy in HTML"
+    },
+    "02_register_cn": {
+      "status": "PASS",
+      "note": "uid=MCJ00002; e164=+8613800138000"
+    },
+    "03_login": {
+      "status": "PASS",
+      "note": "supabase password login ok"
+    },
+    "04_browse_hall": {
+      "status": "PASS",
+      "note": "count=2; pick=身份证终验陪玩"
+    },
+    "05_place_order": {
+      "status": "PASS",
+      "note": "7b2293e3-098c-4ac9-ac9a-b5b1b1b54783"
+    }
+  },
+  "pass": 5,
+  "fail": 0,
+  "at": "2026-08-03T00:18:11.360Z"
+}

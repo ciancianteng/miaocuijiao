@@ -1,0 +1,75 @@
+{
+  "desktop": {
+    "file": "C:\\Users\\cianc\\Desktop\\meow-cuijiao-homepage\\meow-cuijiao-homepage\\scripts\\tmp-layout-shots\\cs-conv-list-desktop.png",
+    "metrics": {
+      "h": 92,
+      "texts": [
+        {
+          "h": 92,
+          "name": "老板 · 小橘",
+          "meta": "王者荣耀 · XB1K",
+          "tag": "🟡 待接待",
+          "preview": "你好，这个订单可以改时间吗？",
+          "time": "14:32",
+          "unread": "2"
+        },
+        {
+          "h": 92,
+          "name": "陪玩 · 夜雨",
+          "meta": "永劫无间 · 陪玩咨询",
+          "tag": "🟡 待接待",
+          "preview": "想问一下提现多久到账",
+          "time": "14:18",
+          "unread": "1"
+        },
+        {
+          "h": 92,
+          "name": "老板 · 阿柠",
+          "meta": "和平精英 · A9F2",
+          "tag": "🟡 待接待",
+          "preview": "[图片]",
+          "time": "13:55",
+          "unread": "5"
+        }
+      ],
+      "visible": true
+    }
+  },
+  "mobile": {
+    "file": "C:\\Users\\cianc\\Desktop\\meow-cuijiao-homepage\\meow-cuijiao-homepage\\scripts\\tmp-layout-shots\\cs-conv-list-mobile.png",
+    "metrics": {
+      "h": 92,
+      "texts": [
+        {
+          "h": 92,
+          "name": "老板 · 小橘",
+          "meta": "王者荣耀 · XB1K",
+          "tag": "🟡 待接待",
+          "preview": "你好，这个订单可以改时间吗？",
+          "time": "14:32",
+          "unread": "2"
+        },
+        {
+          "h": 92,
+          "name": "陪玩 · 夜雨",
+          "meta": "永劫无间 · 陪玩咨询",
+          "tag": "🟡 待接待",
+          "preview": "想问一下提现多久到账",
+          "time": "14:18",
+          "unread": "1"
+        },
+        {
+          "h": 92,
+          "name": "老板 · 阿柠",
+          "meta": "和平精英 · A9F2",
+          "tag": "🟡 待接待",
+          "preview": "[图片]",
+          "time": "13:55",
+          "unread": "5"
+        }
+      ],
+      "visible": true
+    }
+  },
+  "at": "2026-08-03T19:48:27.636Z"
+}

@@ -1,0 +1,7231 @@
+﻿import {
+  PRIVATE_BUCKETS,
+  PUBLIC_BUCKETS,
+  MAX_VIDEO_BYTES,
+  assertAudioUpload,
+  assertImageUpload,
+  assertVideoUpload,
+  assertVideoMeta,
+  assertStorageObjectPresent,
+  buildObjectPath,
+  companionDb,
+  createSignedUrl,
+  createSignedUploadUrl,
+  decodeDataUrl,
+  deleteStorageObject,
+  ensureCompanionBuckets,
+  isMissingRelation,
+  maskBankAccount,
+  publicObjectUrl,
+  stringifyApiErrorValue,
+  uploadPrivateObject,
+} from "./_companion-media-store.js";
+import { companionPopularityMe, recordOnlineSession, scheduleRecomputeSoft } from "./_popularity.js";
+import { readLocalLevels, toPublicLevel } from "./_companion-levels-store.js";
+import { resolvePlatformCommission } from "./_commission-rates.js";
+import { writeOrderStatusLog, COMPANION_STATUS_LABELS } from "./_order-status.js";
+import { stripInternalMarkers } from "./_order-assignment.js";
+import {
+  completionCountdown,
+  formatRemainingLabel,
+  parseCompletionMethod,
+} from "./_order-complete.js";
+import {
+  acceptSubmittedServicePrice,
+  projectGamePrices,
+  readGamePrices,
+  writeGamePricesMarker,
+  stripGamePricesMarker,
+  splitGames,
+  parseServiceIds,
+  parseServiceTypes,
+} from "./_game-prices.js";
+import { loadPublicServices } from "./platform/services.js";
+import { syncCompanionServicesFromGamePrices } from "./_admin-service-prices.js";
+import {
+  SERVICE_STANDARD_FIELDS,
+  readServiceStandards,
+  saveCompanionServiceStandard,
+  viewServiceSnapshot,
+} from "./_service-standard.js";
+import { readEarlyFinish, readEarlyFinishReject } from "./_order-early-finish.js";
+
+function companionEarlyFinishView(row) {
+  const ef = readEarlyFinish(row);
+  if (!ef || ef.status !== "done") return null;
+  return {
+    servedHours: ef.servedHours,
+    bookedHours: ef.bookedHours,
+    settleAmount: ef.settleAmount,
+    refundAmount: ef.refundAmount,
+    companionIncome: ef.companionIncome,
+    initiatorLabel: ef.initiator?.label || "",
+    reason: ef.reason || "",
+    completedAt: ef.completedAt || "",
+  };
+}
+import {
+  partitionCompanionIncome,
+  sumTxAmount,
+  money as incomeMoney,
+  clawbackCompanionIncomeForOrder,
+} from "./_companion-income.js";
+import { splitCompanionIncomeByWithdrawLock, companionEarningsUnlockMeta } from "./_earnings-windows.js";
+import {
+  anonymousBossLabel,
+  allocateWithdrawalNo,
+  resolveBossPublicCode,
+  publicDisplayName,
+  resolveCompanionPublicCode,
+} from "./_account-codes.js";
+import {
+  normalizeSelectedVoiceTypes,
+} from "./_companion-voice-types-store.js";
+import {
+  evaluatePublishGate,
+  assertHasPositivePrice,
+  MISSING_PRICE_MESSAGE,
+} from "./_companion-publish-gate.js";
+import { resolveCertTagsForProfiles } from "./_companion-cert-tags-store.js";
+import {
+  buildCompanionInbox,
+  ensureCompanionSupportConversation,
+  endCompanionSupportConversation,
+  sendCompanionChatMessage,
+  markConversationMessagesRead,
+  markNoticesRead,
+  loadConversationMessages,
+  loadCompanionThreadMessages,
+  viewMessage,
+  viewMessageSigned,
+  buildSystemNotices,
+  loadCompanionNotifications,
+  loadReadKeys,
+  insertCompanionNotification,
+} from "./_companion-inbox.js";
+import { isClosedConversationStatus } from "./_conversation-lock.js";
+import "./_load-env.js";
+import {
+  computeSettlementDate,
+  mergeWeeklySettings,
+  normalizePayoutStatus,
+  PAYOUT_STATUS_TEXT,
+  PAYOUT_FROZEN_STATUSES,
+  viewWeeklyRules,
+} from "./_weekly-settlement.js";
+import {
+  loadFinanceWeeklySettings,
+  lockPayoutSources,
+  upsertPayoutRequest,
+} from "./_payout-requests.js";
+import { assessWithdrawalRequest } from "./_withdraw-fee.js";
+import { listDepositPaymentMethods } from "./_platform-pay-qr.js";
+import {
+  normalizeSettlementMethod,
+  normalizePaymentAccountRecord,
+  buildPaymentAccountPayload as buildSettlementPaymentPayload,
+  hasSettlementPaymentInput,
+  formatSettlementAccountLabel,
+  formatSettlementAccountMasked,
+} from "./_settlement-payment.js";
+
+const DEPOSIT_AMOUNT_RM = 100;
+const DEPOSIT_CHANNEL_MARK_START = "[[DEPOSIT_PAY]]";
+const DEPOSIT_CHANNEL_MARK_END = "[[/DEPOSIT_PAY]]";
+
+function depositRecordNo(row = {}) {
+  const id = String(row.id || "").replace(/-/g, "");
+  if (id.length >= 8) return `DEP-${id.slice(0, 8).toUpperCase()}`;
+  return id ? `DEP-${id.toUpperCase()}` : "";
+}
+
+function parseDepositChannelSnapshot(remark = "") {
+  const text = String(remark || "");
+  const i = text.indexOf(DEPOSIT_CHANNEL_MARK_START);
+  if (i < 0) return null;
+  const j = text.indexOf(DEPOSIT_CHANNEL_MARK_END, i);
+  if (j < 0) return null;
+  try {
+    return JSON.parse(text.slice(i + DEPOSIT_CHANNEL_MARK_START.length, j));
+  } catch {
+    return null;
+  }
+}
+
+function embedDepositChannelSnapshot(remark, snapshot) {
+  const base = String(remark || "")
+    .replace(/\[\[DEPOSIT_PAY\]\][\s\S]*?\[\[\/DEPOSIT_PAY\]\]/g, "")
+    .trim();
+  if (!snapshot || typeof snapshot !== "object") return base;
+  const block = `${DEPOSIT_CHANNEL_MARK_START}${JSON.stringify(snapshot)}${DEPOSIT_CHANNEL_MARK_END}`;
+  return base ? `${base}\n${block}` : block;
+}
+
+function isDepositPaidStatus(status) {
+  return /^(approved|verified|passed|paid|active|completed|received)$/i.test(String(status || "").trim());
+}
+
+/** Ensure a durable companion_deposits ledger row exists when profile already says paid. */
+async function softHealPaidDepositLedger(profile = {}, companionRow = {}, deposit = null) {
+  if (deposit && isDepositPaidStatus(deposit.status)) return deposit;
+  const profileSt = String(companionRow?.deposit_status || "").trim();
+  if (!isDepositPaidStatus(profileSt) && !/^approved$/i.test(profileSt)) return deposit;
+  if (!companionRow?.id || !profile?.id) return deposit;
+  try {
+    const existing = await companionDb(
+      "companion_deposits",
+      `?companion_profile_id=eq.${encodeURIComponent(companionRow.id)}&order=created_at.desc&limit=20`
+    ).catch((e) => (isMissingRelation(e) ? [] : Promise.reject(e)));
+    const paid = (existing || []).find((r) => isDepositPaidStatus(r?.status));
+    if (paid) return paid;
+    const latest = existing?.[0] || null;
+    if (latest) {
+      const patched = await companionDb("companion_deposits", `?id=eq.${encodeURIComponent(latest.id)}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          status: "paid",
+          required_amount: Number(latest.required_amount || DEPOSIT_AMOUNT_RM) || DEPOSIT_AMOUNT_RM,
+          paid_amount: Number(latest.paid_amount || DEPOSIT_AMOUNT_RM) || DEPOSIT_AMOUNT_RM,
+          payment_method: latest.payment_method || "俱乐部收款",
+          paid_at: latest.paid_at || nowIso(),
+          reviewed_at: latest.reviewed_at || nowIso(),
+          updated_at: nowIso(),
+        }),
+      });
+      return Array.isArray(patched) ? patched[0] : latest;
+    }
+    const created = await companionDb("companion_deposits", "", {
+      method: "POST",
+      body: JSON.stringify({
+        companion_profile_id: companionRow.id,
+        user_id: profile.id,
+        required_amount: DEPOSIT_AMOUNT_RM,
+        paid_amount: DEPOSIT_AMOUNT_RM,
+        payment_method: "俱乐部收款",
+        proof_path: "",
+        proof_bucket: PRIVATE_BUCKETS.payment,
+        status: "paid",
+        refund_status: "none",
+        reject_reason: "",
+        remark: "[[DEPOSIT_PAY]]{\"label\":\"俱乐部收款\",\"amountRm\":100,\"healed\":true}[[/DEPOSIT_PAY]]",
+        paid_at: nowIso(),
+        reviewed_at: nowIso(),
+        created_at: nowIso(),
+        updated_at: nowIso(),
+      }),
+    });
+    return Array.isArray(created) ? created[0] : created;
+  } catch {
+    return deposit;
+  }
+}
+
+const ORDER_STATUS_TEXT = COMPANION_STATUS_LABELS;
+
+const WITHDRAW_STATUS_TEXT = {
+  ...PAYOUT_STATUS_TEXT,
+  pending: "已提交",
+  pending_review: "待周五结算",
+  pending_friday: "待周五结算",
+  reviewing: "审核中",
+  approved: "审核通过待打款",
+  approved_pending_pay: "审核通过待打款",
+  pending_payment: "审核通过待打款",
+  paying: "审核通过待打款",
+  paid_pending_receipt: "已打款",
+  paid: "已打款",
+  completed: "已完成",
+  rejected: "已驳回",
+  rolled_over: "顺延至下周",
+  pay_failed: "付款失败",
+  cancelled: "已取消",
+};
+const WITHDRAW_FROZEN = PAYOUT_FROZEN_STATUSES;
+const WITHDRAW_RELEASED = new Set(["rejected", "cancelled", "canceled", "pay_failed", "failed"]);
+const WITHDRAW_ACTIVE = new Set(
+  [...WITHDRAW_FROZEN, "completed", "paid"].filter((status) => !WITHDRAW_RELEASED.has(status))
+);
+const WITHDRAW_OPEN_RE =
+  /^(submitted|pending_friday|reviewing|pending|pending_review|rolled_over|approved|pending_payment|processing|paying|approved_pending_pay|paid_pending_receipt)$/;
+
+function withdrawalIdempotencyMarker(key) {
+  return `[[idem:${key}]]`;
+}
+
+async function findCompanionWithdrawalByIdempotency(db, companionId, key) {
+  const marker = withdrawalIdempotencyMarker(key);
+  const select =
+    "id,status,remark,cat_food_amount,amount,gross_amount_rm,fee_rm,net_amount_rm,withdrawal_no,settlement_date,account_last4,bank_name,created_at";
+  const rows = await db(
+    "companion_withdrawals",
+    `?companion_id=eq.${encodeURIComponent(companionId)}&select=${select}&order=created_at.desc&limit=80`
+  ).catch(() => []);
+  const hit = (Array.isArray(rows) ? rows : []).find((row) => String(row.remark || "").includes(marker));
+  if (hit) return hit;
+  try {
+    const byCol = await db(
+      "companion_withdrawals",
+      `?companion_id=eq.${encodeURIComponent(companionId)}&idempotency_key=eq.${encodeURIComponent(key)}&select=${select}&limit=1`
+    );
+    return byCol?.[0] || null;
+  } catch {
+    return null;
+  }
+}
+const SETTLEMENT_PREFIX = "MCJ_SETTLEMENT:";
+
+const REQUIRED_ENV = ["SUPABASE_URL", "SUPABASE_ANON_KEY", "SUPABASE_SERVICE_ROLE_KEY"];
+const ORDER_TYPE_TEXT = {
+  customer_service: "客服派单",
+  direct_companion: "指定陪玩",
+  open_grab: "公开抢单",
+  custom: "自定义订单",
+  gameplay_mall: "固定玩法订单",
+  gameplay: "固定玩法订单"
+};
+const REJECT_REASONS = [
+  "正在服务其他订单",
+  "时间无法配合",
+  "临时有事",
+  "不接该项目",
+  "其他",
+];
+const COMPANION_CONFIRM_TIMEOUT_MS = 5 * 60 * 1000;
+
+function json(res, status, data) { res.status(status).json(data); }
+function hasDb() { return REQUIRED_ENV.every((key) => process.env[key]); }
+function anonHeaders(extra = {}) { return { apikey: process.env.SUPABASE_ANON_KEY, "Content-Type": "application/json", ...extra }; }
+function serviceHeaders(extra = {}) {
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  return {
+    apikey: key,
+    Authorization: `Bearer ${key}`,
+    "Content-Type": "application/json",
+    Prefer: "return=representation",
+    ...extra,
+  };
+}
+async function patchCompanionProfile(query, patch, { maxRetries = 8 } = {}) {
+  let body = { ...patch };
+  Object.keys(body).forEach((k) => body[k] === undefined && delete body[k]);
+  let lastError = null;
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      return await supabaseJson(restUrl("companion_profiles", query), {
+        method: "PATCH",
+        headers: serviceHeaders(),
+        body: JSON.stringify(body),
+      });
+    } catch (error) {
+      lastError = error;
+      const msg = `${error?.message || ""} ${typeof error?.body === "string" ? error.body : JSON.stringify(error?.body || "")}`;
+      const m = msg.match(/Could not find the '([^']+)' column/i);
+      if (!m) throw error;
+      const col = m[1];
+      if (!(col in body)) throw error;
+      delete body[col];
+    }
+  }
+  throw lastError || new Error("companion_profiles 更新失败");
+}
+function authUrl(path) { return `${process.env.SUPABASE_URL}/auth/v1/${path}`; }
+function restUrl(table, query = "") { return `${process.env.SUPABASE_URL}/rest/v1/${table}${query}`; }
+function nowIso() { return new Date().toISOString(); }
+function todayKey() { return new Date().toISOString().slice(0, 10); }
+function monthKey() { return new Date().toISOString().slice(0, 7); }
+function money(value) { const n = Number(String(value ?? "").replace(/[^\d.-]/g, "")); return Number.isFinite(n) ? n : 0; }
+function roundMoney(value) { return Math.round(money(value) * 100) / 100; }
+function formatSupabaseError(body, response, url = "") {
+  const parts = [
+    stringifyApiErrorValue(body?.error_description),
+    stringifyApiErrorValue(body?.msg),
+    stringifyApiErrorValue(body?.message),
+    stringifyApiErrorValue(body?.error),
+    stringifyApiErrorValue(body?.hint),
+    stringifyApiErrorValue(body?.details),
+    body?.code ? `code=${body.code}` : "",
+    typeof body === "string" ? body.slice(0, 240) : "",
+  ].filter(Boolean);
+  const path = String(url || "").replace(String(process.env.SUPABASE_URL || ""), "").slice(0, 140);
+  return `${parts[0] || "Supabase 请求失败"} (HTTP ${response?.status || "?"}${path ? `; ${path}` : ""})`;
+}
+function parseSettlementNote(note) {
+  const text = String(note || "");
+  const idx = text.indexOf(SETTLEMENT_PREFIX);
+  if (idx === -1) return null;
+  try {
+    return JSON.parse(text.slice(idx + SETTLEMENT_PREFIX.length));
+  } catch {
+    return null;
+  }
+}
+function parseGiftNote(note) {
+  const text = String(note || "");
+  const idx = text.indexOf("MCJ_GIFT:");
+  if (idx === -1) {
+    const m = text.match(/礼物收益[：:]\s*(.+)$/);
+    return m ? { giftName: String(m[1] || "").trim() } : null;
+  }
+  try {
+    return JSON.parse(text.slice(idx + "MCJ_GIFT:".length));
+  } catch {
+    return null;
+  }
+}
+function findLevelForCompanion(levels, companion = {}) {
+  const list = Array.isArray(levels) ? levels : [];
+  const id = String(companion.level_id || "").trim();
+  const name = String(companion.level_name || "").trim();
+  return (
+    list.find((l) => l.id === id) ||
+    list.find((l) => String(l.code) === id || String(l.code) === name) ||
+    list.find((l) => String(l.name) === name) ||
+    list.find((l) => name && `${l.code || ""} ${l.name || ""}`.trim() === name) ||
+    list.find((l) => name && String(l.name).includes(l.name)) ||
+    list.find((l) => Number(l.level) === Number(((String(name).match(/\d+/) || [])[0]))) ||
+    null
+  );
+}
+async function resolveLevelBundle(companion = {}) {
+  const levels = await readLocalLevels().catch(() => []);
+  const level = findLevelForCompanion(levels, companion);
+  const publicLevel = level ? toPublicLevel(level) : null;
+  const levelPlatform = publicLevel ? money(publicLevel.commissionRate) : null;
+  const { platformRate, companionShareRate } = resolvePlatformCommission(
+    companion.commission_rate,
+    levelPlatform != null ? levelPlatform : 20
+  );
+  const price = money(companion.price);
+  const min = publicLevel ? money(publicLevel.min) : 0;
+  const max = publicLevel ? money(publicLevel.max) : 0;
+  const maxPlus = !!(publicLevel && publicLevel.maxPlus);
+  const inRange = !publicLevel ? true : price >= min && (maxPlus ? true : price <= max);
+  return {
+    levels: levels.map(toPublicLevel),
+    level: publicLevel,
+    platformCommissionRate: platformRate,
+    companionShareRate,
+    minPrice: min,
+    maxPrice: max,
+    maxPlus,
+    price,
+    priceInRange: !price ? false : inRange,
+    priceNeedsReset: !!price && !!publicLevel && !inRange,
+  };
+}
+function buildSettlement({ order, boss = {}, companion = {}, rates, completedAt }) {
+  const total = money(order.total_amount);
+  const platformRate = money(rates.platformCommissionRate);
+  const companionShare = money(rates.companionShareRate);
+  const rebateRate = money(companion.direct_rebate_rate);
+  const platformFee = roundMoney((total * platformRate) / 100);
+  const rebateDeduction = roundMoney((total * rebateRate) / 100);
+  const netIncome = roundMoney(Math.max(0, (total * companionShare) / 100 - rebateDeduction));
+  return {
+    orderId: order.id,
+    orderNo: order.order_no || order.id,
+    bossName: anonymousBossLabel(boss),
+    bossUid: resolveBossPublicCode(boss),
+    bossId: order.boss_id || "",
+    serviceName: order.title || order.description || order.game || "陪玩服务",
+    game: order.game || "",
+    duration: order.hours ? `${order.hours}小时` : "",
+    hours: money(order.hours),
+    totalCatFood: total,
+    platformCommissionRate: platformRate,
+    platformCommissionCatFood: platformFee,
+    rebateRate,
+    rebateOrOtherDeduction: rebateDeduction,
+    companionShareRate: companionShare,
+    companionNetCatFood: netIncome,
+    completedAt: completedAt || order.completed_at || nowIso(),
+    settlementStatus: "已结算",
+    levelId: rates.level?.id || companion.level_id || "",
+    levelName: rates.level ? `${rates.level.code || ""} ${rates.level.name || ""}`.trim() : companion.level_name || "",
+    bossCommissionTransparencyNote: "老板直属分成由平台抽成支付，不扣陪玩收入",
+    companionIncomeUnchangedByBossCommission: true,
+  };
+}
+function ledgerTypeLabel(row = {}) {
+  const type = String(row.transaction_type || "");
+  const note = String(row.note || "");
+  if (type === "companion_income") {
+    if (/打赏|礼物|gift/i.test(note)) return "打赏收入";
+    if (/返点|邀请/i.test(note)) return "邀请返点";
+    if (/抽成|platform/i.test(note) && /扣/.test(note)) return "平台抽成";
+    return "订单收入";
+  }
+  if (type === "refund") return "退款扣回";
+  if (type === "withdrawal") {
+    if (/驳回|拒绝|退回/.test(note)) return "提现驳回退回";
+    if (/申请|冻结/.test(note)) return "提现申请";
+    return "提现完成";
+  }
+  if (type === "salary") return "其他收入";
+  return type || "流水";
+}
+async function parseBody(req) { if (req.body && typeof req.body === "object") return req.body; const chunks=[]; for await (const chunk of req) chunks.push(chunk); try { return JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}"); } catch { return {}; } }
+async function supabaseJson(url, init = {}) {
+  const response = await fetch(url, init);
+  const text = await response.text();
+  let body = null;
+  try {
+    body = text ? JSON.parse(text) : null;
+  } catch {
+    body = text;
+  }
+  if (!response.ok) {
+    const err = new Error(formatSupabaseError(body, response, url));
+    err.status = response.status >= 400 && response.status < 600 ? response.status : 500;
+    err.body = body;
+    err.url = url;
+    throw err;
+  }
+  return body;
+}
+function tokenFrom(req) { return String(req.headers["x-mcj-companion-token"] || req.headers.authorization || "").replace(/^Bearer\s+/i, "").trim(); }
+async function authUserFromToken(token) { return supabaseJson(authUrl("user"), { headers: anonHeaders({ Authorization: `Bearer ${token}` }) }); }
+async function profileById(id) { const rows = await supabaseJson(restUrl("profiles", `?id=eq.${encodeURIComponent(id)}&limit=1`), { headers: serviceHeaders() }); return rows?.[0] || null; }
+async function companionProfile(userId) { const rows = await supabaseJson(restUrl("companion_profiles", `?user_id=eq.${encodeURIComponent(userId)}&limit=1`), { headers: serviceHeaders() }); return rows?.[0] || null; }
+
+function maskEmailHint(email = "") {
+  const e = String(email || "").trim().toLowerCase();
+  const at = e.indexOf("@");
+  if (at < 1) return "";
+  const name = e.slice(0, at);
+  const domain = e.slice(at + 1);
+  const shown = name.length <= 2 ? `${name[0] || "*"}*` : `${name.slice(0, 2)}***`;
+  return `${shown}@${domain}`;
+}
+
+async function resolveCompanionAuthEmail(accountRaw = "") {
+  const account = String(accountRaw || "").trim();
+  if (!account) return null;
+  const lower = account.toLowerCase();
+  // MVP: email is the primary auth identity. Companion UID remains a password-login alias.
+  if (/^\S+@\S+\.\S+$/.test(lower)) {
+    // Prefer accounts that already have companion_profiles; else any profile with this email (multi-role).
+    const byEmail = await supabaseJson(
+      restUrl("profiles", `?email=eq.${encodeURIComponent(lower)}&select=id,email,role,status&limit=5`),
+      { headers: serviceHeaders() }
+    ).catch(() => []);
+    const list = Array.isArray(byEmail) ? byEmail : [];
+    for (const row of list) {
+      const cp = await companionProfile(row.id);
+      if (cp) return { email: String(row.email || lower).toLowerCase(), profile: row, companion: cp };
+    }
+    if (list[0]?.email) return { email: String(list[0].email).toLowerCase(), profile: list[0], companion: null };
+    return { email: lower, profile: null, companion: null };
+  }
+  const byUid = await supabaseJson(
+    restUrl("companion_profiles", `?companion_uid=eq.${encodeURIComponent(account)}&select=user_id,companion_uid&limit=1`),
+    { headers: serviceHeaders() }
+  ).catch(() => []);
+  if (byUid?.[0]?.user_id) {
+    const profile = await profileById(byUid[0].user_id);
+    if (profile?.email) {
+      return { email: String(profile.email).toLowerCase(), profile, companion: byUid[0] };
+    }
+  }
+  return null;
+}
+
+function randomOtpCode() {
+  return String(Math.floor(100000 + Math.random() * 900000));
+}
+
+async function storePasswordResetOtp(email, code) {
+  const id = `pwr_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+  const exp = Date.now() + 15 * 60 * 1000;
+  const status = `otp:${code}:exp:${exp}`;
+  try {
+    await supabaseJson(restUrl("password_reset_requests"), {
+      method: "POST",
+      headers: serviceHeaders(),
+      body: JSON.stringify({ id, account: email, role: "companion", status, created_at: new Date().toISOString() }),
+    });
+    return { id, exp };
+  } catch {
+    globalThis.__mcjPwResets = globalThis.__mcjPwResets || new Map();
+    globalThis.__mcjPwResets.set(email, { id, code, exp });
+    return { id, exp, memory: true };
+  }
+}
+
+async function findPasswordResetOtp(email) {
+  const rows = await supabaseJson(
+    restUrl(
+      "password_reset_requests",
+      `?account=eq.${encodeURIComponent(email)}&role=eq.companion&order=created_at.desc&limit=5`
+    ),
+    { headers: serviceHeaders() }
+  ).catch(() => []);
+  for (const row of rows || []) {
+    const m = String(row.status || "").match(/^otp:(\d{6}):exp:(\d+)$/);
+    if (m) return { id: row.id, code: m[1], exp: Number(m[2]), row };
+    const v = String(row.status || "").match(/^verified:([A-Za-z0-9_-]+):exp:(\d+)$/);
+    if (v) return { id: row.id, verifiedToken: v[1], exp: Number(v[2]), row };
+  }
+  const mem = globalThis.__mcjPwResets?.get(email);
+  if (mem) return mem;
+  return null;
+}
+
+async function markPasswordResetVerified(email, rowId, token) {
+  const exp = Date.now() + 15 * 60 * 1000;
+  if (rowId) {
+    await supabaseJson(restUrl("password_reset_requests", `?id=eq.${encodeURIComponent(rowId)}`), {
+      method: "PATCH",
+      headers: serviceHeaders(),
+      body: JSON.stringify({ status: `verified:${token}:exp:${exp}` }),
+    }).catch(() => null);
+  }
+  globalThis.__mcjPwResets = globalThis.__mcjPwResets || new Map();
+  globalThis.__mcjPwResets.set(email, { id: rowId || token, verifiedToken: token, exp });
+  return exp;
+}
+
+async function requireCompanion(req) {
+  const token = tokenFrom(req);
+  if (!token) throw Object.assign(new Error("请先登录陪玩端。"), { status: 401 });
+  let authUser;
+  try {
+    authUser = await authUserFromToken(token);
+  } catch (error) {
+    throw Object.assign(new Error("登录状态已过期，请重新登录后继续。"), { status: 401, cause: error });
+  }
+  if (!authUser?.id) throw Object.assign(new Error("登录状态已过期，请重新登录后继续。"), { status: 401 });
+  const profile = await profileById(authUser.id);
+  if (!profile) throw Object.assign(new Error("陪玩资料不存在（profiles 为空），无法查询钱包。"), { status: 403 });
+  const companion = await companionProfile(profile.id);
+  const { hasCompanionRole } = await import("./_account-roles.js");
+  if (!hasCompanionRole(profile, { companion, authUser })) {
+    throw Object.assign(new Error("无权访问陪玩端。请先申请陪玩身份。"), { status: 403, code: "NO_COMPANION_ROLE" });
+  }
+  if (profile.status === "disabled") throw Object.assign(new Error("陪玩账号已停用。"), { status: 403 });
+  return { token, authUser, profile, companion };
+}
+function statusLabel(code) {
+  return ({ online: "在线可接单", busy: "忙碌", paused: "暂停接单", offline: "离线" })[code] || "离线";
+}
+function normalizeOnlineStatus(raw) {
+  const s = String(raw || "offline").toLowerCase();
+  if (s === "online" || s === "busy" || s === "paused" || s === "offline") return s;
+  return "offline";
+}
+function resolveDisplayAvatar(profile = {}, companion = {}) {
+  const raw = String(profile.avatar_url || companion.card_image_url || "").trim();
+  if (!raw || /default-avatar\.png$/i.test(raw) || /meow-cuijiao-brand\.(jpe?g|png|webp)$/i.test(raw)) {
+    return "/default-avatar.png";
+  }
+  return raw;
+}
+const GALLERY_MARK_START = "[[MCJ_GALLERY:";
+const GALLERY_MARK_END = "]]";
+
+function readGalleryFallback(tags) {
+  const text = String(tags || "");
+  const i = text.indexOf(GALLERY_MARK_START);
+  if (i < 0) return { items: [], baseTags: text };
+  const j = text.indexOf(GALLERY_MARK_END, i);
+  if (j < 0) return { items: [], baseTags: text };
+  let items = [];
+  try {
+    items = JSON.parse(text.slice(i + GALLERY_MARK_START.length, j));
+  } catch {
+    items = [];
+  }
+  const baseTags = `${text.slice(0, i)}${text.slice(j + GALLERY_MARK_END.length)}`
+    .replace(/,\s*,/g, ",")
+    .replace(/^\s*,\s*|\s*,\s*$/g, "")
+    .trim();
+  return { items: Array.isArray(items) ? items : [], baseTags };
+}
+
+function writeGalleryFallback(baseTags, items) {
+  const cleaned = String(baseTags || "").trim();
+  if (!items.length) return cleaned;
+  return `${cleaned}${cleaned ? "," : ""}${GALLERY_MARK_START}${JSON.stringify(items)}${GALLERY_MARK_END}`;
+}
+
+async function listStoragePrefix(bucket, prefix) {
+  try {
+    const response = await fetch(`${process.env.SUPABASE_URL}/storage/v1/object/list/${bucket}`, {
+      method: "POST",
+      headers: serviceHeaders(),
+      body: JSON.stringify({ prefix: String(prefix || "").replace(/^\/+/, ""), limit: 50, offset: 0 }),
+    });
+    const text = await response.text();
+    let body = null;
+    try {
+      body = text ? JSON.parse(text) : [];
+    } catch {
+      body = [];
+    }
+    if (!response.ok) return [];
+    return Array.isArray(body) ? body.filter((x) => x && x.name && !String(x.name).endsWith("/")) : [];
+  } catch {
+    return [];
+  }
+}
+
+function isUuid(value) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(value || "").trim());
+}
+
+function isSyntheticMediaId(value) {
+  const id = String(value || "").trim();
+  if (!id || isUuid(id)) return false;
+  return /^(storage-gallery-|legacy-gallery-|legacy-avatar|legacy-voice|fb-|legacy-)/i.test(id);
+}
+
+function humanizeCompanionApiError(error) {
+  const raw = stringifyApiErrorValue(error?.message || error, "");
+  const status = Number(error?.status) || 500;
+  const blob = `${raw} ${stringifyApiErrorValue(error?.body, "")}`;
+  if (status === 413 || /413|Payload Too Large|request entity too large|VERCEL_BODY_LIMIT|上传通道限制/i.test(blob)) {
+    return { status: 413, message: "视频文件过大或上传通道限制，请稍后重试。" };
+  }
+  if (
+    status === 401 ||
+    /jwt|token is expired|invalid jwt|unable to parse or verify|unauthorized|登录态无效|请先登录|登录已过期/i.test(blob)
+  ) {
+    return { status: 401, message: "登录状态已过期，请重新登录后继续。" };
+  }
+  if (/invalid input syntax for type uuid|22P02/i.test(blob)) {
+    return { status: 400, message: "媒体数据异常，请刷新后重试。" };
+  }
+  if (/HTTP\s*403|\/auth\/v1\/user/i.test(blob) && /jwt|token|expired|signature/i.test(blob)) {
+    return { status: 401, message: "登录状态已过期，请重新登录后继续。" };
+  }
+  if (/PGRST|PostgREST|supabase|schema cache|permission denied for/i.test(blob) && !/请|上传|删除|相册|头像|录音|视频/.test(raw)) {
+    return { status: status >= 400 && status < 600 ? status : 500, message: "操作失败，请稍后重试。" };
+  }
+  // Never leak raw JS/runtime dumps (e.g. "Assignment to constant variable") to companion UI.
+  if (/Assignment to constant variable|TypeError|ReferenceError|SyntaxError|is not defined|Cannot read propert/i.test(raw)) {
+    return { status: 500, message: "操作失败，请稍后重试。" };
+  }
+  if (/\[object Object\]/i.test(raw)) {
+    return { status: status >= 400 && status < 600 ? status : 500, message: "操作失败，请稍后重试。" };
+  }
+  // Never leak raw HTTP / JWT / UUID dumps to companion UI.
+  if (/invalid JWT|HTTP\s*\d{3}|invalid input syntax/i.test(raw)) {
+    if (/jwt|token|expired|403|401/i.test(raw)) {
+      return { status: 401, message: "登录状态已过期，请重新登录后继续。" };
+    }
+    return { status: status >= 400 && status < 600 ? status : 500, message: "操作失败，请稍后重试。" };
+  }
+  return { status: status >= 400 && status < 600 ? status : 500, message: raw || "陪玩端接口异常" };
+}
+
+/**
+ * When companion_media exists but gallery rows are empty, migrate durable tag/storage
+ * gallery fallbacks into real UUID rows once. Never rehydrate storage after DB has gallery
+ * rows — that would resurrect deleted photos.
+ */
+async function migrateGalleryFallbacksIntoMedia(profile, companionRow, mediaRows) {
+  if (!profile?.id || !companionRow?.id) return Array.isArray(mediaRows) ? mediaRows : [];
+  const existing = Array.isArray(mediaRows) ? mediaRows.slice() : [];
+  const galleryImageRows = existing.filter((m) => {
+    if (String(m.media_type || "") !== "gallery") return false;
+    const ctype = String(m.content_type || "").toLowerCase();
+    return !/^video\//.test(ctype);
+  });
+  const pathKeys = new Set(
+    galleryImageRows
+      .map((m) => `${String(m.storage_bucket || "").trim()}::${String(m.storage_path || "").trim()}`)
+      .filter((k) => !k.startsWith("::") && k !== "::")
+  );
+
+  const insertGallery = async (bucket, objectPath, sortOrder, uploadedAt) => {
+    const key = `${bucket}::${objectPath}`;
+    if (!bucket || !objectPath || pathKeys.has(key)) return null;
+    try {
+      const rows = await companionDb("companion_media", "", {
+        method: "POST",
+        body: JSON.stringify({
+          companion_profile_id: companionRow.id,
+          user_id: profile.id,
+          media_type: "gallery",
+          storage_bucket: bucket,
+          storage_path: objectPath,
+          content_type: "image/jpeg",
+          status: "approved",
+          sort_order: sortOrder || 100,
+          uploaded_at: uploadedAt || nowIso(),
+          created_at: nowIso(),
+          updated_at: nowIso(),
+        }),
+      });
+      const row = Array.isArray(rows) ? rows[0] : rows;
+      if (row?.id) {
+        pathKeys.add(key);
+        existing.push(row);
+        return row;
+      }
+    } catch {
+      /* best-effort migrate */
+    }
+    return null;
+  };
+
+  const { items: tagItems, baseTags } = readGalleryFallback(companionRow.tags);
+  let migratedFromTags = 0;
+  for (const g of tagItems) {
+    const bucket = String(g.bucket || "").trim();
+    const objectPath = String(g.path || "").trim();
+    if (!bucket || !objectPath) continue;
+    const row = await insertGallery(bucket, objectPath, g.sortOrder || 100, g.uploadedAt || "");
+    if (row) migratedFromTags += 1;
+  }
+  if (tagItems.length) {
+    try {
+      await patchCompanionProfile(`?id=eq.${encodeURIComponent(companionRow.id)}`, {
+        tags: writeGalleryFallback(baseTags, []),
+        updated_at: nowIso(),
+      });
+      companionRow.tags = writeGalleryFallback(baseTags, []);
+    } catch {
+      /* optional */
+    }
+  }
+
+  // IMPORTANT: never re-list Storage into companion_media when the table exists.
+  // Doing so resurrects deleted gallery photos (DB empty + leftover objects → migrate → back).
+  // Tags marker is the only bootstrap fallback; orphans without DB rows stay ignored.
+  void migratedFromTags;
+
+  return existing;
+}
+
+async function synthesizeMediaFallback(profile, companion, opts = {}) {
+  const allowStorageListing = opts.allowStorageListing !== false;
+  const signedMedia = [];
+  const avatarUrl = resolveDisplayAvatar(profile, companion || {});
+  if (avatarUrl && avatarUrl !== "/default-avatar.png") {
+    signedMedia.push({
+      id: "legacy-avatar",
+      mediaType: "avatar",
+      status: "approved",
+      rejectReason: "",
+      durationSeconds: null,
+      uploadedAt: companion?.updated_at || "",
+      sortOrder: 0,
+      url: avatarUrl,
+    });
+  }
+
+  const { items: galleryItems } = readGalleryFallback(companion?.tags);
+  const gallerySeen = new Set();
+  for (const g of galleryItems) {
+    let gUrl = g.url || "";
+    if (!gUrl && g.bucket && g.path) {
+      try {
+        gUrl =
+          g.bucket === PUBLIC_BUCKETS.profile
+            ? publicObjectUrl(g.bucket, g.path)
+            : await createSignedUrl(g.bucket, g.path, 60 * 60 * 24 * 7);
+      } catch {
+        gUrl = "";
+      }
+    }
+    if (!gUrl || gallerySeen.has(gUrl)) continue;
+    gallerySeen.add(gUrl);
+    signedMedia.push({
+      id: g.id || `legacy-gallery-${g.path || gUrl}`,
+      mediaType: "gallery",
+      status: "approved",
+      rejectReason: "",
+      durationSeconds: null,
+      uploadedAt: g.uploadedAt || "",
+      sortOrder: g.sortOrder || 100,
+      url: gUrl,
+    });
+  }
+
+  // Storage listing is ONLY a last-resort when companion_media table is missing.
+  // When the table exists, empty gallery means empty — never re-list Storage (resurrects deletes).
+  if (allowStorageListing && !gallerySeen.size && profile?.id) {
+    const buckets = [PRIVATE_BUCKETS.gallery, PUBLIC_BUCKETS.profile];
+    let sort = 100;
+    for (const bucket of buckets) {
+      const files = await listStoragePrefix(bucket, `${profile.id}/gallery`);
+      for (const file of files) {
+        const objectPath = `${profile.id}/gallery/${file.name}`;
+        let gUrl = "";
+        try {
+          gUrl =
+            bucket === PUBLIC_BUCKETS.profile
+              ? publicObjectUrl(bucket, objectPath)
+              : await createSignedUrl(bucket, objectPath, 60 * 60 * 24 * 7);
+        } catch {
+          gUrl = "";
+        }
+        if (!gUrl || gallerySeen.has(gUrl)) continue;
+        gallerySeen.add(gUrl);
+        signedMedia.push({
+          id: `storage-gallery-${bucket}-${file.name}`,
+          mediaType: "gallery",
+          status: "approved",
+          rejectReason: "",
+          durationSeconds: null,
+          uploadedAt: file.updated_at || file.created_at || "",
+          sortOrder: sort,
+          url: gUrl,
+          storageBucket: bucket,
+          storagePath: objectPath,
+        });
+        sort += 10;
+      }
+    }
+  }
+
+  if (companion?.voice_url) {
+    let voiceUrl = String(companion.voice_url || "").trim();
+    if (/^storage:\/\//i.test(voiceUrl)) {
+      const rest = voiceUrl.replace(/^storage:\/\//i, "");
+      const slash = rest.indexOf("/");
+      if (slash > 0) {
+        const bucket = rest.slice(0, slash);
+        const objectPath = rest.slice(slash + 1);
+        try {
+          voiceUrl = await createSignedUrl(bucket, objectPath, 60 * 60 * 24 * 7);
+        } catch {
+          voiceUrl = "";
+        }
+      } else {
+        voiceUrl = "";
+      }
+    } else if (/\/storage\/v1\/object\/sign\//i.test(voiceUrl) || (/[?&]token=/i.test(voiceUrl) && /\/storage\/v1\//i.test(voiceUrl))) {
+      // Stale signed URL — skip; companion_media row (if any) will provide a fresh one.
+      voiceUrl = "";
+    }
+    if (voiceUrl) {
+      signedMedia.push({
+        id: "legacy-voice",
+        mediaType: "voice",
+        status: "approved",
+        rejectReason: "",
+        durationSeconds: null,
+        uploadedAt: companion?.updated_at || "",
+        sortOrder: 999,
+        url: voiceUrl,
+      });
+    }
+  }
+  return signedMedia;
+}
+
+function safePlayer(profile = {}, companion = {}) {
+  // Unverified accounts cannot work: never expose stale busy/online to client/admin sync.
+  let onlineStatus = normalizeOnlineStatus(companion.availability_status || companion.online_status);
+  if (!canWork(profile, companion)) onlineStatus = "offline";
+  const gamePrices = readGamePrices(companion);
+  const serviceTypes = parseServiceTypes(companion.service_type, {
+    fallbackPlayWhenGame: true,
+    hasGame: !!(companion.game || parseServiceIds(companion.service_ids).length),
+  });
+  const serviceIds = parseServiceIds(companion.service_ids);
+  const publicTags = stripGamePricesMarker(companion.tags || "")
+    .replace(/\[\[MCJ_GALLERY:[\s\S]*?\]\]/g, "")
+    .replace(/游戏ID:[^,，]*/g, "")
+    .replace(/,\s*,/g, ",")
+    .replace(/^\s*,\s*|\s*,\s*$/g, "")
+    .trim();
+  return {
+    id: profile.id,
+    uid: profile.id,
+    email: profile.email || "",
+    name: companion.nickname || profile.display_name || profile.email || "陪玩",
+    avatar: resolveDisplayAvatar(profile, companion),
+    hasCustomAvatar: !!(profile.avatar_url || companion.card_image_url) && resolveDisplayAvatar(profile, companion) !== "/default-avatar.png",
+    role: "companion",
+    roles: Array.isArray(profile.roles) && profile.roles.length
+      ? profile.roles
+      : ["companion", ...(String(profile.role || "").toLowerCase() === "boss" ? ["boss"] : ["boss"])],
+    hasBoss: true,
+    hasCompanion: true,
+    mainGame: companion.game || "",
+    game: companion.game || "",
+    serviceType: serviceTypes[0] || "陪玩服务",
+    serviceTypes,
+    service_type: serviceTypes.join(","),
+    serviceIds,
+    service_ids: serviceIds,
+    gameId: companion.game_id || ((String(companion.tags || "").match(/游戏ID:([^,，]+)/) || [])[1] || "").trim(),
+    level: companion.level_name || "未设置",
+    rawPrice: money(companion.price),
+    price: money(companion.price),
+    gamePrices,
+    publicTags,
+    voiceType: String(companion.voice_type || "").trim(),
+    voice_type: String(companion.voice_type || "").trim(),
+    bio: companion.description || "",
+    voiceUrl: companion.voice_url || "",
+    onlineStatus,
+    onlineStatusLabel: statusLabel(onlineStatus),
+    workStatus: statusLabel(onlineStatus),
+    accountStatus: profile.status || "pending",
+    profileReviewStatus: normalizeProfileReviewStatus(companion),
+    profile_review_status: normalizeProfileReviewStatus(companion),
+    depositStatus: normalizeDepositStatus(companion),
+    deposit_status: normalizeDepositStatus(companion),
+    accountAccessStatus: resolveAccountAccessStatus(profile, companion).status,
+    account_access_status: resolveAccountAccessStatus(profile, companion).status,
+    accountAccessLabel: resolveAccountAccessStatus(profile, companion).label,
+    auditStatus: normalizeProfileReviewStatus(companion),
+    verificationStatus: companion.verification_status || "pending",
+    orderCommissionRate: resolvePlatformCommission(companion.commission_rate).platformRate,
+    giftCommissionRate: money(companion.gift_commission_rate) || 0,
+    directRebateRate: money(companion.direct_rebate_rate) || 0,
+    applicationRejectReason: companion.application_reject_reason || "",
+    mediaRejectReason: companion.media_reject_reason || "",
+    tags: companion.tags || "",
+    updatedAt: companion.updated_at || profile.updated_at || "",
+    raw: { ...profile, ...companion }
+  };
+}
+function normalizeProfileReviewStatus(companion = {}) {
+  const raw = String(companion.application_status || "").trim().toLowerCase();
+  if (/approved|verified|passed/.test(raw)) return "approved";
+  if (/reject/.test(raw)) return "rejected";
+  if (/resubmit|need_more/.test(raw)) return "need_more";
+  if (/^draft$|^archived$|^deleted$/.test(raw)) return "draft";
+  // submitted / pending_review → pending (审核中)
+  if (/submitted|pending_review/.test(raw)) return "pending";
+  // Legacy never-submitted register rows behave as draft for UI.
+  if (!companion.application_submitted_at && !/pending|submitted|review/.test(raw)) return "draft";
+  if (!companion.application_submitted_at && (!raw || raw === "pending")) return "draft";
+  return "pending";
+}
+function normalizeDepositStatus(companion = {}, depositRow = null) {
+  const raw = String(depositRow?.status || companion.deposit_status || "").trim().toLowerCase();
+  // Check unpaid/rejected BEFORE /paid/ — "unpaid" must never match paid.
+  if (/unpaid|draft|none|not_submitted|missing|未缴/.test(raw) || !raw) return "unpaid";
+  if (/reject|驳回|拒绝/.test(raw)) return "rejected";
+  if (/^(approved|verified|passed|paid|received)$|已通过|已缴纳|已到账/.test(raw)) return "approved";
+  if (/pending|review|submit|待审|审核中/.test(raw)) {
+    // companion_profiles.deposit_status defaults to "pending" at register time.
+    // Without a companion_deposits ledger row this means unpaid — NOT under review.
+    // Showing "审核中" here hides the live payment QR / deposit form.
+    if (!depositRow || !String(depositRow.id || "").trim()) return "unpaid";
+    return "pending";
+  }
+  if (/refund/.test(raw)) return "refunded";
+  return "unpaid";
+}
+function profileReviewApproved(companion = {}) {
+  return normalizeProfileReviewStatus(companion) === "approved";
+}
+function depositApproved(companion = {}, depositRow = null) {
+  return normalizeDepositStatus(companion, depositRow) === "approved";
+}
+const COMPANION_AUTH_LOCK_MSG = "您的陪玩认证尚未通过，暂不可使用此功能。";
+const COMPANION_ISOLATION_MSG = "您的陪玩认证尚未通过，目前只能查看审核进度。";
+/** Actions allowed while application is not approved (isolation mode). */
+const COMPANION_ISOLATION_ALLOWED_ACTIONS = new Set([
+  "bootstrap",
+  "inbox",
+  "thread",
+  "conversation_messages",
+  "update_profile",
+  "submit_application",
+  "submit_verification",
+  "upload_private_doc",
+  "delete_private_doc",
+  "submit_deposit",
+  "submit_deposit_proof",
+  "deposit_pay_methods",
+  "deposit_channels",
+  "list_deposit_pay_methods",
+  "upload_media",
+  "prepare_video_upload",
+  "delete_media",
+  "discard_application_draft",
+  "clear_application_draft",
+  "reorder_media",
+  "start_cs_consult",
+  "open_cs_conversation",
+  "end_cs_conversation",
+  "end_conversation",
+  "send_cs_message",
+  "send_message",
+  "mark_notices_read",
+  "mark_all_read",
+  "mark_cs_read",
+  "read_cs_conversation",
+  "acknowledge_forced",
+  "ack_forced_announcement",
+  "pending_forced",
+]);
+/** Maps "companion.enabled" — no dedicated column; allow_orders / enabled flag. */
+function companionEnabled(companion = {}) {
+  if (companion.enabled === false || companion.enabled === 0 || companion.enabled === "false") return false;
+  if (companion.allow_orders === false) return false;
+  return true;
+}
+/**
+ * Isolation UI gate: draft / pending_review / rejected / need_more, or non-active account.
+ * Approved companions leave isolation even if deposit/canWork still soft-locks grab.
+ */
+function isCompanionIsolated(profile = {}, companion = {}) {
+  const accountOk = !profile.status || profile.status === "active" || profile.status === "pending";
+  if (profile.status && profile.status !== "active" && profile.status !== "pending") return true;
+  if (!accountOk) return true;
+  return normalizeProfileReviewStatus(companion) !== "approved";
+}
+/**
+ * Business API gate: application approved + companion enabled + account active.
+ */
+function assertCompanionBusinessAccess(profile = {}, companion = {}) {
+  const appOk = normalizeProfileReviewStatus(companion) === "approved";
+  const accountOk = profile.status === "active";
+  const enabled = companionEnabled(companion);
+  if (appOk && accountOk && enabled) return;
+  const err = new Error(COMPANION_ISOLATION_MSG);
+  err.status = 403;
+  err.code = "COMPANION_ISOLATED";
+  err.applicationStatus = normalizeProfileReviewStatus(companion);
+  err.accountStatus = profile.status || "";
+  err.companionEnabled = enabled;
+  throw err;
+}
+function isolationForbiddenResponse(res, err) {
+  return json(res, err?.status || 403, {
+    ok: false,
+    message: err?.message || COMPANION_ISOLATION_MSG,
+    code: err?.code || "COMPANION_ISOLATED",
+    applicationStatus: err?.applicationStatus,
+    accountStatus: err?.accountStatus,
+    companionEnabled: err?.companionEnabled,
+  });
+}
+function resolveCredentialMode(companion = {}, depositRow = null) {
+  // Preferred auth path hint (apply form). Order eligibility is OR, not XOR.
+  const tagged = String(companion.credential_mode || companion.auth_mode || "").trim().toLowerCase();
+  if (tagged === "id_card" || tagged === "deposit") return tagged;
+  const note = String(companion.application_note || "");
+  const m = note.match(/\[AUTH_MODE:(id_card|deposit)\]/i);
+  if (m) return m[1].toLowerCase();
+  const depSt = normalizeDepositStatus(companion, depositRow);
+  if (depSt === "approved" || depSt === "pending") return "deposit";
+  return "id_card";
+}
+function normalizeIdentityStatus(identityRow = null, companion = {}) {
+  // Any approved source wins (identity row OR profile columns). A pending row must
+  // not override companion_profiles.verification_status / identity_status = approved.
+  const sources = [
+    identityRow?.status,
+    identityRow?.verification_status,
+    companion?.identity_status,
+    companion?.verification_status,
+  ];
+  if (sources.some((value) => /approved|verified|passed/i.test(String(value || "").trim()))) {
+    return "approved";
+  }
+  if (sources.some((value) => /reject/i.test(String(value || "").trim()))) {
+    return "rejected";
+  }
+  const raw = String(
+    identityRow?.status || companion?.identity_status || companion?.verification_status || ""
+  )
+    .trim()
+    .toLowerCase();
+  if (/pending|review|submit|uploaded/.test(raw)) return "pending";
+  if (!raw || /draft|none|not_submitted|missing|unsubmitted/.test(raw)) return "draft";
+  return "pending";
+}
+function identityApproved(identityRow = null, companion = {}) {
+  return normalizeIdentityStatus(identityRow, companion) === "approved";
+}
+/**
+ * Work/order access (locked):
+ * 1) profile application approved
+ * 2) identity_verified OR deposit_verified (admin-approved only)
+ * 3) account active + companion not disabled
+ * Forced-ack is applied separately on top of canWork.
+ */
+function resolveAccountAccessStatus(profile = {}, companion = {}, depositRow = null, identityRow = null) {
+  const profileSt = normalizeProfileReviewStatus(companion);
+  const depositSt = normalizeDepositStatus(companion, depositRow);
+  const identitySt = normalizeIdentityStatus(identityRow, companion);
+  const idOk = identitySt === "approved";
+  const depOk = depositSt === "approved";
+  const base = {
+    identityVerified: idOk,
+    depositVerified: depOk,
+    identityStatus: identitySt,
+    depositStatus: depositSt,
+    profileReviewStatus: profileSt,
+    credentialOrOk: idOk || depOk,
+  };
+  if (profile.status && profile.status !== "active" && profile.status !== "pending") {
+    return { ...base, status: "blocked", label: "账号已停用，无法接单。" };
+  }
+  if (profile.status !== "active") {
+    return { ...base, status: "pending", label: "账号尚未启用，暂时无法接单。" };
+  }
+  if (companion.allow_orders === false && profileSt === "approved") {
+    return { ...base, status: "blocked", label: "后台已暂停该账号接单权限。" };
+  }
+  if (profileSt === "rejected") {
+    const appReason = String(companion.application_reject_reason || "").trim();
+    return {
+      ...base,
+      status: "rejected",
+      label: appReason ? `审核未通过：${appReason}` : "资料审核未通过，请修改后重新提交。",
+    };
+  }
+  if (profileSt === "need_more") {
+    const appReason = String(companion.application_reject_reason || "").trim();
+    return {
+      ...base,
+      status: "need_more",
+      label: appReason ? `需补交资料：${appReason}` : "请按审核意见补交资料后再接单。",
+    };
+  }
+  if (profileSt === "draft") {
+    return { ...base, status: "draft", label: "资料未完成，请继续填写申请。完成后提交审核。" };
+  }
+  if (profileSt !== "approved") {
+    return { ...base, status: "pending", label: "资料审核中，暂时无法接单。" };
+  }
+  // Profile approved — credential is OR of identity / deposit (admin approved only).
+  if (!idOk && !depOk) {
+    const idPending = identitySt === "pending";
+    const depPending = depositSt === "pending";
+    const idRejected = identitySt === "rejected";
+    const depRejected = depositSt === "rejected";
+    if (idPending || depPending) {
+      const bits = [];
+      if (idPending) bits.push("身份证认证审核中");
+      if (depPending) bits.push("押金认证审核中");
+      return {
+        ...base,
+        status: "incomplete",
+        label: `${bits.join("；")}。上传≠通过，需后台审核通过后才能接单。`,
+      };
+    }
+    if (idRejected && depRejected) {
+      return {
+        ...base,
+        status: "incomplete",
+        label: "身份证与押金认证均未通过，请任选其一重新提交并等待审核。",
+      };
+    }
+    if (idRejected && !depOk) {
+      const reason = String(identityRow?.reject_reason || "").trim();
+      return {
+        ...base,
+        status: "incomplete",
+        label: reason
+          ? `身份证认证未通过：${reason}。也可改走押金认证（二选一）。`
+          : "身份证认证未通过。请重新提交，或改走押金认证（二选一）。",
+      };
+    }
+    if (depRejected && !idOk) {
+      const reason = String(depositRow?.reject_reason || companion.deposit_reject_reason || "").trim();
+      return {
+        ...base,
+        status: "incomplete",
+        label: reason
+          ? `押金认证未通过：${reason}。也可改走身份证认证（二选一）。`
+          : "押金认证未通过。请重新提交，或改走身份证认证（二选一）。",
+      };
+    }
+    return {
+      ...base,
+      status: "incomplete",
+      label: "认证未完成：请完成身份证认证或押金认证（二选一），后台审核通过后方可接单。",
+    };
+  }
+  if (companion.allow_orders === false) {
+    return { ...base, status: "blocked", label: "后台已暂停该账号接单权限。" };
+  }
+  const via = idOk && depOk ? "身份证与押金均已通过" : idOk ? "身份证认证已通过" : "押金认证已通过";
+  return { ...base, status: "approved", label: `${via}，可正常接单。` };
+}
+function canWork(profile = {}, companion = {}, depositRow = null, identityRow = null) {
+  return resolveAccountAccessStatus(profile, companion, depositRow, identityRow).status === "approved";
+}
+function canAccept(profile = {}, companion = {}, depositRow = null, identityRow = null) {
+  return (
+    canWork(profile, companion, depositRow, identityRow) &&
+    normalizeOnlineStatus(companion.availability_status || companion.online_status) === "online"
+  );
+}
+function auditLockMessage(profile = {}, companion = {}, depositRow = null, identityRow = null) {
+  const access = resolveAccountAccessStatus(profile, companion, depositRow, identityRow);
+  if (access.status === "approved") return "";
+  if (access.status === "rejected" || access.status === "need_more") return access.label || COMPANION_AUTH_LOCK_MSG;
+  if (access.status === "draft") return access.label || "资料未完成，请继续填写申请。";
+  if (access.status === "incomplete") return access.label || "请完成身份证认证或押金认证（二选一）。";
+  return access.label || COMPANION_AUTH_LOCK_MSG;
+}
+function applyUnifiedAccessFields(player, profile, companionRow, depositRow = null, identityRow = null) {
+  const access = resolveAccountAccessStatus(profile, companionRow, depositRow, identityRow);
+  const profileReview = normalizeProfileReviewStatus(companionRow);
+  const depositSt = normalizeDepositStatus(companionRow, depositRow);
+  const identitySt = normalizeIdentityStatus(identityRow, companionRow);
+  player.profileReviewStatus = profileReview;
+  player.profile_review_status = profileReview;
+  player.depositStatus = depositSt;
+  player.deposit_status = depositSt;
+  player.identityStatus = identitySt;
+  player.identity_status = identitySt;
+  player.identityVerified = !!access.identityVerified;
+  player.depositVerified = !!access.depositVerified;
+  player.credentialOrOk = !!access.credentialOrOk;
+  player.accountAccessStatus = access.status;
+  player.account_access_status = access.status;
+  player.accountAccessLabel = access.label;
+  player.auditStatus = profileReview;
+  return access;
+}
+async function fetchCompanionAuthRows(profile = {}, companion = {}) {
+  const cpId = companion?.id || "";
+  const userId = profile?.id || companion?.user_id || "";
+  async function one(table, query) {
+    try {
+      const rows = await companionDb(table, query);
+      return Array.isArray(rows) ? rows[0] || null : null;
+    } catch (err) {
+      if (isMissingRelation(err)) return null;
+      throw err;
+    }
+  }
+  const [identityByProfile, depositByProfile] = await Promise.all([
+    cpId
+      ? one("companion_identity_verifications", `?companion_profile_id=eq.${encodeURIComponent(cpId)}&order=updated_at.desc&limit=1`)
+      : Promise.resolve(null),
+    cpId
+      ? one("companion_deposits", `?companion_profile_id=eq.${encodeURIComponent(cpId)}&order=created_at.desc&limit=1`)
+      : Promise.resolve(null),
+  ]);
+  let identity = identityByProfile;
+  let deposit = depositByProfile;
+  if ((!identity || !deposit) && userId) {
+    const [identityByUser, depositByUser] = await Promise.all([
+      identity
+        ? Promise.resolve(identity)
+        : one("companion_identity_verifications", `?user_id=eq.${encodeURIComponent(userId)}&order=updated_at.desc&limit=1`),
+      deposit
+        ? Promise.resolve(deposit)
+        : one("companion_deposits", `?user_id=eq.${encodeURIComponent(userId)}&order=created_at.desc&limit=1`),
+    ]);
+    identity = identity || identityByUser;
+    deposit = deposit || depositByUser;
+  }
+  return { identity, deposit };
+}
+async function assertCompanionOrderEligibility(profile, companion) {
+  const { identity, deposit } = await fetchCompanionAuthRows(profile, companion || {});
+  if (!canWork(profile, companion || {}, deposit, identity)) {
+    const err = new Error(auditLockMessage(profile, companion || {}, deposit, identity) || COMPANION_AUTH_LOCK_MSG);
+    err.status = 403;
+    err.code = "COMPANION_AUTH_LOCKED";
+    err.access = resolveAccountAccessStatus(profile, companion || {}, deposit, identity);
+    throw err;
+  }
+  return { identity, deposit };
+}
+function stripOrderFacingText(text = "") {
+  const withoutGrabs = String(text || "")
+    .replace(/\[\[ORDER_GRABS\]\][\s\S]*?\[\[\/ORDER_GRABS\]\]/g, "")
+    .replace(/\[\[ORDER_GRABS\]\][\s\S]*$/g, "")
+    .split("[[COMPLETION_PENDING]]")
+    .join("");
+  return stripInternalMarkers(withoutGrabs)
+    .replace(/\buuid\s+create\s+regression\s+\d+\b/gi, "")
+    .replace(/\bcreate\s+regression\s+\d+\b/gi, "")
+    .replace(/\bregression\s+\d+\b/gi, "")
+    .replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi, "")
+    .replace(/\b(selector|grabber|ORDER_GRABS|COMPLETION_PENDING)\b/gi, "")
+    .replace(/\n{2,}/g, "\n")
+    .replace(/[ \t]{2,}/g, " ")
+    .trim();
+}
+function viewOrder(row = {}, boss = {}, settlement = null) {
+  const parsed = settlement || parseSettlementNote(row.settlement_note) || null;
+  const rate = money(parsed?.companionShareRate || row.commission_rate || row.player_commission_rate || row.companion_rate || 80) || 80;
+  const amount = money(row.total_amount);
+  const net = parsed ? money(parsed.companionNetCatFood) : roundMoney((amount * rate) / 100);
+  const platformFee = parsed ? money(parsed.platformCommissionCatFood) : roundMoney(amount - net);
+  const description = stripOrderFacingText(row.description || "");
+  const gameIdFromDesc = (description.match(/游戏ID[：:]\s*([^\n；;]+)/i) || [])[1] || "";
+  const scheduleFromDesc =
+    (description.match(/服务时段[：:]\s*([^\n；;]+)/i) || [])[1] ||
+    (description.match(/(?:开始时间|服务时间)[：:]\s*([^\n；;]+)/i) || [])[1] ||
+    "";
+  const serverFromDesc =
+    (description.match(/(?:区服|服务器|大区)[：:]\s*([^\n；;]+)/i) || [])[1] ||
+    (String(row.server || row.region || row.game_server || "").trim());
+  const notesLine = (() => {
+    const rawNotes = stripOrderFacingText(row.notes || "").trim();
+    const scheduleFromNotes = (rawNotes.match(/服务时段[：:]\s*([^\n；;]+)/i) || [])[1] || "";
+    const cleanedNotes = rawNotes
+      .replace(/(?:^|[；;\n])\s*服务时段[：:][^；;\n]*/gi, "")
+      .replace(/^[；;\s]+|[；;\s]+$/g, "")
+      .trim();
+    if (cleanedNotes && !/^(区服|服务器|大区|游戏ID|付款方式|服务时段)[：:]/i.test(cleanedNotes)) {
+      return { remark: cleanedNotes, schedule: scheduleFromNotes || scheduleFromDesc };
+    }
+    const remarkFromDesc = (description.match(/(?:老板备注|备注)[：:]\s*([^\n；;]+)/i) || [])[1];
+    if (remarkFromDesc) {
+      return {
+        remark: stripOrderFacingText(remarkFromDesc).trim(),
+        schedule: scheduleFromNotes || scheduleFromDesc,
+      };
+    }
+    return { remark: cleanedNotes || "", schedule: scheduleFromNotes || scheduleFromDesc };
+  })();
+  const gameId = String(row.game_id_value || row.game_id || gameIdFromDesc || "").trim();
+  const serviceSchedule = String(notesLine.schedule || scheduleFromDesc || "").trim();
+  const unitPrice = money(row.unit_price);
+  const confirmAnchor = row.accepted_at || row.created_at || "";
+  // Companion confirm timeout cancelled — no deadline countdown.
+  const confirmDeadline =
+    COMPANION_CONFIRM_TIMEOUT_MS > 0 && confirmAnchor
+      ? new Date(Date.parse(confirmAnchor) + COMPANION_CONFIRM_TIMEOUT_MS).toISOString()
+      : "";
+  const orderTypeKey = row.order_type || "custom";
+  const completionPending =
+    String(row.note || "").includes("[[COMPLETION_PENDING]]") ||
+    String(row.description || "").includes("[[COMPLETION_PENDING]]");
+  let statusText = ORDER_STATUS_TEXT[row.status] || row.status || "待付款确认";
+  if (row.status === "in_progress" && completionPending) statusText = "待老板确认完成";
+  if (row._grabStatus === "pending_customer_selection") statusText = "等待老板选择";
+  if (row._grabStatus === "not_selected") statusText = "该订单已由其他陪玩接单。";
+  const countdown = completionCountdown(row);
+  const serviceContent =
+    description ||
+    stripOrderFacingText(row.title || "") ||
+    stripOrderFacingText(row.note || "") ||
+    "";
+  const durationLabel = row.hours
+    ? `${row.hours}小时`
+    : row.rounds || row.games_count
+      ? `${row.rounds || row.games_count}局`
+      : "";
+  return {
+    id: row.id,
+    orderNo: row.order_no || row.id,
+    isRenewal: row.is_renewal === true || row.is_renewal === "true",
+    renewalOfOrderId: row.renewal_of_order_id || "",
+    renewalSourceOrderNo: row.renewal_source_order_no || "",
+    orderType: ORDER_TYPE_TEXT[orderTypeKey] || orderTypeKey,
+    orderTypeKey,
+    orderSource: ORDER_TYPE_TEXT[orderTypeKey] || orderTypeKey,
+    companionId: row.companion_id || "",
+    bossName: anonymousBossLabel(boss),
+    bossUid: resolveBossPublicCode(boss),
+    bossId: row.boss_id || "",
+    game: row.game || "",
+    gameServer: serverFromDesc || "",
+    serviceSchedule,
+    schedule: serviceSchedule,
+    serviceContent: serviceContent || "无补充说明",
+    serviceName: row.service_name || row.game || row.title || "",
+    serviceType: row.service_name || row.title || ORDER_TYPE_TEXT[orderTypeKey] || orderTypeKey,
+    serviceSnapshot: viewServiceSnapshot(row),
+    earlyFinish: companionEarlyFinishView(row),
+    earlyFinishReject: (() => { const r = readEarlyFinishReject(row); return r ? { reason: r.reason, at: r.at } : null; })(),
+    duration: durationLabel,
+    hours: money(row.hours),
+    unitPrice,
+    amount,
+    playerIncome: net,
+    platformFee,
+    gameId,
+    bossNotes: notesLine.remark || "",
+    remark: notesLine.remark || "",
+    voiceMode: String(row.voice_mode || "game_mic").trim() || "game_mic",
+    voice_mode: String(row.voice_mode || "game_mic").trim() || "game_mic",
+    discordChannelId: row.discord_channel_id || null,
+    discord_channel_id: row.discord_channel_id || null,
+    discordChannelStatus: row.discord_channel_status || null,
+    discord_channel_status: row.discord_channel_status || null,
+    discordInviteUrl: row.discord_invite_url || null,
+    discord_invite_url: row.discord_invite_url || null,
+    discordChannelUrl: (() => {
+      const st = String(row.discord_channel_status || "").toLowerCase();
+      if (st === "deleted" || st === "closed") return null;
+      const invite = String(row.discord_invite_url || "").trim();
+      if (invite) return invite;
+      const code = String(row.discord_invite_code || "").trim();
+      if (code) return `https://discord.gg/${code}`;
+      if (row.discord_channel_id && process.env.DISCORD_GUILD_ID) {
+        return `https://discord.com/channels/${process.env.DISCORD_GUILD_ID}/${row.discord_channel_id}`;
+      }
+      return null;
+    })(),
+    discord_channel_url: (() => {
+      const st = String(row.discord_channel_status || "").toLowerCase();
+      if (st === "deleted" || st === "closed") return null;
+      const invite = String(row.discord_invite_url || "").trim();
+      if (invite) return invite;
+      const code = String(row.discord_invite_code || "").trim();
+      if (code) return `https://discord.gg/${code}`;
+      if (row.discord_channel_id && process.env.DISCORD_GUILD_ID) {
+        return `https://discord.com/channels/${process.env.DISCORD_GUILD_ID}/${row.discord_channel_id}`;
+      }
+      return null;
+    })(),
+    confirmDeadline,
+    acceptedAt: row.accepted_at || "",
+    startedAt: row.started_at || "",
+    requiredLevel: "不限",
+    requiredTags: "无特殊标签",
+    orderStatus: statusText,
+    status: row.status,
+    statusText,
+    grabStatus: row._grabStatus || "",
+    completionPending,
+    completionRequestedAt: countdown.completionRequestedAt || "",
+    autoConfirmAt: countdown.autoConfirmAt || "",
+    autoConfirmRemainingMs: countdown.autoConfirmRemainingMs,
+    autoConfirmRemainingLabel: formatRemainingLabel(countdown.autoConfirmRemainingMs),
+    autoConfirmPaused: !!countdown.autoConfirmPaused,
+    autoConfirmPausedReason: countdown.autoConfirmPausedReason || "",
+    completionMethod: parseCompletionMethod(row) || "",
+    paidAt: row.paid_at || "",
+    paymentReviewedByName: row.paymentReviewedByName || "",
+    paymentReviewedByStaffId: row.paymentReviewedByStaffId || "",
+    paymentReviewedAt: row.paymentReviewedAt || "",
+    paymentReviewStatus: row.paymentReviewStatus || "",
+    paymentRejectReason: row.paymentRejectReason || "",
+    appointmentAt: row.created_at || "",
+    createdAt: row.created_at || "",
+    completedAt: row.completed_at || parsed?.completedAt || "",
+    settlement,
+    settlementStatus: row.settlement_status || (parsed ? "settled" : ""),
+    settlementSkipped:
+      String(row.settlement_status || "").toLowerCase() === "skipped" ||
+      /\[\[SETTLEMENT_SKIPPED\]\]/i.test(String(row.note || "") + String(row.description || "")),
+    hasSettlement: !!parsed || String(row.settlement_status || "").toLowerCase() === "settled",
+    isDesignatedConfirm: row.status === "claimed",
+    assignmentType: row.assignment_type || "",
+    parentOrderId: row.parent_order_id || null,
+    isMultiGroupChild: !!row.parent_order_id,
+    isMultiGroupParent:
+      String(row.order_type || "").toLowerCase() === "multi_group" && !row.parent_order_id,
+    groupPeerCount: Number(row._groupPeerCount || 0) || 0,
+    groupPeers: Array.isArray(row._groupPeers) ? row._groupPeers : [],
+    raw: { ...row, note: stripInternalMarkers(row.note || ""), description: stripInternalMarkers(row.description || "") }
+  };
+}
+async function bossesForOrders(orders) { const ids=[...new Set((orders||[]).map((row)=>row.boss_id).filter(Boolean))]; if(!ids.length) return {}; const rows=await supabaseJson(restUrl("profiles", `?id=in.(${ids.map(encodeURIComponent).join(",")})`), { headers: serviceHeaders() }); return Object.fromEntries((rows||[]).map((row)=>[row.id,row])); }
+
+/** Safe co-companion peers for multi-group child orders (no income / amount fields). */
+async function attachGroupPeers(rows = []) {
+  const list = Array.isArray(rows) ? rows : [];
+  const parentIds = [
+    ...new Set(
+      list
+        .map((r) => String(r.parent_order_id || "").trim())
+        .filter(Boolean)
+    ),
+  ];
+  if (!parentIds.length) return list;
+  let siblings = [];
+  try {
+    siblings = await supabaseJson(
+      restUrl(
+        "orders",
+        `?parent_order_id=in.(${parentIds.map(encodeURIComponent).join(",")})&select=id,parent_order_id,companion_id,status,service_name,game,order_no&order=created_at.asc&limit=200`
+      ),
+      { headers: serviceHeaders() }
+    );
+    if (!Array.isArray(siblings)) siblings = [];
+  } catch {
+    siblings = [];
+  }
+  const companionIds = [
+    ...new Set(siblings.map((s) => s.companion_id).filter(Boolean)),
+  ];
+  let profileMap = {};
+  if (companionIds.length) {
+    try {
+      const profiles = await supabaseJson(
+        restUrl(
+          "profiles",
+          `?id=in.(${companionIds.map(encodeURIComponent).join(",")})&select=id,display_name,nickname,avatar_url,avatar`
+        ),
+        { headers: serviceHeaders() }
+      );
+      profileMap = Object.fromEntries((profiles || []).map((p) => [p.id, p]));
+    } catch {
+      profileMap = {};
+    }
+  }
+  const byParent = {};
+  for (const s of siblings) {
+    const pid = String(s.parent_order_id || "");
+    if (!byParent[pid]) byParent[pid] = [];
+    const p = profileMap[s.companion_id] || {};
+    byParent[pid].push({
+      orderId: s.id,
+      orderNo: s.order_no || s.id,
+      companionId: s.companion_id || "",
+      nickname:
+        p.display_name || p.nickname || s.service_name || s.game || "陪玩",
+      avatar: p.avatar_url || p.avatar || "",
+      service: s.service_name || s.game || "",
+      status: s.status || "",
+    });
+  }
+  return list.map((row) => {
+    const pid = String(row.parent_order_id || "").trim();
+    if (!pid) return row;
+    const peers = (byParent[pid] || []).filter(
+      (p) => String(p.companionId) !== String(row.companion_id || "")
+    );
+    const total = (byParent[pid] || []).length || 0;
+    return {
+      ...row,
+      _groupPeers: peers,
+      _groupPeerCount: total || peers.length + 1,
+    };
+  });
+}
+
+async function loadOrdersFor(profile, companion, transactions = []) {
+  const {
+    resolveAssignmentType,
+    isPublicHallEligible,
+    sanitizeHallOrderView,
+    ASSIGNMENT_ASSIGNED,
+    ASSIGNMENT_PUBLIC,
+  } = await import("./_order-assignment.js");
+  try {
+    const { expireCompanionConfirmTimeouts } = await import("./_order-confirm-timeout.js");
+    await expireCompanionConfirmTimeouts({ companionId: profile.id, limit: 40 });
+  } catch {
+    /* best-effort */
+  }
+  try {
+    const { createOrderCompleteHelpers } = await import("./_order-complete.js");
+    const helpers = createOrderCompleteHelpers({
+      restUrl,
+      supabaseJson,
+      serviceHeaders,
+      addSystemMessage: async (order, actorId, content) =>
+        addSystemMessage(order, actorId || order.boss_id, "system", content),
+    });
+    await Promise.race([
+      helpers.expireCompletionAutoConfirms({ limit: 15 }),
+      new Promise((resolve) => setTimeout(resolve, 1500)),
+    ]);
+  } catch {
+    /* best-effort auto-complete */
+  }
+  const myRows = await supabaseJson(restUrl("orders", `?companion_id=eq.${encodeURIComponent(profile.id)}&order=created_at.desc&limit=200`), { headers: serviceHeaders() });
+  // Best-effort: warn near confirm timeout (idempotent email/inbox).
+  try {
+    const { maybeNotifyConfirmDeadlineWarning } = await import("./_companion-order-notify.js");
+    const claimed = (myRows || []).filter((row) => row.status === "claimed").slice(0, 8);
+    await Promise.all(
+      claimed.map((row) =>
+        maybeNotifyConfirmDeadlineWarning(row).catch(() => null)
+      )
+    );
+  } catch {
+    /* ignore */
+  }
+  // Never surface unpaid designated orders (awaiting_payment) as actionable confirm tasks.
+  // Assigned pending-confirm stays in 我的订单→待确认 only.
+  let visibleMine = (myRows || []).filter((row) => row.status !== "awaiting_payment");
+  try {
+    visibleMine = await attachGroupPeers(visibleMine);
+  } catch {
+    /* best-effort co-peer enrichment */
+  }
+  // 抢单大厅 ONLY: public (or null assignment_type) + companion_id null + hall-open statuses.
+  const openQueryWithType =
+    "?and=(or(assignment_type.eq.public,assignment_type.is.null),companion_id.is.null,or(status.eq.pending,status.eq.waiting_boss_confirm))&order=created_at.desc&limit=100";
+  const openQueryFallback =
+    "?and=(companion_id.is.null,or(status.eq.pending,status.eq.waiting_boss_confirm))&order=created_at.desc&limit=100";
+  let openRows = [];
+  try {
+    openRows = await supabaseJson(restUrl("orders", openQueryWithType), { headers: serviceHeaders() });
+  } catch (err) {
+    if (/assignment_type|PGRST204|schema cache|column/i.test(String(err?.message || err || ""))) {
+      openRows = await supabaseJson(restUrl("orders", openQueryFallback), { headers: serviceHeaders() }).catch(() => []);
+    } else {
+      openRows = [];
+    }
+  }
+  openRows = (openRows || []).filter((row) => isPublicHallEligible(row));
+  // Self-trade guard: never show own boss orders in the grab hall for the same user_id.
+  openRows = (openRows || []).filter((row) => String(row.boss_id || "") !== String(profile.id || ""));
+  const { createOrderGrabHelpers } = await import("./_order-grabs.js");
+  const { hallStateForOrder, hallStateLabel, toFlowStatus, isOrderExpired } = await import("./_order-flow.js");
+  const grabsApi = createOrderGrabHelpers({ restUrl, supabaseJson, serviceHeaders });
+  const myGrabRows = await grabsApi.listMyPendingGrabs(profile.id);
+  // Also load not_selected / selected grabs for this companion (outcome visibility).
+  let myOutcomeGrabs = [];
+  try {
+    myOutcomeGrabs = await supabaseJson(
+      restUrl(
+        "order_grabs",
+        `?companion_id=eq.${encodeURIComponent(profile.id)}&or=(status.eq.not_selected,status.eq.selected)&order=grabbed_at.desc&limit=40`
+      ),
+      { headers: serviceHeaders() }
+    );
+    if (!Array.isArray(myOutcomeGrabs)) myOutcomeGrabs = [];
+  } catch {
+    myOutcomeGrabs = [];
+  }
+  const grabOrderIds = [...new Set([...myGrabRows.map((g) => g.order_id), ...myOutcomeGrabs.map((g) => g.order_id)].filter(Boolean))];
+  let grabOrders = [];
+  if (grabOrderIds.length) {
+    grabOrders = await supabaseJson(
+      restUrl("orders", `?id=in.(${grabOrderIds.map(encodeURIComponent).join(",")})&order=created_at.desc`),
+      { headers: serviceHeaders() }
+    ).catch(() => []);
+  }
+  // Settled hall cards: ONLY public-hall history (had grabs). Never assigned-only orders.
+  // Prefer orders this companion actually grabbed; fall back to recent public settled with grabs.
+  const settledCandidateIds = [...new Set(grabOrderIds)];
+  let settledRows = [];
+  if (settledCandidateIds.length) {
+    settledRows = await supabaseJson(
+      restUrl(
+        "orders",
+        `?id=in.(${settledCandidateIds.map(encodeURIComponent).join(",")})&or=(status.eq.claimed,status.eq.confirmed,status.eq.in_progress,status.eq.cancelled,status.eq.completed)&order=created_at.desc&limit=40`
+      ),
+      { headers: serviceHeaders() }
+    ).catch(() => []);
+  }
+  // Optional: recent public settled (assignment_type=public) that others grabbed — still only if grabs exist.
+  let recentPublicSettled = [];
+  try {
+    recentPublicSettled = await supabaseJson(
+      restUrl(
+        "orders",
+        "?and=(assignment_type.eq.public,companion_id.not.is.null,or(status.eq.claimed,status.eq.confirmed,status.eq.in_progress,status.eq.cancelled))&order=created_at.desc&limit=30"
+      ),
+      { headers: serviceHeaders() }
+    );
+  } catch {
+    recentPublicSettled = [];
+  }
+  const settledById = new Map();
+  for (const row of [...(settledRows || []), ...(recentPublicSettled || [])]) {
+    if (!row?.id) continue;
+    if (resolveAssignmentType(row) === ASSIGNMENT_ASSIGNED) continue;
+    settledById.set(row.id, row);
+  }
+  const openSlice = (openRows || []).slice(0, 40);
+  const openNoteMap = Object.fromEntries(openSlice.map((row) => [row.id, row.note || row.description || ""]));
+  const openGrabMap = await grabsApi.listGrabsBatch(
+    openSlice.map((row) => row.id),
+    openNoteMap
+  );
+  const openWithMine = openSlice.map((row) => {
+    const grabs = openGrabMap[row.id] || [];
+    const mine = grabs.find((g) => g.companionId === profile.id);
+    const hallState = hallStateForOrder(row, grabs);
+    return { ...row, _myGrab: mine || null, _grabs: grabs, _hallState: hallState, _hadPublicGrabs: true };
+  });
+  const openIds = new Set(openWithMine.map((r) => r.id));
+  const settledSlice = [...settledById.values()].slice(0, 30);
+  const settledNoteMap = Object.fromEntries(settledSlice.map((row) => [row.id, row.note || row.description || ""]));
+  const settledGrabMap = await grabsApi.listGrabsBatch(
+    settledSlice.map((row) => row.id),
+    settledNoteMap
+  );
+  const settledHall = [];
+  for (const row of settledSlice) {
+    if (openIds.has(row.id)) continue;
+    if (resolveAssignmentType({ ...row, _hadPublicGrabs: true }) === ASSIGNMENT_ASSIGNED) continue;
+    const grabs = settledGrabMap[row.id] || [];
+    // Hard privacy rule: no grab history ⇒ never show in public hall (blocks assigned leaks).
+    if (!grabs.length) continue;
+    const createdMs = Date.parse(row.accepted_at || row.created_at || "") || 0;
+    if (createdMs && Date.now() - createdMs > 1000 * 60 * 60 * 48) continue; // 48h retention
+    const hallState = hallStateForOrder(row, grabs);
+    if (!["settled", "cancelled", "expired"].includes(hallState)) continue;
+    settledHall.push({
+      ...row,
+      _myGrab: grabs.find((g) => g.companionId === profile.id) || null,
+      _grabs: grabs,
+      _hallState: hallState,
+      _hadPublicGrabs: true,
+    });
+  }
+  const mineIds = new Set(visibleMine.map((r) => r.id));
+  const pendingSelection = [];
+  for (const row of grabOrders || []) {
+    if (mineIds.has(row.id)) continue;
+    // Assigned orders must not leak into "pending selection" via grab rows.
+    if (resolveAssignmentType(row) === ASSIGNMENT_ASSIGNED) continue;
+    const g =
+      myGrabRows.find((x) => x.order_id === row.id) ||
+      myOutcomeGrabs.find((x) => x.order_id === row.id);
+    pendingSelection.push({ ...row, _grabStatus: g?.status || "pending_customer_selection" });
+  }
+  for (const row of openWithMine) {
+    if (row._myGrab && !mineIds.has(row.id) && !pendingSelection.some((p) => p.id === row.id)) {
+      pendingSelection.push({ ...row, _grabStatus: row._myGrab.status });
+    }
+  }
+  const bossMap = await bossesForOrders([...visibleMine, ...pendingSelection, ...openWithMine, ...settledHall]);
+  const settlementByOrder = {};
+  (transactions || []).forEach((tx) => {
+    if (tx.transaction_type !== "companion_income" || !tx.order_id) return;
+    const parsed = parseSettlementNote(tx.note);
+    if (parsed) settlementByOrder[tx.order_id] = { ...parsed, transactionId: tx.id, settledAmount: money(tx.amount) };
+  });
+  let approvedPaymentByOrder = {};
+  try {
+    const { latestApprovedForOrders, receiptReviewerFields } = await import("./_payment-receipts.js");
+    const payIds = [...visibleMine, ...pendingSelection]
+      .map((r) => r.id)
+      .filter(Boolean);
+    if (payIds.length) {
+      approvedPaymentByOrder = await latestApprovedForOrders(payIds);
+    }
+    for (const [oid, receipt] of Object.entries(approvedPaymentByOrder || {})) {
+      const fields = receiptReviewerFields(receipt);
+      const target = visibleMine.find((r) => r.id === oid) || pendingSelection.find((r) => r.id === oid);
+      if (target) Object.assign(target, fields);
+    }
+  } catch {
+    approvedPaymentByOrder = {};
+  }
+  return {
+    myOrders: [
+      ...visibleMine.map((row) => {
+        const v = viewOrder(row, bossMap[row.boss_id] || {}, settlementByOrder[row.id] || null);
+        return {
+          ...v,
+          assignmentType: resolveAssignmentType(row),
+          isDesignatedConfirm:
+            row.status === "claimed" && resolveAssignmentType(row) === ASSIGNMENT_ASSIGNED,
+        };
+      }),
+      ...pendingSelection.map((row) =>
+        viewOrder(row, bossMap[row.boss_id] || {}, settlementByOrder[row.id] || null)
+      ),
+    ],
+    openOrders: [...openWithMine, ...settledHall].map((row) => {
+      const viewed = viewOrder(row, bossMap[row.boss_id] || {});
+      const hallState = row._hallState || hallStateForOrder(row, row._grabs || []);
+      const hallView = {
+        ...viewed,
+        assignmentType: ASSIGNMENT_PUBLIC,
+        myGrab: row._myGrab || null,
+        grabCount: (row._grabs || []).length,
+        alreadyGrabbed: !!row._myGrab,
+        hallState,
+        hallStateLabel: hallStateLabel(hallState),
+        flowStatus: toFlowStatus(row.status, { expired: isOrderExpired(row) }),
+        canGrab: hallState === "open" || hallState === "grabbing",
+      };
+      return sanitizeHallOrderView(hallView);
+    }),
+  };
+}
+
+async function attachDiscordBoundFlag(profileId, myOrders = []) {
+  const list = Array.isArray(myOrders) ? myOrders : [];
+  const needs = list.some((o) => String(o.voiceMode || o.voice_mode || "") === "discord");
+  if (!needs || !profileId) return list;
+  try {
+    const discordVoice = await import("./_discord-voice-orders.js");
+    const link = await discordVoice.getDiscordLink(profileId);
+    const bound = !!(link && link.discord_user_id);
+    return list.map((o) =>
+      String(o.voiceMode || o.voice_mode || "") === "discord"
+        ? { ...o, discordBound: bound, discord_bound: bound, discordUsername: link?.discord_username || "" }
+        : o
+    );
+  } catch {
+    return list;
+  }
+}
+async function transactionsFor(userId) {
+  try {
+    const rows = await supabaseJson(
+      restUrl("transactions", `?user_id=eq.${encodeURIComponent(userId)}&order=created_at.desc&limit=200`),
+      { headers: serviceHeaders() }
+    );
+    return Array.isArray(rows) ? rows : [];
+  } catch (error) {
+    // Soft-fail: missing table / column / RLS must not blank the wallet page.
+    if (isMissingRelation(error) || /column|schema cache|PGRST|permission|RLS/i.test(String(error.message || ""))) {
+      return [];
+    }
+    throw error;
+  }
+}
+async function financeSettings() {
+  try {
+    const rows = await companionDb("finance_settings", "?id=eq.1&limit=1");
+    return (
+      rows?.[0] || {
+        min_withdraw_cat_food: 50,
+        max_withdrawals_per_month: 3,
+        cat_food_to_rm_rate: 1,
+        withdraw_fee_rm: 0,
+        withdraw_fee_percent: 0,
+      }
+    );
+  } catch (e) {
+    if (isMissingRelation(e)) {
+      return {
+        min_withdraw_cat_food: 50,
+        max_withdrawals_per_month: 3,
+        cat_food_to_rm_rate: 1,
+        withdraw_fee_rm: 0,
+        withdraw_fee_percent: 0,
+      };
+    }
+    throw e;
+  }
+}
+async function withdrawalsFor(userId) {
+  try {
+    const rows = await companionDb(
+      "companion_withdrawals",
+      `?companion_id=eq.${encodeURIComponent(userId)}&order=submitted_at.desc&limit=100`
+    );
+    return Array.isArray(rows) ? rows : [];
+  } catch (e) {
+    if (isMissingRelation(e) || /column|schema cache|PGRST|permission|RLS/i.test(String(e.message || ""))) return [];
+    throw e;
+  }
+}
+
+function emptyWalletBundle() {
+  return {
+    transactions: [],
+    withdrawalRows: [],
+    summary: {
+      todayOrders: 0,
+      waitingConfirm: 0,
+      waitingStart: 0,
+      waitingComplete: 0,
+      runningOrders: 0,
+      completedOrders: 0,
+      todayCompleted: 0,
+      todayIncome: 0,
+      todayExpectedIncome: 0,
+      monthIncome: 0,
+      totalIncome: 0,
+      withdrawn: 0,
+      frozen: 0,
+      pendingSettlement: 0,
+      withdrawable: 0,
+      unreadMessages: 0,
+      monthReviews: 0,
+      designatedPending: 0,
+    },
+    walletLedger: [],
+    earningDetails: [],
+    earnings: {
+      todayIncome: 0,
+      yesterdayIncome: 0,
+      weekIncome: 0,
+      monthIncome: 0,
+      totalIncome: 0,
+      withdrawable: 0,
+      available: 0,
+      frozen: 0,
+      pendingSettlement: 0,
+      withdrawn: 0,
+      bonus: 0,
+      reward: 0,
+      rewardWithdrawable: false,
+      rewardNote: "",
+    },
+  };
+}
+
+async function ordersForIncomeTransactions(transactions = [], myOrders = []) {
+  const byId = new Map();
+  for (const o of myOrders || []) {
+    const id = o?.id || o?.orderId;
+    if (!id) continue;
+    byId.set(String(id), {
+      id: String(id),
+      status: o.status || o.orderStatus || "",
+      order_no: o.orderNo || o.order_no || "",
+      // Keep unlock SoT fields — missing completed_at forces permanent earnings lock.
+      completed_at: o.completedAt || o.completed_at || "",
+      completion_method: o.completionMethod || o.completion_method || "",
+      cancelled_at: o.cancelledAt || o.cancelled_at || "",
+      note: o.note || "",
+      description: o.description || "",
+    });
+  }
+  // Always refresh from DB for companion_income order ids so SoT completed_at wins
+  // (myOrders seed alone previously omitted completed_at → permanent lock).
+  const incomeOids = [
+    ...new Set(
+      (transactions || [])
+        .filter((tx) => String(tx.transaction_type || "") === "companion_income" && tx.order_id)
+        .map((tx) => String(tx.order_id))
+    ),
+  ].slice(0, 120);
+  if (incomeOids.length) {
+    try {
+      const rows = await supabaseJson(
+        restUrl(
+          "orders",
+          `?id=in.(${incomeOids.map(encodeURIComponent).join(",")})&select=id,status,order_no,companion_id,completed_at,cancelled_at,completion_method,note,description`
+        ),
+        { headers: serviceHeaders() }
+      );
+      for (const row of Array.isArray(rows) ? rows : []) {
+        byId.set(String(row.id), row);
+      }
+    } catch {
+      /* soft-fail: keep myOrders seed */
+    }
+  }
+  return [...byId.values()];
+}
+
+async function loadWalletBundle(profile, myOrders = []) {
+  const warnings = [];
+  let transactions = [];
+  let withdrawalRows = [];
+  try {
+    transactions = await transactionsFor(profile.id);
+  } catch (error) {
+    warnings.push(`transactions: ${error.message || error}`);
+    transactions = [];
+  }
+  try {
+    withdrawalRows = await withdrawalsFor(profile.id);
+  } catch (error) {
+    warnings.push(`companion_withdrawals: ${error.message || error}`);
+    withdrawalRows = [];
+  }
+  const linkedOrders = await ordersForIncomeTransactions(transactions, myOrders);
+  const partitioned = partitionCompanionIncome(transactions, linkedOrders);
+  const summary = summaryFrom(myOrders, transactions, withdrawalRows, linkedOrders);
+  const incomeKindById = new Map();
+  for (const tx of partitioned.orderIncome) incomeKindById.set(String(tx.id), "order_income");
+  for (const tx of partitioned.giftIncome || []) incomeKindById.set(String(tx.id), "gift_income");
+  for (const tx of partitioned.inviteIncome || []) incomeKindById.set(String(tx.id), "invite_income");
+  for (const tx of partitioned.rewardOther) incomeKindById.set(String(tx.id), "reward_other");
+  for (const item of partitioned.voided) incomeKindById.set(String(item.tx.id), "void");
+
+  const ledgerFromTx = (transactions || []).map((row) => {
+    const kind = incomeKindById.get(String(row.id)) || "";
+    return {
+      id: row.id,
+      orderId: row.order_id || "",
+      type: ledgerTypeLabel(row),
+      typeCode: row.transaction_type,
+      incomeKind: kind || (row.transaction_type === "companion_income" ? "void" : ""),
+      amount: money(row.amount),
+      direction: row.transaction_type === "refund" || row.transaction_type === "withdrawal" ? "out" : "in",
+      status: row.status || "completed",
+      note: row.note || "",
+      createdAt: row.created_at,
+      settlement: parseSettlementNote(row.note),
+    };
+  });
+  const ledgerFromWithdraw = (withdrawalRows || []).flatMap((w) => {
+    const rows = [
+      {
+        id: `wd-apply-${w.id}`,
+        orderId: "",
+        type: "提现申请",
+        typeCode: "withdrawal_request",
+        incomeKind: "",
+        amount: money(w.cat_food_amount),
+        direction: "out",
+        status: w.status,
+        note: w.remark || "",
+        createdAt: w.submitted_at || w.created_at,
+        withdrawalId: w.id,
+      },
+    ];
+    if (w.status === "rejected") {
+      rows.push({
+        id: `wd-reject-${w.id}`,
+        orderId: "",
+        type: "提现驳回退回",
+        typeCode: "withdrawal_reject_return",
+        incomeKind: "",
+        amount: money(w.cat_food_amount),
+        direction: "in",
+        status: "completed",
+        note: w.reject_reason || "",
+        createdAt: w.updated_at || w.submitted_at || w.created_at,
+        withdrawalId: w.id,
+      });
+    }
+    return rows;
+  });
+  const walletLedger = [...ledgerFromTx, ...ledgerFromWithdraw].sort((a, b) =>
+    String(b.createdAt || "").localeCompare(String(a.createdAt || ""))
+  );
+  // Unlock = earliest of Boss confirm OR serviceComplete+24h (read-time; never re-settle).
+  const orderMap = new Map((linkedOrders || []).map((o) => [String(o.id), o]));
+  const earningDetails = ledgerFromTx
+    .filter(
+      (row) =>
+        row.typeCode === "companion_income" &&
+        (row.incomeKind === "order_income" ||
+          row.incomeKind === "gift_income" ||
+          row.incomeKind === "invite_income")
+    )
+    .map((row) => {
+      const settlement = row.settlement || parseSettlementNote(row.note) || {};
+      const giftMeta = parseGiftNote(row.note) || {};
+      const kindLabel =
+        row.incomeKind === "gift_income"
+          ? "礼物净收入"
+          : row.incomeKind === "invite_income"
+            ? "邀请佣金"
+            : row.type || "订单收入";
+      const linked = row.orderId ? orderMap.get(String(row.orderId)) : null;
+      const unlock =
+        row.incomeKind === "order_income" && linked
+          ? companionEarningsUnlockMeta(linked)
+          : {
+              locked: false,
+              unlockAt: "",
+              bossConfirmedAt: "",
+              unlockReason: "immediate",
+              statusLabel: "可提现",
+            };
+      return {
+        ...row,
+        type: kindLabel,
+        orderNo:
+          settlement.orderNo ||
+          settlement.order_no ||
+          linked?.order_no ||
+          giftMeta.giftName ||
+          "",
+        grossAmount: money(
+          settlement.orderAmountCatFood ||
+            settlement.gross ||
+            giftMeta.gross ||
+            row.amount
+        ),
+        platformFee: money(
+          settlement.platformCommissionCatFood ||
+            settlement.platformFee ||
+            giftMeta.platformCommission ||
+            0
+        ),
+        netIncome: money(settlement.companionNetCatFood || giftMeta.net || row.amount),
+        statusText: unlock.locked ? "锁定中" : "可提现",
+        earningsLocked: !!unlock.locked,
+        withdrawableAt: unlock.unlockAt || "",
+        bossConfirmedAt: unlock.bossConfirmedAt || "",
+        unlockReason: unlock.unlockReason || "",
+        unlockStatusLabel: unlock.statusLabel || "",
+      };
+    });
+  const bonus = sumTxAmount(partitioned.rewardOther);
+  let inviteCash = {
+    available: 0,
+    pending: 0,
+    frozen: 0,
+    totalEarned: 0,
+    totalWithdrawn: 0,
+  };
+  try {
+    const cashRows = await companionDb(
+      "invite_cash_wallets",
+      `?user_id=eq.${encodeURIComponent(profile.id)}&limit=1`
+    ).catch(() => []);
+    const cash = cashRows?.[0];
+    if (cash) {
+      inviteCash = {
+        available: money(cash.available_amount),
+        pending: money(cash.pending_amount),
+        frozen: money(cash.frozen_amount),
+        totalEarned: money(cash.total_earned),
+        totalWithdrawn: money(cash.total_withdrawn),
+      };
+    }
+  } catch {
+    /* optional invite cash channel */
+  }
+  let giftGrossTotal = 0;
+  let giftCommissionTotal = 0;
+  let giftNetTotal = money(summary.giftIncome || 0);
+  try {
+    const giftTxRows = await companionDb(
+      "gift_transactions",
+      `?receiver_companion_id=eq.${encodeURIComponent(profile.id)}&order=created_at.desc&limit=500`
+    ).catch(() => []);
+    if (giftTxRows?.length) {
+      giftGrossTotal = 0;
+      giftCommissionTotal = 0;
+      giftNetTotal = 0;
+      for (const g of giftTxRows) {
+        giftGrossTotal = money(giftGrossTotal + money(g.gross_amount ?? g.gross_cat_food));
+        giftCommissionTotal = money(
+          giftCommissionTotal + money(g.platform_commission ?? g.platform_commission_amount)
+        );
+        giftNetTotal = money(giftNetTotal + money(g.net_companion_income ?? g.companion_income));
+      }
+    }
+  } catch {
+    /* gift_transactions optional until migration */
+  }
+  return {
+    transactions,
+    withdrawalRows,
+    summary,
+    walletLedger,
+    earningDetails,
+    earnings: {
+      todayIncome: summary.todayIncome || 0,
+      yesterdayIncome: summary.yesterdayIncome || 0,
+      weekIncome: summary.weekIncome || 0,
+      monthIncome: summary.monthIncome || 0,
+      totalIncome: summary.totalIncome || 0,
+      orderIncome: summary.orderIncome || 0,
+      giftIncome: summary.giftIncome || 0,
+      giftGross: giftGrossTotal,
+      giftCommission: giftCommissionTotal,
+      giftNetIncome: giftNetTotal || summary.giftIncome || 0,
+      inviteIncome: money((summary.inviteIncome || 0) + inviteCash.totalEarned),
+      inviteCash,
+      earningsLocked: summary.earningsLocked || 0,
+      withdrawable: summary.withdrawable || 0,
+      available: summary.withdrawable || 0,
+      availableWithdrawable: summary.withdrawable || 0,
+      frozen: summary.frozen || 0,
+      withdrawalLocked: summary.frozen || 0,
+      pendingSettlement: summary.pendingSettlement || 0,
+      withdrawn: summary.withdrawn || 0,
+      withdrawnTotal: summary.withdrawn || 0,
+      bonus,
+      reward: bonus,
+      rewardWithdrawable: false,
+      rewardNote: "奖励/其它不计入订单/礼物收入，默认不可提现。礼物净收入可提现。",
+      channels: {
+        orderIncome: summary.orderIncome || 0,
+        giftGross: giftGrossTotal,
+        giftCommission: giftCommissionTotal,
+        giftNetIncome: giftNetTotal || summary.giftIncome || 0,
+        inviteCommission: money((summary.inviteIncome || 0) + inviteCash.available),
+        withdrawalLocked: summary.frozen || 0,
+        withdrawn: summary.withdrawn || 0,
+        availableWithdrawable: summary.withdrawable || 0,
+      },
+    },
+    warnings,
+  };
+}
+function summaryFrom(myOrders, transactions, withdrawals = [], linkedOrders = []) {
+  const today = todayKey();
+  const month = monthKey();
+  const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+  const weekStart = (() => {
+    const d = new Date();
+    const day = d.getUTCDay() || 7;
+    d.setUTCDate(d.getUTCDate() - (day - 1));
+    return d.toISOString().slice(0, 10);
+  })();
+  const ordersForMap = linkedOrders && linkedOrders.length ? linkedOrders : myOrders;
+  const { orderIncome, giftIncome, inviteIncome, rewardOther, orderMap } = partitionCompanionIncome(
+    transactions,
+    ordersForMap
+  );
+  const incomeRows = orderIncome;
+  const giftRows = giftIncome || [];
+  const inviteRows = inviteIncome || [];
+  const orderIncomeIds = new Set(incomeRows.map((r) => String(r.order_id || "")).filter(Boolean));
+  const refundRows = (transactions || []).filter((row) => {
+    if (row.transaction_type !== "refund" || row.status === "cancelled") return false;
+    const oid = row.order_id ? String(row.order_id) : "";
+    if (!oid) return true;
+    return orderIncomeIds.has(oid);
+  });
+  // §8 freeze: in-flight withdrawals lock balance until REJECTED / CANCELED / PAID settles.
+  const frozen = (withdrawals || [])
+    .filter((w) => WITHDRAW_FROZEN.has(w.status) && !WITHDRAW_RELEASED.has(w.status))
+    .reduce((n, w) => n + money(w.cat_food_amount || w.amount), 0);
+  const withdrawn = (withdrawals || [])
+    .filter((w) => w.status === "completed")
+    .reduce((n, w) => n + money(w.cat_food_amount || w.amount), 0);
+  // Withdrawal-locked + already-withdrawn must both reduce available (never double-spend).
+  const locked = (withdrawals || [])
+    .filter((w) => WITHDRAW_ACTIVE.has(w.status))
+    .reduce((n, w) => n + money(w.cat_food_amount || w.amount), 0);
+  const orderGross = incomeRows.reduce((n, row) => n + money(row.amount), 0);
+  const giftGross = giftRows.reduce((n, row) => n + money(row.amount), 0);
+  const inviteGross = inviteRows.reduce((n, row) => n + money(row.amount), 0);
+  const refundTotal = refundRows.reduce((n, row) => n + money(row.amount), 0);
+  const orderNet = Math.max(0, roundMoney(orderGross - refundTotal));
+  // Gift + invite catfood ledger rows enter withdrawable (source kept via incomeKind).
+  // Order income: unlock at earliest of Boss confirm OR serviceComplete+24h (read-time).
+  const withdrawableBase = Math.max(0, roundMoney(orderNet + giftGross + inviteGross));
+  const bonus = sumTxAmount(rewardOther);
+  const sumIncomeOn = (pred) =>
+    [...incomeRows, ...giftRows, ...inviteRows].filter(pred).reduce((n, row) => n + money(row.amount), 0);
+
+  // Owner lock: order income unlocks only at completed_at + 24h. Gift/invite unlock immediately.
+  let earningsLocked = 0;
+  try {
+    const { locked: lockedRows } = splitCompanionIncomeByWithdrawLock(incomeRows, orderMap, Date.now());
+    const lockedGross = lockedRows.reduce((n, row) => n + money(row.amount), 0);
+    const lockedOrderIds = new Set(lockedRows.map((r) => String(r.order_id || "")).filter(Boolean));
+    const lockedRefund = refundRows
+      .filter((r) => lockedOrderIds.has(String(r.order_id || "")))
+      .reduce((n, r) => n + money(r.amount), 0);
+    earningsLocked = Math.max(0, roundMoney(lockedGross - lockedRefund));
+  } catch {
+    earningsLocked = 0;
+  }
+
+  const withdrawable = Math.max(0, roundMoney(withdrawableBase - earningsLocked - locked));
+  return {
+    todayOrders: myOrders.filter((o) => String(o.createdAt || "").slice(0,10) === today).length,
+    waitingConfirm: myOrders.filter((o) => o.status === "claimed").length,
+    waitingStart: myOrders.filter((o) => o.status === "confirmed" || o.status === "in_progress").length,
+    waitingComplete: myOrders.filter((o) => o.status === "waiting_boss_confirm" && o.startedAt).length,
+    runningOrders: myOrders.filter((o) => o.status === "in_progress").length,
+    completedOrders: myOrders.filter((o) => o.status === "completed").length,
+    todayCompleted: myOrders.filter((o) => o.status === "completed" && String(o.completedAt || "").slice(0,10) === today).length,
+    todayIncome: sumIncomeOn((row) => String(row.created_at || "").slice(0, 10) === today),
+    yesterdayIncome: sumIncomeOn((row) => String(row.created_at || "").slice(0, 10) === yesterday),
+    weekIncome: sumIncomeOn((row) => String(row.created_at || "").slice(0, 10) >= weekStart),
+    todayExpectedIncome: myOrders
+      .filter((o) => ["claimed", "confirmed", "in_progress"].includes(o.status) && String(o.createdAt || "").slice(0, 10) === today)
+      .reduce((n, o) => n + money(o.playerIncome), 0),
+    monthIncome: sumIncomeOn((row) => String(row.created_at || "").slice(0, 7) === month),
+    totalIncome: withdrawableBase,
+    orderIncome: orderNet,
+    giftIncome: giftGross,
+    inviteIncome: inviteGross,
+    earningsLocked,
+    bonus,
+    reward: bonus,
+    withdrawn,
+    frozen,
+    pendingSettlement: frozen,
+    withdrawable,
+    unreadMessages: 0,
+    monthReviews: 0,
+    designatedPending: myOrders.filter((o) => o.status === "claimed").length,
+  };
+}
+async function bootstrapData(profile, companion) {
+  const warnings = [];
+  // Heal stale online/busy while audit-locked so admin/companion/boss stay consistent.
+  let companionRow = companion || {};
+  const isolated = isCompanionIsolated(profile, companionRow);
+  // Isolation forces offline immediately. Full canWork offline-heal runs after ID/deposit load.
+  if (isolated) {
+    const cur = normalizeOnlineStatus(companionRow.availability_status || companionRow.online_status);
+    if (cur !== "offline") {
+      try {
+        await supabaseJson(restUrl("companion_profiles", `?user_id=eq.${encodeURIComponent(profile.id)}`), {
+          method: "PATCH",
+          headers: serviceHeaders(),
+          body: JSON.stringify({
+            online_status: "offline",
+            updated_at: nowIso(),
+          }),
+        });
+        companionRow = { ...companionRow, online_status: "offline", availability_status: "offline" };
+      } catch (error) {
+        warnings.push(`offline_heal: ${error.message || error}`);
+        companionRow = { ...companionRow, online_status: "offline", availability_status: "offline" };
+      }
+    }
+  }
+  const player = safePlayer(profile, companionRow);
+  const permissions = {
+    canLogin: true,
+    canWork: false,
+    canSetAvailable: false,
+    canAcceptOrder: false,
+    canStartOrder: false,
+    canWithdraw: false,
+    messagesMode: isolated ? "system_cs_only" : "system_only",
+    lockReason: auditLockMessage(profile, companionRow),
+    isolationMode: isolated,
+    applicationStatus: normalizeProfileReviewStatus(companionRow),
+    identityVerified: false,
+    depositVerified: false,
+    credentialOrOk: false,
+    accountStatus: profile.status || "active",
+    companionEnabled: companionEnabled(companionRow),
+    isolationMessage: isolated ? COMPANION_ISOLATION_MSG : "",
+    allowedRoutes: isolated
+      ? ["review-status", "profile", "account", "login"]
+      : null,
+  };
+  const [cfg, levelBundle] = await Promise.all([
+    isolated
+      ? Promise.resolve({
+          min_withdraw_cat_food: 50,
+          max_withdrawals_per_month: 3,
+          cat_food_to_rm_rate: 1,
+          withdraw_fee_rm: 0,
+          withdraw_fee_percent: 0,
+        })
+      : financeSettings().catch((error) => {
+          warnings.push(`finance_settings: ${error.message || error}`);
+          return {
+            min_withdraw_cat_food: 50,
+            max_withdrawals_per_month: 3,
+            cat_food_to_rm_rate: 1,
+            withdraw_fee_rm: 0,
+            withdraw_fee_percent: 0,
+          };
+        }),
+    resolveLevelBundle(companionRow).catch((error) => {
+      warnings.push(`levels: ${error.message || error}`);
+      return {
+        levels: [],
+        level: null,
+        platformCommissionRate: resolvePlatformCommission(companionRow?.commission_rate).platformRate,
+        companionShareRate: resolvePlatformCommission(companionRow?.commission_rate).companionShareRate,
+        minPrice: 0,
+        maxPrice: 0,
+        maxPlus: false,
+        price: money(companionRow?.price),
+        priceInRange: true,
+        priceNeedsReset: false,
+      };
+    }),
+  ]);
+
+  let myOrders = [];
+  let openOrders = [];
+  let wallet = emptyWalletBundle();
+  if (!isolated) {
+    try {
+      // Prefetch transactions for settlement notes; soft-fail inside transactionsFor.
+      const preTx = await transactionsFor(profile.id).catch((error) => {
+        warnings.push(`transactions:preload: ${error.message || error}`);
+        return [];
+      });
+      const loaded = await loadOrdersFor(profile, companionRow, preTx);
+      myOrders = await attachDiscordBoundFlag(profile.id, loaded.myOrders || []);
+      openOrders = loaded.openOrders || [];
+    } catch (error) {
+      warnings.push(`orders: ${error.message || error}`);
+      myOrders = [];
+      openOrders = [];
+    }
+    wallet = await loadWalletBundle(profile, myOrders);
+    if (wallet.warnings?.length) warnings.push(...wallet.warnings);
+  }
+  const { summary, walletLedger, earningDetails, earnings, withdrawalRows } = wallet;
+
+  player.priceNeedsReset = levelBundle.priceNeedsReset;
+  player.priceInRange = levelBundle.priceInRange;
+  player.rawPrice = levelBundle.price;
+  player.price = levelBundle.price;
+  player.level = levelBundle.level
+    ? `${levelBundle.level.code || ""} ${levelBundle.level.name || ""}`.trim()
+    : player.level;
+  // Do not expose internal commission rates while isolated.
+  player.orderCommissionRate = isolated ? null : levelBundle.platformCommissionRate;
+
+  let identity = null;
+  let payment = null;
+  let deposit = null;
+  let depositHistoryRows = [];
+  let media = [];
+  let mediaTableAvailable = false;
+  let paymentAccounts = [];
+  try {
+    const cpId = companionRow?.id || "";
+    const byProfile = (table, extra = "") =>
+      cpId
+        ? companionDb(table, `?companion_profile_id=eq.${encodeURIComponent(cpId)}${extra}`).catch((e) =>
+            isMissingRelation(e) ? [] : Promise.reject(e)
+          )
+        : Promise.resolve([]);
+    const byUser = (table, extra = "") =>
+      companionDb(table, `?user_id=eq.${encodeURIComponent(profile.id)}${extra}`).catch((e) =>
+        isMissingRelation(e) ? [] : Promise.reject(e)
+      );
+    // Detect companion_media availability separately so empty gallery ≠ missing table.
+    let mediaRowsRaw = [];
+    try {
+      if (cpId) {
+        mediaRowsRaw = await companionDb(
+          "companion_media",
+          `?companion_profile_id=eq.${encodeURIComponent(cpId)}&order=sort_order.asc`
+        );
+        mediaTableAvailable = true;
+      } else {
+        mediaRowsRaw = await companionDb(
+          "companion_media",
+          `?user_id=eq.${encodeURIComponent(profile.id)}&order=sort_order.asc`
+        );
+        mediaTableAvailable = true;
+      }
+    } catch (mediaErr) {
+      if (isMissingRelation(mediaErr)) {
+        mediaTableAvailable = false;
+        mediaRowsRaw = [];
+      } else {
+        throw mediaErr;
+      }
+    }
+    const [identityRowsRaw, paymentRowsRaw, depositRowsRaw] = await Promise.all([
+      byProfile("companion_identity_verifications", "&order=updated_at.desc&limit=1"),
+      byProfile("companion_payment_accounts", "&order=submitted_at.desc&limit=20"),
+      byProfile("companion_deposits", "&order=created_at.desc&limit=20"),
+    ]);
+    let identityRows = identityRowsRaw;
+    let paymentRows = paymentRowsRaw;
+    let depositRows = depositRowsRaw;
+    let mediaRows = mediaRowsRaw;
+    if (!identityRows?.length || !paymentRows?.length || !depositRows?.length || (mediaTableAvailable && !mediaRows?.length)) {
+      const [i2, p2, d2, m2] = await Promise.all([
+        identityRows?.length ? Promise.resolve(identityRows) : byUser("companion_identity_verifications", "&order=updated_at.desc&limit=1"),
+        paymentRows?.length ? Promise.resolve(paymentRows) : byUser("companion_payment_accounts", "&order=submitted_at.desc&limit=20"),
+        depositRows?.length ? Promise.resolve(depositRows) : byUser("companion_deposits", "&order=created_at.desc&limit=20"),
+        mediaTableAvailable && !mediaRows?.length
+          ? byUser("companion_media", "&order=sort_order.asc")
+          : Promise.resolve(mediaRows),
+      ]);
+      identityRows = i2;
+      paymentRows = p2;
+      depositRows = d2;
+      mediaRows = m2;
+    }
+    identity = identityRows?.[0] || null;
+    paymentAccounts = Array.isArray(paymentRows) ? paymentRows : [];
+    payment = paymentAccounts.find((a) => a.status === "approved" || a.status === "verified") || paymentAccounts[0] || null;
+    // Soft-repair legacy misfiled TNG/Alipay values that landed in bank_account.
+    if (payment) {
+      const repaired = normalizePaymentAccountRecord(payment);
+      if (repaired?._repaired) {
+        try {
+          const { _repaired, ...patch } = repaired;
+          // Only patch columns present on Production companion_payment_accounts.
+          // (payment_account / payment_phone are logical fields, not DB columns here.)
+          let next = {
+            method: patch.method,
+            bank_name: patch.bank_name,
+            bank_account: patch.bank_account,
+            tng_account: patch.tng_account,
+            alipay_account: patch.alipay_account,
+            account_last4: patch.account_last4,
+            updated_at: nowIso(),
+          };
+          let saved = null;
+          for (let i = 0; i < 6; i++) {
+            try {
+              saved = await companionDb("companion_payment_accounts", `?id=eq.${encodeURIComponent(payment.id)}`, {
+                method: "PATCH",
+                body: JSON.stringify(next),
+              });
+              break;
+            } catch (error) {
+              const msg = `${error?.message || ""} ${typeof error?.body === "string" ? error.body : JSON.stringify(error?.body || "")}`;
+              const m = msg.match(/Could not find the '([^']+)' column/i);
+              if (!m || !(m[1] in next)) throw error;
+              delete next[m[1]];
+            }
+          }
+          payment = Array.isArray(saved) && saved[0] ? saved[0] : { ...payment, ...patch, ...next };
+          paymentAccounts = paymentAccounts.map((row) => (String(row.id) === String(payment.id) ? payment : row));
+        } catch {
+          payment = { ...payment, ...repaired };
+          delete payment._repaired;
+        }
+      }
+    }
+    // Prefer a paid/approved ledger row when present so permanent deposit proof survives later drafts.
+    const depositList = Array.isArray(depositRows) ? depositRows : [];
+    depositHistoryRows = depositList;
+    deposit =
+      depositList.find((row) => isDepositPaidStatus(row?.status)) ||
+      depositList[0] ||
+      null;
+    deposit = await softHealPaidDepositLedger(profile, companionRow, deposit);
+    if (deposit && !depositHistoryRows.some((r) => String(r.id) === String(deposit.id))) {
+      depositHistoryRows = [deposit, ...depositHistoryRows];
+    }
+    media = Array.isArray(mediaRows) ? mediaRows : [];
+    if (mediaTableAvailable && companionRow?.id) {
+      media = await migrateGalleryFallbacksIntoMedia(profile, companionRow, media);
+    }
+  } catch (error) {
+    warnings.push(`profile-assets: ${error.message || error}`);
+  }
+
+  if (deposit?.status && companionRow?.id) {
+    const tableDep = String(deposit.status || "").trim();
+    const profileDep = String(companionRow.deposit_status || "").trim();
+    if (tableDep && tableDep !== profileDep) {
+      try {
+        await patchCompanionProfile(`?id=eq.${encodeURIComponent(companionRow.id)}`, {
+          deposit_status: tableDep,
+          updated_at: nowIso(),
+        });
+        companionRow = { ...companionRow, deposit_status: tableDep };
+      } catch (error) {
+        warnings.push(`deposit_status_sync: ${error.message || error}`);
+      }
+    }
+  }
+
+  if (identity?.status && companionRow?.id) {
+    const tableId = String(identity.status || "").trim();
+    const profileId = String(companionRow.identity_status || "").trim();
+    if (tableId && tableId !== profileId) {
+      try {
+        await patchCompanionProfile(`?id=eq.${encodeURIComponent(companionRow.id)}`, {
+          identity_status: tableId,
+          updated_at: nowIso(),
+        });
+        companionRow = { ...companionRow, identity_status: tableId };
+      } catch (error) {
+        // identity_status may be absent on older schemas
+        if (!/identity_status|column|schema cache|PGRST/i.test(String(error?.message || error || ""))) {
+          warnings.push(`identity_status_sync: ${error.message || error}`);
+        }
+      }
+    }
+  }
+
+  const unifiedAccess = applyUnifiedAccessFields(player, profile, companionRow, deposit, identity);
+  permissions.canWork = canWork(profile, companionRow, deposit, identity);
+  permissions.canSetAvailable = permissions.canWork;
+  permissions.canAcceptOrder = canAccept(profile, companionRow, deposit, identity);
+  permissions.canStartOrder = permissions.canWork;
+  permissions.lockReason = auditLockMessage(profile, companionRow, deposit, identity);
+  permissions.identityVerified = !!unifiedAccess.identityVerified;
+  permissions.depositVerified = !!unifiedAccess.depositVerified;
+  permissions.credentialOrOk = !!unifiedAccess.credentialOrOk;
+  permissions.identityStatus = unifiedAccess.identityStatus;
+  permissions.depositStatus = unifiedAccess.depositStatus;
+  permissions.isolationMode = isCompanionIsolated(profile, companionRow);
+  permissions.applicationStatus = normalizeProfileReviewStatus(companionRow);
+  permissions.accountStatus = profile.status || "active";
+  permissions.companionEnabled = companionEnabled(companionRow);
+  permissions.isolationMessage = permissions.isolationMode ? COMPANION_ISOLATION_MSG : "";
+  permissions.allowedRoutes = permissions.isolationMode
+    ? ["review-status", "profile", "account", "login"]
+    : null;
+  // Soft-heal online status when credential/order gate fails (approved profile but incomplete OR).
+  if (!permissions.canWork && !permissions.isolationMode) {
+    const cur = normalizeOnlineStatus(companionRow.availability_status || companionRow.online_status);
+    if (cur !== "offline") {
+      try {
+        await supabaseJson(restUrl("companion_profiles", `?user_id=eq.${encodeURIComponent(profile.id)}`), {
+          method: "PATCH",
+          headers: serviceHeaders(),
+          body: JSON.stringify({ online_status: "offline", updated_at: nowIso() }),
+        });
+        companionRow = { ...companionRow, online_status: "offline", availability_status: "offline" };
+        player.onlineStatus = "offline";
+        player.onlineStatusLabel = statusLabel("offline");
+        player.workStatus = statusLabel("offline");
+      } catch (error) {
+        warnings.push(`offline_heal_auth: ${error.message || error}`);
+      }
+    }
+  }
+  if (permissions.isolationMode) {
+    permissions.canWork = false;
+    permissions.canSetAvailable = false;
+    permissions.canAcceptOrder = false;
+    permissions.canStartOrder = false;
+    permissions.canWithdraw = false;
+    permissions.messagesMode = "system_cs_only";
+  }
+
+  const month = monthKey();
+  const weeklyCfg = mergeWeeklySettings(cfg);
+  const nextSettlement = computeSettlementDate(new Date(), weeklyCfg);
+  const usedThisWeek = withdrawalRows.filter(
+    (w) =>
+      String(w.settlement_date || "").slice(0, 10) === nextSettlement &&
+      !/rejected|cancelled|pay_failed|failed/.test(String(w.status || ""))
+  ).length;
+  const usedThisMonth = withdrawalRows.filter(
+    (w) =>
+      String(w.submitted_at || "").slice(0, 7) === month &&
+      !/rejected|cancelled|pay_failed|failed/.test(String(w.status || ""))
+  ).length;
+  const weeklyLimit = Number(weeklyCfg.max_withdrawals_per_week || cfg.max_withdrawals_per_month || 2);
+  const monthlyLimit = Number(cfg.max_withdrawals_per_month || 8);
+  const minAmount = money(cfg.min_withdraw_cat_food);
+  const rate = money(cfg.cat_food_to_rm_rate) || 1;
+  const depositOk = depositApproved(companionRow, deposit);
+  const bankOk = /approved|verified/.test(String(payment?.status || ""));
+  const accountOk = profile.status === "active" && !companionRow?.withdraw_frozen;
+  const authModeWd = resolveCredentialMode(companionRow, deposit);
+  const credentialOk = authModeWd === "deposit" ? depositOk : true;
+  const openPending = withdrawalRows.some((w) => WITHDRAW_OPEN_RE.test(String(w.status || "")));
+  const canWithdrawNow =
+    canWork(profile, companionRow, deposit, identity) &&
+    credentialOk &&
+    bankOk &&
+    accountOk &&
+    summary.withdrawable >= minAmount &&
+    usedThisWeek < weeklyLimit &&
+    !openPending;
+  permissions.canWithdraw = canWithdrawNow;
+  if (permissions.isolationMode) {
+    permissions.canWithdraw = false;
+    permissions.canWork = false;
+    permissions.canSetAvailable = false;
+    permissions.canAcceptOrder = false;
+    permissions.canStartOrder = false;
+  }
+  if (!canWithdrawNow) {
+    if (!canWork(profile, companionRow, deposit, identity)) {
+      permissions.withdrawLockReason = COMPANION_AUTH_LOCK_MSG;
+    } else if (!credentialOk) permissions.withdrawLockReason = "请先完成押金认证并通过审核";
+    else if (!bankOk) permissions.withdrawLockReason = "请先提交并等待结款账户审核通过";
+    else if (companionRow?.withdraw_frozen) permissions.withdrawLockReason = "提现已被冻结";
+    else if (openPending) permissions.withdrawLockReason = "已有待周五结算的提现申请，请等待处理后再提交";
+    else if (summary.withdrawable < minAmount) permissions.withdrawLockReason = `可提现余额不足（最低 ${minAmount}）`;
+    else if (usedThisWeek >= weeklyLimit) permissions.withdrawLockReason = "已达本周提现次数上限";
+    else if (profile.status !== "active") permissions.withdrawLockReason = "账号状态异常";
+    else permissions.withdrawLockReason = permissions.lockReason || "暂不可提现";
+  }
+
+  const feePercent = 0;
+  const feeFixed = 0.8;
+  // Companion self bootstrap: return full account details for the owner.
+  // Boss/public APIs never use this payload — keep masking only on admin default + public strippers.
+  const approvedAccounts = paymentAccounts
+    .filter((a) => /approved|verified/.test(String(a.status || "")))
+    .map((a) => ({
+      id: a.id,
+      method: a.method || "",
+      bankName: a.bank_name || "",
+      accountHolder: a.account_name || "",
+      accountName: a.account_name || "",
+      bankAccount: a.bank_account || "",
+      tngAccount: a.tng_account || "",
+      alipayAccount: a.alipay_account || "",
+      paymentAccount: a.payment_account || a.bank_account || a.tng_account || a.alipay_account || "",
+      paymentPhone: a.payment_phone || a.tng_account || "",
+      accountLast4: a.account_last4 || maskBankAccount(a.bank_account || a.tng_account || a.alipay_account).slice(-4),
+      status: a.status,
+    }));
+
+  const signedMediaRaw = [];
+  const seenTypes = {
+    avatar: false,
+    cover: false,
+    gallery: false,
+    voice: false,
+    video: false,
+    achievement: false,
+  };
+  for (const item of media) {
+    let url = "";
+    try {
+      if (item.storage_bucket === PUBLIC_BUCKETS.profile || /public/i.test(String(item.storage_bucket || ""))) {
+        url = publicObjectUrl(item.storage_bucket, item.storage_path);
+      } else {
+        url = await createSignedUrl(item.storage_bucket, item.storage_path, 60 * 60 * 24 * 7);
+      }
+    } catch {
+      url = "";
+    }
+    signedMediaRaw.push({
+      id: item.id,
+      mediaType: item.media_type,
+      status: item.status,
+      rejectReason: item.reject_reason || "",
+      durationSeconds: item.duration_seconds,
+      uploadedAt: item.uploaded_at,
+      sortOrder: item.sort_order,
+      storagePath: item.storage_path || "",
+      contentType: item.content_type || "",
+      url,
+    });
+  }
+  // Keep current review set only: 1 avatar, unique gallery, 1 latest voice.
+  const byUploadedDesc = (a, b) =>
+    new Date(b.uploadedAt || 0).getTime() - new Date(a.uploadedAt || 0).getTime();
+  const bySortOrderAsc = (a, b) =>
+    Number(a.sortOrder ?? 100) - Number(b.sortOrder ?? 100) ||
+    new Date(a.uploadedAt || 0).getTime() - new Date(b.uploadedAt || 0).getTime();
+  const avatars = signedMediaRaw.filter((m) => m.mediaType === "avatar").sort(byUploadedDesc);
+  const voicesOnly = signedMediaRaw.filter((m) => m.mediaType === "voice").sort(byUploadedDesc);
+  const gallerySeen = new Set();
+  const galleryOnly = [];
+  for (const g of signedMediaRaw
+    .filter((m) => {
+      if (m.mediaType !== "gallery") return false;
+      const ctype = String(m.contentType || m.content_type || "").toLowerCase();
+      return !/^video\//.test(ctype);
+    })
+    .sort((a, b) => Number(a.sortOrder ?? 100) - Number(b.sortOrder ?? 100))) {
+    const key = String(g.storagePath || g.url || g.id || "").trim();
+    if (!key || gallerySeen.has(key)) continue;
+    gallerySeen.add(key);
+    galleryOnly.push(g);
+  }
+  const signedMedia = [];
+  if (avatars[0]) {
+    signedMedia.push(avatars[0]);
+    seenTypes.avatar = true;
+  }
+  for (const g of galleryOnly) {
+    signedMedia.push(g);
+    seenTypes.gallery = true;
+  }
+  if (voicesOnly[0]) {
+    signedMedia.push(voicesOnly[0]);
+    seenTypes.voice = true;
+  }
+  for (const m of signedMediaRaw) {
+    if (m.mediaType === "cover") {
+      signedMedia.push(m);
+      seenTypes.cover = true;
+    }
+  }
+  const videosOnly = signedMediaRaw
+    .filter((m) => {
+      if (m.mediaType === "video") return true;
+      const ctype = String(m.contentType || m.content_type || "").toLowerCase();
+      return m.mediaType === "gallery" && /^video\//.test(ctype);
+    })
+    .sort(bySortOrderAsc);
+  // Videos and achievements are append-only (no cap): return every row, in upload order.
+  const videoSeen = new Set();
+  for (const v of videosOnly) {
+    const key = String(v.storagePath || v.url || v.id || "").trim();
+    if (key && videoSeen.has(key)) continue;
+    if (key) videoSeen.add(key);
+    signedMedia.push({ ...v, mediaType: "video" });
+    seenTypes.video = true;
+  }
+  const achievementSeen = new Set();
+  for (const a of signedMediaRaw.filter((m) => m.mediaType === "achievement").sort(bySortOrderAsc)) {
+    const key = String(a.storagePath || a.url || a.id || "").trim();
+    if (key && achievementSeen.has(key)) continue;
+    if (key) achievementSeen.add(key);
+    signedMedia.push(a);
+    seenTypes.achievement = true;
+  }
+  // Merge synthesized fallbacks for missing single-slot types.
+  // Gallery: companion_media is canonical when the table exists — never mix storage listing
+  // back in (that caused overwrite illusion + delete resurrection). When the table is missing,
+  // allow ALL tag/storage gallery items (multi-append), not just the first.
+  {
+    const dbHadGallery = signedMedia.some((m) => m.mediaType === "gallery");
+    const synthesized = await synthesizeMediaFallback(profile, companionRow, {
+      allowStorageListing: !mediaTableAvailable,
+    });
+    for (const syn of synthesized) {
+      const mt = String(syn.mediaType || "");
+      if (mt === "avatar" && seenTypes.avatar) continue;
+      if (mt === "cover" && seenTypes.cover) continue;
+      if (mt === "voice" && seenTypes.voice) continue;
+      if (mt === "video" && seenTypes.video) continue;
+      if (mt === "gallery") {
+        if (mediaTableAvailable || dbHadGallery) continue;
+        if (signedMedia.some((m) => m.mediaType === "gallery" && m.url && m.url === syn.url)) continue;
+        signedMedia.push(syn);
+        continue;
+      }
+      if (mt === "avatar") seenTypes.avatar = true;
+      if (mt === "cover") seenTypes.cover = true;
+      if (mt === "voice") seenTypes.voice = true;
+      if (mt === "video") seenTypes.video = true;
+      signedMedia.push(syn);
+    }
+  }
+  // Prefer fresh companion_media voice URL on player payload.
+  const voiceFromMedia = signedMedia.find((m) => m.mediaType === "voice" && m.url);
+  if (voiceFromMedia) {
+    player.voiceUrl = voiceFromMedia.url;
+  } else if (/^storage:\/\//i.test(String(player.voiceUrl || ""))) {
+    player.voiceUrl = "";
+  }
+  const videoFromMedia = signedMedia.find((m) => m.mediaType === "video" && m.url);
+  if (videoFromMedia) {
+    player.videoUrl = videoFromMedia.url;
+    player.showcaseVideoUrl = videoFromMedia.url;
+  }
+
+  let popularity = null;
+  if (!permissions.isolationMode) {
+    try {
+      popularity = await companionPopularityMe(profile.id);
+    } catch {
+      popularity = null;
+    }
+  }
+
+  let pendingForced = [];
+  try {
+    pendingForced = await (await import("./_content-acks.js")).pendingForcedForUser(profile.id, { audience: "companion" });
+  } catch {
+    pendingForced = [];
+  }
+  if (pendingForced.length) {
+    permissions.canSetAvailable = false;
+    permissions.canAcceptOrder = false;
+    permissions.canStartOrder = false;
+    permissions.forcedAckRequired = true;
+    permissions.forcedAckReason = "请先阅读并确认最新强制公告";
+  }
+
+  // Count durable gallery/voice even when a signed preview URL failed — empty url must
+  // not surface false 「缺少相册/录音」 after a successful upload_media persist.
+  const mediaExtrasForGate = {
+    avatarUrl:
+      signedMedia.find((m) => m.mediaType === "avatar" && m.url)?.url ||
+      (signedMedia.find((m) => m.mediaType === "avatar" && m.storagePath)
+        ? `storage://present/${signedMedia.find((m) => m.mediaType === "avatar" && m.storagePath).storagePath}`
+        : ""),
+    voiceUrl:
+      player.voiceUrl ||
+      (signedMedia.find((m) => m.mediaType === "voice" && m.storagePath)
+        ? `storage://present/${signedMedia.find((m) => m.mediaType === "voice" && m.storagePath).storagePath}`
+        : ""),
+    gallery: signedMedia
+      .filter((m) => m.mediaType === "gallery" && (m.url || m.storagePath || m.id))
+      .map((m) => ({ id: m.id, url: m.url || m.storagePath || "" })),
+  };
+  const publishGate = evaluatePublishGate(companionRow, profile, mediaExtrasForGate);
+  permissions.publishReady = publishGate.publishReady;
+  permissions.profileComplete = publishGate.profileComplete;
+  let certTags = [];
+  try {
+    const map = await resolveCertTagsForProfiles([companionRow.id].filter(Boolean));
+    certTags = map[companionRow.id] || [];
+  } catch {
+    certTags = [];
+  }
+
+  const paymentView = normalizePaymentAccountRecord(payment) || payment || {};
+  return {
+    serverTime: nowIso(),
+    player: { ...player, certTags },
+    permissions,
+    publishGate: permissions.isolationMode
+      ? { publishReady: false, profileComplete: publishGate.profileComplete, missing: publishGate.missing || [], statusLabel: "审核未通过前不对老板公开" }
+      : publishGate,
+    publishStatus: permissions.isolationMode ? "审核未通过前不对老板公开" : publishGate.statusLabel,
+    publishMissing: publishGate.missing,
+    pendingForced: permissions.isolationMode ? [] : pendingForced,
+    forcedAckRequired: permissions.isolationMode ? false : pendingForced.length > 0,
+    summary: permissions.isolationMode ? emptyWalletBundle().summary : summary,
+    popularity: permissions.isolationMode ? null : popularity,
+    openOrders: permissions.isolationMode ? [] : openOrders,
+    myOrders: permissions.isolationMode ? [] : myOrders,
+    conversations: [],
+    messages: [],
+    earnings: permissions.isolationMode
+      ? emptyWalletBundle().earnings
+      : {
+          ...(earnings || {}),
+          todayIncome: summary.todayIncome || 0,
+          yesterdayIncome: summary.yesterdayIncome || earnings?.yesterdayIncome || 0,
+          weekIncome: summary.weekIncome || earnings?.weekIncome || 0,
+          monthIncome: summary.monthIncome || 0,
+          totalIncome: summary.totalIncome || 0,
+          orderIncome: summary.orderIncome ?? earnings?.orderIncome ?? 0,
+          giftIncome: summary.giftIncome ?? earnings?.giftIncome ?? 0,
+          inviteIncome: summary.inviteIncome ?? earnings?.inviteIncome ?? 0,
+          earningsLocked: summary.earningsLocked ?? earnings?.earningsLocked ?? 0,
+          withdrawable: summary.withdrawable || 0,
+          available: summary.withdrawable || 0,
+          availableWithdrawable: summary.withdrawable || 0,
+          frozen: summary.frozen || 0,
+          withdrawalLocked: summary.frozen || 0,
+          pendingSettlement: summary.pendingSettlement || 0,
+          withdrawn: summary.withdrawn || 0,
+          withdrawnTotal: summary.withdrawn || 0,
+          bonus: summary.bonus || earnings?.bonus || 0,
+          reward: summary.reward || earnings?.reward || 0,
+          rewardWithdrawable: false,
+          rewardNote:
+            earnings?.rewardNote ||
+            "奖励/其它不计入订单/礼物收入，默认不可提现。礼物净收入可提现。",
+          channels: earnings?.channels || {
+            orderIncome: summary.orderIncome || 0,
+            giftNetIncome: summary.giftIncome || 0,
+            inviteCommission: summary.inviteIncome || 0,
+            withdrawalLocked: summary.frozen || 0,
+            withdrawn: summary.withdrawn || 0,
+            availableWithdrawable: summary.withdrawable || 0,
+          },
+        },
+    earningDetails: permissions.isolationMode ? [] : earningDetails,
+    walletLedger: permissions.isolationMode ? [] : walletLedger,
+    walletWarnings: warnings,
+    warnings,
+    withdrawalRules: permissions.isolationMode
+      ? {
+          monthlyLimit: 0,
+          usedThisMonth: 0,
+          remainingThisMonth: 0,
+          weeklyLimit: 0,
+          usedThisWeek: 0,
+          remainingThisWeek: 0,
+          minAmount: 0,
+          exchangeRate: 1,
+          feeRm: 0,
+          feePercent: 0,
+          nextSettlementDate: "",
+          settlementHint: "",
+          weeklyBanner: "",
+          currentAccount: "",
+          approvedAccounts: [],
+        }
+      : {
+          monthlyLimit,
+          usedThisMonth,
+          remainingThisMonth: Math.max(0, monthlyLimit - usedThisMonth),
+          weeklyLimit,
+          usedThisWeek,
+          remainingThisWeek: Math.max(0, weeklyLimit - usedThisWeek),
+          minAmount,
+          exchangeRate: rate,
+          feeRm: feeFixed,
+          feePercent,
+          nextSettlementDate: nextSettlement,
+          settlementHint: `预计发放日期：${nextSettlement}（星期五）`,
+          weeklyBanner: viewWeeklyRules(weeklyCfg),
+          currentAccount: payment ? formatSettlementAccountLabel(payment) : "",
+          currentAccountMasked: payment
+            ? formatSettlementAccountMasked(payment, maskBankAccount)
+            : "",
+          approvedAccounts,
+        },
+    withdrawals: permissions.isolationMode ? [] : await Promise.all(withdrawalRows.map((w) => viewCompanionWithdrawal(w))),
+    verification: {
+      identityStatus: normalizeIdentityStatus(identity, companionRow),
+      identityVerified: identityApproved(identity, companionRow),
+      depositVerified: depositApproved(companionRow, deposit),
+      credentialOrOk: identityApproved(identity, companionRow) || depositApproved(companionRow, deposit),
+      contactStatus: companionRow?.verification_status || "draft",
+      bankStatus: payment?.status || "draft",
+      depositStatus: normalizeDepositStatus(companionRow, deposit),
+      profile_review_status: normalizeProfileReviewStatus(companionRow),
+      profileReviewStatus: normalizeProfileReviewStatus(companionRow),
+      deposit_status: normalizeDepositStatus(companionRow, deposit),
+      account_access_status: unifiedAccess.status,
+      accountAccessStatus: unifiedAccess.status,
+      accountAccessLabel: unifiedAccess.label,
+      realName: identity?.real_name || "",
+      // Self-view: full plaintext for the authenticated companion only.
+      identityNo: identity?.identity_no || "",
+      bankName: paymentView.bank_name || "",
+      accountName: payment?.account_name || paymentView.account_name || "",
+      bankAccount: paymentView.bank_account || "",
+      phone: companion?.contact_phone || "",
+      tngAccount: paymentView.tng_account || "",
+      alipayAccount: paymentView.alipay_account || "",
+      paymentMethod: paymentView.method || "",
+      method: paymentView.method || "",
+      paymentAccount:
+        paymentView.payment_account ||
+        paymentView.bank_account ||
+        paymentView.tng_account ||
+        paymentView.alipay_account ||
+        "",
+      paymentPhone: paymentView.payment_phone || paymentView.tng_account || "",
+      identityNoMasked: identity?.identity_no
+        ? `****${String(identity.identity_no).replace(/\s+/g, "").slice(-4)}`
+        : "",
+      bankAccountMasked: paymentView.account_last4
+        ? `****${String(paymentView.account_last4)}`
+        : (paymentView.bank_account || paymentView.tng_account || paymentView.alipay_account)
+          ? `****${String(paymentView.bank_account || paymentView.tng_account || paymentView.alipay_account).replace(/\s+/g, "").slice(-4)}`
+          : "",
+      hasIdentityNo: !!String(identity?.identity_no || "").trim(),
+      hasBankAccount: !!String(
+        paymentView.bank_account || paymentView.tng_account || paymentView.alipay_account || paymentView.account_last4 || ""
+      ).trim(),
+      identitySubmitted: !!(
+        String(identity?.real_name || "").trim() &&
+        String(identity?.identity_no || "").trim() &&
+        String(identity?.id_front_path || "").trim() &&
+        String(identity?.id_back_path || "").trim() &&
+        !/draft|uploaded|none|not_submitted/i.test(String(identity?.status || ""))
+      ),
+      paymentSubmitted: !!(
+        (String(paymentView.method || "").trim() || String(paymentView.bank_name || "").trim()) &&
+        String(
+          paymentView.bank_account ||
+            paymentView.tng_account ||
+            paymentView.alipay_account ||
+            paymentView.payment_account ||
+            paymentView.account_last4 ||
+            ""
+        ).trim() &&
+        !/draft|uploaded|none|not_submitted/i.test(String(payment?.status || ""))
+      ),
+      identityRejectReason: identity?.reject_reason || "",
+      paymentRejectReason: payment?.reject_reason || "",
+      applicationRejectReason: companionRow?.application_reject_reason || "",
+      mediaRejectReason: companionRow?.media_reject_reason || "",
+      depositRejectReason: deposit?.reject_reason || "",
+      // Signed URLs for companion self-view only (never sent to public/boss APIs).
+      idFrontUrl: await signedPrivateDocUrl(PRIVATE_BUCKETS.identity, identity?.id_front_path),
+      idBackUrl: await signedPrivateDocUrl(PRIVATE_BUCKETS.identity, identity?.id_back_path),
+      hasIdFront: !!String(identity?.id_front_path || "").trim(),
+      hasIdBack: !!String(identity?.id_back_path || "").trim(),
+    },
+    deposit: await (async () => {
+      let depositChannels = [];
+      try {
+        const listed = await listDepositPaymentMethods([]);
+        depositChannels = listed.methods || [];
+      } catch (err) {
+        warnings.push(`deposit_channels: ${err.message || err}`);
+      }
+      const channelSnap = parseDepositChannelSnapshot(deposit?.remark || "");
+      const history = [];
+      for (const row of depositHistoryRows.slice(0, 20)) {
+        history.push({
+          id: row.id || "",
+          recordNo: depositRecordNo(row),
+          requiredAmount: Number(row.required_amount || DEPOSIT_AMOUNT_RM) || DEPOSIT_AMOUNT_RM,
+          paidAmount: Number(row.paid_amount || 0) || 0,
+          paymentMethod: row.payment_method || "",
+          status: row.status || "",
+          statusLabel: isDepositPaidStatus(row.status)
+            ? "已缴纳"
+            : /pending|review|submit/i.test(String(row.status || ""))
+              ? "审核中"
+              : /refund/i.test(String(row.status || ""))
+                ? "已退还"
+                : /reject/i.test(String(row.status || ""))
+                  ? "已拒绝"
+                  : String(row.status || ""),
+          paidAt: row.paid_at || "",
+          reviewedAt: row.reviewed_at || "",
+          reviewedBy: row.reviewed_by || "",
+          rejectReason: row.reject_reason || "",
+          channel: parseDepositChannelSnapshot(row.remark || ""),
+          proofUrl: await signedPrivateDocUrl(row.proof_bucket || PRIVATE_BUCKETS.payment, row.proof_path),
+          hasProof: !!String(row.proof_path || "").trim(),
+        });
+      }
+      const status = normalizeDepositStatus(companionRow, deposit);
+      return {
+        status,
+        deposit_status: status,
+        profile_review_status: normalizeProfileReviewStatus(companionRow),
+        account_access_status: unifiedAccess.status,
+        requiredAmount: deposit?.required_amount || DEPOSIT_AMOUNT_RM,
+        amountRm: DEPOSIT_AMOUNT_RM,
+        paidAmount: deposit?.paid_amount || 0,
+        rejectReason: deposit?.reject_reason || "",
+        paymentMethod: deposit?.payment_method || channelSnap?.label || "",
+        remark: deposit?.remark || "",
+        id: deposit?.id || "",
+        recordNo: depositRecordNo(deposit || {}),
+        paidAt: deposit?.paid_at || "",
+        reviewedAt: deposit?.reviewed_at || "",
+        reviewedBy: deposit?.reviewed_by || "",
+        channelId: channelSnap?.channelId || "",
+        channel: channelSnap,
+        depositSubmitted: !!(
+          String(deposit?.proof_path || "").trim() &&
+          (Number(deposit?.paid_amount || 0) > 0 || String(deposit?.payment_method || "").trim()) &&
+          !/draft|uploaded|none|not_submitted|unpaid/i.test(String(deposit?.status || ""))
+        ),
+        proofUrl: await signedPrivateDocUrl(
+          deposit?.proof_bucket || PRIVATE_BUCKETS.payment,
+          deposit?.proof_path
+        ),
+        hasProof: !!String(deposit?.proof_path || "").trim(),
+        channels: depositChannels,
+        depositChannels,
+        history,
+      };
+    })(),
+    playerGames: [],
+    media: signedMedia,
+    levelInfo: {
+      level: levelBundle.level ? `${levelBundle.level.code || ""} ${levelBundle.level.name || ""}`.trim() : companion?.level_name || "",
+      levelId: levelBundle.level?.id || companion?.level_id || "",
+      levelCode: levelBundle.level?.code || "",
+      levelName: levelBundle.level?.name || companion?.level_name || "",
+      orderCommissionRate: levelBundle.platformCommissionRate,
+      platformCommissionRate: levelBundle.platformCommissionRate,
+      giftCommissionRate: money(companion?.gift_commission_rate) || 0,
+      directRebateRate: money(companion?.direct_rebate_rate) || 0,
+      price: levelBundle.price,
+      minPrice: levelBundle.minPrice,
+      maxPrice: levelBundle.maxPrice,
+      maxPlus: levelBundle.maxPlus,
+      priceRangeText: levelBundle.level
+        ? `RM${levelBundle.minPrice}–RM${levelBundle.maxPrice}${levelBundle.maxPlus ? "+" : ""} / 小时`
+        : "请先联系后台设置等级",
+      priceInRange: levelBundle.priceInRange,
+      priceNeedsReset: levelBundle.priceNeedsReset,
+      gamePrices: projectGamePrices(companion || {}, levelBundle.level),
+      serviceStandards: readServiceStandards(companion || {}),
+      serviceStandardFields: SERVICE_STANDARD_FIELDS,
+      effectiveAt: companion?.commission_effective_at || companion?.level_effective_at || "",
+    },
+    companionLevel: levelBundle.level,
+    companionLevels: levelBundle.levels,
+    invitation: { records: [] },
+    reviews: await loadCompanionReviews(profile.id),
+    orderStatuses: Object.values(ORDER_STATUS_TEXT),
+    paymentStatuses: [],
+    payment: payment
+      ? {
+          method: payment.method || "",
+          settlementMethod: payment.method || "",
+          bankName: payment.bank_name || "",
+          bank_name: payment.bank_name || "",
+          accountName: payment.account_name || "",
+          account_name: payment.account_name || "",
+          bankAccount: payment.bank_account || "",
+          bank_account: payment.bank_account || "",
+          tngAccount: payment.tng_account || "",
+          tng_account: payment.tng_account || "",
+          alipayAccount: payment.alipay_account || "",
+          alipay_account: payment.alipay_account || "",
+          paymentAccount: payment.payment_account || payment.bank_account || payment.tng_account || payment.alipay_account || "",
+          payment_account: payment.payment_account || "",
+          paymentPhone: payment.payment_phone || payment.tng_account || "",
+          payment_phone: payment.payment_phone || payment.tng_account || "",
+          status: payment.status || "",
+        }
+      : null,
+    paymentAccount: payment
+      ? {
+          method: payment.method || "",
+          bankName: payment.bank_name || "",
+          accountName: payment.account_name || "",
+          bankAccount: payment.bank_account || "",
+          tngAccount: payment.tng_account || "",
+          alipayAccount: payment.alipay_account || "",
+          paymentAccount: payment.payment_account || payment.bank_account || payment.tng_account || payment.alipay_account || "",
+          paymentPhone: payment.payment_phone || payment.tng_account || "",
+          status: payment.status || "",
+        }
+      : null,
+  };
+}
+
+async function loadCompanionReviews(companionUserId) {
+  if (!companionUserId) return [];
+  try {
+    const rows = await supabaseJson(
+      restUrl(
+        "companion_reviews",
+        `?companion_id=eq.${encodeURIComponent(companionUserId)}&or=(status.eq.published,status.is.null)&order=created_at.desc&limit=50&select=id,order_id,boss_id,rating,content,status,created_at`
+      ),
+      { headers: serviceHeaders() }
+    );
+    const list = Array.isArray(rows) ? rows : [];
+    // One review per order (keep newest).
+    const byOrder = new Map();
+    for (const r of list) {
+      const key = String(r.order_id || r.id || "");
+      if (!key) continue;
+      if (!byOrder.has(key)) byOrder.set(key, r);
+    }
+    const deduped = [...byOrder.values()];
+    const bossIds = [...new Set(deduped.map((r) => r.boss_id).filter(Boolean))];
+    const orderIds = [...new Set(deduped.map((r) => r.order_id).filter(Boolean))];
+    let bosses = {};
+    let orders = {};
+    if (bossIds.length) {
+      const profiles = await supabaseJson(
+        restUrl("profiles", `?id=in.(${bossIds.map(encodeURIComponent).join(",")})&select=id,display_name,boss_uid`),
+        { headers: serviceHeaders() }
+      ).catch(() => []);
+      bosses = Object.fromEntries((profiles || []).map((p) => [p.id, p]));
+    }
+    if (orderIds.length) {
+      const orderRows = await supabaseJson(
+        restUrl("orders", `?id=in.(${orderIds.map(encodeURIComponent).join(",")})&select=id,order_no,game,status,companion_id`),
+        { headers: serviceHeaders() }
+      ).catch(() => []);
+      orders = Object.fromEntries((orderRows || []).map((o) => [o.id, o]));
+    }
+    return deduped.map((r) => {
+      const boss = bosses[r.boss_id] || {};
+      const order = orders[r.order_id] || {};
+      // Guard against mis-bound reviews leaking onto this companion profile.
+      if (order.companion_id && String(order.companion_id) !== String(companionUserId)) return null;
+      const bossCode = resolveBossPublicCode(boss) || "";
+      return {
+        id: r.id,
+        orderId: order.order_no || r.order_id || "",
+        orderNo: order.order_no || r.order_id || "",
+        companionId: r.companion_id || companionUserId,
+        bossId: r.boss_id || "",
+        gameName: order.game || "",
+        game: order.game || "",
+        rating: Number(r.rating || 0),
+        content: r.content || "",
+        status: r.status || "published",
+        createdAt: r.created_at || "",
+        bossName: anonymousBossLabel(boss),
+        bossUid: bossCode,
+        bossCode,
+        avatarUrl: "",
+        anonymous: true,
+      };
+    }).filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+async function ensureCompanionRow(profile, companion) {
+  if (companion?.id) return companion;
+  const rows = await supabaseJson(restUrl("companion_profiles"), {
+    method: "POST",
+    headers: serviceHeaders(),
+    body: JSON.stringify({
+      user_id: profile.id,
+      nickname: profile.display_name || "",
+      contact_phone: String(profile.phone || profile.phone_e164 || "").trim() || "",
+      verification_status: "pending",
+      deposit_status: "unpaid",
+      application_status: "draft",
+      allow_orders: false,
+      online_status: "offline",
+      created_at: nowIso(),
+      updated_at: nowIso(),
+    }),
+  });
+  return rows?.[0] || companion || {};
+}
+
+function buildPaymentAccountPayload(body = {}, existingPayment = null) {
+  return buildSettlementPaymentPayload(body, existingPayment, nowIso);
+}
+
+async function upsertByCompanion(table, companionId, userId, payload) {
+  const existing = await companionDb(table, `?companion_profile_id=eq.${encodeURIComponent(companionId)}&limit=1`).catch((e) => {
+    if (isMissingRelation(e)) throw Object.assign(new Error("请先执行 supabase/companion-admin-data.sql"), { status: 503 });
+    throw e;
+  });
+
+  async function write(body, method, query) {
+    let next = { ...body };
+    for (let i = 0; i < 8; i++) {
+      try {
+        return await companionDb(table, query, { method, body: JSON.stringify(next) });
+      } catch (error) {
+        const msg = `${error?.message || ""} ${typeof error?.body === "string" ? error.body : JSON.stringify(error?.body || "")}`;
+        const m = msg.match(/Could not find the '([^']+)' column/i);
+        if (!m || !(m[1] in next)) throw error;
+        delete next[m[1]];
+      }
+    }
+    throw Object.assign(new Error(`${table} 写入失败（列不兼容）`), { status: 500 });
+  }
+
+  if (existing?.[0]) {
+    return write({ ...payload, updated_at: nowIso() }, "PATCH", `?id=eq.${encodeURIComponent(existing[0].id)}`);
+  }
+  return write(
+    {
+      companion_profile_id: companionId,
+      user_id: userId,
+      ...payload,
+      created_at: nowIso(),
+      updated_at: nowIso(),
+    },
+    "POST",
+    ""
+  );
+}
+
+async function saveUploadFromBody(userId, folder, bucket, dataUrlOrPath, filename) {
+  if (!dataUrlOrPath) return { bucket: "", path: "" };
+  const raw = String(dataUrlOrPath).trim();
+  if (!raw) return { bucket: "", path: "" };
+  if (/^(blob:|filesystem:|file:)/i.test(raw)) {
+    throw Object.assign(new Error("不支持临时预览地址，请重新选择图片上传"), { status: 400 });
+  }
+  if (/^(https?:\/\/)?(localhost|127\.0\.0\.1)/i.test(raw)) {
+    throw Object.assign(new Error("不支持本地路径，请重新选择图片上传"), { status: 400 });
+  }
+  if (!raw.startsWith("data:")) {
+    // Existing durable storage path (not a public URL paste for identity docs)
+    if (/^https?:\/\//i.test(raw)) {
+      throw Object.assign(new Error("请通过上传按钮选择图片，不要粘贴链接"), { status: 400 });
+    }
+    return { bucket, path: raw };
+  }
+  const decoded = assertImageUpload(decodeDataUrl(raw));
+  const objectPath = buildObjectPath(userId, folder, filename || "file.jpg");
+  await uploadPrivateObject(bucket, objectPath, decoded.buffer, decoded.contentType);
+  return { bucket, path: objectPath, contentType: decoded.contentType };
+}
+
+async function signedPrivateDocUrl(bucket, objectPath) {
+  const path = String(objectPath || "").trim();
+  if (!bucket || !path) return "";
+  if (/^https?:\/\//i.test(path) || path.startsWith("data:")) return "";
+  try {
+    return await createSignedUrl(bucket, path, 60 * 60 * 6);
+  } catch {
+    return "";
+  }
+}
+
+function parseReceiptPathFromRemark(remark = "") {
+  const m = String(remark || "").match(/\[打款收据\][^\n]*path=([^\s]+)/);
+  return m?.[1] || "";
+}
+
+async function viewCompanionWithdrawal(w) {
+  let receiptPath = String(w.receipt_url || "").trim();
+  if (!receiptPath) receiptPath = parseReceiptPathFromRemark(w.remark);
+  const receiptUrl = receiptPath
+    ? await signedPrivateDocUrl("finance-receipts", receiptPath)
+    : "";
+  const statusKey = normalizePayoutStatus(w.status);
+  return {
+    id: w.id,
+    withdrawalNo: w.withdrawal_no,
+    catFoodAmount: money(w.cat_food_amount || w.amount),
+    grossAmountRm: money(w.gross_amount_rm),
+    feeRm: money(w.fee_rm),
+    netAmountRm: money(w.net_amount_rm),
+    sourceOrderIds: Array.isArray(w.source_order_ids) ? w.source_order_ids : [],
+    bankName: w.bank_name || "",
+    accountName: w.account_name || w.account_holder || "",
+    accountLast4: w.account_last4 || "",
+    status: w.status,
+    statusCanonical: statusKey,
+    statusText: WITHDRAW_STATUS_TEXT[w.status] || WITHDRAW_STATUS_TEXT[statusKey] || w.status,
+    rejectReason: w.reject_reason || w.rejection_reason || "",
+    submittedAt: w.submitted_at || w.created_at,
+    reviewedAt: w.reviewed_at || w.approved_at || "",
+    approvedAt: w.approved_at || w.reviewed_at || "",
+    paidAt: w.paid_at || "",
+    completedAt: w.completed_at || "",
+    settlementDate: w.settlement_date || "",
+    settlementHint: w.settlement_date ? `预计发放日期：${String(w.settlement_date).slice(0, 10)}（星期五）` : "",
+    bankReference: w.bank_reference || w.transaction_no || "",
+    bankReferenceMasked: w.bank_reference || w.transaction_no || "",
+    transactionNo: w.transaction_no || w.bank_reference || "",
+    paymentRemark: w.payment_remark || "",
+    receiptUrl,
+    hasReceipt: !!receiptPath,
+    amount: money(w.cat_food_amount || w.amount),
+    createdAt: w.submitted_at || w.created_at,
+  };
+}
+async function ensureConversation(order, { create = false } = {}) {
+  // System notices for order events belong on the BOSS↔CS order_support thread only.
+  // Never attach companion_id and never reuse companion_support rows for the same order_id.
+  // Routine order events must not open a CS thread on their own (create=false → reuse only).
+  const bossId = order?.boss_id || null;
+  if (!bossId || !order?.id) return null;
+  const typed = await supabaseJson(
+    restUrl(
+      "conversations",
+      `?boss_id=eq.${encodeURIComponent(bossId)}&order_id=eq.${encodeURIComponent(order.id)}&conversation_type=eq.order_support&order=updated_at.desc&limit=1`
+    ),
+    { headers: serviceHeaders() }
+  ).catch(() => []);
+  if (typed?.[0]) return typed[0];
+  const legacy = await supabaseJson(
+    restUrl(
+      "conversations",
+      `?boss_id=eq.${encodeURIComponent(bossId)}&order_id=eq.${encodeURIComponent(order.id)}&order=updated_at.desc&limit=5`
+    ),
+    { headers: serviceHeaders() }
+  ).catch(() => []);
+  const hit = (Array.isArray(legacy) ? legacy : []).find((row) => {
+    const t = String(row.conversation_type || "");
+    return t !== "companion_support" && !!row.boss_id;
+  });
+  if (hit) return hit;
+  if (!create) return null;
+  const rows = await supabaseJson(restUrl("conversations"), {
+    method: "POST",
+    headers: serviceHeaders(),
+    body: JSON.stringify({
+      boss_id: bossId,
+      companion_id: null,
+      customer_service_id: order.customer_service_id || null,
+      order_id: order.id,
+      conversation_type: "order_support",
+      status: "open",
+      created_at: nowIso(),
+      updated_at: nowIso(),
+    }),
+  }).catch(async (err) => {
+    if (!/conversation_type/i.test(String(err?.message || ""))) throw err;
+    return supabaseJson(restUrl("conversations"), {
+      method: "POST",
+      headers: serviceHeaders(),
+      body: JSON.stringify({
+        boss_id: bossId,
+        companion_id: null,
+        customer_service_id: order.customer_service_id || null,
+        order_id: order.id,
+        status: "open",
+        created_at: nowIso(),
+        updated_at: nowIso(),
+      }),
+    });
+  });
+  return rows?.[0] || null;
+}
+async function addSystemMessage(order, senderId, senderRole, content, { needsCs = false } = {}) {
+  const conversation = await ensureConversation(order, { create: needsCs });
+  if (!conversation) return;
+  await supabaseJson(restUrl("messages"), {
+    method: "POST",
+    headers: serviceHeaders(),
+    body: JSON.stringify({
+      conversation_id: conversation.id,
+      sender_id: senderId,
+      sender_role: senderRole,
+      message_type: "system",
+      content,
+      order_id: order.id,
+      created_at: nowIso(),
+    }),
+  });
+}
+async function claimOrder(profile, companion, id) {
+  const beforeRows = await supabaseJson(restUrl("orders", `?id=eq.${encodeURIComponent(id)}&limit=1`), { headers: serviceHeaders() });
+  const before = beforeRows?.[0];
+  if (!before) throw Object.assign(new Error("订单不存在。"), { status: 404 });
+  // Self-trade first (user_id), before work-eligibility gates.
+  const { assertNotSelfTrade } = await import("./_account-roles.js");
+  assertNotSelfTrade(before.boss_id, profile.id, "抢自己的订单");
+  // Load identity/deposit rows so eligibility is identity OR deposit (not profile columns alone).
+  let authRows = { identity: null, deposit: null };
+  try {
+    authRows = await assertCompanionOrderEligibility(profile, companion);
+  } catch (err) {
+    throw Object.assign(new Error(err?.message || COMPANION_AUTH_LOCK_MSG), {
+      status: err?.status || 403,
+      code: err?.code || "COMPANION_AUTH_LOCKED",
+    });
+  }
+  if (!canAccept(profile, companion, authRows.deposit, authRows.identity)) {
+    const status = normalizeOnlineStatus(companion.availability_status || companion.online_status);
+    const reason =
+      status === "busy"
+        ? "忙碌中，无法抢新订单。"
+        : status === "paused"
+          ? "已暂停接单，无法抢新订单。"
+          : "请先在工作台切换为在线接单。";
+    throw Object.assign(new Error(reason), { status: 403 });
+  }
+  const { resolveAssignmentType, ASSIGNMENT_ASSIGNED, isPublicHallEligible } = await import("./_order-assignment.js");
+  // Open grab only: never auto-bind companion_id; never jump to confirmed/in_progress.
+  // Assigned / 指定陪玩 orders are invisible to the public hall and cannot be grabbed.
+  if (resolveAssignmentType(before) === ASSIGNMENT_ASSIGNED || before.companion_id) {
+    throw Object.assign(new Error("该订单为指定陪玩单，不在公开抢单大厅。"), { status: 409 });
+  }
+  const openForGrab = isPublicHallEligible(before);
+  if (!openForGrab) throw Object.assign(new Error("该订单当前不可抢单。"), { status: 409 });
+  if (["confirmed", "in_progress", "completed", "claimed"].includes(before.status)) {
+    throw Object.assign(new Error("该订单已进入正式接单，不能再抢。"), { status: 409 });
+  }
+  const { createOrderGrabHelpers } = await import("./_order-grabs.js");
+  const grabsApi = createOrderGrabHelpers({ restUrl, supabaseJson, serviceHeaders });
+  const { grab, created, grabs } = await grabsApi.insertGrab(before, profile.id);
+  if (!created) {
+    return { ...before, _grab: grab, _already: true, _grabs: grabs };
+  }
+  // Keep hall open for others: do NOT set companion_id until boss manually selects.
+  let order = before;
+  if (before.status === "pending") {
+    const rows = await supabaseJson(
+      restUrl("orders", `?id=eq.${encodeURIComponent(id)}&status=eq.pending&companion_id=is.null`),
+      {
+        method: "PATCH",
+        headers: serviceHeaders(),
+        body: JSON.stringify({ status: "waiting_boss_confirm" }),
+      }
+    );
+    order = rows?.[0] || { ...before, status: "waiting_boss_confirm" };
+  }
+  // Guard: claim must not leave companion_id set.
+  if (order.companion_id) {
+    await supabaseJson(restUrl("orders", `?id=eq.${encodeURIComponent(id)}`), {
+      method: "PATCH",
+      headers: serviceHeaders(),
+      body: JSON.stringify({ companion_id: null }),
+    });
+    order = { ...order, companion_id: null };
+  }
+  await addSystemMessage(order, profile.id, "companion", "陪玩已抢单，等待老板选择。");
+  return { ...order, companion_id: null, _grab: grab, _grabs: grabs };
+}
+async function patchOwnOrder(profile, id, expected, patch, message) {
+  const beforeRows = await supabaseJson(restUrl("orders", `?id=eq.${encodeURIComponent(id)}&companion_id=eq.${encodeURIComponent(profile.id)}&limit=1`), { headers: serviceHeaders() });
+  const before = beforeRows?.[0];
+  if (!before) throw Object.assign(new Error("订单不存在。"), { status: 404 });
+  if (expected && before.status !== expected) throw Object.assign(new Error("当前订单状态不能执行该操作。"), { status: 409 });
+  const rows = await supabaseJson(restUrl("orders", `?id=eq.${encodeURIComponent(id)}&companion_id=eq.${encodeURIComponent(profile.id)}`), { method: "PATCH", headers: serviceHeaders(), body: JSON.stringify(patch) });
+  const saved = rows?.[0] || { ...before, ...patch };
+  if (patch.status && patch.status !== before.status) {
+    await writeOrderStatusLog(
+      { restUrl, supabaseJson, serviceHeaders },
+      {
+        orderId: id,
+        fromStatus: before.status,
+        toStatus: patch.status,
+        operatorRole: "companion",
+        operatorId: profile.id,
+        note: message || "",
+      }
+    );
+  }
+  if (message) await addSystemMessage(saved, profile.id, "companion", message);
+  return saved;
+}
+
+async function trySendResetCodeEmail(email, code) {
+  try {
+    const { sendEmailOtp } = await import("./_mail.js");
+    await sendEmailOtp({ to: email, code, purpose: "forgot", roleLabel: "陪玩端" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export default async function handler(req, res) {
+  if (!hasDb()) return json(res, req.method === "GET" ? 200 : 503, { ok: req.method === "GET", data: { player: {}, permissions: { canAcceptOrder: false, lockReason: "真实数据库未配置" }, summary: { todayOrders: 0, waitingConfirm: 0, runningOrders: 0, completedOrders: 0, monthIncome: 0, withdrawable: 0 }, openOrders: [], myOrders: [], earnings: {}, earningDetails: [] }, message: "未配置 Supabase，陪玩端不返回假业务数据。" });
+  try {
+    const bodyEarly = req.method === "GET" ? null : await parseBody(req);
+    if (bodyEarly && typeof bodyEarly === "object" && (!req.body || typeof req.body !== "object")) {
+      req.body = bodyEarly;
+    }
+    const action = String(
+      req.method === "GET"
+        ? req.query.action || "bootstrap"
+        : bodyEarly?.action || req.query?.action || ""
+    ).trim();
+    if (action === "login") {
+      const body = bodyEarly || (await parseBody(req)); const account=String(body.account || body.email || "").trim().toLowerCase(); const password=String(body.password || "");
+      if (!account || !password) return json(res,400,{ok:false,message:"请输入邮箱和密码"});
+      const resolvedLogin = await resolveCompanionAuthEmail(account);
+      const email = (resolvedLogin && resolvedLogin.email) || account.toLowerCase();
+      if (resolvedLogin?.profile && String(resolvedLogin.profile.status || "").toLowerCase() === "disabled") {
+        return json(res,403,{ok:false,message:"陪玩账号已停用"});
+      }
+      let auth;
+      try {
+        auth = await supabaseJson(authUrl("token?grant_type=password"), { method:"POST", headers: anonHeaders(), body: JSON.stringify({ email, password }) });
+      } catch (loginErr) {
+        const raw = String(loginErr?.message || "").trim();
+        const looksLikeBadPassword =
+          /invalid login credentials|invalid.*(email|password)|wrong password|invalid email or password/i.test(raw);
+        if (looksLikeBadPassword && resolvedLogin?.profile) {
+          try {
+            const { resolveHasPassword, NO_PASSWORD_LOGIN_MESSAGE } = await import("./_account-security.js");
+            const hasPwd = await resolveHasPassword(resolvedLogin.profile, {}, { probeAuth: true });
+            if (hasPwd === false) return json(res,400,{ok:false,message:NO_PASSWORD_LOGIN_MESSAGE,code:"NO_PASSWORD"});
+          } catch { /* fall through */ }
+        }
+        return json(res,401,{ok:false,message:"账号或密码错误"});
+      }
+      const profile = await profileById(auth.user.id);
+      const companion = await companionProfile(profile?.id);
+      const { hasCompanionRole, enrichProfileRoles } = await import("./_account-roles.js");
+      if (!profile || !hasCompanionRole(profile, { companion, authUser: auth.user })) {
+        return json(res,403,{ok:false,message:"无权访问陪玩端。请先申请陪玩身份。",code:"NO_COMPANION_ROLE"});
+      }
+      if (profile.status === "disabled") return json(res,403,{ok:false,message:"陪玩账号已停用"});
+      try {
+        const { resolveEmailVerified } = await import("./_account-security.js");
+        if (!resolveEmailVerified(profile, auth.user || {})) {
+          return json(res,403,{ok:false,message:"请先完成邮箱验证。",code:"EMAIL_NOT_VERIFIED"});
+        }
+      } catch { /* if helper missing, continue */ }
+      try {
+        const { touchLastLogin, stampPasswordSet } = await import("./_account-security.js");
+        await stampPasswordSet(profile.id, { mustChangePassword: false, touchPasswordSetAt: false }).catch(() => null);
+        await touchLastLogin(profile.id, "");
+      } catch { /* optional */ }
+      let playerProfile = profile;
+      try {
+        const enriched = await enrichProfileRoles(profile, auth.user);
+        playerProfile = enriched.profile || profile;
+      } catch { /* optional */ }
+      return json(res,200,{ok:true,session:{
+        token:auth.access_token,
+        accessToken:auth.access_token,
+        refreshToken:auth.refresh_token || "",
+        expiresAt:auth.expires_at || "",
+        user:safePlayer(playerProfile, companion || {}),
+        remember:!!body.remember
+      },needRolePick:false});
+    }
+    if (action === "forgot_password" || action === "send_reset_code") {
+      // Unify with /api/auth forgot flow (same OTP store + auth.users password reset).
+      const body = bodyEarly || (await parseBody(req));
+      req.body = {
+        ...(body && typeof body === "object" ? body : {}),
+        action: "forgot_send_otp",
+        role: "companion",
+        email: String(body?.email || body?.account || "").trim(),
+        account: String(body?.account || body?.email || "").trim(),
+      };
+      const authHandler = (await import("./auth.js")).default;
+      return authHandler(req, res);
+    }
+    if (action === "verify_reset_code") {
+      const body = bodyEarly || (await parseBody(req));
+      req.body = {
+        ...(body && typeof body === "object" ? body : {}),
+        action: "forgot_verify_otp",
+        role: "companion",
+        email: String(body?.email || body?.account || "").trim(),
+        account: String(body?.account || body?.email || "").trim(),
+        code: String(body?.code || body?.otp || "").trim(),
+      };
+      const authHandler = (await import("./auth.js")).default;
+      return authHandler(req, res);
+    }
+    if (action === "reset_password") {
+      const body = bodyEarly || (await parseBody(req));
+      const resetToken = String(body?.resetToken || body?.token || "").trim();
+      // Shared auth OTP token path (mcj_…)
+      if (resetToken.startsWith("mcj_")) {
+        req.body = {
+          ...(body && typeof body === "object" ? body : {}),
+          action: "forgot_reset_password",
+          role: "companion",
+          email: String(body?.email || body?.account || "").trim(),
+          account: String(body?.account || body?.email || "").trim(),
+          resetToken,
+          newPassword: String(body?.newPassword || body?.password || ""),
+          confirmPassword: String(body?.confirmPassword || body?.confirm_password || body?.newPassword || body?.password || ""),
+        };
+        const authHandler = (await import("./auth.js")).default;
+        return authHandler(req, res);
+      }
+      // Legacy Supabase recovery / mcj: base64 token paths (kept for in-flight tokens).
+      const newPassword = String(body.newPassword || body.password || "");
+      const confirmPassword = String(body.confirmPassword || body.confirm_password || "");
+      if (!newPassword || newPassword.length < 8) return json(res, 400, { ok: false, message: "新密码至少 8 位" });
+      if (confirmPassword && confirmPassword !== newPassword) {
+        return json(res, 400, { ok: false, message: "两次输入的新密码不一致" });
+      }
+      if (!resetToken) return json(res, 400, { ok: false, message: "请先完成验证码校验" });
+      if (resetToken.startsWith("mcj:")) {
+        let payload;
+        try {
+          payload = JSON.parse(Buffer.from(resetToken.slice(4), "base64url").toString("utf8"));
+        } catch {
+          return json(res, 400, { ok: false, message: "重置凭证无效，请重新获取验证码" });
+        }
+        if (!payload?.email || Date.now() - Number(payload.at || 0) > 20 * 60 * 1000) {
+          return json(res, 400, { ok: false, message: "重置凭证已过期，请重新获取验证码" });
+        }
+        const profile = (
+          await supabaseJson(
+            restUrl("profiles", `?role=eq.companion&email=eq.${encodeURIComponent(payload.email)}&select=id&limit=1`),
+            { headers: serviceHeaders() }
+          ).catch(() => [])
+        )?.[0];
+        if (!profile?.id) return json(res, 404, { ok: false, message: "账号不存在" });
+        await supabaseJson(authUrl(`admin/users/${encodeURIComponent(profile.id)}`), {
+          method: "PUT",
+          headers: serviceHeaders(),
+          body: JSON.stringify({ password: newPassword }),
+        });
+        return json(res, 200, { ok: true, message: "密码已重设，请使用新密码登录" });
+      }
+      try {
+        await supabaseJson(authUrl("user"), {
+          method: "PUT",
+          headers: anonHeaders({ Authorization: `Bearer ${resetToken}` }),
+          body: JSON.stringify({ password: newPassword }),
+        });
+        return json(res, 200, { ok: true, message: "密码已重设，请使用新密码登录" });
+      } catch (err) {
+        return json(res, 400, { ok: false, message: err.message || "重设失败，请重新获取验证码" });
+      }
+    }
+    if (action === "register") {
+      const body = await parseBody(req); const email=String(body.email || body.account || "").trim().toLowerCase(); const password=String(body.password || ""); const nickname=String(body.nickname || body.name || "").trim();
+      const registerToken = String(body.registerToken || body.emailOtpToken || body.otpToken || "").trim();
+      if (!email || !/^\S+@\S+\.\S+$/.test(email)) return json(res,400,{ok:false,message:"请输入有效邮箱"});
+      const { shouldBlockTestIdentityOnProduction, stampTestAccountPayload, stampTestUserMetadata, PROD_TEST_ACCOUNT_BLOCK_MESSAGE } = await import("./_test-accounts.js");
+      if (shouldBlockTestIdentityOnProduction({ email, displayName: nickname })) {
+        return json(res, 403, { ok: false, message: PROD_TEST_ACCOUNT_BLOCK_MESSAGE, code: "PROD_TEST_ACCOUNT_BLOCKED" });
+      }
+      if (!registerToken) return json(res,400,{ok:false,message:"请先完成邮箱验证。"});
+      if (!nickname) return json(res,400,{ok:false,message:"请输入陪玩昵称"});
+      if (!password) return json(res,400,{ok:false,message:"请设置登录密码。"});
+      const { validatePassword } = await import("./_password-policy.js");
+      const policy = validatePassword(password, body.confirmPassword || body.confirm_password);
+      if (!policy.ok) return json(res,400,{ok:false,message:policy.message});
+      const wantsPassword = true;
+      const authPassword = password;
+      try {
+        const { consumeRegisterVerified } = await import("./_otp-store.js");
+        await consumeRegisterVerified(email, "companion", registerToken);
+      } catch (otpErr) {
+        return json(res, otpErr?.status || 400, {
+          ok: false,
+          message: otpErr?.message || "请先完成邮箱验证。",
+        });
+      }
+      // Unified account: never create a second Auth user for an existing email.
+      try {
+        const { normalizeEmail, findProfilesByEmail } = await import("./_account-roles.js");
+        const emailNorm = normalizeEmail(email);
+        const emailProfiles = await findProfilesByEmail(emailNorm);
+        if (emailProfiles.length) {
+          return json(res, 409, {
+            ok: false,
+            code: "EMAIL_EXISTS_LOGIN_THEN_APPLY",
+            message: "该邮箱已注册，请直接登录。已登录老板可在当前账号下申请陪玩身份，不会创建新账号。",
+          });
+        }
+        // Also probe Auth uniqueness soft-fail path via profiles role filter (legacy).
+        const { isFormalCompanion, isApplicationDraft } = await import("./_companion-draft.js");
+        const legacyProfiles = await supabaseJson(
+          restUrl("profiles", `?email=eq.${encodeURIComponent(email)}&select=id,email,role&limit=5`),
+          { headers: serviceHeaders() }
+        ).catch(() => []);
+        for (const ep of Array.isArray(legacyProfiles) ? legacyProfiles : []) {
+          const cp = await companionProfile(ep.id);
+          if (!cp) continue;
+          if (isFormalCompanion(cp)) {
+            return json(res, 409, { ok: false, message: "该邮箱已是正式陪玩账号，请直接登录。" });
+          }
+          const st = String(cp.application_status || "").toLowerCase();
+          if (!/archived|deleted/.test(st) && (isApplicationDraft(cp) || /pending|submitted|review|reject|resubmit|need_more/.test(st))) {
+            return json(res, 409, { ok: false, message: "该邮箱已有陪玩申请，请直接登录陪玩端继续填写或查看审核进度。" });
+          }
+        }
+      } catch (uniqErr) {
+        console.warn("[companion/register] uniqueness probe:", uniqErr?.message || uniqErr);
+      }
+      const created = await supabaseJson(authUrl("admin/users"), {
+        method:"POST",
+        headers: serviceHeaders(),
+        body: JSON.stringify({
+          email,
+          password: authPassword,
+          email_confirm: true,
+          user_metadata: stampTestUserMetadata(
+            {
+              display_name: nickname,
+              has_password: wantsPassword,
+              email_verified: true,
+              email_verified_at: nowIso(),
+              roles: ["companion"],
+              ...(wantsPassword ? { password_set_at: nowIso() } : {}),
+            },
+            { email, displayName: nickname, nickname }
+          ),
+          app_metadata: { has_password: wantsPassword, email_verified: true, roles: ["companion"] },
+        }),
+      });
+      const companionProfilePayload = stampTestAccountPayload({
+        id: created.id,
+        role: "companion",
+        display_name: nickname,
+        email,
+        phone: "",
+        status: "active",
+        created_at: nowIso(),
+        email_verified: true,
+        email_verified_at: nowIso(),
+      }, { email, displayName: nickname, nickname });
+      try {
+        await supabaseJson(restUrl("profiles"), { method:"POST", headers: serviceHeaders(), body: JSON.stringify(companionProfilePayload) });
+      } catch (profErr) {
+        if (/email_verified|is_test_account|Could not find|schema cache/i.test(String(profErr?.message || ""))) {
+          const { email_verified, email_verified_at, ...fallback } = companionProfilePayload;
+          void email_verified;
+          void email_verified_at;
+          await supabaseJson(restUrl("profiles"), { method:"POST", headers: serviceHeaders(), body: JSON.stringify(fallback) });
+        } else {
+          throw profErr;
+        }
+      }
+      try {
+        const { persistRoles } = await import("./_account-roles.js");
+        await persistRoles(created.id, ["companion"], { primaryRole: "companion" });
+      } catch { /* optional */ }
+      const cpRow = stampTestAccountPayload({ user_id: created.id, nickname, contact_phone: "", verification_status: "pending", deposit_status: "unpaid", application_status: "draft", allow_orders: false, online_status: "offline", created_at: nowIso(), updated_at: nowIso() }, { email, displayName: nickname, nickname });
+      try {
+        await supabaseJson(restUrl("companion_profiles"), { method:"POST", headers: serviceHeaders(), body: JSON.stringify(cpRow) });
+      } catch (cpErr) {
+        if (/is_test_account|schema cache|Could not find/i.test(String(cpErr?.message || ""))) {
+          const { is_test_account, ...fallbackCp } = cpRow;
+          void is_test_account;
+          await supabaseJson(restUrl("companion_profiles"), { method:"POST", headers: serviceHeaders(), body: JSON.stringify(fallbackCp) });
+        } else {
+          throw cpErr;
+        }
+      }
+      try {
+        const { stampPasswordSet, stampPasswordUnset } = await import("./_account-security.js");
+        if (wantsPassword) await stampPasswordSet(created.id, { mustChangePassword: false });
+        else await stampPasswordUnset(created.id);
+      } catch { /* optional columns */ }
+      // Invite redeem ONLY after auth user + profiles + companion_profiles succeeded.
+      let inviteRedeem = null;
+      const inviteCode = String(body.inviteCode || body.invite_code || body.code || "").trim();
+      if (inviteCode) {
+        try {
+          const { redeemInviteAfterCompanionReady } = await import("./_boss-invite-links.js");
+          inviteRedeem = await redeemInviteAfterCompanionReady({
+            inviteCode,
+            inviteeId: created.id,
+          });
+        } catch (inviteErr) {
+          console.warn("[companion/register] invite redeem soft-fail:", inviteErr?.message || inviteErr);
+          inviteRedeem = { attempted: true, outcome: "error", detail: inviteErr?.message || "redeem_failed" };
+        }
+      }
+      let auth;
+      if (wantsPassword) {
+        auth = await supabaseJson(authUrl("token?grant_type=password"), { method:"POST", headers: anonHeaders(), body: JSON.stringify({ email, password: authPassword }) });
+      } else {
+        // Session without revealing opaque system password.
+        const link = await supabaseJson(authUrl("admin/generate_link"), {
+          method: "POST",
+          headers: serviceHeaders(),
+          body: JSON.stringify({ type: "magiclink", email }),
+        });
+        const hashed = link?.hashed_token || link?.properties?.hashed_token || "";
+        auth = await supabaseJson(authUrl("verify"), {
+          method: "POST",
+          headers: anonHeaders(),
+          body: JSON.stringify({ type: "magiclink", token_hash: hashed }),
+        });
+      }
+      const profile = await profileById(created.id);
+      const companion = await companionProfile(created.id);
+      return json(res,200,{
+        ok:true,
+        message: wantsPassword
+          ? "陪玩账号已创建，请继续填写资料。草稿不会出现在正式陪玩列表。"
+          : "陪玩账号已创建。建议前往账号安全设置密码（审核状态不影响密码设置）。",
+        suggestSetPassword: !wantsPassword,
+        inviteRedeem: inviteRedeem || null,
+        session:{token:auth.access_token,accessToken:auth.access_token,refreshToken:auth.refresh_token||"",user:safePlayer(profile, companion || {}),remember:!!body.remember}
+      });
+    }
+    if (action === "apply_companion_role" || action === "upgrade_to_companion" || action === "boss_apply_companion") {
+      const body = bodyEarly || (await parseBody(req));
+      const token = tokenFrom(req) || String(body.accessToken || body.token || "").trim();
+      if (!token) return json(res, 401, { ok: false, message: "请先登录后再申请陪玩身份。" });
+      let authUser;
+      try {
+        authUser = await authUserFromToken(token);
+      } catch {
+        return json(res, 401, { ok: false, message: "登录状态已过期，请重新登录后继续。" });
+      }
+      const profile = await profileById(authUser.id);
+      if (!profile) return json(res, 403, { ok: false, message: "账号未绑定平台资料。" });
+      if (String(profile.status || "").toLowerCase() === "disabled") {
+        return json(res, 403, { ok: false, message: "账号已停用。" });
+      }
+      const nickname = String(body.nickname || body.name || profile.display_name || "").trim() || "陪玩";
+      let companion = await companionProfile(profile.id);
+      const createdNewRow = !companion?.id;
+      if (!companion?.id) {
+        companion = await ensureCompanionRow(profile, null);
+      }
+      // Keep primary role as-is when already boss; only attach companion capability on same user_id.
+      const { addRoleToUser, enrichProfileRoles } = await import("./_account-roles.js");
+      const nextRoles = await addRoleToUser(profile.id, "companion", {
+        primaryRole: profile.role || "boss",
+        existingProfile: profile,
+        authUser,
+      });
+      // Application starts as draft/pending — never auto-approve.
+      if (companion?.id && createdNewRow) {
+        try {
+          await supabaseJson(restUrl("companion_profiles", `?id=eq.${encodeURIComponent(companion.id)}`), {
+            method: "PATCH",
+            headers: serviceHeaders(),
+            body: JSON.stringify({
+              nickname,
+              application_status: companion.application_status || "draft",
+              verification_status: companion.verification_status || "pending",
+              updated_at: nowIso(),
+            }),
+          });
+          companion = (await companionProfile(profile.id)) || companion;
+        } catch {
+          /* optional */
+        }
+      }
+      const enriched = await enrichProfileRoles({ ...profile, roles: nextRoles }, authUser);
+      // Echo client-held refresh token so apply-page uploads can auto-refresh after JWT TTL.
+      // Access token alone cannot mint a refresh token server-side.
+      const refreshToken = String(body.refreshToken || body.refresh_token || "").trim();
+      const expiresAt = body.expiresAt || body.expires_at || "";
+      // Optional invite redeem after companion capability exists (existing boss→companion apply).
+      let inviteRedeem = null;
+      const inviteCode = String(body.inviteCode || body.invite_code || body.code || "").trim();
+      if (inviteCode && (createdNewRow || companion?.id)) {
+        try {
+          const { redeemInviteAfterCompanionReady } = await import("./_boss-invite-links.js");
+          inviteRedeem = await redeemInviteAfterCompanionReady({
+            inviteCode,
+            inviteeId: profile.id,
+          });
+        } catch (inviteErr) {
+          console.warn("[companion/apply] invite redeem soft-fail:", inviteErr?.message || inviteErr);
+          inviteRedeem = { attempted: true, outcome: "error", detail: inviteErr?.message || "redeem_failed" };
+        }
+      }
+      return json(res, 200, {
+        ok: true,
+        message: createdNewRow
+          ? "已在当前账号下开通陪玩申请（未新建 User ID）。请继续填写资料并提交审核。"
+          : "当前账号已关联陪玩资料，可继续填写或查看审核进度。",
+        userId: profile.id,
+        sameUserId: true,
+        createdNewAuthUser: false,
+        roles: enriched.roles,
+        inviteRedeem: inviteRedeem || null,
+        playerStatus: normalizeProfileReviewStatus(companion || {}),
+        applicationStatus: String(companion?.application_status || "draft"),
+        companion: companion || null,
+        session: {
+          token,
+          accessToken: token,
+          refreshToken,
+          expiresAt,
+          user: safePlayer(enriched.profile || profile, companion || {}),
+        },
+      });
+    }
+    const auth = await requireCompanion(req);
+    const companion = auth.companion || await companionProfile(auth.profile.id) || {};
+    const isolated = isCompanionIsolated(auth.profile, companion);
+    if (isolated && !COMPANION_ISOLATION_ALLOWED_ACTIONS.has(action || "bootstrap")) {
+      return isolationForbiddenResponse(res, {
+        status: 403,
+        message: COMPANION_ISOLATION_MSG,
+        code: "COMPANION_ISOLATED",
+        applicationStatus: normalizeProfileReviewStatus(companion),
+        accountStatus: auth.profile.status || "",
+        companionEnabled: companionEnabled(companion),
+      });
+    }
+    if (req.method === "GET" && action === "bootstrap") return json(res,200,{ok:true,data:await bootstrapData(auth.profile, companion)});
+    // Apply-page deposit step: same SoT as companion workbench / submit_deposit_proof.
+    // Reads payment_channels when present, else platform_settings.paymentChannelsPublic.
+    if (
+      (req.method === "GET" || req.method === "POST") &&
+      (action === "deposit_pay_methods" || action === "deposit_channels" || action === "list_deposit_pay_methods")
+    ) {
+      try {
+        const listed = await listDepositPaymentMethods([]);
+        return json(res, 200, {
+          ok: true,
+          amountRm: Number(listed.amountRm || DEPOSIT_AMOUNT_RM) || DEPOSIT_AMOUNT_RM,
+          currency: "MYR",
+          tableReady: listed.tableReady !== false,
+          methods: listed.methods || [],
+          channels: listed.methods || [],
+          depositChannels: listed.methods || [],
+          emptyMessage:
+            !(listed.methods || []).length
+              ? "平台暂未配置押金收款方式，请联系客服。"
+              : "",
+        });
+      } catch (err) {
+        return json(res, 500, {
+          ok: false,
+          message: err?.message || "押金收款信息加载失败，请稍后重试。",
+          methods: [],
+          channels: [],
+          depositChannels: [],
+          emptyMessage: "平台暂未配置押金收款方式，请联系客服。",
+        });
+      }
+    }
+    if (req.method === "GET" && action === "inbox") {
+      const activeConversationId = String(req.query.conversation_id || req.query.conversationId || "").trim();
+      const light =
+        String(req.query.light || "").trim() === "1" ||
+        String(req.query.mode || "").trim().toLowerCase() === "light";
+      const includeActiveMessages =
+        String(req.query.include_messages || req.query.includeMessages || (light ? "0" : "1")).trim() !== "0";
+      try {
+        let slice = {
+          light,
+          includeActiveMessages,
+          activeConversationId,
+          skipDerivedNotices: light,
+        };
+        if (!light) {
+          const data = await bootstrapData(auth.profile, companion).catch(() => ({}));
+          slice = {
+            ...slice,
+            player: data.player,
+            verification: data.verification,
+            deposit: data.deposit,
+            myOrders: data.permissions?.isolationMode ? [] : data.myOrders,
+            withdrawals: data.permissions?.isolationMode ? [] : data.withdrawals,
+            popularity: data.permissions?.isolationMode ? null : data.popularity,
+            auditLocked: !data.permissions?.canWork || !!data.permissions?.isolationMode,
+            auditHint: data.permissions?.isolationMessage || data.permissions?.lockReason || "",
+          };
+        }
+        const inbox = await buildCompanionInbox(auth.profile, companion, slice);
+        return json(res, 200, { ok: true, data: inbox, inbox });
+      } catch (err) {
+        return json(res, 200, {
+          ok: true,
+          data: {
+            conversations: [
+              { id: "system", key: "system", type: "system", title: "系统通知", subtitle: "", lastMessage: "", unread: 0 },
+            ],
+            csConversations: [],
+            csConversationId: "",
+            messages: [],
+            systemNotices: [],
+            unreadTotal: 0,
+            unreadMessages: 0,
+            connectError: err.message || "客服连接失败",
+          },
+          message: err.message || "客服连接失败",
+        });
+      }
+    }
+    if (req.method === "GET" && (action === "my_gifts" || action === "received_gifts" || action === "gifts")) {
+      try {
+        const { listCompanionReceivedGifts, getCompanionGiftWall } = await import("./_gift-orders.js");
+        const companionId = String(auth.profile.id || companion?.user_id || "").trim();
+        const gifts = await listCompanionReceivedGifts(companionId, { limit: 100 });
+        const wall = await getCompanionGiftWall(companionId);
+        return json(res, 200, {
+          ok: true,
+          gifts: (gifts || []).map((g) => ({
+            id: g.id,
+            txNo: g.tx_no,
+            giftId: g.gift_id,
+            giftName: g.gift_name,
+            giftImage: g.gift_image_url || "",
+            quantity: Number(g.quantity || 1),
+            senderBossId: g.sender_boss_id,
+            createdAt: g.created_at,
+            giftOrderId: g.gift_order_id || "",
+          })),
+          wall,
+        });
+      } catch (err) {
+        return json(res, err.status || 500, { ok: false, message: err.message || "礼物加载失败" });
+      }
+    }
+
+    if (req.method === "GET" && (action === "thread" || action === "conversation_messages")) {
+      const conversationId = String(req.query.conversation_id || req.query.conversationId || "").trim();
+      try {
+        const thread = await loadCompanionThreadMessages(auth.profile, conversationId);
+        return json(res, 200, { ok: true, data: thread, messages: thread.messages, conversationId: thread.conversationId });
+      } catch (err) {
+        const status = Number(err?.status) || 500;
+        return json(res, status >= 400 && status < 600 ? status : 500, {
+          ok: false,
+          message: err.message || "会话消息加载失败",
+        });
+      }
+    }
+    if (req.method === "GET" && (action === "wallet" || action === "earnings")) {
+      try {
+        assertCompanionBusinessAccess(auth.profile, companion);
+      } catch (err) {
+        return isolationForbiddenResponse(res, err);
+      }
+      if (!auth.profile?.id) {
+        return json(res, 403, { ok: false, message: "profile_id 为空，无法查询钱包" });
+      }
+      let myOrders = [];
+      try {
+        const myRows = await supabaseJson(
+          restUrl("orders", `?companion_id=eq.${encodeURIComponent(auth.profile.id)}&order=created_at.desc&limit=200`),
+          { headers: serviceHeaders() }
+        ).catch(() => []);
+        myOrders = (Array.isArray(myRows) ? myRows : [])
+          .filter((row) => row.status !== "awaiting_payment")
+          .map((row) => viewOrder(row, {}, null));
+      } catch {
+        myOrders = [];
+      }
+      const wallet = await loadWalletBundle(auth.profile, myOrders);
+      const cfg = await financeSettings().catch(() => ({
+        min_withdraw_cat_food: 50,
+        max_withdrawals_per_month: 3,
+        cat_food_to_rm_rate: 1,
+        withdraw_fee_rm: 0,
+        withdraw_fee_percent: 0,
+      }));
+      const paymentAccounts = await companionDb(
+        "companion_payment_accounts",
+        `?user_id=eq.${encodeURIComponent(auth.profile.id)}&order=submitted_at.desc&limit=20`
+      ).catch(() => []);
+      const payment =
+        (paymentAccounts || []).find((a) => /approved|verified/.test(String(a.status || ""))) ||
+        null;
+      // Self wallet/earnings: full settlement account for the owner (same as bootstrap).
+      const approvedAccounts = (paymentAccounts || [])
+        .filter((a) => /approved|verified/.test(String(a.status || "")))
+        .map((a) => ({
+          id: a.id,
+          method: a.method || "",
+          bankName: a.bank_name || "",
+          accountHolder: a.account_name || "",
+          accountName: a.account_name || "",
+          bankAccount: a.bank_account || "",
+          tngAccount: a.tng_account || "",
+          alipayAccount: a.alipay_account || "",
+          paymentAccount: a.payment_account || a.bank_account || a.tng_account || a.alipay_account || "",
+          paymentPhone: a.payment_phone || a.tng_account || "",
+          accountLast4: a.account_last4 || maskBankAccount(a.bank_account || a.tng_account || a.alipay_account).slice(-4),
+          status: a.status,
+        }));
+      const usedThisMonth = (wallet.withdrawalRows || []).filter(
+        (w) =>
+          String(w.submitted_at || "").slice(0, 7) === monthKey() &&
+          !/rejected|cancelled/.test(String(w.status || ""))
+      ).length;
+      const monthlyLimit = Number(cfg.max_withdrawals_per_month || 3);
+      return json(res, 200, {
+        ok: true,
+        data: {
+          profileId: auth.profile.id,
+          companionId: companion.id || null,
+          summary: wallet.summary,
+          earnings: wallet.earnings,
+          walletLedger: wallet.walletLedger,
+          earningDetails: wallet.earningDetails,
+          withdrawals: await Promise.all((wallet.withdrawalRows || []).map((w) => viewCompanionWithdrawal(w))),
+          withdrawalRules: {
+            monthlyLimit,
+            usedThisMonth,
+            remainingThisMonth: Math.max(0, monthlyLimit - usedThisMonth),
+            minAmount: money(cfg.min_withdraw_cat_food),
+            exchangeRate: money(cfg.cat_food_to_rm_rate) || 1,
+            feeRm: 0.8,
+            feePercent: 0,
+            currentAccount: payment ? formatSettlementAccountLabel(payment) : "",
+          currentAccountMasked: payment
+            ? formatSettlementAccountMasked(payment, maskBankAccount)
+            : "",
+            approvedAccounts,
+          },
+          warnings: wallet.warnings || [],
+        },
+      });
+    }
+    if (req.method === "GET" && action === "get_settlement") {
+      try {
+        assertCompanionBusinessAccess(auth.profile, companion);
+      } catch (err) {
+        return isolationForbiddenResponse(res, err);
+      }
+      const orderId = String(req.query.id || req.query.order_id || "").trim();
+      if (!orderId) return json(res, 400, { ok: false, message: "缺少订单 ID" });
+      const txs = await transactionsFor(auth.profile.id);
+      const tx = txs.find((t) => t.order_id === orderId && t.transaction_type === "companion_income");
+      const settlement = tx ? parseSettlementNote(tx.note) : null;
+      if (!settlement) return json(res, 404, { ok: false, message: "未找到该订单的结算详情" });
+      return json(res, 200, { ok: true, settlement, transactionId: tx.id });
+    }
+    if (req.method !== "POST") return json(res,405,{ok:false,message:"Method Not Allowed"});
+    const body = await parseBody(req);
+    if (action === "accept_order") {
+      const orderId = String(body.id || body.orderId || body.order_id || "").trim();
+      if (orderId) {
+        try {
+          const beforeRows = await supabaseJson(restUrl("orders", `?id=eq.${encodeURIComponent(orderId)}&select=id,boss_id,status,companion_id&limit=1`), {
+            headers: serviceHeaders(),
+          });
+          const before = beforeRows?.[0];
+          if (before) {
+            const { assertNotSelfTrade } = await import("./_account-roles.js");
+            assertNotSelfTrade(before.boss_id, auth.profile.id, "抢自己的订单");
+          }
+        } catch (selfErr) {
+          if ((selfErr?.code === "SELF_ORDER_NOT_ALLOWED" || selfErr?.code === "SELF_TRADE_FORBIDDEN")) {
+            return json(res, selfErr.status || 403, {
+              ok: false,
+              code: selfErr.code,
+              message: selfErr.message,
+            });
+          }
+          /* continue to normal path for load errors */
+        }
+      }
+      try {
+        assertCompanionBusinessAccess(auth.profile, companion || {});
+      } catch (err) {
+        return isolationForbiddenResponse(res, err);
+      }
+      try {
+        await assertCompanionOrderEligibility(auth.profile, companion || {});
+      } catch (err) {
+        return json(res, err.status || 403, {
+          ok: false,
+          message: err.message || COMPANION_AUTH_LOCK_MSG,
+          code: err.code || "COMPANION_AUTH_LOCKED",
+          access: err.access || null,
+        });
+      }
+      try {
+        await (await import("./_content-acks.js")).assertCompanionCanWork(auth.profile.id);
+      } catch (err) {
+        return json(res, err.status || 403, {
+          ok: false,
+          message: err.message || "请先确认强制公告",
+          code: err.code || "FORCED_ACK_REQUIRED",
+          pending: err.pending || [],
+        });
+      }
+      const order = await claimOrder(auth.profile, companion, orderId);
+      const already = !!order._already;
+      return json(res, 200, {
+        ok: true,
+        message: already ? "你已抢过该单，请等待老板选择。" : "已抢单，等待老板选择。",
+        order: viewOrder({ ...order, companion_id: null, status: order.status || "waiting_boss_confirm" }),
+        grab: order._grab || null,
+        already,
+        // Explicit: grab is NOT formal accept / NOT startable.
+        formalAccepted: false,
+        canStart: false,
+      });
+    }
+    if (action === "accept_direct_order" || action === "accept_direct") {
+      try {
+        assertCompanionBusinessAccess(auth.profile, companion || {});
+      } catch (err) {
+        return isolationForbiddenResponse(res, err);
+      }
+      try {
+        await assertCompanionOrderEligibility(auth.profile, companion || {});
+      } catch (err) {
+        return json(res, err.status || 403, {
+          ok: false,
+          message: err.message || COMPANION_AUTH_LOCK_MSG,
+          code: err.code || "COMPANION_AUTH_LOCKED",
+          access: err.access || null,
+        });
+      }
+      try {
+        await (await import("./_content-acks.js")).assertCompanionCanWork(auth.profile.id);
+      } catch (err) {
+        return json(res, err.status || 403, {
+          ok: false,
+          message: err.message || "请先确认强制公告",
+          code: err.code || "FORCED_ACK_REQUIRED",
+          pending: err.pending || [],
+        });
+      }
+      const id = String(body.id || "");
+      const name = String(auth.profile.display_name || companion.nickname || "陪玩").trim() || "陪玩";
+      const beforeRows = await supabaseJson(restUrl("orders", `?id=eq.${encodeURIComponent(id)}&companion_id=eq.${encodeURIComponent(auth.profile.id)}&limit=1`), { headers: serviceHeaders() });
+      const before = beforeRows?.[0];
+      if (!before) return json(res, 409, { ok: false, message: "当前订单不能确认接单" });
+      if (before.status === "in_progress" || before.status === "confirmed") {
+        const lockedByUs = String(before.note || "").includes("[[ACCEPT_PAY_LOCK]]");
+        if (before.status === "in_progress" || (before.status === "confirmed" && !lockedByUs)) {
+          if (before.status === "in_progress") {
+            return json(res, 200, { ok: true, duplicate: true, message: "已确认接单，订单进入进行中", order: viewOrder(before) });
+          }
+          return json(res, 409, { ok: false, message: "当前订单不能确认接单" });
+        }
+      } else if (before.status !== "claimed") {
+        return json(res, 409, { ok: false, message: "当前订单不能确认接单" });
+      }
+      // Multi / manual rails: refuse companion confirm if CS never approved payment.
+      try {
+        const gates = await import("./_payment-gates.js");
+        let gateOrder = before;
+        if (before.parent_order_id) {
+          const parents = await supabaseJson(
+            restUrl("orders", `?id=eq.${encodeURIComponent(before.parent_order_id)}&select=*&limit=1`),
+            { headers: serviceHeaders() }
+          );
+          if (parents?.[0]) gateOrder = parents[0];
+        }
+        const receiptIds = [gateOrder.id, before.id].filter(Boolean);
+        const receipts = await supabaseJson(
+          restUrl(
+            "payment_receipts",
+            `?order_id=in.(${receiptIds.map(encodeURIComponent).join(",")})&select=*&limit=40`
+          ),
+          { headers: serviceHeaders() }
+        ).catch(() => []);
+        gates.assertCsApprovedBeforeCompanionStage(gateOrder, receipts || [], { toStatus: "in_progress" });
+      } catch (gateErr) {
+        if (gateErr?.code === "CS_APPROVAL_REQUIRED") {
+          return json(res, gateErr.status || 409, {
+            ok: false,
+            message: gateErr.message,
+            code: gateErr.code,
+          });
+        }
+      }
+      // Discord voice orders: companion must bind Discord before accept.
+      try {
+        const voiceMode = String(before.voice_mode || "game_mic").trim() || "game_mic";
+        if (voiceMode === "discord") {
+          const discordVoice = await import("./_discord-voice-orders.js");
+          if (discordVoice.discordConfigured()) {
+            const link = await discordVoice.getDiscordLink(auth.profile.id);
+            if (!link?.discord_user_id) {
+              return json(res, 409, {
+                ok: false,
+                code: "DISCORD_BIND_REQUIRED",
+                message: "本单使用 Discord 私人语音房，请先连接 Discord 后再确认接单。",
+                oauthStartUrl: "/api/discord/oauth-start",
+                order: viewOrder(before),
+              });
+            }
+          }
+        }
+      } catch (discordErr) {
+        console.warn("[companion/accept] discord gate", String(discordErr?.message || discordErr).slice(0, 160));
+      }
+      const now = nowIso();
+      const payApi = await import("./_order-payment-facts.js");
+      const payFacts = await payApi.loadOrderMoneyFacts(before);
+      const mustCharge = payApi.needsProxyCharge(before, payFacts) || String(before.note || "").includes("[[ACCEPT_PAY_LOCK]]");
+      async function casOwn(fromStatus, patch) {
+        const rows = await supabaseJson(
+          restUrl("orders", `?id=eq.${encodeURIComponent(id)}&companion_id=eq.${encodeURIComponent(auth.profile.id)}&status=eq.${encodeURIComponent(fromStatus)}`),
+          { method: "PATCH", headers: serviceHeaders(), body: JSON.stringify(patch) }
+        );
+        return Array.isArray(rows) ? rows[0] || null : null;
+      }
+      let order;
+      let chargedNow = false;
+      if (mustCharge) {
+        let working = before;
+        if (working.status === "claimed") {
+          const note = `${String(working.note || "").trim()}\n[[ACCEPT_PAY_LOCK]]`.trim();
+          const locked = await casOwn("claimed", { status: "confirmed", accepted_at: now, note }).catch(() => null);
+          if (!locked) {
+            const again = (await supabaseJson(restUrl("orders", `?id=eq.${encodeURIComponent(id)}&limit=1`), { headers: serviceHeaders() }))?.[0];
+            if (again?.status === "in_progress") {
+              return json(res, 200, { ok: true, duplicate: true, message: "已确认接单，订单进入进行中", order: viewOrder(again) });
+            }
+            if (again?.status !== "confirmed" || !String(again.note || "").includes("[[ACCEPT_PAY_LOCK]]")) {
+              return json(res, 409, { ok: false, message: "订单状态已变化，请刷新后重试。" });
+            }
+            working = again;
+          } else {
+            working = locked;
+          }
+        }
+        const charge = await payApi.chargeProxyOrderOnConfirm(working, { operatorId: auth.profile.id });
+        if (!charge.ok) {
+          await casOwn("confirmed", { status: "claimed" }).catch(() => null);
+          return json(res, 400, {
+            ok: false,
+            code: charge.code || "PAYMENT_FAILED",
+            message: charge.message || "老板余额不足，付款失败，订单未成立。",
+          });
+        }
+        chargedNow = !!charge.charged;
+        const payAmount = charge.amount || money(working.total_amount);
+        const paidPatch = {
+          status: "in_progress",
+          accepted_at: working.accepted_at || now,
+          started_at: now,
+          paid_at: now,
+          paid_cat_food: payAmount,
+        };
+        order = await casOwn("confirmed", paidPatch).catch(async (err) => {
+          if (/paid_at|paid_cat_food|column|schema cache|PGRST/i.test(String(err?.message || err))) {
+            return casOwn("confirmed", { status: "in_progress", accepted_at: working.accepted_at || now, started_at: now });
+          }
+          throw err;
+        });
+        if (!order) {
+          const latest = (await supabaseJson(restUrl("orders", `?id=eq.${encodeURIComponent(id)}&limit=1`), { headers: serviceHeaders() }))?.[0];
+          if (latest?.status === "in_progress") {
+            order = latest;
+          } else {
+            const { creditWallet } = await import("./_wallet.js");
+            await creditWallet({
+              bossId: working.boss_id,
+              transactionType: "order_refund",
+              amount: payAmount,
+              balanceType: "paid",
+              idempotencyKey: `order-accept-pay-revert:${working.order_no || working.id}`,
+              reason: `接单未完成，撤销扣款 ${working.order_no || working.id}`,
+              relatedOrderId: working.id,
+              operatorId: auth.profile.id,
+            }).catch(() => null);
+            await casOwn("confirmed", { status: "claimed" }).catch(() => null);
+            return json(res, 409, { ok: false, code: "ACCEPT_ABORTED", message: "接单未完成，已撤销本次扣款。" });
+          }
+        }
+        await writeOrderStatusLog(
+          { restUrl, supabaseJson, serviceHeaders },
+          { orderId: id, fromStatus: "confirmed", toStatus: "in_progress", operatorRole: "companion", operatorId: auth.profile.id, note: `accept_direct pay ${payAmount}` }
+        ).catch(() => {});
+        await addSystemMessage(order, auth.profile.id, "companion", `陪玩 ${name} 已确认接单，已扣除老板 ${payAmount} 猫粮，订单进入进行中。`).catch(() => {});
+      } else {
+        order = await patchOwnOrder(
+          auth.profile,
+          id,
+          "claimed",
+          { status: "in_progress", accepted_at: now, started_at: now },
+          `陪玩 ${name} 已确认接单，订单进入进行中。`
+        );
+      }
+
+      try {
+        const { notifyBossOrderEvent } = await import("./_boss-order-notify.js");
+        await notifyBossOrderEvent(order, {
+          title: "陪玩已接单",
+          body: "陪玩已确认接单，订单进行中。",
+          kind: "order_accepted",
+        });
+      } catch (err) {
+        console.warn("[companion/accept_direct] boss push", err?.message || err);
+      }
+      // Multi child accept → refresh parent aggregate; never reset siblings.
+      if (order?.parent_order_id) {
+        try {
+          const partial = await import("./_multi-order-partial.js");
+          await partial.refreshParentWithDeps(order.parent_order_id, { restUrl, supabaseJson, serviceHeaders });
+        } catch (err) {
+          console.warn("[companion/accept_direct] parent refresh", err?.message || err);
+        }
+      }
+      // Discord: create/join private voice room after confirm (never fail the accept).
+      let discordVoiceResult = null;
+      try {
+        if (String(order?.voice_mode || before?.voice_mode || "") === "discord") {
+          const discordVoice = await import("./_discord-voice-orders.js");
+          discordVoiceResult = await discordVoice.ensureOrderVoiceChannel(order, {
+            companionUserId: auth.profile.id,
+          });
+        }
+      } catch (err) {
+        console.warn("[companion/accept_direct] discord room", err?.message || err);
+      }
+      return json(res, 200, {
+        ok: true,
+        message: "已确认接单，订单进入进行中",
+        order: viewOrder(order),
+        discordVoice: discordVoiceResult,
+      });
+    }
+    if (action === "reject_direct_order") {
+      try {
+        assertCompanionBusinessAccess(auth.profile, companion || {});
+      } catch (err) {
+        return isolationForbiddenResponse(res, err);
+      }
+      const id = String(body.id || "");
+      const reasonRaw = String(body.reason || body.reject_reason || body.payload?.reason || "").trim();
+      const reason = REJECT_REASONS.includes(reasonRaw) ? reasonRaw : (reasonRaw ? "其他原因" : "");
+      if (!reason) return json(res, 400, { ok: false, message: "请选择无法接单的原因", reasons: REJECT_REASONS });
+      const beforeRows = await supabaseJson(restUrl("orders", `?id=eq.${encodeURIComponent(id)}&companion_id=eq.${encodeURIComponent(auth.profile.id)}&limit=1`), { headers: serviceHeaders() });
+      const before = beforeRows?.[0];
+      const appointmentHallBlock = (await import("./appointments.js")).appointmentOrderBlocked(before, "reject_direct_order");
+      if (appointmentHallBlock) return json(res, appointmentHallBlock.status, { ok: false, message: appointmentHallBlock.message });
+      if (!before || before.status !== "claimed") return json(res, 409, { ok: false, message: "当前订单不能拒绝" });
+      const name = String(auth.profile.display_name || companion.nickname || "陪玩").trim() || "陪玩";
+
+      // Multi-group child: soft-exit (cancelled + keep companion/parent) — do NOT open public hall.
+      if (before.parent_order_id) {
+        const partial = await import("./_multi-order-partial.js");
+        const { notifyBossOrderEvent } = await import("./_boss-order-notify.js");
+        const result = await partial.softExitMultiChildOrder(before, {
+          reason,
+          companionId: auth.profile.id,
+          companionName: name,
+          deps: {
+            restUrl,
+            supabaseJson,
+            serviceHeaders,
+            writeOrderStatusLog: (payload) =>
+              writeOrderStatusLog({ restUrl, supabaseJson, serviceHeaders }, payload),
+            refreshParent: (parentId) =>
+              partial.refreshParentWithDeps(parentId, { restUrl, supabaseJson, serviceHeaders }),
+            notifyBoss: (order, opts) => notifyBossOrderEvent(order, opts),
+            addSystemMessage,
+          },
+        });
+        scheduleRecomputeSoft();
+        return json(res, 200, {
+          ok: true,
+          message: "已提交无法接单。老板可重新选择陪玩或只保留其余陪玩继续。",
+          softExit: true,
+          code: "MULTI_CHILD_SOFT_EXIT",
+          order: viewOrder(result.order || before),
+          parentRefresh: result.parentRefresh || null,
+          reasons: REJECT_REASONS,
+        });
+      }
+
+      const { isGameplayNoTakerOrder, stampHallOpenNote } = await import("./_order-confirm-timeout.js");
+      const noTakerRule = isGameplayNoTakerOrder(before);
+      const rejectNote = `陪玩无法接单|原因:${reason}|原陪玩:${auth.profile.id}|${nowIso()}`;
+      const note = noTakerRule ? stampHallOpenNote(rejectNote) : rejectNote;
+      // Legacy standalone: Reject designated → reopen as public hall for CS re-assign / public grab.
+      // Staging schema may lack cancel_reason / assignment_type / order_type — try progressively.
+      const rejectAttempts = [
+        {
+          companion_id: null,
+          status: "pending",
+          accepted_at: null,
+          assignment_type: "public",
+          order_type: "open_grab",
+          note,
+        },
+        {
+          companion_id: null,
+          status: "pending",
+          accepted_at: null,
+          note,
+        },
+        {
+          companion_id: null,
+          status: "pending",
+          accepted_at: null,
+        },
+      ];
+      let rows = null;
+      let lastErr = null;
+      for (const patch of rejectAttempts) {
+        try {
+          rows = await supabaseJson(
+            restUrl("orders", `?id=eq.${encodeURIComponent(id)}&companion_id=eq.${encodeURIComponent(auth.profile.id)}&status=eq.claimed`),
+            {
+              method: "PATCH",
+              headers: serviceHeaders(),
+              body: JSON.stringify(patch),
+            }
+          );
+          if (rows?.[0] || Array.isArray(rows)) break;
+        } catch (err) {
+          lastErr = err;
+          if (!/PGRST204|schema cache|column|Could not find/i.test(String(err?.message || err || ""))) throw err;
+        }
+      }
+      if (!rows?.[0] && lastErr) throw lastErr;
+      const saved = rows?.[0] || { ...before, companion_id: null, status: "pending", assignment_type: "public", note };
+      await writeOrderStatusLog(
+        { restUrl, supabaseJson, serviceHeaders },
+        {
+          orderId: id,
+          fromStatus: before.status,
+          toStatus: "pending",
+          operatorRole: "companion",
+          operatorId: auth.profile.id,
+          note: `reject_direct: ${reason}`,
+        }
+      );
+      await addSystemMessage(
+        { ...saved, companion_id: null },
+        auth.profile.id,
+        "companion",
+        noTakerRule
+          ? `陪玩 ${name} 无法接单（${reason}）。订单 ${before.order_no || before.id} 已转入抢单大厅，30分钟内无人接单将自动全额退回猫粮余额。`
+          : `陪玩 ${name} 无法接单（${reason}）。订单 ${before.order_no || before.id} 状态：陪玩无法接单，等待重新安排。请客服更换陪玩、推送抢单、联系老板或发起退款。`,
+        { needsCs: !noTakerRule }
+      );
+      if (noTakerRule) {
+        try {
+          const { createGrabListingHelpers } = await import("./_order-grab-listings.js");
+          await createGrabListingHelpers({ restUrl, supabaseJson, serviceHeaders }).upsertListing(
+            { ...before, ...saved, companion_id: null },
+            { publishedByCsId: null, reason: "gameplay_companion_reject" }
+          );
+        } catch (err) {
+          console.warn("[companion/reject_direct] listing", err?.message || err);
+        }
+      }
+      try {
+        const { notifyBossOrderEvent } = await import("./_boss-order-notify.js");
+        await notifyBossOrderEvent(
+          { ...before, ...saved, boss_id: before.boss_id },
+          {
+            title: "当前陪玩无法接单",
+            body: noTakerRule
+              ? "当前陪玩无法接单，订单已转入抢单大厅；30分钟内无人接单将自动全额退回猫粮余额。"
+              : "当前陪玩无法接单，请重新选择陪玩。",
+            kind: "order_companion_unavailable",
+          }
+        );
+      } catch (err) {
+        console.warn("[companion/reject_direct] boss push", err?.message || err);
+      }
+      scheduleRecomputeSoft();
+      return json(res, 200, {
+        ok: true,
+        message: noTakerRule ? "已提交无法接单，订单已转入抢单大厅" : "已提交无法接单，订单已交由客服重新安排",
+        order: viewOrder(saved),
+        reasons: REJECT_REASONS,
+      });
+    }
+    if (action === "start_order") {
+      try {
+        assertCompanionBusinessAccess(auth.profile, companion || {});
+      } catch (err) {
+        return isolationForbiddenResponse(res, err);
+      }
+      try {
+        await assertCompanionOrderEligibility(auth.profile, companion || {});
+      } catch (err) {
+        return json(res, err.status || 403, {
+          ok: false,
+          message: err.message || COMPANION_AUTH_LOCK_MSG,
+          code: err.code || "COMPANION_AUTH_LOCKED",
+          access: err.access || null,
+        });
+      }
+      try {
+        await (await import("./_content-acks.js")).assertCompanionCanWork(auth.profile.id);
+      } catch (err) {
+        return json(res, err.status || 403, {
+          ok: false,
+          message: err.message || "请先确认强制公告",
+          code: err.code || "FORCED_ACK_REQUIRED",
+          pending: err.pending || [],
+        });
+      }
+      const orderId = String(body.id || "");
+      const beforeRows = await supabaseJson(
+        restUrl("orders", `?id=eq.${encodeURIComponent(orderId)}&companion_id=eq.${encodeURIComponent(auth.profile.id)}&limit=1`),
+        { headers: serviceHeaders() }
+      );
+      const before = beforeRows?.[0];
+      if (!before) return json(res, 404, { ok: false, message: "订单不存在。" });
+      // Already started by accept_direct (claimed → in_progress): idempotent OK.
+      if (before.status === "in_progress") {
+return json(res, 200, {
+          ok: true,
+          message: "订单已在进行中。",
+          order: viewOrder(before),
+          already: true,
+        });
+      }
+      // Legacy confirmed hop still supported.
+      if (before.status !== "confirmed") {
+        return json(res, 409, {
+          ok: false,
+          message:
+            before.status === "waiting_boss_confirm" || before.status === "pending"
+              ? "老板尚未确认人选，不能开始订单。"
+              : before.status === "claimed"
+                ? "请先确认接单。"
+                : "当前订单状态不能开始服务。",
+        });
+      }
+      const order = await patchOwnOrder(
+        auth.profile,
+        orderId,
+        "confirmed",
+        { status: "in_progress", started_at: nowIso() },
+        "陪玩已开始服务。"
+      );
+      let reward = null;
+      try {
+        reward = await (await import("./_cs-commission-settle.js")).settleCsOrderIncome(
+          { ...before, ...order, status: "in_progress" },
+          { source: "companion_start" }
+        );
+      } catch (_) {}
+      
+      try {
+        const { notifyBossOrderEvent } = await import("./_boss-order-notify.js");
+        await notifyBossOrderEvent(order, {
+          title: "陪玩已开始服务",
+          body: "陪玩已开始服务。",
+          kind: "order_started",
+        });
+      } catch (err) {
+        console.warn("[companion/start_order] boss push", err?.message || err);
+      }
+      return json(res, 200, {
+        ok: true,
+        message: "已开始服务，订单进入进行中。",
+        order: viewOrder(order),
+        reward,
+      });
+    }
+    if (action === "complete_order" || action === "confirm_complete") {
+      try {
+        assertCompanionBusinessAccess(auth.profile, companion || {});
+      } catch (err) {
+        return isolationForbiddenResponse(res, err);
+      }
+      const orderId = String(body.id || "");
+      const existingTx = (await transactionsFor(auth.profile.id)).find(
+        (t) => t.order_id === orderId && t.transaction_type === "companion_income" && t.status !== "cancelled"
+      );
+      if (existingTx) {
+        const settlement = parseSettlementNote(existingTx.note) || null;
+return json(res, 200, {
+          ok: true,
+          message: "订单已结算",
+          order: { id: orderId, status: "completed" },
+          settlement,
+          transactionId: existingTx.id,
+        });
+      }
+      const beforeRows = await supabaseJson(
+        restUrl("orders", `?id=eq.${encodeURIComponent(orderId)}&companion_id=eq.${encodeURIComponent(auth.profile.id)}&limit=1`),
+        { headers: serviceHeaders() }
+      );
+      const before = beforeRows?.[0];
+      if (!before) return json(res, 404, { ok: false, message: "订单不存在。" });
+      if (before.status !== "in_progress") {
+        return json(res, 409, { ok: false, message: "当前订单状态不能完成。" });
+      }
+      const { createOrderGrabHelpers } = await import("./_order-grabs.js");
+      const grabsApi = createOrderGrabHelpers({ restUrl, supabaseJson, serviceHeaders });
+      if (grabsApi.orderHasCompletionPending(before)) {
+        // Backfill request timestamp for legacy pending rows (required for 24h auto-confirm).
+        await grabsApi.markCompletionPending(before);
+        const refreshed = (
+          await supabaseJson(
+            restUrl("orders", `?id=eq.${encodeURIComponent(orderId)}&companion_id=eq.${encodeURIComponent(auth.profile.id)}&limit=1`),
+            { headers: serviceHeaders() }
+          )
+        )?.[0] || before;
+        return json(res, 200, {
+          ok: true,
+          message: "已申请完成，等待老板确认。",
+          order: viewOrder(refreshed),
+          awaitingBossConfirm: true,
+        });
+      }
+      await grabsApi.markCompletionPending(before);
+      const afterRows = await supabaseJson(
+        restUrl("orders", `?id=eq.${encodeURIComponent(orderId)}&companion_id=eq.${encodeURIComponent(auth.profile.id)}&limit=1`),
+        { headers: serviceHeaders() }
+      );
+      const saved = afterRows?.[0] || before;
+      await addSystemMessage(saved, auth.profile.id, "companion", "陪玩已完成服务，请确认订单。若老板 24 小时内未确认且无售后/争议，系统将自动确认完成。");
+      
+      try {
+        const { notifyBossOrderEvent } = await import("./_boss-order-notify.js");
+        await notifyBossOrderEvent(saved, {
+          title: "请确认订单",
+          body: "陪玩已完成服务，请确认订单。",
+          kind: "order_complete_requested",
+        });
+      } catch (err) {
+        console.warn("[companion/complete_order] boss push", err?.message || err);
+      }
+      return json(res, 200, {
+        ok: true,
+        message: "已提交完成申请，等待老板确认后结算。",
+        order: viewOrder(saved),
+        awaitingBossConfirm: true,
+      });
+    }
+    if (action === "acknowledge_forced" || action === "ack_forced_announcement") {
+      const contentId = String(body.content_id || body.contentId || body.id || "").trim();
+      const contentVersion = String(body.content_version || body.contentVersion || body.version || "1").trim() || "1";
+      const contentType = String(body.content_type || body.contentType || "announcement").trim() || "announcement";
+      if (!contentId) return json(res, 400, { ok: false, message: "缺少内容 ID" });
+      const acks = await import("./_content-acks.js");
+      const pending = await acks.pendingForcedForUser(auth.profile.id, { audience: "companion" });
+      const match = pending.find(
+        (p) =>
+          String(p.id) === contentId &&
+          String(p.version) === contentVersion &&
+          (!p.contentType || p.contentType === contentType || contentType === "announcement")
+      );
+      const forced = contentType === "announcement" ? await acks.listActiveForcedAnnouncements({ audience: "companion" }) : [];
+      const row = forced.find((f) => String(f.id) === contentId) || match;
+      if (!row && !match) return json(res, 404, { ok: false, message: "强制内容不存在或已停用" });
+      const ver = contentVersion || String(row?.content_version || match?.version || 1);
+      const type = match?.contentType || contentType || "announcement";
+      const ip = String(req.headers["x-forwarded-for"] || req.headers["x-real-ip"] || "").split(",")[0].trim();
+      const saved = await acks.acknowledgeContent({
+        userId: auth.profile.id,
+        contentType: type,
+        contentId,
+        contentVersion: ver,
+        effectiveAt: row?.start_at || match?.publishedAt || "",
+        contentUpdatedAt: row?.updated_at || match?.updatedAt || "",
+        ip,
+        userAgent: String(req.headers["user-agent"] || ""),
+      });
+      const still = await acks.pendingForcedForUser(auth.profile.id, { audience: "companion" });
+      return json(res, 200, {
+        ok: true,
+        message: "已确认阅读强制公告",
+        ack: saved,
+        pendingForced: still,
+        forcedAckRequired: still.length > 0,
+      });
+    }
+    if (action === "pending_forced") {
+      const pending = await (await import("./_content-acks.js")).pendingForcedForUser(auth.profile.id, { audience: "companion" });
+      return json(res, 200, { ok: true, pendingForced: pending, forcedAckRequired: pending.length > 0 });
+    }
+    if (action === "set_online_status") {
+      const allowed = new Set(["online", "busy", "paused", "offline"]);
+      const raw = String(body.online_status || body.availability_status || body.status || "offline").toLowerCase();
+      const status = allowed.has(raw) ? raw : "offline";
+      if (auth.profile.status !== "active") return json(res, 403, { ok: false, message: "账号已停用，不能接单" });
+      try {
+        assertCompanionBusinessAccess(auth.profile, companion || {});
+      } catch (err) {
+        return isolationForbiddenResponse(res, err);
+      }
+      try {
+        await assertCompanionOrderEligibility(auth.profile, companion || {});
+      } catch (err) {
+        return json(res, err.status || 403, {
+          ok: false,
+          message: err.message || COMPANION_AUTH_LOCK_MSG,
+          code: err.code || "COMPANION_AUTH_LOCKED",
+          access: err.access || null,
+        });
+      }
+      if (status === "online" || status === "busy") {
+        try {
+          await (await import("./_content-acks.js")).assertCompanionCanWork(auth.profile.id);
+        } catch (err) {
+          return json(res, err.status || 403, {
+            ok: false,
+            message: err.message || "请先确认强制公告",
+            code: err.code || "FORCED_ACK_REQUIRED",
+            pending: err.pending || [],
+          });
+        }
+      }
+      const patch = {
+        online_status: status,
+        availability_status: status,
+        status_updated_at: nowIso(),
+        updated_at: nowIso(),
+      };
+      if (status !== "offline") patch.last_online_at = nowIso();
+      try {
+        const rows = await supabaseJson(restUrl("companion_profiles", `?user_id=eq.${encodeURIComponent(auth.profile.id)}`), {
+          method: "PATCH",
+          headers: serviceHeaders(),
+          body: JSON.stringify(patch),
+        });
+        await recordOnlineSession(auth.profile.id, status);
+        return json(res, 200, {
+          ok: true,
+          message: ({ online: "已设为在线可接单", busy: "已设为忙碌", paused: "已暂停接单", offline: "已离线" })[status],
+          onlineStatus: status,
+          onlineStatusLabel: statusLabel(status),
+          profile: rows?.[0] || null,
+        });
+      } catch (e) {
+        const rows = await supabaseJson(restUrl("companion_profiles", `?user_id=eq.${encodeURIComponent(auth.profile.id)}`), {
+          method: "PATCH",
+          headers: serviceHeaders(),
+          body: JSON.stringify({ online_status: status, updated_at: nowIso() }),
+        });
+        await recordOnlineSession(auth.profile.id, status);
+        return json(res, 200, {
+          ok: true,
+          message: ({ online: "已设为在线可接单", busy: "已设为忙碌", paused: "已暂停接单", offline: "已离线" })[status],
+          onlineStatus: status,
+          onlineStatusLabel: statusLabel(status),
+          profile: rows?.[0] || null,
+        });
+      }
+    }
+    if (action === "save_service_standard") {
+      const serviceId = String(body.serviceId || body.service_id || "").trim();
+      if (!serviceId) return json(res, 400, { ok: false, message: "请选择服务项目", field: "serviceId" });
+      const servicesBundle = await loadPublicServices().catch(() => ({ services: [] }));
+      const svc = (Array.isArray(servicesBundle?.services) ? servicesBundle.services : []).find(
+        (s) => String(s.id) === serviceId
+      );
+      if (!svc) return json(res, 400, { ok: false, message: "服务项目不存在或已下架", field: "serviceId" });
+      try {
+        const saved = await saveCompanionServiceStandard(auth.profile.id, {
+          serviceId,
+          name: svc.name || svc.title || "",
+          standard: body.standard || body,
+          rank: body.rank !== undefined ? body.rank : body.standard?.rank,
+        });
+        return json(res, 200, {
+          ok: true,
+          message: saved.standard ? "服务标准 / 段位已保存，老板可查看" : "已清空该项目的服务标准",
+          serviceId,
+          standard: saved.standard,
+          serviceStandards: saved.standards,
+        });
+      } catch (e) {
+        return json(res, e.status || 500, { ok: false, code: e.code || "", message: e.message || "保存失败" });
+      }
+    }
+    if (action === "update_profile") {
+      if (body.privacy_only) {
+        const privacyContact = String(body.contact_phone || body.phone || "").trim();
+        if (!privacyContact) return json(res, 400, { ok: false, message: "请填写联系方式", field: "contact_phone" });
+        await patchCompanionProfile(`?user_id=eq.${encodeURIComponent(auth.profile.id)}`, {
+          contact_phone: privacyContact,
+          updated_at: nowIso(),
+        });
+        try {
+          await supabaseJson(restUrl("profiles", `?id=eq.${encodeURIComponent(auth.profile.id)}`), {
+            method: "PATCH",
+            headers: serviceHeaders(),
+            body: JSON.stringify({ phone: privacyContact }),
+          });
+        } catch {
+          /* optional */
+        }
+        return json(res, 200, { ok: true, message: "联系方式已保存（仅自己/客服/后台可见）" });
+      }
+
+      const nickname = String(body.nickname || "").trim();
+      const ageNum = body.age === "" || body.age == null ? null : Number(body.age);
+      const gender = String(body.gender || "").trim();
+      const region = String(body.region || "").trim();
+      const contactProvided = body.contact_phone != null || body.phone != null;
+      const contact = contactProvided ? String(body.contact_phone || body.phone || "").trim() : "";
+      const gameId = String(body.game_id || "").trim();
+      if (!nickname) return json(res, 400, { ok: false, message: "请填写昵称", field: "nickname" });
+      if (!Number.isFinite(ageNum) || ageNum < 18 || ageNum > 60) return json(res, 400, { ok: false, message: "年龄须为 18–60 的数字", field: "age" });
+      if (!["男", "女", "不公开"].includes(gender)) return json(res, 400, { ok: false, message: "请选择性别", field: "gender" });
+      if (!region) return json(res, 400, { ok: false, message: "请填写地区", field: "region" });
+      if (contactProvided && !contact) return json(res, 400, { ok: false, message: "请填写联系方式", field: "contact_phone" });
+      if (!gameId) return json(res, 400, { ok: false, message: "请填写游戏 ID", field: "game_id" });
+
+      const servicesBundle = await loadPublicServices().catch(() => ({ services: [] }));
+      const catalog = Array.isArray(servicesBundle?.services) ? servicesBundle.services : [];
+      const byId = new Map(catalog.map((s) => [String(s.id), s]));
+      const byName = new Map(catalog.map((s) => [String(s.name || s.title || "").trim(), s]));
+
+      let serviceIds = [];
+      if (Array.isArray(body.service_ids) || Array.isArray(body.serviceIds)) {
+        serviceIds = parseServiceIds(body.service_ids || body.serviceIds);
+      } else if (body.service_ids != null || body.serviceIds != null) {
+        serviceIds = parseServiceIds(body.service_ids || body.serviceIds);
+      }
+      const selectedNamesFromBody = splitGames(body.main_game || body.game || "");
+      if (!serviceIds.length && selectedNamesFromBody.length) {
+        serviceIds = selectedNamesFromBody
+          .map((name) => byName.get(name)?.id)
+          .filter(Boolean)
+          .map(String);
+      }
+      serviceIds = [...new Set(serviceIds.filter((id) => byId.has(String(id))))];
+      if (!serviceIds.length) {
+        return json(res, 400, { ok: false, message: "请至少选择一个可接游戏", field: "main_game" });
+      }
+      const selectedServices = serviceIds.map((id) => byId.get(String(id))).filter(Boolean);
+      const mainGame = selectedServices.map((s) => s.name || s.title).filter(Boolean).join("、");
+
+      const serviceTypes = parseServiceTypes(body.service_type || body.serviceType || body.service_types || body.serviceTypes, {
+        fallbackPlayWhenGame: false,
+      });
+      if (!serviceTypes.length) {
+        return json(res, 400, { ok: false, message: "请至少选择一种可提供服务（陪玩服务 / 陪聊服务）", field: "service_type" });
+      }
+
+      const levelBundle = await resolveLevelBundle(companion || {});
+      const min = money(levelBundle.minPrice);
+      const max = money(levelBundle.maxPrice);
+      const reviewStNow = normalizeProfileReviewStatus(companion || {});
+      // 审核中不可改价；草稿/驳回可改；通过后可改。
+      if (reviewStNow === "pending") {
+        return json(res, 403, {
+          ok: false,
+          message: "资料审核中，暂不可修改价格。请等待审核结果。",
+          field: "price",
+        });
+      }
+      let gamePricesInput = body.game_prices;
+      if (typeof gamePricesInput === "string") {
+        try { gamePricesInput = JSON.parse(gamePricesInput); } catch { gamePricesInput = {}; }
+      }
+      if (!gamePricesInput || typeof gamePricesInput !== "object") gamePricesInput = {};
+      const nextGamePrices = {};
+      if (!levelBundle.level) {
+        return json(res, 400, { ok: false, message: "当前账号尚未设置等级，无法保存单价，请联系后台", field: "price" });
+      }
+      for (const svc of selectedServices) {
+        const id = String(svc.id);
+        const name = String(svc.name || svc.title || "").trim();
+        const rawG = gamePricesInput[id] != null
+          ? String(gamePricesInput[id]).trim()
+          : gamePricesInput[name] != null
+            ? String(gamePricesInput[name]).trim()
+            : "";
+        if (!rawG) return json(res, 400, { ok: false, message: `请填写 ${name} 的价格`, field: "price" });
+        if (!/^\d+(\.\d{1,2})?$/.test(rawG)) {
+          return json(res, 400, { ok: false, message: `${name} 单价只能输入有效数字，最多保留 2 位小数`, field: "price" });
+        }
+        let pv = roundMoney(rawG);
+        const snapped = acceptSubmittedServicePrice(companion, id, name, pv);
+        if (snapped !== pv && snapped >= min && (levelBundle.maxPlus || snapped <= max)) pv = snapped;
+        if (pv < min || (!levelBundle.maxPlus && pv > max)) {
+          return json(res, 400, {
+            ok: false,
+            message: `${name} 单价必须在 RM${min}–RM${max}${levelBundle.maxPlus ? "+" : ""} 之间`,
+            field: "price",
+            minPrice: min,
+            maxPrice: max,
+          });
+        }
+        nextGamePrices[id] = pv;
+        if (name) nextGamePrices[name] = pv;
+      }
+
+      let priceValue = companion.price != null ? money(companion.price) : null;
+      const firstId = serviceIds[0];
+      const firstName = selectedServices[0]?.name || selectedServices[0]?.title || "";
+      if (firstId && nextGamePrices[firstId] != null) {
+        priceValue = money(nextGamePrices[firstId]);
+      } else if (firstName && nextGamePrices[firstName] != null) {
+        priceValue = money(nextGamePrices[firstName]);
+      } else if (body.price != null && String(body.price).trim() !== "") {
+        const rawPrice = String(body.price).trim();
+        if (!/^\d+(\.\d{1,2})?$/.test(rawPrice)) {
+          return json(res, 400, { ok: false, message: "单价只能输入有效数字，最多保留 2 位小数", field: "price" });
+        }
+        priceValue = roundMoney(rawPrice);
+        if (priceValue < min || (!levelBundle.maxPlus && priceValue > max)) {
+          return json(res, 400, {
+            ok: false,
+            message: `单价必须在 RM${min}–RM${max}${levelBundle.maxPlus ? "+" : ""} 之间`,
+            field: "price",
+            minPrice: min,
+            maxPrice: max,
+          });
+        }
+      } else if (levelBundle.priceNeedsReset && !Object.keys(nextGamePrices).length) {
+        return json(res, 400, {
+          ok: false,
+          message: "当前单价已超出等级范围，请重新设置单价后再保存",
+          field: "price",
+          priceNeedsReset: true,
+        });
+      }
+
+      const publicTags = String(body.public_tags || body.tags || "").trim();
+      const galleryKeep = (String(companion.tags || "").match(/\[\[MCJ_GALLERY:[\s\S]*?\]\]/) || [])[0] || "";
+      let tagsForWrite = publicTags || stripGamePricesMarker(String(companion.tags || "")).replace(/\[\[MCJ_GALLERY:[\s\S]*?\]\]/g, "").trim();
+      if (galleryKeep) tagsForWrite = `${tagsForWrite}${tagsForWrite ? "," : ""}${galleryKeep}`;
+      tagsForWrite = writeGamePricesMarker(tagsForWrite, nextGamePrices);
+
+      let voiceTypeValue = "";
+      try {
+        voiceTypeValue = await normalizeSelectedVoiceTypes(
+          body.voice_type != null || body.voiceType != null
+            ? body.voice_type || body.voiceType
+            : companion.voice_type || "",
+          { required: true }
+        );
+      } catch (voiceErr) {
+        return json(res, voiceErr.status || 400, {
+          ok: false,
+          message: voiceErr.message || "请选择声线",
+          field: voiceErr.field || "voice_type",
+        });
+      }
+
+      const patch = {
+        nickname,
+        game: mainGame,
+        main_service: String(body.main_service || body.mainService || companion.main_service || ""),
+        service_type: serviceTypes.join(","),
+        service_ids: serviceIds,
+        description: String(body.bio || body.description || ""),
+        voice_type: voiceTypeValue,
+        price: priceValue != null ? priceValue : money(companion.price),
+        game_prices: nextGamePrices,
+        age: ageNum,
+        gender,
+        region,
+        tags: tagsForWrite,
+        game_rank: String(body.rank || body.game_rank || ""),
+        position: String(body.position || ""),
+        schedule: String(body.schedule || companion.schedule || ""),
+        game_id: gameId,
+        // Already-approved companions keep approved so price writes stay live for boss orders.
+        // Rejected / resubmit / pending → re-enter review queue and clear prior reject text.
+        application_status: /approved|verified|passed/i.test(String(companion.application_status || ""))
+          ? "approved"
+          : "pending",
+        updated_at: nowIso(),
+      };
+      // voice_url is owned by upload_media / delete_media. Never rewrite it from a
+      // request-start snapshot — concurrent save after upload was wiping storage:// refs
+      // (or writing ""), so public profile kept showing 缺少录音 / 音频加载失败.
+      if (body.voice_url != null || body.voiceUrl != null) {
+        const nextVoice = String(body.voice_url != null ? body.voice_url : body.voiceUrl || "").trim();
+        const isSigned =
+          /\/storage\/v1\/object\/sign\//i.test(nextVoice) ||
+          (/[?&]token=/i.test(nextVoice) && /\/storage\/v1\//i.test(nextVoice));
+        if (nextVoice && !isSigned) {
+          patch.voice_url = nextVoice;
+        }
+      }
+      if (!/approved|verified|passed/i.test(String(companion.application_status || ""))) {
+        patch.application_reject_reason = "";
+      }
+      if (contactProvided) patch.contact_phone = contact;
+      if (body.card_image_url) patch.card_image_url = String(body.card_image_url);
+      Object.keys(patch).forEach((k) => patch[k] === undefined && delete patch[k]);
+      try {
+        if (!companion.id) {
+          await supabaseJson(restUrl("companion_profiles"), {
+            method: "POST",
+            headers: serviceHeaders(),
+            body: JSON.stringify({ user_id: auth.profile.id, ...patch, deposit_status: "unpaid", online_status: "offline", created_at: nowIso() }),
+          });
+        } else {
+          await patchCompanionProfile(`?user_id=eq.${encodeURIComponent(auth.profile.id)}`, patch);
+        }
+      } catch (error) {
+        // Last-resort core fields that exist on early schemas.
+        const core = {
+          nickname: patch.nickname,
+          game: patch.game,
+          description: patch.description,
+          voice_type: patch.voice_type,
+          price: patch.price,
+          updated_at: patch.updated_at,
+          tags: writeGamePricesMarker(String(patch.tags || ""), nextGamePrices),
+        };
+        if (patch.voice_url != null) core.voice_url = patch.voice_url;
+        if (patch.card_image_url) core.card_image_url = patch.card_image_url;
+        const tagBits = [core.tags];
+        if (gameId) tagBits.push(`游戏ID:${gameId}`);
+        if (contactProvided && contact) tagBits.push(`联系:${contact}`);
+        if (region) tagBits.push(`地区:${region}`);
+        if (gender) tagBits.push(`性别:${gender}`);
+        if (ageNum != null) tagBits.push(`年龄:${ageNum}`);
+        const tagsJoined = tagBits.filter(Boolean).join(",");
+        if (tagsJoined) core.tags = tagsJoined;
+        await patchCompanionProfile(`?user_id=eq.${encodeURIComponent(auth.profile.id)}`, core);
+      }
+      await supabaseJson(restUrl("profiles", `?id=eq.${encodeURIComponent(auth.profile.id)}`), {
+        method: "PATCH",
+        headers: serviceHeaders(),
+        body: JSON.stringify({
+          display_name: nickname,
+          ...(contactProvided ? { phone: contact } : {}),
+        }),
+      });
+      try {
+        await syncCompanionServicesFromGamePrices({
+          companionId: auth.profile.id,
+          companion: { ...companion, user_id: auth.profile.id, level_id: companion?.level_id },
+          gamePrices: nextGamePrices,
+          selectedServices,
+          source: "companion_custom",
+        });
+      } catch (syncErr) {
+        if (!isMissingRelation(syncErr)) {
+          console.warn("[companion/save] companion_services sync", syncErr?.message || syncErr);
+        }
+      }
+      const stayedApproved = /approved|verified|passed/i.test(String(patch.application_status || ""));
+      const wasRejected = /reject|resubmit|need_more/i.test(String(companion.application_status || ""));
+      return json(res, 200, {
+        ok: true,
+        message: stayedApproved
+          ? "保存成功"
+          : wasRejected
+            ? "已重新提交审核，请等待后台复核"
+            : "保存成功，资料已提交审核",
+        gamePrices: nextGamePrices,
+        price: priceValue != null ? priceValue : money(companion.price),
+        applicationStatus: patch.application_status,
+      });
+    }
+
+    if (action === "submit_verification") {
+      const row = await ensureCompanionRow(auth.profile, companion);
+      await ensureCompanionBuckets();
+      const existingIdentity = (
+        await companionDb(
+          "companion_identity_verifications",
+          `?companion_profile_id=eq.${encodeURIComponent(row.id)}&limit=1`
+        ).catch((e) => (isMissingRelation(e) ? [] : Promise.reject(e)))
+      )?.[0];
+      const existingPayment = (
+        await companionDb(
+          "companion_payment_accounts",
+          `?companion_profile_id=eq.${encodeURIComponent(row.id)}&order=created_at.desc&limit=1`
+        ).catch((e) => (isMissingRelation(e) ? [] : Promise.reject(e)))
+      )?.[0];
+      const frontRaw = body.id_front || body.idFront || "";
+      const backRaw = body.id_back || body.idBack || "";
+      const handheldRaw = body.id_handheld || body.idHandheld || "";
+      const front = frontRaw
+        ? await saveUploadFromBody(auth.profile.id, "id-front", PRIVATE_BUCKETS.identity, frontRaw, "id-front.jpg")
+        : { path: existingIdentity?.id_front_path || "" };
+      const back = backRaw
+        ? await saveUploadFromBody(auth.profile.id, "id-back", PRIVATE_BUCKETS.identity, backRaw, "id-back.jpg")
+        : { path: existingIdentity?.id_back_path || "" };
+      const handheld = handheldRaw
+        ? await saveUploadFromBody(
+            auth.profile.id,
+            "id-handheld",
+            PRIVATE_BUCKETS.identity,
+            handheldRaw,
+            "id-handheld.jpg"
+          )
+        : { path: existingIdentity?.id_handheld_path || "" };
+      if (!front.path || !back.path) {
+        return json(res, 400, { ok: false, message: "请上传身份证正面和反面照片。" });
+      }
+      const identityNoRaw = String(body.identity_no || body.identityNo || "").trim();
+      let identityNo =
+        !identityNoRaw || /^\*+\d{0,4}$/.test(identityNoRaw)
+          ? String(existingIdentity?.identity_no || "")
+          : identityNoRaw;
+      if (!identityNo) {
+        // Apply form uploads ID photos but does not collect identity_no; allow pending review with empty number.
+        if (!(front.path && back.path)) {
+          return json(res, 400, { ok: false, message: "请填写身份证号码。" });
+        }
+        identityNo = "";
+      }
+      const bankAccountRaw = String(body.bank_account || body.bankAccount || "").trim();
+      const bankAccount =
+        !bankAccountRaw || /^\*+\d{0,4}$/.test(bankAccountRaw)
+          ? String(existingPayment?.bank_account || "")
+          : bankAccountRaw;
+      await upsertByCompanion("companion_identity_verifications", row.id, auth.profile.id, {
+        real_name: String(body.real_name || body.realName || ""),
+        identity_no: identityNo,
+        id_front_path: front.path || "",
+        id_back_path: back.path || "",
+        id_handheld_path: handheld.path || "",
+        status: "pending",
+        reject_reason: "",
+        submitted_at: nowIso(),
+      });
+      if (hasSettlementPaymentInput(body) || bankAccount) {
+        await upsertByCompanion(
+          "companion_payment_accounts",
+          row.id,
+          auth.profile.id,
+          buildPaymentAccountPayload(body, existingPayment)
+        );
+      }
+      if (body.phone || body.contact_phone) {
+        try {
+          await supabaseJson(restUrl("companion_profiles", `?id=eq.${encodeURIComponent(row.id)}`), {
+            method: "PATCH",
+            headers: serviceHeaders(),
+            body: JSON.stringify({
+              contact_phone: String(body.phone || body.contact_phone || "").trim(),
+              updated_at: nowIso(),
+            }),
+          });
+        } catch {
+          /* optional */
+        }
+      }
+      await supabaseJson(restUrl("companion_profiles", `?id=eq.${encodeURIComponent(row.id)}`), {
+        method: "PATCH",
+        headers: serviceHeaders(),
+        body: JSON.stringify({
+          verification_status: "pending",
+          application_status: "pending",
+          application_reject_reason: "",
+          application_submitted_at: nowIso(),
+          updated_at: nowIso(),
+        }),
+      });
+      return json(res, 200, { ok: true, message: "已提交审核，等待后台审核。" });
+    }
+
+    if (action === "discard_application_draft" || action === "clear_application_draft") {
+      const { isApplicationDraft, isApplicationApproved, isApplicationQueueRow } = await import("./_companion-draft.js");
+      if (isApplicationApproved(companion || {})) {
+        return json(res, 409, {
+          ok: false,
+          message: "正式陪玩资料不能通过「清空草稿」删除。",
+          code: "FORMAL_PROFILE_PROTECTED",
+        });
+      }
+      if (isApplicationQueueRow(companion || {}) || companion?.application_submitted_at) {
+        return json(res, 409, {
+          ok: false,
+          message: "已提交审核的申请不能清空草稿。",
+          code: "SUBMITTED_PROTECTED",
+        });
+      }
+      if (companion && !isApplicationDraft(companion)) {
+        return json(res, 409, {
+          ok: false,
+          message: "当前申请状态不允许清空草稿。",
+          code: "NOT_DRAFT",
+        });
+      }
+      const row = await ensureCompanionRow(auth.profile, companion);
+      const mediaRows = await companionDb(
+        "companion_media",
+        `?companion_profile_id=eq.${encodeURIComponent(row.id)}&select=id,media_type,storage_bucket,storage_path&limit=200`
+      ).catch((error) => (isMissingRelation(error) ? [] : Promise.reject(error)));
+      for (const item of mediaRows || []) {
+        try {
+          if (item.storage_bucket && item.storage_path) {
+            await deleteStorageObject(item.storage_bucket, item.storage_path);
+          }
+        } catch {
+          /* keep clearing references even if storage object already gone */
+        }
+        try {
+          await companionDb("companion_media", `?id=eq.${encodeURIComponent(item.id)}`, { method: "DELETE" });
+        } catch (error) {
+          if (!isMissingRelation(error)) throw error;
+        }
+      }
+      // Clear draft identity / payment / deposit proof paths only when still draft-like.
+      const identityRows = await companionDb(
+        "companion_identity_verifications",
+        `?companion_profile_id=eq.${encodeURIComponent(row.id)}&limit=5`
+      ).catch(() => []);
+      for (const idRow of identityRows || []) {
+        const st = String(idRow.status || "").toLowerCase();
+        if (/approved|verified|passed/.test(st)) continue;
+        for (const pathKey of ["id_front_path", "id_back_path", "id_handheld_path"]) {
+          if (idRow[pathKey]) {
+            try {
+              await deleteStorageObject(PRIVATE_BUCKETS.identity, idRow[pathKey]);
+            } catch {
+              /* ignore */
+            }
+          }
+        }
+        await companionDb("companion_identity_verifications", `?id=eq.${encodeURIComponent(idRow.id)}`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            id_front_path: "",
+            id_back_path: "",
+            id_handheld_path: "",
+            status: "draft",
+            reject_reason: "",
+            updated_at: nowIso(),
+          }),
+        }).catch(() => null);
+      }
+      const depositRows = await companionDb(
+        "companion_deposits",
+        `?companion_profile_id=eq.${encodeURIComponent(row.id)}&order=created_at.desc&limit=5`
+      ).catch(() => []);
+      for (const dep of depositRows || []) {
+        const st = String(dep.status || "").toLowerCase();
+        if (/approved|verified|paid|passed/.test(st)) continue;
+        if (dep.proof_path) {
+          try {
+            await deleteStorageObject(dep.proof_bucket || PRIVATE_BUCKETS.payment, dep.proof_path);
+          } catch {
+            /* ignore */
+          }
+        }
+        await companionDb("companion_deposits", `?id=eq.${encodeURIComponent(dep.id)}`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            proof_path: "",
+            proof_bucket: "",
+            status: "draft",
+            reject_reason: "",
+            updated_at: nowIso(),
+          }),
+        }).catch(() => null);
+      }
+      await patchCompanionProfile(`?id=eq.${encodeURIComponent(row.id)}`, {
+        description: "",
+        voice_url: "",
+        card_image_url: "",
+        game: "",
+        game_id: "",
+        main_service: "",
+        service_type: "",
+        service_ids: [],
+        tags: "",
+        game_rank: "",
+        position: "",
+        schedule: "",
+        voice_type: "",
+        application_status: "draft",
+        application_reject_reason: "",
+        application_submitted_at: null,
+        media_status: "pending",
+        updated_at: nowIso(),
+      });
+      return json(res, 200, {
+        ok: true,
+        message: "草稿已清空，可重新填写申请。",
+        discarded: true,
+        mediaCleared: (mediaRows || []).length,
+      });
+    }
+
+    if (action === "upload_private_doc") {
+      const row = await ensureCompanionRow(auth.profile, companion);
+      await ensureCompanionBuckets();
+      const docType = String(body.doc_type || body.docType || body.media_type || "").trim();
+      const dataUrl = body.data_url || body.dataUrl || body.file;
+      if (!dataUrl || !String(dataUrl).startsWith("data:")) {
+        return json(res, 400, { ok: false, message: "请选择图片文件上传。" });
+      }
+      if (docType === "id_front" || docType === "id-front") {
+        const uploaded = await saveUploadFromBody(
+          auth.profile.id,
+          "id-front",
+          PRIVATE_BUCKETS.identity,
+          dataUrl,
+          body.filename || "id-front.jpg"
+        );
+        const existing = (
+          await companionDb(
+            "companion_identity_verifications",
+            `?companion_profile_id=eq.${encodeURIComponent(row.id)}&limit=1`
+          ).catch(() => [])
+        )?.[0];
+        const cur = String(existing?.status || "").toLowerCase();
+        const keepPending =
+          /pending|review|submit/.test(cur) &&
+          String(existing?.real_name || "").trim() &&
+          String(existing?.identity_no || "").trim();
+        await upsertByCompanion("companion_identity_verifications", row.id, auth.profile.id, {
+          real_name: existing?.real_name || "",
+          identity_no: existing?.identity_no || "",
+          id_front_path: uploaded.path,
+          id_back_path: existing?.id_back_path || "",
+          id_handheld_path: existing?.id_handheld_path || "",
+          status: keepPending ? "pending" : "draft",
+          reject_reason: existing?.reject_reason || "",
+          submitted_at: existing?.submitted_at || nowIso(),
+        });
+        const url = await signedPrivateDocUrl(PRIVATE_BUCKETS.identity, uploaded.path);
+        return json(res, 200, { ok: true, message: "身份证正面上传成功", docType: "id_front", url, path: uploaded.path });
+      }
+      if (docType === "id_back" || docType === "id-back") {
+        const uploaded = await saveUploadFromBody(
+          auth.profile.id,
+          "id-back",
+          PRIVATE_BUCKETS.identity,
+          dataUrl,
+          body.filename || "id-back.jpg"
+        );
+        const existing = (
+          await companionDb(
+            "companion_identity_verifications",
+            `?companion_profile_id=eq.${encodeURIComponent(row.id)}&limit=1`
+          ).catch(() => [])
+        )?.[0];
+        const cur = String(existing?.status || "").toLowerCase();
+        const keepPending =
+          /pending|review|submit/.test(cur) &&
+          String(existing?.real_name || "").trim() &&
+          String(existing?.identity_no || "").trim();
+        await upsertByCompanion("companion_identity_verifications", row.id, auth.profile.id, {
+          real_name: existing?.real_name || "",
+          identity_no: existing?.identity_no || "",
+          id_front_path: existing?.id_front_path || "",
+          id_back_path: uploaded.path,
+          id_handheld_path: existing?.id_handheld_path || "",
+          status: keepPending ? "pending" : "draft",
+          reject_reason: existing?.reject_reason || "",
+          submitted_at: existing?.submitted_at || nowIso(),
+        });
+        const url = await signedPrivateDocUrl(PRIVATE_BUCKETS.identity, uploaded.path);
+        return json(res, 200, { ok: true, message: "身份证反面上传成功", docType: "id_back", url, path: uploaded.path });
+      }
+      if (docType === "deposit_proof" || docType === "deposit" || docType === "proof") {
+        const uploaded = await saveUploadFromBody(
+          auth.profile.id,
+          "deposit",
+          PRIVATE_BUCKETS.payment,
+          dataUrl,
+          body.filename || "deposit-proof.jpg"
+        );
+        const existing = (
+          await companionDb(
+            "companion_deposits",
+            `?companion_profile_id=eq.${encodeURIComponent(row.id)}&order=created_at.desc&limit=1`
+          ).catch(() => [])
+        )?.[0];
+        const cur = String(existing?.status || "").toLowerCase();
+        const keepPending =
+          /pending|review|submit/.test(cur) &&
+          Number(existing?.paid_amount || 0) > 0 &&
+          String(existing?.payment_method || "").trim();
+        await upsertByCompanion("companion_deposits", row.id, auth.profile.id, {
+          required_amount: money(existing?.required_amount || 100) || 100,
+          paid_amount: money(existing?.paid_amount || body.paid_amount || 0),
+          payment_method: String(existing?.payment_method || body.payment_method || ""),
+          proof_path: uploaded.path,
+          proof_bucket: uploaded.bucket || PRIVATE_BUCKETS.payment,
+          status: keepPending ? "pending" : "draft",
+          reject_reason: existing?.reject_reason || "",
+          remark: String(existing?.remark || body.remark || ""),
+          paid_at: existing?.paid_at || null,
+        });
+        const url = await signedPrivateDocUrl(PRIVATE_BUCKETS.payment, uploaded.path);
+        return json(res, 200, {
+          ok: true,
+          message: "付款凭证上传成功",
+          docType: "deposit_proof",
+          url,
+          path: uploaded.path,
+        });
+      }
+      return json(res, 400, { ok: false, message: "不支持的证件类型" });
+    }
+
+    if (action === "delete_private_doc") {
+      const row = await ensureCompanionRow(auth.profile, companion);
+      const docType = String(body.doc_type || body.docType || "").trim();
+      if (docType === "id_front" || docType === "id-front") {
+        const existing = (
+          await companionDb(
+            "companion_identity_verifications",
+            `?companion_profile_id=eq.${encodeURIComponent(row.id)}&limit=1`
+          ).catch(() => [])
+        )?.[0];
+        if (existing?.id_front_path) {
+          try {
+            await deleteStorageObject(PRIVATE_BUCKETS.identity, existing.id_front_path);
+          } catch {
+            /* ignore */
+          }
+        }
+        if (existing) {
+          await upsertByCompanion("companion_identity_verifications", row.id, auth.profile.id, {
+            real_name: existing.real_name || "",
+            identity_no: existing.identity_no || "",
+            id_front_path: "",
+            id_back_path: existing.id_back_path || "",
+            id_handheld_path: existing.id_handheld_path || "",
+            status: "pending",
+            reject_reason: "",
+            submitted_at: existing.submitted_at || nowIso(),
+          });
+        }
+        return json(res, 200, { ok: true, message: "已删除身份证正面" });
+      }
+      if (docType === "id_back" || docType === "id-back") {
+        const existing = (
+          await companionDb(
+            "companion_identity_verifications",
+            `?companion_profile_id=eq.${encodeURIComponent(row.id)}&limit=1`
+          ).catch(() => [])
+        )?.[0];
+        if (existing?.id_back_path) {
+          try {
+            await deleteStorageObject(PRIVATE_BUCKETS.identity, existing.id_back_path);
+          } catch {
+            /* ignore */
+          }
+        }
+        if (existing) {
+          await upsertByCompanion("companion_identity_verifications", row.id, auth.profile.id, {
+            real_name: existing.real_name || "",
+            identity_no: existing.identity_no || "",
+            id_front_path: existing.id_front_path || "",
+            id_back_path: "",
+            id_handheld_path: existing.id_handheld_path || "",
+            status: "pending",
+            reject_reason: "",
+            submitted_at: existing.submitted_at || nowIso(),
+          });
+        }
+        return json(res, 200, { ok: true, message: "已删除身份证反面" });
+      }
+      if (docType === "deposit_proof" || docType === "deposit" || docType === "proof") {
+        const existing = (
+          await companionDb(
+            "companion_deposits",
+            `?companion_profile_id=eq.${encodeURIComponent(row.id)}&order=created_at.desc&limit=1`
+          ).catch(() => [])
+        )?.[0];
+        if (existing?.proof_path) {
+          try {
+            await deleteStorageObject(existing.proof_bucket || PRIVATE_BUCKETS.payment, existing.proof_path);
+          } catch {
+            /* ignore */
+          }
+        }
+        if (existing) {
+          await upsertByCompanion("companion_deposits", row.id, auth.profile.id, {
+            required_amount: money(existing.required_amount || 100) || 100,
+            paid_amount: money(existing.paid_amount),
+            payment_method: String(existing.payment_method || ""),
+            proof_path: "",
+            proof_bucket: existing.proof_bucket || PRIVATE_BUCKETS.payment,
+            status: "pending",
+            reject_reason: "",
+            remark: String(existing.remark || ""),
+            paid_at: existing.paid_at || nowIso(),
+          });
+        }
+        await supabaseJson(restUrl("companion_profiles", `?id=eq.${encodeURIComponent(row.id)}`), {
+          method: "PATCH",
+          headers: serviceHeaders(),
+          body: JSON.stringify({ deposit_status: "pending", updated_at: nowIso() }),
+        });
+        return json(res, 200, { ok: true, message: "已删除付款凭证" });
+      }
+      return json(res, 400, { ok: false, message: "不支持的证件类型" });
+    }
+
+    if (action === "submit_deposit_proof" || action === "submit_deposit") {
+      const row = await ensureCompanionRow(auth.profile, companion);
+      await ensureCompanionBuckets();
+      const existingDeposit = (
+        await companionDb(
+          "companion_deposits",
+          `?companion_profile_id=eq.${encodeURIComponent(row.id)}&order=created_at.desc&limit=20`
+        ).catch((e) => (isMissingRelation(e) ? [] : Promise.reject(e)))
+      ) || [];
+      const paidExisting = existingDeposit.find((d) => isDepositPaidStatus(d?.status));
+      if (paidExisting) {
+        return json(res, 400, {
+          ok: false,
+          message: "押金已缴纳，无需重复提交。",
+          deposit: { id: paidExisting.id, recordNo: depositRecordNo(paidExisting), status: paidExisting.status },
+        });
+      }
+      const latestDeposit = existingDeposit[0] || null;
+      const listed = await listDepositPaymentMethods([]).catch(() => ({ methods: [] }));
+      const channels = Array.isArray(listed.methods) ? listed.methods : [];
+      if (!channels.length) {
+        return json(res, 503, {
+          ok: false,
+          message: "俱乐部尚未配置押金收款渠道，请联系管理员在「支付设置」启用押金收款。",
+        });
+      }
+      const channelId = String(body.channel_id || body.channelId || body.payment_channel || "").trim();
+      const channel =
+        channels.find((c) => c.id === channelId || c.code === channelId) ||
+        (channels.length === 1 ? channels[0] : null);
+      if (!channel || !channel.payInfo) {
+        return json(res, 400, { ok: false, message: "请选择俱乐部收款渠道后再提交押金审核。" });
+      }
+      const payInfo = channel.payInfo || {};
+      const paymentMethodLabel = String(
+        channel.label || channel.name || payInfo.title || channel.code || "俱乐部收款"
+      ).trim();
+      const proofRaw = body.proof_url || body.proofUrl || body.proof || "";
+      const proof = proofRaw
+        ? await saveUploadFromBody(
+            auth.profile.id,
+            "deposit",
+            PRIVATE_BUCKETS.payment,
+            proofRaw,
+            "deposit-proof.jpg"
+          )
+        : {
+            path: latestDeposit?.proof_path || "",
+            bucket: latestDeposit?.proof_bucket || PRIVATE_BUCKETS.payment,
+          };
+      if (!proof.path) {
+        return json(res, 400, { ok: false, message: "请先上传押金付款凭证图片。" });
+      }
+      const channelSnapshot = {
+        channelId: channel.code || channel.id,
+        label: paymentMethodLabel,
+        receiverName: payInfo.receiverName || "",
+        bankName: payInfo.bankName || "",
+        bankAccount: payInfo.bankAccount || "",
+        duitnowId: payInfo.duitnowId || "",
+        phone: payInfo.phone || "",
+        qrUrl: payInfo.qrUrl || "",
+        amountRm: DEPOSIT_AMOUNT_RM,
+      };
+      const userRemark = String(body.remark || "").trim();
+      const remark = embedDepositChannelSnapshot(userRemark, channelSnapshot);
+      const saved = await upsertByCompanion("companion_deposits", row.id, auth.profile.id, {
+        required_amount: DEPOSIT_AMOUNT_RM,
+        paid_amount: DEPOSIT_AMOUNT_RM,
+        payment_method: paymentMethodLabel,
+        proof_path: proof.path || "",
+        proof_bucket: proof.bucket || PRIVATE_BUCKETS.payment,
+        status: "pending",
+        reject_reason: "",
+        remark,
+        paid_at: nowIso(),
+      });
+      const savedRow = Array.isArray(saved) ? saved[0] : saved;
+      if (hasSettlementPaymentInput(body)) {
+        const existingPayment = (
+          await companionDb(
+            "companion_payment_accounts",
+            `?companion_profile_id=eq.${encodeURIComponent(row.id)}&order=created_at.desc&limit=1`
+          ).catch((e) => (isMissingRelation(e) ? [] : Promise.reject(e)))
+        )?.[0];
+        await upsertByCompanion(
+          "companion_payment_accounts",
+          row.id,
+          auth.profile.id,
+          buildPaymentAccountPayload(body, existingPayment)
+        );
+      }
+      await supabaseJson(restUrl("companion_profiles", `?id=eq.${encodeURIComponent(row.id)}`), {
+        method: "PATCH",
+        headers: serviceHeaders(),
+        body: JSON.stringify({ deposit_status: "pending", updated_at: nowIso() }),
+      });
+      return json(res, 200, {
+        ok: true,
+        message: "已提交押金审核，状态：押金审核中。",
+        deposit: {
+          id: savedRow?.id || latestDeposit?.id || "",
+          recordNo: depositRecordNo(savedRow || latestDeposit || {}),
+          status: "pending",
+          statusLabel: "押金审核中",
+          requiredAmount: DEPOSIT_AMOUNT_RM,
+          paidAmount: DEPOSIT_AMOUNT_RM,
+          paymentMethod: paymentMethodLabel,
+          channelId: channelSnapshot.channelId,
+        },
+      });
+    }
+
+    if (action === "prepare_video_upload") {
+      // Browser uploads the binary straight to Supabase (signed PUT / TUS).
+      // This endpoint only mints credentials + object path — never accepts video bytes.
+      const row = await ensureCompanionRow(auth.profile, companion);
+      await ensureCompanionBuckets();
+      const filename = String(body.filename || body.fileName || "showcase.mp4").slice(0, 80);
+      const contentType = assertVideoMeta({
+        contentType: body.content_type || body.contentType || body.mime || "video/mp4",
+        byteLength: body.byte_length != null ? body.byte_length : body.byteLength,
+      }).contentType;
+      const dur = body.duration_seconds != null ? Number(body.duration_seconds) : null;
+      if (dur && dur > 30.5) return json(res, 400, { ok: false, message: "视频最长 30 秒" });
+      const size = Number(body.byte_length != null ? body.byte_length : body.byteLength);
+      if (Number.isFinite(size) && size > MAX_VIDEO_BYTES) {
+        return json(res, 413, { ok: false, message: "视频不能超过 50MB" });
+      }
+      const objectPath = buildObjectPath(auth.profile.id, "video", filename);
+      const signed = await createSignedUploadUrl(PRIVATE_BUCKETS.video, objectPath, 15 * 60);
+      const anonKey =
+        process.env.SUPABASE_ANON_KEY ||
+        process.env.SUPABASE_PUBLISHABLE_KEY ||
+        process.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
+        process.env.VITE_SUPABASE_ANON_KEY ||
+        "";
+      return json(res, 200, {
+        ok: true,
+        message: "已签发直传凭证",
+        companionProfileId: row.id,
+        bucket: PRIVATE_BUCKETS.video,
+        path: objectPath,
+        contentType,
+        signedUrl: signed.signedUrl,
+        token: signed.token,
+        expiresIn: signed.expiresIn,
+        supabaseUrl: process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "",
+        anonKey,
+        maxBytes: MAX_VIDEO_BYTES,
+        maxSeconds: 30,
+        resumableEndpoint: `${(process.env.SUPABASE_URL || "").replace(/\/$/, "")}/storage/v1/upload/resumable`,
+        // Prefer TUS for larger phone videos (chunked, resumable).
+        preferResumable: Number.isFinite(size) ? size >= 6 * 1024 * 1024 : true,
+      });
+    }
+
+    if (action === "upload_media") {
+      const row = await ensureCompanionRow(auth.profile, companion);
+      await ensureCompanionBuckets();
+      let mediaType = String(body.media_type || body.mediaType || "gallery");
+      if (mediaType === "card" || mediaType === "card_image") mediaType = "cover";
+      if (
+        mediaType === "achievement_image" ||
+        mediaType === "achievement_video" ||
+        mediaType === "records" ||
+        mediaType === "record"
+      ) {
+        mediaType = "achievement";
+      }
+      if (!["avatar", "cover", "gallery", "voice", "video", "achievement"].includes(mediaType)) {
+        return json(res, 400, { ok: false, message: "不支持的媒体类型" });
+      }
+      const dataUrl = body.data_url || body.dataUrl || body.file;
+      const directPath = String(body.storage_path || body.storagePath || body.path || "").trim();
+      const directBucket = String(body.storage_bucket || body.storageBucket || body.bucket || "").trim();
+      // Achievements accept both images (data_url) and videos (direct upload), same as showcase video.
+      const isDirectVideo = Boolean(directPath) && (mediaType === "video" || mediaType === "achievement");
+      if (!dataUrl && !isDirectVideo) {
+        return json(res, 400, { ok: false, message: "请选择要上传的文件" });
+      }
+
+      const galleryFallback = readGalleryFallback(row.tags || companion.tags || "");
+      if (mediaType === "gallery" || mediaType === "video" || mediaType === "achievement") {
+        // Append semantics: no count cap. Next sort_order = max + 10 (never overwrite prior rows).
+        const existing = await companionDb(
+          "companion_media",
+          `?companion_profile_id=eq.${encodeURIComponent(row.id)}&media_type=eq.${encodeURIComponent(mediaType)}&select=id,sort_order,content_type,storage_path`
+        ).catch((e) => (isMissingRelation(e) ? null : Promise.reject(e)));
+        if (existing != null && body.sort_order == null) {
+          const rowsForSort =
+            mediaType === "gallery"
+              ? (existing || []).filter((g) => !/^video\//i.test(String(g.content_type || "")))
+              : existing || [];
+          const maxSort = rowsForSort.reduce((acc, g) => Math.max(acc, Number(g.sort_order) || 0), 0);
+          body.sort_order = maxSort + 10;
+        }
+      }
+
+      let uploaded;
+      let publicUrl = "";
+      if (mediaType === "voice") {
+        const decoded = decodeDataUrl(dataUrl);
+        if (!decoded) {
+          return json(res, 400, {
+            ok: false,
+            message:
+              "语音文件解析失败（不支持的 data URL / MIME）。请重录后重试；手机录音常见类型为 webm/mp4。",
+          });
+        }
+        const checked = assertAudioUpload(decoded);
+        const objectPath = buildObjectPath(auth.profile.id, "voice", body.filename || "voice.webm");
+        await uploadPrivateObject(PRIVATE_BUCKETS.audio, objectPath, checked.buffer, checked.contentType);
+        uploaded = { bucket: PRIVATE_BUCKETS.audio, path: objectPath, contentType: checked.contentType };
+      } else if (mediaType === "video" || isDirectVideo) {
+        const dur = body.duration_seconds != null ? Number(body.duration_seconds) : null;
+        if (dur && dur > 30.5) return json(res, 400, { ok: false, message: "视频最长 30 秒" });
+        if (directPath) {
+          // Direct browser → Supabase upload: only register metadata here.
+          const bucket = directBucket || PRIVATE_BUCKETS.video;
+          if (bucket !== PRIVATE_BUCKETS.video) {
+            return json(res, 400, { ok: false, message: "视频存储桶不正确" });
+          }
+          const uidPrefix = `${auth.profile.id}/`;
+          if (!directPath.startsWith(uidPrefix)) {
+            return json(res, 403, { ok: false, message: "视频路径无权写入" });
+          }
+          const contentType = assertVideoMeta({
+            contentType: body.content_type || body.contentType || "video/mp4",
+            byteLength: body.byte_length != null ? body.byte_length : body.byteLength,
+          }).contentType;
+          await assertStorageObjectPresent(bucket, directPath);
+          uploaded = { bucket, path: directPath, contentType };
+        } else {
+          // Legacy tiny data_url path (e2e / old clients). Large videos must use prepare_video_upload.
+          const decoded = decodeDataUrl(dataUrl);
+          if (!decoded) return json(res, 400, { ok: false, message: "请选择要上传的视频文件" });
+          if (decoded.buffer.length > 3 * 1024 * 1024) {
+            return json(res, 413, {
+              ok: false,
+              message: "视频文件过大或上传通道限制，请稍后重试。",
+              code: "VERCEL_BODY_LIMIT",
+              hint: "请使用直传（prepare_video_upload）上传视频，勿将完整视频 POST 到本接口。",
+            });
+          }
+          const checked = assertVideoUpload(decoded);
+          const objectPath = buildObjectPath(
+            auth.profile.id,
+            mediaType === "achievement" ? "achievement" : "video",
+            body.filename || "showcase.mp4"
+          );
+          const bucket = PRIVATE_BUCKETS.video;
+          await uploadPrivateObject(bucket, objectPath, checked.buffer, checked.contentType);
+          uploaded = { bucket, path: objectPath, contentType: checked.contentType };
+        }
+      } else {
+        const decoded = assertImageUpload(decodeDataUrl(dataUrl));
+        const objectPath = buildObjectPath(auth.profile.id, mediaType, body.filename || `${mediaType}.jpg`);
+        // Game records are served to bosses via signed URLs only (no raw public bucket path / user id).
+        let bucket = mediaType === "achievement" ? PRIVATE_BUCKETS.gallery : PUBLIC_BUCKETS.profile;
+        try {
+          await uploadPrivateObject(bucket, objectPath, decoded.buffer, decoded.contentType);
+          publicUrl = bucket === PUBLIC_BUCKETS.profile ? publicObjectUrl(bucket, objectPath) : "";
+        } catch (publicErr) {
+          // Private fallback is allowed for storage, but NEVER persist signed URLs into profile fields.
+          bucket = PRIVATE_BUCKETS.gallery;
+          await uploadPrivateObject(bucket, objectPath, decoded.buffer, decoded.contentType);
+          publicUrl = "";
+          console.warn(
+            "[companion.upload_media] public bucket failed, stored in private gallery without durable profile URL",
+            publicErr?.message || publicErr
+          );
+        }
+        uploaded = { bucket, path: objectPath, contentType: decoded.contentType };
+      }
+      if (!uploaded.path) return json(res, 400, { ok: false, message: "缺少上传文件" });
+
+      // Single-slot types replace the previous row. gallery / video / achievement append.
+      if (mediaType === "avatar" || mediaType === "cover" || mediaType === "voice") {
+        const oldRows = await companionDb(
+          "companion_media",
+          `?companion_profile_id=eq.${encodeURIComponent(row.id)}&media_type=eq.${encodeURIComponent(mediaType)}`
+        ).catch(() => []);
+        for (const old of oldRows || []) {
+          try {
+            await deleteStorageObject(old.storage_bucket, old.storage_path);
+          } catch {
+            /* ignore */
+          }
+          try {
+            await companionDb("companion_media", `?id=eq.${encodeURIComponent(old.id)}`, { method: "DELETE" });
+          } catch {
+            /* ignore */
+          }
+        }
+      }
+
+      const sortOrder =
+        mediaType === "avatar"
+          ? 0
+          : mediaType === "cover"
+            ? 1
+          : body.sort_order != null
+            ? Number(body.sort_order)
+            : 100 + (Date.now() % 100000);
+      let mediaRow = null;
+      let mediaTableMissing = false;
+      let persistedMediaType = mediaType;
+      try {
+        const mediaPayload = {
+          companion_profile_id: row.id,
+          user_id: auth.profile.id,
+          media_type: mediaType,
+          storage_bucket: uploaded.bucket,
+          storage_path: uploaded.path,
+          content_type: uploaded.contentType || "",
+          duration_seconds: body.duration_seconds != null ? Number(body.duration_seconds) : null,
+          status: "pending",
+          sort_order: sortOrder,
+          uploaded_at: nowIso(),
+          created_at: nowIso(),
+          updated_at: nowIso(),
+        };
+        try {
+          const mediaRows = await companionDb("companion_media", "", {
+            method: "POST",
+            body: JSON.stringify(mediaPayload),
+          });
+          mediaRow = Array.isArray(mediaRows) ? mediaRows[0] : mediaRows;
+        } catch (insertErr) {
+          // Legacy DB check only allows avatar|gallery|voice — store cover as gallery sort 1 so admin still sees it.
+          const insertMsg = `${insertErr?.message || ""} ${JSON.stringify(insertErr?.body || "")}`;
+          if (
+            (mediaType === "cover" || mediaType === "video" || mediaType === "achievement") &&
+            /media_type|check|23514|violates/i.test(insertMsg)
+          ) {
+            persistedMediaType = "gallery";
+            const fallbackPayload = {
+              ...mediaPayload,
+              media_type: "gallery",
+              sort_order:
+                mediaType === "cover" ? 1 : mediaType === "achievement" ? 500 + (Number(sortOrder) || 0) : sortOrder,
+            };
+            const mediaRows = await companionDb("companion_media", "", {
+              method: "POST",
+              body: JSON.stringify(fallbackPayload),
+            });
+            mediaRow = Array.isArray(mediaRows) ? mediaRows[0] : mediaRows;
+          } else {
+            throw insertErr;
+          }
+        }
+      } catch (error) {
+        if (!isMissingRelation(error)) throw error;
+        mediaTableMissing = true;
+      }
+
+      if (!publicUrl && uploaded.bucket && uploaded.path) {
+        try {
+          if (uploaded.bucket === PUBLIC_BUCKETS.profile || /public/i.test(uploaded.bucket)) {
+            publicUrl = publicObjectUrl(uploaded.bucket, uploaded.path);
+          } else {
+            // Preview signed URL for the client player (same TTL as bootstrap). Durable
+            // profile fields still store storage:// — never this signed URL.
+            const previewTtl = mediaType === "voice" ? 60 * 60 * 24 * 7 : 60 * 60;
+            publicUrl = await createSignedUrl(uploaded.bucket, uploaded.path, previewTtl);
+          }
+        } catch {
+          publicUrl = "";
+        }
+      }
+
+      // Keep media pending until admin review_application / review_media approves.
+      const companionPatch = { media_status: "pending", media_reject_reason: "", updated_at: nowIso() };
+      const durablePublicUrl =
+        uploaded.bucket === PUBLIC_BUCKETS.profile || /public/i.test(String(uploaded.bucket || ""))
+          ? publicObjectUrl(uploaded.bucket, uploaded.path)
+          : "";
+      const durableStorageRef =
+        uploaded.bucket && uploaded.path ? `storage://${uploaded.bucket}/${uploaded.path}` : "";
+      if (mediaType === "avatar" && durablePublicUrl) {
+        // Avatar updates profile.avatar_url. Only seed card_image_url when cover is empty.
+        if (!String(companion.card_image_url || "").trim()) {
+          companionPatch.card_image_url = durablePublicUrl;
+        }
+        await supabaseJson(restUrl("profiles", `?id=eq.${encodeURIComponent(auth.profile.id)}`), {
+          method: "PATCH",
+          headers: serviceHeaders(),
+          body: JSON.stringify({ avatar_url: durablePublicUrl }),
+        });
+      } else if (mediaType === "avatar" && !durablePublicUrl) {
+        // Clear stale signed/broken avatar URLs; keep existing cover if present.
+        await supabaseJson(restUrl("profiles", `?id=eq.${encodeURIComponent(auth.profile.id)}`), {
+          method: "PATCH",
+          headers: serviceHeaders(),
+          body: JSON.stringify({ avatar_url: "" }),
+        }).catch(() => {});
+      }
+      if (mediaType === "cover" && durablePublicUrl) {
+        companionPatch.card_image_url = durablePublicUrl;
+      } else if (mediaType === "cover" && !durablePublicUrl && durableStorageRef) {
+        // Private bucket fallback: durable storage:// ref (admin/public resolve via companion_media + sign).
+        companionPatch.card_image_url = durableStorageRef;
+      }
+      if (mediaType === "gallery" && durablePublicUrl && !companion.card_image_url && !auth.profile.avatar_url) {
+        companionPatch.card_image_url = durablePublicUrl;
+      }
+      if (mediaType === "voice") {
+        // Never persist short-lived signed URLs into voice_url; companion_media is source of truth.
+        companionPatch.voice_url = durableStorageRef || `storage://${uploaded.bucket}/${uploaded.path}`;
+      }
+
+      let fallbackMediaId = mediaRow?.id || null;
+      if (mediaTableMissing && mediaType === "gallery") {
+        const nextItems = galleryFallback.items.concat([
+          {
+            id: `fb-${Date.now()}`,
+            bucket: uploaded.bucket,
+            path: uploaded.path,
+            url: publicUrl,
+            sortOrder,
+            uploadedAt: nowIso(),
+          },
+        ]);
+        companionPatch.tags = writeGalleryFallback(galleryFallback.baseTags, nextItems);
+        fallbackMediaId = nextItems[nextItems.length - 1].id;
+      }
+
+      await patchCompanionProfile(`?id=eq.${encodeURIComponent(row.id)}`, companionPatch);
+      const storageRef =
+        mediaType === "voice"
+          ? companionPatch.voice_url || durableStorageRef || ""
+          : durableStorageRef || "";
+      return json(res, 200, {
+        ok: true,
+        message:
+          mediaType === "avatar"
+            ? "头像上传成功"
+            : mediaType === "cover"
+              ? "卡面上传成功"
+            : mediaType === "gallery"
+              ? "相册照片上传成功"
+              : mediaType === "voice"
+                ? "录音上传成功"
+                : mediaType === "video"
+                  ? "展示视频上传成功"
+                : mediaType === "achievement"
+                  ? "战绩上传成功"
+                : "媒体上传成功",
+        url: publicUrl,
+        path: uploaded.path,
+        bucket: uploaded.bucket,
+        storageRef: storageRef || undefined,
+        voice_url: mediaType === "voice" ? storageRef || undefined : undefined,
+        media: {
+          id: fallbackMediaId || `legacy-${mediaType}`,
+          mediaType: persistedMediaType || mediaType,
+          url: publicUrl,
+          path: uploaded.path,
+          bucket: uploaded.bucket,
+          storageRef: storageRef || undefined,
+          sortOrder,
+        },
+      });
+    }
+
+    if (action === "delete_media") {
+      const row = await ensureCompanionRow(auth.profile, companion);
+      const mediaId = String(body.media_id || body.id || "").trim();
+      const mediaType = String(body.media_type || body.mediaType || "").trim();
+
+      async function clearGalleryTagItem(predicate) {
+        const galleryFallback = readGalleryFallback(row.tags || companion.tags || "");
+        const nextItems = galleryFallback.items.filter((g) => !predicate(g));
+        if (nextItems.length !== galleryFallback.items.length) {
+          await supabaseJson(restUrl("companion_profiles", `?id=eq.${encodeURIComponent(row.id)}`), {
+            method: "PATCH",
+            headers: serviceHeaders(),
+            body: JSON.stringify({ tags: writeGalleryFallback(galleryFallback.baseTags, nextItems), updated_at: nowIso() }),
+          });
+        }
+        return nextItems;
+      }
+
+      async function deleteStorageByBucketPath(bucket, objectPath) {
+        if (!bucket || !objectPath) return;
+        try {
+          await deleteStorageObject(bucket, objectPath);
+        } catch {
+          /* ignore missing object */
+        }
+      }
+
+      // Legacy / soft-fallback ids when companion_media table is missing OR synthetic client ids.
+      if (mediaId === "legacy-avatar" || (mediaType === "avatar" && mediaId.startsWith("legacy-"))) {
+        await supabaseJson(restUrl("profiles", `?id=eq.${encodeURIComponent(auth.profile.id)}`), {
+          method: "PATCH",
+          headers: serviceHeaders(),
+          body: JSON.stringify({ avatar_url: "" }),
+        });
+        await supabaseJson(restUrl("companion_profiles", `?id=eq.${encodeURIComponent(row.id)}`), {
+          method: "PATCH",
+          headers: serviceHeaders(),
+          body: JSON.stringify({ card_image_url: "", updated_at: nowIso() }),
+        });
+        return json(res, 200, { ok: true, message: "已删除" });
+      }
+
+      if (mediaId.startsWith("fb-") || mediaId.startsWith("legacy-gallery-")) {
+        const restPath = mediaId.startsWith("legacy-gallery-") ? mediaId.slice("legacy-gallery-".length) : "";
+        await clearGalleryTagItem((g) => {
+          if (String(g.id) === mediaId) return true;
+          if (restPath && (String(g.path || "") === restPath || String(g.url || "") === restPath)) return true;
+          return false;
+        });
+        // Best-effort: also remove matching companion_media / storage when path is known.
+        if (restPath && !/^https?:\/\//i.test(restPath)) {
+          for (const bucket of [PUBLIC_BUCKETS.profile, PRIVATE_BUCKETS.gallery]) {
+            await deleteStorageByBucketPath(bucket, restPath);
+            try {
+              await companionDb(
+                "companion_media",
+                `?user_id=eq.${encodeURIComponent(auth.profile.id)}&storage_path=eq.${encodeURIComponent(restPath)}`,
+                { method: "DELETE" }
+              );
+            } catch {
+              /* ignore */
+            }
+          }
+        }
+        return json(res, 200, { ok: true, message: "已删除" });
+      }
+
+      // Fake storage-listing ids must NEVER hit companion_media.id (uuid column).
+      // Format: storage-gallery-{bucket}-{filename}
+      const storageSyn = mediaId.match(/^storage-gallery-(companion-public|companion-gallery)-(.+)$/i);
+      if (storageSyn) {
+        const bucket = storageSyn[1];
+        const fileName = storageSyn[2];
+        const objectPath = `${auth.profile.id}/gallery/${fileName}`;
+        await deleteStorageByBucketPath(bucket, objectPath);
+        try {
+          await companionDb(
+            "companion_media",
+            `?user_id=eq.${encodeURIComponent(auth.profile.id)}&storage_bucket=eq.${encodeURIComponent(bucket)}&storage_path=eq.${encodeURIComponent(objectPath)}`,
+            { method: "DELETE" }
+          );
+        } catch (error) {
+          if (!isMissingRelation(error)) {
+            /* path delete is enough for SoT when table missing */
+          }
+        }
+        await clearGalleryTagItem(
+          (g) =>
+            String(g.path || "") === objectPath ||
+            (String(g.bucket || "") === bucket && String(g.path || "").endsWith(`/${fileName}`))
+        );
+        return json(res, 200, { ok: true, message: "已删除" });
+      }
+
+      if (mediaId && !isUuid(mediaId)) {
+        // Any other non-UUID id: refuse uuid eq filter; try tag cleanup only.
+        await clearGalleryTagItem((g) => String(g.id) === mediaId);
+        return json(res, 200, { ok: true, message: "已删除" });
+      }
+
+      let items = [];
+      try {
+        if (mediaId) {
+          items = await companionDb(
+            "companion_media",
+            `?id=eq.${encodeURIComponent(mediaId)}&user_id=eq.${encodeURIComponent(auth.profile.id)}`
+          );
+        } else if (mediaType === "avatar" || mediaType === "voice" || mediaType === "video") {
+          items = await companionDb(
+            "companion_media",
+            `?companion_profile_id=eq.${encodeURIComponent(row.id)}&media_type=eq.${encodeURIComponent(mediaType)}`
+          );
+          if (mediaType === "video" && !(items || []).length) {
+            const galleryRows = await companionDb(
+              "companion_media",
+              `?companion_profile_id=eq.${encodeURIComponent(row.id)}&media_type=eq.gallery`
+            ).catch(() => []);
+            items = (galleryRows || []).filter(
+              (g) =>
+                /^video\//i.test(String(g.content_type || "")) ||
+                /\/video\//i.test(String(g.storage_path || "")) ||
+                String(g.storage_bucket || "") === PRIVATE_BUCKETS.video
+            );
+          }
+        } else {
+          return json(res, 400, { ok: false, message: "缺少要删除的媒体" });
+        }
+      } catch (error) {
+        if (isMissingRelation(error) && mediaType === "avatar") {
+          await supabaseJson(restUrl("profiles", `?id=eq.${encodeURIComponent(auth.profile.id)}`), {
+            method: "PATCH",
+            headers: serviceHeaders(),
+            body: JSON.stringify({ avatar_url: "" }),
+          });
+          await supabaseJson(restUrl("companion_profiles", `?id=eq.${encodeURIComponent(row.id)}`), {
+            method: "PATCH",
+            headers: serviceHeaders(),
+            body: JSON.stringify({ card_image_url: "", updated_at: nowIso() }),
+          });
+          return json(res, 200, { ok: true, message: "已删除" });
+        }
+        throw error;
+      }
+      if (!items?.length) return json(res, 404, { ok: false, message: "媒体不存在" });
+      const deletedTypes = new Set((items || []).map((i) => String(i.media_type || "")));
+      const deletedVideoLike = (items || []).some(
+        (i) =>
+          i.media_type === "video" ||
+          /^video\//i.test(String(i.content_type || "")) ||
+          String(i.storage_bucket || "") === PRIVATE_BUCKETS.video
+      );
+      for (const item of items) {
+        await deleteStorageByBucketPath(item.storage_bucket, item.storage_path);
+        try {
+          await companionDb("companion_media", `?id=eq.${encodeURIComponent(item.id)}`, { method: "DELETE" });
+        } catch (error) {
+          if (!isMissingRelation(error)) throw error;
+        }
+        if (item.media_type === "gallery") {
+          await clearGalleryTagItem(
+            (g) =>
+              String(g.path || "") === String(item.storage_path || "") ||
+              String(g.id || "") === String(item.id || "")
+          );
+        }
+      }
+      const deletedAvatar = deletedTypes.has("avatar");
+      if (deletedAvatar) {
+        await supabaseJson(restUrl("profiles", `?id=eq.${encodeURIComponent(auth.profile.id)}`), {
+          method: "PATCH",
+          headers: serviceHeaders(),
+          body: JSON.stringify({ avatar_url: "" }),
+        });
+        await supabaseJson(restUrl("companion_profiles", `?id=eq.${encodeURIComponent(row.id)}`), {
+          method: "PATCH",
+          headers: serviceHeaders(),
+          body: JSON.stringify({ card_image_url: "", updated_at: nowIso() }),
+        });
+      }
+      // Voice/video must unbind profile fields so public + self views cannot resurrect old files.
+      if (deletedTypes.has("voice")) {
+        await patchCompanionProfile(`?id=eq.${encodeURIComponent(row.id)}`, {
+          voice_url: "",
+          media_status: "pending",
+          updated_at: nowIso(),
+        }).catch(() => null);
+      }
+      if (deletedTypes.has("video") || deletedVideoLike) {
+        await patchCompanionProfile(`?id=eq.${encodeURIComponent(row.id)}`, {
+          media_status: "pending",
+          updated_at: nowIso(),
+        }).catch(() => null);
+      }
+      return json(res, 200, { ok: true, message: "已删除" });
+    }
+
+    if (action === "reorder_media") {
+      const row = await ensureCompanionRow(auth.profile, companion);
+      const ids = Array.isArray(body.ordered_ids || body.ids) ? body.ordered_ids || body.ids : [];
+      if (!ids.length) return json(res, 400, { ok: false, message: "缺少排序列表" });
+      let order = 10;
+      for (const id of ids) {
+        if (!isUuid(id)) continue;
+        await companionDb(
+          "companion_media",
+          `?id=eq.${encodeURIComponent(id)}&companion_profile_id=eq.${encodeURIComponent(row.id)}`,
+          {
+            method: "PATCH",
+            body: JSON.stringify({ sort_order: order, updated_at: nowIso() }),
+          }
+        );
+        order += 10;
+      }
+      return json(res, 200, { ok: true, message: "相册顺序已更新" });
+    }
+
+    if (action === "submit_application") {
+      const row = await ensureCompanionRow(auth.profile, companion);
+      // Pricing V2 P2: applicant must NOT set sell price. Price is assigned at admin approve via level.base_price.
+      const applyGameNames = splitGames(body.main_game || body.game || body.mainGame || "");
+      const servicesBundle = await loadPublicServices().catch(() => ({ services: [] }));
+      const catalog = Array.isArray(servicesBundle?.services) ? servicesBundle.services : [];
+      const byId = new Map(catalog.map((s) => [String(s.id), s]));
+      const byName = new Map(catalog.map((s) => [String(s.name || s.title || "").trim(), s]));
+      let applyServiceIds = parseServiceIds(body.service_ids || body.serviceIds);
+      if (!applyServiceIds.length && applyGameNames.length) {
+        applyServiceIds = applyGameNames.map((n) => byName.get(n)?.id).filter(Boolean).map(String);
+      }
+      applyServiceIds = [...new Set(applyServiceIds.filter((id) => byId.has(String(id))))];
+      const applyGame = applyServiceIds.length
+        ? applyServiceIds.map((id) => byId.get(String(id))?.name || byId.get(String(id))?.title).filter(Boolean).join("、")
+        : applyGameNames.join("、");
+      const applyServiceTypes = parseServiceTypes(body.service_type || body.serviceType || body.modes, {
+        fallbackPlayWhenGame: true,
+        hasGame: !!applyGame,
+      });
+      const authModeRaw = String(body.auth_mode || body.credential_mode || body.certification_method || body.authMode || body.credentialMode || body.certificationMethod || "")
+        .trim()
+        .toLowerCase();
+      const authMode = authModeRaw === "id_card" || authModeRaw === "deposit" ? authModeRaw : "";
+      if (!authMode) {
+        return json(res, 400, {
+          ok: false,
+          error: "certification_method_required",
+          message: "请先选择认证方式（身份证认证或押金认证）后再提交申请。",
+        });
+      }
+      // Applicant must NEVER set level / base_price / sell price via apply API.
+      // Level + base_price are assigned only by admin approve. Strip (do not trust) any such fields.
+      const forbiddenApplicantKeys = [
+        "level",
+        "level_id",
+        "levelId",
+        "companion_level",
+        "companionLevel",
+        "base_price",
+        "basePrice",
+        "price",
+        "service_price",
+        "servicePrice",
+        "unit_price",
+        "unitPrice",
+        "hourly_price",
+        "hourlyPrice",
+        "game_prices",
+        "gamePrices",
+        "custom_price",
+        "customPrice",
+      ];
+      const rejectedApplicantFields = forbiddenApplicantKeys.filter((k) => body[k] != null && String(body[k]).trim() !== "");
+      // Soft-reject path: if client explicitly tries to set level/price, refuse rather than silently apply.
+      if (rejectedApplicantFields.length) {
+        return json(res, 400, {
+          ok: false,
+          error: "applicant_level_price_forbidden",
+          message: "申请端不可自行设置陪玩等级或接单价格；等级与基础价格仅由管理员审核时指定。",
+          rejected_fields: rejectedApplicantFields,
+        });
+      }
+      // Personal intro/signature → public bio (description). Never store intro as application remark.
+      const bioText = String(body.bio || body.description || body.intro || "")
+        .replace(/\[AUTH_MODE:(?:id_card|deposit)\]\s*/gi, "")
+        .trim();
+      // Optional admin-only remark (explicit note/remark only — not intro/bio).
+      const rawRemark = String(body.remark || body.application_remark || body.applicationRemark || body.note || body.application_note || "")
+        .replace(/\[AUTH_MODE:(?:id_card|deposit)\]\s*/gi, "")
+        .trim();
+      // If client still sends intro via legacy `note`, treat it as bio when bio is empty and keep remark empty.
+      const legacyNoteLooksLikeIntro = !bioText && rawRemark && !body.remark && !body.application_remark && !body.applicationRemark;
+      const publicBio = bioText || (legacyNoteLooksLikeIntro ? rawRemark : "");
+      const adminRemark = legacyNoteLooksLikeIntro ? "" : rawRemark;
+      const applicationNote = authMode ? `[AUTH_MODE:${authMode}]${adminRemark ? ` ${adminRemark}` : ""}` : adminRemark;
+      let applyVoiceType = "";
+      try {
+        applyVoiceType = await normalizeSelectedVoiceTypes(body.voice_type || body.voiceType || "", {
+          required: false,
+        });
+      } catch {
+        applyVoiceType = String(body.voice_type || body.voiceType || "").trim();
+      }
+      const patch = {
+        main_service: String(body.main_service || body.mainService || applyGameNames[0] || ""),
+        game: applyGame,
+        service_type: (applyServiceTypes.length ? applyServiceTypes : ["陪玩服务"]).join(","),
+        service_ids: applyServiceIds,
+        game_rank: String(body.rank || body.game_rank || ""),
+        position: String(body.position || ""),
+        voice_type: applyVoiceType,
+        schedule: String(body.schedule || ""),
+        description: publicBio,
+        application_note: applicationNote,
+        tags: String(body.tags || ""),
+        application_status: "pending",
+        application_reject_reason: "",
+        application_submitted_at: nowIso(),
+        verification_status: companion.verification_status || "pending",
+        updated_at: nowIso(),
+      };
+      // Durable SoT: certification_method (+ legacy alias credential_mode).
+      patch.certification_method = authMode;
+      patch.credential_mode = authMode;
+      if (body.nickname) patch.nickname = String(body.nickname).trim();
+      if (body.phone || body.contact_phone) patch.contact_phone = String(body.phone || body.contact_phone || "").trim();
+      // P2: ignore applicant price on submit_application
+      if (body.age != null && body.age !== "") patch.age = Number(body.age) || null;
+      if (body.gender) patch.gender = String(body.gender).trim();
+      if (body.region) patch.region = String(body.region).trim();
+      if (body.contact_public != null) patch.contact_public = String(body.contact_public).trim();
+      // P2: ignore applicant game_prices on submit_application
+      try {
+        await supabaseJson(restUrl("companion_profiles", `?id=eq.${encodeURIComponent(row.id)}`), {
+          method: "PATCH",
+          headers: serviceHeaders(),
+          body: JSON.stringify(patch),
+        });
+      } catch (firstErr) {
+        // Optional certification_method / credential_mode columns may be absent — strip and retry.
+        let patched = false;
+        const msg = String(firstErr?.message || firstErr || "");
+        if (
+          (patch.certification_method || patch.credential_mode) &&
+          /column|schema cache|PGRST|certification_method|credential_mode/i.test(msg)
+        ) {
+          delete patch.certification_method;
+          delete patch.credential_mode;
+          try {
+            await supabaseJson(restUrl("companion_profiles", `?id=eq.${encodeURIComponent(row.id)}`), {
+              method: "PATCH",
+              headers: serviceHeaders(),
+              body: JSON.stringify(patch),
+            });
+            patched = true;
+          } catch {
+            /* fall through to core strip */
+          }
+        }
+        if (!patched) {
+          const core = {
+            main_service: patch.main_service,
+            game: patch.game,
+            service_type: patch.service_type,
+            game_rank: patch.game_rank,
+            position: patch.position,
+            voice_type: patch.voice_type,
+            schedule: patch.schedule,
+            application_note: patch.application_note,
+            tags: patch.tags,
+            application_status: "pending",
+            application_reject_reason: "",
+            application_submitted_at: nowIso(),
+            updated_at: nowIso(),
+          };
+          if (patch.nickname) core.nickname = patch.nickname;
+          if (patch.contact_phone) core.contact_phone = patch.contact_phone;
+          // P2: do not copy applicant price into core patch
+          try {
+            await supabaseJson(restUrl("companion_profiles", `?id=eq.${encodeURIComponent(row.id)}`), {
+              method: "PATCH",
+              headers: serviceHeaders(),
+              body: JSON.stringify(core),
+            });
+          } catch {
+            await supabaseJson(restUrl("companion_profiles", `?id=eq.${encodeURIComponent(row.id)}`), {
+              method: "PATCH",
+              headers: serviceHeaders(),
+              body: JSON.stringify({
+                game: patch.game,
+                application_note: patch.application_note,
+                application_status: "pending",
+                updated_at: nowIso(),
+              }),
+            });
+          }
+        }
+      }
+      // Formal submit: promote draft identity / deposit rows so admin review sees materials immediately.
+      try {
+        const identityRow = (
+          await companionDb(
+            "companion_identity_verifications",
+            `?companion_profile_id=eq.${encodeURIComponent(row.id)}&limit=1`
+          ).catch(() => [])
+        )?.[0];
+        if (
+          identityRow &&
+          String(identityRow.status || "").toLowerCase() === "draft" &&
+          (identityRow.id_front_path || identityRow.id_back_path)
+        ) {
+          await upsertByCompanion("companion_identity_verifications", row.id, auth.profile.id, {
+            real_name: identityRow.real_name || "",
+            identity_no: identityRow.identity_no || "",
+            id_front_path: identityRow.id_front_path || "",
+            id_back_path: identityRow.id_back_path || "",
+            id_handheld_path: identityRow.id_handheld_path || "",
+            status: "pending",
+            reject_reason: "",
+            submitted_at: nowIso(),
+          });
+        }
+      } catch {
+        /* optional */
+      }
+      try {
+        const depositRow = (
+          await companionDb(
+            "companion_deposits",
+            `?companion_profile_id=eq.${encodeURIComponent(row.id)}&order=created_at.desc&limit=1`
+          ).catch(() => [])
+        )?.[0];
+        if (depositRow && String(depositRow.status || "").toLowerCase() === "draft" && depositRow.proof_path) {
+          await upsertByCompanion("companion_deposits", row.id, auth.profile.id, {
+            required_amount: money(depositRow.required_amount || 100) || 100,
+            paid_amount: money(depositRow.paid_amount),
+            payment_method: String(depositRow.payment_method || ""),
+            proof_path: depositRow.proof_path || "",
+            proof_bucket: depositRow.proof_bucket || PRIVATE_BUCKETS.payment,
+            status: "pending",
+            reject_reason: "",
+            remark: String(depositRow.remark || ""),
+            paid_at: depositRow.paid_at || nowIso(),
+          });
+        }
+      } catch {
+        /* optional */
+      }
+      return json(res, 200, { ok: true, message: "申请已提交，等待后台审核。" });
+    }
+
+    if (action === "start_cs_consult" || action === "open_cs_conversation") {
+      const orderId = String(body.order_id || body.orderId || "").trim();
+      const consultType = String(body.consult_type || body.consultType || "").trim();
+      const forceNew =
+        action === "start_cs_consult"
+          ? body.forceNew !== false && String(body.forceNew || body.force_new || "").trim() !== "0"
+          : body.forceNew === true || String(body.forceNew || body.force_new || "").trim() === "1";
+      const conversation = await ensureCompanionSupportConversation(auth.profile.id, {
+        orderId,
+        consultType,
+        forceNew,
+      });
+      const activeConversationId = String(conversation?.id || "").trim();
+      const inbox = await buildCompanionInbox(auth.profile, companion, {
+        light: true,
+        includeActiveMessages: true,
+        skipDerivedNotices: true,
+        activeConversationId,
+      });
+      return json(res, 200, {
+        ok: true,
+        message: "咨询会话已创建",
+        conversationId: activeConversationId,
+        consultType: conversation?.consult_type || consultType || "",
+        orderId: conversation?.order_id || orderId || "",
+        data: inbox,
+        inbox,
+      });
+    }
+    if (action === "end_cs_conversation" || action === "end_conversation") {
+      const conversationId = String(body.conversation_id || body.conversationId || body.id || "").trim();
+      await endCompanionSupportConversation(auth.profile.id, conversationId);
+      const inbox = await buildCompanionInbox(auth.profile, companion, {
+        light: true,
+        includeActiveMessages: false,
+        skipDerivedNotices: true,
+        activeConversationId: conversationId,
+      });
+      return json(res, 200, {
+        ok: true,
+        message: "会话已结束",
+        conversationId,
+        data: inbox,
+        inbox,
+      });
+    }
+
+    if (action === "send_cs_message" || action === "send_message") {
+      const orderId = String(body.order_id || body.orderId || "").trim();
+      const consultType = String(body.consult_type || body.consultType || "").trim();
+      const conversationId = String(body.conversation_id || body.conversationId || "").trim();
+      const forceNew =
+        body.forceNew === true ||
+        String(body.forceNew || body.force_new || "").trim() === "1";
+      let conversation = null;
+      if (conversationId && !forceNew) {
+        const rows = await supabaseJson(
+          restUrl(
+            "conversations",
+            `?id=eq.${encodeURIComponent(conversationId)}&companion_id=eq.${encodeURIComponent(auth.profile.id)}&limit=1`
+          ),
+          { headers: serviceHeaders() }
+        ).catch(() => []);
+        conversation = rows?.[0] || null;
+        if (!conversation) {
+          return json(res, 404, { ok: false, message: "会话不存在或无权访问" });
+        }
+        try {
+          const { assertCompanionCanAccessConversation } = await import("./_conversation-privacy.js");
+          assertCompanionCanAccessConversation(conversation, auth.profile.id);
+        } catch (err) {
+          return json(res, err.status || 403, { ok: false, message: err.message || "无权访问该会话" });
+        }
+        if (isClosedConversationStatus(conversation.status)) {
+          return json(res, 403, { ok: false, message: "会话已结束，无法继续发送" });
+        }
+      } else {
+        conversation = await ensureCompanionSupportConversation(auth.profile.id, {
+          orderId,
+          consultType,
+          forceNew,
+        });
+      }
+      const messageType = String(body.messageType || body.message_type || "text").trim() || "text";
+      const msg = await sendCompanionChatMessage(
+        conversation,
+        auth.profile.id,
+        body.content || body.message || "",
+        messageType
+      );
+      const messageRow = msg ? await viewMessageSigned(msg) : null;
+      await import("./_user-notifications.js")
+        .then((mod) => mod.notifyChatParticipants(conversation, msg, auth.profile.id))
+        .catch((err) => console.warn("[companion] notify", err?.message || err));
+      return json(res, 200, {
+        ok: true,
+        message: "消息已发送",
+        conversationId: conversation?.id || conversationId || "",
+        consultType: conversation?.consult_type || consultType || "",
+        orderId: conversation?.order_id || orderId || "",
+        messageRow: messageRow || (msg ? viewMessage(msg) : null),
+      });
+    }
+    if (action === "mark_notices_read") {
+      const keys = Array.isArray(body.keys) ? body.keys : body.key ? [body.key] : [];
+      const result = await markNoticesRead(auth.profile.id, keys);
+      return json(res, 200, { ok: true, message: "已标记已读", ...result });
+    }
+    if (action === "mark_all_read") {
+      const data = await bootstrapData(auth.profile, companion);
+      const derived = buildSystemNotices({
+        companionUserId: auth.profile.id,
+        player: data.player,
+        verification: data.verification,
+        deposit: data.deposit,
+        orders: data.myOrders,
+        withdrawals: data.withdrawals,
+        popularity: data.popularity,
+        auditLocked: !data.permissions?.canWork,
+        auditHint: data.permissions?.lockReason || "",
+      });
+      const dbNotices = await loadCompanionNotifications(auth.profile.id).catch(() => []);
+      const notices = [...(dbNotices || []), ...(derived || [])];
+      const keys = Array.isArray(body.keys) && body.keys.length
+        ? body.keys
+        : notices.map((n) => n.key);
+      await markNoticesRead(auth.profile.id, keys);
+      // Mark most recent open CS thread only — do not create a new consult lock.
+      const openRows = await supabaseJson(
+        restUrl(
+          "conversations",
+          `?companion_id=eq.${encodeURIComponent(auth.profile.id)}&conversation_type=eq.companion_support&status=not.in.(closed,ended)&order=updated_at.desc&limit=1`
+        ),
+        { headers: serviceHeaders() }
+      ).catch(() => []);
+      const conversation = openRows?.[0] || null;
+      if (conversation?.id) await markConversationMessagesRead(conversation.id, { companionUserId: auth.profile.id });
+      return json(res, 200, { ok: true, message: "已全部标记已读", marked: keys.length });
+    }
+    if (action === "mark_cs_read" || action === "read_cs_conversation") {
+      const conversationId = String(body.conversation_id || body.conversationId || "").trim();
+      let conversation = null;
+      if (conversationId) {
+        const rows = await supabaseJson(
+          restUrl("conversations", `?id=eq.${encodeURIComponent(conversationId)}&companion_id=eq.${encodeURIComponent(auth.profile.id)}&limit=1`),
+          { headers: serviceHeaders() }
+        ).catch(() => []);
+        conversation = rows?.[0] || null;
+      }
+      if (!conversation) {
+        const openRows = await supabaseJson(
+          restUrl(
+            "conversations",
+            `?companion_id=eq.${encodeURIComponent(auth.profile.id)}&conversation_type=eq.companion_support&status=not.in.(closed,ended)&order=updated_at.desc&limit=1`
+          ),
+          { headers: serviceHeaders() }
+        ).catch(() => []);
+        conversation = openRows?.[0] || null;
+      }
+      if (conversation?.id) await markConversationMessagesRead(conversation.id, { companionUserId: auth.profile.id });
+      return json(res, 200, { ok: true, message: "已标记已读" });
+    }
+
+    if (action === "my_offers") {
+      const { listCompanionOffers } = await import("./_companion-offers.js");
+      const data = await listCompanionOffers(auth.profile.id);
+      return json(res, 200, { ok: true, ...data });
+    }
+    if (action === "save_offers") {
+      try {
+        assertCompanionBusinessAccess(auth.profile, companion || {});
+      } catch (err) {
+        return isolationForbiddenResponse(res, err);
+      }
+      const { saveCompanionOffers } = await import("./_companion-offers.js");
+      const data = await saveCompanionOffers(auth.profile.id, body.offers || []);
+      return json(res, 200, { ok: true, message: "我的服务已保存", ...data });
+    }
+
+    if (action === "request_withdrawal") {
+      try {
+        assertCompanionBusinessAccess(auth.profile, companion || {});
+      } catch (err) {
+        return isolationForbiddenResponse(res, err);
+      }
+      let amount = money(body.amount || body.cat_food_amount || body.catFoodAmount);
+      const idempotencyKey = String(body.idempotencyKey || body.idempotency_key || "").trim();
+      const remark = String(body.remark || body.note || "").trim();
+      const accountId = String(body.paymentAccountId || body.payment_account_id || "").trim();
+      let data = await bootstrapData(auth.profile, companion);
+      if (!/^[A-Za-z0-9:_-]{8,80}$/.test(idempotencyKey)) {
+        return json(res, 400, { ok: false, message: "缺少提现幂等标识，请刷新页面后重新提交" });
+      }
+      const existingEarly = await findCompanionWithdrawalByIdempotency(
+        companionDb,
+        auth.profile.id,
+        idempotencyKey
+      );
+      if (existingEarly) {
+        if (WITHDRAW_RELEASED.has(String(existingEarly.status || ""))) {
+          return json(res, 409, { ok: false, message: "该提现申请已结束，请重新提交" });
+        }
+        return json(res, 200, {
+          ok: true,
+          duplicate: true,
+          message: "提现申请已提交",
+          item: existingEarly,
+          preview: {
+            catFoodAmount: money(existingEarly.cat_food_amount || existingEarly.amount),
+            amount: money(existingEarly.amount || existingEarly.cat_food_amount),
+            grossAmountRm: money(existingEarly.gross_amount_rm || existingEarly.amount),
+            feeRm: money(existingEarly.fee_rm),
+            netAmountRm: money(existingEarly.net_amount_rm),
+            withdrawalNo: existingEarly.withdrawal_no,
+            settlementDate: existingEarly.settlement_date,
+            status: existingEarly.status,
+            statusText: WITHDRAW_STATUS_TEXT[existingEarly.status] || existingEarly.status,
+          },
+        });
+      }
+      if (!data.permissions.canWithdraw) {
+        return json(res, 400, { ok: false, message: data.permissions.withdrawLockReason || "暂不可提现" });
+      }
+      if (!(amount > 0)) return json(res, 400, { ok: false, message: "提现金额必须大于 0" });
+      if (amount < money(data.withdrawalRules.minAmount)) {
+        return json(res, 400, { ok: false, message: `最低提现 ${data.withdrawalRules.minAmount} 猫粮` });
+      }
+      if (amount > money(data.earnings.withdrawable) + 0.001) {
+        return json(res, 400, { ok: false, message: "可提现余额不足" });
+      }
+      if (Number(data.withdrawalRules.remainingThisWeek ?? data.withdrawalRules.remainingThisMonth ?? 0) <= 0) {
+        return json(res, 400, { ok: false, message: "本周提现次数已用完" });
+      }
+      const accounts = data.withdrawalRules.approvedAccounts || [];
+      const account = accounts.find((a) => a.id === accountId) || accounts[0];
+      if (!account) return json(res, 400, { ok: false, message: "没有已审核通过的结款账户，请先提交并等待审核" });
+
+      const fullAccounts = await companionDb(
+        "companion_payment_accounts",
+        `?id=eq.${encodeURIComponent(account.id)}&limit=1`
+      ).catch(() => []);
+      const full = fullAccounts?.[0];
+      if (!full || !/approved|verified/.test(String(full.status || ""))) {
+        return json(res, 400, { ok: false, message: "结款账户未审核通过" });
+      }
+
+      // Block withdraw while companion has orders in Friday refund queue / open refund
+      {
+        const openRefunds = await companionDb(
+          "boss_refund_requests",
+          `?status=in.(pending_review,approved_for_payout,included_in_batch,processing,carried_forward)&select=id,order_id,status&limit=200`
+        ).catch(() => []);
+        const refundOrderIds = new Set((openRefunds || []).map((r) => r.order_id).filter(Boolean));
+        if (refundOrderIds.size) {
+          const incomeOnRefund = await companionDb(
+            "transactions",
+            `?user_id=eq.${encodeURIComponent(auth.profile.id)}&transaction_type=eq.companion_income&status=neq.cancelled&select=order_id&limit=500`
+          ).catch(() => []);
+          const hit = (incomeOnRefund || []).some((t) => t.order_id && refundOrderIds.has(t.order_id));
+          if (hit) {
+            return json(res, 400, {
+              ok: false,
+              message: "存在待处理/待周五退款的订单，相关收入暂不可提现。请等待退款结算完成或冲减后再申请。",
+            });
+          }
+        }
+      }
+
+      const weeklyCfg = await loadFinanceWeeklySettings(companionDb).catch(() => mergeWeeklySettings({}));
+      const settlementDate = computeSettlementDate(new Date(), weeklyCfg);
+      const inflightId = `withdraw-inflight:${auth.profile.id}`;
+      let inflightHeld = false;
+      const releaseInflight = async () => {
+        if (!inflightHeld) return;
+        inflightHeld = false;
+        await companionDb(
+          "payout_source_locks",
+          `?source_kind=eq.period&source_id=eq.${encodeURIComponent(inflightId)}`,
+          { method: "DELETE" }
+        ).catch(() => null);
+      };
+      const acquireInflight = async () => {
+        const locked = await lockPayoutSources(companionDb, {
+          applicantId: auth.profile.id,
+          sources: [{ kind: "period", id: inflightId }],
+          relatedTable: "profiles",
+          relatedRecordId: auth.profile.id,
+        });
+        inflightHeld = Array.isArray(locked) && locked.some(Boolean);
+      };
+
+      let rate = 1;
+      let gross = 0;
+      let fee = 0;
+      let net = 0;
+      try {
+        try {
+          await acquireInflight();
+        } catch (lockErr) {
+          if (lockErr?.code !== "SOURCE_LOCKED") throw lockErr;
+          const held = await companionDb(
+            "payout_source_locks",
+            `?source_kind=eq.period&source_id=eq.${encodeURIComponent(inflightId)}&select=id,created_at&limit=1`
+          ).catch(() => []);
+          const created = Date.parse(held?.[0]?.created_at || "");
+          if (!(Number.isFinite(created) && Date.now() - created > 120000)) {
+            return json(res, 409, { ok: false, message: "已有提现正在提交，请勿重复操作" });
+          }
+          await companionDb(
+            "payout_source_locks",
+            `?source_kind=eq.period&source_id=eq.${encodeURIComponent(inflightId)}`,
+            { method: "DELETE" }
+          ).catch(() => null);
+          try {
+            await acquireInflight();
+          } catch (retryErr) {
+            if (retryErr?.code === "SOURCE_LOCKED") {
+              return json(res, 409, { ok: false, message: "已有提现正在提交，请勿重复操作" });
+            }
+            throw retryErr;
+          }
+        }
+
+        const fresh = await bootstrapData(auth.profile, companion);
+        const existing = await findCompanionWithdrawalByIdempotency(
+          companionDb,
+          auth.profile.id,
+          idempotencyKey
+        );
+        if (existing) {
+          if (WITHDRAW_RELEASED.has(String(existing.status || ""))) {
+            return json(res, 409, { ok: false, message: "该提现申请已结束，请重新提交" });
+          }
+          return json(res, 200, {
+            ok: true,
+            duplicate: true,
+            message: "提现申请已提交",
+            item: existing,
+            preview: {
+              catFoodAmount: money(existing.cat_food_amount || existing.amount),
+              amount: money(existing.amount || existing.cat_food_amount),
+              grossAmountRm: money(existing.gross_amount_rm || existing.amount),
+              feeRm: money(existing.fee_rm),
+              netAmountRm: money(existing.net_amount_rm),
+              withdrawalNo: existing.withdrawal_no,
+              settlementDate: existing.settlement_date,
+              status: existing.status,
+              statusText: WITHDRAW_STATUS_TEXT[existing.status] || existing.status,
+            },
+          });
+        }
+        const openCount = (fresh.withdrawals || []).filter((row) =>
+          WITHDRAW_OPEN_RE.test(String(row.status || ""))
+        ).length;
+        const assessment = assessWithdrawalRequest({
+          amount,
+          exchangeRate: fresh.withdrawalRules?.exchangeRate || 1,
+          withdrawable: fresh.earnings?.withdrawable,
+          openWithdrawalCount: openCount,
+          idempotencyKey,
+          existingByKey: null,
+        });
+        if (!assessment.ok) {
+          return json(res, assessment.status || 400, { ok: false, message: assessment.message });
+        }
+        rate = money(fresh.withdrawalRules?.exchangeRate) || 1;
+        gross = assessment.gross;
+        fee = assessment.fee;
+        net = assessment.net;
+        data = fresh;
+      const rawAccount = String(full.bank_account || full.tng_account || full.alipay_account || "").replace(/\s+/g, "");
+      const last4 = full.account_last4 || (rawAccount ? rawAccount.slice(-4) : maskBankAccount(full.bank_account).slice(-4));
+      const holder = String(full.account_name || full.account_holder || auth.profile.display_name || "").trim();
+      const accountNumber = rawAccount
+        ? rawAccount.length <= 4
+          ? rawAccount
+          : `${"*".repeat(Math.max(0, rawAccount.length - 4))}${last4}`
+        : last4
+          ? `****${last4}`
+          : "";
+
+      const withdrawalNo = await allocateWithdrawalNo(companionDb).catch(
+        () => `WD${String(Date.now()).slice(-6)}`
+      );
+      const withdrawalPayload = {
+        withdrawal_no: withdrawalNo,
+        companion_id: auth.profile.id,
+        payment_account_id: full.id,
+        amount,
+        cat_food_amount: amount,
+        exchange_rate: rate,
+        gross_amount_rm: gross,
+        fee_rm: fee,
+        net_amount_rm: net,
+        bank_name: full.bank_name || "",
+        account_name: holder,
+        account_holder: holder,
+        account_number: accountNumber,
+        account_last4: last4,
+        remark: `${withdrawalIdempotencyMarker(idempotencyKey)} ${remark}`.trim(),
+        idempotency_key: idempotencyKey,
+        status: "pending_friday",
+        settlement_date: settlementDate,
+        source_ledger_ids: [],
+        source_order_ids: [],
+        currency: "CAT_FOOD",
+        payout_method: full.tng_account ? "tng" : "bank",
+        tng_account: full.tng_account ? `****${String(full.tng_account).slice(-4)}` : "",
+        submitted_at: nowIso(),
+        created_at: nowIso(),
+        updated_at: nowIso(),
+      };
+      let item = null;
+      {
+        // Staging/Prod may enforce companion_withdrawals_stream_alloc_sum:
+        // order+gift(+invite) stream columns must equal cat_food_amount.
+        const giftWithdrawable = money(
+          data?.earnings?.giftNetIncome ??
+            data?.earnings?.giftIncome ??
+            data?.summary?.giftIncome ??
+            data?.channels?.giftNetIncome ??
+            0
+        );
+        const orderWithdrawable = money(
+          data?.earnings?.availableOrderIncome ??
+            data?.earnings?.orderUnlocked ??
+            data?.channels?.orderIncome ??
+            0
+        );
+        let giftAlloc = Math.min(amount, Math.max(0, giftWithdrawable));
+        let orderAlloc = Math.min(Math.max(0, amount - giftAlloc), Math.max(0, orderWithdrawable));
+        let inviteAlloc = money(amount - giftAlloc - orderAlloc);
+        if (inviteAlloc < 0) inviteAlloc = 0;
+        // If channel balances unknown/stale, attribute remaining to gift (immediate unlock stream).
+        const allocated = money(giftAlloc + orderAlloc + inviteAlloc);
+        if (allocated < amount) giftAlloc = money(giftAlloc + (amount - allocated));
+        if (money(giftAlloc + orderAlloc + inviteAlloc) !== amount) {
+          giftAlloc = amount;
+          orderAlloc = 0;
+          inviteAlloc = 0;
+        }
+        const streamSets = [
+          {
+            service_income_withdrawn_amount: money(orderAlloc + giftAlloc),
+            referral_rebate_withdrawn_amount: inviteAlloc,
+          },
+          {
+            service_income_withdrawn_amount: amount,
+            referral_rebate_withdrawn_amount: 0,
+          },
+          {
+            service_income_withdrawn_amount: giftAlloc,
+            referral_rebate_withdrawn_amount: money(Math.max(0, amount - giftAlloc)),
+          },
+        ];
+        // Default first attempt includes Staging stream alloc columns (service + referral).
+        let payload = { ...withdrawalPayload, ...streamSets[0] };
+        let streamIdx = 0;
+        let lastErr = "";
+        for (let attempt = 0; attempt < 24; attempt++) {
+          try {
+            const rows = await companionDb("companion_withdrawals", "", {
+              method: "POST",
+              body: JSON.stringify(payload),
+            });
+            item = rows?.[0] || null;
+            break;
+          } catch (error) {
+            const msg = `${error?.message || ""} ${JSON.stringify(error?.body || "")}`;
+            lastErr = msg.slice(0, 500);
+            if (/companion_withdrawals|schema cache|PGRST/i.test(msg) && /Could not find the table/i.test(msg)) {
+              return json(res, 503, {
+                ok: false,
+                message: "提现表未就绪，请稍后重试或联系管理员执行数据库迁移",
+              });
+            }
+            if (/stream_alloc_sum/i.test(msg)) {
+              streamIdx += 1;
+              if (streamIdx >= streamSets.length) {
+                return json(res, 500, {
+                  ok: false,
+                  message: "提现申请写入失败：stream_alloc 约束未满足",
+                  detail: lastErr.slice(0, 400),
+                });
+              }
+              payload = { ...withdrawalPayload, ...streamSets[streamIdx] };
+              continue;
+            }
+            const m = msg.match(/Could not find the '([^']+)' column/i);
+            if (m && m[1] in payload) {
+              delete payload[m[1]];
+              // If this stream set has no remaining alloc keys, advance.
+              const allocLeft = Object.keys(payload).some((k) => /alloc|stream|gift_cat|order_cat|invite_cat/i.test(k));
+              if (!allocLeft && streamIdx + 1 < streamSets.length && streamIdx > 0) {
+                streamIdx += 1;
+                payload = { ...withdrawalPayload, ...streamSets[streamIdx] };
+              }
+              continue;
+            }
+            throw error;
+          }
+        }
+      }
+      if (!item) {
+        return json(res, 500, { ok: false, message: "提现申请写入失败，请稍后重试" });
+      }
+
+      let freezeTxId = null;
+      try {
+        const txRows = await supabaseJson(restUrl("transactions"), {
+          method: "POST",
+          headers: serviceHeaders(),
+          body: JSON.stringify({
+            user_id: auth.profile.id,
+            order_id: null,
+            transaction_type: "withdrawal",
+            amount,
+            status: "pending",
+            note: `提现申请冻结 ${item?.withdrawal_no || ""} 申请 ${amount} 手续费 RM${Number(fee).toFixed(2)} 预计到账 RM${Number(net).toFixed(2)} 发放 ${settlementDate}`.trim(),
+            created_at: nowIso(),
+          }),
+        });
+        freezeTxId = txRows?.[0]?.id || null;
+        if (freezeTxId && item?.id) {
+          await companionDb("companion_withdrawals", `?id=eq.${encodeURIComponent(item.id)}`, {
+            method: "PATCH",
+            body: JSON.stringify({
+              freeze_tx_id: freezeTxId,
+              transaction_id: freezeTxId,
+              updated_at: nowIso(),
+            }),
+          }).catch(() => null);
+          item = { ...item, freeze_tx_id: freezeTxId, transaction_id: freezeTxId };
+        }
+      } catch {
+        /* ledger marker optional */
+      }
+
+      // Anti-duplicate: period-level lock for this withdrawal row (amount freeze via freeze_tx).
+      const sourceLedgerIds = freezeTxId ? [String(freezeTxId)] : [];
+      const sourceOrderIds = [];
+
+      const payoutRow = await upsertPayoutRequest(companionDb, {
+        payoutNo: item.withdrawal_no,
+        applicantType: "companion",
+        applicantId: auth.profile.id,
+        applicantName: auth.profile.display_name || "",
+        applicantUid: auth.profile.boss_uid || auth.profile.id || "",
+        amount: net,
+        currency: "MYR",
+        payoutMethod: withdrawalPayload.payout_method,
+        bankName: full.bank_name || "",
+        accountName: holder,
+        accountNumberMasked: accountNumber,
+        tngAccount: withdrawalPayload.tng_account,
+        sourceOrderIds,
+        sourceLedgerIds,
+        settlementDate,
+        status: "pending_friday",
+        payoutType: "companion_wage",
+        relatedTable: "companion_withdrawals",
+        relatedRecordId: item.id,
+        meta: { payout_type: "companion_wage", catFoodAmount: amount, grossRm: gross, feeRm: fee },
+      });
+
+      try {
+        await lockPayoutSources(companionDb, {
+          applicantId: auth.profile.id,
+          sources: [{ kind: "period", id: `companion-wd:${item.id}` }],
+          payoutRequestId: payoutRow?.id,
+          relatedTable: "companion_withdrawals",
+          relatedRecordId: item.id,
+        });
+      } catch (lockErr) {
+        if (lockErr?.code === "SOURCE_LOCKED") {
+          return json(res, 409, { ok: false, message: lockErr.message });
+        }
+      }
+
+      try {
+        await insertCompanionNotification({
+          companionUserId: auth.profile.id,
+          category: "withdraw",
+          title: "提现申请已提交",
+          body: `提现单 ${item.withdrawal_no} 已进入待周五结算，预计发放 ${settlementDate}。`,
+          href: "/companion/withdraw/",
+          noticeKey: `withdraw-submitted-${item.id}`,
+        });
+      } catch {
+        /* optional */
+      }
+
+      return json(res, 200, {
+        ok: true,
+        message: "提现申请已提交，进入待周五结算",
+        preview: {
+          catFoodAmount: amount,
+          amount,
+          grossAmountRm: gross,
+          feeRm: fee,
+          netAmountRm: net,
+          bankName: full.bank_name,
+          accountHolder: holder,
+          accountLast4: last4,
+          withdrawalNo: item.withdrawal_no,
+          settlementDate,
+          status: item.status || "pending_friday",
+          statusText: WITHDRAW_STATUS_TEXT[item.status || "pending_friday"] || "待周五结算",
+        },
+        item,
+        data: {
+          withdrawalId: item.id,
+          withdrawalNo: item.withdrawal_no,
+          status: item.status || "pending_friday",
+          settlementDate,
+        },
+      });
+      } finally {
+        await releaseInflight();
+      }
+    }
+
+    return json(res, 400, { ok: false, message: "未知陪玩端操作" });
+  } catch (error) {
+    const friendly = humanizeCompanionApiError(error);
+    return json(res, friendly.status || 500, {
+      ok: false,
+      message: friendly.message || "陪玩端接口异常",
+      status: friendly.status || 500,
+    });
+  }
+}

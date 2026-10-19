@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>我的预约 | 陪玩端</title>
+  <style>
+    *{box-sizing:border-box}
+    html,body{max-width:100%}
+    body{margin:0;background:#07070a;color:#fff4fa;font-family:"Microsoft YaHei",sans-serif}
+    main{max-width:1080px;margin:0 auto;padding:18px 14px 48px}
+    a{color:#F4A6C8}
+    h1{margin:8px 0 16px;font-size:28px;line-height:1.2}
+    h2{margin:0 0 8px;font-size:18px;line-height:1.3}
+    .status-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+    .status-card{display:flex;flex-direction:column;align-items:flex-start;gap:8px;width:100%;min-width:0;min-height:108px;padding:16px;border-radius:16px;border:1px solid rgba(244,166,200,.45);background:#101014;color:#fff4fa;text-align:left;cursor:pointer}
+    .status-card strong{font-size:28px;line-height:1;color:#F4A6C8}
+    .status-card span{font-size:14px;font-weight:700;line-height:1.35;white-space:normal;overflow-wrap:anywhere}
+    .status-card.is-active{border-color:#F4A6C8;box-shadow:0 0 0 1px #F4A6C8}
+    .detail-wrap{margin-top:16px;padding:14px;border-radius:16px;background:#101014;border:1px solid rgba(244,166,200,.35);min-width:0}
+    .appt-list{display:flex;flex-direction:column;gap:10px}
+    .appt-card{padding:12px;border-radius:12px;background:#07070a;border:1px solid rgba(244,166,200,.28);min-width:0}
+    .summary{display:flex;flex-direction:column;gap:4px;margin:0}
+    .summary div{display:grid;grid-template-columns:4.75em minmax(0,1fr);column-gap:8px;align-items:start}
+    .summary dt{color:#F4A6C8;font-size:12px;font-weight:700}
+    .summary dd{margin:0;min-width:0;font-size:14px;line-height:1.4;overflow-wrap:anywhere;word-break:break-word}
+    .more{display:none;margin-top:8px}
+    .more.is-open{display:block}
+    .actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+    button.act,button.ghost{border-radius:999px;padding:8px 14px;margin:0;font-weight:700;cursor:pointer;min-height:44px}
+    button.act{border:0;background:#F4A6C8;color:#1a1020}
+    button.ghost{border:1px solid #F4A6C8;background:transparent;color:#F4A6C8}
+    @media (max-width:900px){
+      main{padding:12px 10px 28px}
+      h1{font-size:22px;margin:4px 0 10px}
+      .status-grid{grid-template-columns:repeat(4,minmax(0,1fr));gap:4px}
+      .status-card{min-height:0;padding:6px 2px;gap:2px;border-radius:10px;align-items:center;text-align:center}
+      .status-card strong{font-size:16px}
+      .status-card span{font-size:10px;line-height:1.25}
+      .detail-wrap{margin-top:12px;padding:10px}
+      .appt-card{padding:10px}
+    }
+  </style>
+</head>
+<body>
+<main>
+  <p><a href="/companion/dashboard">返回陪玩工作台</a></p>
+  <h1>我的预约</h1>
+  <section class="status-grid" id="grid"></section>
+  <section id="detail"></section>
+</main>
+<script>
+(function(){
+  function session(){try{return JSON.parse(localStorage.getItem("mcjCompanionSession")||sessionStorage.getItem("mcjCompanionSession")||"null");}catch(e){return null;}}
+  function token(){var s=session();return s&&s.token||"";}
+  function esc(s){return String(s||"").replace(/[&<>"']/g,function(c){return({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"})[c];});}
+  var labels={pending:"待确认",confirmed:"已确认",rejected:"已拒绝",cancelled:"已取消",awaiting_payment:"待老板确认支付",in_progress:"进行中",completed:"已完成",expired:"已过期"};
+  var groups=[["pending","待确认预约"],["confirmed","已确认预约"],["awaiting_payment","待老板确认支付"],["rejected","已拒绝预约"],["cancelled","已取消预约"],["completed","已完成预约"],["expired","已过期"],["in_progress","进行中"]];
+  var selected="pending";
+  var rows=[];
+  if(!token()){location.href="/companion/login/";return;}
+  function beat(){
+    var intent="online";
+    try{intent=sessionStorage.getItem("mcjCompanionPresenceIntent")||"online";}catch(e){}
+    if(intent==="offline")return;
+    fetch("/api/companion",{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+token()},body:JSON.stringify({action:"set_online_status",online_status:intent,heartbeat:1})}).catch(function(){});
+  }
+  beat();
+  setInterval(beat,20000);
+  function api(action,body,method){
+    var opts={method:method||"POST",headers:{Authorization:"Bearer "+token(),"Content-Type":"application/json"}};
+    if(opts.method==="GET")return fetch("/api/appointments?action="+encodeURIComponent(action),opts).then(function(r){return r.json();});
+    opts.body=JSON.stringify(Object.assign({action:action},body||{}));
+    return fetch("/api/appointments",opts).then(function(r){return r.json();});
+  }
+  function appointmentText(r){
+    var req=String((r&&r.requirements)||"");
+    var note=String((r&&r.note)||"");
+    if(!note){
+      var matched=req.match(/^服务需求：([\s\S]*?)\n备注：([\s\S]*)$/);
+      if(matched){req=matched[1].trim();note=matched[2].trim();}
+    }
+    return {requirements:req.trim()||"无",note:note.trim()||"无"};
+  }
+  function paint(){
+    document.getElementById("grid").innerHTML=groups.map(function(g){
+      var count=(rows||[]).filter(function(r){return r.status===g[0];}).length;
+      return '<button type="button" class="status-card'+(selected===g[0]?" is-active":"")+'" data-status="'+g[0]+'"><strong>'+count+'</strong><span>'+esc(g[1])+'</span></button>';
+    }).join("");
+    var title=(groups.filter(function(g){return g[0]===selected;})[0]||["",""])[1];
+    var items=(rows||[]).filter(function(r){return r.status===selected;});
+    function line(label,value){return '<div><dt>'+esc(label)+'</dt><dd>'+esc(value)+'</dd></div>';}
+    document.getElementById("detail").innerHTML='<section class="detail-wrap"><h2>'+esc(title)+'（'+items.length+'）</h2>'+(items.length?'<div class="appt-list">'+items.map(function(r){
+      var text=appointmentText(r);
+      var pay=r.charged?"已扣款":"未扣款";
+      var actions=r.status==="pending"?'<button class="act" type="button" data-act="accept" data-id="'+esc(r.id)+'">接受预约</button><button class="ghost" type="button" data-act="reject" data-id="'+esc(r.id)+'">拒绝预约</button>':"";
+      return '<article class="appt-card"><dl class="summary">'+line("预约编号",r.id)+line("预约状态",labels[r.status]||r.status)+line("预约时间",r.startAt)+line("服务名称",r.serviceName)+line("金额",String(r.totalAmount||"")+" 猫粮")+'</dl><div class="actions">'+actions+'<button class="ghost" type="button" data-fold="1">查看详情</button></div><div class="more"><dl class="summary">'+line("老板",r.bossId||"无")+line("陪玩",r.companionId||"无")+line("结束时间",r.endAt||"无")+line("时长",String(r.hours||"")+" 小时")+line("付款状态",pay+"（"+(r.chargeState||"none")+"）")+line("服务需求",text.requirements)+line("备注",text.note)+line("关联订单", r.orderId||"未生成")+line("订单状态", r.orderStatus||"无")+line("正式订单","预约审核通过前不是进行中的正式服务，提交预约不会扣款。")+'</dl></div></article>';
+    }).join("")+'</div>':'<p>暂无</p>')+'</section>';
+  }
+  function load(){
+    return api("mine",null,"GET").then(function(res){rows=res.appointments||[];paint();});
+  }
+  document.body.addEventListener("click",function(e){
+    var card=e.target.closest("[data-status]");
+    if(card){selected=card.getAttribute("data-status");paint();return;}
+    var fold=e.target.closest("[data-fold]");
+    if(fold){
+      var more=fold.closest("article").querySelector(".more");
+      var open=!more.classList.contains("is-open");
+      more.classList.toggle("is-open",open);
+      fold.textContent=open?"收起详情":"查看详情";
+      return;
+    }
+    var btn=e.target.closest("[data-act]");
+    if(!btn||btn.disabled)return;
+    btn.disabled=true;
+    api(btn.getAttribute("data-act"),{id:btn.getAttribute("data-id")}).then(function(res){
+      if(!res||!res.ok)alert((res&&res.message)||"操作失败");
+      return load();
+    }).catch(function(){alert("操作失败");});
+  });
+  load();
+})();
+</script>
+</body>
+</html>

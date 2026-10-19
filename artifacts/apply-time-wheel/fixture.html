@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Apply time wheel fixture</title>
+  <link rel="stylesheet" href="/src/mcj-time-picker.css?v=20260924timeWheel3">
+  <style>
+    html, body {
+      margin: 0;
+      min-height: 100%;
+      background: #0a0610;
+      color: #ffe6f2;
+      font-family: "Segoe UI", system-ui, sans-serif;
+    }
+    .wrap {
+      max-width: 420px;
+      margin: 0 auto;
+      padding: 24px 16px 48px;
+    }
+    h1 { font-size: 18px; margin: 0 0 16px; }
+    .panel {
+      border-radius: 18px;
+      border: 1px solid rgba(239, 171, 201, 0.22);
+      background: linear-gradient(180deg, rgba(28, 18, 28, 0.95), rgba(10, 8, 14, 0.98));
+      padding: 16px;
+    }
+    .apply-fields { display: grid; gap: 12px; }
+    .apply-section-note { margin: 0; color: rgba(255, 214, 231, 0.55); font-size: 12px; }
+    #status { margin-top: 14px; font-size: 13px; color: rgba(255, 214, 231, 0.7); }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>常在线时间 · fixture</h1>
+    <div class="panel">
+      <form class="apply-fields" id="root"></form>
+      <p id="status">ready</p>
+    </div>
+  </div>
+  <script src="/src/mcj-time-picker.js?v=20260924timeWheel3"></script>
+  <script>
+    (function () {
+      var TP = window.MCJTimePicker;
+      var root = document.getElementById("root");
+      var status = document.getElementById("status");
+      function paint(start, end) {
+        root.innerHTML =
+          TP.applyFieldHtml({
+            name: "onlineStart",
+            label: "开始时间",
+            icon: "🕐",
+            value: start,
+            pickerTitle: "选择开始时间",
+          }) +
+          '<div class="mcj-apply-time-to">至</div>' +
+          TP.applyFieldHtml({
+            name: "onlineEnd",
+            label: "结束时间",
+            icon: "🌙",
+            value: end,
+            pickerTitle: "选择结束时间",
+          }) +
+          '<p class="apply-section-note">支持跨午夜，例如 23:00 至次日 04:00。</p>';
+        // wrap like production stack
+        var stack = document.createElement("div");
+        stack.className = "mcj-apply-time-stack";
+        stack.innerHTML =
+          '<p class="mcj-apply-time-heading">常在线时间</p>' + root.innerHTML;
+        root.innerHTML = "";
+        root.appendChild(stack);
+        status.textContent =
+          "start=" +
+          (root.querySelector('[name="onlineStart"]').value || "") +
+          " end=" +
+          (root.querySelector('[name="onlineEnd"]').value || "");
+      }
+      paint("23:00", "04:00");
+      document.addEventListener("click", function (e) {
+        var open = e.target.closest("[data-apply-time-open]");
+        if (!open) return;
+        e.preventDefault();
+        var name = open.getAttribute("data-apply-time-open");
+        var title = open.getAttribute("data-apply-time-title") || "选择时间";
+        var wrap = open.closest("[data-apply-time-field]");
+        var hidden = wrap && wrap.querySelector('input[name="' + name + '"]');
+        var display = wrap && wrap.querySelector('[data-apply-time-display="' + name + '"]');
+        TP.open({
+          title: title,
+          value: hidden ? hidden.value : "",
+          minuteStep: 1,
+          onConfirm: function (value) {
+            if (hidden) hidden.value = value;
+            if (display) {
+              display.textContent = value;
+              display.classList.remove("is-empty");
+            }
+            status.textContent =
+              "start=" +
+              root.querySelector('[name="onlineStart"]').value +
+              " end=" +
+              root.querySelector('[name="onlineEnd"]').value;
+          },
+        });
+      });
+      window.__applyTimeFixture = {
+        getValues: function () {
+          return {
+            onlineStart: root.querySelector('[name="onlineStart"]').value,
+            onlineEnd: root.querySelector('[name="onlineEnd"]').value,
+          };
+        },
+        setValues: function (s, e) {
+          paint(s, e);
+        },
+      };
+    })();
+  </script>
+</body>
+</html>

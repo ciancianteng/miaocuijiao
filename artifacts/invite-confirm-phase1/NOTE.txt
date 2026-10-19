@@ -1,0 +1,2 @@
+Shots 01-03 use real invite.html with mocked APIs.
+Shots 04-07 are labeled product-path illustrations (DB/Preview E2E pending migration apply).

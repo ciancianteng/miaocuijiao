@@ -1,0 +1,13 @@
+/* Admin · 组队大厅管理（单例启用/链接） */
+.admin-team-lobby-panel{display:grid;gap:14px;max-width:720px}
+.admin-team-lobby-form{display:grid;gap:16px;padding:16px;border:1px solid rgba(255,255,255,.1);border-radius:14px;background:rgba(255,255,255,.03)}
+.tl-status-fieldset{margin:0;padding:12px 14px;border:1px solid rgba(243,168,203,.22);border-radius:12px;display:grid;gap:10px;background:rgba(0,0,0,.18)}
+.tl-status-fieldset legend{padding:0 6px;color:#ffd6e8;font-weight:700}
+.tl-radio{display:flex;align-items:center;gap:10px;color:#f3f4f6;font-size:14px;cursor:pointer}
+.tl-radio input{width:16px;height:16px;accent-color:#f3a8cb}
+.tl-link-field{display:grid;gap:8px;color:#d1d5db;font-size:13px}
+.tl-link-field input{border:1px solid rgba(255,255,255,.12);border-radius:10px;background:rgba(0,0,0,.28);color:#fff;padding:11px 12px;font:inherit}
+.tl-link-field small{color:#9ca3af;line-height:1.4}
+.tl-actions{display:flex;flex-wrap:wrap;gap:10px}
+.tl-hint{margin:0;color:#9ca3af;font-size:12px}
+.tl-hint strong{color:#ffd6e8}

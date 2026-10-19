@@ -1,0 +1,12 @@
+{
+  "ok": true,
+  "source": "EXECUTE_RESULT.json checks after authorized purge",
+  "ORDERS_GONE": true,
+  "HOLDS_CLEAR": true,
+  "LEDGER_CLEAR": true,
+  "wallet_reverse_credit": 70,
+  "companion_income_clawed": 28.7,
+  "self_orders_deleted": ["MCJO000395", "MCJO000396", "MCJO000397"],
+  "protected_not_targeted": ["MCJO0000415", "MCJO0000419"],
+  "note": "Re-query with DRY_RUN now returns matched_root_count=0 (already purged)."
+}

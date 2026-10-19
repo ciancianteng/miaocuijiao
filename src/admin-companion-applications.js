@@ -1,0 +1,707 @@
+(function () {
+  "use strict";
+  var Auth = window.MCJAdminAuthFetch;
+  var TARGET = "table-companion_applications";
+  var state = {
+    loading: true,
+    error: "",
+    rows: [],
+    filter: "pending",
+    message: "",
+    levels: [],
+    selectedLevelById: {},
+    selectedIds: {},
+    batchLevelId: "",
+    batchBusy: false,
+    confirmCount: 0,
+    pendingBatch: null,
+  };
+
+  function certMethodOf(item) {
+    var mode = String(
+      (item && (item.certificationMethod || item.certification_method || item.credential_mode || item.auth_mode || item.authMode)) || ""
+    ).trim().toLowerCase();
+    if (mode === "id_card") return "身份证认证";
+    if (mode === "deposit") return "押金认证";
+    if (item && item.certificationMethodLabel) return String(item.certificationMethodLabel);
+    return "未选择";
+  }
+  function esc(v) {
+    return String(v == null ? "" : v).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+  function role() {
+    try {
+      var u = JSON.parse(localStorage.getItem("adminUser") || sessionStorage.getItem("adminUser") || "{}");
+      return u.adminRole || u.role || "admin";
+    } catch (e) {
+      return "admin";
+    }
+  }
+  function api(path, opts) {
+    opts = opts || {};
+    opts.headers = Object.assign({ Accept: "application/json", "x-mcj-admin-role": role() }, opts.headers || {});
+    return (Auth && Auth.fetch ? Auth.fetch(path, opts) : fetch(path, opts)).then(function (res) {
+      return res.json().then(function (body) {
+        if (!res.ok || body.ok === false) {
+          var err = new Error(body.message || "请求失败");
+          err.code = body.code || "";
+          err.blockReasons = body.blockReasons || body.block_reasons || [];
+          err.publish = body.publish || null;
+          err.status = res.status;
+          throw err;
+        }
+        return body;
+      });
+    });
+  }
+
+  function loadLevels() {
+    return api("/api/admin/companion-levels")
+      .then(function (res) {
+        var list = res.levels || res.data || [];
+        state.levels = (list || []).filter(function (lv) {
+          return lv && (lv.enabled !== false && lv.open !== false);
+        });
+        return state.levels;
+      })
+      .catch(function () {
+        state.levels = state.levels || [];
+        return state.levels;
+      });
+  }
+  function levelBasePrice(lv) {
+    if (!lv) return 0;
+    var n = Number(lv.basePrice != null ? lv.basePrice : lv.base_price != null ? lv.base_price : lv.min);
+    return Number.isFinite(n) ? n : 0;
+  }
+  function levelOptionLabel(lv) {
+    var code = lv.code || lv.name || lv.id || "";
+    var name = lv.name && lv.code && lv.name !== lv.code ? (" " + lv.name) : (lv.name && !lv.code ? lv.name : "");
+    var price = levelBasePrice(lv);
+    return String(code) + (name && name !== (" " + code) ? name : "") + (price > 0 ? (" · 基础价格 " + price + " 猫粮") : "");
+  }
+  function selectedLevel(id) {
+    var key = String(state.selectedLevelById[id] || state.batchLevelId || "").trim();
+    if (!key) return null;
+    return (state.levels || []).find(function (lv) {
+      return String(lv.id) === key || String(lv.code) === key || String(lv.name) === key;
+    }) || null;
+  }
+  function levelPickerHtml(id) {
+    var selected = String(state.selectedLevelById[id] || "");
+    var lv = selectedLevel(id);
+    var opts =
+      '<option value="">请选择等级</option>' +
+      (state.levels || [])
+        .map(function (item) {
+          var value = String(item.id || item.code || "");
+          return (
+            '<option value="' +
+            esc(value) +
+            '" ' +
+            (selected === value ? "selected" : "") +
+            ">" +
+            esc(levelOptionLabel(item)) +
+            "</option>"
+          );
+        })
+        .join("");
+    var preview = lv
+      ? '<div class="admin-sync-note" data-capp-level-preview="' +
+        esc(id) +
+        '">等级：' +
+        esc((lv.code || "") + " " + (lv.name || "")) +
+        " · 基础价格：" +
+        esc(String(levelBasePrice(lv))) +
+        " 猫粮</div>"
+      : '<div class="admin-sync-note" data-capp-level-preview="' +
+        esc(id) +
+        '">通过审核前必须选择陪玩等级；价格将按该等级 base_price 自动写入。</div>';
+    return (
+      '<div class="capp-level-picker" data-capp-level-wrap="' +
+      esc(id) +
+      '"><label>陪玩等级 <select data-capp-level="' +
+      esc(id) +
+      '">' +
+      opts +
+      "</select></label>" +
+      preview +
+      "</div>"
+    );
+  }
+  function statusCode(row) {
+    return String(row.application_status || row.applicationStatus || row.verification_status || row.auditStatus || "pending").toLowerCase();
+  }
+  function statusLabel(code) {
+    var key = String(code || "").toLowerCase().trim();
+    var map = {
+      draft: "草稿",
+      pending: "待审核",
+      review: "待审核",
+      submitted: "待审核",
+      resubmit: "需要补资料",
+      need_more: "需要补资料",
+      approved: "已通过",
+      verified: "已通过",
+      passed: "已通过",
+      rejected: "已驳回",
+    };
+    if (map[key]) return map[key];
+    if (!key || /^[a-z][a-z0-9_]*$/i.test(key)) return "-";
+    return String(code);
+  }
+  function completenessHint(item) {
+    var bits = [];
+    if (item.nickname || item.name) bits.push("资料");
+    var cert = certMethodOf(item);
+    if (cert && cert !== "-") bits.push(cert);
+    var photos = Number(item.galleryCount || item.gallery_count || 0);
+    if (photos > 0 || item.avatar || item.avatarUrl) bits.push("照片");
+    if (item.voiceUrl || item.voice_url || Number(item.voiceCount || 0) > 0) bits.push("声线");
+    return bits.length ? bits.join(" · ") : "待核验";
+  }
+  function isApplicationQueue(row) {
+    var code = statusCode(row);
+    if (/approved|verified|passed/.test(code) && !row.application_submitted_at && !row.applicationSubmittedAt) {
+      /* still show if they have submitted_at */
+    }
+    return !!row.id && (row.application_submitted_at || row.applicationSubmittedAt || row.game || row.mainGame || row.main_service || /pending|resubmit|rejected|approved|review|submitted/.test(code));
+  }
+  function missingPrice(row) {
+    if (!row) return true;
+    if (row.missingPrice === true || row.missing_price === true) return true;
+    if (row.missingPrice === false || row.missing_price === false) return false;
+    var p = Number(row.price);
+    if (Number.isFinite(p) && p > 0) return false;
+    var gp = row.game_prices || row.gamePrices || {};
+    if (typeof gp === "string") {
+      try {
+        gp = JSON.parse(gp);
+      } catch (e) {
+        gp = {};
+      }
+    }
+    return !Object.keys(gp || {}).some(function (k) {
+      var n = Number(gp[k]);
+      return Number.isFinite(n) && n > 0;
+    });
+  }
+  function hallVisible(row) {
+    return row && (row.hallVisible === true || row.hall_visible === true || row.publishReady === true);
+  }
+  function approvedButHidden(row) {
+    if (!row) return false;
+    if (row.approvedButHidden === true || row.approved_but_hidden === true) return true;
+    var code = statusCode(row);
+    if (!/approved|verified|passed/.test(code)) return false;
+    if (row.isTestAccount === true || row.is_test_account === true) return false;
+    return !hallVisible(row);
+  }
+  function publishHint(row) {
+    if (!row) return "";
+    if (row.isTestAccount === true || row.is_test_account === true) return "测试账号隔离";
+    if (hallVisible(row)) return "已上大厅";
+    var reasons = row.blockReasons || row.block_reasons || row.criticalMissing || [];
+    if (Array.isArray(reasons) && reasons.length) return reasons.join("、");
+    return row.listingBlockReason || row.publishStatusLabel || "";
+  }
+  function filteredRows() {
+    var list = (state.rows || []).filter(isApplicationQueue);
+    var f = state.filter || "all";
+    if (f === "all") return list;
+    if (f === "pending") return list.filter(function (r) { return /pending|review|submitted/.test(statusCode(r)); });
+    if (f === "resubmit") return list.filter(function (r) { return /resubmit|need_more/.test(statusCode(r)); });
+    if (f === "approved") return list.filter(function (r) { return /approved|verified|passed/.test(statusCode(r)); });
+    if (f === "approved_missing_price") {
+      return list.filter(function (r) {
+        return /approved|verified|passed/.test(statusCode(r)) && missingPrice(r);
+      });
+    }
+    if (f === "approved_not_in_hall") {
+      return list.filter(function (r) {
+        return approvedButHidden(r);
+      });
+    }
+    if (f === "rejected") return list.filter(function (r) { return /rejected/.test(statusCode(r)); });
+    return list;
+  }
+  function isBatchEligible(row) {
+    var code = statusCode(row);
+    if (/rejected|已拒绝|已驳回|approved|verified|passed|已通过|resubmit|need_more|待补充|需要补资料|^draft$|草稿/.test(code)) return false;
+    return /pending|review|submitted|审核中|待审核|未审核/.test(code);
+  }
+  function rowId(row) {
+    return String((row && (row.id || row.playerId)) || "").trim();
+  }
+  function pruneSelectionToVisible() {
+    var visible = {};
+    filteredRows().forEach(function (row) {
+      var id = rowId(row);
+      if (id && state.selectedIds[id]) visible[id] = true;
+    });
+    state.selectedIds = visible;
+  }
+  function visibleSelectedIds() {
+    pruneSelectionToVisible();
+    return Object.keys(state.selectedIds).filter(function (id) {
+      return state.selectedIds[id];
+    });
+  }
+  function eligibleVisibleRows() {
+    return filteredRows().filter(isBatchEligible);
+  }
+  function selectedEligibleIds() {
+    var picked = {};
+    visibleSelectedIds().forEach(function (id) {
+      picked[id] = true;
+    });
+    return eligibleVisibleRows()
+      .map(rowId)
+      .filter(function (id) {
+        return id && picked[id];
+      });
+  }
+  function paint() {
+    var box = document.getElementById(TARGET);
+    if (!box) return;
+    if (state.loading) {
+      box.innerHTML = '<div class="admin-sync-note">正在读取陪玩申请…</div>';
+      return;
+    }
+    if (state.error) {
+      box.innerHTML =
+        '<div class="admin-sync-note error">' +
+        esc(state.error) +
+        ' <button class="mini-btn" type="button" data-capp-reload>重试</button></div>';
+      return;
+    }
+    var rows = filteredRows();
+    pruneSelectionToVisible();
+    var selectedCount = selectedEligibleIds().length;
+    var eligible = eligibleVisibleRows();
+    var allEligibleChecked = eligible.length > 0 && eligible.every(function (row) {
+      return !!state.selectedIds[rowId(row)];
+    });
+    var body = rows
+      .map(function (item) {
+        var code = statusCode(item);
+        var id = rowId(item);
+        var noPrice = missingPrice(item);
+        var hidden = approvedButHidden(item);
+        var hint = publishHint(item);
+        var statusText = statusLabel(code);
+        var eligibleRow = isBatchEligible(item);
+        if (noPrice) statusText += " · 缺价格";
+        if (/approved|verified|passed/.test(code)) {
+          if (item.isTestAccount === true || item.is_test_account === true) statusText += " · 测试隔离";
+          else if (hallVisible(item)) statusText += " · 已上大厅";
+          else if (hidden) statusText += " · 未上大厅";
+        }
+        return (
+          "<tr>" +
+          '<td><input type="checkbox" data-capp-check="' +
+          esc(id) +
+          '"' +
+          (state.selectedIds[id] ? " checked" : "") +
+          (eligibleRow ? "" : " disabled") +
+          ' aria-label="选择 ' +
+          esc(item.nickname || item.name || id) +
+          '"></td>' +
+          "<td>" +
+          esc(id) +
+          "</td><td>" +
+          esc(item.nickname || item.name || "-") +
+          "</td><td>" +
+          esc(item.phone || item.email || "-") +
+          "</td><td>" +
+          esc(item.game || item.mainGame || item.main_service || "-") +
+          "</td><td title=\"" +
+          esc(hint) +
+          "\">" +
+          esc(statusText) +
+          (hidden && hint ? "<br><small>" + esc(hint) + "</small>" : "") +
+          "</td><td>" +
+          esc(certMethodOf(item)) +
+          "</td><td>" +
+          esc(item.depositStatus || item.deposit_status || "-") +
+          "</td><td>" +
+          levelPickerHtml(id) +
+          '<button class="mini-btn primary-lite" type="button" data-capp-open="' +
+          esc(id) +
+          '">审核</button> ' +
+          '<button class="mini-btn" type="button" data-capp-approve="' +
+          esc(id) +
+          '"' +
+          (selectedLevel(id) || state.batchLevelId ? "" : " disabled") +
+          '>通过</button> ' +
+          '<button class="mini-btn" type="button" data-capp-resubmit="' +
+          esc(id) +
+          '">补资料</button> ' +
+          '<button class="mini-btn danger-btn" type="button" data-capp-reject="' +
+          esc(id) +
+          '">拒绝</button>' +
+          "</td></tr>"
+        );
+      })
+      .join("");
+    var cards = rows
+      .map(function (item) {
+        var code = statusCode(item);
+        var id = rowId(item);
+        var statusText = statusLabel(code);
+        var pending = /pending|review|submitted/.test(code);
+        return (
+          '<article class="capp-card">' +
+          '<div class="capp-card-head"><img src="' +
+          esc(item.avatarUrl || item.avatar || item.card_image_url || "/assets/meow-cuijiao-brand.jpg") +
+          '" alt="" onerror="this.onerror=null;this.src=\'/assets/meow-cuijiao-brand.jpg\'"><div><strong>' +
+          esc(item.nickname || item.name || "-") +
+          "</strong><span>" +
+          esc(statusText) +
+          (pending ? " · 待处理" : "") +
+          "</span></div></div>" +
+          '<div class="capp-card-meta">' +
+          "<div>申请时间：" +
+          esc(item.application_submitted_at || item.applicationSubmittedAt || item.created_at || "—") +
+          "</div><div>认证方式：" +
+          esc(certMethodOf(item)) +
+          "</div><div>资料：" +
+          esc(completenessHint(item)) +
+          "</div></div>" +
+          '<div class="capp-card-actions">' +
+          '<button class="mini-btn primary-lite" type="button" data-capp-open="' +
+          esc(id) +
+          '">审核</button>' +
+          (pending
+            ? '<button class="mini-btn danger-btn" type="button" data-capp-reject="' +
+              esc(id) +
+              '">驳回</button>'
+            : "") +
+          "</div></article>"
+        );
+      })
+      .join("");
+    var batchLevelOpts =
+      '<option value="">批量通过使用等级</option>' +
+      (state.levels || [])
+        .map(function (item) {
+          var value = String(item.id || item.code || "");
+          return (
+            '<option value="' +
+            esc(value) +
+            '" ' +
+            (state.batchLevelId === value ? "selected" : "") +
+            ">" +
+            esc(levelOptionLabel(item)) +
+            "</option>"
+          );
+        })
+        .join("");
+    box.innerHTML =
+      '<div class="admin-section-head compact"><div><h3>陪玩申请审核</h3><p>通过审核前必须选择陪玩等级。系统按等级 base_price 初始化服务价格；真实用户须具备昵称、游戏，且账号 active；测试账号保持隔离不进正式大厅。</p></div>' +
+      '<div class="content-admin-toolbar compact"><select data-capp-filter>' +
+      [
+        ["pending", "待审核"],
+        ["resubmit", "需要补资料"],
+        ["approved", "已通过"],
+        ["approved_not_in_hall", "已通过但未上大厅"],
+        ["approved_missing_price", "已通过但缺价格"],
+        ["rejected", "已驳回"],
+        ["all", "全部"],
+      ]
+        .map(function (pair) {
+          return (
+            '<option value="' +
+            pair[0] +
+            '" ' +
+            (state.filter === pair[0] ? "selected" : "") +
+            ">" +
+            pair[1] +
+            "</option>"
+          );
+        })
+        .join("") +
+      '</select><button class="mini-btn" type="button" data-capp-reload>刷新</button>' +
+      '<span data-capp-selected-count>已选择 ' +
+      selectedCount +
+      " 人</span>" +
+      '<select data-capp-batch-level>' +
+      batchLevelOpts +
+      "</select>" +
+      '<button class="mini-btn primary-lite" type="button" data-capp-batch-approve' +
+      (selectedCount && !state.batchBusy ? "" : " disabled") +
+      ">" +
+      (state.batchBusy ? "批量通过中…" : "批量通过") +
+      "</button></div></div>" +
+      (state.confirmCount
+        ? '<div class="admin-sync-note" data-capp-confirm role="dialog" aria-modal="true"><strong>确认通过已选择的 ' +
+          state.confirmCount +
+          ' 位陪玩吗？</strong> 仅处理当前页已勾选的审核中对象。<button class="mini-btn primary-lite" type="button" data-capp-confirm-yes>确认通过</button> <button class="mini-btn" type="button" data-capp-confirm-no>取消</button></div>'
+        : "") +
+      (state.message ? '<div class="admin-sync-note" data-capp-batch-result>' + esc(state.message) + "</div>" : "") +
+      '<div class="table-wrap capp-table-wrap"><table><thead><tr><th><input type="checkbox" data-capp-select-all' +
+      (allEligibleChecked ? " checked" : "") +
+      (eligible.length ? "" : " disabled") +
+      ' aria-label="全选当前页待审核"></th><th>申请ID</th><th>昵称</th><th>联系方式</th><th>游戏</th><th>申请/大厅状态</th><th>认证方式</th><th>押金</th><th>操作</th></tr></thead><tbody>' +
+      (body || '<tr><td colspan="9">暂无陪玩申请</td></tr>') +
+      '</tbody></table></div><div class="capp-mobile-cards">' +
+      (cards || '<div class="admin-sync-note">暂无陪玩申请</div>') +
+      "</div>";
+  }
+  function load() {
+    state.loading = true;
+    state.error = "";
+    paint();
+    Promise.all([api("/api/admin/players"), loadLevels()])
+      .then(function (pair) {
+        var res = pair[0] || {};
+        state.rows = res.players || res.data || [];
+        state.loading = false;
+        paint();
+      })
+      .catch(function (err) {
+        state.loading = false;
+        state.error = err.message || "读取失败";
+        paint();
+      });
+  }
+  function review(id, status, reason, levelId) {
+    var payload = { status: status, rejectReason: reason || "" };
+    if (status === "approved") {
+      payload.levelId = levelId || "";
+      payload.level_id = levelId || "";
+    }
+    return api("/api/admin/players", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "review_application",
+        id: id,
+        payload: payload,
+      }),
+    }).then(function (res) {
+      state.message = res.message || "审核已保存";
+      if (res.approvedButHidden && Array.isArray(res.blockReasons) && res.blockReasons.length) {
+        state.message += "；未上大厅原因：" + res.blockReasons.join("、");
+      }
+      if (window.MCJAdminPlayerBridge && window.MCJAdminPlayerBridge.reloadList) {
+        window.MCJAdminPlayerBridge.reloadList();
+      }
+      load();
+      return res;
+    });
+  }
+  function openDetail(id) {
+    if (window.MCJAdminPlayerBridge && window.MCJAdminPlayerBridge.reloadDetail) {
+      window.MCJAdminPlayerBridge.reloadDetail(id, "edit");
+      return;
+    }
+    var btn = document.querySelector('[data-player-action="edit"][data-player-id="' + id + '"]');
+    if (btn) btn.click();
+  }
+  document.addEventListener("click", function (e) {
+    if (e.target.closest("[data-capp-reload]")) {
+      load();
+      return;
+    }
+    var open = e.target.closest("[data-capp-open]");
+    if (open) {
+      openDetail(open.getAttribute("data-capp-open"));
+      return;
+    }
+    var approve = e.target.closest("[data-capp-approve]");
+    if (approve) {
+      if (approve.disabled) {
+        alert("请先选择陪玩等级后再通过审核。");
+        return;
+      }
+      var approveId = approve.getAttribute("data-capp-approve");
+      var lv = selectedLevel(approveId);
+      if (!lv || !lv.id) {
+        alert("请先选择陪玩等级后再通过审核。");
+        return;
+      }
+      var base = levelBasePrice(lv);
+      if (!(base > 0)) {
+        alert("所选等级缺少有效的基础价格 base_price，无法通过。");
+        return;
+      }
+      if (!confirm("确认通过该陪玩申请？\n等级：" + levelOptionLabel(lv) + "\n通过后将按该等级基础价格初始化服务，并同步大厅展示条件；测试账号仍隔离。")) return;
+      review(approveId, "approved", "", lv.id)
+        .then(function (res) {
+          var msg = (res && res.message) || "已通过。";
+          if (res && res.hallVisible) msg = "已通过，已同步进入陪玩大厅。";
+          else if (res && res.approvedButHidden) {
+            msg =
+              "已通过，但未进入大厅：" +
+              ((res.blockReasons && res.blockReasons.join("、")) || "请检查资料完整性");
+          }
+          alert(msg);
+        })
+        .catch(function (err) {
+          var extra =
+            err && Array.isArray(err.blockReasons) && err.blockReasons.length
+              ? "\n原因：" + err.blockReasons.join("、")
+              : "";
+          alert((err.message || "操作失败") + extra);
+        });
+      return;
+    }
+    var batchApprove = e.target.closest("[data-capp-batch-approve]");
+    if (batchApprove) {
+      if (state.batchBusy) return;
+      var ids = selectedEligibleIds();
+      if (!ids.length) {
+        alert("请先勾选当前页待审核陪玩。未勾选、其他筛选结果、已拒绝/已通过对象不会被提交。");
+        return;
+      }
+      var levelById = {};
+      var missingLevel = [];
+      ids.forEach(function (id) {
+        var lv = selectedLevel(id);
+        if (lv && lv.id) levelById[id] = lv.id;
+        else missingLevel.push(id);
+      });
+      if (missingLevel.length && !state.batchLevelId) {
+        alert("已选陪玩中有 " + missingLevel.length + " 位未选择等级。请在行内选择等级，或在工具栏选择「批量通过使用等级」。");
+        return;
+      }
+      state.pendingBatch = { ids: ids, levelById: levelById };
+      state.confirmCount = ids.length;
+      paint();
+      return;
+    }
+    if (e.target.closest("[data-capp-confirm-no]")) {
+      state.confirmCount = 0;
+      state.pendingBatch = null;
+      paint();
+      return;
+    }
+    if (e.target.closest("[data-capp-confirm-yes]")) {
+      var pending = state.pendingBatch;
+      state.confirmCount = 0;
+      state.pendingBatch = null;
+      if (!pending || !pending.ids || !pending.ids.length) {
+        paint();
+        return;
+      }
+      state.batchBusy = true;
+      paint();
+      api("/api/admin/players", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "batch_review_application",
+          ids: pending.ids,
+          levelId: state.batchLevelId || "",
+          levelById: pending.levelById || {},
+        }),
+      })
+        .then(function (res) {
+          var lines = ["成功 " + (res.successCount || 0) + "，失败 " + (res.failCount || 0)];
+          (res.results || []).forEach(function (row) {
+            if (!row.ok) {
+              lines.push((row.nickname || row.id || "") + "：" + (row.message || "失败"));
+            }
+          });
+          state.message = lines.join("；");
+          (pending.ids || []).forEach(function (id) {
+            var hit = (res.results || []).find(function (row) {
+              return String(row.id) === String(id) && row.ok;
+            });
+            if (hit) delete state.selectedIds[id];
+          });
+          if (window.MCJAdminPlayerBridge && window.MCJAdminPlayerBridge.reloadList) {
+            window.MCJAdminPlayerBridge.reloadList();
+          }
+        })
+        .catch(function (err) {
+          state.message = err.message || "批量通过失败";
+        })
+        .then(function () {
+          state.batchBusy = false;
+          load();
+        });
+      return;
+    }
+    var resubmit = e.target.closest("[data-capp-resubmit]");
+    if (resubmit) {
+      var reason = prompt("请填写需要补交的资料说明（必填）", "");
+      if (reason == null) return;
+      if (!String(reason).trim()) {
+        alert("要求补资料时必须填写原因");
+        return;
+      }
+      review(resubmit.getAttribute("data-capp-resubmit"), "resubmit", reason).catch(function (err) {
+        alert(err.message || "操作失败");
+      });
+      return;
+    }
+    var reject = e.target.closest("[data-capp-reject]");
+    if (reject) {
+      var reason2 = prompt("请填写拒绝原因（必填）", "");
+      if (reason2 == null) return;
+      if (!String(reason2).trim()) {
+        alert("拒绝时必须填写原因");
+        return;
+      }
+      review(reject.getAttribute("data-capp-reject"), "rejected", reason2).catch(function (err) {
+        alert(err.message || "操作失败");
+      });
+    }
+  });
+  document.addEventListener("change", function (e) {
+    if (e.target.matches("[data-capp-filter]")) {
+      state.filter = e.target.value || "pending";
+      pruneSelectionToVisible();
+      paint();
+      return;
+    }
+    if (e.target.matches("[data-capp-batch-level]")) {
+      state.batchLevelId = e.target.value || "";
+      paint();
+      return;
+    }
+    var selectAll = e.target.closest("[data-capp-select-all]");
+    if (selectAll) {
+      var on = !!selectAll.checked;
+      eligibleVisibleRows().forEach(function (row) {
+        var id = rowId(row);
+        if (!id) return;
+        if (on) state.selectedIds[id] = true;
+        else delete state.selectedIds[id];
+      });
+      paint();
+      return;
+    }
+    var check = e.target.closest("[data-capp-check]");
+    if (check) {
+      var cid = check.getAttribute("data-capp-check") || "";
+      if (!cid || check.disabled) return;
+      if (check.checked) state.selectedIds[cid] = true;
+      else delete state.selectedIds[cid];
+      paint();
+      return;
+    }
+    var levelSel = e.target.closest("[data-capp-level]");
+    if (levelSel) {
+      var pid = levelSel.getAttribute("data-capp-level");
+      state.selectedLevelById[pid] = levelSel.value || "";
+      paint();
+    }
+  });
+  function maybeLoad() {
+    if (document.getElementById(TARGET)) load();
+  }
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", maybeLoad);
+  } else {
+    maybeLoad();
+  }
+  window.addEventListener("hashchange", function () {
+    if ((location.hash || "").replace("#", "") === "companion-applications") load();
+  });
+  window.MCJAdminCompanionApplicationsReload = load;
+})();

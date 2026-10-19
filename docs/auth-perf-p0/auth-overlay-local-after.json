@@ -1,0 +1,210 @@
+{
+  "base": "http://127.0.0.1:8765",
+  "at": "2026-09-11T12:06:53.707Z",
+  "results": [
+    {
+      "scenario": "valid_jwt_clean",
+      "url": "/mine.html",
+      "overlaySeenAt": null,
+      "overlayGoneAt": null,
+      "firstUsableAt": 113,
+      "overlayTexts": [],
+      "errors": [],
+      "overlayDurationMs": 0,
+      "authBootstrapMs": 113,
+      "final": {
+        "gate": null,
+        "reason": null,
+        "overlay": false
+      },
+      "totalMs": 723
+    },
+    {
+      "scenario": "valid_jwt_clean",
+      "url": "/orders.html",
+      "overlaySeenAt": null,
+      "overlayGoneAt": null,
+      "firstUsableAt": 70,
+      "overlayTexts": [],
+      "errors": [],
+      "overlayDurationMs": 0,
+      "authBootstrapMs": 70,
+      "final": {
+        "gate": null,
+        "reason": null,
+        "overlay": false
+      },
+      "totalMs": 712
+    },
+    {
+      "scenario": "valid_jwt_clean",
+      "url": "/messages.html",
+      "overlaySeenAt": null,
+      "overlayGoneAt": null,
+      "firstUsableAt": 67,
+      "overlayTexts": [],
+      "errors": [],
+      "overlayDurationMs": 0,
+      "authBootstrapMs": 67,
+      "final": {
+        "gate": null,
+        "reason": null,
+        "overlay": false
+      },
+      "totalMs": 711
+    },
+    {
+      "scenario": "valid_jwt_stale_auth_expires",
+      "url": "/mine.html",
+      "overlaySeenAt": null,
+      "overlayGoneAt": null,
+      "firstUsableAt": 57,
+      "overlayTexts": [],
+      "errors": [],
+      "overlayDurationMs": 0,
+      "authBootstrapMs": 57,
+      "final": {
+        "gate": null,
+        "reason": null,
+        "overlay": false
+      },
+      "totalMs": 729
+    },
+    {
+      "scenario": "valid_jwt_stale_auth_expires",
+      "url": "/orders.html",
+      "overlaySeenAt": null,
+      "overlayGoneAt": null,
+      "firstUsableAt": 70,
+      "overlayTexts": [],
+      "errors": [],
+      "overlayDurationMs": 0,
+      "authBootstrapMs": 70,
+      "final": {
+        "gate": null,
+        "reason": null,
+        "overlay": false
+      },
+      "totalMs": 715
+    },
+    {
+      "scenario": "valid_jwt_stale_auth_expires",
+      "url": "/messages.html",
+      "overlaySeenAt": null,
+      "overlayGoneAt": null,
+      "firstUsableAt": 61,
+      "overlayTexts": [],
+      "errors": [],
+      "overlayDurationMs": 0,
+      "authBootstrapMs": 61,
+      "final": {
+        "gate": null,
+        "reason": null,
+        "overlay": false
+      },
+      "totalMs": 703
+    },
+    {
+      "scenario": "valid_jwt_stale_admin_expires",
+      "url": "/mine.html",
+      "overlaySeenAt": null,
+      "overlayGoneAt": null,
+      "firstUsableAt": 77,
+      "overlayTexts": [],
+      "errors": [],
+      "overlayDurationMs": 0,
+      "authBootstrapMs": 77,
+      "final": {
+        "gate": null,
+        "reason": null,
+        "overlay": false
+      },
+      "totalMs": 725
+    },
+    {
+      "scenario": "valid_jwt_stale_admin_expires",
+      "url": "/orders.html",
+      "overlaySeenAt": null,
+      "overlayGoneAt": null,
+      "firstUsableAt": 66,
+      "overlayTexts": [],
+      "errors": [],
+      "overlayDurationMs": 0,
+      "authBootstrapMs": 66,
+      "final": {
+        "gate": null,
+        "reason": null,
+        "overlay": false
+      },
+      "totalMs": 709
+    },
+    {
+      "scenario": "valid_jwt_stale_admin_expires",
+      "url": "/messages.html",
+      "overlaySeenAt": null,
+      "overlayGoneAt": null,
+      "firstUsableAt": 70,
+      "overlayTexts": [],
+      "errors": [],
+      "overlayDurationMs": 0,
+      "authBootstrapMs": 70,
+      "final": {
+        "gate": null,
+        "reason": null,
+        "overlay": false
+      },
+      "totalMs": 711
+    },
+    {
+      "scenario": "expired_jwt_with_refresh",
+      "url": "/mine.html",
+      "overlaySeenAt": null,
+      "overlayGoneAt": null,
+      "firstUsableAt": 74,
+      "overlayTexts": [],
+      "errors": [],
+      "overlayDurationMs": 0,
+      "authBootstrapMs": 74,
+      "final": {
+        "gate": "soft-restore",
+        "reason": "pending_restore",
+        "overlay": false
+      },
+      "totalMs": 719
+    },
+    {
+      "scenario": "expired_jwt_with_refresh",
+      "url": "/orders.html",
+      "overlaySeenAt": null,
+      "overlayGoneAt": null,
+      "firstUsableAt": 78,
+      "overlayTexts": [],
+      "errors": [],
+      "overlayDurationMs": 0,
+      "authBootstrapMs": 78,
+      "final": {
+        "gate": "soft-restore",
+        "reason": "pending_restore",
+        "overlay": false
+      },
+      "totalMs": 720
+    },
+    {
+      "scenario": "expired_jwt_with_refresh",
+      "url": "/messages.html",
+      "overlaySeenAt": null,
+      "overlayGoneAt": null,
+      "firstUsableAt": 68,
+      "overlayTexts": [],
+      "errors": [],
+      "overlayDurationMs": 0,
+      "authBootstrapMs": 68,
+      "final": {
+        "gate": "soft-restore",
+        "reason": "pending_restore",
+        "overlay": false
+      },
+      "totalMs": 707
+    }
+  ]
+}

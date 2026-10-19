@@ -1,0 +1,321 @@
+{
+  "generated_at": "2026-09-23T20:57:34.363Z",
+  "staging": "https://meow-cuijiao-homepage-staging.vercel.app",
+  "source": "cursor_acceptance",
+  "steps": [
+    {
+      "TEST": "01_create_multi",
+      "RESULT": "PASS",
+      "EVIDENCE": "parent=awaiting_payment kids=2",
+      "SCREENSHOT": "—",
+      "API": {
+        "place": "多人订单已创建，请完成支付。",
+        "snap": {
+          "order_status": "awaiting_payment",
+          "paymentReview": false,
+          "paymentStatus": "待付款",
+          "paidAt": null,
+          "children": [
+            {
+              "id": "bfd28db0-54e8-4369-a860-1d19cf1dd5bd",
+              "status": "awaiting_payment",
+              "companionConfirm": "awaiting_payment",
+              "companionId": "d9aded34-8ed5-436f-9f43-d654c8cda7f0"
+            },
+            {
+              "id": "205df8cf-c586-412c-8045-94950e4f98ae",
+              "status": "awaiting_payment",
+              "companionConfirm": "awaiting_payment",
+              "companionId": "61c0fb64-0467-4d8c-9c1a-2d4c1a670ec9"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "TEST": "04_payment_page_shows_proof_not_wallet_shortcut",
+      "RESULT": "PASS",
+      "EVIDENCE": "payOrderBtns=0 proofBtns=2",
+      "SCREENSHOT": "screenshots/04-payment-info-and-proof-upload.png",
+      "API": {
+        "payOrderBtns": 0,
+        "proofBtns": 2,
+        "snippet": "MEOW CUI JIAO 妙脆角 ☰ 多人陪玩订单 · 支付确认 请确认以下订单与金额后完成支付。未确认支付前订单保持待付款。 订单号 MCJO000242 订单类型 多人陪玩 人数 2 位陪玩 陪玩 Organic Invitee Comp · Organic Companion 服务 多人陪玩 · 共2位陪玩 服务时间 - 语音方式 游戏麦 订单总额 40 猫粮 支付方式 catfood O Organic Invitee Comp 游戏 王者荣耀 服务 王者荣耀 时长 1 小时 单价 20 猫粮/小时 小计 20 猫粮 O Organic Com"
+      }
+    },
+    {
+      "TEST": "03_pay_order_blocked_for_multi",
+      "RESULT": "PASS",
+      "EVIDENCE": "code=MANUAL_PAYMENT_REQUIRES_PROOF status=awaiting_payment",
+      "SCREENSHOT": "—",
+      "API": {
+        "response": {
+          "ok": false,
+          "code": "MANUAL_PAYMENT_REQUIRES_PROOF",
+          "paymentReview": false,
+          "message": "多人订单须先在支付页上传付款凭证并提交。提交后进入「待客服审核」；客服审核通过前不会进入等待陪玩确认。",
+          "order": {
+            "id": "9d14360f-6913-410a-a1e6-c3d02eb559b6",
+            "parentOrderId": null,
+            "isMultiGroupParent": true,
+            "isMultiGroupChild": false,
+            "companionConfirm": null,
+            "needsReplacement": false,
+            "orderNo": "MCJO000242",
+            "order_no": "MCJO000242",
+            "bossId": "e68fd4e1-405c-4800-bb33-1a9bda032695",
+            "companionId": "",
+            "companionName": "",
+            "companionCode": "",
+            "companionPublicId": "",
+            "publicId": "",
+            "customerServiceId": "",
+            "orderType": "多人订单（主单）",
+            "orderTypeKey": "multi_group",
+            "game": "王者荣耀",
+            "title": "多人订单 · 2 位陪玩 · 40 猫粮",
+            "description": "cursor_acceptance multi-proof-cs\n付款方式：catfood\n语音方式：游戏麦\n子单数：2\n总价：40",
+            "notes": "cursor_acceptance multi-proof-cs",
+            "bossNotes": "cursor_acceptance multi-proof-cs",
+            "serviceType": "王者荣耀",
+            "serviceName": "王者荣耀",
+            "gameId": "",
+            "game_id": "",
+            "paymentMethod": "catfood",
+            "payment_method": "catfood",
+            "voiceMode": "game_mic",
+            "voice_mode": "game_mic",
+            "discordChannelId": null,
+            "discord_channel_id": null,
+            "discordChannelStatus": null,
+            "discord_channel_status": null,
+            "discordChannelCreatedAt": null,
+            "discordChannelUrl": null,
+            "hours": 2,
+            "unitPrice": 40,
+            "totalAmount": 40,
+            "amount": 40,
+            "paidCatFood": 0,
+            "status": "awaiting_payment",
+            "dbStatus": "awaiting_payment",
+            "flowStatus": "draft",
+            "statusText": "待付款",
+            "completionPending": false,
+            "completionRequestedAt": "",
+            "autoConfirmAt": "",
+            "autoConfirmRemainingMs": null,
+            "autoConfirmRemainingLabel": "",
+            "autoConfirmPaused": false,
+            "autoConfirmPausedReason": "",
+            "completionMethod": "",
+            "afterSaleOpen": false,
+            "afterSaleClosesAt": "",
+            "companionWithdrawableAt": "",
+            "companionEarningsLocked": true,
+            "grabs": [],
+            "grabCount": 0,
+            "bossIntent": null,
+            "preferredCompanionId": "",
+            "paymentStatus": "待付款",
+            "acceptStatus": "尚未付款",
+            "paymentReview": false,
+            "paymentProofUrl": "",
+            "paymentRejectReason": "",
+            "paymentReviewedAt": "",
+            "paymentReviewedByName": "",
+            "paymentReviewedByStaffId": "",
+            "paymentReviewStatus": "",
+            "paidAt": "",
+            "settlementStatus": "",
+            "settlementSkipped": false,
+            "bossHint": "请尽快完成付款并上传凭证。",
+            "cancelReason": "",
+            "note": "",
+            "reviewed": false,
+            "reviewId": "",
+            "reviewRating": null,
+            "reviewContent": "",
+            "canReview": false,
+            "createdAt": "2026-09-23T20:57:43.345+00:00",
+            "acceptedAt": "",
+            "startedAt": "",
+            "completedAt": "",
+            "cancelledAt": "",
+            "companion": null,
+            "customerService": null
+          }
+        },
+        "snap": {
+          "order_status": "awaiting_payment",
+          "paymentReview": false,
+          "paymentStatus": "待付款",
+          "paidAt": null,
+          "children": [
+            {
+              "id": "bfd28db0-54e8-4369-a860-1d19cf1dd5bd",
+              "status": "awaiting_payment",
+              "companionConfirm": "awaiting_payment",
+              "companionId": "d9aded34-8ed5-436f-9f43-d654c8cda7f0"
+            },
+            {
+              "id": "205df8cf-c586-412c-8045-94950e4f98ae",
+              "status": "awaiting_payment",
+              "companionConfirm": "awaiting_payment",
+              "companionId": "61c0fb64-0467-4d8c-9c1a-2d4c1a670ec9"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "TEST": "05_06_submit_proof_boss_pending_cs",
+      "RESULT": "PASS",
+      "EVIDENCE": "order=MCJO000242 apiReview=true uiOk=true",
+      "SCREENSHOT": "screenshots/06-boss-pending-cs-review.png",
+      "API": {
+        "orderNo": "MCJO000242",
+        "response": {
+          "ok": true,
+          "message": "付款凭证已提交，等待客服审核。审核通过前不会进入等待陪玩确认。",
+          "paymentReview": true,
+          "orderStatus": "awaiting_payment"
+        },
+        "snap": {
+          "order_status": "awaiting_payment",
+          "paymentReview": true,
+          "paymentStatus": "待客服审核",
+          "paidAt": null,
+          "children": [
+            {
+              "id": "bfd28db0-54e8-4369-a860-1d19cf1dd5bd",
+              "status": "awaiting_payment",
+              "companionConfirm": "awaiting_payment",
+              "companionId": "d9aded34-8ed5-436f-9f43-d654c8cda7f0"
+            },
+            {
+              "id": "205df8cf-c586-412c-8045-94950e4f98ae",
+              "status": "awaiting_payment",
+              "companionConfirm": "awaiting_payment",
+              "companionId": "61c0fb64-0467-4d8c-9c1a-2d4c1a670ec9"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "TEST": "07_companion_cannot_confirm_before_cs",
+      "RESULT": "PASS",
+      "EVIDENCE": "accept=409 msg=当前订单不能确认接单 claimable=false uiLoggedIn=true",
+      "SCREENSHOT": "screenshots/07-companion-cannot-confirm-before-cs.png",
+      "API": {
+        "response": {
+          "ok": false,
+          "message": "当前订单不能确认接单"
+        },
+        "inboxHasClaimable": false,
+        "companionUiSnippet": "MEOW CUI JIAO Companion Workbench 工作台 抢单大厅 我的订单 收益中心 我的资料（公开） 账号中心（隐私） 我的礼物 消息中心 设置 规则与制度 MEOW CUI JIAO 妙脆角 · 陪玩端 工作台 M 官方公告 暂无最新公告。 加载中… 工作台 抢单 订单 收益 账号"
+      }
+    },
+    {
+      "TEST": "08_09_cs_approve_then_waiting_0of2",
+      "RESULT": "PASS",
+      "EVIDENCE": "order=MCJO000242 parent=claimed kids=claimed,claimed",
+      "SCREENSHOT": "screenshots/09-boss-waiting-0of2-after-cs.png",
+      "API": {
+        "orderNo": "MCJO000242",
+        "response": {
+          "ok": true,
+          "message": "已确认付款，多人订单进入等待陪玩确认。",
+          "path": "multi_confirm"
+        },
+        "snap": {
+          "order_status": "claimed",
+          "paymentReview": false,
+          "paymentStatus": "已付款",
+          "paidAt": null,
+          "children": [
+            {
+              "id": "bfd28db0-54e8-4369-a860-1d19cf1dd5bd",
+              "status": "claimed",
+              "companionConfirm": "pending",
+              "companionId": "d9aded34-8ed5-436f-9f43-d654c8cda7f0"
+            },
+            {
+              "id": "205df8cf-c586-412c-8045-94950e4f98ae",
+              "status": "claimed",
+              "companionConfirm": "pending",
+              "companionId": "61c0fb64-0467-4d8c-9c1a-2d4c1a670ec9"
+            }
+          ]
+        },
+        "bossUiSnippet": "MEOW CUI JIAO 妙脆角 ☰ 创建自定义订单 填写需求，客服匹配陪玩 → 我的订单 只显示当前老板账号的真实订单。 刷新 全部 待付款 待客服审核 待客服处理 等待陪玩确认 等待老板选择 进行中 已完成 售后 已取消 多人陪玩订单 · MCJO000242 2026/9/24 04:57:43 多人陪玩订单 · 共2位陪玩 等待陪玩确认（0/2） 游戏/服务 王者荣耀 · 2位陪玩 · 一次付款 陪玩 Organic Invitee Comp + Organic Companion 总消费 🐱 40 猫粮 当前状态 等待陪玩确认（0/2） 创"
+      }
+    },
+    {
+      "TEST": "10_companions_0_1_2",
+      "RESULT": "PASS",
+      "EVIDENCE": "order=MCJO000242 a1=200 a2=200 mid=claimed,in_progress fin=in_progress,in_progress",
+      "SCREENSHOT": "screenshots/10b-boss-after-2of2.png",
+      "API": {
+        "orderNo": "MCJO000242",
+        "acceptA": {
+          "ok": true,
+          "message": "已确认接单，订单进入进行中",
+          "status": "in_progress"
+        },
+        "acceptB": {
+          "ok": true,
+          "message": "已确认接单，订单进入进行中",
+          "status": "in_progress"
+        },
+        "snap1of2": {
+          "order_status": "claimed",
+          "paymentReview": false,
+          "paymentStatus": "已付款",
+          "paidAt": null,
+          "children": [
+            {
+              "id": "bfd28db0-54e8-4369-a860-1d19cf1dd5bd",
+              "status": "claimed",
+              "companionConfirm": "pending",
+              "companionId": "d9aded34-8ed5-436f-9f43-d654c8cda7f0"
+            },
+            {
+              "id": "205df8cf-c586-412c-8045-94950e4f98ae",
+              "status": "in_progress",
+              "companionConfirm": "accepted",
+              "companionId": "61c0fb64-0467-4d8c-9c1a-2d4c1a670ec9"
+            }
+          ]
+        },
+        "snap2of2": {
+          "order_status": "in_progress",
+          "paymentReview": false,
+          "paymentStatus": "已付款",
+          "paidAt": null,
+          "children": [
+            {
+              "id": "bfd28db0-54e8-4369-a860-1d19cf1dd5bd",
+              "status": "in_progress",
+              "companionConfirm": "accepted",
+              "companionId": "d9aded34-8ed5-436f-9f43-d654c8cda7f0"
+            },
+            {
+              "id": "205df8cf-c586-412c-8045-94950e4f98ae",
+              "status": "in_progress",
+              "companionConfirm": "accepted",
+              "companionId": "61c0fb64-0467-4d8c-9c1a-2d4c1a670ec9"
+            }
+          ]
+        },
+        "shot1of2": "screenshots/10a-boss-waiting-1of2.png",
+        "ui1": "MEOW CUI JIAO 妙脆角 ☰ 创建自定义订单 填写需求，客服匹配陪玩 → 我的订单 只显示当前老板账号的真实订单。 刷新 全部 待付款 待客服审核 待客服处理 等待陪玩确认 等待老板选择 进行中 已完成 售后 已取消 多人陪玩订单 · MCJO000242 2026/9/24 04:57:43 多人陪玩订单 · 共2位陪玩 等待陪玩确认（1/2） ",
+        "ui2": "MEOW CUI JIAO 妙脆角 ☰ 创建自定义订单 填写需求，客服匹配陪玩 → 我的订单 只显示当前老板账号的真实订单。 刷新 全部 待付款 待客服审核 待客服处理 等待陪玩确认 等待老板选择 进行中 已完成 售后 已取消 多人陪玩订单 · MCJO000242 2026/9/24 04:57:43 多人陪玩订单 · 共2位陪玩 进行中（2/2） 游戏/"
+      }
+    }
+  ],
+  "summary": {
+    "PASS": 7,
+    "FAIL": 0
+  }
+}

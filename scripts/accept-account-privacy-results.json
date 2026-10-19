@@ -1,0 +1,129 @@
+{
+  "base": "https://meow-cuijiao-homepage-7ybk2uafc-ciancianteng-4581s-projects.vercel.app",
+  "at": "2026-08-02T22:52:26.837Z",
+  "pass": 17,
+  "fail": 0,
+  "results": [
+    {
+      "id": "db.first_boss_mcj00001",
+      "pass": true,
+      "detail": "MCJ00001"
+    },
+    {
+      "id": "db.first_companion_pw",
+      "pass": true,
+      "detail": "PW00001"
+    },
+    {
+      "id": "db.single_admin",
+      "pass": true,
+      "detail": "adminCount=1"
+    },
+    {
+      "id": "db.cs_has_display_name",
+      "pass": true,
+      "detail": "{\"display_name\":\"终验客服\",\"email\":\"service.final.1785706919378@meow.test\",\"status\":\"active\"}"
+    },
+    {
+      "id": "admin.login",
+      "pass": true,
+      "detail": "管理员"
+    },
+    {
+      "id": "boss.code_mcj",
+      "pass": true,
+      "detail": "MCJ00001"
+    },
+    {
+      "id": "boss.session_no_password",
+      "pass": true,
+      "detail": "session payload"
+    },
+    {
+      "id": "companion.login",
+      "pass": true,
+      "detail": "终验陪玩"
+    },
+    {
+      "id": "cs.name_not_email",
+      "pass": true,
+      "detail": "终验客服"
+    },
+    {
+      "id": "cs.session_no_password",
+      "pass": true,
+      "detail": "session payload"
+    },
+    {
+      "id": "privacy.companion_orders_no_boss_email",
+      "pass": true,
+      "detail": "clean"
+    },
+    {
+      "id": "privacy.companion_orders_no_secrets",
+      "pass": true,
+      "detail": "payload"
+    },
+    {
+      "id": "privacy.companion_boss_anonymous_label",
+      "pass": true,
+      "detail": "anonymous/clean"
+    },
+    {
+      "id": "privacy.public_companions_no_private",
+      "pass": true,
+      "detail": "clean"
+    },
+    {
+      "id": "public.companion_code_pw",
+      "pass": true,
+      "detail": "PW00001"
+    },
+    {
+      "id": "privacy.anon_admin_players_denied",
+      "pass": true,
+      "detail": "status=401"
+    },
+    {
+      "id": "privacy.cs_no_payment_settings",
+      "pass": true,
+      "detail": "status=403"
+    }
+  ],
+  "dbReport": {
+    "appliedAt": "2026-08-02T22:49:33.227Z",
+    "bosses": [
+      {
+        "boss_uid": "MCJ00001",
+        "display_name": "boss.final.1785706919378",
+        "email": "boss.final.1785706919378@meow.test"
+      }
+    ],
+    "companions": [
+      {
+        "companion_code": "PW00001",
+        "companion_uid": null,
+        "nickname": "终验陪玩",
+        "application_status": "approved"
+      }
+    ],
+    "admins": [
+      {
+        "email": "admin@meow.test",
+        "display_name": "管理员",
+        "role": "admin",
+        "status": "active"
+      }
+    ],
+    "customerServices": [
+      {
+        "display_name": "终验客服",
+        "email": "service.final.1785706919378@meow.test",
+        "status": "active"
+      }
+    ],
+    "firstBossCode": "MCJ00001",
+    "firstCompanionCode": "PW00001",
+    "adminCount": 1
+  }
+}

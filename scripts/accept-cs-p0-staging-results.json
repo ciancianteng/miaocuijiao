@@ -1,0 +1,76 @@
+{
+  "staging": "https://meow-cuijiao-homepage-staging.vercel.app",
+  "checks": [
+    {
+      "name": "boss login",
+      "pass": true,
+      "detail": "a7ed815b-ae97-4619-9be7-3fda611bfb88"
+    },
+    {
+      "name": "cs login",
+      "pass": true,
+      "detail": "268e8205-0e09-4870-b44f-72676ade6ce5"
+    },
+    {
+      "name": "clock_in <3s + persisted",
+      "pass": true,
+      "detail": "ms=1703 msg=今日已上班打卡。"
+    },
+    {
+      "name": "clock_in idempotent (no duplicate)",
+      "pass": true,
+      "detail": "今日已上班打卡。"
+    },
+    {
+      "name": "attendance row in customer_service_reports",
+      "pass": true,
+      "detail": "[{\"id\":\"68437ee8-136b-43ea-9b9d-9d66cc97cf21\",\"shift_start\":\"2026-08-03T04:35:15.309+00:00\",\"shift_end\":\"2026-08-03T04:35:18.274+00:00\",\"admin_note\":\"attendance\",\"report_date\":\"2026-08-03\"}]"
+    },
+    {
+      "name": "clock_out shows hours",
+      "pass": true,
+      "detail": "hours=0 msg=今日已下班打卡。"
+    },
+    {
+      "name": "attendance persists after bootstrap",
+      "pass": true,
+      "detail": "in=2026-08-03 12:35 out=2026-08-03 12:35"
+    },
+    {
+      "name": "admin sees punch records",
+      "pass": true,
+      "detail": "status=200 n=1"
+    },
+    {
+      "name": "boss open/send support chat",
+      "pass": true,
+      "detail": "c866ea3a-8053-46e2-8c40-042ba99e9873"
+    },
+    {
+      "name": "cs take conversation",
+      "pass": true,
+      "detail": "已接待该会话。"
+    },
+    {
+      "name": "cs send_message persisted",
+      "pass": true,
+      "detail": "消息已发送。"
+    },
+    {
+      "name": "messages in Supabase (boss+cs)",
+      "pass": true,
+      "detail": "n=2"
+    },
+    {
+      "name": "mark_read ok",
+      "pass": true,
+      "detail": "已标记已读。"
+    },
+    {
+      "name": "layout CSS deployed (flex list)",
+      "pass": true,
+      "detail": "status=200"
+    }
+  ],
+  "ok": true
+}

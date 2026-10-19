@@ -1,0 +1,632 @@
+{
+  "dry": false,
+  "started_at": "2026-09-25T14:45:05.165Z",
+  "preview": {
+    "title": "MCJO0000395 DELETE PREVIEW",
+    "dry": false,
+    "started_at": "2026-09-25T14:45:05.163Z",
+    "matched_root_count": 1,
+    "root": {
+      "id": "a7b111de-348d-46d2-be5a-c04385de6706",
+      "order_no": "MCJO000395",
+      "parent_order_id": null,
+      "status": "completed",
+      "total_amount": 70,
+      "paid_cat_food": 70,
+      "boss_id": "458ce9ad-3425-42b1-ab66-24bca342f971",
+      "created_at": "2026-09-23T08:37:40.482+00:00"
+    },
+    "children": [
+      {
+        "id": "ade2423d-0747-4087-bb8c-a730df4b96e8",
+        "order_no": "MCJO000396",
+        "parent_order_id": "a7b111de-348d-46d2-be5a-c04385de6706",
+        "companion_id": "458c3d2e-5803-403b-9a25-af1d12c8d142",
+        "status": "completed",
+        "total_amount": 35
+      },
+      {
+        "id": "43429922-46ab-47fc-9879-9ac0a9942a9a",
+        "order_no": "MCJO000397",
+        "parent_order_id": "a7b111de-348d-46d2-be5a-c04385de6706",
+        "companion_id": "737b7c07-cab8-4270-a2da-6eee49135559",
+        "status": "cancelled",
+        "total_amount": 35
+      }
+    ],
+    "ORDER_IDS": [
+      "a7b111de-348d-46d2-be5a-c04385de6706",
+      "ade2423d-0747-4087-bb8c-a730df4b96e8",
+      "43429922-46ab-47fc-9879-9ac0a9942a9a"
+    ],
+    "ORDER_NOS": [
+      "MCJO000395",
+      "MCJO000396",
+      "MCJO000397"
+    ],
+    "forbidden_check_passed": true,
+    "tables": [
+      {
+        "table": "messages",
+        "column": "order_id",
+        "ok": true,
+        "error": null,
+        "record_count": 5,
+        "records": [
+          {
+            "id": "ccad21d2-80dd-41d5-a602-b52c8a96a287",
+            "order_id": "a7b111de-348d-46d2-be5a-c04385de6706",
+            "amount": null,
+            "status": null
+          },
+          {
+            "id": "fd1b57e7-7f59-4b46-96b2-f8d52d1f779e",
+            "order_id": "a7b111de-348d-46d2-be5a-c04385de6706",
+            "amount": null,
+            "status": null
+          },
+          {
+            "id": "10fddc65-9dd0-4644-bf86-c3bc34b09c30",
+            "order_id": "ade2423d-0747-4087-bb8c-a730df4b96e8",
+            "amount": null,
+            "status": null
+          },
+          {
+            "id": "208f1802-280b-48f9-8c11-2e6beabf9bbe",
+            "order_id": "43429922-46ab-47fc-9879-9ac0a9942a9a",
+            "amount": null,
+            "status": null
+          },
+          {
+            "id": "4c69eb08-b984-4252-8848-b56cfd0972d8",
+            "order_id": "ade2423d-0747-4087-bb8c-a730df4b96e8",
+            "amount": null,
+            "status": null
+          }
+        ]
+      },
+      {
+        "table": "companion_reviews",
+        "column": "order_id",
+        "ok": true,
+        "error": null,
+        "record_count": 0,
+        "records": []
+      },
+      {
+        "table": "companion_penalties",
+        "column": "order_id",
+        "ok": true,
+        "error": null,
+        "record_count": 0,
+        "records": []
+      },
+      {
+        "table": "order_grabs",
+        "column": "order_id",
+        "ok": true,
+        "error": null,
+        "record_count": 0,
+        "records": []
+      },
+      {
+        "table": "order_assignments",
+        "column": "order_id",
+        "ok": false,
+        "error": "order_assignments 404: {\"code\":\"PGRST205\",\"details\":null,\"hint\":\"Perhaps you meant the table 'public.companion_cert_tag_assignments'\",\"message\":\"Could not find the table 'public.order_assignments' in the schema cache\"}",
+        "record_count": 0,
+        "records": []
+      },
+      {
+        "table": "order_companions",
+        "column": "order_id",
+        "ok": false,
+        "error": "order_companions 404: {\"code\":\"PGRST205\",\"details\":null,\"hint\":\"Perhaps you meant the table 'public.order_grabs'\",\"message\":\"Could not find the table 'public.order_companions' in the schema cache\"}",
+        "record_count": 0,
+        "records": []
+      },
+      {
+        "table": "order_participants",
+        "column": "order_id",
+        "ok": false,
+        "error": "order_participants 404: {\"code\":\"PGRST205\",\"details\":null,\"hint\":\"Perhaps you meant the table 'public.order_grabs'\",\"message\":\"Could not find the table 'public.order_participants' in the schema cache\"}",
+        "record_count": 0,
+        "records": []
+      },
+      {
+        "table": "service_records",
+        "column": "order_id",
+        "ok": false,
+        "error": "service_records 404: {\"code\":\"PGRST205\",\"details\":null,\"hint\":\"Perhaps you meant the table 'public.service_receptions'\",\"message\":\"Could not find the table 'public.service_records' in the schema cache\"}",
+        "record_count": 0,
+        "records": []
+      },
+      {
+        "table": "payment_receipts",
+        "column": "order_id",
+        "ok": true,
+        "error": null,
+        "record_count": 0,
+        "records": []
+      },
+      {
+        "table": "payment_transactions",
+        "column": "order_id",
+        "ok": true,
+        "error": null,
+        "record_count": 0,
+        "records": []
+      },
+      {
+        "table": "payment_review_history",
+        "column": "source_id",
+        "ok": false,
+        "error": "payment_review_history 404: {\"code\":\"PGRST205\",\"details\":null,\"hint\":\"Perhaps you meant the table 'public.payment_receipts'\",\"message\":\"Could not find the table 'public.payment_review_history' in the schema cache\"}",
+        "record_count": 0,
+        "records": []
+      },
+      {
+        "table": "service_receptions",
+        "column": "order_id",
+        "ok": true,
+        "error": null,
+        "record_count": 0,
+        "records": []
+      },
+      {
+        "table": "cs_commission_settlements",
+        "column": "order_id",
+        "ok": true,
+        "error": null,
+        "record_count": 0,
+        "records": []
+      },
+      {
+        "table": "cs_dock_rewards",
+        "column": "order_id",
+        "ok": true,
+        "error": null,
+        "record_count": 0,
+        "records": []
+      },
+      {
+        "table": "user_points_ledger",
+        "column": "related_order_id",
+        "ok": true,
+        "error": null,
+        "record_count": 0,
+        "records": []
+      },
+      {
+        "table": "referral_commission_records",
+        "column": "order_id",
+        "ok": true,
+        "error": null,
+        "record_count": 0,
+        "records": []
+      },
+      {
+        "table": "transactions",
+        "column": "order_id",
+        "ok": true,
+        "error": null,
+        "record_count": 1,
+        "records": [
+          {
+            "id": "bd707a22-51df-4dd4-812a-b69ca9aa542e",
+            "order_id": "ade2423d-0747-4087-bb8c-a730df4b96e8",
+            "amount": 28.7,
+            "status": "completed"
+          }
+        ]
+      },
+      {
+        "table": "boss_refund_requests",
+        "column": "order_id",
+        "ok": true,
+        "error": null,
+        "record_count": 0,
+        "records": []
+      },
+      {
+        "table": "wallet_order_holds",
+        "column": "order_id",
+        "ok": true,
+        "error": null,
+        "record_count": 1,
+        "records": [
+          {
+            "id": "54841cc8-06c0-4544-b0a8-15f46f14934a",
+            "order_id": "a7b111de-348d-46d2-be5a-c04385de6706",
+            "amount": 70,
+            "status": "finalized"
+          }
+        ]
+      },
+      {
+        "table": "wallet_transactions",
+        "column": "related_order_id",
+        "ok": true,
+        "error": null,
+        "record_count": 2,
+        "records": [
+          {
+            "id": "0d373ec1-b14a-46b9-8a97-b556bd812a95",
+            "order_id": "a7b111de-348d-46d2-be5a-c04385de6706",
+            "amount": 70,
+            "status": null
+          },
+          {
+            "id": "2c226013-6720-4445-a6f3-419ed91a8ac5",
+            "order_id": "a7b111de-348d-46d2-be5a-c04385de6706",
+            "amount": 70,
+            "status": null
+          }
+        ]
+      },
+      {
+        "table": "companion_earnings",
+        "column": "order_id",
+        "ok": false,
+        "error": "companion_earnings 404: {\"code\":\"PGRST205\",\"details\":null,\"hint\":\"Perhaps you meant the table 'public.companion_tags'\",\"message\":\"Could not find the table 'public.companion_earnings' in the schema cache\"}",
+        "record_count": 0,
+        "records": []
+      },
+      {
+        "table": "companion_income_ledger",
+        "column": "order_id",
+        "ok": false,
+        "error": "companion_income_ledger 404: {\"code\":\"PGRST205\",\"details\":null,\"hint\":\"Perhaps you meant the table 'public.companion_media'\",\"message\":\"Could not find the table 'public.companion_income_ledger' in the schema cache\"}",
+        "record_count": 0,
+        "records": []
+      },
+      {
+        "table": "platform_commission_ledger",
+        "column": "order_id",
+        "ok": false,
+        "error": "platform_commission_ledger 404: {\"code\":\"PGRST205\",\"details\":null,\"hint\":\"Perhaps you meant the table 'public.platform_config_logs'\",\"message\":\"Could not find the table 'public.platform_commission_ledger' in the schema cache\"}",
+        "record_count": 0,
+        "records": []
+      },
+      {
+        "table": "settlement_records",
+        "column": "order_id",
+        "ok": false,
+        "error": "settlement_records 404: {\"code\":\"PGRST205\",\"details\":null,\"hint\":\"Perhaps you meant the table 'public.settlement_batches'\",\"message\":\"Could not find the table 'public.settlement_records' in the schema cache\"}",
+        "record_count": 0,
+        "records": []
+      },
+      {
+        "table": "notifications",
+        "column": "order_id",
+        "ok": false,
+        "error": "notifications 404: {\"code\":\"PGRST205\",\"details\":null,\"hint\":\"Perhaps you meant the table 'public.boss_notifications'\",\"message\":\"Could not find the table 'public.notifications' in the schema cache\"}",
+        "record_count": 0,
+        "records": []
+      },
+      {
+        "table": "companion_notifications",
+        "column": "order_id",
+        "ok": false,
+        "error": "companion_notifications 400: {\"code\":\"42703\",\"details\":null,\"hint\":null,\"message\":\"column companion_notifications.order_id does not exist\"}",
+        "record_count": 0,
+        "records": []
+      },
+      {
+        "table": "boss_order_events",
+        "column": "order_id",
+        "ok": false,
+        "error": "boss_order_events 404: {\"code\":\"PGRST205\",\"details\":null,\"hint\":\"Perhaps you meant the table 'public.boss_vip_levels'\",\"message\":\"Could not find the table 'public.boss_order_events' in the schema cache\"}",
+        "record_count": 0,
+        "records": []
+      }
+    ],
+    "wallet": {
+      "total_balance": 480,
+      "held_balance": 0,
+      "paid_balance": 480,
+      "frozen": 0
+    },
+    "holds": [
+      {
+        "id": "54841cc8-06c0-4544-b0a8-15f46f14934a",
+        "boss_id": "458ce9ad-3425-42b1-ab66-24bca342f971",
+        "order_id": "a7b111de-348d-46d2-be5a-c04385de6706",
+        "order_no": "MCJO000395",
+        "amount": 70,
+        "status": "finalized",
+        "hold_idempotency_key": "order-hold:MCJO000395",
+        "finalize_idempotency_key": "order-finalize:MCJO000395",
+        "release_idempotency_key": null,
+        "paid_taken": 70,
+        "bonus_taken": 0,
+        "created_at": "2026-09-23T08:37:45.742731+00:00",
+        "updated_at": "2026-09-25T09:51:36.316818+00:00",
+        "finalized_at": "2026-09-25T09:51:36.316818+00:00",
+        "released_at": null
+      }
+    ],
+    "ledger": [
+      {
+        "id": "0d373ec1-b14a-46b9-8a97-b556bd812a95",
+        "boss_id": "458ce9ad-3425-42b1-ab66-24bca342f971",
+        "transaction_type": "order_hold",
+        "amount": 70,
+        "balance_type": "paid",
+        "direction": "debit",
+        "related_order_id": "a7b111de-348d-46d2-be5a-c04385de6706",
+        "related_recharge_id": null,
+        "campaign_id": null,
+        "compensation_id": null,
+        "reason": "订单冻结 MCJO000395",
+        "internal_note": "catfood hold reserve",
+        "operator_id": "458ce9ad-3425-42b1-ab66-24bca342f971",
+        "idempotency_key": "order-hold:MCJO000395",
+        "paid_balance_after": 480,
+        "bonus_balance_after": 0,
+        "total_balance_after": 550,
+        "expires_at": null,
+        "created_at": "2026-09-23T08:37:45.742731+00:00"
+      },
+      {
+        "id": "2c226013-6720-4445-a6f3-419ed91a8ac5",
+        "boss_id": "458ce9ad-3425-42b1-ab66-24bca342f971",
+        "transaction_type": "order_payment",
+        "amount": 70,
+        "balance_type": "paid",
+        "direction": "debit",
+        "related_order_id": "a7b111de-348d-46d2-be5a-c04385de6706",
+        "related_recharge_id": null,
+        "campaign_id": null,
+        "compensation_id": null,
+        "reason": "多人订单完成扣款 MCJO000395",
+        "internal_note": "catfood hold finalize on complete",
+        "operator_id": "458ce9ad-3425-42b1-ab66-24bca342f971",
+        "idempotency_key": "order-finalize:MCJO000395",
+        "paid_balance_after": 480,
+        "bonus_balance_after": 0,
+        "total_balance_after": 480,
+        "expires_at": null,
+        "created_at": "2026-09-25T09:51:36.316818+00:00"
+      }
+    ]
+  },
+  "actions": [
+    {
+      "op": "HOLD_SKIP",
+      "id": "54841cc8-06c0-4544-b0a8-15f46f14934a",
+      "status": "finalized"
+    },
+    {
+      "op": "WALLET_CREDIT_REVERSE",
+      "source_tx": "2c226013-6720-4445-a6f3-419ed91a8ac5",
+      "amount": 70,
+      "related_order_id": "a7b111de-348d-46d2-be5a-c04385de6706"
+    },
+    {
+      "op": "COMPANION_INCOME_CLAWBACK",
+      "id": "bd707a22-51df-4dd4-812a-b69ca9aa542e",
+      "order_id": "ade2423d-0747-4087-bb8c-a730df4b96e8",
+      "amount": 28.7
+    },
+    {
+      "op": "DELETE",
+      "table": "messages",
+      "filter": "order_id=in.(a7b111de-348d-46d2-be5a-c04385de6706,ade2423d-0747-4087-bb8c-a730df4b96e8,43429922-46ab-47fc-9879-9ac0a9942a9a)",
+      "count": 5
+    },
+    {
+      "op": "DELETE",
+      "table": "companion_reviews",
+      "filter": "order_id=in.(a7b111de-348d-46d2-be5a-c04385de6706,ade2423d-0747-4087-bb8c-a730df4b96e8,43429922-46ab-47fc-9879-9ac0a9942a9a)",
+      "count": 0
+    },
+    {
+      "op": "DELETE",
+      "table": "companion_penalties",
+      "filter": "order_id=in.(a7b111de-348d-46d2-be5a-c04385de6706,ade2423d-0747-4087-bb8c-a730df4b96e8,43429922-46ab-47fc-9879-9ac0a9942a9a)",
+      "count": 0
+    },
+    {
+      "op": "DELETE",
+      "table": "order_grabs",
+      "filter": "order_id=in.(a7b111de-348d-46d2-be5a-c04385de6706,ade2423d-0747-4087-bb8c-a730df4b96e8,43429922-46ab-47fc-9879-9ac0a9942a9a)",
+      "count": 0
+    },
+    {
+      "op": "DELETE",
+      "table": "payment_receipts",
+      "filter": "order_id=in.(a7b111de-348d-46d2-be5a-c04385de6706,ade2423d-0747-4087-bb8c-a730df4b96e8,43429922-46ab-47fc-9879-9ac0a9942a9a)",
+      "count": 0
+    },
+    {
+      "op": "DELETE",
+      "table": "payment_transactions",
+      "filter": "order_id=in.(a7b111de-348d-46d2-be5a-c04385de6706,ade2423d-0747-4087-bb8c-a730df4b96e8,43429922-46ab-47fc-9879-9ac0a9942a9a)",
+      "count": 0
+    },
+    {
+      "op": "DELETE",
+      "table": "service_receptions",
+      "filter": "order_id=in.(a7b111de-348d-46d2-be5a-c04385de6706,ade2423d-0747-4087-bb8c-a730df4b96e8,43429922-46ab-47fc-9879-9ac0a9942a9a)",
+      "count": 0
+    },
+    {
+      "op": "DELETE",
+      "table": "cs_commission_settlements",
+      "filter": "order_id=in.(a7b111de-348d-46d2-be5a-c04385de6706,ade2423d-0747-4087-bb8c-a730df4b96e8,43429922-46ab-47fc-9879-9ac0a9942a9a)",
+      "count": 0
+    },
+    {
+      "op": "DELETE",
+      "table": "cs_dock_rewards",
+      "filter": "order_id=in.(a7b111de-348d-46d2-be5a-c04385de6706,ade2423d-0747-4087-bb8c-a730df4b96e8,43429922-46ab-47fc-9879-9ac0a9942a9a)",
+      "count": 0
+    },
+    {
+      "op": "DELETE",
+      "table": "user_points_ledger",
+      "filter": "related_order_id=in.(a7b111de-348d-46d2-be5a-c04385de6706,ade2423d-0747-4087-bb8c-a730df4b96e8,43429922-46ab-47fc-9879-9ac0a9942a9a)",
+      "count": 0
+    },
+    {
+      "op": "DELETE",
+      "table": "referral_commission_records",
+      "filter": "order_id=in.(a7b111de-348d-46d2-be5a-c04385de6706,ade2423d-0747-4087-bb8c-a730df4b96e8,43429922-46ab-47fc-9879-9ac0a9942a9a)",
+      "count": 0
+    },
+    {
+      "op": "DELETE",
+      "table": "transactions",
+      "filter": "order_id=in.(a7b111de-348d-46d2-be5a-c04385de6706,ade2423d-0747-4087-bb8c-a730df4b96e8,43429922-46ab-47fc-9879-9ac0a9942a9a)",
+      "count": 1
+    },
+    {
+      "op": "DELETE",
+      "table": "boss_refund_requests",
+      "filter": "order_id=in.(a7b111de-348d-46d2-be5a-c04385de6706,ade2423d-0747-4087-bb8c-a730df4b96e8,43429922-46ab-47fc-9879-9ac0a9942a9a)",
+      "count": 0
+    },
+    {
+      "op": "DELETE",
+      "table": "wallet_order_holds",
+      "filter": "order_id=in.(a7b111de-348d-46d2-be5a-c04385de6706,ade2423d-0747-4087-bb8c-a730df4b96e8,43429922-46ab-47fc-9879-9ac0a9942a9a)",
+      "count": 1
+    },
+    {
+      "op": "DELETE",
+      "table": "wallet_transactions",
+      "filter": "related_order_id=in.(a7b111de-348d-46d2-be5a-c04385de6706,ade2423d-0747-4087-bb8c-a730df4b96e8,43429922-46ab-47fc-9879-9ac0a9942a9a)",
+      "count": 3
+    },
+    {
+      "op": "DELETE",
+      "table": "orders",
+      "filter": "id=in.(ade2423d-0747-4087-bb8c-a730df4b96e8,43429922-46ab-47fc-9879-9ac0a9942a9a)",
+      "count": 2
+    },
+    {
+      "op": "DELETE",
+      "table": "orders",
+      "filter": "id=eq.a7b111de-348d-46d2-be5a-c04385de6706",
+      "count": 1
+    }
+  ],
+  "deleted": {
+    "messages": {
+      "deleted": 5
+    },
+    "companion_reviews": {
+      "deleted": 0
+    },
+    "companion_penalties": {
+      "deleted": 0
+    },
+    "order_grabs": {
+      "deleted": 0
+    },
+    "order_assignments": {
+      "skipped": "order_assignments 404: {\"code\":\"PGRST205\",\"details\":null,\"hint\":\"Perhaps you meant the table 'public.companion_cert_tag_assignments'\",\"message\":\"Could not find "
+    },
+    "order_companions": {
+      "skipped": "order_companions 404: {\"code\":\"PGRST205\",\"details\":null,\"hint\":\"Perhaps you meant the table 'public.order_grabs'\",\"message\":\"Could not find the table 'public.or"
+    },
+    "order_participants": {
+      "skipped": "order_participants 404: {\"code\":\"PGRST205\",\"details\":null,\"hint\":\"Perhaps you meant the table 'public.order_grabs'\",\"message\":\"Could not find the table 'public."
+    },
+    "service_records": {
+      "skipped": "service_records 404: {\"code\":\"PGRST205\",\"details\":null,\"hint\":\"Perhaps you meant the table 'public.service_receptions'\",\"message\":\"Could not find the table 'pub"
+    },
+    "payment_receipts": {
+      "deleted": 0
+    },
+    "payment_transactions": {
+      "deleted": 0
+    },
+    "payment_review_history": {
+      "skipped": "payment_review_history 404: {\"code\":\"PGRST205\",\"details\":null,\"hint\":\"Perhaps you meant the table 'public.payment_receipts'\",\"message\":\"Could not find the table"
+    },
+    "service_receptions": {
+      "deleted": 0
+    },
+    "cs_commission_settlements": {
+      "deleted": 0
+    },
+    "cs_dock_rewards": {
+      "deleted": 0
+    },
+    "user_points_ledger": {
+      "deleted": 0
+    },
+    "referral_commission_records": {
+      "deleted": 0
+    },
+    "transactions": {
+      "deleted": 1
+    },
+    "boss_refund_requests": {
+      "deleted": 0
+    },
+    "wallet_order_holds": {
+      "deleted": 1
+    },
+    "wallet_transactions": {
+      "deleted": 3
+    },
+    "companion_earnings": {
+      "skipped": "companion_earnings 404: {\"code\":\"PGRST205\",\"details\":null,\"hint\":\"Perhaps you meant the table 'public.companion_tags'\",\"message\":\"Could not find the table 'publ"
+    },
+    "companion_income_ledger": {
+      "skipped": "companion_income_ledger 404: {\"code\":\"PGRST205\",\"details\":null,\"hint\":\"Perhaps you meant the table 'public.companion_media'\",\"message\":\"Could not find the table"
+    },
+    "platform_commission_ledger": {
+      "skipped": "platform_commission_ledger 404: {\"code\":\"PGRST205\",\"details\":null,\"hint\":\"Perhaps you meant the table 'public.platform_config_logs'\",\"message\":\"Could not find t"
+    },
+    "settlement_records": {
+      "skipped": "settlement_records 404: {\"code\":\"PGRST205\",\"details\":null,\"hint\":\"Perhaps you meant the table 'public.settlement_batches'\",\"message\":\"Could not find the table '"
+    },
+    "notifications": {
+      "skipped": "notifications 404: {\"code\":\"PGRST205\",\"details\":null,\"hint\":\"Perhaps you meant the table 'public.boss_notifications'\",\"message\":\"Could not find the table 'publi"
+    },
+    "companion_notifications": {
+      "skipped": "companion_notifications 400: {\"code\":\"42703\",\"details\":null,\"hint\":null,\"message\":\"column companion_notifications.order_id does not exist\"}"
+    },
+    "boss_order_events": {
+      "skipped": "boss_order_events 404: {\"code\":\"PGRST205\",\"details\":null,\"hint\":\"Perhaps you meant the table 'public.boss_vip_levels'\",\"message\":\"Could not find the table 'publ"
+    },
+    "orders": {
+      "deleted": 1
+    }
+  },
+  "AFTER": {
+    "remaining_self_orders": [],
+    "protected_orders_still_present": [
+      {
+        "id": "8dfba3dd-f855-4d53-9bbf-65e64338cbc1",
+        "order_no": "MCJO000415",
+        "status": "in_progress"
+      },
+      {
+        "id": "c588e77a-293c-464e-b5a0-cf9a1ae9bf77",
+        "order_no": "MCJO000419",
+        "status": "in_progress"
+      }
+    ],
+    "wallet": {
+      "total_balance": 550,
+      "held_balance": 0,
+      "paid_balance": 550,
+      "frozen": 0
+    },
+    "holds": [],
+    "ledger": []
+  },
+  "CHECKS": {
+    "ORDERS_GONE": true,
+    "PROTECTED_INTACT": true,
+    "HOLDS_CLEAR": true,
+    "LEDGER_CLEAR": true
+  },
+  "finished_at": "2026-09-25T14:45:09.289Z",
+  "ok": true
+}

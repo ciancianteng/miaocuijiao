@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0a0610" />
+  <title>消息通知 · 妙脆角</title>
+  <script src="/pwa-boot.js?v=20261008work1" defer></script>
+  <style>
+    :root { color-scheme: dark; }
+    html, body { margin: 0; min-height: 100%; background: #07070a !important; color: #f6f3f7 !important; }
+    body { font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; overflow-x: hidden; }
+    .mcj-note-brand {
+      display: flex; align-items: baseline; gap: 8px;
+      padding: calc(14px + env(safe-area-inset-top, 0px)) 16px 12px;
+      background: #0c0c10; border-bottom: 1px solid rgba(255,255,255,.08);
+    }
+    .mcj-note-brand strong { letter-spacing: .04em; font-size: 14px; }
+    .mcj-note-brand span { color: #ff8fc5; font-size: 13px; font-weight: 700; }
+    main { max-width: 720px; margin: 0 auto; padding: 16px 16px calc(28px + env(safe-area-inset-bottom, 0px)); }
+    h1 { font-size: 22px; margin: 0 0 12px; }
+    .tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+    button {
+      border: 1px solid rgba(255,255,255,.1); border-radius: 999px; padding: 8px 12px;
+      background: #141418; color: #d7d2da; font-weight: 700;
+    }
+    button.is-active { background: rgba(255,143,197,.16); color: #fff; border-color: rgba(255,143,197,.45); }
+    .mcj-note-card {
+      display: block; margin: 0 0 8px; padding: 12px; border-radius: 14px;
+      background: #141418; border: 1px solid rgba(255,255,255,.08); overflow: hidden;
+    }
+    .mcj-note-card.is-work { border-color: rgba(255,143,197,.55); box-shadow: inset 3px 0 0 #ff8fc5; }
+    .mcj-note-tag { display: inline-block; margin-bottom: 4px; padding: 1px 7px; border-radius: 999px; background: rgba(255,143,197,.16); color: #ff8fc5; font-size: 11px; font-style: normal; font-weight: 700; }
+    .mcj-note-card.is-read { opacity: .72; }
+    .mcj-note-link { display: flex; gap: 10px; align-items: flex-start; color: inherit; text-decoration: none; min-width: 0; }
+    .mcj-note-dot { flex: 0 0 auto; width: 8px; height: 8px; margin-top: 6px; border-radius: 999px; background: #ff8fc5; }
+    .mcj-note-link div { min-width: 0; }
+    .mcj-note-link strong { display: block; font-size: 15px; }
+    .mcj-note-link p { margin: 4px 0 0; color: #c8c2cc; font-size: 13px; line-height: 1.45; overflow-wrap: anywhere; }
+    .mcj-note-link time { display: block; margin-top: 6px; color: #8d8794; font-size: 12px; }
+    .mcj-note-empty, .mcj-note-denied { color: #b7bac4; }
+    a[data-mcj-badge-bell] { display: none !important; }
+  </style>
+</head>
+<body>
+  <header class="mcj-note-brand"><strong>MEOW CUI JIAO</strong><span>妙脆角</span></header>
+  <main>
+    <h1>消息通知</h1>
+    <div class="tabs">
+      <button type="button" class="is-active" data-badge-category="all">全部</button>
+      <button type="button" data-badge-category="consult">待接待</button>
+      <button type="button" data-badge-category="recharge">充值</button>
+      <button type="button" data-badge-category="gift">礼物</button>
+      <button type="button" data-badge-category="chat">聊天</button>
+      <button type="button" data-badge-category="order">订单</button>
+      <button type="button" data-badge-category="system">系统</button>
+      <button type="button" data-badge-read-all>全部已读</button>
+    </div>
+    <div data-mcj-notification-center data-category="all">加载中…</div>
+  </main>
+  <script src="/src/app-badge.js?v=20261008work1" defer></script>
+</body>
+</html>

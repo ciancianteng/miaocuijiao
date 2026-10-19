@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <!-- mcj-pwa-meta:begin -->
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="妙脆角老板">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#0a0610">
+  <meta name="mobile-web-app-capable" content="yes">
+  <script src="/pwa-boot.js?v=20261009bell1" defer></script>
+  <!-- mcj-pwa-meta:end -->
+
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>确认订单并付款 | MEOW CUI JIAO</title>
+  <link rel="stylesheet" href="src/style.css">
+  <link rel="stylesheet" href="src/boss-header.css?v=20261018brand1">
+  <link rel="stylesheet" href="src/place-order-modal.css?v=20261005batch1">
+  <link rel="stylesheet" href="src/mcj-time-picker.css?v=20260924timeWheel3">
+  <style>
+    html, body { background: #08070a; color: #fff; margin: 0; }
+    .po-page {
+      width: min(520px, calc(100vw - 32px));
+      margin: 0 auto;
+      padding: 20px 0 calc(120px + env(safe-area-inset-bottom, 0px));
+      box-sizing: border-box;
+    }
+    .po-page-card {
+      border: 1px solid rgba(243, 168, 203, 0.28);
+      border-radius: 18px;
+      background: linear-gradient(180deg, rgba(30, 24, 36, 0.98), rgba(9, 8, 13, 0.99));
+      overflow: hidden;
+      box-shadow: 0 18px 60px rgba(0, 0, 0, 0.45);
+    }
+    .po-page-scroll { padding: 18px 16px 12px; }
+    .po-page-footer {
+      position: sticky;
+      bottom: 0;
+      z-index: 5;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      padding: 14px 16px calc(14px + env(safe-area-inset-bottom, 0px));
+      border-top: 1px solid rgba(255, 255, 255, 0.1);
+      background: rgba(12, 10, 16, 0.98);
+    }
+    .po-page-footer .mcj-po-submit {
+      width: 100%;
+      min-height: 48px;
+      border: 0;
+      border-radius: 14px;
+      background: linear-gradient(180deg, #ffe2ef, #e7a0c4);
+      color: #1b0712;
+      font-weight: 900;
+      font-size: 16px;
+      cursor: pointer;
+    }
+    .po-page-footer .mcj-po-submit:disabled { opacity: 0.55; cursor: not-allowed; }
+    .po-back {
+      display: inline-flex;
+      margin-bottom: 12px;
+      color: #ffd6e7;
+      text-decoration: none;
+      font-weight: 700;
+      font-size: 14px;
+    }
+    .po-alert {
+      margin: 12px 0;
+      padding: 12px;
+      border-radius: 12px;
+      border: 1px solid rgba(255, 107, 122, 0.35);
+      background: rgba(255, 107, 122, 0.1);
+      color: #ffd0d6;
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="index.html"><span>MEOW CUI JIAO</span></a>
+    <nav class="boss-nav">
+      <a href="index.html">首页</a>
+      <a href="companion-center.html">陪玩大厅</a>
+      <a href="orders.html">我的订单</a>
+    </nav>
+  </header>
+  <main class="po-page" id="placeOrderPage">
+    <a class="po-back" href="javascript:history.back()">← 返回</a>
+    <p>正在打开下单页…</p>
+  </main>
+  <script type="module" src="src/role-gates.js?v=20260908antiBlank1"></script>
+  <script src="src/boss-auth-session.js?v=20260811authUnify2"></script>
+  <script type="module" src="src/boss-header.js" defer></script>
+  <script type="module" src="src/currency.js"></script>
+  <script src="/src/mcj-time-picker.js?v=20261007b1528" defer></script>
+  <script src="/src/place-order-page.js?v=20261008p1112" defer></script>
+</body>
+</html>

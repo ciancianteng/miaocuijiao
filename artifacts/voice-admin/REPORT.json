@@ -1,0 +1,89 @@
+{
+  "staging": "https://meow-cuijiao-homepage-staging.vercel.app",
+  "tag": "测试声线改105444",
+  "createdId": "45296180-18cb-4d52-89ae-63d7c05013f4",
+  "matrix": {
+    "VOICE_ADMIN_ENTRY": "PASS",
+    "VOICE_ADD": "PASS",
+    "VOICE_EDIT": "PASS",
+    "VOICE_ENABLE_DISABLE": "PASS",
+    "VOICE_SORT": "PASS",
+    "COMPANION_VOICE_EDIT": "PASS",
+    "APPLICATION_DYNAMIC_OPTIONS": "PASS",
+    "OLD_DATA_COMPATIBLE": "PASS",
+    "MOBILE_ADMIN": "PASS",
+    "STAGING_E2E": "PASS"
+  },
+  "steps": [
+    {
+      "name": "admin login",
+      "result": "PASS",
+      "detail": "admin@meow.test"
+    },
+    {
+      "name": "list voice types",
+      "result": "PASS",
+      "detail": "count=15"
+    },
+    {
+      "name": "VOICE_ADD",
+      "result": "PASS",
+      "detail": "声线已保存，陪玩端选项将立即同步"
+    },
+    {
+      "name": "VOICE persist after refresh",
+      "result": "PASS",
+      "detail": "测试声线105444"
+    },
+    {
+      "name": "VOICE_EDIT",
+      "result": "PASS",
+      "detail": "声线已保存，陪玩端选项将立即同步"
+    },
+    {
+      "name": "VOICE_SORT",
+      "result": "PASS",
+      "detail": "排序已更新"
+    },
+    {
+      "name": "VOICE disable",
+      "result": "PASS",
+      "detail": "已停用"
+    },
+    {
+      "name": "disabled hidden from public",
+      "result": "PASS",
+      "detail": "publicCount=13"
+    },
+    {
+      "name": "VOICE enable",
+      "result": "PASS",
+      "detail": "已启用"
+    },
+    {
+      "name": "enabled visible publicly",
+      "result": "PASS",
+      "detail": "测试声线改105444"
+    },
+    {
+      "name": "COMPANION_VOICE_EDIT",
+      "result": "PASS",
+      "detail": "id=53be06d5-b94b-473c-a63d-cfd5926adfab after=测试声线改880545、测试声线改961181、测试声线改034033、测试声线改105444"
+    },
+    {
+      "name": "delete blocked when in use",
+      "result": "PASS",
+      "detail": "已有 1 位陪玩使用该声线，不能直接删除。请先在陪玩资料中迁移/改掉该声线，或改为「停用」。"
+    },
+    {
+      "name": "VOICE_ADMIN_ENTRY",
+      "result": "PASS",
+      "detail": "nav button"
+    },
+    {
+      "name": "player edit voice field",
+      "result": "PASS",
+      "detail": "opts=16"
+    }
+  ]
+}

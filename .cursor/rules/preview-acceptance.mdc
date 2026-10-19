@@ -1,0 +1,45 @@
+---
+description: 固定 Staging 验收网址；禁止每次换随机 Preview URL / 新建分支验收
+alwaysApply: true
+---
+
+# Staging 固定验收铁律
+
+自本规则生效起：所有验收、截图、E2E、UI 核对 **只认固定 Staging 网址**。
+
+## 固定验收网址（唯一）
+
+https://meow-cuijiao-homepage-staging.vercel.app/
+
+镜像（同一部署）：
+https://meow-cuijiao-homepage-staging-ciancianteng-4581s-projects.vercel.app/
+
+## 必须做
+
+修改完成后：
+
+1. 在 **`staging`** 分支上继续修复（不要每次新建分支 / PR / 独立 Project）
+2. 用 `node scripts/deploy-staging.mjs` 部署（内部会 `vercel deploy` 并把固定 alias 指到最新部署）
+3. 验收时只打开上面的固定 Staging URL（刷新即可）
+4. 报告里写固定 Staging URL，不要把随机 `*-xxxxx-*.vercel.app` 当主验收链接
+
+## 禁止做
+
+```
+// ❌ 每次修 Bug 新建 branch / PR / 换随机 Preview URL 让用户去点
+// ❌ 验收以 http://localhost:5173 为准
+// ❌ 覆盖正式域名 meowcuijiao.com（测试用 Staging alias）
+// ❌ 只改完代码口头说 PASS，不更新 Staging alias
+```
+
+```
+// ✅ staging 分支继续改 → deploy-staging.mjs → 刷新固定 Staging URL
+```
+
+## 正式域名
+
+`meowcuijiao.com` / production **不要**在验收流程里覆盖。测试一律走 Staging alias。
+
+## Preview vs localhost 不一致时
+
+仍输出：不一致原因、哪个文件不同、哪个环境变量不同、为什么 Build 后不同。结论以 Staging 为准。

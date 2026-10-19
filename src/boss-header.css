@@ -1,0 +1,781 @@
+/* =========================================================
+   Boss header — brand left + nav right (desktop)
+                  brand left + ☰ right (mobile)
+   ========================================================= */
+
+html {
+  max-width: 100%;
+  /* clip does not force overflow-y to auto. hidden on one axis does, and
+     that second scrollport is what snaps iOS/Android back to the top. */
+  overflow-x: clip;
+  overflow-y: auto;
+}
+
+body.mcj-boss-shell {
+  max-width: 100%;
+  overflow-x: clip;
+  overflow-y: visible;
+}
+
+header.mcj-boss-header {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100vw;
+  margin: 0;
+  padding: 0;
+  padding-top: env(safe-area-inset-top, 0px);
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+  border-bottom: 1px solid rgba(255, 158, 207, 0.2);
+  background: rgba(5, 4, 6, 0.96);
+  backdrop-filter: blur(16px);
+}
+
+header.mcj-boss-header .mcj-boss-header-inner {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+  max-width: 100%;
+  margin: 0 auto;
+  padding: 0 16px;
+  padding-left: max(16px, calc(env(safe-area-inset-left, 0px) + 16px));
+  padding-right: max(16px, calc(env(safe-area-inset-right, 0px) + 16px));
+  min-height: 62px;
+  height: 62px;
+}
+
+/* Kill legacy chrome / star / favorites completely */
+header.mcj-boss-header .top-actions,
+header.mcj-boss-header .live2d-avatar,
+header.mcj-boss-header .mcj-boss-user,
+header.mcj-boss-header .mcj-boss-mine,
+header.mcj-boss-header .mcj-boss-login,
+header.mcj-boss-header .mcj-boss-star,
+header.mcj-boss-header .header-star,
+header.mcj-boss-header [data-favorite],
+header.mcj-boss-header [data-mcj-favorite],
+header.mcj-boss-header [data-mcj-notify-toggle],
+header.mcj-boss-header .brand:not(.mcj-header-brand),
+header.mcj-boss-header .mcj-boss-brand:not(.mcj-header-brand),
+header.mcj-boss-header .mcj-mnav-brand,
+header.mcj-boss-header .mcj-boss-more,
+header.mcj-boss-header nav.header-nav:not(.mcj-desk-nav),
+header.mcj-boss-header nav.mcj-boss-nav:not(.mcj-desk-nav) {
+  display: none !important;
+}
+
+/* ---------- Shared brand (always visible; never display:none) ---------- */
+header.mcj-boss-header .mcj-header-brand {
+  display: flex !important;
+  flex: 0 0 auto;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 0;
+  min-width: max-content;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  color: #ffffff;
+  text-decoration: none;
+  visibility: visible !important;
+  opacity: 1 !important;
+  position: relative;
+  z-index: 2;
+  overflow: visible;
+}
+
+header.mcj-boss-header .mcj-header-brand-logo,
+header.mcj-boss-header .mcj-header-brand img {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  max-width: 0 !important;
+  max-height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  flex: 0 0 0 !important;
+  overflow: hidden !important;
+  visibility: hidden !important;
+}
+
+header.mcj-boss-header .mcj-header-brand-text {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 2px;
+  min-width: 0;
+  line-height: 1.1;
+}
+
+header.mcj-boss-header .mcj-header-brand-en {
+  display: block;
+  max-width: none;
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  overflow: visible;
+  text-overflow: clip;
+}
+
+header.mcj-boss-header .mcj-header-brand-zh {
+  display: block;
+  max-width: none;
+  color: rgba(255, 214, 234, 0.78);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+  overflow: visible;
+  text-overflow: clip;
+}
+
+/* ---------- Shared nav chrome: compact frosted chips ---------- */
+header.mcj-boss-header {
+  --mcj-nav-h: 40px;
+  --mcj-nav-radius: 10px;
+  --mcj-nav-pink: #ffb6d9;
+  --mcj-nav-pink-soft: #ffe3f0;
+  --mcj-nav-pink-deep: rgba(255, 158, 207, 0.38);
+  --mcj-nav-glass: rgba(10, 8, 12, 0.78);
+  --mcj-nav-glass-hover: rgba(18, 14, 20, 0.88);
+}
+
+header.mcj-boss-header .mcj-desk-nav {
+  display: none;
+}
+
+header.mcj-boss-header .mcj-mnav {
+  display: none;
+}
+
+header.mcj-boss-header .mcj-header-bell {
+  position: relative;
+  flex: 0 0 40px;
+  width: 40px;
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 8px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 158, 207, 0.38);
+  background: rgba(10, 8, 12, 0.78);
+  color: #fff;
+  text-decoration: none;
+  font-size: 16px;
+  z-index: 2;
+}
+
+header.mcj-boss-header .mcj-header-bell [data-mcj-badge-count] {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: #e11d48;
+  color: #fff;
+  font-size: 10px;
+  line-height: 16px;
+  text-align: center;
+}
+
+header.mcj-boss-header .mcj-desk-nav > a,
+header.mcj-boss-header .mcj-desk-nav > .mcj-desk-logout,
+header.mcj-boss-header .mcj-mnav-drawer a,
+header.mcj-boss-header .mcj-mnav-drawer .mcj-mnav-logout,
+header.mcj-boss-header .mcj-mnav-toggle {
+  box-sizing: border-box;
+  position: relative;
+  height: var(--mcj-nav-h);
+  min-height: var(--mcj-nav-h);
+  max-height: var(--mcj-nav-h);
+  border-radius: var(--mcj-nav-radius);
+  border: 1px solid var(--mcj-nav-pink-deep);
+  background: var(--mcj-nav-glass);
+  backdrop-filter: blur(10px) saturate(1.1);
+  -webkit-backdrop-filter: blur(10px) saturate(1.1);
+  color: #f7f0f4;
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 750;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  cursor: pointer;
+  overflow: hidden;
+  box-shadow: none;
+  transition: border-color 0.18s ease, background 0.18s ease, color 0.18s ease;
+}
+
+header.mcj-boss-header .mcj-desk-nav > a,
+header.mcj-boss-header .mcj-desk-nav > .mcj-desk-logout,
+header.mcj-boss-header .mcj-mnav-drawer a,
+header.mcj-boss-header .mcj-mnav-drawer .mcj-mnav-logout {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 12px;
+}
+
+header.mcj-boss-header .mcj-desk-nav > a::after,
+header.mcj-boss-header .mcj-mnav-drawer a::after {
+  content: "";
+  position: absolute;
+  left: 22%;
+  right: 22%;
+  bottom: 5px;
+  height: 1.5px;
+  border-radius: 999px;
+  background: var(--mcj-nav-pink);
+  opacity: 0;
+  transform: scaleX(0.6);
+  transition: opacity 0.18s ease, transform 0.18s ease;
+  pointer-events: none;
+  box-shadow: none;
+}
+
+header.mcj-boss-header .mcj-desk-nav > a:hover,
+header.mcj-boss-header .mcj-desk-nav > .mcj-desk-logout:hover,
+header.mcj-boss-header .mcj-mnav-drawer a:hover,
+header.mcj-boss-header .mcj-mnav-drawer .mcj-mnav-logout:hover,
+header.mcj-boss-header .mcj-mnav-toggle:hover {
+  background: var(--mcj-nav-glass-hover);
+  border-color: rgba(255, 180, 220, 0.55);
+  box-shadow: none;
+}
+
+header.mcj-boss-header .mcj-desk-nav > .mcj-desk-logout {
+  appearance: none;
+  -webkit-appearance: none;
+  font-family: inherit;
+  margin: 0;
+}
+
+header.mcj-boss-header .mcj-desk-nav > a.active,
+header.mcj-boss-header .mcj-mnav-drawer a.active {
+  color: var(--mcj-nav-pink-soft);
+  background: rgba(12, 9, 14, 0.92);
+  border-color: rgba(255, 180, 220, 0.55);
+  font-weight: 850;
+  box-shadow: none;
+}
+
+header.mcj-boss-header .mcj-desk-nav > a.active::after,
+header.mcj-boss-header .mcj-mnav-drawer a.active::after {
+  opacity: 1;
+  transform: scaleX(1);
+}
+
+header.mcj-boss-header .mcj-desk-nav > a:focus-visible,
+header.mcj-boss-header .mcj-mnav-drawer a:focus-visible,
+header.mcj-boss-header .mcj-mnav-drawer .mcj-mnav-logout:focus-visible,
+header.mcj-boss-header .mcj-mnav-toggle:focus-visible {
+  outline: none;
+  border-color: rgba(255, 200, 230, 0.75);
+  box-shadow: 0 0 0 1px rgba(255, 180, 220, 0.25);
+}
+
+@media (min-width: 900px) {
+  header.mcj-boss-header .mcj-boss-header-inner {
+    max-width: 1180px;
+    height: 64px;
+    min-height: 64px;
+    gap: 20px;
+  }
+
+  header.mcj-boss-header .mcj-header-brand {
+    max-width: none;
+    order: 0;
+  }
+
+  header.mcj-boss-header .mcj-header-brand-en {
+    font-size: 15px;
+    font-weight: 650;
+    letter-spacing: 0.04em;
+  }
+
+  header.mcj-boss-header .mcj-header-brand-zh {
+    font-size: 13px;
+  }
+
+  header.mcj-boss-header .mcj-mnav {
+    display: none !important;
+  }
+
+  header.mcj-boss-header .mcj-header-bell {
+    order: 3;
+    margin-left: 8px;
+  }
+
+  header.mcj-boss-header .mcj-desk-nav {
+    display: flex !important;
+    flex-wrap: nowrap !important;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 6px;
+    flex: 0 1 auto;
+    min-width: 0;
+    width: auto;
+    margin-left: auto;
+    max-width: none;
+    order: 2;
+  }
+
+  header.mcj-boss-header .mcj-desk-nav > a,
+  header.mcj-boss-header .mcj-desk-nav > .mcj-desk-logout {
+    flex: 0 0 auto;
+    min-width: 0;
+    width: auto;
+    max-width: none;
+    padding: 0 11px;
+    font-size: 13px;
+  }
+}
+
+/* ---------- Mobile / tablet (<900): brand left + ☰ right ——— */
+@media (max-width: 899px) {
+  header.mcj-boss-header .mcj-desk-nav {
+    display: none !important;
+  }
+
+  header.mcj-boss-header .mcj-boss-header-inner {
+    gap: 12px !important;
+    height: 62px !important;
+    min-height: 62px !important;
+    max-height: 64px !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding-left: max(16px, calc(env(safe-area-inset-left, 0px) + 16px)) !important;
+    padding-right: max(16px, calc(env(safe-area-inset-right, 0px) + 16px)) !important;
+    justify-content: flex-start !important;
+    align-items: center !important;
+  }
+
+  /* Hamburger stays in header row — never over Banner, never full-width */
+  header.mcj-boss-header .mcj-header-brand {
+    display: flex !important;
+    flex: 0 0 auto !important;
+    flex-grow: 0 !important;
+    flex-shrink: 0 !important;
+    order: 0 !important;
+    max-width: none !important;
+    min-width: max-content !important;
+    pointer-events: auto !important;
+    margin: 0 !important;
+  }
+
+  header.mcj-boss-header .mcj-header-bell {
+    order: 1;
+    margin-left: auto;
+  }
+
+  header.mcj-boss-header .mcj-mnav {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    flex: 0 0 auto !important;
+    flex-grow: 0 !important;
+    flex-shrink: 0 !important;
+    order: 2 !important;
+    gap: 0 !important;
+    width: auto !important;
+    max-width: 48px !important;
+    min-width: 40px !important;
+    margin: 0 0 0 8px !important;
+    position: relative !important;
+    z-index: 3 !important;
+  }
+
+  header.mcj-boss-header .mcj-mnav-toggle {
+    flex: 0 0 40px !important;
+    width: 40px !important;
+    height: 40px !important;
+    min-width: 40px !important;
+    min-height: 40px !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    font-size: 20px !important;
+    line-height: 1 !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    z-index: 1 !important;
+    position: relative !important;
+  }
+
+  @media (max-width: 520px) {
+    /* Keep English brand visible on mobile (Meow Cui Jiao) */
+    header.mcj-boss-header .mcj-header-brand-en {
+      display: block;
+      font-size: 13px;
+      font-weight: 650;
+      letter-spacing: 0.04em;
+      line-height: 1.15;
+      max-width: none;
+      overflow: visible;
+      text-overflow: clip;
+    }
+
+    header.mcj-boss-header .mcj-header-brand-zh {
+      font-size: 11px;
+      font-weight: 600;
+      color: rgba(255, 214, 234, 0.78);
+      letter-spacing: 0.06em;
+    }
+
+    header.mcj-boss-header .mcj-header-brand-logo,
+    header.mcj-boss-header .mcj-header-brand img {
+      display: none !important;
+      width: 0 !important;
+      height: 0 !important;
+      flex: 0 0 0 !important;
+    }
+  }
+
+  header.mcj-boss-header .mcj-mnav-toggle[aria-expanded="true"] {
+    color: var(--mcj-nav-pink-soft);
+    border-color: rgba(255, 158, 207, 0.55);
+    box-shadow: none;
+  }
+
+  /* Kill any injected star/svg from design-system icon normalizer */
+  header.mcj-boss-header .mcj-mnav-toggle .mcj-line-icon,
+  header.mcj-boss-header .mcj-mnav-toggle .mcj-inline-icon,
+  header.mcj-boss-header .mcj-mnav-toggle svg {
+    display: none !important;
+  }
+}
+
+/* Mobile nav sheet lives on body (not clipped by sticky header overflow) */
+.mcj-mnav-sheet {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  height: 100dvh;
+  max-height: 100dvh;
+  z-index: 2147483000;
+  display: block;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.mcj-mnav-sheet[hidden] {
+  display: none !important;
+}
+
+.mcj-mnav-sheet.open {
+  pointer-events: auto;
+}
+
+.mcj-mnav-backdrop {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.58);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mcj-mnav-drawer {
+  position: absolute;
+  top: calc(62px + env(safe-area-inset-top, 0px));
+  right: 0;
+  bottom: 0;
+  z-index: 1;
+  box-sizing: border-box;
+  width: min(320px, calc(100vw - 48px));
+  max-width: 100%;
+  height: auto;
+  max-height: calc(100% - 62px - env(safe-area-inset-top, 0px));
+  padding: 12px 14px calc(16px + env(safe-area-inset-bottom, 0px));
+  border-left: 1px solid rgba(255, 140, 200, 0.28);
+  border-top: 1px solid rgba(255, 140, 200, 0.18);
+  border-radius: 16px 0 0 0;
+  background: rgba(8, 6, 10, 0.97);
+  backdrop-filter: blur(18px) saturate(1.25);
+  -webkit-backdrop-filter: blur(18px) saturate(1.25);
+  box-shadow:
+    -18px 0 48px rgba(0, 0, 0, 0.55),
+    0 0 24px rgba(255, 100, 170, 0.12);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.mcj-mnav-drawer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 44px;
+  padding: 4px 2px 8px;
+  border-bottom: 1px solid rgba(255, 158, 207, 0.18);
+  color: #fff7fb;
+}
+
+.mcj-mnav-drawer-head strong {
+  font-size: 16px;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+}
+
+.mcj-mnav-close {
+  box-sizing: border-box;
+  width: 40px;
+  height: 40px;
+  margin: 0;
+  padding: 0;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 140, 200, 0.35);
+  background: rgba(22, 14, 22, 0.82);
+  color: #ffe4f1;
+  font-size: 24px;
+  line-height: 1;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mcj-mnav-drawer-links {
+  display: grid;
+  gap: 8px;
+}
+
+.mcj-mnav-drawer-links a,
+.mcj-mnav-sheet .mcj-mnav-drawer a {
+  box-sizing: border-box;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  width: 100%;
+  min-height: 48px;
+  height: auto;
+  padding: 0 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 120, 180, 0.55);
+  background: rgba(8, 6, 10, 0.72);
+  color: #ffffff;
+  text-decoration: none;
+  font-size: 15px;
+  font-weight: 850;
+  letter-spacing: 0.04em;
+  overflow: hidden;
+}
+
+.mcj-mnav-drawer-links a.active,
+.mcj-mnav-sheet .mcj-mnav-drawer a.active {
+  color: #ffd6ea;
+  border-color: rgba(255, 158, 207, 0.72);
+  background: rgba(6, 4, 8, 0.88);
+}
+
+.mcj-mnav-divider {
+  height: 1px;
+  margin: 6px 2px;
+  background: rgba(255, 140, 200, 0.22);
+  border: 0;
+}
+
+/* Companion login / workbench shortcut — full-card tap target */
+a.mcj-mnav-companion-card,
+.mcj-mnav-drawer-links a.mcj-mnav-companion-card,
+header.mcj-boss-header .mcj-mnav-drawer a.mcj-mnav-companion-card {
+  display: grid !important;
+  grid-template-columns: 44px minmax(0, 1fr) 22px;
+  align-items: center;
+  justify-content: stretch;
+  gap: 12px;
+  width: 100%;
+  min-height: 0 !important;
+  height: auto !important;
+  max-height: none !important;
+  padding: 14px 12px !important;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 120, 180, 0.55);
+  background:
+    linear-gradient(135deg, rgba(255, 105, 180, 0.14), rgba(8, 6, 10, 0.92)),
+    rgba(12, 8, 14, 0.95);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35), 0 0 18px rgba(255, 100, 170, 0.12);
+  text-decoration: none;
+  color: #fff;
+  white-space: normal;
+  overflow: hidden;
+  -webkit-tap-highlight-color: transparent;
+}
+
+header.mcj-boss-header .mcj-mnav-drawer a.mcj-mnav-companion-card::after {
+  display: none !important;
+}
+
+a.mcj-mnav-companion-card:hover,
+a.mcj-mnav-companion-card:focus-visible {
+  border-color: rgba(255, 158, 207, 0.85);
+  background:
+    linear-gradient(135deg, rgba(255, 120, 190, 0.2), rgba(10, 6, 12, 0.96)),
+    rgba(14, 8, 16, 0.98);
+  outline: none;
+}
+
+.mcj-mnav-companion-logo {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid rgba(255, 214, 235, 0.72);
+  box-shadow: 0 0 14px rgba(255, 105, 180, 0.35);
+  flex-shrink: 0;
+}
+
+.mcj-mnav-companion-body {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.mcj-mnav-companion-title {
+  font-size: 16px;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  color: #ffffff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mcj-mnav-companion-en {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: #ffd6ea;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mcj-mnav-companion-sub {
+  font-size: 12px;
+  font-weight: 700;
+  color: rgba(255, 230, 242, 0.78);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mcj-mnav-companion-feats {
+  margin-top: 2px;
+  font-size: 11px;
+  font-weight: 650;
+  color: rgba(189, 170, 182, 0.95);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mcj-mnav-companion-arrow {
+  font-size: 22px;
+  font-weight: 900;
+  color: #ff8ec7;
+  line-height: 1;
+  text-align: center;
+}
+
+/* Official Instagram card — same shell as companion card */
+a.mcj-mnav-instagram-card .mcj-mnav-ig-logo {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 214, 235, 0.72);
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow: 0 0 14px rgba(255, 105, 180, 0.35);
+  flex-shrink: 0;
+}
+
+a.mcj-mnav-instagram-card .mcj-mnav-ig-icon {
+  display: block;
+}
+
+a.mcj-mnav-instagram-card .mcj-mnav-companion-feats {
+  white-space: normal;
+  line-height: 1.35;
+}
+
+@media (max-width: 360px) {
+  a.mcj-mnav-companion-card,
+  .mcj-mnav-drawer-links a.mcj-mnav-companion-card {
+    gap: 10px;
+    padding: 12px 10px;
+  }
+  .mcj-mnav-companion-title {
+    font-size: 15px;
+  }
+  .mcj-mnav-companion-feats {
+    font-size: 10px;
+  }
+}
+
+html.mcj-mnav-open,
+html.mcj-mnav-open body {
+  overscroll-behavior: none;
+}
+
+/* Keep ☰ clickable above the sheet so tapping it again closes the menu. */
+html.mcj-mnav-open header.mcj-boss-header {
+  z-index: 2147483001;
+}
+
+html.mcj-mnav-open header.mcj-boss-header .mcj-mnav-toggle {
+  position: relative;
+  z-index: 2;
+  pointer-events: auto;
+}
+
+@media (min-width: 900px) {
+  .mcj-mnav-sheet {
+    display: none !important;
+  }
+}
+
+/* Chat unread badge on 客服 nav */
+.mcj-chat-unread-badge{display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;margin-left:4px;padding:0 5px;border-radius:999px;background:#e11d48;color:#fff;font-size:11px;font-style:normal;font-weight:700;line-height:1;vertical-align:middle}
+.mcj-chat-unread-badge[hidden]{display:none!important}
+
+/* Perf Phase2: instant click feedback on chrome nav (MPA full reload) */
+.mcj-boss-header a,
+.mcj-desk-nav a,
+.mcj-mnav a,
+.mcj-header-brand {
+  touch-action: manipulation;
+  transition: opacity 0.08s linear, transform 0.08s linear;
+}
+.mcj-boss-header a:active,
+.mcj-desk-nav a:active,
+.mcj-mnav a:active,
+.mcj-header-brand:active {
+  opacity: 0.72;
+  transform: scale(0.98);
+}

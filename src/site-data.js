@@ -1,0 +1,612 @@
+(function () {
+  var DB_KEY = "mcjRealDB.v1";
+  var EMPTY_DB = {
+    siteSettings: { bannerImage: "", noticeText: "", customerServiceUrl: "", discordInviteUrl: "" },
+    ads: [],
+    companions: [],
+    serviceRanges: [],
+    orders: [],
+    dispatches: [],
+    profileAudits: [],
+    services: [],
+    homepageButtons: [],
+    levelFrames: [],
+    supportAgents: [],
+    bosses: [],
+    withdrawals: [],
+    reviews: [],
+    sensitiveWords: [],
+    admins: [],
+    logs: [],
+    customerTickets: [],
+    cooperationInquiries: [],
+    certifications: [],
+    companionApplications: [],
+    companionRules: [],
+    companionApplicationPayments: [],
+    depositSettings: {}
+  };
+
+  function clone(v) { return JSON.parse(JSON.stringify(v)); }
+  function esc(text) { return String(text || "").replace(/[&<>"']/g, function (ch) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]; }); }
+  function now() { return Date.now(); }
+  function readDB() {
+    try {
+      var saved = JSON.parse(localStorage.getItem(DB_KEY) || "null");
+      return Object.assign(clone(EMPTY_DB), saved || {});
+    } catch (e) { return clone(EMPTY_DB); }
+  }
+  function writeDB(db) {
+    localStorage.setItem(DB_KEY, JSON.stringify(Object.assign(clone(EMPTY_DB), db || {})));
+    window.dispatchEvent(new CustomEvent("mcj:data-updated"));
+  }
+  function list(name) { var db = readDB(); return Array.isArray(db[name]) ? db[name] : []; }
+  function enabled(item) {
+    if (!item || item.enabled === false) return false;
+    var t = now();
+    var start = item.startAt ? new Date(item.startAt).getTime() : 0;
+    var end = item.endAt ? new Date(item.endAt).getTime() : 0;
+    if (start && t < start) return false;
+    if (end && t > end) return false;
+    return true;
+  }
+  function sorted(items) { return (items || []).filter(enabled).sort(function (a, b) { return (Number(a.sort) || 999) - (Number(b.sort) || 999); }); }
+  function approvedCompanions() {
+    return sorted(list("companions").filter(function (p) {
+      return p.auditStatus === "approved" && p.visible !== false && p.visible !== "false" && p.status !== "offline";
+    }));
+  }
+  function tagsHtml(tags, maxVisible) {
+    if (!Array.isArray(tags)) tags = String(tags || "").split(/[，,、]/).map(function (s) { return s.trim(); }).filter(Boolean);
+    tags = tags.filter(Boolean);
+    var limit = Number(maxVisible);
+    if (!Number.isFinite(limit) || limit < 1) limit = 4;
+    if (limit > 12) limit = tags.length;
+    var shown = tags.slice(0, limit);
+    var more = tags.length - shown.length;
+    return (
+      shown.map(function (tag) { return "<span>" + esc(tag) + "</span>"; }).join("") +
+      (more > 0 ? '<span class="hot-tag-more">+' + more + "</span>" : "")
+    );
+  }
+  function isPlaceholderLabel(text) {
+    var s = String(text || "").replace(/\s+/g, " ").trim();
+    if (!s) return true;
+    return /未设置|暂无|^无$|^-$|^—$|^新人陪玩$/.test(s);
+  }
+  /** Homepage cards only: short personality chips, never game / server / mode copy. */
+  function homePersonalityTags(item) {
+    var bits = [];
+    function add(raw) {
+      var label = String(raw || "").replace(/\s+/g, " ").trim();
+      if (isPlaceholderLabel(label)) return;
+      if (/端游|手游|国服|国际服|服务器|模式|陪跑|爆破|暗区|三角洲|无畏契约|王者荣耀|英雄联盟/.test(label)) return;
+      if (label.length > 10) return;
+      if (bits.indexOf(label) >= 0) return;
+      bits.push(label);
+    }
+    String((item && (item.voiceType || item.voice_type)) || "").split(/[、，,/|]+/).forEach(add);
+    var tags = (item && (item.tags || item.serviceTags || item.categoryTags)) || [];
+    if (!Array.isArray(tags)) tags = String(tags).split(/[，,、]/);
+    tags.forEach(function (tag) {
+      add(typeof tag === "string" ? tag : (tag && (tag.name || tag.title || "")));
+    });
+    return bits.slice(0, 2);
+  }
+  function homeCompanionTrackLimit() {
+    try {
+      if (window.matchMedia && window.matchMedia("(max-width: 720px)").matches) return 8;
+    } catch (e) {}
+    return 3;
+  }
+  function isGarbledName(value) {
+    var s = String(value == null ? "" : value).trim();
+    if (!s) return true;
+    var marks = (s.match(/[?\uFFFD？]/g) || []).length;
+    if (marks >= 2 && marks >= Math.ceil(s.length * 0.4)) return true;
+    if (/^(?:\?|？|\uFFFD){2,}/.test(s)) return true;
+    return false;
+  }
+  function emptyCard(text) {
+    return '<article class="neon-card companion-card hot-card mcj-empty-card"><div class="hot-info"><h3>' + esc(text || "暂无陪玩") + '</h3></div></article>';
+  }
+  /** Focal crop only — never change cover aspect / card size from JS. */
+  var COVER_FOCUS_DEFAULTS = {
+    PW00002: { x: 50, y: 22 }, // 1717 face
+    PW00004: { x: 50, y: 40 }, // 凝梦 composition
+  };
+  function clampPct(n, fallback) {
+    var v = Number(n);
+    if (!Number.isFinite(v)) return fallback;
+    return Math.max(0, Math.min(100, v));
+  }
+  function resolveCoverFocus(item) {
+    var pub = String((item && (item.publicId || item.companionCode)) || "").toUpperCase();
+    if (/^[0-9A-F]{8}-[0-9A-F]{4}-/.test(pub)) pub = "";
+    var preset = COVER_FOCUS_DEFAULTS[pub] || null;
+    var x = item && (item.objectPositionX != null ? item.objectPositionX : item.object_position_x);
+    var y = item && (item.objectPositionY != null ? item.objectPositionY : item.object_position_y);
+    var focal = item && (item.focalPoint || item.focal_point);
+    if (focal && typeof focal === "object") {
+      if (x == null && focal.x != null) x = focal.x;
+      if (y == null && focal.y != null) y = focal.y;
+    } else if (typeof focal === "string" && focal.indexOf(",") >= 0) {
+      var parts = focal.split(",");
+      if (x == null) x = parts[0];
+      if (y == null) y = parts[1];
+    }
+    if ((x == null || y == null) && preset) {
+      x = x == null ? preset.x : x;
+      y = y == null ? preset.y : y;
+    }
+    var fit = String((item && (item.coverFit || item.cover_fit)) || "cover").toLowerCase();
+    if (fit !== "contain") fit = "cover";
+    return {
+      x: clampPct(x, 50),
+      y: clampPct(y, 25),
+      fit: fit,
+      publicId: pub,
+    };
+  }
+  /**
+   * Shared Companion Card (Home + Hall).
+   * @param {object} item
+   * @param {number|object} [opts] legacy rank number, or { variant:'home'|'hall', actionsHtml, extraAttrs, extraClass, maxTags }
+   */
+  function companionCardHtml(item, opts) {
+    if (typeof opts === "number") opts = { rank: opts };
+    opts = opts || {};
+    var variant = String(opts.variant || "home").toLowerCase() === "hall" ? "hall" : "home";
+    var cover = item.cover || item.cardCover || item.image || "";
+    var avatar = item.avatar || cover || "/default-avatar.png";
+    if (window.MCJAvatar && window.MCJAvatar.resolve) {
+      avatar = window.MCJAvatar.resolve(avatar);
+      cover = window.MCJAvatar.resolve(cover || avatar);
+    } else {
+      if (!String(avatar).trim() || /meow-cuijiao-brand\.(jpe?g|png|webp)$/i.test(String(avatar))) {
+        avatar = "/default-avatar.png";
+      }
+      if (!String(cover).trim() || /meow-cuijiao-brand\.(jpe?g|png|webp)$/i.test(String(cover))) {
+        cover = avatar;
+      }
+    }
+    var displayName = String(item.name || "").trim();
+    if (isGarbledName(displayName)) displayName = "未命名陪玩";
+    var uuid = String(item.id || item.uid || item.companionId || "").trim();
+    var isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(uuid);
+    var detail = isUuid ? ("profile.html?id=" + encodeURIComponent(uuid)) : "";
+    var focus = resolveCoverFocus(item);
+    var pos = focus.x + "% " + focus.y + "%";
+    var hideServices = opts.hideServices === true;
+    var actionHtml =
+      opts.actionsHtml != null
+        ? String(opts.actionsHtml)
+        : detail
+          ? '<a class="mini-order" href="' + esc(detail) + '">查看详情</a>'
+          : '<span class="mini-order" aria-disabled="true" style="opacity:.55;pointer-events:none">资料不可用</span>';
+    var levelId = item.levelId || (item.levelConfig && item.levelConfig.id) || "";
+    var levelCfg = item.levelConfig || null;
+    if (!levelCfg && item.levelColor) levelCfg = { color: item.levelColor, badgeBorder: item.levelColor };
+    var inlineStyle = "";
+    if (window.MCJCompanionLevels && window.MCJCompanionLevels.inlineCardStyle) {
+      inlineStyle = window.MCJCompanionLevels.inlineCardStyle(levelCfg || item);
+    }
+    if ((hideServices || variant === "hall") && levelCfg && levelCfg.color) {
+      function homeLevelHex(value) {
+        var s = String(value || "").trim();
+        return /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/.test(s) ? s : "";
+      }
+      var levelColor = homeLevelHex(levelCfg.color);
+      var levelBorder = homeLevelHex(levelCfg.badgeBorder) || levelColor;
+      var levelTextColor = homeLevelHex(levelCfg.badgeText);
+      if (levelColor) {
+        var levelVars =
+          "--mcj-level-color:" +
+          levelColor +
+          ";--mcj-level-badge-border:" +
+          levelBorder +
+          (levelTextColor ? ";--mcj-level-badge-text:" + levelTextColor : "");
+        inlineStyle = inlineStyle ? inlineStyle + ";" + levelVars : levelVars;
+      }
+    }
+    var styleAttr = inlineStyle ? ' style="' + esc(inlineStyle) + '"' : "";
+    var presence =
+      window.MCJCompanionPresence && window.MCJCompanionPresence.fromCompanion
+        ? window.MCJCompanionPresence.fromCompanion(item)
+        : null;
+    /* Always emit is-* — never leave bare .online-dot (CSS used to default green = offline bug). */
+    var presenceCode =
+      presence && presence.code && /^(online|busy|paused|offline)$/.test(presence.code)
+        ? presence.code
+        : "offline";
+    if (presenceCode === "offline") {
+      var rawStatus = String(item.onlineStatus || item.availabilityStatus || item.status || "").toLowerCase();
+      if (/online/.test(rawStatus) && !/offline/.test(rawStatus)) presenceCode = "online";
+      else if (/busy/.test(rawStatus)) presenceCode = "busy";
+      else if (/paused|pause/.test(rawStatus)) presenceCode = "paused";
+      else if (/offline/.test(rawStatus)) presenceCode = "offline";
+    }
+    var onlineClass = " is-" + presenceCode;
+    var gameLine = String(item.game || item.mainGame || item.serviceType || "").trim();
+    if (isGarbledName(gameLine)) gameLine = "";
+    var hallShort =
+      presenceCode === "busy" ? "忙碌" : presenceCode === "offline" ? "离线" : "在线";
+    var hallEmoji = presenceCode === "busy" ? "🟡" : presenceCode === "offline" ? "⚫" : "🟢";
+    var statusLabel =
+      variant === "hall"
+        ? hallShort
+        : presence && presence.label
+          ? String(presence.label).trim()
+          : presenceCode === "offline"
+            ? "离线"
+            : presenceCode === "online"
+              ? "在线"
+              : presenceCode === "busy"
+                ? "忙碌"
+                : presenceCode === "paused"
+                  ? "暂停"
+                  : "";
+    var maxTags = Number(opts.maxTags);
+    if (!Number.isFinite(maxTags) || maxTags < 1) maxTags = 4;
+    var variantClass = variant === "hall" ? " player-card mcj-card-variant-hall" : "";
+    var extraClass = opts.extraClass ? " " + String(opts.extraClass).trim() : "";
+    if (hideServices) extraClass += " home-browse-card";
+    var extraAttrs = opts.extraAttrs ? " " + String(opts.extraAttrs).trim() : "";
+    // Shared card body — Home & Hall: same cover / typography / tags. Hall injects compact actions.
+    return (
+      '<article class="neon-card companion-card hot-card' +
+      variantClass +
+      extraClass +
+      '" data-companion-id="' +
+      esc(isUuid ? uuid : "") +
+      '" data-public-id="' +
+      esc(focus.publicId || item.publicId || item.companionCode || "") +
+      '" data-level-id="' +
+      esc(levelId) +
+      '" data-companion-level="' +
+      esc(levelId) +
+      '" data-online-status="' +
+      esc(presenceCode) +
+      '" data-card-style="' +
+      esc(item.cardBackground || (levelCfg && levelCfg.cardBackground) || "") +
+      '" data-level-color="' +
+      esc(item.levelColor || (levelCfg && levelCfg.color) || "") +
+      '"' +
+      styleAttr +
+      extraAttrs +
+      ">" +
+      '<div class="hot-cover"><img src="' +
+      esc(cover || avatar || "/default-avatar.png") +
+      '" alt="' +
+      esc(displayName) +
+      '" data-cover-fit="' +
+      esc(focus.fit) +
+      '" style="object-fit:' +
+      esc(focus.fit) +
+      ";object-position:" +
+      esc(pos) +
+      ";--mcj-cover-pos:" +
+      esc(pos) +
+      "\" onerror=\"this.onerror=null;this.src='/default-avatar.png'\" loading=\"lazy\" decoding=\"async\">" +
+      (variant === "hall"
+        ? '<span class="hall-presence is-' + esc(presenceCode) + '">' + hallEmoji + " " + esc(hallShort) + "</span>"
+        : '<span class="online-dot' + onlineClass + '" data-online-status="' + esc(presenceCode) + '" aria-hidden="true"></span>') +
+      "</div>" +
+      '<div class="hot-info">' +
+      '<div class="hot-name-row"><h3>' +
+      esc(displayName) +
+      '</h3><span class="mcj-brand-mark" title="MEOW CUI JIAO">MCJ</span></div>' +
+      '<div class="hot-meta">' +
+      (function () {
+        var levelText = String(item.level || item.levelName || "").trim();
+        if (hideServices && isPlaceholderLabel(levelText)) return "";
+        if (!levelText) levelText = "未设置等级";
+        return '<span class="companion-level-pill" data-level-id="' + esc(levelId) + '">' + esc(levelText) + "</span>";
+      })() +
+      (statusLabel ? '<span class="hot-status is-' + esc(presenceCode) + '">' + esc(statusLabel) + "</span>" : "") +
+      "</div>" +
+      (hideServices || !gameLine ? "" : '<p class="hot-game">' + esc(gameLine) + "</p>") +
+      (function () {
+        if (!hideServices) return "";
+        var brief = String(gameLine || "").split(/[、，,|/]/)[0].replace(/\s+/g, " ").trim();
+        if (!brief || /未设置|综合游戏/.test(brief)) {
+          brief = String((item && (item.desc || item.description)) || "").replace(/\s+/g, " ").trim();
+        }
+        if (brief.length > 42) brief = brief.slice(0, 42);
+        return brief ? '<p class="hot-brief">' + esc(brief) + "</p>" : "";
+      })() +
+      (function () {
+        var tagInner = hideServices
+          ? homePersonalityTags(item).map(function (tag) { return "<span>" + esc(tag) + "</span>"; }).join("")
+          : tagsHtml(item.tags || item.serviceTags || item.categoryTags, maxTags);
+        if (!tagInner) return hideServices ? "" : '<div class="hot-tags-scroll"><div class="hot-tags"></div></div>';
+        if (variant === "hall") return '<div class="hot-tags-scroll"><div class="hot-tags">' + tagInner + "</div></div>";
+        return '<div class="hot-tags">' + tagInner + "</div>";
+      })() +
+      actionHtml +
+      "</div>" +
+      "</article>"
+    );
+  }
+  function renderTopThreeTrack(id, companions, options) {
+    options = options || {};
+    var track = document.getElementById(id);
+    if (!track) return;
+    // Only render real companions with UUID ids — never pad blank TOP slots / fake PW-only rows.
+    var source = (companions || []).filter(function (c) {
+      var uuid = String((c && (c.id || c.uid || c.companionId)) || "").trim();
+      var isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(uuid);
+      return c && isUuid && !isGarbledName(c.name) && c.name;
+    });
+    var limit = Number(options.limit);
+    if (!Number.isFinite(limit) || limit < 1) limit = homeCompanionTrackLimit();
+    var items = source.slice(0, limit);
+    var cols = Math.max(1, items.length + 1); // companions + MORE
+    track.dataset.ready = "1";
+    track.dataset.sourceCount = String(source.length);
+    track.setAttribute("data-home-source-count", String(source.length));
+    // Desktop keeps horizontal top-N + MORE; mobile APP CSS owns 2-col grid.
+    if (limit <= 3) track.style.gridTemplateColumns = "repeat(" + cols + ", minmax(0, 1fr))";
+    else track.style.gridTemplateColumns = "";
+    if (!items.length) { track.innerHTML = emptyCard("暂无陪玩"); return; }
+    track.innerHTML = items.map(function (item) {
+      return companionCardHtml(item, { variant: "home", hideServices: true, maxTags: 2 });
+    }).join("") +
+      '<a class="neon-card companion-card hot-card hot-more-card" href="' + esc(options.moreHref || "companion-center.html") + '"><div class="hot-more-inner"><span>MORE</span><strong>更多</strong><p>' + esc(options.moreDesc || "进入陪玩大厅") + '</p></div></a>';
+  }
+  function renderOfficialAds() {
+    var track = document.getElementById("officialAdTrack");
+    var dots = document.getElementById("officialAdDots");
+    if (!track) return;
+    var ads = sorted(list("ads"));
+    var section = track.closest(".official-ads");
+    if (!ads.length) {
+      if (section) section.hidden = true;
+      track.innerHTML = "";
+      if (dots) dots.innerHTML = "";
+      return;
+    }
+    if (section) section.hidden = false;
+    track.innerHTML = ads.map(function (ad, index) {
+      return '<article class="official-ad-slide' + (index === 0 ? ' active' : '') + '" data-link="' + esc(ad.link || "#") + '">' +
+        '<img src="' + esc(ad.image || "") + '" alt="' + esc(ad.title || "") + '">' +
+        '<div class="official-ad-badge">' + esc(ad.tag || "OFFICIAL") + '</div>' +
+        '<div class="official-ad-copy"><h3>' + esc(ad.title || "") + '</h3><p>' + esc(ad.description || ad.subtitle || "") + '</p><button type="button">' + esc(ad.button || "查看") + '</button></div>' +
+        '</article>';
+    }).join("");
+    if (dots) dots.innerHTML = ads.map(function (_, i) { return '<button type="button" data-ad-dot="' + i + '"' + (i === 0 ? ' class="active"' : '') + '></button>'; }).join("");
+    window.mcjOfficialAds = ads;
+    window.mcjOfficialAdIndex = 0;
+    if (typeof window.showOfficialAd === "function") window.showOfficialAd(0);
+  }
+  var homeEntryFetchStarted = false;
+  function homeEntryDefaults() {
+    // Grid only keeps functional entries; 我的订单 / 在线客服 live in top nav only.
+    return [
+      { slug: "companion-hall", name: "陪玩大厅", description: "浏览已上架陪玩，立即下单", href: "companion-center.html", sort: 1, enabled: true, inGrid: true },
+      { slug: "more-gameplays", name: "更多玩法", description: "护航、跑刀、代肝、趣味单", href: "more-gameplays.html", sort: 2, enabled: true, inGrid: true },
+      { slug: "custom-order", name: "自定义订单", description: "填写需求，客服匹配陪玩", href: "custom-order.html", sort: 3, enabled: true, inGrid: true },
+      { slug: "team-lobby", name: "组队大厅", description: "进入组队社区找队友", href: "team-lobby.html", sort: 4, enabled: true, inGrid: true }
+    ];
+  }
+  function normalizeHomeEntry(row) {
+    var data = row && row.data ? row.data : (row && row.draft ? row.draft : row || {});
+    var slug = String(data.slug || row.slug || "").trim();
+    var base = homeEntryDefaults().find(function (item) { return item.slug === slug; }) || {};
+    return Object.assign({}, base, data, {
+      slug: slug || base.slug || "",
+      name: data.name || row.title || base.name || "未命名入口",
+      description: data.description || data.subtitle || base.description || "",
+      href: data.href || data.link || base.href || "#",
+      sort: Number(data.sort || row.sort || base.sort || 100),
+      enabled: row ? row.enabled !== false && data.enabled !== false && data.visible !== false : base.enabled !== false,
+      inGrid: data.inGrid != null ? data.inGrid !== false : base.inGrid !== false
+    });
+  }
+  function mergeHomeEntries(rows) {
+    var mapped = {};
+    (rows || []).forEach(function (row) { var item = normalizeHomeEntry(row); if (item.slug) mapped[item.slug] = item; });
+    return homeEntryDefaults().map(function (def) { return mapped[def.slug] || def; }).sort(function (a, b) { return Number(a.sort || 0) - Number(b.sort || 0); });
+  }
+  function ensureCompanionApplyCard() {
+    /* Homepage QUICK ACCESS grid removed (PR #214). Hall/orders own secondary entries. */
+  }
+  function applyHomeEntries(entries) {
+    ensureCompanionApplyCard();
+    var applySection = document.querySelector("[data-companion-apply-section], .companion-apply-guide");
+    var applyButton = document.querySelector("[data-companion-apply-guide]");
+    var applyEntry = (entries || []).find(function (entry) { return entry && entry.slug === "companion-apply"; });
+    if (applySection) applySection.hidden = false;
+    if (applyButton) {
+      applyButton.hidden = false;
+      if (applyEntry && applyEntry.href) applyButton.href = applyEntry.href;
+      else applyButton.href = "companion-apply.html";
+    }
+  }
+  function renderHomepageButtons() {
+    if (homeEntryFetchStarted) return;
+    homeEntryFetchStarted = true;
+    applyHomeEntries(homeEntryDefaults());
+    fetch("/api/platform/content?types=homepage_entries", { headers: { Accept: "application/json" }, cache: "no-store" })
+      .then(function (res) { return res.json().catch(function () { return { ok: false, byType: {} }; }); })
+      .then(function (result) {
+        var rows = result.byType && result.byType.homepage_entries ? result.byType.homepage_entries : [];
+        applyHomeEntries(mergeHomeEntries(rows));
+      })
+      .catch(function (err) {
+        console.error("[首页入口] 读取后台配置失败", err);
+        applyHomeEntries(homeEntryDefaults());
+      });
+  }
+  function mapPublicCompanion(item) {
+    if (!item || typeof item !== "object") return null;
+    var priceRaw = item.priceValue != null ? item.priceValue : (item.hourlyPrice != null ? item.hourlyPrice : item.price);
+    var priceNum = Number(priceRaw);
+    var priceLabel = Number.isFinite(priceNum)
+      ? (window.MCJCurrency && window.MCJCurrency.formatRate
+          ? window.MCJCurrency.formatRate(priceNum, item.pricingUnit || "小时")
+          : (String(priceNum).replace(/\.0+$/, "") + " 猫粮/" + (item.pricingUnit || "小时")))
+      : "";
+    var coverRaw = window.MCJCompanionMedia
+      ? window.MCJCompanionMedia.resolveCover(item)
+      : (window.MCJAvatar ? window.MCJAvatar.resolve(item.cover || item.cardImageUrl || item.avatar || "") : (item.cover || item.cardImageUrl || item.avatar || "/default-avatar.png"));
+    var avatarRaw = window.MCJCompanionMedia
+      ? window.MCJCompanionMedia.resolveAvatar(item)
+      : (window.MCJAvatar ? window.MCJAvatar.resolve(item.avatar || item.cover || "") : (item.avatar || item.cover || "/default-avatar.png"));
+    return {
+      id: item.uid || item.id || item.companionProfileId || "",
+      publicId: item.publicId || "",
+      name: item.nameValid === false ? "" : (item.nickname || item.name || ""),
+      // keep through for filters
+      nameValid: item.nameValid !== false && !isGarbledName(item.nickname || item.name),
+      game: item.game || item.mainGame || "",
+      level: item.levelName || item.level || "未设置等级",
+      levelId: item.levelId || item.level_id || "",
+      levelName: item.levelName || item.level || "",
+      levelConfig: item.levelConfig || null,
+      levelColor: item.levelColor || (item.levelConfig && item.levelConfig.color) || "",
+      displayColor: item.displayColor || (item.levelConfig && item.levelConfig.displayColor) || "",
+      cardBackground: item.cardBackground || item.cardStyle || (item.levelConfig && item.levelConfig.cardBackground) || "",
+      badgeBorder: item.badgeBorder || (item.levelConfig && item.levelConfig.badgeBorder) || "",
+      badgeText: item.badgeText || (item.levelConfig && item.levelConfig.badgeText) || "",
+      levelPriceRange: item.levelPriceRange || (item.levelConfig && item.levelConfig.priceRangeLabel) || "",
+      levelPriceRangeText: item.levelPriceRangeText || (item.levelConfig && item.levelConfig.priceRangeText) || "",
+      rating: item.rating || item.score || "",
+      price: priceLabel,
+      servicePrice: priceLabel,
+      cover: coverRaw,
+      avatar: avatarRaw,
+      hasRealCover: !!(coverRaw && !/default-avatar/i.test(String(coverRaw))),
+      objectPositionX: item.objectPositionX != null ? item.objectPositionX : item.object_position_x,
+      objectPositionY: item.objectPositionY != null ? item.objectPositionY : item.object_position_y,
+      focalPoint: item.focalPoint || item.focal_point || null,
+      coverFit: item.coverFit || item.cover_fit || "",
+      tags: item.tags || item.serviceTags || [],
+      voiceType: item.voiceType || item.voice_type || "",
+      availabilityStatus: item.availabilityStatus || item.availability_status || "",
+      onlineStatus: item.onlineStatus || item.online_status || "",
+      certTags: item.certTags || item.certificationTags || [],
+      certificationStatus: item.verificationStatus || "",
+      auditStatus: "approved",
+      featured: item.featured === true || item.recommendationStatus === "featured",
+      visible: true,
+      status: item.availabilityStatus || item.onlineStatus || item.status || "offline",
+      sort: Number(item.sort || 0)
+    };
+  }
+  function pickHotRecommendPool(comps) {
+    var valid = (comps || []).filter(function (c) {
+      return c && c.id && !isGarbledName(c.name) && c.name;
+    });
+    // Stable order: never use updated_at churn. Prefer featured for homepage hot track.
+    function stableSort(list) {
+      return list.slice().sort(function (a, b) {
+        var fa = a.featured ? 1 : 0;
+        var fb = b.featured ? 1 : 0;
+        if (fb !== fa) return fb - fa;
+        var pa = String(a.publicId || a.id || "");
+        var pb = String(b.publicId || b.id || "");
+        if (pa < pb) return -1;
+        if (pa > pb) return 1;
+        return String(a.name || "").localeCompare(String(b.name || ""), "zh");
+      });
+    }
+    var featured = valid.filter(function (c) { return c.featured; });
+    // Admin has「是否推荐到首页」: when any featured exist, homepage uses only those.
+    // When none marked yet, all hall-visible companions can enter recommend ranking (stable).
+    return stableSort(featured.length ? featured : valid);
+  }
+  function applyHomeCompanionTracks(comps, opts) {
+    opts = opts || {};
+    var hallValid = (comps || []).filter(function (c) {
+      var uuid = String((c && (c.id || c.uid || c.companionId)) || "").trim();
+      var isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(uuid);
+      return c && isUuid && !isGarbledName(c.name) && c.name;
+    });
+    var hotPool = pickHotRecommendPool(hallValid);
+    // Expose full recommendation source size for acceptance (display still top-3).
+    try {
+      window.__MCJ_HOME_COMPANION_SOURCE__ = {
+        count: hotPool.length,
+        hallCount: hallValid.length,
+        featuredCount: hallValid.filter(function (c) { return c.featured; }).length,
+        ids: hotPool.map(function (c) { return c.id || c.uid; }),
+        publicIds: hotPool.map(function (c) { return c.publicId || ""; }),
+        names: hotPool.map(function (c) { return c.name; }),
+      };
+    } catch (e) {}
+    if (!opts.skipEmpty && !hallValid.length && !opts.fromApi) {
+      // Keep previous cards while waiting for live API; avoid flash of「暂无陪玩」.
+      return;
+    }
+    renderTopThreeTrack("hotCompanionTrack", hotPool);
+    [["recentCompanionTrack", "orders.html", "查看订单"], ["gameCompanionTrack", "companion-center.html", "进入陪玩大厅"], ["reviewCompanionTrack", "companion-center.html", "进入陪玩大厅"]].forEach(function (cfg) {
+      var track = document.getElementById(cfg[0]);
+      var section = track && track.closest(".section");
+      if (section) section.hidden = false;
+      if (hotPool.length) renderTopThreeTrack(cfg[0], hotPool, { moreHref: cfg[1], moreDesc: cfg[2] });
+      else if (track && opts.fromApi) track.innerHTML = emptyCard("暂无陪玩");
+    });
+  }
+  function loadHomeCompanionsFromApi() {
+    var Cache = window.MCJCompanionsCache;
+    var done = Cache
+      ? Cache.load({ limit: 80 }).then(function (pack) {
+          return Array.isArray(pack.value) ? pack.value : [];
+        })
+      : fetch("/api/public/companions?limit=80", {
+          headers: { Accept: "application/json" },
+          cache: "default",
+        })
+          .then(function (res) {
+            return res.json().catch(function () {
+              return { ok: false, companions: [] };
+            });
+          })
+          .then(function (body) {
+            return body && body.ok && Array.isArray(body.companions) ? body.companions : [];
+          });
+    return done
+      .then(function (rows) {
+        return rows.map(mapPublicCompanion).filter(function (c) {
+          return c && c.id && c.nameValid !== false && !isGarbledName(c.name) && c.name;
+        });
+      })
+      .catch(function (err) {
+        console.error("[首页陪玩] 读取公开陪玩失败", err);
+        return [];
+      });
+  }
+  function renderHomeManagedData() {
+    var db = readDB();
+    var settings = db.siteSettings || {};
+    // Homepage hero SoT: home-banner.js → banners table. Do not inject packaged defaults.
+    var noticeBox = document.querySelector(".announcement-strip");
+    /* 公告栏由 home-announcements.js 负责，避免本地 siteSettings 覆盖后台公告。 */
+    if (noticeBox && noticeBox.id !== "homeAnnouncementBar" && !window.MCJHomeAnnouncements) {
+      var notice = noticeBox.querySelector("span");
+      if (notice && settings.noticeText) {
+        noticeBox.hidden = false;
+        notice.textContent = settings.noticeText;
+      }
+    }
+    renderOfficialAds();
+    /* Prefer live public API only; never keep garbled local placeholder cards on home. */
+    loadHomeCompanionsFromApi().then(function (apiComps) {
+      applyHomeCompanionTracks(apiComps, { fromApi: true, skipEmpty: true });
+    });
+    renderHomepageButtons();
+  }
+  function validatePrice(service, price) {
+    var ranges = list("serviceRanges");
+    var found = ranges.find(function (r) { return r.service === service; });
+    if (!found) return { ok: true };
+    var value = Number(price);
+    if (value < Number(found.min) || value > Number(found.max)) return { ok: false, message: "价格超出俱乐部允许范围" };
+    return { ok: true };
+  }
+  window.MCJRealData = { key: DB_KEY, empty: EMPTY_DB, readDB: readDB, writeDB: writeDB, list: list, sorted: sorted, approvedCompanions: approvedCompanions, companionCardHtml: companionCardHtml, renderHomeManagedData: renderHomeManagedData, validatePrice: validatePrice };
+  window.MCJData = { read: function (key) { return list(key); }, enabledSorted: sorted, renderHomeManagedData: renderHomeManagedData };
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", renderHomeManagedData); else renderHomeManagedData();
+  window.addEventListener("mcj:data-updated", renderHomeManagedData);
+})();

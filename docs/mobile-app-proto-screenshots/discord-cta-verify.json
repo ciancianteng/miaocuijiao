@@ -1,0 +1,13 @@
+{
+  "base": "http://127.0.0.1:5180/",
+  "report": {
+    "url": "http://127.0.0.1:5180/support.html",
+    "hasDiscordCard": true,
+    "isSoon": true,
+    "title": "MEOW CUI JIAO Discord 社区",
+    "subtitle": "加入妙脆角玩家社区",
+    "hint": "Discord 社区即将开放",
+    "hasCsButton": true,
+    "csText": "新建客服咨询"
+  }
+}

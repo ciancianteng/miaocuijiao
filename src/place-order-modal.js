@@ -1,0 +1,2369 @@
+﻿(function () {
+  "use strict";
+
+  var LEGACY_SERVICE_NAMES = { "陪玩": 1, "护航": 1, "跑刀": 1, "代肝": 1, "自定义": 1, "陪玩服务": 1, "陪聊服务": 1 };
+  var HOURS = [
+    { id: "1", label: "1 小时", value: 1 },
+    { id: "2", label: "2 小时", value: 2 },
+    { id: "3", label: "3 小时", value: 3 },
+    { id: "custom", label: "自定义", value: 0, custom: true },
+  ];
+  // Never hardcode channel list — filled live from /api/recharge (payment_channels SoT).
+  var PAYMENTS = [];
+
+  var DEFAULT_AVATAR = "/default-avatar.png";
+  var toastTimer = null;
+  var openGuard = false;
+  var pendingOpenPayload = null;
+  var payFetchSeq = 0;
+  var state = {
+    open: false,
+    companion: null,
+    service: "",
+    customService: "",
+    selectedServiceId: "",
+    hoursMode: "1",
+    hours: 1,
+    quantity: 1,
+    startTime: "",
+    endTime: "",
+    couponCode: "",
+    payment: "",
+    voiceMode: "game_mic",
+    submitting: false,
+    submitStartedAt: 0,
+    walletBalance: null,
+    payMethods: [],
+    payLoadError: "",
+    payMethodsLoading: false,
+    editingGameId: false,
+  };
+
+  function resetOrderFormState() {
+    state.companion = null;
+    state.service = "";
+    state.customService = "";
+    state.selectedServiceId = "";
+    state.hoursMode = "1";
+    state.hours = 1;
+    state.quantity = 1;
+    state.startTime = defaultStartTime();
+    state.endTime = "";
+    state.couponCode = "";
+    state.payment = "";
+    state.voiceMode = "game_mic";
+    state.submitting = false;
+    state.submitStartedAt = 0;
+    state.walletBalance = null;
+    state.payMethods = [];
+    state.payLoadError = "";
+    state.payMethodsLoading = false;
+    state.editingGameId = false;
+  }
+
+  function esc(v) {
+    return String(v == null ? "" : v).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+  function money(v) {
+    var n = Number(v || 0);
+    return Number.isFinite(n) ? n : 0;
+  }
+  function compactServiceKey(name) {
+    return String(name || "").trim().replace(/\s+/g, "");
+  }
+  function isServiceBlob(name) {
+    return /[,，、|/]/.test(String(name || ""));
+  }
+  function serviceNamesMatch(a, b) {
+    var left = String(a || "").trim();
+    var right = String(b || "").trim();
+    if (!left || !right) return false;
+    if (left === right) return true;
+    var c1 = compactServiceKey(left);
+    var c2 = compactServiceKey(right);
+    return !!(c1 && c2 && c1 === c2);
+  }
+
+  function currentIdContext() {
+    var n = String(currentServiceLabel() || "").trim();
+    return {
+      serviceKey: compactServiceKey(n),
+      game: n,
+      server: (n.match(/国服|亚服|欧服|美服|国际服|日服|韩服|台服/) || [""])[0],
+      platform: (n.match(/手游|端游|PC|主机/) || [""])[0],
+    };
+  }
+
+  function inheritedAccountId() {
+    var team = window.MCJMultiCompanionTeam;
+    if (!team) return "";
+    if (typeof team.getSharedAccountId === "function") {
+      return String(team.getSharedAccountId(currentIdContext()) || "").trim();
+    }
+    if (team._test && team._test.state) return String(team._test.state.sharedGameId || "").trim();
+    return "";
+  }
+
+  function readModalGameId() {
+    var el = qs("[data-po-game-id]");
+    var typed = el ? String(el.value || "").trim() : "";
+    return typed || inheritedAccountId();
+  }
+
+  function bindGameIdEdit(mask) {
+    if (!mask) return;
+    var edit = mask.querySelector("[data-po-game-id-edit]");
+    var input = mask.querySelector("[data-po-game-id]");
+    if (edit && input) {
+      edit.addEventListener("click", function (ev) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        state.editingGameId = true;
+        input.removeAttribute("readonly");
+        input.focus();
+        var hint = mask.querySelector("[data-po-game-id-hint]");
+        if (hint) hint.textContent = "修改后本单后续陪玩沿用新ID";
+        edit.hidden = true;
+      });
+    }
+    if (input) {
+      input.addEventListener("input", function () {
+        var team = window.MCJMultiCompanionTeam;
+        var val = String(input.value || "").trim();
+        if (team && typeof team.applyShared === "function" && val) {
+          team.applyShared({ gameId: val, idContext: currentIdContext() });
+        }
+      });
+    }
+  }
+
+  function syncInheritedGameIdField() {
+    var mask = activeMask();
+    if (!mask) return;
+    var input = mask.querySelector("[data-po-game-id]");
+    if (!input) return;
+    var inherited = inheritedAccountId();
+    var showInherited = !!(inherited && !state.editingGameId);
+    var wasReadonly = input.hasAttribute("readonly");
+    var hint = mask.querySelector("[data-po-game-id-hint]");
+    var edit = mask.querySelector("[data-po-game-id-edit]");
+    if (showInherited) {
+      input.value = inherited;
+      input.setAttribute("readonly", "readonly");
+      if (hint) {
+        hint.hidden = false;
+        hint.textContent = "已沿用本次一起下单的游戏ID";
+      }
+      if (edit) edit.hidden = false;
+      return;
+    }
+    if (wasReadonly && !state.editingGameId) input.value = "";
+    input.removeAttribute("readonly");
+    if (hint) {
+      hint.hidden = !state.editingGameId;
+      if (state.editingGameId) hint.textContent = "修改后本单后续陪玩沿用新ID";
+    }
+    if (edit) edit.hidden = true;
+  }
+  function moneyText(v) {
+    if (window.MCJCurrency) return window.MCJCurrency.formatAmount(v);
+    return "🐱 " + money(v).toFixed(2).replace(/\.00$/, "") + " 猫粮";
+  }
+  function priceHeroHtml(v) {
+    return '<span class="mcj-po-price-hero" data-po-price-hero>' + esc(moneyText(v)) + "</span>";
+  }
+  function looksLikeJwt(raw) {
+    var t = String(raw || "").trim();
+    if (!t || t.length < 20) return false;
+    var parts = t.split(".");
+    return parts.length === 3 && parts.every(function (p) {
+      return p.length > 0;
+    });
+  }
+  function tokenFromSessionBlob(raw) {
+    if (!raw) return "";
+    try {
+      var obj = typeof raw === "string" ? JSON.parse(raw) : raw;
+      if (!obj || typeof obj !== "object") return "";
+      var t = obj.accessToken || obj.token || (obj.session && (obj.session.accessToken || obj.session.token)) || "";
+      return looksLikeJwt(t) ? t : "";
+    } catch (e) {
+      return "";
+    }
+  }
+  function token() {
+    if (window.MCJBossAuth && typeof window.MCJBossAuth.getAccessToken === "function") {
+      var fromBoss = window.MCJBossAuth.getAccessToken();
+      if (looksLikeJwt(fromBoss)) return fromBoss;
+      return "";
+    }
+    // Fallback only when auth module missing: session-first (same order as MCJBossAuth).
+    var candidates = [
+      sessionStorage.getItem("mcjAuthAccessToken"),
+      localStorage.getItem("mcjAuthAccessToken"),
+    ];
+    for (var i = 0; i < candidates.length; i++) {
+      if (looksLikeJwt(candidates[i])) return candidates[i];
+    }
+    return "";
+  }
+  function authHeaders() {
+    var t = token();
+    var h = { Accept: "application/json", "Content-Type": "application/json" };
+    if (t) {
+      h.Authorization = "Bearer " + t;
+      h["x-mcj-access-token"] = t;
+    }
+    return h;
+  }
+  function ensureCss() {
+    if (document.querySelector('link[data-mcj-place-order-css]')) return;
+    var link = document.createElement("link");
+    link.rel = "stylesheet";
+    link.href = "/src/place-order-modal.css?v=20261007b1528";
+    link.setAttribute("data-mcj-place-order-css", "1");
+    document.head.appendChild(link);
+  }
+  function toast(msg) {
+    var text = String(msg || "").trim();
+    if (!text) return;
+    // Always use modal-layer toast (z-index above mask). Never rely on page toast
+    // which may sit under the drawer (z-index ~200) and look like "no response".
+    var el = document.querySelector("[data-mcj-po-toast]");
+    if (!el) {
+      el = document.createElement("div");
+      el.className = "mcj-po-toast";
+      el.setAttribute("data-mcj-po-toast", "1");
+      document.body.appendChild(el);
+    }
+    el.textContent = text;
+    el.classList.add("show");
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () {
+      el.classList.remove("show");
+      toastTimer = null;
+    }, 3200);
+  }
+  function isWalletPayment(method) {
+    return /cat.?food|wallet|猫粮|余额/.test(String(method || "").toLowerCase());
+  }
+  function activeMask() {
+    return document.querySelector("[data-mcj-po-mask]");
+  }
+  function qs(sel) {
+    var mask = activeMask();
+    return mask ? mask.querySelector(sel) : document.querySelector(sel);
+  }
+  function sanitizeUserError(msg) {
+    var text = String(msg || "").trim();
+    if (!text) return "操作失败，请重试";
+    // Never surface raw JS engine errors (esp. Safari "Can't find variable: …") to bosses.
+    if (/Can't find variable|is not defined|ReferenceError|TypeError|SyntaxError|InternalError/i.test(text)) {
+      return "下单出错了，请刷新页面后重试";
+    }
+    return text;
+  }
+  function failValidate(msg, focusSel) {
+    var text = sanitizeUserError(msg) || "请完善下单信息";
+    setError(text);
+    toast(text);
+    console.warn("[MCJPlaceOrder] validate", msg);
+    if (focusSel) {
+      var el = qs(focusSel);
+      if (el) {
+        try {
+          el.focus();
+          if (typeof el.scrollIntoView === "function") el.scrollIntoView({ block: "center", behavior: "smooth" });
+        } catch (e) {}
+      }
+    }
+    return false;
+  }
+  function setSubmitLoading(on) {
+    var btn = qs("[data-po-submit]");
+    if (!btn) return;
+    if (on) {
+      btn.disabled = true;
+      btn.setAttribute("aria-busy", "true");
+      btn.textContent = "提交中…";
+      return;
+    }
+    btn.setAttribute("aria-busy", "false");
+    syncSubmitAvailability();
+  }
+  function syncSubmitAvailability() {
+    var btn = qs("[data-po-submit]");
+    if (!btn) return;
+    if (state.submitting) {
+      btn.disabled = true;
+      btn.setAttribute("aria-busy", "true");
+      btn.textContent = "提交中…";
+      return;
+    }
+    btn.setAttribute("aria-busy", "false");
+    if (state.payMethodsLoading) {
+      btn.disabled = true;
+      btn.textContent = "支付方式加载中…";
+      return;
+    }
+    if (!(state.payMethods && state.payMethods.length)) {
+      btn.disabled = true;
+      btn.textContent = "暂无可用支付方式";
+      return;
+    }
+    if (!String(state.payment || "").trim()) {
+      btn.disabled = true;
+      btn.textContent = "请选择支付方式";
+      return;
+    }
+    if (companionUnavailableText()) {
+      btn.disabled = true;
+      btn.textContent = "该陪玩当前不可接单";
+      return;
+    }
+    btn.disabled = false;
+    btn.textContent = "确认订单并付款";
+  }
+  // Mirrors server canCompanionAcceptBossOrder: only online / busy companions accept designated orders.
+  function companionUnavailableText() {
+    var c = state.companion || {};
+    var code = String(c.availabilityStatus || "").toLowerCase();
+    if (code !== "offline" && code !== "paused") return "";
+    return (
+      "该陪玩当前" +
+      (code === "paused" ? "暂停接单" : "离线") +
+      "，暂时无法指定下单。可以选择其他在线陪玩，或到抢单大厅发布需求。"
+    );
+  }
+  function applyOrderPayMethods(body) {
+    // Sole SoT: GET /api/recharge → orderPayMethods (payment_channels + wallet gate).
+    // Never reconstruct from body.methods / never hardcode fallback channels.
+    var list = Array.isArray(body && body.orderPayMethods) ? body.orderPayMethods : [];
+    state.payMethods = list
+      .filter(function (m) {
+        return m && (m.id || m.code) && m.open !== false;
+      })
+      .map(function (m) {
+        return {
+          id: m.id || m.code,
+          label: m.label || m.name || m.code || m.id,
+          open: true,
+          statusText: m.statusText || "可用",
+        };
+      });
+    if (!state.payMethods.some(function (p) { return p.id === state.payment; })) {
+      state.payment = state.payMethods[0] ? state.payMethods[0].id : "";
+    }
+  }
+  function refreshWalletBalance(attempt) {
+    var tryCount = attempt || 0;
+    var seq = ++payFetchSeq;
+    state.payMethodsLoading = true;
+    state.payLoadError = "";
+    function runFetch() {
+      if (!token()) {
+        if (seq !== payFetchSeq) return Promise.resolve(null);
+        state.walletBalance = null;
+        state.payMethods = [];
+        state.payMethodsLoading = false;
+        state.payLoadError = "请先登录老板账号后再选择支付方式";
+        return Promise.resolve(null);
+      }
+      return fetch("/api/recharge", { method: "GET", headers: authHeaders(), cache: "no-store" })
+        .then(function (res) {
+          return res.json().then(function (body) {
+            if (!res.ok || body.ok === false) {
+              var err = new Error(body.message || "支付方式读取失败");
+              err.status = res.status;
+              throw err;
+            }
+            if (seq !== payFetchSeq) return state.walletBalance;
+            var bal =
+              body.summary && body.summary.balance != null
+                ? body.summary.balance
+                : body.wallet && body.wallet.totalBalance != null
+                  ? body.wallet.totalBalance
+                  : null;
+            state.walletBalance = bal == null ? null : money(bal);
+            applyOrderPayMethods(body);
+            state.payLoadError = "";
+            state.payMethodsLoading = false;
+            return state.walletBalance;
+          });
+        })
+        .catch(function (err) {
+          if (seq !== payFetchSeq) return state.walletBalance;
+          if (tryCount < 1) {
+            return new Promise(function (resolve) {
+              setTimeout(function () {
+                resolve(refreshWalletBalance(tryCount + 1));
+              }, 600);
+            });
+          }
+          state.payMethodsLoading = false;
+          var msg = String((err && err.message) || "");
+          if ((err && err.status === 401) || /登录|token|jwt|过期/i.test(msg)) {
+            state.payLoadError = "登录已失效，请重新登录后再下单";
+          } else if (/只有老板账号可以访问|无此端权限|不是老板/i.test(msg)) {
+            state.payLoadError = "当前账号已登录，但无老板端下单权限";
+          } else {
+            state.payLoadError = msg || "支付方式读取失败，请刷新重试";
+          }
+          return state.walletBalance;
+        });
+    }
+    if (window.MCJBossAuth && typeof window.MCJBossAuth.ensureSession === "function") {
+      return window.MCJBossAuth.ensureSession()
+        .then(runFetch)
+        .catch(runFetch);
+    }
+    return runFetch();
+  }
+  function paintPayCards() {
+    var mask = activeMask();
+    if (!mask) return;
+    var grid = mask.querySelector("[data-po-pay-grid]");
+    if (!grid) return;
+    var total = totalAmount();
+    var bal = state.walletBalance;
+    var catInsufficient = bal != null && !(bal + 1e-9 >= total);
+    var list = state.payMethods && state.payMethods.length ? state.payMethods : [];
+
+    if (state.payMethodsLoading && !list.length) {
+      grid.innerHTML =
+        '<p class="mcj-po-empty-services" style="color:#9ca3af;font-size:13px;margin:0">正在读取支付方式…</p>';
+      syncSubmitAvailability();
+      return;
+    }
+
+    if (!list.length) {
+      grid.innerHTML =
+        '<p class="mcj-po-empty-services" style="color:#ffb4d0;font-size:13px;margin:0;line-height:1.55">' +
+        esc(state.payLoadError || "当前暂无可用支付方式，请稍后再试或联系客服") +
+        "</p>";
+      state.payment = "";
+      syncSubmitAvailability();
+      return;
+    }
+    grid.innerHTML = list
+      .map(function (p) {
+        var insufficient = p.id === "catfood" && catInsufficient;
+        if (insufficient) {
+          return (
+            '<button type="button" class="mcj-po-pay-card is-maintenance" disabled aria-disabled="true">' +
+            '<span class="mcj-po-pay-title">' +
+            esc(p.label) +
+            '</span><span class="mcj-po-pay-check">余额不足</span></button>'
+          );
+        }
+        return (
+          '<button type="button" class="mcj-po-pay-card' +
+          (state.payment === p.id ? " active" : "") +
+          '" data-po-pay="' +
+          esc(p.id) +
+          '"><span class="mcj-po-pay-title">' +
+          esc(p.label) +
+          '</span><span class="mcj-po-pay-check" aria-hidden="true"></span></button>'
+        );
+      })
+      .join("");
+    if (state.payment === "catfood" && catInsufficient) {
+      var alt = list.find(function (p) {
+        return p.id !== "catfood";
+      });
+      state.payment = alt ? alt.id : "catfood";
+    }
+    if (!list.some(function (p) { return p.id === state.payment; })) {
+      state.payment = list[0] ? list[0].id : "";
+    }
+    grid.querySelectorAll("[data-po-pay]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        if (btn.disabled) return;
+        state.payment = btn.getAttribute("data-po-pay") || "";
+        setExclusiveActive(grid.querySelectorAll("[data-po-pay]"), btn);
+        setError("");
+        syncSubmitAvailability();
+      });
+    });
+    syncSubmitAvailability();
+  }
+  function lockScroll(lock) {
+    if (lock) {
+      if (document.documentElement.dataset.mcjPoScrollLocked) return;
+      var y = window.scrollY || window.pageYOffset || 0;
+      document.documentElement.dataset.mcjPoScrollLocked = "1";
+      document.documentElement.dataset.mcjPoScrollY = String(y);
+      // body 上若有 transform，会让 fixed 子元素相对 body 定位并随滚动飞出视口。
+      try {
+        var cs = window.getComputedStyle(document.body);
+        if (cs && cs.transform && cs.transform !== "none") {
+          document.documentElement.dataset.mcjPoBodyTransform = document.body.style.transform || "";
+          document.body.style.transform = "none";
+        }
+      } catch (e) {}
+      document.documentElement.style.overflow = "hidden";
+      document.body.style.overflow = "hidden";
+    } else if (document.documentElement.dataset.mcjPoScrollLocked) {
+      var restore = Number(document.documentElement.dataset.mcjPoScrollY || 0);
+      delete document.documentElement.dataset.mcjPoScrollLocked;
+      delete document.documentElement.dataset.mcjPoScrollY;
+      document.documentElement.style.overflow = "";
+      document.body.style.overflow = "";
+      if (Object.prototype.hasOwnProperty.call(document.documentElement.dataset, "mcjPoBodyTransform")) {
+        document.body.style.transform = document.documentElement.dataset.mcjPoBodyTransform;
+        delete document.documentElement.dataset.mcjPoBodyTransform;
+      }
+      document.body.style.position = "";
+      document.body.style.top = "";
+      document.body.style.left = "";
+      document.body.style.right = "";
+      document.body.style.width = "";
+      window.scrollTo(0, restore);
+    }
+  }
+  function hardCleanup() {
+    document.querySelectorAll(".mcj-po-mask,[data-mcj-po-mask]").forEach(function (mask) {
+      mask.remove();
+    });
+    state.open = false;
+    state.submitting = false;
+    openGuard = false;
+    pendingOpenPayload = null;
+    payFetchSeq += 1;
+    resetOrderFormState();
+    lockScroll(false);
+  }
+  function failOpen(msg) {
+    hardCleanup();
+    toast(msg || "下单窗口加载失败，请重新打开");
+  }
+  function dialogInlineStyle() {
+    // Positioning is owned by CSS flex centering on the mask. Keep inline styles
+    // to presentation only so body/scroll lock cannot push the dialog off-screen.
+    return (
+      "position:relative;display:flex;flex-direction:column;overflow:hidden;box-sizing:border-box;" +
+      "margin:0;transform:none;left:auto;top:auto;right:auto;bottom:auto;" +
+      "max-height:min(88dvh,calc(100dvh - 40px));min-height:0;"
+    );
+  }
+  function avatarSrc(raw) {
+    var s = String(raw == null ? "" : raw).trim();
+    if (!s || /meow-cuijiao-brand\.(jpe?g|png|webp)$/i.test(s) || s === "assets/meow-cuijiao-brand.jpg") {
+      return DEFAULT_AVATAR;
+    }
+    return s;
+  }
+  function normalizeCompanion(raw) {
+    if (!raw || typeof raw !== "object") return null;
+    var id = String(raw.companionId || raw.companion_id || raw.id || raw.uid || "").trim();
+    if (!id) return null;
+    var name =
+      String(raw.companionName || raw.companion_name || raw.nickname || raw.name || "陪玩").trim() || "陪玩";
+    var unitPrice = money(
+      raw.unitPrice != null
+        ? raw.unitPrice
+        : raw.priceValue != null
+          ? raw.priceValue
+          : raw.price != null
+            ? raw.price
+            : raw.hourlyPrice
+    );
+    var service =
+      String(raw.service || raw.serviceName || raw.game || raw.mainGame || "").trim();
+    if (LEGACY_SERVICE_NAMES[service]) service = "";
+    var levelId = String(raw.levelId || raw.level_id || "").trim();
+    var level = String(raw.level || raw.levelName || raw.rank || raw.tier || "").trim();
+    if (!level && levelId && window.MCJCompanionLevels && window.MCJCompanionLevels.label) {
+      level = window.MCJCompanionLevels.label(levelId);
+    }
+    if (!level) level = "未设置等级";
+    var onlineRaw =
+      raw.availabilityStatus ||
+      raw.availability_status ||
+      raw.availabilityText ||
+      raw.onlineStatus ||
+      raw.online_status ||
+      raw.status;
+    // fromCompanion() defaults to "offline" when nothing is known; unknown must not block ordering.
+    var hasPresenceSignal = [
+      raw.availabilityStatus,
+      raw.availability_status,
+      raw.online_status,
+      raw.onlineStatus,
+      raw.availabilityText,
+      raw.status,
+      raw.statusText,
+      raw.onlineStatusLabel,
+      raw.workStatus,
+      raw.online,
+      raw.isOnline,
+      raw.canOrderNow,
+      raw.canAcceptBossOrder,
+    ].some(function (v) {
+      return v != null && v !== "";
+    });
+    var presence =
+      hasPresenceSignal && window.MCJCompanionPresence && window.MCJCompanionPresence.fromCompanion
+        ? window.MCJCompanionPresence.fromCompanion(raw)
+        : null;
+    var online = presence
+      ? presence.code === "online" || presence.code === "busy"
+      : onlineRaw === true ||
+        onlineRaw === 1 ||
+        /online|在线|busy|接单中|忙碌/i.test(String(onlineRaw || ""));
+    var gamePrices = raw.gamePrices || raw.game_prices || {};
+    if (typeof gamePrices !== "object" || !gamePrices) gamePrices = {};
+    var serviceIds = raw.serviceIds || raw.service_ids || [];
+    if (!Array.isArray(serviceIds)) serviceIds = [];
+    var services = Array.isArray(raw.services) ? raw.services.slice() : [];
+    var game = String(raw.game || raw.mainGame || raw.main_game || "").trim();
+    return {
+      companionId: id,
+      companionName: name,
+      unitPrice: unitPrice,
+      service: service,
+      game: game,
+      mainGame: game,
+      services: services,
+      serviceIds: serviceIds,
+      gamePrices: gamePrices,
+      pricingUnit: String(raw.pricingUnit || raw.pricing_unit || "小时"),
+      avatar: avatarSrc(raw.avatar || raw.cover || raw.cardImageUrl || ""),
+      publicId: raw.publicId || "",
+      level: level,
+      levelId: levelId,
+      online: online,
+      availabilityStatus: presence ? presence.code : String(raw.availabilityStatus || "").toLowerCase() || "",
+      availabilityText: presence ? presence.label : raw.availabilityText || (online ? "在线可接单" : "离线"),
+    };
+  }
+  function splitGameNames(value) {
+    return String(value || "")
+      .split(/[,，、\/|]+/)
+      .map(function (s) {
+        return String(s || "").trim();
+      })
+      .filter(function (s) {
+        return s && !LEGACY_SERVICE_NAMES[s];
+      });
+  }
+  function normalizeServiceItem(s, idx) {
+    if (s == null) return null;
+    if (typeof s === "string") {
+      var n = String(s).trim();
+      if (!n || LEGACY_SERVICE_NAMES[n]) return null;
+      return { id: "name:" + n, serviceId: "", name: n, price: 0, pricingUnit: "小时", sort: idx || 0 };
+    }
+    if (typeof s !== "object") return null;
+    var name = String(s.name || s.title || s.serviceName || s.game || "").trim();
+    if (!name || LEGACY_SERVICE_NAMES[name]) return null;
+    return {
+      id: String(s.id || s.serviceId || s.service_id || "name:" + name),
+      serviceId: String(s.serviceId || s.service_id || (/^[0-9a-f-]{36}$/i.test(String(s.id || "")) ? s.id : "") || ""),
+      name: name,
+      price: money(s.price != null ? s.price : s.unitPrice != null ? s.unitPrice : 0),
+      pricingUnit: String(s.pricingUnit || s.pricing_unit || "小时"),
+      sort: s.sort != null ? Number(s.sort) : idx || 0,
+      standard: s.standard && typeof s.standard === "object" ? s.standard : null,
+    };
+  }
+  function selectedServiceItem() {
+    if (!state.companion || !state.service) return null;
+    var list = resolveServices(state.companion);
+    var sid = String(state.selectedServiceId || "").trim();
+    return (
+      (sid &&
+        list.find(function (s) {
+          return String(s.serviceId || "") === sid || String(s.id || "") === sid;
+        })) ||
+      list.find(function (s) {
+        return serviceNamesMatch(s.name, state.service);
+      }) ||
+      null
+    );
+  }
+  function serviceStandardHtml(svc) {
+    if (!svc) {
+      return '<p class="mcj-po-standard-empty">选择游戏/服务项目后，这里会显示该项目的服务内容和执行标准。</p>';
+    }
+    var sections = (svc.standard && Array.isArray(svc.standard.sections) ? svc.standard.sections : []).filter(function (s) {
+      return s && s.value;
+    });
+    var head =
+      '<div class="mcj-po-standard-head"><strong>服务明细 · ' +
+      esc(svc.name) +
+      "</strong><span>" +
+      esc(moneyText(svc.price) + " / " + (svc.pricingUnit || "小时")) +
+      "</span></div>";
+    if (!sections.length) {
+      return (
+        head +
+        '<p class="mcj-po-standard-empty">该陪玩暂未填写此项目的详细服务标准。按' +
+        esc(svc.pricingUnit || "小时") +
+        "计费；如需确认服务内容，可下单前联系客服。</p>"
+      );
+    }
+    return (
+      head +
+      '<dl class="mcj-po-standard-list">' +
+      sections
+        .map(function (s) {
+          return "<div><dt>" + esc(s.label) + "</dt><dd>" + esc(s.value) + "</dd></div>";
+        })
+        .join("") +
+      "</dl>" +
+      '<p class="mcj-po-standard-foot">下单后将以此标准保存到订单，陪玩后续修改不影响本单。</p>'
+    );
+  }
+  function refreshServiceStandard() {
+    var mask = activeMask();
+    var box = mask && mask.querySelector("[data-po-standard]");
+    if (box) box.innerHTML = serviceStandardHtml(selectedServiceItem());
+  }
+  function resolveServices(companion) {
+    companion = companion || {};
+    var out = [];
+    var seen = Object.create(null);
+    function push(item) {
+      if (!item || !item.name || LEGACY_SERVICE_NAMES[item.name]) return;
+      var nkey = String(item.name || "")
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, " ");
+      var sid = String(item.serviceId || "").trim();
+      var idKey = /^[0-9a-f-]{36}$/i.test(sid)
+        ? "id:" + sid.toLowerCase()
+        : /^[0-9a-f-]{36}$/i.test(String(item.id || ""))
+          ? "id:" + String(item.id).toLowerCase()
+          : "";
+      if ((idKey && seen[idKey]) || (nkey && seen["n:" + nkey])) return;
+      if (idKey) seen[idKey] = 1;
+      if (nkey) seen["n:" + nkey] = 1;
+      out.push(item);
+    }
+    if (Array.isArray(companion.services)) {
+      companion.services.forEach(function (s, i) {
+        push(normalizeServiceItem(s, i));
+      });
+    }
+    var prices = companion.gamePrices && typeof companion.gamePrices === "object" ? companion.gamePrices : {};
+    var games = splitGameNames(companion.game || companion.mainGame || "");
+    if (!out.length && Array.isArray(companion.serviceIds) && companion.serviceIds.length) {
+      companion.serviceIds.forEach(function (id, i) {
+        var sid = String(id || "").trim();
+        if (!sid) return;
+        var named =
+          games[i] ||
+          (!/^[0-9a-f-]{36}$/i.test(sid) ? sid : "") ||
+          Object.keys(prices).find(function (k) {
+            return k === sid || (!/^[0-9a-f-]{36}$/i.test(k) && money(prices[k]) === money(prices[sid]) && money(prices[k]) > 0);
+          }) ||
+          "";
+        if (!named || LEGACY_SERVICE_NAMES[named]) return;
+        push({
+          id: sid,
+          serviceId: sid,
+          name: named,
+          price: money(prices[sid] != null ? prices[sid] : prices[named] != null ? prices[named] : companion.unitPrice),
+          pricingUnit: companion.pricingUnit || "小时",
+          sort: i,
+        });
+      });
+    }
+    if (!out.length && games.length) {
+      games.forEach(function (g, i) {
+        push({
+          id: "name:" + g,
+          serviceId: "",
+          name: g,
+          price: money(prices[g] != null ? prices[g] : companion.unitPrice),
+          pricingUnit: companion.pricingUnit || "小时",
+          sort: i,
+        });
+      });
+    }
+    if (!out.length && companion.service && !LEGACY_SERVICE_NAMES[companion.service]) {
+      push({
+        id: "name:" + companion.service,
+        serviceId: "",
+        name: companion.service,
+        price: money(companion.unitPrice),
+        pricingUnit: companion.pricingUnit || "小时",
+        sort: 0,
+      });
+    }
+    function priceFromGamePrices(s) {
+      var sid = String((s && (s.serviceId || s.id)) || "").trim();
+      var named = String((s && s.name) || "").trim();
+      if (sid && money(prices[sid]) > 0) return money(prices[sid]);
+      if (named && money(prices[named]) > 0) return money(prices[named]);
+      var compact = compactServiceKey(named);
+      if (compact) {
+        var hits = Object.keys(prices).filter(function (k) {
+          if (!k || /^[0-9a-f-]{36}$/i.test(k)) return false;
+          return compactServiceKey(k) === compact && money(prices[k]) > 0;
+        });
+        if (hits.length === 1) return money(prices[hits[0]]);
+      }
+      return 0;
+    }
+    out.forEach(function (s) {
+      var gp = priceFromGamePrices(s);
+      if (gp > 0) s.price = gp;
+      else if (!(s.price > 0)) {
+        s.price = money(companion.unitPrice || 0);
+      }
+    });
+    return out;
+  }
+  function applySelectedService(svc) {
+    if (!svc || !svc.name) return;
+    state.service = svc.name;
+    state.customService = "";
+    state.selectedServiceId = svc.serviceId || svc.id || "";
+    if (state.companion) {
+      if (money(svc.price) > 0) state.companion.unitPrice = money(svc.price);
+      if (svc.pricingUnit) state.companion.pricingUnit = svc.pricingUnit;
+      state.companion.service = svc.name;
+    }
+    var mask = activeMask();
+    if (mask) {
+      mask.querySelectorAll("[data-po-service]").forEach(function (btn) {
+        var on = btn.getAttribute("data-po-service") === state.service;
+        btn.classList.toggle("active", on);
+        btn.setAttribute("aria-pressed", on ? "true" : "false");
+      });
+      var preview = mask.querySelector("[data-po-service-preview]");
+      if (preview) preview.textContent = currentServiceLabel();
+      var hero = mask.querySelector("[data-po-price-hero]");
+      if (hero && state.companion) hero.textContent = moneyText(state.companion.unitPrice);
+      var unitLabel = mask.querySelector(".mcj-po-price-row small");
+      if (unitLabel && state.companion) unitLabel.textContent = "/ " + (state.companion.pricingUnit || "小时");
+    }
+    refreshServiceStandard();
+    refreshTotals();
+    syncInheritedGameIdField();
+    loadOrderRequirementFields();
+  }
+  function loadOrderRequirementFields() {
+    var host = document.querySelector("[data-po-requirements]");
+    if (!host) return;
+    var sid = String(state.selectedServiceId || "").trim();
+    if (!/^[0-9a-f-]{36}$/i.test(sid)) {
+      host.innerHTML = "";
+      state.orderFields = [];
+      return;
+    }
+    fetch("/api/platform/services?scope=order", { headers: { Accept: "application/json" }, cache: "no-store" })
+      .then(function (res) { return res.json(); })
+      .then(function (body) {
+        var live = document.querySelector("[data-po-requirements]");
+        if (!live || String(state.selectedServiceId || "") !== sid) return;
+        var services = (body && body.services) || [];
+        var match = services.find(function (item) { return String(item.id) === sid; });
+        var fields = (match && match.orderFields) || [];
+        state.orderFields = fields.filter(function (field) { return field && field.enabled !== false && field.name; });
+        live.innerHTML = state.orderFields.map(function (field) {
+          var required = field.required !== false;
+          var label = esc(field.name) + (required ? " *" : "");
+          var placeholder = esc(field.placeholder || "");
+          var common = ' data-po-req="' + esc(field.id) + '" data-po-req-kind="' + esc(field.kind || "text") + '"' + (required ? " data-po-req-required" : "");
+          if (field.kind === "textarea") {
+            return '<label><span class="mcj-po-label">' + label + '</span><textarea' + common + ' maxlength="500" placeholder="' + placeholder + '"></textarea></label>';
+          }
+          if (field.kind === "select") {
+            var options = (field.options || []).map(function (option) {
+              return '<option value="' + esc(option) + '">' + esc(option) + "</option>";
+            }).join("");
+            return '<label><span class="mcj-po-label">' + label + '</span><select' + common + '><option value="">' + (placeholder || "请选择") + "</option>" + options + "</select></label>";
+          }
+          if (field.kind === "multiselect") {
+            var checks = (field.options || []).map(function (option) {
+              return '<label style="display:flex;gap:6px;align-items:center;margin:4px 0"><input type="checkbox" data-po-req-check="' + esc(field.id) + '" value="' + esc(option) + '">' + esc(option) + "</label>";
+            }).join("");
+            return '<div class="mcj-po-field"' + common + '><span class="mcj-po-label">' + label + "</span>" + checks + "</div>";
+          }
+          var inputType = field.kind === "number" ? "number" : "text";
+          return '<label><span class="mcj-po-label">' + label + '</span><input type="' + inputType + '"' + common + ' maxlength="80" placeholder="' + placeholder + '"></label>';
+        }).join("");
+      })
+      .catch(function () {});
+  }
+  function readOrderRequirements() {
+    var host = document.querySelector("[data-po-requirements]");
+    var fields = state.orderFields || [];
+    if (!host || !fields.length) return [];
+    return fields.map(function (field) {
+      if (field.kind === "multiselect") {
+        var values = [];
+        host.querySelectorAll('[data-po-req-check="' + field.id + '"]:checked').forEach(function (box) {
+          values.push(box.value);
+        });
+        if (field.required !== false && !values.length) {
+          failValidate("请填写" + field.name, "[data-po-requirements]");
+          return null;
+        }
+        return { fieldId: field.id, value: values };
+      }
+      var el = host.querySelector('[data-po-req="' + field.id + '"]');
+      var value = el ? String(el.value || "").trim() : "";
+      if (field.required !== false && !value) {
+        failValidate("请填写" + field.name, "[data-po-req=\"" + field.id + "\"]");
+        return null;
+      }
+      return { fieldId: field.id, value: value };
+    });
+  }
+  function remountServiceChips() {
+    var mask = activeMask();
+    if (!mask || !state.companion) return;
+    var wrap = mask.querySelector(".mcj-po-chips[role='group']");
+    if (!wrap) return;
+    var services = resolveServices(state.companion);
+    if (!services.length) {
+      wrap.innerHTML = '<span class="mcj-po-empty-services" style="color:#9ca3af;font-size:13px">该陪玩暂无可下单服务项目</span>';
+      return;
+    }
+    wrap.innerHTML = services
+      .map(function (s) {
+        return (
+          '<button type="button" data-po-service="' +
+          esc(s.name) +
+          '" data-po-service-id="' +
+          esc(s.serviceId || s.id || "") +
+          '" data-po-service-price="' +
+          esc(s.price) +
+          '" class="mcj-po-chip' +
+          (state.service === s.name ? " active" : "") +
+          '" aria-pressed="' +
+          (state.service === s.name ? "true" : "false") +
+          '">' +
+          esc(s.name) +
+          "</button>"
+        );
+      })
+      .join("");
+    wrap.querySelectorAll("[data-po-service]").forEach(function (btn) {
+      btn.addEventListener("click", function (ev) {
+        ev.preventDefault();
+        var name = btn.getAttribute("data-po-service") || "";
+        var list = resolveServices(state.companion);
+        var svc = list.find(function (s) {
+          return serviceNamesMatch(s.name, name);
+        });
+        if (svc) applySelectedService(svc);
+      });
+    });
+    // hide legacy custom input if present
+    var customWrap = mask.querySelector("[data-po-custom-service]");
+    if (customWrap) customWrap.classList.remove("show");
+    refreshServiceStandard();
+  }
+  function hydrateFromCatalog(companionId) {
+    companionId = String(companionId || (state.companion && state.companion.companionId) || "").trim();
+    if (!companionId) return Promise.resolve(null);
+    return fetch("/api/boss/marketplace?action=catalog&companionId=" + encodeURIComponent(companionId), {
+      headers: authHeaders(),
+      cache: "no-store",
+    })
+      .then(function (res) {
+        return res.json().then(function (body) {
+          if (!res.ok || (body && body.ok === false)) throw new Error((body && body.message) || "服务目录读取失败");
+          return body;
+        });
+      })
+      .then(function (body) {
+        if (!state.companion || String(state.companion.companionId) !== companionId) return body;
+        var services = Array.isArray(body.services) ? body.services : [];
+        var catC = body.companion || {};
+        state.companion.services = services;
+        if (catC.gamePrices || catC.game_prices) state.companion.gamePrices = catC.gamePrices || catC.game_prices;
+        if (catC.serviceIds || catC.service_ids) state.companion.serviceIds = catC.serviceIds || catC.service_ids;
+        var gameName = catC.game || catC.mainGame || "";
+        if (gameName) {
+          state.companion.game = gameName;
+          state.companion.mainGame = gameName;
+        }
+        if (state.open) {
+          remountServiceChips();
+          var list = resolveServices(state.companion);
+          var sid = String(state.selectedServiceId || "").trim();
+          var cur =
+            (sid &&
+              list.find(function (s) {
+                return String(s.serviceId || "") === sid || String(s.id || "") === sid;
+              })) ||
+            list.find(function (s) {
+              return serviceNamesMatch(s.name, state.service);
+            }) ||
+            null;
+          // Never silently rewrite an existing selection to list[0] (often level-default 30).
+          if (cur) applySelectedService(cur);
+          else if (!state.service && list.length === 1) applySelectedService(list[0]);
+          else refreshTotals();
+        }
+        return body;
+      })
+      .catch(function () {
+        return null;
+      });
+  }
+  function matchService(service, companion) {
+    var list = resolveServices(companion || state.companion || {});
+    var s = String(service || "").trim();
+    if (LEGACY_SERVICE_NAMES[s]) s = "";
+    if (s) {
+      for (var i = 0; i < list.length; i++) {
+        if (serviceNamesMatch(list[i].name, s)) return { service: list[i].name, custom: "", item: list[i] };
+      }
+      if (!isServiceBlob(s)) {
+        var best = null;
+        var bestLen = 0;
+        var tie = false;
+        for (var j = 0; j < list.length; j++) {
+          var n = String(list[j].name || "");
+          if (!n) continue;
+          if (s.indexOf(n) === -1 && n.indexOf(s) === -1) continue;
+          if (n.length > bestLen) {
+            best = list[j];
+            bestLen = n.length;
+            tie = false;
+          } else if (n.length === bestLen) tie = true;
+        }
+        if (best && !tie) return { service: best.name, custom: "", item: best };
+      } else {
+        // "A、B、C" is not a selected service. Never guess list[0] (often 陪跑/等级价 30).
+        return { service: "", custom: "", item: null };
+      }
+    }
+    if (list[0] && list.length === 1) return { service: list[0].name, custom: "", item: list[0] };
+    return { service: "", custom: "", item: null };
+  }
+  function currentHours() {
+    return Math.max(0.5, money(state.hours) || 1);
+  }
+  function currentServiceLabel() {
+    return String(state.service || "").trim() || "未选择服务";
+  }
+  function currentQuantity() {
+    return 1;
+  }
+  /** Effective service duration in hours: hours × quantity (matches price formula). */
+  function serviceDurationHours() {
+    return Math.round(currentHours() * currentQuantity() * 100) / 100;
+  }
+  function pad2(n) {
+    return (n < 10 ? "0" : "") + n;
+  }
+  function defaultStartTime() {
+    // Next full hour on the platform clock (Asia/Kuala_Lumpur, UTC+8), independent of device timezone.
+    var d = new Date(Date.now() + 288e5);
+    return pad2((d.getUTCHours() + 1) % 24) + ":00";
+  }
+  function normalizeTimeValue(v) {
+    if (window.MCJTimePicker && typeof window.MCJTimePicker.normalize === "function") {
+      return window.MCJTimePicker.normalize(v);
+    }
+    var raw = String(v || "").trim();
+    var ampm = raw.match(/\b(am|pm)\b/i);
+    var m = raw.match(/(\d{1,2})\s*[:：.]\s*(\d{1,2})/);
+    if (!m) return "";
+    var h = Number(m[1]) || 0;
+    var min = Number(m[2]) || 0;
+    if (ampm) {
+      var ap = ampm[1].toLowerCase();
+      if (ap === "pm" && h < 12) h += 12;
+      if (ap === "am" && h === 12) h = 0;
+    }
+    h = Math.min(23, Math.max(0, h));
+    min = Math.min(59, Math.max(0, min));
+    return pad2(h) + ":" + pad2(min);
+  }
+  function addHoursToTime(hhmm, hours) {
+    var t = normalizeTimeValue(hhmm);
+    if (!t) return "--:--";
+    var parts = t.split(":");
+    var totalMin = Number(parts[0]) * 60 + Number(parts[1]) + Math.round(Number(hours) * 60);
+    totalMin = ((totalMin % (24 * 60)) + 24 * 60) % (24 * 60);
+    return pad2(Math.floor(totalMin / 60)) + ":" + pad2(totalMin % 60);
+  }
+  function scheduleWindowLabel(start, end) {
+    return String(start || "") + " – " + String(end || "");
+  }
+  function readStartTimeFromDom(root) {
+    var card = (root || document).querySelector("[data-po-start-time]");
+    if (!card) return normalizeTimeValue(state.startTime);
+    var raw = card.getAttribute("data-po-start-time") || (card.value != null ? card.value : "") || "";
+    return normalizeTimeValue(raw);
+  }
+  function writeStartTimeToDom(root, value) {
+    var v = normalizeTimeValue(value) || defaultStartTime();
+    state.startTime = v;
+    var scope = root || document;
+    var card = scope.querySelector("[data-po-start-time]");
+    if (card) {
+      card.setAttribute("data-po-start-time", v);
+      var display = card.querySelector("[data-po-start-display]");
+      if (display) display.textContent = v;
+      else if (card.tagName === "INPUT") card.value = v;
+    }
+    return v;
+  }
+  function openStartTimePicker(root) {
+    var current = readStartTimeFromDom(root) || defaultStartTime();
+    if (!window.MCJTimePicker || typeof window.MCJTimePicker.open !== "function") {
+      toast("时间选择器加载失败，请刷新后重试");
+      return;
+    }
+    window.MCJTimePicker.open({
+      title: "选择开始时间",
+      value: current,
+      minuteStep: 60,
+      onConfirm: function (value) {
+        writeStartTimeToDom(root, value);
+        refreshSchedulePreview(root);
+      },
+    });
+  }
+  function refreshSchedulePreview(root) {
+    var scope = root || document;
+    var endEl = scope.querySelector("[data-po-end-time]");
+    var hintEl = scope.querySelector("[data-po-schedule-preview]");
+    var start = readStartTimeFromDom(scope);
+    if (!start) start = defaultStartTime();
+    writeStartTimeToDom(scope, start);
+    var end = addHoursToTime(start, serviceDurationHours());
+    state.endTime = end;
+    if (endEl) endEl.textContent = end;
+    if (hintEl) {
+      hintEl.textContent =
+        "服务时段：" +
+        scheduleWindowLabel(start, end) +
+        "（" +
+        serviceDurationHours() +
+        "小时）";
+    }
+  }
+  function totalAmount() {
+    var c = state.companion;
+    if (!c) return 0;
+    return Math.round(money(c.unitPrice) * currentHours() * currentQuantity() * 100) / 100;
+  }
+  function requireLogin() {
+    if (token()) return true;
+    toast("请先登录老板账号后再下单");
+    try {
+      var cid = state.companion && state.companion.companionId;
+      var back = cid
+        ? "profile.html?id=" + encodeURIComponent(cid) + "&open_order=1"
+        : location.href;
+      sessionStorage.setItem("mcjAfterLoginRedirect", back);
+    } catch (e) {}
+    if (typeof window.loginRequiredModal === "function") {
+      window.loginRequiredModal();
+      return false;
+    }
+    if (window.MCJBossHeader && typeof window.MCJBossHeader.openLogin === "function") {
+      window.MCJBossHeader.openLogin();
+      return false;
+    }
+    location.href = "index.html#login";
+    return false;
+  }
+  function close(opts) {
+    opts = opts || {};
+    document.querySelectorAll(".mcj-po-mask,[data-mcj-po-mask]").forEach(function (mask) {
+      mask.remove();
+    });
+    state.open = false;
+    state.submitting = false;
+    state.submitStartedAt = 0;
+    openGuard = false;
+    pendingOpenPayload = null;
+    payFetchSeq += 1;
+    // Always drop residual form / payment state so the next open re-initializes from live data.
+    if (!opts.keepFormState) resetOrderFormState();
+    lockScroll(false);
+    // Never history.back() — that can leave the current Preview and strand a black mask.
+    try {
+      if (history.state && history.state.mcjPoModal) {
+        history.replaceState(Object.assign({}, history.state, { mcjPoModal: 0 }), "");
+      }
+    } catch (e) {}
+  }
+  function setExclusiveActive(buttons, activeBtn) {
+    (buttons || []).forEach(function (b) {
+      var on = b === activeBtn;
+      b.classList.toggle("active", on);
+      b.setAttribute("aria-pressed", on ? "true" : "false");
+      if (!on) {
+        try {
+          b.blur();
+        } catch (e) {}
+      }
+    });
+  }
+  function setError(msg) {
+    var text = String(msg || "");
+    var els = [];
+    var mask = activeMask();
+    if (mask) {
+      mask.querySelectorAll("[data-po-error]").forEach(function (el) {
+        els.push(el);
+      });
+    } else {
+      document.querySelectorAll("[data-po-error]").forEach(function (el) {
+        els.push(el);
+      });
+    }
+    els.forEach(function (el) {
+      el.textContent = text;
+      el.hidden = !text;
+    });
+  }
+  function refreshTotals() {
+    var c = state.companion;
+    var hours = currentHours();
+    var total = moneyText(totalAmount());
+    var unit = c ? moneyText(c.unitPrice) : moneyText(0);
+    var map = {
+      "[data-po-footer-total]": total,
+      "[data-po-total]": total,
+      "[data-po-footer-unit]": unit,
+      "[data-po-footer-discount]": moneyText(0),
+      "[data-po-hours-label]": hours + " 小时",
+    };
+    Object.keys(map).forEach(function (sel) {
+      var el = document.querySelector(sel);
+      if (el) el.textContent = map[sel];
+    });
+    var priceHero = document.querySelector("[data-po-price-hero]");
+    if (priceHero && c) priceHero.textContent = moneyText(c.unitPrice);
+    refreshSchedulePreview();
+    // Soft totals refresh must not wipe payment UI while methods are still loading.
+    if (activeMask() && (state.payMethods.length || !state.payMethodsLoading)) {
+      paintPayCards();
+    }
+  }
+
+  /** Draft prefill only (per game); the order snapshot on the server is the record. */
+  function rememberedBossRank(game) {
+    try {
+      return String(localStorage.getItem("mcjBossRank:" + String(game || "").trim()) || "").slice(0, 30);
+    } catch (e) {
+      return "";
+    }
+  }
+  document.addEventListener("input", function (e) {
+    if (e.target && e.target.matches && e.target.matches("[data-po-boss-rank]")) {
+      state.bossRank = String(e.target.value || "").slice(0, 30);
+    }
+  });
+  function readBossRank() {
+    var el = qs("[data-po-boss-rank]");
+    var v = el ? String(el.value || "").trim().slice(0, 30) : String(state.bossRank || "");
+    state.bossRank = v;
+    try {
+      if (v) localStorage.setItem("mcjBossRank:" + currentServiceLabel(), v);
+    } catch (e) {}
+    return v;
+  }
+
+  function gameIdFieldHtml() {
+    var inherited = inheritedAccountId();
+    var showInherited = !!(inherited && !state.editingGameId);
+    var val = showInherited ? inherited : "";
+    return (
+      '<div class="mcj-po-field" data-po-game-id-field>' +
+      '<span class="mcj-po-label">游戏ID *</span>' +
+      '<div class="mcj-po-game-id-row" data-po-game-id-row>' +
+      '<input data-po-game-id required placeholder="请输入游戏ID" autocomplete="off" inputmode="text"' +
+      (val ? ' value="' + esc(val) + '"' : "") +
+      (showInherited ? " readonly" : "") +
+      ">" +
+      '<button type="button" class="mcj-po-game-id-edit" data-po-game-id-edit' +
+      (showInherited ? "" : " hidden") +
+      ">修改</button></div>" +
+      '<p class="mcj-po-game-id-hint" data-po-game-id-hint' +
+      (showInherited ? "" : " hidden") +
+      ">" +
+      (showInherited ? "已沿用本次一起下单的游戏ID" : "") +
+      "</p></div>"
+    );
+  }
+
+  function paint() {
+    var c = state.companion;
+    if (!c) {
+      failOpen("下单窗口加载失败，请重新打开");
+      return;
+    }
+    if (!document.body) {
+      failOpen("下单窗口加载失败，请重新打开");
+      return;
+    }
+    ensureCss();
+    // Remount dialog chrome but keep the freshly prepared form fields on `state`
+    // (companion/hours/qty/service). Payment methods always re-fetch after mount.
+    close({ fromPop: true, keepFormState: true });
+    state.open = true;
+    state.payMethodsLoading = true;
+    state.payMethods = [];
+    state.payment = "";
+    state.payLoadError = "";
+
+    var companionServices = resolveServices(c);
+    // SoT: never silently pick services[0] among many (level-default 30 vs 三角洲@35).
+    // Only auto-select when exactly one catalog row exists.
+    if (
+      companionServices.length === 1 &&
+      !companionServices.some(function (s) {
+        return serviceNamesMatch(s.name, state.service);
+      })
+    ) {
+      state.service = companionServices[0].name;
+      state.selectedServiceId = companionServices[0].serviceId || companionServices[0].id || "";
+      if (companionServices[0].price > 0) c.unitPrice = companionServices[0].price;
+    }
+    var serviceChips = companionServices.length
+      ? companionServices.map(function (s) {
+          return (
+            '<button type="button" data-po-service="' +
+            esc(s.name) +
+            '" data-po-service-id="' +
+            esc(s.serviceId || s.id || "") +
+            '" data-po-service-price="' +
+            esc(s.price) +
+            '" class="mcj-po-chip' +
+            (state.service === s.name ? " active" : "") +
+            '" aria-pressed="' +
+            (state.service === s.name ? "true" : "false") +
+            '">' +
+            esc(s.name) +
+            "</button>"
+          );
+        }).join("")
+      : '<span class="mcj-po-empty-services" data-po-services-loading style="color:#9ca3af;font-size:13px">正在读取该陪玩的服务项目…</span>';
+    var hourChips = HOURS.map(function (h) {
+      return (
+        '<button type="button" data-po-hours="' +
+        esc(h.id) +
+        '" class="mcj-po-chip' +
+        (state.hoursMode === h.id ? " active" : "") +
+        '" aria-pressed="' +
+        (state.hoursMode === h.id ? "true" : "false") +
+        '">' +
+        esc(h.label) +
+        "</button>"
+      );
+    }).join("");
+    var payList = state.payMethods && state.payMethods.length ? state.payMethods : [];
+    var payCards = payList.length
+      ? payList
+          .map(function (p) {
+            return (
+              '<button type="button" class="mcj-po-pay-card' +
+              (state.payment === p.id ? " active" : "") +
+              '" data-po-pay="' +
+              esc(p.id) +
+              '"><span class="mcj-po-pay-title">' +
+              esc(p.label) +
+              '</span><span class="mcj-po-pay-check" aria-hidden="true"></span></button>'
+            );
+          })
+          .join("")
+      : '<p class="mcj-po-empty-services" style="color:#9ca3af;font-size:13px;margin:0">正在读取支付方式…</p>';
+
+    var mask = document.createElement("div");
+    mask.className = "mcj-po-mask";
+    mask.setAttribute("data-mcj-po-mask", "1");
+    mask.setAttribute("role", "presentation");
+
+    mask.innerHTML =
+      '<div class="mcj-po-dialog" role="dialog" aria-modal="true" aria-label="立即下单" style="' +
+      dialogInlineStyle() +
+      '">' +
+      '<div class="mcj-po-header">' +
+      '<div class="mcj-po-header-row">' +
+      '<div class="mcj-po-header-info">' +
+      '<img src="' +
+      esc(avatarSrc(c.avatar)) +
+      '" alt="" onerror="this.onerror=null;this.src=\'' +
+      DEFAULT_AVATAR +
+      '\'">' +
+      '<div class="mcj-po-header-copy">' +
+      "<h3>立即下单</h3>" +
+      '<div class="mcj-po-name">' +
+      esc(c.companionName) +
+      "</div>" +
+      '<div class="mcj-po-meta">' +
+      '<span class="mcj-po-pill" data-level-id="' +
+      esc(c.levelId || "") +
+      '">' +
+      esc(c.level || "未设置等级") +
+      "</span>" +
+      '<span class="mcj-po-pill' +
+      (c.online ? " online" : "") +
+      '">' +
+      esc(c.availabilityText || (c.online ? "在线可接单" : "离线")) +
+      "</span>" +
+      "</div>" +
+      (companionUnavailableText()
+        ? '<div class="mcj-po-avail-note" data-po-avail-note role="status">' + esc(companionUnavailableText()) + "</div>"
+        : "") +
+      "</div></div>" +
+      '<button type="button" class="mcj-po-close" data-po-close aria-label="关闭">×</button>' +
+      "</div></div>" +
+      '<div class="mcj-po-scroll">' +
+      '<div class="mcj-po-price-card">' +
+      '<div class="mcj-po-price-row"><span>单价</span>' +
+      priceHeroHtml(c.unitPrice) +
+      "<small>/ " +
+      esc(c.pricingUnit || "小时") +
+      "</small></div>" +
+      "<div>当前服务：<strong data-po-service-preview>" +
+      esc(currentServiceLabel()) +
+      "</strong></div></div>" +
+      '<div class="mcj-po-field"><span class="mcj-po-label">游戏/服务项目</span><div class="mcj-po-chips" role="group">' +
+      serviceChips +
+      "</div>" +
+      '<div class="mcj-po-standard" data-po-standard aria-live="polite">' +
+      serviceStandardHtml(selectedServiceItem()) +
+      "</div></div>" +
+      '<div class="mcj-po-field"><span class="mcj-po-label">时长</span><div class="mcj-po-chips" role="radiogroup">' +
+      hourChips +
+      "</div>" +
+      '<div class="mcj-po-custom-hours' +
+      (state.hoursMode === "custom" ? " show" : "") +
+      '" data-po-custom-hours><input type="number" min="0.5" step="0.5" data-po-custom-hours-input value="' +
+      esc(state.hours) +
+      '" placeholder="小时数"></div></div>' +
+      gameIdFieldHtml() +
+      '<div data-po-requirements></div>' +
+      '<label>我的段位（选填，陪玩接单前可见）<input data-po-boss-rank maxlength="30" autocomplete="off" placeholder="例如：钻石 2 / 星耀 / 无段位" value="' +
+      esc(state.bossRank || rememberedBossRank(currentServiceLabel())) +
+      '"></label>' +
+      '<div class="mcj-po-field mcj-po-schedule-field"><span class="mcj-po-label">服务时间 *</span>' +
+      '<div class="mcj-po-time-row">' +
+      '<div class="mcj-po-time-col mcj-po-time-start"><span class="mcj-po-time-cap">开始时间</span>' +
+      (window.MCJTimePicker && window.MCJTimePicker.startCardHtml
+        ? window.MCJTimePicker.startCardHtml(state.startTime || defaultStartTime(), {
+            startAttr: "data-po-start-time",
+            openAttr: "data-po-open-time",
+          })
+        : '<button type="button" class="mcj-po-time-card is-interactive" data-po-start-time="' +
+          esc(state.startTime || defaultStartTime()) +
+          '" data-po-open-time="1" aria-label="选择开始时间"><span class="mcj-po-time-card-value" data-po-start-display>' +
+          esc(state.startTime || defaultStartTime()) +
+          '</span><span class="mcj-po-time-card-chevron" aria-hidden="true">›</span></button>') +
+      "</div>" +
+      '<div class="mcj-po-time-col mcj-po-time-end" data-po-end-wrap><span class="mcj-po-time-cap">预计结束</span>' +
+      (window.MCJTimePicker && window.MCJTimePicker.endCardHtml
+        ? window.MCJTimePicker.endCardHtml("--", { endAttr: "data-po-end-time" })
+        : '<div class="mcj-po-time-card is-readonly" aria-live="polite"><span class="mcj-po-time-card-value" data-po-end-time>--</span></div>') +
+      "</div></div>" +
+      '<p class="mcj-po-time-hint" data-po-schedule-preview>选择开始时间后自动计算结束时间</p></div>' +
+      '<label>订单备注（选填）<textarea data-po-notes rows="2" placeholder="选填：特殊要求、开局说明等"></textarea></label>' +
+      '<label>优惠码<input data-po-coupon placeholder="可选" value="' +
+      esc(state.couponCode) +
+      '"></label>' +
+      '<div class="mcj-po-field mcj-po-voice-field"><span class="mcj-po-label">本单语音方式</span>' +
+      '<div class="mcj-po-voice-grid" role="radiogroup" aria-label="本单语音方式">' +
+      '<button type="button" class="mcj-po-voice-card' +
+      (state.voiceMode === "discord" ? " active" : "") +
+      '" data-po-voice="discord" aria-pressed="' +
+      (state.voiceMode === "discord" ? "true" : "false") +
+      '"><span class="mcj-po-voice-card-icon" aria-hidden="true">🎧</span>' +
+      '<span class="mcj-po-voice-card-title">Discord语音房</span>' +
+      '<span class="mcj-po-voice-card-desc">下单后使用 Discord 私人语音房沟通</span></button>' +
+      '<button type="button" class="mcj-po-voice-card' +
+      (state.voiceMode !== "discord" ? " active" : "") +
+      '" data-po-voice="game_mic" aria-pressed="' +
+      (state.voiceMode !== "discord" ? "true" : "false") +
+      '"><span class="mcj-po-voice-card-icon" aria-hidden="true">🎮</span>' +
+      '<span class="mcj-po-voice-card-title">游戏麦</span>' +
+      '<span class="mcj-po-voice-card-desc">使用游戏内语音沟通</span></button>' +
+      "</div></div>" +
+      '<div class="mcj-po-pay-block"><div class="mcj-po-pay-label">支付方式</div><div class="mcj-po-pay-grid" data-po-pay-grid>' +
+      payCards +
+      "</div></div>" +
+      '<p class="mcj-po-error" data-po-error hidden></p>' +
+      "</div>" +
+      '<div class="mcj-po-footer">' +
+      '<div class="mcj-po-footer-breakdown">' +
+      "<div>单价 <strong data-po-footer-unit>" +
+      esc(moneyText(c.unitPrice)) +
+      "</strong></div>" +
+      "<div>优惠金额 <strong data-po-footer-discount>" +
+      esc(moneyText(0)) +
+      "</strong></div>" +
+      "<div>合计 <strong data-po-footer-total>" +
+      esc(moneyText(totalAmount())) +
+      "</strong></div>" +
+      "</div>" +
+      '<div class="mcj-po-footer-total-row"><span>合计猫粮</span><strong data-po-total>' +
+      esc(moneyText(totalAmount())) +
+      "</strong></div>" +
+      '<p class="mcj-po-error mcj-po-footer-error" data-po-error hidden></p>' +
+      '<div class="mcj-po-footer-actions">' +
+      '<button type="button" class="mcj-po-add-another" data-po-add-another>再加一位陪玩</button>' +
+      '<button type="button" class="primary mcj-po-submit" data-po-submit disabled aria-busy="false">支付方式加载中…</button>' +
+      "</div>" +
+      "</div></div>";
+
+    var dialog = mask.querySelector(".mcj-po-dialog");
+    var scroll = mask.querySelector(".mcj-po-scroll");
+    var footer = mask.querySelector(".mcj-po-footer");
+    if (!dialog || !scroll || !footer) {
+      failOpen("下单窗口加载失败，请重新打开");
+      return;
+    }
+
+    try {
+      // Mount on <html> — body may carry transform (containing block) which breaks viewport fixed.
+      (document.documentElement || document.body).appendChild(mask);
+    } catch (err) {
+      console.error("[MCJPlaceOrder] append failed", err);
+      failOpen("下单窗口加载失败，请重新打开");
+      return;
+    }
+
+    lockScroll(true);
+    openGuard = false;
+
+    requestAnimationFrame(function () {
+      if (!state.open) return;
+      var live = document.querySelector("[data-mcj-po-mask] .mcj-po-dialog");
+      if (!live) {
+        failOpen("下单窗口加载失败，请重新打开");
+        return;
+      }
+      live.setAttribute("style", dialogInlineStyle());
+      var rect = live.getBoundingClientRect();
+      var vh = window.innerHeight || document.documentElement.clientHeight || 0;
+      if (rect.top < -2 || rect.bottom > vh + 2 || !(rect.height >= 80)) {
+        console.warn("[MCJPlaceOrder] dialog rect repaired", rect);
+        live.setAttribute("style", dialogInlineStyle());
+      }
+    });
+
+    try {
+      history.replaceState(Object.assign({}, history.state || {}, { mcjPoModal: 1 }), "");
+    } catch (e) {}
+
+    loadOrderRequirementFields();
+    mask.addEventListener("click", function (e) {
+      if (e.target === mask) close();
+    });
+    mask.querySelectorAll("[data-po-close]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        close();
+      });
+    });
+    if (!window.__MCJPoEscBound) {
+      window.__MCJPoEscBound = true;
+      document.addEventListener("keydown", function (ev) {
+        if (ev.key === "Escape" && state.open) {
+          ev.preventDefault();
+          close();
+        }
+      });
+    }
+    mask.querySelectorAll("[data-po-service]").forEach(function (btn) {
+      btn.addEventListener("click", function (ev) {
+        ev.preventDefault();
+        var name = btn.getAttribute("data-po-service") || "";
+        var list = resolveServices(state.companion);
+        var svc = list.find(function (s) {
+          return serviceNamesMatch(s.name, name);
+        }) || {
+          name: name,
+          serviceId: btn.getAttribute("data-po-service-id") || "",
+          price: money(btn.getAttribute("data-po-service-price")),
+          pricingUnit: (state.companion && state.companion.pricingUnit) || "小时",
+        };
+        applySelectedService(svc);
+        setExclusiveActive(mask.querySelectorAll("[data-po-service]"), btn);
+      });
+    });
+    mask.querySelectorAll("[data-po-hours]").forEach(function (btn) {
+      btn.addEventListener("click", function (ev) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        var id = btn.getAttribute("data-po-hours");
+        state.hoursMode = id;
+        var meta = HOURS.find(function (h) {
+          return h.id === id;
+        });
+        if (meta && !meta.custom) state.hours = meta.value;
+        setExclusiveActive(mask.querySelectorAll("[data-po-hours]"), btn);
+        var wrap = mask.querySelector("[data-po-custom-hours]");
+        if (wrap) wrap.classList.toggle("show", id === "custom");
+        refreshTotals();
+      });
+    });
+    var customHoursInput = mask.querySelector("[data-po-custom-hours-input]");
+    if (customHoursInput) {
+      customHoursInput.addEventListener("input", function () {
+        state.hours = Math.max(0.5, money(customHoursInput.value) || 1);
+        refreshTotals();
+      });
+    }
+    var startTimeCard = mask.querySelector("[data-po-open-time]");
+    if (startTimeCard) {
+      writeStartTimeToDom(mask, state.startTime || defaultStartTime());
+      startTimeCard.addEventListener("click", function (ev) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        openStartTimePicker(mask);
+      });
+    }
+    refreshSchedulePreview(mask);
+    var couponInput = mask.querySelector("[data-po-coupon]");
+    if (couponInput) {
+      couponInput.addEventListener("input", function () {
+        state.couponCode = String(couponInput.value || "").trim();
+      });
+    }
+    mask.querySelectorAll("[data-po-pay]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        if (btn.disabled) return;
+        state.payment = btn.getAttribute("data-po-pay") || "";
+        setExclusiveActive(mask.querySelectorAll("[data-po-pay]"), btn);
+      });
+    });
+    mask.querySelectorAll("[data-po-voice]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var next = btn.getAttribute("data-po-voice") || "game_mic";
+        // New orders: only discord | game_mic (legacy "none" is display-only for old rows).
+        if (next !== "discord" && next !== "game_mic") next = "game_mic";
+        state.voiceMode = next;
+        mask.querySelectorAll("[data-po-voice]").forEach(function (b) {
+          var on = b === btn;
+          b.classList.toggle("active", on);
+          b.setAttribute("aria-pressed", on ? "true" : "false");
+        });
+      });
+    });
+    var submit = mask.querySelector("[data-po-submit]");
+    if (submit) {
+      submit.addEventListener("click", function (ev) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        submitOrder();
+      });
+    }
+    var addAnother = mask.querySelector("[data-po-add-another]");
+    if (addAnother) {
+      addAnother.addEventListener("click", function (ev) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        addAnotherCompanion();
+      });
+    }
+    bindGameIdEdit(mask);
+    syncInheritedGameIdField();
+    syncSubmitAvailability();
+    refreshWalletBalance().then(function () {
+      if (!state.open || !activeMask()) return;
+      paintPayCards();
+      syncSubmitAvailability();
+    });
+  }
+
+  function parseApiJson(res) {
+    return res.text().then(function (text) {
+      var body = {};
+      try {
+        body = text ? JSON.parse(text) : {};
+      } catch (e) {
+        body = { ok: false, message: text ? "服务器返回异常" : "空响应" };
+      }
+      if (!res.ok || body.ok === false) {
+        var err = new Error(body.message || "请求失败");
+        err.code = body.code || "";
+        err.body = body;
+        err.status = res.status;
+        throw err;
+      }
+      return body;
+    });
+  }
+
+  function commitSelectionAfterCreatedOrder(order) {
+    var team = window.MCJMultiCompanionTeam;
+    if (!team) return;
+    var type = String((order && (order.orderTypeKey || order.order_type || order.orderType)) || "");
+    var multi = !!(
+      order &&
+      (order.isMultiGroupParent || type === "multi_group" || order.order_type === "multi_group")
+    );
+    if (multi) {
+      if (typeof team.clear === "function") team.clear();
+      return;
+    }
+    var cid = currentCompanionId();
+    if (cid && typeof team.remove === "function") team.remove(cid);
+  }
+
+  function goPaymentPage(order) {
+    var oid = order && order.id ? order.id : "";
+    close();
+    if (oid) {
+      try {
+        var cachePayload = JSON.stringify({
+          id: oid,
+          status: "awaiting_payment",
+          paymentMethod: state.payment,
+          totalAmount: order.totalAmount || totalAmount(),
+          // Preserve multi markers when present so payment-confirm never shows wallet shortcut.
+          isMultiGroupParent: !!(order.isMultiGroupParent || order.orderTypeKey === "multi_group"),
+          orderTypeKey: order.orderTypeKey || order.order_type || "",
+          order_type: order.order_type || order.orderTypeKey || "",
+        });
+        try {
+          localStorage.setItem("mcjOrderCache:" + oid, cachePayload);
+        } catch (e2) {}
+        sessionStorage.setItem("mcjOrderCache:" + oid, cachePayload);
+      } catch (e) {}
+      location.href = "payment-confirm.html?order=" + encodeURIComponent(oid);
+      return;
+    }
+    location.href = "orders.html";
+  }
+
+  function currentCompanionId() {
+    var c = state.companion || {};
+    return String(c.companionId || c.id || c.uid || "").trim();
+  }
+
+  function teamDraftShouldAbsorbCurrentCompanion() {
+    var team = window.MCJMultiCompanionTeam;
+    if (!team) return false;
+    var cid = currentCompanionId();
+    if (!cid) return false;
+    var count = typeof team.getCount === "function" ? team.getCount() : 0;
+    var lines = typeof team.getLines === "function" ? team.getLines() : [];
+    var already = (lines || []).some(function (l) {
+      return String(l.companionId || "") === cid;
+    });
+    var picking = false;
+    try {
+      picking = sessionStorage.getItem("mcjMultiTeamPicking") === "1";
+    } catch (ePick) {}
+    if (typeof team.hasDraft === "function" && team.hasDraft() && !already) return true;
+    if (count >= 1 && !already) return true;
+    if (picking && !already) return true;
+    if (already && count >= 2) return true;
+    return false;
+  }
+
+  function applyModalSharedToTeam() {
+    var team = window.MCJMultiCompanionTeam;
+    if (!team || typeof team.applyShared !== "function") return;
+    var notesEl = qs("[data-po-notes]");
+    team.applyShared({
+      gameId: readModalGameId(),
+      idContext: currentIdContext(),
+      bossRank: readBossRank(),
+      notes: notesEl ? String(notesEl.value || "").trim() : "",
+      startTime: readStartTimeFromDom(activeMask()) || state.startTime,
+      voiceMode: state.voiceMode,
+      paymentMethod: state.payment,
+    });
+  }
+
+  function requireModalGameId() {
+    var gameId = readModalGameId();
+    var el = qs("[data-po-game-id]");
+    if (el && gameId && !String(el.value || "").trim()) el.value = gameId;
+    if (!gameId) {
+      failValidate("游戏ID不能为空", "[data-po-game-id]");
+      return "";
+    }
+    applyModalSharedToTeam();
+    return gameId;
+  }
+
+  function pushCurrentCompanionToTeam() {
+    var c = state.companion;
+    if (!c || !(c.companionId || c.id)) {
+      toast("缺少陪玩信息");
+      return { ok: false, error: "missing" };
+    }
+    if (!window.MCJMultiCompanionTeam || typeof window.MCJMultiCompanionTeam.add !== "function") {
+      toast("多人一起下单组件未加载，请刷新大厅后重试");
+      return { ok: false, error: "no_team" };
+    }
+    if (!String(state.service || "").trim() || LEGACY_SERVICE_NAMES[String(state.service || "").trim()]) {
+      toast("请先选择具体服务后再加入队伍");
+      return { ok: false, error: "need_service" };
+    }
+    if (!(money(c.unitPrice) > 0)) {
+      toast("当前单价无效，无法加入队伍");
+      return { ok: false, error: "no_price" };
+    }
+    return window.MCJMultiCompanionTeam.add({
+      companionId: c.companionId || c.id,
+      companionName: c.companionName || c.name || "陪玩",
+      avatar: c.avatar || c.image || "",
+      unitPrice: money(c.unitPrice),
+      service: currentServiceLabel(),
+      serviceType: currentServiceLabel(),
+      serviceId: state.selectedServiceId || "",
+      game: currentServiceLabel(),
+      gameId: readModalGameId(),
+      gamePrices: c.gamePrices || c.game_prices || {},
+      hours: currentHours(),
+      quantity: currentQuantity(),
+      services: resolveServices(c),
+      online: c.online !== false,
+      status: c.availabilityStatus || "",
+      statusText: c.availabilityText || "",
+    });
+  }
+
+  function absorbCurrentCompanionIntoTeam() {
+    var team = window.MCJMultiCompanionTeam;
+    var cid = currentCompanionId();
+    var lines = team && typeof team.getLines === "function" ? team.getLines() : [];
+    var already = (lines || []).some(function (l) {
+      return String(l.companionId || "") === cid;
+    });
+    if (already) {
+      close();
+      if (team.getCount() >= 2 && typeof team.openCheckout === "function") {
+        toast("已在队伍中，可确认并支付");
+        team.openCheckout();
+      } else {
+        toast("已在队伍中");
+      }
+      return true;
+    }
+    if (!requireModalGameId()) return false;
+    var result = pushCurrentCompanionToTeam();
+    if (!result || !result.ok) return false;
+    applyModalSharedToTeam();
+    close();
+    toast(
+      result.count >= 2
+        ? "已选 " + result.count + " 人，可继续选或确认并支付"
+        : "已加入队伍，可继续选陪玩"
+    );
+    return true;
+  }
+
+  function addAnotherCompanion() {
+    if (!requireModalGameId()) return;
+    var result = pushCurrentCompanionToTeam();
+    if (!result || !result.ok) return;
+    applyModalSharedToTeam();
+    close();
+    if (result.count >= 2) {
+      toast("已选 " + result.count + " 人，可继续选或确认并支付");
+      return;
+    }
+    try {
+      sessionStorage.setItem("mcjMultiTeamPicking", "1");
+    } catch (ePick) {}
+    toast("已加入队伍，继续选择下一位陪玩");
+    location.href = "/companion-center.html";
+  }
+
+  function submitOrder() {
+    try {
+      if (state.submitting) {
+        var waited = Date.now() - (state.submitStartedAt || 0);
+        if (waited < 25000) {
+          toast("订单提交中，请稍候…");
+          setSubmitLoading(true);
+          return;
+        }
+        // Stuck lock recovery
+        state.submitting = false;
+        setSubmitLoading(false);
+        toast("上次提交已超时，请重试");
+      }
+      var c = state.companion;
+      if (!c || !c.companionId) {
+        failValidate("缺少陪玩信息，无法下单");
+        return;
+      }
+      var svcList = resolveServices(c);
+      if (!svcList.length) {
+        failValidate("该陪玩暂无可下单服务项目");
+        return;
+      }
+      if (!state.service || !svcList.some(function (s) { return serviceNamesMatch(s.name, state.service); })) {
+        failValidate("请选择游戏/服务项目");
+        return;
+      }
+      if (!(money(c.unitPrice) > 0)) {
+        failValidate("当前单价无效，请刷新页面后重试");
+        return;
+      }
+
+      // Existing multi draft stays until this independent order is created successfully.
+      // 立即下单 / 确认订单并付款 always calls place_order.
+      // 再加一位陪玩 is the only path that joins the multi draft.
+      // Opening this modal, leaving it, or a failed create must not clear the selection.
+
+      if (!requireLogin()) return;
+
+      var notesEl = qs("[data-po-notes]");
+      var couponEl = qs("[data-po-coupon]");
+      var qtyEl = qs("[data-po-quantity]");
+      // Root-cause: never use bare `mask` here — submitOrder is outside open()'s scope.
+      // Safari throws "Can't find variable: mask" (commit 6662598 introduced this).
+      var startTime =
+        readStartTimeFromDom(activeMask()) || normalizeTimeValue(state.startTime);
+      var gameId = readModalGameId();
+      var payment = String(state.payment || "").trim();
+
+      if (!gameId) {
+        failValidate("游戏ID不能为空", "[data-po-game-id]");
+        return;
+      }
+      if (!startTime) {
+        failValidate("请选择开始时间", "[data-po-open-time]");
+        return;
+      }
+      state.startTime = startTime;
+      var endTime = addHoursToTime(startTime, serviceDurationHours());
+      state.endTime = endTime;
+      var schedule = scheduleWindowLabel(startTime, endTime);
+      if (state.payMethodsLoading) {
+        failValidate("支付方式加载中，请稍候再试");
+        return;
+      }
+      if (!(state.payMethods && state.payMethods.length)) {
+        failValidate(state.payLoadError || "当前暂无可用支付方式，请稍后再试或联系客服");
+        syncSubmitAvailability();
+        return;
+      }
+      if (!payment) {
+        failValidate("请选择支付方式后再确认订单");
+        return;
+      }
+      if (state.service === "自定义" && !String(state.customService || "").trim()) {
+        failValidate("请填写自定义服务内容", "[data-po-custom-service-input]");
+        return;
+      }
+      var orderRequirements = readOrderRequirements();
+      if (orderRequirements.some(function (item) { return !item; })) return;
+      state.quantity = 1;
+      if (couponEl) state.couponCode = String(couponEl.value || "").trim();
+      var hours = currentHours();
+      var quantity = currentQuantity();
+      var total = totalAmount();
+      if (!(total > 0)) {
+        failValidate("订单金额无效");
+        return;
+      }
+      // Do not block create on wallet balance — payment-confirm owns debit + insufficient UI.
+      // Never call pay_order here (wallet shortcut removed); always open payment-confirm.
+
+      state.submitting = true;
+      state.submitStartedAt = Date.now();
+      setError("");
+      setSubmitLoading(true);
+      console.info("[MCJPlaceOrder] submit start", {
+        companionId: c.companionId,
+        payment: payment,
+        total: total,
+        gameId: gameId,
+        schedule: schedule,
+      });
+
+      var noteParts = [];
+      if (notesEl && String(notesEl.value || "").trim()) noteParts.push(String(notesEl.value || "").trim());
+      noteParts.push("服务时段：" + schedule);
+
+      var replaceSlot = null;
+      try {
+        replaceSlot = JSON.parse(sessionStorage.getItem("mcjReplaceSlot") || "null");
+      } catch (eRep) {
+        replaceSlot = null;
+      }
+      var isReplacement =
+        replaceSlot &&
+        replaceSlot.mode === "replacement" &&
+        replaceSlot.parentOrderId &&
+        replaceSlot.replaceChildId;
+
+      var payload = isReplacement
+        ? {
+            action: "replace_companion",
+            parentOrderId: String(replaceSlot.parentOrderId),
+            replaceChildId: String(replaceSlot.replaceChildId),
+            companionId: c.companionId,
+            companionName: c.companionName,
+            serviceType: currentServiceLabel(),
+            service: currentServiceLabel(),
+            game: currentServiceLabel(),
+            serviceId: state.selectedServiceId || "",
+            unitPrice: money(c.unitPrice),
+            hours: hours,
+            quantity: quantity,
+            totalAmount: total,
+            gameId: gameId,
+            bossRank: readBossRank(),
+            orderRequirements: orderRequirements,
+            notes: noteParts.join("；"),
+            paymentMethod: "catfood",
+            voiceMode: state.voiceMode || "game_mic",
+            idempotencyKey:
+              "replace-" +
+              replaceSlot.replaceChildId +
+              "-" +
+              c.companionId +
+              "-" +
+              Date.now(),
+          }
+        : {
+            action: "place_order",
+            companionId: c.companionId,
+            companionName: c.companionName,
+            serviceType: currentServiceLabel(),
+            service: currentServiceLabel(),
+            game: currentServiceLabel(),
+            serviceId: /^[0-9a-f-]{36}$/i.test(String(state.selectedServiceId || "")) ? state.selectedServiceId : "",
+            unitPrice: money(c.unitPrice),
+            hours: hours,
+            quantity: quantity,
+            totalAmount: total,
+            gameId: gameId,
+            bossRank: readBossRank(),
+            orderRequirements: orderRequirements,
+            schedule: schedule,
+            startTime: startTime,
+            endTime: endTime,
+            couponCode: state.couponCode || "",
+            notes: noteParts.join("；"),
+            paymentMethod: payment,
+            voiceMode: state.voiceMode || "game_mic",
+            idempotencyKey:
+              "po-" + c.companionId + "-" + Date.now() + "-" + Math.random().toString(36).slice(2, 8),
+          };
+
+      fetch("/api/orders", {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify(payload),
+      })
+        .then(parseApiJson)
+        .then(function (body) {
+          if (isReplacement) {
+            try {
+              sessionStorage.removeItem("mcjReplaceSlot");
+            } catch (eClear) {}
+            state.submitting = false;
+            state.submitStartedAt = 0;
+            setSubmitLoading(false);
+            close();
+            toast(body.message || "已补位加入原联合订单");
+            var parentId = (body.parentOrderId || replaceSlot.parentOrderId || "").toString();
+            location.href = parentId
+              ? "orders.html?id=" + encodeURIComponent(parentId)
+              : "orders.html";
+            return;
+          }
+          var order = body.order || {};
+          var oid = order.id || "";
+          if (!oid) throw new Error("订单创建失败");
+          // Commit selection only after the create API returns an order id.
+          // SINGLE: drop this companion. MULTI parent: clear the whole draft.
+          commitSelectionAfterCreatedOrder(order);
+          // Single-order must reuse the same payment-confirm path as multi-order.
+          // pay_order only runs after boss confirms payment on that page.
+          goPaymentPage(order);
+        })
+        .catch(function (err) {
+          state.submitting = false;
+          state.submitStartedAt = 0;
+          setSubmitLoading(false);
+          console.error("[MCJPlaceOrder] submit failed", err);
+          var msg = String((err && err.message) || "");
+          if (/登录|401|未登录|老板账号/.test(msg)) {
+            requireLogin();
+            return;
+          }
+          failValidate(msg || "订单创建失败");
+          toast(msg || "订单创建失败");
+        });
+    } catch (err) {
+      state.submitting = false;
+      state.submitStartedAt = 0;
+      setSubmitLoading(false);
+      console.error("[MCJPlaceOrder] submit crashed", err);
+      failValidate(sanitizeUserError((err && err.message) || "订单创建失败"));
+    }
+  }
+
+  function open(rawCompanion) {
+    if (state.submitting) {
+      toast("订单提交中，请稍候…");
+      return;
+    }
+    // Coalesce rapid re-entry: keep the latest payload instead of silently dropping.
+    if (openGuard) {
+      pendingOpenPayload = rawCompanion;
+      return;
+    }
+    openGuard = true;
+    pendingOpenPayload = null;
+    setTimeout(function () {
+      openGuard = false;
+      if (pendingOpenPayload) {
+        var next = pendingOpenPayload;
+        pendingOpenPayload = null;
+        open(next);
+      }
+    }, 250);
+
+    var companion = normalizeCompanion(rawCompanion);
+    if (!companion) {
+      failOpen("下单窗口加载失败，请重新打开");
+      console.error("[MCJPlaceOrder] missing companion", rawCompanion);
+      return;
+    }
+    var bootServices = resolveServices(companion);
+    // Never seed listing/level 30 from services[0] when several catalog rows exist.
+    if (!(companion.unitPrice > 0) && bootServices.length === 1 && bootServices[0].price > 0) {
+      companion.unitPrice = bootServices[0].price;
+    }
+    if (!(companion.unitPrice > 0) && !bootServices.length) {
+      // Allow open; hydrateFromCatalog may still bring prices.
+      companion.unitPrice = companion.unitPrice || 0;
+    } else if (!(companion.unitPrice > 0) && bootServices.length <= 1) {
+      failOpen("该陪玩暂无有效单价，暂不可下单");
+      console.error("[MCJPlaceOrder] invalid unitPrice", companion);
+      return;
+    }
+    // Fresh session every open — never reuse previous companion/payment/hours state.
+    resetOrderFormState();
+    state.companion = companion;
+    var matched = matchService(companion.service, companion);
+    state.service = matched.service;
+    state.customService = "";
+    state.selectedServiceId = (matched.item && (matched.item.serviceId || matched.item.id)) || "";
+    if (matched.item && matched.item.price > 0) companion.unitPrice = matched.item.price;
+    state.hoursMode = "1";
+    state.hours = 1;
+    state.quantity = 1;
+    state.startTime = defaultStartTime();
+    state.endTime = "";
+    state.couponCode = "";
+    state.payment = "";
+    state.payMethods = [];
+    state.payMethodsLoading = true;
+    state.submitting = false;
+    state.submitStartedAt = 0;
+    try {
+      paint();
+      hydrateFromCatalog(companion.companionId);
+    } catch (err) {
+      console.error("[MCJPlaceOrder] paint crashed", err);
+      failOpen("下单窗口加载失败，请重新打开");
+    }
+  }
+
+  function openFromCanonicalCompanion(src, extras) {
+    extras = extras || {};
+    src = src && typeof src === "object" ? src : {};
+    var companionId = String(
+      extras.companionId || src.companionId || src.companion_id || src.id || src.uid || ""
+    ).trim();
+    var companionName = String(
+      extras.companionName || src.companionName || src.companion_name || src.nickname || src.name || "陪玩"
+    ).trim();
+    var unitPrice =
+      extras.unitPrice != null
+        ? extras.unitPrice
+        : src.unitPrice != null
+          ? src.unitPrice
+          : src.priceValue != null
+            ? src.priceValue
+            : src.price != null
+              ? src.price
+              : src.hourlyPrice;
+
+    // Soft update: catalog refresh must NOT remount and wipe filled fields / kill submit.
+    if (state.open && state.companion && String(state.companion.companionId) === companionId) {
+      if (state.submitting) return;
+      // Listing/level price (often 30) must not overwrite a selected service price (e.g. 35).
+      var nextPrice = money(unitPrice);
+      if (nextPrice > 0 && !state.service && !state.selectedServiceId) state.companion.unitPrice = nextPrice;
+      if (companionName) state.companion.companionName = companionName;
+      if (extras.avatar || src.avatar || src.cover) {
+        state.companion.avatar = extras.avatar || src.avatar || src.cover || state.companion.avatar;
+      }
+      if (extras.publicId || src.publicId) state.companion.publicId = extras.publicId || src.publicId || state.companion.publicId;
+      if (extras.pricingUnit || src.pricingUnit) {
+        state.companion.pricingUnit = extras.pricingUnit || src.pricingUnit || state.companion.pricingUnit;
+      }
+      if (Array.isArray(extras.services) || Array.isArray(src.services)) {
+        state.companion.services = extras.services || src.services || state.companion.services;
+      }
+      if (extras.serviceIds || extras.service_ids || src.serviceIds || src.service_ids) {
+        state.companion.serviceIds = extras.serviceIds || extras.service_ids || src.serviceIds || src.service_ids;
+      }
+      if (extras.gamePrices || extras.game_prices || src.gamePrices || src.game_prices) {
+        state.companion.gamePrices = extras.gamePrices || extras.game_prices || src.gamePrices || src.game_prices;
+      }
+      if (extras.levelId || extras.level_id || src.levelId || src.level_id) {
+        state.companion.levelId = extras.levelId || extras.level_id || src.levelId || src.level_id;
+      }
+      if (extras.level || src.level || src.levelName) {
+        state.companion.level = extras.level || src.level || src.levelName || state.companion.level;
+      }
+      var gameName = extras.game || src.game || src.mainGame || extras.service || "";
+      if (gameName && !LEGACY_SERVICE_NAMES[gameName]) {
+        state.companion.game = gameName;
+        state.companion.mainGame = gameName;
+      }
+      remountServiceChips();
+      // Soft update must refresh header level pill without remounting the whole dialog.
+      try {
+        var pill = document.querySelector('.mcj-po-mask .mcj-po-pill[data-level-id]');
+        if (pill && state.companion) {
+          pill.setAttribute("data-level-id", state.companion.levelId || "");
+          pill.textContent = state.companion.level || "未设置等级";
+        }
+      } catch (e) {}
+      // Soft refresh SoT: NEVER prefer extras.service / listing services[0] over the
+      // user's current chip (e.g. 三角洲手游国服@35 must not snap back to 王者@30).
+      var keepList = resolveServices(state.companion);
+      var keepSid = String(state.selectedServiceId || "").trim();
+      var keep =
+        (keepSid &&
+          keepList.find(function (s) {
+            return String(s.serviceId || "") === keepSid || String(s.id || "") === keepSid;
+          })) ||
+        keepList.find(function (s) {
+          return serviceNamesMatch(s.name, state.service);
+        }) ||
+        null;
+      if (keep) applySelectedService(keep);
+      else refreshTotals();
+      // Soft update never clears/reloads payment cards from empty cache — only refresh if already loaded.
+      if (state.payMethods.length && !state.payMethodsLoading) paintPayCards();
+      return;
+    }
+
+    open({
+      companionId: companionId,
+      id: companionId,
+      uid: companionId,
+      companionName: companionName,
+      name: companionName,
+      unitPrice: unitPrice,
+      priceValue: unitPrice,
+      price: unitPrice,
+      service: Object.prototype.hasOwnProperty.call(extras, "service")
+        ? extras.service || ""
+        : extras.requireServicePick
+          ? ""
+          : extras.service || src.service || src.game || src.mainGame || "",
+      game: extras.game || src.game || src.mainGame || extras.service || "",
+      mainGame: extras.game || src.game || src.mainGame || "",
+      services: extras.services || src.services || [],
+      serviceIds: extras.serviceIds || extras.service_ids || src.serviceIds || src.service_ids || [],
+      gamePrices: extras.gamePrices || extras.game_prices || src.gamePrices || src.game_prices || {},
+      avatar: extras.avatar || src.avatar || src.cover || "",
+      publicId: extras.publicId || src.publicId || "",
+      pricingUnit: extras.pricingUnit || src.pricingUnit || "小时",
+      levelId: extras.levelId || extras.level_id || src.levelId || src.level_id || "",
+      level: extras.level || src.level || src.levelName || "",
+      levelName: extras.levelName || src.levelName || extras.level || src.level || "",
+      online: extras.online != null ? extras.online : src.online != null ? src.online : src.isOnline,
+      availabilityStatus: extras.availabilityStatus || src.availabilityStatus || "",
+      availabilityText: extras.availabilityText || src.availabilityText || "",
+    });
+  }
+
+  function openFromProfileCompanion(companion, extras) {
+    extras = extras || {};
+    var src = companion && typeof companion === "object" ? companion : {};
+    // Always open immediately with known payload — never leave 立即下单 looking dead.
+    openFromCanonicalCompanion(src, extras);
+    var companionId = String(
+      extras.companionId || src.companionId || src.companion_id || src.id || src.uid || ""
+    ).trim();
+    if (!companionId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(companionId)) {
+      return;
+    }
+    // Soft refresh from the same public companion record used by home / hall / detail.
+    fetch("/api/public/companions?id=" + encodeURIComponent(companionId), {
+      headers: { Accept: "application/json" },
+      cache: "no-store",
+    })
+      .then(function (res) {
+        return res.json().then(function (body) {
+          if (!res.ok || !body || body.ok === false) throw new Error((body && body.message) || "陪玩资料读取失败");
+          var list = Array.isArray(body.companions) ? body.companions : body.companion ? [body.companion] : [];
+          var row = list[0] || null;
+          if (!row) throw new Error("陪玩资料不存在");
+          return row;
+        });
+      })
+      .then(function (row) {
+        var softOpen =
+          state.open &&
+          state.companion &&
+          String(state.companion.companionId) === companionId &&
+          !!(state.service || state.selectedServiceId);
+        var merged = Object.assign({}, extras, {
+          services: extras.services || row.services || [],
+          serviceIds: extras.serviceIds || row.serviceIds || row.service_ids || [],
+          gamePrices: extras.gamePrices || row.gamePrices || row.game_prices || {},
+          game: extras.game || row.game || row.mainGame || "",
+        });
+        // Soft refresh / hall open must not inject services[0] (often level-default 30).
+        // Keep an explicit empty pick so the boss chooses the service-specific price.
+        if (!softOpen) {
+          if (Object.prototype.hasOwnProperty.call(extras, "service")) {
+            merged.service = extras.service || "";
+          } else if (extras.requireServicePick) {
+            merged.service = "";
+          } else {
+            merged.service =
+              (row.services && row.services.length === 1 && row.services[0].name) ||
+              row.game ||
+              "";
+          }
+        }
+        openFromCanonicalCompanion(row, merged);
+        hydrateFromCatalog(companionId);
+      })
+      .catch(function () {
+        hydrateFromCatalog(companionId);
+      });
+  }
+
+  window.MCJ_PAY_SOT_VERSION = '20260811orderFlowFix1';
+  window.MCJPlaceOrder = {
+    open: open,
+    openFromCompanion: openFromProfileCompanion,
+    close: close,
+    isSubmitting: function () {
+      return !!state.submitting;
+    },
+    isOpen: function () {
+      return !!state.open;
+    },
+    submit: submitOrder,
+    resolveServices: resolveServices,
+    applySelectedService: applySelectedService,
+    hydrateFromCatalog: hydrateFromCatalog,
+    reset: function () {
+      hardCleanup();
+    },
+  };
+
+  window.addEventListener("popstate", function () {
+    if (state.open) close({ fromPop: true });
+  });
+})();

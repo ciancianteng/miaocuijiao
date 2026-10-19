@@ -1,0 +1,122 @@
+{
+  "staging": "https://meow-cuijiao-homepage-staging.vercel.app",
+  "at": "2026-08-03T16:25:12.161Z",
+  "items": {
+    "1_forgot_password": {
+      "ok": true,
+      "detail": {
+        "url": "https://meow-cuijiao-homepage-staging.vercel.app/customer-service/login/",
+        "channel": "phone",
+        "message": "验证码已发送至手机 601****6789。",
+        "ui": {
+          "hasBtn": true,
+          "hasPanel": true
+        },
+        "flow": "send→verify→reset→login",
+        "relogin": true
+      }
+    },
+    "2_refresh": {
+      "ok": true,
+      "detail": {
+        "url": "https://meow-cuijiao-homepage-staging.vercel.app/customer-service/conversations/",
+        "bootstrapMs": 15630,
+        "convCount": 29,
+        "orderCount": 37,
+        "msgCount": 190,
+        "hasHardRefresh": true,
+        "pollOk": true
+      }
+    },
+    "3_search_companion": {
+      "ok": true,
+      "detail": {
+        "companionPayloadHasCode": true,
+        "nickname": {
+          "q": "草稿保留42324",
+          "ok": true,
+          "status": 200,
+          "message": "已打开陪玩会话。",
+          "convId": "5fad0389-b21c-4429-9cb0-a28fbdba86dd",
+          "lockedByOther": false
+        },
+        "uid": {
+          "q": "1d3fe6a0-830f-47aa-a135-e3f3ab9ff6d0",
+          "ok": true,
+          "status": 200,
+          "message": "已打开陪玩会话。",
+          "convId": "5fad0389-b21c-4429-9cb0-a28fbdba86dd",
+          "lockedByOther": false
+        },
+        "pw": {
+          "q": "PW00002",
+          "ok": true,
+          "status": 200,
+          "message": "已定位陪玩会话（当前由 验收客服7442 接待）",
+          "convId": "e378d530-786e-40a8-bc50-ea07df45e8af",
+          "lockedByOther": true
+        },
+        "pwInList": true
+      }
+    },
+    "4_companion_cs": {
+      "ok": true,
+      "detail": {
+        "marker": "P0LIVE-1785774355474",
+        "convId": "5fad0389-b21c-4429-9cb0-a28fbdba86dd",
+        "sendOk": true,
+        "csSees": true,
+        "csLatencyMs": 5242,
+        "take": "你已在接待该会话。",
+        "replyOk": true,
+        "companionSees": true,
+        "companionLatencyMs": 24661,
+        "dbHasBoth": true,
+        "roles": [
+          "customer_service",
+          "companion"
+        ],
+        "refreshPersists": true,
+        "urls": {
+          "companion": "https://meow-cuijiao-homepage-staging.vercel.app/companion/messages/",
+          "cs": "https://meow-cuijiao-homepage-staging.vercel.app/customer-service/conversations/"
+        }
+      }
+    },
+    "5_boss_display": {
+      "ok": true,
+      "detail": {
+        "sample": [
+          {
+            "name": "国际老板CN",
+            "uid": "MCJ00002"
+          },
+          {
+            "name": "PhoneU1",
+            "uid": "MCJ00003"
+          },
+          {
+            "name": "1717",
+            "uid": "MCJ00004"
+          },
+          {
+            "name": "老板 MCJ00001",
+            "uid": "MCJ00001"
+          }
+        ],
+        "badBosses": [],
+        "badConvs": [],
+        "badOrders": [],
+        "mcj00001": {
+          "id": "a7ed815b-ae97-4619-9be7-3fda611bfb88",
+          "bossUid": "MCJ00001",
+          "boss_uid": "MCJ00001",
+          "bossName": "老板 MCJ00001",
+          "name": "老板 MCJ00001",
+          "avatar": "/default-avatar.png"
+        }
+      }
+    }
+  },
+  "overall": "PASS"
+}

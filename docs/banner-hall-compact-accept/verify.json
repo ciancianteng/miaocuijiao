@@ -1,0 +1,210 @@
+{
+  "evidenceType": "UI validation snapshot — local static + Prod GET proxy",
+  "tip": "6c50626 docs: add banner-hall compact accept mobile screenshots",
+  "sha": "6c50626770c2e2b19f25b696bb63b79b1250ca22",
+  "base": "http://127.0.0.1:4177",
+  "proxy": {
+    "script": "scripts/local-static-api-proxy.mjs",
+    "MCJ_API_ORIGIN": "https://www.meowcuijiao.com",
+    "methodsUsed": [
+      "GET"
+    ],
+    "note": "Local static from ui/banner-hall-compact-v1; API GETs proxied read-only"
+  },
+  "mockCompanions": false,
+  "companionCount": 8,
+  "cardsPerViewport": 1.91,
+  "firstCardHeight": 394,
+  "tagPlusNPresent": true,
+  "paddingBottom": "76px",
+  "tabbarHeight": 65,
+  "segmentedTabsVisible": true,
+  "bannerApiCount": 2,
+  "bannersRemote": [
+    {
+      "id": "954b9c39-377d-4ec8-8580-07e258445e71",
+      "title": "MEOW CUI JIAO",
+      "mobileImage": "https://jqfaknpmcnqwqvatrwgo.supabase.co/storage/v1/object/public/banners/homepage/1785778666575-Image-20260804013708-1449-50.png.png",
+      "sort": 1
+    },
+    {
+      "id": "acf2c9cc-58c3-4748-a525-ffdc89a77855",
+      "title": "不止陪伴",
+      "mobileImage": "https://jqfaknpmcnqwqvatrwgo.supabase.co/storage/v1/object/public/banners/homepage/1785787364484-Image-20260804040159-1482-50.jpg.jpg",
+      "sort": 99
+    }
+  ],
+  "frontSlideSrcs": [
+    {
+      "i": 0,
+      "src": "https://jqfaknpmcnqwqvatrwgo.supabase.co/storage/v1/object/public/banners/homepage/1785778666575-Image-20260804013708-1449-50.png.png",
+      "alt": "MEOW CUI JIAO",
+      "naturalWidth": 1448,
+      "naturalHeight": 1086,
+      "fallbackReason": "",
+      "brandFallback": ""
+    },
+    {
+      "i": 1,
+      "src": "https://jqfaknpmcnqwqvatrwgo.supabase.co/storage/v1/object/public/banners/homepage/1785787364484-Image-20260804040159-1482-50.jpg.jpg",
+      "alt": "不止陪伴",
+      "naturalWidth": 1448,
+      "naturalHeight": 1086,
+      "fallbackReason": "",
+      "brandFallback": ""
+    }
+  ],
+  "uniqueFrontSrcCount": 2,
+  "bannerIdsUnique": true,
+  "bannerSrcsUnique": true,
+  "carouselDots": 2,
+  "hallCards390": [
+    {
+      "name": "哦嗯调",
+      "status": "离线",
+      "verified": true,
+      "image": "https://jqfaknpmcnqwqvatrwgo.supabase.co/storage/v1/object/public/companion-public/5e8c101a-bca1-405d-a1d6-695e901781d6/avatar/1788719234941-78d5c6e5-IMG_7903.jpeg",
+      "naturalWidth": 900,
+      "tags": [
+        "Lv4 喵神",
+        "三角洲",
+        "手游",
+        "国服",
+        "陪玩服务",
+        "陪聊服务",
+        "+5"
+      ],
+      "tagMore": "+5",
+      "publicId": "PW00023",
+      "cardHeight": 394
+    },
+    {
+      "name": "许拓",
+      "status": "离线",
+      "verified": false,
+      "image": "https://jqfaknpmcnqwqvatrwgo.supabase.co/storage/v1/object/public/companion-public/a4505ab8-7040-4934-9fdf-2aa2aee9926c/avatar/1786871253740-acd54763-__.jpg",
+      "naturalWidth": 1200,
+      "tags": [
+        "Lv4 喵神",
+        "三角洲",
+        "端游",
+        "陪玩服务",
+        "猛男",
+        "温柔",
+        "+1"
+      ],
+      "tagMore": "+1",
+      "publicId": "PW00013",
+      "cardHeight": 394
+    },
+    {
+      "name": "瑞秋",
+      "status": "在线",
+      "verified": false,
+      "image": "https://jqfaknpmcnqwqvatrwgo.supabase.co/storage/v1/object/public/companion-public/400289d7-a796-47ae-aae4-fc2c96dde08d/avatar/1786864294228-1880f860-4e4ff292-1414-4eff-af33-ca55109882ac.jpg",
+      "naturalWidth": 720,
+      "tags": [
+        "Lv3 猎喵",
+        "无畏契约",
+        "端游",
+        "陪玩服务",
+        "陪聊服务",
+        "御姐",
+        "+5"
+      ],
+      "tagMore": "+5",
+      "publicId": "PW00012",
+      "cardHeight": 394
+    }
+  ],
+  "companionsApiSample": [
+    {
+      "id": "d7327c64-8e6b-45a0-aa4d-7e4b1255e03c",
+      "name": "立羽",
+      "status": "offline",
+      "game": "CSGO、英雄联盟 端游、王者荣耀",
+      "level": "Lv1 萌喵"
+    },
+    {
+      "id": "458c3d2e-5803-403b-9a25-af1d12c8d142",
+      "name": "小宏",
+      "status": "offline",
+      "game": "王者荣耀、三角洲 手游 国服、三角洲陪跑刀 一千万",
+      "level": "Lv2 灵喵"
+    },
+    {
+      "id": "400289d7-a796-47ae-aae4-fc2c96dde08d",
+      "name": "瑞秋",
+      "status": "online",
+      "game": "无畏契约 端游",
+      "level": "Lv3 猎喵"
+    },
+    {
+      "id": "458ce9ad-3425-42b1-ab66-24bca342f971",
+      "name": "1717",
+      "status": "offline",
+      "game": "三角洲 端游",
+      "level": "Lv3 猎喵"
+    }
+  ],
+  "screenshots": [
+    "hall-375-cards.png",
+    "hall-390-cards.png",
+    "hall-393-cards.png",
+    "hall-430-cards.png",
+    "hall-375-top.png",
+    "hall-390-top.png",
+    "hall-393-top.png",
+    "hall-430-top.png",
+    "home-390-banner-a.png",
+    "home-390-banner-b.png"
+  ],
+  "gatesDraft": {
+    "realCompanionData": "PASS",
+    "hallCompactUI": "PASS",
+    "375px": "PASS",
+    "390px": "PASS",
+    "393px": "PASS",
+    "430px": "PASS",
+    "bannerABRealData": "PASS",
+    "bannerCarouselDots": "PASS",
+    "bottomNavOverlap": "PASS",
+    "note": "Hall density ~1.8–1.95 cards/viewport after scroll-to-first-card; aspect 16/9; tag +N; banner SoT naturalWidth>1000; paddingBottom 76px"
+  },
+  "qa": {
+    "approxCardsPerViewport": "~1.9 (390: 1 full + ~0.93 of next)",
+    "imageAspect": "16/9 cover",
+    "tagsWrap": true,
+    "tagMore": true,
+    "buttonsAligned": true,
+    "tabbarOcclusion": "padding-bottom clears tabbar for scroll end",
+    "segmentedTabsVisible": true,
+    "visibleAfterScroll390": 1.93
+  },
+  "perWidth": {
+    "375": {
+      "cardsPerViewport": 1.95,
+      "cardH": 386,
+      "aspect": 1.78,
+      "visibleAfterScroll": 1.95
+    },
+    "390": {
+      "cardsPerViewport": 1.91,
+      "cardH": 394,
+      "aspect": 1.78,
+      "visibleAfterScroll": 1.93
+    },
+    "393": {
+      "cardsPerViewport": 1.9,
+      "cardH": 396,
+      "aspect": 1.78,
+      "visibleAfterScroll": 1.9
+    },
+    "430": {
+      "cardsPerViewport": 1.81,
+      "cardH": 417,
+      "aspect": 1.78,
+      "visibleAfterScroll": 1.81
+    }
+  }
+}

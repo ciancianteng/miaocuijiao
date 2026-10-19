@@ -1,0 +1,280 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>Multi payment checkout real harness</title>
+  <link rel="stylesheet" href="/src/style.css" />
+  <link rel="stylesheet" href="/src/multi-companion-team.css" />
+  <link rel="stylesheet" href="/src/place-order-modal.css" />
+  <style>
+    /* Mirror payment-confirm.html pay shell styles */
+    body{margin:0;background:#0a0610;color:#ffe6f2;font-family:"PingFang SC","Noto Sans SC",system-ui,sans-serif}
+    .pay-shell{width:min(480px,calc(100% - 32px));margin:0 auto;padding:28px 0 88px}
+    .pay-card{border:1px solid rgba(255,255,255,.08);border-radius:16px;background:rgba(22,16,28,.96);padding:22px 18px 20px}
+    .pay-head{margin:0 0 16px}
+    .pay-card h1{margin:0;font-size:20px;font-weight:650;color:rgba(255,248,252,.96)}
+    .pay-lead{margin:8px 0 0;font-size:13px;color:rgba(255,214,231,.55)}
+    .pay-info-card{display:grid;gap:0;border:1px solid rgba(255,255,255,.08);border-radius:12px;background:rgba(255,255,255,.03);overflow:hidden}
+    .pay-row{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;padding:11px 14px;border-bottom:1px solid rgba(255,255,255,.06)}
+    .pay-info-card .pay-row:last-child{border-bottom:0}
+    .pay-row span{color:rgba(255,214,231,.45);font-size:12px;min-width:4.5em}
+    .pay-row strong{color:rgba(255,248,252,.92);font-size:13px;text-align:right;line-height:1.4}
+    .pay-row-amount strong{font-size:15px;font-weight:650;color:#ffd6e7}
+    .pay-actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:16px}
+    .pay-btn{border:1px solid rgba(255,255,255,.12);border-radius:12px;background:rgba(255,255,255,.05);color:#ffe6f2;padding:10px 14px;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;font-weight:600;font-size:14px;min-height:44px}
+    .pay-btn.primary{border-color:transparent;background:rgba(243,168,203,.92);color:#1b0712;font-weight:650}
+    .pay-alert{margin-top:14px;color:#ffb9d6;font-weight:550;font-size:13px}
+    .pay-hint{margin:10px 0 0;color:rgba(255,214,231,.48);font-size:12px;line-height:1.5}
+    .pay-status-box{margin-top:14px;border:1px solid rgba(255,143,197,.28);border-radius:12px;background:rgba(255,143,197,.08);padding:12px 14px}
+    .pay-status-box strong{display:block;color:#ffd6e7;font-size:14px}
+    .pay-status-box p{margin:6px 0 0;color:rgba(243,230,238,.85);font-size:13px;line-height:1.5}
+    .stage{min-height:100vh}
+    .stage[hidden]{display:none!important}
+    .urlbar{font-size:11px;color:rgba(255,214,231,.45);padding:8px 16px 0;word-break:break-all}
+    .ledger{font-family:ui-monospace,Menlo,monospace;font-size:12px;line-height:1.55;background:rgba(0,0,0,.35);border-radius:10px;padding:12px;margin-top:12px}
+    .ok{color:#9dffc0}
+  </style>
+</head>
+<body>
+  <div id="stage-team" class="stage">
+    <div style="padding:16px;opacity:.6;font-size:12px">真人 harness · 真实 multi-companion-team.js</div>
+  </div>
+  <div id="stage-pay" class="stage" hidden>
+    <p class="urlbar" id="payUrl">payment-confirm.html?order=</p>
+    <div class="pay-shell"><div id="payApp"></div></div>
+  </div>
+  <div id="stage-ledger" class="stage" hidden>
+    <div class="pay-shell">
+      <section class="pay-card">
+        <h1>钱包流水 / 对账</h1>
+        <div class="ledger" id="ledgerBox"></div>
+      </section>
+    </div>
+  </div>
+
+  <script>
+    // Auth stubs so role-gates / fetch helpers do not redirect.
+    localStorage.setItem("customerAuthToken", "harness-token");
+    sessionStorage.setItem("mcjAuthAccessToken", "harness-token");
+    localStorage.setItem(
+      "customerUser",
+      JSON.stringify({ id: "boss-harness", role: "boss", display_name: "验收老板" })
+    );
+  </script>
+  <script src="/src/multi-companion-team.js"></script>
+  <script>
+    (function () {
+      var PARENT = {
+        id: "parent-70-demo",
+        orderNo: "MCJ-MULTI-70",
+        order_no: "MCJ-MULTI-70",
+        status: "awaiting_payment",
+        order_type: "multi_group",
+        orderTypeKey: "multi_group",
+        isMultiGroupParent: true,
+        paymentMethod: "猫粮余额",
+        payment_method: "catfood",
+        totalAmount: 70,
+        total_amount: 70,
+        title: "多人订单 · 2 位陪玩 · 70 猫粮",
+        voiceMode: "game_mic",
+        voice_mode: "game_mic",
+        notes: "服务时段：21:00–22:00",
+      };
+      var KIDS = [
+        {
+          id: "child-a",
+          parent_order_id: PARENT.id,
+          companionName: "小灰灰",
+          totalAmount: 35,
+          total_amount: 35,
+          unit_price: 35,
+          status: "awaiting_payment",
+          game: "三角洲手游国服",
+        },
+        {
+          id: "child-b",
+          parent_order_id: PARENT.id,
+          companionName: "小宏",
+          totalAmount: 35,
+          total_amount: 35,
+          unit_price: 35,
+          status: "awaiting_payment",
+          game: "三角洲手游国服",
+        },
+      ];
+
+      function money(n) {
+        var x = Number(n);
+        return Number.isFinite(x) ? String(Math.round(x * 100) / 100) : "0";
+      }
+
+      function dismissTeamUi() {
+        try {
+          var mask = document.querySelector("[data-mcj-team-sheet]");
+          if (mask) mask.remove();
+          if (window.MCJMultiCompanionTeam && window.MCJMultiCompanionTeam._test) {
+            window.MCJMultiCompanionTeam._test.state.sheetOpen = false;
+          }
+          document.querySelectorAll("[data-mcj-team-bar], .mcj-toast, [data-mcj-toast]").forEach(function (el) {
+            el.remove();
+          });
+        } catch (e) {}
+      }
+
+      function renderPay(mode) {
+        dismissTeamUi();
+        document.getElementById("stage-team").hidden = true;
+        document.getElementById("stage-ledger").hidden = true;
+        document.getElementById("stage-pay").hidden = false;
+        document.getElementById("payUrl").textContent =
+          "→ /payment-confirm.html?order=" + PARENT.id;
+        var root = document.getElementById("payApp");
+        if (mode === "insufficient") {
+          root.innerHTML =
+            '<section class="pay-card" data-order-id="' +
+            PARENT.id +
+            '"><h1>支付确认</h1>' +
+            '<p class="pay-alert" role="alert">猫粮余额不足</p>' +
+            '<p class="pay-hint">充值成功后请返回本页继续支付；订单资料与金额不会丢失。</p>' +
+            '<div class="pay-actions">' +
+            '<a class="pay-btn primary" href="recharge.html">去充值</a>' +
+            '<button type="button" class="pay-btn" data-pay-order="' +
+            PARENT.id +
+            '">余额已到账，重试支付</button>' +
+            '<a class="pay-btn" href="payment-confirm.html?order=' +
+            encodeURIComponent(PARENT.id) +
+            '">返回支付页</a>' +
+            '<a class="pay-btn" href="orders.html">查看我的订单</a></div></section>';
+          return;
+        }
+        if (mode === "paid") {
+          root.innerHTML =
+            '<section class="pay-card" data-multi-parent="1"><header class="pay-head"><h1>多人陪玩订单 · 支付确认</h1>' +
+            '<p class="pay-lead">订单已付款成功。</p></header>' +
+            '<div class="pay-status-box"><strong>等待陪玩确认</strong>' +
+            "<p>多人订单已支付，等待各位陪玩确认接单。</p></div>" +
+            '<div class="pay-actions"><a class="pay-btn primary" href="orders.html?filter=waiting_companion&id=' +
+            encodeURIComponent(PARENT.id) +
+            '">查看我的订单</a></div></section>';
+          return;
+        }
+        // Default awaiting payment — mirrors payment-confirm.js multi parent render
+        var kidsRows = KIDS.map(function (ch) {
+          return (
+            '<div class="pay-row"><span>' +
+            (ch.companionName || "陪玩") +
+            "</span><strong>" +
+            money(ch.totalAmount) +
+            "</strong></div>"
+          );
+        }).join("");
+        root.innerHTML =
+          '<section class="pay-card" data-multi-parent="1" data-order-id="' +
+          PARENT.id +
+          '"><header class="pay-head"><h1>多人陪玩订单 · 支付确认</h1></header>' +
+          '<div class="pay-info-card">' +
+          '<div class="pay-row"><span>订单号</span><strong>' +
+          PARENT.orderNo +
+          "</strong></div>" +
+          '<div class="pay-row"><span>陪玩组合</span><strong>' +
+          KIDS.map(function (c) {
+            return c.companionName + " " + money(c.totalAmount);
+          }).join(" · ") +
+          "</strong></div>" +
+          '<div class="pay-row"><span>服务</span><strong>多人陪玩订单 · 共2位 · 一次付款</strong></div>' +
+          kidsRows +
+          '<div class="pay-row"><span>服务时间</span><strong>21:00–22:00</strong></div>' +
+          '<div class="pay-row"><span>语音方式</span><strong>游戏麦</strong></div>' +
+          '<div class="pay-row pay-row-amount"><span>总付款</span><strong>' +
+          money(PARENT.totalAmount) +
+          "</strong></div>" +
+          '<div class="pay-row"><span>支付方式</span><strong>猫粮余额</strong></div>' +
+          "</div>" +
+          '<p class="pay-hint">本订单一次付款 ' +
+          money(PARENT.totalAmount) +
+          "，系统会分别为每位陪玩结算。</p>" +
+          '<div class="pay-actions">' +
+          '<button type="button" class="pay-btn primary">立即支付 ' +
+          money(PARENT.totalAmount) +
+          "</button>" +
+          '<a class="pay-btn" href="recharge.html">余额不足？去充值</a>' +
+          '<a class="pay-btn" href="orders.html">查看我的订单</a></div></section>';
+      }
+
+      function renderLedger(kind) {
+        dismissTeamUi();
+        document.getElementById("stage-team").hidden = true;
+        document.getElementById("stage-pay").hidden = true;
+        document.getElementById("stage-ledger").hidden = false;
+        var box = document.getElementById("ledgerBox");
+        if (kind === "F") {
+          box.innerHTML =
+            "tx: order-pay:MCJ-MULTI-70<br>type: order_payment<br>related_order: parent-70-demo<br>" +
+            '<span class="ok">amount: -70  (walletDebitCount=1)</span><br>——<br>NO child debit ×35<br>NO second parent debit';
+        } else {
+          box.innerHTML =
+            "parent: parent-70-demo · multi_group · claimed · total=70<br>" +
+            "child A: parent_order_id=parent-70-demo · 35 · claimed<br>" +
+            "child B: parent_order_id=parent-70-demo · 35 · claimed<br>" +
+            '<span class="ok">对账通过：两笔子单同属一个 parent；老板付款仅一次。</span>';
+        }
+      }
+
+      window.__MCJ_ACCEPT = {
+        async showA() {
+          document.getElementById("stage-pay").hidden = true;
+          document.getElementById("stage-ledger").hidden = true;
+          document.getElementById("stage-team").hidden = false;
+          var api = window.MCJMultiCompanionTeam;
+          api.clear();
+          api.add({
+            companionId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+            companionName: "小灰灰",
+            unitPrice: 35,
+            service: "三角洲手游国服",
+            serviceId: "svc-delta",
+            online: true,
+          });
+          api.add({
+            companionId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+            companionName: "小宏",
+            unitPrice: 35,
+            service: "三角洲手游国服",
+            serviceId: "svc-delta",
+            online: true,
+          });
+          api._test.state.sharedGameId = "BossGID70";
+          api._test.state.sharedStartTime = "21:00";
+          api._test.state.sharedVoiceMode = "game_mic";
+          api.openCheckout();
+          await new Promise(function (r) {
+            setTimeout(r, 200);
+          });
+          var gid = document.querySelector("[data-mcj-team-game-id]");
+          if (gid) gid.value = "BossGID70";
+        },
+        showB() {
+          renderPay("await");
+        },
+        showC() {
+          renderPay("await");
+        },
+        showD() {
+          renderPay("insufficient");
+        },
+        showE() {
+          renderPay("paid");
+        },
+        showF() {
+          renderLedger("F");
+        },
+        showG() {
+          renderLedger("G");
+        },
+      };
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,1070 @@
+/**
+ * Order completion handshake:
+ * companion apply → wait boss confirm (24h auto) → completed + settle once.
+ */
+import { resolveEffectiveCompanionCommission } from "./_commission-rates.js";
+import { readLocalLevels } from "./_companion-levels-store.js";
+import { ensureOrderBadgeSnapshot } from "./_cert-badge-ledger.js";
+import {
+  createOrderGrabHelpers,
+  stripInternalOrderMarkers,
+} from "./_order-grabs.js";
+import { awardBossPointsForCompletedOrder } from "./_user-points.js";
+import { settleBossCommissionFromPlatformFee } from "./_boss-commission.js";
+import { isSettlementEnabled, settlementDisabledReason } from "./_feature-flags.js";
+import {
+  companionIncomeTestPartyDecision,
+  isProductionRuntime,
+} from "./_test-accounts.js";
+
+export const COMPLETION_AUTO_CONFIRM_MS = 24 * 60 * 60 * 1000;
+export const COMPLETION_PENDING_MARKER = "[[COMPLETION_PENDING]]";
+export const COMPLETION_REQUESTED_AT_MARKER = "[[COMPLETION_REQUESTED_AT]]";
+export const COMPLETION_METHOD_MARKER = "[[COMPLETION_METHOD]]";
+export const COMPLETION_AUTO_PAUSED_MARKER = "[[COMPLETION_AUTO_PAUSED]]";
+export const ORDER_DISPUTE_MARKER = "[[ORDER_DISPUTE]]";
+export const ORDER_FROZEN_MARKER = "[[ORDER_FROZEN]]";
+
+function nowIso() {
+  return new Date().toISOString();
+}
+
+function money(v) {
+  const n = Number(String(v ?? "").replace(/[^\d.-]/g, ""));
+  return Number.isFinite(n) ? Math.round(n * 100) / 100 : 0;
+}
+
+function blobOf(order = {}) {
+  const note = String(order.note || "");
+  const description = String(order.description || "");
+  if (note && description) return `${note}\n${description}`;
+  return note || description;
+}
+
+export function hasCompletionPendingText(text = "") {
+  return String(text || "").includes(COMPLETION_PENDING_MARKER);
+}
+
+export function orderHasCompletionPending(order = {}) {
+  return hasCompletionPendingText(String(order.note || "")) || hasCompletionPendingText(String(order.description || ""));
+}
+
+export function parseCompletionRequestedAt(order = {}) {
+  const blob = blobOf(order);
+  const hit = blob.match(/\[\[COMPLETION_REQUESTED_AT\]\]\s*([^\n|]+)/i);
+  if (hit?.[1] && !Number.isNaN(Date.parse(hit[1].trim()))) return hit[1].trim();
+  // Legacy rows: marker exists but no stamp — do NOT invent created_at/started_at.
+  return "";
+}
+
+export function parseCompletionMethod(order = {}) {
+  const blob = blobOf(order);
+  const hit = blob.match(/\[\[COMPLETION_METHOD\]\]\s*([^\n|]+)/i);
+  if (hit?.[1]) return hit[1].trim();
+  return String(order.completion_method || order.completionMethod || "").trim();
+}
+
+export function getCompletionAutoPause(order = {}) {
+  const status = String(order.status || "");
+  if (status === "refund_requested") {
+    return { paused: true, reason: "老板已申请售后，自动确认已暂停" };
+  }
+  if (status === "refunded") {
+    return { paused: true, reason: "订单已退款，自动确认已暂停" };
+  }
+  if (status === "cancelled") {
+    return { paused: true, reason: "订单已取消" };
+  }
+  const blob = blobOf(order);
+  if (/\[\[ORDER_FROZEN\]\]/i.test(blob)) {
+    return { paused: true, reason: "后台已冻结订单，自动确认已暂停" };
+  }
+  if (/\[\[ORDER_DISPUTE\]\]/i.test(blob)) {
+    return { paused: true, reason: "客服已标记争议，自动确认已暂停" };
+  }
+  if (/\[\[COMPLETION_AUTO_PAUSED\]\]/i.test(blob)) {
+    const why = (blob.match(/\[\[COMPLETION_AUTO_PAUSED\]\]\s*([^\n|]*)/i) || [])[1] || "";
+    return {
+      paused: true,
+      reason: why.trim() ? `订单问题处理中：${why.trim()}` : "订单问题处理中，自动确认已暂停",
+    };
+  }
+  return { paused: false, reason: "" };
+}
+
+export function isManualConfirmBlocked(order = {}) {
+  const status = String(order.status || "");
+  if (["refund_requested", "refunded", "cancelled"].includes(status)) return true;
+  return /\[\[ORDER_FROZEN\]\]/i.test(blobOf(order));
+}
+
+export function completionCountdown(order = {}, now = Date.now()) {
+  const requestedAt = parseCompletionRequestedAt(order);
+  if (!requestedAt || !orderHasCompletionPending(order)) {
+    return {
+      completionRequestedAt: requestedAt || "",
+      autoConfirmAt: "",
+      autoConfirmRemainingMs: null,
+      autoConfirmPaused: false,
+      autoConfirmPausedReason: "",
+    };
+  }
+  const pause = getCompletionAutoPause(order);
+  const autoConfirmAt = new Date(Date.parse(requestedAt) + COMPLETION_AUTO_CONFIRM_MS).toISOString();
+  const remaining = Math.max(0, Date.parse(autoConfirmAt) - now);
+  return {
+    completionRequestedAt: requestedAt,
+    autoConfirmAt,
+    autoConfirmRemainingMs: pause.paused ? null : remaining,
+    autoConfirmPaused: pause.paused,
+    autoConfirmPausedReason: pause.reason,
+  };
+}
+
+export function formatRemainingLabel(ms) {
+  if (ms == null || !Number.isFinite(ms)) return "";
+  const totalMin = Math.max(0, Math.ceil(ms / 60000));
+  const hours = Math.floor(totalMin / 60);
+  const mins = totalMin % 60;
+  if (hours <= 0) return `${mins}分钟`;
+  return `${hours}小时${mins}分钟`;
+}
+
+function stripCompletionMeta(text = "") {
+  return String(text || "")
+    .replace(/\[\[COMPLETION_PENDING(?::[^\]]*)?\]\]/gi, "")
+    .replace(/\[\[COMPLETION_REQUESTED_AT\]\][^\n]*/gi, "")
+    .replace(/\[\[COMPLETION_METHOD\]\][^\n]*/gi, "")
+    .replace(/\[\[COMPLETION_AUTO_PAUSED\]\][^\n]*/gi, "")
+    .replace(/\n{2,}/g, "\n")
+    .trim();
+}
+
+export function withCompletionPendingStamp(text = "", atIso = nowIso()) {
+  let raw = stripCompletionMeta(text);
+  // Keep dispute/frozen markers if present.
+  const block = `${COMPLETION_PENDING_MARKER}\n${COMPLETION_REQUESTED_AT_MARKER}${atIso}`;
+  return raw ? `${raw}\n${block}` : block;
+}
+
+export function withoutCompletionPendingStamp(text = "") {
+  return stripCompletionMeta(text);
+}
+
+function upsertMarker(text = "", marker, value = "") {
+  const escaped = marker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const re = new RegExp(`\\n?${escaped}[^\\n]*`, "gi");
+  const cleaned = String(text || "").replace(re, "").trim();
+  const line = value ? `${marker}${value}` : marker;
+  return cleaned ? `${cleaned}\n${line}` : line;
+}
+
+function removeMarker(text = "", marker) {
+  const escaped = marker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const re = new RegExp(`\\n?${escaped}[^\\n]*`, "gi");
+  return String(text || "").replace(re, "").replace(/\n{2,}/g, "\n").trim();
+}
+
+async function patchOrderFields(restUrl, supabaseJson, serviceHeaders, orderId, fields) {
+  return supabaseJson(restUrl("orders", `?id=eq.${encodeURIComponent(orderId)}`), {
+    method: "PATCH",
+    headers: serviceHeaders(),
+    body: JSON.stringify(fields),
+  });
+}
+
+async function dualWriteText(restUrl, supabaseJson, serviceHeaders, order, nextNote, nextDesc) {
+  const attempts = [
+    { note: nextNote, description: nextDesc },
+    { description: nextDesc },
+    { note: nextNote },
+  ];
+  let lastErr = null;
+  for (const body of attempts) {
+    try {
+      await patchOrderFields(restUrl, supabaseJson, serviceHeaders, order.id, body);
+      return body;
+    } catch (err) {
+      lastErr = err;
+      if (!/column|schema cache|PGRST|note|description/i.test(String(err?.message || ""))) throw err;
+    }
+  }
+  throw lastErr || new Error("无法写入订单标记");
+}
+
+export function createOrderCompleteHelpers({ restUrl, supabaseJson, serviceHeaders, addSystemMessage }) {
+  const grabsApi = createOrderGrabHelpers({ restUrl, supabaseJson, serviceHeaders });
+
+  async function markCompletionPending(order, atIso = nowIso()) {
+    if (orderHasCompletionPending(order) && parseCompletionRequestedAt(order)) {
+      return {
+        note: String(order.note || ""),
+        description: String(order.description || ""),
+        completionRequestedAt: parseCompletionRequestedAt(order),
+      };
+    }
+    const nextNote = withCompletionPendingStamp(String(order.note || ""), atIso);
+    const nextDesc = withCompletionPendingStamp(String(order.description || ""), atIso);
+    await dualWriteText(restUrl, supabaseJson, serviceHeaders, order, nextNote, nextDesc);
+    return { note: nextNote, description: nextDesc, completionRequestedAt: atIso };
+  }
+
+  async function clearCompletionPending(order) {
+    const nextNote = withoutCompletionPendingStamp(String(order.note || ""));
+    const nextDesc = withoutCompletionPendingStamp(String(order.description || ""));
+    // Also drop pause marker on finalize; keep dispute/frozen for audit unless clearing intentionally.
+    await dualWriteText(restUrl, supabaseJson, serviceHeaders, order, nextNote, nextDesc);
+    return { note: nextNote, description: nextDesc };
+  }
+
+  async function stampAutoPaused(order, reason = "boss_problem") {
+    const nextNote = upsertMarker(String(order.note || ""), COMPLETION_AUTO_PAUSED_MARKER, reason);
+    const nextDesc = upsertMarker(String(order.description || ""), COMPLETION_AUTO_PAUSED_MARKER, reason);
+    await dualWriteText(restUrl, supabaseJson, serviceHeaders, order, nextNote, nextDesc);
+    return { note: nextNote, description: nextDesc };
+  }
+
+  async function stampDispute(order, reason = "cs_dispute") {
+    const nextNote = upsertMarker(String(order.note || ""), ORDER_DISPUTE_MARKER, reason);
+    const nextDesc = upsertMarker(String(order.description || ""), ORDER_DISPUTE_MARKER, reason);
+    await dualWriteText(restUrl, supabaseJson, serviceHeaders, order, nextNote, nextDesc);
+    return { note: nextNote, description: nextDesc };
+  }
+
+  async function clearDispute(order) {
+    const nextNote = removeMarker(String(order.note || ""), ORDER_DISPUTE_MARKER);
+    const nextDesc = removeMarker(String(order.description || ""), ORDER_DISPUTE_MARKER);
+    // Also clear auto-paused when dispute cleared.
+    const n2 = removeMarker(nextNote, COMPLETION_AUTO_PAUSED_MARKER);
+    const d2 = removeMarker(nextDesc, COMPLETION_AUTO_PAUSED_MARKER);
+    await dualWriteText(restUrl, supabaseJson, serviceHeaders, order, n2, d2);
+    return { note: n2, description: d2 };
+  }
+
+  async function stampFrozen(order, reason = "admin_freeze") {
+    const nextNote = upsertMarker(String(order.note || ""), ORDER_FROZEN_MARKER, reason);
+    const nextDesc = upsertMarker(String(order.description || ""), ORDER_FROZEN_MARKER, reason);
+    await dualWriteText(restUrl, supabaseJson, serviceHeaders, order, nextNote, nextDesc);
+    return { note: nextNote, description: nextDesc };
+  }
+
+  async function clearFrozen(order) {
+    const nextNote = removeMarker(String(order.note || ""), ORDER_FROZEN_MARKER);
+    const nextDesc = removeMarker(String(order.description || ""), ORDER_FROZEN_MARKER);
+    await dualWriteText(restUrl, supabaseJson, serviceHeaders, order, nextNote, nextDesc);
+    return { note: nextNote, description: nextDesc };
+  }
+
+  async function settleCompanionIncome(saved, completedAt, method) {
+    if (!saved?.companion_id) return null;
+    try {
+      const { canSettleCompanionIncomeForOrder, isMultiGroupParent } = await import("./_order-group.js");
+      if (isMultiGroupParent(saved) || !canSettleCompanionIncomeForOrder(saved)) {
+        return { skipped: true, reason: "multi_group_parent_no_companion_income" };
+      }
+    } catch (_) {
+      /* soft */
+    }
+
+    // G8: keep Production settlement writes off until flag is explicitly enabled.
+    if (!isSettlementEnabled()) {
+      const reason = settlementDisabledReason() || "settlement_flag_disabled";
+      console.warn("[order-complete] settlement skipped", saved?.id || "", reason);
+      try {
+        await patchOrderFields(restUrl, supabaseJson, serviceHeaders, saved.id, {
+          settlement_status: "skipped",
+        });
+      } catch (_) {
+        /* settlement_status column may be missing */
+      }
+      try {
+        const nextNote = upsertMarker(String(saved.note || ""), "[[SETTLEMENT_SKIPPED]]", reason);
+        const nextDesc = upsertMarker(String(saved.description || ""), "[[SETTLEMENT_SKIPPED]]", reason);
+        await dualWriteText(restUrl, supabaseJson, serviceHeaders, saved, nextNote, nextDesc);
+      } catch (_) {
+        /* soft */
+      }
+      return {
+        skipped: true,
+        reason,
+        message: `结算未入账：${reason}（需开启 SETTLEMENT_ENABLED）`,
+      };
+    }
+
+    // G5/G7: never settle smoke/test-touched orders (incl. RM6000 smoke fixtures).
+    // Companion income requires non-test boss + companion. A mis-flagged CS account alone
+    // must NOT starve real companion settlement (P0: MCJO000356/357).
+    try {
+      const ids = [saved.boss_id, saved.companion_id, saved.customer_service_id].filter(Boolean);
+      const profiles = [];
+      for (const id of ids) {
+        try {
+          const withFlag = await supabaseJson(
+            restUrl(
+              "profiles",
+              `?id=eq.${encodeURIComponent(id)}&select=id,role,email,display_name,is_test_account&limit=1`
+            ),
+            { headers: serviceHeaders() }
+          );
+          if (withFlag?.[0]) profiles.push(withFlag[0]);
+        } catch (error) {
+          const msg = String(error?.message || "");
+          if (!/is_test_account|PGRST204|42703|schema cache/i.test(msg)) throw error;
+          const withoutFlag = await supabaseJson(
+            restUrl(
+              "profiles",
+              `?id=eq.${encodeURIComponent(id)}&select=id,role,email,display_name&limit=1`
+            ),
+            { headers: serviceHeaders() }
+          );
+          if (withoutFlag?.[0]) profiles.push(withoutFlag[0]);
+        }
+      }
+      const byId = new Map(profiles.map((p) => [p.id, p]));
+      const decision = companionIncomeTestPartyDecision({
+        bossProfile: byId.get(saved.boss_id) || null,
+        companionProfile: byId.get(saved.companion_id) || null,
+        customerServiceProfile: byId.get(saved.customer_service_id) || null,
+        order: saved,
+      });
+      if (decision.warnCsTest) {
+        console.warn(
+          "[order-complete] companion_income continuing despite test CS flag",
+          saved?.id || "",
+          saved?.order_no || ""
+        );
+      }
+      if (decision.skip) {
+        return { skipped: true, reason: decision.reason || "test_party" };
+      }
+    } catch (_) {
+      if (isProductionRuntime()) {
+        return { skipped: true, reason: "test_guard_error" };
+      }
+    }
+
+    const existingTx = await supabaseJson(
+      restUrl(
+        "transactions",
+        `?order_id=eq.${encodeURIComponent(saved.id)}&user_id=eq.${encodeURIComponent(saved.companion_id)}&transaction_type=eq.companion_income&limit=1`
+      ),
+      { headers: serviceHeaders() }
+    ).catch(() => []);
+    if (existingTx?.[0]) {
+      let bossCommission = null;
+      try {
+        bossCommission = await settleBossCommissionFromPlatformFee(saved, {
+          platformFeeRate: null,
+          platformFeeAmount: saved.platform_fee,
+          companionIncomeAmount: saved.companion_income,
+          completedAt,
+          method,
+        });
+      } catch (_) {
+        bossCommission = { skipped: true, reason: "boss_commission_error" };
+      }
+      return { duplicate: true, transaction: existingTx[0], bossCommission };
+    }
+
+    const cp =
+      (
+        await supabaseJson(
+          restUrl("companion_profiles", `?user_id=eq.${encodeURIComponent(saved.companion_id)}&limit=1`),
+          { headers: serviceHeaders() }
+        ).catch(() => [])
+      )?.[0] || {};
+    const amount = money(saved.total_amount);
+    const levels = await readLocalLevels().catch(() => []);
+    const levelMeta =
+      (levels || []).find(
+        (l) =>
+          String(l.id) === String(cp.level_id || "") ||
+          String(l.code) === String(cp.level_id || "") ||
+          String(l.name) === String(cp.level_name || "")
+      ) || null;
+
+    // Prefer gameplay product commission snapshot stamped at order create (orders.platform_fee_rate).
+    // Explicit 0% is valid. Non-gameplay orders use effective companion share
+    // (override → club → system/level). Settled amounts are snapshotted and never rewrite.
+    const isGameplayOrder =
+      String(saved.order_type || "").toLowerCase() === "gameplay_product" ||
+      /更多玩法商品|商品ID：/i.test(blobOf(saved));
+    const hasProductFeeSnapshot =
+      isGameplayOrder && saved.platform_fee_rate != null && saved.platform_fee_rate !== "";
+    let platformRate;
+    let companionShareRate;
+    let commissionSource = "system";
+    // Badge commission frozen when the companion was bound; later badge-rate edits never reach this order.
+    const badgeSnap = hasProductFeeSnapshot ? null : await ensureOrderBadgeSnapshot(saved, { stage: "completion" });
+    const badgeShare = badgeSnap?.commission?.companionShareRate;
+    if (hasProductFeeSnapshot) {
+      const snap = money(saved.platform_fee_rate);
+      platformRate = Math.min(100, Math.max(0, Number.isFinite(snap) ? snap : 0));
+      companionShareRate = Math.round((100 - platformRate) * 100) / 100;
+      commissionSource = "order_snapshot";
+    } else if (badgeShare != null && Number.isFinite(Number(badgeShare))) {
+      companionShareRate = Math.min(100, Math.max(0, Math.round(Number(badgeShare) * 100) / 100));
+      platformRate = Math.round((100 - companionShareRate) * 100) / 100;
+      commissionSource = "cert_badge";
+    } else {
+      const effective = resolveEffectiveCompanionCommission({
+        companionProfile: cp,
+        levelPlatformRate: levelMeta?.commissionRate ?? 20,
+        fallbackPlatform: 20,
+      });
+      platformRate = effective.platformRate;
+      companionShareRate = effective.companionShareRate;
+      commissionSource = effective.source || "system";
+    }
+    const companionNet = Math.round(((amount * companionShareRate) / 100) * 100) / 100;
+    const platformFee = Math.round((amount - companionNet) * 100) / 100;
+    const settlement = {
+      orderId: saved.id,
+      orderNo: saved.order_no,
+      companionNetCatFood: companionNet,
+      platformCommissionCatFood: platformFee,
+      platformCommissionRate: platformRate,
+      companionShareRate,
+      commissionRateSnapshot: companionShareRate,
+      commissionAmountSnapshot: companionNet,
+      commissionSource,
+      certBadgeId: commissionSource === "cert_badge" ? badgeSnap.commission.badgeId : null,
+      certBadgeName: commissionSource === "cert_badge" ? badgeSnap.commission.badgeName : null,
+      completedAt,
+      completionMethod: method,
+      bossCommissionTransparencyNote: "老板直属分成由平台抽成支付，不扣陪玩收入",
+      companionIncomeUnchangedByBossCommission: true,
+    };
+    await supabaseJson(restUrl("transactions"), {
+      method: "POST",
+      headers: serviceHeaders(),
+      body: JSON.stringify({
+        user_id: saved.companion_id,
+        order_id: saved.id,
+        transaction_type: "companion_income",
+        amount: companionNet,
+        status: "completed",
+        note: `MCJ_SETTLEMENT:${JSON.stringify(settlement)}`,
+        created_at: completedAt,
+      }),
+    });
+    try {
+      await patchOrderFields(restUrl, supabaseJson, serviceHeaders, saved.id, {
+        settlement_note: `MCJ_SETTLEMENT:${JSON.stringify(settlement)}`,
+        companion_income: companionNet,
+        platform_fee: platformFee,
+        platform_fee_rate: platformRate,
+        companion_commission_rate_snapshot: companionShareRate,
+        companion_commission_amount_snapshot: companionNet,
+        settlement_status: "settled",
+      });
+    } catch (_) {
+      try {
+        await patchOrderFields(restUrl, supabaseJson, serviceHeaders, saved.id, {
+          settlement_note: `MCJ_SETTLEMENT:${JSON.stringify(settlement)}`,
+          companion_income: companionNet,
+          platform_fee: platformFee,
+          platform_fee_rate: platformRate,
+          settlement_status: "settled",
+        });
+      } catch (__) {}
+    }
+
+    // Boss commission from platform fee — does NOT reduce companionNet.
+    // boss_commission = platform_fee * boss_commission_rate / 100
+    let bossCommission = null;
+    try {
+      bossCommission = await settleBossCommissionFromPlatformFee(saved, {
+        platformFeeRate: platformRate,
+        platformFeeAmount: platformFee,
+        companionIncomeAmount: companionNet,
+        completedAt,
+        method,
+      });
+      if (bossCommission && !bossCommission.skipped && !bossCommission.duplicate) {
+        settlement.bossCommissionRate = bossCommission.calc?.bossCommissionRate;
+        settlement.bossCommissionCatFood = bossCommission.calc?.bossCommissionAmount;
+        settlement.bossCommissionRateSource = bossCommission.rateSource;
+        settlement.companionIncomeUnchanged = true;
+      }
+    } catch (_) {
+      bossCommission = { skipped: true, reason: "boss_commission_error" };
+    }
+
+    return { duplicate: false, settlement, bossCommission };
+  }
+
+  /**
+   * Award boss loyalty points without failing order completion.
+   * Always structured-logs skips/errors — never silent catch.
+   * Independent of companion settlement success/skip/fail.
+   */
+  async function safeAwardBossPoints(order, { method = "boss_manual", operatorId = null } = {}) {
+    const meta = {
+      order_id: order?.id || null,
+      boss_id: order?.boss_id || null,
+      method: String(method || ""),
+    };
+    try {
+      const result = await awardBossPointsForCompletedOrder(order, {
+        method,
+        operatorId,
+      });
+      const payload = {
+        ...meta,
+        ok: !!result?.ok,
+        skipped: !!result?.skipped,
+        duplicate: !!result?.duplicate,
+        points: Number(result?.points) || 0,
+        error: result?.error || null,
+        idempotency_key: result?.idempotency_key || null,
+      };
+      if (result?.ok && !result?.skipped && !result?.duplicate && payload.points > 0) {
+        console.info("[order-complete] boss_points_awarded", JSON.stringify(payload));
+      } else if (result?.duplicate) {
+        console.info("[order-complete] boss_points_duplicate", JSON.stringify(payload));
+      } else if (result?.skipped || result?.error) {
+        console.warn("[order-complete] boss_points_skipped", JSON.stringify(payload));
+      } else if (result && result.ok === false) {
+        console.error("[order-complete] boss_points_failed", JSON.stringify(payload));
+      } else {
+        console.warn("[order-complete] boss_points_result", JSON.stringify(payload));
+      }
+      return result;
+    } catch (err) {
+      console.error(
+        "[order-complete] boss_points_exception",
+        JSON.stringify({
+          ...meta,
+          error: String(err?.message || err || "points_exception").slice(0, 300),
+          code: err?.code || err?.status || null,
+        })
+      );
+      return {
+        ok: false,
+        skipped: true,
+        points: 0,
+        error: String(err?.message || err || "points_exception").slice(0, 300),
+      };
+    }
+  }
+
+  function isForceCompleteMethod(method) {
+    const m = String(method || "");
+    return m === "admin_force" || m === "cs_force";
+  }
+
+  /**
+   * Canonical order completion — sole write path for loyalty points on complete.
+   * method: boss_manual | system_auto_24h | admin_force | cs_force
+   *
+   * Boss points are independent of companion settlement (enabled/disabled/skipped/fail).
+   */
+  async function finalizeOrderCompletion(before, { method = "boss_manual", actorId = "", message = "" } = {}) {
+    if (!before?.id) throw Object.assign(new Error("订单不存在。"), { status: 404 });
+
+    // Multi-group parent is status-aggregated only — never companion finalize / settle.
+    try {
+      const { isMultiGroupParent, ORDER_TYPE_MULTI_GROUP } = await import("./_order-group.js");
+      if (
+        isMultiGroupParent(before) ||
+        String(before.order_type || "").toLowerCase() === ORDER_TYPE_MULTI_GROUP
+      ) {
+        throw Object.assign(
+          new Error("多人主订单不能按陪玩单完成；请完成各子订单，系统将自动聚合主单状态。"),
+          { status: 409, code: "MULTI_PARENT_NO_DIRECT_FINALIZE" }
+        );
+      }
+    } catch (guardErr) {
+      if (guardErr?.status === 409) throw guardErr;
+    }
+
+    if (String(before.status) === "completed" || String(before.settlement_status || "") === "settled") {
+      const bossPoints = await safeAwardBossPoints(before, {
+        method,
+        operatorId: actorId || null,
+      });
+      return {
+        ok: true,
+        duplicate: true,
+        message: "订单已完成/已结算，无需重复处理。",
+        order: before,
+        bossPoints,
+      };
+    }
+    if (String(before.status) !== "in_progress") {
+      throw Object.assign(new Error("当前订单不能确认完成。"), { status: 409 });
+    }
+    if (isManualConfirmBlocked(before) && method === "boss_manual") {
+      throw Object.assign(new Error("订单已冻结或售后中，不能确认完成。"), { status: 409 });
+    }
+    if (!isForceCompleteMethod(method) && !orderHasCompletionPending(before)) {
+      throw Object.assign(new Error("陪玩尚未申请完成服务。"), { status: 409 });
+    }
+    if (method === "system_auto_24h") {
+      const pause = getCompletionAutoPause(before);
+      if (pause.paused) {
+        return { ok: false, skipped: true, message: pause.reason, order: before };
+      }
+      const requestedAt = parseCompletionRequestedAt(before);
+      if (!requestedAt) {
+        return { ok: false, skipped: true, message: "缺少申请完成时间，跳过自动确认。", order: before };
+      }
+      if (Date.now() < Date.parse(requestedAt) + COMPLETION_AUTO_CONFIRM_MS) {
+        return { ok: false, skipped: true, message: "未到自动确认时间。", order: before };
+      }
+    }
+
+    const completedAt = nowIso();
+    const cleared = await clearCompletionPending(before);
+    const methodLineNote = upsertMarker(cleared.note, COMPLETION_METHOD_MARKER, method);
+    const methodLineDesc = upsertMarker(cleared.description, COMPLETION_METHOD_MARKER, method);
+    // Boss manual confirm → close after-sale immediately (separate from companion 24h withdraw lock).
+    let noteForSave = methodLineNote;
+    let descForSave = methodLineDesc;
+    if (method === "boss_manual") {
+      const { AFTER_SALE_CLOSED_MARKER } = await import("./_earnings-windows.js");
+      noteForSave = upsertMarker(methodLineNote, AFTER_SALE_CLOSED_MARKER, "boss_manual");
+      descForSave = upsertMarker(methodLineDesc, AFTER_SALE_CLOSED_MARKER, "boss_manual");
+    }
+
+    const patchBodies = [
+      {
+        status: "completed",
+        completed_at: completedAt,
+        note: noteForSave,
+        description: descForSave,
+        completion_method: method,
+        settlement_status: "settling",
+      },
+      {
+        status: "completed",
+        completed_at: completedAt,
+        note: noteForSave,
+        description: descForSave,
+      },
+      { status: "completed", completed_at: completedAt },
+    ];
+    let saved = null;
+    let lastErr = null;
+    for (const body of patchBodies) {
+      try {
+        const rows = await supabaseJson(
+          restUrl("orders", `?id=eq.${encodeURIComponent(before.id)}&status=eq.in_progress`),
+          { method: "PATCH", headers: serviceHeaders(), body: JSON.stringify(body) }
+        );
+        saved = rows?.[0] || { ...before, ...body, status: "completed", completed_at: completedAt };
+        break;
+      } catch (err) {
+        lastErr = err;
+        if (!/column|schema cache|PGRST|completion_method|settlement/i.test(String(err?.message || ""))) {
+          throw err;
+        }
+      }
+    }
+    if (!saved) throw lastErr || new Error("确认完成失败");
+
+    // Race: another worker completed first.
+    if (String(saved.status) !== "completed") {
+      const fresh = (
+        await supabaseJson(restUrl("orders", `?id=eq.${encodeURIComponent(before.id)}&limit=1`), {
+          headers: serviceHeaders(),
+        })
+      )?.[0];
+      if (fresh?.status === "completed") {
+        const bossPoints = await safeAwardBossPoints(fresh, {
+          method,
+          operatorId: actorId || null,
+        });
+        return { ok: true, duplicate: true, message: "订单已完成。", order: fresh, bossPoints };
+      }
+    }
+
+    const msg =
+      message ||
+      (method === "system_auto_24h"
+        ? "系统已按规则自动确认完成订单（陪玩申请完成满 24 小时）。"
+        : method === "admin_force"
+          ? "后台已确认完成订单。"
+          : method === "cs_force"
+            ? "客服已确认完成订单。"
+            : "老板已确认完成订单。");
+    if (typeof addSystemMessage === "function") {
+      try {
+        await addSystemMessage(saved, actorId || saved.boss_id, msg);
+      } catch (_) {}
+    }
+
+    let settlement = null;
+    let settlementOk = false;
+    try {
+      settlement = await settleCompanionIncome(saved, completedAt, method);
+      settlementOk = true;
+    } catch (settleErr) {
+      settlementOk = false;
+      settlement = {
+        skipped: true,
+        reason: "settlement_error",
+        message: String(settleErr?.message || settleErr || "settlement_error").slice(0, 200),
+      };
+      console.warn("[order-complete] settlement error", saved?.id || "", settlement.message);
+    }
+
+    // Boss loyalty points: independent of settlement enabled/skipped/fail.
+    // Multi-group children: awardBossPointsForCompletedOrder skips child (parent_order_id).
+    // After child complete: refresh parent aggregate; award once on parent when group completes.
+    const bossPoints = await safeAwardBossPoints(saved, {
+      method,
+      operatorId: actorId || null,
+    });
+
+    // Legacy / single-order cat-food hold → finalize debit on COMPLETE.
+    let holdFinalize = null;
+    if (!saved?.parent_order_id) {
+      try {
+        const walletApi = await import("./_wallet.js");
+        holdFinalize = await walletApi.finalizeWalletHold({
+          orderId: saved.id,
+          idempotencyKey: `order-finalize:${saved.order_no || saved.id}`,
+          reason: `订单完成扣款 ${saved.order_no || saved.id}`,
+          operatorId: actorId || null,
+        });
+      } catch (e) {
+        holdFinalize = { ok: false, error: String(e?.message || e).slice(0, 160) };
+      }
+    }
+
+    let parentRefresh = null;
+    if (saved?.parent_order_id) {
+      try {
+        const { refreshParentOrderStatus } = await import("./_order-group.js");
+        parentRefresh = await refreshParentOrderStatus(saved.parent_order_id, {
+          loadOrder: async (pid) =>
+            (
+              await supabaseJson(restUrl("orders", `?id=eq.${encodeURIComponent(pid)}&limit=1`), {
+                headers: serviceHeaders(),
+              })
+            )?.[0] || null,
+          loadChildren: async (pid) =>
+            (await supabaseJson(
+              restUrl("orders", `?parent_order_id=eq.${encodeURIComponent(pid)}&select=*&order=created_at.asc`),
+              { headers: serviceHeaders() }
+            ).catch(() => [])) || [],
+          patchOrder: async (pid, patch) => {
+            const rows = await supabaseJson(restUrl("orders", `?id=eq.${encodeURIComponent(pid)}`), {
+              method: "PATCH",
+              headers: serviceHeaders(),
+              body: JSON.stringify(patch),
+            });
+            return rows?.[0] || null;
+          },
+          awardBossPointsForCompletedOrder: async (order, opts = {}) =>
+            safeAwardBossPoints(order, {
+              method: opts.method || method,
+              operatorId: opts.operatorId ?? actorId ?? null,
+            }),
+          awardMethod: method,
+          operatorId: actorId || null,
+        });
+      } catch (e) {
+        parentRefresh = { ok: false, error: String(e?.message || e).slice(0, 160) };
+      }
+    }
+
+    let reward = null;
+    try {
+      reward = await (
+        await import("./_cs-commission-settle.js")
+      ).settleCsOrderIncome(
+        { ...saved, status: "completed" },
+        {
+          source:
+            method === "system_auto_24h"
+              ? "system_auto_complete"
+              : method === "admin_force"
+                ? "admin_confirm_complete"
+                : method === "cs_force"
+                  ? "cs_confirm_complete"
+                  : "boss_confirm_complete",
+        }
+      );
+    } catch (csErr) {
+      console.warn(
+        "[order-complete] cs_commission_settle_failed",
+        JSON.stringify({
+          order_id: saved?.id || null,
+          error: String(csErr?.message || csErr || "cs_settle_error").slice(0, 200),
+        })
+      );
+    }
+
+    // Invite antifraud: grant only when after-sale already closed (boss_manual / marker).
+    let inviteReward = null;
+    try {
+      const completedOrder = {
+        ...saved,
+        status: "completed",
+        completed_at: completedAt,
+        note: saved.note || noteForSave || methodLineNote,
+        description: saved.description || descForSave || methodLineDesc,
+        completion_method: method,
+      };
+      const { isBossAfterSaleOpen } = await import("./_earnings-windows.js");
+      if (!isBossAfterSaleOpen(completedOrder)) {
+        const { maybeGrantInviteRewardForOrder } = await import("./_invite-attribution.js");
+        inviteReward = await maybeGrantInviteRewardForOrder(completedOrder);
+      } else {
+        inviteReward = { granted: false, reason: "after_sale_still_open" };
+      }
+    } catch (invErr) {
+      inviteReward = { granted: false, reason: "error", detail: String(invErr?.message || invErr).slice(0, 160) };
+    }
+
+    const settleSkipMsg = settlement?.skipped
+      ? `（结算暂未入账：${settlement.reason || settlement.message || "skipped"}）`
+      : !settlementOk
+        ? "（结算写入失败，请后台核对）"
+        : "";
+    const baseMsg =
+      method === "system_auto_24h"
+        ? "已自动确认完成，订单已完成。"
+        : method === "cs_force"
+          ? "客服已确认完成，订单已完成。"
+          : "已确认完成，订单已完成。";
+
+    return {
+      ok: true,
+      duplicate: false,
+      message: `${baseMsg}${settleSkipMsg}`,
+      order: {
+        ...saved,
+        note: saved.note || noteForSave || methodLineNote,
+        description: saved.description || descForSave || methodLineDesc,
+        completion_method: method,
+        status: "completed",
+        completed_at: completedAt,
+        settlement_status:
+          settlement?.skipped
+            ? "skipped"
+            : settlementOk && settlement && !settlement.duplicate
+              ? saved.settlement_status || "settled"
+              : saved.settlement_status || null,
+      },
+      settlement,
+      bossPoints,
+      parentRefresh,
+      holdFinalize,
+      reward,
+      inviteReward,
+      completionMethod: method,
+    };
+  }
+
+  async function expireCompletionAutoConfirms({ limit = 40 } = {}) {
+    const rows = await supabaseJson(
+      restUrl(
+        "orders",
+        `?status=eq.in_progress&or=(note.ilike.*COMPLETION_PENDING*,description.ilike.*COMPLETION_PENDING*)&order=updated_at.asc&limit=${Math.max(1, Math.min(100, limit))}`
+      ),
+      { headers: serviceHeaders() }
+    ).catch(async () => {
+      // Fallback without or-filter / updated_at
+      return supabaseJson(
+        restUrl("orders", `?status=eq.in_progress&order=created_at.asc&limit=${Math.max(1, Math.min(100, limit))}`),
+        { headers: serviceHeaders() }
+      ).catch(() => []);
+    });
+    const list = Array.isArray(rows) ? rows : [];
+    // Backfill missing request timestamps so countdown/auto-confirm can start.
+    for (const row of list) {
+      if (orderHasCompletionPending(row) && !parseCompletionRequestedAt(row)) {
+        try {
+          await markCompletionPending(row);
+        } catch (_) {}
+      }
+    }
+    const freshList = [];
+    for (const row of list) {
+      if (!orderHasCompletionPending(row)) continue;
+      try {
+        const latest = (
+          await supabaseJson(restUrl("orders", `?id=eq.${encodeURIComponent(row.id)}&limit=1`), {
+            headers: serviceHeaders(),
+          })
+        )?.[0];
+        freshList.push(latest || row);
+      } catch {
+        freshList.push(row);
+      }
+    }
+    const due = freshList.filter((row) => {
+      if (!orderHasCompletionPending(row)) return false;
+      if (getCompletionAutoPause(row).paused) return false;
+      const at = parseCompletionRequestedAt(row);
+      if (!at) return false;
+      return Date.now() >= Date.parse(at) + COMPLETION_AUTO_CONFIRM_MS;
+    });
+    const results = [];
+    for (const row of due.slice(0, limit)) {
+      try {
+        const out = await finalizeOrderCompletion(row, {
+          method: "system_auto_24h",
+          actorId: row.boss_id || "",
+        });
+        results.push({ id: row.id, ...out });
+      } catch (err) {
+        results.push({ id: row.id, ok: false, message: err?.message || String(err) });
+      }
+    }
+    let inviteSweep = null;
+    try {
+      const { sweepPendingInviteRewards } = await import("./_invite-attribution.js");
+      inviteSweep = await sweepPendingInviteRewards({ limit: 40 });
+    } catch (e) {
+      inviteSweep = { ok: false, error: String(e?.message || e).slice(0, 160) };
+    }
+    return {
+      scanned: list.length,
+      due: due.length,
+      processed: results.length,
+      results,
+      inviteSweep,
+    };
+  }
+
+  /**
+   * Boss confirms a multi_group parent only after every effective child has
+   * applied completion (or is already completed). Finalizes each pending child
+   * via finalizeOrderCompletion (idempotent settle); parent aggregates via refresh.
+   */
+  async function finalizeMultiParentBossConfirm(parent, { actorId = "", message = "" } = {}) {
+    if (!parent?.id) throw Object.assign(new Error("订单不存在。"), { status: 404 });
+    const { isMultiGroupParent, ORDER_TYPE_MULTI_GROUP, effectiveChildren, refreshParentOrderStatus } =
+      await import("./_order-group.js");
+    const isParent =
+      isMultiGroupParent(parent) ||
+      String(parent.order_type || "").toLowerCase() === ORDER_TYPE_MULTI_GROUP;
+    if (!isParent || parent.parent_order_id) {
+      throw Object.assign(new Error("不是多人主订单。"), { status: 400, code: "NOT_MULTI_PARENT" });
+    }
+    if (String(parent.status) === "completed") {
+      return {
+        ok: true,
+        duplicate: true,
+        message: "订单已完成，无需重复确认。",
+        order: parent,
+        children: [],
+      };
+    }
+    const children =
+      (await supabaseJson(
+        restUrl("orders", `?parent_order_id=eq.${encodeURIComponent(parent.id)}&select=*&order=created_at.asc`),
+        { headers: serviceHeaders() }
+      ).catch(() => [])) || [];
+    const effective = effectiveChildren(children);
+    if (!effective.length) {
+      throw Object.assign(new Error("没有可确认完成的陪玩子订单。"), { status: 409 });
+    }
+    const childReady = (c) => {
+      const st = String(c.status || "");
+      if (st === "completed" || st === "reviewed") return true;
+      return st === "in_progress" && orderHasCompletionPending(c);
+    };
+    const ready = effective.filter(childReady);
+    if (ready.length < effective.length) {
+      throw Object.assign(
+        new Error(`等待陪玩完成 ${ready.length}/${effective.length}`),
+        {
+          status: 409,
+          code: "MULTI_CHILDREN_COMPLETION_INCOMPLETE",
+          readyCount: ready.length,
+          totalCount: effective.length,
+        }
+      );
+    }
+    const pending = effective.filter(
+      (c) => String(c.status) === "in_progress" && orderHasCompletionPending(c)
+    );
+    const childResults = [];
+    for (const child of pending) {
+      const out = await finalizeOrderCompletion(child, {
+        method: "boss_manual",
+        actorId,
+        message: message || "老板已确认完成订单。",
+      });
+      childResults.push({ id: child.id, ...out });
+    }
+    let parentRefresh = null;
+    try {
+      parentRefresh = await refreshParentOrderStatus(parent.id, {
+        loadOrder: async (pid) =>
+          (
+            await supabaseJson(restUrl("orders", `?id=eq.${encodeURIComponent(pid)}&limit=1`), {
+              headers: serviceHeaders(),
+            })
+          )?.[0] || null,
+        loadChildren: async (pid) =>
+          (await supabaseJson(
+            restUrl("orders", `?parent_order_id=eq.${encodeURIComponent(pid)}&select=*&order=created_at.asc`),
+            { headers: serviceHeaders() }
+          ).catch(() => [])) || [],
+        patchOrder: async (pid, patch) => {
+          const rows = await supabaseJson(restUrl("orders", `?id=eq.${encodeURIComponent(pid)}`), {
+            method: "PATCH",
+            headers: serviceHeaders(),
+            body: JSON.stringify(patch),
+          });
+          return rows?.[0] || null;
+        },
+        awardBossPointsForCompletedOrder: async (order, opts = {}) =>
+          safeAwardBossPoints(order, {
+            method: opts.method || "boss_manual",
+            operatorId: opts.operatorId ?? actorId ?? null,
+          }),
+        awardMethod: "boss_manual",
+        operatorId: actorId || null,
+      });
+    } catch (e) {
+      parentRefresh = { ok: false, error: String(e?.message || e).slice(0, 160) };
+    }
+    const freshParent =
+      parentRefresh?.parent ||
+      (
+        await supabaseJson(restUrl("orders", `?id=eq.${encodeURIComponent(parent.id)}&limit=1`), {
+          headers: serviceHeaders(),
+        })
+      )?.[0] ||
+      parent;
+    const allDup = childResults.length > 0 && childResults.every((r) => r.duplicate);
+    return {
+      ok: true,
+      duplicate: allDup && String(freshParent.status) === "completed",
+      message:
+        String(freshParent.status) === "completed"
+          ? "已确认完成，订单已完成。"
+          : "已确认各陪玩完成，主单状态已更新。",
+      order: freshParent,
+      children: childResults,
+      parentRefresh,
+      completionMethod: "boss_manual",
+    };
+  }
+
+  return {
+    grabsApi,
+    markCompletionPending,
+    clearCompletionPending,
+    stampAutoPaused,
+    stampDispute,
+    clearDispute,
+    stampFrozen,
+    clearFrozen,
+    finalizeOrderCompletion,
+    finalizeMultiParentBossConfirm,
+    settleCompanionIncome,
+    expireCompletionAutoConfirms,
+    orderHasCompletionPending,
+    completionCountdown,
+    stripInternalOrderMarkers,
+  };
+}

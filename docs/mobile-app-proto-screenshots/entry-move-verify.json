@@ -1,0 +1,25 @@
+{
+  "base": "http://127.0.0.1:5180/",
+  "checks": {
+    "home": {
+      "hasQuickTitle": false,
+      "hasFourCards": false,
+      "clubLevel": true,
+      "quickCards": 0
+    },
+    "hall": {
+      "team": true,
+      "more": true,
+      "teamText": "组队大厅",
+      "moreText": "更多玩法"
+    },
+    "http_team-lobby.html": 200,
+    "http_more-gameplays.html": 200,
+    "http_custom-order.html": 200,
+    "http_companion-center.html": 200,
+    "orders": {
+      "createCta": true,
+      "createText": "创建自定义订单"
+    }
+  }
+}

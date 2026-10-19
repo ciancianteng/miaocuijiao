@@ -1,0 +1,15 @@
+{
+  "pass": true,
+  "desktop": {
+    "device": "desktop",
+    "src": "https://jqfaknpmcnqwqvatrwgo.supabase.co/storage/v1/object/public/banners/homepage/1785769433886-Image-20260803230142-1412-50.jpg.jpg",
+    "w": 1280,
+    "mq": false
+  },
+  "mobile": {
+    "device": "mobile",
+    "src": "https://jqfaknpmcnqwqvatrwgo.supabase.co/storage/v1/object/public/banners/homepage/seed-mobile-dual-1785771783751.png",
+    "w": 390,
+    "mq": true
+  }
+}

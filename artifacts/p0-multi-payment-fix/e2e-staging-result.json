@@ -1,0 +1,93 @@
+{
+  "ok": true,
+  "generated_at": "2026-09-22T06:26:10.361Z",
+  "cases": {
+    "CASE1_place_awaiting_payment": {
+      "result": "PASS",
+      "detail": "200 parent=b3333f80-f25a-4cff-a4bf-030dad585e0b kids=2 status=awaiting_payment"
+    },
+    "CASE1_payment_page": {
+      "result": "PASS",
+      "detail": "MEOW CUI JIAO 妙脆角 ☰ 多人陪玩订单 · 支付确认 订单号 MCJO000043 陪玩组合 多人陪玩订单 服务 多人陪玩订单 · 共?位 · 一次付款 服务时间 - 语音方式 游戏麦 总付款 75 猫粮 支付方式 catfood 本订单一次付款 75 猫粮，系统会分别为每位陪玩结算。 立即支付 75 猫粮 余额不足？去充值 查看我的订单 "
+    },
+    "CASE1_pay_once": {
+      "result": "PASS",
+      "detail": "200 支付成功，多人订单已进入等待陪玩确认。"
+    },
+    "CASE1_pay_idempotent": {
+      "result": "PASS",
+      "detail": "409 NOT_AWAITING_PAYMENT"
+    },
+    "MEMBER_COUNT": {
+      "result": "PASS",
+      "detail": "children_in_list=2"
+    },
+    "DUPLICATE_ORDER_API": {
+      "result": "PASS",
+      "detail": "children expose parentOrderId for Boss hide filter"
+    },
+    "BOSS_LIST_PARENT_ONLY": {
+      "result": "PASS",
+      "detail": "parentCards=1 visibleChildCards=0 memberAttr=2"
+    },
+    "MEMBER_COUNT_UI": {
+      "result": "PASS",
+      "detail": "attr=2"
+    },
+    "PAYMENT_SINGLE_DEBIT": {
+      "result": "PASS",
+      "detail": "bal 4718→4643 expect -75"
+    },
+    "CASE2_1of2_parent_not_in_progress": {
+      "result": "NOT PROVEN",
+      "detail": "needs CompA/AdminComp2 login (STAGING_SUPABASE_SERVICE_ROLE_KEY to reset passwords)"
+    },
+    "CASE3_2of2_in_progress": {
+      "result": "NOT PROVEN",
+      "detail": "same credential gate; offline TEST 7c PASS"
+    },
+    "CASE4_B_reject": {
+      "result": "NOT PROVEN",
+      "detail": "same credential gate"
+    },
+    "CASE5_replacement": {
+      "result": "NOT PROVEN",
+      "detail": "same credential gate"
+    },
+    "CASE6_give_up_partial_refund": {
+      "result": "NOT PROVEN",
+      "detail": "same credential gate; keep_remaining covered in prior finance E2E"
+    },
+    "CASE7_refresh_members": {
+      "result": "PASS",
+      "detail": "kids=2"
+    }
+  },
+  "shots": [
+    "01-payment-page.png",
+    "02-payment-proof-upload.png",
+    "03-payment-pending-review.png",
+    "04-after-payment-waiting-2-companions.png",
+    "09-boss-orders-parent-only.png",
+    "10-member-count-2.png",
+    "12-single-wallet-payment-proof.png",
+    "11-db-parent-child-proof.png"
+  ],
+  "notes": [
+    {
+      "a": {
+        "id": "6f9ddd12-6805-48dc-bb0f-78649b096d39",
+        "name": "CompA-1789912233591",
+        "priceA": 40
+      },
+      "b": {
+        "id": "b5ea23d2-7856-4762-be8d-0051f1b646d1",
+        "name": "AdminComp2-1789912163362",
+        "priceB": 35
+      },
+      "total": 75
+    }
+  ],
+  "errors": [],
+  "summary": "PASS_CORE_CONFIRM_NOT_PROVEN"
+}

@@ -1,0 +1,952 @@
+﻿import "../_load-env.js";
+import { readLocalLevels, toPublicLevel, levelVisualConfig } from "../_companion-levels-store.js";
+import { resolveCertTagsForProfiles } from "../_companion-cert-tags-store.js";
+import { resolvePlatformCommission } from "../_commission-rates.js";
+import {
+  readGamePrices,
+  projectGamePrices,
+  stripGamePricesMarker,
+  parseServiceIds,
+  parseServiceTypes,
+  splitGames,
+  servicesFromGamePrices,
+} from "../_game-prices.js";
+import { loadPublicServices } from "../platform/services.js";
+import {
+  DEFAULT_COMPANION_AVATAR,
+  effectiveAvailabilityCode,
+  mapCompanionPublicFields,
+  pickStableMediaUrl,
+  resolveCompanionAvatar,
+  resolveCompanionCover,
+} from "../_companion-public-map.js";
+import { createSignedUrl, publicObjectUrl } from "../_companion-media-store.js";
+import { cleanRank, gameRanksFromStandards, readServiceStandards } from "../_service-standard.js";
+
+/** Per-game ranks; a legacy single game_rank is only attributed when the companion offers exactly one game. */
+function publicGameRanks(row = {}, gameNames = []) {
+  const ranks = gameRanksFromStandards(readServiceStandards(row));
+  if (ranks.length) return ranks.map((r) => ({ name: r.name, rank: r.rank }));
+  const legacy = cleanRank(row.game_rank);
+  const games = (gameNames || []).filter(Boolean);
+  return legacy && games.length === 1 ? [{ name: games[0], rank: legacy }] : [];
+}
+
+/**
+ * Resolve storage:// or http(s) media to a playable URL.
+ * @param {string} raw
+ * @param {{ skipHead?: boolean }} [opts]
+ *   skipHead: hall/list path — skip per-URL HEAD (was sequential N×RTT on every companion).
+ *   Detail/single lookup still size-gates voice stubs via HEAD.
+ */
+async function resolvePlayableUrl(raw, opts = {}) {
+  const s = String(raw || "").trim();
+  if (!s) return "";
+  const skipHead = !!opts.skipHead;
+  let url = "";
+  // Never treat expired/private signed links as durable — re-sign from storage:// instead.
+  const looksSigned =
+    /\/storage\/v1\/object\/sign\//i.test(s) || (/[?&]token=/i.test(s) && /\/storage\/v1\//i.test(s));
+  if (/^https?:\/\//i.test(s) && !looksSigned) {
+    url = s;
+  } else if (/^storage:\/\//i.test(s)) {
+    const rest = s.replace(/^storage:\/\//i, "");
+    const slash = rest.indexOf("/");
+    if (slash <= 0) return "";
+    const bucket = rest.slice(0, slash);
+    const objectPath = rest.slice(slash + 1);
+    if (!bucket || !objectPath || bucket === "present") return "";
+    try {
+      if (bucket === "companion-public" || /public/i.test(bucket)) {
+        url = publicObjectUrl(bucket, objectPath) || "";
+      } else {
+        url = (await createSignedUrl(bucket, objectPath, 60 * 60 * 12)) || "";
+      }
+    } catch (err) {
+      console.warn("[public/companions] resolvePlayableUrl failed", bucket, objectPath, err?.message || err);
+      return "";
+    }
+  } else if (/^https?:\/\//i.test(s) && looksSigned) {
+    // Keep a still-fresh signed URL from companion_media for the size gate below.
+    url = s;
+  }
+  if (!url) return "";
+  if (skipHead) return url;
+  // Drop empty / header-only audio stubs (WAV header alone is 44 bytes).
+  // Also drop expired/invalid signed URLs (non-OK HEAD) so callers can fall back to storage://.
+  try {
+    const head = await fetch(url, { method: "HEAD" });
+    if (!head.ok && looksSigned) return "";
+    const len = Number(head.headers.get("content-length") || 0);
+    if (Number.isFinite(len) && len > 0 && len < 512) return "";
+  } catch {
+    /* keep URL if HEAD unavailable */
+  }
+  return url;
+}
+import {
+  formatCompanionCode,
+  isCompanionCode,
+  isDbUuid,
+  parseCompanionCodeNumber,
+  resolveCompanionPublicCode,
+} from "../_account-codes.js";
+import { evaluatePublishGate } from "../_companion-publish-gate.js";
+import { isTestAccountRecord } from "../_test-accounts.js";
+
+/** Boss-facing: only audit-approved companion applications (not draft/pending). */
+function isAuditApprovedCompanion(row = {}) {
+  const app = String(row.application_status || "").trim().toLowerCase();
+  if (/^(draft|archived|deleted)$/.test(app)) return false;
+  if (/rejected|resubmit|need_more/.test(app)) return false;
+  if (/approved|verified|passed/.test(app)) return true;
+  // Legacy: verification approved and no explicit draft application_status.
+  if (!app && /approved|verified|passed/i.test(String(row.verification_status || ""))) return true;
+  return false;
+}
+const REQUIRED_ENV = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"];
+
+function json(res, status, data) {
+  res.status(status).json(data);
+}
+function hasDb() {
+  return REQUIRED_ENV.every((key) => process.env[key]);
+}
+function headers() {
+  return {
+    apikey: process.env.SUPABASE_SERVICE_ROLE_KEY,
+    Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
+    "Content-Type": "application/json",
+  };
+}
+function restUrl(table, query = "") {
+  return `${process.env.SUPABASE_URL}/rest/v1/${table}${query}`;
+}
+async function supabaseJson(url, init = {}) {
+  const response = await fetch(url, init);
+  const text = await response.text();
+  let body = null;
+  try {
+    body = text ? JSON.parse(text) : null;
+  } catch {
+    body = text;
+  }
+  if (!response.ok) throw new Error(body?.message || body?.hint || body?.details || "陪玩数据库请求失败");
+  return body;
+}
+/** Adapter for ensureCompanionPublicCode(dbFn, row). */
+async function companionDb(table, query = "", init = {}) {
+  const headersBag = {
+    ...headers(),
+    Prefer: init.method && init.method !== "GET" ? "return=representation" : undefined,
+  };
+  return supabaseJson(restUrl(table, query), { ...init, headers: { ...headersBag, ...(init.headers || {}) } });
+}
+function money(value) {
+  const n = Number(String(value ?? "").replace(/[^\d.-]/g, ""));
+  return Number.isFinite(n) ? n : 0;
+}
+function availabilityCode(row = {}) {
+  return effectiveAvailabilityCode(row);
+}
+function availabilityText(code) {
+  return ({ online: "在线可接单", busy: "忙碌中", paused: "暂停接单", offline: "离线" })[code] || "离线";
+}
+function normalizeLevelLookupKey(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/lv\.?\s*/gi, "lv")
+    .replace(/\s+/g, " ");
+}
+function findLevelMeta(levels, row = {}) {
+  const list = Array.isArray(levels) ? levels : [];
+  const id = String(row.level_id || "").trim();
+  const name = String(row.level_name || "").trim();
+  if (id) {
+    const idKey = normalizeLevelLookupKey(id);
+    const byId = list.find((l) => {
+      const keys = [String(l.id || ""), String(l.code || ""), `lv${l.level || ""}`].map(normalizeLevelLookupKey);
+      return keys.includes(idKey) || String(l.id) === id || String(l.code) === id;
+    });
+    if (byId) return byId;
+  }
+  if (!name || /^未设置/.test(name)) return null;
+  const nameKey = normalizeLevelLookupKey(name);
+  return (
+    list.find((l) => {
+      const keys = [
+        String(l.id || ""),
+        String(l.code || ""),
+        String(l.name || ""),
+        `${l.code || ""} ${l.name || ""}`,
+        `Lv${l.level || ""} ${l.name || ""}`,
+        `lv${l.level || ""}`,
+      ].map(normalizeLevelLookupKey);
+      return keys.includes(nameKey) || (l.name && nameKey.includes(normalizeLevelLookupKey(l.name)));
+    }) || null
+  );
+}
+function resolveServiceTypes(row = {}) {
+  const hasGame = !!(String(row.game || "").trim() || parseServiceIds(row.service_ids).length);
+  const types = parseServiceTypes(row.service_type || row.serviceType, {
+    fallbackPlayWhenGame: true,
+    hasGame,
+  });
+  if (types.length) return types;
+  const hint = `${row.main_service || ""} ${row.tags || ""} ${row.description || ""}`;
+  const inferred = parseServiceTypes(hint);
+  if (inferred.length) return inferred;
+  return hasGame ? ["陪玩服务"] : ["陪玩服务"];
+}
+function resolveCompanionServiceIds(row = {}, catalog = []) {
+  const stored = parseServiceIds(row.service_ids);
+  if (stored.length) return stored;
+  const names = new Set(splitGames(row.game));
+  if (!names.size) return [];
+  return (catalog || [])
+    .filter((svc) => names.has(String(svc.name || svc.title || "").trim()))
+    .map((svc) => String(svc.id));
+}
+function publicCompanion(row = {}, profile = {}, levels = [], catalog = [], mediaExtras = {}, certTags = []) {
+  const base = mapCompanionPublicFields(row, profile, mediaExtras);
+  const avail = base.availabilityStatus || availabilityCode(row);
+  const publicId = base.publicId || "";
+  const avatar = resolveCompanionAvatar(profile, row, mediaExtras) || DEFAULT_COMPANION_AVATAR;
+  const cover = resolveCompanionCover(profile, row, mediaExtras) || avatar;
+  const name = base.name || "未命名陪玩";
+  const level = findLevelMeta(levels, row);
+  const levelConfig = level ? levelVisualConfig(level) : null;
+  const levelName = levelConfig
+    ? levelConfig.title
+    : row.level_name && !/^未设置/.test(String(row.level_name))
+      ? row.level_name
+      : "未设置等级";
+  const levelMin = level?.min ?? level?.minPrice ?? null;
+  const levelMax = level?.max ?? level?.maxPrice ?? null;
+  const levelPriceRange =
+    levelMin != null && levelMax != null
+      ? `${levelMin}–${levelMax}${level?.maxPlus ? "+" : ""}`
+      : "";
+  const rates = resolvePlatformCommission(row.commission_rate, level?.commissionRate ?? 20);
+  const serviceTypes = resolveServiceTypes(row);
+  const serviceIds = resolveCompanionServiceIds(row, catalog);
+  const byId = new Map((catalog || []).map((s) => [String(s.id), s]));
+  const serviceNames = serviceIds
+    .map((id) => byId.get(String(id)))
+    .filter(Boolean)
+    .map((s) => s.name || s.title)
+    .filter(Boolean);
+  const gameDisplay = serviceNames.length ? serviceNames.join("、") : row.game || "";
+  const voicePlayable =
+    pickStableMediaUrl(mediaExtras.voiceUrl) ||
+    (String(mediaExtras.voiceUrl || "").trim().startsWith("http") ? String(mediaExtras.voiceUrl).trim() : "") ||
+    "";
+  // Signed private-audio URLs are playable but intentionally "unstable" for avatar/cover
+  // pickers — keep them for voice so public detail can play after resolvePlayableUrl.
+  const videoPlayable =
+    pickStableMediaUrl(mediaExtras.videoUrl, mediaExtras.showcaseVideoUrl) ||
+    (String(mediaExtras.videoUrl || mediaExtras.showcaseVideoUrl || "").trim().startsWith("http")
+      ? String(mediaExtras.videoUrl || mediaExtras.showcaseVideoUrl).trim()
+      : "") ||
+    "";
+  const gallery = Array.isArray(mediaExtras.gallery)
+    ? mediaExtras.gallery.filter((g) => g && g.url && /^https?:\/\//i.test(String(g.url)))
+    : [];
+  const videos = Array.isArray(mediaExtras.videos)
+    ? mediaExtras.videos.filter((v) => v && v.url && /^https?:\/\//i.test(String(v.url)))
+    : videoPlayable
+      ? [{ url: videoPlayable }]
+      : [];
+  const achievements = Array.isArray(mediaExtras.achievements)
+    ? mediaExtras.achievements.filter((a) => a && a.url && /^https?:\/\//i.test(String(a.url)))
+    : [];
+  return {
+    id: row.user_id || row.id,
+    uid: row.user_id || row.id,
+    publicId,
+    companionUid: row.companion_uid || null,
+    companionProfileId: row.id,
+    name,
+    nickname: name,
+    nameValid: !!base.nameValid,
+    game: gameDisplay || row.game || "",
+    mainGame: gameDisplay || row.game || "",
+    gameRanks: publicGameRanks(row, serviceNames.length ? serviceNames : String(row.game || "").split(/[,，、/|]+/).map((s) => s.trim())),
+    service_type: serviceTypes.join(","),
+    serviceType: serviceTypes[0] || "陪玩服务",
+    serviceTypes,
+    service_ids: serviceIds,
+    serviceIds,
+    services: servicesFromGamePrices(
+      {
+        ...row,
+        service_ids: serviceIds,
+        game: gameDisplay || row.game || "",
+        main_service: gameDisplay || row.game || "",
+        price: row.price,
+        game_prices: projectGamePrices(row, levelConfig),
+        tags: stripGamePricesMarker(row.tags),
+        pricing_unit: row.pricing_unit || "小时",
+      },
+      catalog
+    ).filter((s) => s && s.name && !/^(陪玩|护航|跑刀|代肝|自定义)$/.test(String(s.name))),
+    level: levelName,
+    levelName,
+    levelId: levelConfig?.id || row.level_id || "",
+    levelConfig,
+    levelColor: levelConfig?.color || "",
+    displayColor: levelConfig?.displayColor || "",
+    cardBackground: levelConfig?.cardBackground || "",
+    cardStyle: levelConfig?.cardStyle || "",
+    badgeBorder: levelConfig?.badgeBorder || "",
+    badgeText: levelConfig?.badgeText || "",
+    badgeIcon: levelConfig?.badgeIcon || "",
+    levelMinPrice: levelConfig?.min ?? null,
+    levelMaxPrice: levelConfig?.max ?? null,
+    levelMaxPlus: levelConfig?.maxPlus === true,
+    // Level band = admin-configured limit/recommended range (NOT the companion's selling price).
+    levelPriceRange: levelConfig?.priceRangeLabel || "",
+    levelPriceRangeText: levelConfig?.priceRangeText || "",
+    levelPriceRangeRole: "level_limit",
+    // Selling price = companion_profiles.price (actual hourly quote on the card).
+    price: money(row.price),
+    priceValue: money(row.price),
+    hourlyPrice: money(row.price),
+    sellingPrice: money(row.price),
+    priceRole: "companion_selling_price",
+    certTags: Array.isArray(certTags) ? certTags : [],
+    certificationTags: Array.isArray(certTags) ? certTags : [],
+    gamePrices: projectGamePrices(row, levelConfig),
+    pricingUnit: row.pricing_unit || "小时",
+    availabilityStatus: avail,
+    availabilityText: availabilityText(avail),
+    onlineStatus: availabilityText(avail),
+    onlineStatusLabel: availabilityText(avail),
+    status: availabilityText(avail),
+    canOrderNow: avail === "online",
+    canAcceptBossOrder: avail === "online" || avail === "busy",
+    acceptsBooking: row._acceptsBooking !== false,
+    online: avail === "online" || avail === "busy",
+    avatar,
+    cover,
+    // Only expose playable http(s) voice URLs — never raw storage:// refs (breaks audio UI).
+    voiceUrl: voicePlayable,
+    hasVoice: !!voicePlayable,
+    cardImageUrl: pickStableMediaUrl(row.card_image_url, cover) || "",
+    gallery,
+    videos,
+    achievements,
+    videoUrl: videoPlayable,
+    showcaseVideoUrl: videoPlayable,
+    desc: row.description || "",
+    description: row.description || "",
+    gender: row.gender || "",
+    voiceType: row.voice_type || "",
+    tags: stripGamePricesMarker(String(row.tags || ""))
+      .replace(/\[\[MCJ_GALLERY:[\s\S]*?\]\]/g, "")
+      .split(/[,，、]/)
+      .map((t) => t.trim())
+      .filter((t) => t && !/^游戏ID:|^联系:|^地区:|^性别:|^年龄:/.test(t)),
+    // Never expose private fields to boss-facing public API
+    contactPhone: undefined,
+    identityNo: undefined,
+    commissionRate: rates.platformRate,
+    giftCommissionRate: money(row.gift_commission_rate),
+    directRebateRate: money(row.direct_rebate_rate),
+    verificationStatus: row.verification_status || "",
+    depositStatus: row.deposit_status || "",
+    lastOnlineAt: row.last_online_at || "",
+    statusUpdatedAt: row.status_updated_at || "",
+    rating: 0,
+    score: 0,
+    reviewCount: 0,
+    goodReviewCount: 0,
+    goodRate: 0,
+    completedOrders: Number(row.completed_orders || row.total_orders || 0) || 0,
+    reviews: [],
+  };
+}
+
+function summarizeReviews(list = []) {
+  const ratings = (list || []).map((r) => Number(r.rating) || 0).filter((n) => n >= 1 && n <= 5);
+  const count = ratings.length;
+  const sum = ratings.reduce((n, v) => n + v, 0);
+  const avg = count ? Math.round((sum / count) * 10) / 10 : 0;
+  const good = ratings.filter((n) => n >= 4).length;
+  return {
+    rating: avg,
+    score: avg,
+    reviewCount: count,
+    goodReviewCount: good,
+    goodRate: count ? Math.round((good / count) * 1000) / 10 : 0,
+  };
+}
+
+/**
+ * @param {object[]} companions
+ * @param {{ summaryOnly?: boolean }} [opts]
+ *   summaryOnly (hall list): ratings aggregate only — skip boss/order joins + review bodies.
+ *   Detail path keeps full reviews for the companion detail page.
+ */
+async function attachReviews(companions = [], opts = {}) {
+  const summaryOnly = !!opts.summaryOnly;
+  const ids = [...new Set((companions || []).map((c) => c.id || c.uid).filter(Boolean))];
+  if (!ids.length) return companions || [];
+  let rows = [];
+  const { normalizeReviewImages, isMissingReviewImagesColumn } = await import("../_review-images.js");
+  try {
+    // List: lighter select + lower limit — hall only needs rating aggregates.
+    const baseSelect = summaryOnly
+      ? "id,companion_id,order_id,rating,status,created_at"
+      : "id,companion_id,boss_id,order_id,rating,content,status,created_at";
+    const limit = summaryOnly ? 800 : 3000;
+    const fetchReviews = (select) =>
+      supabaseJson(
+        restUrl(
+          "companion_reviews",
+          `?companion_id=in.(${ids.map(encodeURIComponent).join(",")})&or=(status.eq.published,status.is.null)&order=created_at.desc&limit=${limit}&select=${select}`
+        ),
+        { headers: headers() }
+      );
+    if (summaryOnly) {
+      rows = await fetchReviews(baseSelect);
+    } else {
+      try {
+        rows = await fetchReviews(`${baseSelect},image_urls`);
+      } catch (imgErr) {
+        if (!isMissingReviewImagesColumn(imgErr)) throw imgErr;
+        console.warn("[public/companions] companion_reviews.image_urls missing:", imgErr?.message || imgErr);
+        rows = await fetchReviews(baseSelect);
+      }
+    }
+  } catch (e) {
+    if (/companion_reviews|schema cache|PGRST|does not exist/i.test(String(e.message || e))) return companions;
+    throw e;
+  }
+  const listAll = Array.isArray(rows) ? rows : [];
+  // One published review per order (keep newest).
+  const byOrder = new Map();
+  for (const r of listAll) {
+    const key = String(r.order_id || r.id || "");
+    if (!key || byOrder.has(key)) continue;
+    byOrder.set(key, r);
+  }
+  const deduped = [...byOrder.values()];
+  const byCid = {};
+  for (const r of deduped) {
+    const cid = r.companion_id;
+    if (!cid) continue;
+    if (!byCid[cid]) byCid[cid] = [];
+    byCid[cid].push(r);
+  }
+
+  if (summaryOnly) {
+    return (companions || []).map((c) => {
+      const cid = c.id || c.uid;
+      const list = byCid[cid] || [];
+      const summary = summarizeReviews(list);
+      return { ...c, ...summary, reviews: [] };
+    });
+  }
+
+  const bossIds = [...new Set(deduped.map((r) => r.boss_id).filter(Boolean))];
+  const orderIds = [...new Set(deduped.map((r) => r.order_id).filter(Boolean))];
+  let bosses = {};
+  let orders = {};
+  if (bossIds.length) {
+    const profiles = await supabaseJson(
+      restUrl("profiles", `?id=in.(${bossIds.map(encodeURIComponent).join(",")})&select=id,display_name,boss_uid`),
+      { headers: headers() }
+    ).catch(() => []);
+    bosses = Object.fromEntries((profiles || []).map((p) => [p.id, p]));
+  }
+  if (orderIds.length) {
+    const orderRows = await supabaseJson(
+      restUrl("orders", `?id=in.(${orderIds.map(encodeURIComponent).join(",")})&select=id,order_no,game,status,companion_id`),
+      { headers: headers() }
+    ).catch(() => []);
+    orders = Object.fromEntries((orderRows || []).map((o) => [o.id, o]));
+  }
+  // Detail: drop reviews whose order.companion_id disagrees (same as before).
+  for (const cid of Object.keys(byCid)) {
+    byCid[cid] = byCid[cid].filter((r) => {
+      const order = orders[r.order_id] || {};
+      if (order.companion_id && String(order.companion_id) !== String(cid)) return false;
+      return true;
+    });
+  }
+  return (companions || []).map((c) => {
+    const cid = c.id || c.uid;
+    const list = byCid[cid] || [];
+    const summary = summarizeReviews(list);
+    return {
+      ...c,
+      ...summary,
+      reviews: list.slice(0, 30).map((r) => {
+        const boss = bosses[r.boss_id] || {};
+        const order = orders[r.order_id] || {};
+        const bossCode = String(boss.boss_uid || "").trim() || "";
+        return {
+          id: r.id,
+          orderId: order.order_no || r.order_id || "",
+          orderNo: order.order_no || r.order_id || "",
+          companionId: r.companion_id || cid,
+          bossId: r.boss_id || "",
+          bossCode,
+          bossUid: bossCode,
+          gameName: order.game || "",
+          game: order.game || "",
+          rating: Number(r.rating) || 0,
+          content: r.content || "",
+          images: normalizeReviewImages(r.image_urls),
+          createdAt: r.created_at || "",
+          status: r.status || "published",
+        };
+      }),
+    };
+  });
+}
+
+/**
+ * @param {string[]} profileIds
+ * @param {{ listMode?: boolean }} [opts]
+ *   listMode (hall): only avatar/cover (+ light gallery for cover fallback).
+ *   Skips voice/video rows so list does not pay N signed-URL RTTs for unused media.
+ */
+async function mediaExtrasByProfile(profileIds = [], opts = {}) {
+  const ids = [...new Set((profileIds || []).filter(Boolean))];
+  if (!ids.length) return {};
+  const listMode = !!opts.listMode;
+  const mediaTypes = listMode
+    ? "avatar,cover,gallery"
+    : "avatar,cover,gallery,voice,video,achievement";
+  let rows = [];
+  try {
+    rows = await supabaseJson(
+      restUrl(
+        "companion_media",
+        `?companion_profile_id=in.(${ids.map(encodeURIComponent).join(",")})&media_type=in.(${mediaTypes})&order=sort_order.asc&limit=${listMode ? 1200 : 3000}&select=id,companion_profile_id,media_type,storage_bucket,storage_path,status,content_type,sort_order`
+      ),
+      { headers: headers() }
+    );
+  } catch (e) {
+    // Older DBs without video in check constraint: fall back without video filter.
+    if (/companion_media|schema cache|PGRST|does not exist|media_type|check/i.test(String(e.message || e))) {
+      try {
+        const fallbackTypes = listMode ? "avatar,cover,gallery" : "avatar,cover,gallery,voice";
+        rows = await supabaseJson(
+          restUrl(
+            "companion_media",
+            `?companion_profile_id=in.(${ids.map(encodeURIComponent).join(",")})&media_type=in.(${fallbackTypes})&order=sort_order.asc&limit=${listMode ? 1200 : 3000}&select=id,companion_profile_id,media_type,storage_bucket,storage_path,status,content_type`
+          ),
+          { headers: headers() }
+        );
+      } catch (e2) {
+        if (/companion_media|schema cache|PGRST|does not exist/i.test(String(e2.message || e2))) return {};
+        throw e2;
+      }
+    } else {
+      throw e;
+    }
+  }
+  const list = Array.isArray(rows) ? rows : [];
+  // Phase 2: resolve all signed URLs in parallel (was sequential N×RTT per media row).
+  const resolved = await Promise.all(
+    list.map(async (row) => {
+      const pid = row.companion_profile_id;
+      const bucket = String(row.storage_bucket || "").trim();
+      const path = String(row.storage_path || "").trim();
+      if (!pid || !bucket || !path) return null;
+      const status = String(row.status || "pending").toLowerCase();
+      if (row.media_type === "achievement" && status === "rejected") return null;
+      const ctype = String(row.content_type || "").toLowerCase();
+      const isVideo =
+        row.media_type === "video" ||
+        (row.media_type === "achievement" && /^video\//.test(ctype)) ||
+        (row.media_type === "gallery" && /^video\//.test(ctype)) ||
+        (row.media_type === "gallery" && /\/video\//i.test(path));
+      // List mode: never sign voice/video (hall cards do not play them).
+      if (listMode && (row.media_type === "voice" || isVideo)) return null;
+      // Boss/public: voice + video only after approve (existing review rule).
+      if ((row.media_type === "voice" || isVideo) && status && status !== "approved") return null;
+      let url = "";
+      try {
+        if (bucket === "companion-public" || /public/i.test(bucket)) {
+          url = publicObjectUrl(bucket, path);
+        } else {
+          url = await createSignedUrl(bucket, path, 60 * 60 * 12);
+        }
+      } catch (err) {
+        console.warn("[public/companions] media URL resolve failed", bucket, path, err?.message || err);
+        return null;
+      }
+      if (!url || !/^https?:\/\//i.test(url)) return null;
+      return { row, pid, url, isVideo };
+    })
+  );
+  const byProfile = {};
+  for (const item of resolved) {
+    if (!item) continue;
+    const { row, pid, url, isVideo } = item;
+    if (!byProfile[pid]) {
+      byProfile[pid] = {
+        avatarUrl: "",
+        coverUrl: "",
+        voiceUrl: "",
+        videoUrl: "",
+        showcaseVideoUrl: "",
+        gallery: [],
+        videos: [],
+        achievements: [],
+      };
+    }
+    if (row.media_type === "avatar" && !byProfile[pid].avatarUrl) byProfile[pid].avatarUrl = url;
+    if (row.media_type === "cover" && !byProfile[pid].coverUrl) byProfile[pid].coverUrl = url;
+    if (row.media_type === "gallery" && !isVideo) {
+      // Legacy achievement fallbacks used sort_order >= 500 — keep out of personal gallery.
+      const sortN = Number(row.sort_order || 0);
+      if (sortN >= 500) {
+        byProfile[pid].achievements.push({ id: row.id, url, contentType: row.content_type || "" });
+      } else {
+        byProfile[pid].gallery.push({ id: row.id, url });
+        if (!byProfile[pid].coverUrl) byProfile[pid].coverUrl = url;
+      }
+    }
+    if (row.media_type === "achievement") {
+      byProfile[pid].achievements.push({
+        id: row.id,
+        url,
+        contentType: row.content_type || "",
+        mediaType: isVideo ? "video" : "image",
+      });
+    }
+    if (row.media_type === "voice" && !byProfile[pid].voiceUrl) byProfile[pid].voiceUrl = url;
+    if (isVideo && row.media_type !== "achievement") {
+      byProfile[pid].videos.push({ id: row.id, url, contentType: row.content_type || "" });
+      if (!byProfile[pid].videoUrl) {
+        byProfile[pid].videoUrl = url;
+        byProfile[pid].showcaseVideoUrl = url;
+      }
+    }
+    if (row.media_type === "avatar" && !byProfile[pid].coverUrl) byProfile[pid].coverUrl = url;
+  }
+  return byProfile;
+}
+
+async function fetchCompanionRows(query) {
+  return supabaseJson(restUrl("companion_profiles", query), { headers: headers() }).catch(() => []);
+}
+
+/** Prefer DB-level exclude of smoke/test companions; fall back if column missing. */
+async function fetchCompanionRowsHideTest(query) {
+  const q = String(query || "");
+  const withFlag = q.includes("?")
+    ? q.replace("?", "?is_test_account=eq.false&")
+    : `?is_test_account=eq.false${q ? `&${q.replace(/^\?/, "")}` : ""}`;
+  try {
+    return await supabaseJson(restUrl("companion_profiles", withFlag), { headers: headers() });
+  } catch (error) {
+    if (!/is_test_account|42703|PGRST204|schema cache/i.test(String(error?.message || error || ""))) {
+      throw error;
+    }
+    return fetchCompanionRows(query);
+  }
+}
+
+/**
+ * Resolve one companion profile row by internal UUID or public PW/P code.
+ * Never pass a non-UUID value into a UUID column filter.
+ */
+async function resolveCompanionProfileRows(idRaw = "") {
+  const id = String(idRaw || "").trim();
+  if (!id) return null;
+
+  const approvedFilter = "or=(verification_status.eq.approved,application_status.eq.approved)";
+
+  if (isDbUuid(id)) {
+    const byUser = await fetchCompanionRowsHideTest(
+      `?user_id=eq.${encodeURIComponent(id)}&${approvedFilter}&limit=1`
+    );
+    if (byUser?.[0]) return byUser;
+    // Some callers may pass companion_profiles.id
+    return fetchCompanionRowsHideTest(
+      `?id=eq.${encodeURIComponent(id)}&${approvedFilter}&limit=1`
+    );
+  }
+
+  if (isCompanionCode(id)) {
+    const seq = parseCompanionCodeNumber(id);
+    const code = formatCompanionCode(seq);
+    const byCode = await fetchCompanionRowsHideTest(
+      `?companion_code=eq.${encodeURIComponent(code)}&${approvedFilter}&limit=1`
+    );
+    if (byCode?.[0]) return byCode;
+
+    for (const uid of [seq, seq + 100000]) {
+      const byUid = await fetchCompanionRowsHideTest(
+        `?companion_uid=eq.${encodeURIComponent(uid)}&${approvedFilter}&limit=1`
+      );
+      if (byUid?.[0]) return byUid;
+    }
+
+    // Scan fallback for rows with missing companion_code but resolvable public code.
+    const pool = await fetchCompanionRowsHideTest(
+      `?${approvedFilter}&select=*&order=updated_at.desc&limit=500`
+    );
+    const hit = (Array.isArray(pool) ? pool : []).find((row) => resolveCompanionPublicCode(row) === code);
+    return hit ? [hit] : [];
+  }
+
+  // Unknown non-UUID / non-code lookup — do not hit UUID columns.
+  return [];
+}
+
+async function loadCompanions(id = "", opts = {}) {
+  let companions;
+  if (id) {
+    companions = await resolveCompanionProfileRows(id);
+    if (!Array.isArray(companions)) companions = [];
+  } else {
+    const limitRaw = Number(opts.limit || 80);
+    const limit = Number.isFinite(limitRaw) ? Math.min(200, Math.max(12, Math.floor(limitRaw))) : 80;
+    const LIST_SELECT =
+      "id,user_id,nickname,game,main_service,price,game_prices,level_id,level_name,commission_rate," +
+      "online_status,allow_orders,application_status,verification_status,companion_code,is_test_account," +
+      "gender,age,region,voice_type,tags,featured,updated_at,voice_url,card_image_url,description," +
+      "schedule,game_rank,position,contact_phone,service_standards";
+    let rows;
+    try {
+      rows = await fetchCompanionRowsHideTest(
+        `?or=(verification_status.eq.approved,application_status.eq.approved)&order=updated_at.desc&limit=${limit}&select=${LIST_SELECT}`
+      );
+    } catch (selectErr) {
+      // Older DBs may lack some columns — fall back to full row fetch with same limit.
+      console.warn("[public/companions] list select fallback", selectErr?.message || selectErr);
+      rows = await fetchCompanionRowsHideTest(
+        `?or=(verification_status.eq.approved,application_status.eq.approved)&order=updated_at.desc&limit=${limit}`
+      );
+    }
+    companions = Array.isArray(rows) ? rows : [];
+  }
+  // JS safety net (no deletes): drop smoke/test companions even if DB filter unavailable.
+  companions = companions.filter((row) => row && row.is_test_account !== true);
+  // Soft-heal: allocate durable PW public IDs for customer-facing surfaces.
+  try {
+    const { ensureCompanionPublicCodes } = await import("../_account-codes.js");
+    await ensureCompanionPublicCodes(companionDb, companions);
+  } catch {
+    /* best effort */
+  }
+  const userIds = [...new Set(companions.map((row) => row.user_id).filter(Boolean))];
+  if (!userIds.length) return [];
+  const profileIds = companions.map((row) => row.id).filter(Boolean);
+  let profiles = [];
+  // Do not require profiles.role=companion. Dual-role accounts (e.g. boss who also
+  // has an approved companion_profiles row) must still appear when hallVisible.
+  try {
+    profiles = await supabaseJson(
+      restUrl(
+        "profiles",
+        `?id=in.(${userIds.map(encodeURIComponent).join(",")})&status=eq.active&is_test_account=eq.false&select=id,display_name,avatar_url,email,status,role,is_test_account`
+      ),
+      { headers: headers() }
+    );
+  } catch (error) {
+    if (!/is_test_account|42703|PGRST204|schema cache/i.test(String(error?.message || error || ""))) {
+      throw error;
+    }
+    profiles = await supabaseJson(
+      restUrl(
+        "profiles",
+        `?id=in.(${userIds.map(encodeURIComponent).join(",")})&status=eq.active&select=id,display_name,avatar_url,email,status,role,is_test_account`
+      ),
+      { headers: headers() }
+    ).catch(async () =>
+      supabaseJson(
+        restUrl(
+          "profiles",
+          `?id=in.(${userIds.map(encodeURIComponent).join(",")})&status=eq.active&select=id,display_name,avatar_url,email,status,role`
+        ),
+        { headers: headers() }
+      )
+    );
+  }
+  // List/hall: skip HEAD size-gate (N companions × voice/video/gallery was multi-second).
+  // Single-id detail keeps HEAD so tiny voice stubs still drop.
+  const skipHead = !String(id || "").trim();
+  const resolveOpts = { skipHead };
+  const [levels, servicesBundle, mediaMap, certMap] = await Promise.all([
+    readLocalLevels().catch(() => []),
+    loadPublicServices().catch(() => ({ services: [] })),
+    mediaExtrasByProfile(profileIds, { listMode: skipHead }).catch(() => ({})),
+    resolveCertTagsForProfiles(profileIds).catch(() => ({})),
+  ]);
+  const catalog = Array.isArray(servicesBundle?.services) ? servicesBundle.services : [];
+  const profileMap = Object.fromEntries((profiles || []).map((row) => [row.id, row]));
+  const levelList = Array.isArray(levels) ? levels.map((l) => toPublicLevel(l)) : [];
+  const bookingOff = new Set();
+  try {
+    const settings = await supabaseJson(
+      restUrl(
+        "companion_booking_settings",
+        "?select=companion_id,accept_booking&accept_booking=eq.false&limit=2000"
+      ),
+      { headers: headers() }
+    );
+    (Array.isArray(settings) ? settings : []).forEach((row) => {
+      if (row && row.companion_id) bookingOff.add(String(row.companion_id));
+    });
+  } catch {
+    /* settings table is optional until the staging migration is applied */
+  }
+
+  async function enrichOne(row) {
+    if (!isAuditApprovedCompanion(row)) return null;
+    const profile = profileMap[row.user_id];
+    // Approved companions drop here only when profile join missed (inactive/missing) —
+    // approve flow activates profile before writing application_status=approved.
+    if (!profile) return null;
+    // Hide smoke/test accounts from homepage / hall / public detail (matches admin filter).
+    // Heuristics are mirrored at approve-time (assertApproveCanPublish) so real approve
+    // cannot create a silent approved-but-hidden hall row via smoke name/email.
+    if (isTestAccountRecord(profile, row)) return null;
+    if (profile.is_test_account === true || row.is_test_account === true) return null;
+    const media = { ...(mediaMap[row.id] || {}) };
+    // Hall/list cards only need cover/avatar (already signed in mediaMap).
+    // Soft media never gates hallVisible — skip voice/video/gallery re-resolve on list
+    // (detail id=… still resolves full playable media below).
+    if (!skipHead) {
+      // Prefer companion_media voice, else durable storage:// / legacy URL.
+      // If media signed URL is expired/invalid, fall back to companion_profiles.voice_url.
+      const [fromMedia, fromProfile, videoUrl] = await Promise.all([
+        resolvePlayableUrl(media.voiceUrl, resolveOpts),
+        resolvePlayableUrl(row.voice_url, resolveOpts),
+        resolvePlayableUrl(media.videoUrl || media.showcaseVideoUrl || "", resolveOpts),
+      ]);
+      media.voiceUrl = fromMedia || fromProfile;
+      media.videoUrl = videoUrl;
+      media.showcaseVideoUrl = media.videoUrl;
+      // Parse legacy gallery tags when companion_media has no gallery rows.
+      if (!Array.isArray(media.gallery) || !media.gallery.length) {
+        const tag = String(row.tags || "");
+        const m = tag.match(/\[\[MCJ_GALLERY:([\s\S]*?)\]\]/);
+        if (m) {
+          try {
+            const items = JSON.parse(m[1]);
+            const galleryRaw = Array.isArray(items) ? items : [];
+            const resolved = await Promise.all(
+              galleryRaw.map(async (item) => {
+                const raw = typeof item === "string" ? item : item?.url || item?.path || "";
+                const url = await resolvePlayableUrl(raw, resolveOpts);
+                return url ? { id: item?.id || url, url } : null;
+              })
+            );
+            const gallery = resolved.filter(Boolean);
+            if (gallery.length) media.gallery = gallery;
+          } catch {
+            /* ignore bad gallery tag */
+          }
+        }
+      }
+    } else {
+      // Drop heavy media from list payload — detail API fills them on open.
+      media.voiceUrl = "";
+      media.videoUrl = "";
+      media.showcaseVideoUrl = "";
+      media.gallery = Array.isArray(media.gallery) ? media.gallery.slice(0, 1) : [];
+    }
+    const gate = evaluatePublishGate(row, profile, media);
+    // Homepage / hall (PR A): hallVisible = approved + active + allow_orders + !test.
+    // Critical profile is approve-time only; credential OR does not hide hall.
+    if (!gate.hallVisible) return null;
+    const cardRow = Object.assign({}, row, { _acceptsBooking: !bookingOff.has(String(row.user_id || "")) });
+    return publicCompanion(cardRow, profile, levelList, catalog, media, certMap[row.id] || []);
+  }
+
+  const mapped = (await Promise.all((companions || []).map((row) => enrichOne(row)))).filter(Boolean);
+  // Hall list: summaryOnly (rating aggregates). Detail keeps full review bodies + joins.
+  return attachReviews(mapped, { summaryOnly: !String(id || "").trim() });
+}
+
+/**
+ * Current hall card for specific companions.
+ * Ranking must keep its own score/rank and only borrow this view for nickname, avatar, services, price, and status.
+ */
+export async function hallDisplayByUserIds(userIds = []) {
+  const ids = [...new Set((userIds || []).map((id) => String(id || "").trim()).filter(Boolean))];
+  if (!ids.length || !hasDb()) return {};
+  const inList = ids.map(encodeURIComponent).join(",");
+  const [rows, profiles, levels, servicesBundle] = await Promise.all([
+    supabaseJson(restUrl("companion_profiles", `?user_id=in.(${inList})&select=*&limit=500`), { headers: headers() }).catch(
+      () => []
+    ),
+    supabaseJson(
+      restUrl("profiles", `?id=in.(${inList})&select=id,display_name,avatar_url,email,status,role,is_test_account&limit=500`),
+      { headers: headers() }
+    ).catch(async () =>
+      supabaseJson(
+        restUrl("profiles", `?id=in.(${inList})&select=id,display_name,avatar_url,email,status,role&limit=500`),
+        { headers: headers() }
+      ).catch(() => [])
+    ),
+    readLocalLevels().catch(() => []),
+    loadPublicServices().catch(() => ({ services: [] })),
+  ]);
+  const catalog = Array.isArray(servicesBundle?.services) ? servicesBundle.services : [];
+  const levelList = Array.isArray(levels) ? levels.map((l) => toPublicLevel(l)) : [];
+  const profileMap = Object.fromEntries((profiles || []).map((row) => [row.id, row]));
+  const profileIds = (rows || []).map((row) => row.id).filter(Boolean);
+  const mediaMap = await mediaExtrasByProfile(profileIds, { listMode: true }).catch(() => ({}));
+  const out = {};
+  for (const row of rows || []) {
+    if (!row?.user_id) continue;
+    const profile = profileMap[row.user_id] || {};
+    // Hall list omits service_ids. Ranking must use that same card, not a stricter detail projection.
+    const listRow = { ...row };
+    delete listRow.service_ids;
+    const card = publicCompanion(listRow, profile, levelList, catalog, mediaMap[row.id] || {}, []);
+    out[row.user_id] = card;
+  }
+  return out;
+}
+
+export default async function handler(req, res) {
+  const lookup = String(req.query.id || req.query.uid || req.query.player || "").trim();
+  // List is public + slowly changing; allow short edge cache (overridden only if vercel.json permits).
+  // Detail stays no-store so voice HEAD gating / signed URLs stay fresh.
+  if (lookup) {
+    res.setHeader("Cache-Control", "no-store");
+  } else {
+    res.setHeader("Cache-Control", "public, max-age=0, s-maxage=8, stale-while-revalidate=0");
+  }
+  if (req.method !== "GET") {
+    res.setHeader("Allow", "GET");
+    return json(res, 405, { ok: false, message: "Method Not Allowed" });
+  }
+  if (!hasDb()) {
+    return json(res, 200, { ok: true, configured: false, companions: [], message: "未配置 Supabase，陪玩大厅不返回假数据。" });
+  }
+  try {
+    const limitRaw = Number(req.query?.limit || req.query?.pageSize || 80);
+    const companions = await loadCompanions(lookup, { limit: limitRaw });
+    // Detail lookup: attach approved gift wall (aggregated, permanent).
+    if (lookup && companions?.length === 1) {
+      try {
+        const { getCompanionGiftWall } = await import("../_gift-orders.js");
+        const cid = String(companions[0].id || companions[0].uid || "").trim();
+        companions[0].giftWall = cid ? await getCompanionGiftWall(cid) : [];
+      } catch {
+        companions[0].giftWall = companions[0].giftWall || [];
+      }
+    }
+    return json(res, 200, { ok: true, configured: true, companions });
+  } catch (error) {
+    const msg = String(error?.message || error || "陪玩列表接口异常");
+    // Never surface raw Postgres UUID parse errors to the boss-facing UI.
+    if (/invalid input syntax for type uuid/i.test(msg)) {
+      return json(res, 200, { ok: true, configured: true, companions: [] });
+    }
+    return json(res, 500, { ok: false, message: msg });
+  }
+}

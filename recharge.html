@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <!-- mcj-pwa-meta:begin -->
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="妙脆角老板">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#0a0610">
+  <meta name="mobile-web-app-capable" content="yes">
+  <script src="/pwa-boot.js?v=20261009bell1" defer></script>
+  <!-- mcj-pwa-meta:end -->
+
+  <script src="/portal-early-gate.js?v=20260911authPerfP0"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>充值中心 - MEOW CUI JIAO</title>
+
+
+  <style>
+    *{box-sizing:border-box}
+    body{margin:0;background:#08070a;color:#fff;font-family:"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
+    .boss-nav{display:flex;gap:18px;flex:1;flex-wrap:wrap;align-items:center}
+    .boss-nav a,.boss-nav button{border:0;background:transparent;color:#cdb8c4;cursor:pointer;font:inherit;font-size:14px;padding:0;text-decoration:none}
+    .boss-nav a.active{color:#ffd6e7;font-weight:900}
+    .recharge-shell{width:min(1080px,calc(100% - 32px));margin:0 auto;padding:24px 0 80px;display:grid;gap:16px}
+    .page-head,.panel{border:1px solid rgba(255,255,255,.10);border-radius:18px;background:rgba(255,255,255,.045);padding:18px}
+    .page-head{display:flex;align-items:end;justify-content:space-between;gap:16px}
+    .page-head h1{margin:0;font-size:28px}.page-head p{margin:6px 0 0;color:#9ca3af}
+    .refund-rule-banner{border:1px solid rgba(255,120,150,.55);border-radius:16px;background:linear-gradient(180deg,rgba(255,80,120,.22),rgba(40,10,20,.55));padding:16px 18px;box-shadow:0 0 0 1px rgba(255,143,197,.12),0 12px 40px rgba(255,60,100,.12)}
+    .refund-rule-banner strong.rr-title{display:block;font-size:17px;letter-spacing:.04em;color:#ffd0de;margin:0 0 8px}
+    .refund-rule-banner p{margin:0;color:#ffd6e7;font-size:14px;line-height:1.65;font-weight:650}
+    .refund-rule-banner em{font-style:normal;color:#fff;font-weight:900}
+    .stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+    .stat{border:1px solid rgba(255,255,255,.08);border-radius:14px;background:rgba(0,0,0,.22);padding:14px}
+    .stat span{display:block;color:#9ca3af;font-size:13px}.stat strong{display:block;margin-top:8px;font-size:24px}
+    .layout{display:grid;grid-template-columns:1.25fr .75fr;gap:16px}
+    .panel h2{margin:0 0 14px;font-size:20px}.muted{color:#9ca3af}.hint{margin-top:10px;color:#9ca3af;font-size:13px;line-height:1.6}
+    .campaigns{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+    .campaign,.method,.primary-btn,.ghost-btn{border-radius:12px;min-height:42px;display:inline-flex;align-items:center;justify-content:center;gap:8px;cursor:pointer;font-weight:900}
+    .campaign{flex-direction:column;align-items:flex-start;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.055);color:#fff;padding:14px;text-align:left}
+    .campaign.active{border-color:rgba(255,143,197,.55);background:rgba(255,143,197,.16)}
+    .campaign strong{font-size:18px}.campaign small{color:#9ca3af;font-weight:700;line-height:1.5}
+    .campaign .tag{display:inline-block;margin-top:8px;padding:2px 8px;border-radius:999px;background:rgba(255,143,197,.18);color:#ffd6e7;font-size:12px}
+    .methods{display:grid;gap:10px}.method{justify-content:space-between;padding:0 12px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.055);color:#fff}
+    .method.active{border-color:rgba(255,143,197,.55);background:rgba(255,143,197,.16);color:#ffd6e7}
+    .method small{color:#9ca3af;font-weight:800}.method.open small{color:#8ff0bd}.method.closed small{color:#ffd27a}
+    .summary-line{display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid rgba(255,255,255,.08);padding:11px 0}.summary-line:last-of-type{border-bottom:0}
+    .summary-line span{color:#9ca3af}.summary-line strong{font-size:18px}
+    .primary-btn{width:100%;border:1px solid rgba(255,143,197,.45);background:linear-gradient(180deg,#ffdcea,#f3a6ca);color:#1b0712;margin-top:16px}
+    .primary-btn:disabled{opacity:.55;cursor:not-allowed}
+    .ghost-btn{padding:0 12px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.055);color:#fff}
+    .message{display:none;border-radius:12px;padding:12px;margin-top:12px;line-height:1.55}.message.show{display:block}.message.ok{border:1px solid rgba(143,240,189,.24);background:rgba(143,240,189,.09);color:#8ff0bd}.message.warn{border:1px solid rgba(255,210,122,.22);background:rgba(255,210,122,.08);color:#ffd27a}.message.bad{border:1px solid rgba(255,113,145,.24);background:rgba(255,113,145,.08);color:#ff9db7}
+    .records,.ledger{display:grid;gap:8px}.record,.tx{display:grid;grid-template-columns:1.2fr .8fr .8fr .9fr;gap:10px;align-items:center;border:1px solid rgba(255,255,255,.08);border-radius:12px;background:rgba(0,0,0,.18);padding:11px}.record span,.tx span{color:#9ca3af}.empty{padding:20px;text-align:center;color:#9ca3af}
+    .record-rich{grid-template-columns:1.4fr .7fr .7fr 1.2fr;align-items:start}
+    .record-rich small{color:#ff9db7}
+    .record-rich a{color:#ffd6e7}
+    .pay-step-panel .pay-qr-block{margin-top:14px;display:grid;gap:12px;justify-items:center}
+    /* QR frame: dark-pink theme plate that hugs the image — never a full-bleed white slab. */
+    /* DuitNow/recharge QR: no white outer plate — transparent hug-fit wrapper only. */
+    .pay-qr-frame{display:inline-block;max-width:100%;margin:0 auto;padding:0;border-radius:0;background:transparent;border:0;box-shadow:none;outline:none;overflow:visible;line-height:0;cursor:zoom-in}
+    .pay-qr-frame img,.pay-qr-frame img[data-mcj-pay-qr]{width:320px;max-width:min(92vw,320px);height:auto;object-fit:contain;object-position:center;display:block;margin:0 auto;padding:0;background:transparent!important;border:0!important;outline:0!important;box-shadow:none!important;border-radius:0!important;image-rendering:auto;-webkit-tap-highlight-color:transparent;cursor:zoom-in}
+    .pay-qr-meta,.pay-row{display:grid;gap:8px}
+    .pay-row{border:1px solid rgba(255,255,255,.08);border-radius:12px;background:rgba(0,0,0,.18);padding:12px;display:flex;justify-content:space-between;gap:12px}
+    .pay-row span{color:#9ca3af;font-size:13px}.pay-row strong{color:#fff;word-break:break-word;text-align:right}
+    .pay-proof-block{margin-top:16px;display:grid;gap:10px}
+    .pay-proof-block h3{margin:0;font-size:16px;color:#ffd6e7}
+    .pay-proof-pick{position:relative;overflow:hidden}
+    .pay-proof-file{position:absolute!important;inset:0!important;width:100%!important;height:100%!important;opacity:0!important;cursor:pointer!important;border:0!important;margin:0!important;padding:0!important}
+    .pay-proof-preview{display:grid;gap:8px}
+    .pay-proof-preview img{width:min(100%,320px);max-height:240px;object-fit:contain;border-radius:12px;border:1px solid rgba(255,255,255,.14);background:rgba(0,0,0,.24)}
+    .pay-proof-name{margin:0;color:#ffd6e7;font-size:13px;word-break:break-all}
+    .pay-reject{margin:10px 0 0;color:#ff9db7;font-weight:700}
+    .pay-hint{margin:10px 0 0;color:#ffd6e7;font-size:13px;line-height:1.5}
+    .pay-qr-lightbox{position:fixed;inset:0;z-index:9999;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.88);padding:20px;box-sizing:border-box}
+    .pay-qr-lightbox.is-open{display:flex}
+    .pay-qr-lightbox-panel{position:relative;max-width:min(92vw,560px);max-height:92vh;display:grid;gap:12px;justify-items:center}
+    .pay-qr-lightbox-panel img{width:min(86vw,520px);height:auto;max-height:78vh;object-fit:contain;image-rendering:auto;background:transparent;border:0;border-radius:0;cursor:default}
+    .pay-qr-lightbox-close{position:absolute;top:-8px;right:-8px;width:40px;height:40px;border:0;border-radius:999px;background:#fff;color:#1b0712;font-size:22px;font-weight:800;line-height:1;cursor:pointer;box-shadow:0 8px 24px rgba(0,0,0,.35)}
+    .pay-qr-lightbox-hint{margin:0;color:#c4b5c0;font-size:13px;text-align:center}
+    @media(max-width:860px){.layout,.stats,.campaigns{grid-template-columns:1fr}.page-head{display:block}.pay-qr-frame img,.pay-qr-frame img[data-mcj-pay-qr]{width:min(88vw,320px);max-width:min(88vw,320px)}}
+    @media(max-width:520px){.recharge-shell{width:calc(100% - 24px);padding-top:16px}.boss-nav{gap:12px}.record,.tx,.record-rich{grid-template-columns:1fr}.page-head h1{font-size:24px}}
+  </style>
+  <link rel="stylesheet" crossorigin href="/src/style.css">
+  <link rel="stylesheet" crossorigin href="/src/boss-header.css?v=20261018brand1">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="index.html"><img src="/assets/meow-cuijiao-brand-96.webp" alt="MEOW CUI JIAO" width="32" height="32" decoding="async" onerror="this.onerror=null;this.src='/assets/meow-cuijiao-brand-96.jpg'"><span>MEOW CUI JIAO</span></a>
+    <nav class="boss-nav">
+      <a href="index.html">首页</a>
+      <a href="companion-center.html">陪玩大厅</a>
+      <a class="active" href="recharge.html">充值中心</a>
+      <a href="orders.html">我的订单</a>
+      <a href="support.html">在线客服</a>
+      <a href="mine.html">我的账号</a>
+      <button type="button" data-logout>退出登录</button>
+    </nav>
+  </header>
+
+  <main class="recharge-shell" id="rechargeApp"></main>
+
+  <script src="src/boss-auth-session.js?v=20260911authPerfP0"></script>
+  <script src="src/boss-profile-cache.js?v=20260911perfP2"></script>
+  <script src="src/boss-nav-prefetch.js?v=20261004navPerf1"></script>
+  <script src="src/role-gates.js?v=20260908antiBlank1"></script>
+<script src="src/boss-header.js" defer></script>
+  <script src="src/avatar-fallback.js"></script>
+  <link rel="stylesheet" href="/src/pay-qr-preview.css?v=20260813payQrConfirmZoom1">
+  <script src="/src/pay-qr-preview.js?v=20260813payQrConfirmZoom1"></script>
+  <script src="src/recharge-center.js?v=20261005bankQrImage1" defer></script>
+</body>
+</html>

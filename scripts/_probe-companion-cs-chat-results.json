@@ -1,0 +1,247 @@
+{
+  "marker": "COMP-CS-PROBE-1785770740133",
+  "compUid": "1d3fe6a0-830f-47aa-a135-e3f3ab9ff6d0",
+  "csUid": "268e8205-0e09-4870-b44f-72676ade6ce5",
+  "send": {
+    "status": 200,
+    "ok": true,
+    "message": "消息已发送",
+    "messageRow": {
+      "id": "a43f935b-7df2-4301-9191-19e90b042f85",
+      "conversationId": "5fad0389-b21c-4429-9cb0-a28fbdba86dd",
+      "senderId": "1d3fe6a0-830f-47aa-a135-e3f3ab9ff6d0",
+      "senderRole": "companion",
+      "senderLabel": "我",
+      "side": "right",
+      "messageType": "text",
+      "content": "COMP-CS-PROBE-1785770740133",
+      "createdAt": "2026-08-03T15:25:43.613+00:00",
+      "readAt": ""
+    },
+    "error": "消息已发送"
+  },
+  "inbox": {
+    "postStatus": 400,
+    "getStatus": 200,
+    "csConversationId": "5fad0389-b21c-4429-9cb0-a28fbdba86dd",
+    "hasMarker": true,
+    "conversations": [
+      {
+        "id": "5fad0389-b21c-4429-9cb0-a28fbdba86dd",
+        "key": "cs",
+        "type": "cs",
+        "unread": 3,
+        "assignedServiceId": "268e8205-0e09-4870-b44f-72676ade6ce5",
+        "lastMessage": "COMP-CS-PROBE-1785770740133"
+      },
+      {
+        "id": "system",
+        "key": "system",
+        "type": "system",
+        "unread": 13,
+        "lastMessage": "欢迎使用陪玩端"
+      }
+    ]
+  },
+  "convId": "5fad0389-b21c-4429-9cb0-a28fbdba86dd",
+  "dbConv": {
+    "id": "5fad0389-b21c-4429-9cb0-a28fbdba86dd",
+    "boss_id": null,
+    "companion_id": "1d3fe6a0-830f-47aa-a135-e3f3ab9ff6d0",
+    "customer_service_id": "268e8205-0e09-4870-b44f-72676ade6ce5",
+    "order_id": null,
+    "status": "active",
+    "created_at": "2026-08-03T06:41:52.389+00:00",
+    "updated_at": "2026-08-03T15:25:43.991+00:00",
+    "conversation_type": "companion_support",
+    "last_message_at": "2026-08-03T15:25:43.991+00:00",
+    "last_read_at": "2026-08-03T15:18:47.764+00:00",
+    "closed_at": null,
+    "closed_by": null
+  },
+  "dbMsgs": [
+    {
+      "id": "a43f935b-7df2-4301-9191-19e90b042f85",
+      "sender_id": "1d3fe6a0-830f-47aa-a135-e3f3ab9ff6d0",
+      "sender_role": "companion",
+      "content": "COMP-CS-PROBE-1785770740133",
+      "created_at": "2026-08-03T15:25:43.613+00:00",
+      "message_type": "text",
+      "read_at": null
+    }
+  ],
+  "dbCompanionConvs": [
+    {
+      "id": "5fad0389-b21c-4429-9cb0-a28fbdba86dd",
+      "boss_id": null,
+      "companion_id": "1d3fe6a0-830f-47aa-a135-e3f3ab9ff6d0",
+      "customer_service_id": "268e8205-0e09-4870-b44f-72676ade6ce5",
+      "conversation_type": "companion_support",
+      "status": "active",
+      "updated_at": "2026-08-03T15:25:43.991+00:00",
+      "last_message_at": "2026-08-03T15:25:43.991+00:00"
+    },
+    {
+      "id": "d3cded0a-56d1-457d-8c4d-610c9b018c97",
+      "boss_id": "a7ed815b-ae97-4619-9be7-3fda611bfb88",
+      "companion_id": "1d3fe6a0-830f-47aa-a135-e3f3ab9ff6d0",
+      "customer_service_id": null,
+      "conversation_type": "order_support",
+      "status": "open",
+      "updated_at": "2026-08-03T15:22:13.358+00:00",
+      "last_message_at": "2026-08-03T10:07:01.354+00:00"
+    },
+    {
+      "id": "07ec70ce-5f88-4978-b836-4a79387bfa9d",
+      "boss_id": "a7ed815b-ae97-4619-9be7-3fda611bfb88",
+      "companion_id": "1d3fe6a0-830f-47aa-a135-e3f3ab9ff6d0",
+      "customer_service_id": null,
+      "conversation_type": "order_support",
+      "status": "open",
+      "updated_at": "2026-08-03T15:22:12.721+00:00",
+      "last_message_at": "2026-08-03T10:04:32.363+00:00"
+    },
+    {
+      "id": "de82cc73-8395-4154-bcdb-b120f32d4e04",
+      "boss_id": "a7ed815b-ae97-4619-9be7-3fda611bfb88",
+      "companion_id": "1d3fe6a0-830f-47aa-a135-e3f3ab9ff6d0",
+      "customer_service_id": null,
+      "conversation_type": "order_support",
+      "status": "open",
+      "updated_at": "2026-08-03T06:56:34.457+00:00",
+      "last_message_at": "2026-08-03T04:49:47.315+00:00"
+    },
+    {
+      "id": "5838479e-dd27-4f31-8d71-49be7baa61dc",
+      "boss_id": "a7ed815b-ae97-4619-9be7-3fda611bfb88",
+      "companion_id": "1d3fe6a0-830f-47aa-a135-e3f3ab9ff6d0",
+      "customer_service_id": null,
+      "conversation_type": "order_support",
+      "status": "open",
+      "updated_at": "2026-08-03T06:56:34.163+00:00",
+      "last_message_at": "2026-08-03T04:49:42.554+00:00"
+    }
+  ],
+  "csBoot": {
+    "status": 200,
+    "ok": true,
+    "convCount": 27,
+    "foundConv": {
+      "id": "5fad0389-b21c-4429-9cb0-a28fbdba86dd",
+      "bossName": "陪玩 · 草稿保留42324",
+      "companionId": "1d3fe6a0-830f-47aa-a135-e3f3ab9ff6d0",
+      "conversationType": "companion_support",
+      "currentServiceId": "268e8205-0e09-4870-b44f-72676ade6ce5",
+      "status": "正在接待",
+      "lastMessage": "COMP-CS-PROBE-1785770740133",
+      "unread": 1,
+      "lockedByOther": false
+    },
+    "foundMsg": {
+      "id": "a43f935b-7df2-4301-9191-19e90b042f85",
+      "conversationId": "5fad0389-b21c-4429-9cb0-a28fbdba86dd",
+      "senderId": "1d3fe6a0-830f-47aa-a135-e3f3ab9ff6d0",
+      "senderRole": "companion",
+      "senderName": "草稿保留42324",
+      "messageType": "text",
+      "content": "COMP-CS-PROBE-1785770740133",
+      "orderId": "",
+      "createdAt": "2026-08-03T15:25:43.613+00:00",
+      "readAt": ""
+    },
+    "companionSupportCount": 2,
+    "sampleCompanionSupport": [
+      {
+        "id": "5fad0389-b21c-4429-9cb0-a28fbdba86dd",
+        "name": "陪玩 · 草稿保留42324",
+        "companionId": "1d3fe6a0-830f-47aa-a135-e3f3ab9ff6d0",
+        "type": "companion_support",
+        "service": "268e8205-0e09-4870-b44f-72676ade6ce5",
+        "status": "正在接待",
+        "last": "COMP-CS-PROBE-1785770740133"
+      },
+      {
+        "id": "07ec70ce-5f88-4978-b836-4a79387bfa9d",
+        "name": "boss.final.1785714993009",
+        "companionId": "1d3fe6a0-830f-47aa-a135-e3f3ab9ff6d0",
+        "type": "order_support",
+        "service": "",
+        "status": "待接待",
+        "last": "新订单已提交，等待支付，指定陪玩为 草稿保留42324。支付方式：猫粮余额；服务：VALORANT；时长：1小时；金额："
+      },
+      {
+        "id": "e378d530-786e-40a8-bc50-ea07df45e8af",
+        "name": "陪玩 · 1717大王",
+        "companionId": "db27b7be-f0e2-4af1-9c1b-d1ddd18c6c81",
+        "type": "companion_support",
+        "service": "0d67ee96-4eaf-41c8-92ff-5a5497ad8b08",
+        "status": "正在接待",
+        "last": "hihi"
+      },
+      {
+        "id": "de82cc73-8395-4154-bcdb-b120f32d4e04",
+        "name": "boss.final.1785714993009",
+        "companionId": "1d3fe6a0-830f-47aa-a135-e3f3ab9ff6d0",
+        "type": "order_support",
+        "service": "",
+        "status": "待接待",
+        "last": "新订单已提交，等待支付，指定陪玩为 身份证终验陪玩。支付方式：TNG；服务：陪玩；时长：1小时；金额：35 猫粮。"
+      },
+      {
+        "id": "5838479e-dd27-4f31-8d71-49be7baa61dc",
+        "name": "boss.final.1785714993009",
+        "companionId": "1d3fe6a0-830f-47aa-a135-e3f3ab9ff6d0",
+        "type": "order_support",
+        "service": "",
+        "status": "待接待",
+        "last": "新订单已提交，等待支付，指定陪玩为 身份证终验陪玩。支付方式：TNG；服务：陪玩；时长：1小时；金额：35 猫粮。"
+      }
+    ]
+  },
+  "csList": {
+    "status": 200,
+    "ok": true,
+    "markerMsgs": [
+      {
+        "id": "a43f935b-7df2-4301-9191-19e90b042f85",
+        "senderRole": "companion",
+        "content": "COMP-CS-PROBE-1785770740133"
+      }
+    ],
+    "msgCount": 9
+  },
+  "csPoll": {
+    "status": 200,
+    "ok": true,
+    "hasMsg": true,
+    "hasConv": true,
+    "conv": {
+      "id": "5fad0389-b21c-4429-9cb0-a28fbdba86dd",
+      "bossId": "",
+      "bossUid": "",
+      "bossName": "陪玩 · 草稿保留42324",
+      "companionId": "1d3fe6a0-830f-47aa-a135-e3f3ab9ff6d0",
+      "conversationType": "companion_support",
+      "orderId": "",
+      "orderNo": "",
+      "currentServiceId": "268e8205-0e09-4870-b44f-72676ade6ce5",
+      "currentServiceName": "终验客服",
+      "status": "正在接待",
+      "rawStatus": "active",
+      "lockedByOther": false,
+      "lastMessage": "COMP-CS-PROBE-1785770740133",
+      "lastTime": "2026-08-03T15:25:43.613+00:00",
+      "unread": 1,
+      "unreadCount": 1,
+      "lastReadAt": "2026-08-03T15:18:47.764+00:00",
+      "closedAt": "",
+      "closedBy": "",
+      "updatedAt": "2026-08-03T15:25:43.991+00:00"
+    }
+  },
+  "take": {
+    "status": 200,
+    "ok": true,
+    "message": "你已在接待该会话。"
+  }
+}

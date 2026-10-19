@@ -1,0 +1,78 @@
+{
+  "staging": "https://meow-cuijiao-homepage-staging.vercel.app",
+  "marker": "LIVECOMPCS-1785771618555",
+  "routes": {
+    "/customer-service/conversations": {
+      "status": 200,
+      "ok": true
+    },
+    "/customer-service/conversations/": {
+      "status": 200,
+      "ok": true
+    }
+  },
+  "steps": {
+    "companionSend": {
+      "ok": true,
+      "status": 200,
+      "msgId": "c01302d6-9e84-496d-ac6c-090590fdc9a8",
+      "convId": "5fad0389-b21c-4429-9cb0-a28fbdba86dd"
+    },
+    "realtimeCsSees": {
+      "ok": true,
+      "msgId": "c01302d6-9e84-496d-ac6c-090590fdc9a8",
+      "latencyMs": 2489
+    },
+    "dbInsert": {
+      "ok": true,
+      "roles": [
+        "companion"
+      ],
+      "msgIds": [
+        "c01302d6-9e84-496d-ac6c-090590fdc9a8"
+      ],
+      "convType": "companion_support",
+      "assignedCs": null,
+      "status": "waiting_service"
+    },
+    "csBoot": {
+      "ok": true,
+      "inWaiting": true,
+      "status": "待接待",
+      "lastMessage": "LIVECOMPCS-1785771618555-from-companion",
+      "hasMsg": true,
+      "bossName": "陪玩 · 草稿保留42324",
+      "conversationType": "companion_support"
+    },
+    "csPoll": {
+      "ok": true,
+      "latencyMs": 3206
+    },
+    "csTake": {
+      "ok": true,
+      "message": "已接待该会话。"
+    },
+    "csReply": {
+      "ok": true,
+      "msgId": "8cdf2a1c-2965-4895-b8ae-d1d1fc7aea30"
+    },
+    "companionSeesReply": {
+      "ok": true,
+      "latencyMs": 18292
+    },
+    "refreshHistory": {
+      "csHasCompanion": true,
+      "csHasCs": true,
+      "companionHasBoth": true,
+      "sameConv": true,
+      "bootStillHasConv": true
+    }
+  },
+  "compUid": "1d3fe6a0-830f-47aa-a135-e3f3ab9ff6d0",
+  "csUid": "268e8205-0e09-4870-b44f-72676ade6ce5",
+  "released": [
+    "5fad0389-b21c-4429-9cb0-a28fbdba86dd"
+  ],
+  "convId": "5fad0389-b21c-4429-9cb0-a28fbdba86dd",
+  "ok": true
+}

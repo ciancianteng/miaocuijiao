@@ -1,0 +1,44 @@
+{
+  "pr": 198,
+  "agentBcId": "bc-5033a0da-ee0b-53b7-9f99-794ed54d2301",
+  "validatedAtUtc": "2026-09-08T20:50:00Z",
+  "branch": "cursor/gameplay-product-commission-persist-dcea",
+  "commit": "41c7dba",
+  "guardrails": {
+    "sessionPoolerOnly": true,
+    "poolerHost": "aws-0-ap-southeast-1.pooler.supabase.com",
+    "poolerPort": 5432,
+    "poolerUser": "postgres.cfccwysniduwkjskiqgy",
+    "directDbNotConnected": true,
+    "productionRef": "jqfaknpmcnqwqvatrwgo",
+    "productionTouched": false,
+    "skipDdl": false
+  },
+  "results": {
+    "migration": "FAIL",
+    "schema": "FAIL",
+    "roundTrip": "FAIL",
+    "offline": "PASS"
+  },
+  "details": {
+    "migrationError": "28P01 password authentication failed on Session Pooler",
+    "schemaError": "42703 column gameplay_products.commission_rate does not exist (REST)",
+    "roundTripBlockedBy": "missing commission_rate column",
+    "offlineScript": "scripts/verify-gameplay-commission-offline.mjs"
+  },
+  "secretFingerprints": {
+    "STAGING_DB_PASSWORD_sha12": "4dd2763ccba2",
+    "STAGING_DB_PASSWORD_len": 16,
+    "STAGING_DATABASE_URL_password_sha12": "99568f502dc0",
+    "STAGING_DATABASE_URL_password_len": 15,
+    "passwordsMatch": false,
+    "STAGING_DATABASE_URL_host": "db.cfccwysniduwkjskiqgy.supabase.co",
+    "STAGING_DATABASE_URL_isDirect": true,
+    "STAGING_SUPABASE_URL_host": "cfccwysniduwkjskiqgy.supabase.co"
+  },
+  "mergeRecommendation": "DO_NOT_MERGE — Staging validation not fully PASS",
+  "prBodyUpdate": {
+    "ManagePullRequest": "unavailable in this agent tool catalog",
+    "ghWrite": "403 Resource not accessible by integration"
+  }
+}

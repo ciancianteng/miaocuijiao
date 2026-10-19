@@ -1,0 +1,2421 @@
+import './mcj-chat-media.js';
+import './mcj-chat-realtime.js';
+import './support-app-ui.css';
+import './mcj-chat-skin.css';
+import {
+  getDiscordInviteUrl,
+  isDiscordInviteReady,
+  openDiscordInvite,
+  refreshDiscordInviteFromPlatform,
+} from './discord-community-config.js';
+import { captureChatScroll, restoreChatScroll, keyboardInsetPx } from './scroll-keep.js';
+
+(function () {
+  var root = document.getElementById("supportApp");
+  if (!root) return;
+  try {
+    window.__MCJ_SUPPORT_CHAT_LAGFIX = "20260811bossMsgQr4";
+  } catch (_) {}
+
+  document.documentElement.classList.add("support-page");
+  document.body.classList.add("support-page");
+
+  var q = new URLSearchParams(location.search);
+  var state = {
+    loading: true,
+    authLoading: true,
+    customerLoading: false,
+    opening: false,
+    sending: false,
+    creatingGeneral: false,
+    creatingOrder: "",
+    error: "",
+    authError: "",
+    notice: "",
+    identity: null,
+    conversations: [],
+    conversation: null,
+    messages: [],
+    orders: [],
+    serviceStatus: "等待客服接待",
+    serviceOnline: false,
+    pollTimer: null,
+    composerDraft: "",
+    composerFocused: false,
+    mobileDetail: false,
+    orderCardOpen: false,
+    emojiOpen: false,
+    realtimeReady: false,
+    poolRealtimeBound: false,
+    totalUnread: 0,
+    /** @type {Record<string,{messages:any[],conversation:any,orders:any[],ts:number}>} */
+    threadCache: {},
+    activeRtCid: "",
+    threadLoadSeq: 0,
+  };
+  var THREAD_CACHE_MAX = 24;
+
+  var COMPOSER_SEL = '[data-send] [name="content"]';
+  var EMOJIS = ["😀", "😁", "😂", "😊", "😍", "😘", "👍", "🙏", "🎉", "🐱", "💖", "🔥"];
+  var toastTimer = null;
+  var BOSS_CONSULT_TYPES = [
+    { key: "other", label: "普通咨询（无需下单）", needsOrder: false },
+    { key: "new_order", label: "新订单咨询", needsOrder: false },
+    { key: "current_order", label: "当前订单问题", needsOrder: true },
+    { key: "recharge", label: "充值问题", needsOrder: false },
+    { key: "refund", label: "退款售后", needsOrder: true },
+  ];
+
+  function consultOrderOptionsHtml(orders) {
+    if (!orders.length) {
+      return '<p class="support-consult-order-empty">暂无可关联的订单，可不关联直接创建。</p>';
+    }
+    return orders
+      .map(function (o) {
+        var no = o.orderNo || o.order_no || o.id;
+        var meta = [o.game || o.serviceType || "", o.statusText || o.status || ""].filter(Boolean).join(" · ");
+        return (
+          '<button type="button" class="support-consult-order-opt" data-consult-order-opt="' +
+          esc(o.id) +
+          '"><strong>' +
+          esc(no) +
+          "</strong><span>" +
+          esc(meta) +
+          "</span></button>"
+        );
+      })
+      .join("");
+  }
+
+  /** Modal picker — never use browser prompt / number entry. */
+  function pickBossConsultType(defaultKey) {
+    return new Promise(function (resolve) {
+      var existing = document.querySelector("[data-support-consult-modal]");
+      if (existing) {
+        if (typeof existing._mcjFinish === "function") existing._mcjFinish(null);
+        else existing.remove();
+      }
+      var def = String(defaultKey || "other");
+      var orders = state.orders || [];
+      var modal = document.createElement("div");
+      modal.className = "support-consult-modal";
+      modal.setAttribute("data-support-consult-modal", "1");
+      modal.innerHTML =
+        '<div class="support-consult-dialog" role="dialog" aria-modal="true" aria-labelledby="supportConsultTitle">' +
+        '<div class="support-consult-head"><h3 id="supportConsultTitle">新建人工客服咨询</h3>' +
+        '<button type="button" class="support-btn" data-consult-cancel>取消</button></div>' +
+        '<p class="support-consult-hint">不同问题会进入独立会话；普通咨询无需先下单。</p>' +
+        '<div class="support-consult-types" role="listbox" aria-label="咨询类型">' +
+        BOSS_CONSULT_TYPES.map(function (t) {
+          return (
+            '<button type="button" class="support-consult-type' +
+            (t.key === def ? " is-active" : "") +
+            '" data-consult-type="' +
+            esc(t.key) +
+            '" data-needs-order="' +
+            (t.needsOrder ? "1" : "0") +
+            '">' +
+            esc(t.label) +
+            "</button>"
+          );
+        }).join("") +
+        "</div>" +
+        '<div class="support-consult-order" data-consult-order-wrap hidden>' +
+        '<div class="support-consult-label">关联订单（可选）</div>' +
+        '<input type="hidden" data-consult-order value="">' +
+        '<div class="support-consult-order-list" role="listbox" aria-label="关联订单">' +
+        '<button type="button" class="support-consult-order-opt is-active" data-consult-order-opt=""><strong>不关联订单</strong><span>普通跟进</span></button>' +
+        '<div data-consult-order-items>' +
+        (orders.length ? consultOrderOptionsHtml(orders) : '<p class="support-consult-order-empty">正在读取订单…</p>') +
+        "</div></div></div>" +
+        '<button type="button" class="support-btn primary support-consult-confirm" data-consult-confirm>创建会话</button>' +
+        "</div>";
+      document.body.appendChild(modal);
+      document.documentElement.classList.add("support-consult-open");
+      var selected = def;
+      if (!orders.length && hasAuthSession()) {
+        fetchJson("/api/orders")
+          .then(function (body) {
+            var list = Array.isArray(body && body.orders) ? body.orders : [];
+            var box = modal.querySelector("[data-consult-order-items]");
+            if (box) box.innerHTML = consultOrderOptionsHtml(list.slice(0, 20));
+          })
+          .catch(function () {
+            var box = modal.querySelector("[data-consult-order-items]");
+            if (box) box.innerHTML = consultOrderOptionsHtml([]);
+          });
+      }
+      function syncOrderWrap() {
+        var hit = BOSS_CONSULT_TYPES.find(function (t) {
+          return t.key === selected;
+        });
+        var wrap = modal.querySelector("[data-consult-order-wrap]");
+        if (wrap) wrap.hidden = !(hit && hit.needsOrder);
+      }
+      syncOrderWrap();
+      function onKey(ev) {
+        if (ev.key === "Escape") finish(null);
+      }
+      function finish(result) {
+        document.removeEventListener("keydown", onKey);
+        document.documentElement.classList.remove("support-consult-open");
+        try {
+          modal.remove();
+        } catch (e) {}
+        resolve(result);
+      }
+      modal._mcjFinish = finish;
+      document.addEventListener("keydown", onKey);
+      modal.addEventListener("click", function (ev) {
+        if (ev.target === modal || ev.target.closest("[data-consult-cancel]")) {
+          finish(null);
+          return;
+        }
+        var orderOpt = ev.target.closest("[data-consult-order-opt]");
+        if (orderOpt) {
+          var input = modal.querySelector("[data-consult-order]");
+          if (input) input.value = orderOpt.getAttribute("data-consult-order-opt") || "";
+          modal.querySelectorAll("[data-consult-order-opt]").forEach(function (b) {
+            b.classList.toggle("is-active", b === orderOpt);
+          });
+          return;
+        }
+        var typeBtn = ev.target.closest("[data-consult-type]");
+        if (typeBtn) {
+          selected = typeBtn.getAttribute("data-consult-type") || "other";
+          modal.querySelectorAll("[data-consult-type]").forEach(function (b) {
+            b.classList.toggle("is-active", b.getAttribute("data-consult-type") === selected);
+          });
+          syncOrderWrap();
+          return;
+        }
+        if (ev.target.closest("[data-consult-confirm]")) {
+          var orderSel = modal.querySelector("[data-consult-order]");
+          var orderId = "";
+          var hit = BOSS_CONSULT_TYPES.find(function (t) {
+            return t.key === selected;
+          });
+          if (hit && hit.needsOrder && orderSel) {
+            orderId = String(orderSel.value || "").trim();
+          }
+          finish({ consultType: selected || "other", orderId: orderId });
+        }
+      });
+    });
+  }
+
+  function esc(v) {
+    return String(v == null ? "" : v).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+  function Auth() {
+    return window.MCJBossAuth || null;
+  }
+  function sharedRoleHint() {
+    try {
+      var u = JSON.parse(sessionStorage.getItem("customerUser") || "{}");
+      if (u && u.role) return String(u.role).toLowerCase();
+    } catch (e) {}
+    return String(sessionStorage.getItem("mcjRole") || "").toLowerCase();
+  }
+  function hasBossGateSession() {
+    // Never wipe localStorage on read — that desyncs remember-me vs sessionStorage
+    // and makes recharge / place-order disagree with the header auth state.
+    if (window.MCJBossAuth && typeof window.MCJBossAuth.hasValidAccessToken === "function") {
+      if (!window.MCJBossAuth.hasValidAccessToken()) {
+        if (typeof window.MCJBossAuth.canRestoreSession === "function" && window.MCJBossAuth.canRestoreSession()) {
+          return true; // refresh pending — resolveIdentity awaits ensureSession
+        }
+        return false;
+      }
+    } else {
+      var jwt =
+        (typeof sessionStorage !== "undefined" && sessionStorage.getItem("mcjAuthAccessToken")) ||
+        (typeof localStorage !== "undefined" && localStorage.getItem("mcjAuthAccessToken")) ||
+        "";
+      if (!jwt || String(jwt).split(".").length !== 3) return false;
+    }
+    var role = sharedRoleHint();
+    if (role && role !== "boss" && role !== "customer" && role !== "owner" && role !== "user") return false;
+    if (window.MCJRoleGate && typeof window.MCJRoleGate.isLogged === "function") {
+      return !!(window.MCJRoleGate.isLogged("customer") || window.MCJRoleGate.isLogged("boss"));
+    }
+    return true;
+  }
+  function promptBossLogin(resumeFn) {
+    if (window.MCJAuthContinue && typeof window.MCJAuthContinue.requireLogin === 'function') {
+      window.MCJAuthContinue.requireLogin(typeof resumeFn === 'function' ? resumeFn : function () {
+        resolveIdentity().then(function () {
+          softUpdate({ keepScroll: true });
+          if (hasAuthSession()) bootstrap();
+        });
+      });
+      return;
+    }
+    if (window.MCJModal && typeof window.MCJModal.openLogin === 'function') {
+      window.MCJModal.openLogin('login');
+      return;
+    }
+    location.href = 'index.html#login';
+  }
+
+  function hasAuthSession() {
+    return hasBossGateSession();
+  }
+  function isBossLikeRole(role) {
+    role = String(role || "").trim().toLowerCase();
+    return role === "boss" || role === "customer" || role === "owner" || role === "user";
+  }
+  function resolveIdentity() {
+    state.authLoading = true;
+    state.customerLoading = true;
+    state.authError = "";
+    softUpdate({ keepScroll: true });
+    if (!hasAuthSession()) {
+      state.authLoading = false;
+      state.customerLoading = false;
+      state.identity = null;
+      // Foreign-role JWT left in shared keys: ask for boss login, do not claim CS identity on boss UI.
+      var foreign = sharedRoleHint();
+      if (foreign && !isBossLikeRole(foreign) && (
+        localStorage.getItem("mcjAuthAccessToken") ||
+        sessionStorage.getItem("mcjAuthAccessToken")
+      )) {
+        state.authError = "请先登录后使用在线客服";
+      }
+      return Promise.resolve(null);
+    }
+    var auth = Auth();
+    var ready = auth && auth.ensureSession ? withTimeout(auth.ensureSession(), 4000, "登录校验").catch(function () { return null; }) : Promise.resolve();
+    return ready
+      .then(function () {
+        if (!hasAuthSession()) return null;
+        return fetchJson("/api/auth?action=me", { _mcjTimeoutMs: 6000 });
+      })
+      .then(function (body) {
+        if (!body || !body.user) return null;
+        var user = body.user;
+        if (!isBossLikeRole(user.role)) {
+          var role = String(user.role || "").toLowerCase();
+          // Stale foreign JWT: drop shared mirrors so boss UI stops reading CS/companion identity.
+          if (window.MCJRoleGate && typeof window.MCJRoleGate.clearSharedAuthMirrors === "function") {
+            window.MCJRoleGate.clearSharedAuthMirrors();
+          } else {
+            ["mcjAuthAccessToken", "mcjAuthRefreshToken", "mcjAuthExpiresAt", "mcjRole"].forEach(function (k) {
+              try {
+                localStorage.removeItem(k);
+                sessionStorage.removeItem(k);
+              } catch (e) {}
+            });
+          }
+          if (role === "companion" || role === "player") {
+            state.authError = "当前登录的是陪玩账号，请使用老板账号打开在线客服。";
+          } else if (role === "customer_service" || role === "service") {
+            state.authError = "当前登录的是客服账号，请使用老板账号打开在线客服。";
+          } else {
+            state.authError = "当前账号不是老板客户身份，无法使用老板端在线客服。";
+          }
+          state.identity = null;
+          return null;
+        }
+        state.identity = {
+          authUserId: user.id || "",
+          customerId: user.id || "",
+          bossId: user.id || "",
+          bossUid: user.bossUid || user.boss_uid || "",
+          role: user.role || "boss",
+          email: user.email || "",
+          displayName: user.displayName || "",
+        };
+        try {
+          console.info("[support-chat] identity", state.identity);
+        } catch (e) {}
+        return state.identity;
+      })
+      .catch(function (err) {
+        var msg = (err && err.message) || "账号资料加载失败，请重试";
+        if (/登录|过期|未登录|请先登录/i.test(msg)) {
+          state.authError = "请先登录后使用在线客服";
+        } else {
+          state.authError = msg;
+        }
+        state.identity = null;
+        return null;
+      })
+      .finally(function () {
+        state.authLoading = false;
+        state.customerLoading = false;
+      });
+  }
+  function orderId() {
+    return q.get("order") || q.get("order_id") || "";
+  }
+  function conversationParam() {
+    return q.get("conversation") || q.get("conversation_id") || "";
+  }
+  function isAftersale() {
+    return q.get("aftersale") === "1";
+  }
+  function draftParam() {
+    return q.get("draft") || "";
+  }
+  function applyDraftFromQuery() {
+    var draft = draftParam();
+    if (!draft) return;
+    if (String(state.composerDraft || "").trim()) return;
+    state.composerDraft = draft;
+    state.composerFocused = true;
+    state.mobileDetail = true;
+    try {
+      var u = new URL(location.href);
+      u.searchParams.delete("draft");
+      history.replaceState(null, "", u.pathname + u.search);
+      q = new URLSearchParams(u.search);
+    } catch (e) {}
+    softUpdate({ keepScroll: true });
+    if (isAftersale()) toast("请补充售后原因后发送，客服会尽快跟进处理。");
+  }
+  function isMobile() {
+    return !!(window.matchMedia && window.matchMedia("(max-width: 820px)").matches);
+  }
+  function pad(n) {
+    return String(n).padStart(2, "0");
+  }
+  function shortTime(value) {
+    if (!value) return "";
+    // KL wall-clock (UTC+8): zoned strings converted, zone-less strings kept as-is.
+    var s = String(value).trim();
+    var n = s.match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?(?:\.\d+)?$/);
+    var d = n
+      ? new Date(Date.UTC(+n[1], +n[2] - 1, +n[3], +n[4], +n[5], +(n[6] || 0)))
+      : new Date(new Date(typeof value === "number" ? value : s.replace(/^(\d{4}-\d{2}-\d{2}) /, "$1T").replace(/([+-]\d{2})$/, "$1:00")).getTime() + 288e5);
+    if (Number.isNaN(d.getTime())) return String(value);
+    var k = new Date(Date.now() + 288e5);
+    var today = Date.UTC(k.getUTCFullYear(), k.getUTCMonth(), k.getUTCDate());
+    var day = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+    var diff = Math.round((today - day) / 86400000);
+    var hhmm = pad(d.getUTCHours()) + ":" + pad(d.getUTCMinutes());
+    if (diff === 0) return "今天 " + hhmm;
+    if (diff === 1) return "昨天 " + hhmm;
+    return d.getUTCMonth() + 1 + "月" + d.getUTCDate() + "日 " + hhmm;
+  }
+  function supportParts(value) {
+    if (!value) return null;
+    var s = String(value).trim();
+    var n = s.match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?(?:\.\d+)?$/);
+    var d = n
+      ? new Date(Date.UTC(+n[1], +n[2] - 1, +n[3], +n[4], +n[5], +(n[6] || 0)))
+      : new Date(new Date(typeof value === "number" ? value : s.replace(/^(\d{4}-\d{2}-\d{2}) /, "$1T").replace(/([+-]\d{2})$/, "$1:00")).getTime() + 288e5);
+    if (Number.isNaN(d.getTime())) return null;
+    var k = new Date(Date.now() + 288e5);
+    var today = Date.UTC(k.getUTCFullYear(), k.getUTCMonth(), k.getUTCDate());
+    var day = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+    var diff = Math.round((today - day) / 86400000);
+    return {
+      key: String(day),
+      hm: pad(d.getUTCHours()) + ":" + pad(d.getUTCMinutes()),
+      label: diff === 0 ? "今天" : diff === 1 ? "昨天" : d.getUTCMonth() + 1 + "月" + d.getUTCDate() + "日",
+    };
+  }
+  function supportSenderKey(m) {
+    var role = String((m && (m.sender_role || m.senderRole)) || "").toLowerCase();
+    var mt = String((m && (m.message_type || m.messageType)) || "").toLowerCase();
+    if (role === "system" || mt === "system") return "system";
+    var id = String((m && (m.sender_id || m.senderId)) || "").trim();
+    var name = String((m && (m.sender_name || m.senderName)) || "").trim();
+    return role + "|" + (id || name || "unknown");
+  }
+  function supportGroup(m, prev) {
+    var role = String((m && (m.sender_role || m.senderRole)) || "").toLowerCase();
+    var mt = String((m && (m.message_type || m.messageType)) || "").toLowerCase();
+    var system = role === "system" || mt === "system";
+    var mine = role === "boss";
+    var parts = supportParts(m && (m.created_at || m.createdAt));
+    var prevParts = prev ? supportParts(prev.created_at || prev.createdAt) : null;
+    var dayBreak = !prev || !!(parts && (!prevParts || prevParts.key !== parts.key));
+    var key = supportSenderKey(m);
+    var cont = !dayBreak && !!prev && supportSenderKey(prev) === key && key !== "system";
+    var who = system || mine ? "" : String((m && (m.sender_name || m.senderName)) || "在线客服");
+    return {
+      system: system,
+      mine: mine,
+      cont: cont,
+      dayBreak: dayBreak,
+      showName: !system && !mine && !cont && !!who,
+      who: who,
+      hm: parts ? parts.hm : "",
+      label: parts ? parts.label : "",
+    };
+  }
+  function renderSupportMessages(list) {
+    var html = "";
+    var prev = null;
+    for (var i = 0; i < (list || []).length; i++) {
+      var m = list[i];
+      var g = supportGroup(m, prev);
+      if (g.dayBreak && g.label) html += '<div class="mcj-day-sep">' + esc(g.label) + "</div>";
+      html += msgHtml(m, prev);
+      prev = m;
+    }
+    return html;
+  }
+  function previewMessage(raw, messageType) {
+    var type = String(messageType || "").toLowerCase();
+    var content = "";
+    if (raw && typeof raw === "object") {
+      type = String(type || raw.message_type || raw.messageType || "").toLowerCase();
+      content = String(raw.content || raw.lastMessage || "");
+    } else {
+      content = String(raw || "");
+    }
+    if (type === "companion_card" || type === "player_card") return "客服向您推荐了陪玩";
+    if (type === "product_card") return "客服已发送商品资料";
+    if (type === "order_card") return "订单消息";
+    if (type === "image" || /^https?:\/\//i.test(content) && /\.(png|jpe?g|webp|gif)(\?|$)/i.test(content)) return "[图片]";
+    var trimmed = content.trim();
+    if (!trimmed) return "暂无消息";
+    if (trimmed.charAt(0) === "{" || trimmed.charAt(0) === "[") {
+      try {
+        var parsed = JSON.parse(trimmed);
+        if (parsed && typeof parsed === "object") {
+          var cardType = String(parsed.type || "").toLowerCase();
+          if (cardType === "companion_card" || parsed.companionId || parsed.companion_id) return "客服向您推荐了陪玩";
+          if (cardType === "product_card" || parsed.productId) return "客服已发送商品资料";
+          if (cardType === "order_card" || parsed.orderId) return "订单消息";
+          return "系统消息";
+        }
+      } catch (e) {
+        return "系统消息";
+      }
+    }
+    if (/客服向您推荐陪玩|推荐陪玩|陪玩名片|推送陪玩/.test(trimmed)) return "客服向您推荐了陪玩";
+    if (/已发送陪玩资料|陪玩资料/.test(trimmed)) return "客服已发送陪玩资料";
+    if (/抢单/.test(trimmed) && /(等待|选择|老板)/.test(trimmed)) return "陪玩已抢单，等待您的选择";
+    if (/已确认(线下)?付款|确认收款|发布到抢单大厅/.test(trimmed)) return "客服已确认付款";
+    if (/\[\[[^\]]+\]\]/.test(trimmed)) {
+      trimmed = trimmed.replace(/\[\[[^\]]+\]\]/g, " ").replace(/\s+/g, " ").trim();
+    }
+    if (!trimmed || trimmed.charAt(0) === "{" || trimmed.charAt(0) === "[") return "系统消息";
+    return trimmed.length > 42 ? trimmed.slice(0, 42) + "…" : trimmed;
+  }
+  function normalizeConversations(list) {
+    var rows = (Array.isArray(list) ? list : []).map(function (c) {
+      var row = Object.assign({}, c);
+      row.conversationType = row.conversationType || (row.orderId || row.order_id ? "order_support" : "general_support");
+      row.orderId = row.orderId || row.order_id || "";
+      row.unreadCount = Number(row.unreadCount || row.unread_count || row.unread || 0);
+      row.unread = row.unreadCount;
+      row.lastMessage = previewMessage(row.lastMessage || "", row.lastMessageType || row.last_message_type || "");
+      return row;
+    });
+    var byKey = {};
+    rows.forEach(function (item) {
+      var orderId = String(item.orderId || "").trim();
+      var key = orderId ? "order:" + orderId : "id:" + item.id;
+      var prev = byKey[key];
+      if (!prev) {
+        byKey[key] = item;
+        return;
+      }
+      var prevClosed = /^(closed|ended)$/i.test(String(prev.status || ""));
+      var curClosed = /^(closed|ended)$/i.test(String(item.status || ""));
+      var keep = item;
+      var drop = prev;
+      if (prevClosed && !curClosed) {
+        keep = item;
+        drop = prev;
+      } else if (!prevClosed && curClosed) {
+        keep = prev;
+        drop = item;
+      } else {
+        var prevT = Date.parse(prev.lastMessageAt || prev.updatedAt || "") || 0;
+        var curT = Date.parse(item.lastMessageAt || item.updatedAt || "") || 0;
+        if (curT >= prevT) {
+          keep = item;
+          drop = prev;
+        } else {
+          keep = prev;
+          drop = item;
+        }
+      }
+      keep.unreadCount = Number(keep.unreadCount || 0) + Number(drop.unreadCount || 0);
+      keep.unread = keep.unreadCount;
+      byKey[key] = keep;
+    });
+    return Object.keys(byKey)
+      .map(function (k) {
+        return byKey[k];
+      })
+      .sort(function (a, b) {
+        return String(b.lastMessageAt || b.updatedAt || "").localeCompare(String(a.lastMessageAt || a.updatedAt || ""));
+      });
+  }
+  function toast(msg) {
+    var text = String(msg || "").trim();
+    if (!text) return;
+    var box = root.querySelector("[data-support-toast]");
+    if (!box) {
+      box = document.createElement("div");
+      box.className = "support-toast";
+      box.setAttribute("data-support-toast", "1");
+      root.appendChild(box);
+    }
+    box.textContent = text;
+    box.classList.add("show");
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () {
+      box.classList.remove("show");
+      toastTimer = null;
+    }, 2600);
+  }
+  function parseCard(content) {
+    try {
+      var d = JSON.parse(content || "");
+      if (d && (d.kind === "gameplay_product" || d.productId)) return d;
+    } catch (e) {}
+    return null;
+  }
+  function titleFor(c) {
+    if (!c) return "在线客服";
+    if (c.conversationType === "order_support" || c.orderId || c.order_id || c.orderNo || c.order_no) return "订单咨询";
+    return "人工客服咨询";
+  }
+  function topStatusText(c) {
+    var s = String((c && c.status) || "");
+    if (s === "closed" || s === "ended") return "会话已结束";
+    if (s === "pending_transfer") return "正在为你更换客服。";
+    if (s === "open" || s === "active" || s === "serving" || (c && (c.customerServiceId || c.customer_service_id))) return "客服已接入";
+    if (s === "offline" || (state.serviceOnline === false && s !== "waiting_service" && s !== "waiting")) return "客服暂时离线";
+    if (s === "waiting_service" || s === "waiting" || !s) return "等待客服接待";
+    return "可重新发起咨询";
+  }
+  function isClosedConversation(c) {
+    var s = String((c && c.status) || "");
+    return s === "closed" || s === "ended";
+  }
+  function isOrderConversation(c) {
+    return !!(c && (c.conversationType === "order_support" || c.orderId || c.order_id || c.orderNo || c.order_no));
+  }
+  function findOrderConversation(orderIdValue) {
+    var list = (state.conversations || []).filter(function (c) {
+      return String(c.orderId || c.order_id || "") === String(orderIdValue || "");
+    });
+    if (!list.length) return null;
+    return (
+      list.find(function (c) {
+        return !isClosedConversation(c);
+      }) || list[0]
+    );
+  }
+  function syncChatChrome() {
+    var inChat = !!(state.conversation && state.conversation.id && (state.mobileDetail || !isMobile()));
+    document.body.classList.toggle("support-chat-live", inChat);
+    // softUpdate must keep mobile list/chat panes in sync (paint used to remount this class).
+    var layout = root.querySelector(".support-layout");
+    if (layout) layout.classList.toggle("mobile-detail", !!state.mobileDetail);
+  }
+  function syncUrl(conversation) {
+    try {
+      var u = new URL(location.href);
+      if (!conversation || !conversation.id) {
+        u.searchParams.delete("conversation");
+        history.replaceState(null, "", u.pathname + u.search);
+        q = new URLSearchParams(u.search);
+        return;
+      }
+      u.searchParams.set("conversation", conversation.id);
+      if (conversation.order_id || conversation.orderId) u.searchParams.set("order", conversation.order_id || conversation.orderId);
+      history.replaceState(null, "", u.pathname + u.search);
+      q = new URLSearchParams(u.search);
+    } catch (e) {}
+  }
+  function orderMap() {
+    var map = {};
+    (state.orders || []).forEach(function (o) {
+      map[o.id] = o;
+    });
+    return map;
+  }
+  function conversationOrder(c) {
+    if (!c) return null;
+    var id = c.orderId || c.order_id || "";
+    return orderMap()[id] || null;
+  }
+  function patchMessages(opts) {
+    opts = opts || {};
+    var box = root.querySelector("[data-messages]");
+    if (!box) return false;
+    var snap = captureChatScroll(box);
+    var stick = !!opts.stickBottom || !opts.keepScroll || !!(snap && snap.near);
+    box.innerHTML = state.messages.length
+      ? renderSupportMessages(state.messages)
+      : '<div class="support-list-empty">发送第一条消息开始沟通。</div>';
+    restoreChatScroll(box, snap, stick);
+    return true;
+  }
+  function parseCompanionCard(raw) {
+    try {
+      var o = typeof raw === "string" ? JSON.parse(raw) : raw;
+      if (!o || typeof o !== "object") return null;
+      if (o.type && o.type !== "companion_card" && !o.companionId) return null;
+      return o;
+    } catch (e) {
+      return null;
+    }
+  }
+  function msgHtml(m, prev) {
+    var g = supportGroup(m, prev);
+    var mt = m.message_type || m.messageType || "";
+    var groupCls = (g.mine ? "mine" : "") + (g.system ? " system" : "") + (g.cont ? " is-cont" : "") + (g.dayBreak ? " is-day" : "") + (g.showName ? " show-name" : "");
+    var companionCard =
+      mt === "companion_card"
+        ? parseCompanionCard(m.content)
+        : mt === "text"
+          ? (function () {
+              var t = String(m.content || "").trim();
+              if (t.charAt(0) !== "{") return null;
+              var c = parseCompanionCard(t);
+              return c && (c.type === "companion_card" || c.companionId) ? c : null;
+            })()
+          : null;
+    if (companionCard) {
+      var avatar = companionCard.avatarUrl
+        ? '<img src="' + esc(companionCard.avatarUrl) + '" alt="" style="width:56px;height:56px;border-radius:12px;object-fit:cover">'
+        : '<div class="support-product-cover">' + esc(String(companionCard.nickname || "陪").slice(0, 1)) + "</div>";
+      return (
+        '<div class="support-msg is-card ' +
+        groupCls +
+        '" data-msg-id="' +
+        esc(m.id || "") +
+        '"><div class="support-product-card support-companion-card" style="display:flex;gap:10px;align-items:flex-start">' +
+        avatar +
+        "<div style=\"flex:1;min-width:0\"><strong>" +
+        esc(companionCard.nickname || "陪玩") +
+        "</strong><span>ID " +
+        esc(companionCard.companionCode || companionCard.companionId || "-") +
+        " · " +
+        esc(companionCard.level || "-") +
+        "</span><span>音色 " +
+        esc(companionCard.voiceType || "-") +
+        " · " +
+        esc(companionCard.game || "-") +
+        " · " +
+        esc(String(companionCard.unitPrice != null ? companionCard.unitPrice : "-")) +
+        "</span><span>标签 " +
+        esc(companionCard.tags || "-") +
+        '</span><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">' +
+        '<a class="support-inline-link" href="' +
+        esc(companionCard.detailUrl || ("profile.html?player=" + encodeURIComponent(companionCard.companionId || ""))) +
+        '" target="_blank" rel="noopener">查看详情</a>' +
+        '<button type="button" class="order-btn primary" data-want-him="' +
+        esc(companionCard.orderId || "") +
+        '" data-companion-id="' +
+        esc(companionCard.companionId || "") +
+        '">我要她</button>' +
+        "</div><small>" +
+        esc(g.hm) +
+        "</small></div></div></div>"
+      );
+    }
+    var card = mt === "product_card" ? parseCard(m.content) : null;
+    if (card) {
+      return (
+        '<div class="support-msg is-card ' +
+        groupCls +
+        '"><div class="support-product-card">' +
+        (card.coverUrl ? '<img src="' + esc(card.coverUrl) + '" alt="">' : '<div class="support-product-cover">MEOW</div>') +
+        "<div><strong>" +
+        esc(card.name || "玩法商品") +
+        "</strong><span>" +
+        esc(card.pricingUnit || "每单") +
+        "</span><small>" +
+        esc(g.hm) +
+        "</small></div></div></div>"
+      );
+    }
+    var mine = g.mine;
+    var system = g.system;
+    var failed = !!m._failed;
+    var pending = !!m._pending;
+    var Media = window.MCJChatMedia;
+    var isImg = Media && Media.isImageMessage(m);
+    var bodyHtml = isImg
+      ? Media.imageBubbleHtml(Media.imageUrlOf(m), esc, {
+          createdAt: m.created_at || m.createdAt,
+          storageRef: m.storageRef || m.storage_ref || "",
+          conversationId: (state.conversation && state.conversation.id) || m.conversation_id || m.conversationId || "",
+        })
+      : "<p>" + esc(m.content || "") + "</p>";
+    return (
+      '<div class="support-msg ' +
+      groupCls +
+      (failed ? " failed" : "") +
+      '" data-msg-id="' +
+      esc(m.id || m._localId || "") +
+      '">' +
+      (g.showName ? "<strong>" + esc(g.who) + "</strong>" : "") +
+      bodyHtml +
+      (system
+        ? ""
+        : "<small>" +
+          esc(g.hm) +
+          (pending ? " · 上传中…" : "") +
+          (failed ? ' · 发送失败 <button type="button" class="support-inline-link" data-retry-msg="' + esc(m._localId || m.id || "") + '">重试</button>' : "") +
+          "</small>") +
+      "</div>"
+    );
+  }
+  function authAccessToken() {
+    return (
+      localStorage.getItem("mcjAuthAccessToken") ||
+      sessionStorage.getItem("mcjAuthAccessToken") ||
+      ""
+    );
+  }
+  function isCsPeerMessage(row) {
+    var role = String((row && (row.sender_role || row.senderRole)) || "").toLowerCase();
+    return role === "customer_service" || role === "admin";
+  }
+  function bindBossRealtime(conversationId) {
+    var RT = window.MCJChatRealtime;
+    var cid = String(conversationId || (state.conversation && state.conversation.id) || "").trim();
+    if (!RT || !cid) return;
+    // Drop previous conversation channel when switching threads.
+    var prev = String(state.activeRtCid || "").trim();
+    if (prev && prev !== cid && typeof RT.unsubscribe === "function") {
+      RT.unsubscribe(prev);
+    }
+    state.activeRtCid = cid;
+    // Only drop this conversation channel — never wipe unrelated pool/message channels.
+    if (typeof RT.unsubscribe === "function") RT.unsubscribe(cid);
+    RT.subscribeMessages(cid, authAccessToken(), function (row) {
+      if (!row || !row.id) return;
+      // Ignore inserts for a thread we are no longer viewing / subscribed as active.
+      if (String(state.activeRtCid || "") !== String(cid)) return;
+      if (state.messages.some(function (m) { return m.id === row.id; })) return;
+      var Media = window.MCJChatMedia;
+      var normalized = Object.assign({}, row);
+      if (Media && Media.isImageMessage(normalized)) {
+        normalized.message_type = "image";
+        normalized.messageType = "image";
+        normalized.imageUrl = Media.imageUrlOf(normalized);
+        normalized.content = normalized.imageUrl || normalized.content;
+      }
+      // Drop matching optimistic pending/failed of same content within 2 minutes.
+      state.messages = state.messages.filter(function (m) {
+        if (!(m._pending || m._failed)) return true;
+        var sameUrl =
+          (Media && Media.isImageMessage(m) && Media.isImageMessage(normalized) && Media.imageUrlOf(m) === Media.imageUrlOf(normalized)) ||
+          m.content === row.content;
+        return !(sameUrl && m.sender_role === "boss");
+      });
+      state.messages = state.messages.concat([normalized]);
+      cacheActiveThread();
+      var activeId = state.conversation && state.conversation.id;
+      if (isCsPeerMessage(row)) {
+        if (activeId && String(activeId) === String(cid) && state.mobileDetail !== false) {
+          // Viewing this thread: persist read immediately so badges stay cleared.
+          bumpConversationPreview(cid, row, { unreadDelta: 0, forceUnread: 0 });
+          markConversationRead(cid, { silent: true });
+        } else {
+          bumpConversationPreview(cid, row, { unreadDelta: 1 });
+        }
+      } else {
+        bumpConversationPreview(cid, row, { unreadDelta: 0 });
+      }
+      if (root.querySelector("[data-messages]")) patchMessages({ keepScroll: false });
+      else softUpdate({ keepScroll: false });
+    }).then(function () {
+      state.realtimeReady = true;
+    }).catch(function () {
+      state.realtimeReady = false;
+    });
+  }
+  function cacheActiveThread() {
+    var c = state.conversation;
+    var cid = c && c.id ? String(c.id) : "";
+    if (!cid) return;
+    state.threadCache[cid] = {
+      messages: (state.messages || []).slice(),
+      conversation: Object.assign({}, c),
+      orders: (state.orders || []).slice(),
+      ts: Date.now(),
+    };
+    var keys = Object.keys(state.threadCache);
+    if (keys.length <= THREAD_CACHE_MAX) return;
+    keys
+      .sort(function (a, b) {
+        return (state.threadCache[a].ts || 0) - (state.threadCache[b].ts || 0);
+      })
+      .slice(0, keys.length - THREAD_CACHE_MAX)
+      .forEach(function (k) {
+        delete state.threadCache[k];
+      });
+  }
+  function restoreThreadCache(cid) {
+    var hit = state.threadCache[String(cid || "")];
+    if (!hit) return false;
+    state.messages = (hit.messages || []).slice();
+    state.orders = (hit.orders || []).slice();
+    if (hit.conversation && hit.conversation.id) {
+      state.conversation = Object.assign({}, hit.conversation, state.conversation || {}, { id: String(cid) });
+    }
+    return true;
+  }
+  function conversationFromList(cid) {
+    var id = String(cid || "");
+    var hit = (state.conversations || []).find(function (c) {
+      return String(c.id) === id;
+    });
+    return hit ? Object.assign({}, hit, { id: id }) : { id: id };
+  }
+  function selectConversationInstant(id) {
+    var cid = String(id || "").trim();
+    if (!cid) return;
+    var same =
+      state.conversation &&
+      String(state.conversation.id) === cid &&
+      (!isMobile() || state.mobileDetail);
+    captureComposer();
+    if (!same) cacheActiveThread();
+    state.emojiOpen = false;
+    state.error = "";
+    // Never gate the whole main pane on thread loading — keep shell interactive.
+    state.loading = false;
+    state.conversation = conversationFromList(cid);
+    state.mobileDetail = true;
+    syncUrl(state.conversation);
+    var hadCache = restoreThreadCache(cid);
+    if (!hadCache && !same) {
+      state.messages = [];
+      state.orders = [];
+    }
+    // Instant UI: soft-patch list+main only; avoid full root.innerHTML remount.
+    if (canSoftPatch()) softUpdate({ keepScroll: false });
+    else paint();
+    bindBossRealtime(cid);
+    var seq = ++state.threadLoadSeq;
+    // Background refresh; cached threads stay on screen (silent).
+    loadThread(cid, hadCache || same, seq).catch(function (err) {
+      if (seq !== state.threadLoadSeq) return;
+      state.error = (err && err.message) || "读取会话失败";
+      toast(state.error);
+    });
+  }
+  function bumpConversationPreview(conversationId, row, opts) {
+    opts = opts || {};
+    var cid = String(conversationId || "").trim();
+    if (!cid) return;
+    var found = false;
+    state.conversations = (state.conversations || []).map(function (c) {
+      if (String(c.id) !== String(cid)) return c;
+      found = true;
+      var next = Object.assign({}, c);
+      next.lastMessage = previewMessage(row.content || c.lastMessage, row.message_type || row.messageType || "");
+      next.lastMessageAt = row.created_at || c.lastMessageAt;
+      next.updatedAt = row.created_at || c.updatedAt || next.lastMessageAt;
+      if (opts.forceUnread != null) {
+        next.unreadCount = Math.max(0, Number(opts.forceUnread) || 0);
+      } else if (Number(opts.unreadDelta || 0)) {
+        next.unreadCount = Math.max(0, Number(c.unreadCount || 0) + Number(opts.unreadDelta || 0));
+      }
+      next.unread = next.unreadCount;
+      return next;
+    });
+    if (!found && Number(opts.unreadDelta || 0) > 0) {
+      // Unknown thread — refresh list from server so unread persists correctly.
+      loadList().then(function () { softUpdate({ keepScroll: true }); }).catch(function () {});
+      return;
+    }
+    state.conversations = normalizeConversations(state.conversations);
+    syncTotalUnread(state.conversations);
+  }
+  function bindBossPoolRealtime(force) {
+    var RT = window.MCJChatRealtime;
+    if (!RT || typeof RT.subscribeConversations !== "function") return;
+    var token = authAccessToken();
+    if (!token) return;
+    if (state.poolRealtimeBound && !force) return;
+    state.poolRealtimeBound = true;
+    RT.subscribeConversations(token, {
+      onMessage: function (row) {
+        if (!row || !row.conversation_id) return;
+        var cid = String(row.conversation_id);
+        var activeId = state.conversation && state.conversation.id ? String(state.conversation.id) : "";
+        var known = (state.conversations || []).some(function (c) { return String(c.id) === cid; });
+        if (!known) {
+          // May be a brand-new CS message on a thread not yet in local cache.
+          if (isCsPeerMessage(row)) {
+            loadList().then(function () { softUpdate({ keepScroll: true }); }).catch(function () {});
+          }
+          return;
+        }
+        // Active thread message inserts are handled by subscribeMessages (avoid double unread).
+        if (activeId && activeId === cid) {
+          if (isCsPeerMessage(row) && state.mobileDetail !== false) {
+            bumpConversationPreview(cid, row, { forceUnread: 0 });
+            markConversationRead(cid, { silent: true });
+          } else {
+            bumpConversationPreview(cid, row, { unreadDelta: 0 });
+          }
+          softUpdate({ keepScroll: true });
+          return;
+        }
+        if (isCsPeerMessage(row)) {
+          bumpConversationPreview(cid, row, { unreadDelta: 1 });
+          softUpdate({ keepScroll: true });
+        } else if (String(row.sender_role || "").toLowerCase() === "boss") {
+          bumpConversationPreview(cid, row, { unreadDelta: 0 });
+          softUpdate({ keepScroll: true });
+        }
+      },
+      onReady: function () {
+        state.poolRealtimeBound = true;
+      },
+      onError: function () {
+        state.poolRealtimeBound = false;
+      },
+    }).catch(function () {
+      state.poolRealtimeBound = false;
+    });
+  }
+  function captureComposer() {
+    var input = root.querySelector(COMPOSER_SEL);
+    if (!input) return;
+    state.composerDraft = String(input.value || "");
+    if (document.activeElement === input) state.composerFocused = true;
+  }
+  function focusComposer() {
+    var input = root.querySelector(COMPOSER_SEL);
+    if (!input || input.disabled) return;
+    try { input.focus({ preventScroll: true }); } catch (e) { try { input.focus(); } catch (e2) {} }
+    try {
+      var len = String(input.value || "").length;
+      input.setSelectionRange(len, len);
+    } catch (e3) {}
+  }
+  function syncComposerChrome() {
+    var input = root.querySelector(COMPOSER_SEL);
+    var btn = root.querySelector("[data-send-btn]");
+    if (btn) {
+      var empty = !(input && String(input.value || state.composerDraft || "").trim());
+      btn.disabled = !!state.sending || empty;
+      btn.textContent = state.sending ? "发送中…" : "发送";
+    }
+    if (!input) return;
+    input.readOnly = !!state.sending;
+    if (document.activeElement !== input && String(input.value || "") !== String(state.composerDraft || "")) {
+      input.value = state.composerDraft || "";
+    }
+    try {
+      input.style.height = "44px";
+      var nextH = Math.min(120, Math.max(44, input.scrollHeight));
+      input.style.height = nextH + "px";
+    } catch (e) {}
+    if (state.composerFocused && document.activeElement !== input && !state.sending) focusComposer();
+  }
+  function withTimeout(promise, ms, label) {
+    var settled = false;
+    return new Promise(function (resolve, reject) {
+      var timer = setTimeout(function () {
+        if (settled) return;
+        settled = true;
+        reject(new Error((label || "请求") + "超时，请重试"));
+      }, ms || 2500);
+      Promise.resolve(promise).then(function (value) {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve(value);
+      }, function (err) {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        reject(err);
+      });
+    });
+  }
+  function totalUnreadCount(list) {
+    return (list || state.conversations || []).reduce(function (sum, c) {
+      return sum + Number(c.unreadCount || c.unread || 0);
+    }, 0);
+  }
+  function syncTotalUnread(list) {
+    state.totalUnread = totalUnreadCount(list || state.conversations);
+    try {
+      if (window.MCJBossHeader && typeof window.MCJBossHeader.setChatUnread === "function") {
+        window.MCJBossHeader.setChatUnread(state.totalUnread);
+      }
+      window.dispatchEvent(new CustomEvent("mcj-boss-chat-unread", { detail: { unread: state.totalUnread } }));
+    } catch (e) {}
+    patchAsideHead();
+  }
+  function patchAsideHead() {
+    var head = root.querySelector(".support-aside-head h1");
+    if (!head) return;
+    var total = Number(state.totalUnread || 0);
+    var badge = head.querySelector(".support-unread-total");
+    if (total > 0) {
+      var label = total > 99 ? "99+" : String(total);
+      if (badge) {
+        badge.hidden = false;
+        badge.textContent = label;
+      } else {
+        badge = document.createElement("em");
+        badge.className = "support-unread support-unread-total";
+        badge.textContent = label;
+        head.appendChild(badge);
+      }
+    } else if (badge) {
+      badge.remove();
+    }
+  }
+  function markConversationRead(conversationId, opts) {
+    opts = opts || {};
+    var cid = String(conversationId || (state.conversation && state.conversation.id) || "").trim();
+    if (!cid) return Promise.resolve(null);
+    return fetchJson("/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "mark_read", conversation_id: cid }),
+      _mcjTimeoutMs: 8000,
+    })
+      .then(function (body) {
+        if (body && Array.isArray(body.conversations)) {
+          state.conversations = normalizeConversations(body.conversations);
+        } else {
+          state.conversations = (state.conversations || []).map(function (c) {
+            if (String(c.id) === String(cid)) {
+              c.unreadCount = 0;
+              c.unread = 0;
+            }
+            return c;
+          });
+        }
+        if (state.conversation && String(state.conversation.id) === String(cid)) {
+          state.conversation.unreadCount = 0;
+          state.conversation.unread = 0;
+        }
+        syncTotalUnread(state.conversations);
+        // Unread badge refresh must not remount the chat pane / composer.
+        if (opts.silent) {
+          patchAsideHead();
+          patchSessionList();
+        } else {
+          softUpdate({ keepScroll: true });
+        }
+        return body;
+      })
+      .catch(function () {
+        return null;
+      });
+  }
+  function fetchJson(url, init) {
+    var auth = Auth();
+    if (!auth || typeof auth.authFetch !== "function") return Promise.reject(new Error("鉴权模块未加载"));
+    var ms = init && init._mcjTimeoutMs != null ? init._mcjTimeoutMs : 8000;
+    var opts = Object.assign({}, init || {});
+    delete opts._mcjTimeoutMs;
+    return withTimeout(auth.authFetch(url, opts), ms, "客服接口");
+  }
+  function loadList() {
+    return fetchJson("/api/chat?action=conversations").then(function (body) {
+      state.conversations = normalizeConversations(body.conversations || []);
+      if (typeof body.unreadCount === "number") state.totalUnread = Number(body.unreadCount);
+      else if (typeof body.unread === "number") state.totalUnread = Number(body.unread);
+      else syncTotalUnread(state.conversations);
+      syncTotalUnread(state.conversations);
+      if (body.identity) {
+        state.identity = Object.assign({}, state.identity || {}, body.identity);
+        try {
+          console.info("[support-chat] chat identity", body.identity);
+        } catch (e) {}
+      }
+      if (typeof body.serviceOnline === "boolean") state.serviceOnline = body.serviceOnline;
+      if (body.serviceStatus) state.serviceStatus = body.serviceStatus;
+      return body;
+    });
+  }
+  function loadOrders() {
+    // Only fetch the active conversation's order — never dump the full order list into support UI.
+    var c = state.conversation;
+    var oid = (c && (c.orderId || c.order_id)) || orderId() || "";
+    if (!oid) {
+      state.orders = [];
+      return Promise.resolve([]);
+    }
+    return fetchJson("/api/orders?id=" + encodeURIComponent(oid))
+      .then(function (body) {
+        var list = body.orders || [];
+        if (body.order) list = [body.order];
+        state.orders = Array.isArray(list) ? list : [];
+        return state.orders;
+      })
+      .catch(function (err) {
+        var msg = String((err && err.message) || "");
+        var status = Number(err && err.status) || 0;
+        if (status === 403 || /无权限/.test(msg)) {
+          state.orders = [];
+          state.error = "无权限查看该订单";
+          return [];
+        }
+        if (status === 404 || /不存在/.test(msg)) {
+          state.orders = [];
+          if (orderId()) state.error = "订单不存在";
+          return [];
+        }
+        state.orders = [];
+        return [];
+      });
+  }
+  function loadThread(conversationId, silent, seq) {
+    var cid = conversationId || (state.conversation && state.conversation.id) || conversationParam();
+    if (!cid) return Promise.resolve(null);
+    var requestedId = String(cid);
+    var mySeq = seq != null ? Number(seq) : ++state.threadLoadSeq;
+    return fetchJson("/api/chat?conversation_id=" + encodeURIComponent(cid))
+      .then(function (body) {
+        // Rapid switch: ignore stale responses so UI does not thrash.
+        if (mySeq !== state.threadLoadSeq) return body;
+        if (state.conversation && String(state.conversation.id) !== requestedId) return body;
+        applyPayload(body, { keepScroll: !!silent, pinConversationId: requestedId });
+        cacheActiveThread();
+        // mark_read + orders must not block first paint / message display.
+        markConversationRead(requestedId, { silent: true }).catch(function () {});
+        loadOrders()
+          .then(function () {
+            if (mySeq !== state.threadLoadSeq) return;
+            if (state.conversation && String(state.conversation.id) !== requestedId) return;
+            cacheActiveThread();
+            // Order card is optional chrome — never remount composer/messages for it.
+            if (canSoftPatch() && root.querySelector("[data-messages]")) {
+              patchOrderSummaryOnly();
+              patchChatHeader();
+            } else {
+              softUpdate({ keepScroll: !!silent });
+            }
+          })
+          .catch(function () {});
+        return body;
+      })
+      .catch(function (err) {
+        if (mySeq !== state.threadLoadSeq) return null;
+        var msg = String((err && err.message) || "");
+        var status = Number(err && err.status) || 0;
+        if (status === 403 || /无权限/.test(msg)) {
+          state.conversation = null;
+          state.messages = [];
+          state.error = "无权限查看该会话";
+          try {
+            var u = new URL(location.href);
+            u.searchParams.delete("conversation");
+            u.searchParams.delete("order");
+            history.replaceState({}, "", u.pathname + u.search);
+          } catch (e) {}
+          softUpdate({ keepScroll: true });
+          return null;
+        }
+        if (status === 404 || /不存在/.test(msg)) {
+          state.conversation = null;
+          state.messages = [];
+          state.error = "会话不存在";
+          softUpdate({ keepScroll: true });
+          return null;
+        }
+        if (!silent) throw err;
+        return null;
+      });
+  }
+  function openConversation(payload) {
+    if (state.opening) {
+      return Promise.reject(new Error("正在创建会话，请稍候…"));
+    }
+    state.opening = true;
+    state.error = "";
+    softUpdate({ keepScroll: true });
+    var bodyPayload = Object.assign({ action: "open" }, payload || {});
+    // Never send empty IDs that confuse the API.
+    if (!bodyPayload.order_id && !bodyPayload.orderId) {
+      delete bodyPayload.order_id;
+      delete bodyPayload.orderId;
+    }
+    if (!bodyPayload.conversation_id && !bodyPayload.conversationId) {
+      delete bodyPayload.conversation_id;
+      delete bodyPayload.conversationId;
+    }
+    return fetchJson("/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(bodyPayload),
+      _mcjTimeoutMs: 12000,
+    }).then(function (body) {
+      if (!body || !body.ok || !(body.conversation && body.conversation.id)) {
+        throw new Error((body && body.message) || "创建客服会话失败，请稍后重试。");
+      }
+      state.composerDraft = "";
+      state.mobileDetail = true;
+      applyPayload(body, { keepScroll: false });
+      toast(body.created ? "已创建新的客服会话" : "已进入客服会话");
+      return body;
+    }).catch(function (err) {
+      var msg = String((err && err.message) || "创建客服会话失败，请稍后重试。");
+      if (/正在创建会话/.test(msg)) {
+        toast(msg);
+        return Promise.reject(err);
+      }
+      state.error = msg;
+      toast(msg);
+      softUpdate({ keepScroll: true });
+      throw err;
+    }).finally(function () {
+      state.opening = false;
+      state.loading = false;
+      softUpdate({ keepScroll: true });
+    });
+  }
+  function pickConversation(list) {
+    var oid = orderId();
+    var cid = conversationParam();
+    if (cid) return list.find(function (c) { return c.id === cid; }) || null;
+    if (oid) {
+      var orderList = list.filter(function (c) { return String(c.orderId || c.order_id || "") === String(oid); });
+      return (
+        orderList.find(function (c) { return !isClosedConversation(c); }) ||
+        orderList[0] ||
+        null
+      );
+    }
+    // Plain entry (bottom tab / header / ?start=1) only shows the hub; the boss picks a thread or 联系客服.
+    return null;
+  }
+  function orderSummaryHtml(order) {
+    if (!order) return "";
+    var grab = order.grabCount != null ? order.grabCount : order.claimCount != null ? order.claimCount : order.applicantCount;
+    var grabText = grab != null && grab !== "" ? String(grab) : "-";
+    return (
+      '<section class="support-order-summary' +
+      (state.orderCardOpen ? " is-open" : "") +
+      '"><button class="support-order-summary-toggle" type="button" data-toggle-order-card>' +
+      '<div class="support-order-summary-meta">' +
+      "<strong>订单 " +
+      esc(order.orderNo || order.id) +
+      "</strong>" +
+      "<span>" +
+      esc(order.serviceType || order.game || "-") +
+      "</span>" +
+      "<span>" +
+      esc(order.totalAmount != null ? order.totalAmount + " 猫粮" : "-") +
+      "</span>" +
+      "<span>" +
+      esc(order.statusText || order.status || "-") +
+      "</span></div><span>" +
+      (state.orderCardOpen ? "收起" : "展开") +
+      "</span></button>" +
+      '<div class="support-order-summary-body">' +
+      "<div><span>订单号</span><strong>" +
+      esc(order.orderNo || order.id) +
+      "</strong></div>" +
+      "<div><span>游戏</span><strong>" +
+      esc(order.serviceType || order.game || "-") +
+      "</strong></div>" +
+      "<div><span>金额</span><strong>" +
+      esc(order.totalAmount != null ? order.totalAmount + " 猫粮" : "-") +
+      "</strong></div>" +
+      "<div><span>状态</span><strong>" +
+      esc(order.statusText || order.status || "-") +
+      "</strong></div>" +
+      "<div><span>已有抢单人数</span><strong>" +
+      esc(grabText) +
+      "</strong></div>" +
+      '<div class="support-order-summary-actions">' +
+      '<a class="support-inline-link" href="orders.html?id=' +
+      encodeURIComponent(order.id) +
+      '">返回订单详情</a>' +
+      '<a class="support-inline-link" href="orders.html?id=' +
+      encodeURIComponent(order.id) +
+      '&tab=claims">查看抢单陪玩</a>' +
+      "</div></div></section>"
+    );
+  }
+  function railHtml() {
+    // WeChat-style: no third-column order dump. Current order card lives in chat panel.
+    return "";
+  }
+  function sessionDisplayName(c) {
+    var name = String(
+      (c && (c.customerServiceName || c.serviceName || c.customer_service_name || c.peerName || c.peer_name)) || ""
+    ).trim();
+    if (name && !/^订单/.test(name) && !/^人工客服/.test(name)) return name;
+    if (isOrderConversation(c)) return "订单客服";
+    return "人工客服";
+  }
+  function sessionLine2(c) {
+    var orderNo = String((c && (c.orderNo || c.order_no)) || "").trim();
+    if (orderNo) return "订单 " + orderNo;
+    var consult = String((c && (c.consultType || c.consult_type || c.subtitle)) || "").trim();
+    var consultMap = {
+      other: "普通咨询",
+      new_order: "新订单咨询",
+      current_order: "当前订单问题",
+      recharge: "充值问题",
+      refund: "退款售后",
+    };
+    if (consultMap[consult]) return consultMap[consult];
+    if (consult && consult.length < 28) return consult;
+    if (isClosedConversation(c)) return "会话已结束";
+    return isOrderConversation(c) ? "订单咨询" : "人工客服咨询";
+  }
+  function discordCommunityCardHtml() {
+    var ready = isDiscordInviteReady();
+    var url = getDiscordInviteUrl();
+    var helpText = "寻找队友、交流游戏、参与社区活动";
+    var statusLine = ready ? helpText : helpText + " · 社区链接暂未配置";
+    var actionHint = ready ? "加入" : "暂未配置";
+    var logo =
+      '<span class="mcj-discord-cta-logo" aria-hidden="true">' +
+      '<svg viewBox="0 0 24 24" width="26" height="26" focusable="false">' +
+      '<path fill="currentColor" d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028 14.09 14.09 0 0 0 1.226-1.994.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z"/>' +
+      "</svg></span>";
+    return (
+      '<section class="mcj-discord-cta-wrap" id="mcj-discord-community" aria-label="MEOW CUI JIAO Discord 社区">' +
+      '<p class="mcj-public-channels-label">公开社区</p>' +
+      '<button type="button" class="mcj-discord-cta' +
+      (ready ? "" : " is-unconfigured") +
+      '" data-discord-community-cta' +
+      (ready && url ? ' data-discord-url="' + esc(url) + '"' : "") +
+      ' aria-label="' +
+      esc(ready ? "加入 MEOW CUI JIAO Discord 社区" : "社区链接暂未配置") +
+      '"' +
+      (ready ? "" : ' aria-disabled="true"') +
+      ">" +
+      logo +
+      '<span class="mcj-discord-cta-copy">' +
+      "<strong>MEOW CUI JIAO Discord 社区</strong>" +
+      "<span>加入妙脆角玩家社区</span>" +
+      "<em>" +
+      esc(statusLine) +
+      "</em>" +
+      "</span>" +
+      '<span class="mcj-discord-cta-action" aria-hidden="true">' +
+      "<i>→</i>" +
+      "<small>" +
+      esc(actionHint) +
+      "</small>" +
+      "</span>" +
+      "</button>" +
+      "</section>"
+    );
+  }
+  function listHtml() {
+    var activeId = state.conversation && state.conversation.id;
+    var list = state.conversations || [];
+    var guest = !hasAuthSession();
+    var publicBlock = discordCommunityCardHtml();
+    var actions =
+      '<div class="support-list-actions"><button class="support-btn primary" type="button" data-contact-service' +
+      (state.creatingGeneral ? " disabled" : "") +
+      ">" +
+      (state.creatingGeneral ? "创建中…" : guest ? "登录后新建客服咨询" : "新建客服咨询") +
+      "</button></div>";
+    if (guest) {
+      return (
+        publicBlock +
+        actions +
+        '<div class="support-empty-panel support-empty-list"><strong>人工客服需要登录</strong><span>公开 Discord 社区可直接加入。查询本人订单、售后与人工会话请先登录。</span></div>'
+      );
+    }
+    if (!list.length) {
+      return (
+        publicBlock +
+        actions +
+        '<div class="support-empty-panel support-empty-list"><strong>暂无客服会话</strong><span>需要帮助时，点击上方按钮新建咨询。从订单详情进入时会自动关联当前订单。</span></div>'
+      );
+    }
+    return (
+      publicBlock +
+      actions +
+      '<section class="support-list-block"><div class="support-list-caption">我的会话</div>' +
+      list
+        .map(function (c) {
+          var orderMode = isOrderConversation(c);
+          var line1 = sessionDisplayName(c);
+          var line2 = sessionLine2(c);
+          var line3 = isClosedConversation(c)
+            ? "会话已结束 · 可重新发起"
+            : previewMessage(c.lastMessage || "暂无消息");
+          var unread = Number(c.unreadCount || 0)
+            ? '<em class="support-unread" aria-label="未读">' +
+              esc(Number(c.unreadCount || 0) > 99 ? "99+" : c.unreadCount) +
+              "</em>"
+            : "";
+          return (
+            '<button type="button" class="support-session' +
+            (orderMode ? " support-session-order" : " support-session-general") +
+            (activeId && c.id === activeId ? " active" : "") +
+            '" data-select-conversation="' +
+            esc(c.id) +
+            '"><div class="support-session-main">' +
+            '<strong class="support-session-name">' +
+            esc(line1) +
+            "</strong>" +
+            '<span class="support-session-sub">' +
+            esc(line2) +
+            "</span>" +
+            '<span class="support-session-preview">' +
+            esc(line3) +
+            "</span></div>" +
+            '<div class="support-session-aside"><small>' +
+            esc(shortTime(c.lastMessageAt || c.updatedAt || "")) +
+            "</small>" +
+            unread +
+            "</div></button>"
+          );
+        })
+        .join("") +
+      "</section>"
+    );
+  }
+  function mainHtml() {
+    if (state.authLoading || state.customerLoading) {
+      return '<div class="support-empty-panel"><strong>正在加载账号资料</strong><span>请稍候，正在确认登录身份…</span></div>';
+    }
+    if (!hasAuthSession()) {
+      return (
+        '<div class="support-login-panel support-guest-panel">' +
+        "<strong>欢迎来到客服中心</strong>" +
+        "<p>公开社区（Discord 等）无需登录，请看会话列表上方的社区卡片。查询本人订单、售后或发起人工客服会话时，再登录账号即可。</p>" +
+        '<button class="support-btn primary" type="button" data-support-login>登录后联系人工客服</button>' +
+        "</div>"
+      );
+    }
+    if (state.authError && /请先登录/.test(String(state.authError || ""))) {
+      return (
+        '<div class="support-login-panel"><strong>请先登录后使用在线客服</strong><br>' +
+        '<button class="support-btn primary" type="button" data-support-login>立即登录</button></div>'
+      );
+    }
+    if (state.authError) {
+      return (
+        '<div class="support-empty-panel"><strong>账号资料加载失败</strong><span>' +
+        esc(state.authError) +
+        '</span><button class="support-btn" type="button" data-refresh>重试</button></div>'
+      );
+    }
+    if (!state.identity) {
+      return '<div class="support-empty-panel"><strong>账号资料加载失败，请重试</strong><button class="support-btn" type="button" data-refresh>重试</button></div>';
+    }
+    if (state.loading && !state.conversation && !state.conversations.length && !state.error) {
+      return '<div class="support-empty-panel"><strong>正在加载客服会话…</strong><span>请稍候</span></div>';
+    }
+    if (state.error && !state.conversation) {
+      return (
+        '<div class="support-empty-panel"><strong>加载失败</strong><span>' +
+        esc(state.error) +
+        '</span><button class="support-btn" type="button" data-refresh>重试</button></div>'
+      );
+    }
+    if (!state.conversation) return '<div class="support-empty-panel"><strong>请选择一个会话</strong><span>先从会话列表进入聊天。</span></div>';
+    var order = conversationOrder(state.conversation);
+    var serviceName = state.conversation.customerServiceName || state.conversation.serviceName || '在线客服';
+    var orderNo = state.conversation.orderNo || state.conversation.order_no || (order && order.orderNo) || '';
+    var chatStatus = topStatusText(state.conversation);
+    if (isClosedConversation(state.conversation)) chatStatus = '会话已结束 · 可重新发起咨询';
+    else if (state.serviceStatus && !/重新安排/.test(String(state.serviceStatus || ''))) {
+      if (/等待客服接待|客服暂时离线|客服已接入|正在为您服务|会话已结束|正在为你更换客服/.test(String(state.serviceStatus))) {
+        chatStatus = state.serviceStatus;
+      }
+    }
+    return (
+      '<header class="support-main-head"><div class="support-main-title"><button class="support-back-btn" type="button" data-back-list>返回</button><div class="support-main-copy"><h2>' +
+      esc(state.conversation.customerServiceId || state.conversation.customer_service_id ? serviceName : '在线客服') +
+      '</h2>' +
+      (orderNo ? '<p class="support-order-no" title="' + esc(orderNo) + '">订单 ' + esc(orderNo) + '</p>' : '<p>人工客服咨询</p>') +
+      '<p class="support-chat-status">' + esc(chatStatus) + '</p>' +
+      '</div></div><button class="support-btn" type="button" data-refresh>刷新</button></header>' +
+      (order ? orderSummaryHtml(order) : '') +
+      '<div class="support-messages" data-messages data-cid="' +
+      esc(state.conversation.id || "") +
+      '">' +
+      (state.messages.length ? renderSupportMessages(state.messages) : '<div class="support-list-empty">你可以先留言，客服上线后会尽快回复。</div>') +
+      '</div>' +
+      '<div class="support-footer" data-support-footer data-closed="' +
+      (isClosedConversation(state.conversation) ? "1" : "0") +
+      '" data-emoji="' +
+      (state.emojiOpen ? "1" : "0") +
+      '">' +
+      composerHtml() +
+      '</div>'
+    );
+  }
+  function composerHtml() {
+    if (isClosedConversation(state.conversation)) {
+      var orderMode = isOrderConversation(state.conversation);
+      return (
+        '<div class="support-ended-panel" data-ended-panel>' +
+        '<p>本次客服会话已结束。</p>' +
+        '<p class="support-ended-hint">旧记录可继续查看；如需帮助请重新发起咨询。</p>' +
+        '<div class="support-ended-actions">' +
+        '<button type="button" class="support-btn primary" data-reopen-chat>' +
+        (orderMode ? '重新发起订单咨询' : '重新联系人工客服') +
+        '</button>' +
+        '<button type="button" class="support-btn" data-back-list>返回会话列表</button>' +
+        '</div></div>'
+      );
+    }
+    var empty = !String(state.composerDraft || '').trim();
+    return (
+      (state.emojiOpen
+        ? '<div class="support-emoji-panel" data-emoji-panel>' +
+          EMOJIS.map(function (e) {
+            return '<button type="button" data-emoji="' + esc(e) + '">' + e + '</button>';
+          }).join('') +
+          '</div>'
+        : '') +
+      '<p class="mcj-enter-hint">Enter 发送，Shift+Enter 换行</p>' +
+      '<form class="support-composer" data-send>' +
+      '<div class="support-composer-tools mcj-composer-tools">' +
+      '<button class="support-tool-btn mcj-composer-tool" type="button" data-toggle-emoji aria-label="表情">😊</button>' +
+      '<button class="support-tool-btn mcj-composer-tool mcj-composer-tool-img" type="button" data-chat-image-btn aria-label="图片/相册" title="图片/相册">图片</button>' +
+      '</div>' +
+      '<textarea name="content" rows="1" enterkeyhint="send" placeholder="输入消息…" autocomplete="off" maxlength="2000">' +
+      esc(state.composerDraft || '') +
+      '</textarea>' +
+      '<button class="support-send-btn" type="submit" data-send-btn' +
+      (state.sending || empty ? ' disabled' : '') +
+      '>' +
+      (state.sending ? '发送中…' : '发送') +
+      '</button></form>' +
+      '<div class="mcj-upload-status" data-upload-status></div>'
+    );
+  }
+  function canSoftPatch() {
+    return !!(
+      root.querySelector(".support-layout") &&
+      root.querySelector(".support-aside") &&
+      root.querySelector(".support-main")
+    );
+  }
+  function patchSessionList() {
+    var list = root.querySelector(".support-session-list");
+    if (!list) return;
+    var y = list.scrollTop || 0;
+    list.innerHTML = listHtml();
+    list.scrollTop = y;
+  }
+  function patchMain() {
+    var main = root.querySelector(".support-main");
+    if (main) main.innerHTML = mainHtml();
+  }
+  function patchRail() {
+    /* rail removed — WeChat 2-column layout */
+  }
+  function patchChatHeader() {
+    var copy = root.querySelector(".support-main-copy");
+    if (!copy || !state.conversation) return false;
+    var order = conversationOrder(state.conversation);
+    var serviceName = state.conversation.customerServiceName || state.conversation.serviceName || "在线客服";
+    var orderNo = state.conversation.orderNo || state.conversation.order_no || (order && order.orderNo) || "";
+    var chatStatus = topStatusText(state.conversation);
+    if (isClosedConversation(state.conversation)) chatStatus = "会话已结束 · 可重新发起咨询";
+    else if (state.serviceStatus && !/重新安排/.test(String(state.serviceStatus || ""))) {
+      if (/等待客服接待|客服暂时离线|客服已接入|正在为您服务|会话已结束|正在为你更换客服/.test(String(state.serviceStatus))) {
+        chatStatus = state.serviceStatus;
+      }
+    }
+    var h2 = copy.querySelector("h2");
+    if (h2) {
+      h2.textContent =
+        state.conversation.customerServiceId || state.conversation.customer_service_id ? serviceName : "在线客服";
+    }
+    var orderEl = copy.querySelector(".support-order-no") || copy.querySelector("p:not(.support-chat-status)");
+    if (orderEl && !orderEl.classList.contains("support-chat-status")) {
+      if (orderNo) {
+        orderEl.className = "support-order-no";
+        orderEl.title = orderNo;
+        orderEl.textContent = "订单 " + orderNo;
+      } else {
+        orderEl.className = "";
+        orderEl.removeAttribute("title");
+        orderEl.textContent = "人工客服咨询";
+      }
+    }
+    var statusEl = copy.querySelector(".support-chat-status");
+    if (statusEl) statusEl.textContent = chatStatus;
+    return true;
+  }
+  function patchOrderSummaryOnly() {
+    var main = root.querySelector(".support-main");
+    if (!main || !state.conversation) return false;
+    var existing = main.querySelector(".support-order-summary");
+    var order = conversationOrder(state.conversation);
+    var html = order ? orderSummaryHtml(order) : "";
+    if (!html) {
+      if (existing) existing.remove();
+      return true;
+    }
+    if (existing) {
+      existing.outerHTML = html;
+      return true;
+    }
+    var head = main.querySelector(".support-main-head");
+    var msgs = main.querySelector("[data-messages]");
+    if (head && msgs) {
+      head.insertAdjacentHTML("afterend", html);
+      return true;
+    }
+    return false;
+  }
+  function patchFooterIfNeeded(force) {
+    var footer = root.querySelector("[data-support-footer]");
+    if (!footer || !state.conversation) return false;
+    var closed = isClosedConversation(state.conversation) ? "1" : "0";
+    var emoji = state.emojiOpen ? "1" : "0";
+    if (
+      !force &&
+      footer.getAttribute("data-closed") === closed &&
+      footer.getAttribute("data-emoji") === emoji &&
+      footer.querySelector("[data-send], [data-ended-panel]")
+    ) {
+      syncComposerChrome();
+      return true;
+    }
+    captureComposer();
+    footer.setAttribute("data-closed", closed);
+    footer.setAttribute("data-emoji", emoji);
+    footer.innerHTML = composerHtml();
+    syncComposerChrome();
+    return true;
+  }
+  function softUpdate(opts) {
+    opts = opts || {};
+    captureComposer();
+    syncChatChrome();
+    if (canSoftPatch()) {
+      var activeId = state.conversation && state.conversation.id ? String(state.conversation.id) : "";
+      var messagesBox = root.querySelector("[data-messages]");
+      var renderedId = messagesBox ? String(messagesBox.getAttribute("data-cid") || "") : "";
+      var hasChatShell = !!(
+        root.querySelector(".support-main-head") &&
+        messagesBox &&
+        root.querySelector("[data-support-footer]")
+      );
+      var needFullMain =
+        !!opts.forceMain ||
+        !state.conversation ||
+        !hasChatShell ||
+        !activeId ||
+        renderedId !== activeId ||
+        !!state.authLoading ||
+        !!state.customerLoading ||
+        !!state.authError ||
+        !state.identity ||
+        (!!state.error && !state.conversation) ||
+        (!!state.loading && !state.conversation && !(state.conversations || []).length);
+
+      patchAsideHead();
+      patchSessionList();
+
+      if (needFullMain) {
+        var snap = captureChatScroll(messagesBox);
+        var stick = !!opts.stickBottom || !opts.keepScroll || !!(snap && snap.near);
+        patchMain();
+        restoreChatScroll(root.querySelector("[data-messages]"), snap, stick);
+        syncComposerChrome();
+        return;
+      }
+
+      patchChatHeader();
+      patchOrderSummaryOnly();
+      patchMessages(opts);
+      patchFooterIfNeeded(!!opts.remountFooter);
+      return;
+    }
+    paint(opts);
+  }
+  function paint(opts) {
+    opts = opts || {};
+    captureComposer();
+    syncChatChrome();
+    var keepFocus = !!state.composerFocused;
+    var prior = root.querySelector("[data-messages]");
+    var snap = captureChatScroll(prior);
+    var stick = !!opts.stickBottom || !opts.keepScroll || !!(snap && snap.near);
+    root.innerHTML =
+      '<section class="support-layout' +
+      (state.mobileDetail ? " mobile-detail" : "") +
+      '" aria-label="我的客服会话">' +
+      '<aside class="support-aside"><div class="support-aside-head"><div><h1>客服中心' +
+      (Number(state.totalUnread || 0) > 0
+        ? '<em class="support-unread support-unread-total">' +
+          esc(Number(state.totalUnread) > 99 ? "99+" : state.totalUnread) +
+          "</em>"
+        : "") +
+      '</h1><p>仅显示本人会话</p><div data-cs-online-badge="full"></div></div>' +
+      '<span class="support-online-chip' +
+      (state.serviceOnline ? " is-online" : "") +
+      '" aria-live="polite">' +
+      (state.serviceOnline ? "客服在线" : "客服忙碌/离线") +
+      '</span></div><div class="support-session-list">' +
+      listHtml() +
+      "</div></aside>" +
+      '<div class="support-main">' +
+      mainHtml() +
+      "</div>" +
+      "</section>";
+    restoreChatScroll(root.querySelector("[data-messages]"), snap, stick);
+    syncComposerChrome();
+    if (keepFocus) {
+      state.composerFocused = true;
+      setTimeout(focusComposer, 0);
+    }
+  }
+  function applyPayload(body, opts) {
+    opts = opts || {};
+    if (Array.isArray(body.conversations)) state.conversations = normalizeConversations(body.conversations);
+    var pinCid = String(opts.pinConversationId || (state.conversation && state.conversation.id) || "").trim();
+    var incomingConv = body.conversation || null;
+    var incomingCid = incomingConv && incomingConv.id ? String(incomingConv.id) : "";
+    // Never steal focus: ignore stale poll/open responses for another conversation.
+    if (incomingConv) {
+      if (pinCid && incomingCid && incomingCid !== pinCid) {
+        incomingConv = null;
+      } else {
+        state.conversation = incomingConv;
+        state.mobileDetail = true;
+        syncUrl(incomingConv);
+      }
+    }
+    if (Array.isArray(body.messages)) {
+      var activeCid = String((state.conversation && state.conversation.id) || pinCid || "").trim();
+      var msgConv = incomingCid || activeCid;
+      if (!pinCid || !msgConv || msgConv === pinCid || msgConv === activeCid) {
+        // Preserve failed local drafts across silent polls.
+        var failedLocals = (state.messages || []).filter(function (m) { return m._failed || m._pending; });
+        var remote = body.messages.slice();
+        failedLocals.forEach(function (local) {
+          if (!remote.some(function (m) { return m.content === local.content && m.sender_role === "boss"; })) {
+            remote.push(local);
+          }
+        });
+        state.messages = remote;
+      }
+    } else if (body.appended || body.row) {
+      var added = body.appended || body.row;
+      if (added && added.content) {
+        var exists = state.messages.some(function (m) {
+          return (added.id && m.id && String(m.id) === String(added.id)) || (m.sender_role === added.sender_role && m.content === added.content && Math.abs(new Date(m.created_at || 0) - new Date(added.created_at || 0)) < 5000);
+        });
+        if (!exists) state.messages = state.messages.concat([added]);
+      }
+    }
+    if (typeof body.serviceOnline === 'boolean') state.serviceOnline = body.serviceOnline;
+    if (body.serviceStatus) state.serviceStatus = body.serviceStatus;
+    var st = String((state.conversation && state.conversation.status) || body.serviceStatus || "");
+    if (/pending_transfer|正在为你更换客服/.test(st)) {
+      toast("正在为你更换客服。");
+    }
+    state.error = '';
+    softUpdate(opts);
+    var nextCid = state.conversation && state.conversation.id;
+    // Always (re)bind when the active thread changes OR first ready.
+    // Click handler may pre-set conversation.id — still must switch channels.
+    if (nextCid) {
+      var prevRt = String(state.activeRtCid || "");
+      if (String(nextCid) !== prevRt || !state.realtimeReady) {
+        bindBossRealtime(nextCid);
+      }
+    }
+  }
+  function bootstrap() {
+    if (!hasAuthSession()) {
+      state.loading = false;
+      state.authLoading = false;
+      state.customerLoading = false;
+      // Guest hub: public Discord / contact channels are visible.
+      // Do NOT force login modal / redirect — only private chat actions require auth.
+      state.authError = "";
+      state.conversations = [];
+      state.orders = [];
+      state.conversation = null;
+      state.messages = [];
+      paint();
+      return Promise.resolve(null);
+    }
+    paint();
+    state.loading = true;
+    state.error = "";
+    state.authError = "";
+    return resolveIdentity()
+      .then(function (identity) {
+        softUpdate({ keepScroll: true });
+        if (!identity) {
+          state.loading = false;
+          softUpdate({ keepScroll: true });
+          return null;
+        }
+        return Promise.all([loadList()]).then(function () {
+          state.loading = false;
+          softUpdate({ keepScroll: true });
+          var oid = orderId();
+          var cid = conversationParam();
+          var picked = pickConversation(state.conversations);
+          function openOwned() {
+            if (oid && (!picked || String(picked.orderId || picked.order_id || "") !== String(oid))) {
+              return openConversation({ order_id: oid }).catch(function (err) {
+                var msg = String((err && err.message) || "");
+                var status = Number(err && err.status) || 0;
+                if (status === 403 || /无权限/.test(msg)) state.error = "无权限查看该订单";
+                else if (status === 404 || /不存在/.test(msg)) state.error = "订单不存在";
+                softUpdate({ keepScroll: true });
+                return null;
+              });
+            }
+            if (cid && !picked) {
+              return loadThread(cid, false);
+            }
+            if (picked) {
+              state.conversation = Object.assign({}, picked, {
+                id: picked.id,
+                order_id: picked.orderId || picked.order_id || "",
+                customer_service_id: picked.customerServiceId || "",
+              });
+              state.mobileDetail = isMobile();
+              syncUrl(state.conversation);
+              return loadThread(picked.id, false);
+            }
+            state.conversation = null;
+            state.messages = [];
+            state.mobileDetail = false;
+            softUpdate({ keepScroll: true });
+            return null;
+          }
+          return openOwned();
+        }).then(function (result) {
+          applyDraftFromQuery();
+          return result;
+        });
+      })
+      .catch(function (err) {
+        var msg = err.message || "消息读取失败";
+        // Never surface the old misleading boss-only copy as a generic load failure without context.
+        if (/只有老板账号/.test(msg)) {
+          state.authError = "当前账号不是老板客户身份，无法使用老板端在线客服。";
+          state.error = "";
+        } else if (/请先登录|登录已过期|未登录/i.test(msg)) {
+          state.authError = "请先登录后使用在线客服";
+          state.error = "";
+        } else {
+          state.error = msg;
+        }
+        softUpdate({ keepScroll: true });
+      })
+      .finally(function () {
+        state.loading = false;
+        state.opening = false;
+        state.authLoading = false;
+        state.customerLoading = false;
+        softUpdate({ keepScroll: true });
+      });
+  }
+  function startPoll() {
+    if (state.pollTimer) clearInterval(state.pollTimer);
+    bindBossPoolRealtime(false);
+    state.pollTimer = setInterval(function () {
+      if (!hasAuthSession() || state.sending || state.opening || document.hidden) return;
+      if (!state.poolRealtimeBound) bindBossPoolRealtime(true);
+      if (!state.conversation || !state.conversation.id) {
+        loadList()
+          .then(function () {
+            if (canSoftPatch()) {
+              patchAsideHead();
+              patchSessionList();
+            } else softUpdate({ keepScroll: true });
+          })
+          .catch(function () {});
+        return;
+      }
+      // List poll keeps unread badges fresh; thread poll is fallback when realtime is down.
+      loadList()
+        .then(function () {
+          if (canSoftPatch()) {
+            patchAsideHead();
+            patchSessionList();
+          }
+        })
+        .catch(function () {});
+      if (!state.realtimeReady) {
+        loadThread(state.conversation.id, true).catch(function () {});
+      }
+    }, 12000);
+  }
+
+  root.addEventListener('input', function (e) {
+    if (!e.target || !e.target.matches || !e.target.matches(COMPOSER_SEL)) return;
+    state.composerDraft = String(e.target.value || '');
+    state.composerFocused = true;
+    syncComposerChrome();
+  }, true);
+  root.addEventListener('focusin', function (e) {
+    if (!e.target || !e.target.matches || !e.target.matches(COMPOSER_SEL)) return;
+    state.composerFocused = true;
+  }, true);
+  root.addEventListener('focusout', function (e) {
+    if (!e.target || !e.target.matches || !e.target.matches(COMPOSER_SEL)) return;
+    state.composerDraft = String(e.target.value || '');
+    setTimeout(function () {
+      var ae = document.activeElement;
+      if (!(ae && ae.matches && ae.matches(COMPOSER_SEL))) state.composerFocused = false;
+    }, 0);
+  }, true);
+  root.addEventListener('keydown', function (e) {
+    if (e.key !== 'Enter' || e.shiftKey || e.isComposing || e.keyCode === 229) return;
+    if (!e.target || !e.target.matches || !e.target.matches(COMPOSER_SEL)) return;
+    e.preventDefault();
+    var form = e.target.closest('[data-send]');
+    if (form) form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
+  }, true);
+  // Guarantee send-button click always submits (same path as Enter).
+  root.addEventListener('click', function (e) {
+    var sendBtn = e.target && e.target.closest && e.target.closest('[data-send-btn]');
+    if (!sendBtn || !root.contains(sendBtn) || sendBtn.disabled) return;
+    var form = sendBtn.closest('[data-send]');
+    if (!form) return;
+    e.preventDefault();
+    form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
+  }, true);
+
+  document.addEventListener('click', function (e) {
+    var discordCta = e.target.closest('[data-discord-community-cta]');
+    if (discordCta) {
+      e.preventDefault();
+      e.stopPropagation();
+      var result = openDiscordInvite();
+      if (!result || !result.ok) {
+        toast("社区链接暂未配置");
+      }
+      return;
+    }
+    var loginBtn = e.target.closest('[data-support-login]');
+    if (loginBtn) {
+      e.preventDefault();
+      promptBossLogin(function () {
+        resolveIdentity().then(function () {
+          softUpdate({ keepScroll: true });
+          if (hasAuthSession()) bootstrap();
+        });
+      });
+      return;
+    }
+    var contact = e.target.closest('[data-contact-service]');
+    if (contact) {
+      e.preventDefault();
+      if (!hasAuthSession()) {
+        promptBossLogin(function () {
+          contact.click();
+        });
+        return;
+      }
+      if (state.opening || state.creatingGeneral) {
+        toast('正在创建会话，请稍候…');
+        return;
+      }
+      // Different consult types MUST create independent conversations (no account lock reuse).
+      pickBossConsultType("other").then(function (picked) {
+        if (!picked) return;
+        state.creatingGeneral = true;
+        softUpdate({ keepScroll: true });
+        var consultType = picked.consultType || "other";
+        var linkedOrder = String(picked.orderId || "").trim();
+        var needNew = isClosedConversation(state.conversation) ||
+          (state.conversation && String(state.conversation.consultType || state.conversation.consult_type || "") !== consultType);
+        var openPayload = needNew
+          ? { action: "reopen", forceNew: true, consult_type: consultType }
+          : { action: "open", consult_type: consultType };
+        if (linkedOrder) openPayload.order_id = linkedOrder;
+        return openConversation(openPayload).then(startPoll);
+      })
+        .catch(function () {})
+        .finally(function () {
+          state.creatingGeneral = false;
+          softUpdate({ keepScroll: true });
+        });
+      return;
+    }
+    var reopen = e.target.closest('[data-reopen-chat]');
+    if (reopen) {
+      e.preventDefault();
+      if (!hasAuthSession()) {
+        promptBossLogin(function () {
+          reopen.click();
+        });
+        return;
+      }
+      if (state.opening || state.creatingGeneral) {
+        toast('正在创建会话，请稍候…');
+        return;
+      }
+      var cur = state.conversation || {};
+      var oid = String(cur.orderId || cur.order_id || orderId() || '').trim();
+      pickBossConsultType(oid ? "current_order" : "other").then(function (picked) {
+        if (!picked) return;
+        var consultType = picked.consultType || (oid ? "current_order" : "other");
+        var linked = String(picked.orderId || oid || "").trim();
+        var payload = linked
+          ? { action: 'reopen', forceNew: true, order_id: linked, consult_type: consultType }
+          : { action: 'reopen', forceNew: true, consult_type: consultType };
+        return openConversation(payload).then(startPoll);
+      }).catch(function () {});
+      return;
+    }
+    var emojiToggle = e.target.closest('[data-toggle-emoji]');
+    if (emojiToggle) {
+      state.emojiOpen = !state.emojiOpen;
+      softUpdate({ keepScroll: true, remountFooter: true });
+      return;
+    }
+    var imgBtn = e.target.closest('[data-chat-image-btn]');
+    if (imgBtn && root.contains(imgBtn)) {
+      e.preventDefault();
+      if (!hasAuthSession()) {
+        promptBossLogin(function () {
+          imgBtn.click();
+        });
+        return;
+      }
+      if (isClosedConversation(state.conversation)) {
+        toast('本次客服会话已结束，请重新发起咨询。');
+        return;
+      }
+      if (!state.conversation || !state.conversation.id) {
+        openConversation(orderId() ? { order_id: orderId() } : {}).then(function () {
+          imgBtn.click();
+        }).catch(function () {});
+        return;
+      }
+      var Media = window.MCJChatMedia;
+      if (!Media) {
+        toast('图片组件未加载');
+        return;
+      }
+      var statusEl = root.querySelector('[data-upload-status]');
+      var token = authAccessToken();
+      Media.pickAndSendImages({
+        token: token,
+        conversationId: String((state.conversation && state.conversation.id) || ''),
+        multiple: true,
+        onStatus: function (t) {
+          if (statusEl) statusEl.textContent = t || '';
+        },
+        onError: function () {
+          toast('图片发送失败，请重试');
+        },
+        onUploaded: function (url, up) {
+          return sendImageMessage(up || { url: url });
+        },
+      }).then(function () {
+        if (statusEl) setTimeout(function () { statusEl.textContent = ''; }, 1500);
+      });
+      return;
+    }
+    var emojiBtn = e.target.closest('[data-emoji]');
+    if (emojiBtn) {
+      var emoji = emojiBtn.getAttribute('data-emoji') || '';
+      state.composerDraft = String(state.composerDraft || '') + emoji;
+      state.composerFocused = true;
+      softUpdate({ keepScroll: true, remountFooter: true });
+      setTimeout(focusComposer, 0);
+      return;
+    }
+    var refresh = e.target.closest('[data-refresh]');
+    if (refresh) {
+      bootstrap();
+      return;
+    }
+    var select = e.target.closest('[data-select-conversation]');
+    if (select) {
+      var id = select.getAttribute('data-select-conversation');
+      if (!id) return;
+      selectConversationInstant(id);
+      return;
+    }
+    var orderSelect = e.target.closest('[data-open-order-conversation]');
+    if (orderSelect) {
+      var oid2 = orderSelect.getAttribute('data-open-order-conversation');
+      if (!oid2) return;
+      var existingOrderConv = findOrderConversation(oid2);
+      state.creatingOrder = oid2;
+      state.emojiOpen = false;
+      if (existingOrderConv && isClosedConversation(existingOrderConv)) {
+        openConversation({ action: 'reopen', forceNew: true, order_id: oid2 }).catch(function () {}).finally(function () {
+          state.creatingOrder = '';
+          softUpdate({ keepScroll: true });
+        });
+        return;
+      }
+      openConversation({ order_id: oid2 }).catch(function () {}).finally(function () {
+        state.creatingOrder = '';
+        softUpdate({ keepScroll: true });
+      });
+      return;
+    }
+    if (e.target.closest('[data-back-list]')) {
+      state.mobileDetail = false;
+      state.emojiOpen = false;
+      state.conversation = null;
+      state.messages = [];
+      syncUrl(null);
+      syncChatChrome();
+      paint({ keepScroll: true });
+      loadList().then(function () { softUpdate({ keepScroll: true }); }).catch(function () {});
+      return;
+    }
+    if (e.target.closest('[data-toggle-order-card]')) {
+      state.orderCardOpen = !state.orderCardOpen;
+      paint({ keepScroll: true });
+    }
+  });
+
+  function sendImageMessage(payload) {
+    var up = typeof payload === 'string' ? { url: payload } : (payload || {});
+    var displayUrl = String(up.url || up.imageUrl || up.image_url || '').trim();
+    var durable = String(up.storageRef || up.storage_ref || up.url || '').trim();
+    if (!durable || !state.conversation || !state.conversation.id) return Promise.resolve();
+    var localId = 'local-img-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
+    var preview = displayUrl || durable;
+    var optimistic = {
+      _localId: localId,
+      _pending: true,
+      id: localId,
+      sender_role: 'boss',
+      message_type: 'image',
+      content: preview,
+      imageUrl: preview,
+      image_url: preview,
+      storageRef: up.storageRef || '',
+      created_at: new Date().toISOString(),
+      sender_name: '我',
+    };
+    state.messages = state.messages.concat([optimistic]);
+    if (!patchMessages({ keepScroll: false })) softUpdate({ keepScroll: false });
+    var payloadBody = {
+      action: 'send',
+      content: durable,
+      message_type: 'image',
+      conversation_id: state.conversation.id,
+    };
+    var oid = orderId() || state.conversation.order_id || state.conversation.orderId || '';
+    if (oid) payloadBody.order_id = oid;
+    return fetchJson('/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payloadBody),
+      _mcjTimeoutMs: 12000,
+    })
+      .then(function (body) {
+        var serverMsg = body.appended || body.row || null;
+        state.messages = state.messages.filter(function (m) {
+          return m._localId !== localId;
+        });
+        if (serverMsg && !state.messages.some(function (m) { return m.id === serverMsg.id; })) {
+          state.messages = state.messages.concat([serverMsg]);
+        }
+        if (!patchMessages({ keepScroll: false })) softUpdate({ keepScroll: false });
+      })
+      .catch(function () {
+        state.messages = state.messages.filter(function (m) {
+          return m._localId !== localId;
+        });
+        if (!patchMessages({ keepScroll: true })) softUpdate({ keepScroll: true });
+        toast('图片发送失败，请重试');
+      });
+  }
+
+  document.addEventListener('submit', function (e) {
+    if (!e.target.matches('[data-send]')) return;
+    e.preventDefault();
+    if (!hasAuthSession()) {
+      promptBossLogin(function () {
+        e.target.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
+      });
+      return;
+    }
+    captureComposer();
+    var content = String(state.composerDraft || '').trim();
+    if (!content || state.sending) return;
+    if (isClosedConversation(state.conversation)) {
+      toast('本次客服会话已结束，请重新发起咨询。');
+      softUpdate({ keepScroll: true });
+      return;
+    }
+    if (!state.conversation || !state.conversation.id) {
+      openConversation(orderId() ? { order_id: orderId() } : {}).then(function () {
+        e.target.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
+      }).catch(function () {});
+      return;
+    }
+    state.sending = true;
+    state.composerFocused = true;
+    // Drop in-flight silent thread polls so they cannot wipe this optimistic send.
+    var sendSeq = ++state.threadLoadSeq;
+    var localId = 'local-' + Date.now();
+    var optimistic = { _localId: localId, _pending: true, id: localId, sender_role: 'boss', message_type: 'text', content: content, created_at: new Date().toISOString(), sender_name: '我' };
+    state.messages = state.messages.concat([optimistic]);
+    state.composerDraft = '';
+    var inputClear = root.querySelector(COMPOSER_SEL);
+    if (inputClear) inputClear.value = '';
+    if (!patchMessages({ keepScroll: false })) softUpdate({ keepScroll: false });
+    syncComposerChrome();
+    var payload = { action: 'send', content: content, conversation_id: state.conversation.id };
+    var oid = orderId() || state.conversation.order_id || state.conversation.orderId || '';
+    if (oid) payload.order_id = oid;
+    fetchJson('/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload), _mcjTimeoutMs: 6000 }).then(function (body) {
+      if (sendSeq !== state.threadLoadSeq) return;
+      var serverMsg = body.appended || body.row || null;
+      state.messages = state.messages.filter(function (m) { return m._localId !== localId; });
+      var keep = serverMsg || {
+        id: 'sent-' + Date.now(),
+        sender_role: 'boss',
+        message_type: 'text',
+        content: content,
+        created_at: new Date().toISOString(),
+        sender_name: '我',
+      };
+      if (!state.messages.some(function (m) {
+        return (keep.id && m.id && String(m.id) === String(keep.id)) ||
+          (m.sender_role === 'boss' && m.content === content);
+      })) {
+        state.messages = state.messages.concat([keep]);
+      }
+      if (body.conversation) state.conversation = body.conversation;
+      if (typeof body.serviceOnline === 'boolean') state.serviceOnline = body.serviceOnline;
+      if (body.serviceStatus) state.serviceStatus = body.serviceStatus;
+      cacheActiveThread();
+      if (!patchMessages({ keepScroll: false })) softUpdate({ keepScroll: false });
+      else patchSessionList();
+    }).catch(function (err) {
+      if (sendSeq !== state.threadLoadSeq) return;
+      state.messages = state.messages.map(function (m) {
+        if (m._localId !== localId) return m;
+        return Object.assign({}, m, { _pending: false, _failed: true });
+      });
+      if (!patchMessages({ keepScroll: true })) softUpdate({ keepScroll: true });
+      toast(err.message || '发送失败，可点击重试');
+    }).finally(function () {
+      state.sending = false;
+      state.composerFocused = true;
+      syncComposerChrome();
+      setTimeout(focusComposer, 0);
+    });
+  });
+
+  document.addEventListener('click', function (e) {
+    var want = e.target.closest('[data-want-him]');
+    if (want && root.contains(want)) {
+      e.preventDefault();
+      var oid = want.getAttribute('data-want-him') || '';
+      var cid = want.getAttribute('data-companion-id') || '';
+      if (!oid || !cid) {
+        alert('缺少订单或陪玩信息');
+        return;
+      }
+      if (!confirm('确认选择该陪玩？选择后将正式指定该陪玩，并等待陪玩确认接单。')) return;
+      want.disabled = true;
+      var prev = want.textContent;
+      want.textContent = '处理中…';
+      var token =
+        localStorage.getItem('mcjAuthAccessToken') ||
+        sessionStorage.getItem('mcjAuthAccessToken') ||
+        '';
+      fetch('/api/orders', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer ' + token,
+        },
+        body: JSON.stringify({ action: 'want_him', id: oid, companion_id: cid }),
+      })
+        .then(function (res) {
+          return res.json().then(function (body) {
+            return { res: res, body: body };
+          });
+        })
+        .then(function (x) {
+          if (!x.res.ok || x.body.ok === false) throw new Error(x.body.message || '选择失败');
+          alert(x.body.message || '已指定陪玩，等待陪玩确认接单。');
+          want.textContent = '已指定';
+        })
+        .catch(function (err) {
+          want.disabled = false;
+          want.textContent = prev || '我要她';
+          alert(err.message || '选择失败');
+        });
+      return;
+    }
+    var retry = e.target.closest('[data-retry-msg]');
+    if (!retry || !root.contains(retry)) return;
+    e.preventDefault();
+    var lid = retry.getAttribute('data-retry-msg');
+    var failed = (state.messages || []).find(function (m) { return String(m._localId || m.id) === String(lid); });
+    if (!failed || !failed.content || state.sending) return;
+    state.messages = state.messages.filter(function (m) { return String(m._localId || m.id) !== String(lid); });
+    var Media = window.MCJChatMedia;
+    if (failed.message_type === 'image' || (Media && Media.isImageMessage(failed))) {
+      softUpdate({ keepScroll: true });
+      sendImageMessage({
+        url: Media ? Media.imageUrlOf(failed) : failed.content,
+        storageRef: (Media && Media.storageRefOf && Media.storageRefOf(failed)) || failed.storageRef || '',
+      });
+      return;
+    }
+    state.composerDraft = failed.content;
+    var form = root.querySelector('[data-send]');
+    if (form) form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
+  });
+
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden || !hasAuthSession()) return;
+    // Soft refresh only — full bootstrap remounts composer and reloads everything.
+    loadList()
+      .then(function () {
+        if (canSoftPatch()) {
+          patchAsideHead();
+          patchSessionList();
+        } else softUpdate({ keepScroll: true });
+        if (state.conversation && state.conversation.id) {
+          return loadThread(state.conversation.id, true);
+        }
+      })
+      .catch(function () {});
+  });
+
+  function syncKeyboardInset() {
+    try {
+      var vv = window.visualViewport;
+      var mobile = window.matchMedia && window.matchMedia("(max-width: 820px)").matches;
+      if (!vv || !mobile) {
+        document.documentElement.style.setProperty("--support-keyboard-inset", "0px");
+        return;
+      }
+      var inset = keyboardInsetPx(window);
+      document.documentElement.style.setProperty("--support-keyboard-inset", inset + "px");
+      var messages = root.querySelector("[data-messages]");
+      if (inset > 0 && state.composerFocused && messages) {
+        var snap = captureChatScroll(messages);
+        if (snap && snap.near) restoreChatScroll(messages, snap, true);
+      }
+    } catch (e) {}
+  }
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener("resize", syncKeyboardInset);
+  }
+  window.addEventListener("resize", syncKeyboardInset);
+  syncKeyboardInset();
+
+  if (window.MCJChatMedia) window.MCJChatMedia.bindLightboxClicks(root);
+  paint();
+  refreshDiscordInviteFromPlatform().then(function () {
+    softUpdate({ keepScroll: true });
+  });
+  bootstrap().then(startPoll);
+})();

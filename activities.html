@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <!-- mcj-pwa-meta:begin -->
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="妙脆角老板">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#0a0610">
+  <meta name="mobile-web-app-capable" content="yes">
+  <script src="/pwa-boot.js?v=20261009bell1" defer></script>
+  <!-- mcj-pwa-meta:end -->
+
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>活动中心 - MEOW CUI JIAO</title>
+  <link rel="stylesheet" href="src/style.css">
+  <link rel="stylesheet" href="src/notify-system.css">
+  <link rel="stylesheet" href="src/real-data-admin.css">
+  <link rel="stylesheet" href="src/design-system.css?v=20261018brand1">
+</head>
+<body>
+  <header class="topbar"><a class="brand" href="index.html"><img src="assets/meow-cuijiao-brand.jpg" alt="MEOW CUI JIAO"><span>MEOW CUI JIAO</span></a><nav class="navlinks"><a href="index.html">首页</a><a href="mine.html">我的</a></nav><button class="login-btn" data-login>登录</button></header>
+  <main class="dashboard">
+    <section class="page-title"><p class="eyebrow">ACTIVITY CENTER</p><h1>活动中心</h1><p>后台发布的活动会在这里展示。</p></section>
+    <section class="section-row" id="activityList"></section>
+  </main>
+  <div class="modal" id="loginModal" aria-hidden="true"><div class="modal-box"><button class="close" data-close>×</button><h2>邮箱登录</h2><p>请使用邮箱登录后参加活动</p><a class="primary full" href="index.html" style="display:inline-flex;align-items:center;justify-content:center;text-decoration:none;min-height:44px">前往首页登录</a><div class="login-state" id="loginState">MVP 第一版使用邮箱体系，不再使用手机号验证码。</div></div></div>
+  <script type="module" src="src/role-gates.js?v=20260908antiBlank1"></script>
+  <script type="module" src="src/app.js"></script>
+  <script type="module" src="src/site-data.js"></script>
+  <script>
+    (function(){
+      function readDb(){try{return JSON.parse(localStorage.getItem('mcjPlatformData.v1')||'{}')}catch(e){return {}}}
+      function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
+      function active(item){
+        if(!item || item.enabled===false)return false;
+        var now=Date.now(),start=item.startAt?new Date(item.startAt).getTime():0,end=item.endAt?new Date(item.endAt).getTime():0;
+        return (!start||now>=start)&&(!end||now<=end);
+      }
+      function openLink(link){
+        if(!link)return '#';
+        return link;
+      }
+      var db=readDb();
+      var items=((db.contents&&Array.isArray(db.contents.activities))?db.contents.activities:[]).filter(active).sort(function(a,b){return (Number(a.sort)||99)-(Number(b.sort)||99)});
+      document.getElementById('activityList').innerHTML=items.length?items.map(function(item){
+        var btn=item.buttonText||item.button||'立即查看';
+        var needLogin=/参加|领取|报名|兑换/.test(btn);
+        return '<article class="work-card"><img class="hero-logo" src="'+esc(item.image||'assets/hero-banner-latest.png')+'" alt="'+esc(item.title||'活动')+'"><h2>'+esc(item.title||'活动')+'</h2><p>'+esc(item.description||'')+'</p><small>'+esc((item.startAt||'不限')+' - '+(item.endAt||'不限'))+'</small><p>'+esc(item.condition||item.conditions||'参与条件以活动说明为准')+'</p><a class="primary" '+(needLogin?'data-activity-join ':'')+'style="display:inline-flex;align-items:center;justify-content:center;text-decoration:none" href="'+esc(openLink(item.link))+'">'+esc(btn)+'</a></article>';
+      }).join(''):'<article class="work-card"><h2>暂时没有活动</h2><p>后台发布并启用活动后会显示在这里。</p></article>';
+      document.addEventListener('click',function(e){
+        var join=e.target.closest&&e.target.closest('[data-activity-join]');
+        if(!join)return;
+        var logged=window.MCJRoleGate&&window.MCJRoleGate.isLogged&&window.MCJRoleGate.isLogged('customer');
+        if(!logged){e.preventDefault();document.getElementById('loginModal').classList.add('show');document.getElementById('loginModal').setAttribute('aria-hidden','false');}
+      },true);
+    })();
+  </script>
+  <script type="module" src="src/notify-system.js" defer></script>
+  <script type="module" src="src/real-data-admin.js" defer></script>
+  <script type="module" src="src/footer-system.js" defer></script>
+  <script type="module" src="src/launch-readiness-fixes.js" defer></script>
+<script type="module" src="src/text-guard.js" defer></script>
+  <script type="module" src="src/design-system.js" defer></script>
+</body>
+</html>
+
+
+
+
+
+

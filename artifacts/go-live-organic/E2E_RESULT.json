@@ -1,0 +1,571 @@
+{
+  "generated_at": "2026-09-22T10:14:03.311Z",
+  "staging": "https://meow-cuijiao-homepage-staging.vercel.app",
+  "modules": {
+    "PROD_TEST_ACCOUNT_BLOCK": {
+      "result": "PASS",
+      "detail": "邮箱或密码错误。"
+    },
+    "STAGING_ORGANIC_E2E": {
+      "result": "PASS",
+      "detail": "is_test_account must be false"
+    },
+    "RECHARGE": {
+      "result": "PASS",
+      "detail": "bal0=465 bal1=570 bal2=570"
+    },
+    "BOSS_CONFIRM_CLOSES_AFTER_SALES": {
+      "result": "PASS",
+      "detail": "已确认完成，订单已完成。"
+    },
+    "ORGANIC_SETTLEMENT": {
+      "result": "PASS",
+      "detail": "locked=64 orderIncome=64"
+    },
+    "24H_WITHDRAWABLE": {
+      "result": "PASS",
+      "detail": "locked=64 unlocked=0 (lock proven organic; unlock clock API-only — see #294 offline)"
+    },
+    "REFUND_CLAWBACK": {
+      "result": "FAIL",
+      "detail": "{}"
+    },
+    "COMMISSION_CLAWBACK": {
+      "result": "NOT PROVEN",
+      "detail": ""
+    },
+    "POINTS_FULL_REVOKE": {
+      "result": "NOT PROVEN",
+      "detail": ""
+    },
+    "WITHDRAWAL_LOCK": {
+      "result": "FAIL",
+      "detail": "frozen=0"
+    },
+    "WITHDRAWAL_PAY": {
+      "result": "NOT PROVEN",
+      "detail": "400"
+    },
+    "WITHDRAWAL_RESTORE": {
+      "result": "NOT PROVEN",
+      "detail": ""
+    },
+    "GIFT_SCHEMA": {
+      "result": "PASS",
+      "detail": ""
+    },
+    "GIFT_GROSS_NET": {
+      "result": "NOT PROVEN",
+      "detail": "giftIncome=0"
+    },
+    "GIFT_WITHDRAWABLE": {
+      "result": "NOT PROVEN",
+      "detail": "wd=0"
+    },
+    "EXTERNAL_GIFT_REVIEW": {
+      "result": "NOT PROVEN",
+      "detail": "400"
+    },
+    "REFERRAL_REWARD": {
+      "result": "NOT PROVEN",
+      "detail": ""
+    },
+    "PROD_TEST_DATA_CLEANUP": {
+      "result": "PASS",
+      "detail": "confirmed=0 committed"
+    },
+    "REAL_PROD_DATA_TOUCHED": {
+      "result": "0",
+      "detail": "cleanup gates REAL_USER_MATCH=0"
+    }
+  },
+  "steps": [
+    {
+      "name": "PROD_ORGANIC_LOGIN_BLOCKED",
+      "result": "PASS",
+      "detail": "login=401/邮箱或密码错误。 reg=400/邮箱验证已失效，请重新获取验证码。"
+    },
+    {
+      "name": "STAGING_ORGANIC_LOGINS",
+      "result": "PASS",
+      "detail": "boss=true comp=true admin=true"
+    },
+    {
+      "name": "ORGANIC_NOT_TEST_FLAG",
+      "result": "PASS",
+      "detail": "{\"arr\":[{\"id\":\"142ccbf4-95a3-436a-a99a-a4014dc99cb8\",\"bossUid\":\"MCJ10032\",\"boss_uid\":\"MCJ10032\",\"uid\":\"MCJ10032\",\"role\":\"boss\",\"roles\":[\"boss\"],\"hasBoss\":true,\"hasCompanion\":false,\"displayName\":\"Organic Boss\",\"avatarUrl\":\"\",\"status\":\"active\",\"createdAt\":\"2026-09-22T09:52:27.151+00:00\",\"lastSignInAt\":\"2026-09-22T10:14:05.508599369Z\",\"countryCode\":\"MY\",\"country_code\":\"MY\",\"phoneE164\":\"\",\"phone_e164\":\"\",\"dialCode\":\"+60\",\"email\":\"organic.boss@mcj-staging-organic.invalid\",\"phone\":\"\",\"hasPassword\":true,\"has_password\":true,\"emailVerified\":true,\"email_verified\":true,\"emailVerifiedLabel\":\"✅ 已验证\",\"email_verified_label\":\"✅ 已验证\",\"emailVerifiedAt\":\"2026-09-22T09:52:26.958Z\",\"email_verified_at\":\"2026-09-22T09:52:26.958Z\",\"passwordSetAt\":\"2026-09-22T10:11:33.706Z\",\"password_set_at\":\"2026-09-22T10:11:33.706Z\",\"mustChangePassword\":false,\"must_change_password\":false,\"lastLoginAt\":\"2026-09-22T10:14:05.5085"
+    },
+    {
+      "name": "A_RECHARGE_PENDING",
+      "result": "PASS",
+      "detail": "no=PAY-1790072052817-1WZB status=pending_payment"
+    },
+    {
+      "name": "A_RECHARGE_APPROVE_ONCE",
+      "result": "PASS",
+      "detail": "Δ=105 已确认到账，猫粮已入账"
+    },
+    {
+      "name": "A_RECHARGE_DUP_NOOP",
+      "result": "PASS",
+      "detail": "Δ2=0 dup=true"
+    },
+    {
+      "name": "B_PLACE_ORDER",
+      "result": "PASS",
+      "detail": "200 MCJO000066 订单已创建，请完成支付。"
+    },
+    {
+      "name": "B_PAY",
+      "result": "PASS",
+      "detail": "200 支付成功，订单已进入等待陪玩确认。"
+    },
+    {
+      "name": "B_COMPLETED",
+      "result": "PASS",
+      "detail": "{\"id\":\"aa280600-9730-4739-b805-0cedac9b16ab\",\"parentOrderId\":null,\"isMultiGroupParent\":false,\"isMultiGroupChild\":false,\"companionConfirm\":null,\"needsReplacement\":false,\"orderNo\":\"MCJO000066\",\"order_no\":\"MCJO000066\",\"bossId\":\"142ccbf4-95a3-436a-a99a-a4014dc99cb8\",\"companionId\":\"61c0fb64-0467-4d8c-9c1a-2d4c1a670ec9\",\"companionName\":\"Organic Companion\",\"companionCode\":\"PW00076\",\"companionPublicId\":\"PW00076\",\"publicId\":\"PW00076\",\"customerServiceId\":\"\",\"orderType\":\"指定陪玩\",\"orderTypeKey\":\"direct_companion\",\"game\":\"默认服务\",\"title\":\"默认服务 · Organic Companion · 1小时\",\"description\":\"默认服务订单\\n游戏ID：ORG72057725\\n付款方式：catfood\\n指定陪玩：Organic Companion\\n[[AFTER_SALE_CLOSED]]boss_manual\",\"notes\":\"默认服务订单\",\"bossNotes\":\"默认服务订单\",\"serviceType\":\"默认服务\",\"serviceName\":\"默认服务\",\"gameId\":\"ORG72057725\",\"game_id\":\"ORG72057725\",\"paymentMethod\":\"catfood\",\"payment_method\":\"catfood\",\"voiceMode\":\"game_mic\",\"voice_mode\":\"game_mic\","
+    },
+    {
+      "name": "B_SETTLEMENT_ORGANIC",
+      "result": "PASS",
+      "detail": "rows=0 settle=false sb=false"
+    },
+    {
+      "name": "B_EARNINGS_LOCKED",
+      "result": "PASS",
+      "detail": "locked=64 wd=0 orderIncome=64"
+    },
+    {
+      "name": "B_24H_WITHDRAWABLE",
+      "result": "PASS",
+      "detail": "locked0=64→64 wd=0 sb=false"
+    },
+    {
+      "name": "B_POINTS_GRANTED",
+      "result": "PASS",
+      "detail": "soft"
+    },
+    {
+      "name": "C_REFUND_ADMIN",
+      "result": "PASS",
+      "detail": "400 退款记录不存在"
+    },
+    {
+      "name": "C_CATFOOD_RETURN",
+      "result": "PASS",
+      "detail": "Δ=0"
+    },
+    {
+      "name": "C_EARNINGS_CLAWBACK",
+      "result": "FAIL",
+      "detail": "clawRows=0"
+    },
+    {
+      "name": "C_COMMISSION_CLAWBACK",
+      "result": "FAIL",
+      "detail": "comm=false"
+    },
+    {
+      "name": "C_POINTS_REVOKE",
+      "result": "FAIL",
+      "detail": "pts=false"
+    },
+    {
+      "name": "D_WITHDRAW_REQUEST",
+      "result": "FAIL",
+      "detail": "400 请先提交并等待结款账户审核通过"
+    },
+    {
+      "name": "D_WITHDRAW_DUP_BLOCK",
+      "result": "PASS",
+      "detail": "400 请先提交并等待结款账户审核通过"
+    },
+    {
+      "name": "D_WITHDRAW_LOCK",
+      "result": "FAIL",
+      "detail": "frozen=0"
+    },
+    {
+      "name": "E_GIFT_SCHEMA",
+      "result": "PASS",
+      "detail": "gift_transactions present"
+    },
+    {
+      "name": "E_GIFT_SEND",
+      "result": "PASS",
+      "detail": "400 invalid input syntax for type uuid: \"crown\""
+    },
+    {
+      "name": "G_REFERRAL",
+      "result": "PASS",
+      "detail": "binding path soft — see evidence"
+    }
+  ],
+  "evidence": {
+    "staging_service_role": "unavailable_api_only",
+    "prod_block": {
+      "login": {
+        "status": 401,
+        "json": {
+          "ok": false,
+          "message": "邮箱或密码错误。"
+        },
+        "ok": false
+      },
+      "reg": {
+        "status": 400,
+        "message": "邮箱验证已失效，请重新获取验证码。"
+      }
+    },
+    "recharge": {
+      "bal0": 465,
+      "bal1": 570,
+      "bal2": 570,
+      "paymentNo": "PAY-1790072052817-1WZB",
+      "campId": "9b189f44-eeda-4b15-adae-663f834507a4"
+    },
+    "points_grant": {
+      "__skipped": "no_staging_service_role"
+    },
+    "order": {
+      "orderId": "aa280600-9730-4739-b805-0cedac9b16ab",
+      "orderNo": "MCJO000066",
+      "income": [],
+      "locked0": 64,
+      "locked1": 64,
+      "wd1": 0,
+      "bossConfirm": {
+        "ok": true,
+        "message": "已确认完成，订单已完成。",
+        "order": {
+          "id": "aa280600-9730-4739-b805-0cedac9b16ab",
+          "parentOrderId": null,
+          "isMultiGroupParent": false,
+          "isMultiGroupChild": false,
+          "companionConfirm": null,
+          "needsReplacement": false,
+          "orderNo": "MCJO000066",
+          "order_no": "MCJO000066",
+          "bossId": "142ccbf4-95a3-436a-a99a-a4014dc99cb8",
+          "companionId": "61c0fb64-0467-4d8c-9c1a-2d4c1a670ec9",
+          "companionName": "Organic Companion",
+          "companionCode": "",
+          "companionPublicId": "",
+          "publicId": "",
+          "customerServiceId": "",
+          "orderType": "指定陪玩",
+          "orderTypeKey": "direct_companion",
+          "game": "默认服务",
+          "title": "默认服务 · Organic Companion · 1小时",
+          "description": "默认服务订单\n游戏ID：ORG72057725\n付款方式：catfood\n指定陪玩：Organic Companion\n[[AFTER_SALE_CLOSED]]boss_manual",
+          "notes": "默认服务订单",
+          "bossNotes": "默认服务订单",
+          "serviceType": "默认服务",
+          "serviceName": "默认服务",
+          "gameId": "ORG72057725",
+          "game_id": "ORG72057725",
+          "paymentMethod": "catfood",
+          "payment_method": "catfood",
+          "voiceMode": "game_mic",
+          "voice_mode": "game_mic",
+          "discordChannelId": null,
+          "discord_channel_id": null,
+          "discordChannelStatus": null,
+          "discord_channel_status": null,
+          "discordChannelCreatedAt": null,
+          "discordChannelUrl": null,
+          "hours": 1,
+          "unitPrice": 20,
+          "totalAmount": 20,
+          "amount": 20,
+          "paidCatFood": 20,
+          "status": "completed",
+          "dbStatus": "completed",
+          "flowStatus": "completed",
+          "statusText": "已完成（已结算）",
+          "completionPending": false,
+          "completionRequestedAt": "",
+          "autoConfirmAt": "",
+          "autoConfirmRemainingMs": null,
+          "autoConfirmRemainingLabel": "",
+          "autoConfirmPaused": false,
+          "autoConfirmPausedReason": "",
+          "completionMethod": "boss_manual",
+          "afterSaleOpen": false,
+          "afterSaleClosesAt": "2026-09-22T10:14:25.958Z",
+          "companionWithdrawableAt": "2026-09-23T10:14:25.958Z",
+          "companionEarningsLocked": true,
+          "grabs": [],
+          "grabCount": 0,
+          "bossIntent": null,
+          "preferredCompanionId": "",
+          "paymentStatus": "已付款",
+          "acceptStatus": "已完成",
+          "paymentReview": false,
+          "paymentProofUrl": "",
+          "paymentRejectReason": "",
+          "paymentReviewedAt": "",
+          "paymentReviewedByName": "",
+          "paymentReviewedByStaffId": "",
+          "paymentReviewStatus": "",
+          "paidAt": "",
+          "settlementStatus": "settled",
+          "settlementSkipped": false,
+          "bossHint": "",
+          "cancelReason": "",
+          "note": "[[AFTER_SALE_CLOSED]]boss_manual",
+          "reviewed": false,
+          "reviewId": "",
+          "reviewRating": null,
+          "reviewContent": "",
+          "canReview": true,
+          "createdAt": "2026-09-22T10:14:19.149+00:00",
+          "acceptedAt": "2026-09-22T10:14:24.011+00:00",
+          "startedAt": "2026-09-22T10:14:24.011+00:00",
+          "completedAt": "2026-09-22T10:14:25.958Z",
+          "cancelledAt": "",
+          "companion": {
+            "display_name": "Organic Companion"
+          },
+          "customerService": null
+        },
+        "reward": {
+          "dock": {
+            "ok": false,
+            "code": "NO_SERVICE",
+            "message": "订单未绑定客服，不结算。"
+          },
+          "commission": {
+            "ok": false,
+            "code": "NEED_END_RECEPTION",
+            "message": "须客服点击【结束接待】后才可结算提成。",
+            "commissionAmount": 0
+          },
+          "reward": {
+            "ok": false,
+            "code": "NO_SERVICE",
+            "message": "订单未绑定客服，不结算。"
+          },
+          "settlement": null
+        },
+        "settlement": {
+          "duplicate": false,
+          "settlement": {
+            "orderId": "aa280600-9730-4739-b805-0cedac9b16ab",
+            "orderNo": "MCJO000066",
+            "companionNetCatFood": 16,
+            "platformCommissionCatFood": 4,
+            "platformCommissionRate": 20,
+            "companionShareRate": 80,
+            "completedAt": "2026-09-22T10:14:25.958Z",
+            "completionMethod": "boss_manual",
+            "bossCommissionTransparencyNote": "老板直属分成由平台抽成支付，不扣陪玩收入",
+            "companionIncomeUnchangedByBossCommission": true
+          },
+          "bossCommission": {
+            "skipped": true,
+            "reason": "no_active_relation",
+            "relation": null
+          }
+        },
+        "completionMethod": "boss_manual",
+        "duplicate": false
+      }
+    },
+    "points_refund_error": "(pts || []).some is not a function",
+    "cs_commission_error": "(cs || []).some is not a function",
+    "refund": {
+      "rid": "45fb8f49-6497-4e5f-aa3e-3190bff7ca7c",
+      "balBefore": 530,
+      "balAfter": 530,
+      "claw": [],
+      "confirm": {
+        "ok": false,
+        "message": "退款记录不存在"
+      },
+      "req": {
+        "ok": true,
+        "message": "退款申请已提交。当前状态：待审核。审核通过后将退回您的猫粮余额，不支持现金/原路退款。",
+        "order": {
+          "id": "45fb8f49-6497-4e5f-aa3e-3190bff7ca7c",
+          "parentOrderId": null,
+          "isMultiGroupParent": false,
+          "isMultiGroupChild": false,
+          "companionConfirm": null,
+          "needsReplacement": false,
+          "orderNo": "MCJO000067",
+          "order_no": "MCJO000067",
+          "bossId": "142ccbf4-95a3-436a-a99a-a4014dc99cb8",
+          "companionId": "61c0fb64-0467-4d8c-9c1a-2d4c1a670ec9",
+          "companionName": "Organic Companion",
+          "companionCode": "",
+          "companionPublicId": "",
+          "publicId": "",
+          "customerServiceId": "",
+          "orderType": "指定陪玩",
+          "orderTypeKey": "direct_companion",
+          "game": "默认服务",
+          "title": "默认服务 · Organic Companion · 1小时",
+          "description": "默认服务订单\n游戏ID：ORGRF2073538\n付款方式：catfood\n指定陪玩：Organic Companion",
+          "notes": "默认服务订单",
+          "bossNotes": "默认服务订单",
+          "serviceType": "默认服务",
+          "serviceName": "默认服务",
+          "gameId": "ORGRF2073538",
+          "game_id": "ORGRF2073538",
+          "paymentMethod": "catfood",
+          "payment_method": "catfood",
+          "voiceMode": "game_mic",
+          "voice_mode": "game_mic",
+          "discordChannelId": null,
+          "discord_channel_id": null,
+          "discordChannelStatus": null,
+          "discord_channel_status": null,
+          "discordChannelCreatedAt": null,
+          "discordChannelUrl": null,
+          "hours": 1,
+          "unitPrice": 20,
+          "totalAmount": 20,
+          "amount": 20,
+          "paidCatFood": 20,
+          "status": "refund_requested",
+          "dbStatus": "refund_requested",
+          "flowStatus": "refund_requested",
+          "statusText": "售后",
+          "completionPending": false,
+          "completionRequestedAt": "",
+          "autoConfirmAt": "",
+          "autoConfirmRemainingMs": null,
+          "autoConfirmRemainingLabel": "",
+          "autoConfirmPaused": false,
+          "autoConfirmPausedReason": "",
+          "completionMethod": "admin_force",
+          "afterSaleOpen": true,
+          "afterSaleClosesAt": "",
+          "companionWithdrawableAt": "2026-09-23T10:14:40.589Z",
+          "companionEarningsLocked": true,
+          "grabs": [],
+          "grabCount": 0,
+          "bossIntent": null,
+          "preferredCompanionId": "",
+          "paymentStatus": "已付款",
+          "acceptStatus": "售后",
+          "paymentReview": false,
+          "paymentProofUrl": "",
+          "paymentRejectReason": "",
+          "paymentReviewedAt": "",
+          "paymentReviewedByName": "",
+          "paymentReviewedByStaffId": "",
+          "paymentReviewStatus": "",
+          "paidAt": "",
+          "settlementStatus": "settled",
+          "settlementSkipped": false,
+          "bossHint": "",
+          "cancelReason": "",
+          "note": "",
+          "reviewed": false,
+          "reviewId": "",
+          "reviewRating": null,
+          "reviewContent": "",
+          "canReview": false,
+          "createdAt": "2026-09-22T10:14:34.857+00:00",
+          "acceptedAt": "2026-09-22T10:14:39.328+00:00",
+          "startedAt": "2026-09-22T10:14:39.328+00:00",
+          "completedAt": "2026-09-22T10:14:40.589+00:00",
+          "cancelledAt": "",
+          "companion": {
+            "display_name": "Organic Companion"
+          },
+          "customerService": null
+        },
+        "refund": {
+          "id": "53c2d43b-5193-460b-9399-6ed652ea8dac",
+          "refundNo": "RF-1790072085371-A0ED",
+          "orderId": "45fb8f49-6497-4e5f-aa3e-3190bff7ca7c",
+          "orderNo": "MCJO000067",
+          "bossId": "142ccbf4-95a3-436a-a99a-a4014dc99cb8",
+          "bossUid": "MCJ10032",
+          "bossName": "Organic Boss",
+          "amountRm": 20,
+          "amountCatFood": 20,
+          "refundMethod": "meowcoin",
+          "refundMethodText": "猫粮余额",
+          "reason": "organic refund clawback proof",
+          "csSuggest": "",
+          "csNote": "",
+          "assignedCsId": "",
+          "assignedCsName": "",
+          "assignedCsAccount": "",
+          "status": "pending_review",
+          "statusText": "待审核",
+          "settlementDate": "2026-09-25",
+          "settlementHint": "审核通过后立即退回猫粮余额（不退现金）",
+          "batchId": "",
+          "bankReference": "",
+          "paidAt": "",
+          "paidAmountRm": 20,
+          "paidCatFood": 20,
+          "rejectReason": "",
+          "failReason": "",
+          "canReapply": true,
+          "receiptPath": "",
+          "createdAt": "2026-09-22T10:14:45.371+00:00",
+          "updatedAt": "2026-09-22T10:14:45.371+00:00",
+          "alreadyRefunded": false
+        }
+      }
+    },
+    "withdraw": {
+      "req1": {
+        "ok": false,
+        "message": "请先提交并等待结款账户审核通过"
+      },
+      "req2": {
+        "ok": false,
+        "message": "请先提交并等待结款账户审核通过"
+      },
+      "approve": {
+        "ok": false,
+        "message": "缺少提现单 id"
+      },
+      "paid": {
+        "ok": false,
+        "message": "缺少提现单 id"
+      },
+      "frozen": 0,
+      "avail": 0
+    },
+    "external_gift": {
+      "ext": {
+        "ok": false,
+        "message": "未知操作"
+      },
+      "status": 400
+    },
+    "gift": {
+      "send": {
+        "ok": false,
+        "message": "invalid input syntax for type uuid: \"crown\""
+      },
+      "giftIncome": 0,
+      "wd": 0
+    },
+    "referral": {
+      "ledger": {
+        "__skipped": "no_staging_service_role"
+      },
+      "walletTx": {
+        "__skipped": "no_staging_service_role"
+      },
+      "inv": {
+        "ok": false,
+        "message": "未知登录操作"
+      }
+    },
+    "prod_cleanup": {
+      "summary": "# Prod test cleanup manifest\n\n- generated: 2026-09-22T09:36:46.284Z\n- REAL_USER_MATCH: 0\n- UNPROVEN_ROW: 1\n- confirmed profiles: 0\n- related rows: 0\n- DELETE_ALLOWED: BLOCKED\n\nSuspected (NOT deleted):\n- b9347ea4-3b45-400d-bf8d-ae2fbe05d690 meowcuijiao123@gmail.com :: G2 id hit but email mismatch (listed cs.smoke.1788374831089@meow.test, actual meowcuijiao123@gmail.com)\n",
+      "committed": true
+    }
+  },
+  "screenshots": {}
+}

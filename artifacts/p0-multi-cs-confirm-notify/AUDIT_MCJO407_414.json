@@ -1,0 +1,292 @@
+{
+  "ok": true,
+  "mode": "READ_ONLY",
+  "generated_at": "2026-09-23T23:49:03.850Z",
+  "listed_status": 200,
+  "verdict": "A_PLUS_C",
+  "verdict_detail": "Three independent multi checkouts (~1h apart): each creates 1 parent + 2 children. CS orders list flattens children as separate rows (C). Not one click spawning 8 parents (B/D).",
+  "mapping": {
+    "MCJO000406": "PARENT multi_group (family A) — outside user list but parent of 407/408",
+    "MCJO000407": "CHILD of MCJO000406",
+    "MCJO000408": "CHILD of MCJO000406",
+    "MCJO000409": "PARENT multi_group (family B)",
+    "MCJO000410": "CHILD of MCJO000409",
+    "MCJO000411": "CHILD of MCJO000409",
+    "MCJO000412": "PARENT multi_group (family C)",
+    "MCJO000413": "CHILD of MCJO000412",
+    "MCJO000414": "CHILD of MCJO000412"
+  },
+  "summary": {
+    "multi_parents": [
+      "MCJO000406",
+      "MCJO000409",
+      "MCJO000412"
+    ],
+    "children": [
+      {
+        "no": "MCJO000407",
+        "parent": "567400d5-3204-4fe1-b3ec-80309fbd378c"
+      },
+      {
+        "no": "MCJO000408",
+        "parent": "567400d5-3204-4fe1-b3ec-80309fbd378c"
+      },
+      {
+        "no": "MCJO000410",
+        "parent": "a04ec940-5093-440f-b09e-3b3f8ba93e6d"
+      },
+      {
+        "no": "MCJO000411",
+        "parent": "a04ec940-5093-440f-b09e-3b3f8ba93e6d"
+      },
+      {
+        "no": "MCJO000413",
+        "parent": "c8cdfccc-8cbc-4765-aa6f-e035ad2e0d40"
+      },
+      {
+        "no": "MCJO000414",
+        "parent": "c8cdfccc-8cbc-4765-aa6f-e035ad2e0d40"
+      }
+    ],
+    "unique_bosses": 1,
+    "families": {
+      "567400d5-3204-4fe1-b3ec-80309fbd378c": [
+        {
+          "order_no": "MCJO000406",
+          "type": "multi_group",
+          "parent": null,
+          "status": "cancelled",
+          "companion_id": null,
+          "payment_method": null,
+          "idempotency_key": "pom-458ce9ad-1790199620555-6txnsw",
+          "created_at": "2026-09-23T21:40:22.753+00:00"
+        },
+        {
+          "order_no": "MCJO000407",
+          "type": "direct_companion",
+          "parent": "567400d5-3204-4fe1-b3ec-80309fbd378c",
+          "status": "cancelled",
+          "companion_id": "458c3d2e-5803-403b-9a25-af1d12c8d142",
+          "payment_method": null,
+          "idempotency_key": "pom-458ce9ad-1790199620555-6txnsw:child:458c3d2e-5803-403b-9a25-af1d12c8d142",
+          "created_at": "2026-09-23T21:40:23.008+00:00"
+        },
+        {
+          "order_no": "MCJO000408",
+          "type": "direct_companion",
+          "parent": "567400d5-3204-4fe1-b3ec-80309fbd378c",
+          "status": "cancelled",
+          "companion_id": "737b7c07-cab8-4270-a2da-6eee49135559",
+          "payment_method": null,
+          "idempotency_key": "pom-458ce9ad-1790199620555-6txnsw:child:737b7c07-cab8-4270-a2da-6eee49135559",
+          "created_at": "2026-09-23T21:40:23.251+00:00"
+        }
+      ],
+      "a04ec940-5093-440f-b09e-3b3f8ba93e6d": [
+        {
+          "order_no": "MCJO000409",
+          "type": "multi_group",
+          "parent": null,
+          "status": "cancelled",
+          "companion_id": null,
+          "payment_method": null,
+          "idempotency_key": "pom-458ce9ad-1790203119544-ab6fac",
+          "created_at": "2026-09-23T22:38:41.757+00:00"
+        },
+        {
+          "order_no": "MCJO000410",
+          "type": "direct_companion",
+          "parent": "a04ec940-5093-440f-b09e-3b3f8ba93e6d",
+          "status": "cancelled",
+          "companion_id": "458c3d2e-5803-403b-9a25-af1d12c8d142",
+          "payment_method": null,
+          "idempotency_key": "pom-458ce9ad-1790203119544-ab6fac:child:458c3d2e-5803-403b-9a25-af1d12c8d142",
+          "created_at": "2026-09-23T22:38:42.036+00:00"
+        },
+        {
+          "order_no": "MCJO000411",
+          "type": "direct_companion",
+          "parent": "a04ec940-5093-440f-b09e-3b3f8ba93e6d",
+          "status": "cancelled",
+          "companion_id": "737b7c07-cab8-4270-a2da-6eee49135559",
+          "payment_method": null,
+          "idempotency_key": "pom-458ce9ad-1790203119544-ab6fac:child:737b7c07-cab8-4270-a2da-6eee49135559",
+          "created_at": "2026-09-23T22:38:42.277+00:00"
+        }
+      ],
+      "c8cdfccc-8cbc-4765-aa6f-e035ad2e0d40": [
+        {
+          "order_no": "MCJO000412",
+          "type": "multi_group",
+          "parent": null,
+          "status": "cancelled",
+          "companion_id": null,
+          "payment_method": null,
+          "idempotency_key": "pom-458ce9ad-1790206907265-6jty7e",
+          "created_at": "2026-09-23T23:41:49.415+00:00"
+        },
+        {
+          "order_no": "MCJO000413",
+          "type": "direct_companion",
+          "parent": "c8cdfccc-8cbc-4765-aa6f-e035ad2e0d40",
+          "status": "cancelled",
+          "companion_id": "458c3d2e-5803-403b-9a25-af1d12c8d142",
+          "payment_method": null,
+          "idempotency_key": "pom-458ce9ad-1790206907265-6jty7e:child:458c3d2e-5803-403b-9a25-af1d12c8d142",
+          "created_at": "2026-09-23T23:41:49.785+00:00"
+        },
+        {
+          "order_no": "MCJO000414",
+          "type": "direct_companion",
+          "parent": "c8cdfccc-8cbc-4765-aa6f-e035ad2e0d40",
+          "status": "cancelled",
+          "companion_id": "737b7c07-cab8-4270-a2da-6eee49135559",
+          "payment_method": null,
+          "idempotency_key": "pom-458ce9ad-1790206907265-6jty7e:child:737b7c07-cab8-4270-a2da-6eee49135559",
+          "created_at": "2026-09-23T23:41:50.039+00:00"
+        }
+      ]
+    }
+  },
+  "rows": [
+    {
+      "id": "567400d5-3204-4fe1-b3ec-80309fbd378c",
+      "order_no": "MCJO000406",
+      "order_type": "multi_group",
+      "parent_order_id": null,
+      "status": "cancelled",
+      "total_amount": 70,
+      "companion_id": null,
+      "boss_id": "458ce9ad-3425-42b1-ab66-24bca342f971",
+      "assignment_type": "assigned",
+      "created_at": "2026-09-23T21:40:22.753+00:00",
+      "title": "多人订单 · 2 位陪玩 · 70 猫粮",
+      "game": "陪玩",
+      "idempotency_key": "pom-458ce9ad-1790199620555-6txnsw"
+    },
+    {
+      "id": "4ffe4784-5397-4703-8973-483e836fe599",
+      "order_no": "MCJO000407",
+      "order_type": "direct_companion",
+      "parent_order_id": "567400d5-3204-4fe1-b3ec-80309fbd378c",
+      "status": "cancelled",
+      "total_amount": 35,
+      "companion_id": "458c3d2e-5803-403b-9a25-af1d12c8d142",
+      "boss_id": "458ce9ad-3425-42b1-ab66-24bca342f971",
+      "assignment_type": "assigned",
+      "created_at": "2026-09-23T21:40:23.008+00:00",
+      "title": "三角洲 手游 国服 · 小宏 · 1小时",
+      "game": "三角洲 手游 国服",
+      "idempotency_key": "pom-458ce9ad-1790199620555-6txnsw:child:458c3d2e-5803-403b-9a25-af1d12c8d142"
+    },
+    {
+      "id": "142a0f42-bd7c-481f-8b8e-947bca2097e9",
+      "order_no": "MCJO000408",
+      "order_type": "direct_companion",
+      "parent_order_id": "567400d5-3204-4fe1-b3ec-80309fbd378c",
+      "status": "cancelled",
+      "total_amount": 35,
+      "companion_id": "737b7c07-cab8-4270-a2da-6eee49135559",
+      "boss_id": "458ce9ad-3425-42b1-ab66-24bca342f971",
+      "assignment_type": "assigned",
+      "created_at": "2026-09-23T21:40:23.251+00:00",
+      "title": "三角洲 手游 国服 · 小灰灰 · 1小时",
+      "game": "三角洲 手游 国服",
+      "idempotency_key": "pom-458ce9ad-1790199620555-6txnsw:child:737b7c07-cab8-4270-a2da-6eee49135559"
+    },
+    {
+      "id": "a04ec940-5093-440f-b09e-3b3f8ba93e6d",
+      "order_no": "MCJO000409",
+      "order_type": "multi_group",
+      "parent_order_id": null,
+      "status": "cancelled",
+      "total_amount": 70,
+      "companion_id": null,
+      "boss_id": "458ce9ad-3425-42b1-ab66-24bca342f971",
+      "assignment_type": "assigned",
+      "created_at": "2026-09-23T22:38:41.757+00:00",
+      "title": "多人订单 · 2 位陪玩 · 70 猫粮",
+      "game": "陪玩",
+      "idempotency_key": "pom-458ce9ad-1790203119544-ab6fac"
+    },
+    {
+      "id": "c2da4913-17dd-4329-830f-f48bbc034b95",
+      "order_no": "MCJO000410",
+      "order_type": "direct_companion",
+      "parent_order_id": "a04ec940-5093-440f-b09e-3b3f8ba93e6d",
+      "status": "cancelled",
+      "total_amount": 35,
+      "companion_id": "458c3d2e-5803-403b-9a25-af1d12c8d142",
+      "boss_id": "458ce9ad-3425-42b1-ab66-24bca342f971",
+      "assignment_type": "assigned",
+      "created_at": "2026-09-23T22:38:42.036+00:00",
+      "title": "三角洲 手游 国服 · 小宏 · 1小时",
+      "game": "三角洲 手游 国服",
+      "idempotency_key": "pom-458ce9ad-1790203119544-ab6fac:child:458c3d2e-5803-403b-9a25-af1d12c8d142"
+    },
+    {
+      "id": "529831e0-c39d-44e5-b177-990669b03fbc",
+      "order_no": "MCJO000411",
+      "order_type": "direct_companion",
+      "parent_order_id": "a04ec940-5093-440f-b09e-3b3f8ba93e6d",
+      "status": "cancelled",
+      "total_amount": 35,
+      "companion_id": "737b7c07-cab8-4270-a2da-6eee49135559",
+      "boss_id": "458ce9ad-3425-42b1-ab66-24bca342f971",
+      "assignment_type": "assigned",
+      "created_at": "2026-09-23T22:38:42.277+00:00",
+      "title": "三角洲 手游 国服 · 小灰灰 · 1小时",
+      "game": "三角洲 手游 国服",
+      "idempotency_key": "pom-458ce9ad-1790203119544-ab6fac:child:737b7c07-cab8-4270-a2da-6eee49135559"
+    },
+    {
+      "id": "c8cdfccc-8cbc-4765-aa6f-e035ad2e0d40",
+      "order_no": "MCJO000412",
+      "order_type": "multi_group",
+      "parent_order_id": null,
+      "status": "cancelled",
+      "total_amount": 70,
+      "companion_id": null,
+      "boss_id": "458ce9ad-3425-42b1-ab66-24bca342f971",
+      "assignment_type": "assigned",
+      "created_at": "2026-09-23T23:41:49.415+00:00",
+      "title": "多人订单 · 2 位陪玩 · 70 猫粮",
+      "game": "陪玩",
+      "idempotency_key": "pom-458ce9ad-1790206907265-6jty7e"
+    },
+    {
+      "id": "ea86281f-a770-43fb-a968-be8d1f8c123a",
+      "order_no": "MCJO000413",
+      "order_type": "direct_companion",
+      "parent_order_id": "c8cdfccc-8cbc-4765-aa6f-e035ad2e0d40",
+      "status": "cancelled",
+      "total_amount": 35,
+      "companion_id": "458c3d2e-5803-403b-9a25-af1d12c8d142",
+      "boss_id": "458ce9ad-3425-42b1-ab66-24bca342f971",
+      "assignment_type": "assigned",
+      "created_at": "2026-09-23T23:41:49.785+00:00",
+      "title": "三角洲 手游 国服 · 小宏 · 1小时",
+      "game": "三角洲 手游 国服",
+      "idempotency_key": "pom-458ce9ad-1790206907265-6jty7e:child:458c3d2e-5803-403b-9a25-af1d12c8d142"
+    },
+    {
+      "id": "d8340dae-320a-408d-ac13-0c7ca5cef0db",
+      "order_no": "MCJO000414",
+      "order_type": "direct_companion",
+      "parent_order_id": "c8cdfccc-8cbc-4765-aa6f-e035ad2e0d40",
+      "status": "cancelled",
+      "total_amount": 35,
+      "companion_id": "737b7c07-cab8-4270-a2da-6eee49135559",
+      "boss_id": "458ce9ad-3425-42b1-ab66-24bca342f971",
+      "assignment_type": "assigned",
+      "created_at": "2026-09-23T23:41:50.039+00:00",
+      "title": "三角洲 手游 国服 · 小灰灰 · 1小时",
+      "game": "三角洲 手游 国服",
+      "idempotency_key": "pom-458ce9ad-1790206907265-6jty7e:child:737b7c07-cab8-4270-a2da-6eee49135559"
+    }
+  ],
+  "bosses": {
+    "458ce9ad-3425-42b1-ab66-24bca342f971": null
+  },
+  "cleanup_note": "Do NOT delete yet. Propose cancel-only cleanup for cancelled test multi families after Owner confirms; never touch wallet/ledger."
+}

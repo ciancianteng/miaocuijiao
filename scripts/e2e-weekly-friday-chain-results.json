@@ -1,0 +1,150 @@
+{
+  "base": "https://meow-cuijiao-homepage-2x1bgwpxh-ciancianteng-4581s-projects.vercel.app",
+  "at": "2026-08-04T08:36:47.534Z",
+  "expectedSettlement": "2026-08-07",
+  "checks": [
+    {
+      "id": "env",
+      "name": "Staging + Supabase config resolved",
+      "pass": true,
+      "detail": "https://meow-cuijiao-homepage-2x1bgwpxh-ciancianteng-4581s-projects.vercel.app"
+    },
+    {
+      "id": "auth_boss",
+      "name": "Login boss",
+      "pass": true,
+      "detail": "boss.final.1785714993009@meow.test"
+    },
+    {
+      "id": "auth_companion",
+      "name": "Login companion",
+      "pass": true,
+      "detail": "companion.final.1785714993009@meow.test"
+    },
+    {
+      "id": "auth_cs",
+      "name": "Login cs",
+      "pass": true,
+      "detail": "service.final.1785714993009@meow.test"
+    },
+    {
+      "id": "auth_admin",
+      "name": "Login admin",
+      "pass": true,
+      "detail": "admin@meow.test"
+    },
+    {
+      "id": "1_admin_friday_center",
+      "name": "Admin bootstrap exposes Friday settlement summary + tabs data",
+      "pass": true,
+      "detail": "{\"thisFriday\":\"2026-08-07\",\"pendingRefunds\":0,\"pendingCompanion\":0,\"pendingCs\":0,\"refundPendingRm\":0,\"refundPaidRm\":0,\"batchCode\":\"MCJ-PAYOUT-2026-W32\",\"batchPaidCount\":0,\"batchFailedCount\":0,\"batchPendingAmountRm\":0,\"batchPaidAmountRm\":0}"
+    },
+    {
+      "id": "1b_batch_panel",
+      "name": "Current settlement batch panel available (MCJ-PAYOUT…)",
+      "pass": true,
+      "detail": "MCJ-PAYOUT-2026-W32"
+    },
+    {
+      "id": "2_boss_finance_denied",
+      "name": "Boss cannot access admin finance API",
+      "pass": true,
+      "detail": "http=403 msg=没有后台管理权限。"
+    },
+    {
+      "id": "3_companion_finance_denied",
+      "name": "Companion cannot access admin finance API",
+      "pass": true,
+      "detail": "http=403"
+    },
+    {
+      "id": "4_cs_finance_denied",
+      "name": "CS cannot access admin finance API",
+      "pass": true,
+      "detail": "http=403"
+    },
+    {
+      "id": "5_boss_list_refunds",
+      "name": "Boss list_my_refunds works",
+      "pass": true,
+      "detail": "count=0"
+    },
+    {
+      "id": "5b_boss_orders",
+      "name": "Boss can list orders",
+      "pass": true,
+      "detail": "count=64"
+    },
+    {
+      "id": "6_boss_request_refund",
+      "name": "Boss request_refund enqueues Friday path (no crash)",
+      "pass": true,
+      "detail": "退款申请已提交。当前状态：待审核。预计处理日为本周五或下周五，不会即时到账。"
+    },
+    {
+      "id": "6b_no_instant_wallet",
+      "name": "Approve-path not instant here: wallet not credited solely by request",
+      "pass": true,
+      "detail": "before=NaN after=NaN"
+    },
+    {
+      "id": "7_cs_approve_friday_queue",
+      "name": "CS approve enters Friday queue (message mentions Friday / 不会即时)",
+      "pass": true,
+      "detail": "已批准进入周五退款队列（不会即时到账）。后台打款完成并上传凭证后，老板才会收到退款。"
+    },
+    {
+      "id": "7b_admin_sees_refund",
+      "name": "Admin Friday center lists boss refund",
+      "pass": true,
+      "detail": "RF-1785832624641-AHVW approved_for_payout"
+    },
+    {
+      "id": "8_add_refund_batch",
+      "name": "Admin can add refund to weekly batch",
+      "pass": true,
+      "detail": "已加入本周批次"
+    },
+    {
+      "id": "9_no_receipt_blocked",
+      "name": "Mark refund paid without receipt is blocked",
+      "pass": true,
+      "detail": "没有上传打款凭证，不允许标记完成"
+    },
+    {
+      "id": "9b_mark_refund_paid",
+      "name": "Mark refund paid with receipt succeeds (or idempotent)",
+      "pass": true,
+      "detail": "退款打款完成"
+    },
+    {
+      "id": "9c_mark_refund_idempotent",
+      "name": "Repeat mark_refund_paid is idempotent / safe",
+      "pass": true,
+      "detail": "已打款（幂等）"
+    },
+    {
+      "id": "10_export_csv",
+      "name": "Export settlement CSV available",
+      "pass": true,
+      "detail": "file=MeowCuiJiao_Settlement_2026_08 count=5"
+    },
+    {
+      "id": "comp_bootstrap",
+      "name": "Companion bootstrap works",
+      "pass": true,
+      "detail": "http=200"
+    },
+    {
+      "id": "cs_bootstrap",
+      "name": "CS bootstrap works",
+      "pass": true,
+      "detail": ""
+    }
+  ],
+  "summary": {
+    "passed": 23,
+    "failed": 0,
+    "total": 23
+  }
+}

@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <!-- mcj-pwa-meta:begin -->
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="妙脆角老板">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#0a0610">
+  <meta name="mobile-web-app-capable" content="yes">
+  <script src="/pwa-boot.js?v=20261009bell1" defer></script>
+  <!-- mcj-pwa-meta:end -->
+
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>更多玩法商城 - MEOW CUI JIAO</title>
+  <link rel="stylesheet" href="src/style.css">
+  <link rel="stylesheet" href="src/gameplay-mall.css?v=20261008navMall1">
+  <link rel="stylesheet" href="src/boss-header.css?v=20261018brand1">
+  <script type="module" src="src/role-gates.js?v=20260908antiBlank1"></script>
+  <script type="module" src="src/boss-header.js" defer></script>
+</head>
+<body class="gp-mall-body">
+  <header class="topbar">
+    <a class="brand" href="index.html"><img src="assets/meow-cuijiao-brand.jpg" alt="MEOW CUI JIAO"><span>MEOW CUI JIAO</span></a>
+    <nav class="boss-nav">
+      <a href="index.html">首页</a>
+      <a href="companion-center.html">陪玩大厅</a>
+      <a class="active" href="more-gameplays.html">更多玩法</a>
+      <a href="recharge.html">充值中心</a>
+      <a href="orders.html">我的订单</a>
+      <a href="support.html">在线客服</a>
+      <a href="mine.html">我的账号</a>
+    </nav>
+  </header>
+
+  <main class="gp-mall-shell">
+    <section class="gp-mall-head">
+      <div>
+        <h1>更多玩法</h1>
+        <p>护航、跑刀、上分、陪练与语音娱乐，一键咨询客服派单。</p>
+      </div>
+      <div class="gp-mall-tools">
+        <input id="gpSearch" type="search" placeholder="搜索玩法商品">
+        <select id="gpSort">
+          <option value="recommend">综合</option>
+          <option value="sold">销量</option>
+          <option value="priceAsc">价格从低到高</option>
+          <option value="priceDesc">价格从高到低</option>
+          <option value="newest">最新</option>
+        </select>
+      </div>
+    </section>
+
+    <section class="gp-mall-cats" id="gpCats"></section>
+    <section class="gp-mall-grid" id="gpGrid"><div class="gp-empty">正在读取商城商品...</div></section>
+  </main>
+
+  <script type="module" src="src/currency.js"></script>
+  <script type="module" src="src/gameplay-mall.js"></script>
+</body>
+</html>

@@ -1,0 +1,8 @@
+{
+  "pass": true,
+  "shot": "01-insufficient-balance-ui-390.png",
+  "note": "UI fixture matches profile-detail insufficient sheet copy",
+  "cleanup": "CLEANUP_RESULT.json — gift/income/wall removed; wallet refunded to 550",
+  "commit": "f1d7f3f",
+  "main": "bf065ad"
+}

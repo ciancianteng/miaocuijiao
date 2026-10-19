@@ -1,0 +1,118 @@
+/* Shared QR code preview lightbox — used by payment-confirm, recharge, companion deposit. */
+.pay-qr-frame[data-pay-qr-zoom],
+.pay-qr-frame[data-pay-qr-zoom="1"] {
+  cursor: zoom-in;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+.pay-qr-frame[data-pay-qr-zoom] img,
+.pay-qr-frame[data-pay-qr-zoom] img[data-mcj-pay-qr],
+img[data-mcj-pay-qr][data-pay-qr-img] {
+  cursor: zoom-in;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.pay-qr-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 99999;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.88);
+  padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
+    max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+  box-sizing: border-box;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+.pay-qr-lightbox.is-open {
+  display: flex;
+}
+.pay-qr-lightbox[hidden] {
+  display: none !important;
+}
+.pay-qr-lightbox.is-open[hidden] {
+  display: flex !important;
+}
+
+.pay-qr-lightbox-panel {
+  position: relative;
+  width: min(92vw, 560px);
+  max-width: 100%;
+  max-height: min(92vh, 92dvh);
+  display: grid;
+  gap: 12px;
+  justify-items: center;
+  align-content: center;
+  box-sizing: border-box;
+}
+
+.pay-qr-lightbox-panel img,
+.pay-qr-lightbox-panel img[data-pay-qr-lightbox-img] {
+  width: min(86vw, 520px);
+  max-width: 100%;
+  height: auto;
+  max-height: min(78vh, 78dvh);
+  object-fit: contain;
+  object-position: center;
+  image-rendering: auto;
+  background: #fff;
+  border: 0;
+  border-radius: 12px;
+  padding: 12px;
+  box-sizing: border-box;
+  cursor: default;
+  -webkit-user-drag: none;
+  user-select: none;
+  pointer-events: none;
+}
+
+.pay-qr-lightbox-close {
+  /* Fixed to the overlay (not panel) so Playwright/mobile taps always hit it. */
+  position: fixed;
+  top: max(12px, env(safe-area-inset-top));
+  right: max(12px, env(safe-area-inset-right));
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  border: 0;
+  border-radius: 999px;
+  background: #fff;
+  color: #1b0712;
+  font-size: 22px;
+  font-weight: 800;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  z-index: 100000;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+.pay-qr-lightbox-close:focus-visible {
+  outline: 2px solid #ff9ecf;
+  outline-offset: 2px;
+}
+
+.pay-qr-lightbox-hint {
+  margin: 0;
+  color: #c4b5c0;
+  font-size: 13px;
+  text-align: center;
+  line-height: 1.4;
+}
+
+@media (max-width: 560px) {
+  .pay-qr-lightbox-panel img,
+  .pay-qr-lightbox-panel img[data-pay-qr-lightbox-img] {
+    width: min(92vw, 520px);
+    max-height: min(72vh, 72dvh);
+    padding: 10px;
+  }
+  .pay-qr-lightbox-close {
+    top: max(10px, env(safe-area-inset-top));
+    right: max(10px, env(safe-area-inset-right));
+  }
+}

@@ -1,0 +1,59 @@
+{
+  "base": "http://127.0.0.1:5180/",
+  "checks": {
+    "home": {
+      "slideCount": 2,
+      "dotCount": 2,
+      "index": "0",
+      "hasBrand": true,
+      "hasStats": true,
+      "hasAnn": true,
+      "priceVisible": false,
+      "hasFooterDiscord": true,
+      "banner": {
+        "w": 362,
+        "h": 154,
+        "ratio": 2.35
+      }
+    },
+    "afterSwitch": {
+      "index": "1",
+      "activeDot": true
+    },
+    "hall": {
+      "h1": "陪玩大厅",
+      "secondaryTop": false,
+      "secondaryAfter": true,
+      "searchBeforeList": true,
+      "priceVisible": false,
+      "names": [
+        "哦嗯调",
+        "许拓",
+        "瑞秋",
+        "1717"
+      ],
+      "badges": [
+        true,
+        false,
+        false,
+        false
+      ]
+    },
+    "profile": {
+      "emptyCount": 0,
+      "hasPerfEmpty": false,
+      "hasBasic": false,
+      "hasPerf": false
+    },
+    "support": {
+      "hasDiscord": true,
+      "gated": null,
+      "title": "MEOW CUI JIAO Discord 社区"
+    },
+    "desktop": {
+      "w": 860,
+      "h": 366,
+      "ratio": 2.35
+    }
+  }
+}

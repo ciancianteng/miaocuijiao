@@ -1,0 +1,32 @@
+{
+  "before": {
+    "src_role_gates_cache": "no-store",
+    "src_boss_header_cache": "no-store",
+    "brand_logo_bytes": 638486,
+    "messages_extra_scripts": [
+      "platform-contract",
+      "unified-config",
+      "commission-engine",
+      "unified-api"
+    ],
+    "dup_apis_on_nav": [
+      "chat conversations x2-3",
+      "notifications list x2-3"
+    ],
+    "full_reload": true,
+    "click_feedback": false
+  },
+  "after": {
+    "src_role_gates_cache": "public,max-age=3600,stale-while-revalidate=86400",
+    "src_boss_header_cache": "public,max-age=3600,stale-while-revalidate=86400",
+    "brand_logo_bytes": 3494,
+    "messages_extra_scripts": [],
+    "dup_apis_on_nav": [
+      "chat/notify coalesced+8s throttle"
+    ],
+    "full_reload": true,
+    "click_feedback": true,
+    "profile_me_cache_ttl_s": 45,
+    "prefetch_shells": true
+  }
+}

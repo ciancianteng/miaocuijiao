@@ -1,0 +1,910 @@
+{
+  "at": "2026-09-12T21:27:57.593Z",
+  "preview": "https://meow-cuijiao-homepage-hifal4dl1-ciancianteng-4581s-projects.vercel.app",
+  "prod": "https://www.meowcuijiao.com",
+  "before": {
+    "apis": {
+      "/api/public/companions": {
+        "cold_ms": 3779,
+        "cold_xvc": "MISS",
+        "p50_ms": 3538,
+        "samples": [
+          {
+            "ms": 3589,
+            "http": 200,
+            "bytes": 35613,
+            "xVercelCache": "MISS",
+            "age": "0",
+            "memCache": ""
+          },
+          {
+            "ms": 3033,
+            "http": 200,
+            "bytes": 35613,
+            "xVercelCache": "MISS",
+            "age": "0",
+            "memCache": ""
+          },
+          {
+            "ms": 3538,
+            "http": 200,
+            "bytes": 35613,
+            "xVercelCache": "MISS",
+            "age": "0",
+            "memCache": ""
+          }
+        ],
+        "cacheControl": "no-store",
+        "warm_xvc": "MISS",
+        "warm_mem": "",
+        "companionCount": 8,
+        "sampleNames": [
+          "瑞秋",
+          "小宏",
+          "1717",
+          "立羽",
+          "奈一"
+        ]
+      },
+      "/api/home/daily-stats": {
+        "cold_ms": 681,
+        "cold_xvc": "MISS",
+        "p50_ms": 643,
+        "samples": [
+          {
+            "ms": 643,
+            "http": 200,
+            "bytes": 853,
+            "xVercelCache": "MISS",
+            "age": "0",
+            "memCache": ""
+          },
+          {
+            "ms": 706,
+            "http": 200,
+            "bytes": 853,
+            "xVercelCache": "MISS",
+            "age": "0",
+            "memCache": ""
+          },
+          {
+            "ms": 602,
+            "http": 200,
+            "bytes": 853,
+            "xVercelCache": "MISS",
+            "age": "0",
+            "memCache": ""
+          }
+        ],
+        "cacheControl": "no-store, no-cache, must-revalidate",
+        "warm_xvc": "MISS",
+        "warm_mem": "",
+        "companionCount": null,
+        "sampleNames": []
+      },
+      "/api/platform/services": {
+        "cold_ms": 265,
+        "cold_xvc": "MISS",
+        "p50_ms": 256,
+        "samples": [
+          {
+            "ms": 253,
+            "http": 200,
+            "bytes": 4666,
+            "xVercelCache": "MISS",
+            "age": "0",
+            "memCache": ""
+          },
+          {
+            "ms": 265,
+            "http": 200,
+            "bytes": 4666,
+            "xVercelCache": "MISS",
+            "age": "0",
+            "memCache": ""
+          },
+          {
+            "ms": 256,
+            "http": 200,
+            "bytes": 4666,
+            "xVercelCache": "MISS",
+            "age": "0",
+            "memCache": ""
+          }
+        ],
+        "cacheControl": "no-store",
+        "warm_xvc": "MISS",
+        "warm_mem": "",
+        "companionCount": null,
+        "sampleNames": []
+      }
+    },
+    "html": [
+      {
+        "key": "Homepage",
+        "path": "/",
+        "http": 200,
+        "ms": 30,
+        "bytes": 255609,
+        "xVercelCache": "HIT"
+      },
+      {
+        "key": "Hall",
+        "path": "/companion-center.html",
+        "http": 200,
+        "ms": 140,
+        "bytes": 11642,
+        "xVercelCache": "MISS"
+      },
+      {
+        "key": "Detail",
+        "path": "/companion-detail.html",
+        "http": 200,
+        "ms": 119,
+        "bytes": 1043,
+        "xVercelCache": "MISS"
+      },
+      {
+        "key": "Orders",
+        "path": "/orders.html",
+        "http": 200,
+        "ms": 158,
+        "bytes": 56687,
+        "xVercelCache": "MISS"
+      },
+      {
+        "key": "Mine",
+        "path": "/mine.html",
+        "http": 200,
+        "ms": 186,
+        "bytes": 56230,
+        "xVercelCache": "MISS"
+      },
+      {
+        "key": "Workbench",
+        "path": "/companion/dashboard/index.html",
+        "http": 200,
+        "ms": 117,
+        "bytes": 1952,
+        "xVercelCache": "MISS"
+      },
+      {
+        "key": "Messages",
+        "path": "/messages.html",
+        "http": 200,
+        "ms": 109,
+        "bytes": 2470,
+        "xVercelCache": "MISS"
+      },
+      {
+        "key": "LoginBoss",
+        "path": "/login.html",
+        "http": 200,
+        "ms": 118,
+        "bytes": 1775,
+        "xVercelCache": "MISS"
+      },
+      {
+        "key": "LoginCompanion",
+        "path": "/companion/login/index.html",
+        "http": 200,
+        "ms": 120,
+        "bytes": 1546,
+        "xVercelCache": "MISS"
+      },
+      {
+        "key": "LoginCS",
+        "path": "/customer-service/login/index.html",
+        "http": 200,
+        "ms": 130,
+        "bytes": 3253,
+        "xVercelCache": "MISS"
+      },
+      {
+        "key": "LoginAdmin",
+        "path": "/admin/login/index.html",
+        "http": 200,
+        "ms": 113,
+        "bytes": 3202,
+        "xVercelCache": "MISS"
+      }
+    ],
+    "otp": [
+      {
+        "portal": "boss",
+        "http": 200,
+        "ms": 284,
+        "cacheControl": "no-store",
+        "xVercelCache": "MISS",
+        "body": {
+          "ok": true,
+          "message": "如该邮箱已在当前端注册，将收到登录验证码。请确认选择了正确入口（老板/陪玩），并检查收件箱与垃圾箱。",
+          "channel": "email",
+          "expiresInSec": 600,
+          "retryAfterSec": 60
+        },
+        "pass": true
+      },
+      {
+        "portal": "companion",
+        "http": 200,
+        "ms": 292,
+        "cacheControl": "no-store",
+        "xVercelCache": "MISS",
+        "body": {
+          "ok": true,
+          "message": "如该邮箱已在当前端注册，将收到登录验证码。请确认选择了正确入口（老板/陪玩），并检查收件箱与垃圾箱。",
+          "channel": "email",
+          "expiresInSec": 600,
+          "retryAfterSec": 60
+        },
+        "pass": true
+      },
+      {
+        "portal": "cs",
+        "http": 400,
+        "ms": 480,
+        "cacheControl": "no-store",
+        "xVercelCache": "MISS",
+        "body": {
+          "ok": false,
+          "message": "该端请使用邮箱密码登录。"
+        },
+        "pass": true
+      },
+      {
+        "portal": "admin",
+        "http": 400,
+        "ms": 178,
+        "cacheControl": "no-store",
+        "xVercelCache": "MISS",
+        "body": {
+          "ok": false,
+          "message": "该端请使用邮箱密码登录。"
+        },
+        "pass": true
+      }
+    ],
+    "pwa": [
+      {
+        "portal": "boss",
+        "html": "/",
+        "htmlHttp": 200,
+        "manifestLink": "/manifest.webmanifest",
+        "manifestHttp": 200,
+        "startUrl": "/",
+        "pass": true
+      },
+      {
+        "portal": "companion",
+        "html": "/companion/index.html",
+        "htmlHttp": 200,
+        "manifestLink": "/manifest.webmanifest",
+        "manifestHttp": 200,
+        "startUrl": "/",
+        "pass": true
+      },
+      {
+        "portal": "cs",
+        "html": "/customer-service/index.html",
+        "htmlHttp": 200,
+        "manifestLink": "/manifest.webmanifest",
+        "manifestHttp": 200,
+        "startUrl": "/",
+        "pass": true
+      },
+      {
+        "portal": "admin",
+        "html": "/admin/index.html",
+        "htmlHttp": 200,
+        "manifestLink": "/manifest.webmanifest",
+        "manifestHttp": 200,
+        "startUrl": "/",
+        "pass": true
+      }
+    ],
+    "business": {
+      "companionsOk": true,
+      "companionCount": 8,
+      "pricedCount": 8,
+      "sample": [
+        {
+          "name": "瑞秋",
+          "price": 25,
+          "status": "online"
+        },
+        {
+          "name": "小宏",
+          "price": 30,
+          "status": "online"
+        },
+        {
+          "name": "1717",
+          "price": 30,
+          "status": "offline"
+        }
+      ],
+      "servicesHttp": 200,
+      "serviceCount": 8,
+      "ordersHttp": 401,
+      "ordersNot5xx": true,
+      "messagesHttp": 404,
+      "messagesNot5xx": true
+    },
+    "nav": {
+      "label": "prod",
+      "origin": "https://www.meowcuijiao.com",
+      "scenarios": {
+        "mobile": [
+          {
+            "name": "home cold",
+            "firstContentMs": 394,
+            "usefulContentMs": 411,
+            "settledMs": 4541
+          },
+          {
+            "name": "home→hall",
+            "firstContentMs": 295,
+            "usefulContentMs": 314,
+            "settledMs": 5654,
+            "url": "https://www.meowcuijiao.com/companion-center.html"
+          },
+          {
+            "name": "hall→detail",
+            "firstContentMs": 74,
+            "usefulContentMs": 83,
+            "settledMs": 4266,
+            "url": "https://www.meowcuijiao.com/companion-center.html"
+          },
+          {
+            "name": "detail→hall",
+            "firstContentMs": 48,
+            "usefulContentMs": 58,
+            "settledMs": 5509,
+            "url": "https://www.meowcuijiao.com/companion-center.html"
+          },
+          {
+            "name": "mine→orders",
+            "firstContentMs": 144,
+            "usefulContentMs": 167,
+            "settledMs": 4030,
+            "url": "https://www.meowcuijiao.com/index.html#login"
+          },
+          {
+            "name": "companion→workbench",
+            "firstContentMs": 377,
+            "usefulContentMs": 387,
+            "settledMs": 875,
+            "url": "https://www.meowcuijiao.com/companion/login/"
+          }
+        ],
+        "desktop": [
+          {
+            "name": "home cold",
+            "firstContentMs": 176,
+            "usefulContentMs": 222,
+            "settledMs": 5412
+          },
+          {
+            "name": "home→hall",
+            "firstContentMs": 125,
+            "usefulContentMs": 144,
+            "settledMs": 4808,
+            "url": "https://www.meowcuijiao.com/companion-center.html"
+          },
+          {
+            "name": "hall→detail",
+            "firstContentMs": 92,
+            "usefulContentMs": 104,
+            "settledMs": 5576,
+            "url": "https://www.meowcuijiao.com/companion-center.html"
+          },
+          {
+            "name": "detail→hall",
+            "firstContentMs": 49,
+            "usefulContentMs": 60,
+            "settledMs": 5127,
+            "url": "https://www.meowcuijiao.com/companion-center.html"
+          },
+          {
+            "name": "mine→orders",
+            "firstContentMs": 129,
+            "usefulContentMs": 161,
+            "settledMs": 4097,
+            "url": "https://www.meowcuijiao.com/index.html#login"
+          },
+          {
+            "name": "companion→workbench",
+            "firstContentMs": 73,
+            "usefulContentMs": 81,
+            "settledMs": 571,
+            "url": "https://www.meowcuijiao.com/companion/login/"
+          }
+        ]
+      }
+    }
+  },
+  "after": {
+    "apis": {
+      "/api/public/companions": {
+        "cold_ms": 1508,
+        "cold_xvc": "MISS",
+        "p50_ms": 42,
+        "samples": [
+          {
+            "ms": 707,
+            "http": 200,
+            "bytes": 7672,
+            "xVercelCache": "MISS",
+            "age": "0",
+            "memCache": ""
+          },
+          {
+            "ms": 33,
+            "http": 200,
+            "bytes": 7672,
+            "xVercelCache": "HIT",
+            "age": "0",
+            "memCache": ""
+          },
+          {
+            "ms": 42,
+            "http": 200,
+            "bytes": 7672,
+            "xVercelCache": "HIT",
+            "age": "0",
+            "memCache": ""
+          }
+        ],
+        "cacheControl": "public, max-age=15, s-maxage=30, stale-while-revalidate=60",
+        "warm_xvc": "HIT",
+        "warm_mem": "",
+        "companionCount": 2,
+        "sampleNames": [
+          "P2种子验收陪玩",
+          "1717"
+        ]
+      },
+      "/api/home/daily-stats": {
+        "cold_ms": 513,
+        "cold_xvc": "MISS",
+        "p50_ms": 37,
+        "samples": [
+          {
+            "ms": 228,
+            "http": 200,
+            "bytes": 853,
+            "xVercelCache": "MISS",
+            "age": "0",
+            "memCache": "HIT"
+          },
+          {
+            "ms": 37,
+            "http": 200,
+            "bytes": 853,
+            "xVercelCache": "HIT",
+            "age": "0",
+            "memCache": "HIT"
+          },
+          {
+            "ms": 37,
+            "http": 200,
+            "bytes": 853,
+            "xVercelCache": "HIT",
+            "age": "0",
+            "memCache": "HIT"
+          }
+        ],
+        "cacheControl": "public, max-age=30, s-maxage=60, stale-while-revalidate=120",
+        "warm_xvc": "HIT",
+        "warm_mem": "HIT",
+        "companionCount": null,
+        "sampleNames": []
+      },
+      "/api/platform/services": {
+        "cold_ms": 258,
+        "cold_xvc": "MISS",
+        "p50_ms": 44,
+        "samples": [
+          {
+            "ms": 249,
+            "http": 200,
+            "bytes": 640,
+            "xVercelCache": "MISS",
+            "age": "0",
+            "memCache": ""
+          },
+          {
+            "ms": 35,
+            "http": 200,
+            "bytes": 640,
+            "xVercelCache": "HIT",
+            "age": "0",
+            "memCache": ""
+          },
+          {
+            "ms": 44,
+            "http": 200,
+            "bytes": 640,
+            "xVercelCache": "HIT",
+            "age": "0",
+            "memCache": ""
+          }
+        ],
+        "cacheControl": "public, max-age=30, s-maxage=60, stale-while-revalidate=120",
+        "warm_xvc": "HIT",
+        "warm_mem": "",
+        "companionCount": null,
+        "sampleNames": []
+      }
+    },
+    "html": [
+      {
+        "key": "Homepage",
+        "path": "/",
+        "http": 200,
+        "ms": 99,
+        "bytes": 255840,
+        "xVercelCache": "HIT"
+      },
+      {
+        "key": "Hall",
+        "path": "/companion-center.html",
+        "http": 200,
+        "ms": 74,
+        "bytes": 11805,
+        "xVercelCache": "HIT"
+      },
+      {
+        "key": "Detail",
+        "path": "/companion-detail.html",
+        "http": 200,
+        "ms": 66,
+        "bytes": 1206,
+        "xVercelCache": "HIT"
+      },
+      {
+        "key": "Orders",
+        "path": "/orders.html",
+        "http": 200,
+        "ms": 92,
+        "bytes": 56987,
+        "xVercelCache": "HIT"
+      },
+      {
+        "key": "Mine",
+        "path": "/mine.html",
+        "http": 200,
+        "ms": 87,
+        "bytes": 53390,
+        "xVercelCache": "HIT"
+      },
+      {
+        "key": "Workbench",
+        "path": "/companion/dashboard/index.html",
+        "http": 200,
+        "ms": 79,
+        "bytes": 2277,
+        "xVercelCache": "HIT"
+      },
+      {
+        "key": "Messages",
+        "path": "/messages.html",
+        "http": 200,
+        "ms": 193,
+        "bytes": 2770,
+        "xVercelCache": "MISS"
+      },
+      {
+        "key": "LoginBoss",
+        "path": "/login.html",
+        "http": 200,
+        "ms": 125,
+        "bytes": 1938,
+        "xVercelCache": "HIT"
+      },
+      {
+        "key": "LoginCompanion",
+        "path": "/companion/login/index.html",
+        "http": 200,
+        "ms": 80,
+        "bytes": 1709,
+        "xVercelCache": "HIT"
+      },
+      {
+        "key": "LoginCS",
+        "path": "/customer-service/login/index.html",
+        "http": 200,
+        "ms": 115,
+        "bytes": 3416,
+        "xVercelCache": "HIT"
+      },
+      {
+        "key": "LoginAdmin",
+        "path": "/admin/login/index.html",
+        "http": 200,
+        "ms": 87,
+        "bytes": 3365,
+        "xVercelCache": "HIT"
+      }
+    ],
+    "otp": [
+      {
+        "portal": "boss",
+        "http": 200,
+        "ms": 258,
+        "cacheControl": "no-store",
+        "xVercelCache": "MISS",
+        "body": {
+          "ok": true,
+          "message": "如该邮箱已在当前端注册，将收到登录验证码。请确认选择了正确入口（老板/陪玩），并检查收件箱与垃圾箱。",
+          "channel": "email",
+          "expiresInSec": 600,
+          "retryAfterSec": 60
+        },
+        "pass": true
+      },
+      {
+        "portal": "companion",
+        "http": 200,
+        "ms": 239,
+        "cacheControl": "no-store",
+        "xVercelCache": "MISS",
+        "body": {
+          "ok": true,
+          "message": "如该邮箱已在当前端注册，将收到登录验证码。请确认选择了正确入口（老板/陪玩），并检查收件箱与垃圾箱。",
+          "channel": "email",
+          "expiresInSec": 600,
+          "retryAfterSec": 60
+        },
+        "pass": true
+      },
+      {
+        "portal": "cs",
+        "http": 400,
+        "ms": 188,
+        "cacheControl": "no-store",
+        "xVercelCache": "MISS",
+        "body": {
+          "ok": false,
+          "message": "该端请使用邮箱密码登录。"
+        },
+        "pass": true
+      },
+      {
+        "portal": "admin",
+        "http": 400,
+        "ms": 194,
+        "cacheControl": "no-store",
+        "xVercelCache": "MISS",
+        "body": {
+          "ok": false,
+          "message": "该端请使用邮箱密码登录。"
+        },
+        "pass": true
+      }
+    ],
+    "pwa": [
+      {
+        "portal": "boss",
+        "html": "/",
+        "htmlHttp": 200,
+        "manifestLink": "/manifest.webmanifest",
+        "manifestHttp": 200,
+        "startUrl": "/",
+        "pass": true
+      },
+      {
+        "portal": "companion",
+        "html": "/companion/index.html",
+        "htmlHttp": 200,
+        "manifestLink": "/manifest.webmanifest",
+        "manifestHttp": 200,
+        "startUrl": "/",
+        "pass": true
+      },
+      {
+        "portal": "cs",
+        "html": "/customer-service/index.html",
+        "htmlHttp": 200,
+        "manifestLink": "/manifest.webmanifest",
+        "manifestHttp": 200,
+        "startUrl": "/",
+        "pass": true
+      },
+      {
+        "portal": "admin",
+        "html": "/admin/index.html",
+        "htmlHttp": 200,
+        "manifestLink": "/manifest.webmanifest",
+        "manifestHttp": 200,
+        "startUrl": "/",
+        "pass": true
+      }
+    ],
+    "business": {
+      "companionsOk": true,
+      "companionCount": 2,
+      "pricedCount": 1,
+      "sample": [
+        {
+          "name": "P2种子验收陪玩",
+          "price": 30,
+          "status": "offline"
+        },
+        {
+          "name": "1717",
+          "price": 0,
+          "status": "offline"
+        }
+      ],
+      "servicesHttp": 200,
+      "serviceCount": 1,
+      "ordersHttp": 401,
+      "ordersNot5xx": true,
+      "messagesHttp": 404,
+      "messagesNot5xx": true
+    },
+    "nav": {
+      "label": "preview",
+      "origin": "https://meow-cuijiao-homepage-hifal4dl1-ciancianteng-4581s-projects.vercel.app",
+      "scenarios": {
+        "mobile": [
+          {
+            "name": "home cold",
+            "firstContentMs": 499,
+            "usefulContentMs": 535,
+            "settledMs": 1949
+          },
+          {
+            "name": "home→hall",
+            "firstContentMs": 434,
+            "usefulContentMs": 465,
+            "settledMs": 8466,
+            "url": "https://meow-cuijiao-homepage-hifal4dl1-ciancianteng-4581s-projects.vercel.app/companion-center.html"
+          },
+          {
+            "name": "hall→detail",
+            "firstContentMs": 72,
+            "usefulContentMs": 80,
+            "settledMs": 944,
+            "url": "https://meow-cuijiao-homepage-hifal4dl1-ciancianteng-4581s-projects.vercel.app/companion-center.html"
+          },
+          {
+            "name": "detail→hall",
+            "firstContentMs": 53,
+            "usefulContentMs": 61,
+            "settledMs": 924,
+            "url": "https://meow-cuijiao-homepage-hifal4dl1-ciancianteng-4581s-projects.vercel.app/companion-center.html"
+          },
+          {
+            "name": "mine→orders",
+            "firstContentMs": 140,
+            "usefulContentMs": 165,
+            "settledMs": 1165,
+            "url": "https://meow-cuijiao-homepage-hifal4dl1-ciancianteng-4581s-projects.vercel.app/index.html#login"
+          },
+          {
+            "name": "companion→workbench",
+            "firstContentMs": 485,
+            "usefulContentMs": 496,
+            "settledMs": 985,
+            "url": "https://meow-cuijiao-homepage-hifal4dl1-ciancianteng-4581s-projects.vercel.app/companion/login/"
+          }
+        ],
+        "desktop": [
+          {
+            "name": "home cold",
+            "firstContentMs": 278,
+            "usefulContentMs": 392,
+            "settledMs": 1351
+          },
+          {
+            "name": "home→hall",
+            "firstContentMs": 278,
+            "usefulContentMs": 299,
+            "settledMs": 1141,
+            "url": "https://meow-cuijiao-homepage-hifal4dl1-ciancianteng-4581s-projects.vercel.app/companion-center.html"
+          },
+          {
+            "name": "hall→detail",
+            "firstContentMs": 85,
+            "usefulContentMs": 93,
+            "settledMs": 946,
+            "url": "https://meow-cuijiao-homepage-hifal4dl1-ciancianteng-4581s-projects.vercel.app/companion-center.html"
+          },
+          {
+            "name": "detail→hall",
+            "firstContentMs": 50,
+            "usefulContentMs": 64,
+            "settledMs": 897,
+            "url": "https://meow-cuijiao-homepage-hifal4dl1-ciancianteng-4581s-projects.vercel.app/companion-center.html"
+          },
+          {
+            "name": "mine→orders",
+            "firstContentMs": 211,
+            "usefulContentMs": 281,
+            "settledMs": 1245,
+            "url": "https://meow-cuijiao-homepage-hifal4dl1-ciancianteng-4581s-projects.vercel.app/index.html#login"
+          },
+          {
+            "name": "companion→workbench",
+            "firstContentMs": 90,
+            "usefulContentMs": 99,
+            "settledMs": 590,
+            "url": "https://meow-cuijiao-homepage-hifal4dl1-ciancianteng-4581s-projects.vercel.app/companion/login/"
+          }
+        ]
+      }
+    }
+  },
+  "gate": {
+    "checks": {
+      "companionsWarmUnder800": true,
+      "companionsImprovedVsProd": true,
+      "companionsColdImproved": true,
+      "dailyWarmUnder400": true,
+      "dailyCacheHit": true,
+      "otpPreviewPass": true,
+      "pwaBossCompanionPass": true,
+      "companionsDataOk": true,
+      "pricesPresent": true,
+      "ordersApiNot5xx": true,
+      "navNoMultiSecondBlank": true
+    },
+    "navTargetHits": [
+      {
+        "name": "home→hall",
+        "usefulContentMs": 465,
+        "under1s": true
+      },
+      {
+        "name": "hall→detail",
+        "usefulContentMs": 80,
+        "under1s": true
+      },
+      {
+        "name": "detail→hall",
+        "usefulContentMs": 61,
+        "under1s": true
+      },
+      {
+        "name": "mine→orders",
+        "usefulContentMs": 165,
+        "under1s": true
+      },
+      {
+        "name": "companion→workbench",
+        "usefulContentMs": 496,
+        "under1s": true
+      },
+      {
+        "name": "home→hall",
+        "usefulContentMs": 299,
+        "under1s": true
+      },
+      {
+        "name": "hall→detail",
+        "usefulContentMs": 93,
+        "under1s": true
+      },
+      {
+        "name": "detail→hall",
+        "usefulContentMs": 64,
+        "under1s": true
+      },
+      {
+        "name": "mine→orders",
+        "usefulContentMs": 281,
+        "under1s": true
+      },
+      {
+        "name": "companion→workbench",
+        "usefulContentMs": 99,
+        "under1s": true
+      }
+    ],
+    "hardFails": [],
+    "verdict": "READY FOR FINAL REVIEW"
+  }
+}

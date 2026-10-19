@@ -1,0 +1,57 @@
+.mcj-cs-hours {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #ffe2b8;
+  background: rgba(255, 170, 80, 0.1);
+  border: 1px solid rgba(255, 170, 80, 0.28);
+}
+.mcj-cs-hours.is-on {
+  color: #c9ffe0;
+  background: rgba(80, 180, 120, 0.12);
+  border-color: rgba(120, 220, 160, 0.32);
+}
+.mcj-cs-hours-dot {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  margin-top: 5px;
+  border-radius: 50%;
+  background: #ffb35c;
+}
+.mcj-cs-hours.is-on .mcj-cs-hours-dot {
+  background: #4ade80;
+  box-shadow: 0 0 0 3px rgba(74, 222, 128, 0.2);
+}
+.mcj-cs-hours-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.mcj-cs-hours-text strong {
+  font-size: 13px;
+}
+.mcj-cs-hours-pill {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 700;
+  line-height: 1.6;
+  vertical-align: middle;
+  color: #ffe2b8;
+  background: rgba(255, 170, 80, 0.14);
+  border: 1px solid rgba(255, 170, 80, 0.3);
+}
+.mcj-cs-hours-pill.is-on {
+  color: #c9ffe0;
+  background: rgba(80, 180, 120, 0.14);
+  border-color: rgba(120, 220, 160, 0.35);
+}

@@ -1,0 +1,341 @@
+{
+  "ref": "jqfaknpmcnqwqvatrwgo",
+  "profileQueryOk": true,
+  "profileError": null,
+  "matches": [
+    {
+      "profile": {
+        "id": "f89e7fc8-f424-4ab4-9a1b-cbfec45bd872",
+        "boss_uid": "MCJ00066",
+        "public_id": null,
+        "display_name": "hrmn",
+        "nickname": null,
+        "email": "herman00e22@gmail.com",
+        "role": "boss",
+        "is_test_account": false,
+        "status": "active"
+      },
+      "wallet": [
+        {
+          "id": "c12f0c1f-37c2-4d4e-9577-03d360eec320",
+          "boss_id": "f89e7fc8-f424-4ab4-9a1b-cbfec45bd872",
+          "paid_balance": 100,
+          "bonus_balance": 5,
+          "total_balance": 105,
+          "frozen": false,
+          "total_paid_in": 140,
+          "total_bonus_in": 5,
+          "total_spent": 40,
+          "total_compensation": 0,
+          "total_recharge_rm": 100,
+          "updated_at": "2026-10-08T14:41:32.626045+00:00",
+          "created_at": "2026-09-30T09:43:00.731737+00:00",
+          "held_balance": 0
+        }
+      ],
+      "txs": [
+        {
+          "id": "6173fc76-deea-42f3-a16d-33dad4c00586",
+          "transaction_type": "recharge",
+          "amount": 100,
+          "direction": "credit",
+          "balance_type": "paid",
+          "related_order_id": null,
+          "compensation_id": null,
+          "reason": "充值到账",
+          "idempotency_key": "admin-confirm:PAY-1790761519133-BOLR:paid",
+          "paid_balance_after": 100,
+          "bonus_balance_after": 0,
+          "total_balance_after": 100,
+          "created_at": "2026-10-01T08:54:41.587072+00:00"
+        },
+        {
+          "id": "241f26be-8929-41c4-bd0e-4d16b4f21a4f",
+          "transaction_type": "recharge_bonus",
+          "amount": 5,
+          "direction": "credit",
+          "balance_type": "bonus",
+          "related_order_id": null,
+          "compensation_id": null,
+          "reason": "充值活动赠送",
+          "idempotency_key": "admin-confirm:PAY-1790761519133-BOLR:bonus",
+          "paid_balance_after": 100,
+          "bonus_balance_after": 5,
+          "total_balance_after": 105,
+          "created_at": "2026-10-01T08:54:41.587072+00:00"
+        },
+        {
+          "id": "90529170-00a2-4aee-b6c6-d9d67f68fb48",
+          "transaction_type": "order_hold",
+          "amount": 30,
+          "direction": "debit",
+          "balance_type": "paid",
+          "related_order_id": "1a979188-6878-4fa5-81dc-9538ec798ce4",
+          "compensation_id": null,
+          "reason": "订单冻结 MCJO000430",
+          "idempotency_key": "order-hold:MCJO000430",
+          "paid_balance_after": 75,
+          "bonus_balance_after": 0,
+          "total_balance_after": 105,
+          "created_at": "2026-10-01T09:17:47.487653+00:00"
+        },
+        {
+          "id": "5617df08-1d0e-4110-96fb-3c9603f1f650",
+          "transaction_type": "order_payment",
+          "amount": 40,
+          "direction": "debit",
+          "balance_type": "paid",
+          "related_order_id": "4f08aee7-01c6-4437-816f-ccaeed1de82f",
+          "compensation_id": null,
+          "reason": "客服代下单发送抢单大厅 MCJO000435",
+          "idempotency_key": "order-pay:MCJO000435",
+          "paid_balance_after": 35,
+          "bonus_balance_after": 0,
+          "total_balance_after": 65,
+          "created_at": "2026-10-01T14:01:32.998555+00:00"
+        },
+        {
+          "id": "acb09e30-e6de-47f3-9110-7183f2f9d3ae",
+          "transaction_type": "order_hold_release",
+          "amount": 30,
+          "direction": "credit",
+          "balance_type": "paid",
+          "related_order_id": "1a979188-6878-4fa5-81dc-9538ec798ce4",
+          "compensation_id": null,
+          "reason": "订单 MCJO000430 已取消，释放未退回的冻结猫粮",
+          "idempotency_key": "order-release:MCJO000430",
+          "paid_balance_after": 60,
+          "bonus_balance_after": 5,
+          "total_balance_after": 65,
+          "created_at": "2026-10-08T14:41:02.960629+00:00"
+        },
+        {
+          "id": "ce99b431-e64d-433b-8674-07bfe8f9fd8a",
+          "transaction_type": "system_anomaly_compensation",
+          "amount": 40,
+          "direction": "credit",
+          "balance_type": "paid",
+          "related_order_id": "4f08aee7-01c6-4437-816f-ccaeed1de82f",
+          "compensation_id": "2939757d-6431-442a-8672-f41438bc307f",
+          "reason": "由于系统出现异常，导致您的猫粮余额被错误扣除或冻结。平台现已修复相关问题，并恢复您的猫粮余额。对此造成的不便，我们深表歉意。本次补回 40 猫粮。补偿后可用余额：105 猫粮。",
+          "idempotency_key": "system-anomaly:MCJO000435:hrmn:v1",
+          "paid_balance_after": 100,
+          "bonus_balance_after": 5,
+          "total_balance_after": 105,
+          "created_at": "2026-10-08T14:41:32.626045+00:00"
+        }
+      ],
+      "holds": [
+        {
+          "id": "636df423-4209-4d70-a5ec-91f93ba6bdec",
+          "order_id": "1a979188-6878-4fa5-81dc-9538ec798ce4",
+          "order_no": "MCJO000430",
+          "amount": 30,
+          "status": "released",
+          "paid_taken": 25,
+          "bonus_taken": 5,
+          "created_at": "2026-10-01T09:17:47.487653+00:00",
+          "updated_at": "2026-10-08T14:41:02.960629+00:00",
+          "finalized_at": null,
+          "released_at": "2026-10-08T14:41:02.960629+00:00"
+        }
+      ],
+      "orders": [
+        {
+          "id": "459cd0fa-56ca-45c2-a163-fddad8c8e50e",
+          "order_no": "MCJO000423",
+          "status": "cancelled",
+          "total_amount": 30,
+          "paid_cat_food": 0,
+          "hours": 1,
+          "unit_price": 30,
+          "game": "三角洲 国际服",
+          "order_type": "direct_companion",
+          "assignment_type": "assigned",
+          "companion_id": "a9f6b9c6-12c1-4d3f-a31d-b2465ebb1a27",
+          "created_at": "2026-09-30T09:54:37.5+00:00",
+          "paid_at": null
+        },
+        {
+          "id": "e4b08b09-8cbe-499b-8c10-a0feda184b82",
+          "order_no": "MCJO000429",
+          "status": "cancelled",
+          "total_amount": 30,
+          "paid_cat_food": 0,
+          "hours": 1,
+          "unit_price": 30,
+          "game": "三角洲 国际服",
+          "order_type": "direct_companion",
+          "assignment_type": "assigned",
+          "companion_id": "a9f6b9c6-12c1-4d3f-a31d-b2465ebb1a27",
+          "created_at": "2026-10-01T09:08:32.638+00:00",
+          "paid_at": null
+        },
+        {
+          "id": "1a979188-6878-4fa5-81dc-9538ec798ce4",
+          "order_no": "MCJO000430",
+          "status": "cancelled",
+          "total_amount": 30,
+          "paid_cat_food": 30,
+          "hours": 1,
+          "unit_price": 30,
+          "game": "三角洲 国际服",
+          "order_type": "direct_companion",
+          "assignment_type": "assigned",
+          "companion_id": "a9f6b9c6-12c1-4d3f-a31d-b2465ebb1a27",
+          "created_at": "2026-10-01T09:12:07.977+00:00",
+          "paid_at": "2026-10-01T09:17:47.559+00:00"
+        },
+        {
+          "id": "f13b3fd3-eaca-420e-9d1a-2a2e1b3b1597",
+          "order_no": "MCJO000433",
+          "status": "cancelled",
+          "total_amount": 30,
+          "paid_cat_food": 0,
+          "hours": 1,
+          "unit_price": 30,
+          "game": "三角洲 国际服",
+          "order_type": "direct_companion",
+          "assignment_type": "assigned",
+          "companion_id": "a9f6b9c6-12c1-4d3f-a31d-b2465ebb1a27",
+          "created_at": "2026-10-01T13:14:06.089+00:00",
+          "paid_at": null
+        },
+        {
+          "id": "e80a822e-60a1-4ce5-9c0d-9f0cd0dfd1d4",
+          "order_no": "MCJO000434",
+          "status": "cancelled",
+          "total_amount": 30,
+          "paid_cat_food": 0,
+          "hours": 1,
+          "unit_price": 30,
+          "game": "三角洲 国际服",
+          "order_type": "direct_companion",
+          "assignment_type": "assigned",
+          "companion_id": "5358a5a2-0b80-45a9-9bbc-217fe010e758",
+          "created_at": "2026-10-01T13:55:04.056+00:00",
+          "paid_at": null
+        },
+        {
+          "id": "4f08aee7-01c6-4437-816f-ccaeed1de82f",
+          "order_no": "MCJO000435",
+          "status": "waiting_boss_confirm",
+          "total_amount": 40,
+          "paid_cat_food": 0,
+          "hours": 1,
+          "unit_price": 40,
+          "game": "无畏契约 端游 国际服",
+          "order_type": "customer_service",
+          "assignment_type": "public",
+          "companion_id": null,
+          "created_at": "2026-10-01T14:01:32.015+00:00",
+          "paid_at": null
+        },
+        {
+          "id": "4b3b3644-0d10-4aa4-a5c9-028d4f946025",
+          "order_no": "MCJO000436",
+          "status": "cancelled",
+          "total_amount": 30,
+          "paid_cat_food": 0,
+          "hours": 1,
+          "unit_price": 30,
+          "game": "三角洲 国际服",
+          "order_type": "direct_companion",
+          "assignment_type": "assigned",
+          "companion_id": "5358a5a2-0b80-45a9-9bbc-217fe010e758",
+          "created_at": "2026-10-01T16:14:38.571+00:00",
+          "paid_at": null
+        },
+        {
+          "id": "791cf212-0aa2-41d0-8e81-5e2afaee4f29",
+          "order_no": "MCJO000438",
+          "status": "cancelled",
+          "total_amount": 30,
+          "paid_cat_food": 0,
+          "hours": 1,
+          "unit_price": 30,
+          "game": "三角洲 国际服",
+          "order_type": "direct_companion",
+          "assignment_type": "assigned",
+          "companion_id": "5358a5a2-0b80-45a9-9bbc-217fe010e758",
+          "created_at": "2026-10-02T09:10:05.423+00:00",
+          "paid_at": null
+        },
+        {
+          "id": "df521392-f7ae-42f4-8129-778860832185",
+          "order_no": "MCJO000467",
+          "status": "awaiting_payment",
+          "total_amount": 40,
+          "paid_cat_food": 0,
+          "hours": 1,
+          "unit_price": 40,
+          "game": "三角洲 端游 国际服",
+          "order_type": "direct_companion",
+          "assignment_type": "assigned",
+          "companion_id": "78a16b20-2858-425b-9011-27ec6c6282c4",
+          "created_at": "2026-10-08T13:57:31.428+00:00",
+          "paid_at": null
+        }
+      ]
+    }
+  ],
+  "ordersById": {
+    "ok": true,
+    "rows": [
+      {
+        "id": "1a979188-6878-4fa5-81dc-9538ec798ce4",
+        "order_no": "MCJO000430",
+        "status": "cancelled",
+        "total_amount": 30,
+        "paid_cat_food": 30,
+        "paid_at": "2026-10-01T09:17:47.559+00:00",
+        "order_type": "direct_companion",
+        "assignment_type": "assigned",
+        "companion_id": "a9f6b9c6-12c1-4d3f-a31d-b2465ebb1a27",
+        "customer_service_id": "78f3b7e0-d799-4cfe-b9e7-6a06ae461f6a",
+        "created_at": "2026-10-01T09:12:07.977+00:00"
+      },
+      {
+        "id": "4f08aee7-01c6-4437-816f-ccaeed1de82f",
+        "order_no": "MCJO000435",
+        "status": "waiting_boss_confirm",
+        "total_amount": 40,
+        "paid_cat_food": 0,
+        "paid_at": null,
+        "order_type": "customer_service",
+        "assignment_type": "public",
+        "companion_id": null,
+        "customer_service_id": "78f3b7e0-d799-4cfe-b9e7-6a06ae461f6a",
+        "created_at": "2026-10-01T14:01:32.015+00:00"
+      }
+    ]
+  },
+  "grabs435": {
+    "ok": false,
+    "status": 400,
+    "error": "column order_grabs.created_at does not exist"
+  },
+  "listings435": {
+    "ok": false,
+    "status": 404,
+    "error": "Could not find the table 'public.order_grab_listings' in the schema cache"
+  },
+  "compRow": {
+    "ok": true,
+    "rows": [
+      {
+        "id": "ce99b431-e64d-433b-8674-07bfe8f9fd8a",
+        "transaction_type": "system_anomaly_compensation",
+        "amount": 40,
+        "direction": "credit",
+        "reason": "由于系统出现异常，导致您的猫粮余额被错误扣除或冻结。平台现已修复相关问题，并恢复您的猫粮余额。对此造成的不便，我们深表歉意。本次补回 40 猫粮。补偿后可用余额：105 猫粮。",
+        "internal_note": "SYS-ANOM-MCJO000435-HRMN-20261008 premature hall debit MCJO000435 reversed once",
+        "idempotency_key": "system-anomaly:MCJO000435:hrmn:v1",
+        "compensation_id": "2939757d-6431-442a-8672-f41438bc307f",
+        "paid_balance_after": 100,
+        "bonus_balance_after": 5,
+        "created_at": "2026-10-08T14:41:32.626045+00:00"
+      }
+    ]
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "base": "https://meow-cuijiao-homepage-staging.vercel.app",
+  "cases": {
+    "case1": {
+      "pass": true,
+      "convA": "365e0ed8-7bc4-458b-bc0e-6583cb5e53d2",
+      "convB": "673dfead-3ae3-4159-8a5f-624e798c7d86",
+      "sameConversation": false,
+      "takeA": "ok",
+      "takeB": "ok",
+      "note": "Boss different consult_type → different conversation_id; both claimable"
+    },
+    "case2": {
+      "pass": true,
+      "cid1": "ce70d8dd-d12f-49ce-8c6f-72bfc5aff598",
+      "cid2": "03d99eef-17f6-4640-a271-6a7f628a4cdd",
+      "sameConversation": false,
+      "takeC1": "ok",
+      "takeC2": "ok",
+      "note": "Companion different consult_type → new conversation in pool"
+    },
+    "case3": {
+      "pass": true,
+      "conversationId": "690219f4-aadc-4771-aa6d-97f28816b7f2",
+      "released": "ok",
+      "userTip": "正在为你更换客服。",
+      "takeOver": "ok",
+      "note": "Release → pending_transfer/waiting → other (or same) CS can accept; history preserved on same id"
+    }
+  }
+}

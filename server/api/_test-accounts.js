@@ -1,0 +1,365 @@
+/**
+ * Production-safe test / smoke account detection for dashboard aggregation
+ * and runtime write guards. Does not delete or mutate data.
+ *
+ * Match rules (any one → test):
+ * - is_test_account / is_test === true (authoritative DB flag)
+ * - email contains @meow.test (case-insensitive)
+ * - email domain used by prod-smoke fixtures (@mcj-prod-smoke.invalid)
+ * - disposable / guerrilla inbox domains used by ProdSmoke fixtures
+ * - display_name / nickname / username contains Smoke or ProdSmoke
+ * - rebate / PR-accept / staging fixture nicknames used by E2E (返点陪玩####, PR122Accept, …)
+ * - Cursor acceptance prefixes (CompA- / Invitee*Flow- / …) — stamped on write;
+ *   Production listings hide them even if is_test_account was never set
+ */
+
+export const TEST_DATA_SOURCE = "cursor_acceptance";
+/** Staging-only organic E2E identity — real settlement/points path; blocked on Production. */
+export const STAGING_ORGANIC_SOURCE = "staging_organic";
+export const STAGING_ORGANIC_EMAIL_RE = /@mcj-staging-organic\.invalid\b/i;
+export const PRODUCTION_SUPABASE_REF = "jqfaknpmcnqwqvatrwgo";
+
+export function isStagingOrganicEmail(email = "") {
+  return STAGING_ORGANIC_EMAIL_RE.test(String(email || "").trim());
+}
+
+export function isStagingOrganicSource(meta = {}) {
+  const source = String(meta?.source || meta?.data_source || meta?.test_source || "")
+    .trim()
+    .toLowerCase();
+  return source === STAGING_ORGANIC_SOURCE || source === "staging_organic";
+}
+
+export function isProductionSupabaseUrl(url = process.env.SUPABASE_URL || "") {
+  return String(url || "").toLowerCase().includes(PRODUCTION_SUPABASE_REF);
+}
+
+const MEOW_TEST_EMAIL_RE = /@meow\.test\b/i;
+const PROD_SMOKE_EMAIL_RE = /@mcj-prod-smoke\.invalid\b/i;
+/** Disposable domains observed on Production smoke fixtures (and common guerrilla aliases). */
+const DISPOSABLE_TEST_EMAIL_RE =
+  /@(?:guerrillamailblock\.com|guerrillamail\.com|guerrillamail\.de|guerrillamail\.net|guerrillamail\.org|sharklasers\.com|grr\.la|pokemail\.net|spam4\.me)\b/i;
+/** One-shot Production deploy fixtures (Boss VIP / similar) — never inflate GMV. */
+const VIP_DEPLOY_FIXTURE_EMAIL_RE = /^vip\.deploy\.[^@]+@/i;
+/** Username / display markers used by ProdSmoke* and *Smoke* E2E fixtures */
+const SMOKE_NAME_RE = /prodsmoke|smoke/i;
+/**
+ * Staging E2E / rebate fixtures that were left with is_test_account=false.
+ * These must never appear in public hall / homepage recommendations.
+ */
+const FIXTURE_NAME_RE =
+  /(?:^|\s)(?:返点陪玩\d+|pr\d*accept|staging\s*companion|\[?\s*test\s*\]?\s*验收陪玩|验收陪玩)(?:\s|$)/i;
+const ACCEPTANCE_EMAIL_RE =
+  /^(?:compa|admincomp\d*|inviteebossflow|inviteecompflow|rejectflow|idemflow|pr\d+pay|pr\d*accept)[-._0-9a-z]*@example\.com$/i;
+const ACCEPTANCE_NAME_RE =
+  /^(?:CompA|AdminComp\d*|InviteeBossFlow|InviteeCompFlow|RejectFlow|IdemFlow|PR\d+Pay|PR\d*Accept|dbg\d+|验收被邀人|验收暂不确认|P2种子验收陪玩)(?:-\d+)?$/u;
+
+export function isAcceptanceFixtureEmail(email = "") {
+  return ACCEPTANCE_EMAIL_RE.test(String(email || "").trim());
+}
+
+export function isAcceptanceFixtureName(...parts) {
+  for (const part of parts) {
+    const name = String(part == null ? "" : part).trim();
+    if (!name) continue;
+    if (ACCEPTANCE_NAME_RE.test(name)) return true;
+  }
+  return false;
+}
+
+export function isProductionRuntime(env = process.env) {
+  const vercel = String(env.VERCEL_ENV || "").toLowerCase();
+  const app = String(env.APP_ENV || "").toLowerCase();
+  const nodeEnv = String(env.NODE_ENV || "").toLowerCase();
+  if (vercel === "production" || app === "production") return true;
+  // Prefer Vercel/APP env; never treat plain NODE_ENV alone as prod when VERCEL_ENV=preview.
+  if (vercel === "preview" || vercel === "development") return false;
+  if (app === "staging" || app === "preview" || app === "development") return false;
+  return nodeEnv === "production" && !vercel && !app;
+}
+
+export function isTestEmail(email = "") {
+  const e = String(email || "").trim();
+  if (!e) return false;
+  return (
+    MEOW_TEST_EMAIL_RE.test(e) ||
+    PROD_SMOKE_EMAIL_RE.test(e) ||
+    DISPOSABLE_TEST_EMAIL_RE.test(e) ||
+    VIP_DEPLOY_FIXTURE_EMAIL_RE.test(e)
+  );
+}
+
+export function isTestUsername(...parts) {
+  const joined = parts
+    .map((p) => String(p == null ? "" : p).trim())
+    .filter(Boolean)
+    .join(" ");
+  if (!joined) return false;
+  if (SMOKE_NAME_RE.test(joined)) return true;
+  if (FIXTURE_NAME_RE.test(joined)) return true;
+  // Compact forms without spaces: 返点陪玩6210 / PR122Accept
+  if (/^返点陪玩\d+$/u.test(joined.trim())) return true;
+  if (/^PR\d*Accept$/i.test(joined.trim())) return true;
+  if (/^Staging\s*Companion$/i.test(joined.trim())) return true;
+  return false;
+}
+
+export function isTestAccountFlag(row = {}) {
+  if (!row || typeof row !== "object") return false;
+  return row.is_test_account === true || row.is_test === true;
+}
+
+/**
+ * True when a profile / companion row should be excluded from production business stats
+ * and blocked from Production write paths.
+ * @param {object} row profile-like object
+ * @param {object} [extra] optional companion_profiles / denormalized fields
+ */
+export function isTestAccountRecord(row = {}, extra = {}, env = process.env) {
+  if (isTestAccountFlag(row) || isTestAccountFlag(extra)) return true;
+  if (isTestEmail(row.email) || isTestEmail(extra.email)) return true;
+  if (
+    isTestUsername(
+      row.display_name,
+      row.nickname,
+      row.name,
+      row.account,
+      extra.display_name,
+      extra.nickname,
+      extra.name
+    )
+  ) {
+    return true;
+  }
+  if (
+    isProductionRuntime(env) &&
+    (isAcceptanceFixtureEmail(row.email) ||
+      isAcceptanceFixtureEmail(extra.email) ||
+      isAcceptanceFixtureName(
+        row.display_name,
+        row.nickname,
+        row.name,
+        extra.display_name,
+        extra.nickname,
+        extra.name
+      ))
+  ) {
+    return true;
+  }
+  return false;
+}
+
+export function shouldStampTestAccount({ email = "", displayName = "", nickname = "" } = {}) {
+  if (isStagingOrganicEmail(email)) return false;
+  return (
+    isTestEmail(email) ||
+    isAcceptanceFixtureEmail(email) ||
+    isTestUsername(displayName, nickname) ||
+    isAcceptanceFixtureName(displayName, nickname)
+  );
+}
+
+export function stampTestUserMetadata(meta = {}, identity = {}) {
+  if (isStagingOrganicEmail(identity.email || "")) {
+    return { ...(meta || {}), source: STAGING_ORGANIC_SOURCE, organic: true };
+  }
+  if (!shouldStampTestAccount(identity)) return meta || {};
+  return { ...(meta || {}), source: TEST_DATA_SOURCE };
+}
+
+/** Organic Staging identities must never be stamped is_test_account=true. */
+export function stampTestAccountPayload(payload = {}, identity = {}) {
+  if (isStagingOrganicEmail(identity.email || "")) {
+    return { ...payload, is_test_account: false };
+  }
+  if (!shouldStampTestAccount(identity)) return payload;
+  return { ...payload, is_test_account: true };
+}
+
+export function excludeTestTouchedOnProduction(rows = [], profiles = [], env = process.env) {
+  if (!isProductionRuntime(env)) return Array.isArray(rows) ? rows : [];
+  const { byId, testIds } = indexProfilesForStats(profiles, env);
+  return (rows || []).filter((row) => !isTestTouchedOrder(row, testIds, byId, env));
+}
+
+/** Hard-blocked production test admin identity (login / register). */
+export function isBlockedProductionTestAdmin(email = "") {
+  return String(email || "").trim().toLowerCase() === "admin@meow.test";
+}
+
+/**
+ * Production must refuse smoke / @meow.test identities for login & register.
+ * Broader than admin-only: any @meow.test or Smoke/ProdSmoke display name.
+ */
+export function shouldBlockTestIdentityOnProduction(
+  { email = "", displayName = "", profile = null, authUser = null } = {},
+  env = process.env
+) {
+  if (!isProductionRuntime(env)) return false;
+  if (isBlockedProductionTestAdmin(email)) return true;
+  if (isTestEmail(email)) return true;
+  if (isAcceptanceFixtureEmail(email)) return true;
+  if (isTestUsername(displayName)) return true;
+  if (isAcceptanceFixtureName(displayName)) return true;
+  if (profile && isTestAccountRecord(profile, {}, env)) return true;
+  const meta =
+    (authUser && (authUser.user_metadata || authUser.app_metadata)) ||
+    (profile && (profile.user_metadata || profile.app_metadata)) ||
+    {};
+  const source = String(meta.source || meta.data_source || meta.test_source || "").trim().toLowerCase();
+  if (source === TEST_DATA_SOURCE || source === "cursor_acceptance" || source === "mcj_test_run") {
+    return true;
+  }
+  // Organic Staging acceptance accounts must never authenticate on Production.
+  if (isStagingOrganicEmail(email) || isStagingOrganicSource(meta)) {
+    return true;
+  }
+  return false;
+}
+
+export const PROD_TEST_ACCOUNT_BLOCK_MESSAGE =
+  "正式环境禁止使用测试账号（@meow.test / Smoke）登录或注册。请使用正式管理员账号。";
+
+/**
+ * Build id → profile map and a Set of test profile ids for order filtering.
+ * @param {object[]} profiles
+ */
+export function indexProfilesForStats(profiles = [], env = process.env) {
+  const byId = new Map();
+  const testIds = new Set();
+  for (const p of profiles || []) {
+    if (!p?.id) continue;
+    byId.set(p.id, p);
+    if (isTestAccountRecord(p, {}, env)) testIds.add(p.id);
+  }
+  return { byId, testIds };
+}
+
+/**
+ * True when an order involves a known test party (by id set or denormalized names).
+ */
+export function isTestTouchedOrder(order = {}, testIds = new Set(), byId = new Map(), env = process.env) {
+  const partyIds = [order.boss_id, order.companion_id, order.customer_service_id, order.player_id].filter(
+    Boolean
+  );
+  for (const id of partyIds) {
+    if (testIds.has(id)) return true;
+    const p = byId.get(id);
+    if (p && isTestAccountRecord(p, {}, env)) return true;
+  }
+  if (
+    isTestUsername(
+      order.boss_name,
+      order.companion_name,
+      order.player_name,
+      order.customer_service_name,
+      order.service_name
+    )
+  ) {
+    return true;
+  }
+  if (
+    isProductionRuntime(env) &&
+    isAcceptanceFixtureName(
+      order.boss_name,
+      order.companion_name,
+      order.player_name,
+      order.customer_service_name,
+      order.service_name
+    )
+  ) {
+    return true;
+  }
+  const blob = [order.notes, order.note, order.description, order.title].map((v) => String(v || "")).join(" ");
+  if (/cursor_acceptance|mcj_test_run|source=cursor_acceptance/i.test(blob)) return true;
+  return false;
+}
+
+/** Alias used by some callers. */
+export function isTestOrderRecord(order = {}, testIds = new Set(), byId = new Map()) {
+  return isTestTouchedOrder(order, testIds, byId);
+}
+
+export function filterBusinessProfiles(profiles = [], role) {
+  return (profiles || []).filter((p) => {
+    if (role && p.role !== role) return false;
+    return !isTestAccountRecord(p);
+  });
+}
+
+/**
+ * Fail-closed helper for settlement / points writers.
+ * Returns a skip payload when any party looks like a test account.
+ */
+export function assertNotTestPartiesForSettlement({
+  bossProfile = null,
+  companionProfile = null,
+  customerServiceProfile = null,
+  order = null,
+  testIds = null,
+  byId = null,
+} = {}) {
+  if (bossProfile && isTestAccountRecord(bossProfile)) {
+    return { ok: false, skipped: true, reason: "test_boss" };
+  }
+  if (companionProfile && isTestAccountRecord(companionProfile)) {
+    return { ok: false, skipped: true, reason: "test_companion" };
+  }
+  if (customerServiceProfile && isTestAccountRecord(customerServiceProfile)) {
+    return { ok: false, skipped: true, reason: "test_customer_service" };
+  }
+  if (order && testIds && byId && isTestTouchedOrder(order, testIds, byId)) {
+    return { ok: false, skipped: true, reason: "test_touched_order" };
+  }
+  if (order && (isTestUsername(order.boss_name, order.companion_name, order.customer_service_name))) {
+    return { ok: false, skipped: true, reason: "test_order_names" };
+  }
+  return { ok: true, skipped: false, reason: null };
+}
+
+/**
+ * Companion income gate (P0 fix):
+ * - REAL boss + REAL companion + CS flagged test → ALLOW (warn only)
+ * - test boss / test companion / test-touched / test names → BLOCK
+ * Does not widen skip beyond boss/companion safety.
+ */
+export function companionIncomeTestPartyDecision({
+  bossProfile = null,
+  companionProfile = null,
+  customerServiceProfile = null,
+  order = null,
+  testIds = null,
+  byId = null,
+} = {}) {
+  const partyGuard = assertNotTestPartiesForSettlement({
+    bossProfile,
+    companionProfile,
+    customerServiceProfile,
+    order,
+    testIds,
+    byId,
+  });
+  if (!partyGuard.ok) {
+    if (partyGuard.reason === "test_customer_service") {
+      return {
+        skip: false,
+        reason: null,
+        warnCsTest: true,
+        partyGuardReason: partyGuard.reason,
+      };
+    }
+    return {
+      skip: true,
+      reason: partyGuard.reason || "test_party",
+      warnCsTest: false,
+      partyGuardReason: partyGuard.reason,
+    };
+  }
+  if (bossProfile && isTestAccountRecord(bossProfile)) {
+    return { skip: true, reason: "test_party", warnCsTest: false, partyGuardReason: null };
+  }
+  if (companionProfile && isTestAccountRecord(companionProfile)) {
+    return { skip: true, reason: "test_party", warnCsTest: false, partyGuardReason: null };
+  }
+  return { skip: false, reason: null, warnCsTest: false, partyGuardReason: null };
+}

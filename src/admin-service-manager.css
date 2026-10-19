@@ -1,0 +1,171 @@
+/* Service manager only. Does not restyle the admin shell. */
+#gameManagement,
+.svc-editor {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.svc-toolbar {
+  display: grid !important;
+  grid-template-columns: 1fr;
+  gap: 8px;
+  margin: 0 0 12px;
+}
+
+.svc-toolbar input,
+.svc-toolbar select,
+.svc-field input,
+.svc-field select,
+.svc-field-card input,
+.svc-field-card select,
+.svc-rm input {
+  box-sizing: border-box;
+  width: 100%;
+  height: 40px;
+  min-height: 40px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  color: #fff5fa;
+  padding: 0 12px;
+  font-size: 14px;
+}
+
+.svc-list {
+  display: grid;
+  gap: 10px;
+}
+
+.svc-card {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 12px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 143, 199, 0.18);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.02));
+}
+
+.svc-card-icon {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border-radius: 14px;
+  background: rgba(201, 167, 255, 0.12);
+  font-size: 22px;
+}
+
+.svc-card-main {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.svc-card-main strong,
+.svc-card-main span,
+.svc-card-main em,
+.svc-card-main small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.svc-card-main strong { font-size: 15px; }
+.svc-card-main span,
+.svc-card-main small { color: rgba(255, 245, 250, 0.62); font-size: 12px; }
+.svc-card-main em { color: #ff8fc7; font-style: normal; font-size: 13px; }
+
+.svc-card-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.svc-card-actions { display: grid; gap: 6px; }
+.svc-card-actions .mini-btn { height: 32px; padding: 0 10px; border-radius: 999px; }
+
+.svc-section {
+  display: grid;
+  gap: 10px;
+  margin: 0 0 12px;
+  padding: 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(12, 9, 15, 0.72);
+}
+
+.svc-section h4 {
+  margin: 0;
+  font-size: 14px;
+  color: #ffd1e8;
+}
+
+.svc-field { display: grid; gap: 6px; min-width: 0; }
+.svc-field > span,
+.admin-field-label { font-size: 12px; color: rgba(255, 245, 250, 0.7); }
+
+.svc-price-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.svc-rm { display: flex; align-items: center; gap: 6px; }
+.svc-rm i { color: #ff8fc7; font-style: normal; font-size: 13px; }
+.svc-note { margin: 0; font-size: 12px; color: rgba(255, 245, 250, 0.55); }
+
+.svc-field-list { display: grid; gap: 8px; }
+.svc-field-card {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border-radius: 14px;
+  border: 1px solid rgba(201, 167, 255, 0.2);
+  background: rgba(255, 255, 255, 0.03);
+}
+.svc-field-card-top { display: grid; grid-template-columns: minmax(0, 1fr) 92px auto; gap: 6px; align-items: center; }
+.svc-icon-actions { display: flex; gap: 4px; }
+.svc-icon-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+  color: #fff5fa;
+}
+.svc-icon-btn.danger { color: #ff8fa8; }
+.svc-field-card-flags { display: flex; gap: 12px; }
+
+.svc-mini-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+.svc-mini-toggle input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.svc-mini-toggle i {
+  width: 32px;
+  height: 18px;
+  border-radius: 999px;
+  background: #3a3340;
+  position: relative;
+  display: inline-block;
+}
+.svc-mini-toggle i::after {
+  content: "";
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  top: 2px;
+  left: 2px;
+}
+.svc-mini-toggle input:checked + i { background: linear-gradient(90deg, #ff8fc7, #c9a7ff); }
+.svc-mini-toggle input:checked + i::after { transform: translateX(14px); }
+
+.svc-perm { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.svc-actions { display: flex; gap: 8px; }
+.svc-actions .btn { height: 40px; border-radius: 999px; padding: 0 16px; }
+
+@media (min-width: 760px) {
+  .svc-toolbar { grid-template-columns: minmax(0, 1.4fr) 140px 120px auto auto; align-items: center; }
+}
+
+@media (max-width: 420px) {
+  .svc-card { grid-template-columns: 40px minmax(0, 1fr); }
+  .svc-card-actions { grid-column: 1 / -1; grid-auto-flow: column; justify-content: end; }
+  .svc-field-card-top { grid-template-columns: minmax(0, 1fr); }
+}

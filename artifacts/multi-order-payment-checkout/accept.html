@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Multi-order payment checkout accept</title>
+  <style>
+    :root { color-scheme: dark; }
+    body { margin: 0; font-family: "PingFang SC", "Noto Sans SC", system-ui, sans-serif; background: #0a0610; color: #ffe6f2; }
+    .wrap { width: min(420px, 100%); margin: 0 auto; padding: 16px 14px 40px; }
+    .panel { display: none; }
+    .panel.on { display: block; }
+    .tag { font-size: 11px; color: rgba(255,214,231,.5); margin: 0 0 10px; letter-spacing: .04em; }
+    .sheet { border: 1px solid rgba(255,255,255,.1); border-radius: 16px; background: rgba(22,16,28,.96); padding: 16px; }
+    .sheet h1 { margin: 0 0 12px; font-size: 18px; }
+    .line { display: flex; justify-content: space-between; gap: 10px; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,.06); font-size: 13px; }
+    .line:last-child { border-bottom: 0; }
+    .muted { color: rgba(255,214,231,.5); }
+    .total { font-size: 16px; font-weight: 700; color: #ffd6e7; margin-top: 10px; }
+    .btn { display: block; width: 100%; margin-top: 14px; border: 0; border-radius: 12px; background: rgba(243,168,203,.92); color: #1b0712; font-weight: 700; min-height: 46px; font-size: 15px; }
+    .pay-card { border: 1px solid rgba(255,255,255,.08); border-radius: 16px; background: rgba(22,16,28,.96); padding: 22px 18px 20px; }
+    .pay-card h1 { margin: 0; font-size: 20px; font-weight: 650; }
+    .pay-info-card { margin-top: 14px; border: 1px solid rgba(255,255,255,.08); border-radius: 12px; background: rgba(255,255,255,.03); overflow: hidden; }
+    .pay-row { display: flex; justify-content: space-between; gap: 12px; padding: 11px 14px; border-bottom: 1px solid rgba(255,255,255,.06); }
+    .pay-row:last-child { border-bottom: 0; }
+    .pay-row span { color: rgba(255,214,231,.45); font-size: 12px; }
+    .pay-row strong { color: rgba(255,248,252,.92); font-size: 13px; text-align: right; }
+    .pay-row-amount strong { font-size: 15px; font-weight: 650; color: #ffd6e7; }
+    .pay-hint { margin: 10px 0 0; color: rgba(255,214,231,.48); font-size: 12px; line-height: 1.5; }
+    .pay-alert { margin-top: 14px; color: #ffb9d6; font-weight: 550; font-size: 13px; }
+    .pay-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
+    .pay-btn { border: 1px solid rgba(255,255,255,.12); border-radius: 12px; background: rgba(255,255,255,.05); color: #ffe6f2; padding: 10px 14px; text-decoration: none; display: inline-flex; align-items: center; justify-content: center; font-weight: 600; font-size: 14px; min-height: 44px; }
+    .pay-btn.primary { border-color: transparent; background: rgba(243,168,203,.92); color: #1b0712; }
+    .status-panel { border: 1px solid rgba(255,143,197,.28); border-radius: 12px; background: rgba(255,143,197,.08); padding: 14px; }
+    .status-panel strong { display: block; margin-bottom: 6px; }
+    .ledger { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; line-height: 1.55; background: rgba(0,0,0,.35); border-radius: 10px; padding: 12px; }
+    .ok { color: #9dffc0; }
+    .nav { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+    .nav button { border: 1px solid rgba(255,255,255,.15); background: rgba(255,255,255,.06); color: #ffe6f2; border-radius: 999px; padding: 6px 10px; font-size: 12px; }
+    .nav button.on { background: rgba(243,168,203,.35); }
+    .urlbar { font-size: 11px; color: rgba(255,214,231,.55); margin: 0 0 8px; word-break: break-all; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="nav" id="nav"></div>
+
+    <section class="panel on" data-panel="A">
+      <p class="tag">A · 多人订单确认页</p>
+      <div class="sheet">
+        <h1>多人一起下单</h1>
+        <div class="line"><span class="muted">陪玩 A · 三角洲手游国服</span><strong>35 猫粮</strong></div>
+        <div class="line"><span class="muted">陪玩 B · 三角洲手游国服</span><strong>35 猫粮</strong></div>
+        <div class="line"><span class="muted">游戏 ID</span><strong>BossGID70</strong></div>
+        <div class="line"><span class="muted">服务时间</span><strong>21:00–22:00</strong></div>
+        <div class="line"><span class="muted">语音方式</span><strong>游戏内语音</strong></div>
+        <div class="total">合计 70 猫粮</div>
+        <button class="btn" type="button">确认并支付 70猫粮</button>
+      </div>
+    </section>
+
+    <section class="panel" data-panel="B">
+      <p class="tag">B · 点击确认后进入正式 Payment 页</p>
+      <p class="urlbar">→ /payment-confirm.html?order=parent-70-demo</p>
+      <div class="pay-card" data-multi-parent="1">
+        <header class="pay-head"><h1>多人陪玩订单 · 支付确认</h1></header>
+        <div class="pay-info-card">
+          <div class="pay-row"><span>订单号</span><strong>MCJ-MULTI-70</strong></div>
+          <div class="pay-row"><span>陪玩组合</span><strong>小灰灰 35 · 小宏 35</strong></div>
+          <div class="pay-row"><span>服务</span><strong>多人陪玩订单 · 共2位 · 一次付款</strong></div>
+          <div class="pay-row"><span>服务时间</span><strong>21:00–22:00</strong></div>
+          <div class="pay-row"><span>语音方式</span><strong>游戏内语音</strong></div>
+          <div class="pay-row pay-row-amount"><span>总付款</span><strong>70</strong></div>
+          <div class="pay-row"><span>支付方式</span><strong>猫粮余额</strong></div>
+        </div>
+        <p class="pay-hint">本订单一次付款 70，系统会分别为每位陪玩结算。</p>
+        <div class="pay-actions">
+          <a class="pay-btn primary" href="#">立即支付 70</a>
+          <a class="pay-btn" href="#">余额不足？去充值</a>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel" data-panel="C">
+      <p class="tag">C · Payment 页订单总额 = 确认页合计（SoT 70）</p>
+      <div class="pay-card">
+        <header class="pay-head"><h1>多人陪玩订单 · 支付确认</h1></header>
+        <div class="pay-info-card">
+          <div class="pay-row"><span>子单快照 A</span><strong>35（单价快照）</strong></div>
+          <div class="pay-row"><span>子单快照 B</span><strong>35（单价快照）</strong></div>
+          <div class="pay-row pay-row-amount"><span>订单总额</span><strong>70 猫粮</strong></div>
+        </div>
+        <p class="pay-hint ok">与确认页合计一致；未回退旧价 30。</p>
+      </div>
+    </section>
+
+    <section class="panel" data-panel="D">
+      <p class="tag">D · 余额不足：充值入口（非 toast 卡死）</p>
+      <div class="pay-card" data-order-id="parent-70-demo">
+        <h1>支付确认</h1>
+        <p class="pay-alert" role="alert">猫粮余额不足</p>
+        <p class="pay-hint">充值成功后请返回本页继续支付；订单资料与金额不会丢失。</p>
+        <div class="pay-actions">
+          <a class="pay-btn primary" href="#">去充值</a>
+          <a class="pay-btn" href="#">余额已到账，重试支付</a>
+          <a class="pay-btn" href="#">返回支付页</a>
+          <a class="pay-btn" href="#">查看我的订单</a>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel" data-panel="E">
+      <p class="tag">E · 付款成功 → 等待陪玩确认</p>
+      <div class="pay-card">
+        <header class="pay-head"><h1>多人陪玩订单 · 支付确认</h1>
+          <p class="pay-lead" style="margin:8px 0 0;color:rgba(255,214,231,.55);font-size:13px">订单已付款成功。</p>
+        </header>
+        <div class="status-panel" style="margin-top:14px">
+          <strong>等待陪玩确认</strong>
+          <p>多人订单已支付，等待各位陪玩确认接单。</p>
+        </div>
+        <div class="pay-actions">
+          <a class="pay-btn primary" href="#">查看我的订单</a>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel" data-panel="F">
+      <p class="tag">F · 付款记录：联合订单只扣一次 70</p>
+      <div class="sheet">
+        <h1>钱包流水</h1>
+        <div class="ledger">
+          <div>tx: order-pay:MCJ-MULTI-70</div>
+          <div>type: order_payment</div>
+          <div>related_order: parent-70-demo</div>
+          <div class="ok">amount: -70  (count=1)</div>
+          <div>——</div>
+          <div>NO child debit for 35</div>
+          <div>NO second parent debit</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel" data-panel="G">
+      <p class="tag">G · parent + child 对账</p>
+      <div class="sheet">
+        <h1>订单对账</h1>
+        <div class="line"><span class="muted">parent</span><strong>parent-70-demo · multi_group · claimed · 70</strong></div>
+        <div class="line"><span class="muted">child A</span><strong>parent_order_id=parent-70-demo · 35 · claimed</strong></div>
+        <div class="line"><span class="muted">child B</span><strong>parent_order_id=parent-70-demo · 35 · claimed</strong></div>
+        <p class="pay-hint ok">两笔子单同属一个 parent；老板付款仅 parent 一次。</p>
+      </div>
+    </section>
+  </div>
+  <script>
+    const ids = ["A","B","C","D","E","F","G"];
+    const nav = document.getElementById("nav");
+    function show(id) {
+      document.querySelectorAll(".panel").forEach((p) => p.classList.toggle("on", p.dataset.panel === id));
+      nav.querySelectorAll("button").forEach((b) => b.classList.toggle("on", b.dataset.id === id));
+      location.hash = id;
+    }
+    ids.forEach((id) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.textContent = id;
+      b.dataset.id = id;
+      b.onclick = () => show(id);
+      nav.appendChild(b);
+    });
+    show((location.hash || "#A").slice(1) || "A");
+  </script>
+</body>
+</html>

@@ -1,0 +1,99 @@
+{
+  "preview": "https://meow-cuijiao-homepage-git-cu-e740fd-ciancianteng-4581s-projects.vercel.app",
+  "cacheHeaders": {
+    "src": "public, max-age=3600, stale-while-revalidate=86400",
+    "portalEarlyGate": "public, max-age=300, stale-while-revalidate=3600",
+    "brand96": "3494 bytes webp"
+  },
+  "afterRows": [
+    {
+      "label": "home",
+      "navToFirstVisibleMs": 485,
+      "clickToFirstVisibleMs": 1035,
+      "apiTotal": 13,
+      "apiDupes": [],
+      "srcJsBytes": 81326
+    },
+    {
+      "label": "home→mine",
+      "navToFirstVisibleMs": 202,
+      "clickToFirstVisibleMs": 3320,
+      "apiTotal": 8,
+      "apiDupes": [],
+      "srcJsBytes": 0
+    },
+    {
+      "label": "mine→orders",
+      "navToFirstVisibleMs": 263,
+      "clickToFirstVisibleMs": 406,
+      "apiTotal": 4,
+      "apiDupes": [],
+      "srcJsBytes": 0
+    },
+    {
+      "label": "mine→messages",
+      "navToFirstVisibleMs": 249,
+      "clickToFirstVisibleMs": 393,
+      "apiTotal": 3,
+      "apiDupes": [],
+      "srcJsBytes": 0
+    },
+    {
+      "label": "mine→support",
+      "navToFirstVisibleMs": 180,
+      "clickToFirstVisibleMs": 3355,
+      "apiTotal": 7,
+      "apiDupes": [
+        {
+          "endpoint": "GET /api/chat?action=conversations",
+          "count": 2
+        }
+      ],
+      "srcJsBytes": 0
+    },
+    {
+      "label": "mine→recharge",
+      "navToFirstVisibleMs": 290,
+      "clickToFirstVisibleMs": 428,
+      "apiTotal": 3,
+      "apiDupes": [],
+      "srcJsBytes": 0
+    },
+    {
+      "label": "mine→hall",
+      "navToFirstVisibleMs": 193,
+      "clickToFirstVisibleMs": 3304,
+      "apiTotal": 11,
+      "apiDupes": [
+        {
+          "endpoint": "GET /api/platform/services",
+          "count": 3
+        },
+        {
+          "endpoint": "GET /api/platform/companion-levels",
+          "count": 2
+        },
+        {
+          "endpoint": "GET /api/public/companions",
+          "count": 2
+        }
+      ],
+      "srcJsBytes": 0
+    },
+    {
+      "label": "back→mine",
+      "navToFirstVisibleMs": 99,
+      "clickToFirstVisibleMs": 3225,
+      "apiTotal": 8,
+      "apiDupes": [],
+      "srcJsBytes": 0
+    }
+  ],
+  "notes": [
+    "Production BEFORE: /src no-store; brand 638KB; chat/notify often x2-3",
+    "Preview AFTER: /src cache hit on 2nd+ nav (srcJsBytes=0); brand-96 ~3.5KB; mine flows mostly no API dupes",
+    "Hall platform dupes remain (out of scope)",
+    "Architecture still MPA full reload — Phase2 is feel/cache/dedupe, not SPA",
+    "clickToVisible spikes (~3s) include locator fallback wait; navToVisible is authoritative post-navigation paint"
+  ]
+}

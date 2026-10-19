@@ -1,0 +1,27 @@
+{
+  "at": "2026-08-03T22:22:33.865Z",
+  "staging": "https://meow-cuijiao-homepage-staging.vercel.app",
+  "publicCount": 6,
+  "codes": [
+    "PW00004:凝梦:3",
+    "PW00005:流程验9314:0",
+    "PW00006:流程验6898:0",
+    "PW00002:1717:75",
+    "PW00008:流程验7254:0",
+    "PW00007:流程验9213:0"
+  ],
+  "hasPW00004": true,
+  "detailPW00004": {
+    "code": "PW00004",
+    "name": "凝梦",
+    "price": 3,
+    "game": "VALORANT、CS2",
+    "avatar": "https://jqfaknpmcnqwqvatrwgo.supabase.co/storage/v1/object/public/companion-public/bc2b1d20-e7e7-4399-ae9d-b3663f2b2abc/avatar/1785782484128-c7c8ed1a-avatar.jpg",
+    "voice": true
+  },
+  "verdict": {
+    "hall": "PASS",
+    "detail": "PASS",
+    "homeApiSameSource": "PASS (same /api/public/companions)"
+  }
+}

@@ -1,0 +1,215 @@
+{
+  "at": "2026-09-25T21:55:36.235Z",
+  "http_completedOrders": 8,
+  "http_filter": {
+    "testAccountsExcluded": true,
+    "parentOrdersOnly": true,
+    "revenueSource": "cs_approved_parent_payment",
+    "companionSource": "companion_profiles.approved+profiles.active",
+    "timezone": "Asia/Kuala_Lumpur",
+    "excludedBosses": 0,
+    "excludedCompanionsRoleOnly": 0,
+    "excludedCustomerServices": 0,
+    "excludedOrders": 0,
+    "childOrdersSkipped": 0,
+    "smokeGmvExcluded": true,
+    "paymentTransactionsAttached": 4,
+    "source": "admin_dashboard_buildDashboardStats",
+    "revenueRule": "countsAsRevenue = parent + CS-approved payment (TX|paid_at|paid_cat_food); children never count; amount=approvedRevenueAmount",
+    "dayRule": "local calendar day in Asia/Kuala_Lumpur using paid_at/TX confirmed_at",
+    "completedRule": "business orders with status=completed (test accounts excluded)",
+    "goodRateRule": "companion_reviews rating>=4 / total ratings (1-5); null when no reviews"
+  },
+  "dashboard_completed": 4,
+  "dashboard_validOrders": 4,
+  "dashboard_totalAmount": 270,
+  "completed_rows_total": 8,
+  "current_counted": 4,
+  "roots_non_test_completed_or_reviewed": 4,
+  "children_completed": 4,
+  "test_touched_completed": 0,
+  "current_counted_ids": [
+    {
+      "id": "c588e77a-293c-464e-b5a0-cf9a1ae9bf77",
+      "order_no": "MCJO000419",
+      "parent_order_id": null,
+      "amount": 140,
+      "completed_at": "2026-09-25T15:03:43.892+00:00"
+    },
+    {
+      "id": "8dfba3dd-f855-4d53-9bbf-65e64338cbc1",
+      "order_no": "MCJO000415",
+      "parent_order_id": null,
+      "amount": 70,
+      "completed_at": "2026-09-25T15:04:42.294+00:00"
+    },
+    {
+      "id": "6ea4e05d-cced-4581-a5c2-ffe9d0be8f4a",
+      "order_no": "MCJO000357",
+      "parent_order_id": null,
+      "amount": 30,
+      "completed_at": "2026-09-15T14:48:51.553+00:00"
+    },
+    {
+      "id": "3d5a951e-34b3-4549-87cc-9ebd55792529",
+      "order_no": "MCJO000356",
+      "parent_order_id": null,
+      "amount": 30,
+      "completed_at": "2026-09-15T14:48:54.554+00:00"
+    }
+  ],
+  "children_completed_ids": [
+    {
+      "id": "b8ca5d07-d59e-4352-9b8f-ba416c1e106c",
+      "order_no": "MCJO000421",
+      "parent_order_id": "c588e77a-293c-464e-b5a0-cf9a1ae9bf77",
+      "status": "completed",
+      "amount": 70
+    },
+    {
+      "id": "1ac122e9-fb67-45df-91bf-48f5316539bb",
+      "order_no": "MCJO000420",
+      "parent_order_id": "c588e77a-293c-464e-b5a0-cf9a1ae9bf77",
+      "status": "completed",
+      "amount": 70
+    },
+    {
+      "id": "8cb53ed2-21eb-402f-b5d3-7af5d9807045",
+      "order_no": "MCJO000417",
+      "parent_order_id": "8dfba3dd-f855-4d53-9bbf-65e64338cbc1",
+      "status": "completed",
+      "amount": 35
+    },
+    {
+      "id": "92146a8c-0cca-41eb-8ae6-b99c504f7a45",
+      "order_no": "MCJO000416",
+      "parent_order_id": "8dfba3dd-f855-4d53-9bbf-65e64338cbc1",
+      "status": "completed",
+      "amount": 35
+    }
+  ],
+  "all_completed_detail": [
+    {
+      "id": "b8ca5d07-d59e-4352-9b8f-ba416c1e106c",
+      "order_no": "MCJO000421",
+      "status": "completed",
+      "parent_order_id": "c588e77a-293c-464e-b5a0-cf9a1ae9bf77",
+      "order_type": "direct_companion",
+      "total_amount": 70,
+      "paid_at": null,
+      "paid_cat_food": 0,
+      "completed_at": "2026-09-25T15:03:42.043+00:00",
+      "is_root": false,
+      "is_test_touched": false,
+      "counts_in_current_dashboard": false,
+      "counts_if_reviewed_included": false
+    },
+    {
+      "id": "1ac122e9-fb67-45df-91bf-48f5316539bb",
+      "order_no": "MCJO000420",
+      "status": "completed",
+      "parent_order_id": "c588e77a-293c-464e-b5a0-cf9a1ae9bf77",
+      "order_type": "direct_companion",
+      "total_amount": 70,
+      "paid_at": null,
+      "paid_cat_food": 0,
+      "completed_at": "2026-09-25T15:03:40.252+00:00",
+      "is_root": false,
+      "is_test_touched": false,
+      "counts_in_current_dashboard": false,
+      "counts_if_reviewed_included": false
+    },
+    {
+      "id": "c588e77a-293c-464e-b5a0-cf9a1ae9bf77",
+      "order_no": "MCJO000419",
+      "status": "completed",
+      "parent_order_id": null,
+      "order_type": "multi_group",
+      "total_amount": 140,
+      "paid_at": "2026-09-25T12:23:31.464+00:00",
+      "paid_cat_food": 140,
+      "completed_at": "2026-09-25T15:03:43.892+00:00",
+      "is_root": true,
+      "is_test_touched": false,
+      "counts_in_current_dashboard": true,
+      "counts_if_reviewed_included": true
+    },
+    {
+      "id": "8cb53ed2-21eb-402f-b5d3-7af5d9807045",
+      "order_no": "MCJO000417",
+      "status": "completed",
+      "parent_order_id": "8dfba3dd-f855-4d53-9bbf-65e64338cbc1",
+      "order_type": "direct_companion",
+      "total_amount": 35,
+      "paid_at": "2026-09-24T02:03:25.447+00:00",
+      "paid_cat_food": 0,
+      "completed_at": "2026-09-25T15:04:37.155+00:00",
+      "is_root": false,
+      "is_test_touched": false,
+      "counts_in_current_dashboard": false,
+      "counts_if_reviewed_included": false
+    },
+    {
+      "id": "92146a8c-0cca-41eb-8ae6-b99c504f7a45",
+      "order_no": "MCJO000416",
+      "status": "completed",
+      "parent_order_id": "8dfba3dd-f855-4d53-9bbf-65e64338cbc1",
+      "order_type": "direct_companion",
+      "total_amount": 35,
+      "paid_at": "2026-09-24T02:03:25.447+00:00",
+      "paid_cat_food": 0,
+      "completed_at": "2026-09-25T09:51:36.744+00:00",
+      "is_root": false,
+      "is_test_touched": false,
+      "counts_in_current_dashboard": false,
+      "counts_if_reviewed_included": false
+    },
+    {
+      "id": "8dfba3dd-f855-4d53-9bbf-65e64338cbc1",
+      "order_no": "MCJO000415",
+      "status": "completed",
+      "parent_order_id": null,
+      "order_type": "multi_group",
+      "total_amount": 70,
+      "paid_at": "2026-09-24T02:03:25.447+00:00",
+      "paid_cat_food": 0,
+      "completed_at": "2026-09-25T15:04:42.294+00:00",
+      "is_root": true,
+      "is_test_touched": false,
+      "counts_in_current_dashboard": true,
+      "counts_if_reviewed_included": true
+    },
+    {
+      "id": "6ea4e05d-cced-4581-a5c2-ffe9d0be8f4a",
+      "order_no": "MCJO000357",
+      "status": "completed",
+      "parent_order_id": null,
+      "order_type": "direct_companion",
+      "total_amount": 30,
+      "paid_at": null,
+      "paid_cat_food": 0,
+      "completed_at": "2026-09-15T14:48:51.553+00:00",
+      "is_root": true,
+      "is_test_touched": false,
+      "counts_in_current_dashboard": true,
+      "counts_if_reviewed_included": true
+    },
+    {
+      "id": "3d5a951e-34b3-4549-87cc-9ebd55792529",
+      "order_no": "MCJO000356",
+      "status": "completed",
+      "parent_order_id": null,
+      "order_type": "direct_companion",
+      "total_amount": 30,
+      "paid_at": null,
+      "paid_cat_food": 0,
+      "completed_at": "2026-09-15T14:48:54.554+00:00",
+      "is_root": true,
+      "is_test_touched": false,
+      "counts_in_current_dashboard": true,
+      "counts_if_reviewed_included": true
+    }
+  ],
+  "payment_tx_count": 4,
+  "payment_tx_on_completed_children": 0
+}

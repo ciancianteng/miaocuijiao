@@ -1,0 +1,102 @@
+/* Unified loading / click feedback — keep light for mobile GPU */
+
+.mcj-skel {
+  pointer-events: none;
+  user-select: none;
+}
+.mcj-skel-pulse {
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.04),
+    rgba(255, 145, 195, 0.1),
+    rgba(255, 255, 255, 0.04)
+  );
+  background-size: 200% 100%;
+  animation: mcjSkel 1.2s ease-in-out infinite;
+  border-radius: 10px;
+}
+@keyframes mcjSkel {
+  0% { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
+.mcj-skel-card {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.02);
+  min-width: 0;
+  box-sizing: border-box;
+}
+.mcj-skel-media {
+  width: 100%;
+  aspect-ratio: 4 / 5;
+  border-radius: 12px;
+}
+.mcj-skel-line {
+  height: 12px;
+  border-radius: 999px;
+  width: 100%;
+}
+.mcj-skel-line.lg { height: 16px; width: 62%; }
+.mcj-skel-line.sm { width: 40%; }
+
+button.is-pressed,
+a.is-pressed,
+[data-nav].is-pressed {
+  transform: scale(0.98);
+  opacity: 0.88;
+  transition: transform 120ms ease, opacity 120ms ease;
+}
+button.is-busy,
+[data-mcj-busy].is-busy {
+  opacity: 0.72;
+  cursor: wait;
+  position: relative;
+}
+button.is-busy::after {
+  content: "";
+  display: inline-block;
+  width: 0.85em;
+  height: 0.85em;
+  margin-left: 0.45em;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  vertical-align: -0.1em;
+  animation: mcjSpin 0.7s linear infinite;
+}
+@keyframes mcjSpin {
+  to { transform: rotate(360deg); }
+}
+
+/* Opacity-only page enter — no translate (protects fixed bottom nav) */
+html.mcj-perf-ready body {
+  opacity: 0.001;
+}
+html.mcj-perf-ready body.mcj-page-ready {
+  opacity: 1;
+  transition: opacity 160ms ease;
+}
+
+img.mcj-fade-img {
+  opacity: 0;
+  transition: opacity 180ms ease;
+}
+img.mcj-fade-img.is-loaded {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mcj-skel-pulse,
+  button.is-busy::after {
+    animation: none !important;
+  }
+  html.mcj-perf-ready body,
+  html.mcj-perf-ready body.mcj-page-ready,
+  img.mcj-fade-img {
+    transition: none !important;
+    opacity: 1 !important;
+  }
+}

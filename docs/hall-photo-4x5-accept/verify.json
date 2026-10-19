@@ -1,0 +1,69 @@
+{
+  "target": "http://127.0.0.1:4173/companion-center.html",
+  "results": [
+    {
+      "width": 375,
+      "mediaAR": "4 / 5",
+      "mediaW": 349,
+      "mediaH": 436,
+      "mediaMaxH": "none",
+      "ratioApprox": 1.249,
+      "hasYiRenZhengOnCards": false,
+      "bodyTextHasYiRenZhengInCard": false,
+      "btnCount": 2,
+      "btnHeights": [
+        36,
+        36
+      ],
+      "cardH": 582
+    },
+    {
+      "width": 390,
+      "mediaAR": "4 / 5",
+      "mediaW": 364,
+      "mediaH": 455,
+      "mediaMaxH": "none",
+      "ratioApprox": 1.25,
+      "hasYiRenZhengOnCards": false,
+      "bodyTextHasYiRenZhengInCard": false,
+      "btnCount": 2,
+      "btnHeights": [
+        36,
+        36
+      ],
+      "cardH": 580
+    },
+    {
+      "width": 393,
+      "mediaAR": "4 / 5",
+      "mediaW": 367,
+      "mediaH": 459,
+      "mediaMaxH": "none",
+      "ratioApprox": 1.251,
+      "hasYiRenZhengOnCards": false,
+      "bodyTextHasYiRenZhengInCard": false,
+      "btnCount": 2,
+      "btnHeights": [
+        36,
+        36
+      ],
+      "cardH": 584
+    },
+    {
+      "width": 430,
+      "mediaAR": "4 / 5",
+      "mediaW": 404,
+      "mediaH": 505,
+      "mediaMaxH": "none",
+      "ratioApprox": 1.25,
+      "hasYiRenZhengOnCards": false,
+      "bodyTextHasYiRenZhengInCard": false,
+      "btnCount": 2,
+      "btnHeights": [
+        36,
+        36
+      ],
+      "cardH": 630
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "ok": true,
+  "mode": "READ_ONLY",
+  "generated_at": "2026-09-22T09:36:49.306Z",
+  "production_ref": "jqfaknpmcnqwqvatrwgo",
+  "real_user_diffs": 0,
+  "diffs": [],
+  "note": "Test wallets excluded. Never patch opening ledger for tests. Never auto-fix real diffs."
+}

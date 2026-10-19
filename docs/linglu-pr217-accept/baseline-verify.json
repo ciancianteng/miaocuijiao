@@ -1,0 +1,25 @@
+{
+  "base": "https://meow-cuijiao-homepage-8uhr4z63w-ciancianteng-4581s-projects.vercel.app",
+  "pass": true,
+  "report": {
+    "title": "妙脆角",
+    "missing": [],
+    "qmarks": 0,
+    "src": "https://meow-cuijiao-homepage-8uhr4z63w-ciancianteng-4581s-projects.vercel.app/default-home-banner.png",
+    "net": {
+      "status": 200,
+      "bytes": 3294472,
+      "ct": "image/png"
+    },
+    "nat": {
+      "w": 1717,
+      "h": 916
+    },
+    "bannerBox": {
+      "w": 362,
+      "h": 154
+    },
+    "fallback": "empty",
+    "dots": 0
+  }
+}
