@@ -122,8 +122,12 @@ test("open picker uses every minute 00-59", () => {
     assert.doesNotMatch(read(f), /minuteStep:\s*60/, f);
   }
   assert.match(read("src/mcj-time-picker.js"), /MINUTE_STEP_DEFAULT\s*=\s*1/);
-  assert.match(read("src/mcj-time-picker.js"), /小时/);
-  assert.match(read("src/mcj-time-picker.js"), /分钟/);
+  assert.match(read("src/mcj-time-picker.js"), /几点/);
+  assert.match(read("src/mcj-time-picker.js"), /几分/);
+  for (const f of ["src/place-order-modal.js", "src/place-order-page.js", "src/multi-companion-team.js"]) {
+    assert.match(read(f), /选择预约开始时间/, f);
+    assert.match(read(f), /预约开始时间：/, f);
+  }
 });
 
 test("duration keeps minutes and labels the next day after midnight", () => {

@@ -117,7 +117,7 @@
       '" data-tp-scroll="' +
       kind +
       '" role="listbox" aria-label="' +
-      (kind === "hour" ? "小时" : "分钟") +
+      (kind === "hour" ? "几点" : "几分") +
       '">' +
       items +
       "</div></div></div>"
@@ -166,7 +166,7 @@
       '<div class="mcj-tp-head"><strong>' +
       String(opts.title || "选择时间").replace(/</g, "&lt;") +
       "</strong></div>" +
-      '<div class="mcj-tp-caps" aria-hidden="true"><span>小时</span><span></span><span>分钟</span></div>' +
+      '<div class="mcj-tp-caps" aria-hidden="true"><span>几点</span><span></span><span>几分</span></div>' +
       '<div class="mcj-tp-body">' +
       '<div class="mcj-tp-highlight" aria-hidden="true"></div>' +
       buildCol("hour", hours, hour) +
@@ -395,7 +395,7 @@
       v +
       '" ' +
       openAttr +
-      '="1" aria-label="选择开始时间 ' +
+      '="1" aria-label="预约开始时间：' +
       v +
       '">' +
       '<span class="mcj-po-time-card-value" data-po-start-display>' +
