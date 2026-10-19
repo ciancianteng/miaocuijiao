@@ -309,6 +309,9 @@
       card.setAttribute("data-mcj-team-start-time", v);
       var display = card.querySelector("[data-po-start-display]");
       if (display) display.textContent = v;
+      var cap = card.parentElement && card.parentElement.querySelector("[data-po-start-caption]");
+      if (cap) cap.textContent = "预约开始时间：" + v;
+      card.setAttribute("aria-label", "预约开始时间：" + v);
     }
     return v;
   }
@@ -325,7 +328,7 @@
       return;
     }
     window.MCJTimePicker.open({
-      title: "选择开始时间",
+      title: "选择预约开始时间",
       value: readTeamStartTime(mask),
       minuteStep: 1,
       onConfirm: function (value) {
@@ -1146,7 +1149,9 @@
       "</div>" +
       '<div class="mcj-team-field mcj-team-schedule-field"><span>服务时间 *</span>' +
       '<div class="mcj-team-time-row">' +
-      '<div class="mcj-team-time-col mcj-team-time-start"><span class="mcj-team-time-cap">开始时间</span>' +
+      '<div class="mcj-team-time-col mcj-team-time-start"><span class="mcj-team-time-cap" data-po-start-caption>预约开始时间：' +
+      esc(ensureSharedStartTime()) +
+      '</span>' +
       (window.MCJTimePicker && window.MCJTimePicker.startCardHtml
         ? window.MCJTimePicker.startCardHtml(ensureSharedStartTime(), {
             startAttr: "data-mcj-team-start-time",
@@ -1154,7 +1159,9 @@
           })
         : '<button type="button" class="mcj-po-time-card is-interactive" data-mcj-team-start-time="' +
           esc(ensureSharedStartTime()) +
-          '" data-mcj-team-open-time="1" aria-label="选择开始时间"><span class="mcj-po-time-card-value" data-po-start-display>' +
+          '" data-mcj-team-open-time="1" aria-label="预约开始时间：' +
+          esc(ensureSharedStartTime()) +
+          '"><span class="mcj-po-time-card-value" data-po-start-display>' +
           esc(ensureSharedStartTime()) +
           '</span><span class="mcj-po-time-card-chevron" aria-hidden="true">›</span></button>') +
       "</div>" +
@@ -1163,7 +1170,7 @@
         ? window.MCJTimePicker.endCardHtml("--", { endAttr: "data-mcj-team-end-time" })
         : '<div class="mcj-po-time-card is-readonly" aria-live="polite"><span class="mcj-po-time-card-value" data-mcj-team-end-time>--</span></div>') +
       "</div></div>" +
-      '<p class="mcj-team-time-hint" data-mcj-team-schedule-preview>选择开始时间后自动计算结束时间</p></div>' +
+      '<p class="mcj-team-time-hint" data-mcj-team-schedule-preview>选择预约开始时间后自动计算结束时间</p></div>' +
       '<div class="mcj-team-field"><span>订单备注（选填）</span><input type="text" data-mcj-team-notes value="' +
       esc(state.sharedNotes) +
       '" placeholder="选填：特殊要求、开局说明等"></div>' +
@@ -1427,8 +1434,8 @@
       return;
     }
     if (!ensureSharedStartTime()) {
-      toast("请选择开始时间");
-      setSheetError("请选择开始时间");
+      toast("请选择预约开始时间");
+      setSheetError("请选择预约开始时间");
       return;
     }
     if (!token()) {

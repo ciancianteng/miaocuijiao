@@ -202,6 +202,9 @@
       card.setAttribute("data-po-start-time", v);
       var display = card.querySelector("[data-po-start-display]");
       if (display) display.textContent = v;
+      var cap = card.parentElement && card.parentElement.querySelector("[data-po-start-caption]");
+      if (cap) cap.textContent = "预约开始时间：" + v;
+      card.setAttribute("aria-label", "预约开始时间：" + v);
     }
     return v;
   }
@@ -211,7 +214,7 @@
       return;
     }
     window.MCJTimePicker.open({
-      title: "选择开始时间",
+      title: "选择预约开始时间",
       value: readStartTimeFromDom() || defaultStartTime(),
       minuteStep: 1,
       onConfirm: function (value) {
@@ -501,12 +504,16 @@
       '<input data-po-game-id required placeholder="请输入游戏ID" autocomplete="off" inputmode="text"></div>' +
       '<div class="mcj-po-field mcj-po-schedule-field"><span class="mcj-po-label">服务时间 *</span>' +
       '<div class="mcj-po-time-row">' +
-      '<div class="mcj-po-time-col mcj-po-time-start"><span class="mcj-po-time-cap">开始时间</span>' +
+      '<div class="mcj-po-time-col mcj-po-time-start"><span class="mcj-po-time-cap" data-po-start-caption>预约开始时间：' +
+      esc(state.startTime || defaultStartTime()) +
+      '</span>' +
       (window.MCJTimePicker && window.MCJTimePicker.startCardHtml
         ? window.MCJTimePicker.startCardHtml(state.startTime || defaultStartTime())
         : '<button type="button" class="mcj-po-time-card is-interactive" data-po-start-time="' +
           esc(state.startTime || defaultStartTime()) +
-          '" data-po-open-time="1" aria-label="选择开始时间"><span class="mcj-po-time-card-value" data-po-start-display>' +
+          '" data-po-open-time="1" aria-label="预约开始时间：' +
+          esc(state.startTime || defaultStartTime()) +
+          '"><span class="mcj-po-time-card-value" data-po-start-display>' +
           esc(state.startTime || defaultStartTime()) +
           '</span><span class="mcj-po-time-card-chevron" aria-hidden="true">›</span></button>') +
       "</div>" +
@@ -515,7 +522,7 @@
         ? window.MCJTimePicker.endCardHtml("--", { endAttr: "data-po-end-time" })
         : '<div class="mcj-po-time-card is-readonly" aria-live="polite"><span class="mcj-po-time-card-value" data-po-end-time>--</span></div>') +
       "</div></div>" +
-      '<p class="mcj-po-time-hint" data-po-schedule-preview>选择开始时间后自动计算结束时间</p></div>' +
+      '<p class="mcj-po-time-hint" data-po-schedule-preview>选择预约开始时间后自动计算结束时间</p></div>' +
       '<label>订单备注（选填）<textarea data-po-notes rows="2" placeholder="选填：特殊要求、开局说明等"></textarea></label>' +
       '<label>优惠码<input data-po-coupon placeholder="可选" value="' +
       esc(state.couponCode) +
@@ -709,7 +716,7 @@
     }
     var startTime = readStartTimeFromDom() || normalizeTimeValue(state.startTime);
     if (!startTime) {
-      setError("请选择开始时间");
+      setError("请选择预约开始时间");
       return;
     }
     state.startTime = startTime;
