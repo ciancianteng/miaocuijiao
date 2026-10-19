@@ -2612,17 +2612,27 @@
     var text=String(input?input.value:'').trim();
     var err=offerPriceError(card);
     if(errorEl)errorEl.textContent=err;
-    if(!finalEl)return;
+    var collapsed=card.querySelector('[data-offer-collapsed-price]');
+    function paintCollapsed(label){if(collapsed)collapsed.textContent=label}
+    if(!finalEl){
+      paintCollapsed(Number(standard)>0?('RM '+offerRm(standard)+'／'+unit):'未定价');
+      return;
+    }
     if(card.getAttribute('data-allow')!=='1'){
-      finalEl.textContent=Number(standard)>0?('最终展示价格：RM '+offerRm(standard)+'／'+unit):'最终展示价格：平台尚未配置价格';
+      var fixed=Number(standard)>0?('RM '+offerRm(standard)+'／'+unit):'未定价';
+      finalEl.textContent=Number(standard)>0?('最终展示价格：'+fixed):'最终展示价格：平台尚未配置价格';
+      paintCollapsed(fixed);
       return;
     }
     if(!/^(?:0|[1-9]\d*)(?:\.\d{1,2})?$/.test(text)){
       finalEl.textContent='最终展示价格：请输入加价';
+      paintCollapsed('待设置');
       return;
     }
     var total=Math.round((Number(standard)+Number(text))*100)/100;
-    finalEl.textContent='最终展示价格：RM '+offerRm(total)+'／'+unit;
+    var shown='RM '+offerRm(total)+'／'+unit;
+    finalEl.textContent='最终展示价格：'+shown;
+    paintCollapsed(shown);
   }
   function mountOfferManager(){
     var host=document.getElementById('pwOfferManager');
@@ -2653,33 +2663,59 @@
         var gameBits=[item.gameName||policy.gameName||'', item.platform||policy.platform||''].filter(Boolean);
         var meta=item.placeLabel||gameBits.join(' · ');
         var intro=String(item.content||item.description||'').trim();
+        var requirement=String(item.requirements||(item.policy&&item.policy.requirements)||'').trim();
         var standardText=missing?'平台尚未配置价格':('后台标准价格：RM '+offerRm(item.platformPrice)+'／'+unit);
         var levelLine='当前等级：'+levelLabel;
         var levelCapText=item.levelCap!=null?item.levelCap:capMax;
         var capLine=canPrice?('等级允许加价：RM 1～'+offerRm(levelCapText)):(!ready?'':(conflict?item.priceMessage:(levelMissing?item.priceMessage:'此项目由平台统一定价。')));
         var tight=canPrice&&(Number(capMin)!==1||Number(capMax)!==Number(levelCapText));
         var tightLine=tight?('当前可设置加价：RM '+offerRm(capMin)+'～'+offerRm(capMax)):'';
-        var finalText=missing?'最终展示价格：平台尚未配置价格':(canPrice&&markupValue!==''?('最终展示价格：RM '+offerRm(Number(item.platformPrice)+Number(markupValue))+'／'+unit):('最终展示价格：RM '+offerRm(item.platformPrice||item.price)+'／'+unit));
-        return '<article class="pw-my-service" data-offer-card data-kind="service" data-id="'+esc(item.id)+'" data-saved="'+(item.persisted?'1':'0')+'" data-accepting="'+(accepting?'1':'0')+'" data-allow="'+(canPrice?'1':'0')+'" data-ready="'+(ready?'1':'0')+'" data-level-missing="'+(levelMissing?'1':'0')+'" data-conflict="'+(conflict?'1':'0')+'" data-standard="'+esc(item.platformPrice==null?'':item.platformPrice)+'" data-markup-min="'+esc(capMin)+'" data-markup-max="'+esc(capMax)+'" data-unit="'+esc(unit)+'">'+
-          '<header><b>'+esc(item.name||'服务')+'</b><span>'+esc(item.category||'服务')+'</span></header>'+
+        var quoteNumber=missing?null:(canPrice&&markupValue!==''?Math.round((Number(item.platformPrice)+Number(markupValue))*100)/100:Number(item.price!=null?item.price:item.platformPrice));
+        var collapsedPrice=quoteNumber>0?('RM '+offerRm(quoteNumber)+'／'+unit):(missing?'未定价':'待设置');
+        var finalText=missing?'最终展示价格：平台尚未配置价格':('最终展示价格：'+collapsedPrice);
+        return '<article class="pw-my-service pw-svc" data-offer-card data-kind="service" data-id="'+esc(item.id)+'" data-saved="'+(item.persisted?'1':'0')+'" data-accepting="'+(accepting?'1':'0')+'" data-allow="'+(canPrice?'1':'0')+'" data-ready="'+(ready?'1':'0')+'" data-level-missing="'+(levelMissing?'1':'0')+'" data-conflict="'+(conflict?'1':'0')+'" data-standard="'+esc(item.platformPrice==null?'':item.platformPrice)+'" data-markup-min="'+esc(capMin)+'" data-markup-max="'+esc(capMax)+'" data-unit="'+esc(unit)+'">'+
+          '<div class="pw-svc-head">'+
+            '<button type="button" class="pw-svc-fold" data-offer-fold aria-expanded="false">'+
+              '<span class="pw-svc-copy"><b class="pw-svc-name">'+esc(item.name||'服务')+'</b><span class="pw-svc-cat">'+esc(item.category||'服务')+'</span></span>'+
+              '<strong class="pw-svc-quote" data-offer-collapsed-price>'+esc(collapsedPrice)+'</strong>'+
+              '<i class="pw-svc-chevron" aria-hidden="true"></i>'+
+            '</button>'+
+            '<button type="button" class="pw-offer-switch'+(accepting?' is-on':'')+'" data-offer-toggle aria-label="接单状态" aria-pressed="'+(accepting?'true':'false')+'"'+(ready&&!levelMissing&&!conflict?'':' disabled')+'><i></i></button>'+
+          '</div>'+
+          '<div class="pw-svc-panel"><div class="pw-svc-panel-inner">'+
           (meta?'<p class="pw-my-service-meta">'+esc(meta)+'</p>':'')+
-          (intro?'<p class="pw-my-service-meta">'+esc(intro)+'</p>':'')+
           '<p class="pw-my-service-line"><span>服务名称</span><strong>'+esc(item.name||'服务')+'</strong></p>'+
+          '<p class="pw-my-service-line"><span>服务介绍</span><strong>'+esc(intro||'后台尚未填写服务介绍')+'</strong></p>'+
+          '<p class="pw-my-service-line"><span>服务要求</span><strong>'+esc(requirement||'后台尚未填写服务要求')+'</strong></p>'+
           '<p class="pw-my-service-line"><span>'+esc(missing?'价格状态':'标准价格')+'</span><strong>'+esc(standardText)+'</strong></p>'+
           (missing?'':'<p class="pw-my-service-line"><span>当前等级</span><strong>'+esc(levelLine)+'</strong></p>')+
           (capLine?'<p class="pw-my-service-line"><span>等级加价</span><strong>'+esc(capLine)+'</strong></p>':'')+
           (tightLine?'<p class="pw-my-service-line"><span>可设置范围</span><strong>'+esc(tightLine)+'</strong></p>':'')+
           (canPrice
             ? '<div class="pw-my-service-price"><label>自定义加价<span class="pw-rm"><i>RM</i><input data-offer-price inputmode="decimal" autocomplete="off" value="'+esc(markupValue)+'"></span></label><p class="pw-my-service-final" data-offer-final>'+esc(finalText)+'</p><p class="pw-my-service-error" data-offer-error></p><button class="pw-btn" type="button" data-offer-save>保存价格</button></div>'
-            : '<p class="pw-my-service-final" data-offer-final>'+esc(missing?'':finalText)+'</p>')+
-          '<div class="pw-offer-switch-row"><span>开启接单</span><button type="button" class="pw-offer-switch'+(accepting?' is-on':'')+'" data-offer-toggle aria-pressed="'+(accepting?'true':'false')+'"'+(ready&&!levelMissing&&!conflict?'':' disabled')+'><i></i></button></div>'+
+            : '<p class="pw-my-service-final" data-offer-final>'+esc(missing?'最终展示价格：平台尚未配置价格':finalText)+'</p>')+
           '<p class="pw-my-service-status">当前状态：'+esc(ready?(accepting?'开启接单':'关闭接单'):'平台尚未配置价格')+'</p>'+
-          '</article>';
+          '</div></div></article>';
       }).join('')+'</div>';
+      host.querySelectorAll('[data-offer-fold]').forEach(function(btn){
+        btn.addEventListener('click', function(){
+          var card=btn.closest('[data-offer-card]');
+          if(!card)return;
+          var willOpen=!card.classList.contains('is-open');
+          host.querySelectorAll('[data-offer-card].is-open').forEach(function(other){
+            other.classList.remove('is-open');
+            var fold=other.querySelector('[data-offer-fold]');
+            if(fold)fold.setAttribute('aria-expanded','false');
+          });
+          if(willOpen){
+            card.classList.add('is-open');
+            btn.setAttribute('aria-expanded','true');
+          }
+        });
+      });
       host.querySelectorAll('[data-offer-card]').forEach(function(card){
         var input=card.querySelector('[data-offer-price]');
-        if(!input)return;
-        input.addEventListener('input', function(){paintOfferFinal(card);});
+        if(input)input.addEventListener('input', function(){paintOfferFinal(card);});
         paintOfferFinal(card);
       });
     }).catch(function(err){
@@ -5802,6 +5838,7 @@
     }
     var offerAction=e.target.closest('[data-save-offers],[data-offer-save],[data-offer-toggle]');
     if(offerAction){
+      if(state.offerSaving)return;
       var host=document.getElementById('pwOfferManager');
       var toggled=offerAction.closest('[data-offer-card]');
       if(offerAction.hasAttribute('data-offer-toggle')&&toggled){
@@ -5843,11 +5880,26 @@
           });
         });
       }
+      state.offerSaving=true;
+      if(host)host.querySelectorAll('[data-offer-save],[data-offer-toggle]').forEach(function(btn){btn.disabled=true});
+      var saveBtn=offerAction.hasAttribute('data-offer-save')?offerAction:null;
+      if(saveBtn)saveBtn.textContent='保存中…';
       api('save_offers',{offers:offers}).then(function(res){
+        state.offerSaving=false;
         toast(res.message||'已保存');
         if(host)host.dataset.loaded='';
         mountOfferManager();
-      }).catch(function(err){toast(err.message||'保存失败')});
+      }).catch(function(err){
+        state.offerSaving=false;
+        if(host)host.querySelectorAll('[data-offer-save],[data-offer-toggle]').forEach(function(btn){
+          if(btn.hasAttribute('data-offer-save')){btn.disabled=false;return}
+          var card=btn.closest('[data-offer-card]');
+          var canToggle=card&&card.getAttribute('data-ready')==='1'&&card.getAttribute('data-level-missing')!=='1'&&card.getAttribute('data-conflict')!=='1';
+          btn.disabled=!canToggle;
+        });
+        if(saveBtn)saveBtn.textContent='保存价格';
+        toast(err.message||'保存失败');
+      });
       return;
     }
     var balanceWithdraw=e.target.closest('[data-balance-withdraw],[data-order-withdraw]');

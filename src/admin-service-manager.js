@@ -84,6 +84,7 @@
       gameName: "",
       platform: "",
       description: "",
+      requirements: "",
       allowSelfPrice: false,
       allowSelfOff: false,
       orderFields: [],
@@ -110,6 +111,7 @@
           gameName: (item.pricePolicy && item.pricePolicy.gameName) || "",
           platform: (item.pricePolicy && item.pricePolicy.platform) || "",
           description: (item.pricePolicy && item.pricePolicy.description) || "",
+          requirements: (item.pricePolicy && item.pricePolicy.requirements) || "",
           allowSelfPrice: !!(item.pricePolicy && item.pricePolicy.allowSelfPrice),
           allowSelfOff: !!(item.pricePolicy && item.pricePolicy.allowSelfOff),
           orderFields: Array.isArray(item.orderFields) ? item.orderFields : [],
@@ -259,6 +261,9 @@
       '"></label>' +
       '<label class="svc-field"><span>服务介绍</span><textarea name="description" maxlength="500" rows="3" placeholder="服务内容、适合谁、包含什么">' +
       esc(d.description || "") +
+      "</textarea></label>" +
+      '<label class="svc-field"><span>服务要求</span><textarea name="requirements" maxlength="800" rows="3" placeholder="陪玩接单时必须遵守的要求，留空则陪玩端显示尚未填写">' +
+      esc(d.requirements || "") +
       "</textarea></label>" +
       '<label class="svc-field"><span>展示排序</span><input name="sort" inputmode="numeric" maxlength="6" placeholder="1" value="' +
       esc(d.sort == null ? "" : d.sort) +
@@ -538,6 +543,7 @@
       gameName: String(data.gameName || "").trim(),
       platform: String(data.platform || "").trim(),
       description: String(data.description || "").trim(),
+      requirements: String(data.requirements || "").trim(),
       allowSelfPrice: data.allowSelfPrice === "true" || data.allowSelfPrice === "on",
       allowSelfOff: data.allowSelfOff === "true" || data.allowSelfOff === "on",
       enabled: data.enabled !== "false",
