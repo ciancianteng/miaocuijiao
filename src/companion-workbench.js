@@ -2624,12 +2624,14 @@
         var accepting=item.accepting===true;
         var savedPrice=item.savedPrice!=null&&item.savedPrice!==''?item.savedPrice:'';
         var gameBits=[item.gameName||policy.gameName||'', item.platform||policy.platform||''].filter(Boolean);
-        var meta=gameBits.join(' · ');
+        var meta=item.placeLabel||gameBits.join(' · ');
+        var intro=String(item.content||item.description||'').trim();
         var standardText=missing?'平台尚未配置价格':('后台标准价格：RM '+offerRm(item.platformPrice)+' / '+unit);
         var permission=!ready?'':(canPrice?('后台允许范围：RM '+offerRm(min)+'–'+offerRm(max)+' / '+unit):'此项目由平台统一定价。');
         return '<article class="pw-my-service" data-offer-card data-kind="service" data-id="'+esc(item.id)+'" data-saved="'+(item.persisted?'1':'0')+'" data-accepting="'+(accepting?'1':'0')+'" data-allow="'+(canPrice?'1':'0')+'" data-ready="'+(ready?'1':'0')+'" data-min="'+esc(min==null?'':min)+'" data-max="'+esc(max==null?'':max)+'" data-unit="'+esc(unit)+'">'+
           '<header><b>'+esc((item.icon||'🎮')+' '+(item.name||'服务'))+'</b><span>'+esc(item.category||'服务')+'</span></header>'+
           (meta?'<p class="pw-my-service-meta">'+esc(meta)+'</p>':'')+
+          (intro?'<p class="pw-my-service-meta">'+esc(intro)+'</p>':'')+
           '<p class="pw-my-service-line"><span>服务类型</span><strong>'+esc(item.category||'未分类')+'</strong></p>'+
           '<p class="pw-my-service-line"><span>'+esc(missing?'价格状态':'标准价格')+'</span><strong>'+esc(standardText)+'</strong></p>'+
           (permission?'<p class="pw-my-service-line"><span>价格权限</span><strong>'+esc(permission)+'</strong></p>':'')+

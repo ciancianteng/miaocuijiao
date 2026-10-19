@@ -355,6 +355,16 @@
     );
   }
 
+  function reviewPerson(name, id) {
+    var text = String(name || id || "").trim();
+    return text || "未知（历史记录未保存）";
+  }
+
+  function reviewWhen(iso) {
+    if (!iso) return "未知（历史记录未保存）";
+    return formatMYT(iso);
+  }
+
   function formatMYT(iso) {
     if (!iso) return "—";
     var t = Date.parse(iso);
@@ -905,8 +915,8 @@
               : d.listingBlockReason || (hallOn || d.isTestAccount ? "无" : "—"),
           ],
           ["驳回原因", app.rejectReason || "无"],
-          ["审核人", app.reviewedByName || app.reviewedBy || d.applicationReviewedByName || "—"],
-          ["审核时间", formatMYT(app.reviewedAt || d.applicationReviewedAt)],
+          ["审核人", reviewPerson(app.reviewedByName || d.applicationReviewedByName, app.reviewedBy || d.applicationReviewedBy)],
+          ["审核时间", reviewWhen(app.reviewedAt || d.applicationReviewedAt)],
         ]);
 
     var idGallery = [];
@@ -1409,7 +1419,7 @@
         : appDraft
           ? '<p class="admin-sync-note">草稿不可审核，请等陪玩正式提交。</p>'
           : appApproved
-            ? '<p class="admin-sync-note">已通过 · ' + esc(formatMYT(app.reviewedAt || d.applicationReviewedAt || d.updated_at)) + "</p>"
+            ? '<p class="admin-sync-note">已通过 · ' + esc(reviewWhen(app.reviewedAt || d.applicationReviewedAt)) + "</p>"
             : "") +
       "</div></div>";
 
@@ -1417,8 +1427,8 @@
       rows([
         ["状态", appStatusLabel],
         ["提交时间", formatMYT(app.submittedAt)],
-        ["审核人", app.reviewedByName || app.reviewedBy || d.applicationReviewedByName || "—"],
-        ["审核时间", formatMYT(app.reviewedAt || d.applicationReviewedAt)],
+        ["审核人", reviewPerson(app.reviewedByName || d.applicationReviewedByName, app.reviewedBy || d.applicationReviewedBy)],
+        ["审核时间", reviewWhen(app.reviewedAt || d.applicationReviewedAt)],
         ["驳回原因", app.rejectReason || "无"],
       ]) +
       (canQuickReview
@@ -1449,13 +1459,24 @@
       );
     })();
 
+    var actionsHtml = edit
+      ? '<div class="player-drawer-actions"><button class="btn primary" type="button" data-player-action="save-detail" data-player-id="' +
+        esc(d.id) +
+        '" ' +
+        (saving ? "disabled" : "") +
+        ">" +
+        (saving ? "保存中…" : "保存修改") +
+        '</button><button class="btn" type="button" data-player-drawer-close>取消</button></div>'
+      : '<div class="player-drawer-actions"><button class="btn primary" type="button" data-player-action="edit" data-player-id="' +
+        esc(d.id) +
+        '">进入编辑</button><button class="btn" type="button" data-player-drawer-close>关闭</button></div>';
     return (
       '<div class="player-drawer-head"><div><h2>陪玩审核</h2><p>' +
       esc(d.name || d.nickname || "-") +
       " · " +
       esc(d.publicId || d.playerId || d.id) +
       '</p></div><button class="mini-btn" type="button" data-player-drawer-close>关闭</button></div>' +
-      '<form data-player-detail-form data-player-id="' +
+      '<div class="player-drawer-scroll"><form data-player-detail-form data-player-id="' +
       esc(d.id) +
       '" data-player-mode="' +
       esc(mode || "view") +
@@ -1474,18 +1495,8 @@
       section("cert-badges", "认证徽章（前台卡片）", certHtml, false) +
       section("income", "订单与收益", income, false) +
       section("account", "账号管理", account, false) +
-      (edit
-        ? '<div class="player-drawer-actions"><button class="btn primary" type="button" data-player-action="save-detail" data-player-id="' +
-          esc(d.id) +
-          '" ' +
-          (saving ? "disabled" : "") +
-          ">" +
-          (saving ? "保存中…" : "保存修改") +
-          '</button><button class="btn" type="button" data-player-drawer-close>取消</button></div>'
-        : '<div class="player-drawer-actions"><button class="btn primary" type="button" data-player-action="edit" data-player-id="' +
-          esc(d.id) +
-          '">进入编辑</button><button class="btn" type="button" data-player-drawer-close>关闭</button></div>') +
-      "</form>" +
+      "</form></div>" +
+      actionsHtml +
       '<div class="modal player-preview-modal" id="playerMediaPreview" aria-hidden="true" hidden>' +
       '<div class="modal-card player-preview-card">' +
       '<button class="modal-close" type="button" data-player-preview-close aria-label="关闭">×</button>' +

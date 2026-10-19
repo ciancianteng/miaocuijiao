@@ -4,8 +4,16 @@
  * reserved key so we do not add a second catalog or require new columns.
  */
 import { companionDb } from "./_companion-media-store.js";
-import { loadCompanionServiceStandards } from "./_service-standard.js";
-import { mergeOfferLists, parseMoneyStrict, quoteServiceOffer, validateCompanionOfferSave } from "./_service-offer-quote.js";
+import { readGamePrices } from "./_game-prices.js";
+import { loadCompanionServiceStandards, pickServiceStandard, publicStandard } from "./_service-standard.js";
+import {
+  acceptedLegacyPrice,
+  mergeOfferLists,
+  offerPlaceLabel,
+  parseMoneyStrict,
+  quoteServiceOffer,
+  validateCompanionOfferSave,
+} from "./_service-offer-quote.js";
 
 const OFFER_KEY = "__catalogOffers";
 
@@ -67,8 +75,19 @@ async function loadPolicies() {
   }
 }
 
-function serviceView(row, policy, saved) {
-  const quote = quoteServiceOffer({ service: row, policy, saved });
+function serviceView(row, policy, saved, { standards = {}, gamePrices = {} } = {}) {
+  const legacy =
+    saved && (saved.price == null || saved.price === "")
+      ? acceptedLegacyPrice(gamePrices[String(row.id)] ?? gamePrices[String(row.name || "")], policy)
+      : null;
+  const quote = quoteServiceOffer({
+    service: row,
+    policy,
+    saved: legacy != null ? { ...saved, price: legacy } : saved,
+  });
+  const standard = publicStandard(pickServiceStandard(standards, { serviceId: row.id, name: row.name }));
+  const sectionContent = (standard?.sections || []).find((section) => section.key === "content")?.value || "";
+  const content = quote.description || sectionContent || "";
   return {
     kind: "service",
     id: row.id,
@@ -77,7 +96,10 @@ function serviceView(row, policy, saved) {
     icon: quote.icon,
     gameName: quote.gameName,
     platform: quote.platform,
+    placeLabel: offerPlaceLabel(row, policy),
     description: quote.description,
+    content,
+    sections: standard?.sections || [],
     unit: quote.unit,
     price: quote.orderable ? quote.effectivePrice : quote.effectivePrice,
     platformPrice: quote.standardPrice,
@@ -89,6 +111,7 @@ function serviceView(row, policy, saved) {
     priceStatus: quote.priceStatus,
     priceMessage: quote.priceMessage,
     canEditPrice: quote.canEditPrice,
+    priceSource: legacy != null ? "game_prices" : quote.savedPrice != null ? "offer" : quote.effectivePrice != null ? "platform" : "",
     sort: Number(row.sort || 0),
     href: "",
     policy: {
@@ -107,15 +130,33 @@ function serviceView(row, policy, saved) {
   };
 }
 
+async function loadGamePrices(userId) {
+  try {
+    const rows = await companionDb(
+      "companion_profiles",
+      `?user_id=eq.${encodeURIComponent(userId)}&select=game_prices,tags&limit=1`
+    );
+    return readGamePrices(rows?.[0] || {});
+  } catch {
+    return {};
+  }
+}
+
 export async function listCompanionOffers(userId, { enabledOnly = false } = {}) {
   const loaded = await loadCompanionServiceStandards(userId);
   const raw = loaded.standards?.[OFFER_KEY];
   const saved = cleanOffers(raw);
-  const { serviceRows, productRows } = await catalog();
-  const policies = await loadPolicies();
+  const [{ serviceRows, productRows }, policies, gamePrices] = await Promise.all([
+    catalog(),
+    loadPolicies(),
+    loadGamePrices(userId),
+  ]);
   const savedService = new Map(saved.filter((item) => item.kind === "service").map((item) => [String(item.id), item]));
   const productMap = new Map(productRows.map((row) => [String(row.id), row]));
-  const serviceOffers = serviceRows.map((row) => serviceView(row, policies[String(row.id)] || {}, savedService.get(String(row.id)) || null));
+  const viewContext = { standards: loaded.standards || {}, gamePrices };
+  const serviceOffers = serviceRows.map((row) =>
+    serviceView(row, policies[String(row.id)] || {}, savedService.get(String(row.id)) || null, viewContext)
+  );
   const productOffers = saved
     .filter((item) => item.kind === "product")
     .map((item) => {

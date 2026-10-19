@@ -11,6 +11,8 @@ import {
   assertPricePolicy,
   mergeOfferLists,
   normalizePricePolicy,
+  acceptedLegacyPrice,
+  offerPlaceLabel,
   parseMoneyStrict,
   quoteServiceOffer,
   validateCompanionOfferSave,
@@ -222,6 +224,22 @@ test("下单重验和成交价快照仍写在原订单接口", () => {
   assert.match(multi, /resolved\?\.blocked/);
 });
 
+test("区间价和空标准价不能变成可下单单价", () => {
+  const ranged = quoteServiceOffer({
+    service: { ...service, name: "三角洲 端游 国服", default_price: "30-50" },
+    policy: { unit: "小时", allowSelfPrice: false },
+    saved: { id: "svc-1", accepting: true, price: null },
+  });
+  assert.equal(ranged.standardPrice, null);
+  assert.equal(ranged.orderable, false);
+  assert.equal(ranged.priceMessage, "平台尚未配置价格");
+  assert.equal(offerPlaceLabel({ name: "无畏契约 端游 国际服", category: "端游" }, {}), "端游 / 国际服");
+  assert.equal(offerPlaceLabel({ name: "1陪2 国服 端游" }, {}), "端游 / 国服");
+  assert.equal(acceptedLegacyPrice(40, { allowSelfPrice: true, min: 30, max: 50, unit: "小时" }), 40);
+  assert.equal(acceptedLegacyPrice(10, { allowSelfPrice: true, min: 30, max: 50, unit: "小时" }), null);
+  assert.equal(acceptedLegacyPrice(40, { allowSelfPrice: false, unit: "小时" }), null);
+});
+
 test("陪玩卡片和老板资料不再拼出 RM-", () => {
   const workbench = read("src/companion-workbench.js");
   const profile = read("src/profile-detail.js");
@@ -235,6 +253,17 @@ test("陪玩卡片和老板资料不再拼出 RM-", () => {
   assert.match(profile, /lockOfferServices/);
   assert.match(profile, /orderable === true/);
   assert.match(profile, /pd-offer-go/);
+  assert.match(profile, /certHtml \|\| ""/);
+  assert.match(profile, /选择此服务/);
+  assert.match(profile, /暂无服务介绍/);
+  const drawer = read("src/admin-suite.css");
+  const review = read("src/admin-player-detail.js");
+  assert.match(drawer, /top:env\(safe-area-inset-top,0px\)/);
+  assert.match(drawer, /bottom:env\(safe-area-inset-bottom,0px\)/);
+  assert.match(drawer, /player-drawer-scroll/);
+  assert.doesNotMatch(drawer, /player-drawer-actions\{position:sticky/);
+  assert.match(review, /未知（历史记录未保存）/);
+  assert.doesNotMatch(review, /applicationReviewedAt \|\| d\.updated_at/);
   assert.match(admin, /游戏名称/);
   assert.match(admin, /平台尚未配置价格/);
   assert.doesNotMatch(admin, /默认 RM/);

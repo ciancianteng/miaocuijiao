@@ -79,6 +79,30 @@ function standardPriceOf(service = {}) {
   return parsed.value;
 }
 
+const PLACE_PLATFORM = /手游|端游|PC|主机|steam/i;
+const PLACE_SERVER = /国服|亚服|欧服|美服|国际服|日服|韩服|台服|v区/i;
+
+/** Platform / 区服 line. Admin fields win; otherwise read tokens already in the service name. */
+export function offerPlaceLabel(service = {}, policy = {}) {
+  const pol = normalizePricePolicy(policy || {});
+  if (pol.gameName || pol.platform) return [pol.gameName, pol.platform].filter(Boolean).join(" · ");
+  const name = String(service.name || service.title || "");
+  const category = String(service.category || "");
+  const platform = (name.match(PLACE_PLATFORM) || [])[0] || (PLACE_PLATFORM.test(category) ? category : "");
+  const server = (name.match(PLACE_SERVER) || [])[0] || "";
+  return [platform, server].filter(Boolean).join(" / ");
+}
+
+/** Existing game_prices value, only when custom pricing is allowed and the number is inside the admin range. */
+export function acceptedLegacyPrice(raw, policy = {}) {
+  const parsed = parseMoneyStrict(raw);
+  if (parsed.empty || parsed.error || !(parsed.value > 0)) return null;
+  const pol = normalizePricePolicy(policy || {});
+  if (!pol.allowSelfPrice || pol.min == null || pol.max == null) return null;
+  if (parsed.value < Number(pol.min) || parsed.value > Number(pol.max)) return null;
+  return parsed.value;
+}
+
 function rangeReady(policy) {
   return !!(
     policy &&

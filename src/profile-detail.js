@@ -789,6 +789,7 @@
       levelBadgeHtml +
       voiceBody +
       "</div>" +
+      (certHtml || "") +
       tagsHtml +
       '<p class="pd-id">ID：' +
       esc(publicId || "待生成") +
@@ -1048,8 +1049,10 @@
               );
             }
             var unit = item.unit || "";
-            var bits = [item.gameName, item.platform].filter(Boolean).join(" · ");
-            var desc = String(item.description || "").trim();
+            var priceText = offerRm(item.price);
+            if (!priceText || !unit) return "";
+            var bits = item.placeLabel || [item.gameName, item.platform].filter(Boolean).join(" · ");
+            var desc = String(item.content || item.description || "").trim() || "暂无服务介绍";
             return (
               '<button type="button" class="pd-offer" data-pd-offer data-kind="service" data-id="' +
               esc(item.id) +
@@ -1061,13 +1064,15 @@
               esc(unit) +
               '"><span class="pd-offer-copy"><strong>' +
               esc(item.name) +
-              "</strong>" +
-              (desc ? "<em>" + esc(desc) + "</em>" : "") +
+              "</strong><em>" +
+              esc(desc) +
+              "</em>" +
               (bits ? "<small>" + esc(bits) + "</small>" : "") +
               '</span><span class="pd-offer-side"><span class="pd-offer-price">RM ' +
-              esc(offerRm(item.price)) +
-              (unit ? " / " + esc(unit) : "") +
-              '</span><span class="pd-offer-go">下单</span></span></button>'
+              esc(priceText) +
+              " / " +
+              esc(unit) +
+              '</span><span class="pd-offer-go">选择此服务</span></span></button>'
             );
           })
           .join("");

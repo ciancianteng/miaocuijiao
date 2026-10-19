@@ -897,7 +897,10 @@ export async function hallDisplayByUserIds(userIds = []) {
   const levelList = Array.isArray(levels) ? levels.map((l) => toPublicLevel(l)) : [];
   const profileMap = Object.fromEntries((profiles || []).map((row) => [row.id, row]));
   const profileIds = (rows || []).map((row) => row.id).filter(Boolean);
-  const mediaMap = await mediaExtrasByProfile(profileIds, { listMode: true }).catch(() => ({}));
+  const [mediaMap, certMap] = await Promise.all([
+    mediaExtrasByProfile(profileIds, { listMode: true }).catch(() => ({})),
+    resolveCertTagsForProfiles(profileIds).catch(() => ({})),
+  ]);
   const out = {};
   for (const row of rows || []) {
     if (!row?.user_id) continue;
@@ -905,7 +908,7 @@ export async function hallDisplayByUserIds(userIds = []) {
     // Hall list omits service_ids. Ranking must use that same card, not a stricter detail projection.
     const listRow = { ...row };
     delete listRow.service_ids;
-    const card = publicCompanion(listRow, profile, levelList, catalog, mediaMap[row.id] || {}, []);
+    const card = publicCompanion(listRow, profile, levelList, catalog, mediaMap[row.id] || {}, certMap[row.id] || []);
     out[row.user_id] = card;
   }
   return out;

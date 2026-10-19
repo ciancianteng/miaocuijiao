@@ -132,7 +132,7 @@
   flex-wrap:wrap;
   align-items:center;
   gap:6px;
-  margin:0;
+  margin:8px 0 0;
 }
 
 
@@ -1000,7 +1000,7 @@
 .profile-detail-page .pd-offer strong{font-size:14px;font-weight:650}
 .profile-detail-page .pd-offer-copy{display:flex;flex-direction:column;gap:4px;min-width:0}
 .profile-detail-page .pd-offer-copy em,
-.profile-detail-page .pd-offer-copy small{display:block;font-style:normal;color:rgba(255,255,255,.55);font-size:12px;line-height:1.4;white-space:normal}
+.profile-detail-page .pd-offer-copy small{display:block;font-style:normal;color:rgba(255,255,255,.55);font-size:12px;line-height:1.45;white-space:pre-wrap;overflow-wrap:anywhere}
 .profile-detail-page .pd-offer-side{display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex:0 0 auto}
 .profile-detail-page .pd-offer-go{color:#ff8fc7;font-size:12px;font-weight:650}
 .profile-detail-page .pd-offer-price{
