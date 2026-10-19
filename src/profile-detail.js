@@ -1116,7 +1116,7 @@
           ? offerServices.filter(function (row) { return String(row.id) === String(pref.id); })[0]
           : null;
         var offerPrice = picked && picked.price > 0 ? picked.price : (pref && Number(pref.price) > 0 ? Number(pref.price) : 0);
-        window.MCJPlaceOrder.openFromCompanion(c, {
+        var profileOrderExtras = {
           companionId: c.id || c.uid,
           companionName: c.name || c.nickname,
           service: pref && pref.name ? pref.name : "",
@@ -1137,7 +1137,12 @@
           canAcceptOrders: c.canAcceptOrders,
           canOrderNow: presence ? presence.canOrderNow : c.canOrderNow,
           level: c.level || c.levelName || "",
-        });
+        };
+        if (window.MCJMultiCompanionTeam && typeof window.MCJMultiCompanionTeam.routeOrder === "function") {
+          window.MCJMultiCompanionTeam.routeOrder(c, profileOrderExtras);
+        } else {
+          window.MCJPlaceOrder.openFromCompanion(c, profileOrderExtras);
+        }
       } catch (err) {
         if (window.MCJPlaceOrder && window.MCJPlaceOrder.close) window.MCJPlaceOrder.close();
         alert((err && err.message) || "打开下单弹窗失败");

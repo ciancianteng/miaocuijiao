@@ -1978,12 +1978,26 @@
 
   function addAnotherCompanion() {
     if (!requireModalGameId()) return;
+    var team = window.MCJMultiCompanionTeam;
     var result = pushCurrentCompanionToTeam();
-    if (!result || !result.ok) return;
+    if (!result || !result.ok) {
+      if (
+        result &&
+        result.error === "duplicate" &&
+        team &&
+        typeof team.getCount === "function" &&
+        team.getCount() >= 2 &&
+        typeof team.openCheckout === "function"
+      ) {
+        close();
+        team.openCheckout();
+      }
+      return;
+    }
     applyModalSharedToTeam();
     close();
-    if (result.count >= 2) {
-      toast("已选 " + result.count + " 人，可继续选或确认并支付");
+    if (result.count >= 2 && team && typeof team.openCheckout === "function") {
+      team.openCheckout();
       return;
     }
     try {
@@ -2026,9 +2040,9 @@
         return;
       }
 
-      // Existing multi draft stays until this independent order is created successfully.
-      // 立即下单 / 确认订单并付款 always calls place_order.
-      // 再加一位陪玩 is the only path that joins the multi draft.
+      // Existing multi draft stays until a successful create. This modal always submits one place_order.
+      // Hall / profile / ranking 立即下单 go through MCJMultiCompanionTeam.routeOrder,
+      // which keeps that draft and opens this modal only when nobody else is selected.
       // Opening this modal, leaving it, or a failed create must not clear the selection.
 
       if (!requireLogin()) return;

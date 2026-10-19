@@ -225,7 +225,7 @@
     if (document.querySelector('link[data-mcj-team-css]')) return;
     var link = document.createElement("link");
     link.rel = "stylesheet";
-    link.href = "/src/multi-companion-team.css?v=20261018teamSheet1";
+    link.href = "/src/multi-companion-team.css?v=20261019multi1";
     link.setAttribute("data-mcj-team-css", "1");
     document.head.appendChild(link);
   }
@@ -658,30 +658,45 @@
     return isUnavailable(payload) ? "该陪玩当前不可接单" : "";
   }
 
-  function addCompanion(raw) {
+  function isConcreteServiceName(name) {
+    var n = String(name || "").trim();
+    if (!n || n === "陪玩") return false;
+    if (isServiceBlob(n)) return false;
+    return isValidServiceLabel(n);
+  }
+
+  function companionIdOf(raw) {
+    return String((raw && (raw.companionId || raw.companion_id || raw.id || raw.uid)) || "").trim();
+  }
+
+  function addCompanion(raw, options) {
     ensureCss();
-    var companionId = String(
-      (raw && (raw.companionId || raw.companion_id || raw.id || raw.uid)) || ""
-    ).trim();
+    options = options && typeof options === "object" ? options : {};
+    var silent = options.silent === true;
+    var allowPending = options.allowPendingService === true;
+    function note(msg) {
+      if (!silent) toast(msg);
+    }
+    var companionId = companionIdOf(raw);
     if (!companionId) {
-      toast("缺少陪玩信息");
+      note("缺少陪玩信息");
       return { ok: false, error: "missing_id" };
     }
     if (findLine(companionId)) {
-      toast("已加入一起下单");
+      note("已加入一起下单");
       return { ok: false, error: "duplicate", alreadyInTeam: true };
     }
     if (state.lines.length >= MAX_TEAM) {
-      toast("一起下单最多 " + MAX_TEAM + " 位陪玩");
+      note("一起下单最多 " + MAX_TEAM + " 位陪玩");
       return { ok: false, error: "max" };
     }
     if (isUnavailable(raw || {})) {
-      toast(unavailableReason(raw || {}) || "该陪玩当前不可接单");
+      note(unavailableReason(raw || {}) || "该陪玩当前不可接单");
       return { ok: false, error: "unavailable" };
     }
     var unitPrice = money(raw.unitPrice || raw.priceValue || raw.price || raw.price_value);
-    if (!(unitPrice > 0)) {
-      toast("该陪玩暂无有效单价，无法加入");
+    if (!(unitPrice > 0) && !allowPending) {
+      note("该陪玩暂无有效单价，无法加入");
       return { ok: false, error: "no_price" };
     }
     var companion = {
@@ -696,9 +711,14 @@
       services: raw.services,
       online: raw.online !== false,
     };
-    var services = resolveServicesFor(companion);
+    var servicesAll = resolveServicesFor(companion);
+    var services = allowPending
+      ? servicesAll.filter(function (s) {
+          return isConcreteServiceName(s.name);
+        })
+      : servicesAll;
     if (!services.length) {
-      toast("该陪玩暂无可下单服务项目");
+      note("该陪玩暂无可下单服务项目");
       return { ok: false, error: "no_service" };
     }
     // Prefer explicit selection only — never silently rewrite to services[0]
@@ -744,11 +764,15 @@
       if (fuzzyBest && !fuzzyTie) matched = fuzzyBest;
     }
     var selected = matched;
+    var pendingService = false;
     // No explicit chip → do NOT auto-pick services[0] (level-default 30).
     if (!selected && !hasExplicit) {
-      if (services.length === 1 && money(services[0].price) > 0) selected = services[0];
-      else {
-        toast("请先选择具体服务后再加入队伍");
+      if (services.length === 1 && money(services[0].price) > 0 && isConcreteServiceName(services[0].name)) {
+        selected = services[0];
+      } else if (allowPending) {
+        pendingService = true;
+      } else {
+        note("请先选择具体服务后再加入队伍");
         return { ok: false, error: "need_service" };
       }
     }
@@ -771,8 +795,13 @@
       lineService = (selected && selected.name) || companion.service;
       lineServiceId = (selected && (selected.serviceId || selected.id)) || companion.serviceId || "";
     }
-    if (!(lineUnit > 0)) {
-      toast("该陪玩所选服务暂无有效单价");
+    if (pendingService) {
+      lineUnit = 0;
+      lineService = "";
+      lineServiceId = "";
+    }
+    if (!(lineUnit > 0) && !pendingService) {
+      note("该陪玩所选服务暂无有效单价");
       return { ok: false, error: "no_price" };
     }
     var avail = companionAvailability(raw || {});
@@ -794,6 +823,7 @@
       availabilityStatus: avail.code || "",
       availabilityCheckedAt: new Date().toISOString(),
       gameId: String(raw.gameId || raw.game_id || state.sharedGameId || "").trim(),
+      pendingService: pendingService,
     };
     var incomingId = String(raw.gameId || raw.game_id || "").trim();
     if (incomingId) {
@@ -806,9 +836,11 @@
     persist();
     renderBar();
     syncBottomStackOffset();
-    toast(state.lines.length === 1 ? "已加入队伍，可继续选陪玩" : "已选 " + state.lines.length + " 人，可继续选或确认并支付");
+    if (!silent) {
+      note(state.lines.length === 1 ? "已加入队伍，可继续选陪玩" : "已选 " + state.lines.length + " 人，可继续选或确认并支付");
+    }
     if (state.lines.length >= 2) setPicking(false);
-    return { ok: true, count: state.lines.length };
+    return { ok: true, count: state.lines.length, pendingService: pendingService };
   }
 
   function removeCompanion(companionId) {
@@ -852,6 +884,7 @@
         line.serviceType = name;
         line.game = name;
       }
+      line.pendingService = !isConcreteServiceName(line.service) || !(money(line.unitPrice) > 0);
     }
     persist();
     renderBar();
@@ -973,7 +1006,7 @@
     if (btn) {
       var ok = state.lines.length >= 2;
       btn.disabled = !ok || state.submitting;
-      btn.textContent = state.submitting ? "提交中…" : "确认并支付 " + total + "猫粮";
+      btn.textContent = state.submitting ? "提交中…" : "确认订单并付款";
     }
   }
 
@@ -998,6 +1031,9 @@
           services = [{ name: l.service, price: l.unitPrice }];
         }
         var chips = services
+          .filter(function (s) {
+            return isConcreteServiceName(s.name);
+          })
           .map(function (s) {
             var active = serviceNamesMatch(s.name, l.service);
             return (
@@ -1061,7 +1097,7 @@
           '">移除</button>' +
           "</div>" +
           '<dl class="mcj-team-line-meta">' +
-          "<div><dt>服务</dt><dd>" +
+          "<div><dt>服务项目</dt><dd>" +
           esc(l.service || "未选择") +
           "</dd></div>" +
           "<div><dt>开始</dt><dd data-line-start>" +
@@ -1120,9 +1156,12 @@
       })
       .join("");
     mask.innerHTML =
-      '<div class="mcj-team-sheet" role="dialog" aria-modal="true" aria-label="多人一起下单">' +
+      '<div class="mcj-team-sheet" role="dialog" aria-modal="true" aria-label="多人陪玩订单确认">' +
       '<div class="mcj-team-sheet-head">' +
-      "<h3>多人一起下单</h3>" +
+      "<div><h3>多人陪玩订单确认</h3>" +
+      '<p class="mcj-team-sheet-sub">已选择 ' +
+      state.lines.length +
+      " 位陪玩</p></div>" +
       '<button type="button" class="mcj-team-sheet-close" data-mcj-team-sheet-close aria-label="关闭">×</button>' +
       "</div>" +
       '<div class="mcj-team-sheet-scroll">' +
@@ -1189,15 +1228,15 @@
       "</div>" +
       '<p class="mcj-team-sheet-error" data-mcj-team-error hidden></p>' +
       '<div class="mcj-team-sheet-foot">' +
-      '<div class="mcj-team-sheet-total">合计 <strong data-mcj-team-sheet-total>' +
+      '<div class="mcj-team-sheet-total">订单总金额 <strong data-mcj-team-sheet-total>' +
       esc(String(total)) +
       " 猫粮</strong></div>" +
+      '<div class="mcj-team-sheet-actions">' +
+      '<button type="button" class="mcj-team-add-more" data-mcj-team-add-more>再加一位陪玩</button>' +
       '<button type="button" class="mcj-team-submit" data-mcj-team-submit' +
       (state.lines.length < 2 || !String(state.paymentMethod || "").trim() ? " disabled" : "") +
-      ">确认并支付 " +
-      esc(String(total)) +
-      "猫粮</button>" +
-      "</div></div>";
+      ">确认订单并付款</button>" +
+      "</div></div></div>";
     refreshTeamSchedulePreview();
   }
 
@@ -1449,6 +1488,13 @@
       } else {
         toast("请填写 Discord 麦克风 / 联系信息");
       }
+      return;
+    }
+    var missing = incompleteLineNames();
+    if (missing.length) {
+      var missMsg = "请先为 " + missing.join("、") + " 选择具体服务。未选完不能付款，其他陪玩已保留。";
+      toast(missMsg);
+      setSheetError(missMsg);
       return;
     }
     var payload = buildPayload();
@@ -1864,6 +1910,12 @@
       paintSheet();
       return;
     }
+    if (e.target.closest("[data-mcj-team-add-more]")) {
+      e.preventDefault();
+      closeSheet();
+      continueToHall();
+      return;
+    }
     if (e.target.closest("[data-mcj-team-submit]")) {
       e.preventDefault();
       submitTeam();
@@ -1974,8 +2026,118 @@
     if (!document.hidden) onAuthMaybeChanged();
   });
 
+  function incompleteLineNames() {
+    return state.lines
+      .filter(function (l) {
+        return !isConcreteServiceName(l.service || l.serviceType) || !(money(l.unitPrice) > 0);
+      })
+      .map(function (l) {
+        return l.companionName || "陪玩";
+      });
+  }
+
+  function closeSingleOrderModal() {
+    if (window.MCJPlaceOrder && typeof window.MCJPlaceOrder.isOpen === "function" && window.MCJPlaceOrder.isOpen()) {
+      if (typeof window.MCJPlaceOrder.close === "function") window.MCJPlaceOrder.close();
+    }
+  }
+
+  function openSingleOrder(raw, extras) {
+    if (!window.MCJPlaceOrder || typeof window.MCJPlaceOrder.openFromCompanion !== "function") {
+      return { mode: "single", error: "no_modal" };
+    }
+    window.MCJPlaceOrder.openFromCompanion(raw || {}, extras || {});
+    return { mode: "single" };
+  }
+
+  function explainJoinFailure(merged, result) {
+    var who = (merged && (merged.companionName || merged.name)) || "该陪玩";
+    if (result && result.error === "unavailable") return unavailableReason(merged) || who + "当前不可接单，已保留其他已选陪玩";
+    if (result && result.error === "no_price") return who + "暂无有效单价，已保留其他已选陪玩";
+    if (result && result.error === "no_service") return who + "暂无可下单服务，已保留其他已选陪玩";
+    if (result && result.error === "max") return "一起下单最多 " + MAX_TEAM + " 位陪玩";
+    return who + "未能加入，已保留其他已选陪玩";
+  }
+
+  function finishMultiJoin(merged, result) {
+    if (result && (result.ok || result.error === "duplicate")) {
+      closeSingleOrderModal();
+      openCheckout();
+      return { mode: "multi", count: state.lines.length };
+    }
+    toast(explainJoinFailure(merged, result));
+    if (state.lines.length >= 2) {
+      closeSingleOrderModal();
+      openCheckout();
+    }
+    return { mode: "blocked", error: (result && result.error) || "add_failed", count: state.lines.length };
+  }
+
+  function concreteServiceRows(raw) {
+    var list = Array.isArray(raw && raw.services) ? raw.services : [];
+    return list.filter(function (s) {
+      if (!s) return false;
+      var name = s.name || s.service || s.serviceName || "";
+      var price = s.price != null ? s.price : s.unitPrice;
+      return isConcreteServiceName(name) && money(price) > 0;
+    });
+  }
+
+  function joinDraft(merged) {
+    return addCompanion(merged, { silent: true, allowPendingService: true });
+  }
+
+  /**
+   * One draft for every 立即下单 entry.
+   * 0 other companions → existing single modal.
+   * 1+ others → keep them, ensure the clicked companion is on the draft, open the multi sheet.
+   */
+  function routeOrder(raw, extras) {
+    var base = raw && typeof raw === "object" ? raw : {};
+    var extra = extras && typeof extras === "object" ? extras : {};
+    var merged = Object.assign({}, base, extra);
+    if (Array.isArray(extra.services)) merged.services = extra.services;
+    else if (Array.isArray(base.services)) merged.services = base.services;
+    var id = companionIdOf(merged);
+    var inTeam = !!(id && findLine(id));
+    var countIfJoined = state.lines.length + (id && !inTeam ? 1 : 0);
+    if (!id || countIfJoined < 2) return openSingleOrder(base, extra);
+    if (inTeam) {
+      closeSingleOrderModal();
+      openCheckout();
+      return { mode: "multi", count: state.lines.length };
+    }
+    if (!concreteServiceRows(merged).length && id) {
+      fetch("/api/boss/marketplace?action=catalog&companionId=" + encodeURIComponent(id), {
+        headers: authHeaders(),
+        cache: "no-store",
+      })
+        .then(function (res) {
+          return res.json().then(function (body) {
+            if (!res.ok || (body && body.ok === false)) throw new Error("catalog");
+            return body || {};
+          });
+        })
+        .then(function (body) {
+          var gp = Object.assign(
+            {},
+            merged.gamePrices || merged.game_prices || {},
+            (body.companion && (body.companion.gamePrices || body.companion.game_prices)) || {}
+          );
+          var services = overlayGamePricesOnServices(normalizeCatalogServices(body.services), gp);
+          finishMultiJoin(Object.assign({}, merged, { services: services, gamePrices: gp }), joinDraft(Object.assign({}, merged, { services: services, gamePrices: gp })));
+        })
+        .catch(function () {
+          finishMultiJoin(merged, joinDraft(merged));
+        });
+      return { mode: "multi", pending: true, count: countIfJoined };
+    }
+    return finishMultiJoin(merged, joinDraft(merged));
+  }
+
   window.MCJMultiCompanionTeam = {
     add: addCompanion,
+    routeOrder: routeOrder,
     remove: removeCompanion,
     clear: clearTeam,
     openCheckout: openCheckout,
@@ -2008,6 +2170,8 @@
       unavailableReason: unavailableReason,
       companionAvailability: companionAvailability,
       findLine: findLine,
+      updateLine: updateLine,
+      incompleteLineNames: incompleteLineNames,
       state: state,
       syncBottomStackOffset: syncBottomStackOffset,
       isPicking: isPicking,

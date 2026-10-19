@@ -47,7 +47,7 @@
       return;
     }
     try {
-      window.MCJPlaceOrder.openFromCompanion({
+      var rankOrder = {
         companionId: id,
         id: id,
         uid: id,
@@ -61,7 +61,12 @@
         avatar: el.getAttribute("data-rank-avatar") || "",
         publicId: el.getAttribute("data-rank-public-id") || "",
         pricingUnit: "小时",
-      });
+      };
+      if (window.MCJMultiCompanionTeam && typeof window.MCJMultiCompanionTeam.routeOrder === "function") {
+        window.MCJMultiCompanionTeam.routeOrder(rankOrder);
+        return;
+      }
+      window.MCJPlaceOrder.openFromCompanion(rankOrder);
     } catch (err) {
       if (window.MCJPlaceOrder && typeof window.MCJPlaceOrder.close === "function") {
         window.MCJPlaceOrder.close();

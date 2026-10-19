@@ -175,7 +175,7 @@ test("页面空状态与查询绑定没有退回旧字段", () => {
   assert.match(api, /goodRate: count \? Math\.round\(\(good \/ count\) \* 1000\) \/ 10 : 0/);
   assert.match(offers, /catalogOffersWereSaved/);
   assert.match(offers, /seedLegacyCatalogOffers/);
-  assert.match(html, /profile-detail\.js\?v=20261019stats1/);
+  assert.match(html, /profile-detail\.js\?v=20261019multi1/);
 });
 
 const failed = results.filter((item) => !item.ok);
