@@ -77,6 +77,7 @@ import {
   resolveBossPublicCode,
   publicDisplayName,
   resolveCompanionPublicCode,
+  storedWechatCompanionCode,
 } from "./_account-codes.js";
 import {
   normalizeSelectedVoiceTypes,
@@ -1057,6 +1058,7 @@ const COMPANION_ISOLATION_ALLOWED_ACTIONS = new Set([
   "acknowledge_forced",
   "ack_forced_announcement",
   "pending_forced",
+  "wechat_public_id",
 ]);
 /** Maps "companion.enabled" — no dedicated column; allow_orders / enabled flag. */
 function companionEnabled(companion = {}) {
@@ -4019,6 +4021,10 @@ export default async function handler(req, res) {
         accountStatus: auth.profile.status || "",
         companionEnabled: companionEnabled(companion),
       });
+    }
+    if (req.method === "GET" && action === "wechat_public_id") {
+      const publicId = storedWechatCompanionCode(companion);
+      return json(res, 200, { ok: true, publicId, missing: !publicId });
     }
     if (req.method === "GET" && action === "bootstrap") return json(res,200,{ok:true,data:await bootstrapData(auth.profile, companion)});
     // Apply-page deposit step: same SoT as companion workbench / submit_deposit_proof.

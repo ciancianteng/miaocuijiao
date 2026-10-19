@@ -174,17 +174,35 @@
   user-select:text;
   -webkit-user-select:text;
 }
-.pw-wx-nickline{
+.pw-wx-nickrow{
+  display:flex;
+  align-items:center;
+  gap:8px;
   margin:8px 0 0;
-  padding:12px 14px;
+}
+.pw-wx-nickline{
+  margin:0;
+  flex:1 1 auto;
+  min-width:0;
+  padding:10px 12px;
   border-radius:14px;
   background:rgba(0,0,0,.28);
   color:#fff;
   font-size:16px;
   font-weight:700;
   line-height:1.45;
+  overflow-wrap:anywhere;
   user-select:text;
   -webkit-user-select:text;
+}
+.pw-wx-nick-copy{
+  flex:0 0 auto;
+  width:auto;
+  white-space:nowrap;
+}
+.pw-wx-nick-copy:disabled{
+  opacity:.45;
+  cursor:not-allowed;
 }
 .pw-wx-uses{
   display:grid;
