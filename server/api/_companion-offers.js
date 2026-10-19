@@ -14,6 +14,7 @@ import {
   quoteServiceOffer,
   validateCompanionOfferSave,
 } from "./_service-offer-quote.js";
+import { catalogOffersWereSaved, seedLegacyCatalogOffers } from "./_companion-profile-stats.js";
 
 const OFFER_KEY = "__catalogOffers";
 
@@ -130,27 +131,49 @@ function serviceView(row, policy, saved, { standards = {}, gamePrices = {} } = {
   };
 }
 
-async function loadGamePrices(userId) {
+async function loadProfilePricing(userId) {
   try {
     const rows = await companionDb(
       "companion_profiles",
-      `?user_id=eq.${encodeURIComponent(userId)}&select=game_prices,tags&limit=1`
+      `?user_id=eq.${encodeURIComponent(userId)}&select=id,game_prices,tags&limit=1`
     );
-    return readGamePrices(rows?.[0] || {});
-  } catch {
-    return {};
+    const row = rows?.[0] || {};
+    return { gamePrices: readGamePrices(row), profileId: String(row.id || "") };
+  } catch (error) {
+    console.warn("[companion-offers] game_prices read failed", error?.message || error);
+    return { gamePrices: {}, profileId: "" };
+  }
+}
+
+async function loadCompanionServiceRows(userId, profileId) {
+  const ids = [...new Set([userId, profileId].map((id) => String(id || "").trim()).filter(Boolean))];
+  if (!ids.length) return [];
+  try {
+    const rows = await companionDb(
+      "companion_services",
+      `?companion_id=in.(${ids.map(encodeURIComponent).join(",")})&select=companion_id,service_id,service_name,price,enabled,review_status&limit=80`
+    );
+    return Array.isArray(rows) ? rows : [];
+  } catch (error) {
+    console.warn("[companion-offers] companion_services read failed", error?.message || error);
+    return [];
   }
 }
 
 export async function listCompanionOffers(userId, { enabledOnly = false } = {}) {
   const loaded = await loadCompanionServiceStandards(userId);
-  const raw = loaded.standards?.[OFFER_KEY];
-  const saved = cleanOffers(raw);
-  const [{ serviceRows, productRows }, policies, gamePrices] = await Promise.all([
+  const savedKey = catalogOffersWereSaved(loaded.standards, OFFER_KEY);
+  const [{ serviceRows, productRows }, policies, pricing] = await Promise.all([
     catalog(),
     loadPolicies(),
-    loadGamePrices(userId),
+    loadProfilePricing(userId),
   ]);
+  const gamePrices = pricing.gamePrices || {};
+  const legacyRows = savedKey ? [] : await loadCompanionServiceRows(userId, pricing.profileId);
+  const raw = savedKey
+    ? loaded.standards[OFFER_KEY]
+    : seedLegacyCatalogOffers({ catalogServices: serviceRows, serviceRows: legacyRows, gamePrices });
+  const saved = cleanOffers(raw);
   const savedService = new Map(saved.filter((item) => item.kind === "service").map((item) => [String(item.id), item]));
   const productMap = new Map(productRows.map((row) => [String(row.id), row]));
   const viewContext = { standards: loaded.standards || {}, gamePrices };

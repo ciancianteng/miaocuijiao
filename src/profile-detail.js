@@ -726,8 +726,9 @@
       c.levelId && levelChipLabel && !/未设置/.test(levelChipLabel)
         ? '<span class="companion-level-pill" data-level-id="' + esc(c.levelId) + '">' + esc(levelChipLabel) + "</span>"
         : "";
-    var orderStat = completedOrders > 0 ? String(completedOrders) : "—";
-    var rateStat = "—";
+    var orderStat = String(completedOrders);
+    var rateStat = "暂无评价数据";
+    var scoreStat = "暂无评价数据";
     if (reviewCount > 0) {
       var rate = Number(c.goodRate);
       if (!Number.isFinite(rate) && c.goodReviewCount != null && Number.isFinite(Number(c.goodReviewCount))) {
@@ -738,8 +739,8 @@
         if (rate > 100) rate = 100;
         rateStat = String(Math.round(rate * 10) / 10).replace(/\.0$/, "") + "%";
       }
+      scoreStat = hasRating ? Number(c.rating).toFixed(1) : "暂无评价数据";
     }
-    var scoreStat = hasRating ? Number(c.rating).toFixed(1) : "—";
 
     if (c.levelId) s.setAttribute("data-companion-level", c.levelId);
     else s.removeAttribute("data-companion-level");
@@ -1767,6 +1768,13 @@
       return [
         Number(c.reviewCount || list.length) || 0,
         Number(c.rating || 0) || 0,
+        Number(c.completedOrders || 0) || 0,
+        Number(c.goodRate || 0) || 0,
+        (Array.isArray(c.giftWall) ? c.giftWall : [])
+          .map(function (g) {
+            return String(g.giftId || g.giftName || "") + ":" + String(g.totalQuantity || 0);
+          })
+          .join(","),
         list
           .slice(0, 12)
           .map(function (r) {

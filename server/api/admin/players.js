@@ -9,6 +9,7 @@ import {
 } from "../_companion-media-store.js";
 import { readLocalLevels } from "../_companion-levels-store.js";
 import { normalizeReviewImages } from "../_review-images.js";
+import { loadCompletedOrderCount } from "../_companion-profile-stats.js";
 import {
   getAssignmentsForProfiles,
   readCertTags,
@@ -508,7 +509,7 @@ async function loadRelated(profileId, companionId) {
       ).catch(() => []),
       companionDb(
         "companion_reviews",
-        `?companion_id=eq.${encodeURIComponent(profileId)}&order=created_at.desc&limit=50&select=*`
+        `?companion_id=in.(${[...new Set([profileId, companionId].filter(Boolean))].map(encodeURIComponent).join(",")})&order=created_at.desc&limit=200&select=*`
       ).catch((e) => {
         if (isMissingRelation(e)) return [];
         throw e;
@@ -691,7 +692,16 @@ async function buildDetail(row, profile, opts = {}) {
     }
   }
 
-  const completed = related.orders.filter((o) => o.status === "completed").length;
+  let completed = related.orders.filter((o) => o.status === "completed").length;
+  try {
+    const counts = await loadCompletedOrderCount((table, query) => companionDb(table, query), [
+      { id: row.user_id, companionProfileId: row.id },
+    ]);
+    const key = String(row.user_id || "");
+    if (key && Object.prototype.hasOwnProperty.call(counts, key)) completed = counts[key];
+  } catch (error) {
+    console.warn("[admin/players] completed order count failed", error?.message || error);
+  }
   const cancelled = related.orders.filter((o) => o.status === "cancelled").length;
   const refunded = related.orders.filter((o) => /refund/i.test(String(o.status || ""))).length;
   const totalIncome = related.income.reduce((n, row) => n + money(row.amount), 0);
