@@ -309,6 +309,12 @@
       return;
     }
     if (!(state.payMethods && state.payMethods.length)) {
+      var needsLogin = !token() || /请先登录|登录已失效|重新登录/.test(String(state.payLoadError || ""));
+      if (needsLogin) {
+        btn.disabled = false;
+        btn.textContent = "请先登录后再付款";
+        return;
+      }
       btn.disabled = true;
       btn.textContent = "暂无可用支付方式";
       return;
@@ -2342,6 +2348,15 @@
         hydrateFromCatalog(companionId);
       });
   }
+
+  window.addEventListener("mcj:auth-changed", function () {
+    if (!state.open) return;
+    refreshWalletBalance().then(function () {
+      if (!state.open || !activeMask()) return;
+      paintPayCards();
+      syncSubmitAvailability();
+    });
+  });
 
   window.MCJ_PAY_SOT_VERSION = '20260811orderFlowFix1';
   window.MCJPlaceOrder = {

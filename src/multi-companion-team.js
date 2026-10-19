@@ -1200,6 +1200,7 @@
   function payChipsHtml() {
     var list = Array.isArray(state.orderPayMethods) ? state.orderPayMethods : [];
     if (!list.length) {
+      if (!token()) return '<span class="mcj-team-chip-empty">请先登录老板账号后再选择支付方式</span>';
       return '<span class="mcj-team-chip-empty">暂无可用支付方式</span>';
     }
     return list
