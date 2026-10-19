@@ -273,14 +273,15 @@ body:has(.mcj-team-bar) #playerList.companion-hall-grid {
   padding-top: env(safe-area-inset-top, 0px);
 }
 .mcj-team-sheet {
-  width: 100%;
-  max-width: 560px;
+  box-sizing: border-box;
+  width: min(100%, 560px);
   /* Definite height so the list flex child can shrink and scroll above the footer. */
   height: min(88dvh, calc(100dvh - env(safe-area-inset-top, 0px)));
   max-height: min(88dvh, calc(100dvh - env(safe-area-inset-top, 0px)));
   min-height: 0;
   display: flex;
   flex-direction: column;
+  color-scheme: dark;
   border-radius: 28px 28px 0 0;
   border: 1px solid rgba(243, 168, 203, 0.28);
   border-bottom: 0;
@@ -414,12 +415,72 @@ body:has(.mcj-team-bar) #playerList.companion-hall-grid {
 .mcj-team-field input {
   height: 44px;
   border-radius: 12px;
-  border: 1px solid rgba(243, 168, 203, 0.22);
-  background: rgba(0, 0, 0, 0.25);
-  color: #fff;
+  border: 1px solid rgba(243, 168, 203, 0.48);
+  background-color: #161018;
+  color: #fff8fc;
   padding: 0 12px;
   /* Avoid iOS focus zoom (<16px). */
   font-size: 16px;
+}
+/* Opaque dark controls. A translucent background lets the browser paint a white
+   native time/date/select face on top of the black-pink sheet. */
+.mcj-team-sheet input,
+.mcj-team-sheet select,
+.mcj-team-sheet textarea,
+.mcj-team-sheet button.mcj-po-time-card,
+.mcj-team-sheet .mcj-po-time-card {
+  color-scheme: dark;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 48px;
+  margin: 0;
+  padding: 0 14px;
+  border-radius: 12px;
+  background-color: #161018;
+  color: #fff8fc;
+  border: 1px solid rgba(243, 168, 203, 0.48);
+  box-shadow: none;
+  max-width: 100%;
+  text-align: left;
+  font: inherit;
+}
+.mcj-team-sheet input,
+.mcj-team-sheet select,
+.mcj-team-sheet textarea,
+.mcj-team-sheet button.mcj-po-time-card {
+  -webkit-appearance: none;
+  appearance: none;
+  box-sizing: border-box;
+}
+.mcj-team-sheet input[type="date"],
+.mcj-team-sheet input[type="time"],
+.mcj-team-sheet input[type="datetime-local"] {
+  color-scheme: dark;
+  min-height: 48px;
+  width: 100%;
+}
+.mcj-team-sheet input::-webkit-calendar-picker-indicator {
+  filter: invert(0.92) sepia(0.35) saturate(4) hue-rotate(290deg);
+  opacity: 0.95;
+}
+.mcj-team-sheet input:-webkit-autofill,
+.mcj-team-sheet input:-webkit-autofill:hover,
+.mcj-team-sheet input:-webkit-autofill:focus {
+  -webkit-text-fill-color: #fff8fc;
+  caret-color: #fff8fc;
+  box-shadow: 0 0 0 1000px #161018 inset;
+  transition: background-color 9999s ease-out;
+}
+.mcj-team-sheet .mcj-po-time-card-value {
+  color: #fff8fc;
+}
+.mcj-team-sheet .mcj-po-time-card.is-interactive:hover,
+.mcj-team-sheet .mcj-po-time-card.is-interactive:focus-visible {
+  background-color: #1c1420;
+  border-color: rgba(255, 214, 235, 0.72);
+  outline: none;
 }
 .mcj-team-id-hint {
   margin: 6px 0 0;
