@@ -7,6 +7,7 @@
     items: [],
     forced: [],
     loaded: false,
+    loadError: "",
     activeId: "",
     forcedOpen: false,
     index: 0,
@@ -375,7 +376,7 @@
     var items = state.items;
     var item = currentItem();
     var empty = !items.length;
-    var text = empty ? "暂无最新公告。" : itemLine(item);
+    var text = empty ? (state.loadError || "暂无公告") : itemLine(item);
     var useEllipsis = !empty && preferEllipsis(item);
 
     bar.hidden = false;
@@ -391,7 +392,7 @@
       '<div class="home-announcement-track-wrap" data-announcement-open' +
       (empty ? ' data-empty="1"' : ' tabindex="0"') +
       ' role="button" aria-label="' +
-      (empty ? "暂无最新公告" : "查看公告详情") +
+      (empty ? (state.loadError ? "公告加载失败" : "暂无公告") : "查看公告详情") +
       '">' +
       (empty || useEllipsis
         ? '<span class="home-announcement-static">' + esc(text) + "</span>"
@@ -437,10 +438,21 @@
     }
   }
 
+  function isBossHomeAnn(item) {
+    var aud = String((item && item.audience) || "").toLowerCase();
+    var cat = String((item && item.category) || "").toLowerCase();
+    if (aud === "system_internal" || aud === "internal") return false;
+    if (cat === "companion" || aud === "companion") return false;
+    if (cat === "customer_service" || aud === "customer_service") return false;
+    if (aud === "all") return true;
+    return aud === "home" || aud === "boss" || aud === "homepage" || cat === "home" || cat === "homepage_only" || (!aud && !cat);
+  }
+
   function applyRows(rows) {
+    state.loadError = "";
     var all = sortItems(
       (rows || []).map(normalize).filter(function (item) {
-        return item.enabled !== false && (item.title || item.content) && inSchedule(item);
+        return item.enabled !== false && (item.title || item.content) && inSchedule(item) && isBossHomeAnn(item);
       })
     );
     state.forced = all.filter(function (item) {
@@ -469,70 +481,28 @@
     maybeOpenForced();
   }
 
-  // Platform default home ticker copy (same as Production ops announcement).
-  // Used only when Staging/Preview has zero active home announcements so the
-  // marquee UI keeps working — not a second announcement system.
-  var PLATFORM_DEFAULT_HOME_ANNOUNCEMENTS = [
-    {
-      id: "mcj-default-home-ops-announcement",
-      title: "🎉 MEOW CUI JIAO 妙脆角开启试运营！",
-      content:
-        "欢迎来到妙脆角陪玩平台！目前平台已进入试运营阶段，我们将持续优化功能与服务体验。欢迎大家注册体验并提出宝贵建议。\n\n感谢您的支持，让我们一起玩得开心、赢得尽兴！💗",
-      text:
-        "欢迎来到妙脆角陪玩平台！目前平台已进入试运营阶段，我们将持续优化功能与服务体验。欢迎大家注册体验并提出宝贵建议。\n\n感谢您的支持，让我们一起玩得开心、赢得尽兴！💗",
-      category: "home",
-      audience: "home",
-      kind: "normal",
-      scroll: true,
-      is_scrolling: true,
-      enabled: true,
-      pinned: true,
-      published: true,
-      sort: 1,
-      platformDefault: true,
-    },
-  ];
-
   function load() {
-    // Prefer audience=home; fallback keeps homepage from going blank on schema drift.
-    return fetch("/api/platform/content?types=announcements&audience=home", {
+    return fetch("/api/platform/content?types=announcements&audience=home&_=" + Date.now(), {
       headers: { Accept: "application/json" },
       cache: "no-store",
     })
       .then(function (res) {
-        return res.json().catch(function () {
-          return { byType: { announcements: [] } };
+        if (!res.ok) throw new Error("announcements http " + res.status);
+        return res.json().then(function (body) {
+          return body;
+        }, function () {
+          throw new Error("announcements json");
         });
       })
       .then(function (body) {
+        if (!body || body.ok === false) throw new Error((body && body.message) || "announcements");
         var rows = (((body || {}).byType || {}).announcements) || [];
-        if (rows.length) return rows;
-        return fetch("/api/platform/content?types=announcements", {
-          headers: { Accept: "application/json" },
-          cache: "no-store",
-        })
-          .then(function (res2) {
-            return res2.json().catch(function () {
-              return { byType: { announcements: [] } };
-            });
-          })
-          .then(function (body2) {
-            return ((((body2 || {}).byType || {}).announcements) || []).filter(function (row) {
-              var cat = String(row.category || "home").toLowerCase();
-              var aud = String(row.audience || "home").toLowerCase();
-              return cat !== "companion" && aud !== "companion" && aud !== "customer_service";
-            });
-          });
-      })
-      .then(function (rows) {
-        if (!rows || !rows.length) {
-          applyRows(PLATFORM_DEFAULT_HOME_ANNOUNCEMENTS);
-          return;
-        }
         applyRows(rows);
       })
       .catch(function () {
-        applyRows(PLATFORM_DEFAULT_HOME_ANNOUNCEMENTS);
+        state.loadError = "公告加载失败，请稍后重试。";
+        state.loaded = true;
+        if (!state.items.length) render(false);
       });
   }
 
