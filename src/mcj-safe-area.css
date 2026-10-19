@@ -51,8 +51,8 @@ header.mcj-boss-header .topbar-inner {
   max-width: 100% !important;
   margin: 0 !important;
   padding-left: max(16px, calc(var(--mcj-sal) + 16px)) !important;
-  padding-right: max(16px, calc(var(--mcj-sar) + 16px)) !important;
-  justify-content: flex-start !important;
+  padding-right: calc(20px + var(--mcj-sar)) !important;
+  justify-content: space-between !important;
   align-items: center !important;
   gap: 12px !important;
   overflow: visible !important;

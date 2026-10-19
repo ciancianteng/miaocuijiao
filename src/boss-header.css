@@ -349,16 +349,17 @@ header.mcj-boss-header .mcj-mnav-toggle:focus-visible {
   }
 
   header.mcj-boss-header .mcj-boss-header-inner {
+    display: flex !important;
     gap: 12px !important;
-    height: 62px !important;
-    min-height: 62px !important;
-    max-height: 64px !important;
+    height: 56px !important;
+    min-height: 56px !important;
+    max-height: none !important;
     width: 100% !important;
     max-width: 100% !important;
     margin: 0 !important;
     padding-left: max(16px, calc(env(safe-area-inset-left, 0px) + 16px)) !important;
-    padding-right: max(16px, calc(env(safe-area-inset-right, 0px) + 16px)) !important;
-    justify-content: flex-start !important;
+    padding-right: calc(20px + env(safe-area-inset-right, 0px)) !important;
+    justify-content: space-between !important;
     align-items: center !important;
   }
 
@@ -384,25 +385,25 @@ header.mcj-boss-header .mcj-mnav-toggle:focus-visible {
     display: flex !important;
     align-items: center !important;
     justify-content: center !important;
-    flex: 0 0 auto !important;
+    flex: 0 0 44px !important;
     flex-grow: 0 !important;
     flex-shrink: 0 !important;
     order: 2 !important;
     gap: 0 !important;
-    width: auto !important;
-    max-width: 48px !important;
-    min-width: 40px !important;
-    margin: 0 0 0 8px !important;
+    width: 44px !important;
+    max-width: 44px !important;
+    min-width: 44px !important;
+    margin: 0 0 0 auto !important;
     position: relative !important;
     z-index: 3 !important;
   }
 
   header.mcj-boss-header .mcj-mnav-toggle {
-    flex: 0 0 40px !important;
-    width: 40px !important;
-    height: 40px !important;
-    min-width: 40px !important;
-    min-height: 40px !important;
+    flex: 0 0 44px !important;
+    width: 44px !important;
+    height: 44px !important;
+    min-width: 44px !important;
+    min-height: 44px !important;
     margin: 0 !important;
     padding: 0 !important;
     font-size: 20px !important;
@@ -490,26 +491,32 @@ header.mcj-boss-header .mcj-mnav-toggle:focus-visible {
   border: 0;
   width: 100%;
   height: 100%;
-  background: rgba(0, 0, 0, 0.58);
+  background: rgba(0, 0, 0, 0.46);
   cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.28s ease;
   -webkit-tap-highlight-color: transparent;
+}
+
+.mcj-mnav-sheet.open .mcj-mnav-backdrop {
+  opacity: 1;
 }
 
 .mcj-mnav-drawer {
   position: absolute;
-  top: calc(62px + env(safe-area-inset-top, 0px));
+  top: 0;
   right: 0;
   bottom: 0;
+  left: auto;
   z-index: 1;
   box-sizing: border-box;
-  width: min(320px, calc(100vw - 48px));
+  width: min(82vw, 340px);
   max-width: 100%;
-  height: auto;
-  max-height: calc(100% - 62px - env(safe-area-inset-top, 0px));
-  padding: 12px 14px calc(16px + env(safe-area-inset-bottom, 0px));
+  height: 100dvh;
+  max-height: 100dvh;
+  padding: calc(12px + env(safe-area-inset-top, 0px)) calc(18px + env(safe-area-inset-right, 0px)) calc(16px + env(safe-area-inset-bottom, 0px)) 18px;
   border-left: 1px solid rgba(255, 140, 200, 0.28);
-  border-top: 1px solid rgba(255, 140, 200, 0.18);
-  border-radius: 16px 0 0 0;
+  border-radius: 0;
   background: rgba(8, 6, 10, 0.97);
   backdrop-filter: blur(18px) saturate(1.25);
   -webkit-backdrop-filter: blur(18px) saturate(1.25);
@@ -518,20 +525,26 @@ header.mcj-boss-header .mcj-mnav-toggle:focus-visible {
     0 0 24px rgba(255, 100, 170, 0.12);
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  overflow-x: hidden;
-  overflow-y: auto;
+  gap: 10px;
+  overflow: hidden;
+  transform: translateX(105%);
+  transition: transform 0.28s ease;
   -webkit-overflow-scrolling: touch;
+}
+
+.mcj-mnav-sheet.open .mcj-mnav-drawer {
+  transform: translateX(0);
 }
 
 .mcj-mnav-drawer-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex: 0 0 auto;
   gap: 12px;
   min-height: 44px;
-  padding: 4px 2px 8px;
-  border-bottom: 1px solid rgba(255, 158, 207, 0.18);
+  padding: 2px 0 8px;
+  border-bottom: 0;
   color: #fff7fb;
 }
 
@@ -559,20 +572,27 @@ header.mcj-boss-header .mcj-mnav-toggle:focus-visible {
 
 .mcj-mnav-drawer-links {
   display: grid;
-  gap: 8px;
+  gap: 10px;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 4px;
 }
 
 .mcj-mnav-drawer-links a,
-.mcj-mnav-sheet .mcj-mnav-drawer a {
+.mcj-mnav-sheet .mcj-mnav-drawer a,
+.mcj-mnav-sheet .mcj-mnav-drawer .mcj-mnav-logout {
   box-sizing: border-box;
   position: relative;
   display: flex;
   align-items: center;
   justify-content: flex-start;
   width: 100%;
-  min-height: 48px;
-  height: auto;
-  padding: 0 14px;
+  min-height: 50px;
+  height: 50px;
+  padding: 0 18px;
   border-radius: 12px;
   border: 1px solid rgba(255, 120, 180, 0.55);
   background: rgba(8, 6, 10, 0.72);
@@ -603,15 +623,15 @@ a.mcj-mnav-companion-card,
 .mcj-mnav-drawer-links a.mcj-mnav-companion-card,
 header.mcj-boss-header .mcj-mnav-drawer a.mcj-mnav-companion-card {
   display: grid !important;
-  grid-template-columns: 44px minmax(0, 1fr) 22px;
+  grid-template-columns: 36px minmax(0, 1fr) 16px;
   align-items: center;
   justify-content: stretch;
-  gap: 12px;
+  gap: 10px;
   width: 100%;
   min-height: 0 !important;
   height: auto !important;
   max-height: none !important;
-  padding: 14px 12px !important;
+  padding: 10px 12px !important;
   border-radius: 16px;
   border: 1px solid rgba(255, 120, 180, 0.55);
   background:
@@ -639,8 +659,8 @@ a.mcj-mnav-companion-card:focus-visible {
 }
 
 .mcj-mnav-companion-logo {
-  width: 44px;
-  height: 44px;
+  width: 36px;
+  height: 36px;
   border-radius: 50%;
   object-fit: cover;
   border: 2px solid rgba(255, 214, 235, 0.72);
@@ -650,12 +670,13 @@ a.mcj-mnav-companion-card:focus-visible {
 
 .mcj-mnav-companion-body {
   display: grid;
-  gap: 2px;
+  gap: 1px;
   min-width: 0;
+  line-height: 1.2;
 }
 
 .mcj-mnav-companion-title {
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 900;
   letter-spacing: 0.04em;
   color: #ffffff;
@@ -694,7 +715,7 @@ a.mcj-mnav-companion-card:focus-visible {
 }
 
 .mcj-mnav-companion-arrow {
-  font-size: 22px;
+  font-size: 16px;
   font-weight: 900;
   color: #ff8ec7;
   line-height: 1;
@@ -706,8 +727,8 @@ a.mcj-mnav-instagram-card .mcj-mnav-ig-logo {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 44px;
-  height: 44px;
+  width: 36px;
+  height: 36px;
   border-radius: 50%;
   border: 2px solid rgba(255, 214, 235, 0.72);
   background: rgba(255, 255, 255, 0.06);
@@ -720,8 +741,8 @@ a.mcj-mnav-instagram-card .mcj-mnav-ig-icon {
 }
 
 a.mcj-mnav-instagram-card .mcj-mnav-companion-feats {
-  white-space: normal;
-  line-height: 1.35;
+  white-space: nowrap;
+  line-height: 1.3;
 }
 
 @media (max-width: 360px) {
@@ -741,6 +762,7 @@ a.mcj-mnav-instagram-card .mcj-mnav-companion-feats {
 html.mcj-mnav-open,
 html.mcj-mnav-open body {
   overscroll-behavior: none;
+  overflow-x: hidden;
 }
 
 /* Keep ☰ clickable above the sheet so tapping it again closes the menu. */

@@ -73,11 +73,14 @@ body.mcj-app-shell {
 
   header.mcj-boss-header .mcj-boss-header-inner,
   header.mcj-boss-header .header-inner {
-    min-height: 48px !important;
-    height: 48px !important;
-    padding-left: max(14px, env(safe-area-inset-left)) !important;
-    padding-right: max(10px, env(safe-area-inset-right)) !important;
-    gap: 10px !important;
+    display: flex !important;
+    justify-content: space-between !important;
+    align-items: center !important;
+    min-height: 56px !important;
+    height: 56px !important;
+    padding-left: max(16px, calc(env(safe-area-inset-left, 0px) + 16px)) !important;
+    padding-right: calc(20px + env(safe-area-inset-right, 0px)) !important;
+    gap: 12px !important;
   }
 
   header.mcj-boss-header .mcj-header-brand-logo,
@@ -101,11 +104,12 @@ body.mcj-app-shell {
   }
 
   header.mcj-boss-header .mcj-mnav-toggle {
-    width: 40px !important;
-    height: 40px !important;
-    min-width: 40px !important;
+    width: 44px !important;
+    height: 44px !important;
+    min-width: 44px !important;
+    min-height: 44px !important;
     border-radius: 12px !important;
-    font-size: 18px !important;
+    font-size: 20px !important;
     background: rgba(255, 255, 255, 0.04) !important;
     border: 1px solid rgba(255, 214, 232, 0.12) !important;
   }
