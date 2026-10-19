@@ -258,3 +258,7 @@
   .pw-wx-remark{font-size:20px}
   .pw-wx-actions .pw-btn{flex:1 1 auto}
 }
+
+body.pw-wx-open{overflow:hidden}
+.pw-wx-sheet,.pw-wx-zoom{z-index:10060;overscroll-behavior:contain}
+.pw-wx-dialog,.pw-wx-zoom-card{max-height:min(92dvh,920px);-webkit-overflow-scrolling:touch}

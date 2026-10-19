@@ -5,7 +5,6 @@
   window.__MCJCompanionWechatLoaded = true;
 
   var REMARK = "陪玩";
-  var NICK_PREFIX = "陪玩嘻嘻｜";
   var MISSING_ID = "暂无陪玩编号";
   var QR_SRC = "/companion-wechat-admin-qr.jpg";
   var PAGE_TITLES = { "工作台": 1, "审核状态": 1 };
@@ -16,7 +15,7 @@
     if (document.querySelector("link[data-pw-wx-css]")) return;
     var link = document.createElement("link");
     link.rel = "stylesheet";
-    link.href = "/src/companion-wechat-center.css?v=20261019wx3";
+    link.href = "/src/companion-wechat-center.css?v=20261019wx4";
     link.setAttribute("data-pw-wx-css", "");
     document.head.appendChild(link);
   }
@@ -129,13 +128,13 @@
       "</section>" +
       '<section class="pw-wx-block">' +
       "<h3>入群后的群昵称</h3>" +
-      "<p>成功入群后，请将群昵称修改为：</p>" +
+      "<p>成功入群后，请将群昵称修改为你的陪玩 ID：</p>" +
       '<div class="pw-wx-nickrow">' +
       '<p class="pw-wx-nickline" data-wx-group-nick>' + MISSING_ID + "</p>" +
       '<button type="button" class="pw-btn primary pw-wx-copy pw-wx-nick-copy" data-wx-nick-copy disabled>复制</button>' +
       "</div>" +
       '<p class="pw-wx-live" data-wx-nick-live aria-live="polite"></p>' +
-      "<p>添加管理员微信时，请备注『" + REMARK + "』。成功加入微信对接群后，请复制上方专属群昵称，并在微信群内修改。群昵称中的编号与你的平台陪玩 ID 一致，方便管理员核对身份。</p>" +
+      "<p>添加管理员微信时，请备注『" + REMARK + "』。成功加入微信对接群后，请复制上方陪玩 ID，并把它设为微信群昵称。编号只使用你账号里已保存的陪玩 ID，例如 pw000、pw001。</p>" +
       "</section>" +
       '<section class="pw-wx-block">' +
       "<h3>群用途</h3>" +
@@ -170,7 +169,7 @@
   function nickFromPublicId(publicId) {
     var id = String(publicId || "").trim();
     if (!/^PW\d+$/i.test(id)) return MISSING_ID;
-    return NICK_PREFIX + "PW" + id.slice(2);
+    return "pw" + id.slice(2);
   }
 
   function readToken() {
@@ -381,6 +380,7 @@
   window.MCJCompanionWechat = {
     remark: REMARK,
     groupNick: groupNick,
+    nickFromPublicId: nickFromPublicId,
     qrSrc: QR_SRC,
     open: openSheet,
     close: closeSheet

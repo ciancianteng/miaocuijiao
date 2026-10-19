@@ -13,6 +13,7 @@ import {
 import { resolveOrderUnitPrice } from "./_admin-service-prices.js";
 import { readLocalLevels } from "./_companion-levels-store.js";
 import { buildServiceSnapshotForCompanion, cleanRank, persistOrderServiceSnapshot } from "./_service-standard.js";
+import { attachDiscordContact } from "./_discord-desk.js";
 
 function money(v) {
   const n = Number(String(v ?? "").replace(/[^\d.-]/g, ""));
@@ -362,6 +363,8 @@ export async function placeMultiOrder(ctx) {
   ]
     .filter(Boolean)
     .join("\n");
+  const discordContact = body.discordUsername || body.discord_username || body.discordContact || "";
+  const parentDescMarked = attachDiscordContact(parentDesc, discordContact, voiceMode);
 
   const parentRow = {
     order_no: parentNo,
@@ -373,7 +376,7 @@ export async function placeMultiOrder(ctx) {
     assignment_type: "assigned",
     game: sharedGame,
     title: parentTitle,
-    description: parentDesc,
+    description: parentDescMarked,
     hours: prepared.reduce((n, p) => n + p.hours, 0),
     unit_price: groupTotal,
     total_amount: groupTotal,
@@ -381,7 +384,7 @@ export async function placeMultiOrder(ctx) {
     created_at: nowIso(),
     idempotency_key: idempotencyKey,
     payment_method: paymentMethod,
-    notes: sharedNotes || parentDesc,
+    notes: sharedNotes || parentDescMarked,
     voice_mode: voiceMode,
   };
 
@@ -451,6 +454,7 @@ export async function placeMultiOrder(ctx) {
       ]
         .filter(Boolean)
         .join("\n");
+      const childDescription = attachDiscordContact(description, discordContact, voiceMode);
       const childRow = {
         order_no: childNo,
         boss_id: profile.id,
@@ -461,7 +465,7 @@ export async function placeMultiOrder(ctx) {
         assignment_type: "assigned",
         game: line.game,
         title,
-        description,
+        description: childDescription,
         hours: line.hours,
         unit_price: line.unitPrice,
         total_amount: line.totalAmount,
@@ -470,7 +474,7 @@ export async function placeMultiOrder(ctx) {
         idempotency_key: childIdempotencyKey(idempotencyKey, line.companionId, i),
         service_name: line.serviceType,
         game_id_value: line.gameId,
-        notes: description,
+        notes: childDescription,
         quantity: line.quantity,
         voice_mode: voiceMode,
       };

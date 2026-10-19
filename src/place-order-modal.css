@@ -765,3 +765,61 @@
 .mcj-po-toast.show {
   opacity: 1;
 }
+
+
+body.mcj-po-discord-open{overflow:hidden}
+.mcj-po-discord{
+  position:fixed;
+  inset:0;
+  z-index:100200;
+  display:flex;
+  align-items:flex-end;
+  justify-content:center;
+  box-sizing:border-box;
+  padding:
+    max(12px, env(safe-area-inset-top))
+    max(12px, env(safe-area-inset-right))
+    max(12px, env(safe-area-inset-bottom))
+    max(12px, env(safe-area-inset-left));
+  background:rgba(0,0,0,.72);
+  overscroll-behavior:contain;
+}
+.mcj-po-discord-card{
+  box-sizing:border-box;
+  width:min(440px,100%);
+  max-width:100%;
+  max-height:min(92dvh,760px);
+  overflow:auto;
+  -webkit-overflow-scrolling:touch;
+  padding:22px 18px 16px;
+  border-radius:22px;
+  border:1px solid rgba(255,143,199,.42);
+  background:#0c0b10;
+  color:#fff;
+}
+.mcj-po-discord-card h2{margin:0;font-size:20px;line-height:1.35}
+.mcj-po-discord-card p{margin:12px 0 0;color:rgba(255,255,255,.78);font-size:14px;line-height:1.65}
+.mcj-po-discord-card label{display:block;margin-top:14px}
+.mcj-po-discord-card input{
+  width:100%;
+  box-sizing:border-box;
+  min-height:48px;
+  padding:12px 14px;
+  border-radius:14px;
+  border:1px solid rgba(255,143,199,.4);
+  background:#141218;
+  color:#fff;
+  font-size:16px;
+}
+.mcj-po-discord-error{min-height:1.2em;color:#ffb4c8}
+.mcj-po-discord-actions{display:flex;flex-direction:column;gap:8px;margin-top:16px}
+.mcj-po-discord-btn{
+  min-height:48px;
+  padding:12px 16px;
+  border:0;
+  border-radius:14px;
+  background:#e23b86;
+  color:#fff;
+  font-size:16px;
+}
+.mcj-po-discord-btn.ghost{background:transparent;border:1px solid rgba(255,255,255,.18);color:#fff}

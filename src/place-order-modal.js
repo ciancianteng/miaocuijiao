@@ -52,6 +52,7 @@
     state.couponCode = "";
     state.payment = "";
     state.voiceMode = "game_mic";
+    state.discordContact = "";
     state.submitting = false;
     state.submitStartedAt = 0;
     state.walletBalance = null;
@@ -1643,14 +1644,20 @@
     mask.querySelectorAll("[data-po-voice]").forEach(function (btn) {
       btn.addEventListener("click", function () {
         var next = btn.getAttribute("data-po-voice") || "game_mic";
-        // New orders: only discord | game_mic (legacy "none" is display-only for old rows).
         if (next !== "discord" && next !== "game_mic") next = "game_mic";
-        state.voiceMode = next;
-        mask.querySelectorAll("[data-po-voice]").forEach(function (b) {
-          var on = b === btn;
-          b.classList.toggle("active", on);
-          b.setAttribute("aria-pressed", on ? "true" : "false");
-        });
+        if (next === "discord") {
+          ensureDiscordContact().then(function (value) {
+            if (!value || !state.open) return;
+            state.voiceMode = "discord";
+            state.discordContact = value;
+            paintVoiceCards(mask);
+            applyModalSharedToTeam();
+          });
+          return;
+        }
+        state.voiceMode = "game_mic";
+        paintVoiceCards(mask);
+        applyModalSharedToTeam();
       });
     });
     var submit = mask.querySelector("[data-po-submit]");
@@ -1766,6 +1773,107 @@
     return false;
   }
 
+  function paintVoiceCards(mask) {
+    if (!mask) return;
+    mask.querySelectorAll("[data-po-voice]").forEach(function (b) {
+      var mode = b.getAttribute("data-po-voice");
+      var on = mode === "discord" ? state.voiceMode === "discord" : state.voiceMode !== "discord";
+      b.classList.toggle("active", on);
+      b.setAttribute("aria-pressed", on ? "true" : "false");
+    });
+  }
+
+  function closeDiscordLayer() {
+    var node = document.querySelector("[data-mcj-po-discord]");
+    if (node) node.remove();
+    document.body.classList.remove("mcj-po-discord-open");
+  }
+
+  function discordLayer(html) {
+    closeDiscordLayer();
+    var wrap = document.createElement("div");
+    wrap.className = "mcj-po-discord";
+    wrap.setAttribute("data-mcj-po-discord", "");
+    wrap.setAttribute("role", "dialog");
+    wrap.setAttribute("aria-modal", "true");
+    wrap.innerHTML = html;
+    document.body.appendChild(wrap);
+    document.body.classList.add("mcj-po-discord-open");
+    return wrap;
+  }
+
+  function showDiscordSaved() {
+    var wrap = discordLayer(
+      '<div class="mcj-po-discord-card" data-mcj-po-discord-card>' +
+      '<p data-mcj-po-discord-done>请老板稍等，客服马上添加您并协助对接。</p>' +
+      '<div class="mcj-po-discord-actions"><button type="button" class="mcj-po-discord-btn" data-mcj-po-discord-ok>好的</button></div>' +
+      "</div>"
+    );
+    var btn = wrap.querySelector("[data-mcj-po-discord-ok]");
+    if (btn) btn.focus();
+    function finish() { closeDiscordLayer(); }
+    wrap.addEventListener("click", function (e) {
+      if (e.target.closest("[data-mcj-po-discord-ok]") || e.target === wrap) finish();
+    });
+  }
+
+  function openDiscordContactForm() {
+    if (document.querySelector("[data-mcj-po-discord]")) return;
+    var wrap = discordLayer(
+      '<div class="mcj-po-discord-card" data-mcj-po-discord-card>' +
+      "<h2>填写 Discord 麦克风 / 联系信息</h2>" +
+      "<p>请填写 Discord 用户名或麦克风联系方式。提交后会写入这一笔订单，供客服查看。</p>" +
+      '<label><input data-mcj-po-discord-input maxlength="80" autocomplete="off" placeholder="Discord 用户名或联系信息"></label>' +
+      '<p class="mcj-po-discord-error" data-mcj-po-discord-error></p>' +
+      '<div class="mcj-po-discord-actions">' +
+      '<button type="button" class="mcj-po-discord-btn" data-mcj-po-discord-submit>确认提交</button>' +
+      '<button type="button" class="mcj-po-discord-btn ghost" data-mcj-po-discord-cancel>返回</button>' +
+      "</div></div>"
+    );
+    var input = wrap.querySelector("[data-mcj-po-discord-input]");
+    var error = wrap.querySelector("[data-mcj-po-discord-error]");
+    var submit = wrap.querySelector("[data-mcj-po-discord-submit]");
+    if (input && state.discordContact) input.value = state.discordContact;
+    if (input) input.focus();
+    wrap.addEventListener("click", function (e) {
+      if (e.target.closest("[data-mcj-po-discord-cancel]") || e.target === wrap) {
+        closeDiscordLayer();
+        if (wrap._reject) wrap._reject();
+        return;
+      }
+      if (!e.target.closest("[data-mcj-po-discord-submit]")) return;
+      var name = input ? String(input.value || "").trim() : "";
+      if (!name) {
+        if (error) error.textContent = "请输入 Discord 麦克风 / 联系信息";
+        return;
+      }
+      if (name.length > 80) {
+        if (error) error.textContent = "联系信息过长";
+        return;
+      }
+      if (submit) submit.disabled = true;
+      state.discordContact = name;
+      closeDiscordLayer();
+      showDiscordSaved();
+      if (wrap._resolve) wrap._resolve(name);
+    });
+    return wrap;
+  }
+
+  function ensureDiscordContact() {
+    var existing = String(state.discordContact || "").trim();
+    if (existing) return Promise.resolve(existing);
+    return new Promise(function (resolve) {
+      var wrap = openDiscordContactForm();
+      if (!wrap) {
+        resolve("");
+        return;
+      }
+      wrap._resolve = function (value) { resolve(value || ""); };
+      wrap._reject = function () { resolve(""); };
+    });
+  }
+
   function applyModalSharedToTeam() {
     var team = window.MCJMultiCompanionTeam;
     if (!team || typeof team.applyShared !== "function") return;
@@ -1777,6 +1885,7 @@
       notes: notesEl ? String(notesEl.value || "").trim() : "",
       startTime: readStartTimeFromDom(activeMask()) || state.startTime,
       voiceMode: state.voiceMode,
+      discordContact: state.discordContact || "",
       paymentMethod: state.payment,
     });
   }
@@ -1917,6 +2026,16 @@
       // Opening this modal, leaving it, or a failed create must not clear the selection.
 
       if (!requireLogin()) return;
+      if (state.voiceMode === "discord" && !String(state.discordContact || "").trim()) {
+        ensureDiscordContact().then(function (value) {
+          if (!value) return;
+          state.discordContact = value;
+          state.voiceMode = "discord";
+          paintVoiceCards(activeMask());
+          applyModalSharedToTeam();
+        });
+        return;
+      }
 
       var notesEl = qs("[data-po-notes]");
       var couponEl = qs("[data-po-coupon]");
@@ -2020,6 +2139,7 @@
             notes: noteParts.join("；"),
             paymentMethod: "catfood",
             voiceMode: state.voiceMode || "game_mic",
+            discordUsername: state.voiceMode === "discord" ? state.discordContact || "" : "",
             idempotencyKey:
               "replace-" +
               replaceSlot.replaceChildId +
@@ -2050,6 +2170,7 @@
             notes: noteParts.join("；"),
             paymentMethod: payment,
             voiceMode: state.voiceMode || "game_mic",
+            discordUsername: state.voiceMode === "discord" ? state.discordContact || "" : "",
             idempotencyKey:
               "po-" + c.companionId + "-" + Date.now() + "-" + Math.random().toString(36).slice(2, 8),
           };
@@ -2373,6 +2494,7 @@
     resolveServices: resolveServices,
     applySelectedService: applySelectedService,
     hydrateFromCatalog: hydrateFromCatalog,
+    ensureDiscordContact: ensureDiscordContact,
     reset: function () {
       hardCleanup();
     },

@@ -386,6 +386,72 @@
       value("levelFilter")
     );
   }
+  var PLATFORM_KEYS = { "端游": 1, "手游": 1, "pc": 1, "主机": 1, "steam": 1 };
+  var SERVER_KEYS = {
+    "国服": 1,
+    "国际服": 1,
+    "亚服": 1,
+    "欧服": 1,
+    "美服": 1,
+    "韩服": 1,
+    "台服": 1,
+    "微信区": 1,
+    "qq区": 1,
+    "v区": 1,
+    "官服": 1
+  };
+  function parseOffering(raw) {
+    var parts = String(raw || "")
+      .split(/[\s,，、/|]+/)
+      .map(function (part) { return String(part || "").trim(); })
+      .filter(Boolean);
+    var platform = "";
+    var server = "";
+    var gameParts = [];
+    parts.forEach(function (part) {
+      var key = part.toLowerCase();
+      if (!platform && PLATFORM_KEYS[key]) platform = key;
+      else if (!server && SERVER_KEYS[key]) server = key;
+      else gameParts.push(part);
+    });
+    return { game: gameParts.join(" ").toLowerCase(), platform: platform, server: server };
+  }
+  function offeringMatches(offering, spec) {
+    if (!spec || !spec.game || !offering || offering.game !== spec.game) return false;
+    if (spec.platform && offering.platform !== spec.platform) return false;
+    if (spec.server && offering.server !== spec.server) return false;
+    return true;
+  }
+  function companionOfferings(item) {
+    return companionGames(item).map(parseOffering);
+  }
+  function hallPrimaryGame(raw) {
+    var first = companionGames({ game: raw })[0] || "";
+    var parts = String(first)
+      .split(/[\s,，、/|]+/)
+      .map(function (part) { return String(part || "").trim(); })
+      .filter(Boolean);
+    var gameParts = [];
+    parts.forEach(function (part) {
+      var key = part.toLowerCase();
+      if (PLATFORM_KEYS[key] || SERVER_KEYS[key]) return;
+      gameParts.push(part);
+    });
+    return gameParts.join(" ") || String(first || "").trim();
+  }
+  function searchHit(item, q) {
+    var spec = parseOffering(q);
+    if (spec.game && companionOfferings(item).some(function (row) { return offeringMatches(row, spec); })) return true;
+    var name = String(item.name || "").toLowerCase();
+    var publicId = String(item.publicId || "").toLowerCase();
+    var id = String(item.id || "").toLowerCase();
+    return name.indexOf(q) > -1 || publicId.indexOf(q) > -1 || id.indexOf(q) > -1;
+  }
+  window.MCJHallSearch = {
+    parseOffering: parseOffering,
+    offeringMatches: offeringMatches,
+    searchHit: searchHit
+  };
   function filtered() {
     var q = value("searchInput").trim().toLowerCase();
     var type = value("typeFilter");
@@ -397,21 +463,7 @@
     var level = value("levelFilter");
     var items = state.items.filter(function (item) {
       var ok = true;
-      if (q) {
-        var name = String(item.name || "").toLowerCase();
-        var publicId = String(item.publicId || "").toLowerCase();
-        var id = String(item.id || "").toLowerCase();
-        var games = companionGames(item).join(" ").toLowerCase();
-        var tags = (item.tags || []).join(" ").toLowerCase();
-        // Nickname / public ID first; also allow game/tag contains for the shared search box.
-        ok =
-          name.indexOf(q) > -1 ||
-          publicId.indexOf(q) > -1 ||
-          id.indexOf(q) > -1 ||
-          games.indexOf(q) > -1 ||
-          tags.indexOf(q) > -1 ||
-          String(item.level || "").toLowerCase().indexOf(q) > -1;
-      }
+      if (q) ok = searchHit(item, q);
       if (type) {
         var types = Array.isArray(item.serviceTypes) && item.serviceTypes.length
           ? item.serviceTypes
@@ -420,13 +472,10 @@
       }
       if (game) {
         var ids = companionServiceIds(item);
-        var gameLabels = companionGames(item);
         var opt = stateGameOptions.find(function (row) { return row.value === game; });
-        ok = ok && (
-          ids.indexOf(game) > -1 ||
-          gameLabels.indexOf(game) > -1 ||
-          (opt && opt.label && gameLabels.indexOf(opt.label) > -1)
-        );
+        var spec = parseOffering(opt && opt.label ? opt.label : game);
+        var precise = companionOfferings(item).some(function (row) { return offeringMatches(row, spec); });
+        ok = ok && (ids.indexOf(String(game)) > -1 || precise);
       }
       if (price) {
         var range = String(price).split("-").map(Number);
@@ -558,7 +607,8 @@
       (hallMode === "closed" ? " disabled" : "") +
       ' aria-label="' +
       esc(hallLabel) +
-      '"><span class="hall-order-heart" aria-hidden="true">💗</span>' +
+      '">' +
+      (hallLabel === "立即预约" ? "" : '<span class="hall-order-heart" aria-hidden="true">💗</span>') +
       esc(hallLabel) +
       "</button>" +
       '<button type="button" class="companion-card-action team-add hall-icon' +
@@ -624,9 +674,9 @@
       levelColor: item.levelColor,
       levelConfig: item.levelConfig || null,
       cardBackground: item.cardBackground,
-      game: item.game,
-      tags: categoryTags,
-      serviceTags: categoryTags,
+      game: hallPrimaryGame(item.game),
+      tags: [],
+      serviceTags: [],
       image: item.image || cardImage(item),
       cover: item.image || cardImage(item),
       avatar: item.image || cardImage(item),
@@ -640,8 +690,8 @@
     if (window.MCJRealData && typeof window.MCJRealData.companionCardHtml === "function") {
       return window.MCJRealData.companionCardHtml(sharedPayload, {
         variant: "hall",
-        maxTags: 24,
-        scrollTags: true,
+        maxTags: 0,
+        scrollTags: false,
         actionsHtml: hallActions,
         extraAttrs: extraAttrs,
       });

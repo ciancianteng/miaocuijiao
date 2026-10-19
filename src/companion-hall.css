@@ -1541,3 +1541,33 @@ body{overflow-y:visible;background:radial-gradient(circle at 76% 4%,rgba(255,145
   min-height:0!important;
 }
 .hall-gp-body em i{color:#ff8fc7!important;font-size:13px!important}
+
+
+/* Hall cards: flat black-pink. Grid and bottom nav stay as shipped. */
+.companion-hall-grid .player-card,
+.companion-hall-grid .hot-card.companion-card{
+  background:#0c0b10 !important;
+  background-image:none !important;
+  border:1px solid rgba(255,143,199,.38) !important;
+  box-shadow:none !important;
+}
+.companion-hall-grid .companion-card-action.primary,
+.companion-hall-grid button.companion-card-action.primary,
+.companion-hall-grid .mcj-hall-card-actions button.companion-card-action.primary{
+  background:#e23b86 !important;
+  background-image:none !important;
+  border-color:#e23b86 !important;
+  box-shadow:none !important;
+  color:#fff !important;
+}
+.companion-hall-grid .hot-tags,
+.companion-hall-grid .hot-tags-scroll{
+  display:none !important;
+}
+.companion-hall-grid .hot-game{grid-row:3 !important}
+.companion-hall-grid .mcj-hall-card-actions,
+.companion-hall-grid .hot-info > .companion-card-actions{grid-row:4 !important}
+.companion-hall-grid .companion-level-pill{
+  background:#1a140c !important;
+  background-image:none !important;
+}

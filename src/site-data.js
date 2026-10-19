@@ -316,11 +316,11 @@
         return brief ? '<p class="hot-brief">' + esc(brief) + "</p>" : "";
       })() +
       (function () {
+        if (variant === "hall") return "";
         var tagInner = hideServices
           ? homePersonalityTags(item).map(function (tag) { return "<span>" + esc(tag) + "</span>"; }).join("")
           : tagsHtml(item.tags || item.serviceTags || item.categoryTags, maxTags);
         if (!tagInner) return hideServices ? "" : '<div class="hot-tags-scroll"><div class="hot-tags"></div></div>';
-        if (variant === "hall") return '<div class="hot-tags-scroll"><div class="hot-tags">' + tagInner + "</div></div>";
         return '<div class="hot-tags">' + tagInner + "</div>";
       })() +
       actionHtml +
