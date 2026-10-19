@@ -718,6 +718,20 @@ test("TEST unified routeOrder keeps A,B,C on every 立即下单", () => {
   assert.equal(confirmed.companions.reduce((n, row) => n + row.totalAmount, 0), 120);
 });
 
+test("team sheet footer is outside the scroll and time controls are opaque dark", () => {
+  const css = readFileSync(path.join(root, "src/multi-companion-team.css"), "utf8");
+  assert.match(css, /\.mcj-team-sheet button\.mcj-po-time-card/);
+  assert.match(css, /background-color:\s*#161018/);
+  assert.match(css, /color-scheme:\s*dark/);
+  const hintAt = teamSrc.indexOf("mcj-team-pay-hint");
+  const errAt = teamSrc.indexOf("mcj-team-sheet-error");
+  const footAt = teamSrc.indexOf('class="mcj-team-sheet-foot"');
+  const sheetClose = teamSrc.indexOf("</div></div></div>", footAt);
+  assert.ok(hintAt > 0 && hintAt < errAt && errAt < footAt && sheetClose > footAt);
+  assert.match(teamSrc.slice(hintAt, errAt), /<\/div>/);
+  assert.match(teamSrc, /place_multi_order/);
+});
+
 const failed = results.filter((r) => !r.ok);
 console.log("");
 console.log(
