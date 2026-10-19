@@ -80,6 +80,9 @@
       priceMin: "",
       priceMax: "",
       unit: "局",
+      gameName: "",
+      platform: "",
+      description: "",
       allowSelfPrice: false,
       allowSelfOff: false,
       orderFields: [],
@@ -103,6 +106,9 @@
           priceMin: item.pricePolicy && item.pricePolicy.min != null ? item.pricePolicy.min : "",
           priceMax: item.pricePolicy && item.pricePolicy.max != null ? item.pricePolicy.max : "",
           unit: (item.pricePolicy && item.pricePolicy.unit) || "局",
+          gameName: (item.pricePolicy && item.pricePolicy.gameName) || "",
+          platform: (item.pricePolicy && item.pricePolicy.platform) || "",
+          description: (item.pricePolicy && item.pricePolicy.description) || "",
           allowSelfPrice: !!(item.pricePolicy && item.pricePolicy.allowSelfPrice),
           allowSelfOff: !!(item.pricePolicy && item.pricePolicy.allowSelfOff),
           orderFields: Array.isArray(item.orderFields) ? item.orderFields : [],
@@ -244,6 +250,18 @@
       '<label class="svc-field"><span>服务名称</span><input name="name" required maxlength="40" placeholder="例如：无畏契约端游" value="' +
       esc(d.name) +
       '"></label>' +
+      '<label class="svc-field"><span>游戏名称</span><input name="gameName" maxlength="40" placeholder="例如：无畏契约" value="' +
+      esc(d.gameName || "") +
+      '"></label>' +
+      '<label class="svc-field"><span>平台 / 区服</span><input name="platform" maxlength="60" placeholder="例如：端游 / 国服" value="' +
+      esc(d.platform || "") +
+      '"></label>' +
+      '<label class="svc-field"><span>服务介绍</span><textarea name="description" maxlength="500" rows="3" placeholder="服务内容、适合谁、包含什么">' +
+      esc(d.description || "") +
+      "</textarea></label>" +
+      '<label class="svc-field"><span>展示排序</span><input name="sort" inputmode="numeric" maxlength="6" placeholder="1" value="' +
+      esc(d.sort == null ? "" : d.sort) +
+      '"></label>' +
       categoryField +
       '<label class="svc-field"><span>新增分类</span><input name="newCategory" maxlength="20" placeholder="可选，保存时加入分类"></label>' +
       renderIconPicker(d.icon || "🎮") +
@@ -266,7 +284,7 @@
       unitOpt("场") +
       unitOpt("次") +
       "</select></label>" +
-      '<p class="svc-note">保存后只影响新订单。已有订单保留下单当时的金额。</p>' +
+      '<p class="svc-note">允许自定义单价时必须填写最低和最高价格。未填写完整价格时，陪玩端显示「平台尚未配置价格」，不能新下单。保存后只影响新订单。</p>' +
       "</section>" +
       '<section class="svc-section"><h4>订单要求配置</h4>' +
       renderOrderFields(d.orderFields || []) +
@@ -287,7 +305,9 @@
       '<label class="svc-perm"><input type="checkbox" name="allowSelfOff" value="true"' +
       (d.allowSelfOff ? " checked" : "") +
       "> 允许陪玩自主关闭服务</label>" +
-      "</div></section>" +
+      "</div>" +
+      '<p class="svc-note">陪玩端每个服务都有独立的开启接单开关，和在线、离线状态分开。未配置完整价格时不能开启。</p>' +
+      "</section>" +
       '<div class="form-actions svc-actions"><button class="btn primary" type="submit" ' +
       (state.saving ? "disabled" : "") +
       ">" +
@@ -372,10 +392,18 @@
       .map(function (item) {
         var policy = item.pricePolicy || {};
         var unit = policy.unit || "局";
+        var standardRaw = item.defaultPrice || item.default_price || "";
+        var standardNum = Number(standardRaw);
+        var standardText =
+          String(standardRaw).trim() && Number.isFinite(standardNum) && standardNum > 0
+            ? "后台标准价格 RM " + standardRaw + " / " + unit
+            : "平台尚未配置价格";
         var range =
-          policy.min != null && policy.max != null
-            ? "RM" + policy.min + " - RM" + policy.max + " / " + unit
-            : "未设置区间";
+          policy.allowSelfPrice && policy.min != null && policy.max != null
+            ? "允许范围 RM " + policy.min + "–" + policy.max + " / " + unit
+            : policy.allowSelfPrice
+              ? "平台尚未配置价格"
+              : "平台统一定价";
         var on = item.enabled !== false;
         return (
           '<article class="svc-card" draggable="true" data-service-row="' +
@@ -395,12 +423,10 @@
           "<span>" +
           esc(item.category || "-") +
           "</span>" +
-          "<em>默认 RM" +
-          esc(item.defaultPrice || item.default_price || "-") +
-          " / " +
-          esc(unit) +
+          "<em>" +
+          esc(standardText) +
           "</em>" +
-          "<small>允许范围 " +
+          "<small>" +
           esc(range) +
           "</small>" +
           '<div class="svc-card-tags">' +
@@ -479,6 +505,9 @@
       priceMin: String(data.priceMin || "").trim(),
       priceMax: String(data.priceMax || "").trim(),
       unit: String(data.unit || "局").trim() || "局",
+      gameName: String(data.gameName || "").trim(),
+      platform: String(data.platform || "").trim(),
+      description: String(data.description || "").trim(),
       allowSelfPrice: data.allowSelfPrice === "true" || data.allowSelfPrice === "on",
       allowSelfOff: data.allowSelfOff === "true" || data.allowSelfOff === "on",
       enabled: data.enabled !== "false",
@@ -486,7 +515,7 @@
       allowApply: data.allowApply !== "false",
       allowOrder: data.allowOrder !== "false",
       displayPositions: positions,
-      sort: Number((state.editing && state.editing.sort) || state.services.length + 1),
+      sort: String(data.sort || "").trim() ? Number(data.sort) : Number((state.editing && state.editing.sort) || state.services.length + 1),
     };
   }
 
@@ -522,6 +551,36 @@
     }
     if (!payload.displayPositions.length) {
       alert("请至少勾选一个显示位置");
+      return;
+    }
+    function badMoney(value) {
+      var text = String(value || "").trim();
+      if (!text) return false;
+      return !/^(?:0|[1-9]\d*)(?:\.\d{1,2})?$/.test(text);
+    }
+    if (badMoney(payload.defaultPrice) || badMoney(payload.priceMin) || badMoney(payload.priceMax)) {
+      alert("不允许输入负数或非法字符。");
+      return;
+    }
+    if (String(payload.defaultPrice || "").trim() && !(Number(payload.defaultPrice) > 0)) {
+      alert("平台标准价格必须大于 0。");
+      return;
+    }
+    if (payload.allowSelfPrice && (!String(payload.priceMin || "").trim() || !String(payload.priceMax || "").trim())) {
+      alert("允许自定义单价时必须同时设置最低和最高价格。");
+      return;
+    }
+    if (
+      payload.allowSelfPrice &&
+      String(payload.priceMin || "").trim() &&
+      String(payload.priceMax || "").trim() &&
+      Number(payload.priceMax) < Number(payload.priceMin)
+    ) {
+      alert("最高价格不能低于最低价格。");
+      return;
+    }
+    if (payload.allowSelfPrice && !(Number(payload.priceMax) > 0)) {
+      alert("最高价格必须大于 0。");
       return;
     }
     var orderFields = readOrderFields(form);

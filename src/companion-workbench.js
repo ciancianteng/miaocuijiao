@@ -2581,36 +2581,63 @@
       mountDirectBossCard();
     }
   }
+  function offerRm(value){
+    var n=Math.round(Number(value)*100)/100;
+    if(!isFinite(n))return '';
+    return String(n.toFixed(2)).replace(/\.00$/,'').replace(/(\.\d)0$/,'$1');
+  }
+  function offerPriceError(card){
+    if(!card)return '服务不存在';
+    if(card.getAttribute('data-ready')!=='1')return '平台尚未配置价格';
+    if(card.getAttribute('data-allow')!=='1')return '';
+    var input=card.querySelector('[data-offer-price]');
+    var text=String(input?input.value:'').trim();
+    if(!text)return '请先设置单价';
+    if(!/^(?:0|[1-9]\d*)(?:\.\d{1,2})?$/.test(text))return '不允许输入负数或非法字符。';
+    var n=Math.round(Number(text)*100)/100;
+    var min=Number(card.getAttribute('data-min'));
+    var max=Number(card.getAttribute('data-max'));
+    var unit=card.getAttribute('data-unit')||'';
+    if(!(n>0)||n<min||n>max)return '价格必须在 RM '+offerRm(min)+'–'+offerRm(max)+' / '+unit+' 之间。';
+    return '';
+  }
   function mountOfferManager(){
     var host=document.getElementById('pwOfferManager');
     if(!host||host.dataset.loaded==='1')return;
     host.dataset.loaded='1';
     api('my_offers').then(function(res){
-      var selected={};
-      (res.offers||[]).forEach(function(item){selected[item.kind+':'+item.id]=item;});
-      var catalog=((res.catalog&&res.catalog.services)||[]).map(function(item){return Object.assign({kind:'service'},item);});
+      var catalog=((res.catalog&&res.catalog.services)||[]).slice().sort(function(a,b){
+        return Number(a.sort||0)-Number(b.sort||0);
+      });
       if(!catalog.length){
         host.innerHTML='<p class="pw-note">平台还没有可提供的服务。</p>';
         return;
       }
       host.innerHTML='<div class="pw-my-service-list">'+catalog.map(function(item){
-        var key=item.kind+':'+item.id;
-        var saved=selected[key]||null;
         var policy=item.policy||{};
-        var unit=policy.unit||'局';
-        var range=(policy.min!=null&&policy.max!=null)?('RM'+policy.min+' - RM'+policy.max+' / '+unit):'平台未设置区间';
-        var mine=saved&&saved.price!=null&&saved.price!==''&&!isNaN(Number(saved.price))?saved.price:'';
-        var accepting=!saved||saved.accepting!==false;
-        var canPrice=policy.allowSelfPrice===true;
-        var canOff=policy.allowSelfOff===true;
-        return '<article class="pw-my-service" data-offer-card data-kind="service" data-id="'+esc(item.id)+'" data-saved="'+(saved?'1':'0')+'" data-accepting="'+(accepting?'1':'0')+'">'+
-          '<header><b>'+esc(item.icon||'🎮')+' '+esc(item.name||'-')+'</b><span>'+esc(item.category||'')+'</span></header>'+
-          '<p>平台允许价格：'+esc(range)+'</p>'+
+        var unit=item.unit||policy.unit||'局';
+        var missing=item.priceStatus==='missing'||(!item.priceStatus&&!(Number(item.platformPrice)>0));
+        var canPrice=!missing&&item.canEditPrice===true;
+        var ready=!missing;
+        var min=policy.min!=null?policy.min:null;
+        var max=policy.max!=null?policy.max:null;
+        var accepting=item.accepting===true;
+        var savedPrice=item.savedPrice!=null&&item.savedPrice!==''?item.savedPrice:'';
+        var gameBits=[item.gameName||policy.gameName||'', item.platform||policy.platform||''].filter(Boolean);
+        var meta=gameBits.join(' · ');
+        var standardText=missing?'平台尚未配置价格':('后台标准价格：RM '+offerRm(item.platformPrice)+' / '+unit);
+        var permission=!ready?'':(canPrice?('后台允许范围：RM '+offerRm(min)+'–'+offerRm(max)+' / '+unit):'此项目由平台统一定价。');
+        return '<article class="pw-my-service" data-offer-card data-kind="service" data-id="'+esc(item.id)+'" data-saved="'+(item.persisted?'1':'0')+'" data-accepting="'+(accepting?'1':'0')+'" data-allow="'+(canPrice?'1':'0')+'" data-ready="'+(ready?'1':'0')+'" data-min="'+esc(min==null?'':min)+'" data-max="'+esc(max==null?'':max)+'" data-unit="'+esc(unit)+'">'+
+          '<header><b>'+esc((item.icon||'🎮')+' '+(item.name||'服务'))+'</b><span>'+esc(item.category||'服务')+'</span></header>'+
+          (meta?'<p class="pw-my-service-meta">'+esc(meta)+'</p>':'')+
+          '<p class="pw-my-service-line"><span>服务类型</span><strong>'+esc(item.category||'未分类')+'</strong></p>'+
+          '<p class="pw-my-service-line"><span>'+esc(missing?'价格状态':'标准价格')+'</span><strong>'+esc(standardText)+'</strong></p>'+
+          (permission?'<p class="pw-my-service-line"><span>价格权限</span><strong>'+esc(permission)+'</strong></p>':'')+
           (canPrice
-            ? '<label>我的价格<span class="pw-rm">RM<input data-offer-price inputmode="decimal" value="'+esc(mine)+'"></span><em>/ '+esc(unit)+'</em></label><button class="pw-btn" type="button" data-offer-save>修改价格</button>'
-            : '<p>此服务价格由平台统一设置</p><p>我的价格：RM'+esc(mine||item.price||'-')+' / '+esc(unit)+'</p>')+
-          '<p class="pw-my-service-status">'+(accepting?'● 接单中':'● 已关闭')+'</p>'+
-          (canOff?'<button class="pw-btn" type="button" data-offer-toggle>'+(accepting?'关闭服务':'开启服务')+'</button>':'')+
+            ? '<div class="pw-my-service-price"><label>我的服务单价<span class="pw-rm"><i>RM</i><input data-offer-price inputmode="decimal" autocomplete="off" value="'+esc(savedPrice)+'"></span><em>/ '+esc(unit)+'</em></label><button class="pw-btn" type="button" data-offer-save>保存价格</button></div>'
+            : '')+
+          '<div class="pw-offer-switch-row"><span>开启接单</span><button type="button" class="pw-offer-switch'+(accepting?' is-on':'')+'" data-offer-toggle aria-pressed="'+(accepting?'true':'false')+'"'+(ready?'':' disabled')+'><i></i></button></div>'+
+          '<p class="pw-my-service-status">当前状态：'+esc(ready?(accepting?'开启接单':'关闭接单'):'平台尚未配置价格')+'</p>'+
           '</article>';
       }).join('')+'</div>';
     }).catch(function(err){
@@ -5738,10 +5765,26 @@
       var host=document.getElementById('pwOfferManager');
       var toggled=offerAction.closest('[data-offer-card]');
       if(offerAction.hasAttribute('data-offer-toggle')&&toggled){
-        toggled.setAttribute('data-accepting', toggled.getAttribute('data-accepting')==='0'?'1':'0');
+        var turningOn=toggled.getAttribute('data-accepting')!=='1';
+        if(turningOn){
+          var turnErr=offerPriceError(toggled);
+          if(turnErr){toast(turnErr);return;}
+        }
+        toggled.setAttribute('data-accepting', turningOn?'1':'0');
+        toggled.setAttribute('data-touched','1');
+        var sw=toggled.querySelector('[data-offer-toggle]');
+        if(sw){
+          sw.classList.toggle('is-on', turningOn);
+          sw.setAttribute('aria-pressed', turningOn?'true':'false');
+        }
+        var statusLine=toggled.querySelector('.pw-my-service-status');
+        if(statusLine)statusLine.textContent='当前状态：'+(turningOn?'开启接单':'关闭接单');
+      }
+      if(offerAction.hasAttribute('data-offer-save')&&toggled){
+        var priceErr=offerPriceError(toggled);
+        if(priceErr){toast(priceErr);return;}
         toggled.setAttribute('data-touched','1');
       }
-      if(offerAction.hasAttribute('data-offer-save')&&toggled)toggled.setAttribute('data-touched','1');
       var offers=[];
       if(host){
         host.querySelectorAll('[data-offer-card]').forEach(function(card,index){

@@ -637,6 +637,7 @@
       serviceIds: serviceIds,
       gamePrices: gamePrices,
       pricingUnit: String(raw.pricingUnit || raw.pricing_unit || "小时"),
+      lockOfferServices: !!raw.lockOfferServices,
       avatar: avatarSrc(raw.avatar || raw.cover || raw.cardImageUrl || ""),
       publicId: raw.publicId || "",
       level: level,
@@ -666,6 +667,9 @@
     if (typeof s !== "object") return null;
     var name = String(s.name || s.title || s.serviceName || s.game || "").trim();
     if (!name || LEGACY_SERVICE_NAMES[name]) return null;
+    var description = String(s.description || "").trim();
+    var standard = s.standard && typeof s.standard === "object" ? s.standard : null;
+    if (!standard && description) standard = { sections: [{ label: "服务介绍", value: description }] };
     return {
       id: String(s.id || s.serviceId || s.service_id || "name:" + name),
       serviceId: String(s.serviceId || s.service_id || (/^[0-9a-f-]{36}$/i.test(String(s.id || "")) ? s.id : "") || ""),
@@ -673,7 +677,8 @@
       price: money(s.price != null ? s.price : s.unitPrice != null ? s.unitPrice : 0),
       pricingUnit: String(s.pricingUnit || s.pricing_unit || "小时"),
       sort: s.sort != null ? Number(s.sort) : idx || 0,
-      standard: s.standard && typeof s.standard === "object" ? s.standard : null,
+      description: description,
+      standard: standard,
     };
   }
   function selectedServiceItem() {
@@ -755,6 +760,7 @@
         push(normalizeServiceItem(s, i));
       });
     }
+    if (companion.lockOfferServices) return out;
     var prices = companion.gamePrices && typeof companion.gamePrices === "object" ? companion.gamePrices : {};
     var games = splitGameNames(companion.game || companion.mainGame || "");
     if (!out.length && Array.isArray(companion.serviceIds) && companion.serviceIds.length) {
@@ -985,7 +991,7 @@
         if (!state.companion || String(state.companion.companionId) !== companionId) return body;
         var services = Array.isArray(body.services) ? body.services : [];
         var catC = body.companion || {};
-        state.companion.services = services;
+        if (!state.companion.lockOfferServices) state.companion.services = services;
         if (catC.gamePrices || catC.game_prices) state.companion.gamePrices = catC.gamePrices || catC.game_prices;
         if (catC.serviceIds || catC.service_ids) state.companion.serviceIds = catC.serviceIds || catC.service_ids;
         var gameName = catC.game || catC.mainGame || "";
@@ -2402,6 +2408,7 @@
       avatar: extras.avatar || src.avatar || src.cover || "",
       publicId: extras.publicId || src.publicId || "",
       pricingUnit: extras.pricingUnit || src.pricingUnit || "小时",
+      lockOfferServices: !!(extras.lockOfferServices || src.lockOfferServices),
       levelId: extras.levelId || extras.level_id || src.levelId || src.level_id || "",
       level: extras.level || src.level || src.levelName || "",
       levelName: extras.levelName || src.levelName || extras.level || src.level || "",
