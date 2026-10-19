@@ -5,6 +5,7 @@
  */
 import { companionDb } from "./_companion-media-store.js";
 import { loadCompanionServiceStandards } from "./_service-standard.js";
+import { mergeOfferLists, parseMoneyStrict, quoteServiceOffer, validateCompanionOfferSave } from "./_service-offer-quote.js";
 
 const OFFER_KEY = "__catalogOffers";
 
@@ -41,7 +42,7 @@ function cleanOffers(input) {
 async function catalog() {
   const services = await companionDb(
     "services",
-    "?select=id,name,category,icon,default_price,enabled,allow_order&order=sort.asc&limit=200"
+    "?select=id,name,category,icon,default_price,enabled,allow_order,sort&order=sort.asc&limit=200"
   ).catch(() => []);
   const products = await companionDb(
     "gameplay_products",
@@ -56,61 +57,85 @@ async function catalog() {
   return { serviceRows, productRows };
 }
 
+async function loadPolicies() {
+  try {
+    const { loadAllPricePolicies, normalizePricePolicy } = await import("./_service-price-policy.js");
+    const map = await loadAllPricePolicies();
+    return Object.fromEntries(Object.entries(map || {}).map(([key, value]) => [key, normalizePricePolicy(value)]));
+  } catch {
+    return {};
+  }
+}
+
+function serviceView(row, policy, saved) {
+  const quote = quoteServiceOffer({ service: row, policy, saved });
+  return {
+    kind: "service",
+    id: row.id,
+    name: quote.name,
+    category: quote.category,
+    icon: quote.icon,
+    gameName: quote.gameName,
+    platform: quote.platform,
+    description: quote.description,
+    unit: quote.unit,
+    price: quote.orderable ? quote.effectivePrice : quote.effectivePrice,
+    platformPrice: quote.standardPrice,
+    savedPrice: quote.savedPrice,
+    accepting: quote.accepting,
+    enabled: quote.orderable,
+    orderable: quote.orderable,
+    persisted: quote.persisted,
+    priceStatus: quote.priceStatus,
+    priceMessage: quote.priceMessage,
+    canEditPrice: quote.canEditPrice,
+    sort: Number(row.sort || 0),
+    href: "",
+    policy: {
+      min: quote.min,
+      max: quote.max,
+      unit: quote.unit,
+      allowSelfPrice: quote.canEditPrice,
+      allowSelfOff: true,
+      gameName: quote.gameName,
+      platform: quote.platform,
+      description: quote.description,
+      standardPrice: quote.standardPrice,
+      priceStatus: quote.priceStatus,
+      priceMessage: quote.priceMessage,
+    },
+  };
+}
+
 export async function listCompanionOffers(userId, { enabledOnly = false } = {}) {
   const loaded = await loadCompanionServiceStandards(userId);
   const raw = loaded.standards?.[OFFER_KEY];
   const saved = cleanOffers(raw);
   const { serviceRows, productRows } = await catalog();
-  let policies = {};
-  try {
-    const { loadAllPricePolicies, normalizePricePolicy } = await import("./_service-price-policy.js");
-    const map = await loadAllPricePolicies();
-    policies = Object.fromEntries(
-      Object.entries(map || {}).map(([key, value]) => [key, normalizePricePolicy(value)])
-    );
-  } catch {
-    policies = {};
-  }
-  const serviceMap = new Map(serviceRows.map((row) => [String(row.id), row]));
+  const policies = await loadPolicies();
+  const savedService = new Map(saved.filter((item) => item.kind === "service").map((item) => [String(item.id), item]));
   const productMap = new Map(productRows.map((row) => [String(row.id), row]));
-  const offers = saved
+  const serviceOffers = serviceRows.map((row) => serviceView(row, policies[String(row.id)] || {}, savedService.get(String(row.id)) || null));
+  const productOffers = saved
+    .filter((item) => item.kind === "product")
     .map((item) => {
-      if (item.kind === "product") {
-        const row = productMap.get(item.id);
-        if (!row) return null;
-        return {
-          ...item,
-          name: row.name || "更多玩法",
-          category: row.category || "",
-          price: row.price,
-          href: "",
-        };
-      }
-      const row = serviceMap.get(item.id);
+      const row = productMap.get(item.id);
       if (!row) return null;
       return {
         ...item,
-        name: row.name || "服务",
+        name: row.name || "更多玩法",
         category: row.category || "",
-        icon: row.icon || "🎮",
-        platformPrice: row.default_price,
+        price: row.price,
         href: "",
+        orderable: item.enabled !== false,
       };
     })
     .filter(Boolean);
+  const offers = serviceOffers.concat(productOffers);
   return {
-    offers: enabledOnly ? offers.filter((item) => item.enabled) : offers,
+    offers: enabledOnly ? offers.filter((item) => (item.kind === "product" ? item.enabled !== false : item.orderable === true)) : offers,
     catalog: {
-      services: serviceRows.map((row) => ({
-        kind: "service",
-        id: row.id,
-        name: row.name,
-        category: row.category || "",
-        icon: row.icon || "🎮",
-        price: row.default_price,
-        enabled: row.enabled !== false,
-        policy: policies[String(row.id)] || { min: null, max: null, unit: "局", allowSelfPrice: false, allowSelfOff: false },
-      })),
+      services: serviceOffers,
       products: productRows.map((row) => ({
         kind: "product",
         id: row.id,
@@ -125,8 +150,14 @@ export async function listCompanionOffers(userId, { enabledOnly = false } = {}) 
 export async function saveCompanionOffers(userId, offers) {
   const id = String(userId || "").trim();
   if (!id) throw Object.assign(new Error("缺少陪玩账号"), { status: 400 });
+  for (const raw of Array.isArray(offers) ? offers : []) {
+    if (raw?.kind === "product") continue;
+    const parsed = parseMoneyStrict(raw?.price);
+    if (parsed.error) throw Object.assign(new Error(parsed.error), { status: 400 });
+  }
   const wanted = cleanOffers(offers);
   const { serviceRows, productRows } = await catalog();
+  const serviceMap = new Map(serviceRows.map((row) => [String(row.id), row]));
   const allowed = new Set([
     ...serviceRows.map((row) => `service:${row.id}`),
     ...productRows.map((row) => `product:${row.id}`),
@@ -140,39 +171,31 @@ export async function saveCompanionOffers(userId, offers) {
     throw Object.assign(new Error("陪玩资料尚未就绪，暂时不能保存服务"), { status: 503 });
   }
   const previous = cleanOffers(loaded.standards?.[OFFER_KEY]);
-  let policies = {};
-  try {
-    const { loadAllPricePolicies, normalizePricePolicy } = await import("./_service-price-policy.js");
-    const map = await loadAllPricePolicies();
-    policies = Object.fromEntries(Object.entries(map || {}).map(([key, value]) => [key, normalizePricePolicy(value)]));
-  } catch {
-    policies = {};
-  }
+  const policies = await loadPolicies();
+  const normalized = [];
   for (const item of wanted) {
-    if (item.kind !== "service") continue;
-    const policy = policies[item.id] || { allowSelfPrice: false, allowSelfOff: false, min: null, max: null };
-    const prev = previous.find((row) => row.kind === "service" && row.id === item.id);
-    if (Number.isNaN(item.price)) throw Object.assign(new Error("不允许输入无效金额。"), { status: 400 });
-    if (item.price != null && item.price < 0) throw Object.assign(new Error("不允许输入负数。"), { status: 400 });
-    const prevPrice = prev && prev.price != null && !Number.isNaN(prev.price) ? Number(prev.price) : null;
-    if (item.price != null && !policy.allowSelfPrice && prevPrice !== item.price) {
-      throw Object.assign(new Error("此服务价格由平台统一设置"), { status: 400 });
+    if (item.kind !== "service") {
+      normalized.push(item);
+      continue;
     }
-    if (item.price != null && policy.allowSelfPrice) {
-      if (policy.min != null && item.price < Number(policy.min)) {
-        throw Object.assign(new Error(`价格不得低于 RM${policy.min}`), { status: 400 });
-      }
-      if (policy.max != null && item.price > Number(policy.max)) {
-        throw Object.assign(new Error(`价格不得高于 RM${policy.max}`), { status: 400 });
-      }
-    }
-    if (item.accepting === false && policy.allowSelfOff !== true) {
-      throw Object.assign(new Error("管理员未允许陪玩关闭此服务。"), { status: 400 });
-    }
+    if (Number.isNaN(item.price)) throw Object.assign(new Error("不允许输入负数或非法字符。"), { status: 400 });
+    const row = serviceMap.get(item.id);
+    const prev = previous.find((entry) => entry.kind === "service" && entry.id === item.id) || null;
+    const decision = validateCompanionOfferSave({
+      service: row || {},
+      policy: policies[item.id] || {},
+      previous: prev,
+      next: item,
+    });
+    normalized.push({
+      ...item,
+      price: decision.price,
+      accepting: decision.accepting,
+      enabled: decision.accepting,
+    });
   }
-  const incoming = new Set(wanted.map((item) => `${item.kind}:${item.id}`));
-  const keptProducts = previous.filter((item) => item.kind === "product" && !incoming.has(`product:${item.id}`));
-  const next = { ...loaded.standards, [OFFER_KEY]: wanted.concat(keptProducts) };
+  const nextOffers = mergeOfferLists(previous, normalized, allowed);
+  const next = { ...loaded.standards, [OFFER_KEY]: nextOffers };
   await companionDb("companion_profiles", `?user_id=eq.${encodeURIComponent(id)}`, {
     method: "PATCH",
     body: JSON.stringify({ service_standards: next, updated_at: new Date().toISOString() }),

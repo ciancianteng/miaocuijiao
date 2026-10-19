@@ -10,6 +10,7 @@ import {
   readLocalCategories,
   writeLocalCategories,
 } from "../_services-store.js";
+import { parseMoneyStrict } from "../_service-offer-quote.js";
 
 loadLocalEnv();
 
@@ -197,12 +198,21 @@ function clean(input = {}, categories = DEFAULT_CATEGORIES) {
   if (!finalPositions.length) {
     throw Object.assign(new Error("请至少勾选一个显示位置。"), { status: 400 });
   }
+  const rawPrice = String(input.defaultPrice ?? input.default_price ?? "").trim();
+  let defaultPrice = "";
+  if (rawPrice) {
+    const parsed = parseMoneyStrict(rawPrice);
+    if (parsed.error || !(parsed.value > 0)) {
+      throw Object.assign(new Error(parsed.error || "平台标准价格必须大于 0。"), { status: 400 });
+    }
+    defaultPrice = String(parsed.value);
+  }
   return normalizeServiceRow({
     id: input.id,
     name,
     category,
     icon: String(input.icon || "🎮").trim() || "🎮",
-    default_price: String(input.defaultPrice ?? input.default_price ?? "").trim(),
+    default_price: defaultPrice,
     enabled: truthy(input.enabled, true),
     show_home: finalPositions.includes("home"),
     allow_apply: truthy(input.allowApply ?? input.allow_apply, true),
@@ -481,9 +491,11 @@ export default async function handler(req, res) {
     }
 
     if (action === "save" || action === "create") {
+      const src = body.service || body;
+      const { normalizePricePolicy, assertPricePolicy } = await import("../_service-price-policy.js");
+      assertPricePolicy(normalizePricePolicy(src), src);
       const result = await saveService(body, categories);
       const serviceId = result?.service?.id;
-      const src = body.service || body;
       if (serviceId) {
         try {
           const { savePricePolicy } = await import("../_service-price-policy.js");

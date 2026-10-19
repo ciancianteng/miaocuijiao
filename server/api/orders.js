@@ -1460,6 +1460,9 @@ export default async function handler(req, res) {
       const game = String(order.game || serviceType || "陪玩").trim();
       let unitPrice = 0;
       let totalAmount = 0;
+      let orderPricingUnit = "";
+      let placedServiceId = "";
+      let placedPriceSource = "";
       let noTakerProductId = "";
       let productCompanionName = "";
       let serviceSnapshot = null;
@@ -1521,6 +1524,14 @@ export default async function handler(req, res) {
           return json(res, 400, { ok: false, code: "SERVICE_CLOSED", message: resolved.message || "该服务已关闭，不能创建新订单。" });
         }
         unitPrice = money(resolved.price);
+        placedServiceId = serviceId;
+        placedPriceSource = String(resolved?.source || "");
+        orderPricingUnit = String(resolved?.pricingUnit || "").trim();
+        const clientPricingUnit = String(order.pricingUnit || order.pricing_unit || "").trim();
+        if (resolved?.catalogHit && orderPricingUnit && clientPricingUnit && clientPricingUnit !== orderPricingUnit) {
+          return json(res, 400, { ok: false, message: "计价单位已变化，请刷新后重试。" });
+        }
+        if (!orderPricingUnit) orderPricingUnit = clientPricingUnit || String(cp.pricing_unit || "小时");
         if (!(unitPrice > 0)) {
           return json(res, 400, {
             ok: false,
@@ -1543,7 +1554,7 @@ export default async function handler(req, res) {
             serviceId: serviceId || resolved?.serviceRow?.service_id || "",
             serviceName: serviceType,
             unitPrice,
-            pricingUnit: String(order.pricingUnit || order.pricing_unit || cp.pricing_unit || "小时"),
+            pricingUnit: orderPricingUnit || String(order.pricingUnit || order.pricing_unit || cp.pricing_unit || "小时"),
             hours,
             quantity,
             bossRank,
@@ -1673,9 +1684,19 @@ export default async function handler(req, res) {
         game_id_value: gameId || String(order.game_id || "").trim(),
         notes: notes || descriptionParts.join("\n"),
         quantity,
-        pricing_unit: String(order.pricingUnit || order.pricing_unit || "小时"),
+        pricing_unit: orderPricingUnit || String(order.pricingUnit || order.pricing_unit || "小时"),
         voice_mode: voiceMode,
       };
+      if (action === "place_order") {
+        if (placedServiceId) enriched.service_id = placedServiceId;
+        enriched.price_snapshot = {
+          unitPrice,
+          pricingUnit: enriched.pricing_unit,
+          serviceId: placedServiceId,
+          source: placedPriceSource,
+          capturedAt: nowIso(),
+        };
+      }
       if (voiceMode === "discord") {
         const marked = attachDiscordContact(
           row.description,
@@ -2895,6 +2916,13 @@ export default async function handler(req, res) {
         return json(res, 400, { ok: false, code: "SERVICE_CLOSED", message: resolved.message || "该服务已关闭，不能创建新订单。" });
       }
       let unitPrice = money(resolved.price);
+      if (resolved?.catalogHit && !(unitPrice > 0)) {
+        return json(res, 400, {
+          ok: false,
+          code: "SERVICE_PRICE_MISSING",
+          message: resolved.message || "平台尚未配置价格",
+        });
+      }
       if (!(unitPrice > 0)) unitPrice = money(exited.unit_price || exited.total_amount);
       if (!(unitPrice > 0)) {
         return json(res, 400, { ok: false, message: "补位陪玩尚未设置单价。", code: "SERVICE_PRICE_MISSING" });
