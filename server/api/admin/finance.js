@@ -292,7 +292,7 @@ async function settings() {
     const rows = await companionDb("finance_settings", "?id=eq.1&limit=1");
     return mergeWeeklySettings(
       rows?.[0] || {
-        min_withdraw_cat_food: 50,
+        min_withdraw_cat_food: 0,
         max_withdrawals_per_month: 8,
         max_withdrawals_per_week: 2,
         cat_food_to_rm_rate: 1,
@@ -304,7 +304,7 @@ async function settings() {
   } catch (e) {
     if (isMissingRelation(e)) {
       return mergeWeeklySettings({
-        min_withdraw_cat_food: 50,
+        min_withdraw_cat_food: 0,
         max_withdrawals_per_month: 8,
         max_withdrawals_per_week: 2,
         cat_food_to_rm_rate: 1,

@@ -79,7 +79,7 @@ export const DEFAULT_WEEKLY_SETTINGS = {
   payout_window_start: "12:00",
   payout_window_end: "23:59",
   holiday_rollover_enabled: true,
-  min_withdraw_cat_food: 50,
+  min_withdraw_cat_food: 0,
   max_withdrawals_per_week: 2,
   max_withdrawals_per_month: 8,
   timezone: SETTLEMENT_TZ,
@@ -271,7 +271,8 @@ export function mergeWeeklySettings(row = {}) {
   return {
     ...DEFAULT_WEEKLY_SETTINGS,
     ...row,
-    min_withdraw_cat_food: Number(row.min_withdraw_cat_food ?? DEFAULT_WEEKLY_SETTINGS.min_withdraw_cat_food),
+    // Retired RM50 floor. A stored finance_settings.min_withdraw_cat_food must not gate new requests.
+    min_withdraw_cat_food: 0,
     max_withdrawals_per_week: Number(
       row.max_withdrawals_per_week ?? row.max_withdrawals_per_month ?? DEFAULT_WEEKLY_SETTINGS.max_withdrawals_per_week
     ),
