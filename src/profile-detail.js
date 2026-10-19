@@ -5,6 +5,8 @@
     companion: null,
     catalog: null,
     draft: null,
+    orderableOffers: null,
+    offersLoaded: false,
   };
 
   function esc(v) {
@@ -724,8 +726,9 @@
       c.levelId && levelChipLabel && !/未设置/.test(levelChipLabel)
         ? '<span class="companion-level-pill" data-level-id="' + esc(c.levelId) + '">' + esc(levelChipLabel) + "</span>"
         : "";
-    var orderStat = completedOrders > 0 ? String(completedOrders) : "—";
-    var rateStat = "—";
+    var orderStat = String(completedOrders);
+    var rateStat = "暂无评价数据";
+    var scoreStat = "暂无评价数据";
     if (reviewCount > 0) {
       var rate = Number(c.goodRate);
       if (!Number.isFinite(rate) && c.goodReviewCount != null && Number.isFinite(Number(c.goodReviewCount))) {
@@ -736,8 +739,8 @@
         if (rate > 100) rate = 100;
         rateStat = String(Math.round(rate * 10) / 10).replace(/\.0$/, "") + "%";
       }
+      scoreStat = hasRating ? Number(c.rating).toFixed(1) : "暂无评价数据";
     }
-    var scoreStat = hasRating ? Number(c.rating).toFixed(1) : "—";
 
     if (c.levelId) s.setAttribute("data-companion-level", c.levelId);
     else s.removeAttribute("data-companion-level");
@@ -787,6 +790,7 @@
       levelBadgeHtml +
       voiceBody +
       "</div>" +
+      (certHtml || "") +
       tagsHtml +
       '<p class="pd-id">ID：' +
       esc(publicId || "待生成") +
@@ -804,10 +808,14 @@
       '<div><strong>' +
       esc(orderStat) +
       '</strong><span>完成订单</span></div>' +
-      '<div><strong>' +
+      '<div><strong' +
+      (rateStat === "暂无评价数据" ? ' class="is-empty"' : "") +
+      ">" +
       esc(rateStat) +
       '</strong><span>好评率</span></div>' +
-      '<div><strong>' +
+      '<div><strong' +
+      (scoreStat === "暂无评价数据" ? ' class="is-empty"' : "") +
+      ">" +
       esc(scoreStat) +
       '</strong><span>综合评分</span></div>' +
       "</div></section>" +
@@ -990,6 +998,27 @@
     style.textContent = ".profile-detail-page{overflow-x:clip}.profile-detail-shell{max-width:100%;min-width:0}";
     document.head.appendChild(style);
   }
+  function offerRm(value) {
+    var n = Math.round(Number(value) * 100) / 100;
+    if (!isFinite(n) || !(n > 0)) return "";
+    return String(n.toFixed(2)).replace(/\.00$/, "").replace(/(\.\d)0$/, "$1");
+  }
+  function orderableServiceRows() {
+    return (state.orderableOffers || [])
+      .filter(function (item) {
+        return item && item.kind !== "product" && Number(item.price) > 0 && item.orderable !== false;
+      })
+      .map(function (item) {
+        return {
+          id: item.id,
+          serviceId: item.id,
+          name: item.name || "",
+          price: Number(item.price),
+          pricingUnit: item.unit || "小时",
+          description: item.description || "",
+        };
+      });
+  }
   function loadProfileOffers(c) {
     var host = document.querySelector("[data-pd-offers]");
     var userId = c && (c.userId || c.user_id || c.id || c.uid);
@@ -997,32 +1026,64 @@
     fetch("/api/companion-offers?userId=" + encodeURIComponent(userId), { cache: "no-store" })
       .then(function (res) { return res.json(); })
       .then(function (body) {
-        var offers = (body && body.offers) || [];
+        var offers = ((body && body.offers) || []).filter(function (item) {
+          if (!item) return false;
+          if (item.kind === "product") return item.enabled !== false;
+          return item.orderable === true && Number(item.price) > 0;
+        });
+        state.offersLoaded = true;
+        state.orderableOffers = offers.filter(function (item) { return item.kind !== "product"; });
         if (!offers.length) {
           host.innerHTML = '<p class="pd-empty">暂无可展示的服务</p>';
           return;
         }
         host.innerHTML = offers
           .map(function (item) {
-            var price = Number(item.price);
-            var priceHtml = Number.isFinite(price) && price > 0 ? '<span class="pd-offer-price">' + esc(money(price)) + "</span>" : "";
+            if (item.kind === "product") {
+              var productPrice = Number(item.price);
+              return (
+                '<button type="button" class="pd-offer" data-pd-offer data-kind="product" data-id="' +
+                esc(item.id) +
+                '" data-name="' +
+                esc(item.name) +
+                '"><span class="pd-offer-copy"><strong>' +
+                esc(item.name) +
+                '</strong></span><span class="pd-offer-side"><span class="pd-offer-price">' +
+                (productPrice > 0 ? esc(money(productPrice)) : "") +
+                '</span><span class="pd-offer-go">查看</span></span></button>'
+              );
+            }
+            var unit = item.unit || "";
+            var priceText = offerRm(item.price);
+            if (!priceText || !unit) return "";
+            var bits = item.placeLabel || [item.gameName, item.platform].filter(Boolean).join(" · ");
+            var desc = String(item.content || item.description || "").trim() || "暂无服务介绍";
             return (
-              '<button type="button" class="pd-offer" data-pd-offer data-kind="' +
-              esc(item.kind) +
-              '" data-id="' +
+              '<button type="button" class="pd-offer" data-pd-offer data-kind="service" data-id="' +
               esc(item.id) +
               '" data-name="' +
               esc(item.name) +
-              '"><strong>' +
+              '" data-price="' +
+              esc(item.price) +
+              '" data-unit="' +
+              esc(unit) +
+              '"><span class="pd-offer-copy"><strong>' +
               esc(item.name) +
-              "</strong>" +
-              priceHtml +
-              "</button>"
+              "</strong><em>" +
+              esc(desc) +
+              "</em>" +
+              (bits ? "<small>" + esc(bits) + "</small>" : "") +
+              '</span><span class="pd-offer-side"><span class="pd-offer-price">RM ' +
+              esc(priceText) +
+              " / " +
+              esc(unit) +
+              '</span><span class="pd-offer-go">选择此服务</span></span></button>'
             );
           })
           .join("");
       })
       .catch(function () {
+        state.offersLoaded = false;
         host.innerHTML = '<p class="pd-empty">服务暂时读取失败</p>';
       });
   }
@@ -1050,18 +1111,24 @@
           window.MCJCompanionPresence && window.MCJCompanionPresence.fromCompanion
             ? window.MCJCompanionPresence.fromCompanion(c)
             : null;
-        window.MCJPlaceOrder.openFromCompanion(c, {
+        var offerServices = orderableServiceRows();
+        var picked = pref && pref.id
+          ? offerServices.filter(function (row) { return String(row.id) === String(pref.id); })[0]
+          : null;
+        var offerPrice = picked && picked.price > 0 ? picked.price : (pref && Number(pref.price) > 0 ? Number(pref.price) : 0);
+        var profileOrderExtras = {
           companionId: c.id || c.uid,
           companionName: c.name || c.nickname,
           service: pref && pref.name ? pref.name : "",
           requireServicePick: !(pref && pref.name),
-          unitPrice: Number(c.priceValue != null ? c.priceValue : c.price) || 0,
-          services: Array.isArray(c.services) ? c.services : [],
-          serviceIds: c.serviceIds || c.service_ids || [],
-          gamePrices: c.gamePrices || c.game_prices || {},
+          unitPrice: offerPrice > 0 ? offerPrice : 0,
+          services: state.offersLoaded ? offerServices : (Array.isArray(c.services) ? c.services : []),
+          lockOfferServices: !!state.offersLoaded,
+          serviceIds: state.offersLoaded ? offerServices.map(function (row) { return row.id; }) : (c.serviceIds || c.service_ids || []),
+          gamePrices: state.offersLoaded ? {} : (c.gamePrices || c.game_prices || {}),
           avatar: c.avatar || c.cover || c.cardImageUrl || "",
           publicId: c.publicId || "",
-          pricingUnit: c.pricingUnit || "小时",
+          pricingUnit: (picked && picked.pricingUnit) || (pref && pref.unit) || c.pricingUnit || "小时",
           availabilityStatus: presence ? presence.code : c.availabilityStatus || "",
           availabilityText: presence ? presence.label : c.availabilityText || c.status || c.onlineStatus || "",
           online: presence ? presence.code === "online" || presence.code === "busy" : c.online != null ? c.online : c.canOrderNow,
@@ -1070,7 +1137,12 @@
           canAcceptOrders: c.canAcceptOrders,
           canOrderNow: presence ? presence.canOrderNow : c.canOrderNow,
           level: c.level || c.levelName || "",
-        });
+        };
+        if (window.MCJMultiCompanionTeam && typeof window.MCJMultiCompanionTeam.routeOrder === "function") {
+          window.MCJMultiCompanionTeam.routeOrder(c, profileOrderExtras);
+        } else {
+          window.MCJPlaceOrder.openFromCompanion(c, profileOrderExtras);
+        }
       } catch (err) {
         if (window.MCJPlaceOrder && window.MCJPlaceOrder.close) window.MCJPlaceOrder.close();
         alert((err && err.message) || "打开下单弹窗失败");
@@ -1083,6 +1155,7 @@
           if (window.MCJPlaceOrder && typeof window.MCJPlaceOrder.isSubmitting === "function" && window.MCJPlaceOrder.isSubmitting()) {
             return;
           }
+          if (state.offersLoaded) return;
           var catC = (cat && cat.companion) || {};
           var services = (cat && cat.services) || [];
           // Do NOT force services[0] — that rewrites 三角洲@35 → 王者荣耀@30 on soft update.
@@ -1566,7 +1639,12 @@
         location.href = "gameplay-product.html?id=" + encodeURIComponent(offerId) + "&companion=" + encodeURIComponent(companionId);
         return;
       }
-      openOrderSheet({ name: offerName, id: offerId });
+      openOrderSheet({
+        name: offerName,
+        id: offerId,
+        price: Number(offerCard.getAttribute("data-price") || 0),
+        unit: offerCard.getAttribute("data-unit") || "",
+      });
       return;
     }
     if (e.target.closest("[data-open-order]")) {
@@ -1699,6 +1777,13 @@
       return [
         Number(c.reviewCount || list.length) || 0,
         Number(c.rating || 0) || 0,
+        Number(c.completedOrders || 0) || 0,
+        Number(c.goodRate || 0) || 0,
+        (Array.isArray(c.giftWall) ? c.giftWall : [])
+          .map(function (g) {
+            return String(g.giftId || g.giftName || "") + ":" + String(g.totalQuantity || 0);
+          })
+          .join(","),
         list
           .slice(0, 12)
           .map(function (r) {

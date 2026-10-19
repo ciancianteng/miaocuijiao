@@ -22,6 +22,13 @@ import {
 } from "../_companion-public-map.js";
 import { createSignedUrl, publicObjectUrl } from "../_companion-media-store.js";
 import { cleanRank, gameRanksFromStandards, readServiceStandards } from "../_service-standard.js";
+import {
+  companionLookupIds,
+  loadCompletedOrderCount,
+  mergeGiftWalls,
+  reviewsGroupedByCompanion,
+} from "../_companion-profile-stats.js";
+import { overlayQuotedOfferPrices } from "../_companion-offers.js";
 
 /** Per-game ranks; a legacy single game_rank is only attributed when the companion offers exactly one game. */
 function publicGameRanks(row = {}, gameNames = []) {
@@ -363,7 +370,7 @@ function publicCompanion(row = {}, profile = {}, levels = [], catalog = [], medi
     reviewCount: 0,
     goodReviewCount: 0,
     goodRate: 0,
-    completedOrders: Number(row.completed_orders || row.total_orders || 0) || 0,
+    completedOrders: 0,
     reviews: [],
   };
 }
@@ -391,7 +398,7 @@ function summarizeReviews(list = []) {
  */
 async function attachReviews(companions = [], opts = {}) {
   const summaryOnly = !!opts.summaryOnly;
-  const ids = [...new Set((companions || []).map((c) => c.id || c.uid).filter(Boolean))];
+  const ids = [...new Set((companions || []).flatMap((c) => companionLookupIds(c)))];
   if (!ids.length) return companions || [];
   let rows = [];
   const { normalizeReviewImages, isMissingReviewImagesColumn } = await import("../_review-images.js");
@@ -420,7 +427,11 @@ async function attachReviews(companions = [], opts = {}) {
         rows = await fetchReviews(baseSelect);
       }
     }
+    if (Array.isArray(rows) && rows.length >= limit) {
+      console.warn("[public/companions] review read hit the page cap", limit);
+    }
   } catch (e) {
+    console.warn("[public/companions] review read failed", e?.message || e);
     if (/companion_reviews|schema cache|PGRST|does not exist/i.test(String(e.message || e))) return companions;
     throw e;
   }
@@ -433,59 +444,51 @@ async function attachReviews(companions = [], opts = {}) {
     byOrder.set(key, r);
   }
   const deduped = [...byOrder.values()];
-  const byCid = {};
-  for (const r of deduped) {
-    const cid = r.companion_id;
-    if (!cid) continue;
-    if (!byCid[cid]) byCid[cid] = [];
-    byCid[cid].push(r);
-  }
-
-  if (summaryOnly) {
-    return (companions || []).map((c) => {
-      const cid = c.id || c.uid;
-      const list = byCid[cid] || [];
-      const summary = summarizeReviews(list);
-      return { ...c, ...summary, reviews: [] };
-    });
-  }
-
-  const bossIds = [...new Set(deduped.map((r) => r.boss_id).filter(Boolean))];
   const orderIds = [...new Set(deduped.map((r) => r.order_id).filter(Boolean))];
-  let bosses = {};
   let orders = {};
-  if (bossIds.length) {
-    const profiles = await supabaseJson(
-      restUrl("profiles", `?id=in.(${bossIds.map(encodeURIComponent).join(",")})&select=id,display_name,boss_uid`),
-      { headers: headers() }
-    ).catch(() => []);
-    bosses = Object.fromEntries((profiles || []).map((p) => [p.id, p]));
-  }
   if (orderIds.length) {
-    const orderRows = await supabaseJson(
-      restUrl("orders", `?id=in.(${orderIds.map(encodeURIComponent).join(",")})&select=id,order_no,game,status,companion_id`),
-      { headers: headers() }
-    ).catch(() => []);
-    orders = Object.fromEntries((orderRows || []).map((o) => [o.id, o]));
+    try {
+      const orderRows = [];
+      for (let i = 0; i < orderIds.length; i += 80) {
+        const chunk = orderIds.slice(i, i + 80);
+        const page = await supabaseJson(
+          restUrl("orders", `?id=in.(${chunk.map(encodeURIComponent).join(",")})&select=id,order_no,game,status,companion_id&limit=80`),
+          { headers: headers() }
+        );
+        if (Array.isArray(page)) orderRows.push(...page);
+      }
+      orders = Object.fromEntries(orderRows.map((o) => [o.id, o]));
+    } catch (error) {
+      console.warn("[public/companions] review order lookup failed", error?.message || error);
+      orders = null;
+    }
   }
-  // Detail: drop reviews whose order.companion_id disagrees (same as before).
-  for (const cid of Object.keys(byCid)) {
-    byCid[cid] = byCid[cid].filter((r) => {
-      const order = orders[r.order_id] || {};
-      if (order.companion_id && String(order.companion_id) !== String(cid)) return false;
-      return true;
-    });
+  const byOwner = reviewsGroupedByCompanion(companions, deduped, orders);
+  let bosses = {};
+  if (!summaryOnly) {
+    const bossIds = [...new Set(deduped.map((r) => r.boss_id).filter(Boolean))];
+    if (bossIds.length) {
+      const profiles = await supabaseJson(
+        restUrl("profiles", `?id=in.(${bossIds.map(encodeURIComponent).join(",")})&select=id,display_name,boss_uid`),
+        { headers: headers() }
+      ).catch((error) => {
+        console.warn("[public/companions] review boss lookup failed", error?.message || error);
+        return [];
+      });
+      bosses = Object.fromEntries((profiles || []).map((p) => [p.id, p]));
+    }
   }
   return (companions || []).map((c) => {
     const cid = c.id || c.uid;
-    const list = byCid[cid] || [];
+    const list = byOwner[cid] || [];
     const summary = summarizeReviews(list);
+    if (summaryOnly) return { ...c, ...summary, reviews: [] };
     return {
       ...c,
       ...summary,
       reviews: list.slice(0, 30).map((r) => {
         const boss = bosses[r.boss_id] || {};
-        const order = orders[r.order_id] || {};
+        const order = (orders && orders[r.order_id]) || {};
         const bossCode = String(boss.boss_uid || "").trim() || "";
         return {
           id: r.id,
@@ -865,8 +868,27 @@ async function loadCompanions(id = "", opts = {}) {
   }
 
   const mapped = (await Promise.all((companions || []).map((row) => enrichOne(row)))).filter(Boolean);
+  const priced = await overlayQuotedOfferPrices(mapped);
   // Hall list: summaryOnly (rating aggregates). Detail keeps full review bodies + joins.
-  return attachReviews(mapped, { summaryOnly: !String(id || "").trim() });
+  const reviewed = await attachReviews(priced, { summaryOnly: !String(id || "").trim() });
+  return attachCompletedCounts(reviewed);
+}
+
+async function attachCompletedCounts(companions = []) {
+  if (!companions.length) return companions;
+  try {
+    const counts = await loadCompletedOrderCount(
+      (table, query) => supabaseJson(restUrl(table, query), { headers: headers() }),
+      companions
+    );
+    return companions.map((card) => {
+      const key = String(card.id || card.uid || "");
+      return { ...card, completedOrders: counts[key] || 0 };
+    });
+  } catch (error) {
+    console.warn("[public/companions] completed order count failed", error?.message || error);
+    return companions;
+  }
 }
 
 /**
@@ -897,18 +919,22 @@ export async function hallDisplayByUserIds(userIds = []) {
   const levelList = Array.isArray(levels) ? levels.map((l) => toPublicLevel(l)) : [];
   const profileMap = Object.fromEntries((profiles || []).map((row) => [row.id, row]));
   const profileIds = (rows || []).map((row) => row.id).filter(Boolean);
-  const mediaMap = await mediaExtrasByProfile(profileIds, { listMode: true }).catch(() => ({}));
-  const out = {};
+  const [mediaMap, certMap] = await Promise.all([
+    mediaExtrasByProfile(profileIds, { listMode: true }).catch(() => ({})),
+    resolveCertTagsForProfiles(profileIds).catch(() => ({})),
+  ]);
+  const cards = [];
   for (const row of rows || []) {
     if (!row?.user_id) continue;
     const profile = profileMap[row.user_id] || {};
     // Hall list omits service_ids. Ranking must use that same card, not a stricter detail projection.
     const listRow = { ...row };
     delete listRow.service_ids;
-    const card = publicCompanion(listRow, profile, levelList, catalog, mediaMap[row.id] || {}, []);
-    out[row.user_id] = card;
+    const card = publicCompanion(listRow, profile, levelList, catalog, mediaMap[row.id] || {}, certMap[row.id] || []);
+    cards.push(card);
   }
-  return out;
+  const priced = await overlayQuotedOfferPrices(cards);
+  return Object.fromEntries(priced.map((card) => [card.id || card.uid, card]));
 }
 
 export default async function handler(req, res) {
@@ -934,9 +960,18 @@ export default async function handler(req, res) {
     if (lookup && companions?.length === 1) {
       try {
         const { getCompanionGiftWall } = await import("../_gift-orders.js");
-        const cid = String(companions[0].id || companions[0].uid || "").trim();
-        companions[0].giftWall = cid ? await getCompanionGiftWall(cid) : [];
-      } catch {
+        const ids = companionLookupIds(companions[0]);
+        const walls = [];
+        for (const gid of ids) {
+          try {
+            walls.push(await getCompanionGiftWall(gid));
+          } catch (error) {
+            console.warn("[public/companions] gift wall read failed", gid, error?.message || error);
+          }
+        }
+        companions[0].giftWall = mergeGiftWalls(walls);
+      } catch (error) {
+        console.warn("[public/companions] gift wall read failed", error?.message || error);
         companions[0].giftWall = companions[0].giftWall || [];
       }
     }

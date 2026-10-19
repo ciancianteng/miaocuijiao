@@ -91,6 +91,11 @@
   cursor:default !important;
   transition:border-color .15s ease,box-shadow .15s ease,background .15s ease !important;
 }
+.mcj-cert-badge:not(.is-official)[style*="--mcj-cert-color"],
+.mcj-cert-tag:not(.is-official)[style*="--mcj-cert-color"]{
+  color:var(--mcj-cert-color) !important;
+  border-color:var(--mcj-cert-color) !important;
+}
 .mcj-cert-badge .mcj-cert-icon,
 .mcj-cert-tag .mcj-cert-icon{
   display:inline-flex !important;

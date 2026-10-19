@@ -10,6 +10,7 @@ import {
   readLocalCategories,
   writeLocalCategories,
 } from "../_services-store.js";
+import { parseMoneyStrict } from "../_service-offer-quote.js";
 
 loadLocalEnv();
 
@@ -197,12 +198,21 @@ function clean(input = {}, categories = DEFAULT_CATEGORIES) {
   if (!finalPositions.length) {
     throw Object.assign(new Error("请至少勾选一个显示位置。"), { status: 400 });
   }
+  const rawPrice = String(input.defaultPrice ?? input.default_price ?? "").trim();
+  let defaultPrice = "";
+  if (rawPrice) {
+    const parsed = parseMoneyStrict(rawPrice);
+    if (parsed.error || !(parsed.value > 0)) {
+      throw Object.assign(new Error(parsed.error || "平台标准价格必须大于 0。"), { status: 400 });
+    }
+    defaultPrice = String(parsed.value);
+  }
   return normalizeServiceRow({
     id: input.id,
     name,
     category,
     icon: String(input.icon || "🎮").trim() || "🎮",
-    default_price: String(input.defaultPrice ?? input.default_price ?? "").trim(),
+    default_price: defaultPrice,
     enabled: truthy(input.enabled, true),
     show_home: finalPositions.includes("home"),
     allow_apply: truthy(input.allowApply ?? input.allow_apply, true),
@@ -276,18 +286,29 @@ async function listFromDb() {
   return (Array.isArray(rows) ? rows : []).map(view);
 }
 
+async function attachLevelCaps(result) {
+  try {
+    const { loadLevelMarkupCaps } = await import("../_service-price-policy.js");
+    return { ...result, levelMarkupCaps: await loadLevelMarkupCaps() };
+  } catch (error) {
+    console.warn("[admin/services] level markup caps", error?.message || error);
+    const { normalizeLevelMarkupCaps } = await import("../_service-offer-quote.js");
+    return { ...result, levelMarkupCaps: normalizeLevelMarkupCaps(null) };
+  }
+}
+
 async function listServices() {
   const categoryResult = await listCategories();
   if (!hasDb()) {
     const rows = await readLocalServices();
-    return {
+    return attachLevelCaps({
       services: rows.map(view).sort((a, b) => a.sort - b.sort),
       categories: categoryResult.categories,
       icons: DEFAULT_ICONS,
       positions: DISPLAY_POSITIONS,
       source: "local",
       message: "数据库未配置，当前无法持久同步。请配置 Supabase 并执行 supabase/services.sql。",
-    };
+    });
   }
   try {
     const services = await listFromDb();
@@ -309,23 +330,23 @@ async function listServices() {
     } catch (priceErr) {
       console.warn("[admin/services] price policy", priceErr?.message || priceErr);
     }
-    return {
+    return attachLevelCaps({
       services,
       categories: categoryResult.categories,
       icons: DEFAULT_ICONS,
       positions: DISPLAY_POSITIONS,
       source: "supabase",
-    };
+    });
   } catch (error) {
     if (!isMissingTable(error)) throw error;
-    return {
+    return attachLevelCaps({
       services: [],
       categories: categoryResult.categories.length ? categoryResult.categories : DEFAULT_CATEGORIES.slice(),
       icons: DEFAULT_ICONS,
       positions: DISPLAY_POSITIONS,
       source: "missing_table",
       message: "services 表未初始化。请先在 Supabase SQL Editor 执行 supabase/services.sql，再新增服务。保存才会真实写入数据库并全站同步。",
-    };
+    });
   }
 }
 
@@ -480,10 +501,19 @@ export default async function handler(req, res) {
       return json(res, 200, { ok: true, message: "订单要求已保存", orderFields });
     }
 
+    if (action === "save_level_markup_caps") {
+      const { saveLevelMarkupCaps } = await import("../_service-price-policy.js");
+      const levelMarkupCaps = await saveLevelMarkupCaps(body.caps || body.levelMarkupCaps || body);
+      return json(res, 200, { ok: true, message: "等级加价上限已保存。", levelMarkupCaps });
+    }
+
     if (action === "save" || action === "create") {
+      const src = body.service || body;
+      const { normalizePricePolicy, assertPricePolicy, loadLevelMarkupCaps } = await import("../_service-price-policy.js");
+      const caps = await loadLevelMarkupCaps().catch(() => null);
+      assertPricePolicy(normalizePricePolicy(src), src, caps);
       const result = await saveService(body, categories);
       const serviceId = result?.service?.id;
-      const src = body.service || body;
       if (serviceId) {
         try {
           const { savePricePolicy } = await import("../_service-price-policy.js");

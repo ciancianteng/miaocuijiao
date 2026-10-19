@@ -637,6 +637,7 @@
       serviceIds: serviceIds,
       gamePrices: gamePrices,
       pricingUnit: String(raw.pricingUnit || raw.pricing_unit || "小时"),
+      lockOfferServices: !!raw.lockOfferServices,
       avatar: avatarSrc(raw.avatar || raw.cover || raw.cardImageUrl || ""),
       publicId: raw.publicId || "",
       level: level,
@@ -666,6 +667,9 @@
     if (typeof s !== "object") return null;
     var name = String(s.name || s.title || s.serviceName || s.game || "").trim();
     if (!name || LEGACY_SERVICE_NAMES[name]) return null;
+    var description = String(s.description || "").trim();
+    var standard = s.standard && typeof s.standard === "object" ? s.standard : null;
+    if (!standard && description) standard = { sections: [{ label: "服务介绍", value: description }] };
     return {
       id: String(s.id || s.serviceId || s.service_id || "name:" + name),
       serviceId: String(s.serviceId || s.service_id || (/^[0-9a-f-]{36}$/i.test(String(s.id || "")) ? s.id : "") || ""),
@@ -673,7 +677,8 @@
       price: money(s.price != null ? s.price : s.unitPrice != null ? s.unitPrice : 0),
       pricingUnit: String(s.pricingUnit || s.pricing_unit || "小时"),
       sort: s.sort != null ? Number(s.sort) : idx || 0,
-      standard: s.standard && typeof s.standard === "object" ? s.standard : null,
+      description: description,
+      standard: standard,
     };
   }
   function selectedServiceItem() {
@@ -755,6 +760,7 @@
         push(normalizeServiceItem(s, i));
       });
     }
+    if (companion.lockOfferServices) return out;
     var prices = companion.gamePrices && typeof companion.gamePrices === "object" ? companion.gamePrices : {};
     var games = splitGameNames(companion.game || companion.mainGame || "");
     if (!out.length && Array.isArray(companion.serviceIds) && companion.serviceIds.length) {
@@ -985,7 +991,7 @@
         if (!state.companion || String(state.companion.companionId) !== companionId) return body;
         var services = Array.isArray(body.services) ? body.services : [];
         var catC = body.companion || {};
-        state.companion.services = services;
+        if (!state.companion.lockOfferServices) state.companion.services = services;
         if (catC.gamePrices || catC.game_prices) state.companion.gamePrices = catC.gamePrices || catC.game_prices;
         if (catC.serviceIds || catC.service_ids) state.companion.serviceIds = catC.serviceIds || catC.service_ids;
         var gameName = catC.game || catC.mainGame || "";
@@ -1752,6 +1758,74 @@
     return String(c.companionId || c.id || c.uid || "").trim();
   }
 
+  function otherDraftCompanions() {
+    var team = window.MCJMultiCompanionTeam;
+    if (!team || typeof team.getLines !== "function") return [];
+    var cid = currentCompanionId();
+    return (team.getLines() || []).filter(function (line) {
+      return String(line.companionId || "") !== cid;
+    });
+  }
+
+  function currentDraftCompanion() {
+    if (!state.open || !state.companion) return null;
+    var c = state.companion;
+    var service = "";
+    try {
+      service = currentServiceLabel();
+    } catch (e) {
+      service = state.service || "";
+    }
+    return {
+      companionId: c.companionId || c.id || c.uid || "",
+      companionName: c.companionName || c.name || "陪玩",
+      avatar: c.avatar || c.image || "",
+      unitPrice: money(c.unitPrice),
+      service: service,
+      serviceType: service,
+      serviceId: state.selectedServiceId || "",
+      game: service,
+      hours: currentHours(),
+      quantity: currentQuantity(),
+      services: resolveServices(c),
+      online: c.online !== false,
+      status: c.availabilityStatus || "",
+      statusText: c.availabilityText || "",
+      gameId: readModalGameId(),
+    };
+  }
+
+  // The confirm button must not place_order for only the companion in this modal
+  // when other companions are already in the shared draft.
+  function mergeConfirmIntoTeam() {
+    if (!otherDraftCompanions().length) return false;
+    var team = window.MCJMultiCompanionTeam;
+    if (!team || typeof team.openCheckout !== "function") return false;
+    if (!requireModalGameId()) return true;
+    var cid = currentCompanionId();
+    var lines = typeof team.getLines === "function" ? team.getLines() : [];
+    var already = (lines || []).some(function (line) {
+      return String(line.companionId || "") === cid;
+    });
+    if (already && typeof team.updateLine === "function") {
+      team.updateLine(cid, {
+        service: currentServiceLabel(),
+        serviceType: currentServiceLabel(),
+        serviceId: state.selectedServiceId || "",
+        unitPrice: money(state.companion && state.companion.unitPrice),
+        hours: currentHours(),
+        quantity: currentQuantity(),
+      });
+    } else if (!already) {
+      var result = pushCurrentCompanionToTeam();
+      if (!result || (!result.ok && result.error !== "duplicate")) return true;
+    }
+    applyModalSharedToTeam();
+    close();
+    team.openCheckout();
+    return true;
+  }
+
   function teamDraftShouldAbsorbCurrentCompanion() {
     var team = window.MCJMultiCompanionTeam;
     if (!team) return false;
@@ -1972,12 +2046,26 @@
 
   function addAnotherCompanion() {
     if (!requireModalGameId()) return;
+    var team = window.MCJMultiCompanionTeam;
     var result = pushCurrentCompanionToTeam();
-    if (!result || !result.ok) return;
+    if (!result || !result.ok) {
+      if (
+        result &&
+        result.error === "duplicate" &&
+        team &&
+        typeof team.getCount === "function" &&
+        team.getCount() >= 2 &&
+        typeof team.openCheckout === "function"
+      ) {
+        close();
+        team.openCheckout();
+      }
+      return;
+    }
     applyModalSharedToTeam();
     close();
-    if (result.count >= 2) {
-      toast("已选 " + result.count + " 人，可继续选或确认并支付");
+    if (result.count >= 2 && team && typeof team.openCheckout === "function") {
+      team.openCheckout();
       return;
     }
     try {
@@ -2020,9 +2108,9 @@
         return;
       }
 
-      // Existing multi draft stays until this independent order is created successfully.
-      // 立即下单 / 确认订单并付款 always calls place_order.
-      // 再加一位陪玩 is the only path that joins the multi draft.
+      // Existing multi draft stays until a successful create. This modal always submits one place_order.
+      // Hall / profile / ranking 立即下单 go through MCJMultiCompanionTeam.routeOrder,
+      // which keeps that draft and opens this modal only when nobody else is selected.
       // Opening this modal, leaving it, or a failed create must not clear the selection.
 
       if (!requireLogin()) return;
@@ -2117,6 +2205,10 @@
         replaceSlot.mode === "replacement" &&
         replaceSlot.parentOrderId &&
         replaceSlot.replaceChildId;
+
+      // Existing multi draft stays intact. Confirming this modal must take the
+      // companion currently on screen into that draft instead of place_order alone.
+      if (!isReplacement && mergeConfirmIntoTeam()) return;
 
       var payload = isReplacement
         ? {
@@ -2402,6 +2494,7 @@
       avatar: extras.avatar || src.avatar || src.cover || "",
       publicId: extras.publicId || src.publicId || "",
       pricingUnit: extras.pricingUnit || src.pricingUnit || "小时",
+      lockOfferServices: !!(extras.lockOfferServices || src.lockOfferServices),
       levelId: extras.levelId || extras.level_id || src.levelId || src.level_id || "",
       level: extras.level || src.level || src.levelName || "",
       levelName: extras.levelName || src.levelName || extras.level || src.level || "",
@@ -2490,6 +2583,7 @@
     isOpen: function () {
       return !!state.open;
     },
+    currentDraftCompanion: currentDraftCompanion,
     submit: submitOrder,
     resolveServices: resolveServices,
     applySelectedService: applySelectedService,

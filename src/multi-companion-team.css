@@ -301,6 +301,12 @@ body:has(.mcj-team-bar) #playerList.companion-hall-grid {
   font-size: 17px;
   font-weight: 800;
 }
+.mcj-team-sheet-sub {
+  margin: 4px 0 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: rgba(255, 214, 235, 0.78);
+}
 .mcj-team-sheet-close {
   width: 36px;
   height: 36px;
@@ -491,8 +497,9 @@ body:has(.mcj-team-bar) #playerList.companion-hall-grid {
 }
 .mcj-team-sheet-foot {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   flex: 0 0 auto;
   position: relative;
   z-index: 2;
@@ -501,8 +508,26 @@ body:has(.mcj-team-bar) #playerList.companion-hall-grid {
   padding: 12px 16px calc(16px + env(safe-area-inset-bottom, 0px));
   border-top: 1px solid rgba(243, 168, 203, 0.18);
 }
+.mcj-team-sheet-actions {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+}
+.mcj-team-add-more {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 44px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 214, 235, 0.4);
+  background: rgba(255, 255, 255, 0.04);
+  color: #ffdceb;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+}
 .mcj-team-sheet-total {
-  flex: 1;
+  flex: 1 1 100%;
   font-size: 13px;
   color: rgba(255, 214, 235, 0.75);
 }
@@ -511,8 +536,10 @@ body:has(.mcj-team-bar) #playerList.companion-hall-grid {
   font-size: 16px;
 }
 .mcj-team-submit {
+  flex: 1 1 0;
+  min-width: 0;
   height: 44px;
-  padding: 0 18px;
+  padding: 0 12px;
   border-radius: 999px;
   border: 1px solid rgba(255, 143, 197, 0.55);
   background: rgba(255, 143, 197, 0.22);

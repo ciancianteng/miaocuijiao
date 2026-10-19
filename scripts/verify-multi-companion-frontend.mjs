@@ -460,7 +460,7 @@ test("TEST multi confirm navigates to payment-confirm (not inline debit)", () =>
   assert.doesNotMatch(teamSrc, /action:\s*["']pay_order["']/);
   // Must not jump straight to orders success after create
   const submitIdx = teamSrc.indexOf("function submitTeam");
-  const submitChunk = teamSrc.slice(submitIdx, submitIdx + 5200);
+  const submitChunk = teamSrc.slice(submitIdx, submitIdx + 8000);
   assert.match(submitChunk, /payment-confirm\.html\?order=/);
   assert.doesNotMatch(submitChunk, /orders\.html\?id=/);
 });
@@ -508,6 +508,214 @@ test("P0-1B modal inherits shared game ID and keeps 修改", () => {
   assert.match(teamSrc, /getSharedAccountId/);
   const multiSrc = readFileSync(path.join(root, "server/api/_place-multi-order.js"), "utf8");
   assert.match(multiSrc, /sharedGameId \|\| line\.gameId \|\| line\.game_id/);
+});
+
+test("TEST unified routeOrder keeps A,B,C on every 立即下单", () => {
+  const profileSrc = readFileSync(path.join(root, "src/profile-detail.js"), "utf8");
+  const rankingSrc = readFileSync(path.join(root, "src/ranking-page.js"), "utf8");
+  assert.match(hallSrc, /MCJMultiCompanionTeam\.routeOrder/);
+  assert.match(profileSrc, /MCJMultiCompanionTeam\.routeOrder/);
+  assert.match(rankingSrc, /MCJMultiCompanionTeam\.routeOrder/);
+  assert.match(teamSrc, /function routeOrder/);
+  assert.match(teamSrc, /多人陪玩订单确认/);
+  assert.match(teamSrc, /已选择 /);
+  assert.match(teamSrc, /再加一位陪玩/);
+  assert.match(teamSrc, /确认订单并付款/);
+  assert.match(teamSrc, /data-mcj-team-add-more/);
+  assert.match(teamSrc, /incompleteLineNames/);
+  assert.match(placeSrc, /team\.openCheckout\(\)/);
+  assert.match(placeSrc, /function mergeConfirmIntoTeam/);
+  assert.match(placeSrc, /if \(!isReplacement && mergeConfirmIntoTeam\(\)\) return;/);
+  assert.match(teamSrc, /function absorbOpenModalCompanion/);
+  assert.doesNotMatch(placeSrc, /addAnotherCompanion[\s\S]{0,500}action:\s*"place_order"/);
+
+  const store = {};
+  const opened = [];
+  const document = {
+    querySelector() {
+      return null;
+    },
+    createElement() {
+      return {
+        classList: { add() {}, remove() {} },
+        setAttribute() {},
+        appendChild() {},
+        style: {},
+      };
+    },
+    head: { appendChild() {} },
+    body: { appendChild() {}, classList: { add() {}, remove() {} } },
+    documentElement: { classList: { add() {}, remove() {} }, style: { setProperty() {} } },
+    addEventListener() {},
+  };
+  const window = {
+    MCJPlaceOrder: {
+      resolveServices(c) {
+        if (Array.isArray(c.services) && c.services.length) {
+          return c.services.map(function (s, i) {
+            return {
+              name: s.name,
+              price: Number(s.price || 0),
+              serviceId: s.serviceId || s.id || "",
+              sort: i,
+            };
+          });
+        }
+        return [{ name: c.service || "陪玩", price: Number(c.unitPrice || 0), serviceId: c.serviceId || "" }];
+      },
+      openFromCompanion(raw) {
+        opened.push(raw && (raw.companionId || raw.id));
+      },
+      isOpen() {
+        return false;
+      },
+      close() {},
+    },
+    addEventListener() {},
+  };
+  const sessionStorage = {
+    getItem(k) {
+      return store[k] || null;
+    },
+    setItem(k, v) {
+      store[k] = String(v);
+    },
+    removeItem(k) {
+      delete store[k];
+    },
+  };
+  const sandbox = {
+    window,
+    document,
+    sessionStorage,
+    localStorage: sessionStorage,
+    console,
+    setTimeout,
+    clearTimeout,
+    location: { href: "" },
+    fetch() {
+      return Promise.reject(new Error("no fetch in unit test"));
+    },
+  };
+  sandbox.window = Object.assign(window, { document, sessionStorage, localStorage: sessionStorage });
+  vm.runInNewContext(teamSrc, sandbox);
+  const api = sandbox.window.MCJMultiCompanionTeam;
+  const A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const B = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+  const C = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+  const servicesA = [{ name: "王者荣耀", price: 45, serviceId: "svc-a" }];
+  const servicesB = [{ name: "和平精英", price: 40, serviceId: "svc-b" }];
+  const servicesC = [
+    { name: "三角洲", price: 35, serviceId: "svc-c1" },
+    { name: "永劫无间", price: 50, serviceId: "svc-c2" },
+  ];
+
+  const alone = api.routeOrder({
+    companionId: A,
+    companionName: "1717",
+    unitPrice: 45,
+    service: "",
+    services: servicesA,
+    online: true,
+  });
+  assert.equal(alone.mode, "single");
+  assert.deepEqual(opened, [A]);
+  assert.equal(api.getCount(), 0);
+
+  assert.equal(api.add({ companionId: A, companionName: "1717", unitPrice: 45, service: "王者荣耀", serviceId: "svc-a", services: servicesA, online: true }).ok, true);
+  assert.equal(api.add({ companionId: B, companionName: "烦烦", unitPrice: 40, service: "和平精英", serviceId: "svc-b", services: servicesB, online: true }).ok, true);
+  assert.equal(api.add({ companionId: C, companionName: "3m", unitPrice: 35, service: "三角洲", serviceId: "svc-c1", services: servicesC, online: true }).ok, true);
+  assert.equal(api.getTotal(), 120);
+
+  opened.length = 0;
+  for (const id of [A, B, C]) {
+    const routed = api.routeOrder({
+      companionId: id,
+      companionName: id,
+      unitPrice: 1,
+      service: "",
+      services: [],
+      online: true,
+    });
+    assert.equal(routed.mode, "multi");
+    const ids = api.buildPayload().companions.map((row) => row.companionId);
+    assert.equal(ids.join(","), [A, B, C].join(","));
+  }
+  assert.equal(opened.length, 0);
+  assert.equal(api.getCount(), 3);
+  assert.equal(api.getTotal(), 120);
+  const payload = api.buildPayload();
+  assert.equal(payload.action, "place_multi_order");
+  assert.equal(payload.companions[0].unitPrice, 45);
+  assert.equal(payload.companions[0].serviceId, "svc-a");
+  assert.equal(payload.companions[1].unitPrice, 40);
+  assert.equal(payload.companions[2].unitPrice, 35);
+  assert.equal(payload.companions[2].serviceName, "三角洲");
+
+  api.remove(B);
+  assert.equal(api.getLines().map((row) => row.companionId).join(","), [A, C].join(","));
+  assert.equal(api.getTotal(), 80);
+  api._test.updateLine(A, { hours: 2 });
+  assert.equal(api.getLines().find((row) => row.companionId === A).hours, 2);
+  assert.equal(api.getTotal(), 125);
+  api._test.updateLine(C, { service: "永劫无间", serviceId: "svc-c2", unitPrice: 50 });
+  assert.equal(api.getLines().find((row) => row.companionId === C).unitPrice, 50);
+  assert.equal(api.getTotal(), 140);
+
+  api.clear();
+  api.add({ companionId: A, companionName: "1717", unitPrice: 45, service: "王者荣耀", serviceId: "svc-a", services: servicesA, online: true });
+  api.add({ companionId: B, companionName: "烦烦", unitPrice: 40, service: "和平精英", serviceId: "svc-b", services: servicesB, online: true });
+  const joined = api.routeOrder({
+    companionId: C,
+    companionName: "3m",
+    unitPrice: 35,
+    service: "",
+    services: servicesC,
+    online: true,
+  });
+  assert.equal(joined.mode, "multi");
+  assert.equal(api.getCount(), 3);
+  assert.equal(api.getLines().map((row) => row.companionId).join(","), [A, B, C].join(","));
+  const pending = api.getLines().find((row) => row.companionId === C);
+  assert.equal(pending.service, "");
+  assert.equal(pending.unitPrice, 0);
+  assert.equal(api._test.incompleteLineNames().join(","), "3m");
+  api._test.updateLine(C, { service: "三角洲", serviceType: "三角洲", serviceId: "svc-c1", unitPrice: 35 });
+  assert.equal(api._test.incompleteLineNames().join(","), "");
+  const merged = api.buildPayload();
+  assert.equal(merged.companions.length, 3);
+  assert.equal(merged.companions.reduce((n, row) => n + row.totalAmount, 0), 120);
+
+  const dup = api.add({ companionId: A, companionName: "1717", unitPrice: 45, service: "王者荣耀", online: true });
+  assert.equal(dup.ok, false);
+  assert.equal(dup.error, "duplicate");
+  assert.equal(api.getCount(), 3);
+
+  api.clear();
+  api.add({ companionId: A, companionName: "1717", unitPrice: 45, service: "王者荣耀", serviceId: "svc-a", services: servicesA, online: true });
+  api.add({ companionId: B, companionName: "烦烦", unitPrice: 40, service: "和平精英", serviceId: "svc-b", services: servicesB, online: true });
+  sandbox.window.MCJPlaceOrder.isOpen = () => true;
+  sandbox.window.MCJPlaceOrder.currentDraftCompanion = () => ({
+    companionId: C,
+    companionName: "3m",
+    unitPrice: 35,
+    service: "三角洲",
+    serviceType: "三角洲",
+    serviceId: "svc-c1",
+    services: servicesC,
+    hours: 1,
+    quantity: 1,
+    online: true,
+  });
+  api.openCheckout();
+  assert.equal(api.getCount(), 3);
+  const confirmed = api.buildPayload();
+  assert.equal(confirmed.action, "place_multi_order");
+  assert.equal(confirmed.companions.map((row) => row.companionId).join(","), [A, B, C].join(","));
+  assert.equal(confirmed.companions[2].serviceName, "三角洲");
+  assert.equal(confirmed.companions[2].unitPrice, 35);
+  assert.equal(confirmed.companions[2].totalAmount, 35);
+  assert.equal(confirmed.companions.reduce((n, row) => n + row.totalAmount, 0), 120);
 });
 
 const failed = results.filter((r) => !r.ok);

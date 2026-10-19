@@ -809,7 +809,7 @@
         return;
       }
       var live = hallItemById(id) || {};
-      window.MCJPlaceOrder.openFromCompanion({
+      var hallOrder = {
         companionId: id,
         id: id,
         uid: id,
@@ -841,7 +841,12 @@
         availabilityText: orderBtn.getAttribute("data-hall-status-text") || "",
         online: orderBtn.getAttribute("data-hall-online") === "1",
         canAcceptBossOrder: orderBtn.getAttribute("data-hall-online") === "1",
-      });
+      };
+      if (window.MCJMultiCompanionTeam && typeof window.MCJMultiCompanionTeam.routeOrder === "function") {
+        window.MCJMultiCompanionTeam.routeOrder(hallOrder);
+        return;
+      }
+      window.MCJPlaceOrder.openFromCompanion(hallOrder);
     });
   }
   

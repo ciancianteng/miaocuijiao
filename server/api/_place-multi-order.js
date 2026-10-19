@@ -37,6 +37,8 @@ const OPTIONAL_ORDER_COLUMNS = [
   "service_name",
   "quantity",
   "pricing_unit",
+  "price_snapshot",
+  "service_id",
   "paid_at",
   "paid_cat_food",
 ];
@@ -260,7 +262,20 @@ export async function placeMultiOrder(ctx) {
       gameName: gameHint,
       level,
     });
+    if (resolved?.blocked) {
+      return {
+        ok: false,
+        status: 400,
+        code: "SERVICE_CLOSED",
+        message: resolved.message || "该服务已关闭，不能创建新订单。",
+      };
+    }
     let unitPrice = money(resolved.price);
+    const serverUnit = String(resolved?.pricingUnit || "").trim();
+    const clientUnitName = String(line.pricingUnit || line.pricing_unit || "").trim();
+    if (resolved?.catalogHit && serverUnit && clientUnitName && clientUnitName !== serverUnit) {
+      return { ok: false, status: 400, message: "计价单位已变化，请刷新后重试。" };
+    }
     if (!(unitPrice > 0)) {
       return {
         ok: false,
@@ -336,6 +351,9 @@ export async function placeMultiOrder(ctx) {
       unitPrice,
       totalAmount,
       game: serviceType,
+      pricingUnit: serverUnit || clientUnitName || String(cp.pricing_unit || "小时"),
+      priceSource: String(resolved?.source || ""),
+      catalogServiceId: resolved?.catalogHit ? serviceId : "",
     });
   }
 
@@ -476,8 +494,17 @@ export async function placeMultiOrder(ctx) {
         game_id_value: line.gameId,
         notes: childDescription,
         quantity: line.quantity,
+        pricing_unit: line.pricingUnit || "小时",
         voice_mode: voiceMode,
+        price_snapshot: {
+          unitPrice: line.unitPrice,
+          pricingUnit: line.pricingUnit || "小时",
+          serviceId: line.catalogServiceId || line.serviceId || "",
+          source: line.priceSource || "",
+          capturedAt: nowIso(),
+        },
       };
+      if (line.catalogServiceId) childRow.service_id = line.catalogServiceId;
       let child;
       try {
         child = await insertOrderRow(deps, childRow);

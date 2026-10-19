@@ -480,28 +480,52 @@ export async function resolveOrderUnitPrice({
   });
   const catalogId = String(serviceId || "").trim();
   if (!catalogId) return resolved;
+  let platform = null;
   try {
-    const platformRows = await companionDb("services", `?id=eq.${encodeURIComponent(catalogId)}&select=id,enabled&limit=1`).catch(() => []);
-    const platform = Array.isArray(platformRows) ? platformRows[0] : null;
-    if (platform && platform.enabled === false) {
-      return { ...resolved, price: 0, blocked: true, message: "该服务已停用，不能创建新订单。" };
-    }
+    const platformRows = await companionDb(
+      "services",
+      `?id=eq.${encodeURIComponent(catalogId)}&select=id,name,enabled,allow_order,default_price&limit=1`
+    ).catch(() => []);
+    platform = Array.isArray(platformRows) ? platformRows[0] : null;
+  } catch (err) {
+    console.warn("[order-price] catalog lookup", err?.message || err);
+    platform = null;
+  }
+  if (!platform) return resolved;
+  const base = { ...resolved, catalogHit: true };
+  if (platform.enabled === false || platform.allow_order === false) {
+    return { ...base, price: 0, blocked: true, message: "该服务已停用，不能创建新订单。" };
+  }
+  try {
     const { listCompanionOffers } = await import("./_companion-offers.js");
     const ownerId = String(companion?.user_id || companionId || "").trim();
-    if (!ownerId) return resolved;
+    if (!ownerId) {
+      return { ...base, price: 0, blocked: true, message: "该陪玩已关闭此服务，不能创建新订单。" };
+    }
     const listed = await listCompanionOffers(ownerId);
     const offer = (listed.offers || []).find((item) => item.kind === "service" && String(item.id) === catalogId);
-    if (!offer) return resolved;
-    if (offer.accepting === false) {
-      return { ...resolved, price: 0, blocked: true, message: "该陪玩已关闭此服务，不能创建新订单。" };
+    if (!offer || offer.orderable !== true || !(Number(offer.price) > 0)) {
+      const closed = !offer || offer.accepting !== true;
+      return {
+        ...base,
+        price: 0,
+        blocked: true,
+        pricingUnit: offer?.unit || "",
+        message: closed ? "该陪玩已关闭此服务，不能创建新订单。" : offer?.priceMessage || "平台尚未配置价格",
+      };
     }
-    if (!(Number(resolved.price) > 0) && offer.price != null && Number(offer.price) > 0) {
-      return { ...resolved, price: Number(offer.price), source: "companion_offer" };
-    }
+    return {
+      ...base,
+      price: Number(offer.price),
+      source: "companion_offer",
+      pricingUnit: offer.unit || "小时",
+      blocked: false,
+      serviceName: offer.name || platform.name || "",
+    };
   } catch (err) {
     console.warn("[order-price] companion offer", err?.message || err);
+    return { ...base, price: 0, blocked: true, message: "服务价格暂时无法确认，请稍后重试。" };
   }
-  return resolved;
 }
 
 export { money as moneyAmount, buildAdminServicePriceList as listServicePricesForAdmin };

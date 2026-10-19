@@ -22,6 +22,7 @@
     positions: DEFAULT_POSITIONS.slice(),
     editing: null,
     formOpen: false,
+    levelMarkupCaps: { 1: 5, 2: 8, 3: 10, 4: 13, 5: 15 },
   };
 
   function esc(v) {
@@ -80,6 +81,9 @@
       priceMin: "",
       priceMax: "",
       unit: "局",
+      gameName: "",
+      platform: "",
+      description: "",
       allowSelfPrice: false,
       allowSelfOff: false,
       orderFields: [],
@@ -103,6 +107,9 @@
           priceMin: item.pricePolicy && item.pricePolicy.min != null ? item.pricePolicy.min : "",
           priceMax: item.pricePolicy && item.pricePolicy.max != null ? item.pricePolicy.max : "",
           unit: (item.pricePolicy && item.pricePolicy.unit) || "局",
+          gameName: (item.pricePolicy && item.pricePolicy.gameName) || "",
+          platform: (item.pricePolicy && item.pricePolicy.platform) || "",
+          description: (item.pricePolicy && item.pricePolicy.description) || "",
           allowSelfPrice: !!(item.pricePolicy && item.pricePolicy.allowSelfPrice),
           allowSelfOff: !!(item.pricePolicy && item.pricePolicy.allowSelfOff),
           orderFields: Array.isArray(item.orderFields) ? item.orderFields : [],
@@ -244,6 +251,18 @@
       '<label class="svc-field"><span>服务名称</span><input name="name" required maxlength="40" placeholder="例如：无畏契约端游" value="' +
       esc(d.name) +
       '"></label>' +
+      '<label class="svc-field"><span>游戏名称</span><input name="gameName" maxlength="40" placeholder="例如：无畏契约" value="' +
+      esc(d.gameName || "") +
+      '"></label>' +
+      '<label class="svc-field"><span>平台 / 区服</span><input name="platform" maxlength="60" placeholder="例如：端游 / 国服" value="' +
+      esc(d.platform || "") +
+      '"></label>' +
+      '<label class="svc-field"><span>服务介绍</span><textarea name="description" maxlength="500" rows="3" placeholder="服务内容、适合谁、包含什么">' +
+      esc(d.description || "") +
+      "</textarea></label>" +
+      '<label class="svc-field"><span>展示排序</span><input name="sort" inputmode="numeric" maxlength="6" placeholder="1" value="' +
+      esc(d.sort == null ? "" : d.sort) +
+      '"></label>' +
       categoryField +
       '<label class="svc-field"><span>新增分类</span><input name="newCategory" maxlength="20" placeholder="可选，保存时加入分类"></label>' +
       renderIconPicker(d.icon || "🎮") +
@@ -266,7 +285,7 @@
       unitOpt("场") +
       unitOpt("次") +
       "</select></label>" +
-      '<p class="svc-note">保存后只影响新订单。已有订单保留下单当时的金额。</p>' +
+      '<p class="svc-note">允许自定义单价时必须填写最低和最高价格。陪玩最终单价 = 标准价 + 等级加价，最低加价为 RM 1，最高加价由上方等级规则决定。最低价和最高价会与这个加价范围取交集，没有交集时不能保存。未填写完整价格时，陪玩端显示「平台尚未配置价格」，不能新下单。保存后只影响新订单。</p>' +
       "</section>" +
       '<section class="svc-section"><h4>订单要求配置</h4>' +
       renderOrderFields(d.orderFields || []) +
@@ -287,7 +306,9 @@
       '<label class="svc-perm"><input type="checkbox" name="allowSelfOff" value="true"' +
       (d.allowSelfOff ? " checked" : "") +
       "> 允许陪玩自主关闭服务</label>" +
-      "</div></section>" +
+      "</div>" +
+      '<p class="svc-note">陪玩端每个服务都有独立的开启接单开关，和在线、离线状态分开。未配置完整价格时不能开启。</p>' +
+      "</section>" +
       '<div class="form-actions svc-actions"><button class="btn primary" type="submit" ' +
       (state.saving ? "disabled" : "") +
       ">" +
@@ -372,10 +393,18 @@
       .map(function (item) {
         var policy = item.pricePolicy || {};
         var unit = policy.unit || "局";
+        var standardRaw = item.defaultPrice || item.default_price || "";
+        var standardNum = Number(standardRaw);
+        var standardText =
+          String(standardRaw).trim() && Number.isFinite(standardNum) && standardNum > 0
+            ? "后台标准价格 RM " + standardRaw + " / " + unit
+            : "平台尚未配置价格";
         var range =
-          policy.min != null && policy.max != null
-            ? "RM" + policy.min + " - RM" + policy.max + " / " + unit
-            : "未设置区间";
+          policy.allowSelfPrice && policy.min != null && policy.max != null
+            ? "允许范围 RM " + policy.min + "–" + policy.max + " / " + unit
+            : policy.allowSelfPrice
+              ? "平台尚未配置价格"
+              : "平台统一定价";
         var on = item.enabled !== false;
         return (
           '<article class="svc-card" draggable="true" data-service-row="' +
@@ -395,12 +424,10 @@
           "<span>" +
           esc(item.category || "-") +
           "</span>" +
-          "<em>默认 RM" +
-          esc(item.defaultPrice || item.default_price || "-") +
-          " / " +
-          esc(unit) +
+          "<em>" +
+          esc(standardText) +
           "</em>" +
-          "<small>允许范围 " +
+          "<small>" +
           esc(range) +
           "</small>" +
           '<div class="svc-card-tags">' +
@@ -419,6 +446,34 @@
       })
       .join("");
     return '<div class="svc-list" data-service-sortable>' + rows + "</div>";
+  }
+
+  function renderLevelCaps() {
+    var caps = state.levelMarkupCaps || {};
+    function field(lv, fallback) {
+      var value = caps[lv] != null ? caps[lv] : caps[String(lv)];
+      if (value == null || value === "") value = fallback;
+      return (
+        '<label class="svc-field"><span>LV' +
+        lv +
+        ' 最高加价</span><span class="svc-rm"><i>RM</i><input name="cap' +
+        lv +
+        '" inputmode="decimal" maxlength="8" value="' +
+        esc(value) +
+        '"></span></label>'
+      );
+    }
+    return (
+      '<form class="svc-section" data-level-caps-form><h4>等级加价上限</h4>' +
+      '<p class="svc-note">陪玩可在标准价上加价。最低加价统一为 RM 1，最高加价按真实等级读取。修改后写入数据库，已支付订单的金额保持原样。</p>' +
+      '<div class="svc-price-row">' +
+      field(1, 5) +
+      field(2, 8) +
+      field(3, 10) +
+      field(4, 13) +
+      field(5, 15) +
+      '</div><button class="btn" type="submit">保存等级加价</button></form>'
+    );
   }
 
   function render() {
@@ -443,6 +498,7 @@
       '</select><select data-service-status><option value="">全部状态</option><option value="on">启用</option><option value="off">停用</option></select>' +
       '<button class="btn primary" type="button" data-service-new>新增服务</button>' +
       '<button class="btn" type="button" data-service-reload>刷新</button></div>' +
+      renderLevelCaps() +
       (!window.MCJAdminOverlay ? renderForm() : "") +
       renderRows() +
       "</div>";
@@ -479,6 +535,9 @@
       priceMin: String(data.priceMin || "").trim(),
       priceMax: String(data.priceMax || "").trim(),
       unit: String(data.unit || "局").trim() || "局",
+      gameName: String(data.gameName || "").trim(),
+      platform: String(data.platform || "").trim(),
+      description: String(data.description || "").trim(),
       allowSelfPrice: data.allowSelfPrice === "true" || data.allowSelfPrice === "on",
       allowSelfOff: data.allowSelfOff === "true" || data.allowSelfOff === "on",
       enabled: data.enabled !== "false",
@@ -486,7 +545,7 @@
       allowApply: data.allowApply !== "false",
       allowOrder: data.allowOrder !== "false",
       displayPositions: positions,
-      sort: Number((state.editing && state.editing.sort) || state.services.length + 1),
+      sort: String(data.sort || "").trim() ? Number(data.sort) : Number((state.editing && state.editing.sort) || state.services.length + 1),
     };
   }
 
@@ -503,6 +562,7 @@
         if (Array.isArray(res.icons) && res.icons.length) state.icons = res.icons.slice();
         if (Array.isArray(res.positions) && res.positions.length) state.positions = res.positions.slice();
         state.message = res.message || "";
+        if (res.levelMarkupCaps) state.levelMarkupCaps = res.levelMarkupCaps;
       })
       .catch(function (err) {
         state.error = err.message || "服务列表读取失败";
@@ -523,6 +583,48 @@
     if (!payload.displayPositions.length) {
       alert("请至少勾选一个显示位置");
       return;
+    }
+    function badMoney(value) {
+      var text = String(value || "").trim();
+      if (!text) return false;
+      return !/^(?:0|[1-9]\d*)(?:\.\d{1,2})?$/.test(text);
+    }
+    if (badMoney(payload.defaultPrice) || badMoney(payload.priceMin) || badMoney(payload.priceMax)) {
+      alert("不允许输入负数或非法字符。");
+      return;
+    }
+    if (String(payload.defaultPrice || "").trim() && !(Number(payload.defaultPrice) > 0)) {
+      alert("平台标准价格必须大于 0。");
+      return;
+    }
+    if (payload.allowSelfPrice && (!String(payload.priceMin || "").trim() || !String(payload.priceMax || "").trim())) {
+      alert("允许自定义单价时必须同时设置最低和最高价格。");
+      return;
+    }
+    if (
+      payload.allowSelfPrice &&
+      String(payload.priceMin || "").trim() &&
+      String(payload.priceMax || "").trim() &&
+      Number(payload.priceMax) < Number(payload.priceMin)
+    ) {
+      alert("最高价格不能低于最低价格。");
+      return;
+    }
+    if (payload.allowSelfPrice && !(Number(payload.priceMax) > 0)) {
+      alert("最高价格必须大于 0。");
+      return;
+    }
+    if (payload.allowSelfPrice && Number(payload.defaultPrice) > 0 && String(payload.priceMin || "").trim() && String(payload.priceMax || "").trim()) {
+      var caps = state.levelMarkupCaps || {};
+      var highest = Math.max(Number(caps[1] || caps["1"] || 5), Number(caps[2] || caps["2"] || 8), Number(caps[3] || caps["3"] || 10), Number(caps[4] || caps["4"] || 13), Number(caps[5] || caps["5"] || 15));
+      var floor = Number(payload.defaultPrice) + 1;
+      var ceil = Number(payload.defaultPrice) + highest;
+      var lo = Math.max(Number(payload.priceMin), floor);
+      var hi = Math.min(Number(payload.priceMax), ceil);
+      if (!(hi >= lo)) {
+        alert("自定义价格范围与等级加价没有交集。标准价 RM " + payload.defaultPrice + "，等级加价后为 RM " + floor + "–" + ceil + "，后台范围是 RM " + payload.priceMin + "–" + payload.priceMax + "。");
+        return;
+      }
     }
     var orderFields = readOrderFields(form);
     state.saving = true;
@@ -608,6 +710,28 @@
     });
   }
 
+  function saveLevelCaps(form) {
+    var caps = {};
+    for (var lv = 1; lv <= 5; lv += 1) {
+      var input = form.querySelector('[name="cap' + lv + '"]');
+      var text = String(input ? input.value : "").trim();
+      if (!/^(?:0|[1-9]\d*)(?:\.\d{1,2})?$/.test(text) || !(Number(text) >= 1)) {
+        alert("LV" + lv + " 加价上限必须大于或等于 RM 1。");
+        return;
+      }
+      caps[lv] = Number(text);
+    }
+    apiPost({ action: "save_level_markup_caps", caps: caps })
+      .then(function (res) {
+        if (res.levelMarkupCaps) state.levelMarkupCaps = res.levelMarkupCaps;
+        alert(res.message || "等级加价上限已保存。");
+        return load();
+      })
+      .catch(function (err) {
+        alert(err.message || "等级加价保存失败");
+      });
+  }
+
   function bind() {
     if (document.documentElement.dataset.serviceAdminBound === "1") return;
     document.documentElement.dataset.serviceAdminBound = "1";
@@ -691,6 +815,12 @@
     });
 
     document.addEventListener("submit", function (e) {
+      var capsForm = e.target.closest("[data-level-caps-form]");
+      if (capsForm) {
+        e.preventDefault();
+        saveLevelCaps(capsForm);
+        return;
+      }
       var form = e.target.closest("[data-service-form]");
       if (!form) return;
       e.preventDefault();

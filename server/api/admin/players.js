@@ -9,6 +9,7 @@ import {
 } from "../_companion-media-store.js";
 import { readLocalLevels } from "../_companion-levels-store.js";
 import { normalizeReviewImages } from "../_review-images.js";
+import { loadCompletedOrderCount } from "../_companion-profile-stats.js";
 import {
   getAssignmentsForProfiles,
   readCertTags,
@@ -508,7 +509,7 @@ async function loadRelated(profileId, companionId) {
       ).catch(() => []),
       companionDb(
         "companion_reviews",
-        `?companion_id=eq.${encodeURIComponent(profileId)}&order=created_at.desc&limit=50&select=*`
+        `?companion_id=in.(${[...new Set([profileId, companionId].filter(Boolean))].map(encodeURIComponent).join(",")})&order=created_at.desc&limit=200&select=*`
       ).catch((e) => {
         if (isMissingRelation(e)) return [];
         throw e;
@@ -675,7 +676,8 @@ async function buildDetail(row, profile, opts = {}) {
   );
   const achievementList = achievements.length ? achievements : legacyAchievements;
 
-  const appReviewerId = String(row.application_reviewed_by || "").trim();
+  const reviewSnapshot = readApplicationReviewSnapshot(row);
+  const appReviewerId = String(row.application_reviewed_by || reviewSnapshot.reviewedBy || "").trim();
   let appReviewerName = "";
   if (appReviewerId) {
     if (reviewerMap[appReviewerId]) {
@@ -690,7 +692,16 @@ async function buildDetail(row, profile, opts = {}) {
     }
   }
 
-  const completed = related.orders.filter((o) => o.status === "completed").length;
+  let completed = related.orders.filter((o) => o.status === "completed").length;
+  try {
+    const counts = await loadCompletedOrderCount((table, query) => companionDb(table, query), [
+      { id: row.user_id, companionProfileId: row.id },
+    ]);
+    const key = String(row.user_id || "");
+    if (key && Object.prototype.hasOwnProperty.call(counts, key)) completed = counts[key];
+  } catch (error) {
+    console.warn("[admin/players] completed order count failed", error?.message || error);
+  }
   const cancelled = related.orders.filter((o) => o.status === "cancelled").length;
   const refunded = related.orders.filter((o) => /refund/i.test(String(o.status || ""))).length;
   const totalIncome = related.income.reduce((n, row) => n + money(row.amount), 0);
@@ -853,14 +864,14 @@ async function buildDetail(row, profile, opts = {}) {
       status: row.application_status || row.verification_status || "pending",
       statusLabel: labelStatus(row.application_status || row.verification_status || "pending"),
       rejectReason: row.application_reject_reason || "",
-      reviewedAt: row.application_reviewed_at || "",
-      reviewedBy: row.application_reviewed_by || "",
-      reviewedByName: appReviewerName || "",
+      reviewedAt: row.application_reviewed_at || reviewSnapshot.reviewedAt || "",
+      reviewedBy: row.application_reviewed_by || reviewSnapshot.reviewedBy || "",
+      reviewedByName: appReviewerName || reviewSnapshot.reviewedByName || "",
       empty: !row.application_submitted_at && !row.main_service && !row.game,
     },
-    applicationReviewedAt: row.application_reviewed_at || "",
-    applicationReviewedBy: row.application_reviewed_by || "",
-    applicationReviewedByName: appReviewerName || "",
+    applicationReviewedAt: row.application_reviewed_at || reviewSnapshot.reviewedAt || "",
+    applicationReviewedBy: row.application_reviewed_by || reviewSnapshot.reviewedBy || "",
+    applicationReviewedByName: appReviewerName || reviewSnapshot.reviewedByName || "",
     bio: row.description || "",
     intro: row.description || "",
     identity: identity
@@ -1535,6 +1546,55 @@ async function ensureFirstApprovalReady(companion, payload, profile) {
   }
 }
 
+const APPLICATION_REVIEW_SNAPSHOT_KEY = "__applicationReview";
+
+function readApplicationReviewSnapshot(row) {
+  let raw = row?.service_standards;
+  if (typeof raw === "string") {
+    try {
+      raw = JSON.parse(raw);
+    } catch {
+      raw = null;
+    }
+  }
+  const snap = raw && typeof raw === "object" ? raw[APPLICATION_REVIEW_SNAPSHOT_KEY] : null;
+  if (!snap || typeof snap !== "object" || Array.isArray(snap)) {
+    return { reviewedAt: "", reviewedBy: "", reviewedByName: "" };
+  }
+  return {
+    reviewedAt: String(snap.reviewedAt || "").trim(),
+    reviewedBy: String(snap.reviewedBy || "").trim(),
+    reviewedByName: String(snap.reviewedByName || "").trim(),
+  };
+}
+
+function missingApplicationReviewColumns(error) {
+  return /application_reviewed_(at|by)/i.test(String(error?.message || error || ""));
+}
+
+async function persistApplicationReviewSnapshot(companion, snapshot) {
+  if (!companion?.id || !snapshot?.reviewedAt) return;
+  const rows = await companionDb(
+    PLAYER_TABLE,
+    `?id=eq.${encodeURIComponent(companion.id)}&select=service_standards&limit=1`
+  ).catch(() => []);
+  const current = rows?.[0]?.service_standards;
+  const base = current && typeof current === "object" && !Array.isArray(current) ? current : {};
+  await companionDb(PLAYER_TABLE, `?id=eq.${encodeURIComponent(companion.id)}`, {
+    method: "PATCH",
+    body: JSON.stringify({
+      service_standards: {
+        ...base,
+        [APPLICATION_REVIEW_SNAPSHOT_KEY]: {
+          reviewedAt: snapshot.reviewedAt,
+          reviewedBy: snapshot.reviewedBy || "",
+          reviewedByName: snapshot.reviewedByName || "",
+        },
+      },
+    }),
+  });
+}
+
 async function reviewApplication(req, companion, payload) {
   const status = normalizeStatusInput(payload.status || payload.applicationStatus || payload.auditStatus, "pending");
   const reason = String(payload.rejectReason || payload.reason || "").trim();
@@ -1675,16 +1735,22 @@ async function reviewApplication(req, companion, payload) {
       body: JSON.stringify(patch),
     });
   } catch (patchErr) {
-    // Older schemas may lack application_reviewed_* columns — retry without them.
-    if (!/application_reviewed|column|schema cache|PGRST/i.test(String(patchErr?.message || patchErr || ""))) {
-      throw patchErr;
-    }
+    // Only drop the review columns when this database really does not have them.
+    if (!missingApplicationReviewColumns(patchErr)) throw patchErr;
     const fallback = { ...patch };
     delete fallback.application_reviewed_at;
     delete fallback.application_reviewed_by;
     after = await companionDb(PLAYER_TABLE, `?id=eq.${encodeURIComponent(companion.id)}`, {
       method: "PATCH",
       body: JSON.stringify(fallback),
+    });
+    const reviewerName = String(adminActor?.display_name || adminActor?.nickname || adminActor?.name || "").trim();
+    await persistApplicationReviewSnapshot(companion, {
+      reviewedAt,
+      reviewedBy: adminActor?.id || "",
+      reviewedByName: reviewerName,
+    }).catch((err) => {
+      console.warn("[admin/players] review snapshot skipped", err?.message || err);
     });
   }
   // Keep cert-side rows in sync with application decision (single SoT for list/detail/companion).
