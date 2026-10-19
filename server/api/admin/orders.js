@@ -351,7 +351,12 @@ export function safeOrder(row, profiles, extras = {}) {
     completedAt: row.completed_at || "",
     cancelledAt: row.cancelled_at || "",
     assignedAt: row.accepted_at || row.claimed_at || "",
-    serviceTime: row.scheduled_at || row.started_at || "-",
+    serviceTime: (() => {
+      const blob = `${row.notes || ""}\n${row.description || ""}`;
+      const matched = blob.match(/服务时段[：:]\s*([^\n；;]+)/i);
+      const booked = matched ? String(matched[1] || "").trim() : "";
+      return booked || row.scheduled_at || row.started_at || "-";
+    })(),
     description: sanitizeOrderText(row.description || ""),
     orderType: row.order_type || "普通陪玩订单",
     type: row.order_type || "普通陪玩订单",

@@ -116,9 +116,43 @@ test("companion formats schedule 24h", () => {
   assert.match(read("src/companion-workbench.js"), /formatSchedule24h/);
 });
 
-test("open picker uses minuteStep 60 (整点)", () => {
-  assert.match(read("src/place-order-modal.js"), /minuteStep:\s*60/);
-  assert.match(read("src/mcj-time-picker.js"), /MINUTE_STEP_DEFAULT\s*=\s*60/);
+test("open picker uses every minute 00-59", () => {
+  for (const f of ["src/place-order-modal.js", "src/place-order-page.js", "src/multi-companion-team.js"]) {
+    assert.match(read(f), /minuteStep:\s*1/, f);
+    assert.doesNotMatch(read(f), /minuteStep:\s*60/, f);
+  }
+  assert.match(read("src/mcj-time-picker.js"), /MINUTE_STEP_DEFAULT\s*=\s*1/);
+  assert.match(read("src/mcj-time-picker.js"), /小时/);
+  assert.match(read("src/mcj-time-picker.js"), /分钟/);
+});
+
+test("duration keeps minutes and labels the next day after midnight", () => {
+  function addHoursToTime(hhmm, hours) {
+    const [h, m] = hhmm.split(":").map(Number);
+    let total = h * 60 + m + Math.round(Number(hours) * 60);
+    total = ((total % (24 * 60)) + 24 * 60) % (24 * 60);
+    const hh = String(Math.floor(total / 60)).padStart(2, "0");
+    const mm = String(total % 60).padStart(2, "0");
+    return `${hh}:${mm}`;
+  }
+  function label(start, end) {
+    const nextDay = end < start;
+    return `${start} – ${nextDay ? "次日 " : ""}${end}`;
+  }
+  assert.equal(addHoursToTime("20:17", 1), "21:17");
+  assert.equal(label("20:17", "21:17"), "20:17 – 21:17");
+  assert.equal(addHoursToTime("22:35", 2), "00:35");
+  assert.equal(label("22:35", "00:35"), "22:35 – 次日 00:35");
+  assert.equal(addHoursToTime("23:58", 3), "02:58");
+  assert.equal(label("23:58", "02:58"), "23:58 – 次日 02:58");
+  assert.equal(addHoursToTime("23:59", 1), "00:59");
+  assert.equal(addHoursToTime("00:01", 1), "01:01");
+  for (const f of ["src/place-order-modal.js", "src/place-order-page.js", "src/multi-companion-team.js"]) {
+    assert.match(read(f), /次日 /, f);
+  }
+  assert.match(read("src/companion-workbench.js"), /次日/);
+  assert.match(read("server/api/admin/orders.js"), /服务时段/);
+  assert.match(read("server/api/orders.js"), /serviceSchedule/);
 });
 
 const failed = results.filter((r) => !r.ok);

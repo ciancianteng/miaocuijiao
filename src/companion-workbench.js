@@ -3279,7 +3279,8 @@
     if(parts.length>=2){
       var a=normOne(parts[0]);
       var b=normOne(parts[1]);
-      if(/^\d{2}:\d{2}$/.test(a)&&/^\d{2}:\d{2}$/.test(b))return a+' – '+b;
+      var nextDay=/次日/.test(parts[1])||(/^\d{2}:\d{2}$/.test(a)&&/^\d{2}:\d{2}$/.test(b)&&b<a);
+      if(/^\d{2}:\d{2}$/.test(a)&&/^\d{2}:\d{2}$/.test(b))return a+' – '+(nextDay?'次日 ':'')+b;
     }
     var one=normOne(s);
     return /^\d{2}:\d{2}$/.test(one)?one:s.replace(/\s*-\s*/g,' – ');

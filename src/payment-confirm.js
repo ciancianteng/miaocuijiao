@@ -826,7 +826,7 @@
     if (raw) return raw;
     // Fallback: parse from notes ("服务时间：…")
     var notes = String((order && (order.notes || order.note || order.description)) || "");
-    var m = notes.match(/服务时间[：:]\s*([^\n]+)/);
+    var m = notes.match(/服务(?:时段|时间)[：:]\s*([^\n；;]+)/);
     if (m) return String(m[1] || "").trim();
     return "-";
   }
