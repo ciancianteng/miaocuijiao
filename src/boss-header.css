@@ -572,6 +572,7 @@ header.mcj-boss-header .mcj-mnav-toggle:focus-visible {
 
 .mcj-mnav-drawer-links {
   display: grid;
+  align-content: start;
   gap: 10px;
   flex: 1 1 auto;
   min-height: 0;
@@ -709,9 +710,9 @@ a.mcj-mnav-companion-card:focus-visible {
   font-size: 11px;
   font-weight: 650;
   color: rgba(189, 170, 182, 0.95);
-  white-space: nowrap;
+  white-space: normal;
   overflow: hidden;
-  text-overflow: ellipsis;
+  line-height: 1.3;
 }
 
 .mcj-mnav-companion-arrow {
@@ -741,21 +742,21 @@ a.mcj-mnav-instagram-card .mcj-mnav-ig-icon {
 }
 
 a.mcj-mnav-instagram-card .mcj-mnav-companion-feats {
-  white-space: nowrap;
+  white-space: normal;
   line-height: 1.3;
 }
 
 @media (max-width: 360px) {
   a.mcj-mnav-companion-card,
   .mcj-mnav-drawer-links a.mcj-mnav-companion-card {
-    gap: 10px;
-    padding: 12px 10px;
+    gap: 8px;
+    padding: 8px 10px !important;
   }
   .mcj-mnav-companion-title {
-    font-size: 15px;
+    font-size: 14px;
   }
   .mcj-mnav-companion-feats {
-    font-size: 10px;
+    font-size: 11px;
   }
 }
 
