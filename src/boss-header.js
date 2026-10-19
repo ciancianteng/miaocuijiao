@@ -593,11 +593,8 @@
       navLink("companion-center.html", "陪玩大厅") +
       navLink("guide.html", "使用教学") +
       supportNavLink() +
-      '<div class="mcj-mnav-divider" role="separator" aria-hidden="true"></div>' +
       instagramEntryCardHtml() +
-      '<div class="mcj-mnav-divider" role="separator" aria-hidden="true"></div>' +
       companionEntryCardHtml() +
-      '<div class="mcj-mnav-divider" role="separator" aria-hidden="true"></div>' +
       mobileAuthLinkHtml()
     );
   }
@@ -1269,11 +1266,27 @@
       toggle.setAttribute("aria-expanded", "false");
       toggle.setAttribute("aria-label", "打开菜单");
     }
-    if (sheet) {
-      sheet.hidden = true;
-      sheet.classList.remove("open");
-    }
+    if (sheet) setSheetOpen(sheet, false);
     setMobileNavScrollLock(false);
+  }
+
+  function setSheetOpen(sheet, open) {
+    if (!sheet) return;
+    if (sheet._mcjHideTimer) {
+      clearTimeout(sheet._mcjHideTimer);
+      sheet._mcjHideTimer = 0;
+    }
+    if (open) {
+      sheet.hidden = false;
+      sheet.classList.remove("open");
+      void sheet.offsetWidth;
+      sheet.classList.add("open");
+      return;
+    }
+    sheet.classList.remove("open");
+    sheet._mcjHideTimer = setTimeout(function () {
+      if (!sheet.classList.contains("open")) sheet.hidden = true;
+    }, 280);
   }
 
   function toggleNavMoreMenu(forceClose) {
@@ -1286,8 +1299,7 @@
     wrap.classList.toggle("open", open);
     toggle.setAttribute("aria-expanded", open ? "true" : "false");
     toggle.setAttribute("aria-label", open ? "关闭菜单" : "打开菜单");
-    sheet.hidden = !open;
-    sheet.classList.toggle("open", open);
+    setSheetOpen(sheet, open);
     fillMobileDrawerLinks();
     setMobileNavScrollLock(open);
   }
