@@ -989,7 +989,11 @@
       var af=document.querySelector('[data-announcement-form]');
       if(af){
         af.elements.id.value=a.id||'';
-        if(af.elements.category)af.elements.category.value=a.category==='companion'?'companion':'home';
+        if(af.elements.category){
+          var cat=String(a.category||'home');
+          if(['home','homepage_only','companion','customer_service'].indexOf(cat)<0)cat='home';
+          af.elements.category.value=cat;
+        }
         if(af.elements.kind)af.elements.kind.value=a.kind==='forced'?'forced':'normal';
         if(af.elements.audience)af.elements.audience.value=a.audience||(a.category==='companion'?'companion':'home');
         af.elements.title.value=a.title||'';

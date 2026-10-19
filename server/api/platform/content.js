@@ -177,6 +177,10 @@ function matchesAnnouncementAudience(item, audience) {
   const itemAudience = String(item.audience || "").toLowerCase();
   const category = String(item.category || "").toLowerCase();
   if (itemAudience === "system_internal" || itemAudience === "internal") return false;
+  const homeWant = want === "home" || want === "homepage" || want === "boss" || want === "homepage_only" || want === "home_only";
+  if (homeWant && (category === "companion" || category === "customer_service" || itemAudience === "companion" || itemAudience === "customer_service")) {
+    return false;
+  }
   if (itemAudience === "all") return true;
   if (want === "home" || want === "homepage" || want === "boss") {
     // Homepage ticker: home + homepage_only. Boss strip: home only (not homepage_only).

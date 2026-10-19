@@ -1,18 +1,18 @@
 /**
- * Companion announcement ticker — same platform announcements as homepage/boss.
- * Data: /api/platform/content?types=announcements&audience=home
- * Style: home-announcements.css (.home-announcement-bar)
- * Rotates ALL published home announcements in admin sort order (not first-only).
- * Does NOT load companion-only / quote-style audience=companion rows.
+ * Companion workbench ticker.
+ * Data: /api/platform/content?types=announcements&audience=companion
+ * Shows companion-audience rows and explicit all-platform rows.
+ * Does not show boss/homepage-only announcements.
  */
 (function () {
   "use strict";
 
-  if (window.MCJCompanionAnnouncements && window.MCJCompanionAnnouncements.__v === "20260805annUnify1") return;
+  if (window.MCJCompanionAnnouncements && window.MCJCompanionAnnouncements.__v === "20261019ann1") return;
 
   var state = {
     items: [],
     loaded: false,
+    loadError: "",
     index: 0,
     currentId: "",
     itemsSig: "",
@@ -74,18 +74,19 @@
       startAt: item.startAt || item.start_at || "",
       endAt: item.endAt || item.end_at || "",
       scroll: item.scroll !== false && item.is_scrolling !== false,
-      audience: String(item.audience || "home").toLowerCase(),
-      category: String(item.category || "home").toLowerCase(),
+      audience: String(item.audience || "").toLowerCase(),
+      category: String(item.category || "").toLowerCase(),
     };
   }
 
-  function isPlatformHomeAnn(item) {
-    var aud = String(item.audience || "home").toLowerCase();
-    var cat = String(item.category || "home").toLowerCase();
-    // Platform / homepage announcements only — exclude companion quotes & CS-only.
-    if (aud === "companion" || cat === "companion") return false;
-    if (aud === "customer_service" || cat === "customer_service") return false;
-    return true;
+  function isCompanionAnn(item) {
+    var aud = String((item && item.audience) || "").toLowerCase();
+    var cat = String((item && item.category) || "").toLowerCase();
+    if (aud === "system_internal" || aud === "internal") return false;
+    if (cat === "customer_service" || aud === "customer_service") return false;
+    if (cat === "companion" || aud === "companion") return true;
+    if (aud === "all") return true;
+    return false;
   }
 
   function sortItems(list) {
@@ -292,7 +293,7 @@
     var items = state.items;
     var item = currentItem();
     var empty = !items.length;
-    var text = empty ? "暂无最新公告。" : itemLine(item);
+    var text = empty ? (state.loadError || "无最新公告") : itemLine(item);
     var useEllipsis = !empty && preferEllipsis(item);
 
     if (h) h.hidden = false;
@@ -313,7 +314,7 @@
       '<div class="home-announcement-track-wrap" data-announcement-open' +
       (empty ? ' data-empty="1"' : ' tabindex="0"') +
       ' role="button" aria-label="' +
-      (empty ? "暂无最新公告" : "查看公告详情") +
+      (empty ? (state.loadError ? "公告加载失败" : "无最新公告") : "查看公告详情") +
       '">' +
       (empty || useEllipsis
         ? '<span class="home-announcement-static">' + esc(text) + "</span>"
@@ -359,6 +360,7 @@
   }
 
   function applyRows(rows) {
+    state.loadError = "";
     var nextItems = sortItems(
       (rows || [])
         .map(normalize)
@@ -367,7 +369,7 @@
             item.enabled !== false &&
             (item.title || item.content) &&
             inSchedule(item) &&
-            isPlatformHomeAnn(item) &&
+            isCompanionAnn(item) &&
             item.kind !== "forced" &&
             !item.requiresAck
           );
@@ -392,47 +394,34 @@
   }
 
   function load() {
-    return fetch("/api/platform/content?types=announcements&audience=home", {
+    return fetch("/api/platform/content?types=announcements&audience=companion&_=" + Date.now(), {
       headers: { Accept: "application/json" },
       cache: "no-store",
     })
       .then(function (res) {
-        return res.json().catch(function () {
-          return { byType: { announcements: [] } };
+        if (!res.ok) throw new Error("announcements http " + res.status);
+        return res.json().then(function (body) {
+          return body;
+        }, function () {
+          throw new Error("announcements json");
         });
       })
       .then(function (body) {
+        if (!body || body.ok === false) throw new Error((body && body.message) || "announcements");
         var rows = (((body || {}).byType || {}).announcements) || [];
-        if (rows.length) return rows;
-        return fetch("/api/platform/content?types=announcements", {
-          headers: { Accept: "application/json" },
-          cache: "no-store",
-        })
-          .then(function (res2) {
-            return res2.json().catch(function () {
-              return { byType: { announcements: [] } };
-            });
-          })
-          .then(function (body2) {
-            return ((((body2 || {}).byType || {}).announcements) || []).filter(function (row) {
-              var cat = String(row.category || "home").toLowerCase();
-              var aud = String(row.audience || "home").toLowerCase();
-              return cat !== "companion" && aud !== "companion" && aud !== "customer_service";
-            });
-          });
-      })
-      .then(function (rows) {
         applyRows(rows);
         return state.items;
       })
       .catch(function () {
-        state.items = [];
-        state.itemsSig = "";
+        state.loadError = "公告加载失败，请稍后重试。";
         state.loaded = true;
-        state.index = 0;
-        state.currentId = "";
-        render(false);
-        return [];
+        if (!state.items.length) {
+          state.itemsSig = "";
+          state.index = 0;
+          state.currentId = "";
+          render(false);
+        }
+        return state.items.slice();
       });
   }
 
@@ -460,7 +449,7 @@
   }
 
   window.MCJCompanionAnnouncements = {
-    __v: "20260805annUnify1",
+    __v: "20261019ann1",
     start: start,
     reload: load,
     onShellPaint: onShellPaint,

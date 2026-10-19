@@ -157,7 +157,16 @@ function isAdminManagedAnnouncement(row = {}) {
 }
 function optionalIsoDateTime(value) {
   if (value === undefined || value === null || String(value).trim() === "") return null;
-  const parsed = new Date(value);
+  const raw = String(value).trim();
+  // Admin datetime-local has no offset. Wall clock is Asia/Kuala_Lumpur; the API runs in UTC.
+  const naive = raw.match(/^(\d{4}-\d{2}-\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?$/);
+  if (naive && !/(Z|[+-]\d{2}:?\d{2})$/i.test(raw)) {
+    const iso = `${naive[1]}T${naive[2]}:${naive[3]}:${naive[4] || "00"}+08:00`;
+    const parsed = new Date(iso);
+    if (Number.isNaN(parsed.getTime())) return null;
+    return parsed.toISOString();
+  }
+  const parsed = new Date(raw);
   if (Number.isNaN(parsed.getTime())) return null;
   return parsed.toISOString();
 }
@@ -193,12 +202,32 @@ function announcementPayload(input = {}, previous = null) {
   if (title.startsWith("[MCJ_PC]") || title.includes("[MCJ_GP]") || content.includes("MCJ_CS_DOCK")) {
     throw Object.assign(new Error("公告管理仅允许发布真实公告，不可写入系统配置 JSON。"), { status: 400 });
   }
-  const category = normalizeCategory(input.category || input.announcement_category, input.audience);
+  let category = normalizeCategory(input.category || input.announcement_category, input.audience);
   let audience = normalizeAudience(input.audience || input.target || input.publish_to, category);
-  // Category owns routing for admin-published announcements.
-  if (category === "companion") audience = "companion";
-  else if (category === "customer_service") audience = "customer_service";
-  else if (audience === "companion" || audience === "customer_service") audience = "home";
+  // Explicit publish target wins, so changing 发布对象 moves the row to that end.
+  // A companion/customer-service category is never stored as all-platform.
+  if (audience === "companion") {
+    category = "companion";
+    audience = "companion";
+  } else if (audience === "customer_service") {
+    category = "customer_service";
+    audience = "customer_service";
+  } else if (audience === "all") {
+    category = "home";
+    audience = "all";
+  } else if (audience === "boss" || audience === "home") {
+    if (category !== "homepage_only") category = "home";
+    audience = category === "homepage_only" ? "home" : audience;
+  } else if (category === "companion") {
+    audience = "companion";
+  } else if (category === "customer_service") {
+    audience = "customer_service";
+  } else if (category === "homepage_only") {
+    audience = "home";
+  } else {
+    category = "home";
+    audience = "home";
+  }
   if (audience === "system_internal") {
     throw Object.assign(new Error("系统内部配置不可写入公告管理。"), { status: 400 });
   }
