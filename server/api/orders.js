@@ -28,6 +28,12 @@ import { companionDb } from "./_companion-media-store.js";
 import { listPendingForCs, latestRejectedForOrders, latestApprovedForOrders, signedProofUrl, uploadProof, receiptReviewerFields } from "./_payment-receipts.js";
 import { loadPlatformPayQr, listBossOrderPaymentMethods, normalizePaymentChannelId, isWalletPayEnabled, loadPaymentChannelsContext } from "./_platform-pay-qr.js";
 import { stripInternalOrderMarkers } from "./_order-grabs.js";
+import {
+  discordDeskPublic,
+  normalizeDiscordUsername,
+  readDiscordDesk,
+  upsertDiscordDesk,
+} from "./_discord-desk.js";
 import { sanitizeOrderText, scrubInternalOutput } from "./_output-sanitize.js";
 import { fromDbRow as gameplayProductFromDbRow, isJunkGameplayProduct } from "./_gameplay-products-store.js";
 import { gameplayNoTakerRuleLine } from "./_order-confirm-timeout.js";
@@ -608,6 +614,7 @@ export function viewOrder(row = {}) {
     payment_method: paymentMethod || "线下确认",
     voiceMode: String(row.voice_mode || "game_mic").trim() || "game_mic",
     voice_mode: String(row.voice_mode || "game_mic").trim() || "game_mic",
+    ...discordDeskPublic(row),
     discordChannelId: row.discord_channel_id || null,
     discord_channel_id: row.discord_channel_id || null,
     discordChannelStatus: row.discord_channel_status || null,
@@ -1790,6 +1797,55 @@ export default async function handler(req, res) {
     }
     const id = String(body.id || body.order_id || body.orderId || "");
     if (!id) return json(res, 400, { ok: false, message: "缺少订单 ID。" });
+    if (action === "submit_discord_username" || action === "ack_discord_wait") {
+      const beforeRows = await supabaseJson(
+        restUrl(TABLE, `?id=eq.${encodeURIComponent(id)}&boss_id=eq.${encodeURIComponent(profile.id)}&limit=1`),
+        { headers: serviceHeaders() }
+      );
+      const before = Array.isArray(beforeRows) ? beforeRows[0] : null;
+      if (!before) return json(res, 404, { ok: false, message: "订单不存在。" });
+      const phase = discordDeskPublic(before);
+      const current = readDiscordDesk(`${before.note || ""}\n${before.description || ""}`);
+      if (action === "ack_discord_wait") {
+        if (phase.discordDeskPhase !== "waiting_invite" && phase.discordDeskPhase !== "arranged") {
+          return json(res, 409, { ok: false, message: "当前订单还不能关闭等待提示。", order: viewOrder(before) });
+        }
+        const nextNote = upsertDiscordDesk(before.note || "", { ...current, acked: true });
+        const saved = await supabaseJson(
+          restUrl(TABLE, `?id=eq.${encodeURIComponent(before.id)}&boss_id=eq.${encodeURIComponent(profile.id)}`),
+          { method: "PATCH", headers: serviceHeaders(), body: JSON.stringify({ note: nextNote }) }
+        );
+        const row = Array.isArray(saved) ? saved[0] || { ...before, note: nextNote } : { ...before, note: nextNote };
+        return json(res, 200, { ok: true, order: viewOrder(row) });
+      }
+      if (phase.discordDeskPhase === "waiting_invite" || phase.discordDeskPhase === "arranged") {
+        return json(res, 200, { ok: true, duplicate: true, order: viewOrder(before) });
+      }
+      if (!phase.discordShowFill) {
+        return json(res, 409, {
+          ok: false,
+          message: phase.discordDeskPhase === "none"
+            ? "本单不是 Discord 语音房，无需填写 Discord 用户名。"
+            : "客服确认到账且陪玩接单后才能填写 Discord 用户名。",
+          order: viewOrder(before),
+        });
+      }
+      const parsedName = normalizeDiscordUsername(body.discordUsername || body.discord_username || body.username);
+      if (!parsedName.ok) return json(res, 400, { ok: false, message: parsedName.message });
+      const nextNote = upsertDiscordDesk(before.note || "", {
+        username: parsedName.username,
+        status: "waiting_invite",
+        acked: false,
+        submittedAt: new Date().toISOString(),
+        invitedAt: "",
+      });
+      const saved = await supabaseJson(
+        restUrl(TABLE, `?id=eq.${encodeURIComponent(before.id)}&boss_id=eq.${encodeURIComponent(profile.id)}`),
+        { method: "PATCH", headers: serviceHeaders(), body: JSON.stringify({ note: nextNote }) }
+      );
+      const row = Array.isArray(saved) ? saved[0] || { ...before, note: nextNote } : { ...before, note: nextNote };
+      return json(res, 200, { ok: true, order: viewOrder(row) });
+    }
     if (action === "submit_payment_proof") {
       const beforeRows = await supabaseJson(
         restUrl(TABLE, `?id=eq.${encodeURIComponent(id)}&boss_id=eq.${encodeURIComponent(profile.id)}&limit=1`),
@@ -2315,25 +2371,8 @@ export default async function handler(req, res) {
       } catch (err) {
         console.warn("[orders/pay_order] boss push", err?.message || err);
       }
-      // Discord voice: best-effort create invite room after pay (never block payment).
-      let discordVoice = null;
-      try {
-        const { maybeEnsureDiscordAfterPaid } = await import("./_discord-voice-orders.js");
-        discordVoice = await maybeEnsureDiscordAfterPaid(saved || { ...before, status: nextStatus, voice_mode: before.voice_mode }, {
-          bossUserId: profile.id,
-          companionUserId: (saved || before).companion_id || undefined,
-        });
-        if (discordVoice?.inviteUrl || discordVoice?.channelUrl) {
-          saved = {
-            ...(saved || before),
-            discord_channel_id: discordVoice.channelId || saved?.discord_channel_id,
-            discord_channel_status: "ready",
-            discord_invite_url: discordVoice.inviteUrl || null,
-          };
-        }
-      } catch (err) {
-        console.warn("[orders/pay_order] discord voice", String(err?.message || err).slice(0, 160));
-      }
+      // Discord username is collected after CS confirms payment and the companion accepts.
+      // Do not create a voice room or mark it joined at pay time.
       let reward = null;
       try {
         reward = await (await import("./_cs-commission-settle.js")).settleCsOrderIncome(saved, {
@@ -2355,7 +2394,6 @@ export default async function handler(req, res) {
         children: children.map(viewOrder),
         allowTestPay: previewAllowed,
         reward,
-        discordVoice: discordVoice && !discordVoice.skipped ? discordVoice : undefined,
       });
     }
     if (action === "list_grabs" || action === "grab_applicants") {

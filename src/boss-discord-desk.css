@@ -1,0 +1,98 @@
+.mcj-dd-layer{
+  position:fixed;
+  inset:0;
+  z-index:4200;
+  display:flex;
+  align-items:flex-end;
+  justify-content:center;
+  box-sizing:border-box;
+  padding:
+    max(12px, env(safe-area-inset-top))
+    max(12px, env(safe-area-inset-right))
+    max(12px, env(safe-area-inset-bottom))
+    max(12px, env(safe-area-inset-left));
+  background:rgba(0,0,0,.72);
+}
+.mcj-dd-card{
+  box-sizing:border-box;
+  width:min(440px,100%);
+  max-width:100%;
+  max-height:min(92dvh,760px);
+  overflow:auto;
+  -webkit-overflow-scrolling:touch;
+  padding:22px 18px 16px;
+  border-radius:22px;
+  border:1px solid rgba(255,145,195,.45);
+  background:
+    radial-gradient(circle at 90% 0%, rgba(255,143,197,.22), transparent 36%),
+    linear-gradient(180deg,#17131b 0%, #0d0c10 100%);
+  box-shadow:0 0 0 1px rgba(255,145,195,.12), 0 28px 80px rgba(0,0,0,.55);
+  color:#fff;
+}
+.mcj-dd-card h2{
+  margin:0;
+  font-size:22px;
+  line-height:1.35;
+  overflow-wrap:anywhere;
+}
+.mcj-dd-card p{
+  margin:12px 0 0;
+  color:rgba(255,255,255,.78);
+  font-size:14px;
+  line-height:1.65;
+}
+.mcj-dd-card label{
+  display:block;
+  margin-top:14px;
+}
+.mcj-dd-card input{
+  width:100%;
+  box-sizing:border-box;
+  min-height:48px;
+  padding:12px 14px;
+  border-radius:14px;
+  border:1px solid rgba(255,145,195,.4);
+  background:rgba(0,0,0,.28);
+  color:#fff;
+  font-size:16px;
+}
+.mcj-dd-card input:focus{
+  outline:2px solid #ff8fc5;
+  outline-offset:2px;
+}
+.mcj-dd-error{
+  min-height:1.2em;
+  color:#ffb4c8;
+}
+.mcj-dd-actions{
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+  margin-top:16px;
+}
+.mcj-dd-btn{
+  min-height:48px;
+  padding:12px 16px;
+  border:0;
+  border-radius:14px;
+  background:linear-gradient(135deg,#ff7fbc,#d85f9d);
+  color:#fff;
+  font-size:16px;
+  font-weight:800;
+}
+.mcj-dd-btn:disabled{opacity:.55}
+.mcj-dd-close{
+  width:100%;
+  min-height:44px;
+  border-radius:14px;
+  border:1px solid rgba(255,145,195,.4);
+  background:transparent;
+  color:#fff;
+  font-size:15px;
+}
+@media (min-width:760px){
+  .mcj-dd-layer{align-items:center}
+}
+@media (max-width:390px){
+  .mcj-dd-card h2{font-size:20px}
+}

@@ -49,6 +49,7 @@ import {
   viewServiceSnapshot,
 } from "./_service-standard.js";
 import { readEarlyFinish, readEarlyFinishReject } from "./_order-early-finish.js";
+import { discordDeskPublic } from "./_discord-desk.js";
 
 function companionEarlyFinishView(row) {
   const ef = readEarlyFinish(row);
@@ -1335,6 +1336,7 @@ function stripOrderFacingText(text = "") {
   const withoutGrabs = String(text || "")
     .replace(/\[\[ORDER_GRABS\]\][\s\S]*?\[\[\/ORDER_GRABS\]\]/g, "")
     .replace(/\[\[ORDER_GRABS\]\][\s\S]*$/g, "")
+    .replace(/\[\[MCJ_DISCORD_DESK:[\s\S]*?\]\]/g, "")
     .split("[[COMPLETION_PENDING]]")
     .join("");
   return stripInternalMarkers(withoutGrabs)
@@ -1443,6 +1445,7 @@ function viewOrder(row = {}, boss = {}, settlement = null) {
     remark: notesLine.remark || "",
     voiceMode: String(row.voice_mode || "game_mic").trim() || "game_mic",
     voice_mode: String(row.voice_mode || "game_mic").trim() || "game_mic",
+    ...discordDeskPublic(row),
     discordChannelId: row.discord_channel_id || null,
     discord_channel_id: row.discord_channel_id || null,
     discordChannelStatus: row.discord_channel_status || null,
@@ -4382,27 +4385,8 @@ export default async function handler(req, res) {
           });
         }
       }
-      // Discord voice orders: companion must bind Discord before accept.
-      try {
-        const voiceMode = String(before.voice_mode || "game_mic").trim() || "game_mic";
-        if (voiceMode === "discord") {
-          const discordVoice = await import("./_discord-voice-orders.js");
-          if (discordVoice.discordConfigured()) {
-            const link = await discordVoice.getDiscordLink(auth.profile.id);
-            if (!link?.discord_user_id) {
-              return json(res, 409, {
-                ok: false,
-                code: "DISCORD_BIND_REQUIRED",
-                message: "本单使用 Discord 私人语音房，请先连接 Discord 后再确认接单。",
-                oauthStartUrl: "/api/discord/oauth-start",
-                order: viewOrder(before),
-              });
-            }
-          }
-        }
-      } catch (discordErr) {
-        console.warn("[companion/accept] discord gate", String(discordErr?.message || discordErr).slice(0, 160));
-      }
+      // Discord username is entered by the boss after payment is confirmed.
+      // Accepting the order must not require a Discord OAuth binding.
       const now = nowIso();
       const payApi = await import("./_order-payment-facts.js");
       const payFacts = await payApi.loadOrderMoneyFacts(before);
@@ -4512,23 +4496,10 @@ export default async function handler(req, res) {
           console.warn("[companion/accept_direct] parent refresh", err?.message || err);
         }
       }
-      // Discord: create/join private voice room after confirm (never fail the accept).
-      let discordVoiceResult = null;
-      try {
-        if (String(order?.voice_mode || before?.voice_mode || "") === "discord") {
-          const discordVoice = await import("./_discord-voice-orders.js");
-          discordVoiceResult = await discordVoice.ensureOrderVoiceChannel(order, {
-            companionUserId: auth.profile.id,
-          });
-        }
-      } catch (err) {
-        console.warn("[companion/accept_direct] discord room", err?.message || err);
-      }
       return json(res, 200, {
         ok: true,
         message: "已确认接单，订单进入进行中",
         order: viewOrder(order),
-        discordVoice: discordVoiceResult,
       });
     }
     if (action === "reject_direct_order") {

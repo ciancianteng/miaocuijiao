@@ -81,7 +81,8 @@ export function stripInternalOrderMarkers(text = "") {
     .replace(/\[\[COMPLETION_METHOD\]\][^\n]*/gi, "")
     .replace(/\[\[COMPLETION_AUTO_PAUSED\]\][^\n]*/gi, "")
     .replace(/\[\[ORDER_DISPUTE\]\][^\n]*/gi, "")
-    .replace(/\[\[ORDER_FROZEN\]\][^\n]*/gi, "");
+    .replace(/\[\[ORDER_FROZEN\]\][^\n]*/gi, "")
+    .replace(/\[\[MCJ_DISCORD_DESK:[\s\S]*?\]\]/g, "");
   return raw.replace(/\n{2,}/g, "\n").trim();
 }
 
