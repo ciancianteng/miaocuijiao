@@ -144,6 +144,17 @@ export function resolveCompanionPublicCode(row = {}, extras = {}) {
   return "";
 }
 
+/**
+ * Companion WeChat group nickname ID.
+ * Uses only companion_profiles.companion_code already stored for this row.
+ * Does not allocate a code and does not invent one from companion_uid.
+ */
+export function storedWechatCompanionCode(row = {}) {
+  const direct = String(row?.companion_code || "").trim();
+  if (!/^PW\d+$/i.test(direct)) return "";
+  return `PW${direct.slice(2)}`;
+}
+
 export function resolveBossPublicCode(profile = {}, extras = {}) {
   const raw = String(profile.boss_uid || profile.bossUid || extras.bossUid || extras.boss_uid || "").trim();
   if (!raw) return "";

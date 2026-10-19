@@ -5,15 +5,18 @@
   window.__MCJCompanionWechatLoaded = true;
 
   var REMARK = "陪玩";
-  var GROUP_NICK = "陪玩嘻嘻｜你的陪玩昵称（或陪玩ID）";
+  var NICK_PREFIX = "陪玩嘻嘻｜";
+  var MISSING_ID = "暂无陪玩编号";
   var QR_SRC = "/companion-wechat-admin-qr.jpg";
   var PAGE_TITLES = { "工作台": 1, "审核状态": 1 };
+  var groupNick = MISSING_ID;
+  var nickRequest = 0;
 
   function ensureCss() {
     if (document.querySelector("link[data-pw-wx-css]")) return;
     var link = document.createElement("link");
     link.rel = "stylesheet";
-    link.href = "/src/companion-wechat-center.css?v=20261018wx2";
+    link.href = "/src/companion-wechat-center.css?v=20261019wx3";
     link.setAttribute("data-pw-wx-css", "");
     document.head.appendChild(link);
   }
@@ -127,8 +130,12 @@
       '<section class="pw-wx-block">' +
       "<h3>入群后的群昵称</h3>" +
       "<p>成功入群后，请将群昵称修改为：</p>" +
-      '<p class="pw-wx-nickline" data-wx-group-nick>' + GROUP_NICK + "</p>" +
-      "<p>加好友时只填写备注「" + REMARK + "」。入群之后，再单独把群昵称改成上面这一行。</p>" +
+      '<div class="pw-wx-nickrow">' +
+      '<p class="pw-wx-nickline" data-wx-group-nick>' + MISSING_ID + "</p>" +
+      '<button type="button" class="pw-btn primary pw-wx-copy pw-wx-nick-copy" data-wx-nick-copy disabled>复制</button>' +
+      "</div>" +
+      '<p class="pw-wx-live" data-wx-nick-live aria-live="polite"></p>' +
+      "<p>添加管理员微信时，请备注『" + REMARK + "』。成功加入微信对接群后，请复制上方专属群昵称，并在微信群内修改。群昵称中的编号与你的平台陪玩 ID 一致，方便管理员核对身份。</p>" +
       "</section>" +
       '<section class="pw-wx-block">' +
       "<h3>群用途</h3>" +
@@ -157,6 +164,76 @@
     if (closeBtn && typeof closeBtn.focus === "function") {
       try { closeBtn.focus(); } catch (e) {}
     }
+    loadGroupNick();
+  }
+
+  function nickFromPublicId(publicId) {
+    var id = String(publicId || "").trim();
+    if (!/^PW\d+$/i.test(id)) return MISSING_ID;
+    return NICK_PREFIX + "PW" + id.slice(2);
+  }
+
+  function readToken() {
+    try {
+      var raw = localStorage.getItem("mcjCompanionSession") || sessionStorage.getItem("mcjCompanionSession") || "";
+      var session = JSON.parse(raw || "null");
+      return session && session.token ? String(session.token) : "";
+    } catch (e) {
+      return "";
+    }
+  }
+
+  function applyGroupNick(text, meta) {
+    groupNick = text || MISSING_ID;
+    if (window.MCJCompanionWechat) window.MCJCompanionWechat.groupNick = groupNick;
+    var node = document.querySelector("[data-wx-group-nick]");
+    if (node) node.textContent = groupNick;
+    var btn = document.querySelector("[data-wx-nick-copy]");
+    if (btn) {
+      btn.disabled = false;
+      btn.classList.remove("is-copied");
+      btn.textContent = "复制";
+      btn.removeAttribute("data-wx-copied");
+    }
+    var live = document.querySelector("[data-wx-nick-live]");
+    if (live) live.textContent = meta && meta.failed ? "编号暂时无法读取，请刷新页面后再打开。" : "";
+  }
+
+  function loadGroupNick() {
+    var token = readToken();
+    var seq = ++nickRequest;
+    var node = document.querySelector("[data-wx-group-nick]");
+    var btn = document.querySelector("[data-wx-nick-copy]");
+    if (node) node.textContent = "读取中";
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = "复制";
+      btn.classList.remove("is-copied");
+    }
+    if (!token) {
+      applyGroupNick(MISSING_ID);
+      return;
+    }
+    fetch("/api/companion?action=wechat_public_id", {
+      method: "GET",
+      headers: {
+        Accept: "application/json",
+        Authorization: "Bearer " + token,
+        "x-mcj-companion-token": token
+      }
+    }).then(function (res) {
+      return res.json().catch(function () { return { ok: false }; }).then(function (body) {
+        return { status: res.status, body: body };
+      });
+    }).then(function (result) {
+      if (seq !== nickRequest || readToken() !== token) return;
+      var body = result.body || {};
+      if (result.status === 200 && body.ok === true) applyGroupNick(nickFromPublicId(body.publicId));
+      else applyGroupNick(MISSING_ID, { failed: true });
+    }).catch(function () {
+      if (seq !== nickRequest || readToken() !== token) return;
+      applyGroupNick(MISSING_ID, { failed: true });
+    });
   }
 
   function markCopied(btn) {
@@ -167,8 +244,8 @@
     if (live) live.textContent = "已复制备注：" + REMARK;
   }
 
-  function fallbackCopy(text) {
-    var node = document.querySelector("[data-wx-remark]");
+  function fallbackCopy(text, selector) {
+    var node = document.querySelector(selector || "[data-wx-remark]");
     if (node) {
       var range = document.createRange();
       range.selectNodeContents(node);
@@ -217,6 +294,35 @@
     }
   }
 
+  function markNickCopied(btn) {
+    btn.classList.add("is-copied");
+    btn.textContent = "已复制";
+    btn.setAttribute("data-wx-copied", groupNick);
+    var live = document.querySelector("[data-wx-nick-live]");
+    if (live) live.textContent = "已复制群昵称：" + groupNick;
+  }
+
+  function copyGroupNick(btn) {
+    if (!btn || btn.disabled) return;
+    var text = groupNick;
+    if (!text || text === "读取中") return;
+    function fail() {
+      var live = document.querySelector("[data-wx-nick-live]");
+      if (live) live.textContent = "请长按上方群昵称手动复制。";
+    }
+    if (navigator.clipboard && window.isSecureContext && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(function () {
+        markNickCopied(btn);
+      }).catch(function () {
+        if (fallbackCopy(text, "[data-wx-group-nick]")) markNickCopied(btn);
+        else fail();
+      });
+      return;
+    }
+    if (fallbackCopy(text, "[data-wx-group-nick]")) markNickCopied(btn);
+    else fail();
+  }
+
   document.addEventListener("click", function (e) {
     var t = e.target;
     if (!t || !t.closest) return;
@@ -233,6 +339,11 @@
     if (t.closest("[data-wx-zoom-close]") || (t.matches && t.matches("[data-wx-zoom-layer]"))) {
       e.preventDefault();
       closeZoom();
+      return;
+    }
+    if (t.closest("[data-wx-nick-copy]")) {
+      e.preventDefault();
+      copyGroupNick(t.closest("[data-wx-nick-copy]"));
       return;
     }
     if (t.closest("[data-wx-copy]")) {
@@ -269,7 +380,7 @@
 
   window.MCJCompanionWechat = {
     remark: REMARK,
-    groupNick: GROUP_NICK,
+    groupNick: groupNick,
     qrSrc: QR_SRC,
     open: openSheet,
     close: closeSheet
