@@ -162,6 +162,9 @@ test("页面空状态与查询绑定没有退回旧字段", () => {
   const html = read("profile.html");
   assert.match(page, /var orderStat = String\(completedOrders\);/);
   assert.match(page, /暂无评价数据/);
+  assert.match(page, /class="is-empty"/);
+  assert.match(read("src/profile.css"), /\.pd-stat-row strong\.is-empty/);
+  assert.match(html, /profile\.css\?v=20261019stats1/);
   assert.doesNotMatch(page, /completedOrders > 0 \? String\(completedOrders\) : "—"/);
   assert.match(api, /loadCompletedOrderCount/);
   assert.match(api, /reviewsGroupedByCompanion/);

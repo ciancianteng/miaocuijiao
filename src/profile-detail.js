@@ -808,10 +808,14 @@
       '<div><strong>' +
       esc(orderStat) +
       '</strong><span>完成订单</span></div>' +
-      '<div><strong>' +
+      '<div><strong' +
+      (rateStat === "暂无评价数据" ? ' class="is-empty"' : "") +
+      ">" +
       esc(rateStat) +
       '</strong><span>好评率</span></div>' +
-      '<div><strong>' +
+      '<div><strong' +
+      (scoreStat === "暂无评价数据" ? ' class="is-empty"' : "") +
+      ">" +
       esc(scoreStat) +
       '</strong><span>综合评分</span></div>' +
       "</div></section>" +

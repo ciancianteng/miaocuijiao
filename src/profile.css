@@ -1021,6 +1021,11 @@
   font-weight:700;
   color:#fff;
 }
+.profile-detail-page .pd-stat-row strong.is-empty{
+  font-size:13px;
+  line-height:1.35;
+  font-weight:650;
+}
 .profile-detail-page .pd-stat-row span{
   display:block;
   margin-top:4px;
