@@ -112,6 +112,21 @@ export function discordDeskPhase(order = {}) {
   };
 }
 
+export function attachDiscordContact(text = "", username = "", voiceMode = "") {
+  if (String(voiceMode || "").trim().toLowerCase() !== "discord") return String(text || "");
+  const parsed = normalizeDiscordUsername(username);
+  if (!parsed.ok) return String(text || "");
+  const existing = readDiscordDesk(text);
+  if (existing.username) return String(text || "");
+  return upsertDiscordDesk(text, {
+    username: parsed.username,
+    status: "waiting_invite",
+    acked: true,
+    submittedAt: new Date().toISOString(),
+    invitedAt: "",
+  });
+}
+
 export function discordDeskPublic(order = {}) {
   const phase = discordDeskPhase(order);
   return {

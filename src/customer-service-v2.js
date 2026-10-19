@@ -3351,7 +3351,7 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, virtStartIndex }
       rows.push(['语音方式','Discord 语音房']);
       rows.push(['老板账号 ID',o.bossUid||'-']);
       rows.push(['陪玩 ID',o.companionCode||'-']);
-      rows.push(['Discord ID',o.discordUsername||'未填写']);
+      rows.push(['Discord 麦克风/联系信息',o.discordUsername||'未填写']);
       rows.push(['Discord 对接状态',o.discordDeskStatus||'未到填写阶段']);
     }
     var hasProof=!(o.paymentWalletHold&&!o.paymentProofUrl)&&((o.paymentProofUrl&&!/^proof:/i.test(String(o.paymentProofUrl||'')))||o.paymentReceiptId||o.paymentReview);
@@ -3513,7 +3513,7 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, virtStartIndex }
       '<div>陪玩：'+esc((o.companionName||'-')+' / '+(o.companionCode||'-'))+'</div>'+
       '<div>订单编号：'+esc(o.orderNo||'-')+'</div>'+
       '<div>语音方式：Discord 语音房</div>'+
-      '<div>Discord ID：'+esc(name||'未填写')+'</div>'+
+      '<div>Discord 麦克风/联系信息：'+esc(name||'未填写')+'</div>'+
       '<div>Discord 对接状态：'+esc(status)+'</div>'+
       (copy||invite?'<div class="cs-actions" style="margin-top:8px">'+copy+invite+'</div>':'')+
       '</div>';

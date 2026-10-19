@@ -27,6 +27,7 @@
     sharedBossRank: "",
     sharedStartTime: "",
     sharedVoiceMode: "game_mic",
+    sharedDiscordContact: "",
     paymentMethod: "", // chosen on sheet / inherited from place-order modal — never hardcode catfood
     orderPayMethods: [],
     pendingIdempotencyKey: "",
@@ -409,6 +410,7 @@
         sharedBossRank: state.sharedBossRank || "",
         sharedStartTime: state.sharedStartTime || "",
         sharedVoiceMode: state.sharedVoiceMode || "game_mic",
+        sharedDiscordContact: state.sharedDiscordContact || "",
         paymentMethod: state.paymentMethod || "",
       };
       sessionStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
@@ -472,6 +474,7 @@
       if (state.sharedVoiceMode !== "discord" && state.sharedVoiceMode !== "game_mic") {
         state.sharedVoiceMode = "game_mic";
       }
+      state.sharedDiscordContact = String(data.sharedDiscordContact || "").trim().slice(0, 80);
       if (data.paymentMethod != null) {
         state.paymentMethod = String(data.paymentMethod || "").trim().toLowerCase();
       }
@@ -494,6 +497,7 @@
     state.sharedBossRank = "";
     state.sharedStartTime = "";
     state.sharedVoiceMode = "game_mic";
+    state.sharedDiscordContact = "";
     state.paymentMethod = "";
     state.expanded = false;
     // Keep pendingIdempotencyKey so back/retry cannot mint a second parent.
@@ -1354,6 +1358,7 @@
       startTime: startTime,
       endTime: endTime,
       voiceMode: state.sharedVoiceMode || "game_mic",
+      discordUsername: state.sharedVoiceMode === "discord" ? state.sharedDiscordContact || "" : "",
       idempotencyKey: ensureIdempotencyKey(),
       companions: state.lines.map(function (l) {
         var hours = Math.max(0.5, money(l.hours || 1));
@@ -1429,6 +1434,21 @@
     if (!String(state.paymentMethod || "").trim()) {
       toast("请选择支付方式");
       setSheetError("请选择支付方式");
+      return;
+    }
+    if (state.sharedVoiceMode === "discord" && !String(state.sharedDiscordContact || "").trim()) {
+      var discordApi = window.MCJPlaceOrder;
+      if (discordApi && discordApi.ensureDiscordContact) {
+        discordApi.ensureDiscordContact().then(function (value) {
+          if (!value) return;
+          state.sharedDiscordContact = value;
+          state.sharedVoiceMode = "discord";
+          persist();
+          paintSheet();
+        });
+      } else {
+        toast("请填写 Discord 麦克风 / 联系信息");
+      }
       return;
     }
     var payload = buildPayload();
@@ -1619,6 +1639,9 @@
     }
     if (patch.voiceMode === "discord" || patch.voiceMode === "game_mic") {
       state.sharedVoiceMode = patch.voiceMode;
+    }
+    if (patch.discordContact != null) {
+      state.sharedDiscordContact = String(patch.discordContact || "").trim().slice(0, 80);
     }
     if (patch.paymentMethod != null) {
       state.paymentMethod = String(patch.paymentMethod || "").trim().toLowerCase();
@@ -1861,6 +1884,19 @@
       e.preventDefault();
       var next = voiceBtn.getAttribute("data-mcj-team-voice") || "game_mic";
       if (next !== "discord" && next !== "game_mic") next = "game_mic";
+      if (next === "discord" && !String(state.sharedDiscordContact || "").trim()) {
+        var discordApi = window.MCJPlaceOrder;
+        if (discordApi && discordApi.ensureDiscordContact) {
+          discordApi.ensureDiscordContact().then(function (value) {
+            if (!value) return;
+            state.sharedDiscordContact = value;
+            state.sharedVoiceMode = "discord";
+            persist();
+            paintSheet();
+          });
+          return;
+        }
+      }
       state.sharedVoiceMode = next;
       persist();
       paintSheet();

@@ -29,6 +29,7 @@ import { listPendingForCs, latestRejectedForOrders, latestApprovedForOrders, sig
 import { loadPlatformPayQr, listBossOrderPaymentMethods, normalizePaymentChannelId, isWalletPayEnabled, loadPaymentChannelsContext } from "./_platform-pay-qr.js";
 import { stripInternalOrderMarkers } from "./_order-grabs.js";
 import {
+  attachDiscordContact,
   discordDeskPublic,
   normalizeDiscordUsername,
   readDiscordDesk,
@@ -1675,6 +1676,19 @@ export default async function handler(req, res) {
         pricing_unit: String(order.pricingUnit || order.pricing_unit || "小时"),
         voice_mode: voiceMode,
       };
+      if (voiceMode === "discord") {
+        const marked = attachDiscordContact(
+          row.description,
+          body.discordUsername || body.discord_username || body.discordContact || "",
+          voiceMode
+        );
+        if (marked !== row.description) {
+          row.description = marked;
+          enriched.description = marked;
+          enriched.notes = marked;
+          enriched.note = marked;
+        }
+      }
       if (productCommissionSnapshot != null) {
         enriched.platform_fee_rate = productCommissionSnapshot;
       }
