@@ -288,7 +288,10 @@
   }
 
   function scheduleWindowLabel(start, end) {
-    return String(start || "") + " – " + String(end || "");
+    var a = String(start || "");
+    var b = String(end || "");
+    var nextDay = /^\d{2}:\d{2}$/.test(a) && /^\d{2}:\d{2}$/.test(b) && b < a;
+    return a + " – " + (nextDay ? "次日 " : "") + b;
   }
 
   function ensureSharedStartTime() {
@@ -324,7 +327,7 @@
     window.MCJTimePicker.open({
       title: "选择开始时间",
       value: readTeamStartTime(mask),
-      minuteStep: 60,
+      minuteStep: 1,
       onConfirm: function (value) {
         writeTeamStartTime(mask, value);
         persist();
@@ -342,13 +345,15 @@
     writeTeamStartTime(mask, start);
     var duration = maxTeamDurationHours();
     var end = addHoursToTime(start, duration);
-    if (endEl) endEl.textContent = end;
+    var endLabel = scheduleWindowLabel(start, end).split(" – ")[1] || end;
+    if (endEl) endEl.textContent = endLabel;
     mask.querySelectorAll("[data-line-start]").forEach(function (el) {
       el.textContent = start;
     });
     mask.querySelectorAll("[data-line-end]").forEach(function (el) {
       var hours = Number(el.getAttribute("data-line-hours") || 1);
-      el.textContent = addHoursToTime(start, hours);
+      var lineEnd = addHoursToTime(start, hours);
+      el.textContent = scheduleWindowLabel(start, lineEnd).split(" – ")[1] || lineEnd;
     });
     if (hintEl) {
       hintEl.textContent =

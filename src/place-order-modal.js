@@ -1097,7 +1097,10 @@
     return pad2(Math.floor(totalMin / 60)) + ":" + pad2(totalMin % 60);
   }
   function scheduleWindowLabel(start, end) {
-    return String(start || "") + " – " + String(end || "");
+    var a = String(start || "");
+    var b = String(end || "");
+    var nextDay = /^\d{2}:\d{2}$/.test(a) && /^\d{2}:\d{2}$/.test(b) && b < a;
+    return a + " – " + (nextDay ? "次日 " : "") + b;
   }
   function readStartTimeFromDom(root) {
     var card = (root || document).querySelector("[data-po-start-time]");
@@ -1127,7 +1130,7 @@
     window.MCJTimePicker.open({
       title: "选择开始时间",
       value: current,
-      minuteStep: 60,
+      minuteStep: 1,
       onConfirm: function (value) {
         writeStartTimeToDom(root, value);
         refreshSchedulePreview(root);
@@ -1143,7 +1146,8 @@
     writeStartTimeToDom(scope, start);
     var end = addHoursToTime(start, serviceDurationHours());
     state.endTime = end;
-    if (endEl) endEl.textContent = end;
+    var endLabel = scheduleWindowLabel(start, end).split(" – ")[1] || end;
+    if (endEl) endEl.textContent = endLabel;
     if (hintEl) {
       hintEl.textContent =
         "服务时段：" +
