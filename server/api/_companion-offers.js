@@ -122,6 +122,22 @@ export async function listCompanionOffers(userId, { enabledOnly = false } = {}) 
   };
 }
 
+export function assertCompanionOfferPrice(item, policy, prevPrice) {
+  if (Number.isNaN(item.price)) throw Object.assign(new Error("不允许输入无效金额。"), { status: 400 });
+  if (item.price != null && item.price < 0) throw Object.assign(new Error("不允许输入负数。"), { status: 400 });
+  if (item.price != null && !policy.allowSelfPrice && prevPrice !== item.price) {
+    throw Object.assign(new Error("此服务价格由平台统一设置"), { status: 400 });
+  }
+  if (item.price != null && policy.allowSelfPrice) {
+    if (policy.min != null && item.price < Number(policy.min)) {
+      throw Object.assign(new Error(`价格不得低于 RM${policy.min}`), { status: 400 });
+    }
+    if (policy.max != null && item.price > Number(policy.max)) {
+      throw Object.assign(new Error(`价格不得高于 RM${policy.max}`), { status: 400 });
+    }
+  }
+}
+
 export async function saveCompanionOffers(userId, offers) {
   const id = String(userId || "").trim();
   if (!id) throw Object.assign(new Error("缺少陪玩账号"), { status: 400 });
@@ -153,22 +169,8 @@ export async function saveCompanionOffers(userId, offers) {
     const policy = policies[item.id] || { allowSelfPrice: false, allowSelfOff: false, min: null, max: null };
     const prev = previous.find((row) => row.kind === "service" && row.id === item.id);
     if (Number.isNaN(item.price)) throw Object.assign(new Error("不允许输入无效金额。"), { status: 400 });
-    if (item.price != null && item.price < 0) throw Object.assign(new Error("不允许输入负数。"), { status: 400 });
     const prevPrice = prev && prev.price != null && !Number.isNaN(prev.price) ? Number(prev.price) : null;
-    if (item.price != null && !policy.allowSelfPrice && prevPrice !== item.price) {
-      throw Object.assign(new Error("此服务价格由平台统一设置"), { status: 400 });
-    }
-    if (item.price != null && policy.allowSelfPrice) {
-      if (policy.min != null && item.price < Number(policy.min)) {
-        throw Object.assign(new Error(`价格不得低于 RM${policy.min}`), { status: 400 });
-      }
-      if (policy.max != null && item.price > Number(policy.max)) {
-        throw Object.assign(new Error(`价格不得高于 RM${policy.max}`), { status: 400 });
-      }
-    }
-    if (item.accepting === false && policy.allowSelfOff !== true) {
-      throw Object.assign(new Error("管理员未允许陪玩关闭此服务。"), { status: 400 });
-    }
+    assertCompanionOfferPrice(item, policy, prevPrice);
   }
   const incoming = new Set(wanted.map((item) => `${item.kind}:${item.id}`));
   const keptProducts = previous.filter((item) => item.kind === "product" && !incoming.has(`product:${item.id}`));

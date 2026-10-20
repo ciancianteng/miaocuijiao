@@ -137,7 +137,73 @@ async function loadCompanionServices(companionUserId, companionRow) {
     standard: publicStandard(pickServiceStandard(standards, { serviceId: svc.serviceId, name: svc.name })),
     companionRank: rankForService(standards, { serviceId: svc.serviceId, name: svc.name }),
   });
-  return (await loadCompanionServicesRaw(companionUserId, companionRow)).map(withStandard);
+  const raw = await loadCompanionServicesRaw(companionUserId, companionRow);
+  const aligned = await alignBossServicesWithPlatform(raw, companionUserId);
+  return aligned.map(withStandard);
+}
+
+async function alignBossServicesWithPlatform(services, companionUserId) {
+  let rows = [];
+  try {
+    rows = await companionDb(
+      "services",
+      "?select=id,name,category,icon,default_price,enabled,allow_order,sort&order=sort.asc&limit=200"
+    );
+  } catch (error) {
+    if (!isMissingRelation(error)) console.warn("[marketplace] platform services", error?.message || error);
+    return services;
+  }
+  const platform = (Array.isArray(rows) ? rows : []).filter((row) => row && row.id);
+  if (!platform.length) return services;
+  let policies = {};
+  let offers = [];
+  try {
+    const { loadAllPricePolicies } = await import("../_service-price-policy.js");
+    policies = (await loadAllPricePolicies()) || {};
+  } catch {
+    policies = {};
+  }
+  try {
+    const { listCompanionOffers } = await import("../_companion-offers.js");
+    const listed = await listCompanionOffers(companionUserId);
+    offers = listed.offers || [];
+  } catch {
+    offers = [];
+  }
+  const { quoteVisibleService } = await import("../_service-price-policy.js");
+  const offerById = new Map(offers.filter((item) => item.kind === "service").map((item) => [String(item.id), item]));
+  const previousById = new Map(
+    (services || []).filter((item) => item && item.serviceId).map((item) => [String(item.serviceId), item])
+  );
+  return platform
+    .map((row) => {
+      const id = String(row.id);
+      const prev = previousById.get(id) || null;
+      const quote = quoteVisibleService({
+        row,
+        policy: policies[id] || {},
+        offer: offerById.get(id) || null,
+        fallbackPrice: prev?.price,
+      });
+    if (!quote.visible || quote.blocked) return null;
+      return {
+        id: prev?.id || id,
+        serviceId: id,
+        name: row.name || prev?.name || "服务",
+        price: quote.price,
+        pricingSource: quote.source,
+        pricingUnit: quote.unit || prev?.pricingUnit || "局",
+        content: quote.description || "",
+        requirements: quote.requirements || "",
+        category: row.category || "",
+        icon: row.icon || "🎮",
+        specs: prev?.specs || defaultSpecs(quote.unit || "局"),
+        requiresGameId: prev ? prev.requiresGameId !== false : !/语音|陪聊|聊天/i.test(row.name || ""),
+        customFields: prev?.customFields || [],
+        orderable: !quote.blocked,
+      };
+    })
+    .filter(Boolean);
 }
 
 async function levelForCompanion(companionRow) {

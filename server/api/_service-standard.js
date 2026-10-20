@@ -175,6 +175,8 @@ export function buildServiceSnapshot({
   companionId = "",
   bossRank = "",
   bossRankGame = "",
+  catalogDescription = "",
+  catalogRequirements = "",
 } = {}) {
   const picked = pickServiceStandard(standards, { serviceId, name: serviceName });
   const norm = normalizeServiceStandard(picked || {});
@@ -191,6 +193,8 @@ export function buildServiceSnapshot({
     quantity: Number(quantity) || 1,
     standard: hasStandardContent(norm) ? norm : null,
     standardUpdatedAt: picked ? String(picked.updatedAt || "") : "",
+    catalogDescription: String(catalogDescription || "").trim().slice(0, 500),
+    catalogRequirements: String(catalogRequirements || "").trim().slice(0, 800),
     capturedAt: new Date().toISOString(),
   };
 }

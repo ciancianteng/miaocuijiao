@@ -1526,6 +1526,7 @@ export default async function handler(req, res) {
           return json(res, 400, { ok: false, code: "SERVICE_CLOSED", message: resolved.message || "该服务已关闭，不能创建新订单。" });
         }
         unitPrice = money(resolved.price);
+        const catalogUnit = String(resolved.pricingUnit || "").trim();
         if (!(unitPrice > 0)) {
           return json(res, 400, {
             ok: false,
@@ -1548,7 +1549,9 @@ export default async function handler(req, res) {
             serviceId: serviceId || resolved?.serviceRow?.service_id || "",
             serviceName: serviceType,
             unitPrice,
-            pricingUnit: String(order.pricingUnit || order.pricing_unit || cp.pricing_unit || "小时"),
+            pricingUnit: catalogUnit || String(order.pricingUnit || order.pricing_unit || cp.pricing_unit || "小时"),
+            catalogDescription: resolved.catalogDescription || "",
+            catalogRequirements: resolved.catalogRequirements || "",
             hours,
             quantity,
             bossRank,

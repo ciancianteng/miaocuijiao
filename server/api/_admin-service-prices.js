@@ -481,23 +481,29 @@ export async function resolveOrderUnitPrice({
   const catalogId = String(serviceId || "").trim();
   if (!catalogId) return resolved;
   try {
-    const platformRows = await companionDb("services", `?id=eq.${encodeURIComponent(catalogId)}&select=id,enabled&limit=1`).catch(() => []);
+    const platformRows = await companionDb(
+      "services",
+      `?id=eq.${encodeURIComponent(catalogId)}&select=id,name,default_price,enabled,allow_order&limit=1`
+    ).catch(() => []);
     const platform = Array.isArray(platformRows) ? platformRows[0] : null;
-    if (platform && platform.enabled === false) {
-      return { ...resolved, price: 0, blocked: true, message: "该服务已停用，不能创建新订单。" };
-    }
+    if (!platform) return resolved;
+    const { loadAllPricePolicies, normalizePricePolicy, quoteVisibleService } = await import("./_service-price-policy.js");
     const { listCompanionOffers } = await import("./_companion-offers.js");
+    const policies = await loadAllPricePolicies().catch(() => ({}));
+    const policy = normalizePricePolicy(policies?.[catalogId] || {});
     const ownerId = String(companion?.user_id || companionId || "").trim();
-    if (!ownerId) return resolved;
-    const listed = await listCompanionOffers(ownerId);
-    const offer = (listed.offers || []).find((item) => item.kind === "service" && String(item.id) === catalogId);
-    if (!offer) return resolved;
-    if (offer.accepting === false) {
-      return { ...resolved, price: 0, blocked: true, message: "该陪玩已关闭此服务，不能创建新订单。" };
+    const listed = ownerId ? await listCompanionOffers(ownerId).catch(() => ({ offers: [] })) : { offers: [] };
+    const offer = (listed.offers || []).find((item) => item.kind === "service" && String(item.id) === catalogId) || null;
+    const quote = quoteVisibleService({
+      row: platform,
+      policy,
+      offer,
+      fallbackPrice: resolved?.price,
+    });
+    if (!quote.visible || quote.blocked) {
+      return { ...resolved, price: 0, blocked: true, pricingUnit: quote.unit, message: quote.message || "该服务已停用，不能创建新订单。" };
     }
-    if (!(Number(resolved.price) > 0) && offer.price != null && Number(offer.price) > 0) {
-      return { ...resolved, price: Number(offer.price), source: "companion_offer" };
-    }
+    return { ...resolved, price: quote.price, source: quote.source, pricingUnit: quote.unit, catalogDescription: quote.description, catalogRequirements: quote.requirements };
   } catch (err) {
     console.warn("[order-price] companion offer", err?.message || err);
   }

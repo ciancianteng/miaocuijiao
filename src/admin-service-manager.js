@@ -80,6 +80,8 @@
       priceMin: "",
       priceMax: "",
       unit: "局",
+      description: "",
+      requirements: "",
       allowSelfPrice: false,
       allowSelfOff: false,
       orderFields: [],
@@ -103,6 +105,8 @@
           priceMin: item.pricePolicy && item.pricePolicy.min != null ? item.pricePolicy.min : "",
           priceMax: item.pricePolicy && item.pricePolicy.max != null ? item.pricePolicy.max : "",
           unit: (item.pricePolicy && item.pricePolicy.unit) || "局",
+          description: (item.pricePolicy && item.pricePolicy.description) || "",
+          requirements: (item.pricePolicy && item.pricePolicy.requirements) || "",
           allowSelfPrice: !!(item.pricePolicy && item.pricePolicy.allowSelfPrice),
           allowSelfOff: !!(item.pricePolicy && item.pricePolicy.allowSelfOff),
           orderFields: Array.isArray(item.orderFields) ? item.orderFields : [],
@@ -266,7 +270,13 @@
       unitOpt("场") +
       unitOpt("次") +
       "</select></label>" +
-      '<p class="svc-note">保存后只影响新订单。已有订单保留下单当时的金额。</p>' +
+      '<label class="svc-field"><span>服务内容</span><textarea name="description" maxlength="500" rows="3" placeholder="老板下单和陪玩端都会看到这段说明">' +
+      esc(d.description || "") +
+      "</textarea></label>" +
+      '<label class="svc-field"><span>服务要求</span><textarea name="requirements" maxlength="800" rows="3" placeholder="接单时需要遵守的要求">' +
+      esc(d.requirements || "") +
+      "</textarea></label>" +
+      '<p class="svc-note">保存后只影响新订单。已有订单保留下单当时的金额和内容。</p>' +
       "</section>" +
       '<section class="svc-section"><h4>订单要求配置</h4>' +
       renderOrderFields(d.orderFields || []) +
@@ -284,9 +294,7 @@
       '<label class="svc-perm"><input type="checkbox" name="allowSelfPrice" value="true"' +
       (d.allowSelfPrice ? " checked" : "") +
       "> 允许陪玩自主定价</label>" +
-      '<label class="svc-perm"><input type="checkbox" name="allowSelfOff" value="true"' +
-      (d.allowSelfOff ? " checked" : "") +
-      "> 允许陪玩自主关闭服务</label>" +
+      '<p class="svc-note">每位陪玩可单独开启或关闭是否接此服务。未允许自主定价时，后端会拒绝改价。</p>' +
       "</div></section>" +
       '<div class="form-actions svc-actions"><button class="btn primary" type="submit" ' +
       (state.saving ? "disabled" : "") +
@@ -321,8 +329,8 @@
       '<button class="svc-icon-btn danger" type="button" data-of-remove aria-label="删除">×</button>' +
       "</div></div>" +
       '<div class="svc-field-card-flags">' +
-      '<label class="svc-mini-toggle"><input type="checkbox" data-of-required' + (field.required === false ? "" : " checked") + '><i></i><span>必填</span></label>' +
-      '<label class="svc-mini-toggle"><input type="checkbox" data-of-enabled' + (field.enabled === false ? "" : " checked") + '><i></i><span>启用</span></label>' +
+      '<label class="svc-mini-toggle"><input type="checkbox" data-of-required' + (field.required === false ? "" : " checked") + '><i aria-hidden="true"></i><span>必填</span></label>' +
+      '<label class="svc-mini-toggle"><input type="checkbox" data-of-enabled' + (field.enabled === false ? "" : " checked") + '><i aria-hidden="true"></i><span>启用</span></label>' +
       "</div>" +
       '<input data-of-placeholder maxlength="80" placeholder="placeholder" value="' + esc(field.placeholder || "") + '">' +
       '<input data-of-options maxlength="400" placeholder="单选/多选选项，逗号分隔，可随时增改" value="' + esc(options) + '">' +
@@ -479,6 +487,8 @@
       priceMin: String(data.priceMin || "").trim(),
       priceMax: String(data.priceMax || "").trim(),
       unit: String(data.unit || "局").trim() || "局",
+      description: String(data.description || "").trim(),
+      requirements: String(data.requirements || "").trim(),
       allowSelfPrice: data.allowSelfPrice === "true" || data.allowSelfPrice === "on",
       allowSelfOff: data.allowSelfOff === "true" || data.allowSelfOff === "on",
       enabled: data.enabled !== "false",

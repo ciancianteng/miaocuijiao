@@ -672,6 +672,8 @@
       name: name,
       price: money(s.price != null ? s.price : s.unitPrice != null ? s.unitPrice : 0),
       pricingUnit: String(s.pricingUnit || s.pricing_unit || "小时"),
+      content: String(s.content || s.description || "").trim(),
+      requirements: String(s.requirements || "").trim(),
       sort: s.sort != null ? Number(s.sort) : idx || 0,
       standard: s.standard && typeof s.standard === "object" ? s.standard : null,
     };
@@ -704,7 +706,7 @@
       "</strong><span>" +
       esc(moneyText(svc.price) + " / " + (svc.pricingUnit || "小时")) +
       "</span></div>";
-    if (!sections.length) {
+    if (!sections.length && !svc.content && !svc.requirements) {
       return (
         head +
         '<p class="mcj-po-standard-empty">该陪玩暂未填写此项目的详细服务标准。按' +
@@ -712,9 +714,13 @@
         "计费；如需确认服务内容，可下单前联系客服。</p>"
       );
     }
+    var catalogBits = "";
+    if (svc.content) catalogBits += "<div><dt>服务内容</dt><dd>" + esc(svc.content) + "</dd></div>";
+    if (svc.requirements) catalogBits += "<div><dt>服务要求</dt><dd>" + esc(svc.requirements) + "</dd></div>";
     return (
       head +
       '<dl class="mcj-po-standard-list">' +
+      catalogBits +
       sections
         .map(function (s) {
           return "<div><dt>" + esc(s.label) + "</dt><dd>" + esc(s.value) + "</dd></div>";

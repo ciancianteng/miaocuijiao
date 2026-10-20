@@ -15,6 +15,10 @@ function moneyOrNull(value) {
   return Math.round(n * 100) / 100;
 }
 
+function clipText(value, max) {
+  return String(value || "").replace(/\s+/g, " ").trim().slice(0, max);
+}
+
 export function normalizePricePolicy(raw = {}) {
   const min = moneyOrNull(raw.min ?? raw.priceMin);
   const max = moneyOrNull(raw.max ?? raw.priceMax);
@@ -25,6 +29,49 @@ export function normalizePricePolicy(raw = {}) {
     unit,
     allowSelfPrice: raw.allowSelfPrice === true || raw.allowSelfPrice === "true" || raw.allowCompanionPrice === true,
     allowSelfOff: raw.allowSelfOff === true || raw.allowSelfOff === "true" || raw.allowCompanionOff === true,
+    description: clipText(raw.description ?? raw.content ?? raw.serviceContent, 500),
+    requirements: clipText(raw.requirements ?? raw.serviceRequirements, 800),
+  };
+}
+
+/**
+ * What the boss may order and what price the server must charge.
+ * Companion custom price is used only when the admin policy allows it.
+ */
+export function quoteVisibleService({ row, policy, offer, fallbackPrice = 0 } = {}) {
+  const rules = normalizePricePolicy(policy || {});
+  if (!row || row.enabled === false || row.allow_order === false) {
+    return { visible: false, blocked: true, price: 0, source: "closed", unit: rules.unit, description: rules.description, requirements: rules.requirements, message: "该服务已停用，不能创建新订单。" };
+  }
+  if (offer && offer.accepting === false) {
+    return { visible: false, blocked: true, price: 0, source: "companion_closed", unit: rules.unit, description: rules.description, requirements: rules.requirements, message: "该陪玩已关闭此服务，不能创建新订单。" };
+  }
+  const platformPrice = Number(row.default_price);
+  const custom = offer && offer.price != null && offer.price !== "" ? Number(offer.price) : NaN;
+  let price = 0;
+  let source = "platform_default";
+  if (rules.allowSelfPrice && Number.isFinite(custom) && custom > 0) {
+    if ((rules.min != null && custom < Number(rules.min)) || (rules.max != null && custom > Number(rules.max))) {
+      return { visible: false, blocked: true, price: 0, source: "price_out_of_range", unit: rules.unit, description: rules.description, requirements: rules.requirements, message: "陪玩报价超出后台允许范围，不能创建新订单。" };
+    }
+    price = Math.round(custom * 100) / 100;
+    source = "companion_offer";
+  } else if (Number.isFinite(platformPrice) && platformPrice > 0) {
+    price = Math.round(platformPrice * 100) / 100;
+    source = "platform_default";
+  } else if (Number(fallbackPrice) > 0) {
+    price = Math.round(Number(fallbackPrice) * 100) / 100;
+    source = "fallback";
+  }
+  return {
+    visible: true,
+    blocked: !(price > 0),
+    price,
+    source,
+    unit: rules.unit,
+    description: rules.description,
+    requirements: rules.requirements,
+    message: price > 0 ? "" : "该服务尚未设置单价，无法下单。",
   };
 }
 

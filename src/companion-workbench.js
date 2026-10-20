@@ -2599,18 +2599,24 @@
         var policy=item.policy||{};
         var unit=policy.unit||'局';
         var range=(policy.min!=null&&policy.max!=null)?('RM'+policy.min+' - RM'+policy.max+' / '+unit):'平台未设置区间';
+        var platformPrice=item.price!=null&&item.price!==''&&!isNaN(Number(item.price))?('RM'+item.price+' / '+unit):'平台尚未设置默认价格';
+        var content=String(policy.description||'').trim();
+        var requirement=String(policy.requirements||'').trim();
         var mine=saved&&saved.price!=null&&saved.price!==''&&!isNaN(Number(saved.price))?saved.price:'';
         var accepting=!saved||saved.accepting!==false;
         var canPrice=policy.allowSelfPrice===true;
-        var canOff=policy.allowSelfOff===true;
         return '<article class="pw-my-service" data-offer-card data-kind="service" data-id="'+esc(item.id)+'" data-saved="'+(saved?'1':'0')+'" data-accepting="'+(accepting?'1':'0')+'">'+
           '<header><b>'+esc(item.icon||'🎮')+' '+esc(item.name||'-')+'</b><span>'+esc(item.category||'')+'</span></header>'+
+          '<p>计费单位：每'+esc(unit)+'</p>'+
+          '<p>后台价格：'+esc(platformPrice)+'</p>'+
+          '<p>服务内容：'+esc(content||'后台尚未填写')+'</p>'+
+          '<p>服务要求：'+esc(requirement||'后台尚未填写')+'</p>'+
           '<p>平台允许价格：'+esc(range)+'</p>'+
           (canPrice
             ? '<label>我的价格<span class="pw-rm">RM<input data-offer-price inputmode="decimal" value="'+esc(mine)+'"></span><em>/ '+esc(unit)+'</em></label><button class="pw-btn" type="button" data-offer-save>修改价格</button>'
             : '<p>此服务价格由平台统一设置</p><p>我的价格：RM'+esc(mine||item.price||'-')+' / '+esc(unit)+'</p>')+
           '<p class="pw-my-service-status">'+(accepting?'● 接单中':'● 已关闭')+'</p>'+
-          (canOff?'<button class="pw-btn" type="button" data-offer-toggle>'+(accepting?'关闭服务':'开启服务')+'</button>':'')+
+          '<button class="pw-btn" type="button" data-offer-toggle>'+(accepting?'关闭接单':'开启接单')+'</button>'+
           '</article>';
       }).join('')+'</div>';
     }).catch(function(err){
