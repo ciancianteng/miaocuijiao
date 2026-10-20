@@ -15,6 +15,14 @@ function cleanPrice(value) {
   return Math.round(n * 100) / 100;
 }
 
+/** Companion accept flag. Explicit `accepting` wins; legacy rows that only stored `enabled` still read. */
+export function companionAcceptingFlag(raw) {
+  if (raw && raw.accepting != null && raw.accepting !== "") {
+    return raw.accepting !== false && raw.accepting !== "false";
+  }
+  return raw?.enabled !== false && raw?.enabled !== "false";
+}
+
 function cleanOffers(input) {
   const list = Array.isArray(input) ? input : [];
   const seen = new Set();
@@ -22,7 +30,7 @@ function cleanOffers(input) {
     .map((raw, index) => {
       const kind = raw?.kind === "product" ? "product" : "service";
       const id = String(raw?.id || "").trim();
-      const accepting = raw?.accepting !== false && raw?.accepting !== "false" && raw?.enabled !== false && raw?.enabled !== "false";
+      const accepting = companionAcceptingFlag(raw);
       return {
         kind,
         id,
@@ -94,12 +102,13 @@ export async function listCompanionOffers(userId, { enabledOnly = false } = {}) 
         category: row.category || "",
         icon: row.icon || "🎮",
         platformPrice: row.default_price,
+        platformEnabled: row.enabled !== false,
         href: "",
       };
     })
     .filter(Boolean);
   return {
-    offers: enabledOnly ? offers.filter((item) => item.enabled) : offers,
+    offers: enabledOnly ? offers.filter((item) => item.accepting !== false) : offers,
     catalog: {
       services: serviceRows.map((row) => ({
         kind: "service",

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { quoteVisibleService, normalizePricePolicy } from "../server/api/_service-price-policy.js";
-import { assertCompanionOfferPrice } from "../server/api/_companion-offers.js";
+import { quoteVisibleService, normalizePricePolicy, assertWritablePricePolicy } from "../server/api/_service-price-policy.js";
+import { assertCompanionOfferPrice, companionAcceptingFlag } from "../server/api/_companion-offers.js";
 import { buildServiceSnapshot } from "../server/api/_service-standard.js";
 
 const policy = normalizePricePolicy({
@@ -68,6 +68,12 @@ assert.throws(
   () => assertCompanionOfferPrice({ price: 80 }, { allowSelfPrice: true, min: 20, max: 40 }, null),
   /不得高于/
 );
+assert.equal(companionAcceptingFlag({ accepting: true, enabled: false }), true);
+assert.equal(companionAcceptingFlag({ accepting: false, enabled: true }), false);
+assert.equal(companionAcceptingFlag({ enabled: false }), false);
+assert.throws(() => assertWritablePricePolicy({ unit: "分钟", priceMin: 1, priceMax: 2 }), /计价单位/);
+assert.throws(() => assertWritablePricePolicy({ unit: "局", priceMin: -1 }), /最低价格/);
+assert.doesNotThrow(() => assertWritablePricePolicy({ unit: "小时", priceMin: "", priceMax: 10 }));
 
 const snap = buildServiceSnapshot({
   serviceId: "s1",
@@ -94,7 +100,17 @@ assert.doesNotMatch(css, /grid-template-columns: minmax\(0, 1fr\) 92px auto/);
 
 const workbench = readFileSync(new URL("../src/companion-workbench.js", import.meta.url), "utf8");
 assert.match(workbench, /服务内容/);
+assert.match(workbench, /平台状态/);
 assert.match(workbench, /data-offer-toggle/);
 assert.match(workbench, /关闭接单/);
+const ordersSrc = readFileSync(new URL("../server/api/orders.js", import.meta.url), "utf8");
+const multiSrc = readFileSync(new URL("../server/api/_place-multi-order.js", import.meta.url), "utf8");
+assert.match(ordersSrc, /catalogDescription: resolved\.catalogDescription/);
+assert.match(readFileSync(new URL("../server/api/admin/services.js", import.meta.url), "utf8"), /价格、单位或介绍没有保存/);
+assert.match(readFileSync(new URL("../server/api/admin/services.js", import.meta.url), "utf8"), /服务价格必须是大于或等于 0 的数字/);
+assert.doesNotMatch(multiSrc, /allowLineAmountSnapshot/);
+assert.match(multiSrc, /code: "SERVICE_CLOSED"/);
+assert.match(multiSrc, /catalogDescription: line\.catalogDescription/);
+assert.match(readFileSync(new URL("../place-order.html", import.meta.url), "utf8"), /mcj-time-picker\.js\?v=20261019appt1/);
 
 console.log("verify-service-catalog-flow: PASS");

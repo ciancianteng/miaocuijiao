@@ -2608,6 +2608,7 @@
         return '<article class="pw-my-service" data-offer-card data-kind="service" data-id="'+esc(item.id)+'" data-saved="'+(saved?'1':'0')+'" data-accepting="'+(accepting?'1':'0')+'">'+
           '<header><b>'+esc(item.icon||'🎮')+' '+esc(item.name||'-')+'</b><span>'+esc(item.category||'')+'</span></header>'+
           '<p>计费单位：每'+esc(unit)+'</p>'+
+          '<p>平台状态：'+(item.enabled===false?'已停用':'已启用')+'</p>'+
           '<p>后台价格：'+esc(platformPrice)+'</p>'+
           '<p>服务内容：'+esc(content||'后台尚未填写')+'</p>'+
           '<p>服务要求：'+esc(requirement||'后台尚未填写')+'</p>'+
@@ -5758,7 +5759,6 @@
           offers.push({
             kind:card.getAttribute('data-kind')||'service',
             id:card.getAttribute('data-id'),
-            enabled:accepting,
             accepting:accepting,
             price:priceEl?priceEl.value:'',
             sort:index

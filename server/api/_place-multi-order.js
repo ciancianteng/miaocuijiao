@@ -260,6 +260,14 @@ export async function placeMultiOrder(ctx) {
       gameName: gameHint,
       level,
     });
+    if (resolved?.blocked) {
+      return {
+        ok: false,
+        status: 400,
+        code: "SERVICE_CLOSED",
+        message: resolved.message || "该服务已关闭，不能创建新订单。",
+      };
+    }
     let unitPrice = money(resolved.price);
     if (!(unitPrice > 0)) {
       return {
@@ -282,18 +290,11 @@ export async function placeMultiOrder(ctx) {
       };
     }
     if (clientTotal > 0 && Math.abs(clientTotal - totalAmount) > 0.05) {
-      // Dev/test fixture: allow amount when hours=1 and unit derived from amount
-      // only if body.allowLineAmountSnapshot === true (verify harness).
-      if (body.allowLineAmountSnapshot === true && clientTotal > 0) {
-        totalAmount = clientTotal;
-        unitPrice = hours > 0 ? Math.round((clientTotal / hours) * 100) / 100 : clientTotal;
-      } else {
-        return {
-          ok: false,
-          status: 400,
-          message: `陪玩价格已变化，请刷新后重试（应付 ${totalAmount}）`,
-        };
-      }
+      return {
+        ok: false,
+        status: 400,
+        message: `陪玩价格已变化，请刷新后重试（应付 ${totalAmount}）`,
+      };
     }
     if (!(totalAmount > 0)) {
       return { ok: false, status: 400, message: `第 ${i + 1} 行金额无效。` };
@@ -335,6 +336,9 @@ export async function placeMultiOrder(ctx) {
       quantity,
       unitPrice,
       totalAmount,
+      pricingUnit: String(resolved.pricingUnit || "").trim(),
+      catalogDescription: resolved.catalogDescription || "",
+      catalogRequirements: resolved.catalogRequirements || "",
       game: serviceType,
     });
   }
@@ -501,6 +505,9 @@ export async function placeMultiOrder(ctx) {
           serviceId: line.serviceId,
           serviceName: line.serviceType,
           unitPrice: line.unitPrice,
+          pricingUnit: line.pricingUnit || "小时",
+          catalogDescription: line.catalogDescription || "",
+          catalogRequirements: line.catalogRequirements || "",
           hours: line.hours,
           quantity: line.quantity,
           bossRank: sharedBossRank,

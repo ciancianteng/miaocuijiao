@@ -197,6 +197,13 @@ function clean(input = {}, categories = DEFAULT_CATEGORIES) {
   if (!finalPositions.length) {
     throw Object.assign(new Error("请至少勾选一个显示位置。"), { status: 400 });
   }
+  const rawPrice = String(input.defaultPrice ?? input.default_price ?? "").trim();
+  if (rawPrice) {
+    const amount = Number(rawPrice);
+    if (!Number.isFinite(amount) || amount < 0) {
+      throw Object.assign(new Error("服务价格必须是大于或等于 0 的数字。"), { status: 400 });
+    }
+  }
   return normalizeServiceRow({
     id: input.id,
     name,
@@ -485,12 +492,13 @@ export default async function handler(req, res) {
       const serviceId = result?.service?.id;
       const src = body.service || body;
       if (serviceId) {
+        const { savePricePolicy } = await import("../_service-price-policy.js");
         try {
-          const { savePricePolicy } = await import("../_service-price-policy.js");
           result.service.pricePolicy = await savePricePolicy(serviceId, src);
         } catch (priceErr) {
-          if (priceErr?.status === 400) throw priceErr;
-          console.warn("[admin/services] price policy save", priceErr?.message || priceErr);
+          const detail = String(priceErr?.message || "请重试").slice(0, 180);
+          const message = priceErr?.status === 400 ? detail : `服务名称已写入，但价格、单位或介绍没有保存：${detail}`;
+          throw Object.assign(new Error(message), { status: priceErr?.status || 500 });
         }
       }
       return json(res, 200, {

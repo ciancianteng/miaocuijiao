@@ -196,11 +196,14 @@ export async function createRenewalOrder({ profile, body, db }) {
   if (companionName) row.description += `\n陪玩：${companionName}`;
   let serviceSnapshot = null;
   try {
+    const priorSnap = source.service_snapshot && typeof source.service_snapshot === "object" ? source.service_snapshot : {};
     serviceSnapshot = await db.buildServiceSnapshotForCompanion(source.companion_id, {
-      serviceId: String(source.service_id || "").trim(),
+      serviceId: String(source.service_id || priorSnap.serviceId || "").trim(),
       serviceName,
       unitPrice: preview.unitPrice,
       pricingUnit: row.pricing_unit,
+      catalogDescription: priorSnap.catalogDescription || "",
+      catalogRequirements: priorSnap.catalogRequirements || "",
       hours: preview.hours,
       quantity: 1,
     });

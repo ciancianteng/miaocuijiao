@@ -3044,6 +3044,9 @@ export default async function handler(req, res) {
           serviceId: serviceId || resolved?.serviceRow?.service_id || "",
           serviceName: serviceType,
           unitPrice,
+          pricingUnit: String(resolved.pricingUnit || "").trim() || String(exited.pricing_unit || "小时"),
+          catalogDescription: resolved.catalogDescription || "",
+          catalogRequirements: resolved.catalogRequirements || "",
           hours,
           bossRank: cleanRank(body.bossRank || body.boss_rank || "") || viewServiceSnapshot(exited)?.bossRank?.rank || "",
         })

@@ -75,6 +75,23 @@ export function quoteVisibleService({ row, policy, offer, fallbackPrice = 0 } = 
   };
 }
 
+export function assertWritablePricePolicy(raw = {}) {
+  const unit = String(raw.unit || "").trim();
+  if (unit && !UNITS.has(unit)) {
+    throw Object.assign(new Error("计价单位只允许：局、小时、场、次。"), { status: 400 });
+  }
+  for (const [label, value] of [
+    ["最低价格", raw.min ?? raw.priceMin],
+    ["最高价格", raw.max ?? raw.priceMax],
+  ]) {
+    if (value === "" || value == null) continue;
+    const amount = Number(value);
+    if (!Number.isFinite(amount) || amount < 0) {
+      throw Object.assign(new Error(`${label}必须是大于或等于 0 的数字。`), { status: 400 });
+    }
+  }
+}
+
 export function assertPricePolicy(policy) {
   if (policy.min != null && policy.max != null && policy.max < policy.min) {
     throw Object.assign(new Error("最高价格不能低于最低价格。"), { status: 400 });
@@ -96,6 +113,7 @@ export async function loadAllPricePolicies() {
 export async function savePricePolicy(serviceId, raw) {
   const id = String(serviceId || "").trim();
   if (!id) throw Object.assign(new Error("缺少服务 ID"), { status: 400 });
+  assertWritablePricePolicy(raw || {});
   const policy = normalizePricePolicy(raw || {});
   assertPricePolicy(policy);
   const prev = await readSettingsData();
