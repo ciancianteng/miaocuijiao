@@ -7,7 +7,7 @@
  * - Never pass --prod
  * - Never alias www.meowcuijiao.com / meowcuijiao.com
  */
-import { spawnSync } from "node:child_process";
+import { execSync, spawnSync } from "node:child_process";
 import { hostnameOf, isProductionAppBase } from "./lib/prod-guard.mjs";
 
 const FIXED_ALIAS = "meow-cuijiao-homepage-staging.vercel.app";
@@ -60,7 +60,26 @@ if (process.argv.includes("--prod")) {
   process.exit(1);
 }
 
-console.log("[deploy-staging] deploying Preview (never --prod)…");
+function gitText(args) {
+  try {
+    return execSync(`git ${args}`, { encoding: "utf8" }).trim();
+  } catch {
+    return "";
+  }
+}
+
+const buildSha = gitText("rev-parse HEAD");
+const buildRef = gitText("rev-parse --abbrev-ref HEAD");
+if (!/^[0-9a-f]{40}$/i.test(buildSha)) {
+  console.error("[deploy-staging] REFUSED: git SHA is missing, so /api/build-info would stay empty");
+  process.exit(1);
+}
+if (!buildRef || buildRef === "HEAD") {
+  console.error("[deploy-staging] REFUSED: git branch name is missing");
+  process.exit(1);
+}
+
+console.log(`[deploy-staging] deploying Preview (never --prod) at ${buildSha.slice(0, 7)}…`);
 const deploy = run("npx", [
   "vercel",
   "deploy",
@@ -68,6 +87,10 @@ const deploy = run("npx", [
   "--json",
   "--project",
   "meow-cuijiao-homepage",
+  "-e",
+  `MCJ_BUILD_SHA=${buildSha}`,
+  "-e",
+  `MCJ_BUILD_REF=${buildRef}`,
 ]);
 const combined = `${deploy.stdout || ""}\n${deploy.stderr || ""}`;
 process.stdout.write(deploy.stdout || "");

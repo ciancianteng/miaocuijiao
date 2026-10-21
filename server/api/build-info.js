@@ -84,7 +84,7 @@ export default async function handler(req, res) {
     ok: true,
     sha,
     short,
-    ref: process.env.VERCEL_GIT_COMMIT_REF || process.env.GITHUB_REF_NAME || "",
+    ref: process.env.VERCEL_GIT_COMMIT_REF || process.env.GITHUB_REF_NAME || process.env.MCJ_BUILD_REF || "",
     env: identity.env,
     url: process.env.VERCEL_URL || "",
     supabaseRef: identity.supabaseRef,
