@@ -671,6 +671,7 @@
       serviceId: String(s.serviceId || s.service_id || (/^[0-9a-f-]{36}$/i.test(String(s.id || "")) ? s.id : "") || ""),
       name: name,
       price: money(s.price != null ? s.price : s.unitPrice != null ? s.unitPrice : 0),
+      pricingSource: String(s.pricingSource || s.pricing_source || "").trim(),
       pricingUnit: String(s.pricingUnit || s.pricing_unit || "小时"),
       content: String(s.content || s.description || "").trim(),
       requirements: String(s.requirements || "").trim(),
@@ -823,11 +824,10 @@
       return 0;
     }
     out.forEach(function (s) {
+      if (s.pricingSource || money(s.price) > 0) return;
       var gp = priceFromGamePrices(s);
       if (gp > 0) s.price = gp;
-      else if (!(s.price > 0)) {
-        s.price = money(companion.unitPrice || 0);
-      }
+      else s.price = money(companion.unitPrice || 0);
     });
     return out;
   }
