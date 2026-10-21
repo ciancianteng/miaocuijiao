@@ -457,8 +457,21 @@ export async function syncCompanionServicesFromGamePrices({
 }
 
 /**
+ * Empty serviceId must not skip a real catalog row and fall through to game_prices.
+ * 0 matches: legacy game price. 1 match: quote that service. More than one: block.
+ */
+export function emptyServiceIdQuoteGate(serviceId = "", matchCount = 0) {
+  if (String(serviceId || "").trim()) return "quote";
+  const n = Number(matchCount) || 0;
+  if (n > 1) return "block";
+  if (n === 1) return "quote";
+  return "legacy";
+}
+
+/**
  * Server-authoritative unit price for place_order / place_multi_order.
  * Never trusts client price. Fallback: game_prices → service row → level.base_price.
+ * An empty serviceId uses that fallback only when no platform service matches the name.
  */
 export async function resolveOrderUnitPrice({
   companion,
@@ -478,8 +491,24 @@ export async function resolveOrderUnitPrice({
     serviceRows: rows,
     level,
   });
-  const catalogId = String(serviceId || "").trim();
-  if (!catalogId) return resolved;
+  let catalogId = String(serviceId || "").trim();
+  if (!catalogId) {
+    const name = String(gameName || "").trim();
+    const named = name
+      ? await companionDb(
+          "services",
+          `?name=eq.${encodeURIComponent(name)}&select=id,name&limit=5`
+        ).catch(() => [])
+      : [];
+    const matches = Array.isArray(named) ? named : [];
+    const gate = emptyServiceIdQuoteGate("", matches.length);
+    if (gate === "block") {
+      return { ...resolved, price: 0, blocked: true, message: "请选择服务项目。" };
+    }
+    if (gate === "legacy") return resolved;
+    catalogId = String(matches[0]?.id || "").trim();
+    if (!catalogId) return resolved;
+  }
   try {
     const platformRows = await companionDb(
       "services",
