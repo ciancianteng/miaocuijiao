@@ -303,9 +303,24 @@
         if (!levelText) levelText = "未设置等级";
         return '<span class="companion-level-pill" data-level-id="' + esc(levelId) + '">' + esc(levelText) + "</span>";
       })() +
-      (statusLabel ? '<span class="hot-status is-' + esc(presenceCode) + '">' + esc(statusLabel) + "</span>" : "") +
+      (variant === "hall" ? "" : statusLabel ? '<span class="hot-status is-' + esc(presenceCode) + '">' + esc(statusLabel) + "</span>" : "") +
       "</div>" +
-      (hideServices || !gameLine ? "" : '<p class="hot-game">' + esc(gameLine) + "</p>") +
+      (function () {
+        if (variant !== "hall") return hideServices || !gameLine ? "" : '<p class="hot-game">' + esc(gameLine) + "</p>";
+        var names = String(gameLine || "")
+          .split(/[,，、/|]+/)
+          .map(function (part) { return String(part || "").trim(); })
+          .filter(function (part) { return part && !/未设置/.test(part); });
+        var seen = {};
+        names = names.filter(function (part) {
+          var key = part.toLowerCase();
+          if (seen[key]) return false;
+          seen[key] = 1;
+          return true;
+        });
+        if (!names.length) return '<p class="hot-game is-empty">未设置游戏</p>';
+        return '<p class="hot-game">' + names.map(function (part) { return "<span>" + esc(part) + "</span>"; }).join("") + "</p>";
+      })() +
       (function () {
         if (!hideServices) return "";
         var brief = String(gameLine || "").split(/[、，,|/]/)[0].replace(/\s+/g, " ").trim();

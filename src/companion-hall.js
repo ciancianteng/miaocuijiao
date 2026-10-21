@@ -425,6 +425,28 @@
   function companionOfferings(item) {
     return companionGames(item).map(parseOffering);
   }
+  function hallGameNames(item) {
+    var seen = {};
+    var out = [];
+    function add(raw) {
+      String(raw || "")
+        .split(/[,，、/|]+/)
+        .forEach(function (part) {
+          var name = String(part || "").trim();
+          var key = name.toLowerCase();
+          if (!name || /未设置/.test(name) || seen[key]) return;
+          seen[key] = 1;
+          out.push(name);
+        });
+    }
+    add(item && item.game);
+    add(item && item.mainGame);
+    (item && item.gameRanks || []).forEach(function (rank) { add(rank && rank.name); });
+    return out;
+  }
+  function hallGameLabel(item) {
+    return hallGameNames(item).join("、");
+  }
   function hallPrimaryGame(raw) {
     var first = companionGames({ game: raw })[0] || "";
     var parts = String(first)
@@ -608,7 +630,6 @@
       ' aria-label="' +
       esc(hallLabel) +
       '">' +
-      (hallLabel === "立即预约" ? "" : '<span class="hall-order-heart" aria-hidden="true">💗</span>') +
       esc(hallLabel) +
       "</button>" +
       '<button type="button" class="companion-card-action team-add hall-icon' +
@@ -674,7 +695,7 @@
       levelColor: item.levelColor,
       levelConfig: item.levelConfig || null,
       cardBackground: item.cardBackground,
-      game: hallPrimaryGame(item.game),
+      game: hallGameLabel(item),
       tags: [],
       serviceTags: [],
       image: item.image || cardImage(item),

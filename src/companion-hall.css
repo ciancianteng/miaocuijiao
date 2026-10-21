@@ -1300,31 +1300,27 @@ body{overflow-y:visible;background:radial-gradient(circle at 76% 4%,rgba(255,145
   line-height:18px!important;
 }
 .companion-hall-grid .mcj-brand-mark{display:none!important}
-.companion-hall-grid .hot-status{
-  grid-column:1 / -1!important;
-  grid-row:2!important;
-  justify-self:start!important;
-  display:inline-flex!important;
-  align-items:center!important;
-  height:20px!important;
-  padding:0 8px!important;
-  border-radius:999px!important;
-  background:rgba(255,255,255,.06)!important;
-  font-size:11px!important;
-  font-weight:700!important;
-  color:rgba(255,228,240,.82)!important;
-  white-space:nowrap!important;
-}
+.companion-hall-grid .hot-status{display:none!important}
 .companion-hall-grid .hot-game{
   grid-column:1 / -1!important;
+  display:flex!important;
+  flex-wrap:wrap!important;
+  align-items:flex-start!important;
+  gap:4px 6px!important;
   margin:0!important;
   font-size:12px!important;
   line-height:1.35!important;
   color:rgba(255,228,240,.62)!important;
-  overflow:hidden!important;
-  display:-webkit-box!important;
-  -webkit-line-clamp:1!important;
-  -webkit-box-orient:vertical!important;
+  overflow:visible!important;
+  white-space:normal!important;
+  -webkit-line-clamp:unset!important;
+}
+.companion-hall-grid .hot-game > span{
+  display:inline!important;
+  white-space:normal!important;
+  overflow:visible!important;
+  text-overflow:clip!important;
+  max-width:100%!important;
 }
 .companion-hall-grid .hot-tags-scroll{
   grid-column:1 / -1!important;

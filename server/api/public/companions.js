@@ -23,6 +23,26 @@ import {
 import { createSignedUrl, publicObjectUrl } from "../_companion-media-store.js";
 import { cleanRank, gameRanksFromStandards, readServiceStandards } from "../_service-standard.js";
 
+/** All bound game names. Service ids, the game column, and priced games are unioned. */
+export function mergedPublicGameNames(row = {}, serviceNames = []) {
+  const prices = readGamePrices(row) || {};
+  const names = [
+    ...serviceNames,
+    ...splitGames(row.game),
+    ...Object.keys(prices).filter((key) => key && !/^[0-9a-f-]{36}$/i.test(key)),
+  ];
+  const seen = new Set();
+  const out = [];
+  for (const raw of names) {
+    const name = String(raw || "").trim();
+    const key = name.toLowerCase();
+    if (!name || seen.has(key)) continue;
+    seen.add(key);
+    out.push(name);
+  }
+  return out;
+}
+
 /** Per-game ranks; a legacy single game_rank is only attributed when the companion offers exactly one game. */
 function publicGameRanks(row = {}, gameNames = []) {
   const ranks = gameRanksFromStandards(readServiceStandards(row));
@@ -237,7 +257,7 @@ function publicCompanion(row = {}, profile = {}, levels = [], catalog = [], medi
     .filter(Boolean)
     .map((s) => s.name || s.title)
     .filter(Boolean);
-  const gameDisplay = serviceNames.length ? serviceNames.join("、") : row.game || "";
+  const gameDisplay = mergedPublicGameNames(row, serviceNames).join("、");
   const voicePlayable =
     pickStableMediaUrl(mediaExtras.voiceUrl) ||
     (String(mediaExtras.voiceUrl || "").trim().startsWith("http") ? String(mediaExtras.voiceUrl).trim() : "") ||
