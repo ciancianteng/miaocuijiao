@@ -2656,26 +2656,32 @@
         var policy=item.policy||{};
         var unit=policy.unit||'局';
         var range=(policy.min!=null&&policy.max!=null)?('RM'+policy.min+' - RM'+policy.max+' / '+unit):'平台未设置区间';
-        var platformPrice=item.price!=null&&item.price!==''&&!isNaN(Number(item.price))?('RM'+item.price+' / '+unit):'平台尚未设置默认价格';
         var content=String(policy.description||'').trim();
         var requirement=String(policy.requirements||'').trim();
         var mine=saved&&saved.price!=null&&saved.price!==''&&!isNaN(Number(saved.price))?saved.price:'';
         var accepting=!saved||saved.accepting!==false;
         var canPrice=policy.allowSelfPrice===true;
-        return '<article class="pw-my-service" data-offer-card data-kind="service" data-id="'+esc(item.id)+'" data-saved="'+(saved?'1':'0')+'" data-accepting="'+(accepting?'1':'0')+'">'+
-          '<header><b>'+esc(item.icon||'🎮')+' '+esc(item.name||'-')+'</b><span>'+esc(item.category||'')+'</span></header>'+
-          '<p>计费单位：每'+esc(unit)+'</p>'+
-          '<p>平台状态：'+(item.enabled===false?'已停用':'已启用')+'</p>'+
-          '<p>后台价格：'+esc(platformPrice)+'</p>'+
-          '<p>服务内容：'+esc(content||'后台尚未填写')+'</p>'+
-          '<p>服务要求：'+esc(requirement||'后台尚未填写')+'</p>'+
-          '<p>平台允许价格：'+esc(range)+'</p>'+
-          (canPrice
-            ? '<label>我的价格<span class="pw-rm">RM<input data-offer-price inputmode="decimal" value="'+esc(mine)+'"></span><em>/ '+esc(unit)+'</em></label><button class="pw-btn" type="button" data-offer-save>修改价格</button>'
-            : '<p>此服务价格由平台统一设置</p><p>我的价格：RM'+esc(mine||item.price||'-')+' / '+esc(unit)+'</p>')+
-          '<p class="pw-my-service-status">'+(accepting?'● 接单中':'● 已关闭')+'</p>'+
-          '<button class="pw-btn" type="button" data-offer-toggle>'+(accepting?'关闭接单':'开启接单')+'</button>'+
-          '</article>';
+        var shown=mine!==''?mine:(item.price!=null&&item.price!==''&&!isNaN(Number(item.price))?item.price:'');
+        var quote=shown!==''?('RM'+shown+'/'+unit):'未设置';
+        var headPrice=canPrice?quote:('🔒 已锁定 '+quote);
+        return '<article class="pw-my-service pw-svc" data-offer-card data-kind="service" data-id="'+esc(item.id)+'" data-saved="'+(saved?'1':'0')+'" data-accepting="'+(accepting?'1':'0')+'" data-allow="'+(canPrice?'1':'0')+'">'+
+          '<div class="pw-svc-head">'+
+            '<button type="button" class="pw-svc-fold" data-offer-fold aria-expanded="false">'+
+              '<span class="pw-svc-copy"><b class="pw-svc-name">'+esc(item.name||'服务')+'</b><span class="pw-svc-cat">'+esc(item.category||'服务')+'</span></span>'+
+              '<strong class="pw-svc-quote">'+esc(headPrice)+'</strong>'+
+              '<i class="pw-svc-chevron" aria-hidden="true"></i>'+
+            '</button>'+
+            '<button type="button" class="pw-offer-switch'+(accepting?' is-on':'')+'" data-offer-toggle aria-label="接单状态" aria-pressed="'+(accepting?'true':'false')+'"><i></i></button>'+
+          '</div>'+
+          '<div class="pw-svc-panel"><div class="pw-svc-panel-inner">'+
+            '<p class="pw-my-service-status">'+(accepting?'● 接单中':'● 已关闭')+'</p>'+
+            (canPrice
+              ? '<label>我的价格<span class="pw-rm">RM<input data-offer-price inputmode="decimal" value="'+esc(mine)+'"></span><em>/ '+esc(unit)+'</em></label><button class="pw-btn" type="button" data-offer-save>修改价格</button>'
+              : '<p>🔒 已锁定 '+esc(quote)+'</p><p>该价格由平台锁定，不能在这里修改。客户支付价以服务目录为准。</p>')+
+            '<p>服务内容：'+esc(content||'后台尚未填写')+'</p>'+
+            '<p>服务要求：'+esc(requirement||'后台尚未填写')+'</p>'+
+            '<p>允许区间：'+esc(range)+'</p>'+
+          '</div></div></article>';
       }).join('')+'</div>';
     }).catch(function(err){
       host.dataset.loaded='';
@@ -5798,6 +5804,23 @@
     if(e.target.closest('[data-close-settlement]')){
       if(e.target.closest('[data-settlement-dialog]')&&!e.target.closest('.pw-dialog-head [data-close-settlement],.pw-actions [data-close-settlement]'))return;
       state.settlement=null;paint();return;
+    }
+    var fold=e.target.closest('[data-offer-fold]');
+    if(fold){
+      var foldCard=fold.closest('[data-offer-card]');
+      if(!foldCard)return;
+      var willOpen=!foldCard.classList.contains('is-open');
+      var foldHost=foldCard.parentElement;
+      if(foldHost)foldHost.querySelectorAll('[data-offer-card].is-open').forEach(function(other){
+        other.classList.remove('is-open');
+        var otherFold=other.querySelector('[data-offer-fold]');
+        if(otherFold)otherFold.setAttribute('aria-expanded','false');
+      });
+      if(willOpen){
+        foldCard.classList.add('is-open');
+        fold.setAttribute('aria-expanded','true');
+      }
+      return;
     }
     var offerAction=e.target.closest('[data-save-offers],[data-offer-save],[data-offer-toggle]');
     if(offerAction){
