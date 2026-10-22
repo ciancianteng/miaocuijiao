@@ -517,10 +517,19 @@ export async function resolveOrderUnitPrice({
     const platform = Array.isArray(platformRows) ? platformRows[0] : null;
     if (!platform) return resolved;
     const { loadAllPricePolicies, normalizePricePolicy, quoteVisibleService } = await import("./_service-price-policy.js");
-    const { listCompanionOffers } = await import("./_companion-offers.js");
+    const { listCompanionOffers, loadBoundServiceIds } = await import("./_companion-offers.js");
     const policies = await loadAllPricePolicies().catch(() => ({}));
     const policy = normalizePricePolicy(policies?.[catalogId] || {});
     const ownerId = String(companion?.user_id || companionId || "").trim();
+    const boundIds = ownerId ? await loadBoundServiceIds(ownerId).catch(() => []) : [];
+    if (boundIds.length && !boundIds.map(String).includes(String(catalogId))) {
+      return {
+        ...resolved,
+        price: 0,
+        blocked: true,
+        message: "该服务不在这位陪玩已选择的服务里，不能创建新订单。",
+      };
+    }
     const listed = ownerId ? await listCompanionOffers(ownerId).catch(() => ({ offers: [] })) : { offers: [] };
     const offer = (listed.offers || []).find((item) => item.kind === "service" && String(item.id) === catalogId) || null;
     const quote = quoteVisibleService({
