@@ -788,6 +788,7 @@
     closeMobileMenus();
     history.pushState(null,'',next);
     paint({routeChange:true});
+    sendPresenceHeartbeat();
   }
   function isAccountRoute(route){
     var r=route!=null?route:state.route;
@@ -1738,22 +1739,45 @@
       }
     });
   }
+  function readPresenceChoice(){
+    try{
+      var raw=JSON.parse(localStorage.getItem('mcjCompanionPresence')||'null');
+      var status=String(raw&&raw.status||'').toLowerCase();
+      if(raw&&STATUS_META[status])return {status:status,rev:Number(raw.rev)||0};
+    }catch(e){}
+    return null;
+  }
+  function writePresenceChoice(status){
+    var prev=readPresenceChoice();
+    var rev=Date.now();
+    if(prev&&rev<=prev.rev)rev=prev.rev+1;
+    var choice={status:status,rev:rev};
+    try{
+      localStorage.setItem('mcjCompanionPresence',JSON.stringify(choice));
+      sessionStorage.setItem('mcjCompanionPresenceIntent',status);
+    }catch(e){}
+    return choice;
+  }
   function sendPresenceHeartbeat(){
     if(!state.session||!state.session.token||document.hidden||state.statusBusy)return;
-    var status=currentOnlineStatus();
+    var choice=readPresenceChoice();
+    var status=choice?choice.status:currentOnlineStatus();
     try{sessionStorage.setItem('mcjCompanionPresenceIntent',status);}catch(e){}
-    if(status==='offline')return;
-    api('set_online_status',{online_status:status,heartbeat:1}).catch(function(){});
+    if(!status||status==='offline')return;
+    api('set_online_status',{online_status:status,heartbeat:1,presenceKind:'heartbeat',presenceRev:choice?choice.rev:0}).then(function(x){
+      if(x&&x.onlineStatus)applyOnlineStatusUi(x.onlineStatus);
+    }).catch(function(){});
   }
   function beaconPresenceOffline(){
     var session=state.session||readSession();
     if(!session||!session.token)return;
+    var choice=writePresenceChoice('offline');
     try{
       fetch('/api/companion',{
         method:'POST',
         keepalive:true,
         headers:{'Content-Type':'application/json',Authorization:'Bearer '+session.token,'x-mcj-companion-token':session.token},
-        body:JSON.stringify({action:'set_online_status',online_status:'offline'})
+        body:JSON.stringify({action:'set_online_status',online_status:'offline',explicit:1,presenceKind:'explicit',presenceRev:choice.rev})
       });
     }catch(e){}
   }
@@ -2219,13 +2243,30 @@
     var lock=(state.data&&state.data.permissions&&state.data.permissions.lockReason)||'';
     var subtitle=isolated
       ? isolationHint()
-      : (lock?String(lock):'抢单 → 服务 → 完成订单 → 收益提现');
+      : (lock?String(lock):(state.route==='dashboard'?'':'抢单 → 服务 → 完成订单 → 收益提现'));
     var h1=root.querySelector('.pw-top-titles h1');
     var sub=root.querySelector('.pw-top-sub')||root.querySelector('.pw-top p');
     var pageLabel=root.querySelector('.pw-top-page');
     var pageTitle=title();
     if(h1)h1.textContent=pageTitle;
-    if(pageLabel)pageLabel.textContent=pageTitle;
+    if(pageLabel){
+      var hideDashLabel=!isolated&&state.route==='dashboard';
+      pageLabel.hidden=hideDashLabel;
+      pageLabel.textContent=hideDashLabel?'':pageTitle;
+    }
+    var avatarBtn=root.querySelector('.pw-avatar[data-account-toggle]');
+    if(avatarBtn){
+      var avatarPlayer=(state.data&&state.data.player)||(state.session&&state.session.user)||{};
+      var avatarSrc=avatarPlayer.avatar||'/default-avatar.png';
+      var avatarImg=avatarBtn.querySelector('img');
+      if(!avatarImg){
+        avatarBtn.textContent='';
+        avatarImg=document.createElement('img');
+        avatarImg.alt='';
+        avatarBtn.appendChild(avatarImg);
+      }
+      if(avatarImg.getAttribute('src')!==avatarSrc)avatarImg.setAttribute('src',avatarSrc);
+    }
     if(sub)sub.textContent=subtitle;
     root.querySelectorAll('.pw-nav [data-route], .pw-bottom-nav [data-route]').forEach(function(btn){
       var path=btn.getAttribute('data-route')||'';
@@ -2414,11 +2455,28 @@
   }
   function title(){return ({dashboard:'工作台',hall:'抢单大厅',orders:'我的订单',earnings:'收益中心',wallet:'收益中心',profile:isIsolationMode()?'申请资料':'编辑公开资料',services:'我的服务',account:isIsolationMode()?'账号资料':'账号中心（隐私）',mine:'账号中心（隐私）',gifts:'我的礼物',withdraw:'提现',messages:'消息中心',settings:'设置',popularity:'我的人气',rules:'陪玩规则','review-status':'审核状态'})[state.route]||'陪玩端'}
   function maintenanceHtml(name){return '<div class="pw-page-head"><div><h2>'+esc(name||'模块已合并')+'</h2><p>该模块已合并到工作台其他页面，请从工作台进入相应功能。</p></div><button class="pw-btn primary" type="button" data-route="/companion/dashboard">返回工作台</button></div>'}
+  function navIcon(key){
+    var icons={
+      dashboard:'<path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/><path d="M3 10a2 2 0 0 1 .709-1.528l7-6a2 2 0 0 1 2.582 0l7 6A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
+      hall:'<path d="M3 6h18"/><path d="M7 12h10"/><path d="M10 18h4"/>',
+      orders:'<rect width="8" height="4" x="8" y="2" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/><path d="M8 11h.01"/><path d="M8 16h.01"/>',
+      earnings:'<path d="M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1"/><path d="M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4"/>',
+      account:'<circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 0 0-16 0"/>',
+      'review-status':'<path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/><path d="M3 10a2 2 0 0 1 .709-1.528l7-6a2 2 0 0 1 2.582 0l7 6A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
+      profile:'<circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 0 0-16 0"/>'
+    };
+    return '<svg class="pw-tab-ico" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">'+(icons[key]||icons.dashboard)+'</svg>';
+  }
+  function headerAvatarHtml(player){
+    var src=(player&&player.avatar)||'/default-avatar.png';
+    return '<button type="button" class="pw-avatar" data-account-toggle aria-label="账号菜单"><img src="'+esc(src)+'" alt="" onerror="this.onerror=null;this.src=\'/default-avatar.png\'"></button>';
+  }
   function bottomNavHtml(){
     var items=isIsolationMode()?ISOLATION_BOTTOM_NAV:BOTTOM_NAV;
-    return '<nav class="pw-bottom-nav">'+items.map(function(n){
+    var iconOnly=!isIsolationMode();
+    return '<nav class="pw-bottom-nav" aria-label="陪玩工作台">'+items.map(function(n){
       var active=state.route===n[0]||(n[0]==='account'&&(state.route==='mine'||state.route==='verification'))||(n[0]==='earnings'&&state.route==='wallet');
-      return '<button type="button" class="'+(active?'active':'')+'" data-route="'+n[2]+'">'+n[1]+'</button>';
+      return '<button type="button" class="'+(active?'active':'')+'" data-route="'+n[2]+'" aria-label="'+esc(n[1])+'" title="'+esc(n[1])+'">'+navIcon(n[0])+(iconOnly?'':'<span class="pw-tab-label">'+esc(n[1])+'</span>')+'</button>';
     }).join('')+'</nav>';
   }
   function settlementModalHtml(){
@@ -2481,7 +2539,7 @@
     }catch(e){}
     var subtitle=isolated
       ? isolationHint()
-      : (lock?esc(lock):'抢单 → 服务 → 完成订单 → 收益提现');
+      : (lock?esc(lock):(state.route==='dashboard'?'':'抢单 → 服务 → 完成订单 → 收益提现'));
     // Account dropdown: secondary only. Primary destinations live in side drawer / bottom nav.
     var switchBossBtn='<button type="button" data-switch-boss="menu">切换到老板端</button>';
     var accountMenu=isolated
@@ -2550,12 +2608,12 @@
       '<button type="button" class="pw-drawer-toggle" data-pw-drawer-toggle aria-expanded="false" aria-controls="pwSideNav" aria-label="打开菜单"><span class="pw-drawer-toggle-bars" aria-hidden="true"></span></button>'+
       '<div class="pw-top-brand" aria-label="妙脆角陪玩端">'+
       '<strong class="pw-top-logo">MEOW CUI JIAO</strong>'+
-      '<span class="pw-top-brand-cn">妙脆角 · 陪玩端</span>'+
-      '<span class="pw-top-page">'+esc(title())+'</span>'+
+      '<span class="pw-top-brand-cn">陪玩工作台</span>'+
+      '<span class="pw-top-page"'+((!isolated&&state.route==='dashboard')?' hidden':'')+'>'+esc((!isolated&&state.route==='dashboard')?'':title())+'</span>'+
       '</div>'+
       '<div class="pw-top-titles"><h1>'+title()+'</h1><p class="pw-top-sub">'+subtitle+'</p></div>'+
       '</div>'+
-      '<div class="pw-account">'+headerBellHtml()+'<button type="button" class="pw-avatar" data-account-toggle aria-label="账号菜单">'+esc(String(player.name||player.uid||'P').slice(0,1).toUpperCase())+'</button><div class="pw-menu">'+accountMenu+'</div></div>'+
+      '<div class="pw-account">'+headerBellHtml()+headerAvatarHtml(player)+'<div class="pw-menu">'+accountMenu+'</div></div>'+
       '</header>'+
       (isolated?'':(window.MCJCompanionAnnouncements&&window.MCJCompanionAnnouncements.hostHtml?window.MCJCompanionAnnouncements.hostHtml():'<div class="pw-announcement-host" data-pw-announcement-host hidden></div>'))+
       '<main class="pw-page">'+pageHtml()+'</main></section>'+bottomNavHtml()+
@@ -2896,13 +2954,14 @@
     var label=document.querySelector('[data-current-status-label]');
     if(label){
       var m=STATUS_META[next]||{};
-      label.textContent=(m.emoji?m.emoji+' ':'')+(m.label||next);
+      label.textContent=m.label||next;
     }
   }
   function commitOnlineStatus(next){
     state.statusBusy=true;
     state.pendingOnlineStatus=null;
-    api('set_online_status',{online_status:next}).then(function(x){
+    var choice=writePresenceChoice(next);
+    api('set_online_status',{online_status:next,explicit:1,presenceKind:'explicit',presenceRev:choice.rev}).then(function(x){
       var saved=x.onlineStatus||next;
       if(state.data&&state.data.player){
         state.data.player.onlineStatus=saved;
