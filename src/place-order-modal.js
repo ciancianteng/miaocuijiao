@@ -1284,8 +1284,9 @@
   function refreshTotals() {
     var c = state.companion;
     var hours = currentHours();
-    var total = moneyText(totalAmount());
-    var unit = c ? moneyText(c.unitPrice) : moneyText(0);
+    var picked = !!(state.servicesReady && state.service);
+    var total = picked ? moneyText(totalAmount()) : "请选择服务";
+    var unit = picked && c ? moneyText(c.unitPrice) : "请选择服务";
     var map = {
       "[data-po-footer-total]": total,
       "[data-po-total]": total,
@@ -1298,7 +1299,7 @@
       if (el) el.textContent = map[sel];
     });
     var priceHero = document.querySelector("[data-po-price-hero]");
-    if (priceHero && c) priceHero.textContent = moneyText(c.unitPrice);
+    if (priceHero) priceHero.textContent = picked && c ? moneyText(c.unitPrice) : (state.servicesReady ? "请选择服务" : "读取中");
     refreshSchedulePreview();
     // Soft totals refresh must not wipe payment UI while methods are still loading.
     if (activeMask() && (state.payMethods.length || !state.payMethodsLoading)) {
@@ -1477,7 +1478,7 @@
       '<div class="mcj-po-scroll">' +
       '<div class="mcj-po-price-card">' +
       '<div class="mcj-po-price-row"><span>单价</span>' +
-      (state.servicesReady ? priceHeroHtml(c.unitPrice) : '<span class="mcj-po-price-hero" data-po-price-hero>读取中</span>') +
+      (state.servicesReady && state.service ? priceHeroHtml(c.unitPrice) : '<span class="mcj-po-price-hero" data-po-price-hero>' + (state.servicesReady ? "请选择服务" : "读取中") + "</span>") +
       "<small>/ " +
       esc(c.pricingUnit || "小时") +
       "</small></div>" +
