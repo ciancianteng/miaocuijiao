@@ -37,6 +37,10 @@
     payLoadError: "",
     payMethodsLoading: false,
     editingGameId: false,
+    servicesReady: false,
+    servicesError: "",
+    catalogSeq: 0,
+    catalogAbort: null,
   };
 
   function resetOrderFormState() {
@@ -934,6 +938,14 @@
     if (!mask || !state.companion) return;
     var wrap = mask.querySelector(".mcj-po-chips[role='group']");
     if (!wrap) return;
+    if (!state.servicesReady) {
+      wrap.innerHTML = '<span class="mcj-po-empty-services" data-po-services-loading style="color:#9ca3af;font-size:13px">正在读取该陪玩的服务项目…</span>';
+      return;
+    }
+    if (state.servicesError) {
+      wrap.innerHTML = '<span class="mcj-po-empty-services" style="color:#9ca3af;font-size:13px">' + esc(state.servicesError) + "</span>";
+      return;
+    }
     var services = resolveServices(state.companion);
     if (!services.length) {
       wrap.innerHTML = '<span class="mcj-po-empty-services" style="color:#9ca3af;font-size:13px">该陪玩暂无可下单服务项目</span>';
@@ -977,9 +989,16 @@
   function hydrateFromCatalog(companionId) {
     companionId = String(companionId || (state.companion && state.companion.companionId) || "").trim();
     if (!companionId) return Promise.resolve(null);
+    if (state.catalogAbort) {
+      try { state.catalogAbort.abort(); } catch (eAbort) {}
+    }
+    var ctrl = typeof AbortController !== "undefined" ? new AbortController() : null;
+    state.catalogAbort = ctrl;
+    var seq = state.catalogSeq;
     return fetch("/api/boss/marketplace?action=catalog&companionId=" + encodeURIComponent(companionId), {
       headers: authHeaders(),
       cache: "no-store",
+      signal: ctrl ? ctrl.signal : undefined,
     })
       .then(function (res) {
         return res.json().then(function (body) {
@@ -988,6 +1007,7 @@
         });
       })
       .then(function (body) {
+        if (seq !== state.catalogSeq || !state.open) return body;
         if (!state.companion || String(state.companion.companionId) !== companionId) return body;
         var services = Array.isArray(body.services) ? body.services : [];
         var catC = body.companion || {};
@@ -1000,6 +1020,8 @@
           state.companion.mainGame = gameName;
         }
         if (state.open) {
+          state.servicesError = "";
+          state.servicesReady = true;
           remountServiceChips();
           var list = resolveServices(state.companion);
           var sid = String(state.selectedServiceId || "").trim();
@@ -1019,7 +1041,14 @@
         }
         return body;
       })
-      .catch(function () {
+      .catch(function (err) {
+        if (err && err.name === "AbortError") return null;
+        if (seq !== state.catalogSeq || !state.open) return null;
+        if (!state.companion || String(state.companion.companionId) !== companionId) return null;
+        state.servicesReady = true;
+        state.servicesError = "服务列表读取失败，请关闭后重试";
+        state.companion.services = [];
+        remountServiceChips();
         return null;
       });
   }
@@ -1204,7 +1233,16 @@
     pendingOpenPayload = null;
     payFetchSeq += 1;
     // Always drop residual form / payment state so the next open re-initializes from live data.
-    if (!opts.keepFormState) resetOrderFormState();
+    if (!opts.keepFormState) {
+      state.catalogSeq = (state.catalogSeq || 0) + 1;
+      if (state.catalogAbort) {
+        try { state.catalogAbort.abort(); } catch (eAbort) {}
+      }
+      state.catalogAbort = null;
+      state.servicesReady = false;
+      state.servicesError = "";
+      resetOrderFormState();
+    }
     lockScroll(false);
     // Never history.back() — that can leave the current Preview and strand a black mask.
     try {
@@ -1334,7 +1372,7 @@
     state.payment = "";
     state.payLoadError = "";
 
-    var companionServices = resolveServices(c);
+    var companionServices = state.servicesReady ? resolveServices(c) : [];
     // SoT: never silently pick services[0] among many (level-default 30 vs 三角洲@35).
     // Only auto-select when exactly one catalog row exists.
     if (
@@ -1439,7 +1477,7 @@
       '<div class="mcj-po-scroll">' +
       '<div class="mcj-po-price-card">' +
       '<div class="mcj-po-price-row"><span>单价</span>' +
-      priceHeroHtml(c.unitPrice) +
+      (state.servicesReady ? priceHeroHtml(c.unitPrice) : '<span class="mcj-po-price-hero" data-po-price-hero>读取中</span>') +
       "<small>/ " +
       esc(c.pricingUnit || "小时") +
       "</small></div>" +
@@ -2288,6 +2326,9 @@
     }
     // Fresh session every open — never reuse previous companion/payment/hours state.
     resetOrderFormState();
+    state.servicesReady = false;
+    state.servicesError = "";
+    state.catalogSeq = (state.catalogSeq || 0) + 1;
     state.companion = companion;
     var matched = matchService(companion.service, companion);
     state.service = matched.service;
@@ -2348,15 +2389,6 @@
       if (extras.pricingUnit || src.pricingUnit) {
         state.companion.pricingUnit = extras.pricingUnit || src.pricingUnit || state.companion.pricingUnit;
       }
-      if (Array.isArray(extras.services) || Array.isArray(src.services)) {
-        state.companion.services = extras.services || src.services || state.companion.services;
-      }
-      if (extras.serviceIds || extras.service_ids || src.serviceIds || src.service_ids) {
-        state.companion.serviceIds = extras.serviceIds || extras.service_ids || src.serviceIds || src.service_ids;
-      }
-      if (extras.gamePrices || extras.game_prices || src.gamePrices || src.game_prices) {
-        state.companion.gamePrices = extras.gamePrices || extras.game_prices || src.gamePrices || src.game_prices;
-      }
       if (extras.levelId || extras.level_id || src.levelId || src.level_id) {
         state.companion.levelId = extras.levelId || extras.level_id || src.levelId || src.level_id;
       }
@@ -2364,12 +2396,10 @@
         state.companion.level = extras.level || src.level || src.levelName || state.companion.level;
       }
       var gameName = extras.game || src.game || src.mainGame || extras.service || "";
-      if (gameName && !LEGACY_SERVICE_NAMES[gameName]) {
+      if (gameName && !LEGACY_SERVICE_NAMES[gameName] && !state.servicesReady) {
         state.companion.game = gameName;
         state.companion.mainGame = gameName;
       }
-      remountServiceChips();
-      // Soft update must refresh header level pill without remounting the whole dialog.
       try {
         var pill = document.querySelector('.mcj-po-mask .mcj-po-pill[data-level-id]');
         if (pill && state.companion) {
@@ -2377,22 +2407,20 @@
           pill.textContent = state.companion.level || "未设置等级";
         }
       } catch (e) {}
-      // Soft refresh SoT: NEVER prefer extras.service / listing services[0] over the
-      // user's current chip (e.g. 三角洲手游国服@35 must not snap back to 王者@30).
-      var keepList = resolveServices(state.companion);
-      var keepSid = String(state.selectedServiceId || "").trim();
-      var keep =
-        (keepSid &&
+      if (state.servicesReady && (state.service || state.selectedServiceId)) {
+        var keepList = resolveServices(state.companion);
+        var keepSid = String(state.selectedServiceId || "").trim();
+        var keep =
+          (keepSid &&
+            keepList.find(function (s) {
+              return String(s.serviceId || "") === keepSid || String(s.id || "") === keepSid;
+            })) ||
           keepList.find(function (s) {
-            return String(s.serviceId || "") === keepSid || String(s.id || "") === keepSid;
-          })) ||
-        keepList.find(function (s) {
-          return serviceNamesMatch(s.name, state.service);
-        }) ||
-        null;
-      if (keep) applySelectedService(keep);
-      else refreshTotals();
-      // Soft update never clears/reloads payment cards from empty cache — only refresh if already loaded.
+            return serviceNamesMatch(s.name, state.service);
+          }) ||
+          null;
+        if (keep) applySelectedService(keep);
+      }
       if (state.payMethods.length && !state.payMethodsLoading) paintPayCards();
       return;
     }
