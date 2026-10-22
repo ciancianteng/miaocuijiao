@@ -319,7 +319,9 @@
           return true;
         });
         if (!names.length) return '<p class="hot-game is-empty">未设置游戏</p>';
-        return '<p class="hot-game">' + names.map(function (part) { return "<span>" + esc(part) + "</span>"; }).join("") + "</p>";
+        var shown = names.slice(0, 2);
+        var more = names.length > 2 ? '<span class="hall-service-more">…</span>' : "";
+        return '<p class="hot-game">' + shown.map(function (part) { return '<span class="hall-service-tag">' + esc(part) + "</span>"; }).join("") + more + "</p>";
       })() +
       (function () {
         if (!hideServices) return "";

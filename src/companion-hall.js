@@ -738,6 +738,25 @@
       "</div></article>"
     );
   }
+  function fitHallServiceTags(root) {
+    if (!root) return;
+    Array.prototype.forEach.call(root.querySelectorAll(".hot-game"), function (row) {
+      if (row.classList.contains("is-empty")) return;
+      var tags = Array.prototype.slice.call(row.querySelectorAll(".hall-service-tag"));
+      var more = row.querySelector(".hall-service-more");
+      tags.forEach(function (tag) { tag.classList.remove("is-clipped"); });
+      if (more) more.classList.remove("is-clipped");
+      if (row.scrollWidth <= row.clientWidth + 1) return;
+      if (tags[1]) tags[1].classList.add("is-clipped");
+      if (!more) {
+        more = document.createElement("span");
+        more.className = "hall-service-more";
+        more.textContent = "…";
+        row.appendChild(more);
+      }
+      if (row.scrollWidth > row.clientWidth + 1 && tags[0] && more) more.classList.add("is-clipped");
+    });
+  }
   function render() {
     var list = document.getElementById("playerList");
     if (!list) return;
@@ -758,6 +777,7 @@
     var start = (state.page - 1) * PER_PAGE;
     // Never keep stale cards when the filtered set is empty.
     list.innerHTML = items.length ? items.slice(start, start + PER_PAGE).map(card).join("") : "";
+    fitHallServiceTags(list);
     if (count) count.textContent = "共 " + items.length + " 位陪玩";
     if (empty) {
       var showEmpty = !items.length;
@@ -797,6 +817,12 @@
     });
     var apply = document.getElementById("applyFilter");
     if (apply) apply.addEventListener("click", function () { state.page = 1; render(); });
+    window.addEventListener("resize", function () {
+      clearTimeout(fitHallServiceTags._t);
+      fitHallServiceTags._t = setTimeout(function () {
+        fitHallServiceTags(document.getElementById("playerList"));
+      }, 80);
+    });
     var pager = document.getElementById("companionPagination");
     if (pager) pager.addEventListener("click", function (event) {
       var button = event.target.closest("[data-page]");
