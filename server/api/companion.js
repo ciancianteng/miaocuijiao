@@ -2661,7 +2661,9 @@ async function bootstrapData(profile, companion) {
   ).length;
   const weeklyLimit = Number(weeklyCfg.max_withdrawals_per_week || cfg.max_withdrawals_per_month || 2);
   const monthlyLimit = Number(cfg.max_withdrawals_per_month || 8);
-  const minAmount = money(cfg.min_withdraw_cat_food);
+  const minAmount = 0;
+  const withdrawableCents = Math.round(money(summary.withdrawable) * 100);
+  const canCoverFee = Number.isFinite(withdrawableCents) && withdrawableCents > 80;
   const rate = money(cfg.cat_food_to_rm_rate) || 1;
   const depositOk = depositApproved(companionRow, deposit);
   const bankOk = /approved|verified/.test(String(payment?.status || ""));
@@ -2674,7 +2676,7 @@ async function bootstrapData(profile, companion) {
     credentialOk &&
     bankOk &&
     accountOk &&
-    summary.withdrawable >= minAmount &&
+    canCoverFee &&
     usedThisWeek < weeklyLimit &&
     !openPending;
   permissions.canWithdraw = canWithdrawNow;
@@ -2692,7 +2694,7 @@ async function bootstrapData(profile, companion) {
     else if (!bankOk) permissions.withdrawLockReason = "请先提交并等待结款账户审核通过";
     else if (companionRow?.withdraw_frozen) permissions.withdrawLockReason = "提现已被冻结";
     else if (openPending) permissions.withdrawLockReason = "已有待周五结算的提现申请，请等待处理后再提交";
-    else if (summary.withdrawable < minAmount) permissions.withdrawLockReason = `可提现余额不足（最低 ${minAmount}）`;
+    else if (!canCoverFee) permissions.withdrawLockReason = "可提现余额不足，申请金额须高于 RM0.80";
     else if (usedThisWeek >= weeklyLimit) permissions.withdrawLockReason = "已达本周提现次数上限";
     else if (profile.status !== "active") permissions.withdrawLockReason = "账号状态异常";
     else permissions.withdrawLockReason = permissions.lockReason || "暂不可提现";
@@ -4223,7 +4225,7 @@ export default async function handler(req, res) {
             monthlyLimit,
             usedThisMonth,
             remainingThisMonth: Math.max(0, monthlyLimit - usedThisMonth),
-            minAmount: money(cfg.min_withdraw_cat_food),
+            minAmount: 0,
             exchangeRate: money(cfg.cat_food_to_rm_rate) || 1,
             feeRm: 0.8,
             feePercent: 0,
@@ -6798,9 +6800,6 @@ return json(res, 200, {
         return json(res, 400, { ok: false, message: data.permissions.withdrawLockReason || "暂不可提现" });
       }
       if (!(amount > 0)) return json(res, 400, { ok: false, message: "提现金额必须大于 0" });
-      if (amount < money(data.withdrawalRules.minAmount)) {
-        return json(res, 400, { ok: false, message: `最低提现 ${data.withdrawalRules.minAmount} 猫粮` });
-      }
       if (amount > money(data.earnings.withdrawable) + 0.001) {
         return json(res, 400, { ok: false, message: "可提现余额不足" });
       }

@@ -3525,7 +3525,7 @@
       '<form class="pw-card pad pw-form" data-withdraw-form novalidate>'+
       '<div class="pw-info-list" style="margin-bottom:14px">'+
       '<div><span>可提现工资</span><strong data-wd-available>RM '+esc(num(available).toFixed(2))+'</strong></div>'+
-      infoRow('最低提现金额',(rules.minAmount||0)+' 猫粮')+
+      infoRow('申请金额','须高于 RM0.80')+
       infoRow('预计发放日期',(rules.nextSettlementDate||'-')+(rules.nextSettlementDate?'（星期五）':''))+
       infoRow('提现账户',rules.currentAccount||'未绑定')+
       infoRow('本周剩余次数',(rules.remainingThisWeek!=null?rules.remainingThisWeek:rules.remainingThisMonth||0)+' / '+(rules.weeklyLimit!=null?rules.weeklyLimit:rules.monthlyLimit||0))+
@@ -7183,7 +7183,6 @@
       var perm=(state.data&&state.data.permissions)||{};
       var earnings=(state.data&&state.data.earnings)||{};
       var available=num(earnings.available!=null?earnings.available:earnings.withdrawable);
-      var minAmount=num(rules.minAmount||0);
       var accountId=(rules.approvedAccounts&&rules.approvedAccounts[0]&&rules.approvedAccounts[0].id)||'';
       var accountLabel=rules.currentAccount||'';
       if(!perm.canWithdraw){toast(perm.withdrawLockReason||'暂不可提现');return}
@@ -7192,7 +7191,6 @@
       var amount=Number(amountRaw);
       if(!(amount>0)){toast('提现金额必须大于 0');return}
       if(!(amount>0.8)){toast('本次申请金额必须高于 RM0.80');return}
-      if(minAmount>0&&amount<minAmount){toast('提现金额不能低于最低提现额 '+minAmount+' 猫粮');return}
       if(amount>available+0.001){toast('提现金额不能超过可提现工资 '+available+' 猫粮');return}
       if(!accountId&&!accountLabel){toast('请先在账号中心绑定并审核通过提现账户');return}
       if(num(rules.remainingThisWeek!=null?rules.remainingThisWeek:rules.remainingThisMonth)<=0){toast('本周提现次数已用完');return}
