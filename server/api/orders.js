@@ -815,8 +815,12 @@ async function loadOrders(profile, id = "") {
   // Optional columns ride on every fallback and are dropped only when that column itself is missing.
   let withSnapshot = true;
   let withRenewal = true;
+  let withPayMethod = true;
   const composeSelect = (base) =>
-    base + (withSnapshot ? ",service_snapshot" : "") + (withRenewal ? selectRenewal : "");
+    base +
+    (withSnapshot ? ",service_snapshot" : "") +
+    (withRenewal ? selectRenewal : "") +
+    (withPayMethod ? ",payment_method" : "");
   for (const base of selectCandidates) {
     let sel = composeSelect(base);
     try {
@@ -830,6 +834,7 @@ async function loadOrders(profile, id = "") {
       if (!/column|schema cache|PGRST|parent_order|paid_/i.test(msg)) throw err;
       if (withSnapshot && /service_snapshot/i.test(msg)) withSnapshot = false;
       if (withRenewal && /is_renewal|renewal_of_order_id|renewal_source_order_no/i.test(msg)) withRenewal = false;
+      if (withPayMethod && /payment_method/i.test(msg)) withPayMethod = false;
       if (withSnapshot || withRenewal) {
         sel = composeSelect(base);
         if (sel !== composeSelect(base) || /service_snapshot|is_renewal|renewal_of_order_id|renewal_source_order_no/i.test(msg)) {
@@ -844,6 +849,7 @@ async function loadOrders(profile, id = "") {
             if (!/column|schema cache|PGRST|parent_order|paid_/i.test(msg2)) throw err2;
             if (withSnapshot && /service_snapshot/i.test(msg2)) withSnapshot = false;
             if (withRenewal && /is_renewal|renewal_of_order_id|renewal_source_order_no/i.test(msg2)) withRenewal = false;
+            if (withPayMethod && /payment_method/i.test(msg2)) withPayMethod = false;
           }
         }
       }
