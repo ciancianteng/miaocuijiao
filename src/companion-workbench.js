@@ -1765,7 +1765,6 @@
       document.addEventListener('visibilitychange',function(){
         if(!document.hidden)sendPresenceHeartbeat();
       });
-      window.addEventListener('pagehide',beaconPresenceOffline);
     }
     // 12s polling backup when realtime is up; 8s when realtime not ready.
     var intervalMs=state._ordersRtReady?12000:8000;
