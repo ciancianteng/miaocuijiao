@@ -1,4 +1,4 @@
-﻿(function () {
+(function () {
   "use strict";
 
   var LEGACY_SERVICE_NAMES = { "陪玩": 1, "护航": 1, "跑刀": 1, "代肝": 1, "自定义": 1, "陪玩服务": 1, "陪聊服务": 1 };
@@ -41,6 +41,9 @@
     servicesError: "",
     catalogSeq: 0,
     catalogAbort: null,
+    lockedServiceId: "",
+    lockedServiceName: "",
+    lockedPrice: 0,
   };
 
   function resetOrderFormState() {
@@ -48,6 +51,9 @@
     state.service = "";
     state.customService = "";
     state.selectedServiceId = "";
+    state.lockedServiceId = "";
+    state.lockedServiceName = "";
+    state.lockedPrice = 0;
     state.hoursMode = "1";
     state.hours = 1;
     state.quantity = 1;
@@ -638,6 +644,7 @@
       game: game,
       mainGame: game,
       services: services,
+      serviceId: String(raw.serviceId || raw.service_id || raw.selectedServiceId || "").trim(),
       serviceIds: serviceIds,
       gamePrices: gamePrices,
       pricingUnit: String(raw.pricingUnit || raw.pricing_unit || "小时"),
@@ -973,12 +980,21 @@
     wrap.querySelectorAll("[data-po-service]").forEach(function (btn) {
       btn.addEventListener("click", function (ev) {
         ev.preventDefault();
+        var sid = String(btn.getAttribute("data-po-service-id") || "").trim();
         var name = btn.getAttribute("data-po-service") || "";
         var list = resolveServices(state.companion);
-        var svc = list.find(function (s) {
+        var svc = (sid && list.find(function (s) {
+          return String(s.serviceId || "") === sid || String(s.id || "") === sid;
+        })) || list.find(function (s) {
           return serviceNamesMatch(s.name, name);
         });
-        if (svc) applySelectedService(svc);
+        if (svc) {
+          state.lockedServiceId = String(svc.serviceId || sid || "").trim();
+          state.lockedServiceName = svc.name || name;
+          state.lockedPrice = money(btn.getAttribute("data-po-service-price") || svc.price);
+          applySelectedService(svc);
+          if (state.lockedPrice > 0 && state.companion) state.companion.unitPrice = state.lockedPrice;
+        }
       });
     });
     // hide legacy custom input if present
@@ -1010,6 +1026,30 @@
         if (seq !== state.catalogSeq || !state.open) return body;
         if (!state.companion || String(state.companion.companionId) !== companionId) return body;
         var services = Array.isArray(body.services) ? body.services : [];
+        var lockId = String(state.lockedServiceId || "").trim();
+        var lockName = String(state.lockedServiceName || "").trim();
+        var lockPrice = money(state.lockedPrice);
+        if (lockId || lockName) {
+          var lockedRow = null;
+          services.forEach(function (row) {
+            var sameId = lockId && (String(row.serviceId || row.id || "") === lockId);
+            if (sameId) lockedRow = row;
+          });
+          if (!lockedRow && !lockId) {
+            services.forEach(function (row) {
+              if (!lockedRow && serviceNamesMatch(row.name, lockName)) lockedRow = row;
+            });
+          }
+          if (lockedRow && lockPrice > 0) lockedRow.price = lockPrice;
+          if (!lockedRow) {
+            services = [{
+              id: lockId || ("name:" + lockName),
+              serviceId: lockId,
+              name: lockName || "已选服务",
+              price: lockPrice,
+            }].concat(services);
+          }
+        }
         var catC = body.companion || {};
         state.companion.services = services;
         if (catC.gamePrices || catC.game_prices) state.companion.gamePrices = catC.gamePrices || catC.game_prices;
@@ -1024,20 +1064,27 @@
           state.servicesReady = true;
           remountServiceChips();
           var list = resolveServices(state.companion);
-          var sid = String(state.selectedServiceId || "").trim();
-          var cur =
-            (sid &&
-              list.find(function (s) {
+          var sid = String(state.lockedServiceId || "").trim();
+          var cur = sid
+            ? list.find(function (s) {
                 return String(s.serviceId || "") === sid || String(s.id || "") === sid;
-              })) ||
-            list.find(function (s) {
+              }) || null
+            : null;
+          if (!cur && !sid && state.service) {
+            cur = list.find(function (s) {
               return serviceNamesMatch(s.name, state.service);
-            }) ||
-            null;
-          // Never silently rewrite an existing selection to list[0] (often level-default 30).
-          if (cur) applySelectedService(cur);
-          else if (!state.service && list.length === 1) applySelectedService(list[0]);
-          else refreshTotals();
+            }) || null;
+          }
+          if (cur) {
+            var pinned = money(state.lockedPrice);
+            applySelectedService(cur);
+            if (pinned > 0 && state.companion) state.companion.unitPrice = pinned;
+          } else if (lockName) {
+            state.service = lockName;
+            state.selectedServiceId = lockId;
+            if (lockPrice > 0 && state.companion) state.companion.unitPrice = lockPrice;
+            refreshTotals();
+          } else refreshTotals();
         }
         return body;
       })
@@ -1047,7 +1094,18 @@
         if (!state.companion || String(state.companion.companionId) !== companionId) return null;
         state.servicesReady = true;
         state.servicesError = "服务列表读取失败，请关闭后重试";
-        state.companion.services = [];
+        if (state.lockedServiceId || state.lockedServiceName) {
+          state.companion.services = [{
+            id: state.lockedServiceId || ("name:" + state.lockedServiceName),
+            serviceId: state.lockedServiceId,
+            name: state.lockedServiceName,
+            price: state.lockedPrice,
+          }];
+          state.service = state.lockedServiceName;
+          state.selectedServiceId = state.lockedServiceId;
+        } else {
+          state.companion.services = [];
+        }
         remountServiceChips();
         return null;
       });
@@ -1060,27 +1118,8 @@
       for (var i = 0; i < list.length; i++) {
         if (serviceNamesMatch(list[i].name, s)) return { service: list[i].name, custom: "", item: list[i] };
       }
-      if (!isServiceBlob(s)) {
-        var best = null;
-        var bestLen = 0;
-        var tie = false;
-        for (var j = 0; j < list.length; j++) {
-          var n = String(list[j].name || "");
-          if (!n) continue;
-          if (s.indexOf(n) === -1 && n.indexOf(s) === -1) continue;
-          if (n.length > bestLen) {
-            best = list[j];
-            bestLen = n.length;
-            tie = false;
-          } else if (n.length === bestLen) tie = true;
-        }
-        if (best && !tie) return { service: best.name, custom: "", item: best };
-      } else {
-        // "A、B、C" is not a selected service. Never guess list[0] (often 陪跑/等级价 30).
-        return { service: "", custom: "", item: null };
-      }
+      if (isServiceBlob(s)) return { service: "", custom: "", item: null };
     }
-    if (list[0] && list.length === 1) return { service: list[0].name, custom: "", item: list[0] };
     return { service: "", custom: "", item: null };
   }
   function currentHours() {
@@ -1374,18 +1413,6 @@
     state.payLoadError = "";
 
     var companionServices = state.servicesReady ? resolveServices(c) : [];
-    // SoT: never silently pick services[0] among many (level-default 30 vs 三角洲@35).
-    // Only auto-select when exactly one catalog row exists.
-    if (
-      companionServices.length === 1 &&
-      !companionServices.some(function (s) {
-        return serviceNamesMatch(s.name, state.service);
-      })
-    ) {
-      state.service = companionServices[0].name;
-      state.selectedServiceId = companionServices[0].serviceId || companionServices[0].id || "";
-      if (companionServices[0].price > 0) c.unitPrice = companionServices[0].price;
-    }
     var serviceChips = companionServices.length
       ? companionServices.map(function (s) {
           return (
@@ -1637,17 +1664,24 @@
     mask.querySelectorAll("[data-po-service]").forEach(function (btn) {
       btn.addEventListener("click", function (ev) {
         ev.preventDefault();
+        var sid = String(btn.getAttribute("data-po-service-id") || "").trim();
         var name = btn.getAttribute("data-po-service") || "";
         var list = resolveServices(state.companion);
-        var svc = list.find(function (s) {
+        var svc = (sid && list.find(function (s) {
+          return String(s.serviceId || "") === sid || String(s.id || "") === sid;
+        })) || list.find(function (s) {
           return serviceNamesMatch(s.name, name);
         }) || {
           name: name,
-          serviceId: btn.getAttribute("data-po-service-id") || "",
+          serviceId: sid,
           price: money(btn.getAttribute("data-po-service-price")),
           pricingUnit: (state.companion && state.companion.pricingUnit) || "小时",
         };
+        state.lockedServiceId = String(svc.serviceId || sid || "").trim();
+        state.lockedServiceName = svc.name || name;
+        state.lockedPrice = money(btn.getAttribute("data-po-service-price") || svc.price);
         applySelectedService(svc);
+        if (state.lockedPrice > 0 && state.companion) state.companion.unitPrice = state.lockedPrice;
         setExclusiveActive(mask.querySelectorAll("[data-po-service]"), btn);
       });
     });
@@ -2313,9 +2347,15 @@
       return;
     }
     var bootServices = resolveServices(companion);
-    // Never seed listing/level 30 from services[0] when several catalog rows exist.
-    if (!(companion.unitPrice > 0) && bootServices.length === 1 && bootServices[0].price > 0) {
-      companion.unitPrice = bootServices[0].price;
+    var requestedId = String(companion.serviceId || "").trim();
+    var requestedName = String(companion.service || "").trim();
+    if (isServiceBlob(requestedName) || LEGACY_SERVICE_NAMES[requestedName]) requestedName = "";
+    if (!(companion.unitPrice > 0) && (requestedId || requestedName)) {
+      var priced = bootServices.find(function (s) {
+        return (requestedId && (String(s.serviceId || "") === requestedId || String(s.id || "") === requestedId))
+          || (!requestedId && requestedName && serviceNamesMatch(s.name, requestedName));
+      });
+      if (priced && priced.price > 0) companion.unitPrice = priced.price;
     }
     if (!(companion.unitPrice > 0) && !bootServices.length) {
       // Allow open; hydrateFromCatalog may still bring prices.
@@ -2329,13 +2369,26 @@
     resetOrderFormState();
     state.servicesReady = false;
     state.servicesError = "";
+    state.lockedServiceId = "";
+    state.lockedServiceName = "";
+    state.lockedPrice = 0;
     state.catalogSeq = (state.catalogSeq || 0) + 1;
     state.companion = companion;
-    var matched = matchService(companion.service, companion);
-    state.service = matched.service;
+    var matched = matchService(requestedName || companion.service, companion);
+    var sameItem = matched.item && (
+      (requestedId && (String(matched.item.serviceId || "") === requestedId || String(matched.item.id || "") === requestedId))
+      || (!requestedId && requestedName && serviceNamesMatch(matched.item.name, requestedName))
+    );
+    state.service = requestedName || matched.service;
     state.customService = "";
-    state.selectedServiceId = (matched.item && (matched.item.serviceId || matched.item.id)) || "";
-    if (matched.item && matched.item.price > 0) companion.unitPrice = matched.item.price;
+    state.selectedServiceId = requestedId || (sameItem ? (matched.item.serviceId || matched.item.id || "") : "");
+    if (requestedId || requestedName) {
+      state.lockedServiceId = state.selectedServiceId;
+      state.lockedServiceName = state.service;
+      state.lockedPrice = money(companion.unitPrice);
+    } else if (matched.item && matched.item.price > 0) {
+      companion.unitPrice = matched.item.price;
+    }
     state.hoursMode = "1";
     state.hours = 1;
     state.quantity = 1;
@@ -2379,6 +2432,16 @@
     // Soft update: catalog refresh must NOT remount and wipe filled fields / kill submit.
     if (state.open && state.companion && String(state.companion.companionId) === companionId) {
       if (state.submitting) return;
+      var askedName = Object.prototype.hasOwnProperty.call(extras, "service") ? String(extras.service || "").trim() : "";
+      var askedId = String(extras.serviceId || extras.service_id || "").trim();
+      if (askedName || askedId) {
+        state.lockedServiceName = askedName;
+        state.lockedServiceId = askedId;
+        state.service = askedName;
+        state.selectedServiceId = askedId;
+        state.lockedPrice = money(unitPrice);
+        if (money(unitPrice) > 0) state.companion.unitPrice = money(unitPrice);
+      }
       // Listing/level price (often 30) must not overwrite a selected service price (e.g. 35).
       var nextPrice = money(unitPrice);
       if (nextPrice > 0 && !state.service && !state.selectedServiceId) state.companion.unitPrice = nextPrice;
@@ -2408,19 +2471,24 @@
           pill.textContent = state.companion.level || "未设置等级";
         }
       } catch (e) {}
-      if (state.servicesReady && (state.service || state.selectedServiceId)) {
+      if (state.servicesReady && (state.lockedServiceId || state.lockedServiceName || state.service || state.selectedServiceId)) {
         var keepList = resolveServices(state.companion);
-        var keepSid = String(state.selectedServiceId || "").trim();
-        var keep =
-          (keepSid &&
-            keepList.find(function (s) {
+        var keepSid = String(state.lockedServiceId || state.selectedServiceId || "").trim();
+        var keep = keepSid
+          ? keepList.find(function (s) {
               return String(s.serviceId || "") === keepSid || String(s.id || "") === keepSid;
-            })) ||
-          keepList.find(function (s) {
+            }) || null
+          : null;
+        if (!keep && !state.lockedServiceId && state.service) {
+          keep = keepList.find(function (s) {
             return serviceNamesMatch(s.name, state.service);
-          }) ||
-          null;
-        if (keep) applySelectedService(keep);
+          }) || null;
+        }
+        if (keep) {
+          var pinnedKeep = money(state.lockedPrice);
+          applySelectedService(keep);
+          if (pinnedKeep > 0 && state.companion) state.companion.unitPrice = pinnedKeep;
+        }
       }
       if (state.payMethods.length && !state.payMethodsLoading) paintPayCards();
       return;
@@ -2440,6 +2508,7 @@
         : extras.requireServicePick
           ? ""
           : extras.service || src.service || src.game || src.mainGame || "",
+      serviceId: extras.serviceId || extras.service_id || src.serviceId || src.service_id || "",
       game: extras.game || src.game || src.mainGame || extras.service || "",
       mainGame: extras.game || src.game || src.mainGame || "",
       services: extras.services || src.services || [],
@@ -2494,13 +2563,14 @@
           gamePrices: extras.gamePrices || row.gamePrices || row.game_prices || {},
           game: extras.game || row.game || row.mainGame || "",
         });
-        // Soft refresh / hall open must not inject services[0] (often level-default 30).
-        // Keep an explicit empty pick so the boss chooses the service-specific price.
+        // Hall click carries the chosen service in extras. Never replace that with services[0].
         if (!softOpen) {
           if (Object.prototype.hasOwnProperty.call(extras, "service")) {
             merged.service = extras.service || "";
+            merged.serviceId = extras.serviceId || extras.service_id || "";
           } else if (extras.requireServicePick) {
             merged.service = "";
+            merged.serviceId = "";
           } else {
             merged.service =
               (row.services && row.services.length === 1 && row.services[0].name) ||
