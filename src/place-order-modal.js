@@ -183,15 +183,23 @@
   function pricePending() {
     return !state.servicesReady || !!state.servicesError;
   }
+  function confirmedServiceItem() {
+    if (pricePending()) return null;
+    var item = selectedServiceItem();
+    if (!item || !(money(item.price) > 0)) return null;
+    return item;
+  }
   function shownUnitText() {
     if (pricePending()) return "价格加载中";
-    if (!(state.service && state.companion)) return "请选择服务";
-    return moneyText(state.companion.unitPrice);
+    var item = confirmedServiceItem();
+    if (!item) return "请选择服务";
+    return moneyText(item.price);
   }
   function shownTotalText() {
     if (pricePending()) return "价格加载中";
-    if (!(state.service && state.companion)) return "请选择服务";
-    return moneyText(totalAmount());
+    var item = confirmedServiceItem();
+    if (!item) return "请选择服务";
+    return moneyText(Math.round(money(item.price) * currentHours() * currentQuantity() * 100) / 100);
   }
   function looksLikeJwt(raw) {
     var t = String(raw || "").trim();
@@ -1056,7 +1064,16 @@
           // Never silently rewrite an existing selection to list[0] (often level-default 30).
           if (cur) applySelectedService(cur);
           else if (!state.service && list.length === 1) applySelectedService(list[0]);
-          else refreshTotals();
+          else {
+            if (state.service && !cur) {
+              state.service = "";
+              state.selectedServiceId = "";
+              var stalePreview = document.querySelector("[data-po-service-preview]");
+              if (stalePreview) stalePreview.textContent = "未选择服务";
+            }
+            refreshServiceStandard();
+            refreshTotals();
+          }
           syncSubmitAvailability();
         }
         return body;
@@ -1305,9 +1322,7 @@
     });
   }
   function refreshTotals() {
-    var c = state.companion;
     var hours = currentHours();
-    var picked = !!(state.servicesReady && !state.servicesError && state.service);
     var total = shownTotalText();
     var unit = shownUnitText();
     var map = {
@@ -1322,7 +1337,7 @@
       if (el) el.textContent = map[sel];
     });
     var priceHero = document.querySelector("[data-po-price-hero]");
-    if (priceHero) priceHero.textContent = pricePending() ? "价格加载中" : (picked && c ? moneyText(c.unitPrice) : "请选择服务");
+    if (priceHero) priceHero.textContent = pricePending() ? "价格加载中" : (confirmedServiceItem() ? moneyText(confirmedServiceItem().price) : "请选择服务");
     refreshSchedulePreview();
     // Soft totals refresh must not wipe payment UI while methods are still loading.
     if (activeMask() && (state.payMethods.length || !state.payMethodsLoading)) {
