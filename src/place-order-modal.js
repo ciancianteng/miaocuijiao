@@ -179,6 +179,20 @@
   function priceHeroHtml(v) {
     return '<span class="mcj-po-price-hero" data-po-price-hero>' + esc(moneyText(v)) + "</span>";
   }
+  // Hall cards carry a listing price. The order price is the catalog quote, which arrives later.
+  function pricePending() {
+    return !state.servicesReady || !!state.servicesError;
+  }
+  function shownUnitText() {
+    if (pricePending()) return "价格加载中";
+    if (!(state.service && state.companion)) return "请选择服务";
+    return moneyText(state.companion.unitPrice);
+  }
+  function shownTotalText() {
+    if (pricePending()) return "价格加载中";
+    if (!(state.service && state.companion)) return "请选择服务";
+    return moneyText(totalAmount());
+  }
   function looksLikeJwt(raw) {
     var t = String(raw || "").trim();
     if (!t || t.length < 20) return false;
@@ -327,6 +341,11 @@
     if (!String(state.payment || "").trim()) {
       btn.disabled = true;
       btn.textContent = "请选择支付方式";
+      return;
+    }
+    if (pricePending()) {
+      btn.disabled = true;
+      btn.textContent = "价格加载中";
       return;
     }
     if (companionUnavailableText()) {
@@ -709,7 +728,7 @@
       '<div class="mcj-po-standard-head"><strong>服务明细 · ' +
       esc(svc.name) +
       "</strong><span>" +
-      esc(moneyText(svc.price) + " / " + (svc.pricingUnit || "小时")) +
+      esc(pricePending() ? "价格加载中" : moneyText(svc.price) + " / " + (svc.pricingUnit || "小时")) +
       "</span></div>";
     if (!sections.length && !svc.content && !svc.requirements) {
       return (
@@ -1038,6 +1057,7 @@
           if (cur) applySelectedService(cur);
           else if (!state.service && list.length === 1) applySelectedService(list[0]);
           else refreshTotals();
+          syncSubmitAvailability();
         }
         return body;
       })
@@ -1049,6 +1069,9 @@
         state.servicesError = "服务列表读取失败，请关闭后重试";
         state.companion.services = [];
         remountServiceChips();
+        refreshServiceStandard();
+        refreshTotals();
+        syncSubmitAvailability();
         return null;
       });
   }
@@ -1284,9 +1307,9 @@
   function refreshTotals() {
     var c = state.companion;
     var hours = currentHours();
-    var picked = !!(state.servicesReady && state.service);
-    var total = picked ? moneyText(totalAmount()) : "请选择服务";
-    var unit = picked && c ? moneyText(c.unitPrice) : "请选择服务";
+    var picked = !!(state.servicesReady && !state.servicesError && state.service);
+    var total = shownTotalText();
+    var unit = shownUnitText();
     var map = {
       "[data-po-footer-total]": total,
       "[data-po-total]": total,
@@ -1299,7 +1322,7 @@
       if (el) el.textContent = map[sel];
     });
     var priceHero = document.querySelector("[data-po-price-hero]");
-    if (priceHero) priceHero.textContent = picked && c ? moneyText(c.unitPrice) : (state.servicesReady ? "请选择服务" : "读取中");
+    if (priceHero) priceHero.textContent = pricePending() ? "价格加载中" : (picked && c ? moneyText(c.unitPrice) : "请选择服务");
     refreshSchedulePreview();
     // Soft totals refresh must not wipe payment UI while methods are still loading.
     if (activeMask() && (state.payMethods.length || !state.payMethodsLoading)) {
@@ -1478,7 +1501,7 @@
       '<div class="mcj-po-scroll">' +
       '<div class="mcj-po-price-card">' +
       '<div class="mcj-po-price-row"><span>单价</span>' +
-      (state.servicesReady && state.service ? priceHeroHtml(c.unitPrice) : '<span class="mcj-po-price-hero" data-po-price-hero>' + (state.servicesReady ? "请选择服务" : "读取中") + "</span>") +
+      (state.servicesReady && !state.servicesError && state.service ? priceHeroHtml(c.unitPrice) : '<span class="mcj-po-price-hero" data-po-price-hero>' + (pricePending() ? "价格加载中" : "请选择服务") + "</span>") +
       "<small>/ " +
       esc(c.pricingUnit || "小时") +
       "</small></div>" +
@@ -1557,17 +1580,17 @@
       '<div class="mcj-po-footer">' +
       '<div class="mcj-po-footer-breakdown">' +
       "<div>单价 <strong data-po-footer-unit>" +
-      esc(moneyText(c.unitPrice)) +
+      esc(shownUnitText()) +
       "</strong></div>" +
       "<div>优惠金额 <strong data-po-footer-discount>" +
       esc(moneyText(0)) +
       "</strong></div>" +
       "<div>合计 <strong data-po-footer-total>" +
-      esc(moneyText(totalAmount())) +
+      esc(shownTotalText()) +
       "</strong></div>" +
       "</div>" +
       '<div class="mcj-po-footer-total-row"><span>合计猫粮</span><strong data-po-total>' +
-      esc(moneyText(totalAmount())) +
+      esc(shownTotalText()) +
       "</strong></div>" +
       '<p class="mcj-po-error mcj-po-footer-error" data-po-error hidden></p>' +
       '<div class="mcj-po-footer-actions">' +
@@ -1967,6 +1990,10 @@
     if (!window.MCJMultiCompanionTeam || typeof window.MCJMultiCompanionTeam.add !== "function") {
       toast("多人一起下单组件未加载，请刷新大厅后重试");
       return { ok: false, error: "no_team" };
+    }
+    if (pricePending()) {
+      toast("价格加载中");
+      return { ok: false, error: "price_loading" };
     }
     if (!String(state.service || "").trim() || LEGACY_SERVICE_NAMES[String(state.service || "").trim()]) {
       toast("请先选择具体服务后再加入队伍");
