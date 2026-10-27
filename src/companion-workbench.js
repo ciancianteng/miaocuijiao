@@ -2593,7 +2593,7 @@
 
     state.drawerOpen=false;
     try{document.body.classList.remove('pw-drawer-open')}catch(e){}
-    root.innerHTML='<div class="pw-shell'+(isolated?' is-isolation':'')+'">'+
+    root.innerHTML='<div class="pw-shell'+(isolated?' is-isolation':'')+(state.route==='services'?' is-services':'')+'">'+
       '<aside class="pw-side" id="pwSideNav" aria-label="陪玩端导航">'+
       '<div class="pw-brand"><strong>MEOW CUI JIAO</strong><span>'+(isolated?'审核隔离模式':'Companion Workbench')+'</span></div>'+
       '<nav class="pw-nav">'+navItems.map(function(n){
