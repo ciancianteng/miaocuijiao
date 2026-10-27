@@ -318,10 +318,24 @@
           seen[key] = 1;
           return true;
         });
-        if (!names.length) return '<p class="hot-game is-empty">未设置游戏</p>';
-        var shown = names.slice(0, 2);
-        var more = names.length > 2 ? '<span class="hall-service-more">…</span>' : "";
-        return '<p class="hot-game">' + shown.map(function (part) { return '<span class="hall-service-tag">' + esc(part) + "</span>"; }).join("") + more + "</p>";
+        var serviceRows = Array.isArray(item && item.services) ? item.services : [];
+        var tagged = serviceRows.map(function (row) {
+          var serviceName = String((row && (row.name || row.title)) || "").trim();
+          return {
+            name: serviceName,
+            id: String((row && (row.serviceId || row.service_id || row.id)) || "").trim(),
+            price: row && row.price != null ? row.price : "",
+          };
+        }).filter(function (row) { return row.name && !/未设置/.test(row.name); });
+        if (!tagged.length) {
+          tagged = names.map(function (part) { return { name: part, id: "", price: "" }; });
+        }
+        if (!tagged.length) return '<p class="hot-game is-empty">未设置游戏</p>';
+        var shown = tagged.slice(0, 2);
+        var more = tagged.length > 2 ? '<span class="hall-service-more">…</span>' : "";
+        return '<p class="hot-game">' + shown.map(function (part) {
+          return '<span class="hall-service-tag" data-hall-service="' + esc(part.name) + '" data-hall-service-id="' + esc(part.id) + '" data-hall-service-price="' + esc(part.price) + '">' + esc(part.name) + "</span>";
+        }).join("") + more + "</p>";
       })() +
       (function () {
         if (!hideServices) return "";

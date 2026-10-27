@@ -2593,7 +2593,7 @@
 
     state.drawerOpen=false;
     try{document.body.classList.remove('pw-drawer-open')}catch(e){}
-    root.innerHTML='<div class="pw-shell'+(isolated?' is-isolation':'')+'">'+
+    root.innerHTML='<div class="pw-shell'+(isolated?' is-isolation':'')+(state.route==='services'?' is-services':'')+'">'+
       '<aside class="pw-side" id="pwSideNav" aria-label="陪玩端导航">'+
       '<div class="pw-brand"><strong>MEOW CUI JIAO</strong><span>'+(isolated?'审核隔离模式':'Companion Workbench')+'</span></div>'+
       '<nav class="pw-nav">'+navItems.map(function(n){
@@ -2644,6 +2644,8 @@
     host.dataset.loaded='1';
     api('my_offers').then(function(res){
       var selected={};
+      var boundSet={};
+      (res.boundServiceIds||[]).forEach(function(id){boundSet[String(id)]=1;});
       (res.offers||[]).forEach(function(item){selected[item.kind+':'+item.id]=item;});
       var catalog=((res.catalog&&res.catalog.services)||[]).map(function(item){return Object.assign({kind:'service'},item);});
       if(!catalog.length){
@@ -2659,7 +2661,7 @@
         var content=String(policy.description||'').trim();
         var requirement=String(policy.requirements||'').trim();
         var mine=saved&&saved.price!=null&&saved.price!==''&&!isNaN(Number(saved.price))?saved.price:'';
-        var accepting=!saved||saved.accepting!==false;
+        var accepting=saved?saved.accepting!==false:!!boundSet[String(item.id)];
         var canPrice=policy.allowSelfPrice===true;
         var shown=mine!==''?mine:(item.price!=null&&item.price!==''&&!isNaN(Number(item.price))?item.price:'');
         var quote=shown!==''?('RM'+shown+'/'+unit):'未设置';
@@ -5832,20 +5834,19 @@
       }
       if(offerAction.hasAttribute('data-offer-save')&&toggled)toggled.setAttribute('data-touched','1');
       var offers=[];
-      if(host){
-        host.querySelectorAll('[data-offer-card]').forEach(function(card,index){
-          if(card.getAttribute('data-saved')!=='1'&&card.getAttribute('data-touched')!=='1')return;
-          var priceEl=card.querySelector('[data-offer-price]');
-          var accepting=card.getAttribute('data-accepting')!=='0';
-          offers.push({
-            kind:card.getAttribute('data-kind')||'service',
-            id:card.getAttribute('data-id'),
-            accepting:accepting,
-            price:priceEl?priceEl.value:'',
-            sort:index
-          });
+      var cards=(toggled&&(offerAction.hasAttribute('data-offer-save')||offerAction.hasAttribute('data-offer-toggle')))?[toggled]:(host?Array.prototype.slice.call(host.querySelectorAll('[data-offer-card]')):[]);
+      cards.forEach(function(card,index){
+        if(card!==toggled&&card.getAttribute('data-saved')!=='1'&&card.getAttribute('data-touched')!=='1')return;
+        var priceEl=card.querySelector('[data-offer-price]');
+        var accepting=card.getAttribute('data-accepting')!=='0';
+        offers.push({
+          kind:card.getAttribute('data-kind')||'service',
+          id:card.getAttribute('data-id'),
+          accepting:accepting,
+          price:priceEl?priceEl.value:'',
+          sort:index
         });
-      }
+      });
       api('save_offers',{offers:offers}).then(function(res){
         toast(res.message||'已保存');
         if(host)host.dataset.loaded='';

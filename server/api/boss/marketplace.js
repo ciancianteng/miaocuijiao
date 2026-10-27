@@ -157,6 +157,7 @@ async function alignBossServicesWithPlatform(services, companionUserId) {
   if (!platform.length) return services;
   let policies = {};
   let offers = [];
+  let boundIds = [];
   try {
     const { loadAllPricePolicies } = await import("../_service-price-policy.js");
     policies = (await loadAllPricePolicies()) || {};
@@ -164,21 +165,33 @@ async function alignBossServicesWithPlatform(services, companionUserId) {
     policies = {};
   }
   try {
-    const { listCompanionOffers } = await import("../_companion-offers.js");
+    const { listCompanionOffers, loadBoundServiceIds } = await import("../_companion-offers.js");
     const listed = await listCompanionOffers(companionUserId);
     offers = listed.offers || [];
+    boundIds = await loadBoundServiceIds(companionUserId);
   } catch {
     offers = [];
+    boundIds = [];
   }
   const { quoteVisibleService } = await import("../_service-price-policy.js");
   const offerById = new Map(offers.filter((item) => item.kind === "service").map((item) => [String(item.id), item]));
   const previousById = new Map(
     (services || []).filter((item) => item && item.serviceId).map((item) => [String(item.serviceId), item])
   );
+  const previousByName = new Map(
+    (services || [])
+      .filter((item) => item && String(item.name || "").trim())
+      .map((item) => [String(item.name).trim(), item])
+  );
+  const bound = new Set((boundIds || []).map((id) => String(id)));
   return platform
     .map((row) => {
       const id = String(row.id);
-      const prev = previousById.get(id) || null;
+      const prev = previousById.get(id) || previousByName.get(String(row.name || "").trim()) || null;
+      const owned = bound.has(id) || !!prev;
+      if (!owned) return null;
+      const offer = offerById.get(id) || null;
+      if (offer && offer.accepting === false) return null;
       const quote = quoteVisibleService({
         row,
         policy: policies[id] || {},

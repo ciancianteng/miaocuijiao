@@ -1,4 +1,4 @@
-﻿(function () {
+(function () {
   "use strict";
 
   var PER_PAGE = 12;
@@ -222,6 +222,8 @@
           : Array.isArray(normalized.service_ids)
             ? normalized.service_ids.map(function (id) { return String(id); })
             : [],
+        services: Array.isArray(normalized.services) ? normalized.services : (Array.isArray(item.services) ? item.services : []),
+        gamePrices: normalized.gamePrices || normalized.game_prices || item.gamePrices || item.game_prices || {},
         status: normalizeStatus(normalized.availabilityStatus || normalized.availabilityText || normalized.status || normalized.onlineStatus),
         availabilityStatus: String(normalized.availabilityStatus || "").toLowerCase() || "",
         canOrderNow: !!normalized.canOrderNow,
@@ -696,6 +698,8 @@
       levelConfig: item.levelConfig || null,
       cardBackground: item.cardBackground,
       game: hallGameLabel(item),
+      services: item.services || [],
+      gamePrices: item.gamePrices || {},
       tags: [],
       serviceTags: [],
       image: item.image || cardImage(item),
@@ -837,7 +841,11 @@
           sessionStorage.setItem("mcjHallScrollY", String(window.scrollY || 0));
         } catch (e) {}
       }
+      var serviceTag = event.target.closest(".hall-service-tag");
       var orderBtn = event.target.closest("[data-hall-order]");
+      if (!serviceTag && !orderBtn) return;
+      var card = (serviceTag || orderBtn).closest("[data-player], .player-card, .companion-card");
+      if (!orderBtn && card) orderBtn = card.querySelector("[data-hall-order]");
       if (!orderBtn) return;
       event.preventDefault();
       var id = orderBtn.getAttribute("data-hall-order") || "";
@@ -848,6 +856,13 @@
         window.location.href = "book.html?companion=" + encodeURIComponent(id);
         return;
       }
+      if (!serviceTag && card) {
+        var onlyTags = card.querySelectorAll(".hall-service-tag");
+        if (onlyTags.length === 1) serviceTag = onlyTags[0];
+      }
+      var pickedName = serviceTag ? String(serviceTag.getAttribute("data-hall-service") || serviceTag.textContent || "").trim() : "";
+      var pickedId = serviceTag ? String(serviceTag.getAttribute("data-hall-service-id") || "").trim() : "";
+      var pickedPrice = serviceTag ? Number(serviceTag.getAttribute("data-hall-service-price") || 0) : 0;
       if (!window.MCJPlaceOrder || typeof window.MCJPlaceOrder.openFromCompanion !== "function") {
         try {
           sessionStorage.setItem("mcjHallScrollY", String(window.scrollY || 0));
@@ -856,16 +871,18 @@
         return;
       }
       var live = hallItemById(id) || {};
+      var orderPrice = pickedPrice > 0 ? pickedPrice : Number(orderBtn.getAttribute("data-hall-price") || live.priceValue || 0);
       window.MCJPlaceOrder.openFromCompanion({
         companionId: id,
         id: id,
         uid: id,
         companionName: orderBtn.getAttribute("data-hall-name") || live.name || "陪玩",
         name: orderBtn.getAttribute("data-hall-name") || live.name || "陪玩",
-        unitPrice: Number(orderBtn.getAttribute("data-hall-price") || live.priceValue || 0),
-        priceValue: Number(orderBtn.getAttribute("data-hall-price") || live.priceValue || 0),
-        price: Number(orderBtn.getAttribute("data-hall-price") || live.priceValue || 0),
-        service: "",
+        unitPrice: orderPrice,
+        priceValue: orderPrice,
+        price: orderPrice,
+        service: pickedName,
+        serviceId: pickedId,
         game: orderBtn.getAttribute("data-hall-game") || live.game || "陪玩",
         avatar: orderBtn.getAttribute("data-hall-avatar") || live.avatar || "",
         publicId: orderBtn.getAttribute("data-hall-public-id") || live.publicId || "",
@@ -873,7 +890,6 @@
         services: live.services || [],
         serviceIds: live.serviceIds || live.service_ids || [],
         gamePrices: live.gamePrices || live.game_prices || {},
-        requireServicePick: true,
         level: (function () {
           var lid = orderBtn.getAttribute("data-hall-level") || "";
           if (lid && window.MCJCompanionLevels && window.MCJCompanionLevels.label) {
@@ -888,6 +904,14 @@
         availabilityText: orderBtn.getAttribute("data-hall-status-text") || "",
         online: orderBtn.getAttribute("data-hall-online") === "1",
         canAcceptBossOrder: orderBtn.getAttribute("data-hall-online") === "1",
+      }, {
+        service: pickedName,
+        serviceId: pickedId,
+        unitPrice: orderPrice,
+        requireServicePick: !pickedName,
+        services: live.services || [],
+        serviceIds: live.serviceIds || live.service_ids || [],
+        gamePrices: live.gamePrices || live.game_prices || {},
       });
     });
   }
