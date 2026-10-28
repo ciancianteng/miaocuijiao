@@ -12,10 +12,32 @@ function escHtml(value) {
     .replace(/"/g, "&quot;");
 }
 
+function splitFlatNumbered(text) {
+  var raw = String(text || "").replace(/\s+/g, " ").trim();
+  if (!raw || !/(?:^|\s)(?:[一二三四五六七八九十]、|\d{1,2}[\.、．])/.test(raw)) return null;
+  var bits = raw.split(/\s+(?=[一二三四五六七八九十]、|\d{1,2}[\.、．])/).map(function (bit) {
+    return String(bit || "").trim();
+  }).filter(Boolean);
+  if (bits.length < 2) return null;
+  return bits.map(function (bit) {
+    var heading = bit.match(/^([一二三四五六七八九十]、\S{1,16})$/);
+    if (heading) return { title: heading[1], body: "" };
+    var headingBody = bit.match(/^([一二三四五六七八九十]、\S{1,16})\s+(\S[\s\S]*)$/);
+    if (headingBody) return { title: headingBody[1], body: headingBody[2] };
+    var labeled = bit.match(/^([^：:]{1,12})[：:]\s*(\S[\s\S]*)$/);
+    if (labeled && !/[。！？]/.test(labeled[1])) return { title: labeled[1], body: labeled[2] };
+    return { title: "", body: bit };
+  });
+}
+
 function splitLines(text) {
   var raw = String(text || "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
   if (!raw.trim()) return [];
-  if (raw.indexOf("\n") === -1) return [{ title: "", body: raw.trim() }];
+  if (raw.indexOf("\n") === -1) {
+    var numbered = splitFlatNumbered(raw);
+    if (numbered) return numbered;
+    return [{ title: "", body: raw.trim() }];
+  }
   return raw.split("\n").map(function (line) {
     var textLine = String(line || "").replace(/^\s+|\s+$/g, "");
     if (!textLine) return null;
@@ -34,7 +56,7 @@ function asItems(value) {
       var title = String(item.title || item.label || "").trim();
       var body = String(item.body || item.value || "").trim();
       if (!title && !body) return null;
-      return { title: title, body: body || title, titled: !!title && !!body && body !== title };
+      return { title: title, body: body, titled: !!title };
     }).filter(Boolean);
   }
   return splitLines(value).map(function (item) {
@@ -46,8 +68,9 @@ function itemsHtml(items, emptyLabel) {
   if (!items.length) return '<p class="sdt-empty">' + escHtml(emptyLabel) + "</p>";
   return items.map(function (item) {
     return '<div class="sdt-item">' +
-      (item.titled ? "<strong>" + escHtml(item.title) + "</strong>" : "") +
-      "<p>" + escHtml(item.body) + "</p></div>";
+      (item.title ? "<strong>" + escHtml(item.title) + "</strong>" : "") +
+      (item.body ? "<p>" + escHtml(item.body) + "</p>" : "") +
+      "</div>";
   }).join("");
 }
 
