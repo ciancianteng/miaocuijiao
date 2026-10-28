@@ -3568,6 +3568,22 @@ async function persistUnassignedHallExpiry(row) {
   return saved;
 }
 
+async function setCompanionPresence(profileId, status) {
+  const patch = {
+    online_status: status,
+    availability_status: status,
+    status_updated_at: nowIso(),
+    updated_at: nowIso(),
+  };
+  if (status !== "offline") patch.last_online_at = nowIso();
+  await supabaseJson(restUrl("companion_profiles", `?user_id=eq.${encodeURIComponent(profileId)}`), {
+    method: "PATCH",
+    headers: serviceHeaders(),
+    body: JSON.stringify(patch),
+  });
+  await recordOnlineSession(profileId, status);
+}
+
 async function claimOrder(profile, companion, id) {
   const beforeRows = await supabaseJson(restUrl("orders", `?id=eq.${encodeURIComponent(id)}&limit=1`), { headers: serviceHeaders() });
   const before = beforeRows?.[0];
@@ -3585,19 +3601,16 @@ async function claimOrder(profile, companion, id) {
       code: err?.code || "COMPANION_AUTH_LOCKED",
     });
   }
-  if (!canAccept(profile, companion, authRows.deposit, authRows.identity)) {
-    const status = normalizeOnlineStatus(companion.availability_status || companion.online_status);
-    const reason =
-      status === "busy"
-        ? "忙碌中，无法抢新订单。"
-        : status === "paused"
-          ? "已暂停接单，无法抢新订单。"
-          : "请先在工作台切换为在线接单。";
-    throw Object.assign(new Error(reason), { status: 403 });
+  if (!canWork(profile, companion, authRows.deposit, authRows.identity)) {
+    throw Object.assign(new Error(auditLockMessage(profile, companion, authRows.deposit, authRows.identity) || "当前账号不能接单。"), { status: 403 });
+  }
+  const presence = normalizeOnlineStatus(companion.availability_status || companion.online_status);
+  if (presence === "busy") throw Object.assign(new Error("忙碌中，无法抢新订单。"), { status: 403, code: "BUSY" });
+  if (presence === "paused") throw Object.assign(new Error("已暂停接单，无法抢新订单。"), { status: 403, code: "PAUSED" });
+  if (presence !== "online" && presence !== "offline") {
+    throw Object.assign(new Error("当前状态不能抢单。"), { status: 403 });
   }
   const { resolveAssignmentType, ASSIGNMENT_ASSIGNED, isPublicHallEligible } = await import("./_order-assignment.js");
-  // Open grab only: never auto-bind companion_id; never jump to confirmed/in_progress.
-  // Assigned / 指定陪玩 orders are invisible to the public hall and cannot be grabbed.
   if (resolveAssignmentType(before) === ASSIGNMENT_ASSIGNED || before.companion_id) {
     throw Object.assign(new Error("该订单为指定陪玩单，不在公开抢单大厅。"), { status: 409 });
   }
@@ -3616,11 +3629,17 @@ async function claimOrder(profile, companion, id) {
   if (["confirmed", "in_progress", "completed", "claimed"].includes(before.status)) {
     throw Object.assign(new Error("该订单已进入正式接单，不能再抢。"), { status: 409 });
   }
+  let promoted = false;
+  if (presence === "offline") {
+    await setCompanionPresence(profile.id, "online");
+    promoted = true;
+  }
+  try {
   const { createOrderGrabHelpers } = await import("./_order-grabs.js");
   const grabsApi = createOrderGrabHelpers({ restUrl, supabaseJson, serviceHeaders });
   const { grab, created, grabs } = await grabsApi.insertGrab(before, profile.id);
   if (!created) {
-    return { ...before, _grab: grab, _already: true, _grabs: grabs };
+    return { ...before, _grab: grab, _already: true, _grabs: grabs, _onlineStatus: promoted ? "online" : presence };
   }
   // Keep hall open for others: do NOT set companion_id until boss manually selects.
   let order = before;
@@ -3659,7 +3678,13 @@ async function claimOrder(profile, companion, id) {
     throw Object.assign(new Error("该订单已取消或已失效，不能抢单。"), { status: 409, code: "HALL_CLOSED" });
   }
   await addSystemMessage(order, profile.id, "companion", "陪玩已抢单，等待老板选择。");
-  return { ...order, companion_id: null, _grab: grab, _grabs: grabs };
+  return { ...order, companion_id: null, _grab: grab, _grabs: grabs, _onlineStatus: promoted ? "online" : presence };
+  } catch (err) {
+    if (promoted) {
+      try { await setCompanionPresence(profile.id, "offline"); } catch { /* keep the failure, status restore is best-effort */ }
+    }
+    throw err;
+  }
 }
 async function patchOwnOrder(profile, id, expected, patch, message) {
   const beforeRows = await supabaseJson(restUrl("orders", `?id=eq.${encodeURIComponent(id)}&companion_id=eq.${encodeURIComponent(profile.id)}&limit=1`), { headers: serviceHeaders() });
@@ -4401,9 +4426,9 @@ export default async function handler(req, res) {
         order: viewOrder({ ...order, companion_id: null, status: order.status || "waiting_boss_confirm" }),
         grab: order._grab || null,
         already,
-        // Explicit: grab is NOT formal accept / NOT startable.
         formalAccepted: false,
         canStart: false,
+        onlineStatus: order._onlineStatus || "",
       });
     }
     if (action === "accept_direct_order" || action === "accept_direct") {

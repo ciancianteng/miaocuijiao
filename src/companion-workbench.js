@@ -270,7 +270,7 @@
     if(q.include_messages==null)q.include_messages='0';
     return q;
   }
-  var HALL_TYPE_FILTERS=[['all','全部'],['fixed','固定单'],['custom','自定义单']];
+  var HALL_TYPE_FILTERS=[['all','全部订单'],['fixed','固定单'],['custom','自定义单']];
   var EARNINGS_TABS=[['overview','收入'],['withdraw','提现'],['records','流水']];
   var _audioCtx=null;
   function playCue(kind){
@@ -4655,56 +4655,44 @@
       if(status==='cancelled'||status==='expired'||status==='claimed'||status==='confirmed'||status==='in_progress'||status==='completed'||status==='refunded'||status==='refund_requested')return false;
       return true;
     });
-    var statusReadout='<div class="pw-card pad" style="margin-bottom:14px;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px">'+
-      '<span>当前状态：<strong>'+esc((todayStatusLockLabel()||(statusMeta.emoji+' '+statusMeta.label)))+'</strong>。如需切换，请前往工作台。</span>'+
-      '<button class="pw-btn" type="button" data-route="/companion/dashboard">前往工作台</button>'+
-      '</div>';
+    var shortStatus={online:'在线',busy:'忙碌',offline:'离线',paused:'暂停'};
+    var statusName=shortStatus[statusKey]||statusMeta.label||'离线';
     var filtersRow='<div class="pw-hall-filters">'+
-      HALL_TYPE_FILTERS.map(function(t){return '<button type="button" class="pw-tab-chip'+(typeFilter===t[0]?' active':'')+'" data-hall-type="'+t[0]+'">'+t[1]+'</button>'}).join('')+
+      '<div class="pw-hall-chips">'+
+      HALL_TYPE_FILTERS.map(function(t){return '<button type="button" class="pw-hall-chip'+(typeFilter===t[0]?' is-on':'')+'" data-hall-type="'+t[0]+'">'+t[1]+'</button>'}).join('')+
+      '</div>'+
+      '<div class="pw-hall-tools">'+
       '<select data-hall-game aria-label="游戏筛选">'+
         '<option value="all">全部游戏</option>'+
         games.map(function(g){return '<option value="'+esc(g)+'" '+(gameFilter===g?'selected':'')+'>'+esc(g)+'</option>'}).join('')+
       '</select>'+
-      '<button class="pw-btn" type="button" data-hall-refresh>刷新</button>'+
-      '</div>';
-    return '<div class="pw-page-head"><div><h2>抢单大厅</h2><p>仅「在线接单」可进入抢单。</p></div></div>'+
-      statusReadout+
-      (locked?'<div class="pw-empty" style="margin-bottom:12px"><strong>暂不可抢单</strong><span>'+esc(auditHint())+'</span></div>':'')+
+      '<button class="pw-hall-refresh" type="button" data-hall-refresh aria-label="刷新"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.2-5.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M20 4v5h-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>'+
+      '</div></div>';
+    return '<div class="pw-hall-page"><div class="pw-page-head pw-hall-head"><h2>抢单大厅</h2></div>'+
+      '<div class="pw-hall-status is-'+esc(statusKey)+'" role="status"><i></i><span>'+esc(statusName)+'</span></div>'+
+      (locked?'<div class="pw-hall-empty"><strong>暂不可抢单</strong><span>'+esc(auditHint())+'</span></div>':'')+
       filtersRow+
-      '<section class="pw-card-list">'+(filtered.length?filtered.map(function(o){
+      '<section class="pw-card-list pw-hall-list">'+(filtered.length?filtered.map(function(o){
         var already=!!o.alreadyGrabbed||!!(o.myGrab&&o.myGrab.companionId);
         var hallState=o.hallState||'open';
-        var grabCount=Number(o.grabCount||0)||0;
+        var busyGrab=state.hallGrabId&&String(state.hallGrabId)===String(o.id);
         var disabled=false,btnLabel='立即抢单';
         if(hallState==='settled'){disabled=true;btnLabel='已结单';}
         else if(hallState==='cancelled'){disabled=true;btnLabel='已取消';}
         else if(hallState==='expired'){disabled=true;btnLabel='已失效';}
-        else if(already){disabled=true;btnLabel='已抢单，等待老板选择';}
+        else if(already){disabled=true;btnLabel='已抢单';}
         else if(locked){disabled=true;btnLabel=orderGateButtonLabel('审核通过后可抢单');}
-        else if(statusKey==='busy'){disabled=true;btnLabel='当前忙碌，无法抢新订单';}
-        else if(statusKey==='paused'){disabled=true;btnLabel='已暂停接单，无法抢新订单';}
-        else if(statusKey==='offline'){disabled=true;btnLabel='离线状态无法抢单';}
+        else if(statusKey==='busy'){disabled=true;btnLabel='忙碌中';}
+        else if(statusKey==='paused'){disabled=true;btnLabel='已暂停';}
         else if(!perm.canAcceptOrder){disabled=true;btnLabel=perm.lockReason||perm.acceptLockReason||'暂不可接单';}
-        var hallBadge=hallState==='settled'
-          ?'<em class="pw-hall-badge settled">已结单</em>'
-          :hallState==='cancelled'
-            ?'<em class="pw-hall-badge cancelled">已取消</em>'
-            :hallState==='expired'
-              ?'<em class="pw-hall-badge expired">已失效</em>'
-              :(hallState==='grabbing'||grabCount>0?'<em class="pw-hall-badge grabbing">抢单中 · 已有 '+grabCount+' 人抢单</em>':'<em class="pw-hall-badge open">待抢单 · 已有 '+grabCount+' 人抢单</em>');
-        var serviceText=String(o.serviceContent||'')
-          .replace(/\[\[ORDER_GRABS\]\][\s\S]*$/g,'')
-          .replace(/\[\[COMPLETION_PENDING\]\]/g,'')
-          .replace(/\[\[BOSS_INTENT\]\][\s\S]*?\[\[\/BOSS_INTENT\]\]/g,'')
-          .replace(/\buuid\s+create\s+regression\s+\d+\b/gi,'')
-          .replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi,'')
-          .replace(/\b(selector|grabber)\b/gi,'')
-          .trim()||'-';
-        var orderNo=o.orderNo||humanId(o.id)||'-';
-        var created=o.createdAt||o.appointmentAt||'';
-        var createdLabel=created?fmtTime(created):'-';
-        return '<article class="pw-grab-card'+(hallState==='settled'?' is-settled':'')+'" data-order-id="'+esc(o.id)+'"><header><div><span class="pw-type">'+esc(o.orderType||o.orderSource||'订单')+'</span>'+hallBadge+'<h3>'+esc(o.game||'-')+'</h3><p>'+esc(serviceText)+'</p></div><strong>'+money(o.amount||o.budget||0)+'</strong></header><div class="pw-order-meta"><div><span>订单编号</span><strong>'+esc(orderNo)+'</strong></div><div><span>服务类型</span><strong>'+esc(o.serviceType||o.serviceName||o.orderType||'-')+'</strong></div><div><span>游戏</span><strong>'+esc(o.game||'-')+'</strong></div>'+(o.gameId?'<div><span>老板游戏ID</span><strong>'+esc(o.gameId)+'</strong></div>':'')+bossRankMetaHtml(o)+orderRequirementHtml(o)+(o.serviceSchedule||o.schedule?'<div><span>服务时段</span><strong>'+esc(formatSchedule24h(o.serviceSchedule||o.schedule))+'</strong></div>':(o.gameServer&&o.gameServer!=='-'?'<div><span>区服</span><strong>'+esc(o.gameServer)+'</strong></div>':''))+'<div><span>单价</span><strong>'+money(o.unitPrice||0)+'</strong></div><div><span>时长/局数</span><strong>'+esc(o.duration||'-')+'</strong></div><div><span>老板备注</span><strong>'+esc(o.bossNotes||o.remark||'-')+'</strong></div><div><span>下单时间</span><strong>'+esc(createdLabel)+'</strong></div><div><span>订单来源</span><strong>'+esc(o.orderSource||o.orderType||'-')+'</strong></div><div><span>预计收入</span><strong>'+money(o.playerIncome||0)+'</strong></div><div><span>抢单人数</span><strong>'+esc(grabCount)+'</strong></div><div><span>当前状态</span><strong>'+esc(o.hallStateLabel||o.statusText||o.orderStatus||'待抢单')+'</strong></div></div><footer><button class="pw-btn primary" data-accept-order="'+esc(o.id)+'" '+(disabled?'disabled':'')+'>'+esc(btnLabel)+'</button></footer></article>';
-      }).join(''):'<div class="pw-empty"><strong>暂无可抢订单</strong><span>'+(locked?auditHint():(!online?'请先切换为在线接单。':'客服发布订单后会自动显示，或调整筛选条件。'))+'</span></div>')+'</section>';
+        else if(busyGrab){disabled=true;btnLabel='抢单中…';}
+        var serviceName=o.serviceType||o.serviceName||o.orderType||'订单';
+        var duration=o.duration||'-';
+        return '<article class="pw-grab-card" data-order-id="'+esc(o.id)+'">'+
+          '<header><div><span class="pw-type">'+esc(serviceName)+'</span><h3>'+esc(o.game||'-')+'</h3></div><strong class="pw-grab-price">'+money(o.amount||o.budget||0)+'</strong></header>'+
+          '<p class="pw-grab-meta"><span>时长</span><b>'+esc(duration)+'</b></p>'+
+          '<footer><button class="pw-btn primary" data-accept-order="'+esc(o.id)+'" '+(disabled?'disabled':'')+'>'+esc(btnLabel)+'</button></footer></article>';
+      }).join(''):'<div class="pw-hall-empty"><strong>暂无可抢订单</strong><span>新的订单会出现在这里</span></div>')+'</section></div>';
   }
   function accountDocCard(opts){
     var key=opts.key;
@@ -5844,15 +5832,18 @@
     }
     var accept=e.target.closest('[data-accept-order]');
     if(accept){
+      if(accept.disabled||state.hallGrabId)return;
       if(!confirm('确认抢单？抢单后需等待老板选择，不会立即成为正式接单，也不能直接开始订单。'))return;
-      api('accept_order',{id:accept.dataset.acceptOrder}).then(function(x){
+      var grabId=String(accept.dataset.acceptOrder||'');
+      state.hallGrabId=grabId;
+      paint();
+      api('accept_order',{id:grabId}).then(function(x){
         playCue('grab');
+        if(x&&x.onlineStatus)applyOnlineStatusUi(x.onlineStatus);
         toast(x.message||'已抢单，等待老板选择。');
-        var oid=String(accept.dataset.acceptOrder||'');
-        // Keep PC on抢单大厅 so the same card immediately shows「已抢单」.
         if(state.data&&Array.isArray(state.data.openOrders)){
           state.data.openOrders=state.data.openOrders.map(function(o){
-            if(String(o.id)!==oid)return o;
+            if(String(o.id)!==grabId)return o;
             return Object.assign({},o,{
               alreadyGrabbed:true,
               myGrab:o.myGrab||{companionId:(state.data.player&&state.data.player.id)||true,status:'pending_customer_selection'},
@@ -5861,12 +5852,13 @@
             });
           });
         }
-        state.route='hall';
-        go('/companion/order-hall');
+        state.hallGrabId='';
         paint();
-        return loadData();
+        return loadData({soft:true});
       }).catch(function(err){
+        state.hallGrabId='';
         toast(err.message||'抢单失败');
+        paint();
         loadData({soft:true});
       });
       return;
