@@ -3020,7 +3020,7 @@
       label.textContent=short[next]||m.label||next;
     }
   }
-  function commitOnlineStatus(next){
+  function commitOnlineStatus(next, previous){
     state.statusBusy=true;
     state.pendingOnlineStatus=null;
     var choice=writePresenceChoice(next);
@@ -3034,14 +3034,16 @@
       applyOnlineStatusUi(saved);
       toast(x.message||'状态已更新');
     }).catch(function(err){
+      applyOnlineStatusUi(previous||currentOnlineStatus());
       toast(err.message||'状态更新失败');
     }).finally(function(){
       state.statusBusy=false;
       var pending=state.pendingOnlineStatus;
       if(pending&&pending!==currentOnlineStatus()){
+        var from=currentOnlineStatus();
         state.pendingOnlineStatus=null;
         applyOnlineStatusUi(pending);
-        commitOnlineStatus(pending);
+        commitOnlineStatus(pending, from);
         return;
       }
       loadData({soft:true});
@@ -3056,7 +3058,7 @@
     var shortLabel={online:'在线',busy:'忙碌',offline:'离线'};
     return '<div class="pw-status-panel '+(extraClass||'')+(state.statusBusy?' is-busy':'')+(locked?' is-locked':'')+(isForcedAckLocked()?' is-forced-ack':'')+'" data-status-lock="'+(isForcedAckLocked()?'forced':(lockLabel?'review':'none'))+'">'+
       '<div class="pw-status-row">'+
-      '<div class="pw-status-current">今日状态<strong data-current-status-label>'+esc(shortLabel[cur]||label)+'</strong></div>'+
+      '<div class="pw-status-current">接单状态</div>'+
       '<div class="pw-status-switch" role="radiogroup" aria-label="接单状态">'+
       ['online','busy','offline'].map(function(key){
         var active=!locked&&cur===key;
@@ -3072,9 +3074,7 @@
     var gate=(state.data&&state.data.publishGate)||{};
     var missing=Array.isArray(state.data&&state.data.publishMissing)?state.data.publishMissing:(gate.missing||[]);
     var status=String((state.data&&state.data.publishStatus)||gate.statusLabel||'');
-    if(gate.publishReady||gate.ok){
-      return '<div class="pw-note" style="margin:0 0 14px" role="status">老板端可见：已满足上架条件。认证标签由后台分配，陪玩不可自行修改。</div>';
-    }
+    if(gate.publishReady||gate.ok) return '';
     var missText=missing.length?missing.join('、'):(status||'资料不完整');
     return '<div class="pw-alert" role="status"><strong>尚未对老板公开</strong><span>'+esc(status||'资料不完整')+'：'+esc(missText)+'。完善并审核通过后才会出现在首页/大厅，且老板才能下单。</span><button class="pw-btn" type="button" data-route="/companion/profile">去完善资料</button></div>';
   }
@@ -6033,12 +6033,13 @@
       var next=online.dataset.onlineStatus;
       if(!next)return;
       if(next===currentOnlineStatus()&&!state.statusBusy)return;
+      var previous=currentOnlineStatus();
       applyOnlineStatusUi(next);
       if(state.statusBusy){
         state.pendingOnlineStatus=next;
         return;
       }
-      commitOnlineStatus(next);
+      commitOnlineStatus(next, previous);
       return;
     }
     if(e.target.closest('[data-delete-avatar]')){

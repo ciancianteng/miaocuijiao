@@ -1608,10 +1608,13 @@ body:has(.pw-shell.is-services),
 .pw-app .pw-my-services input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="hidden"]):not([type="range"]){background:#000 !important;border:1px solid rgba(255,255,255,.28) !important;border-radius:8px !important;color:#fff !important}
 .pw-app .pw-my-services .pw-btn{border:1px solid rgba(255,255,255,.28) !important;background:#000 !important;color:#fff !important;border-radius:8px !important}
 .pw-status-panel.compact{display:block !important;height:auto !important;min-height:0 !important;max-height:none !important;overflow:visible !important;padding:10px 12px !important}
-.pw-status-panel.compact .pw-status-current{display:flex !important;align-items:center;gap:6px;white-space:nowrap;font-size:12px !important}
+.pw-status-panel.compact .pw-status-current{display:flex !important;align-items:center;gap:6px;white-space:nowrap;font-size:13px !important;font-weight:700;color:#fff}
 .pw-status-panel.compact .pw-status-current strong{font-size:13px !important}
+.pw-status-panel.compact .pw-status-row{display:grid !important;grid-template-columns:auto minmax(0,1fr) !important;align-items:center !important;gap:8px !important}
 .pw-status-switch,.pw-status-panel.compact .pw-status-switch{display:grid !important;grid-template-columns:repeat(3,minmax(0,1fr)) !important;gap:6px !important}
-.pw-status-btn,.pw-btn.pw-status-btn,.pw-status-panel.compact .pw-status-btn,.pw-status-panel.compact .pw-btn.pw-status-btn{min-height:34px !important;height:34px !important;padding:0 4px !important;font-size:13px !important;white-space:nowrap !important;line-height:1 !important}
+.pw-status-btn,.pw-btn.pw-status-btn,.pw-status-panel.compact .pw-status-btn,.pw-status-panel.compact .pw-btn.pw-status-btn{min-height:34px !important;height:34px !important;padding:0 4px !important;font-size:13px !important;white-space:nowrap !important;line-height:1 !important;min-width:0 !important}
+.pw-status-panel.compact .pw-btn.pw-status-btn{background:#141218 !important;border:1px solid rgba(255,255,255,.16) !important;color:rgba(255,255,255,.82) !important;box-shadow:none !important}
+.pw-status-panel.compact .pw-btn.pw-status-btn.is-active{background:var(--pw-pink) !important;border-color:var(--pw-pink) !important;color:#1a0710 !important;box-shadow:none !important}
 .pw-avatar,.pw-header-bell{border:0 !important;box-shadow:none !important}
 .pw-avatar{border-radius:50% !important;overflow:hidden;background:transparent !important}
 .pw-avatar.is-fallback{background:radial-gradient(circle at 50% 36%,#ffd6ea 0 7px,transparent 8px),radial-gradient(ellipse at 50% 92%,#ff8fc5 0 14px,transparent 15px),#24101c !important}
