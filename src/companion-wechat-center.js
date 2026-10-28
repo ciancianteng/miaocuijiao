@@ -15,7 +15,7 @@
     if (document.querySelector("link[data-pw-wx-css]")) return;
     var link = document.createElement("link");
     link.rel = "stylesheet";
-    link.href = "/src/companion-wechat-center.css?v=20261019wx4";
+    link.href = "/src/companion-wechat-center.css?v=20261028wx1";
     link.setAttribute("data-pw-wx-css", "");
     document.head.appendChild(link);
   }
@@ -44,9 +44,9 @@
     btn.setAttribute("data-wx-center-entry", "");
     btn.setAttribute("data-wx-center-open", "");
     btn.innerHTML =
-      '<span class="pw-wx-mark" aria-hidden="true">微</span>' +
+      '<span class="pw-wx-mark" aria-hidden="true"><svg class="pw-wx-logo" viewBox="0 0 24 24" width="28" height="28" aria-hidden="true"><path fill="#07C160" d="M9.5 3C5.36 3 2 5.91 2 9.5c0 2.05 1.16 3.86 2.96 5.05L4.2 17.2l2.78-1.46c.78.24 1.62.36 2.52.36.34 0 .67-.02.99-.06-.18-.58-.28-1.2-.28-1.84 0-3.31 3.14-6 7-6 .28 0 .55.02.82.05C16.86 5.15 13.48 3 9.5 3zm-2.05 4.15a1.05 1.05 0 1 1 0 2.1 1.05 1.05 0 0 1 0-2.1zm4.15 0a1.05 1.05 0 1 1 0 2.1 1.05 1.05 0 0 1 0-2.1z"/><path fill="#07C160" d="M21.2 14.2c0-2.82-2.78-5.1-6.2-5.1s-6.2 2.28-6.2 5.1 2.78 5.1 6.2 5.1c.72 0 1.41-.1 2.05-.28l2.22 1.16-.62-1.96c1.55-.98 2.55-2.4 2.55-4.02zm-8.15-.65a.85.85 0 1 1 0-1.7.85.85 0 0 1 0 1.7zm3.9 0a.85.85 0 1 1 0-1.7.85.85 0 0 1 0 1.7z"/></svg></span>' +
       '<span class="pw-wx-entry-copy"><strong>微信对接中心</strong><small>加入官方陪玩对接群</small></span>' +
-      '<em class="pw-wx-entry-go">查看</em>';
+      '<span class="pw-wx-entry-go">查看</span>';
     head.insertAdjacentElement("afterend", btn);
   }
 

@@ -240,11 +240,12 @@
     if (!host || !accessToken()) return;
     var which = portal();
     var link = document.createElement("a");
-    link.className = which === "customer_service" ? "cs-bell" : "mcj-header-bell";
+    link.className = "mcj-bell";
     link.href = which === "customer_service" ? "/notifications.html?portal=customer_service" : "/notifications.html";
     link.setAttribute("data-mcj-badge-bell", "1");
     link.setAttribute("aria-label", "通知");
-    link.innerHTML = '🔔<span data-mcj-badge-count hidden></span>';
+    if (global.MCJBell && typeof MCJBell.ensureCss === "function") MCJBell.ensureCss();
+    link.innerHTML = (global.MCJBell && MCJBell.inner) ? MCJBell.inner(0) : '<span data-mcj-badge-count hidden></span>';
     if (which === "boss") {
       var menu = host.querySelector(".mcj-mnav");
       if (menu) host.insertBefore(link, menu);

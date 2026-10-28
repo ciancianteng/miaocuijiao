@@ -777,7 +777,8 @@
     var n=Number(window.__MCJ_BADGE_COUNT);
     if(!isFinite(n)||n<0)n=0;
     var label=n>99?'99+':String(Math.floor(n));
-    return '<a class="pw-btn pw-header-bell" href="/notifications.html?portal=companion" data-mcj-badge-bell="1" aria-label="'+(n>0?'通知 '+label:'通知')+'">🔔<span data-mcj-badge-count class="pw-nav-badge"'+(n>0?'':' hidden')+'>'+(n>0?label:'')+'</span></a>';
+    var icon=window.MCJBell&&window.MCJBell.inner?window.MCJBell.inner(n):'<span data-mcj-badge-count class="pw-nav-badge"'+(n>0?'':' hidden')+'>'+(n>0?label:'')+'</span>';
+    return '<a class="pw-btn pw-header-bell mcj-bell" href="/notifications.html?portal=companion" data-mcj-badge-bell="1" aria-label="'+(n>0?'通知 '+label:'通知')+'">'+icon+'</a>';
   }
   function setDrawerOpen(open){
     state.drawerOpen=!!open;
@@ -2299,18 +2300,22 @@
       pageLabel.hidden=hideDashLabel;
       pageLabel.textContent=hideDashLabel?'':pageTitle;
     }
-    var avatarBtn=root.querySelector('.pw-avatar[data-account-toggle]');
+    var avatarBtn=root.querySelector('.pw-avatar');
     if(avatarBtn){
       var avatarPlayer=(state.data&&state.data.player)||(state.session&&state.session.user)||{};
-      var avatarSrc=avatarPlayer.avatar||'/default-avatar.png';
+      var avatarSrc=(avatarPlayer.hasCustomAvatar&&avatarPlayer.avatar&&avatarPlayer.avatar!=='/default-avatar.png')?avatarPlayer.avatar:'';
       var avatarImg=avatarBtn.querySelector('img');
-      if(!avatarImg){
-        avatarBtn.textContent='';
-        avatarImg=document.createElement('img');
-        avatarImg.alt='';
-        avatarBtn.appendChild(avatarImg);
+      avatarBtn.classList.toggle('is-fallback',!avatarSrc);
+      if(!avatarSrc){
+        if(avatarImg)avatarImg.remove();
+      }else{
+        if(!avatarImg){
+          avatarImg=document.createElement('img');
+          avatarImg.alt='';
+          avatarBtn.appendChild(avatarImg);
+        }
+        if(avatarImg.getAttribute('src')!==avatarSrc)avatarImg.setAttribute('src',avatarSrc);
       }
-      if(avatarImg.getAttribute('src')!==avatarSrc)avatarImg.setAttribute('src',avatarSrc);
     }
     if(sub)sub.textContent=subtitle;
     root.querySelectorAll('.pw-nav [data-route], .pw-bottom-nav [data-route]').forEach(function(btn){
@@ -2513,8 +2518,11 @@
     return '<svg class="pw-tab-ico" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">'+(icons[key]||icons.dashboard)+'</svg>';
   }
   function headerAvatarHtml(player){
-    var src=(player&&player.avatar)||'/default-avatar.png';
-    return '<button type="button" class="pw-avatar" data-account-toggle aria-label="账号菜单"><img src="'+esc(src)+'" alt="" onerror="this.onerror=null;this.src=\'/default-avatar.png\'"></button>';
+    var src=(player&&player.hasCustomAvatar&&player.avatar&&player.avatar!=='/default-avatar.png')?player.avatar:'';
+    var face=src
+      ? '<img src="'+esc(src)+'" alt="" onerror="var p=this.parentNode;this.onerror=null;if(p)p.classList.add(\'is-fallback\');this.remove()">'
+      : '';
+    return '<button type="button" class="pw-avatar'+(src?'':' is-fallback')+'" data-route="/companion/profile" aria-label="个人资料">'+face+'</button>';
   }
   function bottomNavHtml(){
     var items=isIsolationMode()?ISOLATION_BOTTOM_NAV:BOTTOM_NAV;
@@ -3007,8 +3015,9 @@
     });
     var label=document.querySelector('[data-current-status-label]');
     if(label){
+      var short={online:'在线',busy:'忙碌',offline:'离线'};
       var m=STATUS_META[next]||{};
-      label.textContent=m.label||next;
+      label.textContent=short[next]||m.label||next;
     }
   }
   function commitOnlineStatus(next){
@@ -3044,15 +3053,16 @@
     var metaCur=STATUS_META[cur]||STATUS_META.offline;
     var lockLabel=todayStatusLockLabel();
     var label=lockLabel||(metaCur.emoji+' '+metaCur.label);
+    var shortLabel={online:'在线',busy:'忙碌',offline:'离线'};
     return '<div class="pw-status-panel '+(extraClass||'')+(state.statusBusy?' is-busy':'')+(locked?' is-locked':'')+(isForcedAckLocked()?' is-forced-ack':'')+'" data-status-lock="'+(isForcedAckLocked()?'forced':(lockLabel?'review':'none'))+'">'+
-      '<div class="pw-status-current">今日状态：<strong data-current-status-label>'+esc(label)+'</strong></div>'+
+      '<div class="pw-status-row">'+
+      '<div class="pw-status-current">今日状态<strong data-current-status-label>'+esc(shortLabel[cur]||label)+'</strong></div>'+
       '<div class="pw-status-switch" role="radiogroup" aria-label="接单状态">'+
-      ['online','busy','paused','offline'].map(function(key){
-        var meta=STATUS_META[key];
+      ['online','busy','offline'].map(function(key){
         var active=!locked&&cur===key;
-        return '<button type="button" class="pw-btn pw-status-btn'+(active?' is-active':'')+(locked?' is-disabled':'')+'" role="radio" aria-checked="'+(active?'true':'false')+'" data-online-status="'+key+'" '+(locked?'disabled':'')+' aria-label="'+esc(meta.label)+'：'+esc(meta.hint)+'"><span class="pw-status-emoji" aria-hidden="true">'+meta.emoji+'</span><span class="pw-status-btn-label">'+esc(meta.label)+'</span></button>';
+        return '<button type="button" class="pw-btn pw-status-btn'+(active?' is-active':'')+(locked?' is-disabled':'')+'" role="radio" aria-checked="'+(active?'true':'false')+'" data-online-status="'+key+'" '+(locked?'disabled':'')+' aria-label="'+esc(shortLabel[key])+'">'+esc(shortLabel[key])+'</button>';
       }).join('')+
-      '</div>'+
+      '</div></div>'+
       (locked
         ?'<p class="pw-status-hint warn" data-status-hint>'+esc(auditHint())+'</p>'
         :'<p class="pw-status-hint" data-status-hint>'+esc(metaCur.hint)+'</p>')+
@@ -3210,7 +3220,7 @@
     var earnings=(state.data&&state.data.earnings)||{};
     var withdrawable=earnings.availableWithdrawable!=null?earnings.availableWithdrawable:(earnings.available!=null?earnings.available:(earnings.withdrawable!=null?earnings.withdrawable:(earnings.balance||0)));
     var running=num(s.runningOrders)+num(s.waitingStart);
-    return '<div class="pw-page-head pw-page-head--compact"><div><h2>工作台</h2><p>切换状态 · 处理待办 · 进入抢单</p></div></div>'+
+    return '<div class="pw-page-head pw-page-head--compact"><div><h2>工作台</h2></div></div>'+
       publishBanner+
       reviewBanner+
       extra+

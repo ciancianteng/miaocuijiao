@@ -21,17 +21,16 @@
   outline-offset:2px;
 }
 .pw-wx-mark{
-  flex:0 0 42px;
-  width:42px;
-  height:42px;
+  flex:0 0 40px;
+  width:40px;
+  height:40px;
   display:grid;
   place-items:center;
-  border-radius:14px;
-  color:#fff;
-  font-weight:800;
-  background:linear-gradient(160deg,#ff9cc8,#c45d92);
-  box-shadow:0 0 18px rgba(255,143,197,.35);
+  border-radius:12px;
+  background:#fff;
+  box-shadow:none;
 }
+.pw-wx-logo{display:block}
 .pw-wx-entry-copy{
   display:grid;
   gap:3px;
@@ -50,10 +49,17 @@
 }
 .pw-wx-entry-go{
   flex:0 0 auto;
-  color:#ffd0e6;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  height:32px;
+  padding:0 14px;
+  border-radius:999px;
+  color:#1a0710;
+  background:#ff8fc5;
   font-size:13px;
   font-style:normal;
-  font-weight:700;
+  font-weight:800;
 }
 .pw-wx-sheet,
 .pw-wx-zoom{

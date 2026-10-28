@@ -1033,7 +1033,7 @@
     if(!bar||document.getElementById('adminNoticeBtn'))return;
     var wrap=document.createElement('div');
     wrap.style.position='relative';
-    wrap.innerHTML='<button class="admin-text-btn" type="button" id="adminNoticeBtn" aria-label="通知">通知 <em id="adminNoticeBadge" hidden style="font-style:normal;color:#ff7ab8"></em></button><div id="adminNoticePanel" hidden style="position:absolute;right:0;top:110%;z-index:50;width:min(360px,82vw);max-height:420px;overflow:auto;background:#140c18;border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:8px"></div>';
+    wrap.innerHTML='<button class="mcj-bell" type="button" id="adminNoticeBtn" aria-label="通知">'+((window.MCJBell&&MCJBell.icon)?(MCJBell.ensureCss(),MCJBell.icon()):'')+'<em id="adminNoticeBadge" data-mcj-badge-count hidden></em></button><div id="adminNoticePanel" hidden style="position:absolute;right:0;top:110%;z-index:50;width:min(360px,82vw);max-height:420px;overflow:auto;background:#140c18;border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:8px"></div>';
     bar.insertBefore(wrap, bar.firstChild);
   }
   function paintAdminNotices(items){
