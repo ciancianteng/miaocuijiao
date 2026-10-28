@@ -21,16 +21,29 @@
   outline-offset:2px;
 }
 .pw-wx-mark{
-  flex:0 0 40px;
-  width:40px;
-  height:40px;
+  flex:0 0 54px;
+  width:54px;
+  height:54px;
   display:grid;
   place-items:center;
-  border-radius:12px;
-  background:#fff;
-  box-shadow:none;
+  border-radius:16px;
+  background:rgba(20,18,30,.65);
+  border:1px solid rgba(255,145,195,.42);
+  box-shadow:0 0 0 1px rgba(7,193,96,.08),0 0 8px rgba(7,193,96,.16);
+  line-height:0;
+  font-size:0;
+  color:transparent;
 }
-.pw-wx-logo{display:block}
+.pw-wx-mark::before,
+.pw-wx-mark::after{
+  content:none !important;
+  display:none !important;
+}
+.pw-wx-logo{
+  display:block;
+  width:32px;
+  height:32px;
+}
 .pw-wx-entry-copy{
   display:grid;
   gap:3px;
