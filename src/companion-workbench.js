@@ -3459,7 +3459,7 @@
     var open=raw==='claimed'||raw==='confirmed'||raw==='in_progress';
     var body=s.sections&&s.sections.length
       ?serviceDetailsHtml({
-          layout:'boss',
+          layout:'requirements',
           contentOpen:false,
           requirementsOpen:false,
           content:s.sections.filter(function(sec){return sec&&(sec.label==='服务内容'||sec.label==='包含'||sec.label==='计费标准');}).map(function(sec){return {title:sec.label,body:sec.value};}),
@@ -3467,7 +3467,7 @@
         })
       :'<p class="pw-note">下单时你尚未填写该项目的服务标准（按'+esc(s.pricingUnit||'小时')+'计费）。可在「编辑资料 → 游戏与价格」补充，之后的新订单会带上。</p>';
     return '<details class="pw-order-std"'+(open?' open':'')+'><summary>本单服务标准（下单时快照）· '+esc(s.serviceName||o.serviceName||'-')+'</summary>'+
-      body+'<p class="pw-order-std-foot">老板下单时看到的就是这份标准；之后修改服务标准不会改变本单。</p></details>';
+      body+'<p class="pw-order-std-foot">这是下单时保存的服务要求。之后修改不会改变本单。</p></details>';
   }
   function ordersHtml(){
     var rows=(state.data&&state.data.myOrders)||[];

@@ -272,10 +272,10 @@
       unitOpt("场") +
       unitOpt("次") +
       "</select></label>" +
-      '<label class="svc-field"><span>服务内容</span><textarea name="description" maxlength="500" rows="3" placeholder="老板下单和陪玩端都会看到这段说明">' +
+      '<label class="svc-field"><span>服务内容</span><textarea name="description" maxlength="500" rows="3" placeholder="只有老板下单时看到">' +
       esc(d.description || "") +
       "</textarea></label>" +
-      '<label class="svc-field"><span>服务要求</span><textarea name="requirements" maxlength="800" rows="3" placeholder="接单时需要遵守的要求">' +
+      '<label class="svc-field"><span>服务要求</span><textarea name="requirements" maxlength="800" rows="3" placeholder="只有陪玩接单时看到">' +
       esc(d.requirements || "") +
       "</textarea></label>" +
       '<p class="svc-note">保存后只影响新订单。已有订单保留下单当时的金额和内容。</p>' +

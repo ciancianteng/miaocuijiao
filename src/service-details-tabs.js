@@ -1,7 +1,7 @@
 /**
  * Service detail display.
- * Boss order window: two collapsed headings, 服务内容 and 服务要求.
- * Companion 我的服务: 服务要求 only, collapsed until tapped.
+ * Boss order window: 服务内容 only.
+ * Companion 我的服务 and order detail: 服务要求 only, collapsed until tapped.
  * Display only. Does not change prices, orders, or saved text.
  */
 function escHtml(value) {
@@ -94,8 +94,7 @@ function renderServiceDetails(opts) {
   }
   var blocks = layout === "requirements"
     ? accordionHtml("requirements", "服务要求", requirementsOpen, requirementItems, "暂无服务要求")
-    : accordionHtml("content", "服务内容", contentOpen, contentItems, "暂无服务内容") +
-      accordionHtml("requirements", "服务要求", requirementsOpen, requirementItems, "暂无服务要求");
+    : accordionHtml("content", "服务内容", contentOpen, contentItems, "暂无服务内容");
   return '<div class="sdt-root" data-sdt-root data-sdt-layout="' + layout + '" data-sdt-content-open="' + (contentOpen ? "1" : "0") + '" data-sdt-requirements-open="' + (requirementsOpen ? "1" : "0") + '" data-sdt-content="' + pack(layout === "requirements" ? "" : (opts.content || "")) + '" data-sdt-requirements="' + pack(opts.requirements || "") + '" data-sdt-extra-content="' + pack(layout === "requirements" ? [] : (opts.extraContent || [])) + '" data-sdt-extra-requirements="' + pack(opts.extraRequirements || []) + '">' +
     blocks + "</div>";
 }
