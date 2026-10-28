@@ -306,6 +306,41 @@
       (variant === "hall" ? "" : statusLabel ? '<span class="hot-status is-' + esc(presenceCode) + '">' + esc(statusLabel) + "</span>" : "") +
       "</div>" +
       (function () {
+        var list = item.certTags || item.certificationTags || [];
+        if (!Array.isArray(list) || !list.length) return "";
+        if (window.MCJCompanionIdentity && window.MCJCompanionIdentity.renderTags) {
+          return window.MCJCompanionIdentity.renderTags({
+            levelLabel: "",
+            gender: "",
+            voiceType: "",
+            certTags: list,
+            tags: [],
+            className: "hot-cert-row",
+            includeLevel: false,
+            includeGender: false,
+            includeVoice: false,
+            serviceLimit: 0,
+          });
+        }
+        return (
+          '<div class="mcj-id-tags hot-cert-row">' +
+          list
+            .map(function (t) {
+              var name = typeof t === "string" ? t : t.name || t.title || "";
+              if (!name) return "";
+              var icon = typeof t === "object" && t.icon ? String(t.icon) : "🏷️";
+              var color = typeof t === "object" && t.color ? String(t.color) : "";
+              var style = color
+                ? ' style="border-color:' + esc(color) + ";color:" + esc(color) + ";--mcj-cert-color:" + esc(color) + ';"'
+                : "";
+              return '<span class="mcj-cert-badge"' + style + '><span class="mcj-cert-icon" aria-hidden="true">' + esc(icon) + "</span>" + esc(name) + "</span>";
+            })
+            .filter(Boolean)
+            .join("") +
+          "</div>"
+        );
+      })() +
+      (function () {
         if (variant !== "hall") return hideServices || !gameLine ? "" : '<p class="hot-game">' + esc(gameLine) + "</p>";
         var names = String(gameLine || "")
           .split(/[,，、/|]+/)

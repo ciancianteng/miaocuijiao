@@ -75,9 +75,9 @@
   }
 
   function certHtml(list, limit) {
-    var max = limit == null ? 4 : limit;
-    return (Array.isArray(list) ? list : [])
-      .slice(0, max)
+    var items = Array.isArray(list) ? list : [];
+    if (limit != null && isFinite(Number(limit))) items = items.slice(0, Math.max(0, Number(limit)));
+    return items
       .map(function (t) {
         var name = typeof t === "string" ? t : t.name || t.title || "";
         if (!name) return "";

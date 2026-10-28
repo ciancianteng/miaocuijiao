@@ -428,11 +428,9 @@
           includeGender: false,
           includeVoice: false,
           serviceLimit: 0,
-          certLimit: 3,
         })
       : (function () {
           var certTags = (c.certTags || c.certificationTags || [])
-            .slice(0, 3)
             .map(function (t) {
               var name = typeof t === "string" ? t : t.name || t.title || "";
               if (!name) return "";
@@ -791,6 +789,7 @@
       levelBadgeHtml +
       voiceBody +
       "</div>" +
+      (certHtml || "") +
       tagsHtml +
       '<p class="pd-id">ID：' +
       esc(publicId || "待生成") +

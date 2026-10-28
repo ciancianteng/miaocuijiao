@@ -715,6 +715,8 @@
       game: hallGameLabel(item),
       tags: [],
       serviceTags: [],
+      certTags: Array.isArray(item.certTags) ? item.certTags : [],
+      certificationTags: Array.isArray(item.certificationTags) ? item.certificationTags : [],
       image: item.image || cardImage(item),
       cover: item.image || cardImage(item),
       avatar: item.image || cardImage(item),
