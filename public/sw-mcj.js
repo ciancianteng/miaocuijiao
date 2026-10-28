@@ -93,21 +93,31 @@ self.addEventListener("notificationclick", function (event) {
 
   event.waitUntil(
     clients.matchAll({ type: "window", includeUncontrolled: true }).then(function (list) {
+      var same = [];
       for (var i = 0; i < list.length; i++) {
         var client = list[i];
-        try {
-          if (client.url && client.url.indexOf(self.location.origin) === 0 && "focus" in client) {
-            if ("navigate" in client) {
-              return client.navigate(target).then(function (c) {
-                return c && c.focus ? c.focus() : client.focus();
-              });
-            }
-            return client.focus();
-          }
-        } catch (e) {}
+        if (client.url && client.url.indexOf(self.location.origin) === 0) same.push(client);
       }
-      if (clients.openWindow) return clients.openWindow(target);
-      return undefined;
+      var chain = Promise.resolve();
+      for (var j = 0; j < same.length; j++) {
+        (function (client) {
+          chain = chain.then(function (opened) {
+            if (opened) return opened;
+            if (!("navigate" in client)) return null;
+            return client.navigate(target).then(function (next) {
+              var page = next || client;
+              if (page && page.focus) return page.focus();
+              return page || client;
+            }).catch(function () { return null; });
+          });
+        })(same[j]);
+      }
+      return chain.then(function (opened) {
+        if (opened) return opened;
+        if (clients.openWindow) return clients.openWindow(target);
+        if (same[0] && same[0].focus) return same[0].focus();
+        return undefined;
+      });
     })
   );
 });

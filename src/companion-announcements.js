@@ -359,6 +359,17 @@
     }
   }
 
+  function openRequestedAnnouncement() {
+    if (state._openedQuery) return;
+    var wanted = "";
+    try { wanted = String(new URLSearchParams(location.search).get("announcement") || "").trim(); } catch (e) {}
+    if (!wanted) return;
+    state._openedQuery = true;
+    var hit = (state.items || []).find(function (item) { return String(item.id) === wanted; });
+    if (hit) openDetail(hit);
+    else openDetail({ id: wanted, title: "公告", content: "这条公告不存在或已下线。", publishedAt: "" });
+  }
+
   function applyRows(rows) {
     state.loadError = "";
     var nextItems = sortItems(
@@ -391,6 +402,7 @@
       // Host may have been recreated by paint — re-attach bar content if empty host.
       if (host() && (!strip() || !host().contains(strip()))) render(false);
     }
+    openRequestedAnnouncement();
   }
 
   function load() {

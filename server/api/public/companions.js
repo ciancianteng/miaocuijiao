@@ -900,25 +900,58 @@ async function loadCompanions(id = "", opts = {}) {
   const mapped = (await Promise.all((companions || []).map((row) => enrichOne(row)))).filter(Boolean);
   // Hall list: summaryOnly (rating aggregates). Detail keeps full review bodies + joins.
   const withReviews = await attachReviews(mapped, { summaryOnly: !String(id || "").trim() });
-  if (!String(id || "").trim()) return withReviews;
-  return attachCompanionCompletedCounts(withReviews);
+  return attachCompanionCompletedCounts(withReviews, { strict: !!String(id || "").trim() });
 }
 
-/** Detail only. Counts this companion's completed rows; does not update orders or profiles. */
-async function attachCompanionCompletedCounts(companions = []) {
+async function loadCompletedOrderRows(ids) {
+  const selects = [
+    "id,companion_id,status,order_type,parent_order_id,is_test,order_no,description,note",
+    "id,companion_id,status,order_type,parent_order_id,order_no,description",
+    "id,companion_id,status,order_type",
+  ];
+  let selectIndex = 0;
+  const all = [];
+  const pageSize = 1000;
+  for (let offset = 0; offset < 8000; offset += pageSize) {
+    let rows = [];
+    let loaded = false;
+    for (let attempt = selectIndex; attempt < selects.length; attempt += 1) {
+      try {
+        rows = await supabaseJson(
+          restUrl(
+            "orders",
+            `?companion_id=in.(${ids.map(encodeURIComponent).join(",")})&status=eq.completed&select=${selects[attempt]}&limit=${pageSize}&offset=${offset}`
+          ),
+          { headers: headers() }
+        );
+        selectIndex = attempt;
+        loaded = true;
+        break;
+      } catch (error) {
+        const msg = String(error?.message || error || "");
+        if (/column|schema cache|42703|PGRST204/i.test(msg) && attempt < selects.length - 1) continue;
+        throw error;
+      }
+    }
+    if (!loaded) break;
+    const list = Array.isArray(rows) ? rows : [];
+    all.push(...list);
+    if (list.length < pageSize) break;
+  }
+  return all;
+}
+
+/** Counts completed rows for these companions. Does not update orders or profiles. */
+async function attachCompanionCompletedCounts(companions = [], opts = {}) {
+  const strict = opts.strict !== false;
   const ids = [...new Set((companions || []).map((c) => c.id || c.uid).filter(Boolean))];
   if (!ids.length) return companions;
   let rows = [];
   try {
-    rows = await supabaseJson(
-      restUrl(
-        "orders",
-        `?companion_id=in.(${ids.map(encodeURIComponent).join(",")})&status=eq.completed&select=id,companion_id,status,order_type&limit=2000`
-      ),
-      { headers: headers() }
-    );
+    rows = await loadCompletedOrderRows(ids);
   } catch (e) {
     console.warn("[public/companions] completed order count failed", e?.message || e);
+    if (!strict) return companions;
     return (companions || []).map((c) => ({
       ...c,
       completedOrders: null,
@@ -926,16 +959,16 @@ async function attachCompanionCompletedCounts(companions = []) {
     }));
   }
   const list = Array.isArray(rows) ? rows : [];
-  const truncated = list.length >= 2000;
+  const truncated = list.length >= 8000;
   return (companions || []).map((c) => {
     const cid = String(c.id || c.uid || "");
-    if (truncated) {
+    if (truncated && strict) {
       return { ...c, completedOrders: null, orderStatsError: "完成订单读取失败" };
     }
     return {
       ...c,
       completedOrders: countCompanionCompletedOrders(list, cid),
-      orderStatsError: "",
+      orderStatsError: truncated ? "完成订单读取失败" : "",
       completedOrdersSource: "orders",
     };
   });

@@ -74,6 +74,7 @@
     var path = String((global.location && location.pathname) || "");
     var search = String((global.location && location.search) || "");
     if (/[?&]portal=customer_service(?:&|$)/.test(search)) return "customer_service";
+    if (/[?&]portal=companion(?:&|$)/.test(search)) return "companion";
     if (path.indexOf("/admin") === 0) return "admin";
     if (path.indexOf("/companion") === 0) return "companion";
     if (path.indexOf("/customer-service") === 0) return "customer_service";
@@ -308,8 +309,10 @@
         var kind = String(item.category || "");
         var work = kind === "consult" || kind === "recharge" || kind === "gift";
         var tag = kind === "consult" ? "待接待" : kind === "recharge" ? "充值审核" : kind === "gift" ? "礼物审核" : "";
+        var href = String(item.url || "");
+        var canOpen = href.charAt(0) === "/" && href.charAt(1) !== "/" && !/\/login/i.test(href);
         return '<article class="mcj-note-card' + (work ? " is-work" : "") + (item.isRead ? " is-read" : "") + '" data-id="' + esc(item.id) + '">' +
-          '<a class="mcj-note-link" href="' + esc(item.url || "/notifications.html") + '" data-open-notification="' + esc(item.id) + '">' +
+          '<a class="mcj-note-link" href="' + esc(canOpen ? href : "#") + '" data-open-notification="' + esc(item.id) + '" data-note-url="' + esc(canOpen ? href : "") + '">' +
           (item.isRead ? "" : '<i class="mcj-note-dot" aria-hidden="true"></i>') +
           '<div>' + (tag ? '<em class="mcj-note-tag">' + tag + '</em>' : '') + '<strong>' + esc(item.title || "通知") + '</strong><p>' + esc(item.body || "") + '</p><time>' + esc(when) + '</time></div></a></article>';
       }).join("");
@@ -335,7 +338,20 @@
         return;
       }
       var open = event.target.closest("[data-open-notification]");
-      if (open) markOne(open.getAttribute("data-open-notification"));
+      if (open) {
+        markOne(open.getAttribute("data-open-notification"));
+        if (!open.getAttribute("data-note-url")) {
+          event.preventDefault();
+          var empty = document.querySelector("[data-mcj-note-missing]");
+          if (!empty) {
+            empty = document.createElement("p");
+            empty.className = "mcj-note-empty";
+            empty.setAttribute("data-mcj-note-missing", "1");
+            empty.textContent = "这条通知没有可打开的页面。";
+            root.prepend(empty);
+          }
+        }
+      }
     });
   }
 

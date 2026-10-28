@@ -968,9 +968,14 @@
       } catch (e3) {}
     }
     var roleHome = result.redirect || routeFor(role);
-    // Boss may resume a pending page; other roles always land on their portal.
-    // Critical for per-portal PWAs: companion/CS/admin must never bounce to boss "/".
-    var redirect = profileRole(role) === "boss" && pending ? pending : roleHome;
+    // Resume the notification target for the same portal. Never follow an off-site or login URL.
+    var pendingPath = String(pending || "");
+    var pendingOk = pendingPath.charAt(0) === "/" && pendingPath.charAt(1) !== "/" && !/\/login/i.test(pendingPath);
+    var roleKeyEarly = profileRole(role);
+    var redirect = roleHome;
+    if (pendingOk && roleKeyEarly === "boss") redirect = pendingPath;
+    else if (pendingOk && roleKeyEarly === "companion" && /^\/companion(\/|$)/i.test(pendingPath.split("?")[0])) redirect = pendingPath;
+    else if (pendingOk && roleKeyEarly === "customer_service" && /^\/customer-service(\/|$)/i.test(pendingPath.split("?")[0])) redirect = pendingPath;
     try {
       var roleKey = profileRole(role);
       if (roleKey === "companion" && !/^\/companion(\/|$)/i.test(String(redirect || ""))) {
@@ -1202,13 +1207,8 @@
   function denyUnauthed(loginHref, returnTo, reason) {
     try {
       if (returnTo) {
-        try {
-          sessionStorage.setItem("mcjAfterLoginRedirect", returnTo);
-        } catch (e1) {
-          try {
-            localStorage.setItem("mcjAfterLoginRedirect", returnTo);
-          } catch (e2) {}
-        }
+        try { sessionStorage.setItem("mcjAfterLoginRedirect", returnTo); } catch (e1) {}
+        try { localStorage.setItem("mcjAfterLoginRedirect", returnTo); } catch (e2) {}
       }
     } catch (eRemember) {}
 
@@ -2024,7 +2024,7 @@
       document.head.appendChild(f);
     }
     var s = document.createElement("script");
-    s.src = "/src/boss-header.js";
+    s.src = "/src/boss-header.js?v=20261028note1";
     s.defer = true;
     document.head.appendChild(s);
   })();
@@ -2046,21 +2046,15 @@
       try {
         var abs = new URL(href, location.href);
         var returnTo = abs.pathname + abs.search + abs.hash;
-        try {
-          sessionStorage.setItem("mcjAfterLoginRedirect", returnTo);
-        } catch (e1) {
-          try {
-            localStorage.setItem("mcjAfterLoginRedirect", returnTo);
-          } catch (e2) {}
-        }
+        try { sessionStorage.setItem("mcjAfterLoginRedirect", returnTo); } catch (e1) {}
+        try { localStorage.setItem("mcjAfterLoginRedirect", returnTo); } catch (e2) {}
       } catch (e) {
         try {
           sessionStorage.setItem("mcjAfterLoginRedirect", href);
-        } catch (e3) {
-          try {
-            localStorage.setItem("mcjAfterLoginRedirect", href);
-          } catch (e4) {}
-        }
+        } catch (e3) {}
+        try {
+          localStorage.setItem("mcjAfterLoginRedirect", href);
+        } catch (e4) {}
       }
       location.href = "/login.html";
     },

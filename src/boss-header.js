@@ -737,6 +737,8 @@
           (item.read ? "" : " unread") +
           '" data-mcj-notify-item="' +
           esc(item.id) +
+          '" data-mcj-notify-url="' +
+          esc(item.url || "") +
           '"><strong>' +
           esc(item.title || "通知") +
           "</strong><span>" +
@@ -1101,6 +1103,14 @@
       if (notifyItem) {
         e.preventDefault();
         markOneRead(notifyItem.getAttribute("data-mcj-notify-item"));
+        var notifyUrl = String(notifyItem.getAttribute("data-mcj-notify-url") || "");
+        if (notifyUrl.charAt(0) === "/" && notifyUrl.charAt(1) !== "/" && !/\/login/i.test(notifyUrl)) {
+          location.href = notifyUrl;
+          return;
+        }
+        notifyState.open = false;
+        notifyState.error = "这条通知没有可打开的页面。";
+        renderNotifyPanel();
         return;
       }
 

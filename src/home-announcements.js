@@ -448,6 +448,18 @@
     return aud === "home" || aud === "boss" || aud === "homepage" || cat === "home" || cat === "homepage_only" || (!aud && !cat);
   }
 
+  function openRequestedAnnouncement() {
+    if (state._openedQuery) return;
+    var wanted = "";
+    try { wanted = String(new URLSearchParams(location.search).get("announcement") || "").trim(); } catch (e) {}
+    if (!wanted) return;
+    state._openedQuery = true;
+    var pool = (state.items || []).concat(state.forced || []);
+    var hit = pool.find(function (item) { return String(item.id) === wanted; });
+    if (hit) openDetail(hit);
+    else openDetail({ id: wanted, title: "公告", content: "这条公告不存在或已下线。", publishedAt: "" });
+  }
+
   function applyRows(rows) {
     state.loadError = "";
     var all = sortItems(
@@ -479,6 +491,7 @@
       }
     }
     maybeOpenForced();
+    openRequestedAnnouncement();
   }
 
   function load() {

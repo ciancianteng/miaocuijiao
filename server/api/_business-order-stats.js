@@ -53,11 +53,22 @@ export function countCompletedBusinessOrders(orders = []) {
  * One companion's finished jobs. Multi-group children count (the parent shell has no companion).
  * Does not count cancelled, refunded, or unpaid rows. Read-only; never writes orders.
  */
+function isExcludedCompanionOrder(order = {}) {
+  if (order.is_test === true || order.is_test === "true" || order.is_test_order === true) return true;
+  const st = String(order.status || order.orderStatus || "").trim().toLowerCase();
+  if (["cancelled", "canceled", "refunded", "refund", "invalid", "void"].includes(st)) return true;
+  const blob = [order.order_no, order.orderNo, order.title, order.description, order.note]
+    .map((v) => String(v || ""))
+    .join(" ");
+  return /@meow\.test|MCJ_TEST|ProdSmoke|测试订单/.test(blob);
+}
+
 export function isCompanionCompletedOrder(order = {}, companionId = "") {
   const cid = String(companionId || "").trim();
   if (!cid || String(order.companion_id || order.companionId || "") !== cid) return false;
   const st = String(order.status || order.orderStatus || "").trim().toLowerCase();
   if (st !== "completed") return false;
+  if (isExcludedCompanionOrder(order)) return false;
   const t = String(order.order_type || order.orderType || "").toLowerCase();
   if (t === "multi_group" || t === "multi_group_parent" || t === "parent") return false;
   return true;

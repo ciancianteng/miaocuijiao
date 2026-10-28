@@ -49,17 +49,16 @@
   function rememberReturnTo(returnTo) {
     var value = String(returnTo || "");
     if (!value) return false;
+    var saved = false;
     try {
       sessionStorage.setItem("mcjAfterLoginRedirect", value);
-      return true;
-    } catch (e1) {
-      try {
-        localStorage.setItem("mcjAfterLoginRedirect", value);
-        return true;
-      } catch (e2) {
-        return false;
-      }
-    }
+      saved = true;
+    } catch (e1) {}
+    try {
+      localStorage.setItem("mcjAfterLoginRedirect", value);
+      saved = true;
+    } catch (e2) {}
+    return saved;
   }
 
   function escapeHtml(s) {
@@ -286,7 +285,6 @@
       "customerAuthToken",
       "customerUser",
       "mcjCurrentUser",
-      "mcjAfterLoginRedirect",
     ]
       .concat(
         preserveSharedAuth

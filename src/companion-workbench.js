@@ -356,12 +356,29 @@
         try{
       // Web Push only — never auto-prompt system permission here.
       if(typeof Notification==='function'&&Notification.permission==='granted'){
-        new Notification('妙脆角陪玩',{body:'你有新的指定订单',tag:id||'designated-order'});
+        new Notification('妙脆角陪玩',{body:'你有新的指定订单',tag:id||'designated-order',data:{url:'/companion/orders?focus='+encodeURIComponent(id)}}).onclick=function(){
+          location.href='/companion/orders?focus='+encodeURIComponent(id);
+        };
       }
     }catch(e){}
     var s=(state.data||{}).summary||{};
     updateTabBadge(num(s.waitingConfirm||s.designatedPending)||1);
     return true;
+  }
+  function readSavedLoginTarget(){
+    try{
+      return String(sessionStorage.getItem('mcjAfterLoginRedirect')||localStorage.getItem('mcjAfterLoginRedirect')||'').trim();
+    }catch(e){return ''}
+  }
+  function clearSavedLoginTarget(){
+    try{sessionStorage.removeItem('mcjAfterLoginRedirect')}catch(e){}
+    try{localStorage.removeItem('mcjAfterLoginRedirect')}catch(e2){}
+  }
+  function companionReturnTarget(raw){
+    var value=String(raw||'').trim();
+    if(!value||value.charAt(0)!=='/'||value.charAt(1)==='/'||/\/login/i.test(value))return '';
+    if(!/^\/companion(\/|$)/i.test(value.split('?')[0].split('#')[0]))return '';
+    return value;
   }
   function applyFocusOrderFromQuery(){
     try{
@@ -760,7 +777,7 @@
     var n=Number(window.__MCJ_BADGE_COUNT);
     if(!isFinite(n)||n<0)n=0;
     var label=n>99?'99+':String(Math.floor(n));
-    return '<a class="pw-btn pw-header-bell" href="/notifications.html" data-mcj-badge-bell="1" aria-label="'+(n>0?'通知 '+label:'通知')+'">🔔<span data-mcj-badge-count class="pw-nav-badge"'+(n>0?'':' hidden')+'>'+(n>0?label:'')+'</span></a>';
+    return '<a class="pw-btn pw-header-bell" href="/notifications.html?portal=companion" data-mcj-badge-bell="1" aria-label="'+(n>0?'通知 '+label:'通知')+'">🔔<span data-mcj-badge-count class="pw-nav-badge"'+(n>0?'':' hidden')+'>'+(n>0?label:'')+'</span></a>';
   }
   function setDrawerOpen(open){
     state.drawerOpen=!!open;
@@ -779,9 +796,10 @@
   }
   function go(path){
     var next=String(path||'');
+    var nextPath=next.split('?')[0].split('#')[0];
     if(isIsolationMode()&&state.session){
-      var nextRoute=ROUTES[next.replace(/\/$/,'')]||ROUTES[next]||'';
-      if(next.indexOf('/companion/grab-hall')>=0)nextRoute='hall';
+      var nextRoute=ROUTES[nextPath.replace(/\/$/,'')]||ROUTES[nextPath]||'';
+      if(nextPath.indexOf('/companion/grab-hall')>=0)nextRoute='hall';
       if(nextRoute&&!ISOLATION_ALLOWED_ROUTES[nextRoute]&&nextRoute!=='login'){
         toast(isolationHint());
         next='/companion/review-status';
@@ -789,10 +807,13 @@
     }
     var leavingProfile=state.route==='profile'&&next.indexOf('/companion/profile')===-1;
     if(leavingProfile)state.profileDraft=null;
-    var leavingAccount=isAccountRoute(state.route)&&!/\/companion\/(account|mine|verification)(\/|$)/.test(next);
+    var leavingAccount=isAccountRoute(state.route)&&!/\/companion\/(account|mine|verification)(\/|$)/.test(next.split('?')[0]);
     if(leavingAccount)state.accountDraft=null;
     closeMobileMenus();
     history.pushState(null,'',next);
+    state.route=route();
+    applyFocusOrderFromQuery();
+    applyConversationFromQuery();
     paint({routeChange:true});
     sendPresenceHeartbeat();
   }
@@ -1741,6 +1762,10 @@
         setTimeout(function(){
           var el=document.querySelector('[data-order-focus="1"]')||document.getElementById('order-'+state._focusOrderId);
           if(el&&el.scrollIntoView)el.scrollIntoView({behavior:'smooth',block:'center'});
+          else if(!state._focusMissed){
+            state._focusMissed=state._focusOrderId;
+            toast('这条订单不存在，或你没有查看权限。');
+          }
         },80);
       }
     });
@@ -2081,14 +2106,15 @@
     }).catch(function(){state._rtInboxUid='';state._inboxRtReady=false});
   }
   function applyConversationFromQuery(){
-    if(state.route!=='messages')return;
     try{
       var q=new URLSearchParams(location.search||'');
       var cid=String(q.get('conversation')||'').trim();
       if(!cid)return;
       state.chatConversationId=cid;
       state.chatSession='cs';
-      history.replaceState(null,'','/companion/messages');
+      state.msgThreadOpen=true;
+      if(state.route!=='messages')state.route='messages';
+      history.replaceState(null,'','/companion/messages?conversation='+encodeURIComponent(cid));
     }catch(e){}
   }
   function init(){
@@ -2115,10 +2141,23 @@
         if(state.inviteCode)state.authTab='register';
       }
     }catch(e){}
-    if(!state.session&&state.route!=='login'){go('/companion/login');return}
+    if(!state.session&&state.route!=='login'){
+      var here=location.pathname+location.search+location.hash;
+      if(companionReturnTarget(here)){
+        try{sessionStorage.setItem('mcjAfterLoginRedirect',here)}catch(eSave){}
+        try{localStorage.setItem('mcjAfterLoginRedirect',here)}catch(eSave2){}
+      }
+      go('/companion/login');
+      return;
+    }
     if(state.session&&state.route==='login'){
-      try{history.replaceState(null,'','/companion/review-status')}catch(e){}
-      state.route='review-status';
+      var savedTarget=companionReturnTarget(readSavedLoginTarget());
+      clearSavedLoginTarget();
+      var resume=savedTarget||'/companion/review-status';
+      try{history.replaceState(null,'',resume)}catch(e){}
+      state.route=route();
+      applyFocusOrderFromQuery();
+      applyConversationFromQuery();
     }
     if(state.session){
       if(window.MCJCompanionAnnouncements&&window.MCJCompanionAnnouncements.start)window.MCJCompanionAnnouncements.start();
@@ -7019,9 +7058,10 @@
           remember:remember
         },remember);
         state.loginBusy=false;state.loginError='';
-        // Prefer API redirect; fall back to review-status for isolation / dashboard for approved.
-        var next=String((res&&res.redirect)||'/companion/review-status');
-        if(!/^\/companion\//.test(next))next='/companion/review-status';
+        var saved=companionReturnTarget(readSavedLoginTarget());
+        clearSavedLoginTarget();
+        var next=saved||String((res&&res.redirect)||'/companion/review-status');
+        if(!/^\/companion\//.test(next.split('?')[0]))next='/companion/review-status';
         go(next);
         return loadData();
       }).catch(function(err){

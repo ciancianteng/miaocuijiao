@@ -189,6 +189,7 @@
         price: formatHourlyPrice(priceValue || normalized.price || normalized.servicePrice || normalized.hourlyPrice),
         priceValue: priceValue,
         rating: normalized.rating || normalized.score || "0",
+        completedOrders: Number(item.completedOrders != null ? item.completedOrders : normalized.completedOrders),
         level: levelLabel(Object.assign({}, normalized, { levelId: levelId })),
         levelId: levelId,
         levelNumber: normalized.levelNumber || Number(String(levelId).replace(/\D+/g, "")) || 0,
@@ -512,12 +513,28 @@
       return ok;
     });
     var sort = value("sortFilter");
+    function hallTie(a, b) {
+      return String(a.publicId || a.id || "").localeCompare(String(b.publicId || b.id || ""), "en");
+    }
+    function hallOnlineRank(item) {
+      var code = String(item.availabilityStatus || "").toLowerCase();
+      if (item.online || code === "online" || code === "busy") return 0;
+      return 1;
+    }
+    function hallCompleted(item) {
+      var n = Number(item.completedOrders);
+      return isFinite(n) ? n : 0;
+    }
     items.sort(function (a, b) {
-      if (sort === "ratingDesc") return Number(b.rating) - Number(a.rating);
-      if (sort === "priceAsc") return a.priceValue - b.priceValue;
-      if (sort === "priceDesc") return b.priceValue - a.priceValue;
-      if (sort === "levelDesc") return Number(b.levelNumber || 0) - Number(a.levelNumber || 0);
-      return Number(b.levelNumber || 0) - Number(a.levelNumber || 0);
+      if (sort === "ratingDesc") return Number(b.rating) - Number(a.rating) || hallTie(a, b);
+      if (sort === "priceAsc") return a.priceValue - b.priceValue || hallTie(a, b);
+      if (sort === "priceDesc") return b.priceValue - a.priceValue || hallTie(a, b);
+      if (sort === "levelDesc") return Number(b.levelNumber || 0) - Number(a.levelNumber || 0) || hallTie(a, b);
+      var presence = hallOnlineRank(a) - hallOnlineRank(b);
+      if (presence) return presence;
+      var count = hallCompleted(b) - hallCompleted(a);
+      if (count) return count;
+      return hallTie(a, b);
     });
     return items;
   }
