@@ -570,18 +570,8 @@ body{overflow-y:visible;background:radial-gradient(circle at 76% 4%,rgba(255,145
   vertical-align:middle!important;
 }
 .companion-hall-grid .mcj-cert-badge{
-  display:inline-flex!important;
-  align-items:center!important;
-  gap:4px!important;
-  padding:2px 8px!important;
-  border-radius:999px!important;
-  border:1px solid currentColor!important;
-  font-size:11px!important;
-  font-weight:700!important;
-  line-height:1.35!important;
-  background:color-mix(in srgb, currentColor 14%, transparent)!important;
+  max-width:100% !important;
 }
-.companion-hall-grid .mcj-cert-badge .mcj-cert-icon{font-size:12px!important;line-height:1!important}
 
 /* Cert badges live in card body — remove photo overlay watermark */
 .companion-hall-grid .companion-card-media .companion-identity-watermark{

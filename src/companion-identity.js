@@ -74,6 +74,21 @@
     return /官方推荐/.test(String(name || ""));
   }
 
+  function safeCertColor(value) {
+    var color = String(value || "").trim();
+    if (/^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/.test(color)) return color;
+    return "#ff8fc5";
+  }
+
+  function certIconHtml(icon) {
+    var raw = String(icon || "").trim();
+    if (!raw) raw = "🏷️";
+    if (/^(https?:\/\/|data:image\/|\/)/i.test(raw) || /\.(?:png|jpe?g|gif|webp|svg)(?:[?#]|$)/i.test(raw)) {
+      return '<img class="mcj-cert-medal-img" src="' + esc(raw) + '" alt="">';
+    }
+    return esc(raw);
+  }
+
   function certHtml(list, limit) {
     var items = Array.isArray(list) ? list : [];
     if (limit != null && isFinite(Number(limit))) items = items.slice(0, Math.max(0, Number(limit)));
@@ -81,31 +96,22 @@
       .map(function (t) {
         var name = typeof t === "string" ? t : t.name || t.title || "";
         if (!name) return "";
-        var icon = typeof t === "object" && t.icon ? String(t.icon) : isOfficialCert(name) ? "🏅" : "🏷️";
-        var color = typeof t === "object" && t.color ? String(t.color) : "";
+        var icon = typeof t === "object" && t && t.icon != null ? t.icon : "";
+        var image = typeof t === "object" && t ? t.image || t.imageUrl || t.iconUrl || t.badgeImage || "" : "";
+        var color = safeCertColor(typeof t === "object" && t ? t.color : "");
         var official = isOfficialCert(name) ? " is-official" : "";
-        var style =
-          color
-            ? ' style="border-color:' +
-              esc(color) +
-              ";color:" +
-              esc(color) +
-              ";--mcj-cert-color:" +
-              esc(color) +
-              ';"'
-            : "";
         return (
-          '<span class="mcj-cert-badge' +
+          '<span class="mcj-cert-badge mcj-cert-medal' +
           official +
-          '"' +
-          style +
-          ' title="' +
+          '" style="--mcj-cert-color:' +
+          esc(color) +
+          ';" title="' +
           esc(name) +
-          '"><span class="mcj-cert-icon" aria-hidden="true">' +
-          esc(icon) +
-          "</span>" +
+          '"><span class="mcj-cert-icon mcj-cert-medal-gem" aria-hidden="true">' +
+          certIconHtml(image || icon) +
+          '</span><span class="mcj-cert-medal-name">' +
           esc(name) +
-          "</span>"
+          "</span></span>"
         );
       })
       .filter(Boolean)
