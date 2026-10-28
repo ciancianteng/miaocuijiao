@@ -2695,7 +2695,11 @@
         host.innerHTML='<p class="pw-note">平台还没有可提供的服务。</p>';
         return;
       }
-      host.innerHTML='<div class="pw-my-service-list">'+catalog.map(function(item){
+      var ordered=window.MCJServicePinyinOrder&&window.MCJServicePinyinOrder.sortByPinyin
+        ? window.MCJServicePinyinOrder.sortByPinyin(catalog)
+        : catalog.map(function(item,index){return {item:item,index:index};});
+      host.innerHTML='<div class="pw-my-service-list">'+ordered.map(function(entry){
+        var item=entry.item;
         var key=item.kind+':'+item.id;
         var saved=selected[key]||null;
         var policy=item.policy||{};
@@ -2709,7 +2713,7 @@
         var shown=mine!==''?mine:(item.price!=null&&item.price!==''&&!isNaN(Number(item.price))?item.price:'');
         var quote=shown!==''?('RM'+shown+'/'+unit):'未设置';
         var headPrice=canPrice?quote:('🔒 已锁定 '+quote);
-        return '<article class="pw-my-service pw-svc" data-offer-card data-kind="service" data-id="'+esc(item.id)+'" data-saved="'+(saved?'1':'0')+'" data-accepting="'+(accepting?'1':'0')+'" data-allow="'+(canPrice?'1':'0')+'">'+
+        return '<article class="pw-my-service pw-svc" data-offer-card data-kind="service" data-id="'+esc(item.id)+'" data-offer-sort="'+esc(entry.index)+'" data-saved="'+(saved?'1':'0')+'" data-accepting="'+(accepting?'1':'0')+'" data-allow="'+(canPrice?'1':'0')+'">'+
           '<div class="pw-svc-head">'+
             '<button type="button" class="pw-svc-fold" data-offer-fold aria-expanded="false">'+
               '<span class="pw-svc-copy"><b class="pw-svc-name">'+esc(item.name||'服务')+'</b><span class="pw-svc-cat">'+esc(item.category||'服务')+'</span></span>'+
@@ -5899,12 +5903,13 @@
           if(card.getAttribute('data-saved')!=='1'&&card.getAttribute('data-touched')!=='1')return;
           var priceEl=card.querySelector('[data-offer-price]');
           var accepting=card.getAttribute('data-accepting')!=='0';
+          var savedSort=Number(card.getAttribute('data-offer-sort'));
           offers.push({
             kind:card.getAttribute('data-kind')||'service',
             id:card.getAttribute('data-id'),
             accepting:accepting,
             price:priceEl?priceEl.value:'',
-            sort:index
+            sort:isFinite(savedSort)?savedSort:index
           });
         });
       }
