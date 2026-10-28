@@ -4648,6 +4648,11 @@
     var filtered=rows.filter(function(o){
       if(!matchesHallType(o,typeFilter))return false;
       if(gameFilter!=='all'&&o.game!==gameFilter)return false;
+      var st=String(o.hallState||'');
+      if(st==='cancelled'||st==='expired'||st==='settled')return false;
+      if(o.canGrab===false)return false;
+      var status=String(o.status||o.flowStatus||'').toLowerCase();
+      if(status==='cancelled'||status==='expired'||status==='claimed'||status==='confirmed'||status==='in_progress'||status==='completed'||status==='refunded'||status==='refund_requested')return false;
       return true;
     });
     var statusReadout='<div class="pw-card pad" style="margin-bottom:14px;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px">'+
@@ -5860,7 +5865,10 @@
         go('/companion/order-hall');
         paint();
         return loadData();
-      }).catch(function(err){toast(err.message)});
+      }).catch(function(err){
+        toast(err.message||'抢单失败');
+        loadData({soft:true});
+      });
       return;
     }
     var filterBtn=e.target.closest('[data-order-filter]');

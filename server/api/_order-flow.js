@@ -72,6 +72,49 @@ export function isOrderExpired(order = {}) {
   return blob.includes(EXPIRED_MARKER) || /已失效|订单超时|expired/i.test(blob);
 }
 
+/** Unassigned public-hall orders close 24h after created_at. Assigned work is never included. */
+export const HALL_UNASSIGNED_TTL_MS = 24 * 60 * 60 * 1000;
+
+export function unassignedHallPastTtl(order = {}, nowMs = Date.now()) {
+  if (order.companion_id || order.companionId) return false;
+  const status = normalizeOrderStatus(order.status);
+  if (status !== "pending" && status !== "waiting_boss_confirm") return false;
+  const anchor = Date.parse(order.created_at || order.createdAt || "");
+  if (!Number.isFinite(anchor)) return false;
+  return nowMs - anchor >= HALL_UNASSIGNED_TTL_MS;
+}
+
+export function hallOrderBlocksGrab(order = {}, nowMs = Date.now()) {
+  const status = normalizeOrderStatus(order.status);
+  if (isOrderExpired(order) || unassignedHallPastTtl(order, nowMs)) return "expired";
+  if (status === "cancelled" || status === "refunded" || status === "refund_requested") return "cancelled";
+  if (order.companion_id || order.companionId || ["claimed", "confirmed", "in_progress", "completed"].includes(status)) {
+    return "assigned";
+  }
+  if (status !== "pending" && status !== "waiting_boss_confirm") return "closed";
+  return "";
+}
+
+export function buildUnassignedHallExpirePatch(order = {}, nowIso = new Date().toISOString()) {
+  const note = String(order.note || "");
+  const description = String(order.description || "");
+  const preferNote = note.length > 0 || !description;
+  const current = preferNote ? note : description;
+  const next = current.includes(EXPIRED_MARKER) ? current : `${current ? `${current}\n` : ""}${EXPIRED_MARKER}`;
+  const patch = {
+    status: "cancelled",
+    cancelled_at: nowIso,
+    cancel_reason: "超过24小时未分配，抢单已关闭",
+  };
+  if (preferNote) patch.note = next;
+  else patch.description = next;
+  return patch;
+}
+
+export function hallExpireMatch(orderId) {
+  return `?id=eq.${encodeURIComponent(orderId)}&companion_id=is.null&or=(status.eq.pending,status.eq.waiting_boss_confirm)`;
+}
+
 export function parseBossIntent(orderOrText = {}) {
   const raw =
     typeof orderOrText === "string"
@@ -110,11 +153,10 @@ export function clearBossIntent(text = "") {
     .trim();
 }
 
-export function hallStateForOrder(order = {}, grabs = []) {
+export function hallStateForOrder(order = {}, grabs = [], nowMs = Date.now()) {
   const status = normalizeOrderStatus(order.status);
-  if (isOrderExpired(order) || status === "cancelled") {
-    return isOrderExpired(order) ? "expired" : "cancelled";
-  }
+  if (isOrderExpired(order) || unassignedHallPastTtl(order, nowMs)) return "expired";
+  if (status === "cancelled" || status === "refunded" || status === "refund_requested") return "cancelled";
   // Assigned / 指定陪玩 never participates in public hall state machine.
   const assignment = String(order.assignment_type || order.assignmentType || "").toLowerCase();
   if (assignment === "assigned" || assignment === "direct" || assignment === "direct_companion") {

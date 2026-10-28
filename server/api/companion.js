@@ -1664,7 +1664,18 @@ async function loadOrdersFor(profile, companion, transactions = []) {
   // Self-trade guard: never show own boss orders in the grab hall for the same user_id.
   openRows = (openRows || []).filter((row) => String(row.boss_id || "") !== String(profile.id || ""));
   const { createOrderGrabHelpers } = await import("./_order-grabs.js");
-  const { hallStateForOrder, hallStateLabel, toFlowStatus, isOrderExpired } = await import("./_order-flow.js");
+  const { hallStateForOrder, hallStateLabel, toFlowStatus, isOrderExpired, unassignedHallPastTtl } = await import("./_order-flow.js");
+  const liveOpen = [];
+  for (const row of openRows || []) {
+    const status = String(row.status || "");
+    const stillOpen = status === "pending" || status === "waiting_boss_confirm";
+    if (stillOpen && (unassignedHallPastTtl(row) || isOrderExpired(row))) {
+      await persistUnassignedHallExpiry(row);
+      continue;
+    }
+    liveOpen.push(row);
+  }
+  openRows = liveOpen;
   const grabsApi = createOrderGrabHelpers({ restUrl, supabaseJson, serviceHeaders });
   const myGrabRows = await grabsApi.listMyPendingGrabs(profile.id);
   // Also load not_selected / selected grabs for this companion (outcome visibility).
@@ -1814,7 +1825,10 @@ async function loadOrdersFor(profile, companion, transactions = []) {
         viewOrder(row, bossMap[row.boss_id] || {}, settlementByOrder[row.id] || null)
       ),
     ],
-    openOrders: [...openWithMine, ...settledHall].map((row) => {
+    openOrders: [...openWithMine, ...settledHall].filter((row) => {
+      const hallState = row._hallState || hallStateForOrder(row, row._grabs || []);
+      return hallState === "open" || hallState === "grabbing";
+    }).map((row) => {
       const viewed = viewOrder(row, bossMap[row.boss_id] || {});
       const hallState = row._hallState || hallStateForOrder(row, row._grabs || []);
       const hallView = {
@@ -3502,6 +3516,58 @@ async function addSystemMessage(order, senderId, senderRole, content, { needsCs 
     }),
   });
 }
+async function persistUnassignedHallExpiry(row) {
+  if (!row?.id) return row;
+  const flow = await import("./_order-flow.js");
+  if (!flow.unassignedHallPastTtl(row) && !flow.isOrderExpired(row)) return row;
+  const patch = flow.buildUnassignedHallExpirePatch(row, new Date().toISOString());
+  const match = flow.hallExpireMatch(row.id);
+  async function write(body) {
+    return supabaseJson(restUrl("orders", match), {
+      method: "PATCH",
+      headers: serviceHeaders(),
+      body: JSON.stringify(body),
+    });
+  }
+  let saved = null;
+  try {
+    const rows = await write(patch);
+    saved = rows?.[0] || null;
+  } catch (err) {
+    if (!/cancel_reason|cancelled_at|column|schema cache|PGRST/i.test(String(err?.message || ""))) {
+      console.warn("[hall-expire]", String(err?.message || err).slice(0, 160));
+      return row;
+    }
+    const slim = { status: "cancelled" };
+    if (patch.note) slim.note = patch.note;
+    if (patch.description) slim.description = patch.description;
+    try {
+      const rows = await write(slim);
+      saved = rows?.[0] || null;
+    } catch (err2) {
+      console.warn("[hall-expire]", String(err2?.message || err2).slice(0, 160));
+      return row;
+    }
+  }
+  if (!saved) return { ...row, ...patch, status: row.status };
+  try {
+    await writeOrderStatusLog(
+      { restUrl, supabaseJson, serviceHeaders },
+      {
+        orderId: row.id,
+        fromStatus: row.status,
+        toStatus: "cancelled",
+        operatorRole: "system",
+        operatorId: null,
+        note: "超过24小时未分配，抢单已关闭",
+      }
+    );
+  } catch {
+    /* status row is already saved */
+  }
+  return saved;
+}
+
 async function claimOrder(profile, companion, id) {
   const beforeRows = await supabaseJson(restUrl("orders", `?id=eq.${encodeURIComponent(id)}&limit=1`), { headers: serviceHeaders() });
   const before = beforeRows?.[0];
@@ -3537,6 +3603,16 @@ async function claimOrder(profile, companion, id) {
   }
   const openForGrab = isPublicHallEligible(before);
   if (!openForGrab) throw Object.assign(new Error("该订单当前不可抢单。"), { status: 409 });
+  const { hallOrderBlocksGrab } = await import("./_order-flow.js");
+  const blocked = hallOrderBlocksGrab(before);
+  if (blocked === "expired") {
+    await persistUnassignedHallExpiry(before);
+    throw Object.assign(new Error("该订单已超过24小时未分配，抢单已关闭。"), { status: 409, code: "HALL_EXPIRED" });
+  }
+  if (blocked === "cancelled") {
+    throw Object.assign(new Error("该订单已取消，不能抢单。"), { status: 409, code: "HALL_CANCELLED" });
+  }
+  if (blocked) throw Object.assign(new Error("该订单当前不可抢单。"), { status: 409 });
   if (["confirmed", "in_progress", "completed", "claimed"].includes(before.status)) {
     throw Object.assign(new Error("该订单已进入正式接单，不能再抢。"), { status: 409 });
   }
@@ -3567,6 +3643,20 @@ async function claimOrder(profile, companion, id) {
       body: JSON.stringify({ companion_id: null }),
     });
     order = { ...order, companion_id: null };
+  }
+  const afterRows = await supabaseJson(restUrl("orders", `?id=eq.${encodeURIComponent(id)}&limit=1`), { headers: serviceHeaders() });
+  const after = afterRows?.[0] || order;
+  if (hallOrderBlocksGrab(after)) {
+    try {
+      await supabaseJson(
+        restUrl("order_grabs", `?order_id=eq.${encodeURIComponent(id)}&companion_id=eq.${encodeURIComponent(profile.id)}&status=eq.pending_customer_selection`),
+        { method: "PATCH", headers: serviceHeaders(), body: JSON.stringify({ status: "withdrawn" }) }
+      );
+    } catch {
+      /* keep the grab row; the order itself is no longer open */
+    }
+    if (hallOrderBlocksGrab(after) === "expired") await persistUnassignedHallExpiry(after);
+    throw Object.assign(new Error("该订单已取消或已失效，不能抢单。"), { status: 409, code: "HALL_CLOSED" });
   }
   await addSystemMessage(order, profile.id, "companion", "陪玩已抢单，等待老板选择。");
   return { ...order, companion_id: null, _grab: grab, _grabs: grabs };
