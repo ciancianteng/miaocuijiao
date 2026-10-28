@@ -683,6 +683,12 @@
     return '<div class="pw-note" style="margin:0 0 14px" role="status">'+esc(ua.accountAccessLabel||auditHint())+'</div>';
   }
   function esc(v){return String(v==null?'':v).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
+  function serviceDetailsHtml(opts){
+    var api=window.MCJServiceDetails;
+    if(!api)return '';
+    api.installCss();
+    return api.render(opts||{});
+  }
   function loadWorkRules(){
     state.rulesLoading=true;
     paint();
@@ -2678,8 +2684,7 @@
             (canPrice
               ? '<label>我的价格<span class="pw-rm">RM<input data-offer-price inputmode="decimal" value="'+esc(mine)+'"></span><em>/ '+esc(unit)+'</em></label><button class="pw-btn" type="button" data-offer-save>修改价格</button>'
               : '<p>🔒 已锁定 '+esc(quote)+'</p><p>该价格由平台锁定，不能在这里修改。客户支付价以服务目录为准。</p>')+
-            '<p>服务内容：'+esc(content||'后台尚未填写')+'</p>'+
-            '<p>服务要求：'+esc(requirement||'后台尚未填写')+'</p>'+
+            serviceDetailsHtml({layout:'requirements',requirementsOpen:false,requirements:requirement})+
             '<p>允许区间：'+esc(range)+'</p>'+
           '</div></div></article>';
       }).join('')+'</div>';
@@ -3400,7 +3405,13 @@
     var raw=String(o.status||o.rawStatus||'');
     var open=raw==='claimed'||raw==='confirmed'||raw==='in_progress';
     var body=s.sections&&s.sections.length
-      ?'<dl>'+s.sections.map(function(sec){return '<div><dt>'+esc(sec.label)+'</dt><dd>'+esc(sec.value)+'</dd></div>';}).join('')+'</dl>'
+      ?serviceDetailsHtml({
+          layout:'boss',
+          contentOpen:false,
+          requirementsOpen:false,
+          content:s.sections.filter(function(sec){return sec&&(sec.label==='服务内容'||sec.label==='包含'||sec.label==='计费标准');}).map(function(sec){return {title:sec.label,body:sec.value};}),
+          requirements:s.sections.filter(function(sec){return sec&&sec.label!=='服务内容'&&sec.label!=='包含'&&sec.label!=='计费标准';}).map(function(sec){return {title:sec.label,body:sec.value};})
+        })
       :'<p class="pw-note">下单时你尚未填写该项目的服务标准（按'+esc(s.pricingUnit||'小时')+'计费）。可在「编辑资料 → 游戏与价格」补充，之后的新订单会带上。</p>';
     return '<details class="pw-order-std"'+(open?' open':'')+'><summary>本单服务标准（下单时快照）· '+esc(s.serviceName||o.serviceName||'-')+'</summary>'+
       body+'<p class="pw-order-std-foot">老板下单时看到的就是这份标准；之后修改服务标准不会改变本单。</p></details>';
@@ -5804,6 +5815,18 @@
     if(e.target.closest('[data-close-settlement]')){
       if(e.target.closest('[data-settlement-dialog]')&&!e.target.closest('.pw-dialog-head [data-close-settlement],.pw-actions [data-close-settlement]'))return;
       state.settlement=null;paint();return;
+    }
+    var sdt=e.target.closest('[data-sdt-acc]');
+    if(sdt){
+      if(sdt.closest('[data-po-standard]'))return;
+      var sdtRoot=sdt.closest('[data-sdt-root]');
+      if(!sdtRoot||!window.MCJServiceDetails)return;
+      e.preventDefault();
+      var sdtOpts=window.MCJServiceDetails.read(sdtRoot);
+      if(sdt.getAttribute('data-sdt-acc')==='content')sdtOpts.contentOpen=!sdtOpts.contentOpen;
+      else sdtOpts.requirementsOpen=!sdtOpts.requirementsOpen;
+      sdtRoot.outerHTML=window.MCJServiceDetails.render(sdtOpts);
+      return;
     }
     var fold=e.target.closest('[data-offer-fold]');
     if(fold){

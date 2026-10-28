@@ -22,6 +22,7 @@ import {
 } from "../_companion-public-map.js";
 import { createSignedUrl, publicObjectUrl } from "../_companion-media-store.js";
 import { cleanRank, gameRanksFromStandards, readServiceStandards } from "../_service-standard.js";
+import { countCompanionCompletedOrders } from "../_business-order-stats.js";
 
 /** All bound game names. Service ids, the game column, and priced games are unioned. */
 export function mergedPublicGameNames(row = {}, serviceNames = []) {
@@ -441,7 +442,19 @@ async function attachReviews(companions = [], opts = {}) {
       }
     }
   } catch (e) {
-    if (/companion_reviews|schema cache|PGRST|does not exist/i.test(String(e.message || e))) return companions;
+    if (/companion_reviews|schema cache|PGRST|does not exist/i.test(String(e.message || e))) {
+      if (summaryOnly) return companions;
+      return (companions || []).map((c) => ({
+        ...c,
+        rating: null,
+        score: null,
+        reviewCount: null,
+        goodReviewCount: null,
+        goodRate: null,
+        reviews: [],
+        reviewStatsError: "评价读取失败",
+      }));
+    }
     throw e;
   }
   const listAll = Array.isArray(rows) ? rows : [];
@@ -886,7 +899,46 @@ async function loadCompanions(id = "", opts = {}) {
 
   const mapped = (await Promise.all((companions || []).map((row) => enrichOne(row)))).filter(Boolean);
   // Hall list: summaryOnly (rating aggregates). Detail keeps full review bodies + joins.
-  return attachReviews(mapped, { summaryOnly: !String(id || "").trim() });
+  const withReviews = await attachReviews(mapped, { summaryOnly: !String(id || "").trim() });
+  if (!String(id || "").trim()) return withReviews;
+  return attachCompanionCompletedCounts(withReviews);
+}
+
+/** Detail only. Counts this companion's completed rows; does not update orders or profiles. */
+async function attachCompanionCompletedCounts(companions = []) {
+  const ids = [...new Set((companions || []).map((c) => c.id || c.uid).filter(Boolean))];
+  if (!ids.length) return companions;
+  let rows = [];
+  try {
+    rows = await supabaseJson(
+      restUrl(
+        "orders",
+        `?companion_id=in.(${ids.map(encodeURIComponent).join(",")})&status=eq.completed&select=id,companion_id,status,order_type&limit=2000`
+      ),
+      { headers: headers() }
+    );
+  } catch (e) {
+    console.warn("[public/companions] completed order count failed", e?.message || e);
+    return (companions || []).map((c) => ({
+      ...c,
+      completedOrders: null,
+      orderStatsError: "完成订单读取失败",
+    }));
+  }
+  const list = Array.isArray(rows) ? rows : [];
+  const truncated = list.length >= 2000;
+  return (companions || []).map((c) => {
+    const cid = String(c.id || c.uid || "");
+    if (truncated) {
+      return { ...c, completedOrders: null, orderStatsError: "完成订单读取失败" };
+    }
+    return {
+      ...c,
+      completedOrders: countCompanionCompletedOrders(list, cid),
+      orderStatsError: "",
+      completedOrdersSource: "orders",
+    };
+  });
 }
 
 /**

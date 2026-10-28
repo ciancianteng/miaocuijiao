@@ -39,6 +39,8 @@
     editingGameId: false,
     servicesReady: false,
     servicesError: "",
+    contentOpen: false,
+    requirementsOpen: false,
     catalogSeq: 0,
     catalogAbort: null,
   };
@@ -48,6 +50,8 @@
     state.service = "";
     state.customService = "";
     state.selectedServiceId = "";
+    state.contentOpen = false;
+    state.requirementsOpen = false;
     state.hoursMode = "1";
     state.hours = 1;
     state.quantity = 1;
@@ -725,6 +729,7 @@
       null
     );
   }
+  var CONTENT_SECTION = { 服务内容: 1, 包含: 1, 计费标准: 1 };
   function serviceStandardHtml(svc) {
     if (!svc) {
       return '<p class="mcj-po-standard-empty">选择游戏/服务项目后，这里会显示该项目的服务内容和执行标准。</p>';
@@ -746,21 +751,27 @@
         "计费；如需确认服务内容，可下单前联系客服。</p>"
       );
     }
-    var catalogBits = "";
-    if (svc.content) catalogBits += "<div><dt>服务内容</dt><dd>" + esc(svc.content) + "</dd></div>";
-    if (svc.requirements) catalogBits += "<div><dt>服务要求</dt><dd>" + esc(svc.requirements) + "</dd></div>";
-    return (
-      head +
-      '<dl class="mcj-po-standard-list">' +
-      catalogBits +
-      sections
-        .map(function (s) {
-          return "<div><dt>" + esc(s.label) + "</dt><dd>" + esc(s.value) + "</dd></div>";
+    var extraContent = [];
+    var extraRequirements = [];
+    sections.forEach(function (s) {
+      var item = { title: s.label, body: s.value };
+      if (CONTENT_SECTION[s.label]) extraContent.push(item);
+      else extraRequirements.push(item);
+    });
+    var details = window.MCJServiceDetails;
+    if (details) details.installCss();
+    var tabs = details
+      ? details.render({
+          layout: "boss",
+          contentOpen: state.contentOpen,
+          requirementsOpen: state.requirementsOpen,
+          content: svc.content,
+          requirements: svc.requirements,
+          extraContent: extraContent,
+          extraRequirements: extraRequirements,
         })
-        .join("") +
-      "</dl>" +
-      '<p class="mcj-po-standard-foot">下单后将以此标准保存到订单，陪玩后续修改不影响本单。</p>'
-    );
+      : '<p class="mcj-po-standard-empty">' + esc([svc.content, svc.requirements].filter(Boolean).join("\n")) + "</p>";
+    return head + tabs + '<p class="mcj-po-standard-foot">下单后将以此标准保存到订单，陪玩后续修改不影响本单。</p>';
   }
   function refreshServiceStandard() {
     var mask = activeMask();
@@ -867,6 +878,8 @@
     state.service = svc.name;
     state.customService = "";
     state.selectedServiceId = svc.serviceId || svc.id || "";
+    state.contentOpen = false;
+    state.requirementsOpen = false;
     if (state.companion) {
       if (money(svc.price) > 0) state.companion.unitPrice = money(svc.price);
       if (svc.pricingUnit) state.companion.pricingUnit = svc.pricingUnit;
@@ -1657,6 +1670,12 @@
     loadOrderRequirementFields();
     mask.addEventListener("click", function (e) {
       if (e.target === mask) close();
+      var accBtn = e.target.closest && e.target.closest("[data-sdt-acc]");
+      if (!accBtn || !mask.contains(accBtn)) return;
+      e.preventDefault();
+      if (accBtn.getAttribute("data-sdt-acc") === "content") state.contentOpen = !state.contentOpen;
+      else state.requirementsOpen = !state.requirementsOpen;
+      refreshServiceStandard();
     });
     mask.querySelectorAll("[data-po-close]").forEach(function (btn) {
       btn.addEventListener("click", function () {

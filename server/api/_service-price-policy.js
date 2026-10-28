@@ -16,7 +16,16 @@ function moneyOrNull(value) {
 }
 
 function clipText(value, max) {
-  return String(value || "").replace(/\s+/g, " ").trim().slice(0, max);
+  return String(value || "")
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n")
+    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, "")
+    .split("\n")
+    .map(function (line) { return line.replace(/[ \t\f\v]+/g, " ").trim(); })
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim()
+    .slice(0, max);
 }
 
 export function normalizePricePolicy(raw = {}) {

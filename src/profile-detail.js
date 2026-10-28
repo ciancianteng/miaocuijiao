@@ -594,8 +594,12 @@
       : "";
 
     var reviewList = Array.isArray(c.reviews) ? c.reviews : [];
-    var reviewCount = Number(c.reviewCount != null ? c.reviewCount : reviewList.length) || 0;
-    var completedOrders = Number(c.completedOrders || c.orderCount || 0) || 0;
+    var reviewFailed = !!c.reviewStatsError;
+    var reviewCount = reviewFailed
+      ? null
+      : Math.max(0, Number(c.reviewCount != null ? c.reviewCount : reviewList.length) || 0);
+    var orderFailed = !!c.orderStatsError || c.completedOrders == null || c.completedOrders === "";
+    var completedOrders = orderFailed ? null : Math.max(0, Math.floor(Number(c.completedOrders)));
     var reviewHtml = reviewList.length
       ? reviewList
           .slice(0, 12)
@@ -670,7 +674,7 @@
           })
           .join("")
       : '<p class="pd-empty">暂无评价</p>';
-    var hasRating = c.rating != null && Number(c.rating) > 0;
+    var hasRating = !reviewFailed && reviewCount > 0 && c.rating != null && Number.isFinite(Number(c.rating));
     var ratingText = hasRating
       ? Number(c.rating).toFixed(1) + "（" + reviewCount + " 条）"
       : "暂无数据";
@@ -724,9 +728,9 @@
       c.levelId && levelChipLabel && !/未设置/.test(levelChipLabel)
         ? '<span class="companion-level-pill" data-level-id="' + esc(c.levelId) + '">' + esc(levelChipLabel) + "</span>"
         : "";
-    var orderStat = completedOrders > 0 ? String(completedOrders) : "—";
-    var rateStat = "—";
-    if (reviewCount > 0) {
+    var orderStat = orderFailed || !Number.isFinite(completedOrders) ? "读取失败" : String(completedOrders);
+    var rateStat = reviewFailed ? "读取失败" : "暂无评分";
+    if (!reviewFailed && reviewCount > 0) {
       var rate = Number(c.goodRate);
       if (!Number.isFinite(rate) && c.goodReviewCount != null && Number.isFinite(Number(c.goodReviewCount))) {
         rate = Math.round((Number(c.goodReviewCount) / reviewCount) * 1000) / 10;
@@ -737,7 +741,7 @@
         rateStat = String(Math.round(rate * 10) / 10).replace(/\.0$/, "") + "%";
       }
     }
-    var scoreStat = hasRating ? Number(c.rating).toFixed(1) : "—";
+    var scoreStat = reviewFailed ? "读取失败" : hasRating ? Number(c.rating).toFixed(1) : "暂无评分";
 
     if (c.levelId) s.setAttribute("data-companion-level", c.levelId);
     else s.removeAttribute("data-companion-level");
