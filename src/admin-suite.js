@@ -872,7 +872,7 @@
       row.style.display=matchedKeyword&&matchedTab&&matchedFilters?'':'none';
     });
   }
-  var playerAdminState={page:1,pageSize:20,rows:[],loaded:false,error:'',configured:true,selectedIds:{},batchLevelId:'',batchBusy:false,confirmCount:0,pendingBatch:null,batchMessage:''};
+  var playerAdminState={page:1,pageSize:20,rows:[],loaded:false,error:'',configured:true,selectedIds:{},batchLevelId:'',batchBusy:false,confirmCount:0,pendingBatch:null,batchMessage:'',filters:{game:'',level:'',identity:'',audit:'',deposit:''}};
   function renderPlayerManagement(){
     var target=document.getElementById('playerManagement');
     if(!target)return;
@@ -880,14 +880,22 @@
       '<div class="admin-section-head compact"><div><h3>陪玩列表</h3><p>集中查看陪玩资料、认证、押金、抽成、返点、收入与账号状态。</p></div><span class="admin-count-pill" data-player-count>0 条</span></div>'+
       '<div class="player-filter-panel">'+
         '<div class="player-filter-row player-filter-main">'+
-          '<input class="player-keyword" data-player-search placeholder="搜索陪玩名字或ID">'+
-          '<select data-player-filter="game"><option value="">游戏筛选</option></select>'+
-          '<select data-player-filter="level"><option value="">等级筛选</option></select>'+
-          '<select data-player-filter="identity"><option value="">实名状态</option><option>已认证</option><option>已上传</option><option>审核中</option><option>未认证</option><option>待补充</option></select>'+
-          '<select data-player-filter="audit"><option value="">审核状态</option><option>未审核</option><option>待审核</option><option>审核中</option><option>已通过</option><option>已拒绝</option><option>已停用</option></select>'+
-          '<select data-player-filter="deposit"><option value="">押金状态</option><option>已缴纳</option><option>已到账</option><option>待审核</option><option>未缴纳</option><option>已退回</option></select>'+
-          '<button class="mini-btn primary-lite" type="button" data-player-search-button>搜索</button>'+
+          '<input class="player-keyword" data-player-search placeholder="搜索昵称或陪玩 ID">'+
+          '<button class="mini-btn primary-lite" type="button" data-player-filter-open>高级筛选</button>'+
           '<button class="mini-btn" type="button" data-player-clear>重置</button>'+
+        '</div>'+
+        '<div class="player-filter-drawer" data-player-filter-drawer hidden>'+
+          '<div class="player-filter-grid">'+
+            '<label>游戏<select data-player-filter="game"><option value="">全部游戏</option></select></label>'+
+            '<label>等级<select data-player-filter="level"><option value="">全部等级</option></select></label>'+
+            '<label>实名状态<select data-player-filter="identity"><option value="">全部</option><option>已认证</option><option>已上传</option><option>审核中</option><option>未认证</option><option>待补充</option></select></label>'+
+            '<label>审核状态<select data-player-filter="audit"><option value="">全部</option><option>未审核</option><option>待审核</option><option>审核中</option><option>已通过</option><option>已拒绝</option><option>已停用</option></select></label>'+
+            '<label>押金状态<select data-player-filter="deposit"><option value="">全部</option><option>已缴纳</option><option>已到账</option><option>待审核</option><option>未缴纳</option><option>已退回</option></select></label>'+
+          '</div>'+
+          '<div class="player-filter-actions">'+
+            '<button class="mini-btn" type="button" data-player-filter-reset>重置</button>'+
+            '<button class="mini-btn primary-lite" type="button" data-player-filter-apply>应用筛选</button>'+
+          '</div>'+
         '</div>'+
       '</div>'+
       '<div id="playerManagementTable" class="player-table-shell"><div class="player-empty-state"><strong>正在加载陪玩列表…</strong></div></div>'+
@@ -976,14 +984,14 @@
   function renderPlayerFilterOptions(){
     var gameSelect=document.querySelector('[data-player-filter="game"]');
     var levelSelect=document.querySelector('[data-player-filter="level"]');
-    if(gameSelect){var current=gameSelect.value;var games=[];(playerAdminState.rows||[]).map(normalizePlayerAdmin).forEach(function(item){if(item.mainGame&&item.mainGame!=='-'&&games.indexOf(item.mainGame)<0)games.push(item.mainGame);});gameSelect.innerHTML='<option value="">游戏筛选</option>'+games.sort().map(function(game){return '<option '+(game===current?'selected':'')+'>'+esc(game)+'</option>'}).join('');}
-    if(levelSelect){var currentLevel=levelSelect.value;levelSelect.innerHTML='<option value="">等级筛选</option>'+getLevels().map(function(level){var value=level.id||level.code||level.name;var label=(level.code?level.code+' ':'')+(level.name||value);return '<option value="'+esc(value)+'" '+(String(value)===currentLevel?'selected':'')+'>'+esc(label)+'</option>';}).join('');}
+    if(gameSelect){var current=playerAdminState.filters.game||'';var games=[];(playerAdminState.rows||[]).map(normalizePlayerAdmin).forEach(function(item){if(item.mainGame&&item.mainGame!=='-'&&games.indexOf(item.mainGame)<0)games.push(item.mainGame);});gameSelect.innerHTML='<option value="">全部游戏</option>'+games.sort().map(function(game){return '<option '+(game===current?'selected':'')+'>'+esc(game)+'</option>'}).join('');}
+    if(levelSelect){var currentLevel=playerAdminState.filters.level||'';levelSelect.innerHTML='<option value="">全部等级</option>'+getLevels().map(function(level){var value=level.id||level.code||level.name;var label=(level.code?level.code+' ':'')+(level.name||value);return '<option value="'+esc(value)+'" '+(String(value)===currentLevel?'selected':'')+'>'+esc(label)+'</option>';}).join('');}
   }
   function visiblePlayerRows(){
     var keyword=((document.querySelector('[data-player-search]')||{}).value||'').trim().toLowerCase();
-    var filters={};document.querySelectorAll('[data-player-filter]').forEach(function(select){filters[select.dataset.playerFilter]=select.value||'';});
+    var filters=playerAdminState.filters||{};
     return (playerAdminState.rows||[]).map(normalizePlayerAdmin).filter(function(item){
-      var ok=!keyword||item.search.indexOf(keyword)>-1;
+      var ok=!keyword||String(item.name||'').toLowerCase().indexOf(keyword)>-1||String(item.playerId||'').toLowerCase().indexOf(keyword)>-1||String(item.uid||'').toLowerCase().indexOf(keyword)>-1||String(item.id||'').toLowerCase().indexOf(keyword)>-1;
       if(ok&&filters.game)ok=item.mainGame===filters.game;
       if(ok&&filters.level)ok=(item.levelRaw===filters.level||item.levelText.indexOf(filters.level)>-1);
       if(ok&&filters.audit)ok=item.audit.indexOf(filters.audit)>-1;
@@ -2401,9 +2409,11 @@
         submitPlayerBatchApprove();
         return;
       }
+      var playerFilterOpen=e.target.closest('[data-player-filter-open]');if(playerFilterOpen){var drawer=document.querySelector('[data-player-filter-drawer]');if(drawer)drawer.hidden=!drawer.hidden;return;}
+      var playerFilterApply=e.target.closest('[data-player-filter-apply]');if(playerFilterApply){var next={};document.querySelectorAll('[data-player-filter]').forEach(function(select){next[select.dataset.playerFilter]=select.value||'';});playerAdminState.filters=next;var openDrawer=document.querySelector('[data-player-filter-drawer]');if(openDrawer)openDrawer.hidden=true;filterPlayerManagement();return;}
       var playerSearchBtn=e.target.closest('[data-player-search-button]');if(playerSearchBtn){filterPlayerManagement();return;}
       var playerExport=e.target.closest('[data-player-export]');if(playerExport){exportPlayerRows();return;}
-      var playerClear=e.target.closest('[data-player-clear]');if(playerClear){var search=document.querySelector('[data-player-search]');if(search)search.value='';document.querySelectorAll('[data-player-filter]').forEach(function(select){select.value='';});filterPlayerManagement();return;}
+      var playerClear=e.target.closest('[data-player-clear],[data-player-filter-reset]');if(playerClear){var search=document.querySelector('[data-player-search]');if(search)search.value='';playerAdminState.filters={game:'',level:'',identity:'',audit:'',deposit:''};document.querySelectorAll('[data-player-filter]').forEach(function(select){select.value='';});var resetDrawer=document.querySelector('[data-player-filter-drawer]');if(resetDrawer)resetDrawer.hidden=true;filterPlayerManagement();return;}
       var playerPage=e.target.closest('[data-player-page]');if(playerPage){playerAdminState.page+=playerPage.dataset.playerPage==='next'?1:-1;renderPlayerTableRows();return;}
       var playerPageGo=e.target.closest('[data-player-page-go]');if(playerPageGo){var jump=document.querySelector('[data-player-page-jump]');var total=visiblePlayerRows().length;var pages=Math.max(1,Math.ceil(total/playerAdminState.pageSize));playerAdminState.page=Math.min(Math.max(1,Number(jump&&jump.value)||1),pages);renderPlayerTableRows();return;}
       var playerClose=e.target.closest('[data-player-drawer-close]');if(playerClose){closePlayerDrawer();return;}
@@ -2420,7 +2430,7 @@
       var whtest=e.target.closest('[data-webhook-test]');if(whtest){alert('Webhook 测试不会修改真实订单或余额。当前支付安全接口未连接，未发送。');return;}
     });
     document.addEventListener('input',function(e){if(e.target.matches('[data-admin-chat-search]'))filterAdminChats();if(e.target.matches('[data-service-record-search]')){serviceRecordState.keyword=e.target.value||'';serviceRecordState.page=1;renderServiceRecordRows();}if(e.target.matches('[data-order-search]'))filterOrders();if(e.target.matches('[data-boss-search]'))filterBossManagement();if(e.target.matches('[data-player-search]'))filterPlayerManagement();if(e.target.matches('[data-coupon-search]')){couponState.keyword=e.target.value||'';var target=document.getElementById('couponManagement');if(target)target.innerHTML=couponPageHtml();}if(e.target.matches('[data-content-search]'))filterPlatformContentRows(e.target);});
-    document.addEventListener('change',function(e){if(e.target.matches('[data-player-check]')){var pid=e.target.getAttribute('data-player-check')||'';if(!pid||e.target.disabled)return;if(e.target.checked)playerAdminState.selectedIds[pid]=true;else delete playerAdminState.selectedIds[pid];renderPlayerTableRows();return;}if(e.target.matches('[data-player-select-all]')){var on=!!e.target.checked;currentPlayerPageRows().forEach(function(item){var id=String(item.id||'');if(!id||!isPlayerBatchEligible(item))return;if(on)playerAdminState.selectedIds[id]=true;else delete playerAdminState.selectedIds[id];});renderPlayerTableRows();return;}if(e.target.matches('[data-player-batch-level]')){playerAdminState.batchLevelId=e.target.value||'';renderPlayerTableRows();return;}if(e.target.matches('[data-boss-check]'))updateBossBulkState();if(e.target.matches('[data-boss-filter]'))filterBossManagement();if(e.target.matches('[data-boss-page-size]')){bossAdminState.pageSize=Number(e.target.value)||20;bossAdminState.page=1;renderBossTableRows();}if(e.target.matches('[data-order-filter]'))filterOrders();if(e.target.matches('[data-content-upload]'))uploadPlatformContentFile(e.target);if(e.target.matches('[data-player-quick-field]')){var quickPayload={};quickPayload[e.target.dataset.playerQuickField]=e.target.value;savePlayerAdminChanges('quick-edit',e.target.dataset.playerId,quickPayload);return;}if(e.target.matches('[data-player-filter]'))filterPlayerManagement();if(e.target.matches('[data-player-page-size]')){playerAdminState.pageSize=Number(e.target.value)||20;playerAdminState.page=1;renderPlayerTableRows();}if(e.target.matches('[data-coupon-filter]')){couponState.filter=e.target.value||'';var target=document.getElementById('couponManagement');if(target)target.innerHTML=couponPageHtml();}});
+    document.addEventListener('change',function(e){if(e.target.matches('[data-player-check]')){var pid=e.target.getAttribute('data-player-check')||'';if(!pid||e.target.disabled)return;if(e.target.checked)playerAdminState.selectedIds[pid]=true;else delete playerAdminState.selectedIds[pid];renderPlayerTableRows();return;}if(e.target.matches('[data-player-select-all]')){var on=!!e.target.checked;currentPlayerPageRows().forEach(function(item){var id=String(item.id||'');if(!id||!isPlayerBatchEligible(item))return;if(on)playerAdminState.selectedIds[id]=true;else delete playerAdminState.selectedIds[id];});renderPlayerTableRows();return;}if(e.target.matches('[data-player-batch-level]')){playerAdminState.batchLevelId=e.target.value||'';renderPlayerTableRows();return;}if(e.target.matches('[data-boss-check]'))updateBossBulkState();if(e.target.matches('[data-boss-filter]'))filterBossManagement();if(e.target.matches('[data-boss-page-size]')){bossAdminState.pageSize=Number(e.target.value)||20;bossAdminState.page=1;renderBossTableRows();}if(e.target.matches('[data-order-filter]'))filterOrders();if(e.target.matches('[data-content-upload]'))uploadPlatformContentFile(e.target);if(e.target.matches('[data-player-quick-field]')){var quickPayload={};quickPayload[e.target.dataset.playerQuickField]=e.target.value;savePlayerAdminChanges('quick-edit',e.target.dataset.playerId,quickPayload);return;}if(e.target.matches('[data-player-page-size]')){playerAdminState.pageSize=Number(e.target.value)||20;playerAdminState.page=1;renderPlayerTableRows();}if(e.target.matches('[data-coupon-filter]')){couponState.filter=e.target.value||'';var target=document.getElementById('couponManagement');if(target)target.innerHTML=couponPageHtml();}});
     document.addEventListener('keydown',function(e){
       if(e.key==='Escape'){
         var adminModal=document.getElementById('adminModal');

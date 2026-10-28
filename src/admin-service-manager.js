@@ -22,6 +22,8 @@
     positions: DEFAULT_POSITIONS.slice(),
     editing: null,
     formOpen: false,
+    query: "",
+    letter: "",
   };
 
   function esc(v) {
@@ -369,6 +371,85 @@
     });
   }
 
+  function pinyinApi() {
+    return window.MCJServicePinyinOrder || null;
+  }
+
+  function serviceInitial(name) {
+    var api = pinyinApi();
+    return api && api.initialOf ? api.initialOf(name) : "#";
+  }
+
+  function serviceMatches(name, query) {
+    var api = pinyinApi();
+    if (api && api.matchesQuery) return api.matchesQuery(name, query);
+    var q = String(query || "").trim().toLowerCase();
+    if (!q) return true;
+    return String(name || "").toLowerCase().indexOf(q) >= 0;
+  }
+
+  function serviceGroups() {
+    var matched = state.services.filter(function (item) {
+      var name = item.name || "";
+      if (!serviceMatches(name, state.query)) return false;
+      if (state.letter && serviceInitial(name) !== state.letter) return false;
+      return true;
+    });
+    var api = pinyinApi();
+    var ordered = api && api.sortByPinyin ? api.sortByPinyin(matched).map(function (row) { return row.item; }) : matched;
+    var groups = [];
+    var byLetter = {};
+    ordered.forEach(function (item) {
+      var letter = serviceInitial(item.name || "");
+      if (!byLetter[letter]) {
+        byLetter[letter] = { letter: letter, games: [] };
+        groups.push(byLetter[letter]);
+      }
+      var gameName = String(item.name || "").trim() || "未命名";
+      var games = byLetter[letter].games;
+      var last = games[games.length - 1];
+      if (!last || last.name !== gameName) {
+        last = { name: gameName, items: [] };
+        games.push(last);
+      }
+      last.items.push(item);
+    });
+    return groups;
+  }
+
+  function letterNavHtml() {
+    var used = {};
+    state.services.forEach(function (item) {
+      if (serviceMatches(item.name || "", state.query)) used[serviceInitial(item.name || "")] = 1;
+    });
+    var letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ#".split("");
+    return '<div class="svc-letters" role="tablist">' + letters.map(function (letter) {
+      var on = state.letter === letter;
+      var has = !!used[letter];
+      return '<button type="button" class="svc-letter' + (on ? " is-on" : "") + '" data-service-letter="' + letter + '"' + (has ? "" : " disabled") + ">" + letter + "</button>";
+    }).join("") + "</div>";
+  }
+
+  function serviceCardHtml(item) {
+    var policy = item.pricePolicy || {};
+    var unit = policy.unit || "局";
+    var price = item.defaultPrice || item.default_price || "-";
+    var on = item.enabled !== false;
+    return (
+      '<article class="svc-card svc-card-compact" data-service-row="' + esc(item.id) + '" data-service-card>' +
+      '<div class="svc-card-main"><strong>' + esc(item.name || "-") + "</strong>" +
+      "<em>" + esc(price) + " / " + esc(unit) + "</em>" +
+      statusChip(on ? "启用" : "停用", on) +
+      "</div>" +
+      '<div class="svc-card-actions">' +
+      '<button class="mini-btn" type="button" data-service-edit="' + esc(item.id) + '">编辑</button>' +
+      (on
+        ? '<button class="mini-btn" type="button" data-service-disable="' + esc(item.id) + '">停用</button>'
+        : '<button class="mini-btn primary-lite" type="button" data-service-enable="' + esc(item.id) + '">启用</button>') +
+      "</div></article>"
+    );
+  }
+
   function renderRows() {
     if (!state.services.length) {
       return (
@@ -376,57 +457,15 @@
         '<button class="btn primary" type="button" data-service-new>新增服务</button></div>'
       );
     }
-    var rows = state.services
-      .map(function (item) {
-        var policy = item.pricePolicy || {};
-        var unit = policy.unit || "局";
-        var range =
-          policy.min != null && policy.max != null
-            ? "RM" + policy.min + " - RM" + policy.max + " / " + unit
-            : "未设置区间";
-        var on = item.enabled !== false;
-        return (
-          '<article class="svc-card" draggable="true" data-service-row="' +
-          esc(item.id) +
-          '" data-service-card data-category="' +
-          esc(item.category || "") +
-          '" data-status="' +
-          (on ? "on" : "off") +
-          '">' +
-          '<div class="svc-card-icon" aria-hidden="true">' +
-          esc(item.icon || "🎮") +
-          "</div>" +
-          '<div class="svc-card-main">' +
-          "<strong>" +
-          esc(item.name || "-") +
-          "</strong>" +
-          "<span>" +
-          esc(item.category || "-") +
-          "</span>" +
-          "<em>默认 RM" +
-          esc(item.defaultPrice || item.default_price || "-") +
-          " / " +
-          esc(unit) +
-          "</em>" +
-          "<small>允许范围 " +
-          esc(range) +
-          "</small>" +
-          '<div class="svc-card-tags">' +
-          statusChip(on ? "启用" : "停用", on) +
-          statusChip(policy.allowSelfPrice ? "可自主定价" : "平台统一定价", !!policy.allowSelfPrice) +
-          "</div></div>" +
-          '<div class="svc-card-actions">' +
-          '<button class="mini-btn" type="button" data-service-edit="' +
-          esc(item.id) +
-          '">编辑</button>' +
-          (on
-            ? '<button class="mini-btn" type="button" data-service-disable="' + esc(item.id) + '">停用</button>'
-            : '<button class="mini-btn primary-lite" type="button" data-service-enable="' + esc(item.id) + '">启用</button>') +
-          "</div></article>"
-        );
-      })
-      .join("");
-    return '<div class="svc-list" data-service-sortable>' + rows + "</div>";
+    var groups = serviceGroups();
+    if (!groups.length) return '<div class="content-empty-action"><strong>没有匹配的服务</strong></div>';
+    return groups.map(function (group) {
+      return '<section class="svc-letter-block" id="svc-letter-' + group.letter + '"><h4>' + esc(group.letter) + "</h4>" +
+        group.games.map(function (game) {
+          return '<div class="svc-game-block"><p class="svc-game-name">' + esc(game.name) + "</p>" +
+            game.items.map(serviceCardHtml).join("") + "</div>";
+        }).join("") + "</section>";
+    }).join("");
   }
 
   function render() {
@@ -441,18 +480,11 @@
       (state.message && !state.error ? '<div class="admin-sync-note">' + esc(state.message) + "</div>" : "") +
       '<div class="platform-content-admin base-data-admin" data-service-admin>' +
       '<div class="content-admin-head"><div><h3>服务列表</h3><p>管理平台提供的服务（不是游戏管理）。保存后同步首页、申请陪玩、陪玩资料、客服建单、老板下单与更多玩法。</p></div></div>' +
-      '<div class="content-admin-toolbar compact svc-toolbar"><input data-service-search placeholder="搜索服务">' +
-      '<select data-service-category><option value="">全部分类</option>' +
-      state.categories
-        .map(function (cat) {
-          return '<option value="' + esc(cat) + '">' + esc(cat) + "</option>";
-        })
-        .join("") +
-      '</select><select data-service-status><option value="">全部状态</option><option value="on">启用</option><option value="off">停用</option></select>' +
-      '<button class="btn primary" type="button" data-service-new>新增服务</button>' +
-      '<button class="btn" type="button" data-service-reload>刷新</button></div>' +
+      '<div class="svc-toolbar svc-toolbar-row"><input data-service-search value="' + esc(state.query) + '" placeholder="搜索中文、拼音或首字母">' +
+      '<button class="btn primary svc-new-btn" type="button" data-service-new>新增服务</button></div>' +
+      letterNavHtml() +
+      '<div data-service-groups>' + renderRows() + "</div>" +
       (!window.MCJAdminOverlay ? renderForm() : "") +
-      renderRows() +
       "</div>";
     if (window.MCJAdminForms && window.MCJAdminForms.enhance) window.MCJAdminForms.enhance(box);
     bindSortable();
@@ -635,6 +667,17 @@
         });
         return;
       }
+      var letterBtn = e.target.closest("[data-service-letter]");
+      if (letterBtn && !letterBtn.disabled) {
+        var next = letterBtn.getAttribute("data-service-letter") || "";
+        state.letter = state.letter === next ? "" : next;
+        var groups = document.querySelector("[data-service-groups]");
+        if (groups) groups.innerHTML = renderRows();
+        document.querySelectorAll("[data-service-letter]").forEach(function (btn) {
+          btn.classList.toggle("is-on", btn.getAttribute("data-service-letter") === state.letter);
+        });
+        return;
+      }
       if (e.target.closest("[data-service-new]")) {
         openForm(null);
         return;
@@ -722,20 +765,12 @@
     });
 
     document.addEventListener("input", function (e) {
-      if (!e.target.closest("[data-service-search], [data-service-category], [data-service-status]")) return;
-      var wrap = document.querySelector("[data-service-admin]");
-      if (!wrap) return;
-      var q = String((wrap.querySelector("[data-service-search]") || {}).value || "")
-        .trim()
-        .toLowerCase();
-      var cat = String((wrap.querySelector("[data-service-category]") || {}).value || "");
-      var st = String((wrap.querySelector("[data-service-status]") || {}).value || "");
-      wrap.querySelectorAll("[data-service-card]").forEach(function (row) {
-        var missQ = !!(q && row.textContent.toLowerCase().indexOf(q) === -1);
-        var missCat = !!(cat && row.getAttribute("data-category") !== cat);
-        var missSt = !!(st && row.getAttribute("data-status") !== st);
-        row.hidden = missQ || missCat || missSt;
-      });
+      if (!e.target.closest("[data-service-search]")) return;
+      state.query = String(e.target.value || "");
+      var groups = document.querySelector("[data-service-groups]");
+      var nav = document.querySelector(".svc-letters");
+      if (nav) nav.outerHTML = letterNavHtml();
+      if (groups) groups.innerHTML = renderRows();
     });
   }
 

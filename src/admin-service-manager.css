@@ -236,3 +236,15 @@
   .svc-card { grid-template-columns: 40px minmax(0, 1fr); }
   .svc-card-actions { grid-column: 1 / -1; display: flex; flex-wrap: wrap; justify-content: flex-end; }
 }
+.svc-toolbar.svc-toolbar-row{display:flex!important;grid-template-columns:none;align-items:center;gap:8px}
+.svc-toolbar.svc-toolbar-row input{flex:1;min-width:0;width:auto}
+.svc-new-btn{width:auto!important;flex:none;white-space:nowrap}
+.svc-letters{display:flex;gap:4px;overflow-x:auto;margin:0 0 12px;-webkit-overflow-scrolling:touch}
+.svc-letter{min-width:28px;height:28px;border-radius:8px;border:1px solid rgba(243,168,203,.35);background:#141218;color:#fff;font-size:12px}
+.svc-letter.is-on{background:#F4A6C8;color:#1a0710}
+.svc-letter:disabled{opacity:.35}
+.svc-letter-block{margin:0 0 14px}
+.svc-letter-block h4{margin:0 0 8px;color:#ff8fc7;font-size:13px}
+.svc-game-name{margin:0 0 6px;color:rgba(255,255,255,.55);font-size:12px}
+.svc-card-compact{display:flex;justify-content:space-between;align-items:center;gap:10px;grid-template-columns:none;margin:0 0 8px;padding:12px;border:1px solid rgba(243,168,203,.28);border-radius:14px;background:#141218}
+.svc-card-compact .svc-card-actions{display:flex;gap:6px}

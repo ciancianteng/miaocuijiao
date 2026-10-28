@@ -47,6 +47,19 @@
     return nameCollator().compare(left, right);
   }
 
+  function initialsOf(name) {
+    return Array.from(String(name || "").trim().normalize("NFKC")).map(initialOf).join("");
+  }
+
+  function matchesQuery(name, query) {
+    var q = String(query || "").trim().toLowerCase().replace(/\s+/g, "");
+    if (!q) return true;
+    var raw = String(name || "").trim().toLowerCase();
+    if (raw.indexOf(q) >= 0) return true;
+    var initials = initialsOf(name).toLowerCase().replace(/#/g, "");
+    return initials.indexOf(q) >= 0;
+  }
+
   function sortByPinyin(list) {
     return (Array.isArray(list) ? list : []).map(function (item, index) {
       return { item: item, index: index };
@@ -59,6 +72,8 @@
 
   root.MCJServicePinyinOrder = {
     initialOf: initialOf,
+    initialsOf: initialsOf,
+    matchesQuery: matchesQuery,
     compareNames: compareNames,
     sortByPinyin: sortByPinyin,
   };

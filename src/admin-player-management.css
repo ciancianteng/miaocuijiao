@@ -358,3 +358,86 @@
 #playerManagement .player-more-wrap {
   overflow: visible !important;
 }
+
+#playerManagement .player-table-wrap {
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-x pan-y;
+  overscroll-behavior: contain;
+}
+
+#playerManagement .player-filter-main {
+  display: flex !important;
+  flex-wrap: nowrap !important;
+  align-items: center;
+  gap: 8px;
+  grid-template-columns: none !important;
+}
+
+#playerManagement .player-filter-main .player-keyword,
+#playerManagement .player-filter-main [data-player-search] {
+  flex: 1 1 auto !important;
+  width: auto !important;
+  min-width: 0 !important;
+  max-width: none !important;
+}
+
+#playerManagement .player-filter-main .mini-btn {
+  flex: 0 0 auto !important;
+  width: auto !important;
+}
+
+@media (max-width: 700px) {
+  #playerManagement .player-table-wrap {
+    overflow: visible !important;
+    max-height: none !important;
+    height: auto !important;
+    min-height: 0 !important;
+  }
+
+  #playerManagement .player-data-table {
+    min-width: 0 !important;
+    width: 100% !important;
+  }
+
+  #playerManagement .player-data-table thead {
+    display: none !important;
+  }
+
+  #playerManagement .player-data-table,
+  #playerManagement .player-data-table tbody,
+  #playerManagement .player-data-table tr {
+    display: block !important;
+    width: auto !important;
+    min-width: 0 !important;
+  }
+
+  #playerManagement .player-data-table tr {
+    padding: 8px 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  #playerManagement .player-data-table td,
+  #playerManagement .player-data-table td.player-action-cell {
+    display: flex !important;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    width: auto !important;
+    min-width: 0 !important;
+    height: auto !important;
+    max-height: none !important;
+    position: static !important;
+    white-space: normal !important;
+    overflow: visible !important;
+    box-shadow: none !important;
+    padding: 6px 0 !important;
+    background: transparent !important;
+  }
+
+  #playerManagement .player-data-table td::before {
+    content: attr(data-label) !important;
+    display: block !important;
+    color: rgba(255, 255, 255, 0.5);
+    font-size: 12px;
+  }
+}
