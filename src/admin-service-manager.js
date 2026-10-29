@@ -121,56 +121,170 @@
         }
       : blankForm();
     state.formOpen = true;
-    if (!openFormOverlay()) render();
+    state.formSignature = "";
+    openSvcDialog();
+  }
+
+  function formSignature(form) {
+    if (!form) return "";
+    var parts = [];
+    new FormData(form).forEach(function (value, key) {
+      parts.push(key + "=" + value);
+    });
+    form.querySelectorAll("[data-order-field]").forEach(function (row) {
+      var name = row.querySelector("[data-of-name]");
+      var kind = row.querySelector("[data-of-kind]");
+      var placeholder = row.querySelector("[data-of-placeholder]");
+      var options = row.querySelector("[data-of-options]");
+      var required = row.querySelector("[data-of-required]");
+      var enabled = row.querySelector("[data-of-enabled]");
+      parts.push(
+        "of=" +
+          ((name && name.value) || "") +
+          "|" +
+          ((kind && kind.value) || "") +
+          "|" +
+          ((placeholder && placeholder.value) || "") +
+          "|" +
+          ((options && options.value) || "") +
+          "|" +
+          (required && required.checked ? "1" : "0") +
+          "|" +
+          (enabled && enabled.checked ? "1" : "0")
+      );
+    });
+    return parts.join("&");
+  }
+
+  function formIsDirty() {
+    var form = document.querySelector("[data-service-form]");
+    if (!form || !state.formSignature) return false;
+    return formSignature(form) !== state.formSignature;
+  }
+
+  function requestCloseForm() {
+    if (state.saving) return;
+    if (formIsDirty() && !window.confirm("有未保存的修改，确定关闭？")) return;
+    closeForm();
   }
 
   function closeForm() {
-    if (window.MCJAdminOverlay && window.MCJAdminOverlay.isOpen && window.MCJAdminOverlay.isOpen()) {
-      window.MCJAdminOverlay.close();
-      return;
-    }
     state.formOpen = false;
     state.editing = null;
-    render();
+    state.formSignature = "";
+    state.saving = false;
+    var dialog = document.getElementById("svcEditDialog");
+    if (dialog) {
+      dialog.classList.remove("is-open");
+      dialog.hidden = true;
+      var body = dialog.querySelector("[data-svc-dialog-body]");
+      if (body) body.innerHTML = "";
+    }
+    document.body.classList.remove("svc-dialog-lock");
+    document.body.style.top = "";
+    if (state.lockY) window.scrollTo(0, state.lockY);
+    state.lockY = 0;
+    if (state.viewportPin) {
+      window.visualViewport.removeEventListener("resize", state.viewportPin);
+      window.visualViewport.removeEventListener("scroll", state.viewportPin);
+      state.viewportPin = null;
+    }
   }
 
   function formTitle() {
     return state.editing && state.editing.id ? "编辑服务" : "新增服务";
   }
 
-  function openFormOverlay() {
-    if (!state.formOpen || !state.editing) return false;
-    if (window.MCJAdminOverlay) {
-      window.MCJAdminOverlay.open({
-        title: formTitle(),
-        html: renderForm(),
-        onClose: function () {
-          state.formOpen = false;
-          state.editing = null;
-        },
-      });
-      return true;
-    }
-    return false;
+  function ensureSvcDialog() {
+    var dialog = document.getElementById("svcEditDialog");
+    if (dialog) return dialog;
+    dialog = document.createElement("div");
+    dialog.id = "svcEditDialog";
+    dialog.className = "svc-dialog";
+    dialog.hidden = true;
+    dialog.innerHTML =
+      '<div class="svc-dialog-backdrop" data-svc-dialog-close></div>' +
+      '<div class="svc-dialog-panel" role="dialog" aria-modal="true" aria-labelledby="svcEditTitle">' +
+      '<header class="svc-dialog-head"><h3 id="svcEditTitle" data-svc-dialog-title></h3>' +
+      '<button type="button" class="svc-dialog-x" data-svc-dialog-close aria-label="关闭">×</button></header>' +
+      '<div class="svc-dialog-body" data-svc-dialog-body></div>' +
+      '<p class="svc-dialog-error" data-svc-form-error hidden></p>' +
+      '<footer class="svc-dialog-foot">' +
+      '<button class="btn" type="button" data-service-cancel>取消</button>' +
+      '<button class="btn primary" type="submit" form="svcEditForm" data-service-save>保存</button>' +
+      "</footer></div>";
+    document.body.appendChild(dialog);
+    return dialog;
   }
 
-  function syncFormOverlay() {
-    if (!state.formOpen || !state.editing || !window.MCJAdminOverlay) return;
-    if (window.MCJAdminOverlay.isOpen && window.MCJAdminOverlay.isOpen()) window.MCJAdminOverlay.setBody(renderForm());
-    else openFormOverlay();
+  function pinSvcDialog() {
+    var dialog = document.getElementById("svcEditDialog");
+    var panel = dialog && dialog.querySelector(".svc-dialog-panel");
+    if (!panel || !window.visualViewport) return;
+    var height = Math.max(280, window.visualViewport.height - 8);
+    panel.style.maxHeight = height + "px";
+  }
+
+  function openSvcDialog() {
+    if (!state.formOpen || !state.editing) return;
+    var dialog = ensureSvcDialog();
+    var title = dialog.querySelector("[data-svc-dialog-title]");
+    var body = dialog.querySelector("[data-svc-dialog-body]");
+    var error = dialog.querySelector("[data-svc-form-error]");
+    var saveBtn = dialog.querySelector("[data-service-save]");
+    if (title) title.textContent = formTitle();
+    if (body) body.innerHTML = renderForm();
+    if (error) {
+      error.hidden = true;
+      error.textContent = "";
+    }
+    if (saveBtn) {
+      saveBtn.disabled = false;
+      saveBtn.textContent = "保存";
+    }
+    state.lockY = window.scrollY || document.documentElement.scrollTop || 0;
+    document.body.style.top = "-" + state.lockY + "px";
+    document.body.classList.add("svc-dialog-lock");
+    dialog.hidden = false;
+    dialog.classList.add("is-open");
+    if (window.MCJAdminForms && window.MCJAdminForms.enhance) window.MCJAdminForms.enhance(dialog);
+    if (body && body.dataset.svcSelectScroll !== "1") {
+      body.dataset.svcSelectScroll = "1";
+      body.addEventListener("scroll", function () {
+        if (window.MCJAdminForms && window.MCJAdminForms.closeSelect) window.MCJAdminForms.closeSelect();
+      }, { passive: true });
+    }
+    var form = dialog.querySelector("[data-service-form]");
+    state.formSignature = formSignature(form);
+    pinSvcDialog();
+    if (window.visualViewport && !state.viewportPin) {
+      state.viewportPin = function () {
+        pinSvcDialog();
+      };
+      window.visualViewport.addEventListener("resize", state.viewportPin);
+      window.visualViewport.addEventListener("scroll", state.viewportPin);
+    }
+    var closeBtn = dialog.querySelector(".svc-dialog-x");
+    if (closeBtn) {
+      try {
+        closeBtn.focus({ preventScroll: true });
+      } catch (e) {}
+    }
   }
 
   function renderIconPicker(selected) {
     return (
       '<div class="admin-service-span-2"><span class="admin-field-label">服务图标</span>' +
-      '<div class="content-row-actions compact" data-service-icon-picker>' +
+      '<div class="svc-icon-picker" data-service-icon-picker>' +
       state.icons
         .map(function (icon) {
           return (
-            '<button class="mini-btn' +
-            (icon === selected ? " primary-lite" : "") +
+            '<button class="svc-icon-pick' +
+            (icon === selected ? " is-on" : "") +
             '" type="button" data-service-icon="' +
             esc(icon) +
+            '" aria-pressed="' +
+            (icon === selected ? "true" : "false") +
             '">' +
             esc(icon) +
             "</button>"
@@ -214,20 +328,23 @@
     var Forms = window.MCJAdminForms;
     var categoryOptions = state.categories.slice();
     if (d.category && categoryOptions.indexOf(d.category) < 0) categoryOptions.push(d.category);
-    var categoryField = Forms
-      ? Forms.selectHtml({
-          name: "category",
-          label: "服务分类",
-          value: d.category || "手游",
-          options: categoryOptions,
-        })
-      : '<label><span>服务分类</span><select name="category">' +
-        categoryOptions
-          .map(function (cat) {
-            return '<option value="' + esc(cat) + '" ' + (d.category === cat ? "selected" : "") + ">" + esc(cat) + "</option>";
+    var categoryField =
+      '<div class="svc-field svc-select-host">' +
+      (Forms
+        ? Forms.selectHtml({
+            name: "category",
+            label: "服务分类",
+            value: d.category || "手游",
+            options: categoryOptions,
           })
-          .join("") +
-        "</select></label>";
+        : '<span>服务分类</span><select name="category">' +
+          categoryOptions
+            .map(function (cat) {
+              return '<option value="' + esc(cat) + '" ' + (d.category === cat ? "selected" : "") + ">" + esc(cat) + "</option>";
+            })
+            .join("") +
+          "</select>") +
+      "</div>";
     var switchEnabled = Forms
       ? Forms.switchHtml({ name: "enabled", label: "服务状态", checked: d.enabled !== false, onLabel: "启用", offLabel: "停用" })
       : "";
@@ -245,7 +362,7 @@
     }
     return (
       '<div class="content-editor svc-editor" data-service-editor>' +
-      '<form class="platform-content-form admin-service-form" data-service-form>' +
+      '<form id="svcEditForm" class="platform-content-form admin-service-form" data-service-form>' +
       '<section class="svc-section"><h4>基本信息</h4>' +
       '<label class="svc-field"><span>服务名称</span><input name="name" required maxlength="40" placeholder="例如：无畏契约端游" value="' +
       esc(d.name) +
@@ -298,11 +415,6 @@
       "> 允许陪玩自主定价</label>" +
       '<p class="svc-note">每位陪玩可单独开启或关闭是否接此服务。未允许自主定价时，后端会拒绝改价。</p>' +
       "</div></section>" +
-      '<div class="form-actions svc-actions"><button class="btn primary" type="submit" ' +
-      (state.saving ? "disabled" : "") +
-      ">" +
-      (state.saving ? "保存中…" : "保存") +
-      '</button><button class="btn" type="button" data-service-cancel>取消</button></div>' +
       "</form></div>"
     );
   }
@@ -423,10 +535,13 @@
       if (serviceMatches(item.name || "", state.query)) used[serviceInitial(item.name || "")] = 1;
     });
     var letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ#".split("");
-    return '<div class="svc-letters" role="tablist">' + letters.map(function (letter) {
+    var allOn = !state.letter;
+    return '<div class="svc-letters" role="tablist">' +
+      '<button type="button" class="svc-letter svc-letter-all' + (allOn ? " is-on" : "") + '" data-service-letter="ALL" aria-pressed="' + (allOn ? "true" : "false") + '">ALL</button>' +
+      letters.map(function (letter) {
       var on = state.letter === letter;
       var has = !!used[letter];
-      return '<button type="button" class="svc-letter' + (on ? " is-on" : "") + '" data-service-letter="' + letter + '"' + (has ? "" : " disabled") + ">" + letter + "</button>";
+      return '<button type="button" class="svc-letter' + (on ? " is-on" : "") + '" data-service-letter="' + letter + '"' + (has ? "" : " disabled") + ' aria-pressed="' + (on ? "true" : "false") + '">' + letter + "</button>";
     }).join("") + "</div>";
   }
 
@@ -484,11 +599,9 @@
       '<button class="btn primary svc-new-btn" type="button" data-service-new>新增服务</button></div>' +
       letterNavHtml() +
       '<div data-service-groups>' + renderRows() + "</div>" +
-      (!window.MCJAdminOverlay ? renderForm() : "") +
       "</div>";
     if (window.MCJAdminForms && window.MCJAdminForms.enhance) window.MCJAdminForms.enhance(box);
     bindSortable();
-    syncFormOverlay();
   }
 
   function collectForm(form) {
@@ -567,8 +680,18 @@
       return;
     }
     var orderFields = readOrderFields(form);
+    if (state.saving) return;
     state.saving = true;
-    render();
+    var saveBtn = document.querySelector("[data-service-save]");
+    var errorEl = document.querySelector("[data-svc-form-error]");
+    if (errorEl) {
+      errorEl.hidden = true;
+      errorEl.textContent = "";
+    }
+    if (saveBtn) {
+      saveBtn.disabled = true;
+      saveBtn.textContent = "保存中…";
+    }
     apiPost({ action: "save", id: payload.id, service: payload })
       .then(function (res) {
         var serviceId = (res.service && res.service.id) || payload.id;
@@ -578,21 +701,67 @@
         });
       })
       .then(function (res) {
-        alert((res && res.message) || "服务已保存，全站已同步。");
-        if (window.MCJAdminOverlay && window.MCJAdminOverlay.isOpen && window.MCJAdminOverlay.isOpen()) {
-          window.MCJAdminOverlay.close();
-        } else {
-          state.formOpen = false;
-          state.editing = null;
+        var saved = (res && res.service) || null;
+        var next = Object.assign({}, state.editing || {}, payload, saved || {});
+        if (saved && saved.pricePolicy) next.pricePolicy = saved.pricePolicy;
+        else {
+          next.pricePolicy = {
+            min: payload.priceMin,
+            max: payload.priceMax,
+            unit: payload.unit,
+            description: payload.description,
+            requirements: payload.requirements,
+            allowSelfPrice: payload.allowSelfPrice,
+            allowSelfOff: payload.allowSelfOff,
+          };
         }
+        next.defaultPrice = payload.defaultPrice;
+        next.orderFields = orderFields;
+        var idx = state.services.findIndex(function (row) {
+          return String(row.id) === String(next.id);
+        });
+        if (idx >= 0) state.services[idx] = Object.assign({}, state.services[idx], next);
+        else if (next.id) state.services.push(next);
+        state.message = (res && res.message) || "服务已保存，全站已同步。";
+        state.formSignature = formSignature(form);
         state.saving = false;
-        return load();
+        var scrollY = state.lockY || 0;
+        closeForm();
+        refreshServiceList();
+        window.scrollTo(0, scrollY);
       })
       .catch(function (err) {
         state.saving = false;
-        render();
-        alert(err.message || "保存失败");
+        if (saveBtn) {
+          saveBtn.disabled = false;
+          saveBtn.textContent = "保存";
+        }
+        if (errorEl) {
+          errorEl.hidden = false;
+          errorEl.textContent = err.message || "保存失败";
+        }
       });
+  }
+
+  function refreshServiceList() {
+    var main = document.querySelector(".admin-content, .admin-main, main");
+    var mainY = main ? main.scrollTop : 0;
+    var y = window.scrollY || 0;
+    var groups = document.querySelector("[data-service-groups]");
+    var nav = document.querySelector(".svc-letters");
+    var note = document.querySelector("[data-service-admin]");
+    if (!groups || !nav) {
+      render();
+    } else {
+      nav.outerHTML = letterNavHtml();
+      groups.innerHTML = renderRows();
+      if (note && state.message) {
+        var old = note.querySelector(".admin-sync-note");
+        if (old) old.textContent = state.message;
+      }
+    }
+    if (main) main.scrollTop = mainY;
+    window.scrollTo(0, y);
   }
 
   function mutate(action, id, extra) {
@@ -654,6 +823,13 @@
     if (document.documentElement.dataset.serviceAdminBound === "1") return;
     document.documentElement.dataset.serviceAdminBound = "1";
 
+    document.addEventListener("keydown", function (e) {
+      if (e.key !== "Escape") return;
+      var dialog = document.getElementById("svcEditDialog");
+      if (!dialog || dialog.hidden) return;
+      requestCloseForm();
+    });
+
     document.addEventListener("click", function (e) {
       if (!document.getElementById(TARGET_ID)) return;
       var iconBtn = e.target.closest("[data-service-icon]");
@@ -663,18 +839,24 @@
         var hidden = form.querySelector('input[name="icon"]');
         if (hidden) hidden.value = iconBtn.getAttribute("data-service-icon") || "🎮";
         form.querySelectorAll("[data-service-icon]").forEach(function (btn) {
-          btn.classList.toggle("primary-lite", btn === iconBtn);
+          var on = btn === iconBtn;
+          btn.classList.toggle("is-on", on);
+          btn.setAttribute("aria-pressed", on ? "true" : "false");
         });
         return;
       }
       var letterBtn = e.target.closest("[data-service-letter]");
       if (letterBtn && !letterBtn.disabled) {
         var next = letterBtn.getAttribute("data-service-letter") || "";
-        state.letter = state.letter === next ? "" : next;
+        if (next === "ALL") state.letter = "";
+        else state.letter = state.letter === next ? "" : next;
         var groups = document.querySelector("[data-service-groups]");
         if (groups) groups.innerHTML = renderRows();
         document.querySelectorAll("[data-service-letter]").forEach(function (btn) {
-          btn.classList.toggle("is-on", btn.getAttribute("data-service-letter") === state.letter);
+          var key = btn.getAttribute("data-service-letter") || "";
+          var active = key === "ALL" ? !state.letter : key === state.letter;
+          btn.classList.toggle("is-on", active);
+          btn.setAttribute("aria-pressed", active ? "true" : "false");
         });
         return;
       }
@@ -686,8 +868,8 @@
         load();
         return;
       }
-      if (e.target.closest("[data-service-cancel]")) {
-        closeForm();
+      if (e.target.closest("[data-svc-dialog-close], [data-service-cancel]")) {
+        requestCloseForm();
         return;
       }
       if (e.target.closest("[data-of-add]")) {

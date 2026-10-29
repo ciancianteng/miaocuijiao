@@ -8,6 +8,7 @@
   var LETTERS = "ABCDEFGHJKLMNOPQRSTWXYZ";
   var BOUNDS = "啊芭擦搭蛾发噶哈击喀垃妈拿哦啪期然撒塌挖昔压匝";
   var collator = null;
+  var HAN = /\p{Script=Han}/u;
 
   function nameCollator() {
     if (!collator) collator = new Intl.Collator("zh-CN");
@@ -19,12 +20,10 @@
     return String(raw || "").trim().normalize("NFKC");
   }
 
-  function initialOf(name) {
-    var text = String(name || "").trim().normalize("NFKC");
-    var ch = text.charAt(0);
+  function initialOfChar(ch) {
     if (!ch) return "#";
     if (/[A-Za-z]/.test(ch)) return ch.toUpperCase();
-    if (/[0-9]/.test(ch)) return "#";
+    if (!HAN.test(ch)) return "#";
     var compare = nameCollator();
     var letter = "#";
     for (var i = 0; i < BOUNDS.length; i += 1) {
@@ -32,6 +31,19 @@
       else break;
     }
     return letter;
+  }
+
+  function groupingChar(name) {
+    var chars = Array.from(String(name || "").trim().normalize("NFKC"));
+    for (var i = 0; i < chars.length; i += 1) {
+      var ch = chars[i];
+      if (HAN.test(ch) || /[A-Za-z]/.test(ch)) return ch;
+    }
+    return "";
+  }
+
+  function initialOf(name) {
+    return initialOfChar(groupingChar(name));
   }
 
   function compareNames(a, b) {
@@ -48,7 +60,11 @@
   }
 
   function initialsOf(name) {
-    return Array.from(String(name || "").trim().normalize("NFKC")).map(initialOf).join("");
+    return Array.from(String(name || "").trim().normalize("NFKC")).map(function (ch) {
+      if (!(HAN.test(ch) || /[A-Za-z]/.test(ch))) return "";
+      var letter = initialOfChar(ch);
+      return letter === "#" ? "" : letter;
+    }).join("");
   }
 
   function matchesQuery(name, query) {

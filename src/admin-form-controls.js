@@ -186,7 +186,30 @@
     var rect = wrap.getBoundingClientRect();
     var spaceBelow = window.innerHeight - rect.bottom;
     var spaceAbove = rect.top;
-    if (spaceBelow < 220 && spaceAbove > spaceBelow) menu.classList.add("is-up");
+    var upward = spaceBelow < 220 && spaceAbove > spaceBelow;
+    if (upward) menu.classList.add("is-up");
+    if (wrap.closest(".svc-dialog")) {
+      menu.style.position = "fixed";
+      menu.style.left = rect.left + "px";
+      menu.style.width = rect.width + "px";
+      menu.style.right = "auto";
+      menu.style.zIndex = "14000";
+      if (upward) {
+        menu.style.top = "auto";
+        menu.style.bottom = Math.max(8, window.innerHeight - rect.top + 6) + "px";
+      } else {
+        menu.style.bottom = "auto";
+        menu.style.top = rect.bottom + 6 + "px";
+      }
+      return;
+    }
+    menu.style.position = "";
+    menu.style.left = "";
+    menu.style.width = "";
+    menu.style.right = "";
+    menu.style.top = "";
+    menu.style.bottom = "";
+    menu.style.zIndex = "";
   }
 
   function enhanceSelect(select) {
@@ -362,7 +385,7 @@
       if (select.getAttribute("data-admin-control") === "native") return;
       if (select.closest(".cs-reward-toolbar, .service-record-toolbar, [role='search']")) return;
       // Only enhance inside admin surfaces
-      if (!select.closest(".admin-shell, #adminModal, .admin-content, body[data-allowed-roles]")) return;
+      if (!select.closest(".admin-shell, #adminModal, .admin-content, .svc-dialog, body[data-allowed-roles]")) return;
       try {
         enhanceSelect(select);
       } catch (err) {
