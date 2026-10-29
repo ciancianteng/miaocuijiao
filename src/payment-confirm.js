@@ -568,6 +568,16 @@
     );
   }
 
+  function payViewState(info) {
+    if (!info || info.__live !== true) return "loading";
+    if (info.payState === "error" || info.source === "error") return "error";
+    if (info.payState === "disabled" || info.source === "unavailable" || info.enabled === false || info.unavailable === true) {
+      return "disabled";
+    }
+    if (info.payState === "enabled" || info.enabled === true) return "enabled";
+    return "error";
+  }
+
   function qrPanelHtml(order) {
     var st = String(order.status || "");
     if (st !== "awaiting_payment") return "";
@@ -620,8 +630,20 @@
       esc(String(qrUrlRaw.length)) +
       " live=" +
       (info && info.__live ? "1" : "0") +
+      " state=" +
+      payViewState(info) +
       "</p>";
-    if (hasQr) {
+    var viewState = payViewState(info);
+    if (viewState === "loading") {
+      html += '<p class="pay-hint" data-pay-loading="1">正在读取收款信息…</p>';
+    } else if (viewState === "error") {
+      html += '<p class="pay-alert" role="alert" data-pay-load-error="1">' + esc(PAY_RETRY) + "</p>";
+      html += '<div class="pay-actions"><button type="button" class="pay-btn primary" data-reload>重试</button></div>';
+    } else if (viewState === "enabled" && hasQr) {
+      if (payInfoStale) {
+        html += '<p class="pay-alert" role="alert" data-pay-load-error="1">' + esc(PAY_RETRY) + "</p>";
+        html += '<div class="pay-actions"><button type="button" class="pay-btn" data-reload>重试</button></div>';
+      }
       html +=
         '<p class="pay-hint">' +
         esc((info && info.instructions) || "请扫描下方收款二维码完成付款。仅本支付页显示，首页不公开收款码。") +
@@ -793,6 +815,9 @@
   };
 
   var platformPayInfo = null;
+  var payInfoStale = false;
+  var loadInFlight = false;
+  var PAY_RETRY = "支付信息暂时无法加载，请重试";
   var discordStatus = { loaded: false, bound: false, username: "", configured: true };
 
   function orderVoiceMode(order) {
@@ -1099,16 +1124,13 @@
 
     // Manual channels with closed QR: still show proof panel for multi; singles may hide QR-only dead end.
     var info = platformPayInfo || (order && order.platformPayInfo) || null;
+    var viewState = payViewState(info);
     var channelClosed =
       !isMultiParent(order) &&
       !isWalletMethod(order) &&
       !reviewing &&
       !hasLocal &&
-      info &&
-      info.__live === true &&
-      ((!info.qrUrl && !(/^acct-/.test(methodCode(order)) && info.bankAccount)) ||
-        info.enabled === false ||
-        info.unavailable === true);
+      viewState !== "enabled";
     if (channelClosed) return "";
 
     var html = '<div class="pay-proof" data-proof-panel>';
@@ -1476,6 +1498,17 @@
       renderOrder(current);
       return;
     }
+    var payGateState = payViewState(platformPayInfo);
+    if (payGateState === "disabled") {
+      proofDraft.error = methodLabel(current) + " 暂未开放，请选择其他支付方式";
+      renderOrder(current);
+      return;
+    }
+    if (payGateState !== "enabled") {
+      proofDraft.error = PAY_RETRY;
+      renderOrder(current);
+      return;
+    }
     if (!isAllowedProofFile(file)) {
       proofDraft.error = "仅支持 JPG、PNG、WEBP。iPhone 请用「照片」导出为 JPG，或关闭「保留原格式」后再选。";
       renderOrder(current);
@@ -1591,10 +1624,13 @@
 
   async function loadOrder(opts) {
     opts = opts || {};
+    if (opts.silent && loadInFlight) return;
     var orderId = q("order") || q("id");
     var gen = ++loadGen;
-    if (abortCtrl) abortCtrl.abort();
-    abortCtrl = typeof AbortController !== "undefined" ? new AbortController() : null;
+    if (!opts.silent && abortCtrl) abortCtrl.abort();
+    var ctrl = typeof AbortController !== "undefined" ? new AbortController() : null;
+    abortCtrl = ctrl;
+    var timedOut = false;
 
     if (!token()) {
       sessionStorage.setItem("mcjAfterLoginRedirect", location.pathname + location.search);
@@ -1616,6 +1652,13 @@
       );
     }
 
+    var timer = setTimeout(function () {
+      timedOut = true;
+      try {
+        if (ctrl) ctrl.abort();
+      } catch (e) {}
+    }, 12000);
+    loadInFlight = true;
     try {
       var res = await fetch("/api/orders?id=" + encodeURIComponent(orderId), {
         headers: { Accept: "application/json", Authorization: "Bearer " + token() },
@@ -1627,18 +1670,28 @@
       });
       if (gen !== loadGen) return;
       if (typeof body.allowTestPay === "boolean") allowTestPay = body.allowTestPay;
+      if (!res.ok || body.ok === false) throw new Error(body.message || "订单读取失败");
       if (body.platformPayInfo && typeof body.platformPayInfo === "object") {
-        platformPayInfo = Object.assign({}, body.platformPayInfo, { __live: true });
-      } else {
+        var incoming = Object.assign({}, body.platformPayInfo, { __live: true });
+        if (payViewState(incoming) === "error" && payViewState(platformPayInfo) === "enabled") {
+          payInfoStale = true;
+        } else {
+          platformPayInfo = incoming;
+          payInfoStale = payViewState(incoming) === "error";
+        }
+      } else if (payViewState(platformPayInfo) !== "enabled") {
         platformPayInfo = {
           qrUrl: "",
-          enabled: false,
-          instructions: "支付通道暂不可用",
+          enabled: null,
+          unavailable: false,
+          payState: "error",
+          source: "error",
+          instructions: PAY_RETRY,
           title: "平台收款",
           __live: true,
         };
+        payInfoStale = true;
       }
-      if (!res.ok || body.ok === false) throw new Error(body.message || "订单读取失败");
       var order = pickOrder(body.orders, orderId);
       if (!order) {
         failUi("订单不存在，请到「我的订单」查看。");
@@ -1692,16 +1745,29 @@
       renderOrder(order);
     } catch (err) {
       if (gen !== loadGen) return;
-      if (err && err.name === "AbortError") return;
-      if (cached) {
-        if (isMultiParent(cached) || requiresProofUpload(cached)) {
-          renderOrder(forceMultiProofOrder(cached, orderId));
-        } else {
-          renderOrder(cached);
-        }
-      } else {
-        failUi(err.message || "订单加载失败，请重试", { orderId: orderId });
+      if (err && err.name === "AbortError" && !timedOut) return;
+      if (payViewState(platformPayInfo) === "enabled") {
+        payInfoStale = true;
+        var kept = cached || readCache(orderId);
+        if (kept) renderOrder(kept);
+        return;
       }
+      platformPayInfo = {
+        qrUrl: "",
+        enabled: null,
+        unavailable: false,
+        payState: "error",
+        source: "error",
+        instructions: PAY_RETRY,
+        title: "平台收款",
+        __live: true,
+      };
+      payInfoStale = true;
+      var fallback = cached || { id: orderId, status: "awaiting_payment", paymentMethod: "duitnow" };
+      renderOrder(fallback);
+    } finally {
+      clearTimeout(timer);
+      if (gen === loadGen) loadInFlight = false;
     }
   }
 
@@ -1837,9 +1903,13 @@
   });
 
   window.addEventListener("pagehide", function () {
-    if (abortCtrl) abortCtrl.abort();
-    if (pollTimer) clearInterval(pollTimer);
-    // Do NOT clearProofDraft here — mobile Safari may fire pagehide when opening the photo picker.
+    // Do not abort. Android Chrome and iOS Safari fire pagehide when the photo
+    // sheet or browser chrome moves; aborting cancelled the pay-config request
+    // and the next paint showed a false「暂未开放」.
+  });
+  window.addEventListener("pageshow", function () {
+    if (!pollTimer) startPoll();
+    if (payViewState(platformPayInfo) !== "enabled") loadOrder({ silent: true });
   });
 
   ensureDurableProofInput();

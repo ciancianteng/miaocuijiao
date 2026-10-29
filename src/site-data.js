@@ -287,7 +287,8 @@
       esc(pos) +
       ";--mcj-cover-pos:" +
       esc(pos) +
-      "\" onerror=\"this.onerror=null;this.src='/default-avatar.png'\" loading=\"lazy\" decoding=\"async\">" +
+      "\" onerror=\"this.onerror=null;this.src='/default-avatar.png'\"" +
+      (opts.eagerImage ? " decoding=\"async\">" : " loading=\"lazy\" decoding=\"async\">") +
       (variant === "hall"
         ? '<span class="hall-presence is-' + esc(presenceCode) + '">' + hallEmoji + " " + esc(hallShort) + "</span>"
         : '<span class="online-dot' + onlineClass + '" data-online-status="' + esc(presenceCode) + '" aria-hidden="true"></span>') +

@@ -564,7 +564,7 @@
   function verifiedBadgeHtml() {
     return "";
   }
-  function card(item) {
+  function card(item, index) {
     var publicId =
       (window.MCJCompanionPublicId && window.MCJCompanionPublicId.customerFacingCompanionId
         ? window.MCJCompanionPublicId.customerFacingCompanionId(item)
@@ -730,6 +730,7 @@
     if (window.MCJRealData && typeof window.MCJRealData.companionCardHtml === "function") {
       return window.MCJRealData.companionCardHtml(sharedPayload, {
         variant: "hall",
+        eagerImage: index < 4,
         maxTags: 0,
         scrollTags: false,
         actionsHtml: hallActions,
@@ -747,7 +748,9 @@
       esc(item.image || DEFAULT_AVATAR) +
       '" alt="' +
       esc(nickname) +
-      '" loading="lazy" decoding="async" onload="this.classList.add(\'is-loaded\')" onerror="this.onerror=null;this.classList.add(\'is-loaded\');this.src=\'' +
+      '"' +
+      (index < 4 ? ' decoding="async"' : ' loading="lazy" decoding="async"') +
+      ' onload="this.classList.add(\'is-loaded\')" onerror="this.onerror=null;this.classList.add(\'is-loaded\');this.src=\'' +
       DEFAULT_AVATAR +
       '\'"></div>' +
       '<div class="hot-info"><div class="hot-name-row"><h3>' +

@@ -14,9 +14,14 @@ import {
 } from "./_payment-bank-accounts.js";
 
 async function bankAccountPayInfoOrUnavailable(code) {
-  const info = await loadBankAccountPayInfo(code).catch(() => null);
-  if (info) return { ...info, requestedMethod: moneySafe(code) };
-  return { ...unavailablePayInfo(moneySafe(code), code), title: "收款渠道" };
+  try {
+    const info = await loadBankAccountPayInfo(code);
+    if (info) return { ...info, payState: info.enabled === false ? "disabled" : "enabled", requestedMethod: moneySafe(code) };
+    return { ...unavailablePayInfo(moneySafe(code), code), title: "收款渠道" };
+  } catch (error) {
+    console.warn("[pay-qr] bank account", String(error?.message || error).slice(0, 160));
+    return loadErrorPayInfo(code);
+  }
 }
 
 function moneySafe(v) {
@@ -119,6 +124,45 @@ export function channelDisplayName(channelId, methodHint = "") {
   return "该支付方式";
 }
 
+export const PAY_INFO_RETRY = "支付信息暂时无法加载，请重试";
+
+/** loading is client-only. error is a failed read, never an admin-off switch. */
+export function classifyPlatformPayInfo(info) {
+  if (!info || typeof info !== "object") return "loading";
+  if (info.payState === "error" || info.source === "error") return "error";
+  if (
+    info.payState === "disabled" ||
+    info.source === "unavailable" ||
+    info.enabled === false ||
+    info.unavailable === true
+  ) {
+    return "disabled";
+  }
+  if (info.payState === "enabled" || info.enabled === true) return "enabled";
+  return "error";
+}
+
+export function loadErrorPayInfo(methodHint = "") {
+  const label = channelDisplayName("", methodHint);
+  return {
+    channelId: "",
+    requestedMethod: moneySafe(methodHint),
+    title: label || "平台收款",
+    qrUrl: "",
+    duitnowId: "",
+    receiverName: "",
+    bankName: "",
+    bankAccount: "",
+    phone: "",
+    accountLast4: "",
+    instructions: PAY_INFO_RETRY,
+    enabled: null,
+    unavailable: false,
+    payState: "error",
+    source: "error",
+  };
+}
+
 function unavailablePayInfo(channelId, methodHint = "") {
   const id = moneySafe(channelId) || resolvePayChannelIds(methodHint)[0] || "";
   const label = channelDisplayName(id, methodHint);
@@ -136,6 +180,7 @@ function unavailablePayInfo(channelId, methodHint = "") {
     instructions: `${label} 暂未开放，请选择其他支付方式`,
     enabled: false,
     unavailable: true,
+    payState: "disabled",
     source: "unavailable",
   };
 }
@@ -265,6 +310,7 @@ function payInfoFromMeta(meta, hasQr) {
     instructions: meta.instructions || defaultInstructions(meta.channelId),
     enabled: true,
     unavailable: false,
+    payState: "enabled",
     source: meta.source,
   };
 }
@@ -306,6 +352,7 @@ function emptyPayInfo(methodHint = "") {
 export async function loadPaymentChannelsContext() {
   let publicMap = {};
   let platformData = {};
+  let settingsOk = true;
   try {
     const rows = await companionDb("platform_settings", "?id=eq.global&select=id,data&limit=1");
     const data = rows?.[0]?.data;
@@ -319,10 +366,12 @@ export async function loadPaymentChannelsContext() {
   } catch {
     publicMap = {};
     platformData = {};
+    settingsOk = false;
   }
 
   let channelRows = [];
   let tableReady = true;
+  let channelsOk = true;
   try {
     channelRows = await companionDb("payment_channels", "?select=*&order=sort.asc");
     if (!Array.isArray(channelRows)) channelRows = [];
@@ -335,6 +384,7 @@ export async function loadPaymentChannelsContext() {
       tableReady = !/PGRST205|Could not find the table|schema cache|does not exist/i.test(
         String(error2?.message || error?.message || "")
       );
+      channelsOk = false;
       channelRows = [];
       if (tableReady) {
         console.warn(
@@ -356,7 +406,7 @@ export async function loadPaymentChannelsContext() {
       if (!byId[key]) byId[key] = r;
     }
   }
-  return { publicMap, byId, channelRows: channelRows || [], tableReady, platformData };
+  return { publicMap, byId, channelRows: channelRows || [], tableReady, platformData, settingsOk, channelsOk };
 }
 
 /**
@@ -403,6 +453,15 @@ export async function loadChannelPayInfo(channelId) {
  * Never invent hardcoded accounts. Never substitute another channel's QR.
  */
 export async function loadPlatformPayQr(preferredMethod = "") {
+  try {
+    return await loadPlatformPayQrInner(preferredMethod);
+  } catch (error) {
+    console.warn("[pay-qr]", String(error?.message || error).slice(0, 180));
+    return loadErrorPayInfo(preferredMethod);
+  }
+}
+
+async function loadPlatformPayQrInner(preferredMethod = "") {
   if (bankIdFromMethodCode(preferredMethod)) return bankAccountPayInfoOrUnavailable(preferredMethod);
   const method = moneySafe(preferredMethod);
   const channelIds = resolvePayChannelIds(method);
@@ -412,7 +471,12 @@ export async function loadPlatformPayQr(preferredMethod = "") {
     return emptyPayInfo(method);
   }
 
-  const { publicMap, byId } = await loadPaymentChannelsContext();
+  const ctx = await loadPaymentChannelsContext();
+  const { publicMap, byId } = ctx;
+  // A failed read must not look like the admin turned the channel off.
+  if (!ctx.channelsOk && !(ctx.tableReady === false && ctx.settingsOk)) {
+    return loadErrorPayInfo(method);
+  }
 
   for (const id of channelIds) {
     const info = pickChannelPayInfo(id, byId[id], publicMap);

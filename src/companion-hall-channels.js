@@ -49,7 +49,7 @@
 
   function card(item) {
     var cover = item.coverUrl
-      ? '<div class="hall-gp-cover"><img src="' + esc(item.coverUrl) + '" alt=""></div>'
+      ? '<div class="hall-gp-cover"><img src="' + esc(item.coverUrl) + '" alt="" loading="lazy" decoding="async"></div>'
       : '<div class="hall-gp-cover hall-gp-cover--empty"><span>' + esc((item.category || "玩法").slice(0, 2)) + "</span></div>";
     return (
       '<a class="hall-gp-card" href="gameplay-product.html?id=' +
