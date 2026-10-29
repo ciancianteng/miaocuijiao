@@ -1172,3 +1172,104 @@ button.cs-metric{display:block;width:100%;text-align:left;color:inherit;backgrou
 }
 .cs-main > .cs-top{grid-row:1}
 .cs-main > .cs-page{grid-row:2;min-height:0}
+
+/* Session page: keep the status bar, list header and bottom nav in separate bands.
+   Safe area comes from the device, not a hardcoded notch height. */
+.cs-load-error{color:#ffb4bc}
+.cs-load-error .cs-btn{margin-top:8px}
+.cs-thread-more{display:flex;justify-content:center;padding:8px 12px}
+@media (max-width:1050px){
+  html,body{max-width:100%;overflow-x:clip}
+  .cs-app,.cs-shell,.cs-main,.cs-page{max-width:100%;overflow-x:clip}
+  :root{--cs-mobile-tabbar:calc(54px + env(safe-area-inset-bottom, 0px))}
+  .cs-chat-list{
+    top:0 !important;
+    right:0 !important;
+    bottom:var(--cs-mobile-tabbar) !important;
+    left:0 !important;
+    width:auto !important;
+    max-width:100% !important;
+    height:auto !important;
+    padding-top:env(safe-area-inset-top, 0px);
+    padding-left:env(safe-area-inset-left, 0px);
+    padding-right:env(safe-area-inset-right, 0px);
+    box-sizing:border-box;
+  }
+  .cs-chat-list-backdrop{
+    top:0;
+    right:0;
+    bottom:var(--cs-mobile-tabbar);
+    left:0;
+  }
+  .cs-chat-list-head{
+    min-height:44px;
+    padding:10px 12px;
+    gap:8px;
+    align-items:center;
+  }
+  .cs-chat-list-head strong{
+    min-width:0;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+    line-height:1.3;
+  }
+  .cs-chat-list-head .cs-actions{
+    flex-wrap:nowrap;
+    gap:6px;
+    flex:0 0 auto;
+  }
+  .cs-chat-list-head .cs-btn{height:32px;padding:0 10px}
+  .cs-companion-contact,
+  .cs-conv-tabs{
+    padding-left:12px;
+    padding-right:12px;
+    box-sizing:border-box;
+  }
+  .cs-mobile-nav{
+    align-items:stretch;
+    justify-items:stretch;
+    left:0;
+    right:0;
+    bottom:0;
+    height:var(--cs-mobile-tabbar);
+    padding:0 env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
+    box-sizing:border-box;
+  }
+  .cs-mobile-nav button{
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    height:54px;
+    margin:0;
+    line-height:1.15;
+    text-align:center;
+    white-space:nowrap;
+  }
+  .cs-main{
+    height:calc(100dvh - var(--cs-mobile-tabbar)) !important;
+    min-height:0 !important;
+  }
+  .cs-top{
+    position:sticky;
+    top:0;
+    z-index:30;
+    box-sizing:border-box;
+    min-height:calc(52px + env(safe-area-inset-top, 0px));
+    padding-top:env(safe-area-inset-top, 0px);
+    padding-left:max(12px, env(safe-area-inset-left, 0px));
+    padding-right:max(12px, env(safe-area-inset-right, 0px));
+  }
+  .cs-top h1,.cs-top p{position:static;line-height:1.25}
+  .cs-page[data-route="conversations"]{padding:0 !important}
+  .cs-chat-main{
+    display:flex;
+    flex-direction:column;
+    min-height:0;
+    height:100%;
+    overflow:hidden;
+  }
+  .cs-chat-head{flex:0 0 auto;height:auto;min-height:52px;position:sticky;top:0}
+  .cs-chat-messages{flex:1 1 auto;min-height:0}
+  .cs-chat-composer{padding-bottom:var(--cs-keyboard-inset, 0px)}
+}

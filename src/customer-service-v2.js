@@ -119,6 +119,31 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, virtStartIndex }
     });
     return counts;
   }
+  function conversationRows(){
+    return (state.data&&state.data.conversations)||[];
+  }
+  function countLabel(n){
+    if(!conversationRows().length&&(state.dataUnavailable||state.error||state.pollError))return '—';
+    if(state.loading&&!conversationRows().length)return '…';
+    return String(n);
+  }
+  function listEmptyHtml(){
+    if(!conversationRows().length&&(state.dataUnavailable||state.error||state.pollError)){
+      return '<div class="cs-empty cs-load-error">会话加载失败：'+esc(state.error||state.pollError||'请重试')+'<button class="cs-btn" type="button" data-retry-conv>重试</button></div>';
+    }
+    if(state.loading&&!conversationRows().length)return '<div class="cs-empty">正在加载会话…</div>';
+    return '<div class="cs-empty">该分类暂无会话</div>';
+  }
+  function threadChromeHtml(activeId,msgCount){
+    if(!activeId)return '';
+    var meta=(state.threadMeta||{})[activeId]||{};
+    var loading=!!(state._msgFlight&&state._msgFlight.id===activeId);
+    var html='';
+    if(meta.hasMore)html+='<div class="cs-thread-more"><button class="cs-btn" type="button" data-load-older="'+esc(activeId)+'">查看更早消息</button></div>';
+    if(!msgCount&&meta.error)html+='<div class="cs-empty cs-load-error">消息加载失败：'+esc(meta.error)+'<button class="cs-btn" type="button" data-retry-thread="'+esc(activeId)+'">重试</button></div>';
+    else if(!msgCount&&loading)html+='<div class="cs-empty">正在加载最新消息…</div>';
+    return html;
+  }
   function convActivityTime(c){
     // Prefer last message time so mark_read/claim bumps don't pin empty chats above active ones.
     var last=String((c&&c.lastTime)||'');
@@ -611,7 +636,7 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, virtStartIndex }
   function virtualListHtml(list,active,data,scrollTop,viewportH){
     var total=list.length;
     if(total<=40){
-      return (total?list.map(function(c){return conversationCardHtml(c,active,data)}).join(''):'<div class="cs-empty">该分类暂无会话</div>');
+      return (total?list.map(function(c){return conversationCardHtml(c,active,data)}).join(''):listEmptyHtml());
     }
     var start=virtStartIndex(scrollTop, CONV_ROW_H, CONV_OVERSCAN);
     var visible=Math.ceil((viewportH||600)/CONV_ROW_H)+CONV_OVERSCAN*2;
@@ -1122,7 +1147,8 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, virtStartIndex }
     if(!node)return;
     try{node.outerHTML=messageHtml(msg);}catch(e){}
   }
-  function loadActiveConversationMessages(cid){
+  function loadActiveConversationMessages(cid, opts){
+    opts=opts||{};
     var id=String(cid||state.activeConversation||'').trim();
     if(!id||!state.session||!state.session.token)return Promise.resolve();
     var conv=((state.data&&state.data.conversations)||[]).find(function(c){return c.id===id});
@@ -1136,11 +1162,34 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, virtStartIndex }
       }
       return Promise.resolve();
     }
-    return api('list_messages',{id:id,conversation_id:id}).then(function(res){
+    var meta=(state.threadMeta||{})[id]||{};
+    if(!opts.force&&!opts.before&&meta.loaded&&!meta.error)return Promise.resolve();
+    if(state._msgFlight&&state._msgFlight.id===id&&state._msgFlight.before===(opts.before||'')&&!opts.force)return state._msgFlight.p;
+    var body={id:id,conversation_id:id,limit:40};
+    if(opts.before)body.before=opts.before;
+    var p=api('list_messages',body).then(function(res){
       var remote=(res.messages||[]);
       if(!state.data)return;
-      var others=(state.data.messages||[]).filter(function(m){return m.conversationId!==id});
-      state.data.messages=others.concat(remote);
+      if(opts.before){
+        var byId={};
+        (state.data.messages||[]).forEach(function(m){if(m&&m.id)byId[m.id]=m;});
+        remote.forEach(function(m){if(m&&m.id&&!byId[m.id])byId[m.id]=m;});
+        state.data.messages=Object.keys(byId).map(function(k){return byId[k];});
+        state.data.messages.sort(function(a,b){return String(a.createdAt||a.created_at||'').localeCompare(String(b.createdAt||b.created_at||''));});
+      }else{
+        var others=(state.data.messages||[]).filter(function(m){return m.conversationId!==id||m._pending||m._failed;});
+        var pending=others.filter(function(m){return m.conversationId===id;});
+        others=others.filter(function(m){return m.conversationId!==id;});
+        pending=pending.filter(function(local){
+          return !remote.some(function(m){
+            return String(m.content||'')===String(local.content||'')&&String(m.senderRole||m.sender_role||'')===String(local.senderRole||local.sender_role||'');
+          });
+        });
+        state.data.messages=others.concat(remote).concat(pending);
+      }
+      if(!state.threadMeta)state.threadMeta={};
+      var oldest=remote.length?String(remote[0].createdAt||remote[0].created_at||''):(meta.oldest||'');
+      state.threadMeta[id]={loaded:true,hasMore:!!res.hasMore,oldest:oldest,error:''};
       if(state.route==='conversations'){
         if(root.querySelector('.cs-chat-layout'))patchConversationMessages();
         else paint();
@@ -1162,8 +1211,19 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, virtStartIndex }
           if(root.querySelector('.cs-chat-layout'))patchConversationMessages();
           else paint();
         }
+      }else{
+        if(!state.threadMeta)state.threadMeta={};
+        state.threadMeta[id]=Object.assign({},meta,{error:(err&&err.message)||'消息加载失败'});
+        if(state.route==='conversations'){
+          if(root.querySelector('.cs-chat-layout'))patchConversationMessages();
+          else paint();
+        }
       }
+    }).finally(function(){
+      if(state._msgFlight&&state._msgFlight.p===p)state._msgFlight=null;
     });
+    state._msgFlight={id:id,before:opts.before||'',p:p};
+    return p;
   }
   function bindRealtime(cid){
     var id=String(cid||'').trim();
@@ -1547,28 +1607,51 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, virtStartIndex }
   // Also fix bootstrap summary unread/current from live conversation list.
   function load(){
     if(!state.session||!state.session.token){state.loading=false;paint();return Promise.resolve()}
-    state.loading=true;state.error='';
+    state.loading=true;state.error='';state.pollError='';
     state.createOrderErrors={bosses:'',companions:'',services:state.servicesError||''};
     if(!state.data)state.data=emptyDashboardData();
     paint();
     var bootFailed=false;
     var bootMsg='';
-    var boot=api('bootstrap',{},'GET').then(function(res){
-      state.dataUnavailable=false;
-      return res;
-    }).catch(function(err){
+    function onBootFail(err){
       bootFailed=true;
       bootMsg=err&&err.message?err.message:'客服端数据读取失败';
       state.error=bootMsg;
+      if(conversationRows().length){
+        state.dataUnavailable=false;
+        return {data:state.data,ok:false,keep:true};
+      }
       state.dataUnavailable=true;
       return {data:emptyDashboardData(),ok:false};
-    });
+    }
+    var boot=(state.route==='conversations'
+      ? api('session_pool').then(function(res){
+          var pool=(res&&res.data)||{};
+          var merged=Object.assign(emptyDashboardData(), state.data||{}, pool);
+          delete merged._unavailable;
+          state.data=merged;
+          state.dataUnavailable=false;
+          state.error='';
+          healSessionStaff(state.data);
+          try{paint();}catch(e){}
+          return api('bootstrap',{},'GET');
+        })
+      : api('bootstrap',{},'GET')
+    ).then(function(res){
+      state.dataUnavailable=false;
+      return res;
+    }).catch(onBootFail);
     return Promise.all([boot,loadServices()]).then(function(results){
       var res=results[0]||{};
       var next=res.data||emptyDashboardData();
       if(bootFailed){
-        next=Object.assign({},next,{_unavailable:true});
-        state.dataUnavailable=true;
+        if(res.keep){
+          next=state.data||next;
+          state.dataUnavailable=false;
+        }else{
+          next=Object.assign({},next,{_unavailable:true});
+          state.dataUnavailable=true;
+        }
       }else{
         if(next&&next._unavailable)delete next._unavailable;
         state.dataUnavailable=false;
@@ -1626,12 +1709,17 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, virtStartIndex }
     if(keepRoute==='conversations')captureComposer();
     var seq=++softRefreshSeq;
     // Conversations page: lightweight poll (not full bootstrap) for <5s freshness.
-    var poller=api('poll_updates',{conversation_id:keepRoute==='conversations'?(keepConv||''):'',since:state.lastPollAt||''}).catch(function(){
-      if(keepRoute==='dashboard'||keepRoute==='orders'||keepRoute==='conversations')return api('bootstrap',{},'GET');
-      return {ok:true,data:{conversations:[],messages:[],incremental:true,polledAt:new Date().toISOString()}};
+    var poller=api('poll_updates',{conversation_id:keepRoute==='conversations'?(keepConv||''):'',since:state.lastPollAt||''}).catch(function(err){
+      state.pollError=(err&&err.message)||'会话刷新失败';
+      return null;
     });
     return poller.then(function(res){
       if(seq!==softRefreshSeq)return;
+      if(!res){
+        if(state.route==='conversations'&&root.querySelector('.cs-chat-layout'))patchConversationMessages();
+        return;
+      }
+      state.pollError='';
       var nowRoute=state.route||keepRoute;
       var remote;
       var isPollPayload=res&&res.data&&(res.data.conversations||res.data.messages||res.data.incremental!=null||res.data.polledAt);
@@ -1852,7 +1940,7 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, virtStartIndex }
       syncPoolCounters();
       var activeId=state.activeConversation||'';
       if(activeId&&state.route==='conversations'){
-        return loadActiveConversationMessages(activeId).then(function(){
+        return loadActiveConversationMessages(activeId,{force:true}).then(function(){
           bindRealtime(activeId);
           if(root.querySelector('.cs-chat-layout'))patchConversationMessages();
         });
@@ -1895,7 +1983,7 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, virtStartIndex }
     var snap=null;
     try{snap=captureChatScroll(box);}catch(e){}
     var stick=!!state.chatStickBottom||!!(snap&&snap.near);
-    box.innerHTML=(lockedActive?lockPanelHtml(active):'')+(msgs.length?msgs.map(messageHtml).join(''):(lockedActive?'':'<div class="cs-empty">暂无消息</div>'));
+    box.innerHTML=threadChromeHtml(active.id,msgs.length)+(lockedActive?lockPanelHtml(active):'')+(msgs.length?msgs.map(messageHtml).join(''):(lockedActive||threadChromeHtml(active.id,msgs.length)?'':'<div class="cs-empty">暂无消息</div>'));
     try{restoreChatScroll(box,snap,stick);}catch(e){}
     if(stick)state.chatStickBottom=false;
     if(listEl){
@@ -1907,9 +1995,9 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, virtStartIndex }
       var tabs=listEl.querySelector('.cs-conv-tabs');
       if(tabs){
         tabs.innerHTML=
-          '<button type="button" class="cs-conv-tab'+(state.convFilter==='waiting'?' active':'')+'" data-conv-filter="waiting">待接待 <em>'+counts.waiting+'</em></button>'+
-          '<button type="button" class="cs-conv-tab'+(state.convFilter==='active'?' active':'')+'" data-conv-filter="active">接待中 <em>'+counts.active+'</em></button>'+
-          '<button type="button" class="cs-conv-tab'+(state.convFilter==='ended'?' active':'')+'" data-conv-filter="ended">已结束 <em>'+counts.ended+'</em></button>';
+          '<button type="button" class="cs-conv-tab'+(state.convFilter==='waiting'?' active':'')+'" data-conv-filter="waiting">待接待 <em>'+countLabel(counts.waiting)+'</em></button>'+
+          '<button type="button" class="cs-conv-tab'+(state.convFilter==='active'?' active':'')+'" data-conv-filter="active">接待中 <em>'+countLabel(counts.active)+'</em></button>'+
+          '<button type="button" class="cs-conv-tab'+(state.convFilter==='ended'?' active':'')+'" data-conv-filter="ended">已结束 <em>'+countLabel(counts.ended)+'</em></button>';
       }
       var body=listEl.querySelector('[data-cs-virt-body]');
       if(body){
@@ -1922,9 +2010,9 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, virtStartIndex }
         var headHtml='<div class="cs-chat-list-head"><strong>会话列表</strong><div class="cs-actions"><button class="cs-btn" type="button" data-refresh>刷新</button><button class="cs-btn cs-list-close" type="button" data-close-conv-list>关闭</button></div></div>'+
           companionContactBarHtml()+
           '<div class="cs-conv-tabs" role="tablist">'+
-          '<button type="button" class="cs-conv-tab'+(state.convFilter==='waiting'?' active':'')+'" data-conv-filter="waiting">待接待 <em>'+counts.waiting+'</em></button>'+
-          '<button type="button" class="cs-conv-tab'+(state.convFilter==='active'?' active':'')+'" data-conv-filter="active">接待中 <em>'+counts.active+'</em></button>'+
-          '<button type="button" class="cs-conv-tab'+(state.convFilter==='ended'?' active':'')+'" data-conv-filter="ended">已结束 <em>'+counts.ended+'</em></button>'+
+          '<button type="button" class="cs-conv-tab'+(state.convFilter==='waiting'?' active':'')+'" data-conv-filter="waiting">待接待 <em>'+countLabel(counts.waiting)+'</em></button>'+
+          '<button type="button" class="cs-conv-tab'+(state.convFilter==='active'?' active':'')+'" data-conv-filter="active">接待中 <em>'+countLabel(counts.active)+'</em></button>'+
+          '<button type="button" class="cs-conv-tab'+(state.convFilter==='ended'?' active':'')+'" data-conv-filter="ended">已结束 <em>'+countLabel(counts.ended)+'</em></button>'+
           '</div>';
         listEl.innerHTML=headHtml+'<div data-cs-virt-body>'+virtualListHtml(list,active,data,savedScroll,560)+'</div>';
         try{
@@ -2021,10 +2109,15 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, virtStartIndex }
     startReviewBadgePoll();
     if(window.__MCJCsPoll)return;
     bindPoolRealtime();
+    var lastQuietAt=0;
     window.__MCJCsPoll=setInterval(function(){
       if(isLoginView())return;
+      var gap=state.realtimeReady?12000:4000;
+      var now=Date.now();
+      if(now-lastQuietAt<gap)return;
+      lastQuietAt=now;
       quietRefresh();
-    }, 1500);
+    }, 2000);
     if(!window.__MCJCsVisBound){
       window.__MCJCsVisBound=true;
       window.addEventListener('online',function(){
@@ -2991,9 +3084,9 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, virtStartIndex }
       '</div></div>'+
       companionContactBarHtml()+
       '<div class="cs-conv-tabs" role="tablist">'+
-      '<button type="button" class="cs-conv-tab'+(state.convFilter==='waiting'?' active':'')+'" data-conv-filter="waiting">待接待 <em>'+counts.waiting+'</em></button>'+
-      '<button type="button" class="cs-conv-tab'+(state.convFilter==='active'?' active':'')+'" data-conv-filter="active">接待中 <em>'+counts.active+'</em></button>'+
-      '<button type="button" class="cs-conv-tab'+(state.convFilter==='ended'?' active':'')+'" data-conv-filter="ended">已结束 <em>'+counts.ended+'</em></button>'+
+      '<button type="button" class="cs-conv-tab'+(state.convFilter==='waiting'?' active':'')+'" data-conv-filter="waiting">待接待 <em>'+countLabel(counts.waiting)+'</em></button>'+
+      '<button type="button" class="cs-conv-tab'+(state.convFilter==='active'?' active':'')+'" data-conv-filter="active">接待中 <em>'+countLabel(counts.active)+'</em></button>'+
+      '<button type="button" class="cs-conv-tab'+(state.convFilter==='ended'?' active':'')+'" data-conv-filter="ended">已结束 <em>'+countLabel(counts.ended)+'</em></button>'+
       '</div>'+
       '<div data-cs-virt-body>'+virtualListHtml(list,active,data,state.listScrollTop||0,560)+'</div>'+
       '</aside>';
@@ -3031,7 +3124,7 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, virtStartIndex }
           '<p>'+(bossLabel?'编号 '+esc(bossLabel)+' · ':'')+(active.orderNo?'订单 '+esc(active.orderNo)+' · ':'')+esc(isClosed?'已结束':(active.currentServiceId?(active.currentServiceName||'接待中'):'待接待'))+'</p></div></div>'+
           takeBtn+
           '</header>'+
-          '<div class="cs-chat-messages">'+(lockedActive?lockPanelHtml(active):'')+(msgs.length?msgs.map(messageHtml).join(''):'<div class="cs-empty">暂无消息</div>')+'</div>'+
+          '<div class="cs-chat-messages">'+threadChromeHtml(active.id,msgs.length)+(lockedActive?lockPanelHtml(active):'')+(msgs.length?msgs.map(messageHtml).join(''):(lockedActive||threadChromeHtml(active.id,0)?'':'<div class="cs-empty">暂无消息</div>'))+'</div>'+
           composerHtml)
         :'<div class="cs-empty cs-pick-session">请从左侧选择会话<button class="cs-btn primary" style="margin-top:12px" type="button" data-open-conv-list>打开会话列表</button></div>')+
       '</section>'+
@@ -4213,6 +4306,17 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, virtStartIndex }
       '<button type="button" class="cs-btn" data-logout-cancel>取消</button>'+
       '<button type="button" class="cs-btn primary" data-logout-confirm>确认退出</button>'+
       '</div></div></div>');
+    return;
+  }
+  if(e.target.closest('[data-retry-conv]')){e.preventDefault();state.error='';state.pollError='';load();return}
+  var retryThread=e.target.closest('[data-retry-thread]');
+  if(retryThread){e.preventDefault();loadActiveConversationMessages(retryThread.getAttribute('data-retry-thread'),{force:true});return}
+  var olderBtn=e.target.closest('[data-load-older]');
+  if(olderBtn){
+    e.preventDefault();
+    var olderId=olderBtn.getAttribute('data-load-older');
+    var olderMeta=(state.threadMeta||{})[olderId]||{};
+    if(olderMeta.oldest)loadActiveConversationMessages(olderId,{before:olderMeta.oldest});
     return;
   }
   if(e.target.closest('[data-refresh]')){hardRefresh();return}

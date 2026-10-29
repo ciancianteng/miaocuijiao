@@ -1153,28 +1153,118 @@ async function ensureBossUid(profile) {
   }
   return profile;
 }
+async function loadSessionPool(serviceProfile) {
+  const started = Date.now();
+  const conversationsRaw = await maybeRows("conversations", "?order=updated_at.desc&limit=300");
+  const visible = (conversationsRaw || []).filter((row) => {
+    const isCompanion =
+      String(row.conversation_type || "") === "companion_support" || (!row.boss_id && row.companion_id);
+    if (isCompanion) return true;
+    return !isTestNoiseConversation(row, [], "");
+  });
+  const ids = [
+    ...new Set(visible.flatMap((row) => [row.boss_id, row.companion_id, row.customer_service_id]).filter(Boolean)),
+  ];
+  const profiles = {};
+  for (let i = 0; i < ids.length; i += 60) {
+    Object.assign(profiles, await profileMap(ids.slice(i, i + 60)));
+  }
+  let msgRows = [];
+  try {
+    msgRows = await maybeRows("messages", "?order=created_at.desc&limit=160");
+  } catch {
+    msgRows = [];
+  }
+  const messages = await Promise.all(
+    (msgRows || [])
+      .slice()
+      .sort((a, b) => String(a.created_at || "").localeCompare(String(b.created_at || "")))
+      .map((row) => safeMessageSigned(row, profiles))
+  );
+  const byConv = messages.reduce((map, msg) => {
+    (map[msg.conversationId] = map[msg.conversationId] || []).push(msg);
+    return map;
+  }, {});
+  const conversations = visible.map((row) => {
+    const boss = profiles[row.boss_id] || {};
+    const companionProf = profiles[row.companion_id] || {};
+    const serviceProf = profiles[row.customer_service_id] || {};
+    const isCompanionSupport =
+      String(row.conversation_type || "") === "companion_support" || (!row.boss_id && row.companion_id);
+    const isClosed = row.status === "closed" || row.status === "ended";
+    const isTransfer = String(row.status || "") === "pending_transfer";
+    const bossInfo = bossForCs(boss);
+    const companionName = (() => {
+      const n = String(companionProf.display_name || "").trim() || "陪玩";
+      return /@/.test(n) || /^(boss|companion|service)\./i.test(n) ? "陪玩" : n;
+    })();
+    const list = byConv[row.id] || [];
+    const last = list[list.length - 1] || null;
+    const roles = isCompanionSupport ? ["companion"] : ["boss"];
+    const unread = isClosed
+      ? 0
+      : list.filter((m) => {
+          if (!roles.includes(m.senderRole) || m.readAt) return false;
+          if (row.last_read_at && String(m.createdAt || "") <= String(row.last_read_at)) return false;
+          return true;
+        }).length;
+    return withConversationLockFields(
+      {
+        id: row.id,
+        bossId: row.boss_id || "",
+        bossUid: bossInfo.bossUid,
+        bossName: isCompanionSupport ? `陪玩 · ${companionName}` : bossInfo.bossName,
+        companionId: row.companion_id || "",
+        conversationType: row.conversation_type || (isCompanionSupport ? "companion_support" : "general_support"),
+        orderId: row.order_id || "",
+        orderNo: "",
+        currentServiceId: row.customer_service_id || "",
+        currentServiceName: isTransfer ? "待转接" : row.customer_service_id ? csDisplayName(serviceProf) : "待接待",
+        status: isClosed ? "已结束" : isTransfer ? "待转接" : row.customer_service_id ? "接待中" : "待接待",
+        rawStatus: isClosed ? "closed" : row.status || "",
+        lastMessage: last ? messagePreviewText(last) || last.content || "" : "",
+        lastTime: (last && last.createdAt) || row.updated_at || "",
+        unread,
+        unreadCount: unread,
+        lastReadAt: row.last_read_at || "",
+        updatedAt: row.updated_at || "",
+      },
+      serviceProfile.id
+    );
+  });
+  return {
+    conversations,
+    messages,
+    staff: safeProfile(serviceProfile),
+    pool: true,
+    elapsedMs: Date.now() - started,
+  };
+}
 async function loadBootstrap(serviceProfile) {
-  try {
-    const { expireCompanionConfirmTimeouts } = await import("./_order-confirm-timeout.js");
-    await expireCompanionConfirmTimeouts({ limit: 50 });
-  } catch {
-    /* best-effort */
-  }
-  try {
-    const { createOrderCompleteHelpers } = await import("./_order-complete.js");
-    const helpers = createOrderCompleteHelpers({
-      restUrl,
-      supabaseJson,
-      serviceHeaders,
-      addSystemMessage: async () => {},
-    });
-    await Promise.race([
-      helpers.expireCompletionAutoConfirms({ limit: 20 }),
-      new Promise((resolve) => setTimeout(resolve, 1500)),
-    ]);
-  } catch {
-    /* best-effort */
-  }
+  // Order timeout expiry stays in place, but the session list must not wait on it.
+  void (async () => {
+    try {
+      const { expireCompanionConfirmTimeouts } = await import("./_order-confirm-timeout.js");
+      await expireCompanionConfirmTimeouts({ limit: 50 });
+    } catch {
+      /* best-effort */
+    }
+    try {
+      const { createOrderCompleteHelpers } = await import("./_order-complete.js");
+      const helpers = createOrderCompleteHelpers({
+        restUrl,
+        supabaseJson,
+        serviceHeaders,
+        addSystemMessage: async () => {},
+      });
+      await Promise.race([
+        helpers.expireCompletionAutoConfirms({ limit: 20 }),
+        new Promise((resolve) => setTimeout(resolve, 1500)),
+      ]);
+    } catch {
+      /* best-effort */
+    }
+  })();
   const [ordersRaw, conversationsRaw, profilesRaw, companionsRaw, reportsRaw, payrollsRaw, workData] = await Promise.all([
     (async () => {
       try {
@@ -1191,20 +1281,12 @@ async function loadBootstrap(serviceProfile) {
     maybeRows("staff_payrolls", `?staff_id=eq.${encodeURIComponent(serviceProfile.id)}&order=created_at.desc&limit=100`),
     import("./_customer-service-work.js").then((m) => m.loadServiceWorkData(serviceProfile.id)).catch(() => null),
   ]);
-  const convIds = (conversationsRaw || []).map((c) => c.id).filter(Boolean);
+  // List preview only. Opening a thread loads its latest page via list_messages.
   let messagesRawDesc = [];
-  if (convIds.length) {
-    const chunkSize = 40;
-    for (let i = 0; i < convIds.length; i += chunkSize) {
-      const chunk = convIds.slice(i, i + chunkSize);
-      const rows = await maybeRows(
-        "messages",
-        `?conversation_id=in.(${chunk.map(encodeURIComponent).join(",")})&order=created_at.desc&limit=1200`
-      );
-      messagesRawDesc = messagesRawDesc.concat(rows || []);
-    }
-  } else {
-    messagesRawDesc = await maybeRows("messages", "?order=created_at.desc&limit=1500");
+  try {
+    messagesRawDesc = await maybeRows("messages", "?order=created_at.desc&limit=160");
+  } catch {
+    messagesRawDesc = [];
   }
   const messagesRaw = (messagesRawDesc || []).slice().sort((a, b) => String(a.created_at || "").localeCompare(String(b.created_at || "")));
   const profiles = profilesRaw.reduce((map, row) => { map[row.id] = row; return map; }, {});
@@ -1617,6 +1699,7 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
       return handleCsResetPassword(body, res);
     }
     const service = await requireService(req); if (req.method === "GET") return json(res, 200, { ok: true, configured: true, data: await loadBootstrap(service.profile) });
+    if (action === "session_pool") return json(res, 200, { ok: true, configured: true, data: await loadSessionPool(service.profile) });
     if (action === "bootstrap" || !action) return json(res, 200, { ok: true, configured: true, data: await loadBootstrap(service.profile) });
     if (action === "take_conversation") {
       const id = String(body.id || body.conversation_id || body.conversationId || "").trim();
@@ -2721,10 +2804,12 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
       if (!existing) return json(res, 404, { ok: false, message: "会话不存在。" });
       // Other CS may VIEW messages; mutate endpoints still enforce ownership.
       const lockBanner = await lockMessageForConversation(existing, service.profile);
-      const rows = await maybeRows(
-        "messages",
-        `?conversation_id=eq.${encodeURIComponent(id)}&order=created_at.asc&limit=500`
-      );
+      const pageSize = Math.min(80, Math.max(1, Number(body.limit) || 40));
+      const before = String(body.before || "").trim();
+      let msgQuery = `?conversation_id=eq.${encodeURIComponent(id)}&order=created_at.desc&limit=${pageSize}`;
+      if (before) msgQuery += `&created_at=lt.${encodeURIComponent(before)}`;
+      const rowsDesc = await maybeRows("messages", msgQuery);
+      const rows = (rowsDesc || []).slice().reverse();
       const ids = [...new Set((rows || []).map((m) => m.sender_id).filter(Boolean))];
       const profiles = await profileMap(ids.concat([existing.boss_id, existing.companion_id, existing.customer_service_id]));
       const other = existing.customer_service_id ? profiles[existing.customer_service_id] || (await profileById(existing.customer_service_id)) : null;
@@ -2734,6 +2819,8 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
         ok: true,
         conversationId: id,
         messages,
+        hasMore: (rowsDesc || []).length >= pageSize,
+        oldest: rows[0]?.created_at || "",
         locked: lockedByOther,
         lockedByOther,
         lockBanner: lockBanner || "",
@@ -2948,7 +3035,6 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
             signedByOrder = {};
           }
         }
-        
         const missingProfileIds = (ordersMerged || [])
           .flatMap((row) => [row.boss_id, row.companion_id, row.customer_service_id])
           .filter((id) => id && !profiles[id]);
