@@ -173,6 +173,24 @@ export async function listStaffNotifications(staffId, limit = 40) {
   }
 }
 
+/** Mark every unread notice for this staff member only. */
+export async function markAllStaffNotificationsRead(staffId) {
+  const id = String(staffId || "").trim();
+  if (!id) throw Object.assign(new Error("已读状态写入失败"), { status: 400 });
+  const rows = await companionDb(
+    "staff_notifications",
+    `?staff_id=eq.${encodeURIComponent(id)}&read_at=is.null`,
+    {
+      method: "PATCH",
+      headers: { Prefer: "return=representation" },
+      body: JSON.stringify({ read_at: new Date().toISOString() }),
+    }
+  );
+  if (rows == null) return 0;
+  if (!Array.isArray(rows)) throw new Error("已读状态写入失败");
+  return rows.length;
+}
+
 export async function markStaffNotificationRead(staffId, noticeId) {
   const id = String(staffId || "").trim();
   const nid = String(noticeId || "").trim();

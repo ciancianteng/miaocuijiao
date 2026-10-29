@@ -1053,10 +1053,22 @@
   document.addEventListener('click',function(e){
     var btn=e.target.closest&&e.target.closest('#adminNoticeBtn');
     var panel=document.getElementById('adminNoticePanel');
-    if(btn&&panel){panel.hidden=!panel.hidden;return;}
+    if(btn&&panel){
+      panel.hidden=!panel.hidden;
+      if(!panel.hidden){
+        post('/api/admin/notifications',{action:'mark_all_read'}).then(function(res){
+          if(!res||res.ok===false){alert((res&&res.message)||'已读状态写入失败');return;}
+          loadAdminNotices();
+        }).catch(function(err){alert((err&&err.message)||'已读状态写入失败');});
+      }
+      return;
+    }
     var link=e.target.closest&&e.target.closest('[data-admin-notice]');
     if(link){
-      post('/api/admin/notifications',{action:'mark_read',id:link.getAttribute('data-admin-notice')}).catch(function(){});
+      post('/api/admin/notifications',{action:'mark_read',id:link.getAttribute('data-admin-notice')}).then(function(res){
+        if(!res||res.ok===false){alert((res&&res.message)||'已读状态写入失败');return;}
+        loadAdminNotices();
+      }).catch(function(err){alert((err&&err.message)||'已读状态写入失败');});
       return;
     }
     if(panel&&!panel.hidden&&!(e.target.closest&&e.target.closest('#adminNoticePanel')))panel.hidden=true;

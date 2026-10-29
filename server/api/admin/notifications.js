@@ -1,5 +1,5 @@
 import { requireAdmin } from "../_admin-auth.js";
-import { listStaffNotifications, markStaffNotificationRead } from "../_staff-notify.js";
+import { listStaffNotifications, markAllStaffNotificationsRead, markStaffNotificationRead } from "../_staff-notify.js";
 
 function json(res, status, data) {
   res.status(status).json(data);
@@ -36,7 +36,12 @@ export default async function handler(req, res) {
       const body = await readBody(req);
       if (String(body.action || "") === "mark_read") {
         const marked = await markStaffNotificationRead(admin.id, body.id || "");
+        if (!marked) return json(res, 409, { ok: false, message: "已读状态写入失败" });
         return json(res, 200, { ok: true, marked });
+      }
+      if (String(body.action || "") === "mark_all_read") {
+        const marked = await markAllStaffNotificationsRead(admin.id);
+        return json(res, 200, { ok: true, marked, unread: 0 });
       }
       return json(res, 400, { ok: false, message: "未知操作" });
     }

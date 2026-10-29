@@ -6818,6 +6818,7 @@ return json(res, 200, {
         ? body.keys
         : notices.map((n) => n.key);
       await markNoticesRead(auth.profile.id, keys);
+      await import("./_user-notifications.js").then((mod) => mod.markAllRead(auth.profile.id));
       // Mark most recent open CS thread only — do not create a new consult lock.
       const openRows = await supabaseJson(
         restUrl(

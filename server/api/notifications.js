@@ -245,9 +245,7 @@ export default async function handler(req, res) {
           body: JSON.stringify({ read_at: nowIso() }),
         }
       );
-      await import("./_user-notifications.js")
-        .then((mod) => mod.markAllRead(profile.id))
-        .catch(() => null);
+      await import("./_user-notifications.js").then((mod) => mod.markAllRead(profile.id));
       return json(res, 200, { ok: true, message: "全部已读" });
     }
 

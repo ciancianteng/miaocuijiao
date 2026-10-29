@@ -142,11 +142,16 @@ export async function countUnread(userId) {
 }
 
 /** Null when the count request failed, so a push must not clear the icon by mistake. */
+/** Only this user's unread rows. Null is_read still counts as unread. */
+export function userUnreadFilter(userId) {
+  return `user_id=eq.${encodeURIComponent(String(userId || "").trim())}&or=(is_read.is.false,is_read.is.null)`;
+}
+
 export async function countUnreadForPush(userId) {
   const id = String(userId || "").trim();
   if (!id || !envValue("SUPABASE_URL")) return null;
   try {
-    const response = await fetch(restUrl(`?user_id=eq.${encodeURIComponent(id)}&is_read=eq.false&select=id`), {
+    const response = await fetch(restUrl(`?${userUnreadFilter(id)}&select=id`), {
       headers: { ...serviceHeaders(), Prefer: "count=exact", Range: "0-0" },
     });
     if (!response.ok && response.status !== 416) return null;
@@ -196,42 +201,67 @@ export async function recordUserNotification(input) {
   return { ok: true, created, duplicate: !created, unreadCount: await countUnread(userId) };
 }
 
+function patchError(body, status) {
+  const message = String(body?.message || body?.hint || body?.details || body || "").trim();
+  const err = new Error(message ? `已读状态写入失败：${message.slice(0, 180)}` : "已读状态写入失败");
+  err.status = status || 500;
+  return err;
+}
+
 async function patchUnread(filter, userId) {
-  const response = await fetch(restUrl(filter), {
+  const stamp = { is_read: true, read_at: new Date().toISOString() };
+  let response = await fetch(restUrl(filter), {
     method: "PATCH",
     headers: serviceHeaders({ Prefer: "return=minimal" }),
-    body: JSON.stringify({ is_read: true, read_at: new Date().toISOString() }),
+    body: JSON.stringify(stamp),
   });
   if (!response.ok) {
     const body = await readJson(response);
-    if (missingTable(body?.message || body)) return countUnread(userId);
+    const message = String(body?.message || body || "");
+    if (missingTable(message)) throw patchError(body, response.status);
+    if (/read_at|column|schema cache|PGRST204/i.test(message)) {
+      response = await fetch(restUrl(filter), {
+        method: "PATCH",
+        headers: serviceHeaders({ Prefer: "return=minimal" }),
+        body: JSON.stringify({ is_read: true }),
+      });
+      if (!response.ok) throw patchError(await readJson(response), response.status);
+    } else {
+      throw patchError(body, response.status);
+    }
   }
-  return countUnread(userId);
+  const unreadCount = await countUnreadForPush(userId);
+  if (unreadCount == null) {
+    const err = new Error("已读已写入，但未读数量读取失败");
+    err.status = 503;
+    throw err;
+  }
+  return unreadCount;
 }
 
 export function markConversationRead(userId, conversationId) {
   const id = String(conversationId || "").trim();
-  if (!id) return countUnread(userId);
+  if (!id) return countUnreadForPush(userId).then((n) => (n == null ? Promise.reject(Object.assign(new Error("未读数量读取失败"), { status: 503 })) : n));
   return patchUnread(
-    `?user_id=eq.${encodeURIComponent(userId)}&entity_type=eq.conversation&entity_id=eq.${encodeURIComponent(id)}&is_read=eq.false`,
+    `?${userUnreadFilter(userId)}&entity_type=eq.conversation&entity_id=eq.${encodeURIComponent(id)}`,
     userId,
   );
 }
 
 export function markNotificationRead(userId, notificationId) {
   return patchUnread(
-    `?id=eq.${encodeURIComponent(notificationId)}&user_id=eq.${encodeURIComponent(userId)}&is_read=eq.false`,
+    `?id=eq.${encodeURIComponent(notificationId)}&${userUnreadFilter(userId)}`,
     userId,
   );
 }
 
 export function markAllRead(userId) {
-  return patchUnread(`?user_id=eq.${encodeURIComponent(userId)}&is_read=eq.false`, userId);
+  return patchUnread(`?${userUnreadFilter(userId)}`, userId);
 }
 
 export function clearOrderUnread(userId, orderId) {
   return patchUnread(
-    `?user_id=eq.${encodeURIComponent(userId)}&entity_type=eq.order&entity_id=eq.${encodeURIComponent(orderId)}&is_read=eq.false`,
+    `?${userUnreadFilter(userId)}&entity_type=eq.order&entity_id=eq.${encodeURIComponent(orderId)}`,
     userId,
   );
 }
@@ -327,11 +357,11 @@ export async function retireWorkNotices(entityType, entityId) {
 
 async function patchUnreadConsult(userId, eventKey, title, body) {
   const response = await fetch(
-    restUrl(`?user_id=eq.${encodeURIComponent(userId)}&event_key=eq.${encodeURIComponent(eventKey)}&is_read=eq.false`),
+    restUrl(`?user_id=eq.${encodeURIComponent(userId)}&event_key=eq.${encodeURIComponent(eventKey)}`),
     {
       method: "PATCH",
       headers: serviceHeaders({ Prefer: "return=minimal" }),
-      body: JSON.stringify({ title, body }),
+      body: JSON.stringify({ title, body, is_read: false, read_at: null }),
     },
   );
   return response.ok;
@@ -575,13 +605,15 @@ export async function handleUserNotificationRequest(req, res, action, body) {
     const profile = await userFromRequest(req);
     const userId = profile.id;
     if (action === "unread_count" || action === "unread-count") {
-      const unreadCount = await countUnread(userId);
+      const unreadCount = await countUnreadForPush(userId);
+      if (unreadCount == null) return send(res, 503, { ok: false, message: "未读数量读取失败" });
       return send(res, 200, { ok: true, unread_count: unreadCount, unreadCount });
     }
     if (action === "inbox" || action === "list_badge") {
       const category = String((req.query && req.query.category) || body.category || "all");
       const items = await listNotifications(userId, category);
-      const unreadCount = await countUnread(userId);
+      const unreadCount = await countUnreadForPush(userId);
+      if (unreadCount == null) return send(res, 503, { ok: false, message: "未读数量读取失败" });
       return send(res, 200, { ok: true, items, unread_count: unreadCount, unreadCount });
     }
     if (action === "badge_read" || action === "read_one") {

@@ -163,8 +163,22 @@
     });
   }
 
+  function showCenterError(message) {
+    var root = document.querySelector("[data-mcj-notification-center]");
+    if (!root) return;
+    var note = root.querySelector("[data-mcj-note-error]");
+    if (!note) {
+      note = document.createElement("p");
+      note.className = "mcj-note-empty";
+      note.setAttribute("data-mcj-note-error", "1");
+      root.prepend(note);
+    }
+    note.textContent = message || "已读状态写入失败";
+  }
+
   function applyServerCount(body) {
-    var raw = body && (body.unread_count != null ? body.unread_count : body.unreadCount);
+    if (!body || body.ok === false) return null;
+    var raw = body.unread_count != null ? body.unread_count : body.unreadCount;
     var count = Number(raw);
     if (raw == null || !isFinite(count)) return null;
     paint(count);
@@ -177,6 +191,16 @@
     return run;
   }
 
+  function afterRead(body) {
+    if (!body || body.ok === false || applyServerCount(body) == null) {
+      showCenterError((body && body.message) || "已读状态写入失败");
+      return refreshUnreadCount().then(function () {
+        return body || { ok: false, message: "已读状态写入失败" };
+      });
+    }
+    return refreshUnreadCount().then(function () { return body; });
+  }
+
   function markConversation(conversationId) {
     if (!conversationId || !accessToken()) return Promise.resolve(null);
     return enqueueMutation(function () {
@@ -184,23 +208,18 @@
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "badge_read_conversation", conversationId: conversationId }),
-      }).then(function (body) {
-        applyServerCount(body);
-        return refreshUnreadCount();
-      });
+      }).then(afterRead);
     });
   }
 
   function markAll() {
+    if (!accessToken()) return Promise.resolve({ ok: false, message: "请先登录。" });
     return enqueueMutation(function () {
       return authFetch("/api/notifications", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "badge_read_all" }),
-      }).then(function (body) {
-        applyServerCount(body);
-        return refreshUnreadCount();
-      });
+      }).then(afterRead);
     });
   }
 
@@ -210,10 +229,7 @@
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "badge_read", id: id }),
-      }).then(function (body) {
-        applyServerCount(body);
-        return refreshUnreadCount();
-      });
+      }).then(afterRead);
     });
   }
 
@@ -335,23 +351,31 @@
         return;
       }
       if (event.target.closest("[data-badge-read-all]")) {
-        markAll().then(renderCenter);
+        markAll().then(function (body) {
+          if (body && body.ok === false) return;
+          renderCenter();
+        });
         return;
       }
       var open = event.target.closest("[data-open-notification]");
       if (open) {
-        markOne(open.getAttribute("data-open-notification"));
-        if (!open.getAttribute("data-note-url")) {
-          event.preventDefault();
-          var empty = document.querySelector("[data-mcj-note-missing]");
-          if (!empty) {
-            empty = document.createElement("p");
-            empty.className = "mcj-note-empty";
-            empty.setAttribute("data-mcj-note-missing", "1");
-            empty.textContent = "这条通知没有可打开的页面。";
-            root.prepend(empty);
+        var noteUrl = open.getAttribute("data-note-url") || "";
+        if (noteUrl) event.preventDefault();
+        markOne(open.getAttribute("data-open-notification")).then(function (body) {
+          if (!body || body.ok === false) return;
+          if (noteUrl) location.href = noteUrl;
+          else {
+            var empty = document.querySelector("[data-mcj-note-missing]");
+            if (!empty) {
+              empty = document.createElement("p");
+              empty.className = "mcj-note-empty";
+              empty.setAttribute("data-mcj-note-missing", "1");
+              empty.textContent = "这条通知没有可打开的页面。";
+              root.prepend(empty);
+            }
+            renderCenter();
           }
-        }
+        });
       }
     });
   }
@@ -369,7 +393,11 @@
     if (portal() === "admin") return;
     ensureBell();
     bindCenter();
-    renderCenter();
+    if (document.querySelector("[data-mcj-notification-center]")) {
+      markAll().then(function () { renderCenter(); });
+    } else {
+      renderCenter();
+    }
     refreshUnreadCount();
     if (portal() === "boss" && global.MCJWebPush && typeof MCJWebPush.maybePromptOnFirstVisit === "function") {
       MCJWebPush.maybePromptOnFirstVisit({ role: "boss" });
