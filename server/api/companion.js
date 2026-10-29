@@ -47,6 +47,7 @@ import {
   readServiceStandards,
   saveCompanionServiceStandard,
   viewServiceSnapshot,
+  snapshotWithRequirementsAck,
 } from "./_service-standard.js";
 import { readEarlyFinish, readEarlyFinishReject } from "./_order-early-finish.js";
 import { discordDeskPublic } from "./_discord-desk.js";
@@ -72,6 +73,7 @@ import {
   clawbackCompanionIncomeForOrder,
 } from "./_companion-income.js";
 import { splitCompanionIncomeByWithdrawLock, companionEarningsUnlockMeta } from "./_earnings-windows.js";
+import { readMedalStatus, writeMedalStatus, medalDisplayTag } from "./_companion-medal.js";
 import {
   anonymousBossLabel,
   allocateWithdrawalNo,
@@ -920,8 +922,10 @@ async function synthesizeMediaFallback(profile, companion, opts = {}) {
 
 function safePlayer(profile = {}, companion = {}) {
   // Unverified accounts cannot work: never expose stale busy/online to client/admin sync.
-  let onlineStatus = normalizeOnlineStatus(companion.availability_status || companion.online_status);
-  if (!canWork(profile, companion)) onlineStatus = "offline";
+  const rawOnline = String(companion.online_status || "").trim();
+  const onlineStatus = rawOnline
+    ? normalizeOnlineStatus(rawOnline)
+    : normalizeOnlineStatus(companion.availability_status);
   const gamePrices = readGamePrices(companion);
   const serviceTypes = parseServiceTypes(companion.service_type, {
     fallbackPlayWhenGame: true,
@@ -929,6 +933,7 @@ function safePlayer(profile = {}, companion = {}) {
   });
   const serviceIds = parseServiceIds(companion.service_ids);
   const publicTags = stripGamePricesMarker(companion.tags || "")
+    .replace(/\[\[MCJ_MEDAL:(?:pending|approved|rejected|revoked)\]\]/gi, "")
     .replace(/\[\[MCJ_GALLERY:[\s\S]*?\]\]/g, "")
     .replace(/游戏ID:[^,，]*/g, "")
     .replace(/,\s*,/g, ",")
@@ -982,7 +987,8 @@ function safePlayer(profile = {}, companion = {}) {
     directRebateRate: money(companion.direct_rebate_rate) || 0,
     applicationRejectReason: companion.application_reject_reason || "",
     mediaRejectReason: companion.media_reject_reason || "",
-    tags: companion.tags || "",
+    tags: String(companion.tags || "").replace(/\[\[MCJ_MEDAL:(?:pending|approved|rejected|revoked)\]\]/gi, "").trim(),
+    medalStatus: readMedalStatus(companion.tags),
     updatedAt: companion.updated_at || profile.updated_at || "",
     raw: { ...profile, ...companion }
   };
@@ -2924,6 +2930,9 @@ async function bootstrapData(profile, companion) {
   } catch {
     certTags = [];
   }
+  if (readMedalStatus(companionRow.tags) === "approved" && !certTags.some((t) => t && t.name === "认证勋章")) {
+    certTags = certTags.concat([medalDisplayTag()]);
+  }
 
   const paymentView = normalizePaymentAccountRecord(payment) || payment || {};
   return {
@@ -4473,6 +4482,17 @@ export default async function handler(req, res) {
       } else if (before.status !== "claimed") {
         return json(res, 409, { ok: false, message: "当前订单不能确认接单" });
       }
+      const requirementsAck =
+        body.requirementsAck === true ||
+        body.requirements_ack === true ||
+        String(body.requirementsAck || "") === "true";
+      if (!requirementsAck) {
+        return json(res, 400, {
+          ok: false,
+          code: "REQUIREMENTS_ACK_REQUIRED",
+          message: "请先阅读并同意服务要求后再确认接单。",
+        });
+      }
       // Multi / manual rails: refuse companion confirm if CS never approved payment.
       try {
         const gates = await import("./_payment-gates.js");
@@ -4546,6 +4566,7 @@ export default async function handler(req, res) {
         }
         chargedNow = !!charge.charged;
         const payAmount = charge.amount || money(working.total_amount);
+        const ackSnap = snapshotWithRequirementsAck(working, auth.profile.id, now);
         const paidPatch = {
           status: "in_progress",
           accepted_at: working.accepted_at || now,
@@ -4553,9 +4574,12 @@ export default async function handler(req, res) {
           paid_at: now,
           paid_cat_food: payAmount,
         };
+        if (ackSnap) paidPatch.service_snapshot = ackSnap;
         order = await casOwn("confirmed", paidPatch).catch(async (err) => {
           if (/paid_at|paid_cat_food|column|schema cache|PGRST/i.test(String(err?.message || err))) {
-            return casOwn("confirmed", { status: "in_progress", accepted_at: working.accepted_at || now, started_at: now });
+            const fallback = { status: "in_progress", accepted_at: working.accepted_at || now, started_at: now };
+            if (ackSnap) fallback.service_snapshot = ackSnap;
+            return casOwn("confirmed", fallback);
           }
           throw err;
         });
@@ -4581,16 +4605,19 @@ export default async function handler(req, res) {
         }
         await writeOrderStatusLog(
           { restUrl, supabaseJson, serviceHeaders },
-          { orderId: id, fromStatus: "confirmed", toStatus: "in_progress", operatorRole: "companion", operatorId: auth.profile.id, note: `accept_direct pay ${payAmount}` }
+          { orderId: id, fromStatus: "confirmed", toStatus: "in_progress", operatorRole: "companion", operatorId: auth.profile.id, note: `accept_direct pay ${payAmount} requirements_ack ${now}` }
         ).catch(() => {});
-        await addSystemMessage(order, auth.profile.id, "companion", `陪玩 ${name} 已确认接单，已扣除老板 ${payAmount} 猫粮，订单进入进行中。`).catch(() => {});
+        await addSystemMessage(order, auth.profile.id, "companion", `陪玩 ${name} 已确认服务要求并接单，已扣除老板 ${payAmount} 猫粮，订单进入进行中。确认时间 ${now}。`).catch(() => {});
       } else {
+        const ackSnap = snapshotWithRequirementsAck(before, auth.profile.id, now);
+        const acceptPatch = { status: "in_progress", accepted_at: now, started_at: now };
+        if (ackSnap) acceptPatch.service_snapshot = ackSnap;
         order = await patchOwnOrder(
           auth.profile,
           id,
           "claimed",
-          { status: "in_progress", accepted_at: now, started_at: now },
-          `陪玩 ${name} 已确认接单，订单进入进行中。`
+          acceptPatch,
+          `陪玩 ${name} 已确认服务要求并接单，订单进入进行中。确认时间 ${now}。`
         );
       }
 
@@ -5026,7 +5053,7 @@ return json(res, 200, {
         const rows = await supabaseJson(restUrl("companion_profiles", `?user_id=eq.${encodeURIComponent(auth.profile.id)}`), {
           method: "PATCH",
           headers: serviceHeaders(),
-          body: JSON.stringify({ online_status: status, updated_at: nowIso() }),
+          body: JSON.stringify({ online_status: status, availability_status: status, updated_at: nowIso() }),
         });
         await recordOnlineSession(auth.profile.id, status);
         return json(res, 200, {
@@ -6554,7 +6581,21 @@ return json(res, 200, {
         schedule: String(body.schedule || ""),
         description: publicBio,
         application_note: applicationNote,
-        tags: String(body.tags || ""),
+        tags: (() => {
+          const prevTags = String(row.tags || companion.tags || "");
+          let merged = String(body.tags || "");
+          const priceMark = prevTags.match(/\[\[MCJ_PRICES:[\s\S]*?\]\]/);
+          if (priceMark && merged.indexOf("[[MCJ_PRICES:") < 0) merged = `${merged} ${priceMark[0]}`.trim();
+          const wantMedal =
+            body.apply_medal === true ||
+            body.applyMedal === true ||
+            String(body.apply_medal || body.applyMedal || "") === "1" ||
+            String(body.apply_medal || body.applyMedal || "") === "true";
+          const prevMedal = readMedalStatus(prevTags);
+          const nextMedal = wantMedal ? (prevMedal === "approved" ? "approved" : "pending") : prevMedal;
+          row._medalJustPending = nextMedal === "pending" && prevMedal !== "pending";
+          return writeMedalStatus(merged, nextMedal);
+        })(),
         application_status: "pending",
         application_reject_reason: "",
         application_submitted_at: nowIso(),
@@ -6687,6 +6728,21 @@ return json(res, 200, {
         }
       } catch {
         /* optional */
+      }
+      if (row._medalJustPending) {
+        try {
+          const { notifyCustomerServiceStaff } = await import("./_staff-notify.js");
+          const who = String(patch.nickname || companion.nickname || "陪玩").trim();
+          await notifyCustomerServiceStaff({
+            kind: "medal_apply",
+            relatedId: row.id,
+            title: "新的认证勋章申请",
+            body: `${who} 申请认证勋章`,
+            href: `/admin.html?medal=${encodeURIComponent(row.id)}#companion-applications`,
+          });
+        } catch (err) {
+          console.warn("[medal-notify]", err?.message || err);
+        }
       }
       return json(res, 200, { ok: true, message: "申请已提交，等待后台审核。" });
     }

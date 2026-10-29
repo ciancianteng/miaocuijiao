@@ -2283,6 +2283,9 @@
       field("email", "邮箱", "email", data.email, 'placeholder="name@email.com"') +
       selectField("contactPublic", "联系方式是否公开", data.contactPublic, ["不公开，仅平台可见", "审核通过后公开给已下单老板"], { full: true }) +
       tagPicker("personalTags", "个人标签（必填，最多 10 个）", data.personalTags, tagGroups.personalTags, 10) +
+      '<label class="form-field full"><input name="applyMedal" type="checkbox" data-apply-field' +
+      (data.applyMedal === true || data.applyMedal === "true" || data.applyMedal === "on" ? " checked" : "") +
+      "> 申请认证勋章</label>" +
       "</form>";
     return sectionShell("personal", "个人资料", "基础信息，审核与接单都会用到", body);
   }
@@ -3173,7 +3176,10 @@
     var identity = draft.identity || {};
     var uploads = draft.uploads || {};
     var step = Number(root.dataset.step || 0);
-    Array.prototype.slice.call(root.querySelectorAll("[data-apply-field]")).forEach(function (el) { data[el.name] = el.value.trim(); });
+    Array.prototype.slice.call(root.querySelectorAll("[data-apply-field]")).forEach(function (el) {
+      if (el.type === "checkbox") data[el.name] = !!el.checked;
+      else data[el.name] = el.value.trim();
+    });
     // Pricing V2 P2: do not collect applicant price fields
     Array.prototype.slice.call(root.querySelectorAll("[data-tag-picker]")).forEach(function (picker) {
       var key = picker.dataset.tagPicker;
@@ -3436,6 +3442,7 @@
         // Optional admin-only remark — never send self-intro as application note.
         note: draft.data.remark || draft.data.applicationRemark || "",
         tags: (draft.data.personalTags || []).join(","),
+        apply_medal: draft.data.applyMedal === true,
         // Pricing V2 P2: never submit applicant price fields
         nickname: draft.data.nickname || "",
         age: draft.data.age || "",

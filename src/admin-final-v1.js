@@ -312,6 +312,8 @@
     if(!s)return '';
     var rows=[['项目',s.serviceName||o.serviceContent||'-'],['下单时单价',money(s.unitPrice)+' / '+(s.pricingUnit||'小时')]];
     if(s.bossRank&&s.bossRank.rank)rows.push(['老板段位',(s.bossRank.game?s.bossRank.game+' · ':'')+s.bossRank.rank]);
+    rows.push(['服务要求', s.serviceRequirements ? esc(s.serviceRequirements).replace(/\n/g,'<br>') : '下单时未保存', true]);
+    if(s.requirementsAck&&s.requirementsAck.at)rows.push(['服务要求确认', fmtOrderTime(s.requirementsAck.at)+(s.requirementsAck.companionId?' · 陪玩已确认':'')]);
     (s.requirements||[]).forEach(function(field){
       var val=Array.isArray(field.value)?field.value.join('、'):String(field.value||'');
       rows.push([field.name||'订单要求', val||'-']);

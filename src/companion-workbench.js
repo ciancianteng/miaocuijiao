@@ -90,7 +90,7 @@
     }catch(e){return false}
   }
   var HIDDEN_MVP_ROUTES={};
-  var state={route:'dashboard',session:null,data:null,notice:'',loading:false,error:'',walletWarning:'',authTab:'login',loginMethod:'otp',loginError:'',loginBusy:false,registerToken:'',registerVerifiedEmail:'',registerCooldownUntil:0,registerBusy:false,inviteCode:'',forgotStep:'',forgotAccount:'',forgotBusy:false,forgotMsg:'',forgotResetToken:'',profileServices:[],profileVoiceTypes:[],profileCompanionTags:[],profileErrors:{},profileDraft:null,accountDraft:null,uploadBusy:'',galleryPending:[],statusBusy:false,pendingOnlineStatus:null,settlement:null,orderFilter:'all',pollTimer:null,rulesPollTimer:null,ordersCacheAt:0,msgFilter:'all',settings:null,earningsTab:'overview',chatSession:'cs',chatConversationId:'',msgThreadOpen:false,chatBusy:false,withdrawBusy:false,inbox:null,inboxError:'',hallOrderType:'all',hallGame:'all',drawerOpen:false,_prevDesignated:null,_prevAuditLocked:null,_toastTimer:null,_ordersRtReady:false,_alertedOrderIds:null,_baseDocTitle:'',_focusOrderId:'',myGifts:null,myGiftsBusy:false,myGiftsError:'',giftWall:[],_giftPopupShown:false};
+  var state={route:'dashboard',session:null,data:null,notice:'',loading:false,error:'',walletWarning:'',authTab:'login',loginMethod:'otp',loginError:'',loginBusy:false,registerToken:'',registerVerifiedEmail:'',registerCooldownUntil:0,registerBusy:false,inviteCode:'',forgotStep:'',forgotAccount:'',forgotBusy:false,forgotMsg:'',forgotResetToken:'',profileServices:[],profileVoiceTypes:[],profileCompanionTags:[],profileErrors:{},profileDraft:null,accountDraft:null,uploadBusy:'',galleryPending:[],statusBusy:false,pendingOnlineStatus:null,settlement:null,reqAck:null,reqAckChecked:false,reqAckBusy:false,reqAckError:'',orderFilter:'all',pollTimer:null,rulesPollTimer:null,ordersCacheAt:0,msgFilter:'all',settings:null,earningsTab:'overview',chatSession:'cs',chatConversationId:'',msgThreadOpen:false,chatBusy:false,withdrawBusy:false,inbox:null,inboxError:'',hallOrderType:'all',hallGame:'all',drawerOpen:false,_prevDesignated:null,_prevAuditLocked:null,_toastTimer:null,_ordersRtReady:false,_alertedOrderIds:null,_baseDocTitle:'',_focusOrderId:'',myGifts:null,myGiftsBusy:false,myGiftsError:'',giftWall:[],_giftPopupShown:false};
   var IMAGE_ACCEPT='image/jpeg,image/jpg,image/png,image/webp,image/*';
   /** Fallback only when platform voice_types empty — admin「声线管理」is SoT. */
   var FIXED_VOICE_OPTIONS=['甜妹','御姐','少御','萝莉','温柔','清冷','慵懒','磁性','少年','青叔','大叔','其他'];
@@ -1796,7 +1796,11 @@
     var status=choice?choice.status:currentOnlineStatus();
     try{sessionStorage.setItem('mcjCompanionPresenceIntent',status);}catch(e){}
     if(!status||status==='offline')return;
-    api('set_online_status',{online_status:status,heartbeat:1,presenceKind:'heartbeat',presenceRev:choice?choice.rev:0}).then(function(x){
+    var sentRev=choice?choice.rev:0;
+    api('set_online_status',{online_status:status,heartbeat:1,presenceKind:'heartbeat',presenceRev:sentRev}).then(function(x){
+      var now=readPresenceChoice();
+      if(now&&sentRev&&sentRev<now.rev)return;
+      if(state.statusBusy)return;
       if(x&&x.onlineStatus)applyOnlineStatusUi(x.onlineStatus);
     }).catch(function(){});
   }
@@ -2342,25 +2346,118 @@
       }
     });
   }
+  function findMyOrder(id){
+    return ((state.data&&state.data.myOrders)||[]).find(function(o){return String(o.id)===String(id)})||null;
+  }
+  function orderCatalogRequirements(o){
+    var snap=o&&o.serviceSnapshot;
+    if(!snap||typeof snap!=='object')return '';
+    return String(snap.serviceRequirements||snap.catalogRequirements||'').trim();
+  }
+  function reqAckModalHtml(){
+    var ack=state.reqAck;
+    if(!ack)return '';
+    var text=String(ack.text||'').trim();
+    var body=text
+      ? '<div class="pw-req-scroll" tabindex="0">'+esc(text)+'</div>'
+      : '<div class="pw-req-scroll" tabindex="0">本单下单时没有保存服务要求。</div>';
+    var err=state.reqAckError?'<p class="pw-req-error" role="alert">'+esc(state.reqAckError)+'</p>':'';
+    var disabled=(!state.reqAckChecked||state.reqAckBusy)?' disabled':'';
+    var label=state.reqAckBusy?'确认中…':'确认并开始服务';
+    var checked=state.reqAckChecked?' checked':'';
+    var lock=state.reqAckBusy?' disabled':'';
+    return '<div class="pw-modal pw-req-ack" data-req-ack>'+
+      '<div class="pw-req-panel" role="dialog" aria-modal="true" aria-labelledby="pwReqAckTitle">'+
+      '<div class="pw-req-head"><h3 id="pwReqAckTitle">服务要求确认</h3>'+
+      '<button type="button" class="pw-req-x" data-req-ack-close aria-label="关闭"'+lock+'>×</button></div>'+
+      '<p class="pw-req-lead">请仔细阅读本次订单的服务要求。确认后，即代表您已了解并同意按照相关要求完成服务。</p>'+
+      '<div class="pw-req-meta"><div><span>服务名称</span><strong>'+esc(ack.serviceName)+'</strong></div>'+
+      '<div><span>订单编号</span><strong>'+esc(ack.orderNo)+'</strong></div></div>'+
+      '<p class="pw-req-label">服务要求</p>'+body+err+
+      '<label class="pw-req-check"><input type="checkbox" data-req-ack-check'+checked+lock+'>'+
+      '<span>我已阅读并同意遵守以上服务要求</span></label>'+
+      '<div class="pw-req-actions">'+
+      '<button type="button" class="pw-btn" data-req-ack-close'+lock+'>暂不接单</button>'+
+      '<button type="button" class="pw-btn primary" data-req-ack-confirm'+disabled+'>'+label+'</button>'+
+      '</div></div></div>';
+  }
+  function openReqAck(id){
+    if(state.reqAckBusy)return;
+    var o=findMyOrder(id);
+    if(!o){toast('找不到该订单，请刷新后重试');return}
+    var snap=o.serviceSnapshot&&typeof o.serviceSnapshot==='object'?o.serviceSnapshot:null;
+    state.reqAck={
+      id:String(o.id),
+      serviceName:String((snap&&snap.serviceName)||o.serviceName||o.game||'服务'),
+      orderNo:humanOrderNo(o),
+      text:orderCatalogRequirements(o)
+    };
+    state.reqAckChecked=false;
+    state.reqAckError='';
+    syncTransientOverlays();
+  }
+  function closeReqAck(){
+    if(state.reqAckBusy)return;
+    state.reqAck=null;
+    state.reqAckChecked=false;
+    state.reqAckError='';
+    syncTransientOverlays();
+  }
+  function submitReqAck(){
+    if(!state.reqAck||state.reqAckBusy||!state.reqAckChecked)return;
+    var id=state.reqAck.id;
+    state.reqAckBusy=true;
+    state.reqAckError='';
+    syncTransientOverlays();
+    api('accept_direct_order',{id:id,requirementsAck:true}).then(function(x){
+      state.reqAckBusy=false;
+      state.reqAck=null;
+      state.reqAckChecked=false;
+      state.reqAckError='';
+      toast(x.message||'已确认接单，订单进入进行中');
+      state.route='orders';
+      state.orderFilter='running';
+      go('/companion/orders');
+      return loadData();
+    }).catch(function(err){
+      state.reqAckBusy=false;
+      state.reqAckError=(err&&err.message)||'接单失败，订单状态未改变';
+      syncTransientOverlays();
+      if(err&&err.code==='DISCORD_BIND_REQUIRED'){
+        if(confirm((err.message||'请先连接 Discord')+'\n\n现在去连接 Discord？')){
+          startDiscordOAuth('/companion/orders/');
+        }
+      }
+    });
+  }
   function syncTransientOverlays(){
     var notice=noticeHtml();
     var settle=settlementModalHtml();
+    var reqAck=reqAckModalHtml();
     var oldToast=root.querySelector('.pw-toast');
     var oldModal=root.querySelector('[data-close-settlement].pw-modal, .pw-modal[data-close-settlement]');
-    if(!oldModal)oldModal=root.querySelector('.pw-modal');
+    if(!oldModal)oldModal=root.querySelector('.pw-modal:not([data-req-ack])');
+    var oldReq=root.querySelector('[data-req-ack]');
     if(oldToast)oldToast.remove();
     if(oldModal)oldModal.remove();
-    if(notice||settle){
+    if(oldReq)oldReq.remove();
+    if(notice||settle||reqAck){
       var wrap=document.createElement('div');
-      wrap.innerHTML=notice+settle;
+      wrap.innerHTML=notice+settle+reqAck;
       while(wrap.firstChild)root.appendChild(wrap.firstChild);
     }
+    document.body.classList.toggle('pw-req-lock',!!state.reqAck);
   }
   function paint(opts){
     opts=opts||{};
     captureLiveForms();
     var prevRoute=state.route;
     state.route=route();
+    if((opts.routeChange||prevRoute!==state.route)&&state.reqAck&&!state.reqAckBusy){
+      state.reqAck=null;
+      state.reqAckChecked=false;
+      state.reqAckError='';
+    }
     if(opts.routeChange||prevRoute!==state.route)closeMobileMenus();
     if(state.route!=='profile')state.profileDraft=null;
     if(!isAccountRoute())state.accountDraft=null;
@@ -2706,7 +2803,7 @@
       var ordered=window.MCJServicePinyinOrder&&window.MCJServicePinyinOrder.sortByPinyin
         ? window.MCJServicePinyinOrder.sortByPinyin(catalog)
         : catalog.map(function(item,index){return {item:item,index:index};});
-      host.innerHTML='<div class="pw-my-service-list">'+ordered.map(function(entry){
+      host.innerHTML='<div class="pw-svc-toolbar"><button type="button" class="pw-btn" data-offers-close-all>一键关闭全部服务</button></div><div class="pw-my-service-list">'+ordered.map(function(entry){
         var item=entry.item;
         var key=item.kind+':'+item.id;
         var saved=selected[key]||null;
@@ -2728,7 +2825,7 @@
               '<strong class="pw-svc-quote">'+esc(headPrice)+'</strong>'+
               '<i class="pw-svc-chevron" aria-hidden="true"></i>'+
             '</button>'+
-            '<button type="button" class="pw-offer-switch'+(accepting?' is-on':'')+'" data-offer-toggle aria-label="接单状态" aria-pressed="'+(accepting?'true':'false')+'"><i></i></button>'+
+            '<button type="button" class="pw-offer-switch'+(accepting?' is-on':'')+'" data-offer-toggle aria-label="'+(accepting?'开':'关')+'" aria-pressed="'+(accepting?'true':'false')+'"><span>关</span><span>开</span><i></i></button>'+
           '</div>'+
           '<div class="pw-svc-panel"><div class="pw-svc-panel-inner">'+
             '<p class="pw-my-service-status">'+(accepting?'● 接单中':'● 已关闭')+'</p>'+
@@ -3044,9 +3141,7 @@
         state.pendingOnlineStatus=null;
         applyOnlineStatusUi(pending);
         commitOnlineStatus(pending, from);
-        return;
       }
-      loadData({soft:true});
     });
   }
   function statusSwitcherHtml(extraClass){
@@ -5317,8 +5412,17 @@
     var publicTagList=Array.prototype.map.call(form.querySelectorAll('input[name="public_tag_opt"]:checked'),function(el){return el.value}).filter(Boolean);
     var publicTagsJoined=publicTagList.join('、');
     var serviceInputs=Array.prototype.slice.call(form.querySelectorAll('input[name="service_id_opt"]:checked'));
+    var hasServiceEditor=!!form.querySelector('[data-game-price-grid]');
     var serviceIds=serviceInputs.map(function(el){return el.value}).filter(Boolean);
     var serviceNames=serviceInputs.map(function(el){return el.getAttribute('data-game-name')||el.value}).filter(Boolean);
+    var storedPlayer=(state.data&&state.data.player)||{};
+    var storedRaw=storedPlayer.raw||{};
+    if(!hasServiceEditor){
+      serviceTypes=selectedServiceTypesFromPlayer(storedPlayer,storedRaw);
+      serviceIds=selectedServiceIdsFromPlayer(storedPlayer,storedRaw);
+      serviceNames=String(storedPlayer.mainGame||storedRaw.game||'').split(/[,，、/|]+/).map(function(x){return x.trim()}).filter(Boolean);
+      gameId=String(storedPlayer.gameId||storedRaw.game_id||'').trim();
+    }
     var minP=20,maxP=30,maxPlus=false;
     var sample=form.querySelector('[data-game-price-grid] input')||form.querySelector('[name="price"]');
     if(sample){
@@ -5328,7 +5432,9 @@
     }
     var gamePrices={};
     var priceError='';
-    serviceInputs.forEach(function(el){
+    if(!hasServiceEditor){
+      gamePrices=Object.assign({},storedPlayer.gamePrices||((state.data&&state.data.levelInfo)||{}).gamePrices||{});
+    }else serviceInputs.forEach(function(el){
       var id=el.value;
       var name=el.getAttribute('data-game-name')||id;
       var raw=String(fd.get('game_price_'+id)||'').trim();
@@ -5345,10 +5451,12 @@
     if(!region){errors.region='请填写地区';missing.push('缺少地区')}
     if(voiceOtherOn&&!voiceCustom){errors.voice_type='选择「其他」时请填写自定义声线';missing.push('缺少声线')}
     else if(!voiceTypes.length){errors.voice_type='请至少选择一种声线';missing.push('缺少声线')}
+    if(hasServiceEditor){
     if(!serviceTypes.length){errors.service_type='请至少选择一种可提供服务';missing.push('缺少服务类型')}
     if(!serviceIds.length){errors.main_game='请至少选择一个可接游戏';missing.push('缺少游戏资料')}
     if(!gameId){errors.game_id='请填写游戏 ID';if(missing.indexOf('缺少游戏资料')===-1)missing.push('缺少游戏资料')}
     if(priceError){errors.price=priceError;missing.push('缺少价格')}
+    }
 
     var p=(state.data&&state.data.player)||{};
     var media=(state.data&&state.data.media)||[];
@@ -5380,8 +5488,8 @@
         service_ids:serviceIds,
         main_game:serviceNames.join('、'),
         game_id:gameId,
-        rank:String(fd.get('rank')||'').trim(),
-        position:String(fd.get('position')||'').trim(),
+        rank:form.querySelector('[name="rank"]')?String(fd.get('rank')||'').trim():String(storedRaw.game_rank||storedRaw.rank||'').trim(),
+        position:form.querySelector('[name="position"]')?String(fd.get('position')||'').trim():String(storedRaw.position||'').trim(),
         bio:String(fd.get('bio')||'').trim(),
         public_tags:publicTagsJoined,
         tags:publicTagsJoined,
@@ -5432,6 +5540,22 @@
     api('reorder_media',{ordered_ids:media.map(function(m){return m.id})}).then(function(res){toast(res.message||'顺序已更新');return loadData()}).catch(function(err){toast(err.message)});
   }
   document.addEventListener('click',function(e){
+    if(e.target.closest('[data-req-ack]')){
+      var reqLayer=e.target.closest('[data-req-ack]');
+      var closeHit=e.target.closest('[data-req-ack-close]');
+      var confirmHit=e.target.closest('[data-req-ack-confirm]');
+      if(closeHit||e.target===reqLayer){
+        e.preventDefault();
+        closeReqAck();
+        return;
+      }
+      if(confirmHit){
+        e.preventDefault();
+        submitReqAck();
+        return;
+      }
+      return;
+    }
     var qrZoom=e.target.closest('[data-pay-qr-zoom], [data-mcj-pay-qr]');
     if(qrZoom && (e.target.closest('[data-deposit-form], [data-deposit-view], [data-deposit-channels]')||qrZoom.closest('.pw-deposit-qr-block'))){
       var qImg=qrZoom.tagName==='IMG'?qrZoom:qrZoom.querySelector('img[data-mcj-pay-qr], img');
@@ -5898,13 +6022,26 @@
       }
       return;
     }
+    var closeAll=e.target.closest('[data-offers-close-all]');
+    if(closeAll){
+      if(!confirm('确认关闭全部已开启的服务？资料和历史订单会保留，在线状态不会改变。'))return;
+      var allHost=document.getElementById('pwOfferManager');
+      var any=false;
+      if(allHost)allHost.querySelectorAll('[data-offer-card]').forEach(function(card){
+        if(card.getAttribute('data-accepting')!=='0'){card.setAttribute('data-accepting','0');card.setAttribute('data-touched','1');any=true;}
+      });
+      if(!any){toast('没有已开启的服务');return;}
+      offerAction=closeAll;
+    }
     var offerAction=e.target.closest('[data-save-offers],[data-offer-save],[data-offer-toggle]');
+    if(closeAll)offerAction=closeAll;
     if(offerAction){
       var host=document.getElementById('pwOfferManager');
       var toggled=offerAction.closest('[data-offer-card]');
       if(offerAction.hasAttribute('data-offer-toggle')&&toggled){
         toggled.setAttribute('data-accepting', toggled.getAttribute('data-accepting')==='0'?'1':'0');
         toggled.setAttribute('data-touched','1');
+        offerAction.setAttribute('aria-label', toggled.getAttribute('data-accepting')==='1'?'开':'关');
       }
       if(offerAction.hasAttribute('data-offer-save')&&toggled)toggled.setAttribute('data-touched','1');
       var offers=[];
@@ -5970,22 +6107,7 @@
       var act=action.dataset.orderAction;
       var oid=action.dataset.orderId;
       if(act==='accept_direct_order'){
-        if(!confirm('确认接受此订单吗？'))return;
-        api(act,{id:oid}).then(function(x){
-          toast(x.message||'已确认接单，订单进入进行中');
-          state.route='orders';
-          state.orderFilter='running';
-          go('/companion/orders');
-          return loadData();
-        }).catch(function(err){
-          if(err&&err.code==='DISCORD_BIND_REQUIRED'){
-            if(confirm((err.message||'请先连接 Discord')+'\n\n现在去连接 Discord？')){
-              startDiscordOAuth('/companion/orders/');
-            }
-            return;
-          }
-          toast(err.message||'操作失败');
-        });
+        openReqAck(oid);
         return;
       }
       if(act==='reject_direct_order'){
@@ -7007,7 +7129,18 @@
   document.addEventListener('input',function(e){
     if(e.target&&e.target.matches&&e.target.matches('[data-chat-input]'))autoSizeChatInput(e.target);
   });
+  document.addEventListener('change',function(e){
+    var box=e.target&&e.target.closest&&e.target.closest('[data-req-ack-check]');
+    if(!box)return;
+    state.reqAckChecked=!!box.checked;
+    var btn=root.querySelector('[data-req-ack-confirm]');
+    if(btn)btn.disabled=!state.reqAckChecked||!!state.reqAckBusy;
+  });
   document.addEventListener('keydown',function(e){
+    if(e.key==='Escape'&&state.reqAck){
+      closeReqAck();
+      return;
+    }
     if(e.key==='Escape'){
       if(state.drawerOpen||root.querySelector('.pw-account.open')){
         closeMobileMenus();

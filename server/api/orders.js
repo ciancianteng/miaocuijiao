@@ -871,6 +871,7 @@ async function loadOrders(profile, id = "") {
       }
     }
   }
+  
   const companionIds = [...new Set(orders.map((row) => row.companion_id).filter(Boolean))];
   const serviceIds = [...new Set(orders.map((row) => row.customer_service_id).filter(Boolean))];
   const orderIds = orders.map((row) => row.id).filter(Boolean);
@@ -1273,11 +1274,10 @@ export default async function handler(req, res) {
               requestedMethod: methodHint,
               title: methodHint || "平台收款",
               qrUrl: "",
-              instructions: methodHint
-                ? `${paymentMethodLabel(methodHint)} 暂未开放，请选择其他支付方式`
-                : "支付通道暂不可用",
-              enabled: false,
-              unavailable: true,
+              instructions: "支付信息暂时无法加载，请重试",
+              enabled: null,
+              unavailable: false,
+              payState: "error",
               source: "error",
             };
           }
@@ -1315,7 +1315,7 @@ export default async function handler(req, res) {
           ? "place_multi_order"
           : actionRaw;
     if (
-      ["create", "place_order", "create_order", "place_multi_order", "place_multi", "pay_order", "want_him", "grab", "claim", "preview_renewal", "create_renewal"].includes(actionRaw) ||
+      ["create", "place_order", "create_order", "place_multi_order", "place_multi", "pay_order", "want_him", "grab", "claim", "preview_renewal", "create_renewal", "quote_coupons"].includes(actionRaw) ||
       action === "place_multi_order"
     ) {
       const { isProductionRuntime, isTestAccountRecord, PROD_TEST_ACCOUNT_BLOCK_MESSAGE } = await import(
@@ -1328,6 +1328,28 @@ export default async function handler(req, res) {
           code: "PROD_TEST_ACCOUNT_BLOCKED",
         });
       }
+    }
+    if (action === "quote_coupons") {
+      const couponApi = await import("./_order-coupon.js");
+      const amount = money(body.amount || body.totalAmount || body.order?.totalAmount || 0);
+      const serviceId = String(body.serviceId || body.service_id || "").trim();
+      const game = String(body.game || body.gameName || "").trim();
+      const loaded = await couponApi.loadCouponRows();
+      const prior = await supabaseJson(
+        restUrl(TABLE, `?boss_id=eq.${encodeURIComponent(profile.id)}&status=neq.cancelled&select=id&limit=1`),
+        { headers: serviceHeaders() }
+      ).catch(() => []);
+      const quoted = loaded.coupons.map((item) =>
+        couponApi.quoteCoupon(item, {
+          amount,
+          bossId: profile.id,
+          serviceId,
+          game,
+          isNewUser: !(prior && prior.length),
+          redemptions: loaded.redemptions,
+        })
+      );
+      return json(res, 200, { ok: true, amount, coupons: quoted });
     }
     if (action === "preview_renewal" || action === "create_renewal") {
       const renewal = await import("./_order-renewal.js");
@@ -1544,6 +1566,36 @@ export default async function handler(req, res) {
           return json(res, 400, { ok: false, message: `价格已变化，请刷新后重试（应付 ${totalAmount}）` });
         }
         if (!(totalAmount > 0)) return json(res, 400, { ok: false, message: "订单金额无效。" });
+        if (couponCode || String(order.couponId || order.coupon_id || "").trim()) {
+          const couponApi = await import("./_order-coupon.js");
+          const loaded = await couponApi.loadCouponRows();
+          const picked = couponApi.findCoupon(loaded.coupons, order.couponId || order.coupon_id, couponCode);
+          if (!picked) return json(res, 400, { ok: false, message: "优惠券不存在或已结束。" });
+          const priorOrders = await supabaseJson(
+            restUrl(TABLE, `?boss_id=eq.${encodeURIComponent(profile.id)}&status=neq.cancelled&select=id&limit=1`),
+            { headers: serviceHeaders() }
+          ).catch(() => []);
+          const quoted = couponApi.quoteCoupon(picked, {
+            amount: totalAmount,
+            bossId: profile.id,
+            serviceId,
+            game: gameHint,
+            isNewUser: !(priorOrders && priorOrders.length),
+            redemptions: loaded.redemptions,
+          });
+          if (!quoted.ok) return json(res, 400, { ok: false, message: quoted.reason || "这张优惠券现在不能用。" });
+          order._couponSnap = {
+            couponId: picked.id,
+            name: quoted.name,
+            code: quoted.code,
+            type: quoted.type,
+            discount: quoted.discount,
+            originalAmount: totalAmount,
+            payable: quoted.payable,
+            bearer: "club",
+            reservedAt: new Date().toISOString(),
+          };
+        }
         try {
           serviceSnapshot = await buildServiceSnapshotForCompanion(companionId, {
             serviceId: serviceId || resolved?.serviceRow?.service_id || "",
@@ -1605,7 +1657,8 @@ export default async function handler(req, res) {
           ? [
               notes || `${serviceType}订单`,
               gameId ? `游戏ID：${gameId}` : "",
-              couponCode ? `优惠券：${couponCode}` : "",
+              order._couponSnap ? `优惠券：${order._couponSnap.name} -${order._couponSnap.discount}` : couponCode ? `优惠券：${couponCode}` : "",
+              order._couponSnap ? (await import("./_order-coupon.js")).couponMarker(order._couponSnap) : "",
               `付款方式：${paymentMethod}`,
               companionName ? `指定陪玩：${companionName}` : "",
             ].filter(Boolean)
@@ -1778,6 +1831,30 @@ export default async function handler(req, res) {
       }
       let saved = rows?.[0] || enriched;
       if (serviceSnapshot && rows?.[0]) await persistOrderServiceSnapshot(saved, serviceSnapshot);
+      if (order._couponSnap && saved.id) {
+        try {
+          await (await import("./_order-coupon.js")).reserveCoupon({
+            couponId: order._couponSnap.couponId,
+            orderId: saved.id,
+            orderNo: saved.order_no || "",
+            bossId: profile.id,
+            discount: order._couponSnap.discount,
+            originalAmount: order._couponSnap.originalAmount,
+            payable: order._couponSnap.payable,
+            name: order._couponSnap.name,
+            reservedAt: order._couponSnap.reservedAt,
+          });
+        } catch (couponErr) {
+          console.warn("[orders/create] coupon reserve", String(couponErr?.message || couponErr).slice(0, 160));
+          const cleaned = String(saved.description || "").replace(/\n?\[\[COUPON\]\]\{.*?\}/, "");
+          saved = { ...saved, description: cleaned };
+          await supabaseJson(restUrl(TABLE, `?id=eq.${encodeURIComponent(saved.id)}`), {
+            method: "PATCH",
+            headers: serviceHeaders(),
+            body: JSON.stringify({ description: cleaned }),
+          }).catch(() => {});
+        }
+      }
 
       const companionLabel = productCompanionName || companionName || companionId || "未指定（公开抢单）";
       const notify = `新订单已提交，等待支付，指定陪玩为 ${companionLabel}。支付方式：${(/^acct-/.test(paymentMethod) && payGate.label) || paymentMethodLabel(paymentMethod)}；服务：${serviceType}；时长：${hours}小时；金额：${totalAmount} 猫粮。`;
@@ -1903,7 +1980,7 @@ export default async function handler(req, res) {
             bossId: profile.id,
             orderId: before.id,
             orderNo: before.order_no || before.id,
-            amount: money(before.total_amount),
+            amount: (await import("./_order-coupon.js")).bossPayableAmount(before),
             idempotencyKey: `order-hold:${before.order_no || before.id}`,
             reason: `多人订单凭证提交冻结 ${before.order_no || before.id}`,
             operatorId: profile.id,
@@ -2078,7 +2155,7 @@ export default async function handler(req, res) {
             bossId: profile.id,
             orderId: before.id,
             orderNo: before.order_no || before.id,
-            amount: money(before.total_amount),
+            amount: (await import("./_order-coupon.js")).bossPayableAmount(before),
             idempotencyKey: `order-hold:${before.order_no || before.id}`,
             reason: `订单冻结 ${before.order_no || before.id}`,
             operatorId: profile.id,
@@ -2093,7 +2170,7 @@ export default async function handler(req, res) {
               const walletApi = await import("./_wallet.js");
               await walletApi.debitWallet({
                 bossId: profile.id,
-                amount: money(before.total_amount),
+                amount: (await import("./_order-coupon.js")).bossPayableAmount(before),
                 transactionType: "order_payment",
                 idempotencyKey: `order-pay:${before.order_no || before.id}`,
                 reason: `订单支付 ${before.order_no || before.id}`,
@@ -2247,7 +2324,7 @@ export default async function handler(req, res) {
       // Companion must confirm before accepted_at / start — never pre-stamp on pay.
       const deps = { restUrl, supabaseJson, serviceHeaders };
       const paidAtIso = nowIso();
-      const paidAmount = money(before.total_amount);
+      const paidAmount = (await import("./_order-coupon.js")).bossPayableAmount(before);
       const payPatch = {
         accepted_at: null,
         paid_at: paidAtIso,
@@ -2330,6 +2407,12 @@ export default async function handler(req, res) {
             }
           }
         }
+      }
+
+      try {
+        await (await import("./_order-coupon.js")).markCouponUsed(before.id);
+      } catch (couponUseErr) {
+        console.warn("[orders/pay_order] coupon", String(couponUseErr?.message || couponUseErr).slice(0, 160));
       }
 
       const companionLabel =
@@ -3368,6 +3451,11 @@ export default async function handler(req, res) {
         }
       }
 
+      try {
+        await (await import("./_order-coupon.js")).releaseCouponForOrder(id);
+      } catch (couponReleaseErr) {
+        console.warn("[orders/cancel_order] coupon", String(couponReleaseErr?.message || couponReleaseErr).slice(0, 160));
+      }
       try {
         await (await import("./_cs-commission-settle.js")).clawbackCsOrderIncome(
           { id: order?.id || id, status: "cancelled" },

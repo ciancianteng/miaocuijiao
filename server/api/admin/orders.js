@@ -1494,6 +1494,11 @@ export default async function handler(req, res) {
           reason: String(payload.reason || body.reason || "后台确认退款猫粮"),
         });
         if (!result.ok) return json(res, 400, result);
+        try {
+          await (await import("../_order-coupon.js")).releaseCouponForOrder(id);
+        } catch (couponReleaseErr) {
+          console.warn("[admin/refund] coupon", String(couponReleaseErr?.message || couponReleaseErr).slice(0, 160));
+        }
         const afterRows = await supabaseJson(restUrl("orders", `?id=eq.${encodeURIComponent(id)}&limit=1`), {
           headers: serviceHeaders(),
         }).catch(() => []);

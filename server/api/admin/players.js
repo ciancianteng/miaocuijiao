@@ -15,6 +15,7 @@ import {
   setAssignmentsForProfile,
   toPublicCertTag,
 } from "../_companion-cert-tags-store.js";
+import { readMedalStatus, writeMedalStatus } from "../_companion-medal.js";
 import {
   parseCompanionShareOverride,
   resolveEffectiveCompanionCommission,
@@ -428,6 +429,8 @@ function mapListPlayer(row = {}, profile = {}) {
     allow_orders: row.allow_orders !== false,
     allowOrders: row.allow_orders !== false,
     tags: row.tags || "",
+    medalStatus: readMedalStatus(row.tags),
+    medal_status: readMedalStatus(row.tags),
     voice_type: row.voice_type || "",
     voiceType: row.voice_type || "",
     deposit_status: depositRaw,
@@ -1847,6 +1850,26 @@ export default async function handler(req, res) {
         ok: true,
         identityNo: related.identity.identity_no,
         message: "已记录查看完整身份证号码操作",
+      });
+    }
+
+    if (action === "medal_review") {
+      const decision = String(body.status || body.decision || payload.status || payload.decision || "").trim().toLowerCase();
+      const next =
+        decision === "approve" || decision === "approved"
+          ? "approved"
+          : decision === "reject" || decision === "rejected"
+            ? "rejected"
+            : decision === "revoke" || decision === "revoked"
+              ? "revoked"
+              : "";
+      if (!next) return json(res, 400, { ok: false, message: "请选择通过、拒绝或撤销认证勋章" });
+      const tags = writeMedalStatus(companion.tags, next);
+      await patchCompanionRow(companion.id || id, { tags });
+      return json(res, 200, {
+        ok: true,
+        medalStatus: next,
+        message: next === "approved" ? "认证勋章已通过" : next === "rejected" ? "认证勋章已拒绝" : "认证勋章已撤销",
       });
     }
 

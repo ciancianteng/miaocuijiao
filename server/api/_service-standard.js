@@ -255,6 +255,14 @@ export function viewServiceSnapshot(row = {}) {
     quantity: Number(snap.quantity) || 1,
     capturedAt: String(snap.capturedAt || ""),
     standardUpdatedAt: String(snap.standardUpdatedAt || ""),
+    serviceRequirements: String(snap.catalogRequirements || "").slice(0, 800).trim(),
+    requirementsAck:
+      snap.requirementsAck && typeof snap.requirementsAck === "object"
+        ? {
+            companionId: String(snap.requirementsAck.companionId || ""),
+            at: String(snap.requirementsAck.at || ""),
+          }
+        : null,
     hasStandard: hasStandardContent(std),
     sections: standardSections(std),
     bossRank: viewBossRank(snap, row),
@@ -268,6 +276,26 @@ export function viewServiceSnapshot(row = {}) {
           }))
           .filter((field) => field.name)
       : [],
+  };
+}
+
+/** Merge a companion requirements acknowledgement into the existing order snapshot. No new column. */
+export function snapshotWithRequirementsAck(row, companionId, at) {
+  let snap = row?.service_snapshot;
+  if (typeof snap === "string") {
+    try {
+      snap = JSON.parse(snap);
+    } catch {
+      return null;
+    }
+  }
+  if (!snap || typeof snap !== "object" || Array.isArray(snap)) return null;
+  return {
+    ...snap,
+    requirementsAck: {
+      companionId: String(companionId || ""),
+      at: String(at || ""),
+    },
   };
 }
 

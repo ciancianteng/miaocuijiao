@@ -207,6 +207,22 @@
     if (Array.isArray(reasons) && reasons.length) return reasons.join("、");
     return row.listingBlockReason || row.publishStatusLabel || "";
   }
+  function medalActionsHtml(id, item) {
+    var s = String((item && (item.medalStatus || item.medal_status)) || "").toLowerCase();
+    if (!s) return "";
+    var label = s === "pending" ? "勋章待审" : s === "approved" ? "已认证" : s === "rejected" ? "勋章已拒绝" : "勋章已撤销";
+    var html = '<div data-capp-medal-row="' + esc(id) + '">' + esc(label) + " ";
+    if (s !== "approved") {
+      html += '<button class="mini-btn" type="button" data-capp-medal="approve" data-capp-medal-id="' + esc(id) + '">通过勋章</button> ';
+    }
+    if (s === "pending") {
+      html += '<button class="mini-btn danger-btn" type="button" data-capp-medal="reject" data-capp-medal-id="' + esc(id) + '">拒绝勋章</button>';
+    }
+    if (s === "approved") {
+      html += '<button class="mini-btn danger-btn" type="button" data-capp-medal="revoke" data-capp-medal-id="' + esc(id) + '">撤销勋章</button>';
+    }
+    return html + "</div>";
+  }
   function filteredRows() {
     var list = (state.rows || []).filter(isApplicationQueue);
     var f = state.filter || "all";
@@ -224,6 +240,9 @@
         return approvedButHidden(r);
       });
     }
+    if (f === "medal") return list.filter(function (r) {
+      return String(r.medalStatus || r.medal_status || "").toLowerCase() === "pending";
+    });
     if (f === "rejected") return list.filter(function (r) { return /rejected/.test(statusCode(r)); });
     return list;
   }
@@ -342,6 +361,7 @@
           '<button class="mini-btn danger-btn" type="button" data-capp-reject="' +
           esc(id) +
           '">拒绝</button>' +
+          medalActionsHtml(id, item) +
           "</td></tr>"
         );
       })
@@ -379,6 +399,7 @@
               esc(id) +
               '">驳回</button>'
             : "") +
+          medalActionsHtml(id, item) +
           "</div></article>"
         );
       })
@@ -409,6 +430,7 @@
         ["approved_not_in_hall", "已通过但未上大厅"],
         ["approved_missing_price", "已通过但缺价格"],
         ["rejected", "已驳回"],
+        ["medal", "勋章待审"],
         ["all", "全部"],
       ]
         .map(function (pair) {
@@ -459,7 +481,11 @@
         var res = pair[0] || {};
         state.rows = res.players || res.data || [];
         state.loading = false;
+        var focus = "";
+        try { focus = new URLSearchParams(location.search).get("medal") || ""; } catch (e) { focus = ""; }
+        if (focus) state.filter = "medal";
         paint();
+        if (focus) openDetail(focus);
       })
       .catch(function (err) {
         state.loading = false;
@@ -504,6 +530,20 @@
   document.addEventListener("click", function (e) {
     if (e.target.closest("[data-capp-reload]")) {
       load();
+      return;
+    }
+    var medalBtn = e.target.closest("[data-capp-medal]");
+    if (medalBtn) {
+      var decision = medalBtn.getAttribute("data-capp-medal");
+      var mid = medalBtn.getAttribute("data-capp-medal-id");
+      api("/api/admin/players", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "medal_review", id: mid, status: decision }),
+      }).then(function (res) {
+        state.message = res.message || "勋章审核已保存";
+        load();
+      }).catch(function (err) { alert(err.message || "勋章审核失败"); });
       return;
     }
     var open = e.target.closest("[data-capp-open]");

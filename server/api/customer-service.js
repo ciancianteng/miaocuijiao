@@ -2948,6 +2948,7 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
             signedByOrder = {};
           }
         }
+        
         const missingProfileIds = (ordersMerged || [])
           .flatMap((row) => [row.boss_id, row.companion_id, row.customer_service_id])
           .filter((id) => id && !profiles[id]);
@@ -3950,7 +3951,9 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
           ? {}
           : {
               paid_at: nowIso(),
-              paid_cat_food: approvedAmt,
+              paid_cat_food: (await import("./_order-coupon.js")).readCouponSnapshot(order)
+                ? (await import("./_order-coupon.js")).bossPayableAmount(order)
+                : approvedAmt,
             };
         async function patchAppointmentConfirmed(patch) {
           const rows = await supabaseJson(
@@ -4064,6 +4067,11 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
       }
       if (!patched || patched.status === "awaiting_payment") {
         return json(res, 409, { ok: false, message: "订单状态已变更，请刷新后重试。" });
+      }
+      try {
+        await (await import("./_order-coupon.js")).markCouponUsed(order.id);
+      } catch (couponUseErr) {
+        console.warn("[cs/payment] coupon", String(couponUseErr?.message || couponUseErr).slice(0, 160));
       }
       if (isAppointmentOrder) {
         if (patched.status !== "confirmed" || String(patched.companion_id || assignedCompanionId) !== String(assignedCompanionId)) {

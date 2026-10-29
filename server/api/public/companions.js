@@ -1,6 +1,7 @@
 ﻿import "../_load-env.js";
 import { readLocalLevels, toPublicLevel, levelVisualConfig } from "../_companion-levels-store.js";
 import { resolveCertTagsForProfiles } from "../_companion-cert-tags-store.js";
+import { readMedalStatus, medalDisplayTag } from "../_companion-medal.js";
 import { resolvePlatformCommission } from "../_commission-rates.js";
 import {
   readGamePrices,
@@ -236,6 +237,10 @@ function publicCompanion(row = {}, profile = {}, levels = [], catalog = [], medi
   const avatar = resolveCompanionAvatar(profile, row, mediaExtras) || DEFAULT_COMPANION_AVATAR;
   const cover = resolveCompanionCover(profile, row, mediaExtras) || avatar;
   const name = base.name || "未命名陪玩";
+  const shownCerts = Array.isArray(certTags) ? certTags.slice() : [];
+  if (readMedalStatus(row.tags) === "approved" && !shownCerts.some((t) => t && t.name === "认证勋章")) {
+    shownCerts.push(medalDisplayTag());
+  }
   const level = findLevelMeta(levels, row);
   const levelConfig = level ? levelVisualConfig(level) : null;
   const levelName = levelConfig
@@ -336,8 +341,8 @@ function publicCompanion(row = {}, profile = {}, levels = [], catalog = [], medi
     hourlyPrice: money(row.price),
     sellingPrice: money(row.price),
     priceRole: "companion_selling_price",
-    certTags: Array.isArray(certTags) ? certTags : [],
-    certificationTags: Array.isArray(certTags) ? certTags : [],
+    certTags: shownCerts,
+    certificationTags: shownCerts,
     gamePrices: projectGamePrices(row, levelConfig),
     pricingUnit: row.pricing_unit || "小时",
     availabilityStatus: avail,
@@ -365,6 +370,7 @@ function publicCompanion(row = {}, profile = {}, levels = [], catalog = [], medi
     gender: row.gender || "",
     voiceType: row.voice_type || "",
     tags: stripGamePricesMarker(String(row.tags || ""))
+      .replace(/\[\[MCJ_MEDAL:(?:pending|approved|rejected|revoked)\]\]/gi, "")
       .replace(/\[\[MCJ_GALLERY:[\s\S]*?\]\]/g, "")
       .split(/[,，、]/)
       .map((t) => t.trim())

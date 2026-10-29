@@ -147,6 +147,20 @@ async function profileFromToken(req) {
   return profile;
 }
 
+function bossNotifyUrl(row) {
+  const kind = String(row.kind || "").toLowerCase();
+  const rid = String(row.related_id || "").trim();
+  if (/cs|support|message|chat|service_reply/.test(kind)) {
+    return rid ? `/support.html?order=${encodeURIComponent(rid)}` : "/support.html";
+  }
+  if (rid && /order|accept|start|complete|cancel|paid|pay|claim|service|refund/.test(kind)) {
+    return `/orders.html?id=${encodeURIComponent(rid)}`;
+  }
+  if (/recharge|wallet|bonus|cat_food|catfood/.test(kind)) return "/recharge.html";
+  if (/gift/.test(kind)) return "/gifts.html";
+  if (/vip/.test(kind)) return "/mine.html";
+  return "/mine.html";
+}
 function mapRow(row) {
   return {
     id: row.id,
@@ -154,6 +168,7 @@ function mapRow(row) {
     body: row.body || "",
     kind: row.kind || "system",
     relatedId: row.related_id || "",
+    url: bossNotifyUrl(row),
     readAt: row.read_at || null,
     read: !!row.read_at,
     createdAt: row.created_at || "",

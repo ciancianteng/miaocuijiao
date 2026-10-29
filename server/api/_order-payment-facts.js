@@ -117,7 +117,7 @@ export async function chargeProxyOrderOnConfirm(order, { operatorId } = {}) {
   if (!needsProxyCharge(order, facts)) {
     return { ok: true, skipped: true, amount: 0, facts };
   }
-  const amount = round(order.total_amount);
+  const amount = round((await import("./_order-coupon.js")).bossPayableAmount(order));
   if (!(amount > 0)) {
     return { ok: false, code: "INVALID_AMOUNT", message: "订单金额无效，付款失败。", facts };
   }

@@ -466,11 +466,10 @@
 }
 
 .mcj-po-standard {
-  margin-top: 10px;
-  padding: 12px;
-  border-radius: 14px;
-  border: 1px solid rgba(255, 145, 195, 0.22);
-  background: rgba(255, 145, 195, 0.06);
+  margin-top: 8px;
+  padding: 0;
+  border: 0;
+  background: transparent;
 }
 
 .mcj-po-standard-head {
@@ -549,15 +548,16 @@
 }
 
 .mcj-po-scroll input,
+.mcj-po-scroll select,
 .mcj-po-scroll textarea {
   width: 100%;
   box-sizing: border-box;
+  min-height: 44px;
   border-radius: 12px;
   border: 1px solid rgba(255, 255, 255, 0.12);
   background: rgba(0, 0, 0, 0.28);
   color: #fff;
   padding: 12px 14px;
-  /* iOS zooms the whole page when focused inputs are <16px; keep >=16 to avoid sticky zoom. */
   font-size: 16px;
   font-family: inherit;
 }
@@ -823,3 +823,34 @@ body.mcj-po-discord-open{overflow:hidden}
   font-size:16px;
 }
 .mcj-po-discord-btn.ghost{background:transparent;border:1px solid rgba(255,255,255,.18);color:#fff}
+.mcj-po-scroll{padding-bottom:28px}
+.mcj-po-game{position:relative;min-width:0}
+.mcj-po-game-trigger{display:flex;align-items:center;width:100%;min-height:44px;padding:10px 14px;border-radius:12px;border:1px solid rgba(243,168,203,.35);background:#141218;color:#fff;font-size:16px;text-align:left}
+.mcj-po-game-trigger span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mcj-po-game-list{display:none;gap:6px;max-height:220px;margin-top:8px;overflow:auto;padding:8px;border-radius:12px;border:1px solid rgba(243,168,203,.28);background:#100e14}
+.mcj-po-game-list.is-open{display:grid}
+.mcj-po-game-option{min-height:40px;padding:8px 10px;border:0;border-radius:10px;background:transparent;color:#fff;font-size:15px;text-align:left;overflow-wrap:anywhere}
+.mcj-po-game-option.is-on{background:rgba(244,166,200,.18);color:#ffd6ea}
+.mcj-po-stepper{display:grid;grid-template-columns:44px minmax(0,1fr) 44px;align-items:center;height:44px;border:1px solid rgba(243,168,203,.35);border-radius:12px;background:#141218;overflow:hidden}
+.mcj-po-stepper button{height:44px;border:0;background:transparent;color:#ffd6ea;font-size:22px}
+.mcj-po-stepper span{text-align:center;font-size:16px;font-weight:700}
+.mcj-po-dialog .sdt-acc{border-top:1px solid rgba(255,255,255,.08)}
+.mcj-po-dialog .sdt-acc-btn{border:0 !important;background:transparent !important;box-shadow:none !important;border-radius:0 !important;min-height:44px}
+.mcj-po-dialog .sdt-item p{line-height:1.75}
+@media (max-width:767px){
+  .mcj-po-dialog,.mcj-po-scroll,.mcj-po-game{max-width:100%}
+  .mcj-po-footer{padding-bottom:calc(16px + env(safe-area-inset-bottom,0px))}
+}
+.mcj-po-coupon-entry{display:flex;justify-content:space-between;align-items:center;width:100%;margin:8px 0;padding:12px 14px;border:1px solid rgba(243,168,203,.45);border-radius:14px;background:#100e14;color:#fff}
+.mcj-po-coupon-entry strong{color:#f0d7a4;font-weight:700}
+.mcj-po-coupon-modal{position:fixed;inset:0;z-index:80;display:grid;align-items:end;background:rgba(0,0,0,.62)}
+.mcj-po-coupon-modal[hidden]{display:none}
+.mcj-po-coupon-sheet{width:min(100%,440px);margin:0 auto;padding:16px 16px calc(16px + env(safe-area-inset-bottom));border:1px solid rgba(243,168,203,.4);border-radius:18px 18px 0 0;background:#0c0a10;color:#fff}
+.mcj-po-coupon-head{display:flex;align-items:center;gap:8px;margin-bottom:12px}
+.mcj-po-coupon-head strong{flex:1}
+.mcj-po-coupon-head button,.mcj-po-coupon-card button{border:1px solid rgba(240,215,164,.45);border-radius:999px;background:transparent;color:#f0d7a4;padding:6px 12px}
+.mcj-po-coupon-card{display:grid;gap:6px;margin:0 0 10px;padding:12px;border:1px solid rgba(243,168,203,.35);border-radius:14px;background:#141218}
+.mcj-po-coupon-card div{display:flex;justify-content:space-between;gap:8px}
+.mcj-po-coupon-card em{color:#f0d7a4;font-style:normal}
+.mcj-po-coupon-card.is-off{opacity:.55}
+.mcj-po-coupon-card small{color:#e7b4c8}

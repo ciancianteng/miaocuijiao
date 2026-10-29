@@ -325,8 +325,9 @@ async function writeLog(req, action, type, itemId, beforeValue, afterValue) {
 }
 
 export default async function handler(req, res) {
+  let adminAuth = null;
   try {
-    await (await import("../_admin-auth.js")).requireAdmin(req, { allowRoles: ADMIN_ROLES });
+    adminAuth = await (await import("../_admin-auth.js")).requireAdmin(req, { allowRoles: ADMIN_ROLES });
   } catch (err) {
     return json(res, err.status || 403, { ok: false, message: err.message || "没有平台内容管理权限" });
   }
@@ -373,7 +374,10 @@ export default async function handler(req, res) {
       const type = sanitizeType(req.body?.type);
       const id = req.body?.id ? String(req.body.id) : "";
       const payload = req.body?.payload || {};
-      const role = roleFromRequest(req) || "admin";
+      const role = adminAuth?.role || roleFromRequest(req) || "admin";
+      if (type === "marketing_coupons" && !["super_admin", "admin"].includes(role)) {
+        return json(res, 403, { ok: false, message: "只有超级管理员可以创建或修改优惠活动。" });
+      }
 
       if (action === "create") {
         const item = normalizeItem(payload, type);

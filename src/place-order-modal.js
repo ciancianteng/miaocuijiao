@@ -2,12 +2,8 @@
   "use strict";
 
   var LEGACY_SERVICE_NAMES = { "陪玩": 1, "护航": 1, "跑刀": 1, "代肝": 1, "自定义": 1, "陪玩服务": 1, "陪聊服务": 1 };
-  var HOURS = [
-    { id: "1", label: "1 小时", value: 1 },
-    { id: "2", label: "2 小时", value: 2 },
-    { id: "3", label: "3 小时", value: 3 },
-    { id: "custom", label: "自定义", value: 0, custom: true },
-  ];
+  var MIN_ORDER_HOURS = 1;
+  var MAX_ORDER_HOURS = 24;
   // Never hardcode channel list — filled live from /api/recharge (payment_channels SoT).
   var PAYMENTS = [];
 
@@ -28,6 +24,8 @@
     startTime: "",
     endTime: "",
     couponCode: "",
+    couponId: "",
+    couponQuote: null,
     payment: "",
     voiceMode: "game_mic",
     submitting: false,
@@ -58,6 +56,8 @@
     state.startTime = defaultStartTime();
     state.endTime = "";
     state.couponCode = "";
+    state.couponId = "";
+    state.couponQuote = null;
     state.payment = "";
     state.voiceMode = "game_mic";
     state.discordContact = "";
@@ -199,11 +199,19 @@
     if (!item) return "请选择服务";
     return moneyText(item.price);
   }
+  function orderOriginalTotal() {
+    var item = confirmedServiceItem();
+    if (!item) return 0;
+    return Math.round(money(item.price) * currentHours() * currentQuantity() * 100) / 100;
+  }
+  function couponDiscountAmount() {
+    return state.couponQuote && state.couponQuote.ok ? money(state.couponQuote.discount) : 0;
+  }
   function shownTotalText() {
     if (pricePending()) return "价格加载中";
     var item = confirmedServiceItem();
     if (!item) return "请选择服务";
-    return moneyText(Math.round(money(item.price) * currentHours() * currentQuantity() * 100) / 100);
+    return moneyText(Math.max(0, Math.round((orderOriginalTotal() - couponDiscountAmount()) * 100) / 100));
   }
   function looksLikeJwt(raw) {
     var t = String(raw || "").trim();
@@ -253,7 +261,7 @@
     if (document.querySelector('link[data-mcj-place-order-css]')) return;
     var link = document.createElement("link");
     link.rel = "stylesheet";
-    link.href = "/src/place-order-modal.css?v=20261007b1528";
+    link.href = "/src/place-order-modal.css?v=20261029coupon1";
     link.setAttribute("data-mcj-place-order-css", "1");
     document.head.appendChild(link);
   }
@@ -732,25 +740,11 @@
   var CONTENT_SECTION = { 服务内容: 1, 包含: 1, 计费标准: 1 };
   function serviceStandardHtml(svc) {
     if (!svc) {
-      return '<p class="mcj-po-standard-empty">选择游戏/服务项目后，这里会显示该项目的服务内容和执行标准。</p>';
+      return '<p class="mcj-po-standard-empty">选择游戏/服务项目后，这里会显示该项目的服务内容。</p>';
     }
     var sections = (svc.standard && Array.isArray(svc.standard.sections) ? svc.standard.sections : []).filter(function (s) {
       return s && s.value;
     });
-    var head =
-      '<div class="mcj-po-standard-head"><strong>服务明细 · ' +
-      esc(svc.name) +
-      "</strong><span>" +
-      esc(pricePending() ? "价格加载中" : moneyText(svc.price) + " / " + (svc.pricingUnit || "小时")) +
-      "</span></div>";
-    if (!sections.length && !svc.content && !svc.requirements) {
-      return (
-        head +
-        '<p class="mcj-po-standard-empty">该陪玩暂未填写此项目的详细服务标准。按' +
-        esc(svc.pricingUnit || "小时") +
-        "计费；如需确认服务内容，可下单前联系客服。</p>"
-      );
-    }
     var extraContent = [];
     var extraRequirements = [];
     sections.forEach(function (s) {
@@ -770,8 +764,8 @@
           extraContent: extraContent,
           extraRequirements: extraRequirements,
         })
-      : '<p class="mcj-po-standard-empty">' + esc([svc.content, svc.requirements].filter(Boolean).join("\n")) + "</p>";
-    return head + tabs + '<p class="mcj-po-standard-foot">下单后将以此标准保存到订单，陪玩后续修改不影响本单。</p>';
+      : '<p class="mcj-po-standard-empty">' + esc(svc.content || "") + "</p>";
+    return tabs;
   }
   function refreshServiceStandard() {
     var mask = activeMask();
@@ -887,10 +881,14 @@
     }
     var mask = activeMask();
     if (mask) {
+      var gameLabel = mask.querySelector("[data-po-game-label]");
+      if (gameLabel) gameLabel.textContent = state.service || "请选择游戏";
+      var gameList = mask.querySelector("[data-po-game-list]");
+      if (gameList) gameList.classList.add("is-open");
+      var gameToggle = mask.querySelector("[data-po-game-toggle]");
+      if (gameToggle) gameToggle.setAttribute("aria-expanded", "true");
       mask.querySelectorAll("[data-po-service]").forEach(function (btn) {
-        var on = btn.getAttribute("data-po-service") === state.service;
-        btn.classList.toggle("active", on);
-        btn.setAttribute("aria-pressed", on ? "true" : "false");
+        btn.classList.toggle("is-on", btn.getAttribute("data-po-service") === state.service);
       });
       var preview = mask.querySelector("[data-po-service-preview]");
       if (preview) preview.textContent = currentServiceLabel();
@@ -973,57 +971,54 @@
       return { fieldId: field.id, value: value };
     });
   }
-  function remountServiceChips() {
-    var mask = activeMask();
-    if (!mask || !state.companion) return;
-    var wrap = mask.querySelector(".mcj-po-chips[role='group']");
-    if (!wrap) return;
-    if (!state.servicesReady) {
-      wrap.innerHTML = '<span class="mcj-po-empty-services" data-po-services-loading style="color:#9ca3af;font-size:13px">正在读取该陪玩的服务项目…</span>';
-      return;
+  function gameMenuHtml(services, placeholder) {
+    var label = state.service || placeholder || "请选择游戏";
+    var options = (services || []).map(function (s) {
+      var priceBit = money(s.price) > 0 ? " · RM" + money(s.price) + (s.pricingUnit ? "/" + s.pricingUnit : "") : "";
+      return '<button type="button" class="mcj-po-game-option' + (state.service === s.name ? " is-on" : "") + '" data-po-service="' + esc(s.name) + '">' + esc(s.name) + esc(priceBit) + "</button>";
+    }).join("");
+    return '<button type="button" class="mcj-po-game-trigger" data-po-game-toggle aria-expanded="true" aria-label="选择游戏"><span data-po-game-label>' + esc(label) + "</span></button>" +
+      (options ? '<div class="mcj-po-game-list is-open" data-po-game-list>' + options + "</div>" : "");
+  }
+  function bindGameMenu(mask) {
+    if (!mask) return;
+    var toggle = mask.querySelector("[data-po-game-toggle]");
+    var list = mask.querySelector("[data-po-game-list]");
+    if (toggle && list) {
+      toggle.addEventListener("click", function (ev) {
+        ev.preventDefault();
+        var open = !list.classList.contains("is-open");
+        list.classList.toggle("is-open", open);
+        toggle.setAttribute("aria-expanded", open ? "true" : "false");
+      });
     }
-    if (state.servicesError) {
-      wrap.innerHTML = '<span class="mcj-po-empty-services" style="color:#9ca3af;font-size:13px">' + esc(state.servicesError) + "</span>";
-      return;
-    }
-    var services = resolveServices(state.companion);
-    if (!services.length) {
-      wrap.innerHTML = '<span class="mcj-po-empty-services" style="color:#9ca3af;font-size:13px">该陪玩暂无可下单服务项目</span>';
-      return;
-    }
-    wrap.innerHTML = services
-      .map(function (s) {
-        return (
-          '<button type="button" data-po-service="' +
-          esc(s.name) +
-          '" data-po-service-id="' +
-          esc(s.serviceId || s.id || "") +
-          '" data-po-service-price="' +
-          esc(s.price) +
-          '" class="mcj-po-chip' +
-          (state.service === s.name ? " active" : "") +
-          '" aria-pressed="' +
-          (state.service === s.name ? "true" : "false") +
-          '">' +
-          esc(s.name) +
-          "</button>"
-        );
-      })
-      .join("");
-    wrap.querySelectorAll("[data-po-service]").forEach(function (btn) {
+    mask.querySelectorAll("[data-po-service]").forEach(function (btn) {
       btn.addEventListener("click", function (ev) {
         ev.preventDefault();
         var name = btn.getAttribute("data-po-service") || "";
-        var list = resolveServices(state.companion);
-        var svc = list.find(function (s) {
+        var svc = resolveServices(state.companion).find(function (s) {
           return serviceNamesMatch(s.name, name);
         });
         if (svc) applySelectedService(svc);
       });
     });
-    // hide legacy custom input if present
-    var customWrap = mask.querySelector("[data-po-custom-service]");
-    if (customWrap) customWrap.classList.remove("show");
+  }
+  function remountServiceChips() {
+    var mask = activeMask();
+    if (!mask || !state.companion) return;
+    var wrap = mask.querySelector("[data-po-game-menu]");
+    if (!wrap) return;
+    if (!state.servicesReady) {
+      wrap.innerHTML = gameMenuHtml([], "正在读取该陪玩的服务项目…");
+      return;
+    }
+    if (state.servicesError) {
+      wrap.innerHTML = gameMenuHtml([], state.servicesError);
+      return;
+    }
+    var services = resolveServices(state.companion);
+    wrap.innerHTML = gameMenuHtml(services, services.length ? "请选择游戏" : "该陪玩暂无可下单服务项目");
+    bindGameMenu(mask);
     refreshServiceStandard();
   }
   function hydrateFromCatalog(companionId) {
@@ -1137,7 +1132,10 @@
     return { service: "", custom: "", item: null };
   }
   function currentHours() {
-    return Math.max(0.5, money(state.hours) || 1);
+    var n = Math.round(money(state.hours) || MIN_ORDER_HOURS);
+    if (n < MIN_ORDER_HOURS) n = MIN_ORDER_HOURS;
+    if (n > MAX_ORDER_HOURS) n = MAX_ORDER_HOURS;
+    return n;
   }
   function currentServiceLabel() {
     return String(state.service || "").trim() || "未选择服务";
@@ -1342,7 +1340,7 @@
       "[data-po-footer-total]": total,
       "[data-po-total]": total,
       "[data-po-footer-unit]": unit,
-      "[data-po-footer-discount]": moneyText(0),
+      "[data-po-footer-discount]": moneyText(couponDiscountAmount()),
       "[data-po-hours-label]": hours + " 小时",
     };
     Object.keys(map).forEach(function (sel) {
@@ -1356,6 +1354,51 @@
     if (activeMask() && (state.payMethods.length || !state.payMethodsLoading)) {
       paintPayCards();
     }
+  }
+  function openCouponPicker(mask) {
+    var modal = mask.querySelector("[data-po-coupon-modal]");
+    var list = mask.querySelector("[data-po-coupon-list]");
+    if (!modal || !list) return;
+    modal.hidden = false;
+    list.innerHTML = "<p>正在读取优惠券…</p>";
+    fetch("/api/orders", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({
+        action: "quote_coupons",
+        amount: orderOriginalTotal(),
+        serviceId: state.selectedServiceId || "",
+        game: currentServiceLabel(),
+      }),
+    })
+      .then(function (res) { return res.json(); })
+      .then(function (body) {
+        var rows = (body && body.coupons) || [];
+        if (!rows.length) {
+          list.innerHTML = "<p>暂无优惠券</p>";
+          return;
+        }
+        list.innerHTML = rows.map(function (item) {
+          var action = item.ok
+            ? '<button type="button" data-po-coupon-use="' + esc(item.id) + '">使用</button>'
+            : '<button type="button" disabled>不可用</button>';
+          return '<article class="mcj-po-coupon-card' + (item.ok ? "" : " is-off") + '"><div><strong>' + esc(item.name) + "</strong><em>-" + esc(moneyText(item.discount || 0)) + "</em></div><p>" + esc(item.condition || "") + " · " + esc((item.startAt || "") + " 至 " + (item.endAt || "")) + "</p>" + (item.reason ? "<small>" + esc(item.reason) + "</small>" : "") + action + "</article>";
+        }).join("");
+        list.querySelectorAll("[data-po-coupon-use]").forEach(function (btn) {
+          btn.addEventListener("click", function () {
+            var picked = rows.find(function (item) { return item.id === btn.getAttribute("data-po-coupon-use"); });
+            if (!picked || !picked.ok) return;
+            state.couponId = picked.id;
+            state.couponCode = picked.code || "";
+            state.couponQuote = picked;
+            modal.hidden = true;
+            var label = mask.querySelector("[data-po-coupon-label]");
+            if (label) label.textContent = "已用 " + picked.name;
+            refreshTotals();
+          });
+        });
+      })
+      .catch(function () { list.innerHTML = "<p>优惠券读取失败</p>"; });
   }
 
   /** Draft prefill only (per game); the order snapshot on the server is the record. */
@@ -1437,38 +1480,7 @@
       state.selectedServiceId = companionServices[0].serviceId || companionServices[0].id || "";
       if (companionServices[0].price > 0) c.unitPrice = companionServices[0].price;
     }
-    var serviceChips = companionServices.length
-      ? companionServices.map(function (s) {
-          return (
-            '<button type="button" data-po-service="' +
-            esc(s.name) +
-            '" data-po-service-id="' +
-            esc(s.serviceId || s.id || "") +
-            '" data-po-service-price="' +
-            esc(s.price) +
-            '" class="mcj-po-chip' +
-            (state.service === s.name ? " active" : "") +
-            '" aria-pressed="' +
-            (state.service === s.name ? "true" : "false") +
-            '">' +
-            esc(s.name) +
-            "</button>"
-          );
-        }).join("")
-      : '<span class="mcj-po-empty-services" data-po-services-loading style="color:#9ca3af;font-size:13px">正在读取该陪玩的服务项目…</span>';
-    var hourChips = HOURS.map(function (h) {
-      return (
-        '<button type="button" data-po-hours="' +
-        esc(h.id) +
-        '" class="mcj-po-chip' +
-        (state.hoursMode === h.id ? " active" : "") +
-        '" aria-pressed="' +
-        (state.hoursMode === h.id ? "true" : "false") +
-        '">' +
-        esc(h.label) +
-        "</button>"
-      );
-    }).join("");
+    var serviceMenu = gameMenuHtml(companionServices, state.servicesReady ? "请选择游戏" : "正在读取该陪玩的服务项目…");
     var payList = state.payMethods && state.payMethods.length ? state.payMethods : [];
     var payCards = payList.length
       ? payList
@@ -1532,24 +1544,18 @@
       (state.servicesReady && !state.servicesError && state.service ? priceHeroHtml(c.unitPrice) : '<span class="mcj-po-price-hero" data-po-price-hero>' + (pricePending() ? "价格加载中" : "请选择服务") + "</span>") +
       "<small>/ " +
       esc(c.pricingUnit || "小时") +
-      "</small></div>" +
-      "<div>当前服务：<strong data-po-service-preview>" +
-      esc(currentServiceLabel()) +
-      "</strong></div></div>" +
-      '<div class="mcj-po-field"><span class="mcj-po-label">游戏/服务项目</span><div class="mcj-po-chips" role="group">' +
-      serviceChips +
+      "</small></div></div>" +
+      '<div class="mcj-po-field"><span class="mcj-po-label">游戏</span><div class="mcj-po-game" data-po-game-menu>' +
+      serviceMenu +
       "</div>" +
       '<div class="mcj-po-standard" data-po-standard aria-live="polite">' +
       serviceStandardHtml(selectedServiceItem()) +
       "</div></div>" +
-      '<div class="mcj-po-field"><span class="mcj-po-label">时长</span><div class="mcj-po-chips" role="radiogroup">' +
-      hourChips +
-      "</div>" +
-      '<div class="mcj-po-custom-hours' +
-      (state.hoursMode === "custom" ? " show" : "") +
-      '" data-po-custom-hours><input type="number" min="0.5" step="0.5" data-po-custom-hours-input value="' +
-      esc(state.hours) +
-      '" placeholder="小时数"></div></div>' +
+      '<div class="mcj-po-field"><span class="mcj-po-label">服务时长</span><div class="mcj-po-stepper" role="group" aria-label="服务时长">' +
+      '<button type="button" data-po-hours-step="-1" aria-label="减少1小时">−</button>' +
+      '<span data-po-hours-label>' + esc(currentHours()) + " 小时</span>" +
+      '<button type="button" data-po-hours-step="1" aria-label="增加1小时">+</button>' +
+      "</div></div>" +
       gameIdFieldHtml() +
       '<div data-po-requirements></div>' +
       '<label>我的段位（选填，陪玩接单前可见）<input data-po-boss-rank maxlength="30" autocomplete="off" placeholder="例如：钻石 2 / 星耀 / 无段位" value="' +
@@ -1580,9 +1586,13 @@
       "</div></div>" +
       '<p class="mcj-po-time-hint" data-po-schedule-preview>选择预约开始时间后自动计算结束时间</p></div>' +
       '<label>订单备注（选填）<textarea data-po-notes rows="2" placeholder="选填：特殊要求、开局说明等"></textarea></label>' +
-      '<label>优惠码<input data-po-coupon placeholder="可选" value="' +
-      esc(state.couponCode) +
-      '"></label>' +
+      '<button type="button" class="mcj-po-coupon-entry" data-po-coupon-open>' +
+      '<span>优惠券</span><strong data-po-coupon-label>' +
+      (state.couponQuote && state.couponQuote.ok ? esc("已用 " + state.couponQuote.name + " -" + moneyText(state.couponQuote.discount)) : "可用优惠券") +
+      "</strong></button>" +
+      '<div class="mcj-po-coupon-modal" data-po-coupon-modal hidden><div class="mcj-po-coupon-sheet" role="dialog" aria-label="选择优惠券">' +
+      '<div class="mcj-po-coupon-head"><strong>选择优惠券</strong><button type="button" data-po-coupon-clear>不使用</button><button type="button" data-po-coupon-close>关闭</button></div>' +
+      '<div data-po-coupon-list><p>正在读取优惠券…</p></div></div></div>' +
       '<div class="mcj-po-field mcj-po-voice-field"><span class="mcj-po-label">本单语音方式</span>' +
       '<div class="mcj-po-voice-grid" role="radiogroup" aria-label="本单语音方式">' +
       '<button type="button" class="mcj-po-voice-card' +
@@ -1611,7 +1621,7 @@
       esc(shownUnitText()) +
       "</strong></div>" +
       "<div>优惠金额 <strong data-po-footer-discount>" +
-      esc(moneyText(0)) +
+      esc(moneyText(couponDiscountAmount())) +
       "</strong></div>" +
       "<div>合计 <strong data-po-footer-total>" +
       esc(shownTotalText()) +
@@ -1691,46 +1701,23 @@
         }
       });
     }
-    mask.querySelectorAll("[data-po-service]").forEach(function (btn) {
+    bindGameMenu(mask);
+    mask.querySelectorAll("[data-po-hours-step]").forEach(function (btn) {
       btn.addEventListener("click", function (ev) {
         ev.preventDefault();
-        var name = btn.getAttribute("data-po-service") || "";
-        var list = resolveServices(state.companion);
-        var svc = list.find(function (s) {
-          return serviceNamesMatch(s.name, name);
-        }) || {
-          name: name,
-          serviceId: btn.getAttribute("data-po-service-id") || "",
-          price: money(btn.getAttribute("data-po-service-price")),
-          pricingUnit: (state.companion && state.companion.pricingUnit) || "小时",
-        };
-        applySelectedService(svc);
-        setExclusiveActive(mask.querySelectorAll("[data-po-service]"), btn);
+        var next = currentHours() + (Number(btn.getAttribute("data-po-hours-step")) || 0);
+        if (next < MIN_ORDER_HOURS) next = MIN_ORDER_HOURS;
+        if (next > MAX_ORDER_HOURS) next = MAX_ORDER_HOURS;
+        state.hours = next;
+        state.hoursMode = String(next);
+        state.couponId = "";
+        state.couponCode = "";
+        state.couponQuote = null;
+        refreshTotals();
+        var couponLabel = document.querySelector("[data-po-coupon-label]");
+        if (couponLabel) couponLabel.textContent = "可用优惠券";
       });
     });
-    mask.querySelectorAll("[data-po-hours]").forEach(function (btn) {
-      btn.addEventListener("click", function (ev) {
-        ev.preventDefault();
-        ev.stopPropagation();
-        var id = btn.getAttribute("data-po-hours");
-        state.hoursMode = id;
-        var meta = HOURS.find(function (h) {
-          return h.id === id;
-        });
-        if (meta && !meta.custom) state.hours = meta.value;
-        setExclusiveActive(mask.querySelectorAll("[data-po-hours]"), btn);
-        var wrap = mask.querySelector("[data-po-custom-hours]");
-        if (wrap) wrap.classList.toggle("show", id === "custom");
-        refreshTotals();
-      });
-    });
-    var customHoursInput = mask.querySelector("[data-po-custom-hours-input]");
-    if (customHoursInput) {
-      customHoursInput.addEventListener("input", function () {
-        state.hours = Math.max(0.5, money(customHoursInput.value) || 1);
-        refreshTotals();
-      });
-    }
     var startTimeCard = mask.querySelector("[data-po-open-time]");
     if (startTimeCard) {
       writeStartTimeToDom(mask, state.startTime || defaultStartTime());
@@ -1741,12 +1728,24 @@
       });
     }
     refreshSchedulePreview(mask);
-    var couponInput = mask.querySelector("[data-po-coupon]");
-    if (couponInput) {
-      couponInput.addEventListener("input", function () {
-        state.couponCode = String(couponInput.value || "").trim();
-      });
-    }
+    var couponOpen = mask.querySelector("[data-po-coupon-open]");
+    if (couponOpen) couponOpen.addEventListener("click", function () { openCouponPicker(mask); });
+    var couponClose = mask.querySelector("[data-po-coupon-close]");
+    if (couponClose) couponClose.addEventListener("click", function () {
+      var modal = mask.querySelector("[data-po-coupon-modal]");
+      if (modal) modal.hidden = true;
+    });
+    var couponClear = mask.querySelector("[data-po-coupon-clear]");
+    if (couponClear) couponClear.addEventListener("click", function () {
+      state.couponId = "";
+      state.couponCode = "";
+      state.couponQuote = null;
+      var modal = mask.querySelector("[data-po-coupon-modal]");
+      if (modal) modal.hidden = true;
+      var label = mask.querySelector("[data-po-coupon-label]");
+      if (label) label.textContent = "可用优惠券";
+      refreshTotals();
+    });
     mask.querySelectorAll("[data-po-pay]").forEach(function (btn) {
       btn.addEventListener("click", function () {
         if (btn.disabled) return;
@@ -2283,6 +2282,7 @@
             schedule: schedule,
             startTime: startTime,
             endTime: endTime,
+            couponId: state.couponId || "",
             couponCode: state.couponCode || "",
             notes: noteParts.join("；"),
             paymentMethod: payment,
@@ -2403,6 +2403,8 @@
     state.startTime = defaultStartTime();
     state.endTime = "";
     state.couponCode = "";
+    state.couponId = "";
+    state.couponQuote = null;
     state.payment = "";
     state.payMethods = [];
     state.payMethodsLoading = true;
