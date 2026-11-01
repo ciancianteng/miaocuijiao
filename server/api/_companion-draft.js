@@ -42,6 +42,24 @@ export function isApplicationDraft(row = {}) {
   return true;
 }
 
+/** 陪玩管理 list scopes. Drafts never mix into formal or pending. */
+export function matchesApplicationListScope(row = {}, scope = "formal") {
+  if (!row || !row.id || isApplicationArchived(row)) return false;
+  const asked = String(scope || "formal").toLowerCase();
+  const st = normalizeApplicationStatus(row);
+  if (asked === "drafts") return isApplicationDraft(row);
+  if (asked === "pending") {
+    if (isApplicationApproved(row) || /^(rejected|resubmit|need_more)$/.test(st)) return false;
+    return isApplicationQueueRow(row);
+  }
+  if (asked === "rejected") return /^(rejected|resubmit|need_more)$/.test(st);
+  if (asked === "review") {
+    if (isApplicationApproved(row) || /^(rejected|resubmit|need_more)$/.test(st)) return true;
+    return isApplicationQueueRow(row);
+  }
+  return isFormalCompanion(row);
+}
+
 /** Formal 陪玩管理: only review-approved companions. */
 export function isFormalCompanion(row = {}) {
   return isApplicationApproved(row) && !isApplicationArchived(row);

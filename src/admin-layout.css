@@ -185,6 +185,59 @@ body[data-admin-section="orders"] #orderManagement {
   margin-left: auto;
   flex-wrap: nowrap;
 }
+.admin-dash-range{
+  display:flex;
+  flex-wrap:wrap;
+  align-items:center;
+  gap:8px;
+  width:100%;
+  margin:0 0 14px;
+}
+.admin-content .admin-dash-range .admin-dash-preset{
+  flex:0 1 auto;
+  width:auto !important;
+  max-width:100%;
+  height:auto;
+  min-height:36px;
+  padding:8px 12px;
+  border-radius:999px;
+  border:1px solid rgba(255,158,207,.28);
+  background:#120e16;
+  color:#fff;
+  font-size:13px;
+  font-weight:700;
+  line-height:1.2;
+  white-space:nowrap;
+}
+.admin-content .admin-dash-range .admin-dash-preset.is-on{
+  background:linear-gradient(180deg,#ffe2ef,#e7a0c4);
+  color:#1b0712;
+  border-color:transparent;
+}
+.admin-dash-custom{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:-6px 0 14px}
+.admin-dash-custom label{display:flex;align-items:center;gap:6px;color:#ffd6e7;font-size:13px;font-weight:700}
+.admin-dash-custom input{height:36px;border-radius:10px;border:1px solid rgba(255,158,207,.28);background:#120e16;color:#fff;padding:0 8px}
+.admin-notice{position:relative;flex:0 0 36px}
+.admin-notice #adminNoticePanel{
+  position:absolute;
+  right:0;
+  top:calc(100% + 8px);
+  z-index:40;
+  width:min(320px,calc(100vw - 24px));
+  max-height:min(420px,70dvh);
+  overflow:auto;
+  padding:8px;
+  border-radius:14px;
+  border:1px solid rgba(255,158,207,.28);
+  background:#140c18;
+}
+.admin-notice #adminNoticePanel[hidden]{display:none !important}
+.admin-notice-tools{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px;color:#ffd6e7;font-size:13px}
+.admin-notice-tools button{border:0;background:transparent;color:#ffb6d9;font-weight:800;cursor:pointer}
+.admin-notice-item{display:grid;gap:2px;width:100%;margin:0 0 6px;padding:8px 10px;border:0;border-radius:10px;background:rgba(255,143,197,.12);color:#fff;text-align:left;cursor:pointer}
+.admin-notice-item.is-read{background:rgba(255,255,255,.04);opacity:.7}
+.admin-notice-item small{color:rgba(255,255,255,.5);font-size:11px}
+.admin-notice-empty{padding:12px;color:rgba(255,255,255,.65);font-size:13px}
 
 .admin-header .admin-text-btn {
   height: 36px;

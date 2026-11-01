@@ -1626,6 +1626,7 @@ body:has(.pw-shell.is-services),
 .pw-hall-page{display:grid;gap:12px}
 .pw-hall-head{margin:0}
 .pw-hall-head h2{margin:0;font-size:22px}
+.pw-hall-certs{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
 .pw-hall-status{display:inline-flex;align-items:center;gap:8px;height:32px;padding:0 12px;border-radius:999px;background:#141218;border:1px solid rgba(244,166,200,.28);color:#fff;font-size:13px;font-weight:700}
 .pw-hall-status i{width:8px;height:8px;border-radius:50%;background:#8a8494}
 .pw-hall-status.is-online i{background:#5ee0a1}

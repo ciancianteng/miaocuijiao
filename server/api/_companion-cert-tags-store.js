@@ -236,6 +236,99 @@ export async function readCertTags() {
   return seeded;
 }
 
+/** Existing catalog only. Empty table stays empty — does not seed defaults or write config. */
+export async function readExistingCertTags() {
+  try {
+    const dbRows = await readDbTags();
+    if (Array.isArray(dbRows)) {
+      return dbRows.sort((a, b) => a.sort - b.sort || a.name.localeCompare(b.name, "zh"));
+    }
+  } catch (error) {
+    if (!isMissingTable(error)) console.error("[cert-tags] DB read failed", error.message || error);
+  }
+  const local = await readJsonFile(TAGS_FILE, null);
+  if (Array.isArray(local) && local.length) {
+    return local.map((r, i) => normalizeCertTag(r, i)).filter((r) => r.name);
+  }
+  return [];
+}
+
+export function sanitizeCertTagId(id) {
+  const s = String(id || "").trim();
+  return /^[A-Za-z0-9_-]{1,64}$/.test(s) ? s : "";
+}
+
+const CERT_REQ_RE = /\[\[MCJ_CERT_REQ:(pending|rejected):([A-Za-z0-9_|,-]*)\]\]/gi;
+
+/** Applicant requests live in the profile tag marker. They are not assignments and do not display. */
+export function readCertRequests(tags) {
+  const pending = [];
+  const rejected = [];
+  const seenP = new Set();
+  const seenR = new Set();
+  String(tags || "").replace(CERT_REQ_RE, (_, st, ids) => {
+    const bucket = String(st).toLowerCase() === "rejected" ? rejected : pending;
+    const seen = bucket === rejected ? seenR : seenP;
+    String(ids || "")
+      .split(/[|,]/)
+      .forEach((raw) => {
+        const id = sanitizeCertTagId(raw);
+        if (id && !seen.has(id)) {
+          seen.add(id);
+          bucket.push(id);
+        }
+      });
+    return "";
+  });
+  return { pending, rejected: rejected.filter((id) => !seenP.has(id)) };
+}
+
+export function writeCertRequests(tags, req = {}) {
+  let base = String(tags || "")
+    .replace(/\[\[MCJ_CERT_REQ:(?:pending|rejected):[A-Za-z0-9_|,-]*\]\]/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const pending = [];
+  const seen = new Set();
+  (req.pending || []).forEach((raw) => {
+    const id = sanitizeCertTagId(raw);
+    if (id && !seen.has(id)) {
+      seen.add(id);
+      pending.push(id);
+    }
+  });
+  const rejected = [];
+  const seenR = new Set();
+  (req.rejected || []).forEach((raw) => {
+    const id = sanitizeCertTagId(raw);
+    if (id && !seen.has(id) && !seenR.has(id)) {
+      seenR.add(id);
+      rejected.push(id);
+    }
+  });
+  if (pending.length) base = `${base} [[MCJ_CERT_REQ:pending:${pending.join("|")}]]`.trim();
+  if (rejected.length) base = `${base} [[MCJ_CERT_REQ:rejected:${rejected.join("|")}]]`.trim();
+  return base;
+}
+
+/** Queue a request for an existing enabled badge. Held or unknown ids are ignored. Never grants. */
+export function planCertRequest(tags, requestedIds, { enabledIds = [], heldIds = [] } = {}) {
+  const prev = readCertRequests(tags);
+  const enabled = new Set((enabledIds || []).map((id) => sanitizeCertTagId(id)).filter(Boolean));
+  const held = new Set((heldIds || []).map((id) => sanitizeCertTagId(id)).filter(Boolean));
+  const pending = prev.pending.filter((id) => !held.has(id));
+  const added = [];
+  const rawList = Array.isArray(requestedIds) ? requestedIds : String(requestedIds || "").split(/[,，\s]+/);
+  rawList.forEach((raw) => {
+    const id = sanitizeCertTagId(raw);
+    if (!id || !enabled.has(id) || held.has(id) || pending.includes(id)) return;
+    pending.push(id);
+    added.push(id);
+  });
+  const rejected = prev.rejected.filter((id) => !pending.includes(id));
+  return { pending, rejected, added };
+}
+
 function isServerlessFs() {
   return !!(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.NOW_REGION);
 }
@@ -284,7 +377,10 @@ async function readDbAssignments(profileIds = []) {
   );
   if (response.status === 400) {
     response = await fetch(
-      restUrl("companion_cert_tag_assignments", `?companion_profile_id=in.(${ids})&select=companion_profile_id,tag_id`),
+      restUrl(
+        "companion_cert_tag_assignments",
+        `?companion_profile_id=in.(${ids})&status=in.(active,pending_removal)&select=companion_profile_id,tag_id`
+      ),
       { headers: serviceHeaders() }
     );
   }

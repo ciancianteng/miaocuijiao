@@ -143,17 +143,32 @@ export async function notifyCustomerServiceStaff({ kind, relatedId, title, body 
   return { inserted, skipped };
 }
 
+const READ_PREFIX = "read:";
+
+/** Read when read_at is set, or when the key was marked on a table that has no read_at column. */
+export function staffNoticeIsRead(row = {}) {
+  if (row?.read_at) return true;
+  return String(row?.notice_key || "").startsWith(READ_PREFIX);
+}
+
+function readNoticeKey(key) {
+  const raw = String(key || "");
+  if (!raw || raw.startsWith(READ_PREFIX)) return raw;
+  return `${READ_PREFIX}${raw}`;
+}
+
 function viewStaffNotice(row) {
   const kind = String(row?.kind || row?.category || "system");
+  const key = String(row?.notice_key || "").replace(/^read:/, "");
   return {
     id: row?.id || "",
-    key: row?.notice_key || "",
+    key,
     kind,
     title: row?.title || "系统通知",
     body: row?.body || "",
     href: row?.href || "/admin.html#orders",
     relatedId: row?.related_id || "",
-    readAt: row?.read_at || "",
+    readAt: row?.read_at || (staffNoticeIsRead(row) ? row?.created_at || "read" : ""),
     at: row?.created_at || "",
   };
 }
@@ -173,22 +188,49 @@ export async function listStaffNotifications(staffId, limit = 40) {
   }
 }
 
+async function markNoticeKeyRead(row) {
+  if (!row?.id || staffNoticeIsRead(row)) return staffNoticeIsRead(row) ? 1 : 0;
+  const next = readNoticeKey(row.notice_key);
+  if (!next || next === row.notice_key) return 0;
+  const updated = await companionDb(
+    "staff_notifications",
+    `?id=eq.${encodeURIComponent(row.id)}`,
+    {
+      method: "PATCH",
+      headers: { Prefer: "return=representation" },
+      body: JSON.stringify({ notice_key: next }),
+    }
+  );
+  return Array.isArray(updated) ? updated.length : 0;
+}
+
 /** Mark every unread notice for this staff member only. */
 export async function markAllStaffNotificationsRead(staffId) {
   const id = String(staffId || "").trim();
   if (!id) throw Object.assign(new Error("已读状态写入失败"), { status: 400 });
-  const rows = await companionDb(
-    "staff_notifications",
-    `?staff_id=eq.${encodeURIComponent(id)}&read_at=is.null`,
-    {
-      method: "PATCH",
-      headers: { Prefer: "return=representation" },
-      body: JSON.stringify({ read_at: new Date().toISOString() }),
-    }
-  );
-  if (rows == null) return 0;
-  if (!Array.isArray(rows)) throw new Error("已读状态写入失败");
-  return rows.length;
+  try {
+    const rows = await companionDb(
+      "staff_notifications",
+      `?staff_id=eq.${encodeURIComponent(id)}&read_at=is.null`,
+      {
+        method: "PATCH",
+        headers: { Prefer: "return=representation" },
+        body: JSON.stringify({ read_at: new Date().toISOString() }),
+      }
+    );
+    if (rows == null) return 0;
+    if (!Array.isArray(rows)) throw new Error("已读状态写入失败");
+    return rows.length;
+  } catch (err) {
+    if (!columnMismatch(err)) throw err;
+  }
+  const rows = await lookupRows(`?staff_id=eq.${encodeURIComponent(id)}&select=id,notice_key&limit=200`);
+  let marked = 0;
+  for (const row of rows) {
+    if (staffNoticeIsRead(row)) continue;
+    marked += await markNoticeKeyRead(row);
+  }
+  return marked;
 }
 
 export async function markStaffNotificationRead(staffId, noticeId) {
@@ -205,10 +247,15 @@ export async function markStaffNotificationRead(staffId, noticeId) {
         body: JSON.stringify({ read_at: new Date().toISOString() }),
       }
     );
-    return Array.isArray(rows) ? rows.length : 0;
-  } catch {
-    return 0;
+    if (Array.isArray(rows) && rows.length) return rows.length;
+  } catch (err) {
+    if (!columnMismatch(err)) return 0;
+    const rows = await lookupRows(
+      `?id=eq.${encodeURIComponent(nid)}&staff_id=eq.${encodeURIComponent(id)}&select=id,notice_key&limit=1`
+    ).catch(() => []);
+    return markNoticeKeyRead(rows[0] || null);
   }
+  return 0;
 }
 
 /** Clear one finished task's alerts for every agent. Does not change the task itself. */

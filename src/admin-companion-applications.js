@@ -15,6 +15,7 @@
     batchBusy: false,
     confirmCount: 0,
     pendingBatch: null,
+    certNames: {},
   };
 
   function certMethodOf(item) {
@@ -132,12 +133,15 @@
     );
   }
   function statusCode(row) {
-    return String(row.application_status || row.applicationStatus || row.verification_status || row.auditStatus || "pending").toLowerCase();
+    var code = String(row.application_status || row.applicationStatus || row.verification_status || row.auditStatus || "").toLowerCase();
+    var submitted = row.application_submitted_at || row.applicationSubmittedAt;
+    if (!submitted && !/approved|verified|passed|rejected|resubmit|need_more|^draft$|草稿/.test(code)) return "draft";
+    return code || "pending";
   }
   function statusLabel(code) {
     var key = String(code || "").toLowerCase().trim();
     var map = {
-      draft: "草稿",
+      draft: "申请草稿",
       pending: "待审核",
       review: "待审核",
       submitted: "待审核",
@@ -163,11 +167,12 @@
     return bits.length ? bits.join(" · ") : "待核验";
   }
   function isApplicationQueue(row) {
+    if (!row || !row.id) return false;
     var code = statusCode(row);
-    if (/approved|verified|passed/.test(code) && !row.application_submitted_at && !row.applicationSubmittedAt) {
-      /* still show if they have submitted_at */
-    }
-    return !!row.id && (row.application_submitted_at || row.applicationSubmittedAt || row.game || row.mainGame || row.main_service || /pending|resubmit|rejected|approved|review|submitted/.test(code));
+    if (/^draft$|草稿|archived|deleted/.test(code)) return false;
+    if (/approved|verified|passed|rejected|resubmit|need_more/.test(code)) return true;
+    var submitted = row.application_submitted_at || row.applicationSubmittedAt;
+    return !!submitted && /pending|review|submitted/.test(code);
   }
   function missingPrice(row) {
     if (!row) return true;
@@ -223,6 +228,38 @@
     }
     return html + "</div>";
   }
+  function certRequestHtml(id, item) {
+    var ids = (item && (item.certPendingIds || item.cert_pending_ids)) || [];
+    if (!ids.length) return "";
+    return (
+      '<div data-capp-cert-row="' +
+      esc(id) +
+      '">' +
+      ids
+        .map(function (tagId) {
+          var name = (state.certNames && state.certNames[tagId]) || "认证徽章";
+          var visual =
+            window.MCJCompanionIdentity && window.MCJCompanionIdentity.certHtml
+              ? window.MCJCompanionIdentity.certHtml([{ id: tagId, name: name, color: "#e8b4c8" }], 1)
+              : "";
+          return (
+            visual +
+            '<button class="mini-btn" type="button" data-capp-cert="approve" data-capp-cert-id="' +
+            esc(id) +
+            '" data-capp-cert-tag="' +
+            esc(tagId) +
+            '">通过徽章</button> ' +
+            '<button class="mini-btn danger-btn" type="button" data-capp-cert="reject" data-capp-cert-id="' +
+            esc(id) +
+            '" data-capp-cert-tag="' +
+            esc(tagId) +
+            '">拒绝徽章</button>'
+          );
+        })
+        .join(" ") +
+      "</div>"
+    );
+  }
   function filteredRows() {
     var list = (state.rows || []).filter(isApplicationQueue);
     var f = state.filter || "all";
@@ -242,6 +279,10 @@
     }
     if (f === "medal") return list.filter(function (r) {
       return String(r.medalStatus || r.medal_status || "").toLowerCase() === "pending";
+    });
+    if (f === "cert_badge") return list.filter(function (r) {
+      var ids = r.certPendingIds || r.cert_pending_ids || [];
+      return ids.length > 0;
     });
     if (f === "rejected") return list.filter(function (r) { return /rejected/.test(statusCode(r)); });
     return list;
@@ -312,6 +353,7 @@
         var hint = publishHint(item);
         var statusText = statusLabel(code);
         var eligibleRow = isBatchEligible(item);
+        var pendingRow = /pending|review|submitted/.test(code);
         if (noPrice) statusText += " · 缺价格";
         if (/approved|verified|passed/.test(code)) {
           if (item.isTestAccount === true || item.is_test_account === true) statusText += " · 测试隔离";
@@ -353,7 +395,7 @@
           '<button class="mini-btn" type="button" data-capp-approve="' +
           esc(id) +
           '"' +
-          (selectedLevel(id) || state.batchLevelId ? "" : " disabled") +
+          (pendingRow && (selectedLevel(id) || state.batchLevelId) ? "" : " disabled") +
           '>通过</button> ' +
           '<button class="mini-btn" type="button" data-capp-resubmit="' +
           esc(id) +
@@ -362,6 +404,7 @@
           esc(id) +
           '">拒绝</button>' +
           medalActionsHtml(id, item) +
+          certRequestHtml(id, item) +
           "</td></tr>"
         );
       })
@@ -400,6 +443,7 @@
               '">驳回</button>'
             : "") +
           medalActionsHtml(id, item) +
+          certRequestHtml(id, item) +
           "</div></article>"
         );
       })
@@ -431,6 +475,7 @@
         ["approved_missing_price", "已通过但缺价格"],
         ["rejected", "已驳回"],
         ["medal", "勋章待审"],
+        ["cert_badge", "徽章待审"],
         ["all", "全部"],
       ]
         .map(function (pair) {
@@ -476,10 +521,18 @@
     state.loading = true;
     state.error = "";
     paint();
-    Promise.all([api("/api/admin/players"), loadLevels()])
+    Promise.all([
+      api("/api/admin/players?scope=review"),
+      loadLevels(),
+      api("/api/admin/companion-cert-tags").catch(function () { return { items: [] }; }),
+    ])
       .then(function (pair) {
         var res = pair[0] || {};
         state.rows = res.players || res.data || [];
+        state.certNames = {};
+        ((pair[2] && (pair[2].items || pair[2].tags)) || []).forEach(function (tag) {
+          if (tag && tag.id) state.certNames[String(tag.id)] = tag.name || tag.title || "认证徽章";
+        });
         state.loading = false;
         var focus = "";
         try { focus = new URLSearchParams(location.search).get("medal") || ""; } catch (e) { focus = ""; }
@@ -530,6 +583,21 @@
   document.addEventListener("click", function (e) {
     if (e.target.closest("[data-capp-reload]")) {
       load();
+      return;
+    }
+    var certBtn = e.target.closest("[data-capp-cert]");
+    if (certBtn) {
+      var certDecision = certBtn.getAttribute("data-capp-cert");
+      var certId = certBtn.getAttribute("data-capp-cert-id");
+      var certTag = certBtn.getAttribute("data-capp-cert-tag");
+      api("/api/admin/players", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "cert_badge_review", id: certId, tagId: certTag, status: certDecision }),
+      }).then(function (res) {
+        state.message = res.message || "认证徽章审核已保存";
+        load();
+      }).catch(function (err) { alert(err.message || "认证徽章审核失败"); });
       return;
     }
     var medalBtn = e.target.closest("[data-capp-medal]");

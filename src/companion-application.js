@@ -2269,6 +2269,55 @@
       "</section>"
     );
   }
+  var certBadgeCatalog = { badges: [], pendingIds: [], rejectedIds: [], heldIds: [], loaded: false };
+  function loadCertBadgeCatalog() {
+    return postCompanion("cert_badge_catalog", {}).then(function (res) {
+      certBadgeCatalog = {
+        badges: (res && res.badges) || [],
+        pendingIds: (res && res.pendingIds) || [],
+        rejectedIds: (res && res.rejectedIds) || [],
+        heldIds: (res && res.heldIds) || [],
+        loaded: true,
+      };
+    }).catch(function () {
+      certBadgeCatalog.loaded = true;
+    });
+  }
+  function certBadgePickerHtml(data) {
+    data = data || {};
+    var badges = certBadgeCatalog.badges || [];
+    var pending = {};
+    var held = {};
+    var rejected = {};
+    var picked = {};
+    (certBadgeCatalog.pendingIds || []).forEach(function (id) { pending[String(id)] = 1; });
+    (certBadgeCatalog.heldIds || []).forEach(function (id) { held[String(id)] = 1; });
+    (certBadgeCatalog.rejectedIds || []).forEach(function (id) { rejected[String(id)] = 1; });
+    (data.certBadgeIds || []).forEach(function (id) { picked[String(id)] = 1; });
+    var rows = badges.map(function (badge) {
+      var id = String(badge.id || "");
+      var stateText = "可申请";
+      var disabled = false;
+      var checked = !!picked[id];
+      if (held[id]) { stateText = "已认证"; disabled = true; checked = true; }
+      else if (pending[id]) { stateText = "审核中"; disabled = true; checked = true; }
+      else if (rejected[id] && !checked) stateText = "未通过，可再次申请";
+      var visual = window.MCJCompanionIdentity && window.MCJCompanionIdentity.certHtml
+        ? window.MCJCompanionIdentity.certHtml([badge], 1)
+        : "";
+      return '<label class="apply-cert-item">' +
+        '<input type="checkbox" data-cert-badge value="' + esc(id) + '"' +
+        (checked ? " checked" : "") + (disabled ? " disabled" : "") + ">" +
+        visual +
+        '<span class="apply-cert-state">' + esc(stateText) + "</span></label>";
+    }).join("");
+    var empty = certBadgeCatalog.loaded
+      ? "当前没有可申请的认证徽章。徽章由管理员配置，提交资料不会自动获得。"
+      : "认证徽章加载中";
+    return '<div class="apply-cert-block"><p class="apply-section-hint">认证徽章需管理员审核。未通过前不会出现在主页、卡片或抢单大厅。</p>' +
+      (rows ? '<div class="apply-cert-list">' + rows + "</div>" : '<p class="apply-cert-empty">' + esc(empty) + "</p>") +
+      "</div>";
+  }
   function personalProfileHtml(data) {
     data = data || {};
     var body =
@@ -2283,9 +2332,7 @@
       field("email", "邮箱", "email", data.email, 'placeholder="name@email.com"') +
       selectField("contactPublic", "联系方式是否公开", data.contactPublic, ["不公开，仅平台可见", "审核通过后公开给已下单老板"], { full: true }) +
       tagPicker("personalTags", "个人标签（必填，最多 10 个）", data.personalTags, tagGroups.personalTags, 10) +
-      '<label class="form-field full"><input name="applyMedal" type="checkbox" data-apply-field' +
-      (data.applyMedal === true || data.applyMedal === "true" || data.applyMedal === "on" ? " checked" : "") +
-      "> 申请认证勋章</label>" +
+      certBadgePickerHtml(data) +
       "</form>";
     return sectionShell("personal", "个人资料", "基础信息，审核与接单都会用到", body);
   }
@@ -3181,6 +3228,12 @@
       else data[el.name] = el.value.trim();
     });
     // Pricing V2 P2: do not collect applicant price fields
+    var certPicks = root.querySelectorAll("[data-cert-badge]");
+    if (certPicks.length) {
+      data.certBadgeIds = Array.prototype.slice.call(certPicks).filter(function (el) {
+        return el.checked && !el.disabled;
+      }).map(function (el) { return el.value; });
+    }
     Array.prototype.slice.call(root.querySelectorAll("[data-tag-picker]")).forEach(function (picker) {
       var key = picker.dataset.tagPicker;
       data[key] = Array.prototype.slice.call(picker.querySelectorAll("[data-tag-field]:checked")).map(function (el) { return el.value; });
@@ -3442,6 +3495,7 @@
         // Optional admin-only remark — never send self-intro as application note.
         note: draft.data.remark || draft.data.applicationRemark || "",
         tags: (draft.data.personalTags || []).join(","),
+        cert_badge_ids: draft.data.certBadgeIds || [],
         apply_medal: draft.data.applyMedal === true,
         // Pricing V2 P2: never submit applicant price fields
         nickname: draft.data.nickname || "",
@@ -6124,6 +6178,7 @@
       taxonomyReady,
       loadRemoteApplyConfig(),
       fetchCompanionBootstrap(),
+      loadCertBadgeCatalog(),
     ]).then(function (results) {
       resolveDraftGateAfterBootstrap(results[2]);
       initLoading = false;

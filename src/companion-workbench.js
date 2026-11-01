@@ -4729,6 +4729,19 @@
     }
     return true;
   }
+  function hallCertHtml(){
+    var p=(state.data&&state.data.player)||{};
+    var tags=p.certTags||[];
+    if(!tags.length||!window.MCJCompanionIdentity||!window.MCJCompanionIdentity.renderTags)return '';
+    var html=window.MCJCompanionIdentity.renderTags({
+      certTags:tags,
+      includeLevel:false,
+      includeGender:false,
+      includeVoice:false,
+      tags:[]
+    });
+    return html?'<div class="pw-hall-certs">'+html+'</div>':'';
+  }
   function hallHtml(){
     var rows=(state.data&&state.data.openOrders)||[],perm=(state.data&&state.data.permissions)||{};
     var statusKey=currentOnlineStatus();
@@ -4763,7 +4776,7 @@
       '</select>'+
       '<button class="pw-hall-refresh" type="button" data-hall-refresh aria-label="刷新"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.2-5.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M20 4v5h-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>'+
       '</div></div>';
-    return '<div class="pw-hall-page"><div class="pw-page-head pw-hall-head"><h2>抢单大厅</h2></div>'+
+    return '<div class="pw-hall-page"><div class="pw-page-head pw-hall-head"><h2>抢单大厅</h2>'+hallCertHtml()+'</div>'+
       '<div class="pw-hall-status is-'+esc(statusKey)+'" role="status"><i></i><span>'+esc(statusName)+'</span></div>'+
       (locked?'<div class="pw-hall-empty"><strong>暂不可抢单</strong><span>'+esc(auditHint())+'</span></div>':'')+
       filtersRow+

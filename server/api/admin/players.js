@@ -12,10 +12,15 @@ import { normalizeReviewImages } from "../_review-images.js";
 import {
   getAssignmentsForProfiles,
   readCertTags,
+  readCertRequests,
+  writeCertRequests,
+  sanitizeCertTagId,
   setAssignmentsForProfile,
   toPublicCertTag,
 } from "../_companion-cert-tags-store.js";
 import { readMedalStatus, writeMedalStatus } from "../_companion-medal.js";
+import { isApplicationApproved, isApplicationArchived, isApplicationDraft, matchesApplicationListScope } from "../_companion-draft.js";
+import { isDepositIdentityExempt } from "../_companion-credential-gate.js";
 import {
   parseCompanionShareOverride,
   resolveEffectiveCompanionCommission,
@@ -62,6 +67,7 @@ const SIGN_TTL = 60 * 60; // 1h — voice/gallery preview must remain playable i
 const ACCOUNT_LABEL = { active: "正常", disabled: "冻结", pending: "待审核" };
 const STATUS_LABEL = {
   pending: "待审核",
+  draft: "申请草稿",
   approved: "已通过",
   rejected: "已驳回",
   resubmit: "需要补资料",
@@ -195,6 +201,7 @@ function isBatchApprovableApplication(companion) {
   if (/approved|verified|passed|已通过/.test(raw)) return false;
   if (/resubmit|need_more|待补充|需要补资料/.test(raw)) return false;
   if (/^draft$|草稿/.test(raw)) return false;
+  if (!companion.application_submitted_at) return false;
   return /pending|review|submitted|审核中|待审核|未审核/.test(raw);
 }
 
@@ -368,9 +375,11 @@ function certificationMethodLabel(mode) {
 }
 
 function mapListPlayer(row = {}, profile = {}) {
+  const certReq = readCertRequests(row.tags);
   const accountRaw = profile.status || "active";
   const identityRaw = row.identity_status || row.verification_status || "pending";
   const applicationRaw = row.application_status || row.verification_status || "pending";
+  const reviewCode = isApplicationDraft(row) ? "draft" : applicationRaw;
   const depositRaw = row.deposit_status || "unpaid";
   const mediaRaw = row.media_status || "pending";
   // Same public companion ID source as marketplace hall (`mapCompanionPublicFields` /
@@ -431,6 +440,10 @@ function mapListPlayer(row = {}, profile = {}) {
     tags: row.tags || "",
     medalStatus: readMedalStatus(row.tags),
     medal_status: readMedalStatus(row.tags),
+    certPendingIds: certReq.pending,
+    cert_pending_ids: certReq.pending,
+    certRejectedIds: certReq.rejected,
+    cert_rejected_ids: certReq.rejected,
     voice_type: row.voice_type || "",
     voiceType: row.voice_type || "",
     deposit_status: depositRaw,
@@ -441,14 +454,16 @@ function mapListPlayer(row = {}, profile = {}) {
     credential_mode: resolveCertificationMethod(row),
     auth_mode: resolveCertificationMethod(row),
     verification_status: applicationRaw,
-    auditStatus: labelStatus(applicationRaw),
-    audit: labelStatus(applicationRaw),
+    auditStatus: labelStatus(reviewCode),
+    audit: labelStatus(reviewCode),
     identity_status: identityRaw,
     identityStatus: labelStatus(identityRaw, "未认证"),
     media_status: mediaRaw,
     mediaStatus: labelStatus(mediaRaw),
-    application_status: applicationRaw,
-    applicationStatus: labelStatus(applicationRaw),
+    application_status: reviewCode,
+    applicationStatus: labelStatus(reviewCode),
+    application_submitted_at: row.application_submitted_at || "",
+    applicationSubmittedAt: row.application_submitted_at || "",
     online_status: (() => {
       const verified = /approved|verified|passed/.test(String(row.verification_status || applicationRaw || ""));
       if (!verified) return "offline";
@@ -524,6 +539,7 @@ async function loadRelated(profileId, companionId) {
       payment: paymentRows?.[0] || null,
       media: Array.isArray(mediaRows) ? mediaRows : [],
       deposit: paid || deposits[0] || null,
+      depositLatest: deposits[0] || null,
       deposits,
       orders: Array.isArray(orderRows) ? orderRows : [],
       income: Array.isArray(txRows) ? txRows : [],
@@ -853,15 +869,15 @@ async function buildDetail(row, profile, opts = {}) {
       certificationMethodLabel: certificationMethodLabel(resolveCertificationMethod(row)),
       credential_mode: resolveCertificationMethod(row),
       auth_mode: resolveCertificationMethod(row),
-      status: row.application_status || row.verification_status || "pending",
-      statusLabel: labelStatus(row.application_status || row.verification_status || "pending"),
+      status: isApplicationDraft(row) ? "draft" : row.application_status || row.verification_status || "pending",
+      statusLabel: labelStatus(isApplicationDraft(row) ? "draft" : row.application_status || row.verification_status || "pending"),
       rejectReason: row.application_reject_reason || "",
       reviewedAt: row.application_reviewed_at || "",
       reviewedBy: row.application_reviewed_by || "",
       reviewedByName: appReviewerName || "",
       empty: !row.application_submitted_at && !row.main_service && !row.game,
     },
-    applicationReviewedAt: row.application_reviewed_at || "",
+    depositIdentityExempt: isDepositIdentityExempt(row, related.depositLatest || deposit),
     applicationReviewedBy: row.application_reviewed_by || "",
     applicationReviewedByName: appReviewerName || "",
     bio: row.description || "",
@@ -1195,7 +1211,23 @@ function profileEditablePatch(payload = {}) {
   return patch;
 }
 
-async function listPlayers() {
+async function profilesForUsers(userIds) {
+  const map = {};
+  const ids = [...new Set((userIds || []).map((id) => String(id || "").trim()).filter(Boolean))];
+  for (let i = 0; i < ids.length; i += 60) {
+    const chunk = ids.slice(i, i + 60);
+    const rows = await companionDb(
+      "profiles",
+      `?id=in.(${chunk.map(encodeURIComponent).join(",")})`
+    ).catch(() => []);
+    for (const profile of Array.isArray(rows) ? rows : []) {
+      if (profile?.id) map[profile.id] = profile;
+    }
+  }
+  return map;
+}
+
+async function listPlayers(scope = "formal") {
   // Prefer DB-level exclude of is_test_account=true; fall back if column missing.
   let companions;
   try {
@@ -1209,16 +1241,19 @@ async function listPlayers() {
     }
     companions = await companionDb(PLAYER_TABLE, "?order=updated_at.desc,created_at.desc&limit=500");
   }
-  const profiles = await companionDb("profiles", "?role=eq.companion&limit=800").catch(() => []);
-  const profileMap = (Array.isArray(profiles) ? profiles : []).reduce((m, p) => {
-    m[p.id] = p;
-    return m;
-  }, {});
-  // JS safety net: also drop rows whose linked profile is_test_account=true (no deletes).
-  return (Array.isArray(companions) ? companions : [])
-    .filter((row) => !isTestAccountRecord(profileMap[row.user_id] || {}, row))
-    .filter((row) => row.is_test_account !== true && profileMap[row.user_id]?.is_test_account !== true)
+  const profileMap = await profilesForUsers((Array.isArray(companions) ? companions : []).map((row) => row.user_id));
+  const visible = (Array.isArray(companions) ? companions : []).filter((row) => {
+    if (row.is_test_account === true) return false;
+    if (isApplicationArchived(row)) return false;
+    if (isTestAccountRecord(profileMap[row.user_id] || {}, row)) return false;
+    if (profileMap[row.user_id]?.is_test_account === true) return false;
+    return true;
+  });
+  const pendingCount = visible.filter((row) => matchesApplicationListScope(row, "pending")).length;
+  const players = visible
+    .filter((row) => matchesApplicationListScope(row, scope))
     .map((row) => mapListPlayer(row, profileMap[row.user_id] || {}));
+  return { players, pendingCount };
 }
 
 async function reviewIdentity(req, companion, payload) {
@@ -1556,6 +1591,34 @@ async function reviewApplication(req, companion, payload) {
   } catch (draftErr) {
     if (draftErr?.code === "DRAFT_NOT_REVIEWABLE") throw draftErr;
   }
+  if (status === "approved" && isApplicationApproved(companion)) {
+    const profileNow = companion.user_id ? await getProfile(companion.user_id) : {};
+    return {
+      row: companion,
+      publish: adminPublishSnapshot(companion, profileNow, {}),
+      alreadyApproved: true,
+    };
+  }
+  if (status === "approved") {
+    const depRows = await companionDb(
+      "companion_deposits",
+      `?companion_profile_id=eq.${encodeURIComponent(companion.id)}&order=created_at.desc&limit=20`
+    ).catch(() => []);
+    const deposits = Array.isArray(depRows) ? depRows : [];
+    const depositRow = deposits[0] || null;
+    const idRows = await companionDb(
+      "companion_identity_verifications",
+      `?companion_profile_id=eq.${encodeURIComponent(companion.id)}&limit=1`
+    ).catch(() => []);
+    const idRow = Array.isArray(idRows) ? idRows[0] : null;
+    const idOk = !!(idRow && idRow.id_front_path && idRow.id_back_path);
+    if (!isDepositIdentityExempt(companion, depositRow) && !idOk) {
+      throw Object.assign(new Error("身份证正反面未齐。有效押金确认后可免提交。"), {
+        status: 400,
+        code: "IDENTITY_REQUIRED",
+      });
+    }
+  }
   const adminActor = await requireAdmin(req).catch(() => null);
   const reviewedAt = new Date().toISOString();
   const { approveListingPatchForRow, unlistListingPatch } = await import("../_companion-listing-sync.js");
@@ -1805,8 +1868,16 @@ export default async function handler(req, res) {
           throw error;
         }
       }
-      const players = await listPlayers();
-      return json(res, 200, { ok: true, configured: true, players, table: PLAYER_TABLE });
+      const asked = String(req.query?.scope || "formal").toLowerCase();
+      const scope = ["review", "drafts", "pending", "rejected"].includes(asked) ? asked : "formal";
+      const listed = await listPlayers(scope);
+      return json(res, 200, {
+        ok: true,
+        configured: true,
+        players: listed.players,
+        pendingCount: listed.pendingCount,
+        table: PLAYER_TABLE,
+      });
     }
 
     if (req.method !== "POST") return json(res, 405, { ok: false, message: "Method Not Allowed" });
@@ -1850,6 +1921,34 @@ export default async function handler(req, res) {
         ok: true,
         identityNo: related.identity.identity_no,
         message: "已记录查看完整身份证号码操作",
+      });
+    }
+
+    if (action === "cert_badge_review") {
+      const tagId = sanitizeCertTagId(body.tagId || body.tag_id || payload.tagId || payload.tag_id || "");
+      const decision = String(body.status || body.decision || payload.status || payload.decision || "").trim().toLowerCase();
+      const approve = decision === "approve" || decision === "approved";
+      const reject = decision === "reject" || decision === "rejected";
+      if (!tagId || (!approve && !reject)) {
+        return json(res, 400, { ok: false, message: "请选择要通过或拒绝的认证徽章" });
+      }
+      const reqs = readCertRequests(companion.tags);
+      if (!reqs.pending.includes(tagId)) {
+        return json(res, 409, { ok: false, message: "该徽章不在待审核申请中，不能直接授予" });
+      }
+      if (approve) {
+        const { grantBadge } = await import("../_cert-badge-ledger.js");
+        await grantBadge({ profileId: companion.id, tagId, operator: admin });
+      }
+      const tags = writeCertRequests(companion.tags, {
+        pending: reqs.pending.filter((id) => id !== tagId),
+        rejected: reject ? reqs.rejected.concat(tagId) : reqs.rejected.filter((id) => id !== tagId),
+      });
+      await patchCompanionRow(companion.id || id, { tags });
+      return json(res, 200, {
+        ok: true,
+        certPendingIds: readCertRequests(tags).pending,
+        message: approve ? "认证徽章已通过，前台将显示该徽章" : "已拒绝该认证徽章，前台不会显示",
       });
     }
 

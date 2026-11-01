@@ -9,37 +9,55 @@
   function statusText(s){return ({awaiting_payment:'待付款',pending:'等待陪玩抢单',claimed:'等待陪玩确认',waiting_boss_confirm:'等待老板选择',confirmed:'进行中',in_progress:'进行中',completed:'已完成',cancelled:'已取消',refund_requested:'售后',refunded:'已退款',after_sale:'售后',reviewed:'已评价'})[s]||s||'-'}
   function get(url){return Auth.get(url)}
   function post(url,body){return Auth.post(url,body)}
+  var dashRange={preset:'all',from:'',to:''};
+  var DASH_RANGES=[['all','全部'],['today','今日'],['yesterday','昨日'],['7d','近7天'],['30d','近30天'],['month','本月'],['last_month','上月'],['custom','自定义日期']];
+  function dashRangeBar(){
+    var custom=dashRange.preset==='custom';
+    var chips=DASH_RANGES.map(function(item){
+      var on=dashRange.preset===item[0]?' is-on':'';
+      return '<button type="button" class="admin-dash-preset'+on+'" data-dash-preset="'+item[0]+'" aria-pressed="'+(on?'true':'false')+'">'+esc(item[1])+'</button>';
+    }).join('');
+    return '<div class="admin-dash-range" role="group" aria-label="统计时间">'+chips+'</div>'+(custom?'<div class="admin-dash-custom"><label>从<input type="date" data-dash-from value="'+esc(dashRange.from)+'"></label><label>到<input type="date" data-dash-to value="'+esc(dashRange.to)+'"></label><button class="mini-btn" type="button" data-dash-apply>查询</button></div>':'');
+  }
+  function dashQuery(){
+    if(!dashRange.preset||dashRange.preset==='all')return '/api/admin/dashboard';
+    var q='range='+encodeURIComponent(dashRange.preset);
+    if(dashRange.preset==='custom')q+='&from='+encodeURIComponent(dashRange.from)+'&to='+encodeURIComponent(dashRange.to);
+    return '/api/admin/dashboard?'+q;
+  }
   function renderDashboard(){
     var target=document.getElementById('superStats');
     if(!target)return;
-    target.innerHTML='<div class="content-loading">正在读取真实统计...</div>';
-    get('/api/admin/dashboard').then(function(res){
+    if(dashRange.preset==='custom'&&(!dashRange.from||!dashRange.to)){
+      target.innerHTML=dashRangeBar()+'<div class="content-loading">请选择开始和结束日期</div>';
+      return;
+    }
+    target.innerHTML=dashRangeBar()+'<div class="content-loading">正在读取真实统计...</div>';
+    get(dashQuery()).then(function(res){
       if(res.ok===false){
-        target.innerHTML=note(res.message||'数据加载失败')+'<button class="mini-btn" type="button" data-admin-final-refresh="dashboard">重试</button>';
+        target.innerHTML=dashRangeBar()+note(res.message||'数据加载失败')+'<button class="mini-btn" type="button" data-admin-final-refresh="dashboard">重试</button>';
         return;
       }
       var s=res.stats||{};
-      // Cards link to existing admin detail sections (no duplicate pages).
       var cards=[
         {label:'老板总数',value:s.bosses||0,href:'#bosses'},
         {label:'陪玩总数',value:s.companions||0,href:'#players'},
         {label:'客服总数',value:s.customerServices||0,href:'#service-accounts'},
-        {label:'今日有效订单',value:s.todayOrders||0,href:'#orders'},
+        {label:'有效订单',value:s.validOrders||0,href:'#orders'},
         {label:'待付款订单',value:s.awaitingPayment||0,href:'#orders'},
         {label:'等待陪玩确认',value:s.pendingOrders||0,href:'#orders'},
         {label:'进行中订单',value:s.inProgress||0,href:'#orders'},
         {label:'已完成订单',value:s.completed||0,href:'#orders'},
         {label:'退款订单',value:s.refunds||0,href:'#orders'},
-        {label:'有效营业额',value:money(s.totalAmount||0),href:'#orders'},
-        {label:'今日营业额',value:money(s.todayAmount||0),href:'#orders'},
+        {label:'营业额',value:money(s.totalAmount||0),href:'#orders'},
         {label:'平台利润',value:money(s.platformProfit||0),href:'#orders'},
         {label:'提现中/已打款',value:money(s.withdrawPending||0)+' / '+money(s.withdrawPaid||0),href:'#service-reports',valueClass:'admin-final-stat-value-wrap'}
       ];
-      target.innerHTML=(res.message?note(res.message):'')+'<div class="admin-final-grid">'+cards.map(function(item){
+      target.innerHTML=dashRangeBar()+(res.message?note(res.message):'')+'<div class="admin-final-grid">'+cards.map(function(item){
         return '<a class="admin-final-stat" href="'+esc(item.href)+'"><span>'+esc(item.label)+'</span><strong'+(item.valueClass?' class="'+esc(item.valueClass)+'"':'')+'>'+esc(item.value)+'</strong></a>';
       }).join('')+'</div>';
     }).catch(function(err){
-      target.innerHTML=note(err.message||'数据加载失败')+'<button class="mini-btn" type="button" data-admin-final-refresh="dashboard">重试</button>';
+      target.innerHTML=dashRangeBar()+note(err.message||'数据加载失败')+'<button class="mini-btn" type="button" data-admin-final-refresh="dashboard">重试</button>';
     });
   }
   var ORDER_STATUS_OPTIONS=[
@@ -1034,46 +1052,76 @@
     var bar=document.querySelector('.topbar-actions');
     if(!bar||document.getElementById('adminNoticeBtn'))return;
     var wrap=document.createElement('div');
-    wrap.style.position='relative';
-    wrap.innerHTML='<button class="mcj-bell" type="button" id="adminNoticeBtn" aria-label="通知">'+((window.MCJBell&&MCJBell.icon)?(MCJBell.ensureCss(),MCJBell.icon()):'')+'<em id="adminNoticeBadge" data-mcj-badge-count hidden></em></button><div id="adminNoticePanel" hidden style="position:absolute;right:0;top:110%;z-index:50;width:min(360px,82vw);max-height:420px;overflow:auto;background:#140c18;border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:8px"></div>';
+    wrap.className='admin-notice';
+    wrap.innerHTML='<button class="mcj-bell" type="button" id="adminNoticeBtn" aria-label="通知">'+((window.MCJBell&&MCJBell.icon)?(MCJBell.ensureCss(),MCJBell.icon()):'')+'<em id="adminNoticeBadge" data-mcj-badge-count hidden></em></button><div id="adminNoticePanel" hidden><div class="admin-notice-tools"><strong>通知</strong><button type="button" id="adminNoticeReadAll">全部标记已读</button></div><div id="adminNoticeList"></div></div>';
     bar.insertBefore(wrap, bar.firstChild);
   }
+  var adminNotices=[];
   function paintAdminNotices(items){
+    adminNotices=items||[];
     var badge=document.getElementById('adminNoticeBadge');
-    var panel=document.getElementById('adminNoticePanel');
-    var unread=(items||[]).filter(function(n){return !n.readAt}).length;
+    var list=document.getElementById('adminNoticeList');
+    var unread=adminNotices.filter(function(n){return !n.readAt}).length;
     if(badge){badge.hidden=unread<1;badge.textContent=unread>99?'99+':String(unread);}
-    if(!panel)return;
-    panel.innerHTML=(items&&items.length)?items.map(function(n){
-      return '<a href="'+esc(n.href||'/admin.html#orders')+'" data-admin-notice="'+esc(n.id)+'" style="display:block;padding:8px 10px;border-radius:8px;color:inherit;text-decoration:none;'+(n.readAt?'opacity:.6':'')+'"><strong style="font-size:13px">'+esc(n.title)+'</strong><div style="font-size:12px;opacity:.78;margin-top:2px">'+esc(n.body)+'</div><div style="font-size:11px;opacity:.5;margin-top:2px">'+esc(n.at||'')+(n.relatedId?' · '+esc(n.relatedId):'')+'</div></a>';
-    }).join(''):'<div style="padding:12px;opacity:.7">暂无通知</div>';
+    if(!list)return;
+    list.innerHTML=adminNotices.length?adminNotices.map(function(n){
+      return '<button type="button" class="admin-notice-item'+(n.readAt?' is-read':'')+'" data-admin-notice="'+esc(n.id)+'" data-admin-notice-href="'+esc(n.href||'')+'"><strong>'+esc(n.title)+'</strong><span>'+esc(n.body)+'</span><small>'+esc(n.at||'')+(n.relatedId?' · '+esc(n.relatedId):'')+'</small></button>';
+    }).join(''):'<div class="admin-notice-empty">暂无通知</div>';
   }
   function loadAdminNotices(){
-    if(!Auth)return;
-    get('/api/admin/notifications').then(function(res){paintAdminNotices(res.notifications||[])}).catch(function(){});
+    if(!Auth)return Promise.resolve();
+    return get('/api/admin/notifications').then(function(res){paintAdminNotices(res.notifications||[]);}).catch(function(){});
   }
   document.addEventListener('click',function(e){
+    var preset=e.target.closest&&e.target.closest('[data-dash-preset]');
+    if(preset){
+      dashRange.preset=preset.getAttribute('data-dash-preset')||'all';
+      if(dashRange.preset!=='custom'){dashRange.from='';dashRange.to='';}
+      renderDashboard();
+      return;
+    }
+    if(e.target.closest&&e.target.closest('[data-dash-apply]')){
+      var from=document.querySelector('[data-dash-from]');
+      var to=document.querySelector('[data-dash-to]');
+      dashRange.preset='custom';
+      dashRange.from=from?from.value:'';
+      dashRange.to=to?to.value:'';
+      renderDashboard();
+      return;
+    }
     var btn=e.target.closest&&e.target.closest('#adminNoticeBtn');
     var panel=document.getElementById('adminNoticePanel');
     if(btn&&panel){
       panel.hidden=!panel.hidden;
-      if(!panel.hidden){
-        post('/api/admin/notifications',{action:'mark_all_read'}).then(function(res){
-          if(!res||res.ok===false){alert((res&&res.message)||'已读状态写入失败');return;}
-          loadAdminNotices();
-        }).catch(function(err){alert((err&&err.message)||'已读状态写入失败');});
-      }
+      if(!panel.hidden)loadAdminNotices();
+      return;
+    }
+    var readAll=e.target.closest&&e.target.closest('#adminNoticeReadAll');
+    if(readAll){
+      e.preventDefault();
+      adminNotices.forEach(function(n){if(!n.readAt)n.readAt=new Date().toISOString();});
+      paintAdminNotices(adminNotices);
+      post('/api/admin/notifications',{action:'mark_all_read'}).then(function(res){
+        if(!res||res.ok===false){alert((res&&res.message)||'已读状态写入失败');loadAdminNotices();return;}
+        loadAdminNotices();
+      }).catch(function(err){alert((err&&err.message)||'已读状态写入失败');loadAdminNotices();});
       return;
     }
     var link=e.target.closest&&e.target.closest('[data-admin-notice]');
     if(link){
-      post('/api/admin/notifications',{action:'mark_read',id:link.getAttribute('data-admin-notice')}).then(function(res){
-        if(!res||res.ok===false){alert((res&&res.message)||'已读状态写入失败');return;}
-        loadAdminNotices();
-      }).catch(function(err){alert((err&&err.message)||'已读状态写入失败');});
+      e.preventDefault();
+      var nid=link.getAttribute('data-admin-notice');
+      var href=link.getAttribute('data-admin-notice-href')||'';
+      adminNotices.forEach(function(n){if(String(n.id)===String(nid)&&!n.readAt)n.readAt=new Date().toISOString();});
+      paintAdminNotices(adminNotices);
+      post('/api/admin/notifications',{action:'mark_read',id:nid}).then(function(res){
+        if(!res||res.ok===false){alert((res&&res.message)||'已读状态写入失败');loadAdminNotices();return;}
+        if(href)location.href=href;
+        else loadAdminNotices();
+      }).catch(function(err){alert((err&&err.message)||'已读状态写入失败');loadAdminNotices();});
       return;
     }
-    if(panel&&!panel.hidden&&!(e.target.closest&&e.target.closest('#adminNoticePanel')))panel.hidden=true;
+    if(panel&&!panel.hidden&&!(e.target.closest&&e.target.closest('.admin-notice')))panel.hidden=true;
   });
   document.addEventListener('DOMContentLoaded',function(){if(!Auth)return;Auth.ensureValidToken().then(function(){ensureGrabModalHost();mountAdminNotices();loadAdminNotices();renderDashboard();renderOrders();renderReports();renderContent()}).catch(function(){})});
 })();

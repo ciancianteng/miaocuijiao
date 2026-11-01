@@ -312,7 +312,7 @@ function publicCompanion(row = {}, profile = {}, levels = [], catalog = [], medi
         main_service: gameDisplay || row.game || "",
         price: row.price,
         game_prices: projectGamePrices(row, levelConfig),
-        tags: stripGamePricesMarker(row.tags),
+        tags: stripGamePricesMarker(row.tags).replace(/\[\[MCJ_CERT_REQ:(?:pending|rejected):[A-Za-z0-9_|,-]*\]\]/gi, ""),
         pricing_unit: row.pricing_unit || "小时",
       },
       catalog
@@ -370,6 +370,7 @@ function publicCompanion(row = {}, profile = {}, levels = [], catalog = [], medi
     gender: row.gender || "",
     voiceType: row.voice_type || "",
     tags: stripGamePricesMarker(String(row.tags || ""))
+      .replace(/\[\[MCJ_CERT_REQ:(?:pending|rejected):[A-Za-z0-9_|,-]*\]\]/gi, "")
       .replace(/\[\[MCJ_MEDAL:(?:pending|approved|rejected|revoked)\]\]/gi, "")
       .replace(/\[\[MCJ_GALLERY:[\s\S]*?\]\]/g, "")
       .split(/[,，、]/)

@@ -872,7 +872,7 @@
       row.style.display=matchedKeyword&&matchedTab&&matchedFilters?'':'none';
     });
   }
-  var playerAdminState={page:1,pageSize:20,rows:[],loaded:false,error:'',configured:true,selectedIds:{},batchLevelId:'',batchBusy:false,confirmCount:0,pendingBatch:null,batchMessage:'',filters:{game:'',level:'',identity:'',audit:'',deposit:''}};
+  var playerAdminState={page:1,pageSize:20,scope:'formal',pendingCount:0,rows:[],loaded:false,error:'',configured:true,selectedIds:{},batchLevelId:'',batchBusy:false,confirmCount:0,pendingBatch:null,batchMessage:'',filters:{game:'',level:'',identity:'',audit:'',deposit:''}};
   function renderPlayerManagement(){
     var target=document.getElementById('playerManagement');
     if(!target)return;
@@ -881,6 +881,7 @@
       '<div class="player-filter-panel">'+
         '<div class="player-filter-row player-filter-main">'+
           '<input class="player-keyword" data-player-search placeholder="搜索昵称或陪玩 ID">'+
+          '<select data-player-scope aria-label="申请状态"><option value="formal">全部陪玩</option><option value="drafts">申请草稿</option><option value="pending">待审核（'+esc(playerAdminState.pendingCount||0)+'）</option><option value="rejected">已驳回</option></select>'+
           '<button class="mini-btn primary-lite" type="button" data-player-filter-open>高级筛选</button>'+
           '<button class="mini-btn" type="button" data-player-clear>重置</button>'+
         '</div>'+
@@ -901,10 +902,14 @@
       '<div id="playerManagementTable" class="player-table-shell"><div class="player-empty-state"><strong>正在加载陪玩列表…</strong></div></div>'+
       '<aside id="playerDetailDrawer" class="player-detail-drawer" hidden></aside>'+
     '</div>';
+    var scopeSelect=target.querySelector('[data-player-scope]');
+    if(scopeSelect)scopeSelect.value=playerAdminState.scope||'formal';
     loadPlayerAdminRows();
   }
   function loadPlayerAdminRows(){
-    adminFetch('/api/admin/players',{headers:{'x-mcj-admin-role':getRole(),Accept:'application/json'}}).then(function(res){
+    var scope=playerAdminState.scope||'formal';
+    var listUrl='/api/admin/players'+(scope==='formal'?'':'?scope='+encodeURIComponent(scope));
+    adminFetch(listUrl,{headers:{'x-mcj-admin-role':getRole(),Accept:'application/json'}}).then(function(res){
       var ct=res.headers.get('content-type')||'';
       if(ct.indexOf('application/json')<0)throw new Error('数据库尚未连接，暂时无法加载陪玩列表。');
       return res.json();
@@ -920,6 +925,9 @@
         return;
       }
       playerAdminState.rows=(result.players||result.data||result.items||[]);
+      if(result&&result.pendingCount!=null)playerAdminState.pendingCount=Number(result.pendingCount)||0;
+      var pendingOpt=document.querySelector('[data-player-scope] option[value="pending"]');
+      if(pendingOpt)pendingOpt.textContent='待审核（'+(playerAdminState.pendingCount||0)+'）';
       playerAdminState.loaded=true;
       playerAdminState.configured=true;
       playerAdminState.error='';
@@ -1099,20 +1107,20 @@
     var allEligibleChecked=eligiblePage.length>0&&eligiblePage.every(function(item){return !!playerAdminState.selectedIds[String(item.id)];});
     var headers=['选择','头像','昵称','陪玩ID','主接游戏','等级','审核状态','实名状态','押金状态','抽成比例','直属陪返点','账号状态','注册时间','操作'];
     var body=pageRows.map(function(item){var eligibleRow=isPlayerBatchEligible(item);var id=String(item.id||'');return '<tr class="player-list-row" data-player-open="'+esc(id)+'">'+
-      '<td data-label="选择"><input type="checkbox" data-player-check="'+esc(id)+'" '+(playerAdminState.selectedIds[id]?'checked':'')+(eligibleRow?'':' disabled')+' aria-label="选择 '+esc(item.name||id)+'"></td>'+
+      '<td data-label="选择" class="player-pick"><input type="checkbox" data-player-check="'+esc(id)+'" '+(playerAdminState.selectedIds[id]?'checked':'')+(eligibleRow?'':' disabled')+' aria-label="选择 '+esc(item.name||id)+'"></td>'+
       '<td data-label="头像" class="avatar-cell"><button class="player-avatar-btn" type="button" data-player-action="view" data-player-id="'+esc(id)+'"><img class="avatar player-avatar" src="'+esc(playerAvatarSrc(item))+'" alt="" onerror="this.onerror=null;this.src=\'/assets/meow-cuijiao-brand.jpg\'"></button></td>'+
-      '<td data-label="昵称" class="player-name-cell" title="'+esc(item.name)+'"><button class="player-name-link" type="button" data-player-action="view" data-player-id="'+esc(item.id)+'">'+esc(item.name)+'</button><span class="player-name-meta">'+playerContactLine(item)+'</span></td>'+
-      playerTableCell('陪玩ID',esc(item.playerId))+
-      playerTableCell('主接游戏',esc(item.mainGame))+
-      playerTableCell('等级',esc(item.levelText))+
-      '<td data-label="审核状态">'+statusChip(item.audit)+'</td>'+
-      '<td data-label="实名状态">'+statusChip(item.identity)+'</td>'+
-      '<td data-label="押金状态">'+statusChip(item.deposit)+'</td>'+
-      playerTableCell('抽成比例',esc(item.commission))+
-      playerTableCell('直属陪返点',esc(item.directRebate))+
-      '<td data-label="账号状态">'+statusChip(item.account)+'</td>'+
-      playerTableCell('注册时间',esc(item.registered))+
-      '<td data-label="操作" class="player-action-cell"><div class="player-ops"><button class="mini-btn" type="button" data-player-action="view" data-player-id="'+esc(item.id)+'">查看</button><button class="mini-btn primary-lite" type="button" data-player-action="edit" data-player-id="'+esc(item.id)+'">编辑</button><span class="player-more-wrap"><button class="mini-btn" type="button" data-player-more>更多</button><span class="player-more-menu" hidden><button type="button" data-player-action="edit" data-player-section="split" data-player-id="'+esc(item.id)+'">设置等级</button><button type="button" data-player-action="edit" data-player-section="split" data-player-id="'+esc(item.id)+'">设置抽成</button><button type="button" data-player-action="view" data-player-section="income" data-player-id="'+esc(item.id)+'">查看流水</button></span></span></div></td>'+
+      '<td data-label="昵称" class="player-name-cell" title="'+esc(item.name)+'"><button class="player-name-link" type="button" data-player-action="view" data-player-id="'+esc(item.id)+'">'+esc(item.name)+'</button><span class="player-name-meta">'+playerContactLine(item)+'</span><span class="player-card-facts"><b>'+esc(item.playerId)+'</b><em>'+esc(item.levelText)+'</em>'+statusChip(item.audit)+'</span></td>'+
+      playerTableCell('陪玩ID',esc(item.playerId),'class="player-id"')+
+      playerTableCell('主接游戏',esc(item.mainGame),'class="player-extra"')+
+      playerTableCell('等级',esc(item.levelText),'class="player-level"')+
+      '<td data-label="审核状态" class="player-audit">'+statusChip(item.audit)+'</td>'+
+      '<td data-label="实名状态" class="player-extra">'+statusChip(item.identity)+'</td>'+
+      '<td data-label="押金状态" class="player-extra">'+statusChip(item.deposit)+'</td>'+
+      playerTableCell('抽成比例',esc(item.commission),'class="player-extra"')+
+      playerTableCell('直属陪返点',esc(item.directRebate),'class="player-extra"')+
+      '<td data-label="账号状态" class="player-extra">'+statusChip(item.account)+'</td>'+
+      playerTableCell('注册时间',esc(item.registered),'class="player-extra"')+
+      '<td data-label="操作" class="player-action-cell"><div class="player-ops"><button class="mini-btn" type="button" data-player-action="view" data-player-id="'+esc(item.id)+'">查看</button><button class="mini-btn primary-lite" type="button" data-player-action="edit" data-player-id="'+esc(item.id)+'">编辑</button><button class="mini-btn player-expand-btn" type="button" data-player-expand aria-expanded="false">展开详情</button><span class="player-more-wrap"><button class="mini-btn" type="button" data-player-more>更多</button><span class="player-more-menu" hidden><button type="button" data-player-action="edit" data-player-section="split" data-player-id="'+esc(item.id)+'">设置等级</button><button type="button" data-player-action="edit" data-player-section="split" data-player-id="'+esc(item.id)+'">设置抽成</button><button type="button" data-player-action="view" data-player-section="income" data-player-id="'+esc(item.id)+'">查看流水</button></span></span></div></td>'+
     '</tr>';}).join('');
     if(!body)body='<tr><td colspan="'+headers.length+'"><div class="player-table-empty"><strong>暂无陪玩数据</strong><span>当前没有符合条件的陪玩记录。</span></div></td></tr>';
     var head=headers.map(function(h,i){
@@ -2381,6 +2389,7 @@
       var chatTool=e.target.closest('[data-chat-tool]');if(chatTool){submitAdminChatAction('tool_'+chatTool.dataset.chatTool,adminMessageState.activeId,{});return;}
       var chatMessageAction=e.target.closest('[data-chat-message-action]');if(chatMessageAction){var msg=chatMessageAction.closest('[data-message-id]');submitAdminChatAction(chatMessageAction.dataset.chatMessageAction,adminMessageState.activeId,{messageId:msg?msg.dataset.messageId:''});return;}
       var homeReload=e.target.closest('[data-home-entry-reload]');if(homeReload){renderHomeEntryManager();return;}var homeEdit=e.target.closest('[data-home-entry-edit]');if(homeEdit){openHomeEntryEditor(homeEdit.dataset.homeEntryEdit);return;}var homeClose=e.target.closest('[data-home-entry-close]');if(homeClose){var drawer=document.querySelector('[data-home-entry-drawer]');if(drawer){drawer.hidden=true;drawer.innerHTML='';}return;}var bannerClear=e.target.closest('[data-banner-clear-image]');if(bannerClear){var form=bannerClear.closest('[data-content-form]');var field=bannerClear.dataset.bannerClearImage;var target=form&&form.querySelector('[name="'+field+'"]');if(target)target.value='';if(form)refreshBannerSimplePreview(form);return;}var contentAction=e.target.closest('[data-content-action]');if(contentAction){var ctype=contentAction.dataset.contentType,cid=contentAction.dataset.contentId,act=contentAction.dataset.contentAction;if(act==='new'){openPlatformContentEditor(ctype,'');return;}if(act==='edit'){openPlatformContentEditor(ctype,cid);return;}if(act==='cancel'){var editor=document.querySelector('[data-content-editor="'+ctype+'"]');if(editor){editor.hidden=true;editor.innerHTML='';}return;}if(act==='reload'){var cfg=platformContentConfig(ctype);if(cfg)loadPlatformContent(cfg);return;}if(act==='preview'){var form=document.querySelector('[data-content-form="'+ctype+'"]');if(form){var cfgp=platformContentConfig(ctype);var box=form.querySelector('.content-preview-box');if(box)box.innerHTML=renderContentPreview(cfgp,collectPlatformContentForm(form).draft);}return;}if(act==='delete'&&isProtectedBaseData(ctype)){alert('该数据已被业务使用时不能直接删除。请先停用，避免破坏历史订单和资料。');return;}if(/delete|unpublish|disable/.test(act)&&!confirm('确认执行该内容操作？'))return;if(act==='save'){var editForm=document.querySelector('[data-content-form="'+ctype+'"][data-content-id="'+cid+'"]');submitPlatformContent('save',ctype,cid,editForm?collectPlatformContentForm(editForm):{});return;}submitPlatformContent(act,ctype,cid,{});return;}
+      var playerExpand=e.target.closest('[data-player-expand]');if(playerExpand){var expandRow=playerExpand.closest('tr');if(expandRow){var expanded=expandRow.classList.toggle('is-expanded');playerExpand.textContent=expanded?'收起详情':'展开详情';playerExpand.setAttribute('aria-expanded',expanded?'true':'false');}return;}
       var playerMore=e.target.closest('[data-player-more]');if(playerMore){
         e.preventDefault();e.stopPropagation();
         openPlayerMoreMenu(playerMore);
@@ -2415,7 +2424,7 @@
       var playerFilterApply=e.target.closest('[data-player-filter-apply]');if(playerFilterApply){var next={};document.querySelectorAll('[data-player-filter]').forEach(function(select){next[select.dataset.playerFilter]=select.value||'';});playerAdminState.filters=next;var openDrawer=document.querySelector('[data-player-filter-drawer]');if(openDrawer)openDrawer.hidden=true;filterPlayerManagement();return;}
       var playerSearchBtn=e.target.closest('[data-player-search-button]');if(playerSearchBtn){filterPlayerManagement();return;}
       var playerExport=e.target.closest('[data-player-export]');if(playerExport){exportPlayerRows();return;}
-      var playerClear=e.target.closest('[data-player-clear],[data-player-filter-reset]');if(playerClear){var search=document.querySelector('[data-player-search]');if(search)search.value='';playerAdminState.filters={game:'',level:'',identity:'',audit:'',deposit:''};document.querySelectorAll('[data-player-filter]').forEach(function(select){select.value='';});var resetDrawer=document.querySelector('[data-player-filter-drawer]');if(resetDrawer)resetDrawer.hidden=true;filterPlayerManagement();return;}
+      var playerClear=e.target.closest('[data-player-clear],[data-player-filter-reset]');if(playerClear){var search=document.querySelector('[data-player-search]');if(search)search.value='';playerAdminState.filters={game:'',level:'',identity:'',audit:'',deposit:''};playerAdminState.scope='formal';var scopeSelect=document.querySelector('[data-player-scope]');if(scopeSelect)scopeSelect.value='formal';document.querySelectorAll('[data-player-filter]').forEach(function(select){select.value='';});var resetDrawer=document.querySelector('[data-player-filter-drawer]');if(resetDrawer)resetDrawer.hidden=true;playerAdminState.page=1;loadPlayerAdminRows();return;}
       var playerPage=e.target.closest('[data-player-page]');if(playerPage){playerAdminState.page+=playerPage.dataset.playerPage==='next'?1:-1;renderPlayerTableRows();return;}
       var playerPageGo=e.target.closest('[data-player-page-go]');if(playerPageGo){var jump=document.querySelector('[data-player-page-jump]');var total=visiblePlayerRows().length;var pages=Math.max(1,Math.ceil(total/playerAdminState.pageSize));playerAdminState.page=Math.min(Math.max(1,Number(jump&&jump.value)||1),pages);renderPlayerTableRows();return;}
       var playerClose=e.target.closest('[data-player-drawer-close]');if(playerClose){closePlayerDrawer();return;}
@@ -2432,7 +2441,7 @@
       var whtest=e.target.closest('[data-webhook-test]');if(whtest){alert('Webhook 测试不会修改真实订单或余额。当前支付安全接口未连接，未发送。');return;}
     });
     document.addEventListener('input',function(e){if(e.target.matches('[data-admin-chat-search]'))filterAdminChats();if(e.target.matches('[data-service-record-search]')){serviceRecordState.keyword=e.target.value||'';serviceRecordState.page=1;renderServiceRecordRows();}if(e.target.matches('[data-order-search]'))filterOrders();if(e.target.matches('[data-boss-search]'))filterBossManagement();if(e.target.matches('[data-player-search]'))filterPlayerManagement();if(e.target.matches('[data-coupon-search]')){couponState.keyword=e.target.value||'';var target=document.getElementById('couponManagement');if(target)target.innerHTML=couponPageHtml();}if(e.target.matches('[data-content-search]'))filterPlatformContentRows(e.target);});
-    document.addEventListener('change',function(e){if(e.target.matches('[data-player-check]')){var pid=e.target.getAttribute('data-player-check')||'';if(!pid||e.target.disabled)return;if(e.target.checked)playerAdminState.selectedIds[pid]=true;else delete playerAdminState.selectedIds[pid];renderPlayerTableRows();return;}if(e.target.matches('[data-player-select-all]')){var on=!!e.target.checked;currentPlayerPageRows().forEach(function(item){var id=String(item.id||'');if(!id||!isPlayerBatchEligible(item))return;if(on)playerAdminState.selectedIds[id]=true;else delete playerAdminState.selectedIds[id];});renderPlayerTableRows();return;}if(e.target.matches('[data-player-batch-level]')){playerAdminState.batchLevelId=e.target.value||'';renderPlayerTableRows();return;}if(e.target.matches('[data-boss-check]'))updateBossBulkState();if(e.target.matches('[data-boss-filter]'))filterBossManagement();if(e.target.matches('[data-boss-page-size]')){bossAdminState.pageSize=Number(e.target.value)||20;bossAdminState.page=1;renderBossTableRows();}if(e.target.matches('[data-order-filter]'))filterOrders();if(e.target.matches('[data-content-upload]'))uploadPlatformContentFile(e.target);if(e.target.matches('[data-player-quick-field]')){var quickPayload={};quickPayload[e.target.dataset.playerQuickField]=e.target.value;savePlayerAdminChanges('quick-edit',e.target.dataset.playerId,quickPayload);return;}if(e.target.matches('[data-player-page-size]')){playerAdminState.pageSize=Number(e.target.value)||20;playerAdminState.page=1;renderPlayerTableRows();}if(e.target.matches('[data-coupon-filter]')){couponState.filter=e.target.value||'';var target=document.getElementById('couponManagement');if(target)target.innerHTML=couponPageHtml();}});
+    document.addEventListener('change',function(e){if(e.target.matches('[data-player-scope]')){playerAdminState.scope=e.target.value||'formal';playerAdminState.page=1;playerAdminState.selectedIds={};loadPlayerAdminRows();return;}if(e.target.matches('[data-player-check]')){var pid=e.target.getAttribute('data-player-check')||'';if(!pid||e.target.disabled)return;if(e.target.checked)playerAdminState.selectedIds[pid]=true;else delete playerAdminState.selectedIds[pid];renderPlayerTableRows();return;}if(e.target.matches('[data-player-select-all]')){var on=!!e.target.checked;currentPlayerPageRows().forEach(function(item){var id=String(item.id||'');if(!id||!isPlayerBatchEligible(item))return;if(on)playerAdminState.selectedIds[id]=true;else delete playerAdminState.selectedIds[id];});renderPlayerTableRows();return;}if(e.target.matches('[data-player-batch-level]')){playerAdminState.batchLevelId=e.target.value||'';renderPlayerTableRows();return;}if(e.target.matches('[data-boss-check]'))updateBossBulkState();if(e.target.matches('[data-boss-filter]'))filterBossManagement();if(e.target.matches('[data-boss-page-size]')){bossAdminState.pageSize=Number(e.target.value)||20;bossAdminState.page=1;renderBossTableRows();}if(e.target.matches('[data-order-filter]'))filterOrders();if(e.target.matches('[data-content-upload]'))uploadPlatformContentFile(e.target);if(e.target.matches('[data-player-quick-field]')){var quickPayload={};quickPayload[e.target.dataset.playerQuickField]=e.target.value;savePlayerAdminChanges('quick-edit',e.target.dataset.playerId,quickPayload);return;}if(e.target.matches('[data-player-page-size]')){playerAdminState.pageSize=Number(e.target.value)||20;playerAdminState.page=1;renderPlayerTableRows();}if(e.target.matches('[data-coupon-filter]')){couponState.filter=e.target.value||'';var target=document.getElementById('couponManagement');if(target)target.innerHTML=couponPageHtml();}});
     document.addEventListener('keydown',function(e){
       if(e.key==='Escape'){
         var adminModal=document.getElementById('adminModal');

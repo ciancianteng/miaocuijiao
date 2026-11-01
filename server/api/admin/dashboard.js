@@ -26,7 +26,7 @@ import {
   isTestAccountRecord,
   isTestTouchedOrder,
 } from "../_test-accounts.js";
-import { PLATFORM_STATS_TIMEZONE, isCreatedOnLocalDay, localDateYmd } from "../_platform-day.js";
+import { PLATFORM_STATS_TIMEZONE, isCreatedOnLocalDay, localDateYmd, localYmdInRange, resolveStatsRange } from "../_platform-day.js";
 import {
   assertOrdersCarryParentField,
   countCompletedBusinessOrders,
@@ -299,6 +299,7 @@ export function buildDashboardStats({
   paymentTransactions = [],
   now = new Date(),
   timeZone = PLATFORM_STATS_TIMEZONE,
+  range = null,
 } = {}) {
   const { byId, testIds } = indexProfilesForStats(profiles);
   const enrichedOrders =
@@ -311,7 +312,6 @@ export function buildDashboardStats({
   const today = localDateYmd(now, timeZone);
   const revenueOrders = businessOrders.filter((o) => countsAsRevenue(o));
   const paidToday = revenueOrders.filter((o) => isCreatedOnLocalDay(revenueRecognizedAt(o), today, timeZone));
-  const completedBusiness = businessOrders.filter((o) => isRealCompletedBusinessOrder(o));
   if (!parentField.ok && enrichedOrders.length > 0) {
     // Fail closed: never publish an inflated completed count when parent_order_id was not selected.
     throw Object.assign(
@@ -320,13 +320,16 @@ export function buildDashboardStats({
     );
   }
 
-  const wd = (Array.isArray(withdrawals) ? withdrawals : []).filter((w) => {
+  const wdAll = (Array.isArray(withdrawals) ? withdrawals : []).filter((w) => {
     const uid = w.user_id || w.companion_id || w.boss_id || w.profile_id;
     if (uid && testIds.has(uid)) return false;
     const p = uid ? byId.get(uid) : null;
     if (p && isTestAccountRecord(p)) return false;
     return true;
   });
+  const wd = range
+    ? wdAll.filter((w) => localYmdInRange(w.paid_at || w.completed_at || w.created_at || "", range, timeZone))
+    : wdAll;
   const withdrawPending = wd
     .filter((w) => !["completed", "paid", "rejected", "cancelled", "pay_failed"].includes(String(w.status || "")))
     .reduce((sum, w) => sum + money(w.net_amount_rm != null ? w.net_amount_rm : w.amount_rm != null ? w.amount_rm : w.amount), 0);
@@ -334,7 +337,13 @@ export function buildDashboardStats({
     .filter((w) => ["completed", "paid", "paid_pending_receipt"].includes(String(w.status || "")))
     .reduce((sum, w) => sum + money(w.net_amount_rm != null ? w.net_amount_rm : w.amount_rm != null ? w.amount_rm : w.amount), 0);
 
-  const platformProfit = revenueOrders.reduce((sum, o) => sum + platformProfitOf(o), 0);
+  const statusOrders = range
+    ? businessOrders.filter((o) => localYmdInRange(o.created_at || o.createdAt || "", range, timeZone))
+    : businessOrders;
+  const revenueScoped = range
+    ? revenueOrders.filter((o) => localYmdInRange(revenueRecognizedAt(o), range, timeZone))
+    : revenueOrders;
+  const platformProfit = revenueScoped.reduce((sum, o) => sum + platformProfitOf(o), 0);
   const bosses = filterActiveBusinessProfiles(profiles, "boss");
   const customerServices = filterActiveBusinessProfiles(profiles, "customer_service");
   const companions =
@@ -342,7 +351,7 @@ export function buildDashboardStats({
       ? countApprovedCompanions({ profiles, companionProfiles })
       : filterActiveBusinessProfiles(profiles, "companion").length;
 
-  const totalAmount = revenueOrders.reduce((sum, o) => sum + approvedRevenueAmount(o), 0);
+  const totalAmount = revenueScoped.reduce((sum, o) => sum + approvedRevenueAmount(o), 0);
   const todayAmount = paidToday.reduce((sum, o) => sum + approvedRevenueAmount(o), 0);
 
   return {
@@ -351,13 +360,13 @@ export function buildDashboardStats({
       companions,
       customerServices: customerServices.length,
       todayOrders: paidToday.length,
-      validOrders: revenueOrders.length,
-      awaitingPayment: businessOrders.filter((o) => o.status === "awaiting_payment").length,
+      validOrders: revenueScoped.length,
+      awaitingPayment: statusOrders.filter((o) => o.status === "awaiting_payment").length,
       // Kept key pendingOrders for API compat; UI label = 等待陪玩确认
-      pendingOrders: businessOrders.filter((o) => WAITING_COMPANION_STATUSES.has(String(o.status || ""))).length,
-      inProgress: businessOrders.filter((o) => IN_PROGRESS_STATUSES.has(String(o.status || ""))).length,
-      completed: completedBusiness.length,
-      refunds: businessOrders.filter((o) => REFUND_STATUSES.has(String(o.status || ""))).length,
+      pendingOrders: statusOrders.filter((o) => WAITING_COMPANION_STATUSES.has(String(o.status || ""))).length,
+      inProgress: statusOrders.filter((o) => IN_PROGRESS_STATUSES.has(String(o.status || ""))).length,
+      completed: statusOrders.filter((o) => isRealCompletedBusinessOrder(o)).length,
+      refunds: statusOrders.filter((o) => REFUND_STATUSES.has(String(o.status || ""))).length,
       totalAmount,
       todayAmount,
       platformProfit: Math.round(platformProfit * 100) / 100,
@@ -372,6 +381,7 @@ export function buildDashboardStats({
       revenueSource: "cs_approved_parent_payment",
       companionSource: "companion_profiles.approved+profiles.active",
       timezone: timeZone,
+      range: range || { preset: "all" },
       excludedBosses: (profiles || []).filter((p) => p.role === "boss").length - bosses.length,
       excludedCompanionsRoleOnly:
         (profiles || []).filter((p) => p.role === "companion").length -
@@ -382,7 +392,11 @@ export function buildDashboardStats({
       childOrdersSkipped: enrichedOrders.filter((o) => !isBusinessOrderRoot(o)).length,
       smokeGmvExcluded: true,
       paymentTransactionsAttached: Array.isArray(paymentTransactions) ? paymentTransactions.length : 0,
-      completedBusinessOrderIds: completedBusiness.map((o) => o.id || o.orderId).filter(Boolean).slice(0, 50),
+      completedBusinessOrderIds: statusOrders
+        .filter((o) => isRealCompletedBusinessOrder(o))
+        .map((o) => o.id || o.orderId)
+        .filter(Boolean)
+        .slice(0, 50),
     },
     definitions: {
       boss_total: "profiles.role=boss AND status=active AND NOT test",
@@ -482,7 +496,7 @@ async function loadWithdrawalsForStats() {
   const queries = [
     {
       table: "companion_withdrawals",
-      q: "?select=id,status,companion_id,net_amount_rm,cat_food_amount,amount,gross_amount_rm&limit=2000",
+      q: "?select=id,status,companion_id,net_amount_rm,cat_food_amount,amount,gross_amount_rm,created_at,paid_at,completed_at&limit=2000",
     },
     {
       table: "companion_withdrawals",
@@ -513,6 +527,17 @@ export default async function handler(req, res) {
   }
   try {
     await requireAdmin(req);
+    const query = req.query && typeof req.query === "object" ? req.query : {};
+    let search = query;
+    try {
+      search = Object.fromEntries(new URL(req.url || "/", "http://localhost").searchParams);
+    } catch {
+      search = query;
+    }
+    const range = resolveStatsRange(search.range || query.range || "all", {
+      from: search.from || query.from || "",
+      to: search.to || query.to || "",
+    });
     const [profiles, orders, withdrawals, companionProfiles, paymentTransactions] = await Promise.all([
       loadProfilesForStats(),
       loadOrdersForStats(),
@@ -526,6 +551,7 @@ export default async function handler(req, res) {
       withdrawals,
       companionProfiles,
       paymentTransactions,
+      range,
     });
     return json(res, 200, { ok: true, configured: true, stats, filter, definitions });
   } catch (error) {

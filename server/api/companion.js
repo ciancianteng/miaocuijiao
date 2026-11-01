@@ -1,4 +1,4 @@
-﻿import {
+import {
   PRIVATE_BUCKETS,
   PUBLIC_BUCKETS,
   MAX_VIDEO_BYTES,
@@ -90,7 +90,15 @@ import {
   assertHasPositivePrice,
   MISSING_PRICE_MESSAGE,
 } from "./_companion-publish-gate.js";
-import { resolveCertTagsForProfiles } from "./_companion-cert-tags-store.js";
+import {
+  resolveCertTagsForProfiles,
+  readExistingCertTags,
+  readCertRequests,
+  writeCertRequests,
+  planCertRequest,
+  toPublicCertTag,
+  getAssignmentsForProfiles,
+} from "./_companion-cert-tags-store.js";
 import {
   buildCompanionInbox,
   ensureCompanionSupportConversation,
@@ -933,6 +941,7 @@ function safePlayer(profile = {}, companion = {}) {
   });
   const serviceIds = parseServiceIds(companion.service_ids);
   const publicTags = stripGamePricesMarker(companion.tags || "")
+    .replace(/\[\[MCJ_CERT_REQ:(?:pending|rejected):[A-Za-z0-9_|,-]*\]\]/gi, "")
     .replace(/\[\[MCJ_MEDAL:(?:pending|approved|rejected|revoked)\]\]/gi, "")
     .replace(/\[\[MCJ_GALLERY:[\s\S]*?\]\]/g, "")
     .replace(/游戏ID:[^,，]*/g, "")
@@ -987,7 +996,10 @@ function safePlayer(profile = {}, companion = {}) {
     directRebateRate: money(companion.direct_rebate_rate) || 0,
     applicationRejectReason: companion.application_reject_reason || "",
     mediaRejectReason: companion.media_reject_reason || "",
-    tags: String(companion.tags || "").replace(/\[\[MCJ_MEDAL:(?:pending|approved|rejected|revoked)\]\]/gi, "").trim(),
+    tags: String(companion.tags || "")
+      .replace(/\[\[MCJ_CERT_REQ:(?:pending|rejected):[A-Za-z0-9_|,-]*\]\]/gi, "")
+      .replace(/\[\[MCJ_MEDAL:(?:pending|approved|rejected|revoked)\]\]/gi, "")
+      .trim(),
     medalStatus: readMedalStatus(companion.tags),
     updatedAt: companion.updated_at || profile.updated_at || "",
     raw: { ...profile, ...companion }
@@ -1066,6 +1078,7 @@ const COMPANION_ISOLATION_ALLOWED_ACTIONS = new Set([
   "ack_forced_announcement",
   "pending_forced",
   "wechat_public_id",
+  "cert_badge_catalog",
 ]);
 /** Maps "companion.enabled" — no dedicated column; allow_orders / enabled flag. */
 function companionEnabled(companion = {}) {
@@ -4156,6 +4169,26 @@ export default async function handler(req, res) {
       return json(res, 200, { ok: true, publicId, missing: !publicId });
     }
     if (req.method === "GET" && action === "bootstrap") return json(res,200,{ok:true,data:await bootstrapData(auth.profile, companion)});
+    if (action === "cert_badge_catalog") {
+      const catalog = (await readExistingCertTags()).filter((t) => t.enabled !== false).map(toPublicCertTag);
+      const reqs = readCertRequests(companion?.tags || "");
+      let heldIds = [];
+      if (companion?.id) {
+        try {
+          const map = await getAssignmentsForProfiles([companion.id]);
+          heldIds = map[String(companion.id)] || [];
+        } catch {
+          heldIds = [];
+        }
+      }
+      return json(res, 200, {
+        ok: true,
+        badges: catalog,
+        pendingIds: reqs.pending,
+        rejectedIds: reqs.rejected,
+        heldIds,
+      });
+    }
     // Apply-page deposit step: same SoT as companion workbench / submit_deposit_proof.
     // Reads payment_channels when present, else platform_settings.paymentChannelsPublic.
     if (
@@ -5277,11 +5310,6 @@ return json(res, 200, {
         position: String(body.position || ""),
         schedule: String(body.schedule || companion.schedule || ""),
         game_id: gameId,
-        // Already-approved companions keep approved so price writes stay live for boss orders.
-        // Rejected / resubmit / pending → re-enter review queue and clear prior reject text.
-        application_status: /approved|verified|passed/i.test(String(companion.application_status || ""))
-          ? "approved"
-          : "pending",
         updated_at: nowIso(),
       };
       // voice_url is owned by upload_media / delete_media. Never rewrite it from a
@@ -5296,7 +5324,10 @@ return json(res, 200, {
           patch.voice_url = nextVoice;
         }
       }
-      if (!/approved|verified|passed/i.test(String(companion.application_status || ""))) {
+      if (
+        !/approved|verified|passed/i.test(String(companion.application_status || "")) &&
+        !/reject|resubmit|need_more/i.test(String(companion.application_status || ""))
+      ) {
         patch.application_reject_reason = "";
       }
       if (contactProvided) patch.contact_phone = contact;
@@ -5307,7 +5338,7 @@ return json(res, 200, {
           await supabaseJson(restUrl("companion_profiles"), {
             method: "POST",
             headers: serviceHeaders(),
-            body: JSON.stringify({ user_id: auth.profile.id, ...patch, deposit_status: "unpaid", online_status: "offline", created_at: nowIso() }),
+            body: JSON.stringify({ user_id: auth.profile.id, ...patch, application_status: "draft", deposit_status: "unpaid", online_status: "offline", created_at: nowIso() }),
           });
         } else {
           await patchCompanionProfile(`?user_id=eq.${encodeURIComponent(auth.profile.id)}`, patch);
@@ -5357,14 +5388,15 @@ return json(res, 200, {
         }
       }
       const stayedApproved = /approved|verified|passed/i.test(String(patch.application_status || ""));
-      const wasRejected = /reject|resubmit|need_more/i.test(String(companion.application_status || ""));
+      const stayedRejected = /reject|resubmit|need_more/i.test(String(patch.application_status || ""));
+      const stayedDraft = String(patch.application_status || "") === "draft";
       return json(res, 200, {
         ok: true,
-        message: stayedApproved
+        message: stayedApproved || stayedDraft
           ? "保存成功"
-          : wasRejected
-            ? "已重新提交审核，请等待后台复核"
-            : "保存成功，资料已提交审核",
+          : stayedRejected
+            ? "保存成功。驳回后需点击「提交审核」才会重新进入待审核。"
+            : "保存成功",
         gamePrices: nextGamePrices,
         price: priceValue != null ? priceValue : money(companion.price),
         applicationStatus: patch.application_status,
@@ -5456,18 +5488,13 @@ return json(res, 200, {
           /* optional */
         }
       }
+      const identityPatch = { verification_status: "pending", updated_at: nowIso() };
       await supabaseJson(restUrl("companion_profiles", `?id=eq.${encodeURIComponent(row.id)}`), {
         method: "PATCH",
         headers: serviceHeaders(),
-        body: JSON.stringify({
-          verification_status: "pending",
-          application_status: "pending",
-          application_reject_reason: "",
-          application_submitted_at: nowIso(),
-          updated_at: nowIso(),
-        }),
+        body: JSON.stringify(identityPatch),
       });
-      return json(res, 200, { ok: true, message: "已提交审核，等待后台审核。" });
+      return json(res, 200, { ok: true, message: "身份证资料已保存。填写完成后请点击「提交审核」。" });
     }
 
     if (action === "discard_application_draft" || action === "clear_application_draft") {
@@ -6488,6 +6515,71 @@ return json(res, 200, {
 
     if (action === "submit_application") {
       const row = await ensureCompanionRow(auth.profile, companion);
+      const { isApplicationApproved, isApplicationQueueRow } = await import("./_companion-draft.js");
+      const submitState = String(companion?.application_status || row?.application_status || "").toLowerCase();
+      const tagSource = String(row?.tags || companion?.tags || "");
+      let certPlan = { ...readCertRequests(tagSource), added: [] };
+      try {
+        const catalog = await readExistingCertTags();
+        const enabledIds = catalog.filter((t) => t.enabled !== false).map((t) => t.id);
+        let heldIds = [];
+        if (row?.id) {
+          const map = await getAssignmentsForProfiles([row.id]);
+          heldIds = map[String(row.id)] || [];
+        }
+        certPlan = planCertRequest(tagSource, body.cert_badge_ids ?? body.certBadgeIds, { enabledIds, heldIds });
+      } catch (certErr) {
+        console.warn("[cert-request]", certErr?.message || certErr);
+      }
+      const saveCertRequest = async () => {
+        if (!certPlan.added.length) return;
+        const tags = writeCertRequests(tagSource, certPlan);
+        await supabaseJson(restUrl("companion_profiles", `?id=eq.${encodeURIComponent(row.id)}`), {
+          method: "PATCH",
+          headers: serviceHeaders(),
+          body: JSON.stringify({ tags, updated_at: nowIso() }),
+        });
+        try {
+          const { notifyCustomerServiceStaff } = await import("./_staff-notify.js");
+          const admins = await companionDb("profiles", "?role=in.(admin,super_admin)&select=id&limit=40").catch(() => []);
+          const adminIds = [...new Set((Array.isArray(admins) ? admins : []).map((item) => item?.id).filter(Boolean))];
+          if (adminIds.length) {
+            const who = String(body.nickname || companion?.nickname || row?.nickname || "陪玩").trim();
+            await notifyCustomerServiceStaff({
+              kind: "companion_cert_badge",
+              relatedId: `${row.id}:${certPlan.added.slice().sort().join(",")}`,
+              title: "认证徽章待审核",
+              body: `${who} 申请认证徽章，审核通过前不会显示`,
+              href: "/admin.html#companion-applications",
+              staffIds: adminIds,
+            });
+          }
+        } catch (err) {
+          console.warn("[cert-request-notify]", err?.message || err);
+        }
+      };
+      if (isApplicationApproved(companion || row || {})) {
+        if (!certPlan.added.length) {
+          return json(res, 409, { ok: false, message: "已通过审核，无需再次提交。" });
+        }
+        await saveCertRequest();
+        return json(res, 200, {
+          ok: true,
+          certRequested: true,
+          message: "认证徽章已提交审核。资料审核状态不变，通过前不会显示徽章。",
+        });
+      }
+      if (isApplicationQueueRow(companion || row || {}) && /^(pending|submitted|pending_review|review)$/.test(submitState)) {
+        await saveCertRequest();
+        return json(res, 200, {
+          ok: true,
+          already: true,
+          certRequested: certPlan.added.length > 0,
+          message: certPlan.added.length
+            ? "认证徽章已提交审核。申请已在待审核，无需重复提交。"
+            : "申请已在待审核，无需重复提交。",
+        });
+      }
       // Pricing V2 P2: applicant must NOT set sell price. Price is assigned at admin approve via level.base_price.
       const applyGameNames = splitGames(body.main_game || body.game || body.mainGame || "");
       const servicesBundle = await loadPublicServices().catch(() => ({ services: [] }));
@@ -6515,6 +6607,34 @@ return json(res, 200, {
           ok: false,
           error: "certification_method_required",
           message: "请先选择认证方式（身份证认证或押金认证）后再提交申请。",
+        });
+      }
+      const submitMissing = [];
+      if (!String(body.nickname || companion?.nickname || "").trim()) submitMissing.push("昵称");
+      if (!String(applyGame || companion?.game || companion?.main_service || "").trim()) submitMissing.push("主玩游戏");
+      if (authMode === "id_card") {
+        const identityRow = (
+          await companionDb(
+            "companion_identity_verifications",
+            `?companion_profile_id=eq.${encodeURIComponent(row.id)}&limit=1`
+          ).catch(() => [])
+        )?.[0];
+        if (!identityRow?.id_front_path || !identityRow?.id_back_path) submitMissing.push("身份证正反面");
+      }
+      if (authMode === "deposit") {
+        const depositRow = (
+          await companionDb(
+            "companion_deposits",
+            `?companion_profile_id=eq.${encodeURIComponent(row.id)}&order=created_at.desc&limit=1`
+          ).catch(() => [])
+        )?.[0];
+        if (!depositRow?.proof_path) submitMissing.push("押金凭证");
+      }
+      if (submitMissing.length) {
+        return json(res, 400, {
+          ok: false,
+          error: "application_incomplete",
+          message: "资料未完成，不能提交审核：" + submitMissing.join("、"),
         });
       }
       // Applicant must NEVER set level / base_price / sell price via apply API.
@@ -6594,7 +6714,7 @@ return json(res, 200, {
           const prevMedal = readMedalStatus(prevTags);
           const nextMedal = wantMedal ? (prevMedal === "approved" ? "approved" : "pending") : prevMedal;
           row._medalJustPending = nextMedal === "pending" && prevMedal !== "pending";
-          return writeMedalStatus(merged, nextMedal);
+          return writeCertRequests(writeMedalStatus(merged, nextMedal), certPlan);
         })(),
         application_status: "pending",
         application_reject_reason: "",
@@ -6673,6 +6793,7 @@ return json(res, 200, {
                 game: patch.game,
                 application_note: patch.application_note,
                 application_status: "pending",
+                application_submitted_at: nowIso(),
                 updated_at: nowIso(),
               }),
             });
@@ -6728,6 +6849,50 @@ return json(res, 200, {
         }
       } catch {
         /* optional */
+      }
+      try {
+        const { notifyCustomerServiceStaff } = await import("./_staff-notify.js");
+        const admins = await companionDb(
+          "profiles",
+          "?role=in.(admin,super_admin)&select=id&limit=40"
+        ).catch(() => []);
+        const adminIds = [...new Set((Array.isArray(admins) ? admins : []).map((item) => item?.id).filter(Boolean))];
+        if (adminIds.length) {
+          const who = String(patch.nickname || companion.nickname || "陪玩").trim();
+          await notifyCustomerServiceStaff({
+            kind: "companion_application",
+            relatedId: row.id,
+            title: "新的陪玩申请待审核",
+            body: `${who} 已提交陪玩申请`,
+            href: "/admin.html#companion-applications",
+            staffIds: adminIds,
+          });
+        }
+      } catch (err) {
+        console.warn("[application-notify]", err?.message || err);
+      }
+      if (certPlan.added.length) {
+        try {
+          const { notifyCustomerServiceStaff } = await import("./_staff-notify.js");
+          const admins = await companionDb(
+            "profiles",
+            "?role=in.(admin,super_admin)&select=id&limit=40"
+          ).catch(() => []);
+          const adminIds = [...new Set((Array.isArray(admins) ? admins : []).map((item) => item?.id).filter(Boolean))];
+          if (adminIds.length) {
+            const who = String(patch.nickname || companion.nickname || "陪玩").trim();
+            await notifyCustomerServiceStaff({
+              kind: "companion_cert_badge",
+              relatedId: `${row.id}:${certPlan.added.slice().sort().join(",")}`,
+              title: "认证徽章待审核",
+              body: `${who} 申请认证徽章，审核通过前不会显示`,
+              href: "/admin.html#companion-applications",
+              staffIds: adminIds,
+            });
+          }
+        } catch (err) {
+          console.warn("[cert-request-notify]", err?.message || err);
+        }
       }
       if (row._medalJustPending) {
         try {
