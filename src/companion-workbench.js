@@ -1213,7 +1213,8 @@
     if(/HTTP\s*403|HTTP\s*401/i.test(text) && /auth|jwt|token/i.test(text)){
       return '登录状态已过期，请重新登录后继续。';
     }
-    if(/HTTP\s*\d{3}|PGRST|PostgREST|supabase/i.test(text) && !/请|上传|删除|相册|头像|录音|视频|保存|网络/.test(text)){
+    if(/接单状态|缺少字段|未找到陪玩资料/.test(text))return text;
+    if(/HTTP\s*\d{3}|PGRST|PostgREST|supabase/i.test(text) && !/请|上传|删除|相册|头像|录音|视频|保存|网络|接单状态|缺少字段/.test(text)){
       return '操作失败，请稍后重试。';
     }
     return text.replace(/^上传失败：\s*/,'');
@@ -2764,8 +2765,17 @@
   }
   function currentOnlineStatus(){
     var p=(state.data&&state.data.player)||{};
-    var s=String(p.onlineStatus||'offline').toLowerCase();
-    return STATUS_META[s]?s:'offline';
+    var raw=String(p.onlineStatus||p.availabilityStatus||p.availability_status||'offline').trim();
+    var s=raw.toLowerCase();
+    if(STATUS_META[s])return s;
+    if(window.MCJCompanionPresence&&typeof window.MCJCompanionPresence.codeFrom==='function'){
+      var code=window.MCJCompanionPresence.codeFrom(raw);
+      if(STATUS_META[code])return code;
+    }
+    if(/在线/.test(raw))return 'online';
+    if(/忙碌/.test(raw))return 'busy';
+    if(/暂停/.test(raw))return 'paused';
+    return 'offline';
   }
   function applyOnlineStatusUi(next){
     if(state.data&&state.data.player){
@@ -2785,10 +2795,14 @@
     }
   }
   function commitOnlineStatus(next){
+    var prev=currentOnlineStatus();
     state.statusBusy=true;
     state.pendingOnlineStatus=null;
     api('set_online_status',{online_status:next}).then(function(x){
-      var saved=x.onlineStatus||next;
+      if(!x||x.ok===false||!x.onlineStatus){
+        throw new Error((x&&x.message)||'接单状态保存失败');
+      }
+      var saved=x.onlineStatus;
       if(state.data&&state.data.player){
         state.data.player.onlineStatus=saved;
         state.data.player.onlineStatusLabel=x.onlineStatusLabel||((STATUS_META[saved]||{}).label);
@@ -2797,7 +2811,8 @@
       applyOnlineStatusUi(saved);
       toast(x.message||'状态已更新');
     }).catch(function(err){
-      toast(err.message||'状态更新失败');
+      applyOnlineStatusUi(prev);
+      toast(err.message||'接单状态保存失败');
     }).finally(function(){
       state.statusBusy=false;
       var pending=state.pendingOnlineStatus;
