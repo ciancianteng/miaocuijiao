@@ -51,6 +51,21 @@ export function isDepositVerified(row = {}, depositRow = null) {
   return /^(approved|verified|passed|paid|received)$|已通过|已缴纳|已到账/.test(raw);
 }
 
+/**
+ * ID front/back is waived only by a real confirmed deposit ledger row.
+ * Profile deposit_status alone is not enough. Pending, failed, refunded,
+ * or expired rows do not qualify.
+ */
+export function isDepositIdentityExempt(row = {}, depositRow = null) {
+  void row;
+  if (!depositRow || !String(depositRow.id || "").trim()) return false;
+  const refund = String(depositRow.refund_status || "").trim().toLowerCase();
+  if (refund && refund !== "none" && /refund|退|失效|expired|fail|invalid/.test(refund)) return false;
+  const paid = Number(depositRow.paid_amount);
+  if (Number.isFinite(paid) && paid <= 0) return false;
+  return isDepositVerified({}, depositRow);
+}
+
 /** True when identity_verified OR deposit_verified. */
 export function isCredentialOrOk(row = {}, identityRow = null, depositRow = null) {
   return isIdentityVerified(row, identityRow) || isDepositVerified(row, depositRow);
