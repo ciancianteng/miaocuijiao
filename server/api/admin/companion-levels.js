@@ -62,6 +62,9 @@ function verifyPublished(levels, expected) {
     if (Number(match.basePrice) !== Number(item.basePrice)) {
       return { ok: false, message: `校验失败：${item.code} base_price 未写入。` };
     }
+    if (!!match.maxPlus !== !!item.maxPlus) {
+      return { ok: false, message: `校验失败：${item.code} 允许超限未写入。` };
+    }
     if (Number(match.commissionRate) !== Number(item.commissionRate)) {
       return { ok: false, message: `校验失败：${item.code} 抽成未写入。` };
     }

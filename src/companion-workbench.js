@@ -2801,25 +2801,34 @@
         host.innerHTML='<p class="pw-note">平台还没有可提供的服务。</p>';
         return;
       }
+      var levelMeta=res.level||{};
       var ordered=window.MCJServicePinyinOrder&&window.MCJServicePinyinOrder.sortByPinyin
         ? window.MCJServicePinyinOrder.sortByPinyin(catalog)
         : catalog.map(function(item,index){return {item:item,index:index};});
-      host.innerHTML='<div class="pw-svc-toolbar"><button type="button" class="pw-btn" data-offers-close-all>一键关闭全部服务</button></div><div class="pw-my-service-list">'+ordered.map(function(entry){
+      var levelHint=levelMeta.priceRangeText
+        ? ('当前等级限价 '+levelMeta.priceRangeText+(levelMeta.basePrice!=null?(' · 默认售价 '+levelMeta.basePrice+' 猫粮'):''))
+        : '价格按你的服务等级独立计算，只影响你自己，不影响历史订单。';
+      host.innerHTML='<p class="pw-note">'+esc(levelHint)+'</p><div class="pw-svc-toolbar"><button type="button" class="pw-btn" data-offers-close-all>一键关闭全部服务</button></div><div class="pw-my-service-list">'+ordered.map(function(entry){
         var item=entry.item;
         var key=item.kind+':'+item.id;
         var saved=selected[key]||null;
-        var policy=item.policy||{};
-        var unit=policy.unit||'局';
-        var range=(policy.min!=null&&policy.max!=null)?('RM'+policy.min+' - RM'+policy.max+' / '+unit):'平台未设置区间';
-        var content=String(policy.description||'').trim();
-        var requirement=String(policy.requirements||'').trim();
-        var mine=saved&&saved.price!=null&&saved.price!==''&&!isNaN(Number(saved.price))?saved.price:'';
+        var pricing=item.pricing||item.policy||{};
+        var requirement=String((item.policy&&item.policy.requirements)||'').trim();
+        var basePrice=pricing.basePrice!=null&&pricing.basePrice!==''&&!isNaN(Number(pricing.basePrice))?Number(pricing.basePrice):0;
+        var markupMax=pricing.markupMax==null?null:Number(pricing.markupMax);
+        var finalPrice=saved&&saved.price!=null&&saved.price!==''&&!isNaN(Number(saved.price))
+          ? Number(saved.price)
+          : (pricing.finalPrice!=null&&pricing.finalPrice!==''&&!isNaN(Number(pricing.finalPrice))?Number(pricing.finalPrice):(item.price!=null&&item.price!==''&&!isNaN(Number(item.price))?Number(item.price):basePrice));
+        if(!(finalPrice>0)&&basePrice>0)finalPrice=basePrice;
+        var currentMarkup=Math.max(0,Math.round((finalPrice-basePrice)*100)/100);
         var accepting=!saved||saved.accepting!==false;
-        var canPrice=policy.allowSelfPrice===true;
-        var shown=mine!==''?mine:(item.price!=null&&item.price!==''&&!isNaN(Number(item.price))?item.price:'');
-        var quote=shown!==''?('RM'+shown+'/'+unit):'未设置';
-        var headPrice=canPrice?quote:('🔒 已锁定 '+quote);
-        return '<article class="pw-my-service pw-svc" data-offer-card data-kind="service" data-id="'+esc(item.id)+'" data-offer-sort="'+esc(entry.index)+'" data-saved="'+(saved?'1':'0')+'" data-accepting="'+(accepting?'1':'0')+'" data-allow="'+(canPrice?'1':'0')+'">'+
+        var canPrice=pricing.allowAdjust===true||pricing.allowSelfPrice===true||(pricing.locked!==true&&pricing.min!=null&&pricing.max!=null);
+        if(pricing.locked===true)canPrice=false;
+        var quote=(finalPrice>0?(finalPrice+' 猫粮'):'未设置');
+        var headPrice=canPrice?('最终 '+quote):('🔒 已锁定 '+quote);
+        var markupMaxText=markupMax==null?(pricing.maxPlus?'不限（允许超限）':'—'):(markupMax+' 猫粮');
+        var rangeText=pricing.priceRangeText||((pricing.min!=null&&pricing.max!=null)?(pricing.min+'–'+pricing.max+(pricing.maxPlus?'+':'')+' 猫粮'):'未设置');
+        return '<article class="pw-my-service pw-svc" data-offer-card data-kind="service" data-id="'+esc(item.id)+'" data-offer-sort="'+esc(entry.index)+'" data-saved="'+(saved?'1':'0')+'" data-accepting="'+(accepting?'1':'0')+'" data-allow="'+(canPrice?'1':'0')+'" data-base-price="'+esc(basePrice)+'">'+
           '<div class="pw-svc-head">'+
             '<button type="button" class="pw-svc-fold" data-offer-fold aria-expanded="false">'+
               '<span class="pw-svc-copy"><b class="pw-svc-name">'+esc(item.name||'服务')+'</b><span class="pw-svc-cat">'+esc(item.category||'服务')+'</span></span>'+
@@ -2830,13 +2839,27 @@
           '</div>'+
           '<div class="pw-svc-panel"><div class="pw-svc-panel-inner">'+
             '<p class="pw-my-service-status">'+(accepting?'● 接单中':'● 已关闭')+'</p>'+
+            '<div class="pw-svc-row"><span>默认售价</span><strong>'+esc(basePrice>0?(basePrice+' 猫粮'):'未设置')+'</strong></div>'+
+            '<div class="pw-svc-row"><span>可加价猫粮数</span><strong>'+esc(markupMaxText)+'</strong></div>'+
+            '<div class="pw-svc-row"><span>当前加价</span><strong data-offer-markup>'+esc(currentMarkup+' 猫粮')+'</strong></div>'+
+            '<div class="pw-svc-row"><span>允许区间</span><strong>'+esc(rangeText)+'</strong></div>'+
             (canPrice
-              ? '<label>我的价格<span class="pw-rm">RM<input data-offer-price inputmode="decimal" value="'+esc(mine)+'"></span><em>/ '+esc(unit)+'</em></label><button class="pw-btn" type="button" data-offer-save>修改价格</button>'
-              : '<p>🔒 已锁定 '+esc(quote)+'</p><p>该价格由平台锁定，不能在这里修改。客户支付价以服务目录为准。</p>')+
+              ? '<label class="pw-svc-price-edit">最终售价<span class="pw-rm"><input data-offer-price inputmode="decimal" type="number" step="1" min="0" value="'+(finalPrice>0?esc(finalPrice):'')+'"></span><em>猫粮</em></label><button class="pw-btn" type="button" data-offer-save>保存价格</button>'
+              : '<div class="pw-svc-row"><span>最终售价</span><strong>🔒 '+esc(quote)+'</strong><em>该等级锁价，不能修改。已创建订单不受影响。</em></div>')+
             serviceDetailsHtml({layout:'requirements',requirementsOpen:false,requirements:requirement})+
-            '<p>允许区间：'+esc(range)+'</p>'+
           '</div></div></article>';
       }).join('')+'</div>';
+      host.querySelectorAll('[data-offer-price]').forEach(function(inp){
+        inp.addEventListener('input',function(){
+          var card=inp.closest('[data-offer-card]');
+          if(!card)return;
+          var base=Number(card.getAttribute('data-base-price')||0)||0;
+          var final=Number(inp.value);
+          var markup=(!isNaN(final)&&final>0)?Math.max(0,Math.round((final-base)*100)/100):0;
+          var el=card.querySelector('[data-offer-markup]');
+          if(el)el.textContent=markup+' 猫粮';
+        });
+      });
     }).catch(function(err){
       host.dataset.loaded='';
       host.innerHTML='<p class="pw-note">'+esc(err.message||'读取失败')+'</p>';

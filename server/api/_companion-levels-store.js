@@ -644,6 +644,7 @@ export function toPublicLevel(level) {
       badgeIcon: item.badgeIcon,
       minPrice: item.min,
       maxPrice: item.max,
+      basePrice: item.basePrice,
       maxPlus: item.maxPlus,
       commissionRate: item.commissionRate,
       upgradeCondition: item.upgradeCondition,

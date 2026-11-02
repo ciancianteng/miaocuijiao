@@ -3210,6 +3210,7 @@ async function bootstrapData(profile, companion) {
       giftCommissionRate: money(companion?.gift_commission_rate) || 0,
       directRebateRate: money(companion?.direct_rebate_rate) || 0,
       price: levelBundle.price,
+      basePrice: levelBundle.level ? Number(levelBundle.level.basePrice) || levelBundle.minPrice : 0,
       minPrice: levelBundle.minPrice,
       maxPrice: levelBundle.maxPrice,
       maxPlus: levelBundle.maxPlus,
