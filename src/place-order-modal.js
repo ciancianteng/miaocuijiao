@@ -261,7 +261,7 @@
     if (document.querySelector('link[data-mcj-place-order-css]')) return;
     var link = document.createElement("link");
     link.rel = "stylesheet";
-    link.href = "/src/place-order-modal.css?v=20261029coupon1";
+    link.href = "/src/place-order-modal.css?v=20261102svcCollapse1";
     link.setAttribute("data-mcj-place-order-css", "1");
     document.head.appendChild(link);
   }
@@ -867,8 +867,15 @@
     });
     return out;
   }
-  function applySelectedService(svc) {
+  function serviceCardPriceText(svc) {
+    var price = money(svc && svc.price);
+    var unit = String((svc && svc.pricingUnit) || (state.companion && state.companion.pricingUnit) || "小时").trim() || "小时";
+    if (!(price > 0)) return "待报价";
+    return "RM" + String(price).replace(/\.0$/, "").replace(/\.00$/, "") + "/" + unit;
+  }
+  function applySelectedService(svc, opts) {
     if (!svc || !svc.name) return;
+    var collapse = !(opts && opts.collapse === false);
     state.service = svc.name;
     state.customService = "";
     state.selectedServiceId = svc.serviceId || svc.id || "";
@@ -882,13 +889,24 @@
     var mask = activeMask();
     if (mask) {
       var gameLabel = mask.querySelector("[data-po-game-label]");
-      if (gameLabel) gameLabel.textContent = state.service || "请选择游戏";
+      if (gameLabel) {
+        gameLabel.innerHTML =
+          '<strong class="mcj-po-game-label-name">' +
+          esc(state.service || "请选择服务") +
+          '</strong><em class="mcj-po-game-label-price">' +
+          esc(serviceCardPriceText(svc)) +
+          "</em>";
+      }
       var gameList = mask.querySelector("[data-po-game-list]");
-      if (gameList) gameList.classList.add("is-open");
       var gameToggle = mask.querySelector("[data-po-game-toggle]");
-      if (gameToggle) gameToggle.setAttribute("aria-expanded", "true");
+      if (collapse) {
+        if (gameList) gameList.classList.remove("is-open");
+        if (gameToggle) gameToggle.setAttribute("aria-expanded", "false");
+      }
       mask.querySelectorAll("[data-po-service]").forEach(function (btn) {
-        btn.classList.toggle("is-on", btn.getAttribute("data-po-service") === state.service);
+        var on = btn.getAttribute("data-po-service") === state.service;
+        btn.classList.toggle("is-on", on);
+        btn.setAttribute("aria-pressed", on ? "true" : "false");
       });
       var preview = mask.querySelector("[data-po-service-preview]");
       if (preview) preview.textContent = currentServiceLabel();
@@ -971,14 +989,50 @@
       return { fieldId: field.id, value: value };
     });
   }
-  function gameMenuHtml(services, placeholder) {
-    var label = state.service || placeholder || "请选择游戏";
-    var options = (services || []).map(function (s) {
-      var priceBit = money(s.price) > 0 ? " · RM" + money(s.price) + (s.pricingUnit ? "/" + s.pricingUnit : "") : "";
-      return '<button type="button" class="mcj-po-game-option' + (state.service === s.name ? " is-on" : "") + '" data-po-service="' + esc(s.name) + '">' + esc(s.name) + esc(priceBit) + "</button>";
-    }).join("");
-    return '<button type="button" class="mcj-po-game-trigger" data-po-game-toggle aria-expanded="true" aria-label="选择游戏"><span data-po-game-label>' + esc(label) + "</span></button>" +
-      (options ? '<div class="mcj-po-game-list is-open" data-po-game-list>' + options + "</div>" : "");
+  function gameMenuHtml(services, placeholder, opts) {
+    var list = services || [];
+    var selected = list.find(function (s) {
+      return state.service && serviceNamesMatch(s.name, state.service);
+    });
+    var open = opts && opts.open === false ? false : true;
+    var labelName = (selected && selected.name) || state.service || placeholder || "请选择服务";
+    var labelPrice = selected ? serviceCardPriceText(selected) : "";
+    var options = list
+      .map(function (s) {
+        var on = state.service && serviceNamesMatch(s.name, state.service);
+        return (
+          '<button type="button" class="mcj-po-game-option' +
+          (on ? " is-on" : "") +
+          '" data-po-service="' +
+          esc(s.name) +
+          '" aria-pressed="' +
+          (on ? "true" : "false") +
+          '">' +
+          '<span class="mcj-po-game-option-check" aria-hidden="true"></span>' +
+          '<span class="mcj-po-game-option-price">' +
+          esc(serviceCardPriceText(s)) +
+          "</span>" +
+          '<span class="mcj-po-game-option-name">' +
+          esc(s.name || "服务") +
+          "</span>" +
+          "</button>"
+        );
+      })
+      .join("");
+    return (
+      '<button type="button" class="mcj-po-game-trigger" data-po-game-toggle aria-expanded="' +
+      (open ? "true" : "false") +
+      '" aria-label="选择服务">' +
+      '<span data-po-game-label class="mcj-po-game-label">' +
+      '<strong class="mcj-po-game-label-name">' +
+      esc(labelName) +
+      "</strong>" +
+      (labelPrice ? '<em class="mcj-po-game-label-price">' + esc(labelPrice) + "</em>" : "") +
+      '</span><i class="mcj-po-game-chevron" aria-hidden="true"></i></button>' +
+      (options
+        ? '<div class="mcj-po-game-list' + (open ? " is-open" : "") + '" data-po-game-list>' + options + "</div>"
+        : "")
+    );
   }
   function bindGameMenu(mask) {
     if (!mask) return;
@@ -1009,15 +1063,21 @@
     var wrap = mask.querySelector("[data-po-game-menu]");
     if (!wrap) return;
     if (!state.servicesReady) {
-      wrap.innerHTML = gameMenuHtml([], "正在读取该陪玩的服务项目…");
+      wrap.innerHTML = gameMenuHtml([], "正在读取该陪玩的服务项目…", { open: true });
       return;
     }
     if (state.servicesError) {
-      wrap.innerHTML = gameMenuHtml([], state.servicesError);
+      wrap.innerHTML = gameMenuHtml([], state.servicesError, { open: true });
       return;
     }
     var services = resolveServices(state.companion);
-    wrap.innerHTML = gameMenuHtml(services, services.length ? "请选择游戏" : "该陪玩暂无可下单服务项目");
+    // Keep collapsed after a real selection; otherwise show the two-column picker.
+    var keepOpen = !state.service;
+    wrap.innerHTML = gameMenuHtml(
+      services,
+      services.length ? "请选择服务" : "该陪玩暂无可下单服务项目",
+      { open: keepOpen }
+    );
     bindGameMenu(mask);
     refreshServiceStandard();
   }
@@ -1341,6 +1401,7 @@
       "[data-po-total]": total,
       "[data-po-footer-unit]": unit,
       "[data-po-footer-discount]": moneyText(couponDiscountAmount()),
+      "[data-po-footer-qty]": hours + " × " + currentQuantity(),
       "[data-po-hours-label]": hours + " 小时",
     };
     Object.keys(map).forEach(function (sel) {
@@ -1509,43 +1570,21 @@
       '">' +
       '<div class="mcj-po-header">' +
       '<div class="mcj-po-header-row">' +
-      '<div class="mcj-po-header-info">' +
-      '<img src="' +
-      esc(avatarSrc(c.avatar)) +
-      '" alt="" onerror="this.onerror=null;this.src=\'' +
-      DEFAULT_AVATAR +
-      '\'">' +
       '<div class="mcj-po-header-copy">' +
       "<h3>立即下单</h3>" +
       '<div class="mcj-po-name">' +
-      esc(c.companionName) +
-      "</div>" +
-      '<div class="mcj-po-meta">' +
-      '<span class="mcj-po-pill" data-level-id="' +
-      esc(c.levelId || "") +
-      '">' +
+      esc(c.companionName || "陪玩") +
+      " · " +
       esc(c.level || "未设置等级") +
-      "</span>" +
-      '<span class="mcj-po-pill' +
-      (c.online ? " online" : "") +
-      '">' +
-      esc(c.availabilityText || (c.online ? "在线可接单" : "离线")) +
-      "</span>" +
       "</div>" +
       (companionUnavailableText()
         ? '<div class="mcj-po-avail-note" data-po-avail-note role="status">' + esc(companionUnavailableText()) + "</div>"
         : "") +
-      "</div></div>" +
+      "</div>" +
       '<button type="button" class="mcj-po-close" data-po-close aria-label="关闭">×</button>' +
       "</div></div>" +
       '<div class="mcj-po-scroll">' +
-      '<div class="mcj-po-price-card">' +
-      '<div class="mcj-po-price-row"><span>单价</span>' +
-      (state.servicesReady && !state.servicesError && state.service ? priceHeroHtml(c.unitPrice) : '<span class="mcj-po-price-hero" data-po-price-hero>' + (pricePending() ? "价格加载中" : "请选择服务") + "</span>") +
-      "<small>/ " +
-      esc(c.pricingUnit || "小时") +
-      "</small></div></div>" +
-      '<div class="mcj-po-field"><span class="mcj-po-label">游戏</span><div class="mcj-po-game" data-po-game-menu>' +
+      '<div class="mcj-po-field"><span class="mcj-po-label">选择服务</span><div class="mcj-po-game" data-po-game-menu>' +
       serviceMenu +
       "</div>" +
       '<div class="mcj-po-standard" data-po-standard aria-live="polite">' +
@@ -1616,20 +1655,21 @@
       '<p class="mcj-po-error" data-po-error hidden></p>' +
       "</div>" +
       '<div class="mcj-po-footer">' +
+      '<div class="mcj-po-price-card mcj-po-footer-price-card">' +
       '<div class="mcj-po-footer-breakdown">' +
       "<div>单价 <strong data-po-footer-unit>" +
       esc(shownUnitText()) +
       "</strong></div>" +
+      '<div>时长/数量 <strong data-po-footer-qty>' +
+      esc(currentHours() + " × " + currentQuantity()) +
+      "</strong></div>" +
       "<div>优惠金额 <strong data-po-footer-discount>" +
       esc(moneyText(couponDiscountAmount())) +
       "</strong></div>" +
-      "<div>合计 <strong data-po-footer-total>" +
+      '<div class="mcj-po-footer-sum">合计 <strong data-po-footer-total data-po-total>' +
       esc(shownTotalText()) +
       "</strong></div>" +
-      "</div>" +
-      '<div class="mcj-po-footer-total-row"><span>合计猫粮</span><strong data-po-total>' +
-      esc(shownTotalText()) +
-      "</strong></div>" +
+      "</div></div>" +
       '<p class="mcj-po-error mcj-po-footer-error" data-po-error hidden></p>' +
       '<div class="mcj-po-footer-actions">' +
       '<button type="button" class="mcj-po-add-another" data-po-add-another>再加一位陪玩</button>' +
