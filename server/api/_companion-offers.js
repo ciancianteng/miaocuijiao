@@ -121,7 +121,8 @@ function buildLevelPricing(level) {
   const max = money(level.max != null ? level.max : level.maxPrice);
   const maxPlus = !!level.maxPlus;
   const locked = !maxPlus && min > 0 && max > 0 && min === max;
-  const markupMax = maxPlus ? null : Math.max(0, Math.round((max - basePrice) * 100) / 100);
+  // X = max - base（等级限价动态计算）；maxPlus 时仍给出基准 X，超限由校验放行
+  const markupMax = Math.max(0, Math.round((max - basePrice) * 100) / 100);
   return {
     basePrice,
     min,
@@ -135,7 +136,15 @@ function buildLevelPricing(level) {
   };
 }
 
-function servicePricingSnapshot(companion, levelPricing, row, savedOffer) {
+function resolveBillingUnit(policyUnit, companion) {
+  const fromPolicy = String(policyUnit || "").trim();
+  if (fromPolicy && fromPolicy !== "猫粮" && fromPolicy !== "RM") return fromPolicy;
+  const fromCompanion = String(companion?.pricing_unit || companion?.pricingUnit || "").trim();
+  if (fromCompanion && fromCompanion !== "猫粮" && fromCompanion !== "RM") return fromCompanion;
+  return "小时";
+}
+
+function servicePricingSnapshot(companion, levelPricing, row, savedOffer, policyUnit) {
   const base = money(levelPricing.basePrice) || money(row?.default_price) || 0;
   const fromMap = companion
     ? money(priceForGame(companion, row?.name || "", row?.id || ""))
@@ -147,17 +156,22 @@ function servicePricingSnapshot(companion, levelPricing, row, savedOffer) {
   const finalPrice = fromMap > 0 ? fromMap : fromOffer > 0 ? fromOffer : base;
   const currentMarkup = Math.max(0, Math.round((finalPrice - base) * 100) / 100);
   const locked = !!levelPricing.locked;
+  const markupMax =
+    levelPricing.markupMax == null
+      ? Math.max(0, Math.round((money(levelPricing.max) - base) * 100) / 100)
+      : levelPricing.markupMax;
   return {
     basePrice: base,
     min: levelPricing.min,
     max: levelPricing.max,
     maxPlus: levelPricing.maxPlus,
-    markupMax: levelPricing.markupMax,
+    markupMax,
     currentMarkup,
     finalPrice,
     locked,
     allowAdjust: !!levelPricing.allowAdjust && !locked,
-    unit: "猫粮",
+    billingUnit: resolveBillingUnit(policyUnit, companion),
+    unit: resolveBillingUnit(policyUnit, companion),
     priceRangeText: levelPricing.priceRangeText,
   };
 }
@@ -223,7 +237,8 @@ export async function listCompanionOffers(userId, { enabledOnly = false } = {}) 
       }
       const row = serviceMap.get(item.id);
       if (!row) return null;
-      const pricing = servicePricingSnapshot(companion, levelPricing, row, item);
+      const legacyPolicy = policies[String(row.id)] || {};
+      const pricing = servicePricingSnapshot(companion, levelPricing, row, item, legacyPolicy.unit);
       return {
         ...item,
         name: row.name || "服务",
@@ -240,14 +255,20 @@ export async function listCompanionOffers(userId, { enabledOnly = false } = {}) 
 
   const catalogServices = serviceRows.map((row) => {
     const savedOffer = saved.find((item) => item.kind === "service" && String(item.id) === String(row.id));
-    const pricing = servicePricingSnapshot(companion, levelPricing, row, savedOffer || null);
     const legacyPolicy = policies[String(row.id)] || {
       min: null,
       max: null,
-      unit: "猫粮",
+      unit: "小时",
       allowSelfPrice: false,
       allowSelfOff: false,
     };
+    const pricing = servicePricingSnapshot(
+      companion,
+      levelPricing,
+      row,
+      savedOffer || null,
+      legacyPolicy.unit
+    );
     return {
       kind: "service",
       id: row.id,
@@ -256,12 +277,13 @@ export async function listCompanionOffers(userId, { enabledOnly = false } = {}) 
       icon: row.icon || "🎮",
       price: pricing.finalPrice,
       enabled: row.enabled !== false,
+      unit: pricing.billingUnit,
       pricing,
       policy: {
         ...legacyPolicy,
         min: pricing.min,
         max: pricing.max,
-        unit: "猫粮",
+        unit: pricing.billingUnit,
         allowSelfPrice: pricing.allowAdjust,
         basePrice: pricing.basePrice,
         markupMax: pricing.markupMax,
@@ -270,6 +292,7 @@ export async function listCompanionOffers(userId, { enabledOnly = false } = {}) 
         maxPlus: pricing.maxPlus,
         locked: pricing.locked,
         priceRangeText: pricing.priceRangeText,
+        billingUnit: pricing.billingUnit,
       },
     };
   });

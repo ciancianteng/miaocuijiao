@@ -2802,12 +2802,48 @@
         return;
       }
       var levelMeta=res.level||{};
+      var levelLabel=[levelMeta.code,levelMeta.name].filter(Boolean).join(' ').trim()||'未设置';
       var ordered=window.MCJServicePinyinOrder&&window.MCJServicePinyinOrder.sortByPinyin
         ? window.MCJServicePinyinOrder.sortByPinyin(catalog)
         : catalog.map(function(item,index){return {item:item,index:index};});
       var levelHint=levelMeta.priceRangeText
-        ? ('当前等级限价 '+levelMeta.priceRangeText+(levelMeta.basePrice!=null?(' · 默认售价 '+levelMeta.basePrice+' 猫粮'):''))
+        ? ('当前等级 '+levelLabel+' · 限价 '+levelMeta.priceRangeText+(levelMeta.basePrice!=null?(' · 默认售价 '+levelMeta.basePrice+' 猫粮'):''))
         : '价格按你的服务等级独立计算，只影响你自己，不影响历史订单。';
+      function billingUnitOf(item,pricing){
+        var u=String((pricing&&pricing.billingUnit)||(item.policy&&item.policy.unit)||item.unit||'小时').trim();
+        if(u==='猫粮'||!u)u='小时';
+        return u;
+      }
+      function syncOfferCardPrice(card){
+        if(!card)return;
+        var base=Number(card.getAttribute('data-base-price')||0)||0;
+        var maxPlus=card.getAttribute('data-max-plus')==='1';
+        var markupCap=Number(card.getAttribute('data-markup-cap')||0);
+        var markupEl=card.querySelector('[data-offer-markup-input]');
+        var rangeEl=card.querySelector('[data-offer-markup-range]');
+        var priceEl=card.querySelector('[data-offer-price]');
+        var markup=markupEl?Number(markupEl.value):0;
+        if(isNaN(markup)||markup<0)markup=0;
+        if(!maxPlus&&markupCap>=0&&markup>markupCap)markup=markupCap;
+        markup=Math.round(markup*100)/100;
+        if(markupEl&&String(markupEl.value)!==String(markup))markupEl.value=String(markup);
+        if(rangeEl){
+          var softMax=Number(rangeEl.max||markupCap||0);
+          if(maxPlus&&markup>softMax){
+            rangeEl.max=String(markup);
+            softMax=markup;
+          }
+          rangeEl.value=String(Math.min(markup,softMax||markup));
+        }
+        var final=Math.round((base+markup)*100)/100;
+        if(priceEl)priceEl.value=String(final);
+        var markupText=card.querySelector('[data-offer-markup]');
+        if(markupText)markupText.textContent='+'+markup+' 猫粮';
+        var finalText=card.querySelector('[data-offer-final]');
+        if(finalText)finalText.textContent=final+' 猫粮 / '+ (card.getAttribute('data-billing-unit')||'小时');
+        var quote=card.querySelector('.pw-svc-quote');
+        if(quote&&card.getAttribute('data-allow')==='1')quote.textContent='最终 '+final+' 猫粮';
+      }
       host.innerHTML='<p class="pw-note">'+esc(levelHint)+'</p><div class="pw-svc-toolbar"><button type="button" class="pw-btn" data-offers-close-all>一键关闭全部服务</button></div><div class="pw-my-service-list">'+ordered.map(function(entry){
         var item=entry.item;
         var key=item.kind+':'+item.id;
@@ -2815,20 +2851,43 @@
         var pricing=item.pricing||item.policy||{};
         var requirement=String((item.policy&&item.policy.requirements)||'').trim();
         var basePrice=pricing.basePrice!=null&&pricing.basePrice!==''&&!isNaN(Number(pricing.basePrice))?Number(pricing.basePrice):0;
-        var markupMax=pricing.markupMax==null?null:Number(pricing.markupMax);
+        var levelMax=pricing.max!=null&&pricing.max!==''&&!isNaN(Number(pricing.max))?Number(pricing.max):0;
+        var maxPlus=!!pricing.maxPlus;
+        var markupCap=pricing.markupMax==null
+          ? Math.max(0,Math.round((levelMax-basePrice)*100)/100)
+          : Math.max(0,Number(pricing.markupMax)||0);
         var finalPrice=saved&&saved.price!=null&&saved.price!==''&&!isNaN(Number(saved.price))
           ? Number(saved.price)
           : (pricing.finalPrice!=null&&pricing.finalPrice!==''&&!isNaN(Number(pricing.finalPrice))?Number(pricing.finalPrice):(item.price!=null&&item.price!==''&&!isNaN(Number(item.price))?Number(item.price):basePrice));
         if(!(finalPrice>0)&&basePrice>0)finalPrice=basePrice;
         var currentMarkup=Math.max(0,Math.round((finalPrice-basePrice)*100)/100);
+        if(!maxPlus&&markupCap>=0&&currentMarkup>markupCap)currentMarkup=markupCap;
+        finalPrice=Math.round((basePrice+currentMarkup)*100)/100;
         var accepting=!saved||saved.accepting!==false;
         var canPrice=pricing.allowAdjust===true||pricing.allowSelfPrice===true||(pricing.locked!==true&&pricing.min!=null&&pricing.max!=null);
         if(pricing.locked===true)canPrice=false;
+        var unit=billingUnitOf(item,pricing);
         var quote=(finalPrice>0?(finalPrice+' 猫粮'):'未设置');
         var headPrice=canPrice?('最终 '+quote):('🔒 已锁定 '+quote);
-        var markupMaxText=markupMax==null?(pricing.maxPlus?'不限（允许超限）':'—'):(markupMax+' 猫粮');
-        var rangeText=pricing.priceRangeText||((pricing.min!=null&&pricing.max!=null)?(pricing.min+'–'+pricing.max+(pricing.maxPlus?'+':'')+' 猫粮'):'未设置');
-        return '<article class="pw-my-service pw-svc" data-offer-card data-kind="service" data-id="'+esc(item.id)+'" data-offer-sort="'+esc(entry.index)+'" data-saved="'+(saved?'1':'0')+'" data-accepting="'+(accepting?'1':'0')+'" data-allow="'+(canPrice?'1':'0')+'" data-base-price="'+esc(basePrice)+'">'+
+        var markupMaxLabel=maxPlus
+          ? ('+'+markupCap+' 猫粮（允许超限）')
+          : ('+'+markupCap+' 猫粮');
+        var sliderMax=Math.max(markupCap,currentMarkup,0);
+        var editHtml=canPrice
+          ? ('<div class="pw-svc-markup">'+
+              '<label class="pw-svc-markup-label">加价（0～'+esc(markupCap)+(maxPlus?'，可超限':'')+'）'+
+                '<span class="pw-svc-markup-inputs">'+
+                  '<input data-offer-markup-input type="number" inputmode="decimal" step="1" min="0"'+(maxPlus?'':' max="'+esc(markupCap)+'"')+' value="'+esc(currentMarkup)+'">'+
+                  '<em>猫粮</em>'+
+                '</span>'+
+              '</label>'+
+              '<input data-offer-markup-range class="pw-svc-markup-range" type="range" min="0" max="'+esc(sliderMax)+'" step="1" value="'+esc(currentMarkup)+'"'+(sliderMax<=0&&!maxPlus?' disabled':'')+'>'+
+              '<input type="hidden" data-offer-price value="'+esc(finalPrice)+'">'+
+              '<div class="pw-svc-row"><span>最终售价</span><strong data-offer-final>'+esc(finalPrice+' 猫粮 / '+unit)+'</strong></div>'+
+              '<button class="pw-btn" type="button" data-offer-save>保存价格</button>'+
+            '</div>')
+          : ('<div class="pw-svc-row"><span>最终售价</span><strong>🔒 '+esc(quote+' / '+unit)+'</strong><em>该等级锁价，不能修改。已创建订单不受影响。</em></div>');
+        return '<article class="pw-my-service pw-svc" data-offer-card data-kind="service" data-id="'+esc(item.id)+'" data-offer-sort="'+esc(entry.index)+'" data-saved="'+(saved?'1':'0')+'" data-accepting="'+(accepting?'1':'0')+'" data-allow="'+(canPrice?'1':'0')+'" data-base-price="'+esc(basePrice)+'" data-markup-cap="'+esc(markupCap)+'" data-max-plus="'+(maxPlus?'1':'0')+'" data-billing-unit="'+esc(unit)+'">'+
           '<div class="pw-svc-head">'+
             '<button type="button" class="pw-svc-fold" data-offer-fold aria-expanded="false">'+
               '<span class="pw-svc-copy"><b class="pw-svc-name">'+esc(item.name||'服务')+'</b><span class="pw-svc-cat">'+esc(item.category||'服务')+'</span></span>'+
@@ -2839,26 +2898,31 @@
           '</div>'+
           '<div class="pw-svc-panel"><div class="pw-svc-panel-inner">'+
             '<p class="pw-my-service-status">'+(accepting?'● 接单中':'● 已关闭')+'</p>'+
-            '<div class="pw-svc-row"><span>默认售价</span><strong>'+esc(basePrice>0?(basePrice+' 猫粮'):'未设置')+'</strong></div>'+
-            '<div class="pw-svc-row"><span>可加价猫粮数</span><strong>'+esc(markupMaxText)+'</strong></div>'+
-            '<div class="pw-svc-row"><span>当前加价</span><strong data-offer-markup>'+esc(currentMarkup+' 猫粮')+'</strong></div>'+
-            '<div class="pw-svc-row"><span>允许区间</span><strong>'+esc(rangeText)+'</strong></div>'+
-            (canPrice
-              ? '<label class="pw-svc-price-edit">最终售价<span class="pw-rm"><input data-offer-price inputmode="decimal" type="number" step="1" min="0" value="'+(finalPrice>0?esc(finalPrice):'')+'"></span><em>猫粮</em></label><button class="pw-btn" type="button" data-offer-save>保存价格</button>'
-              : '<div class="pw-svc-row"><span>最终售价</span><strong>🔒 '+esc(quote)+'</strong><em>该等级锁价，不能修改。已创建订单不受影响。</em></div>')+
+            '<div class="pw-svc-row"><span>当前等级</span><strong>'+esc(levelLabel)+'</strong></div>'+
+            '<div class="pw-svc-row"><span>默认售价</span><strong>'+esc(basePrice>0?(basePrice+' 猫粮 / '+unit):'未设置')+'</strong></div>'+
+            '<div class="pw-svc-row"><span>该等级最多可加价</span><strong>'+esc(markupMaxLabel)+'</strong></div>'+
+            '<div class="pw-svc-row"><span>当前加价</span><strong data-offer-markup>'+esc('+'+currentMarkup+' 猫粮')+'</strong></div>'+
+            editHtml+
             serviceDetailsHtml({layout:'requirements',requirementsOpen:false,requirements:requirement})+
           '</div></div></article>';
       }).join('')+'</div>';
-      host.querySelectorAll('[data-offer-price]').forEach(function(inp){
-        inp.addEventListener('input',function(){
-          var card=inp.closest('[data-offer-card]');
-          if(!card)return;
-          var base=Number(card.getAttribute('data-base-price')||0)||0;
-          var final=Number(inp.value);
-          var markup=(!isNaN(final)&&final>0)?Math.max(0,Math.round((final-base)*100)/100):0;
-          var el=card.querySelector('[data-offer-markup]');
-          if(el)el.textContent=markup+' 猫粮';
-        });
+      host.querySelectorAll('[data-offer-card]').forEach(function(card){
+        var markupEl=card.querySelector('[data-offer-markup-input]');
+        var rangeEl=card.querySelector('[data-offer-markup-range]');
+        if(markupEl){
+          markupEl.addEventListener('input',function(){
+            if(rangeEl)rangeEl.value=markupEl.value;
+            syncOfferCardPrice(card);
+            card.setAttribute('data-touched','1');
+          });
+        }
+        if(rangeEl){
+          rangeEl.addEventListener('input',function(){
+            if(markupEl)markupEl.value=rangeEl.value;
+            syncOfferCardPrice(card);
+            card.setAttribute('data-touched','1');
+          });
+        }
       });
     }).catch(function(err){
       host.dataset.loaded='';
