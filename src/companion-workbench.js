@@ -2765,7 +2765,7 @@
   }
   function currentOnlineStatus(){
     var p=(state.data&&state.data.player)||{};
-    var raw=String(p.onlineStatus||p.availabilityStatus||p.availability_status||'offline').trim();
+    var raw=String(p.onlineStatus||'offline').trim();
     var s=raw.toLowerCase();
     if(STATUS_META[s])return s;
     if(window.MCJCompanionPresence&&typeof window.MCJCompanionPresence.codeFrom==='function'){

@@ -923,7 +923,7 @@ async function synthesizeMediaFallback(profile, companion, opts = {}) {
 
 function safePlayer(profile = {}, companion = {}) {
   // Unverified accounts cannot work: never expose stale busy/online to client/admin sync.
-  let onlineStatus = normalizeOnlineStatus(companion.availability_status || companion.online_status);
+  let onlineStatus = normalizeOnlineStatus(companion.online_status);
   if (!canWork(profile, companion)) onlineStatus = "offline";
   const gamePrices = readGamePrices(companion);
   const serviceTypes = parseServiceTypes(companion.service_type, {
@@ -1256,7 +1256,7 @@ function canWork(profile = {}, companion = {}, depositRow = null, identityRow = 
 function canAccept(profile = {}, companion = {}, depositRow = null, identityRow = null) {
   return (
     canWork(profile, companion, depositRow, identityRow) &&
-    normalizeOnlineStatus(companion.availability_status || companion.online_status) === "online"
+    normalizeOnlineStatus(companion.online_status) === "online"
   );
 }
 function auditLockMessage(profile = {}, companion = {}, depositRow = null, identityRow = null) {
@@ -2327,7 +2327,7 @@ async function bootstrapData(profile, companion) {
   const isolated = isCompanionIsolated(profile, companionRow);
   // Isolation forces offline immediately. Full canWork offline-heal runs after ID/deposit load.
   if (isolated) {
-    const cur = normalizeOnlineStatus(companionRow.availability_status || companionRow.online_status);
+    const cur = normalizeOnlineStatus(companionRow.online_status);
     if (cur !== "offline") {
       try {
         await supabaseJson(restUrl("companion_profiles", `?user_id=eq.${encodeURIComponent(profile.id)}`), {
@@ -2338,10 +2338,10 @@ async function bootstrapData(profile, companion) {
             updated_at: nowIso(),
           }),
         });
-        companionRow = { ...companionRow, online_status: "offline", availability_status: "offline" };
+        companionRow = { ...companionRow, online_status: "offline" };
       } catch (error) {
         warnings.push(`offline_heal: ${error.message || error}`);
-        companionRow = { ...companionRow, online_status: "offline", availability_status: "offline" };
+        companionRow = { ...companionRow, online_status: "offline" };
       }
     }
   }
@@ -2620,7 +2620,7 @@ async function bootstrapData(profile, companion) {
     : null;
   // Soft-heal online status when credential/order gate fails (approved profile but incomplete OR).
   if (!permissions.canWork && !permissions.isolationMode) {
-    const cur = normalizeOnlineStatus(companionRow.availability_status || companionRow.online_status);
+    const cur = normalizeOnlineStatus(companionRow.online_status);
     if (cur !== "offline") {
       try {
         await supabaseJson(restUrl("companion_profiles", `?user_id=eq.${encodeURIComponent(profile.id)}`), {
@@ -2628,7 +2628,7 @@ async function bootstrapData(profile, companion) {
           headers: serviceHeaders(),
           body: JSON.stringify({ online_status: "offline", updated_at: nowIso() }),
         });
-        companionRow = { ...companionRow, online_status: "offline", availability_status: "offline" };
+        companionRow = { ...companionRow, online_status: "offline" };
         player.onlineStatus = "offline";
         player.onlineStatusLabel = statusLabel("offline");
         player.workStatus = statusLabel("offline");
@@ -3518,7 +3518,7 @@ async function claimOrder(profile, companion, id) {
     });
   }
   if (!canAccept(profile, companion, authRows.deposit, authRows.identity)) {
-    const status = normalizeOnlineStatus(companion.availability_status || companion.online_status);
+    const status = normalizeOnlineStatus(companion.online_status);
     const reason =
       status === "busy"
         ? "忙碌中，无法抢新订单。"
@@ -4912,11 +4912,8 @@ return json(res, 200, {
       }
       const patch = {
         online_status: status,
-        availability_status: status,
-        status_updated_at: nowIso(),
         updated_at: nowIso(),
       };
-      if (status === "online") patch.last_online_at = nowIso();
       let rows;
       try {
         rows = await patchCompanionProfile(`?user_id=eq.${encodeURIComponent(auth.profile.id)}`, patch);
@@ -4939,7 +4936,7 @@ return json(res, 200, {
           message: "未找到陪玩资料，接单状态未保存。",
         });
       }
-      const saved = normalizeOnlineStatus(savedRow.availability_status || savedRow.online_status);
+      const saved = normalizeOnlineStatus(savedRow.online_status);
       if (saved !== status) {
         return json(res, 500, {
           ok: false,
