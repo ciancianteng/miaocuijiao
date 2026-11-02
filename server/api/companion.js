@@ -303,7 +303,14 @@ function serviceHeaders(extra = {}) {
     ...extra,
   };
 }
-async function patchCompanionProfile(query, patch, { maxRetries = 8 } = {}) {
+export function missingProfileColumn(error) {
+  const msg = `${error?.message || ""} ${typeof error?.body === "string" ? error.body : JSON.stringify(error?.body || "")}`;
+  const cached = msg.match(/Could not find the '([^']+)' column/i);
+  if (cached) return cached[1];
+  const pg = msg.match(/column (?:[\w"]+\.)?([A-Za-z_][A-Za-z0-9_]*) does not exist/i);
+  return pg ? pg[1] : "";
+}
+export async function patchCompanionProfile(query, patch, { maxRetries = 8 } = {}) {
   let body = { ...patch };
   Object.keys(body).forEach((k) => body[k] === undefined && delete body[k]);
   let lastError = null;
@@ -316,11 +323,8 @@ async function patchCompanionProfile(query, patch, { maxRetries = 8 } = {}) {
       });
     } catch (error) {
       lastError = error;
-      const msg = `${error?.message || ""} ${typeof error?.body === "string" ? error.body : JSON.stringify(error?.body || "")}`;
-      const m = msg.match(/Could not find the '([^']+)' column/i);
-      if (!m) throw error;
-      const col = m[1];
-      if (!(col in body)) throw error;
+      const col = missingProfileColumn(error);
+      if (!col || !(col in body)) throw error;
       delete body[col];
     }
   }
@@ -696,7 +700,10 @@ function humanizeCompanionApiError(error) {
   if (/HTTP\s*403|\/auth\/v1\/user/i.test(blob) && /jwt|token|expired|signature/i.test(blob)) {
     return { status: 401, message: "登录状态已过期，请重新登录后继续。" };
   }
-  if (/PGRST|PostgREST|supabase|schema cache|permission denied for/i.test(blob) && !/请|上传|删除|相册|头像|录音|视频/.test(raw)) {
+  if (/接单状态|缺少字段/.test(raw)) {
+    return { status: status >= 400 && status < 600 ? status : 500, message: raw };
+  }
+  if (/PGRST|PostgREST|supabase|schema cache|permission denied for/i.test(blob) && !/请|上传|删除|相册|头像|录音|视频|保存|接单状态|缺少字段/.test(raw)) {
     return { status: status >= 400 && status < 600 ? status : 500, message: "操作失败，请稍后重试。" };
   }
   // Never leak raw JS/runtime dumps (e.g. "Assignment to constant variable") to companion UI.
@@ -916,7 +923,7 @@ async function synthesizeMediaFallback(profile, companion, opts = {}) {
 
 function safePlayer(profile = {}, companion = {}) {
   // Unverified accounts cannot work: never expose stale busy/online to client/admin sync.
-  let onlineStatus = normalizeOnlineStatus(companion.availability_status || companion.online_status);
+  let onlineStatus = normalizeOnlineStatus(companion.online_status);
   if (!canWork(profile, companion)) onlineStatus = "offline";
   const gamePrices = readGamePrices(companion);
   const serviceTypes = parseServiceTypes(companion.service_type, {
@@ -1249,7 +1256,7 @@ function canWork(profile = {}, companion = {}, depositRow = null, identityRow = 
 function canAccept(profile = {}, companion = {}, depositRow = null, identityRow = null) {
   return (
     canWork(profile, companion, depositRow, identityRow) &&
-    normalizeOnlineStatus(companion.availability_status || companion.online_status) === "online"
+    normalizeOnlineStatus(companion.online_status) === "online"
   );
 }
 function auditLockMessage(profile = {}, companion = {}, depositRow = null, identityRow = null) {
@@ -2320,7 +2327,7 @@ async function bootstrapData(profile, companion) {
   const isolated = isCompanionIsolated(profile, companionRow);
   // Isolation forces offline immediately. Full canWork offline-heal runs after ID/deposit load.
   if (isolated) {
-    const cur = normalizeOnlineStatus(companionRow.availability_status || companionRow.online_status);
+    const cur = normalizeOnlineStatus(companionRow.online_status);
     if (cur !== "offline") {
       try {
         await supabaseJson(restUrl("companion_profiles", `?user_id=eq.${encodeURIComponent(profile.id)}`), {
@@ -2331,10 +2338,10 @@ async function bootstrapData(profile, companion) {
             updated_at: nowIso(),
           }),
         });
-        companionRow = { ...companionRow, online_status: "offline", availability_status: "offline" };
+        companionRow = { ...companionRow, online_status: "offline" };
       } catch (error) {
         warnings.push(`offline_heal: ${error.message || error}`);
-        companionRow = { ...companionRow, online_status: "offline", availability_status: "offline" };
+        companionRow = { ...companionRow, online_status: "offline" };
       }
     }
   }
@@ -2613,7 +2620,7 @@ async function bootstrapData(profile, companion) {
     : null;
   // Soft-heal online status when credential/order gate fails (approved profile but incomplete OR).
   if (!permissions.canWork && !permissions.isolationMode) {
-    const cur = normalizeOnlineStatus(companionRow.availability_status || companionRow.online_status);
+    const cur = normalizeOnlineStatus(companionRow.online_status);
     if (cur !== "offline") {
       try {
         await supabaseJson(restUrl("companion_profiles", `?user_id=eq.${encodeURIComponent(profile.id)}`), {
@@ -2621,7 +2628,7 @@ async function bootstrapData(profile, companion) {
           headers: serviceHeaders(),
           body: JSON.stringify({ online_status: "offline", updated_at: nowIso() }),
         });
-        companionRow = { ...companionRow, online_status: "offline", availability_status: "offline" };
+        companionRow = { ...companionRow, online_status: "offline" };
         player.onlineStatus = "offline";
         player.onlineStatusLabel = statusLabel("offline");
         player.workStatus = statusLabel("offline");
@@ -3511,7 +3518,7 @@ async function claimOrder(profile, companion, id) {
     });
   }
   if (!canAccept(profile, companion, authRows.deposit, authRows.identity)) {
-    const status = normalizeOnlineStatus(companion.availability_status || companion.online_status);
+    const status = normalizeOnlineStatus(companion.online_status);
     const reason =
       status === "busy"
         ? "忙碌中，无法抢新订单。"
@@ -4905,40 +4912,50 @@ return json(res, 200, {
       }
       const patch = {
         online_status: status,
-        availability_status: status,
-        status_updated_at: nowIso(),
         updated_at: nowIso(),
       };
-      if (status === "online") patch.last_online_at = nowIso();
+      let rows;
       try {
-        const rows = await supabaseJson(restUrl("companion_profiles", `?user_id=eq.${encodeURIComponent(auth.profile.id)}`), {
-          method: "PATCH",
-          headers: serviceHeaders(),
-          body: JSON.stringify(patch),
-        });
-        await recordOnlineSession(auth.profile.id, status);
-        return json(res, 200, {
-          ok: true,
-          message: ({ online: "已设为在线可接单", busy: "已设为忙碌", paused: "已暂停接单", offline: "已离线" })[status],
-          onlineStatus: status,
-          onlineStatusLabel: statusLabel(status),
-          profile: rows?.[0] || null,
-        });
-      } catch (e) {
-        const rows = await supabaseJson(restUrl("companion_profiles", `?user_id=eq.${encodeURIComponent(auth.profile.id)}`), {
-          method: "PATCH",
-          headers: serviceHeaders(),
-          body: JSON.stringify({ online_status: status, updated_at: nowIso() }),
-        });
-        await recordOnlineSession(auth.profile.id, status === "online" ? "online" : "offline");
-        return json(res, 200, {
-          ok: true,
-          message: ({ online: "已设为在线可接单", busy: "已设为忙碌", paused: "已暂停接单", offline: "已离线" })[status],
-          onlineStatus: status,
-          onlineStatusLabel: statusLabel(status),
-          profile: rows?.[0] || null,
+        rows = await patchCompanionProfile(`?user_id=eq.${encodeURIComponent(auth.profile.id)}`, patch);
+      } catch (error) {
+        const col = missingProfileColumn(error);
+        const detail = col
+          ? `缺少字段 ${col}`
+          : String(error?.message || error || "数据库拒绝写入").replace(/\s*\(HTTP[\s\S]*$/, "").trim();
+        return json(res, error?.status || 500, {
+          ok: false,
+          code: "ONLINE_STATUS_WRITE_FAILED",
+          message: `接单状态保存失败：${detail || "请稍后重试"}`,
         });
       }
+      const savedRow = Array.isArray(rows) ? rows[0] : null;
+      if (!savedRow) {
+        return json(res, 409, {
+          ok: false,
+          code: "COMPANION_PROFILE_MISSING",
+          message: "未找到陪玩资料，接单状态未保存。",
+        });
+      }
+      const saved = normalizeOnlineStatus(savedRow.online_status);
+      if (saved !== status) {
+        return json(res, 500, {
+          ok: false,
+          code: "ONLINE_STATUS_MISMATCH",
+          message: `接单状态保存失败：写入后仍为${statusLabel(saved)}`,
+        });
+      }
+      try {
+        await recordOnlineSession(auth.profile.id, status);
+      } catch {
+        /* presence log is optional; online_status is already stored */
+      }
+      return json(res, 200, {
+        ok: true,
+        message: ({ online: "已设为在线可接单", busy: "已设为忙碌", paused: "已暂停接单", offline: "已离线" })[status],
+        onlineStatus: saved,
+        onlineStatusLabel: statusLabel(saved),
+        profile: savedRow,
+      });
     }
     if (action === "save_service_standard") {
       const serviceId = String(body.serviceId || body.service_id || "").trim();
