@@ -31,6 +31,37 @@ function isMissingBasePriceColumn(error) {
   const text = String(error?.message || error || "");
   return /PGRST204/i.test(text) && /base_price/i.test(text);
 }
+
+/** Scheme A: admin-managed per-level markup cap. Stored in benefits marker (no game_prices writes). */
+const MARKUP_ALLOWANCE_RE = /\[\[MCJ_MARKUP_ALLOWANCE:(\d+(?:\.\d+)?)\]\]/g;
+
+export function stripMarkupAllowanceMarker(benefits = "") {
+  return String(benefits || "")
+    .replace(MARKUP_ALLOWANCE_RE, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+export function extractMarkupAllowance(row = {}) {
+  for (const raw of [row.markupAllowance, row.markup_allowance, row.maxMarkupCats, row.max_markup_cats]) {
+    if (raw == null || raw === "") continue;
+    const n = Number(raw);
+    if (Number.isFinite(n) && n >= 0) return Math.round(n * 100) / 100;
+  }
+  const m = String(row.benefits || "").match(/\[\[MCJ_MARKUP_ALLOWANCE:(\d+(?:\.\d+)?)\]\]/);
+  if (m) {
+    const n = Number(m[1]);
+    if (Number.isFinite(n) && n >= 0) return Math.round(n * 100) / 100;
+  }
+  return 0;
+}
+
+export function embedMarkupAllowance(benefits = "", markup = 0) {
+  const clean = stripMarkupAllowanceMarker(benefits);
+  const n = Math.max(0, Math.round(Number(markup || 0) * 100) / 100);
+  return `${clean}${clean ? "\n" : ""}[[MCJ_MARKUP_ALLOWANCE:${n}]]`;
+}
+
 function rowFromDb(row = {}, index = 0) {
   return normalizeLevelRow(
     {
@@ -49,6 +80,7 @@ function rowFromDb(row = {}, index = 0) {
       max: row.max_price,
       maxPlus: row.max_plus,
       basePrice: row.base_price != null ? row.base_price : row.min_price,
+      markupAllowance: row.markup_allowance != null ? row.markup_allowance : undefined,
       commissionRate: row.commission_rate,
       upgradeCondition: row.upgrade_condition,
       description: row.description,
@@ -65,6 +97,7 @@ function rowFromDb(row = {}, index = 0) {
 }
 function rowToDb(row) {
   const item = normalizeLevelRow(row);
+  // Legacy min/max/base/maxPlus kept as-is for schema compatibility; Scheme A admin SoT is markupAllowance.
   return {
     id: item.id,
     level: item.level,
@@ -86,7 +119,7 @@ function rowToDb(row) {
     description: item.description,
     requirements: item.requirements || "",
     downgrade_condition: item.downgradeCondition || "",
-    benefits: item.benefits || "",
+    benefits: embedMarkupAllowance(item.benefits, item.markupAllowance),
     sort_order: item.sort,
     is_open: item.open,
     is_enabled: item.enabled,
@@ -303,13 +336,14 @@ export function normalizeLevelRow(row = {}, index = 0) {
     max,
     maxPlus: row.maxPlus === true || row.maxPlus === "true" || row.allowAboveMax === true || row.maximum_price_plus === true,
     basePrice,
+    markupAllowance: extractMarkupAllowance(row),
     commissionRate: Math.max(0, Math.min(100, Number(row.commissionRate ?? row.commission ?? fallback.commissionRate ?? 20))),
     upgradeCondition: String(row.upgradeCondition || row.upgrade_condition || fallback.upgradeCondition || ""),
     description: String(row.description || row.desc || fallback.description || ""),
-      requirements: String(row.requirements || row.requirement || ""),
-      downgradeCondition: String(row.downgradeCondition || row.downgrade_condition || ""),
-      benefits: String(row.benefits || row.benefit || ""),
-      sort: Number.isFinite(Number(row.sort)) ? Number(row.sort) : levelNo,
+    requirements: String(row.requirements || row.requirement || ""),
+    downgradeCondition: String(row.downgradeCondition || row.downgrade_condition || ""),
+    benefits: stripMarkupAllowanceMarker(row.benefits || row.benefit || ""),
+    sort: Number.isFinite(Number(row.sort)) ? Number(row.sort) : levelNo,
     open: row.open !== false && row.open !== "否" && row.open !== "关闭",
     enabled: row.enabled !== false && row.enabled !== "停用" && row.status !== "disabled",
     updated_at: row.updated_at || row.updatedAt || new Date().toISOString(),
@@ -534,9 +568,11 @@ export function validateLevelConfig(row = {}, { requireId = false } = {}) {
   if (!CARD_BACKGROUNDS.has(String(item.cardBackground || ""))) {
     errors.push("card_background 必须是 solid / gradient / glass");
   }
-  if (!(Number(item.min) >= 0)) errors.push("min_price 必须 ≥ 0");
-  if (!(Number(item.max) >= Number(item.min))) errors.push("max_price 必须 ≥ min_price");
-  if (!(Number(item.basePrice) > 0)) errors.push("base_price（等级默认售价）必须 > 0");
+  // Legacy price columns kept for schema compatibility only — not admin SoT for game sell prices.
+  if (!(Number(item.min) >= 0)) errors.push("兼容字段 min_price 必须 ≥ 0");
+  if (!(Number(item.max) >= Number(item.min))) errors.push("兼容字段 max_price 必须 ≥ min_price");
+  if (!(Number(item.basePrice) > 0)) errors.push("兼容字段 base_price 必须 > 0");
+  if (!(Number(item.markupAllowance) >= 0)) errors.push("本等级最多可加价必须 ≥ 0");
   if (!(Number(item.commissionRate) >= 0 && Number(item.commissionRate) <= 100)) {
     errors.push("commission_rate 必须在 0–100");
   }
@@ -572,6 +608,7 @@ export function levelVisualConfig(level) {
   if (!level) return null;
   const item = normalizeLevelRow(level);
   const priceRangeLabel = item.maxPlus ? `${item.min}–${item.max}+` : `${item.min}–${item.max}`;
+  const markupAllowance = Math.max(0, Number(item.markupAllowance) || 0);
   return {
     id: item.id,
     level: item.level,
@@ -592,8 +629,10 @@ export function levelVisualConfig(level) {
     maxPrice: item.max,
     basePrice: item.basePrice,
     maxPlus: item.maxPlus,
+    markupAllowance,
+    maxMarkupCats: markupAllowance,
     priceRangeLabel,
-    priceRangeText: `${priceRangeLabel} 猫粮`,
+    priceRangeText: `最多可加价 +${markupAllowance} 猫粮`,
     commissionRate: item.commissionRate,
   };
 }
@@ -621,6 +660,8 @@ export function toPublicLevel(level) {
     maxPrice: item.max,
     basePrice: item.basePrice,
     maxPlus: item.maxPlus,
+    markupAllowance: visual.markupAllowance,
+    maxMarkupCats: visual.markupAllowance,
     priceRangeLabel: visual.priceRangeLabel,
     priceRangeText: visual.priceRangeText,
     commissionRate: item.commissionRate,
@@ -645,6 +686,8 @@ export function toPublicLevel(level) {
       minPrice: item.min,
       maxPrice: item.max,
       maxPlus: item.maxPlus,
+      basePrice: item.basePrice,
+      markupAllowance: visual.markupAllowance,
       commissionRate: item.commissionRate,
       upgradeCondition: item.upgradeCondition,
       description: item.description,

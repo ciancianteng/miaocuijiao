@@ -56,11 +56,8 @@ function verifyPublished(levels, expected) {
   for (const item of want) {
     const match = got.find((row) => String(row.id) === String(item.id));
     if (!match) return { ok: false, message: `校验失败：缺少等级 ${item.code || item.id}。` };
-    if (Number(match.min) !== Number(item.min) || Number(match.max) !== Number(item.max)) {
-      return { ok: false, message: `校验失败：${item.code} 价格区间未写入。` };
-    }
-    if (Number(match.basePrice) !== Number(item.basePrice)) {
-      return { ok: false, message: `校验失败：${item.code} base_price 未写入。` };
+    if (Number(match.markupAllowance) !== Number(item.markupAllowance)) {
+      return { ok: false, message: `校验失败：${item.code} 最多可加价未写入。` };
     }
     if (Number(match.commissionRate) !== Number(item.commissionRate)) {
       return { ok: false, message: `校验失败：${item.code} 抽成未写入。` };

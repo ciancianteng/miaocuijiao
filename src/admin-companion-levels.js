@@ -46,9 +46,13 @@
     return state.levels.find(function (item) { return String(item.id) === String(state.selectedId); }) || state.levels[0] || null;
   }
 
+  function markupText(level) {
+    var x = level && level.markupAllowance != null ? Number(level.markupAllowance) : Number(level && level.maxMarkupCats);
+    if (!isFinite(x) || x < 0) x = 0;
+    return "+" + x + " 猫粮";
+  }
   function rangeText(level) {
-    if (Levels && Levels.formatRange) return Levels.formatRange(level);
-    return (level.min || 0) + "-" + (level.max || 0) + (level.maxPlus ? "+" : "") + " 猫粮";
+    return "最多可加价 " + markupText(level);
   }
 
   function cardBgLabel(value) {
@@ -86,12 +90,12 @@
                   esc(level.code) + " " + esc(level.name) +
                 "</span>" +
               "</div>" +
-              '<div class="level-preview-rate" style="color:' + esc(level.displayColor) + '">等级限价 ' + esc(rangeText(level)) + " 猫粮</div>" +
+              '<div class="level-preview-rate" style="color:' + esc(level.displayColor) + '">' + esc(rangeText(level)) + "</div>" +
             "</div>" +
           "</div>" +
           '<div class="level-preview-meta">' +
             '<div class="level-preview-meta-card"><span>卡片背景</span><strong>' + esc(cardBgLabel(level.cardBackground)) + "</strong></div>" +
-            '<div class="level-preview-meta-card"><span>默认售价</span><strong>' + esc(level.basePrice != null ? level.basePrice : level.min) + "</strong></div>" +
+            '<div class="level-preview-meta-card"><span>最多可加价</span><strong>' + esc(markupText(level)) + "</strong></div>" +
             '<div class="level-preview-meta-card"><span>平台抽成</span><strong>' + esc(level.commissionRate) + "%</strong></div>" +
             '<div class="level-preview-meta-card"><span>状态</span><strong>' + (level.enabled ? "启用" : "停用") + " · " + (level.open ? "开放申请" : "关闭申请") + "</strong></div>" +
             '<div class="level-preview-meta-card"><span>边框色</span><strong>' + esc(border) + "</strong></div>" +
@@ -149,11 +153,8 @@
           '<label><span>图标颜色</span><input name="badgeIcon" type="color" value="' + esc(level.badgeIcon || level.color || "#9CA3AF") + '"></label>' +
           '<label><span>卡片背景</span><select name="cardBackground" data-admin-control="select">' + bgOptions + "</select></label>"
         ) +
-        moduleBlock("③ 接单规则", "默认售价 SoT · 自定义限价区间 · 平台抽成",
-          '<label><span>等级默认售价 base_price（猫粮）</span><input name="basePrice" type="number" min="1" step="1" value="' + esc(level.basePrice != null ? level.basePrice : level.min) + '" required><span class="muted" style="font-size:11px;font-weight:600">售卖价 SoT；无自定义价时使用</span></label>' +
-          '<label><span>自定义最低限价（猫粮）</span><input name="min" type="number" min="0" step="1" value="' + esc(level.min) + '" required></label>' +
-          '<label><span>自定义最高限价（猫粮）</span><input name="max" type="number" min="0" step="1" value="' + esc(level.max) + '" required></label>' +
-          '<label><span>允许超过最高限价</span><select name="maxPlus" data-admin-control="switch"><option value="false"' + (!level.maxPlus ? " selected" : "") + '>否</option><option value="true"' + (level.maxPlus ? " selected" : "") + '>是</option></select></label>' +
+        moduleBlock("③ 接单规则", "本等级最多可加价 · 平台抽成（不改游戏基础售价）",
+          '<label><span>本等级最多可加价（猫粮）</span><input name="markupAllowance" type="number" min="0" step="1" value="' + esc(level.markupAllowance != null ? level.markupAllowance : 0) + '" required><span class="muted" style="font-size:11px;font-weight:600">各游戏独立原价不变；此处只配置允许加价额度 X，默认 0</span></label>' +
           '<label><span>平台抽成 %</span><input name="commissionRate" type="number" min="0" max="100" step="0.1" value="' + esc(level.commissionRate) + '"><span class="muted" style="font-size:11px;font-weight:600">发布后同步该等级陪玩；历史已结算订单不变</span></label>'
         ) +
         moduleBlock("④ 升级规则", "升级条件与等级说明",
@@ -166,7 +167,7 @@
           '<button class="ghost-btn" type="button" data-level-add>新增下一级</button>' +
           '<button class="ghost-btn" type="button" data-level-delete="' + esc(level.id) + '">删除</button>' +
         "</div>" +
-        '<p class="admin-sync-note" style="margin:0">「保存当前等级」只写入当前等级；「发布到全站」保存全部并同步陪玩大厅 / 详情 / 限价 / 抽成 / 四端展示。</p>' +
+        '<p class="admin-sync-note" style="margin:0">「保存当前等级」只写入当前等级加价额度与抽成；「发布到全站」同步四端展示。不会批量改写游戏基础售价。</p>' +
       "</form>"
     );
   }
@@ -302,16 +303,19 @@
       badgeBorder: String(fd.get("badgeBorder") || "#9CA3AF"),
       badgeText: String(fd.get("badgeText") || "#ffffff"),
       badgeIcon: String(fd.get("badgeIcon") || "#9CA3AF"),
-      min: Number(fd.get("min") || 0),
-      max: Number(fd.get("max") || 0),
-      maxPlus: String(fd.get("maxPlus")) === "true",
-      basePrice: Number(fd.get("basePrice") || fd.get("min") || 0),
+      // Preserve legacy price columns unchanged — Scheme A only edits markupAllowance.
+      min: current.min != null ? Number(current.min) : 0,
+      max: current.max != null ? Number(current.max) : 0,
+      maxPlus: !!current.maxPlus,
+      basePrice: current.basePrice != null ? Number(current.basePrice) : (current.min != null ? Number(current.min) : 20),
+      markupAllowance: Math.max(0, Number(fd.get("markupAllowance") || 0)),
       commissionRate: Number(fd.get("commissionRate") || 0),
       sort: Number(fd.get("sort") || current.sort || 1),
       open: String(fd.get("open")) !== "false",
       enabled: String(fd.get("enabled")) !== "false",
       upgradeCondition: String(fd.get("upgradeCondition") || ""),
       description: String(fd.get("description") || ""),
+      benefits: current.benefits || "",
     });
   }
 
@@ -501,13 +505,16 @@
       badgeIcon: "#D1D5DB",
       min: 20,
       max: 30,
+      maxPlus: false,
       basePrice: 20,
+      markupAllowance: 0,
       commissionRate: 20,
       sort: state.levels.length + 1,
       open: true,
       enabled: true,
       upgradeCondition: "订单数：\n好评率：\n认证完成：",
       description: "",
+      benefits: "",
     });
     state.levels.push(next);
     state.dirty = true;

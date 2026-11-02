@@ -106,13 +106,21 @@
       0,
       Number(basePriceRaw != null && basePriceRaw !== "" ? basePriceRaw : (base.basePrice != null ? base.basePrice : merged.min))
     );
+    var markupRaw = merged.markupAllowance != null ? merged.markupAllowance : (merged.maxMarkupCats != null ? merged.maxMarkupCats : (merged.markup_allowance != null ? merged.markup_allowance : null));
+    if (markupRaw == null || markupRaw === "") {
+      var markupMatch = String(merged.benefits || "").match(/\[\[MCJ_MARKUP_ALLOWANCE:(\d+(?:\.\d+)?)\]\]/);
+      markupRaw = markupMatch ? markupMatch[1] : 0;
+    }
+    merged.markupAllowance = Math.max(0, Number(markupRaw) || 0);
+    merged.maxMarkupCats = merged.markupAllowance;
+    merged.benefits = String(merged.benefits || "").replace(/\[\[MCJ_MARKUP_ALLOWANCE:(\d+(?:\.\d+)?)\]\]/g, "").replace(/\n{3,}/g, "\n\n").trim();
     merged.commissionRate = Math.max(0, Math.min(100, Number(merged.commissionRate != null ? merged.commissionRate : (merged.commission != null ? merged.commission : (base.commissionRate != null ? base.commissionRate : 0)))));
     merged.description = String(merged.description || merged.desc || base.description || "");
     merged.upgradeCondition = String(merged.upgradeCondition || merged.upgrade_condition || base.upgradeCondition || "");
     merged.sort = Number(merged.sort || merged.sort_weight || merged.level);
     merged.open = merged.open !== false && merged.open !== "否" && merged.open !== "关闭";
     merged.enabled = merged.enabled !== false && merged.enabled !== "停用" && merged.status !== "disabled";
-    merged.priceRangeLabel = merged.maxPlus ? (merged.min + "–" + merged.max + "+") : (merged.min + "–" + merged.max);
+    merged.priceRangeLabel = "最多可加价 +" + merged.markupAllowance;
     merged.priceRangeText = merged.priceRangeLabel + " 猫粮";
     merged.title = (merged.code + " " + merged.name).trim();
     return merged;
