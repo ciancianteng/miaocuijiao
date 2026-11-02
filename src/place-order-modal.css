@@ -828,8 +828,28 @@ body.mcj-po-discord-open{overflow:hidden}
 .mcj-po-game-trigger{display:flex;align-items:center;width:100%;min-height:44px;padding:10px 14px;border-radius:12px;border:1px solid rgba(243,168,203,.35);background:#141218;color:#fff;font-size:16px;text-align:left}
 .mcj-po-game-trigger span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .mcj-po-game-list{display:none;gap:6px;max-height:220px;margin-top:8px;overflow:auto;padding:8px;border-radius:12px;border:1px solid rgba(243,168,203,.28);background:#100e14}
-.mcj-po-game-list.is-open{display:grid}
-.mcj-po-game-option{min-height:40px;padding:8px 10px;border:0;border-radius:10px;background:transparent;color:#fff;font-size:15px;text-align:left;overflow-wrap:anywhere}
+.mcj-po-game-list.is-open{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  align-items:stretch;
+}
+.mcj-po-game-option{
+  min-width:0;
+  min-height:40px;
+  height:auto;
+  padding:8px 10px;
+  border:0;
+  border-radius:10px;
+  background:transparent;
+  color:#fff;
+  font-size:15px;
+  text-align:left;
+  white-space:normal;
+  overflow-wrap:anywhere;
+  word-break:break-word;
+  line-height:1.35;
+  box-sizing:border-box;
+}
 .mcj-po-game-option.is-on{background:rgba(244,166,200,.18);color:#ffd6ea}
 .mcj-po-stepper{display:grid;grid-template-columns:44px minmax(0,1fr) 44px;align-items:center;height:44px;border:1px solid rgba(243,168,203,.35);border-radius:12px;background:#141218;overflow:hidden}
 .mcj-po-stepper button{height:44px;border:0;background:transparent;color:#ffd6ea;font-size:22px}
