@@ -133,7 +133,15 @@
     );
   }
   function statusCode(row) {
-    var code = String(row.application_status || row.applicationStatus || row.verification_status || row.auditStatus || "").toLowerCase();
+    // Prefer machine codes only — never Chinese labels (applicationStatus/auditStatus).
+    var code = String(
+      row.application_status ||
+        (row.application && row.application.status) ||
+        row.verification_status ||
+        ""
+    ).toLowerCase();
+    if (/已通过/.test(code)) code = "approved";
+    if (/待审核|审核中/.test(code)) code = "pending";
     var submitted = row.application_submitted_at || row.applicationSubmittedAt;
     if (!submitted && !/approved|verified|passed|rejected|resubmit|need_more|^draft$|草稿/.test(code)) return "draft";
     return code || "pending";

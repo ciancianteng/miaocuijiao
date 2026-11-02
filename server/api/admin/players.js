@@ -179,10 +179,10 @@ async function requireAdmin(req) {
 function normalizeStatusInput(value, fallback = "pending") {
   const text = String(value || "").trim();
   if (!text) return fallback;
-  // Order matters: "unpaid" contains "paid" — match unpaid first.
+  // Order matters: "unpaid" contains "paid"; "approved" must win over "pending" substring traps.
   if (/未缴纳|unpaid/i.test(text)) return "unpaid";
-  if (/待审核|pending|审核中/i.test(text)) return "pending";
   if (/已通过|approved|已认证|verified|已缴纳|^paid$|已到账/i.test(text)) return "approved";
+  if (/待审核|pending|审核中/i.test(text)) return "pending";
   if (/已驳回|已拒绝|rejected/i.test(text)) return "rejected";
   if (/重新提交|resubmit|待补充/i.test(text)) return "resubmit";
   if (/已退回|refunded/i.test(text)) return "refunded";
@@ -1736,23 +1736,55 @@ async function reviewApplication(req, companion, payload) {
   }
   let after;
   try {
-    after = await companionDb(PLAYER_TABLE, `?id=eq.${encodeURIComponent(companion.id)}`, {
-      method: "PATCH",
-      body: JSON.stringify(patch),
-    });
+    after = await patchCompanionRow(companion.id, patch);
   } catch (patchErr) {
-    // Older schemas may lack application_reviewed_* columns — retry without them.
-    if (!/application_reviewed|column|schema cache|PGRST/i.test(String(patchErr?.message || patchErr || ""))) {
-      throw patchErr;
+    // Last-resort: status-only write so approve/reject never silently leave pending.
+    if (status !== "approved" && status !== "rejected" && status !== "resubmit") throw patchErr;
+    const core = {
+      application_status: status === "approved" ? "approved" : status,
+      verification_status: status === "approved" ? "approved" : status,
+      allow_orders: status === "approved",
+      online_status: status === "approved" ? patch.online_status || companion.online_status || "offline" : "offline",
+      updated_at: reviewedAt,
+    };
+    if (status !== "approved") core.application_reject_reason = reason || "";
+    try {
+      after = await patchCompanionRow(companion.id, core);
+    } catch (coreErr) {
+      throw Object.assign(
+        new Error(`审核状态写入失败：${coreErr?.message || patchErr?.message || coreErr || patchErr}`),
+        { status: 500, code: "APPLICATION_STATUS_WRITE_FAILED" }
+      );
     }
-    const fallback = { ...patch };
-    delete fallback.application_reviewed_at;
-    delete fallback.application_reviewed_by;
-    after = await companionDb(PLAYER_TABLE, `?id=eq.${encodeURIComponent(companion.id)}`, {
-      method: "PATCH",
-      body: JSON.stringify(fallback),
-    });
   }
+  // Re-read SoT — Prefer:return can be empty; never report成功 while DB still pending.
+  let verifiedRow = (await getCompanion(companion.id)) || null;
+  if (status === "approved" && !isApplicationApproved(verifiedRow || {})) {
+    const force = {
+      application_status: "approved",
+      verification_status: "approved",
+      allow_orders: patch.allow_orders === false ? false : true,
+      updated_at: reviewedAt,
+    };
+    after = await patchCompanionRow(companion.id, force);
+    verifiedRow = (await getCompanion(companion.id)) || null;
+    if (!isApplicationApproved(verifiedRow || {})) {
+      throw Object.assign(new Error("审核通过未写入数据库，申请仍为待审核。请重试。"), {
+        status: 500,
+        code: "APPROVE_NOT_PERSISTED",
+      });
+    }
+  }
+  if ((status === "rejected" || status === "resubmit") && verifiedRow) {
+    const st = String(verifiedRow.application_status || "").toLowerCase();
+    if (/approved|verified|passed/.test(st)) {
+      throw Object.assign(new Error("驳回未写入数据库，申请仍为已通过。请重试。"), {
+        status: 500,
+        code: "REJECT_NOT_PERSISTED",
+      });
+    }
+  }
+  if (verifiedRow) after = [verifiedRow];
   // Keep cert-side rows in sync with application decision (single SoT for list/detail/companion).
   try {
     if (status === "approved" || status === "rejected" || status === "resubmit") {

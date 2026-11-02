@@ -1263,7 +1263,8 @@
     if(/HTTP\s*403|HTTP\s*401/i.test(text) && /auth|jwt|token/i.test(text)){
       return '登录状态已过期，请重新登录后继续。';
     }
-    if(/HTTP\s*\d{3}|PGRST|PostgREST|supabase/i.test(text) && !/请|上传|删除|相册|头像|录音|视频|保存|网络/.test(text)){
+    if(/接单状态|缺少字段|未找到陪玩资料/.test(text))return text;
+    if(/HTTP\s*\d{3}|PGRST|PostgREST|supabase/i.test(text) && !/请|上传|删除|相册|头像|录音|视频|保存|网络|接单状态|缺少字段/.test(text)){
       return '操作失败，请稍后重试。';
     }
     return text.replace(/^上传失败：\s*/,'');
