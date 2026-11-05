@@ -386,12 +386,133 @@
   width: auto !important;
 }
 
-@media (max-width: 700px) {
+/* Desktop: compact card chrome stays hidden; table layout unchanged */
+#playerManagement .player-card-facts,
+#playerManagement .player-expand-btn {
+  display: none;
+}
+
+/*
+ * Mobile compact cards (historical layout).
+ * Replaces the 28504836 @media(max-width:700px) stacked data-label rows
+ * that forced every field onto its own line.
+ */
+@media (max-width: 900px) {
+  #playerManagement {
+    overflow-x: clip;
+    min-width: 0 !important;
+    max-width: 100% !important;
+  }
+
+  /* Prevent grid/flex min-content from blowing past the phone width */
+  #playerManagement .player-admin-page {
+    grid-template-columns: minmax(0, 1fr) !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    width: 100% !important;
+  }
+
+  #playerManagement #playerManagementTable,
+  #playerManagement .player-table-shell {
+    min-width: 0 !important;
+    max-width: 100% !important;
+    width: 100% !important;
+  }
+
+  #playerManagement .admin-section-head p {
+    display: none;
+  }
+
+  #playerManagement .admin-section-head h3 {
+    color: #fff;
+    font-size: 18px;
+  }
+
+  #playerManagement .player-filter-panel {
+    padding: 10px !important;
+  }
+
+  #playerManagement .player-filter-main {
+    flex-wrap: nowrap !important;
+    gap: 6px !important;
+  }
+
+  #playerManagement .player-filter-panel .player-keyword,
+  #playerManagement .player-filter-panel [data-player-search] {
+    flex: 1 1 auto !important;
+    width: auto !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    height: 40px !important;
+    color: #fff;
+    font-size: 15px;
+  }
+
+  #playerManagement .player-filter-panel .mini-btn {
+    flex: 0 0 auto !important;
+    width: auto !important;
+    min-width: 0 !important;
+    height: 40px !important;
+    padding: 0 10px !important;
+  }
+
+  #playerManagement .content-admin-toolbar.compact,
+  #playerManagement [data-player-batch-bar] {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 8px;
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    box-sizing: border-box;
+  }
+
+  #playerManagement .content-admin-toolbar select,
+  #playerManagement .content-admin-toolbar .mini-btn,
+  #playerManagement .content-admin-toolbar .admin-select,
+  #playerManagement .content-admin-toolbar .admin-select-trigger,
+  #playerManagement [data-player-batch-bar] .admin-select,
+  #playerManagement [data-player-batch-bar] .admin-select-trigger {
+    height: 36px;
+    font-size: 14px;
+    color: #fff;
+    width: auto;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    box-sizing: border-box;
+  }
+
+  #playerManagement [data-player-batch-bar] .admin-select {
+    flex: 1 1 160px;
+  }
+
+  #playerManagement [data-player-batch-bar] .admin-select-trigger {
+    width: 100% !important;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  #playerManagement .player-pagination.compact {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    box-sizing: border-box;
+    flex-wrap: wrap;
+  }
+
   #playerManagement .player-table-wrap {
     overflow: visible !important;
     max-height: none !important;
     height: auto !important;
     min-height: 0 !important;
+    border: 0;
+    background: transparent;
+    touch-action: pan-y;
+    overscroll-behavior: auto;
+    -webkit-overflow-scrolling: auto;
   }
 
   #playerManagement .player-data-table {
@@ -404,40 +525,191 @@
   }
 
   #playerManagement .player-data-table,
-  #playerManagement .player-data-table tbody,
-  #playerManagement .player-data-table tr {
+  #playerManagement .player-data-table tbody {
     display: block !important;
-    width: auto !important;
+    width: 100% !important;
     min-width: 0 !important;
   }
 
-  #playerManagement .player-data-table tr {
-    padding: 8px 0;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  #playerManagement .player-admin-page,
+  #playerManagement .player-table-shell,
+  #playerManagement .player-table-wrap,
+  #playerManagement .player-data-table,
+  #playerManagement .player-data-table tbody {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    box-sizing: border-box !important;
+    overflow-x: clip !important;
+  }
+
+  #playerManagement .player-data-table tr.player-list-row {
+    display: grid !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    box-sizing: border-box !important;
+    grid-template-columns: 28px 48px minmax(0, 1fr);
+    grid-template-areas:
+      "pick avatar name"
+      "facts facts facts"
+      "actions actions actions"
+      "extra extra extra";
+    gap: 8px 10px;
+    margin: 0 0 10px;
+    padding: 12px;
+    border: 1px solid rgba(244, 166, 200, 0.35);
+    border-radius: 14px;
+    background: #221c28;
+    overflow: hidden;
   }
 
   #playerManagement .player-data-table td,
   #playerManagement .player-data-table td.player-action-cell {
-    display: flex !important;
-    justify-content: space-between;
-    align-items: center;
-    gap: 8px;
+    display: block !important;
     width: auto !important;
     min-width: 0 !important;
     height: auto !important;
     max-height: none !important;
     position: static !important;
+    padding: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
     white-space: normal !important;
     overflow: visible !important;
-    box-shadow: none !important;
-    padding: 6px 0 !important;
-    background: transparent !important;
+    text-overflow: clip !important;
+    border: 0 !important;
+    color: #fff;
+    font-size: 15px;
+  }
+
+  #playerManagement .player-data-table td.player-pick { grid-area: pick; align-self: center; }
+  #playerManagement .player-data-table td.avatar-cell { grid-area: avatar; }
+  #playerManagement .player-data-table td.player-name-cell { grid-area: name; min-width: 0; }
+  #playerManagement .player-data-table td.player-action-cell { grid-area: actions; }
+  #playerManagement .player-data-table td.player-extra { grid-area: extra; }
+
+  #playerManagement .player-data-table td.player-id,
+  #playerManagement .player-data-table td.player-level,
+  #playerManagement .player-data-table td.player-audit,
+  #playerManagement .player-data-table td.player-extra,
+  #playerManagement .player-name-meta,
+  #playerManagement .player-more-wrap {
+    display: none !important;
+  }
+
+  #playerManagement .player-data-table tr.is-expanded {
+    display: flex !important;
+    flex-wrap: wrap;
+    align-items: center;
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    box-sizing: border-box;
+  }
+
+  #playerManagement .player-data-table tr.is-expanded td.player-pick { order: 1; }
+  #playerManagement .player-data-table tr.is-expanded td.avatar-cell { order: 2; }
+  #playerManagement .player-data-table tr.is-expanded td.player-name-cell { order: 3; flex: 1 1 140px; min-width: 0 !important; }
+  #playerManagement .player-data-table tr.is-expanded td.player-action-cell { order: 4; flex: 1 1 100%; max-width: 100% !important; }
+  #playerManagement .player-data-table tr.is-expanded td.player-extra { order: 5; flex: 1 1 100%; max-width: 100% !important; }
+
+  #playerManagement .player-data-table tr.is-expanded td.player-extra,
+  #playerManagement .player-data-table tr.is-expanded .player-name-meta,
+  #playerManagement .player-data-table tr.is-expanded .player-more-wrap {
+    display: flex !important;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 8px;
+    width: 100%;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    box-sizing: border-box;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  #playerManagement .player-data-table tr.is-expanded td.player-extra::before {
+    content: attr(data-label) !important;
+    display: block !important;
+    color: #f0c6da;
+    font-size: 13px;
+    flex: 0 0 auto;
   }
 
   #playerManagement .player-data-table td::before {
-    content: attr(data-label) !important;
-    display: block !important;
-    color: rgba(255, 255, 255, 0.5);
-    font-size: 12px;
+    content: none !important;
+    display: none !important;
+  }
+
+  #playerManagement .player-card-facts {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 8px;
+    margin-top: 4px;
+    color: #fff;
+    font-size: 14px;
+    line-height: 1.35;
+  }
+
+  #playerManagement .player-card-facts b,
+  #playerManagement .player-card-facts em,
+  #playerManagement .player-card-facts .player-card-game {
+    color: #fff;
+    font-style: normal;
+    font-weight: 650;
+  }
+
+  #playerManagement .player-card-facts .player-card-game {
+    opacity: 0.92;
+  }
+
+  #playerManagement .player-name-cell,
+  #playerManagement .player-name-link,
+  #playerManagement .player-card-facts {
+    min-width: 0;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+  }
+
+  #playerManagement .player-name-link {
+    color: #fff;
+    font-size: 16px;
+  }
+
+  #playerManagement .player-ops .mini-btn {
+    min-width: 0 !important;
+  }
+
+  #playerManagement .player-expand-btn {
+    display: inline-flex;
+    align-items: center;
+  }
+
+  #playerManagement .player-ops {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    gap: 6px;
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    box-sizing: border-box;
+  }
+
+  #playerManagement .player-action-cell,
+  #playerManagement .player-data-table td:last-child {
+    position: static !important;
+    right: auto !important;
+    width: auto !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    box-shadow: none !important;
+  }
+
+  #playerManagement .player-pagination {
+    color: #f3e7ee;
+    font-size: 14px;
   }
 }

@@ -1524,7 +1524,9 @@ body[data-admin-section="bosses"] .topbar-actions .admin-profile-menu {
 .player-name-link:hover{text-decoration:underline}
 .player-empty-state{min-height:180px;display:grid;place-content:center;color:var(--muted);text-align:center;border:1px dashed rgba(255,255,255,.10);border-radius:14px;margin-top:12px;background:rgba(0,0,0,.12)}
 .player-bulk-actions{display:none!important}
-@media(max-width:700px){.player-list-toolbar{grid-template-columns:1fr 1fr}.player-table-shell table,.player-table-shell thead,.player-table-shell tbody,.player-table-shell tr,.player-table-shell th,.player-table-shell td{display:block}.player-table-shell thead{display:none}.player-list-row{padding:12px;border-bottom:1px solid rgba(255,255,255,.08)}.player-table-shell td{display:flex;justify-content:space-between;gap:12px;padding:7px 0!important}.player-table-shell td:nth-child(1){width:auto}.player-table-shell td::before{content:attr(data-label);color:var(--muted);font-weight:760}.player-table-shell td:nth-child(1)::before{content:'头像'}}
+/* Mobile player cards are owned by admin-player-management.css (#playerManagement).
+   Do not reintroduce stacked data-label rows here — that caused the compact-card regression. */
+@media(max-width:700px){.player-list-toolbar{grid-template-columns:1fr 1fr}}
 @media(max-width:640px){.player-list-toolbar{grid-template-columns:1fr}}
 /* admin-order-menu-fix */
 .nav-parent:not([data-toggle-group])::after{display:none!important}
@@ -2835,9 +2837,10 @@ body[data-admin-section="players"] .player-filter-main .mini-btn{flex:none;width
 .player-filter-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:10px}
 body[data-admin-section="players"] .player-table-shell .player-table-wrap{overflow:auto!important;-webkit-overflow-scrolling:touch;touch-action:pan-x pan-y;overscroll-behavior:contain;max-height:calc(100dvh - 230px)!important;height:auto!important}
 body[data-admin-section="players"] #section-players{min-height:0;overflow:auto;-webkit-overflow-scrolling:touch}
-@media(max-width:700px){
+/* Align with compact-card breakpoint in admin-player-management.css */
+@media(max-width:900px){
   body[data-admin-section="players"] .player-table-shell .player-table-wrap{overflow:visible!important;max-height:none!important;height:auto!important;min-height:0!important}
   body[data-admin-section="players"] .player-data-table{min-width:0!important;width:100%!important}
   body[data-admin-section="players"] .player-data-table th,
-  body[data-admin-section="players"] .player-data-table td{height:auto!important;max-height:none!important;position:static!important;white-space:normal!important;overflow:visible!important}
+  body[data-admin-section="players"] .player-data-table td{height:auto!important;max-height:none!important;position:static!important;white-space:normal!important;overflow:visible!important;text-overflow:clip!important}
 }
