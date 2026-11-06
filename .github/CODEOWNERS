@@ -1,0 +1,13 @@
+# MCJ-PLACE-ORDER-UI-APPROVED-V1 — changes require owner review.
+# NOTE: GitHub only enforces CODEOWNERS when branch protection
+# "Require review from Code Owners" is enabled. Without that setting,
+# this file is advisory only.
+
+src/place-order-modal.css @ciancianteng
+src/place-order-modal.js @ciancianteng
+place-order.html @ciancianteng
+docs/ui-baselines/MCJ-PLACE-ORDER-UI-APPROVED-V1/ @ciancianteng
+.cursor/rules/place-order-ui-approved-v1.mdc @ciancianteng
+scripts/verify-place-order-ui-freeze.mjs @ciancianteng
+scripts/verify-place-order-ui-freeze-live.mjs @ciancianteng
+.github/workflows/place-order-ui-freeze.yml @ciancianteng

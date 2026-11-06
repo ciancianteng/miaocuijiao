@@ -258,11 +258,15 @@
     return h;
   }
   function ensureCss() {
-    if (document.querySelector('link[data-mcj-place-order-css]')) return;
-    var link = document.createElement("link");
-    link.rel = "stylesheet";
-    link.href = "/src/place-order-modal.css?v=20261106poUi4";
-    link.setAttribute("data-mcj-place-order-css", "1");
+    var href = "/src/place-order-modal.css?v=20261106poUi8";
+    var link = document.querySelector('link[data-mcj-place-order-css]');
+    if (!link) {
+      link = document.createElement("link");
+      link.rel = "stylesheet";
+      link.setAttribute("data-mcj-place-order-css", "1");
+    }
+    if (link.getAttribute("href") !== href) link.setAttribute("href", href);
+    // Always append last so source CSS wins over stale Vite-bundled place-order CSS.
     document.head.appendChild(link);
   }
   function toast(msg) {
@@ -915,6 +919,7 @@
     }
     refreshServiceStandard();
     refreshTotals();
+    syncHoursStepper();
     syncInheritedGameIdField();
     loadOrderRequirementFields();
   }
@@ -1004,12 +1009,11 @@
           '" aria-pressed="' +
           (on ? "true" : "false") +
           '">' +
-          '<span class="mcj-po-game-option-check" aria-hidden="true"></span>' +
-          '<span class="mcj-po-game-option-price">' +
-          esc(serviceCardPriceText(s)) +
-          "</span>" +
           '<span class="mcj-po-game-option-name">' +
           esc(s.name || "服务") +
+          "</span>" +
+          '<span class="mcj-po-game-option-price">' +
+          esc(serviceCardPriceText(s)) +
           "</span>" +
           "</button>"
         );
@@ -1166,6 +1170,35 @@
     if (n < MIN_ORDER_HOURS) n = MIN_ORDER_HOURS;
     if (n > MAX_ORDER_HOURS) n = MAX_ORDER_HOURS;
     return n;
+  }
+  function currentPricingUnit() {
+    var svc = confirmedServiceItem() || selectedServiceItem();
+    return (
+      String((svc && svc.pricingUnit) || (state.companion && state.companion.pricingUnit) || "小时").trim() ||
+      "小时"
+    );
+  }
+  function hoursAdjustable() {
+    var unit = currentPricingUnit();
+    // 套餐 / 一口价等固定计费不可加减；小时 / 局 / 场 / 次可调。
+    return !/套餐|一口价|固定|整单|不可调/.test(unit);
+  }
+  function hoursLabelText() {
+    return currentHours() + " " + currentPricingUnit();
+  }
+  function syncHoursStepper(mask) {
+    var root = mask || activeMask();
+    if (!root) return;
+    var label = root.querySelector("[data-po-hours-label]");
+    if (label) label.textContent = hoursLabelText();
+    var can = hoursAdjustable();
+    root.querySelectorAll("[data-po-hours-step]").forEach(function (btn) {
+      btn.disabled = !can;
+      btn.setAttribute("aria-disabled", can ? "false" : "true");
+      btn.classList.toggle("is-disabled", !can);
+    });
+    var stepper = root.querySelector(".mcj-po-stepper");
+    if (stepper) stepper.classList.toggle("is-locked", !can);
   }
   function currentServiceLabel() {
     return String(state.service || "").trim() || "未选择服务";
@@ -1373,12 +1406,13 @@
       "[data-po-footer-unit]": unit,
       "[data-po-footer-discount]": moneyText(couponDiscountAmount()),
       "[data-po-footer-qty]": hours + " × " + currentQuantity(),
-      "[data-po-hours-label]": hours + " 小时",
+      "[data-po-hours-label]": hoursLabelText(),
     };
     Object.keys(map).forEach(function (sel) {
       var el = document.querySelector(sel);
       if (el) el.textContent = map[sel];
     });
+    syncHoursStepper();
     var priceHero = document.querySelector("[data-po-price-hero]");
     if (priceHero) priceHero.textContent = pricePending() ? "价格加载中" : (confirmedServiceItem() ? moneyText(confirmedServiceItem().price) : "请选择服务");
     refreshSchedulePreview();
@@ -1387,17 +1421,38 @@
       paintPayCards();
     }
   }
+  function clearCouponViewportStyles(modal) {
+    if (!modal) return;
+    ["top", "left", "width", "height", "right", "bottom"].forEach(function (k) {
+      modal.style[k] = "";
+    });
+    var sheet = modal.querySelector(".mcj-po-coupon-sheet");
+    if (sheet) {
+      sheet.style.maxHeight = "";
+      sheet.style.width = "";
+    }
+  }
   function layoutCouponViewport(modal) {
     if (!modal) return;
     var sheet = modal.querySelector(".mcj-po-coupon-sheet");
     if (!sheet) return;
     var vv = window.visualViewport;
+    var top = vv ? Math.max(0, Math.floor(vv.offsetTop || 0)) : 0;
+    var left = vv ? Math.max(0, Math.floor(vv.offsetLeft || 0)) : 0;
+    var vw = Math.floor((vv && vv.width) || window.innerWidth || document.documentElement.clientWidth || 390);
     var vh = Math.floor((vv && vv.height) || window.innerHeight || document.documentElement.clientHeight || 640);
+    // Pin to visualViewport — iOS Safari/PWA fixed overlays otherwise drift / leave a dead dark mask.
+    modal.style.top = top + "px";
+    modal.style.left = left + "px";
+    modal.style.right = "auto";
+    modal.style.bottom = "auto";
+    modal.style.width = vw + "px";
+    modal.style.height = vh + "px";
     var mobile = window.matchMedia && window.matchMedia("(max-width: 767px)").matches;
-    // Keep sheet fully inside the visual viewport; header stays outside the scroll body.
-    var reserve = mobile ? 8 : 24;
-    var maxH = Math.max(220, vh - reserve);
+    var reserve = mobile ? 12 : 28;
+    var maxH = Math.max(200, Math.min(vh - reserve, Math.floor(vh * 0.88)));
     sheet.style.maxHeight = maxH + "px";
+    sheet.style.width = mobile ? "100%" : "";
   }
   function bindCouponViewportSync(modal) {
     if (!modal || modal.__mcjCouponVvBound) return;
@@ -1412,35 +1467,56 @@
       window.visualViewport.addEventListener("scroll", sync);
     }
   }
-  function closeCouponPicker(mask) {
-    var modal =
+  function resolveCouponModal(mask) {
+    return (
+      document.querySelector("[data-mcj-po-coupon-portal].is-open") ||
       document.querySelector("[data-mcj-po-coupon-portal]") ||
       (mask && mask.querySelector("[data-po-coupon-modal]")) ||
-      document.querySelector("[data-po-coupon-modal]");
-    if (!modal) return;
+      document.querySelector("[data-po-coupon-modal]")
+    );
+  }
+  function isCouponPickerOpen() {
+    var modal = resolveCouponModal(activeMask());
+    return !!(modal && !modal.hidden && modal.classList.contains("is-open"));
+  }
+  function closeCouponPicker(mask) {
+    var modal = resolveCouponModal(mask);
+    if (!modal) {
+      document.documentElement.classList.remove("mcj-po-coupon-open");
+      return;
+    }
     modal.hidden = true;
     modal.classList.remove("is-open");
     document.documentElement.classList.remove("mcj-po-coupon-open");
-    var sheet = modal.querySelector(".mcj-po-coupon-sheet");
-    if (sheet) sheet.style.maxHeight = "";
+    clearCouponViewportStyles(modal);
+  }
+  function mountCouponPortal(modal) {
+    if (!modal) return modal;
+    var host = document.documentElement || document.body;
+    if (modal.parentElement !== host) {
+      modal.setAttribute("data-mcj-po-coupon-portal", "1");
+      host.appendChild(modal);
+    }
+    return modal;
   }
   function openCouponPicker(mask) {
     if (!mask) return;
-    var modal = mask.querySelector("[data-po-coupon-modal]") || document.querySelector("[data-mcj-po-coupon-portal]");
+    var modal = resolveCouponModal(mask);
     if (!modal) return;
     var list = modal.querySelector("[data-po-coupon-list]");
     if (!list) return;
-    // Escape order-mask containing block (backdrop-filter) so sheet sits above dialog/footer.
-    if (modal.parentElement !== document.documentElement && modal.parentElement !== document.body) {
-      modal.setAttribute("data-mcj-po-coupon-portal", "1");
-      (document.documentElement || document.body).appendChild(modal);
-    }
+    // Must leave order-mask (backdrop-filter creates a fixed containing block → sheet clips / black-freeze).
+    modal = mountCouponPortal(modal);
+    bindCouponChrome(modal, mask);
     modal.hidden = false;
     modal.classList.add("is-open");
     document.documentElement.classList.add("mcj-po-coupon-open");
     layoutCouponViewport(modal);
     bindCouponViewportSync(modal);
-    list.innerHTML = "<p>正在读取优惠券…</p>";
+    requestAnimationFrame(function () {
+      if (!modal.hidden) layoutCouponViewport(modal);
+    });
+    list.innerHTML = "<p class=\"mcj-po-coupon-empty\">正在读取优惠券…</p>";
     var seq = (openCouponPicker._seq = (openCouponPicker._seq || 0) + 1);
     fetch("/api/orders", {
       method: "POST",
@@ -1462,7 +1538,7 @@
           return true;
         });
         if (!rows.length) {
-          list.innerHTML = "<p>暂无优惠券</p>";
+          list.innerHTML = '<p class="mcj-po-coupon-empty">暂无可用优惠券</p>';
           return;
         }
         list.innerHTML = rows.map(function (item) {
@@ -1504,7 +1580,7 @@
       })
       .catch(function () {
         if (seq !== openCouponPicker._seq) return;
-        list.innerHTML = "<p>优惠券读取失败</p>";
+        list.innerHTML = '<p class="mcj-po-coupon-empty">优惠券读取失败，请关闭后重试</p>';
       });
   }
 
@@ -1613,23 +1689,41 @@
     mask.setAttribute("data-mcj-po-mask", "1");
     mask.setAttribute("role", "presentation");
 
+    var statusLabel =
+      String(c.availabilityText || "").trim() ||
+      (c.online ? "在线可接单" : "离线");
+    var statusOn = !companionUnavailableText();
     mask.innerHTML =
       '<div class="mcj-po-dialog" role="dialog" aria-modal="true" aria-label="立即下单" style="' +
       dialogInlineStyle() +
       '">' +
       '<div class="mcj-po-header">' +
       '<div class="mcj-po-header-row">' +
+      '<div class="mcj-po-header-info">' +
+      '<img src="' +
+      esc(c.avatar || DEFAULT_AVATAR) +
+      '" alt="" width="52" height="52" loading="lazy" decoding="async" onerror="this.src=\'' +
+      DEFAULT_AVATAR +
+      '\'">' +
       '<div class="mcj-po-header-copy">' +
       "<h3>立即下单</h3>" +
       '<div class="mcj-po-name">' +
       esc(c.companionName || "陪玩") +
-      " · " +
+      "</div>" +
+      '<div class="mcj-po-meta">' +
+      '<span class="mcj-po-pill">' +
       esc(c.level || "未设置等级") +
+      "</span>" +
+      '<span class="mcj-po-pill' +
+      (statusOn ? " online" : "") +
+      '">' +
+      esc(statusLabel) +
+      "</span>" +
       "</div>" +
       (companionUnavailableText()
         ? '<div class="mcj-po-avail-note" data-po-avail-note role="status">' + esc(companionUnavailableText()) + "</div>"
         : "") +
-      "</div>" +
+      "</div></div>" +
       '<button type="button" class="mcj-po-close" data-po-close aria-label="关闭">×</button>' +
       "</div></div>" +
       '<div class="mcj-po-scroll">' +
@@ -1639,10 +1733,18 @@
       '<div class="mcj-po-standard" data-po-standard aria-live="polite">' +
       serviceStandardHtml(selectedServiceItem()) +
       "</div></div>" +
-      '<div class="mcj-po-field"><span class="mcj-po-label">服务时长</span><div class="mcj-po-stepper" role="group" aria-label="服务时长">' +
-      '<button type="button" class="mcj-po-step" data-po-hours-step="-1" aria-label="减少1小时">−</button>' +
-      '<span class="mcj-po-step-value" data-po-hours-label>' + esc(currentHours()) + " 小时</span>" +
-      '<button type="button" class="mcj-po-step" data-po-hours-step="1" aria-label="增加1小时">+</button>' +
+      '<div class="mcj-po-field"><span class="mcj-po-label">服务时长</span><div class="mcj-po-stepper' +
+      (hoursAdjustable() ? "" : " is-locked") +
+      '" role="group" aria-label="服务时长">' +
+      '<button type="button" class="mcj-po-step" data-po-hours-step="-1" aria-label="减少" ' +
+      (hoursAdjustable() ? "" : "disabled ") +
+      ">−</button>" +
+      '<span class="mcj-po-step-value" data-po-hours-label>' +
+      esc(hoursLabelText()) +
+      "</span>" +
+      '<button type="button" class="mcj-po-step" data-po-hours-step="1" aria-label="增加" ' +
+      (hoursAdjustable() ? "" : "disabled ") +
+      ">+</button>" +
       "</div></div>" +
       gameIdFieldHtml() +
       '<div data-po-requirements></div>' +
@@ -1687,17 +1789,16 @@
       (state.voiceMode === "discord" ? " active" : "") +
       '" data-po-voice="discord" aria-pressed="' +
       (state.voiceMode === "discord" ? "true" : "false") +
-      '"><span class="mcj-po-voice-card-icon" aria-hidden="true">🎧</span>' +
-      '<span class="mcj-po-voice-card-title">Discord语音房</span>' +
-      '<span class="mcj-po-voice-card-desc">下单后使用 Discord 私人语音房沟通</span></button>' +
+      '"><span class="mcj-po-voice-card-title">Discord 语音房</span></button>' +
       '<button type="button" class="mcj-po-voice-card' +
       (state.voiceMode !== "discord" ? " active" : "") +
       '" data-po-voice="game_mic" aria-pressed="' +
       (state.voiceMode !== "discord" ? "true" : "false") +
-      '"><span class="mcj-po-voice-card-icon" aria-hidden="true">🎮</span>' +
-      '<span class="mcj-po-voice-card-title">游戏麦</span>' +
-      '<span class="mcj-po-voice-card-desc">使用游戏内语音沟通</span></button>' +
-      "</div></div>" +
+      '"><span class="mcj-po-voice-card-title">游戏麦</span></button>' +
+      "</div>" +
+      '<p class="mcj-po-voice-hint" data-po-voice-hint>' +
+      (state.voiceMode === "discord" ? "下单后客服协助对接 Discord 私人语音房" : "使用游戏内语音沟通") +
+      "</p></div>" +
       '<div class="mcj-po-pay-block"><div class="mcj-po-pay-label">支付方式</div><div class="mcj-po-pay-grid" data-po-pay-grid>' +
       payCards +
       "</div></div>" +
@@ -1743,6 +1844,10 @@
       return;
     }
 
+    // Coupon must never live under mask (backdrop-filter → fixed containing block → black freeze).
+    var couponEarly = mask.querySelector("[data-po-coupon-modal]");
+    if (couponEarly) mountCouponPortal(couponEarly);
+
     lockScroll(true);
     openGuard = false;
 
@@ -1784,10 +1889,13 @@
     if (!window.__MCJPoEscBound) {
       window.__MCJPoEscBound = true;
       document.addEventListener("keydown", function (ev) {
-        if (ev.key === "Escape" && state.open) {
-          ev.preventDefault();
-          close();
+        if (ev.key !== "Escape" || !state.open) return;
+        ev.preventDefault();
+        if (isCouponPickerOpen()) {
+          closeCouponPicker(activeMask());
+          return;
         }
+        close();
       });
     }
     bindGameMenu(mask);
@@ -1795,6 +1903,7 @@
     mask.querySelectorAll("[data-po-hours-step]").forEach(function (btn) {
       btn.addEventListener("click", function (ev) {
         ev.preventDefault();
+        if (!hoursAdjustable() || btn.disabled) return;
         var now = Date.now();
         if (now - hoursTapAt < 90) return;
         hoursTapAt = now;
@@ -1831,35 +1940,8 @@
         openCouponPicker(mask);
       });
     }
-    function bindCouponChrome(root) {
-      if (!root || root.getAttribute("data-po-coupon-chrome-bound") === "1") return;
-      root.setAttribute("data-po-coupon-chrome-bound", "1");
-      root.addEventListener("click", function (ev) {
-        var t = ev.target;
-        if (!t) return;
-        if (t.closest && t.closest("[data-po-coupon-close]")) {
-          ev.preventDefault();
-          closeCouponPicker(mask);
-          return;
-        }
-        if (t.closest && t.closest("[data-po-coupon-clear]")) {
-          ev.preventDefault();
-          state.couponId = "";
-          state.couponCode = "";
-          state.couponQuote = null;
-          closeCouponPicker(mask);
-          var label = mask.querySelector("[data-po-coupon-label]");
-          if (label) label.textContent = "可用优惠券";
-          refreshTotals();
-          return;
-        }
-        // Backdrop tap closes; sheet content does not.
-        if (t === root || (t.classList && t.classList.contains("mcj-po-coupon-modal"))) {
-          closeCouponPicker(mask);
-        }
-      });
-    }
-    bindCouponChrome(mask.querySelector("[data-po-coupon-modal]"));
+    var couponModalEl = mask.querySelector("[data-po-coupon-modal]");
+    if (couponModalEl) bindCouponChrome(couponModalEl, mask);
     mask.querySelectorAll("[data-po-pay]").forEach(function (btn) {
       btn.addEventListener("click", function () {
         if (btn.disabled) return;
@@ -1999,6 +2081,39 @@
     return false;
   }
 
+  function bindCouponChrome(root, mask) {
+    if (!root || root.getAttribute("data-po-coupon-chrome-bound") === "1") return;
+    root.setAttribute("data-po-coupon-chrome-bound", "1");
+    root.addEventListener("click", function (ev) {
+      var t = ev.target;
+      if (!t) return;
+      if (t.closest && t.closest("[data-po-coupon-close]")) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        closeCouponPicker(mask || activeMask());
+        return;
+      }
+      if (t.closest && t.closest("[data-po-coupon-clear]")) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        state.couponId = "";
+        state.couponCode = "";
+        state.couponQuote = null;
+        closeCouponPicker(mask || activeMask());
+        var label =
+          (mask && mask.querySelector("[data-po-coupon-label]")) ||
+          document.querySelector("[data-po-coupon-label]");
+        if (label) label.textContent = "可用优惠券";
+        refreshTotals();
+        return;
+      }
+      // Backdrop tap closes; sheet content does not.
+      if (t === root || (t.classList && t.classList.contains("mcj-po-coupon-modal"))) {
+        closeCouponPicker(mask || activeMask());
+      }
+    });
+  }
+
   function paintVoiceCards(mask) {
     if (!mask) return;
     mask.querySelectorAll("[data-po-voice]").forEach(function (b) {
@@ -2007,6 +2122,12 @@
       b.classList.toggle("active", on);
       b.setAttribute("aria-pressed", on ? "true" : "false");
     });
+    var hint = mask.querySelector("[data-po-voice-hint]");
+    if (hint) {
+      hint.textContent =
+        state.voiceMode === "discord" ? "下单后客服协助对接 Discord 私人语音房" : "使用游戏内语音沟通";
+      hint.hidden = false;
+    }
   }
 
   function closeDiscordLayer() {

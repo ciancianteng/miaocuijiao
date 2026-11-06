@@ -35,7 +35,9 @@
     "verify:boss-order-form-simplify": "node scripts/verify-boss-order-form-simplify.mjs",
     "verify:invite-confirm-rewards": "node scripts/verify-invite-confirm-rewards-offline.mjs",
     "verify:boss-vip": "node scripts/verify-boss-vip-offline.mjs",
-    "verify:discord-order-voice": "node scripts/verify-discord-order-voice-offline.mjs"
+    "verify:discord-order-voice": "node scripts/verify-discord-order-voice-offline.mjs",
+    "verify:place-order-ui-freeze": "node scripts/verify-place-order-ui-freeze.mjs",
+    "verify:place-order-ui-freeze:live": "node scripts/verify-place-order-ui-freeze-live.mjs"
   },
   "dependencies": {
     "@vitejs/plugin-react": "latest",

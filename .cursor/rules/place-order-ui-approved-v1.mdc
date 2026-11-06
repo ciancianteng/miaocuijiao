@@ -1,0 +1,52 @@
+---
+description: MCJ-PLACE-ORDER-UI-APPROVED-V1 — 立即下单弹窗 UI 永久基准锁定
+alwaysApply: true
+---
+
+# 立即下单 UI 永久基准（MCJ-PLACE-ORDER-UI-APPROVED-V1）
+
+自 2026-11-06 起，老板已确认 Staging「立即下单」UI 为正式标准。  
+Git Tag：`MCJ-PLACE-ORDER-UI-APPROVED-V1`  
+视觉基准：`docs/ui-baselines/MCJ-PLACE-ORDER-UI-APPROVED-V1/`
+
+## 锁定范围（未经老板明确批准禁止改）
+
+- 两项服务左右并排（双列，禁止改成上下排列）
+- 服务名称靠左、价格靠右、同行 `space-between`
+- 服务卡片高度、间距、圆角、颜色、选中态
+- 服务时长右侧 − N 单位 +
+- 游戏 ID / 段位 / 服务时间区域
+- 优惠券区域及交互
+- 订单金额结算区域
+- 「再加一位陪玩」与支付按钮
+- 弹窗整体宽度、高度及滚动行为
+- 桌面端与移动端响应式（含 390px 两项仍并排）
+
+涉及文件（默认禁止改视觉/布局）：
+
+- `src/place-order-modal.css`
+- `src/place-order-modal.js`（含 CSS cache bust / `ensureCss` 加载顺序）
+- `place-order.html` 及各页对上述资源的引用版本号
+- `src/design-system.css` 中与 `.mcj-po-*` 相关的 button 豁免选择器
+- `docs/ui-baselines/MCJ-PLACE-ORDER-UI-APPROVED-V1/**`
+
+## 允许
+
+- 后端 API、订单/客服/陪玩/钱包/抢单等业务逻辑（不得顺带改上述 UI）
+- **严重 Bug**：崩溃、无法打开弹窗、无法下单/支付、数据错乱、安全漏洞 — 最小改动，不得借机重构 UI
+
+## 执行原则
+
+```
+// ❌ 未经老板明确批准
+改服务卡片布局、时长排版、优惠券交互、弹窗尺寸、顺带“优化”旧版 CSS
+
+// ❌ 用旧 CSS / 旧组件 / 旧缓存版本号覆盖 V1
+回退到名称在上价格在下、或单列堆叠
+
+// ✅ 允许
+只改 API / 状态机 / 非下单弹窗页面；修严重 Bug 时保持 V1 视觉不变
+```
+
+若任务需要改锁定 UI：先停下来，向老板说明范围并等待明确批准。  
+回归检查：`npm run verify:place-order-ui-freeze`
