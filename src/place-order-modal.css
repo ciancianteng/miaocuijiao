@@ -895,7 +895,7 @@ body.mcj-po-discord-open{overflow:hidden}
   min-height:44px;padding:4px 8px;border:0;border-radius:0;background:transparent;overflow:visible
 }
 .mcj-po-step{
-  width:28px;height:28px;padding:0;border:0;border-radius:999px;background:transparent;
+  width:28px;height:28px;padding:0;border:0 !important;outline:none;box-shadow:none;border-radius:999px;background:transparent;
   color:rgba(255,214,231,.78);font-size:20px;font-weight:500;line-height:1;
   display:inline-flex;align-items:center;justify-content:center;cursor:pointer;
   transition:color .15s ease,background .15s ease,transform .12s ease;
