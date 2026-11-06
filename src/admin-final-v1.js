@@ -1058,19 +1058,39 @@
   }
   var adminNotices=[];
   function paintAdminNotices(items){
-    adminNotices=items||[];
+    adminNotices=Array.isArray(items)?items:[];
     var badge=document.getElementById('adminNoticeBadge');
     var list=document.getElementById('adminNoticeList');
-    var unread=adminNotices.filter(function(n){return !n.readAt}).length;
-    if(badge){badge.hidden=unread<1;badge.textContent=unread>99?'99+':String(unread);}
+    var unread=adminNotices.filter(function(n){return !(n&&n.readAt);}).length;
+    if(badge){
+      if(unread<1){
+        badge.hidden=true;
+        badge.setAttribute('hidden','');
+        badge.textContent='';
+      }else{
+        badge.hidden=false;
+        badge.removeAttribute('hidden');
+        badge.textContent=unread>99?'99+':String(unread);
+      }
+    }
     if(!list)return;
     list.innerHTML=adminNotices.length?adminNotices.map(function(n){
       return '<button type="button" class="admin-notice-item'+(n.readAt?' is-read':'')+'" data-admin-notice="'+esc(n.id)+'" data-admin-notice-href="'+esc(n.href||'')+'"><strong>'+esc(n.title)+'</strong><span>'+esc(n.body)+'</span><small>'+esc(n.at||'')+(n.relatedId?' · '+esc(n.relatedId):'')+'</small></button>';
     }).join(''):'<div class="admin-notice-empty">暂无通知</div>';
   }
+  function applyNoticeResponse(res){
+    if(res&&Array.isArray(res.notifications)){
+      paintAdminNotices(res.notifications);
+      return;
+    }
+    return loadAdminNotices();
+  }
   function loadAdminNotices(){
     if(!Auth)return Promise.resolve();
-    return get('/api/admin/notifications').then(function(res){paintAdminNotices(res.notifications||[]);}).catch(function(){});
+    return get('/api/admin/notifications').then(function(res){
+      paintAdminNotices((res&&res.notifications)||[]);
+      return res;
+    }).catch(function(){return null;});
   }
   document.addEventListener('click',function(e){
     var preset=e.target.closest&&e.target.closest('[data-dash-preset]');
@@ -1099,12 +1119,15 @@
     var readAll=e.target.closest&&e.target.closest('#adminNoticeReadAll');
     if(readAll){
       e.preventDefault();
-      adminNotices.forEach(function(n){if(!n.readAt)n.readAt=new Date().toISOString();});
+      var stampAll=new Date().toISOString();
+      adminNotices.forEach(function(n){if(!n.readAt)n.readAt=stampAll;});
       paintAdminNotices(adminNotices);
       post('/api/admin/notifications',{action:'mark_all_read'}).then(function(res){
-        if(!res||res.ok===false){alert((res&&res.message)||'已读状态写入失败');loadAdminNotices();return;}
+        applyNoticeResponse(res);
+      }).catch(function(err){
+        alert((err&&err.message)||'已读状态写入失败');
         loadAdminNotices();
-      }).catch(function(err){alert((err&&err.message)||'已读状态写入失败');loadAdminNotices();});
+      });
       return;
     }
     var link=e.target.closest&&e.target.closest('[data-admin-notice]');
@@ -1112,13 +1135,16 @@
       e.preventDefault();
       var nid=link.getAttribute('data-admin-notice');
       var href=link.getAttribute('data-admin-notice-href')||'';
-      adminNotices.forEach(function(n){if(String(n.id)===String(nid)&&!n.readAt)n.readAt=new Date().toISOString();});
+      var stampOne=new Date().toISOString();
+      adminNotices.forEach(function(n){if(String(n.id)===String(nid)&&!n.readAt)n.readAt=stampOne;});
       paintAdminNotices(adminNotices);
       post('/api/admin/notifications',{action:'mark_read',id:nid}).then(function(res){
-        if(!res||res.ok===false){alert((res&&res.message)||'已读状态写入失败');loadAdminNotices();return;}
+        applyNoticeResponse(res);
         if(href)location.href=href;
-        else loadAdminNotices();
-      }).catch(function(err){alert((err&&err.message)||'已读状态写入失败');loadAdminNotices();});
+      }).catch(function(err){
+        alert((err&&err.message)||'已读状态写入失败');
+        loadAdminNotices();
+      });
       return;
     }
     if(panel&&!panel.hidden&&!(e.target.closest&&e.target.closest('.admin-notice')))panel.hidden=true;

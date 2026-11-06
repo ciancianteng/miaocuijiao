@@ -208,6 +208,8 @@ async function markNoticeKeyRead(row) {
 export async function markAllStaffNotificationsRead(staffId) {
   const id = String(staffId || "").trim();
   if (!id) throw Object.assign(new Error("已读状态写入失败"), { status: 400 });
+  const stamp = new Date().toISOString();
+  let usedReadAt = false;
   try {
     const rows = await companionDb(
       "staff_notifications",
@@ -215,19 +217,41 @@ export async function markAllStaffNotificationsRead(staffId) {
       {
         method: "PATCH",
         headers: { Prefer: "return=representation" },
-        body: JSON.stringify({ read_at: new Date().toISOString() }),
+        body: JSON.stringify({ read_at: stamp }),
       }
     );
-    if (rows == null) return 0;
-    if (!Array.isArray(rows)) throw new Error("已读状态写入失败");
-    return rows.length;
+    usedReadAt = true;
+    if (Array.isArray(rows) && rows.length) return rows.length;
   } catch (err) {
     if (!columnMismatch(err)) throw err;
   }
-  const rows = await lookupRows(`?staff_id=eq.${encodeURIComponent(id)}&select=id,notice_key&limit=200`);
+  /* Fallback when read_at column missing, or Prefer returned empty after a silent patch. */
+  const rows = await lookupRows(
+    `?staff_id=eq.${encodeURIComponent(id)}&select=id,notice_key,read_at&limit=200`
+  ).catch(() => []);
   let marked = 0;
   for (const row of rows) {
     if (staffNoticeIsRead(row)) continue;
+    if (usedReadAt) {
+      /* re-try single-row read_at write when bulk Prefer returned empty */
+      try {
+        const one = await companionDb(
+          "staff_notifications",
+          `?id=eq.${encodeURIComponent(row.id)}&staff_id=eq.${encodeURIComponent(id)}`,
+          {
+            method: "PATCH",
+            headers: { Prefer: "return=representation" },
+            body: JSON.stringify({ read_at: stamp }),
+          }
+        );
+        if (Array.isArray(one) && one.length) {
+          marked += one.length;
+          continue;
+        }
+      } catch {
+        /* fall through to notice_key */
+      }
+    }
     marked += await markNoticeKeyRead(row);
   }
   return marked;
@@ -237,6 +261,7 @@ export async function markStaffNotificationRead(staffId, noticeId) {
   const id = String(staffId || "").trim();
   const nid = String(noticeId || "").trim();
   if (!id || !nid) return 0;
+  const stamp = new Date().toISOString();
   try {
     const rows = await companionDb(
       "staff_notifications",
@@ -244,18 +269,28 @@ export async function markStaffNotificationRead(staffId, noticeId) {
       {
         method: "PATCH",
         headers: { Prefer: "return=representation" },
-        body: JSON.stringify({ read_at: new Date().toISOString() }),
+        body: JSON.stringify({ read_at: stamp }),
       }
     );
     if (Array.isArray(rows) && rows.length) return rows.length;
   } catch (err) {
-    if (!columnMismatch(err)) return 0;
-    const rows = await lookupRows(
-      `?id=eq.${encodeURIComponent(nid)}&staff_id=eq.${encodeURIComponent(id)}&select=id,notice_key&limit=1`
-    ).catch(() => []);
-    return markNoticeKeyRead(rows[0] || null);
+    if (!columnMismatch(err)) {
+      /* continue to verify / fallback below */
+    } else {
+      const rows = await lookupRows(
+        `?id=eq.${encodeURIComponent(nid)}&staff_id=eq.${encodeURIComponent(id)}&select=id,notice_key,read_at&limit=1`
+      ).catch(() => []);
+      return markNoticeKeyRead(rows[0] || null);
+    }
   }
-  return 0;
+  /* Prefer may return empty even when PATCH applied — verify then fallback. */
+  const verify = await lookupRows(
+    `?id=eq.${encodeURIComponent(nid)}&staff_id=eq.${encodeURIComponent(id)}&select=id,notice_key,read_at&limit=1`
+  ).catch(() => []);
+  const row = verify?.[0];
+  if (!row) return 0;
+  if (staffNoticeIsRead(row)) return 1;
+  return markNoticeKeyRead(row);
 }
 
 /** Clear one finished task's alerts for every agent. Does not change the task itself. */

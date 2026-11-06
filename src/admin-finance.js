@@ -235,7 +235,7 @@
       ["refunds", "老板退款"],
       ["withdrawals", "陪玩工资"],
       ["payrolls", "客服工资"],
-      ["pending", "待付款单"],
+      ["pending", "待打款单"],
       ["receipts", "收据库"],
       ["payment-proofs", "付款凭证中心"],
     ];
@@ -258,32 +258,86 @@
     );
   }
   function fridayBannerHtml() {
-    var rules = state.weeklyRules || {};
-    var sum = state.settlementSummary || {};
-    var batch = state.currentBatch || {};
+    /* Settlement stats banner removed — keep CSV export only. */
     return (
-      '<div class="admin-sync-note fin-settle-summary">' +
-      "本周五 " +
-      esc(rules.thisFriday || sum.thisFriday || "-") +
-      " · 批次 " +
-      esc(batch.batchCode || sum.batchCode || "-") +
-      " · 待退款 " +
-      esc(sum.pendingRefunds || 0) +
-      " · 待陪玩 " +
-      esc(sum.pendingCompanion || 0) +
-      " · 待客服 " +
-      esc(sum.pendingCs || 0) +
-      " · 待退款额 RM " +
-      esc(sum.refundPendingRm || 0) +
-      " · 已打款 " +
-      esc(batch.paidCount || sum.batchPaidCount || 0) +
-      " · 失败 " +
-      esc(batch.failedCount || sum.batchFailedCount || 0) +
-      " · 实付总额 RM " +
-      esc(batch.paidAmountRm || sum.batchPaidAmountRm || 0) +
-      ' <button class="mini-btn" type="button" data-fin-export-settle>导出本月结算 CSV</button>' +
+      '<div class="fin-export-bar">' +
+      '<button class="mini-btn" type="button" data-fin-export-settle>导出本月结算 CSV</button>' +
       "</div>"
     );
+  }
+  function isUnpaidWithdrawStatus(status) {
+    return /^(pending_payment|approved_pending_pay|paying|paid_pending_receipt|approved)$/i.test(
+      String(status || "")
+    );
+  }
+  function isUnpaidPayrollStatus(status) {
+    return /^(pending_payment|approved|paying)$/i.test(String(status || ""));
+  }
+  function isTerminalPayoutStatus(status) {
+    return /^(completed|paid|rejected|failed|void|cancelled|canceled)$/i.test(String(status || ""));
+  }
+  function buildPendingPayItems() {
+    var items = [];
+    var seenKey = {};
+    function keyOf(type, relatedId, fallbackId) {
+      if (relatedId) return String(type || "payment") + ":" + String(relatedId);
+      return "id:" + String(fallbackId || "");
+    }
+    function add(item) {
+      if (!item || !item.id) return;
+      if (isTerminalPayoutStatus(item.status)) return;
+      var k = keyOf(item.paymentType || item.source, item.relatedRecordId || item.withdrawalId || item.payrollId, item.id);
+      if (!k || seenKey[k]) return;
+      seenKey[k] = true;
+      items.push(item);
+    }
+    /* Prefer live withdraw/payroll rows so confirm-paid immediately drops them after reload. */
+    (state.withdrawals || []).forEach(function (w) {
+      if (!isUnpaidWithdrawStatus(w.status)) return;
+      add({
+        id: "wd:" + w.id,
+        paymentNo: w.withdrawalNo || w.id,
+        paymentType: "companion_withdraw",
+        paymentTypeText: "陪玩提现",
+        relatedRecordId: w.id,
+        payeeName: w.companionName || w.accountHolder || "-",
+        payeeUid: w.companionUid || "",
+        amountRm: w.netAmountRm,
+        payeeBank: w.bankName || "",
+        payeeAccountLast4: w.accountLast4 || "",
+        status: w.status,
+        statusText: w.statusText || "待打款",
+        source: "companion_withdraw",
+        withdrawalId: w.id,
+      });
+    });
+    (state.payrolls || []).forEach(function (p) {
+      if (!isUnpaidPayrollStatus(p.status)) return;
+      add({
+        id: "pay:" + p.id,
+        paymentNo: p.payrollNo || p.id,
+        paymentType: "staff_payroll",
+        paymentTypeText: "客服工资",
+        relatedRecordId: p.id,
+        payeeName: p.staffName || "-",
+        payeeUid: p.staffUid || "",
+        amountRm: p.netSalaryRm,
+        payeeBank: "",
+        payeeAccountLast4: "",
+        status: p.status,
+        statusText: p.statusText || "待打款",
+        source: "staff_payroll",
+        payrollId: p.id,
+      });
+    });
+    (state.pendingPayments || []).forEach(function (p) {
+      add(
+        Object.assign({}, p, {
+          source: p.paymentType || p.payment_type || "payment",
+        })
+      );
+    });
+    return items;
   }
   function refundsHtml(list) {
     var rows = (list || state.bossRefunds || [])
@@ -532,17 +586,34 @@
     );
   }
   function pendingHtml() {
-    var rows = (state.pendingPayments || [])
+    var rows = buildPendingPayItems()
       .map(function (p) {
-        var actions =
-          (p.status === "pending_pay"
-            ? '<button class="mini-btn" type="button" data-fin-mark-paying="' + esc(p.id) + '">标记处理中</button> '
-            : "") +
-          '<button class="mini-btn primary-lite" type="button" data-fin-pay-receipt="' +
-          esc(p.id) +
-          '" data-amount="' +
-          esc(p.amountRm) +
-          '">上传收据并确认</button>';
+        var actions = "";
+        if (p.source === "companion_withdraw" || p.paymentType === "companion_withdraw") {
+          var wdId = p.withdrawalId || p.relatedRecordId || "";
+          actions =
+            '<button class="mini-btn primary-lite" type="button" data-fin-paid-wd="' +
+            esc(wdId) +
+            '">确认打款完成</button> <button class="mini-btn" type="button" data-fin-reject-wd="' +
+            esc(wdId) +
+            '">拒绝</button> <button class="mini-btn" type="button" data-fin-wd-fail="' +
+            esc(wdId) +
+            '">打款失败</button>';
+        } else if (p.source === "staff_payroll" || p.paymentType === "staff_payroll") {
+          var payId = p.payrollId || p.relatedRecordId || "";
+          actions =
+            '<button class="mini-btn" type="button" data-fin-pay-fail="' + esc(payId) + '">打款失败</button>';
+        } else {
+          actions =
+            (p.status === "pending_pay"
+              ? '<button class="mini-btn" type="button" data-fin-mark-paying="' + esc(p.id) + '">标记处理中</button> '
+              : "") +
+            '<button class="mini-btn primary-lite" type="button" data-fin-pay-receipt="' +
+            esc(p.id) +
+            '" data-amount="' +
+            esc(p.amountRm) +
+            '">上传收据并确认</button>';
+        }
         return (
           '<tr class="fin-card-row">' +
           '<td data-label="付款类型">' +
@@ -554,9 +625,8 @@
           '</td><td data-label="UID">' +
           esc(p.payeeUid) +
           '</td><td data-label="银行">' +
-          esc(p.payeeBank) +
-          " ****" +
-          esc(p.payeeAccountLast4) +
+          esc(p.payeeBank || "-") +
+          (p.payeeAccountLast4 ? " ****" + esc(p.payeeAccountLast4) : "") +
           '</td><td data-label="应付 RM"><strong class="fin-wd-amt fin-wd-amt-rm">RM ' +
           esc(p.amountRm) +
           '</strong></td><td data-label="状态">' +
@@ -568,9 +638,8 @@
       })
       .join("");
     return (
-      '<div class="admin-sync-note">待付款中心：已审核通过但尚未完成转账的项目。禁止无收据标记完成。</div>' +
       '<div class="table-wrap fin-table-wrap"><table class="fin-table fin-pending-table"><thead><tr><th>付款类型</th><th>单号</th><th>收款人</th><th>UID</th><th>银行</th><th>应付 RM</th><th>状态</th><th>操作</th></tr></thead><tbody>' +
-      (rows || '<tr><td colspan="8">暂无待付款</td></tr>') +
+      (rows || '<tr><td colspan="8">暂无待打款</td></tr>') +
       "</tbody></table></div>"
     );
   }
@@ -785,8 +854,7 @@
             : state.tab === "refunds"
               ? refundsHtml()
               : state.tab === "friday"
-                ? fridayBannerHtml() +
-                  "<h4>老板退款（本周）</h4>" +
+                ? "<h4>老板退款（本周）</h4>" +
                   refundsHtml(
                     (state.bossRefunds || []).filter(function (r) {
                       return /pending_review|approved_for_payout|included_in_batch|processing|carried_forward|failed/i.test(
@@ -800,9 +868,8 @@
                   payrollsHtml()
                 : withdrawalsHtml();
     box.innerHTML =
-      '<div class="admin-section-head compact fin-page-head"><div><h3>周五结算中心</h3></div><button class="mini-btn" type="button" data-fin-reload>刷新</button></div>' +
+      '<div class="admin-section-head compact fin-page-head"><div><h3>周五结算中心</h3></div><div class="fin-page-head-actions"><button class="mini-btn" type="button" data-fin-export-settle>导出本月结算 CSV</button><button class="mini-btn" type="button" data-fin-reload>刷新</button></div></div>' +
       (state.message ? '<div class="admin-sync-note">' + esc(state.message) + "</div>" : "") +
-      (state.tab !== "friday" ? fridayBannerHtml() : "") +
       tabsHtml() +
       body;
   }

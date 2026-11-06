@@ -12,6 +12,18 @@
   margin: 0;
 }
 
+#serviceReportsManagement .fin-page-head-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+#serviceReportsManagement .fin-export-bar {
+  display: none;
+}
+
 #serviceReportsManagement .fin-payroll-toolbar {
   display: flex;
   justify-content: flex-end;

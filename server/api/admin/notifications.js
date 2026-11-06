@@ -36,12 +36,32 @@ export default async function handler(req, res) {
       const body = await readBody(req);
       if (String(body.action || "") === "mark_read") {
         const marked = await markStaffNotificationRead(admin.id, body.id || "");
-        if (!marked) return json(res, 409, { ok: false, message: "已读状态写入失败" });
-        return json(res, 200, { ok: true, marked });
+        const notifications = await listStaffNotifications(admin.id, 40);
+        const unread = notifications.filter((item) => !item.readAt).length;
+        if (!marked) {
+          /* Already read counts as success so the badge can sync. */
+          const target = notifications.find((n) => String(n.id) === String(body.id || ""));
+          if (target && target.readAt) {
+            return json(res, 200, { ok: true, marked: 1, unread, notifications });
+          }
+          return json(res, 409, { ok: false, message: "已读状态写入失败", unread, notifications });
+        }
+        return json(res, 200, { ok: true, marked, unread, notifications });
       }
       if (String(body.action || "") === "mark_all_read") {
         const marked = await markAllStaffNotificationsRead(admin.id);
-        return json(res, 200, { ok: true, marked, unread: 0 });
+        const notifications = await listStaffNotifications(admin.id, 40);
+        const unread = notifications.filter((item) => !item.readAt).length;
+        if (unread > 0) {
+          return json(res, 409, {
+            ok: false,
+            message: "部分通知未能标记已读，请重试",
+            marked,
+            unread,
+            notifications,
+          });
+        }
+        return json(res, 200, { ok: true, marked, unread: 0, notifications });
       }
       return json(res, 400, { ok: false, message: "未知操作" });
     }
