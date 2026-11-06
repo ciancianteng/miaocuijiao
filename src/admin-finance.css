@@ -1,0 +1,550 @@
+/* Admin「提现与发放」— desktop keeps tables; ≤767px compact cards */
+
+#serviceReportsManagement .fin-page-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+#serviceReportsManagement .fin-page-head h3 {
+  margin: 0;
+}
+
+#serviceReportsManagement .fin-payroll-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 8px;
+}
+
+#serviceReportsManagement .fin-settle-summary {
+  margin-bottom: 10px;
+}
+
+#serviceReportsManagement .fin-tabs {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 12px 0;
+}
+
+#serviceReportsManagement .fin-filter-bar {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+#serviceReportsManagement .fin-filter-bar .mini-input {
+  max-width: 140px;
+  min-width: 0;
+}
+
+#serviceReportsManagement .fin-wd-facts,
+#serviceReportsManagement .fin-wd-more,
+#serviceReportsManagement .fin-wd-amt-label,
+#serviceReportsManagement .fin-wd-amt-unit {
+  display: none;
+}
+
+#serviceReportsManagement .fin-wd-payee {
+  min-width: 220px;
+  text-align: left;
+}
+
+#serviceReportsManagement .fin-wd-payee .fin-account-value {
+  letter-spacing: 0.08em;
+}
+
+#serviceReportsManagement .fin-wd-payee-desktop .mini-btn,
+#serviceReportsManagement .fin-wd-payee-desktop .admin-sync-note {
+  margin-top: 6px;
+}
+
+#serviceReportsManagement .fin-wd-companion-uid {
+  display: block;
+  opacity: 0.75;
+}
+
+@media (max-width: 767px) {
+  body[data-admin-section="service-reports"] #section-service-reports,
+  body[data-admin-section="service-reports"] #section-service-reports > .panel,
+  #serviceReportsManagement {
+    overflow-x: clip !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    box-sizing: border-box;
+  }
+
+  #serviceReportsManagement {
+    width: 100%;
+    padding: 0;
+  }
+
+  #serviceReportsManagement .admin-section-head.compact {
+    display: grid;
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+
+  #serviceReportsManagement .admin-section-head.compact h3 {
+    margin: 0;
+    font-size: 17px;
+    color: #fff;
+  }
+
+  #serviceReportsManagement .admin-section-head.compact p {
+    margin: 4px 0 0;
+    font-size: 12px;
+    line-height: 1.45;
+    color: #b8aeb6;
+  }
+
+  #serviceReportsManagement .admin-sync-note {
+    font-size: 12px;
+    line-height: 1.45;
+    padding: 10px 12px;
+    margin-bottom: 10px;
+  }
+
+  #serviceReportsManagement .fin-tabs {
+    gap: 6px;
+    margin: 8px 0 12px;
+  }
+
+  #serviceReportsManagement .fin-tabs .mini-btn {
+    min-height: 36px;
+    padding: 0 10px;
+    font-size: 13px;
+  }
+
+  #serviceReportsManagement h4 {
+    margin: 14px 0 8px;
+    font-size: 14px;
+    color: #ffd6e7;
+  }
+
+  #serviceReportsManagement .fin-filter-bar {
+    gap: 6px;
+  }
+
+  #serviceReportsManagement .fin-filter-bar .mini-input {
+    flex: 1 1 120px;
+    max-width: none;
+    min-height: 36px;
+    box-sizing: border-box;
+  }
+
+  #serviceReportsManagement .fin-table-wrap.table-wrap,
+  #serviceReportsManagement .table-wrap.fin-table-wrap {
+    overflow: visible !important;
+    max-height: none !important;
+    height: auto !important;
+    min-height: 0 !important;
+    border: 0;
+    background: transparent;
+    -webkit-overflow-scrolling: auto;
+    touch-action: pan-y;
+  }
+
+  #serviceReportsManagement .fin-table {
+    min-width: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    border-collapse: separate;
+    border-spacing: 0;
+  }
+
+  #serviceReportsManagement .fin-table thead {
+    display: none !important;
+  }
+
+  #serviceReportsManagement .fin-table,
+  #serviceReportsManagement .fin-table tbody {
+    display: block !important;
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+
+  /* ── Generic card rows (refunds / payrolls / pending / receipts) ── */
+  #serviceReportsManagement .fin-table tr.fin-card-row {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 8px 10px;
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    box-sizing: border-box !important;
+    margin: 0 0 10px;
+    padding: 12px;
+    border: 1px solid rgba(244, 166, 200, 0.32);
+    border-radius: 14px;
+    background: #221c28;
+    overflow: hidden;
+  }
+
+  #serviceReportsManagement .fin-table tr.fin-card-row td {
+    display: flex !important;
+    flex-direction: column;
+    gap: 2px;
+    width: auto !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    padding: 0 !important;
+    border: 0 !important;
+    background: transparent !important;
+    white-space: normal !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+    color: #fff;
+    font-size: 13px;
+    line-height: 1.35;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+  }
+
+  #serviceReportsManagement .fin-table tr.fin-card-row td::before {
+    content: attr(data-label);
+    color: #f0c6da;
+    font-size: 11px;
+    font-weight: 650;
+    letter-spacing: 0.02em;
+  }
+
+  #serviceReportsManagement .fin-table tr.fin-card-row td[data-label="操作"],
+  #serviceReportsManagement .fin-table tr.fin-card-row td[data-label="退款猫粮"],
+  #serviceReportsManagement .fin-table tr.fin-card-row td[data-label="实付 RM"],
+  #serviceReportsManagement .fin-table tr.fin-card-row td[data-label="应付 RM"],
+  #serviceReportsManagement .fin-table tr.fin-card-row td[data-label="金额 RM"] {
+    grid-column: 1 / -1;
+  }
+
+  #serviceReportsManagement .fin-row-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    width: 100%;
+  }
+
+  #serviceReportsManagement .fin-row-actions .mini-btn {
+    flex: 1 1 calc(50% - 6px);
+    min-height: 36px;
+    min-width: 0;
+    box-sizing: border-box;
+    font-size: 13px;
+    padding: 0 8px;
+  }
+
+  #serviceReportsManagement .fin-row-actions .mini-btn.primary-lite {
+    flex: 1 1 100%;
+  }
+
+  /* ── Withdrawal cards (priority layout) ── */
+  #serviceReportsManagement .fin-wd-table tr.fin-wd-row {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "no status"
+      "amounts amounts"
+      "payee payee"
+      "time time"
+      "ops ops";
+    gap: 6px 8px;
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    box-sizing: border-box !important;
+    margin: 0 0 8px;
+    padding: 10px;
+    border: 1px solid rgba(244, 166, 200, 0.35);
+    border-radius: 12px;
+    background: #221c28;
+    overflow: hidden;
+  }
+
+  #serviceReportsManagement .fin-wd-table tr.fin-wd-row td {
+    display: block !important;
+    width: auto !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    padding: 0 !important;
+    border: 0 !important;
+    background: transparent !important;
+    white-space: normal !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+    color: #fff;
+    font-size: 13px;
+    line-height: 1.35;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+  }
+
+  #serviceReportsManagement .fin-wd-table tr.fin-wd-row td::before {
+    content: none !important;
+    display: none !important;
+  }
+
+  #serviceReportsManagement .fin-wd-table td.fin-wd-no {
+    grid-area: no;
+    min-width: 0;
+  }
+
+  #serviceReportsManagement .fin-wd-table td.fin-wd-status {
+    grid-area: status;
+    justify-self: end;
+    align-self: start;
+  }
+
+  #serviceReportsManagement .fin-wd-table td.fin-wd-catfood,
+  #serviceReportsManagement .fin-wd-table td.fin-wd-net {
+    display: none !important;
+  }
+
+  #serviceReportsManagement .fin-wd-table td.fin-wd-companion {
+    display: none !important;
+  }
+
+  #serviceReportsManagement .fin-wd-table td.fin-wd-payee-cell {
+    grid-area: payee;
+  }
+
+  #serviceReportsManagement .fin-wd-table td.fin-wd-time {
+    grid-area: time;
+    color: #9ca3af;
+    font-size: 12px;
+  }
+
+  #serviceReportsManagement .fin-wd-table td.fin-wd-ops {
+    grid-area: ops;
+  }
+
+  #serviceReportsManagement .fin-wd-no-text {
+    display: block;
+    color: #ffd6e7;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+    overflow-wrap: anywhere;
+  }
+
+  #serviceReportsManagement .fin-wd-status-pill {
+    display: inline-block;
+    max-width: 100%;
+    padding: 4px 8px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 111, 145, 0.35);
+    background: rgba(255, 111, 145, 0.12);
+    color: #ffd6e7;
+    font-size: 11px;
+    font-weight: 650;
+    line-height: 1.2;
+    white-space: normal;
+    text-align: center;
+  }
+
+  /* Inject amount strip via payee cell :: before amounts using nested block */
+  #serviceReportsManagement .fin-wd-payee-cell {
+    display: grid !important;
+    gap: 6px;
+  }
+
+  #serviceReportsManagement .fin-wd-payee {
+    display: grid;
+    gap: 6px;
+    min-width: 0 !important;
+    padding: 0;
+    border: 0;
+    background: transparent;
+  }
+
+  #serviceReportsManagement .fin-wd-payee-desktop {
+    display: none !important;
+  }
+
+  #serviceReportsManagement .fin-wd-facts {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 6px 8px;
+  }
+
+  #serviceReportsManagement .fin-wd-fact {
+    min-width: 0;
+    display: grid;
+    gap: 2px;
+  }
+
+  #serviceReportsManagement .fin-wd-fact span {
+    color: #f0c6da;
+    font-size: 11px;
+    font-weight: 650;
+  }
+
+  #serviceReportsManagement .fin-wd-fact b {
+    color: #fff;
+    font-size: 13px;
+    font-weight: 650;
+    font-style: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  #serviceReportsManagement .fin-wd-fact-wide {
+    grid-column: 1 / -1;
+  }
+
+  #serviceReportsManagement .fin-wd-more {
+    display: block !important;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    padding-top: 6px;
+  }
+
+  #serviceReportsManagement .fin-wd-more > summary {
+    cursor: pointer;
+    color: #f0c6da;
+    font-size: 12px;
+    font-weight: 650;
+    list-style: none;
+    user-select: none;
+  }
+
+  #serviceReportsManagement .fin-wd-more > summary::-webkit-details-marker {
+    display: none;
+  }
+
+  #serviceReportsManagement .fin-wd-more > summary::after {
+    content: " ▾";
+    opacity: 0.7;
+  }
+
+  #serviceReportsManagement .fin-wd-more[open] > summary::after {
+    content: " ▴";
+  }
+
+  #serviceReportsManagement .fin-wd-more-body {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 8px;
+  }
+
+  #serviceReportsManagement .fin-wd-more-body .mini-btn {
+    min-height: 34px;
+    font-size: 12px;
+  }
+
+  #serviceReportsManagement .fin-wd-reveal-note {
+    margin: 0;
+    font-size: 11px;
+    padding: 6px 8px;
+  }
+
+  /* Amounts: pull from hidden cells via grid placement on the row */
+  #serviceReportsManagement .fin-wd-table tr.fin-wd-row {
+    grid-template-areas:
+      "no status"
+      "catfood net"
+      "payee payee"
+      "time time"
+      "ops ops";
+  }
+
+  #serviceReportsManagement .fin-wd-table td.fin-wd-catfood,
+  #serviceReportsManagement .fin-wd-table td.fin-wd-net {
+    display: grid !important;
+    gap: 1px;
+    padding: 6px 8px !important;
+    border-radius: 8px !important;
+    background: rgba(255, 255, 255, 0.04) !important;
+    border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  }
+
+  #serviceReportsManagement .fin-wd-table td.fin-wd-catfood {
+    grid-area: catfood;
+  }
+
+  #serviceReportsManagement .fin-wd-table td.fin-wd-net {
+    grid-area: net;
+  }
+
+  #serviceReportsManagement .fin-wd-amt-label {
+    display: block !important;
+    color: #f0c6da;
+    font-size: 11px;
+    font-weight: 650;
+  }
+
+  #serviceReportsManagement .fin-wd-amt {
+    display: inline;
+    color: #fff;
+    font-size: 16px;
+    font-weight: 750;
+    letter-spacing: 0.01em;
+    line-height: 1.2;
+  }
+
+  #serviceReportsManagement .fin-wd-amt-rm {
+    color: #ffd6e7;
+    font-size: 15px;
+  }
+
+  #serviceReportsManagement .fin-wd-amt-unit {
+    display: inline !important;
+    margin-left: 4px;
+    color: #b8aeb6;
+    font-size: 12px;
+    font-weight: 500;
+  }
+
+  #serviceReportsManagement .fin-wd-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+    width: 100%;
+  }
+
+  #serviceReportsManagement .fin-wd-actions .mini-btn {
+    width: 100%;
+    min-height: 34px;
+    min-width: 0 !important;
+    max-width: 100%;
+    box-sizing: border-box;
+    font-size: 12px;
+    padding: 0 6px;
+    white-space: nowrap;
+  }
+
+  #serviceReportsManagement .fin-wd-actions .mini-btn.primary-lite {
+    grid-column: 1 / -1;
+  }
+
+  #serviceReportsManagement .fin-wd-time::before {
+    content: "提交 ";
+    color: #9ca3af;
+  }
+
+  /* Empty-state rows without fin-*-row class */
+  #serviceReportsManagement .fin-table tbody > tr:not(.fin-wd-row):not(.fin-card-row) {
+    display: block !important;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+    margin: 0 0 10px;
+    padding: 14px 12px;
+    border: 1px dashed rgba(255, 255, 255, 0.14);
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.03);
+    color: #b8aeb6;
+    text-align: center;
+  }
+
+  #serviceReportsManagement .fin-table tbody > tr:not(.fin-wd-row):not(.fin-card-row) td {
+    display: block !important;
+    border: 0 !important;
+    padding: 0 !important;
+    background: transparent !important;
+    white-space: normal !important;
+  }
+}

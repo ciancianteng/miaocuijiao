@@ -240,7 +240,7 @@
       ["payment-proofs", "付款凭证中心"],
     ];
     return (
-      '<div class="admin-final-tabs" style="display:flex;gap:8px;flex-wrap:wrap;margin:12px 0">' +
+      '<div class="admin-final-tabs fin-tabs">' +
       tabs
         .map(function (t) {
           return (
@@ -262,9 +262,8 @@
     var sum = state.settlementSummary || {};
     var batch = state.currentBatch || {};
     return (
-      '<div class="admin-sync-note">' +
-      "周结：陪玩工资 / 客服工资统一周五发放。老板订单退款已改为<strong>即时退回猫粮余额</strong>（不退现金、不原路退回）。" +
-      "<br>本周五 " +
+      '<div class="admin-sync-note fin-settle-summary">' +
+      "本周五 " +
       esc(rules.thisFriday || sum.thisFriday || "-") +
       " · 批次 " +
       esc(batch.batchCode || sum.batchCode || "-") +
@@ -307,31 +306,31 @@
         }
         var amt = Number(r.amountCatFood != null ? r.amountCatFood : r.amountRm || 0);
         return (
-          "<tr><td>" +
+          '<tr class="fin-card-row">' +
+          '<td data-label="退款单号">' +
           esc(r.refundNo) +
-          "</td><td>" +
+          '</td><td data-label="老板">' +
           esc(r.bossName) +
           "<br><small>" +
           esc(r.bossUid) +
-          "</small></td><td>" +
+          '</small></td><td data-label="订单">' +
           esc(r.orderNo) +
-          '</td><td><strong>' +
+          '</td><td data-label="退款猫粮"><strong>' +
           esc(amt) +
-          ' 猫粮</strong><br><small>退款方式：猫粮余额（固定）</small></td><td>' +
+          ' 猫粮</strong><br><small>退款方式：猫粮余额（固定）</small></td><td data-label="负责人客服">' +
           esc(r.assignedCsName || "-") +
-          "</td><td>" +
+          '</td><td data-label="状态">' +
           esc(r.statusText || r.status) +
-          "</td><td>" +
+          '</td><td data-label="申请时间">' +
           esc(String(r.createdAt || "").slice(0, 19).replace("T", " ")) +
-          "</td><td>" +
+          '</td><td data-label="操作"><div class="fin-row-actions">' +
           actions +
-          "</td></tr>"
+          "</div></td></tr>"
         );
       })
       .join("");
     return (
-      '<div class="admin-sync-note" style="margin-bottom:10px">平台规则：订单退款<strong>只退猫粮余额</strong>，不退现金、不原路退回银行卡 / DuitNow / TNG。点击「确认退款猫粮」后立即入账并写 REFUND 流水（幂等）。</div>' +
-      '<div class="table-wrap"><table><thead><tr><th>退款单号</th><th>老板</th><th>订单</th><th>退款猫粮</th><th>负责人客服</th><th>状态</th><th>申请时间</th><th>操作</th></tr></thead><tbody>' +
+      '<div class="table-wrap fin-table-wrap"><table class="fin-table fin-refunds-table"><thead><tr><th>退款单号</th><th>老板</th><th>订单</th><th>退款猫粮</th><th>负责人客服</th><th>状态</th><th>申请时间</th><th>操作</th></tr></thead><tbody>' +
       (rows || '<tr><td colspan="8">暂无老板退款</td></tr>') +
       "</tbody></table></div>"
     );
@@ -340,8 +339,19 @@
   function withdrawPayeeCard(w) {
     var masked = "*****" + esc(w.accountLast4 || "----");
     var method = paymentMethodLabel(w.payoutMethod || w.method || "");
+    var revealBlock =
+      w.paymentAccountId && state.canReveal
+        ? '<button class="mini-btn" type="button" data-fin-reveal="' +
+          esc(w.paymentAccountId) +
+          '" data-fin-reveal-wd="' +
+          esc(w.id) +
+          '" data-fin-reveal-state="masked">查看完整账号</button>'
+        : w.paymentAccountId
+          ? '<div class="admin-sync-note fin-wd-reveal-note">完整账号仅超级管理员/财务可查看</div>'
+          : "";
     return (
-      '<div class="fin-payee-card payout-field-card" style="min-width:220px;text-align:left">' +
+      '<div class="fin-payee-card payout-field-card fin-wd-payee">' +
+      '<div class="fin-wd-payee-desktop">' +
       '<div class="payout-field-label">收款方式</div><div class="payout-field-value">' +
       esc(method) +
       "</div>" +
@@ -353,76 +363,116 @@
       "</div>" +
       '<div class="payout-field-label">银行账号</div><div class="payout-field-value fin-account-value" data-fin-account-display data-masked="' +
       masked +
-      '" style="letter-spacing:.08em">' +
+      '">' +
       masked +
       "</div>" +
-      (w.paymentAccountId && state.canReveal
-        ? '<button class="mini-btn" type="button" data-fin-reveal="' +
-          esc(w.paymentAccountId) +
-          '" data-fin-reveal-wd="' +
-          esc(w.id) +
-          '" data-fin-reveal-state="masked" style="margin-top:6px">查看完整账号</button>'
-        : w.paymentAccountId
-          ? '<div class="admin-sync-note" style="margin-top:6px;font-size:11px">完整账号仅超级管理员/财务可查看</div>'
-          : "") +
+      revealBlock +
       '<button class="mini-btn" type="button" data-fin-view-wd="' +
       esc(w.id) +
-      '" style="margin-top:6px">打款信息详情</button>' +
+      '">打款信息详情</button>' +
+      "</div>" +
+      '<div class="fin-wd-facts">' +
+      '<div class="fin-wd-fact"><span>陪玩昵称</span><b>' +
+      esc(w.companionName || "—") +
+      "</b></div>" +
+      '<div class="fin-wd-fact"><span>陪玩编号</span><b>' +
+      esc(w.companionUid || "—") +
+      "</b></div>" +
+      '<div class="fin-wd-fact"><span>收款人</span><b>' +
+      esc(w.accountHolder || "—") +
+      "</b></div>" +
+      '<div class="fin-wd-fact"><span>银行名称</span><b>' +
+      esc(w.bankName || "—") +
+      "</b></div>" +
+      '<div class="fin-wd-fact fin-wd-fact-wide"><span>收款方式</span><b>' +
+      esc(method) +
+      "</b></div>" +
+      '<div class="fin-wd-fact fin-wd-fact-wide"><span>脱敏账号</span><b class="fin-account-value" data-fin-account-display data-masked="' +
+      masked +
+      '">' +
+      masked +
+      "</b></div>" +
+      "</div>" +
+      '<details class="fin-wd-more">' +
+      "<summary>打款资料</summary>" +
+      '<div class="fin-wd-more-body">' +
+      revealBlock +
+      '<button class="mini-btn" type="button" data-fin-view-wd="' +
+      esc(w.id) +
+      '">打款信息详情</button>' +
+      "</div></details>" +
       "</div>"
     );
   }
   function withdrawalsHtml() {
     var rows = (state.withdrawals || [])
       .map(function (w) {
-        return (
-          "<tr><td>" +
-          esc(w.withdrawalNo) +
-          "</td><td>" +
-          esc(w.companionName) +
-          "<br><small>" +
-          esc(w.companionUid) +
-          "</small></td><td>" +
-          esc(w.catFoodAmount) +
-          "</td><td>" +
-          esc(w.netAmountRm) +
-          "</td><td>" +
-          withdrawPayeeCard(w) +
-          "</td><td>" +
-          esc(w.statusText) +
-          "</td><td>" +
-          esc(w.submittedAt) +
-          "</td><td>" +
-          (w.status === "pending_review" ||
+        var actions = "";
+        if (
+          w.status === "pending_review" ||
           w.status === "pending_friday" ||
           w.status === "submitted" ||
           w.status === "rolled_over" ||
           w.status === "failed"
-            ? '<button class="mini-btn primary-lite" type="button" data-fin-approve-wd="' +
-              esc(w.id) +
-              '">通过</button> <button class="mini-btn" type="button" data-fin-reject-wd="' +
-              esc(w.id) +
-              '">拒绝</button> <button class="mini-btn" type="button" data-fin-wd-batch="' +
-              esc(w.id) +
-              '">加入本周批次</button> <button class="mini-btn" type="button" data-fin-wd-next="' +
-              esc(w.id) +
-              '">移至下周</button>'
-            : "") +
-          (/approved_pending_pay|paying|paid_pending_receipt|pending_payment|approved|paid|failed/.test(String(w.status || ""))
-            ? ' <button class="mini-btn primary-lite" type="button" data-fin-paid-wd="' +
-              esc(w.id) +
-              '">确认打款完成</button> <button class="mini-btn" type="button" data-fin-reject-wd="' +
-              esc(w.id) +
-              '">拒绝</button> <button class="mini-btn" type="button" data-fin-wd-fail="' +
-              esc(w.id) +
-              '">打款失败</button>'
-            : "") +
-          "</td></tr>"
+        ) {
+          actions +=
+            '<button class="mini-btn primary-lite" type="button" data-fin-approve-wd="' +
+            esc(w.id) +
+            '">通过</button> <button class="mini-btn" type="button" data-fin-reject-wd="' +
+            esc(w.id) +
+            '">拒绝</button> <button class="mini-btn" type="button" data-fin-wd-batch="' +
+            esc(w.id) +
+            '">加入本周批次</button> <button class="mini-btn" type="button" data-fin-wd-next="' +
+            esc(w.id) +
+            '">移至下周</button>';
+        }
+        if (
+          /approved_pending_pay|paying|paid_pending_receipt|pending_payment|approved|paid|failed/.test(
+            String(w.status || "")
+          )
+        ) {
+          actions +=
+            ' <button class="mini-btn primary-lite" type="button" data-fin-paid-wd="' +
+            esc(w.id) +
+            '">确认打款完成</button> <button class="mini-btn" type="button" data-fin-reject-wd="' +
+            esc(w.id) +
+            '">拒绝</button> <button class="mini-btn" type="button" data-fin-wd-fail="' +
+            esc(w.id) +
+            '">打款失败</button>';
+        }
+        return (
+          '<tr class="fin-wd-row">' +
+          '<td class="fin-wd-no" data-label="提现单号"><span class="fin-wd-no-text">' +
+          esc(w.withdrawalNo) +
+          "</span></td>" +
+          '<td class="fin-wd-companion" data-label="陪玩"><span class="fin-wd-companion-name">' +
+          esc(w.companionName) +
+          '</span><small class="fin-wd-companion-uid">' +
+          esc(w.companionUid) +
+          "</small></td>" +
+          '<td class="fin-wd-catfood" data-label="提现猫粮"><span class="fin-wd-amt-label">申请提现</span><strong class="fin-wd-amt">' +
+          esc(w.catFoodAmount) +
+          '</strong><span class="fin-wd-amt-unit">猫粮</span></td>' +
+          '<td class="fin-wd-net" data-label="应付 RM"><span class="fin-wd-amt-label">实际打款</span><strong class="fin-wd-amt fin-wd-amt-rm">RM ' +
+          esc(w.netAmountRm) +
+          "</strong></td>" +
+          '<td class="fin-wd-payee-cell" data-label="打款信息">' +
+          withdrawPayeeCard(w) +
+          "</td>" +
+          '<td class="fin-wd-status" data-label="状态"><span class="fin-wd-status-pill">' +
+          esc(w.statusText) +
+          "</span></td>" +
+          '<td class="fin-wd-time" data-label="提交时间">' +
+          esc(w.submittedAt) +
+          "</td>" +
+          '<td class="fin-wd-ops" data-label="操作"><div class="fin-wd-actions fin-row-actions">' +
+          actions +
+          "</div></td></tr>"
         );
       })
       .join("");
     return (
-      '<div class="admin-sync-note">流程：待审核 → 待打款 → 上传打款凭证并确认 → 已完成。无凭证不可标记完成。列表仅显示脱敏账号（*****后四位）；超级管理员/财务点击「查看完整账号」后才展示明文，并写入操作日志。</div>' +
-      '<div class="table-wrap"><table><thead><tr><th>提现单号</th><th>陪玩</th><th>提现猫粮</th><th>应付 RM</th><th>打款信息</th><th>状态</th><th>提交时间</th><th>操作</th></tr></thead><tbody>' +
+      '<div class="table-wrap fin-table-wrap"><table class="fin-table fin-wd-table"><thead><tr><th>提现单号</th><th>陪玩</th><th>提现猫粮</th><th>应付 RM</th><th>打款信息</th><th>状态</th><th>提交时间</th><th>操作</th></tr></thead><tbody>' +
       (rows || '<tr><td colspan="8">暂无提现申请</td></tr>') +
       "</tbody></table></div>"
     );
@@ -430,48 +480,53 @@
   function payrollsHtml() {
     var rows = (state.payrolls || [])
       .map(function (p) {
+        var actions = "-";
+        if (/draft|pending_review|pending_friday|submitted|rolled_over|failed/.test(String(p.status || ""))) {
+          actions =
+            '<button class="mini-btn primary-lite" type="button" data-fin-approve-pay="' +
+            esc(p.id) +
+            '">审核通过</button> <button class="mini-btn" type="button" data-fin-pay-batch="' +
+            esc(p.id) +
+            '">加入本周批次</button> <button class="mini-btn" type="button" data-fin-pay-next="' +
+            esc(p.id) +
+            '">移至下周</button> <button class="mini-btn" type="button" data-fin-pay-fail="' +
+            esc(p.id) +
+            '">打款失败</button>';
+        } else if (/pending_payment|approved|paying/.test(String(p.status || ""))) {
+          actions =
+            '<button class="mini-btn" type="button" data-fin-pay-fail="' + esc(p.id) + '">打款失败</button>';
+        }
         return (
-          "<tr><td>" +
+          '<tr class="fin-card-row">' +
+          '<td data-label="工资单号">' +
           esc(p.payrollNo) +
-          "</td><td>" +
+          '</td><td data-label="客服">' +
           esc(p.staffName) +
           "<br><small>" +
           esc(p.staffUid) +
-          "</small></td><td>" +
+          '</small></td><td data-label="工资周期">' +
           esc(p.periodStart) +
           " ~ " +
           esc(p.periodEnd) +
-          "</td><td>" +
+          '</td><td data-label="基础工资">' +
           esc(p.baseSalaryRm) +
-          "</td><td>" +
+          '</td><td data-label="奖金">' +
           esc(p.bonusRm) +
-          "</td><td>" +
+          '</td><td data-label="扣款">' +
           esc(p.deductionRm) +
-          "</td><td>" +
+          '</td><td data-label="实付 RM"><strong class="fin-wd-amt fin-wd-amt-rm">RM ' +
           esc(p.netSalaryRm) +
-          "</td><td>" +
+          '</strong></td><td data-label="状态">' +
           esc(p.statusText) +
-          "</td><td>" +
-          (/draft|pending_review|pending_friday|submitted|rolled_over|failed/.test(String(p.status || ""))
-            ? '<button class="mini-btn primary-lite" type="button" data-fin-approve-pay="' +
-              esc(p.id) +
-              '">审核通过</button> <button class="mini-btn" type="button" data-fin-pay-batch="' +
-              esc(p.id) +
-              '">加入本周批次</button> <button class="mini-btn" type="button" data-fin-pay-next="' +
-              esc(p.id) +
-              '">移至下周</button> <button class="mini-btn" type="button" data-fin-pay-fail="' +
-              esc(p.id) +
-              '">打款失败</button>'
-            : /pending_payment|approved|paying/.test(String(p.status || ""))
-              ? '<button class="mini-btn" type="button" data-fin-pay-fail="' + esc(p.id) + '">打款失败</button>'
-              : "-") +
-          "</td></tr>"
+          '</td><td data-label="操作"><div class="fin-row-actions">' +
+          actions +
+          "</div></td></tr>"
         );
       })
       .join("");
     return (
-      '<div class="admin-section-head compact" style="margin-bottom:10px"><div><p>客服工资按工资中心实时计算入周五批次；打款完成须上传凭证。</p></div><button class="mini-btn primary-lite" type="button" data-fin-create-payroll>创建工资单</button></div>' +
-      '<div class="table-wrap"><table><thead><tr><th>工资单号</th><th>客服</th><th>工资周期</th><th>基础工资</th><th>奖金</th><th>扣款</th><th>实付 RM</th><th>状态</th><th>操作</th></tr></thead><tbody>' +
+      '<div class="admin-section-head compact fin-section-head fin-payroll-toolbar"><button class="mini-btn primary-lite" type="button" data-fin-create-payroll>创建工资单</button></div>' +
+      '<div class="table-wrap fin-table-wrap"><table class="fin-table fin-payrolls-table"><thead><tr><th>工资单号</th><th>客服</th><th>工资周期</th><th>基础工资</th><th>奖金</th><th>扣款</th><th>实付 RM</th><th>状态</th><th>操作</th></tr></thead><tbody>' +
       (rows || '<tr><td colspan="9">暂无工资单</td></tr>') +
       "</tbody></table></div>"
     );
@@ -479,24 +534,7 @@
   function pendingHtml() {
     var rows = (state.pendingPayments || [])
       .map(function (p) {
-        return (
-          "<tr><td>" +
-          esc(p.paymentTypeText) +
-          "</td><td>" +
-          esc(p.paymentNo) +
-          "</td><td>" +
-          esc(p.payeeName) +
-          "</td><td>" +
-          esc(p.payeeUid) +
-          "</td><td>" +
-          esc(p.payeeBank) +
-          " ****" +
-          esc(p.payeeAccountLast4) +
-          "</td><td>" +
-          esc(p.amountRm) +
-          "</td><td>" +
-          esc(p.statusText) +
-          "</td><td>" +
+        var actions =
           (p.status === "pending_pay"
             ? '<button class="mini-btn" type="button" data-fin-mark-paying="' + esc(p.id) + '">标记处理中</button> '
             : "") +
@@ -504,14 +542,34 @@
           esc(p.id) +
           '" data-amount="' +
           esc(p.amountRm) +
-          '">上传收据并确认</button>' +
-          "</td></tr>"
+          '">上传收据并确认</button>';
+        return (
+          '<tr class="fin-card-row">' +
+          '<td data-label="付款类型">' +
+          esc(p.paymentTypeText) +
+          '</td><td data-label="单号">' +
+          esc(p.paymentNo) +
+          '</td><td data-label="收款人">' +
+          esc(p.payeeName) +
+          '</td><td data-label="UID">' +
+          esc(p.payeeUid) +
+          '</td><td data-label="银行">' +
+          esc(p.payeeBank) +
+          " ****" +
+          esc(p.payeeAccountLast4) +
+          '</td><td data-label="应付 RM"><strong class="fin-wd-amt fin-wd-amt-rm">RM ' +
+          esc(p.amountRm) +
+          '</strong></td><td data-label="状态">' +
+          esc(p.statusText) +
+          '</td><td data-label="操作"><div class="fin-row-actions">' +
+          actions +
+          "</div></td></tr>"
         );
       })
       .join("");
     return (
       '<div class="admin-sync-note">待付款中心：已审核通过但尚未完成转账的项目。禁止无收据标记完成。</div>' +
-      '<div class="table-wrap"><table><thead><tr><th>付款类型</th><th>单号</th><th>收款人</th><th>UID</th><th>银行</th><th>应付 RM</th><th>状态</th><th>操作</th></tr></thead><tbody>' +
+      '<div class="table-wrap fin-table-wrap"><table class="fin-table fin-pending-table"><thead><tr><th>付款类型</th><th>单号</th><th>收款人</th><th>UID</th><th>银行</th><th>应付 RM</th><th>状态</th><th>操作</th></tr></thead><tbody>' +
       (rows || '<tr><td colspan="8">暂无待付款</td></tr>') +
       "</tbody></table></div>"
     );
@@ -531,25 +589,26 @@
     var rows = list
       .map(function (r) {
         return (
-          "<tr><td>" +
+          '<tr class="fin-card-row">' +
+          '<td data-label="收据编号">' +
           esc(r.receiptNo) +
-          "</td><td>" +
+          '</td><td data-label="类型">' +
           esc(r.paymentType) +
-          "</td><td>" +
+          '</td><td data-label="关联单号">' +
           esc(r.paymentNo || r.relatedRecordId) +
-          "</td><td>" +
+          '</td><td data-label="收款人">' +
           esc(r.payeeName) +
           " / " +
           esc(r.payeeUid) +
-          "</td><td>" +
+          '</td><td data-label="金额 RM"><strong class="fin-wd-amt fin-wd-amt-rm">RM ' +
           esc(r.amountRm) +
-          "</td><td>" +
+          '</strong></td><td data-label="会计月">' +
           esc(r.accountingMonth) +
-          "</td><td>" +
+          '</td><td data-label="银行流水号">' +
           esc(r.bankReference) +
-          "</td><td>" +
+          '</td><td data-label="对账">' +
           esc(r.reconciliationStatusText) +
-          "</td><td>" +
+          '</td><td data-label="操作"><div class="fin-row-actions">' +
           '<button class="mini-btn" type="button" data-fin-view-receipt="' +
           esc(r.id) +
           '">查看</button> ' +
@@ -562,23 +621,23 @@
           '<button class="mini-btn" type="button" data-fin-void-receipt="' +
           esc(r.id) +
           '">作废</button>' +
-          "</td></tr>"
+          "</div></td></tr>"
         );
       })
       .join("");
     return (
-      '<div class="admin-section-head compact" style="margin-bottom:10px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">' +
+      '<div class="admin-section-head compact fin-section-head fin-filter-bar">' +
       '<input class="mini-input" placeholder="按 UID 筛选" value="' +
       esc(state.filterUid) +
-      '" data-fin-filter-uid style="max-width:140px">' +
+      '" data-fin-filter-uid>' +
       '<input class="mini-input" placeholder="月份 2026-07" value="' +
       esc(state.filterMonth) +
-      '" data-fin-filter-month style="max-width:140px">' +
+      '" data-fin-filter-month>' +
       '<button class="mini-btn" type="button" data-fin-apply-filter>筛选</button>' +
       '<button class="mini-btn primary-lite" type="button" data-fin-export>按月导出 Excel</button>' +
       "</div>" +
       '<div class="admin-sync-note">收据库长期保留付款凭证。错误收据只能作废，不能删除历史记录。本模块不自动报税，仅整理财务资料。</div>' +
-      '<div class="table-wrap"><table><thead><tr><th>收据编号</th><th>类型</th><th>关联单号</th><th>收款人</th><th>金额 RM</th><th>会计月</th><th>银行流水号</th><th>对账</th><th>操作</th></tr></thead><tbody>' +
+      '<div class="table-wrap fin-table-wrap"><table class="fin-table fin-receipts-table"><thead><tr><th>收据编号</th><th>类型</th><th>关联单号</th><th>收款人</th><th>金额 RM</th><th>会计月</th><th>银行流水号</th><th>对账</th><th>操作</th></tr></thead><tbody>' +
       (rows || '<tr><td colspan="9">暂无收据</td></tr>') +
       "</tbody></table></div>"
     );
@@ -687,11 +746,11 @@
       '<div class="admin-section-head compact"><div><h4>人工支付审核记录</h4><p>永久保存付款截图与审核客服、审核时间、拒绝原因。未审核订单不计入营业额。</p></div>' +
       '<button class="mini-btn primary-lite" type="button" data-payment-receipts-export>导出 CSV</button></div>' +
       "<h4>待审核</h4>" +
-      '<div class="table-wrap"><table><thead><tr><th>订单号</th><th>老板</th><th>金额</th><th>支付方式</th><th>付款截图</th><th>审核客服</th><th>上传/审核时间</th><th>拒绝原因</th><th>操作</th></tr></thead><tbody>' +
+      '<div class="table-wrap fin-table-wrap"><table class="fin-table"><thead><tr><th>订单号</th><th>老板</th><th>金额</th><th>支付方式</th><th>付款截图</th><th>审核客服</th><th>上传/审核时间</th><th>拒绝原因</th><th>操作</th></tr></thead><tbody>' +
       (pending || '<tr><td colspan="9">暂无待审核付款凭证</td></tr>') +
       "</tbody></table></div>" +
       '<h4 style="margin-top:18px">已通过</h4>' +
-      '<div class="table-wrap"><table><thead><tr><th>订单号</th><th>老板</th><th>金额</th><th>支付方式</th><th>付款截图</th><th>审核客服</th><th>审核时间</th><th>拒绝原因</th></tr></thead><tbody>' +
+      '<div class="table-wrap fin-table-wrap"><table class="fin-table"><thead><tr><th>订单号</th><th>老板</th><th>金额</th><th>支付方式</th><th>付款截图</th><th>审核客服</th><th>审核时间</th><th>拒绝原因</th></tr></thead><tbody>' +
       (paid || '<tr><td colspan="8">暂无已通过记录</td></tr>') +
       "</tbody></table></div>" +
       '<h4 style="margin-top:18px">已拒绝</h4>' +
@@ -741,7 +800,7 @@
                   payrollsHtml()
                 : withdrawalsHtml();
     box.innerHTML =
-      '<div class="admin-section-head compact"><div><h3>周五结算中心</h3><p>陪玩工资 · 客服工资统一周五结算并上传打款凭证。老板订单退款改为<strong>确认退款猫粮</strong>即时入账，禁止现金/原路退款。</p></div><button class="mini-btn" type="button" data-fin-reload>刷新</button></div>' +
+      '<div class="admin-section-head compact fin-page-head"><div><h3>周五结算中心</h3></div><button class="mini-btn" type="button" data-fin-reload>刷新</button></div>' +
       (state.message ? '<div class="admin-sync-note">' + esc(state.message) + "</div>" : "") +
       (state.tab !== "friday" ? fridayBannerHtml() : "") +
       tabsHtml() +
@@ -1425,16 +1484,23 @@
         return;
       }
       var card = reveal.closest(".fin-payee-card") || reveal.parentElement;
-      var display = card ? card.querySelector("[data-fin-account-display]") : null;
+      var displays = card ? card.querySelectorAll("[data-fin-account-display]") : [];
+      function setDisplays(text) {
+        Array.prototype.forEach.call(displays, function (el) {
+          el.textContent = text;
+        });
+      }
       var stateNow = String(reveal.getAttribute("data-fin-reveal-state") || "masked");
-      if (stateNow === "revealed" && display) {
-        display.textContent = display.getAttribute("data-masked") || "*****----";
+      if (stateNow === "revealed" && displays.length) {
+        setDisplays(
+          (displays[0] && displays[0].getAttribute("data-masked")) || "*****----"
+        );
         reveal.setAttribute("data-fin-reveal-state", "masked");
         reveal.textContent = "查看完整账号";
         return;
       }
-      if (reveal.dataset.finFullAccount && display) {
-        display.textContent = reveal.dataset.finFullAccount;
+      if (reveal.dataset.finFullAccount && displays.length) {
+        setDisplays(reveal.dataset.finFullAccount);
         reveal.setAttribute("data-fin-reveal-state", "revealed");
         reveal.textContent = "隐藏完整账号";
         return;
@@ -1452,7 +1518,7 @@
           var full = String(a.accountNumber || "").replace(/\s+/g, "");
           if (!full) throw new Error("未返回完整账号");
           reveal.dataset.finFullAccount = full;
-          if (display) display.textContent = full;
+          setDisplays(full);
           reveal.setAttribute("data-fin-reveal-state", "revealed");
           reveal.textContent = "隐藏完整账号";
           reveal.disabled = false;
