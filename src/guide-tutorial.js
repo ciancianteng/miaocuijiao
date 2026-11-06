@@ -60,19 +60,27 @@
   }
 
   function isCompanionLoggedIn() {
+    if (window.MCJRoleGate && typeof window.MCJRoleGate.hasPortalSession === "function") {
+      try {
+        return !!window.MCJRoleGate.hasPortalSession("companion");
+      } catch (eGate) {}
+    }
     try {
       var token =
         localStorage.getItem("companionAuthToken") ||
         sessionStorage.getItem("companionAuthToken") ||
         "";
-      if (!token) return false;
-      var raw =
-        localStorage.getItem("companionUser") ||
-        sessionStorage.getItem("companionUser") ||
-        "";
-      if (!raw) return true;
-      var u = JSON.parse(raw);
-      return !!(u && (u.id || u.user_id || u.userId || u.email));
+      if (String(token).indexOf("companion_session_") !== 0) return false;
+      var pw = JSON.parse(
+        localStorage.getItem("mcjCompanionSession") ||
+          sessionStorage.getItem("mcjCompanionSession") ||
+          "null"
+      );
+      if (!pw) return false;
+      var access = String(pw.token || pw.accessToken || "").trim();
+      var refresh = String(pw.refreshToken || pw.refresh_token || "").trim();
+      if (!(refresh || (access.split(".").length === 3 && access.length > 20))) return false;
+      return true;
     } catch (e) {
       return false;
     }

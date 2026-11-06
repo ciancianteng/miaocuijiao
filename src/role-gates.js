@@ -1141,6 +1141,68 @@
     }
     refreshAuthUi();
   }
+  function healCompanionSoftSession(pw) {
+    try {
+      var soft = localStorage.getItem("companionAuthToken") || sessionStorage.getItem("companionAuthToken") || "";
+      if (String(soft).indexOf("companion_session_") === 0) return;
+      var access = pw && (pw.token || pw.accessToken || pw.access_token);
+      var refresh = pw && (pw.refreshToken || pw.refresh_token);
+      if (!looksLikeJwt(access) && !String(refresh || "").trim()) return;
+      var user = (pw && pw.user) || {};
+      writeCompanionPortalSession(
+        {
+          accessToken: access || "",
+          refreshToken: refresh || "",
+          expiresAt: (pw && (pw.expiresAt != null ? pw.expiresAt : pw.expires_at)) || "",
+          user: Object.assign({}, user, { role: "companion" }),
+        },
+        pw && pw.remember !== false
+      );
+    } catch (eHeal) {}
+  }
+
+  function refreshCompanionAccessToken(pw) {
+    var refresh = String((pw && (pw.refreshToken || pw.refresh_token)) || "").trim();
+    var access = String((pw && (pw.token || pw.accessToken || pw.access_token)) || "").trim();
+    if (!refresh) {
+      if (looksLikeJwt(access)) {
+        healCompanionSoftSession(pw);
+        return Promise.resolve(true);
+      }
+      return Promise.resolve(false);
+    }
+    return fetch("/api/auth", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ action: "refresh", refreshToken: refresh }),
+    })
+      .then(function (res) {
+        return res.text().then(function (text) {
+          var body = {};
+          try {
+            body = text ? JSON.parse(text) : {};
+          } catch (e) {
+            body = {};
+          }
+          if (!res.ok || body.ok === false) return false;
+          var sess = body.session || {};
+          writeCompanionPortalSession(
+            {
+              accessToken: sess.accessToken || sess.token || access,
+              refreshToken: sess.refreshToken || refresh,
+              expiresAt: sess.expiresAt || sess.expires_at || "",
+              user: Object.assign({}, (pw && pw.user) || {}, sess.user || {}, { role: "companion" }),
+            },
+            true
+          );
+          return true;
+        });
+      })
+      .catch(function () {
+        return false;
+      });
+  }
+
   function hasPortalSession(role) {
     var key = profileRole(role);
     if (key === "customer_service") {
@@ -1159,12 +1221,18 @@
         var pw = JSON.parse(localStorage.getItem("mcjCompanionSession") || sessionStorage.getItem("mcjCompanionSession") || "null");
         var soft = localStorage.getItem("companionAuthToken") || sessionStorage.getItem("companionAuthToken") || "";
         var access = pw && (pw.token || pw.accessToken);
+        var refresh = pw && (pw.refreshToken || pw.refresh_token);
         var softOk = String(soft).indexOf("companion_session_") === 0;
-        if (!softOk) return false;
-        if (!(looksLikeJwt(access) || (pw && pw.refreshToken))) return false;
+        if (!(looksLikeJwt(access) || String(refresh || "").trim())) return false;
         var pwRole = pw && pw.user && pw.user.role;
         if (pwRole && profileRole(pwRole) !== "companion") return false;
-        return true;
+        if (!softOk) {
+          // Heal missing soft marker so homepage entry + early-gate agree.
+          healCompanionSoftSession(pw);
+          soft = localStorage.getItem("companionAuthToken") || sessionStorage.getItem("companionAuthToken") || "";
+          softOk = String(soft).indexOf("companion_session_") === 0;
+        }
+        return softOk;
       } catch (e2) {
         return false;
       }
@@ -1204,17 +1272,65 @@
     // Companion/CS must not wipe boss JWT when claiming their own portal session.
   }
 
-  function denyUnauthed(loginHref, returnTo, reason) {
+  function isCompanionLoginPath(p) {
+    return /\/companion\/login/i.test(String(p || path()));
+  }
+
+  function companionAuthRedirectLatch(loginHref) {
+    var key = "__mcjCompanionAuthRedirectAt";
     try {
-      if (returnTo) {
-        try { sessionStorage.setItem("mcjAfterLoginRedirect", returnTo); } catch (e1) {}
-        try { localStorage.setItem("mcjAfterLoginRedirect", returnTo); } catch (e2) {}
+      var prev = Number(sessionStorage.getItem(key) || 0) || 0;
+      var now = Date.now();
+      if (prev && now - prev < 4000) return true;
+      sessionStorage.setItem(key, String(now));
+    } catch (e) {}
+    try {
+      if (window.__mcjCompanionAuthRedirecting) return true;
+      window.__mcjCompanionAuthRedirecting = String(loginHref || "/companion/login/");
+    } catch (e2) {}
+    return false;
+  }
+
+  function denyUnauthed(loginHref, returnTo, reason) {
+    var href = String(loginHref || "/login.html");
+    var why = String(reason || "unauthenticated");
+    var here = returnPath();
+    // Already on the target login surface — never replace(self); that reboots gates and flashes.
+    try {
+      var herePath = String(location.pathname || "").replace(/\/+$/, "") || "/";
+      var hrefPath = String(href.split("?")[0].split("#")[0] || "").replace(/\/+$/, "") || "/";
+      if (herePath === hrefPath || herePath + "/index.html" === hrefPath || hrefPath + "/index.html" === herePath) {
+        clearPendingAuthGate();
+        return false;
+      }
+      if (/\/companion\/login/i.test(href) && isCompanionLoginPath()) {
+        clearPendingAuthGate();
+        return false;
+      }
+    } catch (eSame) {}
+
+    if (/\/companion\/login/i.test(href) && companionAuthRedirectLatch(href)) {
+      // Second deny within 4s: keep overlay + manual link only (stop replace loops).
+      try {
+        document.documentElement.setAttribute("data-mcj-auth-gate", "1");
+        document.documentElement.setAttribute("data-mcj-auth-reason", why + "_latched");
+      } catch (eL) {}
+      return false;
+    }
+
+    try {
+      // Never remember login itself as returnTo (login↔dashboard ping-pong).
+      var safeReturn = String(returnTo || "").trim();
+      if (safeReturn && !/\/companion\/login/i.test(safeReturn) && safeReturn !== here) {
+        try { sessionStorage.setItem("mcjAfterLoginRedirect", safeReturn); } catch (e1) {}
+        try { localStorage.setItem("mcjAfterLoginRedirect", safeReturn); } catch (e2) {}
+      } else if (safeReturn && !/\/companion\/login/i.test(safeReturn)) {
+        try { sessionStorage.setItem("mcjAfterLoginRedirect", safeReturn); } catch (e3) {}
+        try { localStorage.setItem("mcjAfterLoginRedirect", safeReturn); } catch (e4) {}
       }
     } catch (eRemember) {}
 
     var overlayId = "mcjAuthBootOverlay";
-    var href = String(loginHref || "/login.html");
-    var why = String(reason || "unauthenticated");
     try {
       document.documentElement.setAttribute("data-mcj-auth-gate", "1");
       document.documentElement.setAttribute("data-mcj-auth-reason", why);
@@ -1371,9 +1487,56 @@
       return true;
     }
     if (/\/companion(\/|$)/i.test(p)) {
-      if (!hasPortalSession("companion")) return denyUnauthed("/companion/login/", returnPath());
-      clearPendingAuthGate();
-      return true;
+      if (isCompanionLoginPath(p)) {
+        clearPendingAuthGate();
+        return true;
+      }
+      if (hasPortalSession("companion")) {
+        clearPendingAuthGate();
+        return true;
+      }
+      // Soft restore: refresh token present but soft marker / access JWT not ready yet.
+      // Hard deny here rebooted login↔dashboard loops on iPhone Safari.
+      var pwBlob = null;
+      try {
+        pwBlob = JSON.parse(
+          localStorage.getItem("mcjCompanionSession") || sessionStorage.getItem("mcjCompanionSession") || "null"
+        );
+      } catch (ePw) {
+        pwBlob = null;
+      }
+      var pwRefresh = pwBlob && (pwBlob.refreshToken || pwBlob.refresh_token);
+      var pwAccess = pwBlob && (pwBlob.token || pwBlob.accessToken || pwBlob.access_token);
+      if (String(pwRefresh || "").trim() || looksLikeJwt(pwAccess)) {
+        showPendingAuthGate("正在恢复陪玩登录状态…");
+        healCompanionSoftSession(pwBlob);
+        var finishCompanionGate = function (ok) {
+          clearPendingAuthGate();
+          if (!ok) {
+            try {
+              clearCompanionPortalSession();
+            } catch (eClr) {}
+            denyUnauthed("/companion/login/", returnPath(), "token_expired");
+          }
+        };
+        var safetyPw = setTimeout(function () {
+          finishCompanionGate(hasPortalSession("companion"));
+        }, 8000);
+        refreshCompanionAccessToken(pwBlob)
+          .then(function (ok) {
+            clearTimeout(safetyPw);
+            finishCompanionGate(!!ok && hasPortalSession("companion"));
+          })
+          .catch(function () {
+            clearTimeout(safetyPw);
+            finishCompanionGate(hasPortalSession("companion"));
+          });
+        return true;
+      }
+      try {
+        clearCompanionPortalSession();
+      } catch (eWipe) {}
+      return denyUnauthed("/companion/login/", returnPath(), "token_missing");
     }
 
     if (/\/(mine|orders|recharge|messages|favorites|payment-confirm|order-confirm|gifts)\.html$/i.test(p)) {
@@ -1502,11 +1665,15 @@
       return true;
     }
     if (storageRole(role) === "companion") {
-      if (!hasPortalSession("companion")) {
-        return denyUnauthed("/companion/login/", returnPath());
+      if (isCompanionLoginPath()) {
+        clearPendingAuthGate();
+        return true;
       }
-      clearPendingAuthGate();
-      return true;
+      if (hasPortalSession("companion")) {
+        clearPendingAuthGate();
+        return true;
+      }
+      return denyUnauthed("/companion/login/", returnPath(), "token_missing");
     }
     if (!isAllowed(role)) {
       location.replace(cfg.login);

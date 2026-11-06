@@ -385,9 +385,16 @@
       var q=new URLSearchParams(location.search||'');
       var focus=String(q.get('focus')||q.get('order')||'').trim();
       var filter=String(q.get('filter')||'').trim();
+      var path=String(location.pathname||'');
+      var onHall=/\/companion\/(order-hall|grab-hall)/i.test(path);
       if(filter)state.orderFilter=filter;
       if(focus){
         state._focusOrderId=focus;
+        if(onHall){
+          state.route='hall';
+          try{history.replaceState(null,'','/companion/order-hall/?order='+encodeURIComponent(focus))}catch(e){}
+          return;
+        }
         if(state.route!=='orders'){
           try{history.replaceState(null,'','/companion/orders?focus='+encodeURIComponent(focus)+(filter?('&filter='+encodeURIComponent(filter)):''))}catch(e){}
           state.route='orders';
@@ -1217,7 +1224,30 @@
     clearSession();
     state.error='';
     state.loginError=message||'登录已过期，请重新登录。';
-    go('/companion/login');
+    state.session=null;
+    try{if(state.pollTimer){clearInterval(state.pollTimer);state.pollTimer=null;}}catch(eP){}
+    try{if(state._presenceHeartbeatTimer){clearInterval(state._presenceHeartbeatTimer);state._presenceHeartbeatTimer=null;}}catch(eH){}
+    // One hard navigation to login — never SPA-bounce while gates also location.replace.
+    if(/\/companion\/login/i.test(location.pathname||'')){
+      state.route='login';
+      paint();
+      return;
+    }
+    try{
+      if(window.__mcjCompanionAuthRedirecting){
+        state.route='login';
+        paint();
+        return;
+      }
+      window.__mcjCompanionAuthRedirecting='/companion/login/';
+      sessionStorage.setItem('__mcjCompanionAuthRedirectAt',String(Date.now()));
+    }catch(e){}
+    try{
+      location.replace('/companion/login/');
+    }catch(eNav){
+      state.route='login';
+      paint();
+    }
   }
   function toast(msg){
     state.notice=humanizeClientError(msg)||'';
@@ -2123,6 +2153,39 @@
       history.replaceState(null,'','/companion/messages?conversation='+encodeURIComponent(cid));
     }catch(e){}
   }
+  function beginAuthenticatedWorkbench(){
+    if(window.MCJCompanionAnnouncements&&window.MCJCompanionAnnouncements.start)window.MCJCompanionAnnouncements.start();
+    loadData().then(function(){
+      startPoll();
+      bindCompanionChatRealtime();
+      bindCompanionOrdersRealtime();
+      bindCompanionInboxRealtime();
+      var s=(state.data||{}).summary||{};
+      updateTabBadge(s.waitingConfirm||s.designatedPending);
+      try{
+        ensureCompanionWebPushScript().then(function(api){
+          if(api&&typeof api.maybePromptOnFirstVisit==='function'){
+            api.maybePromptOnFirstVisit({role:'companion'});
+          }
+        });
+      }catch(ePush){}
+      try{setTimeout(maybeShowGiftReceivedPopup,300)}catch(e){}
+    });
+  }
+  function resumeAfterVerifiedLogin(){
+    var savedTarget=companionReturnTarget(readSavedLoginTarget());
+    clearSavedLoginTarget();
+    try{sessionStorage.removeItem('__mcjCompanionAuthRedirectAt')}catch(e1){}
+    try{window.__mcjCompanionAuthRedirecting=''}catch(e2){}
+    var resume=savedTarget||'/companion/review-status';
+    if(!/^\/companion\//.test(String(resume).split('?')[0]))resume='/companion/review-status';
+    try{history.replaceState(null,'',resume)}catch(e){}
+    state.route=route();
+    applyFocusOrderFromQuery();
+    applyConversationFromQuery();
+    paint({routeChange:true});
+    beginAuthenticatedWorkbench();
+  }
   function init(){
     watchStrayCompanionBell();
     state.settings=readSettings();
@@ -2149,40 +2212,56 @@
     }catch(e){}
     if(!state.session&&state.route!=='login'){
       var here=location.pathname+location.search+location.hash;
+      // Prefer full navigation once — avoid SPA go()+gate replace ping-pong.
       if(companionReturnTarget(here)){
         try{sessionStorage.setItem('mcjAfterLoginRedirect',here)}catch(eSave){}
         try{localStorage.setItem('mcjAfterLoginRedirect',here)}catch(eSave2){}
       }
-      go('/companion/login');
+      if(!/\/companion\/login/i.test(location.pathname||'')){
+        try{
+          if(!window.__mcjCompanionAuthRedirecting){
+            window.__mcjCompanionAuthRedirecting='/companion/login/';
+            location.replace('/companion/login/');
+            return;
+          }
+        }catch(eNav){}
+      }
+      state.route='login';
+      paint();
       return;
     }
     if(state.session&&state.route==='login'){
-      var savedTarget=companionReturnTarget(readSavedLoginTarget());
-      clearSavedLoginTarget();
-      var resume=savedTarget||'/companion/review-status';
-      try{history.replaceState(null,'',resume)}catch(e){}
-      state.route=route();
-      applyFocusOrderFromQuery();
-      applyConversationFromQuery();
+      // P0: never bounce login→dashboard on unverified storage alone (Safari flash loop).
+      state.loginBusy=true;
+      state.loginError='';
+      paint();
+      ensureFreshSession()
+        .then(function(sess){
+          state.session=sess||readSession();
+          if(!state.session||!sessionLooksValid(state.session)){
+            throw new Error('登录已失效');
+          }
+          state.loginBusy=false;
+          resumeAfterVerifiedLogin();
+        })
+        .catch(function(){
+          clearSession();
+          state.session=null;
+          state.loginBusy=false;
+          state.loginError='登录已失效，请重新登录。';
+          // Drop stale returnTo that pointed at dashboard — prevents re-entry loops.
+          try{
+            var pending=readSavedLoginTarget();
+            if(/\/companion\/(dashboard|order-hall|orders)/i.test(pending))clearSavedLoginTarget();
+          }catch(eClr){}
+          try{sessionStorage.removeItem('__mcjCompanionAuthRedirectAt')}catch(eL){}
+          try{window.__mcjCompanionAuthRedirecting=''}catch(eL2){}
+          paint();
+        });
+      return;
     }
     if(state.session){
-      if(window.MCJCompanionAnnouncements&&window.MCJCompanionAnnouncements.start)window.MCJCompanionAnnouncements.start();
-      loadData().then(function(){
-        startPoll();
-        bindCompanionChatRealtime();
-        bindCompanionOrdersRealtime();
-        bindCompanionInboxRealtime();
-        var s=(state.data||{}).summary||{};
-        updateTabBadge(s.waitingConfirm||s.designatedPending);
-        try{
-          ensureCompanionWebPushScript().then(function(api){
-            if(api&&typeof api.maybePromptOnFirstVisit==='function'){
-              api.maybePromptOnFirstVisit({role:'companion'});
-            }
-          });
-        }catch(ePush){}
-        try{setTimeout(maybeShowGiftReceivedPopup,300)}catch(e){}
-      });
+      beginAuthenticatedWorkbench();
     }else paint();
   }
   window.addEventListener('popstate',function(){
@@ -4797,9 +4876,11 @@
         else if(busyGrab){disabled=true;btnLabel='抢单中…';}
         var serviceName=o.serviceType||o.serviceName||o.orderType||'订单';
         var duration=o.duration||'-';
-        return '<article class="pw-grab-card" data-order-id="'+esc(o.id)+'">'+
+        var focused=state._focusOrderId&&String(o.id)===String(state._focusOrderId);
+        return '<article class="pw-grab-card'+(focused?' is-focus':'')+'" data-order-id="'+esc(o.id)+'"'+(focused?' data-order-focus="1" id="order-'+esc(o.id)+'"':'')+'>'+
           '<header><div><span class="pw-type">'+esc(serviceName)+'</span><h3>'+esc(o.game||'-')+'</h3></div><strong class="pw-grab-price">'+money(o.amount||o.budget||0)+'</strong></header>'+
           '<p class="pw-grab-meta"><span>时长</span><b>'+esc(duration)+'</b></p>'+
+          (o.playerIncome!=null?'<p class="pw-grab-meta"><span>可获报酬</span><b>'+money(o.playerIncome)+'</b></p>':'')+
           '<footer><button class="pw-btn primary" data-accept-order="'+esc(o.id)+'" '+(disabled?'disabled':'')+'>'+esc(btnLabel)+'</button></footer></article>';
       }).join(''):'<div class="pw-hall-empty"><strong>暂无可抢订单</strong><span>新的订单会出现在这里</span></div>')+'</section></div>';
   }
@@ -7221,6 +7302,8 @@
           remember:remember
         },remember);
         state.loginBusy=false;state.loginError='';
+        try{sessionStorage.removeItem('__mcjCompanionAuthRedirectAt')}catch(eL){}
+        try{window.__mcjCompanionAuthRedirecting=''}catch(eL2){}
         var saved=companionReturnTarget(readSavedLoginTarget());
         clearSavedLoginTarget();
         var next=saved||String((res&&res.redirect)||'/companion/review-status');

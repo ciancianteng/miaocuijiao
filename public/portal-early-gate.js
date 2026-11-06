@@ -8,7 +8,7 @@
 (function () {
   "use strict";
 
-  var GATE_VERSION = "20260911authPerfP0";
+  var GATE_VERSION = "20261106companionAuthLoopP0";
   var OVERLAY_ID = "mcjAuthBootOverlay";
   /** Once true, deferred DOMContentLoaded overlay paint must no-op (auth hang fix). */
   var gateClosed = false;
@@ -309,22 +309,52 @@
   }
 
   function deny(loginHref, reason) {
+    var href = String(loginHref || "/login.html");
+    var herePath = String(location.pathname || "").replace(/\/+$/, "") || "/";
+    var hrefPath = String(href.split("?")[0].split("#")[0] || "").replace(/\/+$/, "") || "/";
+    // Never location.replace(self) — reboots the gate and flashes forever.
+    if (herePath === hrefPath || /\/companion\/login/i.test(herePath) && /\/companion\/login/i.test(hrefPath)) {
+      paintAuthGateOverlay({
+        mode: "redirect",
+        loginHref: href,
+        title: "需要登录后继续",
+        message: "未登录或登录已失效，请点击下方链接进入登录页。",
+        reason: reason || "unauthenticated",
+      });
+      return false;
+    }
+    if (/\/companion\/login/i.test(href)) {
+      try {
+        var prev = Number(sessionStorage.getItem("__mcjCompanionAuthRedirectAt") || 0) || 0;
+        if (prev && Date.now() - prev < 4000) {
+          paintAuthGateOverlay({
+            mode: "redirect",
+            loginHref: href,
+            title: "需要登录后继续",
+            message: "未登录或登录已失效，请点击下方链接进入登录页。",
+            reason: (reason || "unauthenticated") + "_latched",
+          });
+          return false;
+        }
+        sessionStorage.setItem("__mcjCompanionAuthRedirectAt", String(Date.now()));
+      } catch (eLatch) {}
+    }
     var returnTo =
       String(location.pathname || "/") + String(location.search || "") + String(location.hash || "");
-    rememberReturnTo(returnTo);
+    if (!/\/companion\/login/i.test(returnTo)) rememberReturnTo(returnTo);
     paintAuthGateOverlay({
       mode: "redirect",
-      loginHref: loginHref,
+      loginHref: href,
       title: "需要登录后继续",
       message: "未登录或登录已失效，正在前往登录页…",
       reason: reason || "unauthenticated",
     });
     // Prefer replace; keep visible link as WeChat / storage-failure fallback.
     try {
-      location.replace(loginHref);
+      location.replace(href);
     } catch (eNav) {
       try {
-        location.href = loginHref;
+        location.href = href;
       } catch (eHref) {}
     }
     return false;
@@ -442,9 +472,17 @@
       var pwSoft = item("companionAuthToken");
       var pwSoftOk = String(pwSoft).indexOf("companion_session_") === 0;
       // Portal isolation: ignore shared mcjRole / boss JWT. Companion blob + soft only.
-      var pwRoleOk = isCompanionRole(roleOf(pwUser)) || (pwSoftOk && !roleOf(pwUser));
-      if (!pwSoftOk || !hasJwtOrRefresh(pwAccess, pwRefresh) || !pwRoleOk) {
+      var pwRoleOk = isCompanionRole(roleOf(pwUser)) || (!roleOf(pwUser) && hasJwtOrRefresh(pwAccess, pwRefresh));
+      if (!hasJwtOrRefresh(pwAccess, pwRefresh) || !pwRoleOk) {
+        // Orphan soft token alone must not unlock — wipe so homepage stops saying「已登录」.
+        ["mcjCompanionSession", "companionAuthToken", "companionUser"].forEach(removeItem);
         return deny("/companion/login/", classifyAuthFailure(pwAccess, pwRefresh));
+      }
+      if (!pwSoftOk) {
+        // Soft marker missing but JWT/refresh OK — leave pending for role-gates heal/refresh.
+        // Do NOT hard-deny (that caused login↔dashboard replace loops on Safari).
+        hideShell("companion_soft_pending");
+        return true;
       }
       revealShell();
       return true;

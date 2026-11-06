@@ -483,18 +483,39 @@
     }
   }
 
+  function looksLikeJwt(token) {
+    var t = String(token || "").trim();
+    if (!t || t.length < 20) return false;
+    var parts = t.split(".");
+    return parts.length === 3 && parts.every(function (part) {
+      return part.length > 0;
+    });
+  }
+
   function isCompanionLoggedIn() {
-    if (!companionAuthToken()) return false;
+    // Must match portal-early-gate / role-gates hasPortalSession — soft token alone is NOT enough.
+    if (window.MCJRoleGate && typeof window.MCJRoleGate.hasPortalSession === "function") {
+      try {
+        return !!window.MCJRoleGate.hasPortalSession("companion");
+      } catch (eGate) {}
+    }
     try {
-      var raw =
-        localStorage.getItem("companionUser") ||
-        sessionStorage.getItem("companionUser") ||
-        "";
-      if (!raw) return true;
-      var u = JSON.parse(raw);
-      return !!(u && (u.id || u.user_id || u.userId || u.email));
-    } catch (e2) {
+      var soft = companionAuthToken();
+      if (String(soft).indexOf("companion_session_") !== 0) return false;
+      var pw = JSON.parse(
+        localStorage.getItem("mcjCompanionSession") ||
+          sessionStorage.getItem("mcjCompanionSession") ||
+          "null"
+      );
+      if (!pw || typeof pw !== "object") return false;
+      var access = pw.token || pw.accessToken || pw.access_token || "";
+      var refresh = pw.refreshToken || pw.refresh_token || "";
+      if (!(looksLikeJwt(access) || String(refresh || "").trim())) return false;
+      var role = String((pw.user && pw.user.role) || "").toLowerCase();
+      if (role && role !== "companion" && role !== "player") return false;
       return true;
+    } catch (e2) {
+      return false;
     }
   }
 
