@@ -261,7 +261,7 @@
     if (document.querySelector('link[data-mcj-place-order-css]')) return;
     var link = document.createElement("link");
     link.rel = "stylesheet";
-    link.href = "/src/place-order-modal.css?v=20261106poUi3";
+    link.href = "/src/place-order-modal.css?v=20261106poUi4";
     link.setAttribute("data-mcj-place-order-css", "1");
     document.head.appendChild(link);
   }
@@ -1393,18 +1393,11 @@
     if (!sheet) return;
     var vv = window.visualViewport;
     var vh = Math.floor((vv && vv.height) || window.innerHeight || document.documentElement.clientHeight || 640);
-    var offsetTop = Math.floor((vv && vv.offsetTop) || 0);
-    var pad = 16;
-    var maxH = Math.max(220, vh - pad * 2);
+    var mobile = window.matchMedia && window.matchMedia("(max-width: 767px)").matches;
+    // Keep sheet fully inside the visual viewport; header stays outside the scroll body.
+    var reserve = mobile ? 8 : 24;
+    var maxH = Math.max(220, vh - reserve);
     sheet.style.maxHeight = maxH + "px";
-    // Pin overlay to the visual viewport (Safari URL bar / keyboard safe).
-    modal.style.top = offsetTop + "px";
-    modal.style.left = "0";
-    modal.style.right = "0";
-    modal.style.width = "100%";
-    modal.style.height = vh + "px";
-    modal.style.bottom = "auto";
-    modal.style.inset = "";
   }
   function bindCouponViewportSync(modal) {
     if (!modal || modal.__mcjCouponVvBound) return;
@@ -1428,12 +1421,6 @@
     modal.hidden = true;
     modal.classList.remove("is-open");
     document.documentElement.classList.remove("mcj-po-coupon-open");
-    modal.style.top = "";
-    modal.style.height = "";
-    modal.style.left = "";
-    modal.style.right = "";
-    modal.style.width = "";
-    modal.style.bottom = "";
     var sheet = modal.querySelector(".mcj-po-coupon-sheet");
     if (sheet) sheet.style.maxHeight = "";
   }
