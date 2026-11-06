@@ -48,10 +48,58 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, virtStartIndex }
       }catch(e){}
     }
   }
+  var ENDED_LIST_VISIBLE_MS=72*60*60*1000;
   function isClosedConv(c){
     if(!c)return false;
     var raw=String(c.rawStatus||'').toLowerCase();
     return raw==='closed'||raw==='ended'||c.status==='已结束';
+  }
+  function resolveEndedAt(c){
+    if(!c)return '';
+    return String(c.endedAt||c.closedAt||c.ended_at||c.closed_at||'').trim();
+  }
+  function isEndedStillVisible(c, nowMs){
+    if(!isClosedConv(c))return true;
+    var at=resolveEndedAt(c);
+    if(!at)return true;
+    var t=Date.parse(at);
+    if(!Number.isFinite(t))return true;
+    return (nowMs!=null?nowMs:Date.now())-t<ENDED_LIST_VISIBLE_MS;
+  }
+  function pruneHiddenEnded(list){
+    var now=Date.now();
+    return (list||[]).filter(function(c){return isEndedStillVisible(c,now);});
+  }
+  function scheduleEndedListPrune(){
+    if(window.__MCJCsEndedPruneTimer){
+      clearTimeout(window.__MCJCsEndedPruneTimer);
+      window.__MCJCsEndedPruneTimer=null;
+    }
+    var soonest=null;
+    var now=Date.now();
+    ((state.data&&state.data.conversations)||[]).forEach(function(c){
+      if(!isClosedConv(c))return;
+      var at=resolveEndedAt(c);
+      if(!at)return;
+      var t=Date.parse(at);
+      if(!Number.isFinite(t))return;
+      var hideAt=t+ENDED_LIST_VISIBLE_MS;
+      if(hideAt<=now){soonest=0;return;}
+      var remain=hideAt-now;
+      if(soonest==null||remain<soonest)soonest=remain;
+    });
+    if(soonest==null)return;
+    window.__MCJCsEndedPruneTimer=setTimeout(function(){
+      window.__MCJCsEndedPruneTimer=null;
+      if(!state.data||!state.data.conversations)return;
+      var before=state.data.conversations.length;
+      state.data.conversations=pruneHiddenEnded(state.data.conversations);
+      if(state.data.conversations.length!==before){
+        recomputeSummaryFromConversations();
+        if(typeof paint==='function')paint();
+      }
+      scheduleEndedListPrune();
+    }, Math.max(250, Math.min(soonest+50, 60*60*1000)));
   }
   function isLockedByOther(c){
     if(!c||isClosedConv(c))return false;
@@ -85,7 +133,7 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, virtStartIndex }
   }
   function filteredConversations(){
     var f=state.convFilter||'waiting';
-    var all=((state.data&&state.data.conversations)||[]);
+    var all=pruneHiddenEnded((state.data&&state.data.conversations)||[]);
     if(f==='active'){
       return all.filter(function(c){
         if(isClosedConv(c))return false;
@@ -111,7 +159,7 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, virtStartIndex }
   }
   function filterCounts(){
     var counts={waiting:0,active:0,ended:0};
-    ((state.data&&state.data.conversations)||[]).forEach(function(c){
+    pruneHiddenEnded((state.data&&state.data.conversations)||[]).forEach(function(c){
       if(isClosedConv(c)){counts.ended++;return;}
       if(!c.currentServiceId){counts.waiting++;return;}
       var myId=myServiceId();
@@ -189,10 +237,18 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, virtStartIndex }
         next.rawStatus=prev.rawStatus||'active';
       }
       if(isClosedConv(prev)&&!isClosedConv(next)){
-        next.status=prev.status;
-        next.rawStatus=prev.rawStatus;
-        next.closedAt=prev.closedAt||next.closedAt;
+        // Keep optimistic local-ended only when remote looks stale — not when reopened.
+        var localEnd=String(prev.endedAt||prev.closedAt||prev.updatedAt||'');
+        var remoteUpd=String(next.updatedAt||next.lastTime||'');
+        if(!remoteUpd||(localEnd&&remoteUpd<=localEnd)){
+          next.status=prev.status;
+          next.rawStatus=prev.rawStatus;
+          next.closedAt=prev.closedAt||next.closedAt;
+          next.endedAt=prev.endedAt||next.endedAt;
+        }
       }
+      if(!next.endedAt&&prev.endedAt)next.endedAt=prev.endedAt;
+      if(!next.closedAt&&prev.closedAt)next.closedAt=prev.closedAt;
       if(state.readCursors&&state.readCursors[c.id]){
         var at=state.readCursors[c.id];
         if(!next.lastReadAt||String(next.lastReadAt)<String(at))next.lastReadAt=at;
@@ -209,7 +265,7 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, virtStartIndex }
       }
       byId[c.id]=next;
     });
-    var merged=Object.keys(byId).map(function(k){return byId[k];});
+    var merged=pruneHiddenEnded(Object.keys(byId).map(function(k){return byId[k];}));
     merged.sort(function(a,b){
       return convActivityTime(b).localeCompare(convActivityTime(a));
     });
@@ -224,6 +280,9 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, virtStartIndex }
   function recomputeSummaryFromConversations(){
     if(!state.data)return;
     if(!state.data.summary)state.data.summary={};
+    if(Array.isArray(state.data.conversations)){
+      state.data.conversations=pruneHiddenEnded(state.data.conversations);
+    }
     var counts=filterCounts();
     var myId=myServiceId();
     var mine=((state.data.conversations)||[]).filter(function(c){
@@ -232,6 +291,7 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, virtStartIndex }
     state.data.summary.waitingConversations=counts.waiting;
     state.data.summary.currentReceptions=mine;
     state.data.summary.unreadMessages=totalUnreadCount();
+    scheduleEndedListPrune();
   }
   function syncPoolCounters(){
     recomputeSummaryFromConversations();
@@ -696,9 +756,20 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, virtStartIndex }
           status:(row.status==='closed'||row.status==='ended')?'已结束':(row.status==='pending_transfer'?'待转接':(row.customer_service_id?'接待中':'待接待')),
           updatedAt:row.updated_at||new Date().toISOString(),
           closedAt:row.closed_at||'',
+          endedAt:row.ended_at||row.closed_at||'',
           orderId:row.order_id||'',
           consultType:row.consult_type||undefined
         };
+        if(isClosedConv(patch)&&!isEndedStillVisible(patch)){
+          if(idx>=0){
+            list.splice(idx,1);
+            state.data.conversations=list;
+            syncPoolCounters();
+            if(state.route==='conversations'&&root.querySelector('.cs-chat-layout'))patchConversationMessages();
+            else if(state.route==='conversations')paint();
+          }
+          return;
+        }
         if(row.last_read_at)patch.lastReadAt=row.last_read_at;
         if(idx>=0){
           var prev=list[idx];

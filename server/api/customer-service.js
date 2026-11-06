@@ -42,6 +42,11 @@ import {
   isPendingTransferStatus,
 } from "./_conversation-lock.js";
 import {
+  filterCsListConversations,
+  hintEndedAtFromMessages,
+  resolveConversationEndedAt,
+} from "./_cs-ended-visibility.js";
+import {
   CS_LOCK_DENIED,
   CS_LOCK_VIEW_ONLY,
   assertCanMutateOrder,
@@ -1156,7 +1161,8 @@ async function ensureBossUid(profile) {
 async function loadSessionPool(serviceProfile) {
   const started = Date.now();
   const conversationsRaw = await maybeRows("conversations", "?order=updated_at.desc&limit=300");
-  const visible = (conversationsRaw || []).filter((row) => {
+  const listVisibleRaw = filterCsListConversations(conversationsRaw || []);
+  const visible = listVisibleRaw.filter((row) => {
     const isCompanion =
       String(row.conversation_type || "") === "companion_support" || (!row.boss_id && row.companion_id);
     if (isCompanion) return true;
@@ -1227,6 +1233,8 @@ async function loadSessionPool(serviceProfile) {
         unread,
         unreadCount: unread,
         lastReadAt: row.last_read_at || "",
+        closedAt: row.closed_at || "",
+        endedAt: resolveConversationEndedAt(row) || "",
         updatedAt: row.updated_at || "",
       },
       serviceProfile.id
@@ -1395,7 +1403,18 @@ async function loadBootstrap(serviceProfile) {
     orders = nestParentOnlyOrders(orders);
   } catch (_) {
     orders = (orders || []).filter((o) => !o.isMultiGroupChild && !o.parentOrderId);
-  } const msgByConv = messagesRaw.reduce((map, msg) => { (map[msg.conversation_id] = map[msg.conversation_id] || []).push(msg); return map; }, {}); const conversationsMapped = conversationsRaw.map((row) => { const boss = profiles[row.boss_id] || {}; const companionProf = profiles[row.companion_id] || {}; const service = profiles[row.customer_service_id] || {}; const msgs = msgByConv[row.id] || []; const last = msgs[msgs.length - 1] || {}; const bossUid = bossForCs(boss).bossUid; const isCompanionSupport = String(row.conversation_type || "") === "companion_support" || (!row.boss_id && row.companion_id); const isClosed = row.status === "closed" || row.status === "ended"; const convStatus = isClosed ? "已结束" : (row.customer_service_id ? "正在接待" : "待接待"); const lastReadAt = row.last_read_at || ""; const unreadRoles = isCompanionSupport ? ["companion"] : ["boss"];   const unreadBoss = isClosed ? [] : msgs.filter((m) => {
+  } const msgByConv = messagesRaw.reduce((map, msg) => { (map[msg.conversation_id] = map[msg.conversation_id] || []).push(msg); return map; }, {});
+  const endHintById = {};
+  for (const row of conversationsRaw || []) {
+    if (!row?.id) continue;
+    const closed = row.status === "closed" || row.status === "ended";
+    if (!closed) continue;
+    if (row.ended_at || row.closed_at) continue;
+    const hint = hintEndedAtFromMessages(msgByConv[row.id] || []);
+    if (hint) endHintById[row.id] = { hintEndedAt: hint };
+  }
+  const conversationsListRaw = filterCsListConversations(conversationsRaw || [], Date.now(), endHintById);
+  const conversationsMapped = conversationsListRaw.map((row) => { const boss = profiles[row.boss_id] || {}; const companionProf = profiles[row.companion_id] || {}; const service = profiles[row.customer_service_id] || {}; const msgs = msgByConv[row.id] || []; const last = msgs[msgs.length - 1] || {}; const bossUid = bossForCs(boss).bossUid; const isCompanionSupport = String(row.conversation_type || "") === "companion_support" || (!row.boss_id && row.companion_id); const isClosed = row.status === "closed" || row.status === "ended"; const convStatus = isClosed ? "已结束" : (row.customer_service_id ? "正在接待" : "待接待"); const lastReadAt = row.last_read_at || ""; const unreadRoles = isCompanionSupport ? ["companion"] : ["boss"];   const unreadBoss = isClosed ? [] : msgs.filter((m) => {
     if (!unreadRoles.includes(m.sender_role) || m.read_at) return false;
     if (lastReadAt && String(m.created_at || "") <= String(lastReadAt)) return false;
     return true;
@@ -1412,6 +1431,7 @@ async function loadBootstrap(serviceProfile) {
   const nickname = isCompanionSupport ? companionName : bossForCs(boss).bossName;
   const isTransfer = isPendingTransferStatus(row.status);
   const convStatusLabel = isClosed ? "已结束" : isTransfer ? "待转接" : (row.customer_service_id ? "接待中" : "待接待");
+  const endedAtResolved = resolveConversationEndedAt(row, endHintById[row.id] || {}) || "";
   return {
     id: row.id,
     identity,
@@ -1442,7 +1462,8 @@ async function loadBootstrap(serviceProfile) {
     createdAt: row.created_at || "",
     unread: unreadBoss.length,
     unreadCount: unreadBoss.length,
-    closedAt: row.closed_at || "",
+    closedAt: row.closed_at || endedAtResolved || "",
+    endedAt: endedAtResolved,
     closedBy: row.closed_by || "",
     lastReadAt,
     acceptedAt: row.accepted_at || "",
@@ -2841,7 +2862,7 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
       }
       const convRows = await maybeRows("conversations", convQuery);
       // When incremental returns few rows, still refresh top active pool lightly for status drift.
-      let visible = (convRows || []).filter((row) => {
+      let visible = filterCsListConversations(convRows || []).filter((row) => {
         const isCompanion =
           String(row.conversation_type || "") === "companion_support" || (!row.boss_id && row.companion_id);
         if (isCompanion) return true;
@@ -2850,7 +2871,7 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
       if (since && visible.length < 5) {
         const top = await maybeRows("conversations", "?order=updated_at.desc&limit=40");
         const byId = {};
-        (top || []).concat(visible).forEach((r) => {
+        filterCsListConversations(top || []).concat(visible).forEach((r) => {
           if (r?.id) byId[r.id] = r;
         });
         visible = Object.keys(byId).map((k) => byId[k]);
@@ -2948,6 +2969,7 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
           unreadCount: 0,
           lastReadAt: row.last_read_at || "",
           closedAt: row.closed_at || "",
+          endedAt: resolveConversationEndedAt(row) || "",
           closedBy: row.closed_by || "",
           updatedAt: row.updated_at || "",
           _unreadRoles: unreadRoles,
