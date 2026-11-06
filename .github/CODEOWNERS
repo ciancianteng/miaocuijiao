@@ -11,3 +11,13 @@ docs/ui-baselines/MCJ-PLACE-ORDER-UI-APPROVED-V1/ @ciancianteng
 scripts/verify-place-order-ui-freeze.mjs @ciancianteng
 scripts/verify-place-order-ui-freeze-live.mjs @ciancianteng
 .github/workflows/place-order-ui-freeze.yml @ciancianteng
+
+# MCJ-PWA-INSTALL-PROMPT-V1 — do not silently disable auto install sheet
+src/pwa-install-prompt.js @ciancianteng
+src/pwa-install-prompt.css @ciancianteng
+public/src/pwa-install-prompt.js @ciancianteng
+public/src/pwa-install-prompt.css @ciancianteng
+pwa-boot.js @ciancianteng
+public/pwa-boot.js @ciancianteng
+scripts/verify-pwa-install-prompt-freeze.mjs @ciancianteng
+.cursor/rules/pwa-install-prompt-freeze.mdc @ciancianteng

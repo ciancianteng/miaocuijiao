@@ -37,7 +37,8 @@
     "verify:boss-vip": "node scripts/verify-boss-vip-offline.mjs",
     "verify:discord-order-voice": "node scripts/verify-discord-order-voice-offline.mjs",
     "verify:place-order-ui-freeze": "node scripts/verify-place-order-ui-freeze.mjs",
-    "verify:place-order-ui-freeze:live": "node scripts/verify-place-order-ui-freeze-live.mjs"
+    "verify:place-order-ui-freeze:live": "node scripts/verify-place-order-ui-freeze-live.mjs",
+    "verify:pwa-install-prompt-freeze": "node scripts/verify-pwa-install-prompt-freeze.mjs"
   },
   "dependencies": {
     "@vitejs/plugin-react": "latest",

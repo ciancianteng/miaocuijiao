@@ -898,8 +898,8 @@
     ensureCss("/src/mcj-safe-area.css?v=20260802mobileP0c", "data-mcj-safe-area-css");
     ensureCss("/src/home-mobile.css?v=20260802mobileP0c", "data-mcj-home-mobile-css");
     // Shared install guide also loaded by /pwa-boot.js sitewide; keep as boss fallback.
-    ensureCss("/src/pwa-install-prompt.css?v=20260912pwaGuide1", "data-mcj-pwa-install-css");
-    ensureScript("/src/pwa-install-prompt.js?v=20260912pwaGuide1", "data-mcj-pwa-install-js");
+    ensureCss("/src/pwa-install-prompt.css?v=20261106pwaAuto1", "data-mcj-pwa-install-css");
+    ensureScript("/src/pwa-install-prompt.js?v=20261106pwaAuto1", "data-mcj-pwa-install-js");
     document.body.classList.add("mcj-boss-shell");
     purgeGuestAuthArtifacts();
 

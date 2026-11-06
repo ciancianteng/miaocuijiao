@@ -438,13 +438,13 @@
       if(!document.querySelector('link[data-mcj-pwa-install-css]')){
         var css=document.createElement('link');
         css.rel='stylesheet';
-        css.href='/src/pwa-install-prompt.css?v=20260912pwaGuide1';
+        css.href='/src/pwa-install-prompt.css?v=20261106pwaAuto1';
         css.setAttribute('data-mcj-pwa-install-css','1');
         document.head.appendChild(css);
       }
       if(!document.querySelector('script[data-mcj-pwa-install-js]')&&!window.__MCJPwaInstallLoaded){
         var js=document.createElement('script');
-        js.src='/src/pwa-install-prompt.js?v=20260912pwaGuide1';
+        js.src='/src/pwa-install-prompt.js?v=20261106pwaAuto1';
         js.defer=true;
         js.setAttribute('data-mcj-pwa-install-js','1');
         js.onload=function(){tryOpen()};

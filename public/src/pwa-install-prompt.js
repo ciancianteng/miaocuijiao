@@ -503,9 +503,8 @@
   }
 
   function scheduleAutoShow() {
-    // P1/P2: never auto-popup install sheet on normal browser visits.
-    // Install guide opens only via MCJPwaInstall.openGuide() (user-initiated).
-    return;
+    // Restored 2026-11-06: auto bottom-sheet for eligible browsers
+    // (standalone / installed / 7-day dismiss / max 3 / once-session still gated by canAutoShow).
     if (autoScheduled) return;
     if (!canAutoShow()) return;
     autoScheduled = true;
@@ -539,8 +538,8 @@
   }
 
   function waitBrieflyForBipThenSchedule() {
-    // Auto install prompts disabled — BIP still captured for manual install.
-    return;
+    // Android: wait briefly for beforeinstallprompt so the primary CTA can be native install.
+    // iOS / no-BIP: schedule teach sheet on the same delay path.
     var platform = detectPlatform();
     if (!platform.android || deferredPrompt) {
       scheduleAutoShow();

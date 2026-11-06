@@ -1,0 +1,24 @@
+---
+description: MCJ-PWA-INSTALL-PROMPT-V1 — 添加到主屏幕提示浮窗不可再次静默关闭
+alwaysApply: true
+---
+
+# PWA 安装提示浮窗（MCJ-PWA-INSTALL-PROMPT-V1）
+
+原功能：`src/pwa-install-prompt.js` + `src/pwa-install-prompt.css`（`c109033a` / `#219`）。  
+曾在 `ac9e2baa` 被 early `return` 关掉自动弹出；2026-11-06 已恢复。
+
+## 禁止
+
+- 在 `scheduleAutoShow` / `waitBrieflyForBipThenSchedule` 顶部加 `return` 禁用自动提示
+- 删除 `pwa-boot.js` 的 `loadInstallGuide()`
+- 未经批准改底部 sheet 的黑粉视觉、文案结构、7 天 dismiss、standalone 不显示
+
+## 允许
+
+- 修严重 Bug（无法安装、错误指引、SW/manifest 坏掉）
+- 业务页增加「安装妙脆角」入口调用 `MCJPwaInstall.openGuide()`
+
+回归：`node scripts/verify-pwa-install-prompt-freeze.mjs`
+
+不触及：`MCJ-PLACE-ORDER-UI-APPROVED-V1` 下单 UI。

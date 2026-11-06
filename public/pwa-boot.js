@@ -10,7 +10,7 @@
  */
 (function () {
   var ICON_V = "20260914pwaPortal4";
-  var INSTALL_V = "20260914pwaPortal4";
+  var INSTALL_V = "20261106pwaAuto1";
 
   // Companion cards (dozens per carousel/grid) sit on a >=96% opaque gradient,
   // so their backdrop blur is invisible but each costs a composited layer that

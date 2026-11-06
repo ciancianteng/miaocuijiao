@@ -19,6 +19,8 @@ jobs:
           node-version: "20"
       - name: Offline UI freeze contract
         run: node scripts/verify-place-order-ui-freeze.mjs
+      - name: PWA install prompt must stay auto-enabled
+        run: node scripts/verify-pwa-install-prompt-freeze.mjs
       - name: Fail if approved baselines are deleted
         run: |
           set -euo pipefail
@@ -26,4 +28,5 @@ jobs:
           test -s docs/ui-baselines/MCJ-PLACE-ORDER-UI-APPROVED-V1/mobile-390.png
           test -s docs/ui-baselines/MCJ-PLACE-ORDER-UI-APPROVED-V1/MANIFEST.md
           test -s .cursor/rules/place-order-ui-approved-v1.mdc
+          test -s .cursor/rules/pwa-install-prompt-freeze.mdc
           echo "OK baselines + freeze rule"
