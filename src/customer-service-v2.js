@@ -3430,7 +3430,12 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, virtStartIndex }
       if(o.isMultiGroupChild||o.parentOrderId||o.parent_order_id)return false;
       var st=String(o.status||'');
       var hall=(!o.companionId)&&((String(o.assignmentType||'').toLowerCase()==='public')||!o.assignmentType||o.orderType==='open_grab'||st==='pending'||st==='waiting_boss_confirm')&&(st==='pending'||st==='waiting_boss_confirm');
-      if(!orderMatchesGroup(o, st, hall, group))return false;
+      if(group==='archive'){
+        if(!o.csArchived)return false;
+      }else{
+        if(o.csArchived)return false;
+        if(!orderMatchesGroup(o, st, hall, group))return false;
+      }
       if(q&&orderSearchText(o, o.paymentReview?'待人工审核':(hall?'抢单中':(o.statusText||st))).indexOf(q)<0)return false;
       return true;
     });
@@ -3438,16 +3443,21 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, virtStartIndex }
       return String(b.createdAt||b.updatedAt||'').localeCompare(String(a.createdAt||a.updatedAt||''));
     });
     var statuses=(state.data&&state.data.orderStatuses)||{};
-    var chips=[['','全部'],['todo','待处理'],['run','进行中'],['done','已完成'],['cancel','已取消']].map(function(item){
+    var archivedCount=((state.data&&state.data.orders)||[]).filter(function(o){return o.csArchived&&!o.isMultiGroupChild&&!o.parentOrderId&&!o.parent_order_id;}).length;
+    var chips=[['','全部'],['todo','待处理'],['run','进行中'],['done','已完成'],['cancel','已取消'],['archive','历史归档'+(archivedCount?'('+archivedCount+')':'')]].map(function(item){
       return '<button type="button" class="cs-order-chip'+(group===item[0]?' active':'')+'" data-order-group="'+item[0]+'">'+item[1]+'</button>';
     }).join('');
-    var empty='<div class="cs-empty">暂无订单</div>';
-    return '<div class="cs-page-head cs-dash-head"><div><h2>订单处理</h2><p>共 '+rows.length+' 单</p></div><div class="cs-actions"><button class="cs-btn" data-route="/customer-service/create-order">代下单</button><button class="cs-btn" data-refresh>刷新</button></div></div>'+
+    var empty=group==='archive'?'<div class="cs-empty">暂无已归档的取消订单</div>':'<div class="cs-empty">暂无订单</div>';
+    var batchBar=group==='cancel'&&rows.length
+      ?('<div class="cs-order-batch"><label class="cs-batch-check"><input type="checkbox" data-archive-select-all> 全选本页已取消</label><button type="button" class="cs-btn ghost" data-archive-batch>批量移除记录</button><span class="cs-note">仅从客服日常列表隐藏，不删除财务数据</span></div>')
+      :'';
+    return '<div class="cs-page-head cs-dash-head"><div><h2>订单处理</h2><p>共 '+rows.length+' 单'+(group==='archive'?' · 历史归档':'')+'</p></div><div class="cs-actions"><button class="cs-btn" data-route="/customer-service/create-order">代下单</button><button class="cs-btn" data-refresh>刷新</button></div></div>'+
       '<div class="cs-order-tools"><input class="cs-order-search" data-order-query value="'+esc(state.orderQuery||'')+'" placeholder="搜索订单号、老板、陪玩、游戏、状态" autocomplete="off">'+
       '<div class="cs-order-chips">'+chips+'</div>'+
       '<select data-order-filter><option value="">全部状态</option>'+Object.keys(statuses).map(function(k){return '<option value="'+esc(k)+'" '+(state.orderFilter===k?'selected':'')+'>'+esc(statuses[k])+'</option>';}).join('')+'</select></div>'+
+      batchBar+
       '<div class="cs-order-list">'+(rows.length?rows.map(orderCard).join(''):empty)+'</div>'+
-      '<section class="cs-table-wrap cs-orders-table-wrap"><table class="cs-table cs-orders-table"><thead><tr><th class="cs-col-no">订单编号</th><th class="cs-col-boss">老板</th><th class="cs-col-companion">陪玩</th><th class="cs-col-game">游戏</th><th class="cs-col-amount">金额</th><th class="cs-col-status">状态</th><th class="cs-col-time">创建时间</th><th class="cs-col-actions">操作</th></tr></thead><tbody>'+(rows.length?rows.map(orderRow).join(''):'<tr><td colspan="8">'+empty+'</td></tr>')+'</tbody></table></section>';
+      '<section class="cs-table-wrap cs-orders-table-wrap"><table class="cs-table cs-orders-table"><thead><tr><th class="cs-col-check"></th><th class="cs-col-no">订单编号</th><th class="cs-col-boss">老板</th><th class="cs-col-companion">陪玩</th><th class="cs-col-game">游戏</th><th class="cs-col-amount">金额</th><th class="cs-col-status">状态</th><th class="cs-col-time">创建时间</th><th class="cs-col-actions">操作</th></tr></thead><tbody>'+(rows.length?rows.map(orderRow).join(''):'<tr><td colspan="9">'+empty+'</td></tr>')+'</tbody></table></section>';
   }
   function compensationHtml(){
     var bosses=(state.data&&state.data.bosses)||[];
@@ -3497,6 +3507,7 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, virtStartIndex }
       ['结算说明',o.settlementNote||(Number(o.bossCommissionAmount)>0?'老板分成由平台抽成支付，不扣陪玩收入':'-')],
       ['创建时间',fmtOrderDateTime(o.createdAt)]
     ];
+    if(o.csArchived)rows.push(['列表归档','已归档 · '+fmtOrderDateTime(o.csArchivedAt)+(o.csArchivedByName?' · '+o.csArchivedByName:'')]);
     if(mode==='cancel')rows.push(['取消原因',o.cancelReason||o.note||'-']);
     if(mode==='refund'){
       rows.push(['退款状态',o.statusText||o.status||'-']);
@@ -3588,11 +3599,22 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, virtStartIndex }
       actions.push('<button class="cs-btn warn" data-urge-companion="'+esc(o.id)+'">催单</button>');
       actions.push('<button class="cs-btn ghost" data-return-grab-hall="'+esc(o.id)+'">返回抢单大厅</button>');
       actions.push('<button class="cs-btn danger" data-cancel-order="'+esc(o.id)+'">取消订单</button>');
-    }else if(st==='confirmed'||st==='in_progress'||orderEarlyPending(o)){
+    }else if(st==='confirmed'){
+      actions.push('<button class="cs-btn ghost" data-order-detail="'+esc(o.id)+'" data-detail-mode="detail">查看订单</button>');
+      actions.push('<button class="cs-btn ghost" data-open-order-chat="'+esc(o.id)+'">打开会话</button>');
+      actions.push('<button class="cs-btn primary" data-mark-in-progress="'+esc(o.id)+'">标记为服务中</button>');
+      actions.push('<button class="cs-btn danger" data-cancel-order="'+esc(o.id)+'">取消订单</button>');
+    }else if(st==='in_progress'||orderEarlyPending(o)){
       actions.push('<button class="cs-btn ghost" data-order-detail="'+esc(o.id)+'" data-detail-mode="detail">查看订单</button>');
       actions.push('<button class="cs-btn ghost" data-open-order-chat="'+esc(o.id)+'">打开会话</button>');
       if(canApplyCompensation(o))actions.push('<button class="cs-btn warn" data-route="/customer-service/compensation" type="button">申请补偿</button>');
-      actions.push('<button class="cs-btn primary" data-complete-order="'+esc(o.id)+'">'+(orderEarlyPending(o)?'确认提前结束':'提前结束订单')+'</button>');
+      if(o.completionPending||orderEarlyPending(o)){
+        actions.push('<button class="cs-btn primary" data-cs-confirm-complete="'+esc(o.id)+'">帮老板确认完成</button>');
+        actions.push('<button class="cs-btn ghost" data-complete-order="'+esc(o.id)+'">提前结束 / 改结算</button>');
+      }else{
+        actions.push('<button class="cs-btn primary" data-cs-confirm-complete="'+esc(o.id)+'">帮老板完成订单</button>');
+        actions.push('<button class="cs-btn warn" data-complete-order="'+esc(o.id)+'">提前结束订单</button>');
+      }
     }else if(st==='completed'||st==='reviewed'){
       actions.push('<button class="cs-btn ghost" data-order-detail="'+esc(o.id)+'" data-detail-mode="detail">查看详情</button>');
       actions.push('<button class="cs-btn ghost" data-open-order-chat="'+esc(o.id)+'">查看聊天记录</button>');
@@ -3604,6 +3626,11 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, virtStartIndex }
     }else if(st==='cancelled'){
       actions.push('<button class="cs-btn ghost" data-order-detail="'+esc(o.id)+'" data-detail-mode="detail">查看详情</button>');
       actions.push('<button class="cs-btn ghost" data-order-detail="'+esc(o.id)+'" data-detail-mode="cancel">查看取消原因</button>');
+      if(o.csArchived){
+        actions.push('<button class="cs-btn ghost" data-unarchive-order="'+esc(o.id)+'">恢复到日常列表</button>');
+      }else{
+        actions.push('<button class="cs-btn warn" data-archive-order="'+esc(o.id)+'">移除记录</button>');
+      }
     }else if(st==='refunded'){
       actions.push('<button class="cs-btn ghost" data-order-detail="'+esc(o.id)+'" data-detail-mode="refund">查看退款详情</button>');
       actions.push('<button class="cs-btn ghost" data-order-detail="'+esc(o.id)+'" data-detail-mode="pay">查看退款凭证</button>');
@@ -3614,16 +3641,18 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, virtStartIndex }
       actions.push('<button class="cs-btn ghost" data-order-detail="'+esc(o.id)+'" data-detail-mode="detail">查看详情</button>');
     }
 
-    // Hard cap: at most 4 action buttons
-    if(actions.length>4)actions=actions.slice(0,4);
+    // Soft cap for confirm/archive actions
+    if(actions.length>6)actions=actions.slice(0,6);
 
     var orderConv=((state.data&&state.data.conversations)||[]).find(function(c){return c.orderId===o.id&&!isClosedConv(c);});
     if(orderConv&&isLockedByOther(orderConv)){
       actions=['<span class="cs-note">该订单正在由【'+esc(orderConv.assignedCsName||orderConv.currentServiceName||'其他客服')+'】处理中，当前仅可查看。</span>'];
       if(inGrabHall)actions.push('<button class="cs-btn ghost" data-view-grabs="'+esc(o.id)+'">查看抢单人数('+(o.grabCount||0)+')</button>');
       else actions.push('<button class="cs-btn ghost" data-order-detail="'+esc(o.id)+'" data-detail-mode="detail">查看详情</button>');
-      if(st==='confirmed'||st==='in_progress'||orderEarlyPending(o)){
-        actions.push('<button class="cs-btn primary" data-complete-order="'+esc(o.id)+'">'+(orderEarlyPending(o)?'确认提前结束':'提前结束订单')+'</button>');
+      if(st==='in_progress'||orderEarlyPending(o)){
+        actions.push('<button class="cs-btn primary" data-cs-confirm-complete="'+esc(o.id)+'">'+(o.completionPending||orderEarlyPending(o)?'帮老板确认完成':'帮老板完成订单')+'</button>');
+      }else if(st==='confirmed'){
+        actions.push('<button class="cs-btn primary" data-mark-in-progress="'+esc(o.id)+'">标记为服务中</button>');
       }
     }
 
@@ -3662,8 +3691,11 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, virtStartIndex }
     var row=v.o;
     var search=esc(orderSearchText(row,v.statusLabel));
     var desk=discordDeskHtml(row);
-    var main='<tr data-order-search="'+search+'"'+(row.needsReassign?' style="background:rgba(245,158,11,.08)"':'')+(v.inGrabHall?' data-grab-hall="1"':'')+(v.isMultiParentRow?' data-multi-parent="1"':'')+(row.isRenewal?' data-renewal="1"':'')+' data-order-status="'+esc(v.st)+'"><td class="cs-col-no">'+esc(row.orderNo)+(row.isRenewal?'<br><small>续单'+(row.renewalSourceOrderNo?' · 原'+esc(row.renewalSourceOrderNo):'')+'</small>':'')+(v.isMultiParentRow?'<br><small>多人</small>':'')+'</td><td class="cs-col-boss">'+esc(sanitizeBossLabel(row.bossName,publicBossCode(row)))+(publicBossCode(row)?'<br><small>'+esc(publicBossCode(row))+'</small>':'')+'</td><td class="cs-col-companion">'+v.companionCell+'</td><td class="cs-col-game">'+esc(row.game||'-')+'</td><td class="cs-col-amount">'+money(row.totalAmount)+'</td><td class="cs-col-status">'+v.statusCell+'</td><td class="cs-col-time">'+esc(fmtOrderDateTime(row.createdAt))+'</td><td class="cs-col-actions"><div class="cs-actions">'+v.actions.join('')+'</div></td></tr>';
-    var extra=desk?'<tr data-discord-desk-row="1" data-order-search="'+search+'" data-order-status="'+esc(v.st)+'"><td colspan="8">'+desk+'</td></tr>':'';
+    var checkCell=v.st==='cancelled'&&!row.csArchived
+      ?('<td class="cs-col-check"><input type="checkbox" data-archive-pick value="'+esc(row.id)+'"></td>')
+      :'<td class="cs-col-check"></td>';
+    var main='<tr data-order-search="'+search+'"'+(row.needsReassign?' style="background:rgba(245,158,11,.08)"':'')+(v.inGrabHall?' data-grab-hall="1"':'')+(v.isMultiParentRow?' data-multi-parent="1"':'')+(row.isRenewal?' data-renewal="1"':'')+' data-order-status="'+esc(v.st)+'">'+checkCell+'<td class="cs-col-no">'+esc(row.orderNo)+(row.isRenewal?'<br><small>续单'+(row.renewalSourceOrderNo?' · 原'+esc(row.renewalSourceOrderNo):'')+'</small>':'')+(v.isMultiParentRow?'<br><small>多人</small>':'')+'</td><td class="cs-col-boss">'+esc(sanitizeBossLabel(row.bossName,publicBossCode(row)))+(publicBossCode(row)?'<br><small>'+esc(publicBossCode(row))+'</small>':'')+'</td><td class="cs-col-companion">'+v.companionCell+'</td><td class="cs-col-game">'+esc(row.game||'-')+'</td><td class="cs-col-amount">'+money(row.totalAmount)+'</td><td class="cs-col-status">'+v.statusCell+'</td><td class="cs-col-time">'+esc(fmtOrderDateTime(row.createdAt))+'</td><td class="cs-col-actions"><div class="cs-actions">'+v.actions.join('')+'</div></td></tr>';
+    var extra=desk?'<tr data-discord-desk-row="1" data-order-search="'+search+'" data-order-status="'+esc(v.st)+'"><td colspan="9">'+desk+'</td></tr>':'';
     return main+extra;
   }
   function discordDeskHtml(o){
@@ -3688,6 +3720,7 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, virtStartIndex }
     var notes=[];
     if(orderEarlyPending(row))notes.push('待处理提前结束');
     if(row.needsReassign)notes.push(row.reassignHint||'待重新安排');
+    if(row.csArchived)notes.push('已归档 · '+fmtOrderDateTime(row.csArchivedAt));
     if(v.inGrabHall)notes.push('抢单 '+(row.grabCount||0)+' 人');
     if(row.preferredCompanionId)notes.push('老板意向已提交');
     if(v.isMultiParentRow)notes.push('多人订单，子订单见详情');
@@ -3696,6 +3729,7 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, virtStartIndex }
     var detailBtn='<button class="cs-btn" type="button" data-order-detail="'+esc(row.id)+'" data-detail-mode="detail">查看详情</button>';
     var moreBtn=menu.length?'<button class="cs-btn ghost" type="button" data-order-more>更多操作</button>':'';
     return '<article class="cs-order-card" data-order-search="'+esc(orderSearchText(row,v.statusLabel))+'" data-order-status="'+esc(v.st)+'">'+
+      (v.st==='cancelled'&&!row.csArchived?'<label class="cs-card-check"><input type="checkbox" data-archive-pick value="'+esc(row.id)+'"> 选中</label>':'')+
       '<div class="cs-order-top"><strong>'+esc(row.orderNo||'-')+'</strong><span class="cs-order-tag cs-tag-'+orderStatusTone(row,v.st,v.inGrabHall)+'">'+esc(v.statusLabel)+'</span></div>'+
       '<div class="cs-order-meta"><span>金额 <b>'+money(row.totalAmount)+'</b></span><span>老板 <b>'+esc(sanitizeBossLabel(row.bossName,publicBossCode(row))||'-')+'</b></span><span>陪玩 <b>'+(v.isMultiParentRow?'多人主订单':esc(row.companionName||'未指定'))+'</b></span>'+(row.game?'<span>项目 <b>'+esc(row.game)+'</b></span>':'')+'</div>'+
       discordDeskHtml(row)+
@@ -4738,12 +4772,133 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, virtStartIndex }
       api('cs_cancel_order',{id:cid,reason:cReason}).then(function(res){toast(res.message||'订单已取消');return softRefresh();}).catch(function(err){cancelOrderBtn.disabled=false;toast(err.message||'取消失败');});
       return;
     }
+    var csConfirmComplete=e.target.closest('[data-cs-confirm-complete]');
+    if(csConfirmComplete){e.preventDefault();openCsConfirmCompleteModal(csConfirmComplete.dataset.csConfirmComplete);return;}
+    var markInProgress=e.target.closest('[data-mark-in-progress]');
+    if(markInProgress){e.preventDefault();openMarkInProgressModal(markInProgress.dataset.markInProgress);return;}
+    var archiveOrderBtn=e.target.closest('[data-archive-order]');
+    if(archiveOrderBtn){e.preventDefault();openArchiveOrdersModal([archiveOrderBtn.dataset.archiveOrder]);return;}
+    var unarchiveOrderBtn=e.target.closest('[data-unarchive-order]');
+    if(unarchiveOrderBtn){
+      e.preventDefault();
+      var uid=unarchiveOrderBtn.dataset.unarchiveOrder;
+      unarchiveOrderBtn.disabled=true;
+      api('unarchive_cancelled_order',{id:uid}).then(function(res){toast(res.message||'已恢复');return softRefresh();}).catch(function(err){unarchiveOrderBtn.disabled=false;toast(err.message||'恢复失败');});
+      return;
+    }
+    var archiveBatch=e.target.closest('[data-archive-batch]');
+    if(archiveBatch){
+      e.preventDefault();
+      var picks=Array.prototype.slice.call(document.querySelectorAll('[data-archive-pick]:checked')).map(function(el){return el.value;}).filter(Boolean);
+      if(!picks.length){toast('请先勾选要移除的已取消订单');return;}
+      openArchiveOrdersModal(picks);
+      return;
+    }
+    var archiveSelectAll=e.target.closest('[data-archive-select-all]');
+    if(archiveSelectAll&&e.target.matches&&e.target.matches('[data-archive-select-all]')){
+      var on=!!archiveSelectAll.checked;
+      document.querySelectorAll('[data-archive-pick]').forEach(function(el){el.checked=on;});
+      return;
+    }
     var completeOrder=e.target.closest('[data-complete-order]');if(completeOrder){openEarlyFinish(completeOrder.dataset.completeOrder);return}var cancelHall=e.target.closest('[data-cancel-grab-hall]');if(cancelHall){var hallReason=String(prompt('取消抢单将关闭订单，已付猫粮自动全额退回老板余额（只退一次）。\n请输入取消原因（老板会看到）','无人接单')||'').trim();if(!hallReason){toast('取消必须填写原因');return;}var cid=cancelHall.dataset.cancelGrabHall;cancelHall.disabled=true;api('cancel_grab_hall',{id:cid,reason:hallReason}).then(function(res){toast(res.message||'已取消抢单');return softRefresh()}).catch(function(err){cancelHall.disabled=false;toast(err.message||'取消失败')});return}var viewGrabs=e.target.closest('[data-view-grabs]');if(viewGrabs){openGrabList(viewGrabs.dataset.viewGrabs);return}var assign=e.target.closest('[data-assign-order]');if(assign){openAssign(assign.dataset.assignOrder);return}var st=e.target.closest('[data-status-order]');if(st){openStatus(st.dataset.statusOrder);return}var refund=e.target.closest('[data-refund-order]');if(refund){openRefund(refund.dataset.refundOrder);return}var close=e.target.closest('[data-close-modal]');if(close){close.closest('.cs-modal').remove();return}});
   function modal(html, dialogClass){
     var cls=String(dialogClass||'cs-form').trim()||'cs-form';
     document.body.insertAdjacentHTML('beforeend','<div class="cs-modal"><div class="cs-dialog '+cls+'">'+html+'</div></div>');
   }
-  function openTransferModal(conversationId){
+  function openReasonDialog(opts){
+    opts=opts||{};
+    var title=opts.title||'确认操作';
+    var message=opts.message||'';
+    var confirmLabel=opts.confirmLabel||'确认';
+    var danger=!!opts.danger;
+    var requireReason=opts.requireReason!==false;
+    var defaultReason=opts.defaultReason||'';
+    var placeholder=opts.placeholder||'请填写原因';
+    modal(
+      '<div class="cs-dialog-head"><h3>'+esc(title)+'</h3><button class="cs-btn ghost" type="button" data-close-modal>关闭</button></div>'+
+      (message?'<p class="cs-note">'+esc(message)+'</p>':'')+
+      (requireReason?'<label>原因<textarea data-reason-input required placeholder="'+esc(placeholder)+'">'+esc(defaultReason)+'</textarea></label>':'')+
+      '<div class="cs-actions" style="margin-top:12px"><button type="button" class="cs-btn ghost" data-close-modal>取消</button>'+
+      '<button type="button" class="cs-btn '+(danger?'danger':'primary')+'" data-reason-confirm>'+esc(confirmLabel)+'</button></div>',
+      'cs-form cs-reason-dialog'
+    );
+    var box=document.querySelector('.cs-modal .cs-reason-dialog')||document.querySelector('.cs-modal .cs-dialog');
+    var btn=box&&box.querySelector('[data-reason-confirm]');
+    if(!btn)return;
+    btn.addEventListener('click',function(){
+      var reason=requireReason?String((box.querySelector('[data-reason-input]')||{}).value||'').trim():'';
+      if(requireReason&&!reason){toast('请填写原因');return;}
+      if(typeof opts.onConfirm==='function')opts.onConfirm(reason, btn, box.closest('.cs-modal'));
+    });
+  }
+function openCsConfirmCompleteModal(orderId){
+    var order=(((state.data&&state.data.orders)||[]).find(function(x){return x.id===orderId;}))||{};
+    var pending=!!(order.completionPending||orderEarlyPending(order));
+    openReasonDialog({
+      title:pending?'帮老板确认完成':'帮老板完成订单',
+      message:pending
+        ?('陪玩已申请完成。确认后将正式完结订单并结算陪玩收入（不会重复结算）。订单：'+(order.orderNo||orderId))
+        :('将按「服务中 → 已完成」代老板确认完成并结算。已取消/已退款订单不可强制完成。订单：'+(order.orderNo||orderId)),
+      confirmLabel:'确认完成并结算',
+      danger:false,
+      placeholder:'操作原因（审计留痕，例如：老板口头确认 / 老板联系不上）',
+      onConfirm:function(reason, btn, modalEl){
+        btn.disabled=true;btn.textContent='提交中…';
+        api('cs_confirm_complete',{id:orderId,reason:reason}).then(function(res){
+          toast(res.message||'已代老板确认完成');
+          if(modalEl)modalEl.remove();
+          return softRefresh();
+        }).catch(function(err){
+          btn.disabled=false;btn.textContent='确认完成并结算';
+          toast(err.message||'完成失败');
+        });
+      }
+    });
+  }
+function openMarkInProgressModal(orderId){
+    var order=(((state.data&&state.data.orders)||[]).find(function(x){return x.id===orderId;}))||{};
+    openReasonDialog({
+      title:'标记为服务中',
+      message:'订单当前为「已接单」。标记为服务中后，才可代老板确认完成或提前结束。订单：'+(order.orderNo||orderId),
+      confirmLabel:'确认标记',
+      requireReason:false,
+      onConfirm:function(_reason, btn, modalEl){
+        btn.disabled=true;btn.textContent='处理中…';
+        api('update_order_status',{id:orderId,status:'in_progress',note:'客服标记服务中'}).then(function(res){
+          toast(res.message||'已标记为服务中');
+          if(modalEl)modalEl.remove();
+          return softRefresh();
+        }).catch(function(err){
+          btn.disabled=false;btn.textContent='确认标记';
+          toast(err.message||'操作失败');
+        });
+      }
+    });
+  }
+function openArchiveOrdersModal(ids){
+    ids=(ids||[]).filter(Boolean);
+    if(!ids.length)return;
+    openReasonDialog({
+      title:ids.length>1?'批量移除已取消记录':'移除已取消记录',
+      message:'将从客服日常订单列表隐藏 '+ids.length+' 条已取消订单。不会删除数据库订单、退款、对账与工资记录；可在「历史归档」查看。',
+      confirmLabel:'确认移除',
+      danger:true,
+      defaultReason:'清理已取消订单日常列表',
+      placeholder:'移除说明（可选，写入审计）',
+      onConfirm:function(reason, btn, modalEl){
+        btn.disabled=true;btn.textContent='处理中…';
+        api(ids.length>1?'archive_cancelled_orders':'archive_cancelled_order',{ids:ids,id:ids[0],reason:reason}).then(function(res){
+          toast(res.message||'已移除');
+          if(modalEl)modalEl.remove();
+          return softRefresh();
+        }).catch(function(err){
+          btn.disabled=false;btn.textContent='确认移除';
+          toast(err.message||'移除失败');
+        });
+      }
+    });
+  }
+function openTransferModal(conversationId){
     var id=String(conversationId||'').trim();
     if(!id)return;
     modal('<div class="cs-dialog-head"><h3>转交客服</h3><button class="cs-btn" type="button" data-close-modal>关闭</button></div>'+

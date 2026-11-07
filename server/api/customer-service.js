@@ -64,6 +64,7 @@ import {
   persistImageMessage,
   isImageEnumError,
 } from "./_chat-message.js";
+import { readCsListArchive } from "./_cs-order-archive.js";
 const REQUIRED_ENV = ["SUPABASE_URL", "SUPABASE_ANON_KEY", "SUPABASE_SERVICE_ROLE_KEY"];
 const ORDER_STATUS_TEXT = { ...ORDER_STATUS_LABELS };
 const SERVICE_ROLES = new Set(["customer_service"]);
@@ -477,6 +478,7 @@ export function safeOrder(row, profiles = {}, extras = {}) {
   const bossInfo = bossForCs(boss);
   const bossUid = bossInfo.bossUid;
   const note = String(row.note || row.cancel_reason || "");
+  const csArchive = readCsListArchive(row);
   const needsReassign =
     row.status === "pending" && /无法接单|确认超时|拒单|重新安排/.test(note);
   const flowStatus =
@@ -574,6 +576,10 @@ export function safeOrder(row, profiles = {}, extras = {}) {
       String(row.order_type || "").toLowerCase() === "multi_group" && !row.parent_order_id,
     isMultiGroupChild: !!row.parent_order_id,
     cancelReason: row.cancel_reason || "",
+    csArchived: !!csArchive,
+    csArchivedAt: csArchive?.at || "",
+    csArchivedByName: csArchive?.byName || "",
+    csArchivedReason: csArchive?.reason || "",
     earlyFinish: readEarlyFinish(row),
     earlyFinishReject: readEarlyFinishReject(row),
     needsReassign,
@@ -4822,6 +4828,214 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
       } finally {
         setTimeout(() => ASSIGN_LOCKS.delete(lockKey), 3000);
       }
+    }
+    if (
+      action === "cs_confirm_complete" ||
+      action === "confirm_complete_as_boss" ||
+      action === "cs_boss_confirm_complete"
+    ) {
+      const id = String(body.id || body.order_id || "");
+      const reason = String(body.reason || body.note || "").trim().slice(0, 200);
+      const order = await orderById(id);
+      if (!order) return json(res, 404, { ok: false, code: "ORDER_NOT_FOUND", message: "订单不存在。" });
+      try {
+        assertCsEarlyFinishRole(service.profile);
+      } catch (err) {
+        return json(res, err.status || 403, {
+          ok: false,
+          message: err.message || "无权代老板确认完成。",
+          code: err.code || "CS_CONFIRM_FORBIDDEN",
+        });
+      }
+      if (!reason) {
+        return json(res, 400, { ok: false, code: "REASON_REQUIRED", message: "请填写代完成原因（审计留痕）。" });
+      }
+      const st = String(order.status || "").toLowerCase();
+      if (st === "cancelled" || st === "refunded" || st === "refund_requested") {
+        return json(res, 409, {
+          ok: false,
+          code: "ORDER_NOT_COMPLETABLE",
+          message: "已取消 / 已退款 / 售后中的订单不能强制完成。",
+        });
+      }
+      if (st === "completed" || st === "reviewed") {
+        return json(res, 200, { ok: true, duplicate: true, message: "订单已完成，无需重复处理。" });
+      }
+      if (st === "confirmed") {
+        return json(res, 409, {
+          ok: false,
+          code: "NOT_IN_PROGRESS",
+          message: "订单仍为「已接单」，尚未进入服务中。请先让陪玩开始服务，或使用「标记为服务中」后再代完成。",
+        });
+      }
+      if (st !== "in_progress") {
+        return json(res, 409, {
+          ok: false,
+          code: "STATUS_BLOCKED",
+          message: `当前状态「${ORDER_STATUS_TEXT[st] || st}」不能代老板确认完成。`,
+        });
+      }
+      try {
+        const { isMultiGroupParent, ORDER_TYPE_MULTI_GROUP } = await import("./_order-group.js");
+        if (
+          isMultiGroupParent(order) ||
+          String(order.order_type || "").toLowerCase() === ORDER_TYPE_MULTI_GROUP
+        ) {
+          return json(res, 409, {
+            ok: false,
+            code: "MULTI_PARENT_NO_DIRECT_FINALIZE",
+            message: "多人主订单不能客服直接完成；请完成各子订单。",
+          });
+        }
+      } catch (_) {}
+      try {
+        if (!order.customer_service_id || order.customer_service_id !== service.profile.id) {
+          await patchOrder(order.id, { customer_service_id: service.profile.id });
+        }
+        const { createOrderCompleteHelpers } = await import("./_order-complete.js");
+        const { writeOrderStatusLog } = await import("./_order-status.js");
+        const helpers = createOrderCompleteHelpers({
+          restUrl,
+          supabaseJson,
+          serviceHeaders,
+          addSystemMessage: async (ord, actorId, content) => {
+            const conversation = await ensureConversation({
+              boss_id: ord.boss_id,
+              companion_id: ord.companion_id,
+              customer_service_id: service.profile.id,
+              order_id: ord.parent_order_id || ord.id,
+            });
+            await addMessage(conversation, actorId || service.profile.id, "customer_service", content, "system", ord.id);
+          },
+        });
+        let working = (await orderById(id)) || order;
+        const hadPending = helpers.orderHasCompletionPending(working);
+        if (!hadPending) {
+          await helpers.markCompletionPending(working);
+          working = (await orderById(id)) || working;
+        }
+        const out = await helpers.finalizeOrderCompletion(working, {
+          method: "cs_force",
+          actorId: service.profile.id,
+          message: `客服代老板确认完成：${reason}`,
+        });
+        await writeOrderStatusLog(
+          { restUrl, supabaseJson, serviceHeaders },
+          {
+            orderId: id,
+            fromStatus: "in_progress",
+            toStatus: String(out.order?.status || "completed"),
+            operatorRole: "customer_service",
+            operatorId: service.profile.id,
+            note: `cs_confirm_complete:${hadPending ? "pending" : "force"}:${reason}`.slice(0, 500),
+          }
+        ).catch(() => {});
+        const patched = out.order || working;
+        try {
+          const conversation = await ensureConversation({
+            boss_id: patched.boss_id,
+            companion_id: patched.companion_id,
+            customer_service_id: service.profile.id,
+            order_id: patched.parent_order_id || patched.id,
+          });
+          await addMessage(
+            conversation,
+            service.profile.id,
+            "customer_service",
+            `客服已代老板确认完成订单。原因：${reason}`,
+            "system",
+            id
+          );
+        } catch (_) {}
+        try {
+          const { notifyCompanionOrderStatusChange } = await import("./_companion-order-notify.js");
+          if (patched.companion_id && !out.duplicate) {
+            notifyCompanionOrderStatusChange(patched, { status: "completed" }).catch(() => {});
+          }
+        } catch (_) {}
+        const profiles = await profileMap([patched.boss_id, patched.companion_id, service.profile.id].filter(Boolean));
+        return json(res, 200, {
+          ok: true,
+          duplicate: !!out.duplicate,
+          message: out.duplicate
+            ? "订单已完成/已结算，未重复结算。"
+            : hadPending
+              ? "已代老板确认完成订单。"
+              : "已代老板确认完成订单（订单原无陪玩申请，客服强制完成并已写入审计）。",
+          order: safeOrder(patched, profiles),
+        });
+      } catch (err) {
+        return json(res, err.status || 500, {
+          ok: false,
+          code: err.code || "CS_CONFIRM_FAILED",
+          message: err.message || "代完成失败。",
+        });
+      }
+    }
+    if (
+      action === "archive_cancelled_order" ||
+      action === "archive_cancelled_orders" ||
+      action === "unarchive_cancelled_order"
+    ) {
+      try {
+        assertCsEarlyFinishRole(service.profile);
+      } catch (err) {
+        return json(res, err.status || 403, {
+          ok: false,
+          message: err.message || "无权清理已取消订单。",
+          code: err.code || "CS_ARCHIVE_FORBIDDEN",
+        });
+      }
+      const { archiveCancelledOrder, unarchiveCancelledOrder } = await import("./_cs-order-archive.js");
+      const ids = Array.isArray(body.ids)
+        ? body.ids.map(String).filter(Boolean)
+        : [String(body.id || body.order_id || "")].filter(Boolean);
+      if (!ids.length) {
+        return json(res, 400, { ok: false, message: "请选择要处理的订单。" });
+      }
+      const operator = {
+        id: service.profile.id,
+        name: csDisplayName(service.profile),
+      };
+      const reason = String(body.reason || "").trim().slice(0, 200);
+      const results = [];
+      for (const oid of ids) {
+        const order = await orderById(oid);
+        if (!order) {
+          results.push({ id: oid, ok: false, message: "订单不存在" });
+          continue;
+        }
+        try {
+          await assertOrderMutationAllowed(order, service.profile);
+        } catch (err) {
+          results.push({ id: oid, ok: false, message: err.message || CS_LOCK_DENIED });
+          continue;
+        }
+        try {
+          const out =
+            action === "unarchive_cancelled_order"
+              ? await unarchiveCancelledOrder(order, { patchOrder })
+              : await archiveCancelledOrder(order, { operator, reason, patchOrder });
+          results.push({
+            id: oid,
+            ok: out.ok,
+            duplicate: !!out.duplicate,
+            message: out.message,
+            order: out.order ? safeOrder(out.order, await profileMap([out.order.boss_id, out.order.companion_id, service.profile.id].filter(Boolean))) : null,
+          });
+        } catch (err) {
+          results.push({ id: oid, ok: false, message: err.message || "处理失败", code: err.code || "" });
+        }
+      }
+      const okCount = results.filter((r) => r.ok).length;
+      return json(res, okCount ? 200 : 409, {
+        ok: okCount > 0,
+        message:
+          action === "unarchive_cancelled_order"
+            ? `已恢复 ${okCount} 条记录。`
+            : `已从日常列表移除 ${okCount} 条已取消订单（数据保留）。`,
+        results,
+      });
     }
     if (action === "early_finish_preview" || action === "early_finish_order" || action === "reject_early_finish") {
       const id = String(body.id || body.order_id || "");

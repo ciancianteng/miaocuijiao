@@ -1273,3 +1273,8 @@ button.cs-metric{display:block;width:100%;text-align:left;color:inherit;backgrou
   .cs-chat-messages{flex:1 1 auto;min-height:0}
   .cs-chat-composer{padding-bottom:var(--cs-keyboard-inset, 0px)}
 }
+/* P0 CS soft-archive helpers only */
+.cs-card-check{display:flex;align-items:center;gap:6px;font-size:12px;color:#c8c9d1}
+.cs-order-batch{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:0 0 10px;padding:8px 10px;border-radius:12px;border:1px solid var(--line);background:rgba(255,255,255,.03)}
+.cs-batch-check{display:flex;align-items:center;gap:6px;font-size:12px;color:#c8c9d1}
+.cs-col-check{width:36px}
