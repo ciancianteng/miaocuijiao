@@ -120,8 +120,13 @@
     merged.sort = Number(merged.sort || merged.sort_weight || merged.level);
     merged.open = merged.open !== false && merged.open !== "否" && merged.open !== "关闭";
     merged.enabled = merged.enabled !== false && merged.enabled !== "停用" && merged.status !== "disabled";
-    merged.priceRangeLabel = "最多可加价 +" + merged.markupAllowance;
-    merged.priceRangeText = merged.priceRangeLabel + " 猫粮";
+    var sellMax = Math.min(merged.max, merged.basePrice + merged.markupAllowance);
+    merged.priceRangeLabel = merged.min + "–" + merged.max;
+    merged.priceRangeText =
+      "默认 " + merged.basePrice +
+      " · 允许 " + merged.min + "–" + merged.max +
+      " · 最多加价 +" + merged.markupAllowance +
+      " · 最终可达 " + merged.basePrice + "–" + sellMax + " 猫粮";
     merged.title = (merged.code + " " + merged.name).trim();
     return merged;
   }

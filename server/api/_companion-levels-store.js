@@ -97,7 +97,7 @@ function rowFromDb(row = {}, index = 0) {
 }
 function rowToDb(row) {
   const item = normalizeLevelRow(row);
-  // Legacy min/max/base/maxPlus kept as-is for schema compatibility; Scheme A admin SoT is markupAllowance.
+  // Level band SoT: min/max/base + markupAllowance (embedded in benefits when column absent).
   return {
     id: item.id,
     level: item.level,
@@ -184,6 +184,13 @@ async function writeDbLevels(rows) {
   return (Array.isArray(body) ? body : payload).map((row, index) =>
     row.id && row.min_price != null ? rowFromDb(row, index) : normalizeLevelRow(row, index)
   );
+}
+
+/** Core ladder — structure must never be deleted (config may be cleared/reset). */
+export const LOCKED_LEVEL_IDS = Object.freeze(["lv1", "lv2", "lv3", "lv4", "lv5"]);
+
+export function isLockedLevelId(id) {
+  return LOCKED_LEVEL_IDS.includes(String(id || "").trim().toLowerCase());
 }
 
 export const DEFAULT_LEVELS = [
@@ -303,6 +310,32 @@ export const DEFAULT_LEVELS = [
     enabled: true,
   },
 ];
+
+/**
+ * Reset editable admin fields to seed defaults for this ladder slot.
+ * Keeps id / level / code / sort. Does not touch companions, orders, or finance.
+ * Does not clear per-service price configs elsewhere.
+ */
+export function clearLevelEditableConfig(row = {}) {
+  const current = normalizeLevelRow(row);
+  const seed =
+    DEFAULT_LEVELS.find((item) => String(item.id) === String(current.id)) ||
+    DEFAULT_LEVELS.find((item) => Number(item.level) === Number(current.level)) ||
+    DEFAULT_LEVELS[0];
+  return normalizeLevelRow(
+    {
+      ...seed,
+      id: current.id,
+      level: current.level,
+      code: current.code || seed.code,
+      sort: current.sort != null ? current.sort : seed.sort,
+      markupAllowance: 0,
+      maxMarkupCats: 0,
+      benefits: "",
+    },
+    Math.max(0, Number(current.level) - 1)
+  );
+}
 
 async function ensureDir() {
   await fs.mkdir(DATA_DIR, { recursive: true });
@@ -568,11 +601,17 @@ export function validateLevelConfig(row = {}, { requireId = false } = {}) {
   if (!CARD_BACKGROUNDS.has(String(item.cardBackground || ""))) {
     errors.push("card_background 必须是 solid / gradient / glass");
   }
-  // Legacy price columns kept for schema compatibility only — not admin SoT for game sell prices.
-  if (!(Number(item.min) >= 0)) errors.push("兼容字段 min_price 必须 ≥ 0");
-  if (!(Number(item.max) >= Number(item.min))) errors.push("兼容字段 max_price 必须 ≥ min_price");
-  if (!(Number(item.basePrice) > 0)) errors.push("兼容字段 base_price 必须 > 0");
-  if (!(Number(item.markupAllowance) >= 0)) errors.push("本等级最多可加价必须 ≥ 0");
+  if (!(Number(item.min) >= 0)) errors.push("最低允许售价必须 ≥ 0");
+  if (!(Number(item.max) >= Number(item.min))) errors.push("最高允许售价必须 ≥ 最低允许售价");
+  if (!(Number(item.basePrice) > 0)) errors.push("默认售价必须 > 0");
+  if (!(Number(item.basePrice) >= Number(item.min) && Number(item.basePrice) <= Number(item.max))) {
+    errors.push("默认售价必须在最低价与最高价之间（最低 ≤ 默认 ≤ 最高）");
+  }
+  if (!(Number(item.markupAllowance) >= 0)) errors.push("允许加价上限必须 ≥ 0");
+  const headroom = Number(item.max) - Number(item.basePrice);
+  if (Number(item.markupAllowance) > headroom + 1e-9) {
+    errors.push("允许加价上限不得突破最高价（默认售价 + 加价 ≤ 最高价）");
+  }
   if (!(Number(item.commissionRate) >= 0 && Number(item.commissionRate) <= 100)) {
     errors.push("commission_rate 必须在 0–100");
   }
@@ -607,8 +646,12 @@ export function validateLevelConfigList(rows = []) {
 export function levelVisualConfig(level) {
   if (!level) return null;
   const item = normalizeLevelRow(level);
-  const priceRangeLabel = item.maxPlus ? `${item.min}–${item.max}+` : `${item.min}–${item.max}`;
   const markupAllowance = Math.max(0, Number(item.markupAllowance) || 0);
+  const base = Number(item.basePrice) || 0;
+  const minP = Number(item.min) || 0;
+  const maxP = Number(item.max) || 0;
+  const sellMax = Math.min(maxP, base + markupAllowance);
+  const priceRangeLabel = `${minP}–${maxP}`;
   return {
     id: item.id,
     level: item.level,
@@ -632,7 +675,7 @@ export function levelVisualConfig(level) {
     markupAllowance,
     maxMarkupCats: markupAllowance,
     priceRangeLabel,
-    priceRangeText: `最多可加价 +${markupAllowance} 猫粮`,
+    priceRangeText: `默认 ${base} · 允许 ${minP}–${maxP} · 最多加价 +${markupAllowance} · 最终可达 ${base}–${sellMax} 猫粮`,
     commissionRate: item.commissionRate,
   };
 }

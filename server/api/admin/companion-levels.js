@@ -10,6 +10,8 @@ import {
   toPublicLevel,
   validateLevelConfig,
   validateLevelConfigList,
+  isLockedLevelId,
+  clearLevelEditableConfig,
 } from "../_companion-levels-store.js";
 
 import { requireAdmin as requireAdminJwt } from "../_admin-auth.js";
@@ -57,7 +59,13 @@ function verifyPublished(levels, expected) {
     const match = got.find((row) => String(row.id) === String(item.id));
     if (!match) return { ok: false, message: `校验失败：缺少等级 ${item.code || item.id}。` };
     if (Number(match.markupAllowance) !== Number(item.markupAllowance)) {
-      return { ok: false, message: `校验失败：${item.code} 最多可加价未写入。` };
+      return { ok: false, message: `校验失败：${item.code} 允许加价上限未写入。` };
+    }
+    if (Number(match.basePrice) !== Number(item.basePrice)) {
+      return { ok: false, message: `校验失败：${item.code} 默认售价未写入。` };
+    }
+    if (Number(match.min) !== Number(item.min) || Number(match.max) !== Number(item.max)) {
+      return { ok: false, message: `校验失败：${item.code} 价格区间未写入。` };
     }
     if (Number(match.commissionRate) !== Number(item.commissionRate)) {
       return { ok: false, message: `校验失败：${item.code} 抽成未写入。` };
@@ -233,6 +241,13 @@ export default async function handler(req, res) {
     if (action === "delete") {
       const id = String(body.id || "").trim();
       if (!id) return json(res, 400, { ok: false, message: "缺少等级 ID。" });
+      if (isLockedLevelId(id)) {
+        return json(res, 400, {
+          ok: false,
+          message: "LV1–LV5 为永久等级结构，禁止删除。可使用「清零配置」重置可编辑内容（不影响价格以外的服务价表、用户等级、订单与财务）。",
+          locked: true,
+        });
+      }
       await updateLocalLevels(async (list) => {
         const next = list.filter((row) => String(row.id) !== id);
         if (next.length === list.length) throw Object.assign(new Error("等级不存在。"), { status: 404 });
@@ -240,6 +255,34 @@ export default async function handler(req, res) {
         return { levels: list };
       });
       return json(res, 200, { ok: true, message: "已删除等级", levels: (await readLocalLevels()).map(toPublicLevel), source: "companion_levels" });
+    }
+
+    if (action === "clear_config" || action === "reset_config") {
+      const id = String(body.id || "").trim();
+      if (!id) return json(res, 400, { ok: false, message: "缺少等级 ID。" });
+      const confirmToken = String(body.confirm || body.confirmToken || "").trim();
+      if (confirmToken !== "CLEAR_LEVEL_CONFIG") {
+        return json(res, 400, {
+          ok: false,
+          message: "清零需二次确认：请提交 confirm=CLEAR_LEVEL_CONFIG。仅重置该等级可编辑配置，不删除等级结构、用户等级、订单或财务。",
+        });
+      }
+      let cleared = null;
+      const levels = await updateLocalLevels(async (list) => {
+        const idx = list.findIndex((row) => String(row.id) === id);
+        if (idx < 0) throw Object.assign(new Error("等级不存在。"), { status: 404 });
+        cleared = clearLevelEditableConfig(list[idx]);
+        list[idx] = cleared;
+        return { levels: list, level: cleared };
+      });
+      return json(res, 200, {
+        ok: true,
+        message: "已清零该等级可编辑配置（结构保留）。请「保存/发布」后全站生效。服务项目独立价格未改动。",
+        level: cleared ? toPublicLevel(cleared) : null,
+        levels: (levels.levels || (await readLocalLevels())).map(toPublicLevel),
+        published: false,
+        source: "companion_levels",
+      });
     }
 
     if (action === "reorder") {

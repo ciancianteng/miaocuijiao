@@ -22,6 +22,7 @@
     formOpen: false,
     dirty: false,
     lastPublish: null,
+    lastSavedAt: "",
   };
 
   function esc(v) {
@@ -46,13 +47,35 @@
     return state.levels.find(function (item) { return String(item.id) === String(state.selectedId); }) || state.levels[0] || null;
   }
 
+  var LOCKED_LEVEL_IDS = { lv1: 1, lv2: 1, lv3: 1, lv4: 1, lv5: 1 };
+  function isLockedLevel(id) {
+    return !!LOCKED_LEVEL_IDS[String(id || "").trim().toLowerCase()];
+  }
   function markupText(level) {
     var x = level && level.markupAllowance != null ? Number(level.markupAllowance) : Number(level && level.maxMarkupCats);
     if (!isFinite(x) || x < 0) x = 0;
     return "+" + x + " 猫粮";
   }
+  function numOr(v, fallback) {
+    var n = Number(v);
+    return isFinite(n) ? n : fallback;
+  }
   function rangeText(level) {
-    return "最多可加价 " + markupText(level);
+    if (!level) return "—";
+    if (level.priceRangeText) return String(level.priceRangeText);
+    var base = numOr(level.basePrice != null ? level.basePrice : level.base_price, numOr(level.min, 0));
+    var minP = numOr(level.min != null ? level.min : level.minPrice, 0);
+    var maxP = numOr(level.max != null ? level.max : level.maxPrice, minP);
+    var markup = numOr(level.markupAllowance != null ? level.markupAllowance : level.maxMarkupCats, 0);
+    var sellMax = Math.min(maxP, base + markup);
+    return "默认 " + base + " · " + minP + "–" + maxP + " · 加价+" + markup + " · 最终 " + base + "–" + sellMax;
+  }
+  function saveStatusText() {
+    if (state.publishing) return "发布中…";
+    if (state.saving) return "保存中…";
+    if (state.dirty) return "有未保存修改";
+    if (state.lastSavedAt) return "已保存 · " + state.lastSavedAt;
+    return "与服务器同步";
   }
 
   function cardBgLabel(value) {
@@ -94,11 +117,12 @@
             "</div>" +
           "</div>" +
           '<div class="level-preview-meta">' +
-            '<div class="level-preview-meta-card"><span>卡片背景</span><strong>' + esc(cardBgLabel(level.cardBackground)) + "</strong></div>" +
-            '<div class="level-preview-meta-card"><span>最多可加价</span><strong>' + esc(markupText(level)) + "</strong></div>" +
+            '<div class="level-preview-meta-card"><span>默认售价</span><strong>' + esc(numOr(level.basePrice != null ? level.basePrice : level.base_price, "—")) + "</strong></div>" +
+            '<div class="level-preview-meta-card"><span>允许区间</span><strong>' + esc(numOr(level.min != null ? level.min : level.minPrice, 0) + "–" + numOr(level.max != null ? level.max : level.maxPrice, 0)) + "</strong></div>" +
+            '<div class="level-preview-meta-card"><span>加价上限</span><strong>' + esc(markupText(level)) + "</strong></div>" +
             '<div class="level-preview-meta-card"><span>平台抽成</span><strong>' + esc(level.commissionRate) + "%</strong></div>" +
             '<div class="level-preview-meta-card"><span>状态</span><strong>' + (level.enabled ? "启用" : "停用") + " · " + (level.open ? "开放申请" : "关闭申请") + "</strong></div>" +
-            '<div class="level-preview-meta-card"><span>边框色</span><strong>' + esc(border) + "</strong></div>" +
+            '<div class="level-preview-meta-card"><span>配置状态</span><strong>' + esc(saveStatusText()) + "</strong></div>" +
           "</div>" +
           (level.upgradeCondition
             ? '<div class="level-preview-upgrade">' + esc(level.upgradeCondition) + "</div>"
@@ -153,21 +177,27 @@
           '<label><span>图标颜色</span><input name="badgeIcon" type="color" value="' + esc(level.badgeIcon || level.color || "#9CA3AF") + '"></label>' +
           '<label><span>卡片背景</span><select name="cardBackground" data-admin-control="select">' + bgOptions + "</select></label>"
         ) +
-        moduleBlock("③ 接单规则", "本等级最多可加价 · 平台抽成（不改游戏基础售价）",
-          '<label><span>本等级最多可加价（猫粮）</span><input name="markupAllowance" type="number" min="0" step="1" value="' + esc(level.markupAllowance != null ? level.markupAllowance : 0) + '" required><span class="muted" style="font-size:11px;font-weight:600">各游戏独立原价不变；此处只配置允许加价额度 X，默认 0</span></label>' +
-          '<label><span>平台抽成 %</span><input name="commissionRate" type="number" min="0" max="100" step="0.1" value="' + esc(level.commissionRate) + '"><span class="muted" style="font-size:11px;font-weight:600">发布后同步该等级陪玩；历史已结算订单不变</span></label>'
+        moduleBlock("③ 等级服务价格", "默认售价 / 最低·最高允许售价 / 加价上限（单位：猫粮；最低 ≤ 默认 ≤ 最高；默认+加价 ≤ 最高）",
+          '<label><span>默认售价</span><input name="basePrice" type="number" min="0" step="1" value="' + esc(level.basePrice != null ? level.basePrice : (level.min != null ? level.min : 0)) + '" required></label>' +
+          '<label><span>最低允许售价</span><input name="min" type="number" min="0" step="1" value="' + esc(level.min != null ? level.min : 0) + '" required></label>' +
+          '<label><span>最高允许售价</span><input name="max" type="number" min="0" step="1" value="' + esc(level.max != null ? level.max : 0) + '" required></label>' +
+          '<label><span>允许加价上限</span><input name="markupAllowance" type="number" min="0" step="1" value="' + esc(level.markupAllowance != null ? level.markupAllowance : 0) + '" required><span class="muted" style="font-size:11px;font-weight:600">陪玩最终售价 ≤ 默认售价 + 加价上限，且不超过最高价</span></label>' +
+          '<label><span>平台抽成 %</span><input name="commissionRate" type="number" min="0" max="100" step="0.1" value="' + esc(level.commissionRate != null ? level.commissionRate : 20) + '" readonly><span class="muted" style="font-size:11px;font-weight:600">只读展示；订单/工资/提现仍按平台既有 20% 抽成规则，本页不改财务口径</span></label>' +
+          '<div class="wide muted" style="font-size:12px;font-weight:700;padding:8px 0">生效范围：' + esc(rangeText(level)) + " · " + esc(saveStatusText()) + "</div>"
         ) +
-        moduleBlock("④ 升级规则", "升级条件与等级说明",
+        moduleBlock("④ 升级规则", "升级条件与等级说明（与价格配置分开；清零等级内容不清除服务价表）",
           '<label class="wide"><span>升级条件</span><textarea name="upgradeCondition" rows="4" placeholder="订单数 / 好评率 / 认证完成">' + esc(level.upgradeCondition || "") + "</textarea></label>" +
           '<label class="wide"><span>等级说明</span><textarea name="description" rows="3">' + esc(level.description || "") + "</textarea></label>"
         ) +
         '<div class="row level-editor-actions">' +
           '<button class="primary-btn" type="submit" data-level-save-current' + (state.saving || state.publishing ? " disabled" : "") + ">保存当前等级</button>" +
           '<button class="primary-btn level-publish-btn" type="button" data-level-publish' + (state.saving || state.publishing ? " disabled" : "") + '>发布到全站</button>' +
-          '<button class="ghost-btn" type="button" data-level-add>新增下一级</button>' +
-          '<button class="ghost-btn" type="button" data-level-delete="' + esc(level.id) + '">删除</button>' +
+          '<button class="ghost-btn" type="button" data-level-clear="' + esc(level.id) + '">清零配置</button>' +
+          (isLockedLevel(level.id)
+            ? '<button class="ghost-btn" type="button" disabled title="LV1–LV5 永久保留">等级结构锁定</button>'
+            : '<button class="ghost-btn" type="button" data-level-delete="' + esc(level.id) + '">删除</button>') +
         "</div>" +
-        '<p class="admin-sync-note" style="margin:0">「保存当前等级」只写入当前等级加价额度与抽成；「发布到全站」同步四端展示。不会批量改写游戏基础售价。</p>' +
+        '<p class="admin-sync-note" style="margin:0">逐级保存后点「发布到全站」四端生效。仅影响新报价/新订单；已付款订单价格快照不变。LV1–LV5 不可删除。</p>' +
       "</form>"
     );
   }
@@ -215,19 +245,18 @@
     var level = selected();
     var statusText = state.error || state.message || (state.dirty ? "有未发布修改" : "修改后预览 → 保存当前 / 发布到全站");
     var head = (
-      '<div class="content-admin-head"><div><h3>全站等级配置中心</h3><p>单一数据源 <code>companion_levels</code>：陪玩大厅、详情页、等级徽章、卡片展示与升级规则统一读取。入口仅「制度与等级」。</p></div>' +
-        '<div class="content-version-meta"><span>' + esc(state.levels.length) + " 个等级</span><span>" + esc(statusText) + "</span></div></div>"
+      '<div class="content-admin-head"><div><h3>全站等级配置中心</h3><p>单一数据源 <code>companion_levels</code>：LV1–LV5 永久保留。等级说明与服务价格分栏管理；清零配置不删结构、不改用户等级/订单/财务、不自动清服务价表。</p></div>' +
+        '<div class="content-version-meta"><span>' + esc(state.levels.length) + " 个等级</span><span>" + esc(saveStatusText()) + "</span><span>" + esc(statusText) + "</span></div></div>"
     );
     var toolbar = (
       '<div class="content-admin-toolbar compact level-admin-toolbar">' +
-        '<button class="btn primary" type="button" data-level-add>新增下一级</button>' +
         '<button class="btn" type="button" data-level-edit-selected' + (level ? "" : " disabled") + '>编辑选中等级</button>' +
-        '<button class="btn" type="button" data-level-publish-page' + (state.levels.length ? "" : " disabled") + '>发布到全站</button>' +
+        '<button class="btn primary" type="button" data-level-publish-page' + (state.levels.length ? "" : " disabled") + '>发布到全站</button>' +
       "</div>"
     );
     var listSection = (
-      '<section class="panel level-admin-list-panel"><h2>等级列表</h2><div class="level-admin-list" data-level-list>' + listHtml() + "</div>" +
-        '<p class="muted level-admin-list-hint">拖动手柄调整排序；编辑面板按基础 / 前台显示 / 接单规则 / 升级规则分组，右侧实时预览。</p></section>'
+      '<section class="panel level-admin-list-panel"><h2>等级列表（LV1–LV5 锁定）</h2><div class="level-admin-list" data-level-list>' + listHtml() + "</div>" +
+        '<p class="muted level-admin-list-hint">逐级编辑默认售价 / 最低·最高价 / 加价上限；保存后发布。右侧预览生效价格范围。</p></section>'
     );
     if (!window.MCJAdminOverlay) {
       return (
@@ -303,13 +332,12 @@
       badgeBorder: String(fd.get("badgeBorder") || "#9CA3AF"),
       badgeText: String(fd.get("badgeText") || "#ffffff"),
       badgeIcon: String(fd.get("badgeIcon") || "#9CA3AF"),
-      // Preserve legacy price columns unchanged — Scheme A only edits markupAllowance.
-      min: current.min != null ? Number(current.min) : 0,
-      max: current.max != null ? Number(current.max) : 0,
+      min: Math.max(0, Number(fd.get("min") != null && fd.get("min") !== "" ? fd.get("min") : (current.min != null ? current.min : 0))),
+      max: Math.max(0, Number(fd.get("max") != null && fd.get("max") !== "" ? fd.get("max") : (current.max != null ? current.max : 0))),
       maxPlus: !!current.maxPlus,
-      basePrice: current.basePrice != null ? Number(current.basePrice) : (current.min != null ? Number(current.min) : 20),
+      basePrice: Math.max(0, Number(fd.get("basePrice") != null && fd.get("basePrice") !== "" ? fd.get("basePrice") : (current.basePrice != null ? current.basePrice : 20))),
       markupAllowance: Math.max(0, Number(fd.get("markupAllowance") || 0)),
-      commissionRate: Number(fd.get("commissionRate") || 0),
+      commissionRate: current.commissionRate != null ? Number(current.commissionRate) : 20,
       sort: Number(fd.get("sort") || current.sort || 1),
       open: String(fd.get("open")) !== "false",
       enabled: String(fd.get("enabled")) !== "false",
@@ -408,12 +436,30 @@
     return (overlayBody && overlayBody.querySelector("[data-level-editor]")) || (target() && target().querySelector("[data-level-editor]"));
   }
 
+  function validatePriceBand(level) {
+    var minP = Number(level.min);
+    var maxP = Number(level.max);
+    var base = Number(level.basePrice);
+    var markup = Number(level.markupAllowance);
+    if (!(minP >= 0) || !(maxP >= 0) || !(base > 0)) return "价格数值无效";
+    if (!(maxP >= minP)) return "最高允许售价必须 ≥ 最低允许售价";
+    if (!(base >= minP && base <= maxP)) return "默认售价必须满足：最低 ≤ 默认 ≤ 最高";
+    if (!(markup >= 0)) return "允许加价上限必须 ≥ 0";
+    if (base + markup > maxP + 1e-9) return "允许加价上限不得突破最高价（默认 + 加价 ≤ 最高）";
+    return "";
+  }
+
   function saveCurrent() {
     var form = findEditorForm();
     if (form) patchSelectedFromForm(form);
     var level = selected();
     if (!level) {
       alert("请先选择要保存的等级");
+      return Promise.resolve();
+    }
+    var priceErr = validatePriceBand(level);
+    if (priceErr) {
+      alert(priceErr);
       return Promise.resolve();
     }
     state.saving = true;
@@ -425,6 +471,7 @@
         applyLocal(result.levels || state.levels);
         state.saving = false;
         state.dirty = false;
+        state.lastSavedAt = new Date().toLocaleTimeString();
         state.message = result.message || "当前等级已保存";
         state.error = "";
         state.lastPublish = null;
@@ -436,6 +483,38 @@
         state.message = "";
         render();
         alert("保存失败：" + (err.message || "未知错误"));
+      });
+  }
+
+  function clearLevelConfig(id) {
+    var level = state.levels.find(function (item) { return String(item.id) === String(id); });
+    if (!level) {
+      alert("等级不存在");
+      return;
+    }
+    if (!confirm("确认清零「" + (level.code || id) + " " + (level.name || "") + "」的可编辑配置？\n\n将恢复该等级默认说明/条件/价格区间与加价上限。\n不会删除等级结构、用户等级、历史订单或财务记录。\n不会清除服务项目独立价格。")) return;
+    if (!confirm("二次确认：真的清零该等级配置？（结构保留，仅重置内容）")) return;
+    state.saving = true;
+    state.message = "正在清零配置…";
+    state.error = "";
+    render();
+    apiPost({ action: "clear_config", id: id, confirm: "CLEAR_LEVEL_CONFIG" })
+      .then(function (result) {
+        applyLocal(result.levels || state.levels);
+        state.selectedId = id;
+        state.saving = false;
+        state.dirty = true;
+        state.lastSavedAt = new Date().toLocaleTimeString();
+        state.message = result.message || "已清零，请发布到全站";
+        state.error = "";
+        openLevelEditor(id);
+      })
+      .catch(function (err) {
+        state.saving = false;
+        state.error = err.message || "清零失败";
+        state.message = "";
+        render();
+        alert("清零失败：" + (err.message || "未知错误"));
       });
   }
 
@@ -522,6 +601,10 @@
   }
 
   function deleteLevel(id) {
+    if (isLockedLevel(id)) {
+      alert("LV1–LV5 为永久等级结构，禁止删除。如需重置内容请使用「清零配置」。");
+      return;
+    }
     if (!confirm("确认删除该等级？已绑定陪玩需先迁移等级。删除后请「发布到全站」。")) return;
     state.levels = state.levels.filter(function (item) { return String(item.id) !== String(id); });
     state.selectedId = state.levels[0] ? state.levels[0].id : "";
@@ -547,6 +630,11 @@
       }
       if (e.target.closest("[data-level-add]")) {
         addLevel();
+        return;
+      }
+      var clearBtn = e.target.closest("[data-level-clear]");
+      if (clearBtn) {
+        clearLevelConfig(clearBtn.getAttribute("data-level-clear"));
         return;
       }
       var del = e.target.closest("[data-level-delete]");
