@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>抢单订单 · MEOW CUI JIAO</title>
+  <!-- mcj-grab-og:begin -->
+  <meta name="description" content="妙脆角抢单大厅 — 进入抢单">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="MEOW CUI JIAO">
+  <meta property="og:title" content="抢单订单 · MEOW CUI JIAO">
+  <meta property="og:description" content="妙脆角抢单大厅 — 进入抢单">
+  <meta property="og:image" content="https://www.meowcuijiao.com/og/share-card-square-v2.jpg">
+  <!-- mcj-grab-og:end -->
+  <meta name="theme-color" content="#0a0610">
+  <style>
+    :root{--bg:#0a0610;--panel:#1a1218;--line:rgba(255,143,197,.28);--pink:#ff8fc5;--text:#ffe8f2;--muted:#b9a0b0}
+    *{box-sizing:border-box}
+    body{margin:0;min-height:100dvh;font-family:"Segoe UI",system-ui,sans-serif;background:radial-gradient(1200px 600px at 50% -10%,rgba(255,120,180,.22),transparent 55%),linear-gradient(180deg,#140c14,#0a0610);color:var(--text)}
+    .wrap{max-width:420px;margin:0 auto;padding:28px 16px 48px}
+    .card{border:1px solid var(--line);border-radius:18px;background:linear-gradient(165deg,rgba(42,24,36,.98),rgba(16,12,18,.98));padding:22px;box-shadow:0 18px 40px rgba(0,0,0,.35)}
+    .badge{display:inline-flex;align-items:center;height:24px;padding:0 10px;border-radius:999px;background:rgba(255,143,197,.16);color:#ffb4d6;font-size:12px;font-weight:800}
+    h1{margin:12px 0 8px;font-size:1.35rem;line-height:1.35}
+    .meta{display:grid;gap:8px;margin:16px 0;color:var(--muted);font-size:13px}
+    .meta div{display:flex;justify-content:space-between;gap:12px;border-bottom:1px solid rgba(255,255,255,.06);padding-bottom:8px}
+    .meta b{color:#fff;font-weight:700;text-align:right}
+    .pay{margin:0 0 16px;padding:12px;border-radius:12px;background:rgba(255,143,197,.1);border:1px solid rgba(255,143,197,.2)}
+    .pay span{display:block;font-size:12px;color:var(--muted)}
+    .pay strong{font-size:1.25rem;color:#ffd0e4}
+    .cta{display:flex;flex-direction:column;gap:10px}
+    .cta a,.cta button{min-height:48px;border-radius:14px;border:0;font-weight:800;font-size:15px;display:inline-flex;align-items:center;justify-content:center;text-decoration:none;cursor:pointer}
+    .primary{background:linear-gradient(135deg,#ff8fc5,#ff6aa8);color:#1a0812}
+    .ghost{background:transparent;color:#ffdceb;border:1px solid rgba(255,160,200,.35)}
+    .note{margin-top:14px;font-size:12px;color:#9ca3af;line-height:1.5}
+    .err{color:#ff9db7;font-weight:700}
+  </style>
+</head>
+<body>
+  <!-- mcj-grab-payload -->
+  <main class="wrap">
+    <article class="card" id="grabCard">
+      <span class="badge" id="grabStatus">抢单中</span>
+      <h1 id="grabTitle">加载抢单订单…</h1>
+      <div class="meta" id="grabMeta"></div>
+      <div class="pay" id="grabPay" hidden>
+        <span>陪玩可获得报酬（约）</span>
+        <strong id="grabPayVal">-</strong>
+      </div>
+      <div class="cta" id="grabActions"></div>
+      <p class="note" id="grabNote">链接仅展示公开抢单信息，不含老板私人资料与支付凭证。</p>
+    </article>
+  </main>
+  <script>
+  (function(){
+    function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
+    var raw=document.getElementById('mcjGrabSharePayload');
+    var data={};
+    try{data=raw?JSON.parse(raw.textContent||'{}'):{}}catch(e){data={}}
+    var order=data.order||null;
+    var meta=data.meta||{};
+    var hallUrl=data.hallUrl||'/companion/order-hall/';
+    var titleEl=document.getElementById('grabTitle');
+    var statusEl=document.getElementById('grabStatus');
+    var metaEl=document.getElementById('grabMeta');
+    var payBox=document.getElementById('grabPay');
+    var payVal=document.getElementById('grabPayVal');
+    var actions=document.getElementById('grabActions');
+    var note=document.getElementById('grabNote');
+    if(!order){
+      titleEl.textContent='订单不存在或已失效';
+      statusEl.textContent='不可抢单';
+      actions.innerHTML='<a class="primary" href="/companion/order-hall/">打开抢单大厅</a>';
+      note.className='note err';
+      note.textContent='请确认分享链接是否完整，或返回大厅查看最新订单。';
+      return;
+    }
+    var canGrab=!!order.canGrab;
+    statusEl.textContent=order.statusText||(canGrab?'抢单中':'已结束');
+    titleEl.textContent=(order.game||'电竞')+' · '+(order.serviceName||order.serviceType||'陪玩服务');
+    metaEl.innerHTML=
+      '<div><span>游戏</span><b>'+esc(order.game||'-')+'</b></div>'+
+      '<div><span>服务</span><b>'+esc(order.serviceName||order.serviceType||'-')+'</b></div>'+
+      '<div><span>时长</span><b>'+esc(order.duration||(order.hours!=null?order.hours+' 小时':'-'))+'</b></div>'+
+      '<div><span>状态</span><b>'+esc(order.statusText||'-')+'</b></div>';
+    var income=Number(order.playerIncome||order.amount||0)||0;
+    if(income>0){
+      payBox.hidden=false;
+      payVal.textContent=income+' 猫粮';
+    }
+    function saveReturnThen(url){
+      try{
+        sessionStorage.setItem('mcjAfterLoginRedirect',hallUrl);
+        localStorage.setItem('mcjAfterLoginRedirect',hallUrl);
+      }catch(e){}
+      location.href=url;
+    }
+    if(canGrab){
+      actions.innerHTML=
+        '<a class="primary" href="'+esc(hallUrl)+'" id="grabEnter">进入抢单</a>'+
+        '<button class="ghost" type="button" id="grabLogin">未登录？先登录再抢</button>';
+      var enter=document.getElementById('grabEnter');
+      if(enter)enter.addEventListener('click',function(ev){
+        try{sessionStorage.setItem('mcjAfterLoginRedirect',hallUrl);localStorage.setItem('mcjAfterLoginRedirect',hallUrl);}catch(e){}
+      });
+      var loginBtn=document.getElementById('grabLogin');
+      if(loginBtn)loginBtn.addEventListener('click',function(){saveReturnThen('/companion/login/');});
+    }else{
+      actions.innerHTML=
+        '<a class="primary" href="/companion/order-hall/">查看抢单大厅</a>'+
+        '<button class="ghost" type="button" disabled>'+esc(order.statusText||'不可继续抢单')+'</button>';
+    }
+    if(meta.note)note.textContent=meta.note;
+  })();
+  </script>
+</body>
+</html>

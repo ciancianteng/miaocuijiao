@@ -22,6 +22,11 @@ import {
 } from "./_companion-media-store.js";
 import { companionPopularityMe, recordOnlineSession, scheduleRecomputeSoft } from "./_popularity.js";
 import { readLocalLevels, toPublicLevel } from "./_companion-levels-store.js";
+import {
+  resolveServiceLevelBand,
+  assertPriceInBand,
+  readServiceLevelPrices,
+} from "./_service-level-prices.js";
 import { resolvePlatformCommission } from "./_commission-rates.js";
 import { writeOrderStatusLog, COMPANION_STATUS_LABELS } from "./_order-status.js";
 import { stripInternalMarkers } from "./_order-assignment.js";
@@ -3200,29 +3205,51 @@ async function bootstrapData(profile, companion) {
     })(),
     playerGames: [],
     media: signedMedia,
-    levelInfo: {
-      level: levelBundle.level ? `${levelBundle.level.code || ""} ${levelBundle.level.name || ""}`.trim() : companion?.level_name || "",
-      levelId: levelBundle.level?.id || companion?.level_id || "",
-      levelCode: levelBundle.level?.code || "",
-      levelName: levelBundle.level?.name || companion?.level_name || "",
-      orderCommissionRate: levelBundle.platformCommissionRate,
-      platformCommissionRate: levelBundle.platformCommissionRate,
-      giftCommissionRate: money(companion?.gift_commission_rate) || 0,
-      directRebateRate: money(companion?.direct_rebate_rate) || 0,
-      price: levelBundle.price,
-      minPrice: levelBundle.minPrice,
-      maxPrice: levelBundle.maxPrice,
-      maxPlus: levelBundle.maxPlus,
-      priceRangeText: levelBundle.level
-        ? `RM${levelBundle.minPrice}–RM${levelBundle.maxPrice}${levelBundle.maxPlus ? "+" : ""} / 小时`
-        : "请先联系后台设置等级",
-      priceInRange: levelBundle.priceInRange,
-      priceNeedsReset: levelBundle.priceNeedsReset,
-      gamePrices: projectGamePrices(companion || {}, levelBundle.level),
-      serviceStandards: readServiceStandards(companion || {}),
-      serviceStandardFields: SERVICE_STANDARD_FIELDS,
-      effectiveAt: companion?.commission_effective_at || companion?.level_effective_at || "",
-    },
+    levelInfo: await (async () => {
+      const levelId = String(levelBundle.level?.id || companion?.level_id || "").trim().toLowerCase();
+      const serviceIdsForBand = parseServiceIds(companion?.service_ids || companion?.serviceIds || []);
+      const bands = {};
+      for (const sid of serviceIdsForBand.slice(0, 40)) {
+        bands[sid] = await resolveServiceLevelBand({
+          serviceId: sid,
+          levelId,
+          levelRow: levelBundle.level,
+        });
+      }
+      let matrixRows = [];
+      try {
+        matrixRows = await readServiceLevelPrices();
+      } catch (_) {
+        matrixRows = [];
+      }
+      return {
+        level: levelBundle.level ? `${levelBundle.level.code || ""} ${levelBundle.level.name || ""}`.trim() : companion?.level_name || "",
+        levelId: levelBundle.level?.id || companion?.level_id || "",
+        levelCode: levelBundle.level?.code || "",
+        levelName: levelBundle.level?.name || companion?.level_name || "",
+        orderCommissionRate: levelBundle.platformCommissionRate,
+        platformCommissionRate: levelBundle.platformCommissionRate,
+        giftCommissionRate: money(companion?.gift_commission_rate) || 0,
+        directRebateRate: money(companion?.direct_rebate_rate) || 0,
+        price: levelBundle.price,
+        minPrice: levelBundle.minPrice,
+        maxPrice: levelBundle.maxPrice,
+        maxPlus: levelBundle.maxPlus,
+        markupAllowance: money(levelBundle.level?.markupAllowance),
+        basePrice: money(levelBundle.level?.basePrice ?? levelBundle.minPrice),
+        priceRangeText: levelBundle.level
+          ? `默认 ${money(levelBundle.level?.basePrice ?? levelBundle.minPrice)} · 允许 ${levelBundle.minPrice}–${levelBundle.maxPrice} · 最多加价 +${money(levelBundle.level?.markupAllowance)}`
+          : "请先联系后台设置等级",
+        priceInRange: levelBundle.priceInRange,
+        priceNeedsReset: levelBundle.priceNeedsReset,
+        gamePrices: projectGamePrices(companion || {}, levelBundle.level),
+        serviceBands: bands,
+        matrixRowCount: matrixRows.length,
+        serviceStandards: readServiceStandards(companion || {}),
+        serviceStandardFields: SERVICE_STANDARD_FIELDS,
+        effectiveAt: companion?.commission_effective_at || companion?.level_effective_at || "",
+      };
+    })(),
     companionLevel: levelBundle.level,
     companionLevels: levelBundle.levels,
     invitation: { records: [] },
@@ -5202,6 +5229,7 @@ return json(res, 200, {
       const levelBundle = await resolveLevelBundle(companion || {});
       const min = money(levelBundle.minPrice);
       const max = money(levelBundle.maxPrice);
+      const levelIdForBand = String(levelBundle.level?.id || companion?.level_id || "").trim().toLowerCase();
       const reviewStNow = normalizeProfileReviewStatus(companion || {});
       // 审核中不可改价；草稿/驳回可改；通过后可改。
       if (reviewStNow === "pending") {
@@ -5233,15 +5261,26 @@ return json(res, 200, {
           return json(res, 400, { ok: false, message: `${name} 单价只能输入有效数字，最多保留 2 位小数`, field: "price" });
         }
         let pv = roundMoney(rawG);
+        const band = await resolveServiceLevelBand({
+          serviceId: id,
+          levelId: levelIdForBand,
+          levelRow: levelBundle.level,
+        });
+        const bandMin = money(band.minPrice);
+        const bandMax = money(band.sellMax != null ? band.sellMax : band.maxPrice);
         const snapped = acceptSubmittedServicePrice(companion, id, name, pv);
-        if (snapped !== pv && snapped >= min && (levelBundle.maxPlus || snapped <= max)) pv = snapped;
-        if (pv < min || (!levelBundle.maxPlus && pv > max)) {
+        if (snapped !== pv && snapped >= bandMin && (band.maxPlus || snapped <= bandMax)) pv = snapped;
+        const inBand = assertPriceInBand(pv, band);
+        if (!inBand.ok) {
           return json(res, 400, {
             ok: false,
-            message: `${name} 单价必须在 RM${min}–RM${max}${levelBundle.maxPlus ? "+" : ""} 之间`,
+            message: `${name} ${inBand.message || "单价超出允许范围"}（${band.priceRangeText || ""}）`,
             field: "price",
-            minPrice: min,
-            maxPrice: max,
+            minPrice: bandMin,
+            maxPrice: bandMax,
+            serviceId: id,
+            levelId: levelIdForBand,
+            bandSource: band.source,
           });
         }
         nextGamePrices[id] = pv;

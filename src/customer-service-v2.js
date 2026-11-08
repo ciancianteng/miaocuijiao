@@ -11,8 +11,8 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, virtStartIndex }
     return;
   }
   var SESSION_KEY='mcjServiceSession';
-  var ROUTES={'/customer-service/':'dashboard','/customer-service':'dashboard','/customer-service/login':'login','/customer-service/dashboard':'dashboard','/customer-service/conversations':'conversations','/customer-service/chats':'conversations','/customer-service/orders':'orders','/customer-service/gift-orders':'giftOrders','/customer-service/recharges':'recharges','/customer-service/create-order':'createOrder','/customer-service/compensation':'compensation','/customer-service/reports':'reports','/customer-service/profile':'profile'};
-  var NAV=[['dashboard','工作台','/customer-service/dashboard'],['conversations','统一会话池','/customer-service/conversations'],['orders','订单处理','/customer-service/orders'],['giftOrders','礼物审核','/customer-service/gift-orders'],['recharges','充值审核','/customer-service/recharges'],['compensation','申请补偿','/customer-service/compensation'],['reports','工资中心','/customer-service/reports'],['createOrder','客服代下单','/customer-service/create-order'],['profile','我的资料','/customer-service/profile'],['logout','退出登录','logout']];
+  var ROUTES={'/customer-service/':'dashboard','/customer-service':'dashboard','/customer-service/login':'login','/customer-service/dashboard':'dashboard','/customer-service/conversations':'conversations','/customer-service/chats':'conversations','/customer-service/orders':'orders','/customer-service/grab-hall':'grabHall','/customer-service/gift-orders':'giftOrders','/customer-service/recharges':'recharges','/customer-service/create-order':'createOrder','/customer-service/compensation':'compensation','/customer-service/reports':'reports','/customer-service/profile':'profile'};
+  var NAV=[['dashboard','工作台','/customer-service/dashboard'],['conversations','统一会话池','/customer-service/conversations'],['orders','订单处理','/customer-service/orders'],['grabHall','抢单大厅','/customer-service/grab-hall'],['giftOrders','礼物审核','/customer-service/gift-orders'],['recharges','充值审核','/customer-service/recharges'],['compensation','申请补偿','/customer-service/compensation'],['reports','工资中心','/customer-service/reports'],['createOrder','客服代下单','/customer-service/create-order'],['profile','我的资料','/customer-service/profile'],['logout','退出登录','logout']];
   var CS_ICO_EMOJI='<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.2" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="9" cy="10.2" r="1" fill="currentColor"/><circle cx="15" cy="10.2" r="1" fill="currentColor"/><path d="M8.6 14.2c.8 1.2 1.9 1.8 3.4 1.8s2.6-.6 3.4-1.8" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>';
   var CS_ICO_IMAGE='<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="14" rx="2.4" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="9" cy="10" r="1.3" fill="currentColor"/><path d="M5.2 16.4 9.2 12.8 12.1 15.3 15.1 11.8 18.8 16.4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round"/></svg>';
   var CS_ICO_BOLT='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13.2 2.8 5.6 13.2h5.2L9.8 21.2 18.6 9.6h-5.2l-.2-6.8z" fill="currentColor"/></svg>';
@@ -2223,7 +2223,7 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, virtStartIndex }
     }
   }
   var MOBILE_PRIMARY=['dashboard','conversations','orders','reports'];
-  var MOBILE_SHORT={dashboard:'工作台',conversations:'会话',orders:'订单',reports:'工资'};
+  var MOBILE_SHORT={dashboard:'工作台',conversations:'会话',orders:'订单',grabHall:'抢单',reports:'工资'};
   function navButton(item, unread, label){
     if(!item)return '';
     if(item[0]==='logout')return '<button type="button" data-logout>'+item[1]+'</button>';
@@ -2432,7 +2432,7 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, virtStartIndex }
       chip('/customer-service/gift-orders','待审核礼物',gift,'giftOrders','')+
       '</div>';
   }
-  function title(){return ({dashboard:'客服工作台',conversations:'统一会话池',orders:'订单处理',giftOrders:'礼物审核',recharges:'充值审核',createOrder:'客服代下单',compensation:'申请补偿',reports:'工资中心',profile:'我的资料'})[state.route]||'客服端'}
+  function title(){return ({dashboard:'客服工作台',conversations:'统一会话池',orders:'订单处理',grabHall:'抢单大厅',giftOrders:'礼物审核',recharges:'充值审核',createOrder:'客服代下单',compensation:'申请补偿',reports:'工资中心',profile:'我的资料'})[state.route]||'客服端'}
   function renderShell(){
     var staff=(state.data&&state.data.staff)||(state.session&&state.session.user)||{};
     recomputeSummaryFromConversations();
@@ -2447,6 +2447,7 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, virtStartIndex }
     if(state.error&&state.route!=='createOrder')note+='<div class="cs-dev-note"><strong>部分数据暂不可用</strong><span> '+esc(state.error)+'</span></div>';
     if(HIDDEN_MVP_ROUTES[state.route])return note+maintenanceHtml(title());
     if(state.route==='conversations')return note+conversationsHtml();
+    if(state.route==='grabHall')return note+grabHallHtml();
     if(state.route==='orders')return note+ordersHtml();
     if(state.route==='giftOrders')return note+giftOrdersHtml();
     if(state.route==='recharges')return note+rechargesHtml();
@@ -3419,6 +3420,43 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, virtStartIndex }
       }).join('')+'</tbody></table></section>';
     return '<div class="cs-page-head"><div><h2>充值审核</h2><p>核对付款截图与金额；通过后猫粮自动入账（同一笔只会入账一次），拒绝不会入账并通知老板。</p></div></div>'+
       '<div class="cs-actions" style="margin-bottom:12px">'+tabs+'<button class="cs-btn" data-recharge-reload>刷新</button></div>'+body;
+  }
+  function isGrabHallOrder(o){
+    if(!o||o.companionId||o.isMultiGroupChild||o.parentOrderId||o.parent_order_id)return false;
+    var st=String(o.status||'');
+    var assignment=String(o.assignmentType||'').toLowerCase();
+    var isPublic=assignment==='public'||assignment==='open'||assignment==='open_grab'||!assignment||o.orderType==='open_grab';
+    return isPublic&&(st==='pending'||st==='waiting_boss_confirm');
+  }
+  function grabShareLink(orderId){
+    try{
+      return location.origin+'/g/'+encodeURIComponent(orderId);
+    }catch(e){
+      return '/g/'+encodeURIComponent(orderId);
+    }
+  }
+  function grabHallHtml(){
+    var rows=((state.data&&state.data.orders)||[]).filter(isGrabHallOrder).slice().sort(function(a,b){
+      return Number(b.grabCount||0)-Number(a.grabCount||0)||String(b.updatedAt||b.createdAt||'').localeCompare(String(a.updatedAt||a.createdAt||''));
+    });
+    var cards=rows.map(function(o){
+      var income=o.companionIncome!=null?o.companionIncome:o.totalAmount;
+      return '<article class="cs-order-card cs-grab-card" data-order-status="'+esc(o.status)+'">'+
+        '<div class="cs-order-top"><div class="cs-order-id"><span class="cs-order-kicker">抢单订单</span><strong>'+esc(o.orderNo||o.id)+'</strong></div><span class="cs-order-tag cs-tag-grab">抢单中 · '+(o.grabCount||0)+' 人</span></div>'+
+        '<div class="cs-order-hero"><div class="cs-order-amount"><span>订单金额</span><b>'+money(o.totalAmount)+'</b></div><div class="cs-order-svc"><span>服务</span><b>'+esc(o.game||o.title||'-')+(o.hours!=null?' · '+esc(String(o.hours))+'h':'')+'</b></div></div>'+
+        '<div class="cs-order-meta"><span>老板 <b>'+esc(sanitizeBossLabel(o.bossName,publicBossCode(o))||'-')+'</b></span><span>报酬参考 <b>'+money(income)+'</b></span><span>创建 <b>'+esc(fmtOrderDateTime(o.createdAt))+'</b></span></div>'+
+        '<div class="cs-op-panel cs-order-primary">'+
+          '<button class="cs-btn primary" type="button" data-view-grabs="'+esc(o.id)+'">抢单进度 ('+(o.grabCount||0)+')</button>'+
+          '<button class="cs-btn" type="button" data-view-grabs="'+esc(o.id)+'">确认指定</button>'+
+          '<button class="cs-btn ghost" type="button" data-copy-grab-link="'+esc(o.id)+'">复制抢单链接</button>'+
+          '<button class="cs-btn ghost" type="button" data-share-grab-wechat="'+esc(o.id)+'">转发微信</button>'+
+          '<button class="cs-btn danger" type="button" data-cancel-grab-hall="'+esc(o.id)+'">撤回抢单</button>'+
+        '</div></article>';
+    }).join('');
+    var publishHint='<div class="cs-dev-note"><strong>发布到抢单大厅</strong><span>待付款公开单在「订单处理」点确认收款后会进入本大厅；也可在代下单时选择「发布到抢单大厅」。此处与陪玩端共用真实订单数据。</span></div>';
+    return '<div class="cs-page-head cs-dash-head"><div><h2>抢单大厅管理</h2><p>正在抢单 '+rows.length+' 单 · 真实数据</p></div><div class="cs-actions"><button class="cs-btn" data-route="/customer-service/orders">订单处理</button><button class="cs-btn" data-refresh>刷新</button></div></div>'+
+      publishHint+
+      '<div class="cs-order-list">'+(rows.length?cards:'<div class="cs-empty">当前没有正在抢单的订单</div>')+'</div>';
   }
   function ordersHtml(){
     var q=String(state.orderQuery||'').trim().toLowerCase();
@@ -4800,7 +4838,24 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, virtStartIndex }
       document.querySelectorAll('[data-archive-pick]').forEach(function(el){el.checked=on;});
       return;
     }
-    var completeOrder=e.target.closest('[data-complete-order]');if(completeOrder){openEarlyFinish(completeOrder.dataset.completeOrder);return}var cancelHall=e.target.closest('[data-cancel-grab-hall]');if(cancelHall){var hallReason=String(prompt('取消抢单将关闭订单，已付猫粮自动全额退回老板余额（只退一次）。\n请输入取消原因（老板会看到）','无人接单')||'').trim();if(!hallReason){toast('取消必须填写原因');return;}var cid=cancelHall.dataset.cancelGrabHall;cancelHall.disabled=true;api('cancel_grab_hall',{id:cid,reason:hallReason}).then(function(res){toast(res.message||'已取消抢单');return softRefresh()}).catch(function(err){cancelHall.disabled=false;toast(err.message||'取消失败')});return}var viewGrabs=e.target.closest('[data-view-grabs]');if(viewGrabs){openGrabList(viewGrabs.dataset.viewGrabs);return}var assign=e.target.closest('[data-assign-order]');if(assign){openAssign(assign.dataset.assignOrder);return}var st=e.target.closest('[data-status-order]');if(st){openStatus(st.dataset.statusOrder);return}var refund=e.target.closest('[data-refund-order]');if(refund){openRefund(refund.dataset.refundOrder);return}var close=e.target.closest('[data-close-modal]');if(close){close.closest('.cs-modal').remove();return}});
+    var copyGrab=e.target.closest('[data-copy-grab-link]');
+    if(copyGrab){
+      e.preventDefault();
+      var link=grabShareLink(copyGrab.dataset.copyGrabLink);
+      if(navigator.clipboard&&navigator.clipboard.writeText){
+        navigator.clipboard.writeText(link).then(function(){toast('已复制抢单链接');}).catch(function(){window.prompt('复制链接',link);});
+      }else{
+        window.prompt('复制链接',link);
+      }
+      return;
+    }
+    var shareGrab=e.target.closest('[data-share-grab-wechat]');
+    if(shareGrab){
+      e.preventDefault();
+      openWechatGrabShareModal(shareGrab.dataset.shareGrabWechat);
+      return;
+    }
+    var completeOrder=e.target.closest('[data-complete-order]');if(completeOrder){openEarlyFinish(completeOrder.dataset.completeOrder);return}var cancelHall=e.target.closest('[data-cancel-grab-hall]');if(cancelHall){if(cancelHall.disabled)return;var hallReason=String(prompt('取消抢单将关闭订单，已付猫粮自动全额退回老板余额（只退一次）。\n请输入取消原因（老板会看到）','无人接单')||'').trim();if(!hallReason){toast('取消必须填写原因');return;}var cid=cancelHall.dataset.cancelGrabHall;cancelHall.disabled=true;api('cancel_grab_hall',{id:cid,reason:hallReason}).then(function(res){toast(res.message||'已取消抢单');return softRefresh()}).catch(function(err){cancelHall.disabled=false;toast(err.message||'取消失败')});return}var viewGrabs=e.target.closest('[data-view-grabs]');if(viewGrabs){openGrabList(viewGrabs.dataset.viewGrabs);return}var assign=e.target.closest('[data-assign-order]');if(assign){openAssign(assign.dataset.assignOrder);return}var st=e.target.closest('[data-status-order]');if(st){openStatus(st.dataset.statusOrder);return}var refund=e.target.closest('[data-refund-order]');if(refund){openRefund(refund.dataset.refundOrder);return}var close=e.target.closest('[data-close-modal]');if(close){close.closest('.cs-modal').remove();return}});
   function modal(html, dialogClass){
     var cls=String(dialogClass||'cs-form').trim()||'cs-form';
     document.body.insertAdjacentHTML('beforeend','<div class="cs-modal"><div class="cs-dialog '+cls+'">'+html+'</div></div>');
@@ -4897,6 +4952,27 @@ function openArchiveOrdersModal(ids){
         });
       }
     });
+  }
+  function openWechatGrabShareModal(orderId){
+    var order=(((state.data&&state.data.orders)||[]).find(function(x){return x.id===orderId;}))||{};
+    var link=grabShareLink(orderId);
+    modal(
+      '<div class="cs-dialog-head"><h3>转发微信</h3><button class="cs-btn ghost" type="button" data-close-modal>关闭</button></div>'+
+      '<p class="cs-note">已生成该订单专属 H5 抢单链接。微信内打开可进入抢单详情；聊天链接预览依赖网页 Open Graph 元数据。</p>'+
+      '<div class="cs-info-list">'+
+        '<div><span>订单</span><strong>'+esc(order.orderNo||orderId)+'</strong></div>'+
+        '<div><span>内容</span><strong>'+esc((order.game||'')+' · '+(order.title||'陪玩服务'))+'</strong></div>'+
+        '<div><span>状态</span><strong>抢单中</strong></div>'+
+        '<div><span>链接</span><strong style="word-break:break-all;font-weight:500">'+esc(link)+'</strong></div>'+
+      '</div>'+
+      '<p class="cs-note">当前<strong>未配置</strong>微信 JS-SDK / 公众号已验证域名，因此<strong>不能</strong>调用原生微信分享卡片；请复制链接发到微信，或使用系统分享。</p>'+
+      '<div class="cs-actions" style="margin-top:12px">'+
+        '<button type="button" class="cs-btn primary" data-copy-grab-link="'+esc(orderId)+'">复制链接</button>'+
+        '<a class="cs-btn ghost" href="'+esc(link)+'" target="_blank" rel="noopener">打开预览页</a>'+
+        '<button type="button" class="cs-btn ghost" data-close-modal>关闭</button>'+
+      '</div>',
+      'cs-form'
+    );
   }
 function openTransferModal(conversationId){
     var id=String(conversationId||'').trim();

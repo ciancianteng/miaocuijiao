@@ -235,9 +235,22 @@ export function createOrderGrabHelpers({ restUrl, supabaseJson, serviceHeaders }
         };
       }
     } catch (err) {
-      if (!/relation|schema cache|does not exist|duplicate|unique|PGRST/i.test(String(err?.message || err || ""))) {
+      const msg = String(err?.message || err || "");
+      // Unique (order_id, companion_id) race: never fall through to note-blob overwrite.
+      if (/duplicate|unique|23505/i.test(msg)) {
+        const again = await listGrabs(orderId, blob);
+        const hit = again.find((g) => g.companionId === companionId);
+        if (hit) return { grab: hit, created: false, grabs: again, race: "unique_constraint" };
+      }
+      if (!/relation|schema cache|does not exist|PGRST/i.test(msg)) {
         throw err;
       }
+    }
+    // Table missing → legacy note blob. Re-read first to avoid concurrent clobber.
+    const refreshed = await listGrabs(orderId, blob).catch(() => existing);
+    const existingAgain = refreshed.find((g) => g.companionId === companionId);
+    if (existingAgain) {
+      return { grab: existingAgain, created: false, grabs: refreshed };
     }
     const { grabs, rest } = parseGrabBlob(blob);
     if (grabs.some((g) => g.companion_id === companionId)) {

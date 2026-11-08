@@ -80,6 +80,7 @@
   function tabsHtml() {
     var tabs = [
       ["levels", "陪玩等级配置"],
+      ["matrix", "服务×等级价格"],
       ["rules", "陪玩规则"],
       ["forced", "强制公告"],
       ["acks", "阅读记录"],
@@ -118,8 +119,17 @@
       "</div>" +
       '<div class="row" style="margin-top:10px"><button class="primary-btn" type="submit">保存页面文案</button></div>' +
       "</form>" +
-      '<p class="admin-sync-note">此处为<strong>唯一</strong>陪玩等级配置入口（已合并原「陪玩等级」菜单）。大厅 / 详情 / 徽章 / 卡片 / 升级规则统一读取 <code>companion_levels</code>，保存并「发布到全站」后立即生效。</p>' +
+      '<p class="admin-sync-note">此处为<strong>唯一</strong>陪玩等级配置入口（已合并原「陪玩等级」菜单）。大厅 / 详情 / 徽章 / 卡片 / 升级规则统一读取 <code>companion_levels</code>，保存并「发布到全站」后立即生效。清零等级说明不会清除「服务×等级价格」矩阵。</p>' +
       '<div id="companionLevelSettingsHub"></div>' +
+      "</div>"
+    );
+  }
+
+  function matrixTab() {
+    return (
+      '<div data-rules-hub-panel="matrix">' +
+      '<p class="admin-sync-note">为每个启用服务配置 LV1–LV5 的默认售价 / 最低 / 最高 / 加价上限。陪玩调价按「当前服务 + 当前等级」校验；未配置则回落等级带。</p>' +
+      '<div id="serviceLevelPriceMatrixMount"></div>' +
       "</div>"
     );
   }
@@ -286,14 +296,16 @@
     var body =
       state.tab === "levels"
         ? levelsTab()
-        : state.tab === "rules"
-          ? rulesTab()
-          : state.tab === "forced"
-            ? forcedTab()
-            : acksTab();
+        : state.tab === "matrix"
+          ? matrixTab()
+          : state.tab === "rules"
+            ? rulesTab()
+            : state.tab === "forced"
+              ? forcedTab()
+              : acksTab();
     box.innerHTML =
       '<section class="service-account-admin">' +
-      '<header class="service-account-head"><div><h2>平台制度与等级管理</h2><p>单一数据源：陪玩等级、升级规则、俱乐部等级说明、陪玩规则与强制公告。请勿再使用已移除的「陪玩等级」独立菜单。</p></div></header>' +
+      '<header class="service-account-head"><div><h2>平台制度与等级管理</h2><p>单一数据源：陪玩等级、升级规则、俱乐部等级说明、服务×等级价格矩阵、陪玩规则与强制公告。请勿再使用已移除的「陪玩等级」独立菜单。</p></div></header>' +
       (state.error ? '<div class="admin-sync-note error">' + esc(state.error) + "</div>" : "") +
       (state.message ? '<div class="admin-sync-note">' + esc(state.message) + "</div>" : "") +
       tabsHtml() +
@@ -308,6 +320,11 @@
         window.__MCJRenderCompanionLevels();
       }
       // Trigger suite player_rules mount when on rules — levels uses companionLevelSettings id
+    }
+    if (state.tab === "matrix" && window.MCJServiceLevelPricesAdmin && window.MCJServiceLevelPricesAdmin.mount) {
+      try {
+        window.MCJServiceLevelPricesAdmin.mount();
+      } catch (e) {}
     }
     if (state.tab === "rules") {
       // Mount apply-page player_rules editor into #table-companion_rules.
@@ -405,6 +422,11 @@
       state.message = "";
       render();
       if (state.tab === "acks") loadAcks();
+      if (state.tab === "matrix" && window.MCJServiceLevelPricesAdmin && window.MCJServiceLevelPricesAdmin.mount) {
+        try {
+          window.MCJServiceLevelPricesAdmin.mount();
+        } catch (err) {}
+      }
       if (state.tab === "rules") {
         api("work_rules", {}, "GET")
           .then(function (res) {

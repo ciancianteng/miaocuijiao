@@ -4739,13 +4739,21 @@
       var on=selectedIds.indexOf(s.id)!==-1;
       return '<label class="pw-check-chip"><input type="checkbox" name="service_id_opt" value="'+esc(s.id)+'" data-game-name="'+esc(s.name)+'" '+(on?'checked':'')+' data-game-toggle> '+esc(s.name)+'</label>';
     }).join(''):'<div class="pw-empty"><strong>暂无游戏</strong><span>请后台在「服务管理」新增游戏后刷新。</span></div>';
+    var serviceBands=(level&&level.serviceBands)||((state.data&&state.data.levelInfo&&state.data.levelInfo.serviceBands)||{});
     var priceRows=serviceOptions.length?serviceOptions.map(function(s){
       var on=selectedIds.indexOf(s.id)!==-1;
       var draftPrice=draft&&draft.gamePrices&&draft.gamePrices[s.id]!=null?draft.gamePrices[s.id]:'';
       var val=draftPrice!==''?draftPrice:(gamePrices[s.id]!=null&&gamePrices[s.id]!==''?gamePrices[s.id]:(gamePrices[s.name]!=null&&gamePrices[s.name]!==''?gamePrices[s.name]:(on&&!needsReset?fallbackPrice:'')));
+      var band=serviceBands[s.id]||serviceBands[s.name]||null;
+      var rowMin=band&&band.minPrice!=null?band.minPrice:minP;
+      var rowBase=band&&band.basePrice!=null?band.basePrice:baseP;
+      var rowMarkup=band&&band.markupAllowance!=null?band.markupAllowance:markupCap;
+      var rowMax=band&&band.maxPrice!=null?band.maxPrice:maxP;
+      var rowSellMax=band&&band.sellMax!=null?band.sellMax:Math.min(Number(rowMax)||0,(Number(rowBase)||0)+(Number(rowMarkup)||0));
+      var rowHint=band&&band.priceRangeText?band.priceRangeText:('允许 '+rowMin+'–'+rowMax+' · 最多加价 +'+rowMarkup);
       return '<label class="pw-game-price'+(on?' is-on':'')+'" data-game-price-row="'+esc(s.id)+'">'+
-        '<span>'+esc(s.name)+'</span>'+
-        '<span class="pw-game-price-unit"><input name="game_price_'+esc(s.id)+'" type="number" inputmode="decimal" step="0.01" min="0" value="'+(needsReset&&!(draftPrice||gamePrices[s.id]||gamePrices[s.name])?'':esc(val))+'" placeholder="'+esc(baseP||'')+'" '+(on?'':'disabled')+' data-min-price="'+esc(minP)+'" data-max-price="'+esc(sellMax)+'" data-band-max="'+esc(maxP)+'" data-base-price="'+esc(baseP)+'" data-markup-cap="'+esc(markupCap)+'" data-max-plus="'+(maxPlus?'1':'0')+'"> /小时</span>'+
+        '<span>'+esc(s.name)+'<small class="pw-field-hint" style="display:block;font-weight:600">'+esc(rowHint)+'</small></span>'+
+        '<span class="pw-game-price-unit"><input name="game_price_'+esc(s.id)+'" type="number" inputmode="decimal" step="0.01" min="0" value="'+(needsReset&&!(draftPrice||gamePrices[s.id]||gamePrices[s.name])?'':esc(val))+'" placeholder="'+esc(rowBase||'')+'" '+(on?'':'disabled')+' data-min-price="'+esc(rowMin)+'" data-max-price="'+esc(rowSellMax)+'" data-band-max="'+esc(rowMax)+'" data-base-price="'+esc(rowBase)+'" data-markup-cap="'+esc(rowMarkup)+'" data-max-plus="'+(maxPlus?'1':'0')+'"> /小时</span>'+
         '</label>';
     }).join(''):'';
     var galleryHtml=""; // rendered via pwGalleryUploadHtml
@@ -5549,17 +5557,6 @@
       serviceNames=String(storedPlayer.mainGame||storedRaw.game||'').split(/[,，、/|]+/).map(function(x){return x.trim()}).filter(Boolean);
       gameId=String(storedPlayer.gameId||storedRaw.game_id||'').trim();
     }
-    var minP=20,maxP=30,maxPlus=false,baseP=20,markupCap=0,sellMax=30;
-    var sample=form.querySelector('[data-game-price-grid] input')||form.querySelector('[name="price"]');
-    if(sample){
-      minP=Number(sample.dataset.minPrice)||minP;
-      maxP=Number(sample.dataset.maxPrice)||maxP;
-      sellMax=Number(sample.dataset.maxPrice)||maxP;
-      baseP=Number(sample.dataset.basePrice)||minP;
-      markupCap=Number(sample.dataset.markupCap)||0;
-      if(sample.dataset.bandMax!=null&&sample.dataset.bandMax!=='')maxP=Number(sample.dataset.bandMax)||maxP;
-      maxPlus=sample.dataset.maxPlus==='1';
-    }
     var gamePrices={};
     var priceError='';
     if(!hasServiceEditor){
@@ -5571,6 +5568,12 @@
       if(!raw){priceError=priceError||('请填写 '+name+' 的价格');return;}
       if(!/^\d+(\.\d{1,2})?$/.test(raw)){priceError=priceError||(name+' 单价格式无效');return;}
       var price=Number(raw);
+      var inp=form.querySelector('input[name="game_price_'+id+'"]');
+      var minP=inp?Number(inp.dataset.minPrice)||20:20;
+      var sellMax=inp?Number(inp.dataset.maxPrice)||30:30;
+      var baseP=inp?Number(inp.dataset.basePrice)||minP:minP;
+      var markupCap=inp?Number(inp.dataset.markupCap)||0:0;
+      var maxPlus=inp&&inp.dataset.maxPlus==='1';
       var hi=maxPlus?Infinity:sellMax;
       if(price<minP||price>hi){priceError=priceError||(name+' 须在 '+minP+'–'+sellMax+' 之间（默认 '+baseP+'，最多加价 +'+markupCap+'）');return;}
       gamePrices[id]=price;
