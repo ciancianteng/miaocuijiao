@@ -171,6 +171,8 @@ async function alignBossServicesWithPlatform(services, companionUserId) {
     offers = [];
   }
   const { quoteVisibleService } = await import("../_service-price-policy.js");
+  const { loadMarkupMap } = await import("../_lv-markup.js");
+  const markupMap = await loadMarkupMap().catch(() => new Map());
   const offerById = new Map(offers.filter((item) => item.kind === "service").map((item) => [String(item.id), item]));
   const previousById = new Map(
     (services || []).filter((item) => item && item.serviceId).map((item) => [String(item.serviceId), item])
@@ -179,11 +181,14 @@ async function alignBossServicesWithPlatform(services, companionUserId) {
     .map((row) => {
       const id = String(row.id);
       const prev = previousById.get(id) || null;
+      const offer = offerById.get(id) || null;
       const quote = quoteVisibleService({
         row,
         policy: policies[id] || {},
-        offer: offerById.get(id) || null,
+        offer,
         fallbackPrice: prev?.price,
+        levelId: offer?.levelId,
+        markupMap,
       });
     if (!quote.visible || quote.blocked) return null;
       return {

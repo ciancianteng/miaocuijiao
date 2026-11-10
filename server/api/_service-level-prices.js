@@ -123,6 +123,20 @@ function rowToDb(row) {
   };
 }
 
+export async function probeServiceLevelPricesTable() {
+  if (!hasDb()) return { present: false, reason: "no_db" };
+  try {
+    const res = await fetch(restUrl("service_level_prices", "?select=service_id&limit=1"), { headers: serviceHeaders() });
+    if (res.ok) return { present: true, reason: "ok" };
+    const text = await res.text();
+    if (isMissingTable({ message: text })) return { present: false, reason: "missing_table" };
+    return { present: false, reason: `http_${res.status}` };
+  } catch (error) {
+    if (isMissingTable(error)) return { present: false, reason: "missing_table" };
+    return { present: false, reason: String(error?.message || error || "error").slice(0, 80) };
+  }
+}
+
 async function readDbRows() {
   if (!hasDb()) return null;
   const res = await fetch(restUrl("service_level_prices", "?select=*&order=service_id.asc,level_id.asc"), {
@@ -286,6 +300,76 @@ export async function writeServiceLevelPrices(rows, { replaceServiceIds = null }
   }
   await writeLocalFile(next).catch(() => {});
   return { rows: next, source: persisted ? "db_or_settings" : "local" };
+}
+
+/**
+ * Admin writes only markup_allowance per service × LV1–LV5.
+ * Structural base/min/max are copied from an existing row or companion_levels so CHECK still holds.
+ * max_plus=true so markup is independent of min/max (those columns are not the 加价).
+ */
+export async function saveServiceMarkups(serviceId, items = []) {
+  const sid = String(serviceId || "").trim();
+  if (!sid) throw Object.assign(new Error("缺少 service_id"), { status: 400 });
+  const probe = await probeServiceLevelPricesTable();
+  if (!probe?.present) {
+    throw Object.assign(new Error("service_level_prices 表不存在，无法保存加价。"), { status: 503, reason: probe?.reason });
+  }
+  const byLevel = new Map();
+  for (const raw of Array.isArray(items) ? items : []) {
+    const levelId = String(raw.levelId || raw.level_id || "").trim().toLowerCase();
+    if (!LOCKED_MATRIX_LEVEL_IDS.includes(levelId)) continue;
+    const markup = money(raw.markupAllowance ?? raw.markup_allowance ?? raw.markup);
+    if (!(markup >= 0)) {
+      throw Object.assign(new Error(`${levelId} 加价必须 ≥ 0`), { status: 400 });
+    }
+    byLevel.set(levelId, markup);
+  }
+  const missing = LOCKED_MATRIX_LEVEL_IDS.filter((id) => !byLevel.has(id));
+  if (missing.length) {
+    throw Object.assign(new Error(`请提交完整 LV1–LV5 加价（缺 ${missing.join(",")}）`), { status: 400 });
+  }
+  const levels = await readLocalLevels();
+  const current = await readServiceLevelPrices();
+  const rows = LOCKED_MATRIX_LEVEL_IDS.map((levelId) => {
+    const prev = (current || []).find((r) => r.serviceId === sid && r.levelId === levelId);
+    const lv = (levels || []).find((row) => String(row.id).toLowerCase() === levelId) || {};
+    const min = money(prev?.minPrice ?? lv.min ?? 0);
+    let base = money(prev?.basePrice ?? lv.basePrice ?? min);
+    if (!(base > 0)) base = min > 0 ? min : 1;
+    let max = money(prev?.maxPrice ?? lv.max ?? base);
+    if (max < base) max = base;
+    const markup = byLevel.get(levelId);
+    const checked = validateMatrixRow({
+      serviceId: sid,
+      levelId,
+      basePrice: base,
+      minPrice: min,
+      maxPrice: max,
+      markupAllowance: markup,
+      maxPlus: true,
+    });
+    if (!checked.ok) {
+      throw Object.assign(new Error(checked.message || `${levelId} 加价校验失败`), { status: 400, errors: checked.errors });
+    }
+    return checked.row;
+  });
+  await writeServiceLevelPrices(rows, { replaceServiceIds: [sid] });
+  const db = await readDbRows();
+  const written = Array.isArray(db)
+    ? LOCKED_MATRIX_LEVEL_IDS.every((lid) => {
+        const hit = db.find((r) => r.serviceId === sid && r.levelId === lid);
+        return hit && money(hit.markupAllowance) === byLevel.get(lid);
+      })
+    : false;
+  if (!written) {
+    throw Object.assign(new Error("加价未写入 service_level_prices，已拒绝把回落当成功。"), { status: 503 });
+  }
+  return {
+    persisted: true,
+    source: "service_level_prices",
+    rows: db.filter((r) => r.serviceId === sid),
+    markups: LOCKED_MATRIX_LEVEL_IDS.map((levelId) => ({ levelId, markupAllowance: byLevel.get(levelId) })),
+  };
 }
 
 export async function clearServiceMatrix(serviceId) {

@@ -5,10 +5,13 @@ import {
   LOCKED_MATRIX_LEVEL_IDS,
   readServiceLevelPrices,
   writeServiceLevelPrices,
+  saveServiceMarkups,
+  probeServiceLevelPricesTable,
   clearServiceMatrix,
   validateMatrixRow,
   resolveServiceLevelBand,
 } from "../_service-level-prices.js";
+import { writeAdminLog } from "../_wallet.js";
 
 const ADMIN_ROLES = new Set(["admin", "super_admin"]);
 
@@ -47,7 +50,7 @@ function matrixGrid(services, levels, rows) {
       .map((lv) => {
         const levelId = String(lv.id).toLowerCase();
         const hit = byKey.get(`${serviceId}::${levelId}`);
-        if (hit) return { ...hit, serviceName, configured: true };
+        if (hit) return { ...hit, serviceName, configured: true, markupConfigured: true };
         return {
           serviceId,
           serviceName,
@@ -59,6 +62,7 @@ function matrixGrid(services, levels, rows) {
           maxPlus: !!lv.maxPlus,
           sellMax: Math.min(Number(lv.max) || 0, (Number(lv.basePrice) || 0) + (Number(lv.markupAllowance) || 0)),
           configured: false,
+          markupConfigured: false,
           source: "companion_levels_fallback",
         };
       });
@@ -71,14 +75,16 @@ export default async function handler(req, res) {
     if (!(await requireAdmin(req, res))) return;
 
     if (req.method === "GET") {
-      const [services, levels, rows] = await Promise.all([
+      const [services, levels, rows, table] = await Promise.all([
         readLocalServices(),
         readLocalLevels(),
         readServiceLevelPrices(),
+        probeServiceLevelPricesTable(),
       ]);
       const enabledServices = (services || []).filter((s) => s && s.enabled !== false);
       return json(res, 200, {
         ok: true,
+        table,
         lockedLevelIds: LOCKED_MATRIX_LEVEL_IDS,
         rows,
         grid: matrixGrid(enabledServices, levels, rows),
@@ -125,6 +131,29 @@ export default async function handler(req, res) {
       return json(res, 200, {
         ok: true,
         message: "已清零该服务的等级价格矩阵（等级结构保留）。",
+        ...result,
+      });
+    }
+
+    if (action === "save_markup") {
+      const result = await saveServiceMarkups(body.serviceId || body.service_id, body.markups || body.levels || []);
+      try {
+        await writeAdminLog({
+          module: "service_level_prices",
+          action: "save_markup",
+          targetType: "service",
+          targetId: String(body.serviceId || body.service_id || ""),
+          operatorId: req.admin?.id || "",
+          operatorRole: "admin",
+          reason: "各游戏 LV1–LV5 加价",
+          after: result,
+        });
+      } catch {
+        /* log is best-effort */
+      }
+      return json(res, 200, {
+        ok: true,
+        message: "加价已写入 service_level_prices。仅对新报价/新订单生效。",
         ...result,
       });
     }

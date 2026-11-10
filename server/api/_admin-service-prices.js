@@ -518,16 +518,28 @@ export async function resolveOrderUnitPrice({
     if (!platform) return resolved;
     const { loadAllPricePolicies, normalizePricePolicy, quoteVisibleService } = await import("./_service-price-policy.js");
     const { listCompanionOffers } = await import("./_companion-offers.js");
+    const { loadMarkupMap } = await import("./_lv-markup.js");
     const policies = await loadAllPricePolicies().catch(() => ({}));
     const policy = normalizePricePolicy(policies?.[catalogId] || {});
     const ownerId = String(companion?.user_id || companionId || "").trim();
     const listed = ownerId ? await listCompanionOffers(ownerId).catch(() => ({ offers: [] })) : { offers: [] };
     const offer = (listed.offers || []).find((item) => item.kind === "service" && String(item.id) === catalogId) || null;
+    const markupMap = await loadMarkupMap().catch(() => new Map());
+    let levelId = String(companion?.level_id || companion?.levelId || offer?.levelId || "").toLowerCase();
+    if (!levelId && ownerId) {
+      const lvRows = await companionDb(
+        "companion_profiles",
+        `?user_id=eq.${encodeURIComponent(ownerId)}&select=level_id&limit=1`
+      ).catch(() => []);
+      levelId = String(lvRows?.[0]?.level_id || "").toLowerCase();
+    }
     const quote = quoteVisibleService({
       row: platform,
       policy,
       offer,
       fallbackPrice: resolved?.price,
+      levelId,
+      markupMap,
     });
     if (!quote.visible || quote.blocked) {
       return { ...resolved, price: 0, blocked: true, pricingUnit: quote.unit, message: quote.message || "该服务已停用，不能创建新订单。" };

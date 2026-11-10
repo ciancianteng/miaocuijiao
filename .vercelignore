@@ -22,6 +22,5 @@ dist
 *.log
 .env
 .env.*
-server/api/_lv-markup.js
 artifacts
 backups

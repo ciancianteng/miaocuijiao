@@ -5,6 +5,7 @@
  * Rollback: delete the servicePricePolicy key from platform_settings.data.
  */
 import { companionDb } from "./_companion-media-store.js";
+import { quoteMarkupPrice } from "./_lv-markup.js";
 
 const UNITS = new Set(["局", "小时", "场", "次"]);
 
@@ -47,7 +48,7 @@ export function normalizePricePolicy(raw = {}) {
  * What the boss may order and what price the server must charge.
  * Companion custom price is used only when the admin policy allows it.
  */
-export function quoteVisibleService({ row, policy, offer, fallbackPrice = 0 } = {}) {
+export function quoteVisibleService({ row, policy, offer, fallbackPrice = 0, levelId = "", markupMap = null } = {}) {
   const rules = normalizePricePolicy(policy || {});
   if (!row || row.enabled === false || row.allow_order === false) {
     return { visible: false, blocked: true, price: 0, source: "closed", unit: rules.unit, description: rules.description, requirements: rules.requirements, message: "该服务已停用，不能创建新订单。" };
@@ -55,20 +56,15 @@ export function quoteVisibleService({ row, policy, offer, fallbackPrice = 0 } = 
   if (offer && offer.accepting === false) {
     return { visible: false, blocked: true, price: 0, source: "companion_closed", unit: rules.unit, description: rules.description, requirements: rules.requirements, message: "该陪玩已关闭此服务，不能创建新订单。" };
   }
-  const platformPrice = Number(row.default_price);
-  const custom = offer && offer.price != null && offer.price !== "" ? Number(offer.price) : NaN;
-  let price = 0;
-  let source = "platform_default";
-  if (rules.allowSelfPrice && Number.isFinite(custom) && custom > 0) {
-    if ((rules.min != null && custom < Number(rules.min)) || (rules.max != null && custom > Number(rules.max))) {
-      return { visible: false, blocked: true, price: 0, source: "price_out_of_range", unit: rules.unit, description: rules.description, requirements: rules.requirements, message: "陪玩报价超出后台允许范围，不能创建新订单。" };
-    }
-    price = Math.round(custom * 100) / 100;
-    source = "companion_offer";
-  } else if (Number.isFinite(platformPrice) && platformPrice > 0) {
-    price = Math.round(platformPrice * 100) / 100;
-    source = "platform_default";
-  } else if (Number(fallbackPrice) > 0) {
+  const quoted = quoteMarkupPrice({
+    serviceRow: row,
+    levelId: levelId || offer?.levelId || offer?.level_id,
+    markupOn: offer?.markupOn,
+    markupMap,
+  });
+  let price = quoted.finalPrice;
+  let source = quoted.source;
+  if (!(price > 0) && Number(fallbackPrice) > 0) {
     price = Math.round(Number(fallbackPrice) * 100) / 100;
     source = "fallback";
   }
@@ -80,7 +76,11 @@ export function quoteVisibleService({ row, policy, offer, fallbackPrice = 0 } = 
     unit: rules.unit,
     description: rules.description,
     requirements: rules.requirements,
-    message: price > 0 ? "" : "该服务尚未设置单价，无法下单。",
+    message: price > 0 ? "" : quoted.message || "该服务尚未设置单价，无法下单。",
+    basePrice: quoted.basePrice,
+    markupAllowance: quoted.markupAllowance,
+    markupOn: quoted.markupOn,
+    finalPrice: quoted.finalPrice,
   };
 }
 

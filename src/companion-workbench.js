@@ -2889,16 +2889,17 @@
         var saved=selected[key]||null;
         var policy=item.policy||{};
         var unit=policy.unit||'局';
-        var range=(policy.min!=null&&policy.max!=null)?('RM'+policy.min+' - RM'+policy.max+' / '+unit):'平台未设置区间';
-        var content=String(policy.description||'').trim();
         var requirement=String(policy.requirements||'').trim();
-        var mine=saved&&saved.price!=null&&saved.price!==''&&!isNaN(Number(saved.price))?saved.price:'';
         var accepting=!saved||saved.accepting!==false;
-        var canPrice=policy.allowSelfPrice===true;
-        var shown=mine!==''?mine:(item.price!=null&&item.price!==''&&!isNaN(Number(item.price))?item.price:'');
-        var quote=shown!==''?('RM'+shown+'/'+unit):'未设置';
-        var headPrice=canPrice?quote:('🔒 已锁定 '+quote);
-        return '<article class="pw-my-service pw-svc" data-offer-card data-kind="service" data-id="'+esc(item.id)+'" data-offer-sort="'+esc(entry.index)+'" data-saved="'+(saved?'1':'0')+'" data-accepting="'+(accepting?'1':'0')+'" data-allow="'+(canPrice?'1':'0')+'">'+
+        var basePrice=item.basePrice!=null?item.basePrice:(item.defaultPrice!=null?item.defaultPrice:item.price);
+        var markup=Number(item.markupAllowance!=null?item.markupAllowance:0)||0;
+        var markupOn=!!(saved&&saved.markupOn)||!!item.markupOn;
+        if(!(markup>0))markupOn=false;
+        var finalPrice=item.finalPrice!=null?item.finalPrice:(Number(basePrice||0)+(markupOn?markup:0));
+        var levelLabel=item.levelName||item.levelId||'未设置等级';
+        var markupHint=item.markupConfigured?('当前等级允许 +'+markup+' 猫粮'):'当前游戏该等级尚未配置加价（+0）';
+        var headPrice=String(finalPrice||0)+' 猫粮 / '+unit;
+        return '<article class="pw-my-service pw-svc" data-offer-card data-kind="service" data-id="'+esc(item.id)+'" data-offer-sort="'+esc(entry.index)+'" data-saved="'+(saved?'1':'0')+'" data-accepting="'+(accepting?'1':'0')+'" data-markup-on="'+(markupOn?'1':'0')+'" data-markup-cap="'+esc(markup)+'">'+
           '<div class="pw-svc-head">'+
             '<button type="button" class="pw-svc-fold" data-offer-fold aria-expanded="false">'+
               '<span class="pw-svc-copy"><b class="pw-svc-name">'+esc(item.name||'服务')+'</b><span class="pw-svc-cat">'+esc(item.category||'服务')+'</span></span>'+
@@ -2909,11 +2910,18 @@
           '</div>'+
           '<div class="pw-svc-panel"><div class="pw-svc-panel-inner">'+
             '<p class="pw-my-service-status">'+(accepting?'● 接单中':'● 已关闭')+'</p>'+
-            (canPrice
-              ? '<label>我的价格<span class="pw-rm">RM<input data-offer-price inputmode="decimal" value="'+esc(mine)+'"></span><em>/ '+esc(unit)+'</em></label><button class="pw-btn" type="button" data-offer-save>修改价格</button>'
-              : '<p>🔒 已锁定 '+esc(quote)+'</p><p>该价格由平台锁定，不能在这里修改。客户支付价以服务目录为准。</p>')+
+            '<div class="pw-svc-row"><span>游戏名称</span><strong>'+esc(item.name||'-')+'</strong></div>'+
+            '<div class="pw-svc-row"><span>当前游戏等级</span><strong>'+esc(levelLabel)+'</strong></div>'+
+            '<div class="pw-svc-row"><span>服务基础价格</span><strong>'+esc(basePrice!=null&&basePrice!==''?basePrice:'未设置')+' 猫粮</strong></div>'+
+            '<div class="pw-svc-row"><span>当前等级允许加价</span><strong>'+esc(markupHint)+'</strong></div>'+
+            '<div class="pw-svc-switch"><span>是否加价</span>'+
+              (markup>0
+                ? '<button type="button" class="pw-offer-switch'+(markupOn?' is-on':'')+'" data-markup-toggle aria-pressed="'+(markupOn?'true':'false')+'"><span>+0</span><span>+'+esc(markup)+'</span><i></i></button>'
+                : '<strong>不可加价</strong>')+
+            '</div>'+
+            '<div class="pw-svc-row"><span>最终展示价格</span><strong data-offer-final>'+esc(finalPrice)+' 猫粮 / '+esc(unit)+'</strong></div>'+
+            '<button class="pw-btn" type="button" data-offer-save>保存加价选择</button>'+
             serviceDetailsHtml({layout:'requirements',requirementsOpen:false,requirements:requirement})+
-            '<p>允许区间：'+esc(range)+'</p>'+
           '</div></div></article>';
       }).join('')+'</div>';
     }).catch(function(err){
@@ -3044,7 +3052,7 @@
     else if(state.route==='settings')body=settingsHtml();
     else if(state.route==='popularity')body=popularityHtml();
     else if(state.route==='profile')body=profileHtml();
-    else if(state.route==='services')body='<section class="pw-my-services"><h2>我的服务</h2><p class="pw-note">价格只对你自己生效，不会改其他陪玩，也不会改已经创建的订单。</p><div id="pwOfferManager"><p class="pw-note">正在读取平台服务…</p></div></section>';
+    else if(state.route==='services')body='<section class="pw-my-services"><h2>我的服务</h2><p class="pw-note">每个游戏按你的陪玩等级显示允许加价；你只能选择是否加价。保存后刷新回读。已创建订单的成交价不会因之后改加价而变化。</p><div id="pwOfferManager"><p class="pw-note">正在读取平台服务…</p></div></section>';
     else if(state.route==='account'||state.route==='mine')body=accountHtml();
     else if(state.route==='gifts')body=giftsHtml();
     else if(state.route==='rules')body=rulesHtml();
@@ -6167,6 +6175,27 @@
       if(!any){toast('没有已开启的服务');return;}
       offerAction=closeAll;
     }
+    var markupBtn=e.target.closest('[data-markup-toggle]');
+    if(markupBtn){
+      var markupCard=markupBtn.closest('[data-offer-card]');
+      if(markupCard){
+        var cap=Number(markupCard.getAttribute('data-markup-cap')||0)||0;
+        if(!(cap>0)){toast('当前等级未配置加价额度');return;}
+        var nextOn=markupCard.getAttribute('data-markup-on')==='1'?'0':'1';
+        markupCard.setAttribute('data-markup-on',nextOn);
+        markupCard.setAttribute('data-touched','1');
+        markupBtn.classList.toggle('is-on',nextOn==='1');
+        markupBtn.setAttribute('aria-pressed',nextOn==='1'?'true':'false');
+        var finalEl=markupCard.querySelector('[data-offer-final]');
+        var quoteEl=markupCard.querySelector('.pw-svc-quote');
+        var baseTxt=markupCard.querySelectorAll('.pw-svc-row strong')[2];
+        var baseNum=Number(String(baseTxt&&baseTxt.textContent||'').replace(/[^\d.-]/g,''))||0;
+        var shown=baseNum+(nextOn==='1'?cap:0);
+        if(finalEl)finalEl.textContent=shown+' 猫粮';
+        if(quoteEl)quoteEl.textContent=shown+' 猫粮';
+      }
+      return;
+    }
     var offerAction=e.target.closest('[data-save-offers],[data-offer-save],[data-offer-toggle]');
     if(closeAll)offerAction=closeAll;
     if(offerAction){
@@ -6182,14 +6211,13 @@
       if(host){
         host.querySelectorAll('[data-offer-card]').forEach(function(card,index){
           if(card.getAttribute('data-saved')!=='1'&&card.getAttribute('data-touched')!=='1')return;
-          var priceEl=card.querySelector('[data-offer-price]');
           var accepting=card.getAttribute('data-accepting')!=='0';
           var savedSort=Number(card.getAttribute('data-offer-sort'));
           offers.push({
             kind:card.getAttribute('data-kind')||'service',
             id:card.getAttribute('data-id'),
             accepting:accepting,
-            price:priceEl?priceEl.value:'',
+            markupOn:card.getAttribute('data-markup-on')==='1',
             sort:isFinite(savedSort)?savedSort:index
           });
         });

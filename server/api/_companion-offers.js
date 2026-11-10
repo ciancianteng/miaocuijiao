@@ -5,6 +5,7 @@
  */
 import { companionDb } from "./_companion-media-store.js";
 import { loadCompanionServiceStandards } from "./_service-standard.js";
+import { loadMarkupMap, parseMarkupOn, quoteMarkupPrice } from "./_lv-markup.js";
 
 const OFFER_KEY = "__catalogOffers";
 
@@ -36,7 +37,8 @@ function cleanOffers(input) {
         id,
         enabled: accepting,
         accepting,
-        price: cleanPrice(raw?.price),
+        markupOn: parseMarkupOn(raw?.markupOn ?? raw?.markup_on),
+        price: kind === "service" ? null : cleanPrice(raw?.price),
         sort: Number.isFinite(Number(raw?.sort)) ? Number(raw.sort) : index,
       };
     })
@@ -64,11 +66,22 @@ async function catalog() {
   return { serviceRows, productRows };
 }
 
+async function companionLevelId(userId) {
+  const id = String(userId || "").trim();
+  if (!id) return "";
+  const rows = await companionDb(
+    "companion_profiles",
+    `?user_id=eq.${encodeURIComponent(id)}&select=level_id&limit=1`
+  ).catch(() => []);
+  return String(rows?.[0]?.level_id || "").trim().toLowerCase();
+}
+
 export async function listCompanionOffers(userId, { enabledOnly = false } = {}) {
   const loaded = await loadCompanionServiceStandards(userId);
   const raw = loaded.standards?.[OFFER_KEY];
   const saved = cleanOffers(raw);
   const { serviceRows, productRows } = await catalog();
+  const [levelId, markupMap] = await Promise.all([companionLevelId(userId), loadMarkupMap()]);
   let policies = {};
   try {
     const { loadAllPricePolicies, normalizePricePolicy } = await import("./_service-price-policy.js");
@@ -96,13 +109,22 @@ export async function listCompanionOffers(userId, { enabledOnly = false } = {}) 
       }
       const row = serviceMap.get(item.id);
       if (!row) return null;
+      const quoted = quoteMarkupPrice({
+        serviceRow: row,
+        levelId,
+        markupOn: item.markupOn,
+        markupMap,
+      });
       return {
         ...item,
+        ...quoted,
         name: row.name || "服务",
         category: row.category || "",
         icon: row.icon || "🎮",
-        platformPrice: row.default_price,
+        platformPrice: quoted.basePrice,
         platformEnabled: row.enabled !== false,
+        price: quoted.finalPrice,
+        levelId,
         href: "",
       };
     })
@@ -110,16 +132,28 @@ export async function listCompanionOffers(userId, { enabledOnly = false } = {}) 
   return {
     offers: enabledOnly ? offers.filter((item) => item.accepting !== false) : offers,
     catalog: {
-      services: serviceRows.map((row) => ({
-        kind: "service",
-        id: row.id,
-        name: row.name,
-        category: row.category || "",
-        icon: row.icon || "🎮",
-        price: row.default_price,
-        enabled: row.enabled !== false,
-        policy: policies[String(row.id)] || { min: null, max: null, unit: "局", allowSelfPrice: false, allowSelfOff: false },
-      })),
+      services: serviceRows.map((row) => {
+        const hit = saved.find((item) => item.kind === "service" && item.id === String(row.id));
+        const quoted = quoteMarkupPrice({
+          serviceRow: row,
+          levelId,
+          markupOn: hit?.markupOn,
+          markupMap,
+        });
+        return {
+          kind: "service",
+          id: row.id,
+          name: row.name,
+          category: row.category || "",
+          icon: row.icon || "🎮",
+          price: quoted.finalPrice,
+          enabled: row.enabled !== false,
+          policy: policies[String(row.id)] || { min: null, max: null, unit: "局", allowSelfPrice: false, allowSelfOff: false },
+          ...quoted,
+          levelId,
+          markupOn: quoted.markupOn,
+        };
+      }),
       products: productRows.map((row) => ({
         kind: "product",
         id: row.id,
@@ -179,7 +213,7 @@ export async function saveCompanionOffers(userId, offers) {
     const prev = previous.find((row) => row.kind === "service" && row.id === item.id);
     if (Number.isNaN(item.price)) throw Object.assign(new Error("不允许输入无效金额。"), { status: 400 });
     const prevPrice = prev && prev.price != null && !Number.isNaN(prev.price) ? Number(prev.price) : null;
-    assertCompanionOfferPrice(item, policy, prevPrice);
+    if (item.price != null) assertCompanionOfferPrice(item, policy, prevPrice);
   }
   const incoming = new Set(wanted.map((item) => `${item.kind}:${item.id}`));
   const keptProducts = previous.filter((item) => item.kind === "product" && !incoming.has(`product:${item.id}`));
