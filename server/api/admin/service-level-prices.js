@@ -75,13 +75,30 @@ export default async function handler(req, res) {
     if (!(await requireAdmin(req, res))) return;
 
     if (req.method === "GET") {
-      const [services, levels, rows, table] = await Promise.all([
-        readLocalServices(),
-        readLocalLevels(),
-        readServiceLevelPrices(),
-        probeServiceLevelPricesTable(),
-      ]);
-      const enabledServices = (services || []).filter((s) => s && s.enabled !== false);
+      const table = await probeServiceLevelPricesTable();
+      let services = [];
+      try {
+        services = await readLocalServices();
+      } catch {
+        services = [];
+      }
+      if (!Array.isArray(services) || !services.length) {
+        try {
+          const { companionDb } = await import("../_companion-media-store.js");
+          services = await companionDb("services", "?select=id,name,title,enabled&order=sort.asc&limit=200");
+        } catch {
+          services = [];
+        }
+      }
+      const [levels, rows] = await Promise.all([readLocalLevels(), readServiceLevelPrices()]);
+      let enabledServices = (services || []).filter((s) => s && s.enabled !== false);
+      if (!enabledServices.length && Array.isArray(rows) && rows.length) {
+        const names = new Map();
+        for (const row of rows) {
+          if (!names.has(row.serviceId)) names.set(row.serviceId, { id: row.serviceId, name: row.serviceId, enabled: true });
+        }
+        enabledServices = [...names.values()];
+      }
       return json(res, 200, {
         ok: true,
         table,
