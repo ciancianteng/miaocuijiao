@@ -83,7 +83,9 @@ export function resolveCompanionCover(profile = {}, row = {}, extras = {}) {
 }
 
 export function availabilityCode(row = {}) {
-  const raw = String(row.availability_status || row.online_status || row.availabilityStatus || "offline").toLowerCase();
+  // Writer SoT is companion_profiles.online_status (set_online_status).
+  // Do not let a leftover availability_status override it.
+  const raw = String(row.online_status || row.availability_status || row.availabilityStatus || "offline").toLowerCase();
   if (raw === "online") return "online";
   if (raw === "busy") return "busy";
   if (raw === "paused") return "paused";

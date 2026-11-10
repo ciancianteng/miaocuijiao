@@ -109,8 +109,8 @@ async function loadCompanionPricingRow(userId) {
   if (!id) return null;
   // Prefer wide select, but never fall all the way to price-only — publish gate needs profile fields.
   const selects = [
-    "id,user_id,price,game_prices,tags,game,main_service,service_ids,pricing_unit,nickname,age,gender,region,service_type,voice_url,card_image_url,application_status,verification_status,deposit_status,allow_orders,online_status,availability_status",
-    "id,user_id,price,game_prices,tags,game,main_service,service_ids,nickname,age,gender,region,service_type,voice_url,card_image_url,application_status,verification_status,allow_orders,online_status,availability_status",
+    "id,user_id,price,game_prices,tags,game,main_service,service_ids,pricing_unit,nickname,age,gender,region,service_type,voice_url,card_image_url,application_status,verification_status,deposit_status,allow_orders,online_status,availability_status,last_online_at",
+    "id,user_id,price,game_prices,tags,game,main_service,service_ids,nickname,age,gender,region,service_type,voice_url,card_image_url,application_status,verification_status,allow_orders,online_status,availability_status,last_online_at",
     "id,user_id,price,game_prices,tags,game,main_service,nickname,age,gender,region,service_type,voice_url,card_image_url,application_status,verification_status,allow_orders,online_status",
     "id,user_id,price,tags,game,nickname,age,gender,region,voice_url,card_image_url,application_status,verification_status,allow_orders,online_status",
     "id,user_id,price,game,nickname,application_status,verification_status,allow_orders,online_status",

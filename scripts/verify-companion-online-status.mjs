@@ -10,10 +10,11 @@ const source = fs.readFileSync(new URL("../server/api/companion.js", import.meta
 const start = source.indexOf('if (action === "set_online_status")');
 const end = source.indexOf('if (action === "update_profile")', start);
 const block = source.slice(start, end);
-assert.equal(block.includes("availability_status:"), false);
-assert.equal(block.includes("status_updated_at"), false);
-assert.equal(block.includes("last_online_at"), false);
 assert.equal(block.includes("online_status: status"), true);
+assert.equal(block.includes("status_updated_at"), false);
+assert.match(block, /availability_status: status/);
+assert.match(block, /last_online_at/);
+assert.match(block, /patchCompanionProfile/);
 assert.match(block, /savedRow\.online_status/);
 assert.match(block, /assertCompanionBusinessAccess/);
 assert.match(block, /assertCompanionOrderEligibility/);

@@ -5094,7 +5094,12 @@ return json(res, 200, {
       const patch = {
         online_status: status,
         updated_at: nowIso(),
+        // Staging may store these; Production schema drops them in patchCompanionProfile.
+        availability_status: status,
       };
+      if (status === "online" || status === "busy") {
+        patch.last_online_at = nowIso();
+      }
       let rows;
       try {
         rows = await patchCompanionProfile(`?user_id=eq.${encodeURIComponent(auth.profile.id)}`, patch);

@@ -30,6 +30,42 @@ function row(status) {
   return { availability_status: status, online_status: status };
 }
 
+{
+  const stale = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+  const fresh = new Date().toISOString();
+  assert.equal(
+    availabilityCode({ online_status: "online", availability_status: "offline" }),
+    "online",
+    "writer SoT is online_status"
+  );
+  assert.equal(
+    canCompanionAcceptBossOrder({
+      online_status: "online",
+      availability_status: "offline",
+      last_online_at: fresh,
+    }),
+    true
+  );
+  assert.equal(
+    canCompanionAcceptBossOrder({
+      online_status: "online",
+      availability_status: "offline",
+      last_online_at: stale,
+    }),
+    false,
+    "stale last_online_at must still block"
+  );
+  assert.equal(
+    canCompanionAcceptBossOrder({
+      online_status: "offline",
+      availability_status: "online",
+      last_online_at: fresh,
+    }),
+    false,
+    "offline online_status cannot be overridden by leftover availability_status"
+  );
+}
+
 // CASE 1 — hall online + single-order allowed => multi add allowed
 {
   assert.equal(canCompanionAcceptBossOrder(row("online")), true);
@@ -82,6 +118,7 @@ function row(status) {
 {
   assert.match(ordersSrc, /canCompanionAcceptBossOrder/);
   assert.match(ordersSrc, /assertCompanionOrderable/);
+  assert.match(ordersSrc, /last_online_at/);
   assert.match(readFileSync(new URL("../server/api/_place-multi-order.js", import.meta.url), "utf8"), /assertCompanionOrderable/);
 }
 
