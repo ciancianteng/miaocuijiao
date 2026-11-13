@@ -430,43 +430,131 @@ export async function signedGiftProofUrl(order, expiresIn = 3600) {
   return createSignedUrl(PROOF_BUCKET, path, Math.max(300, Number(expiresIn) || 3600));
 }
 
+function looksLikeUuid(value) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+    String(value || "").trim()
+  );
+}
+
+function visiblePersonName(name, id) {
+  const n = String(name || "").trim();
+  if (n && !looksLikeUuid(n)) return n;
+  return id ? "已删除账号" : "未知用户";
+}
+
+function visibleGiftName(name) {
+  const n = String(name || "").trim();
+  if (n && !looksLikeUuid(n)) return n;
+  return "未知礼物";
+}
+
+async function fetchByIds(table, column, ids, select) {
+  const uniq = [...new Set((ids || []).map((id) => String(id || "").trim()).filter(Boolean))];
+  const out = [];
+  const chunkSize = 60;
+  for (let i = 0; i < uniq.length; i += chunkSize) {
+    const part = uniq.slice(i, i + chunkSize);
+    const rows = await companionDb(
+      table,
+      `?${column}=in.(${part.map(encodeURIComponent).join(",")})&select=${select}`
+    ).catch(() => []);
+    if (Array.isArray(rows)) out.push(...rows);
+  }
+  return out;
+}
+
 export async function enrichGiftOrders(rows = []) {
   const list = Array.isArray(rows) ? rows : [];
   if (!list.length) return [];
   const bossIds = [...new Set(list.map((r) => r.sender_boss_id).filter(Boolean))];
   const companionIds = [...new Set(list.map((r) => r.receiver_companion_id).filter(Boolean))];
-  const bosses = bossIds.length
-    ? await companionDb(
-        "profiles",
-        `?id=in.(${bossIds.map(encodeURIComponent).join(",")})&select=id,display_name,nickname,uid,public_id`
-      ).catch(() => [])
-    : [];
-  const companions = companionIds.length
-    ? await companionDb(
+  const giftIds = [...new Set(list.map((r) => r.gift_id).filter(Boolean))];
+
+  const bosses = await fetchByIds("profiles", "id", bossIds, "id,display_name,nickname,uid,public_id");
+  let companionsByUser = await fetchByIds(
+    "companion_profiles",
+    "user_id",
+    companionIds,
+    "id,user_id,nickname,avatar_url,companion_uid"
+  ).catch(() => []);
+  if (!companionsByUser.length && companionIds.length) {
+    companionsByUser = await fetchByIds(
+      "companion_profiles",
+      "user_id",
+      companionIds,
+      "id,user_id,nickname,avatar_url"
+    ).catch(() => []);
+  }
+  const companionMap = {};
+  for (const c of companionsByUser || []) {
+    if (c?.user_id) companionMap[c.user_id] = c;
+    if (c?.id) companionMap[c.id] = c;
+  }
+  const missingCompanionIds = companionIds.filter((id) => !companionMap[id]);
+  if (missingCompanionIds.length) {
+    let companionsById = await fetchByIds(
+      "companion_profiles",
+      "id",
+      missingCompanionIds,
+      "id,user_id,nickname,avatar_url,companion_uid"
+    ).catch(() => []);
+    if (!companionsById.length) {
+      companionsById = await fetchByIds(
         "companion_profiles",
-        `?user_id=in.(${companionIds.map(encodeURIComponent).join(",")})&select=user_id,nickname,avatar_url,companion_uid`
-      ).catch(() => [])
+        "id",
+        missingCompanionIds,
+        "id,user_id,nickname,avatar_url"
+      ).catch(() => []);
+    }
+    for (const c of companionsById || []) {
+      if (c?.user_id) companionMap[c.user_id] = c;
+      if (c?.id) companionMap[c.id] = c;
+    }
+    const stillMissing = missingCompanionIds.filter((id) => !companionMap[id]);
+    if (stillMissing.length) {
+      const profileFallback = await fetchByIds(
+        "profiles",
+        "id",
+        stillMissing,
+        "id,display_name,nickname"
+      );
+      for (const p of profileFallback || []) {
+        companionMap[p.id] = {
+          user_id: p.id,
+          nickname: p.nickname || p.display_name || "",
+        };
+      }
+    }
+  }
+  const giftRows = giftIds.length
+    ? await fetchByIds("gifts", "id", giftIds, "id,name").catch(() => [])
     : [];
+  const giftMap = Object.fromEntries((giftRows || []).map((g) => [g.id, g]));
   const bossMap = Object.fromEntries((bosses || []).map((b) => [b.id, b]));
-  const companionMap = Object.fromEntries((companions || []).map((c) => [c.user_id, c]));
   const out = [];
   for (const row of list) {
     const b = bossMap[row.sender_boss_id] || {};
     const c = companionMap[row.receiver_companion_id] || {};
+    const gift = giftMap[row.gift_id] || {};
     let paymentProofUrl = "";
     if (row.payment_proof_path) {
       paymentProofUrl = await signedGiftProofUrl(row).catch(() => "");
     }
+    const senderRaw = b.nickname || b.display_name || "";
+    const receiverRaw = c.nickname || "";
+    const giftRaw = row.gift_name_snapshot || gift.name || "";
     out.push(
       viewGiftOrder(row, {
-        senderName: b.nickname || b.display_name || "",
+        senderName: visiblePersonName(senderRaw, row.sender_boss_id),
         senderUid: b.uid || b.public_id || "",
-        receiverName: c.nickname || "",
+        receiverName: visiblePersonName(receiverRaw, row.receiver_companion_id),
         receiverUid: c.companion_uid ? `P${c.companion_uid}` : "",
         receiverAvatar: c.avatar_url || "",
         paymentProofUrl,
       })
     );
+    const last = out[out.length - 1];
+    if (last) last.giftName = visibleGiftName(giftRaw);
   }
   return out;
 }

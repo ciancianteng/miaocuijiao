@@ -610,7 +610,13 @@ export async function handleUserNotificationRequest(req, res, action, body) {
       return send(res, 200, { ok: true, unread_count: unreadCount, unreadCount });
     }
     if (action === "inbox" || action === "list_badge") {
-      const category = String((req.query && req.query.category) || body.category || "all");
+      let category = "all";
+      try {
+        const parsed = new URL(req.url || "/", "http://localhost");
+        category = String(parsed.searchParams.get("category") || (req.query && req.query.category) || body.category || "all");
+      } catch {
+        category = String((req.query && req.query.category) || body.category || "all");
+      }
       const items = await listNotifications(userId, category);
       const unreadCount = await countUnreadForPush(userId);
       if (unreadCount == null) return send(res, 503, { ok: false, message: "未读数量读取失败" });

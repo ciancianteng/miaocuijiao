@@ -256,14 +256,14 @@
   function loadBadge() {
     if (!document.querySelector("script[data-mcj-bell]")) {
       var bell = document.createElement("script");
-      bell.src = "/src/mcj-bell.js?v=20261029bell2";
+      bell.src = "/src/mcj-bell.js?v=20261113csBell1";
       bell.defer = true;
       bell.setAttribute("data-mcj-bell", "1");
       document.head.appendChild(bell);
     }
     if (document.querySelector("script[data-mcj-app-badge]")) return;
     var s = document.createElement("script");
-    s.src = "/src/app-badge.js?v=20261029bell2";
+    s.src = "/src/app-badge.js?v=20261113csBell1";
     s.defer = true;
     s.setAttribute("data-mcj-app-badge", "1");
     document.head.appendChild(s);

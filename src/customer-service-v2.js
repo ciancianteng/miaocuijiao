@@ -22,7 +22,7 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, virtStartIndex }
   var softRefreshSeq=0;
   var toastTimer=null;
   var COMPOSER_SEL='[data-cs-composer], form[data-send-message] textarea[name="content"], form[data-send-message] input[name="content"]';
-  var state={route:'dashboard',session:null,data:null,services:[],servicesError:'',servicesSource:'',createOrderErrors:{bosses:'',companions:'',services:''},loading:false,error:'',notice:'',activeConversation:'',orderFilter:'',convFilter:'waiting',suppressAutoSelect:false,loginError:'',loginBusy:false,loginDraft:{account:'',password:'',remember:false},composerDraft:'',composerDrafts:{},composerFocused:false,sendingChat:false,showConversationList:true,acceptLock:null,readCursors:{},acceptingId:'',clockBusy:false,assignBusy:false,realtimeReady:false,hoursTimer:null,lastPollAt:'',listScrollTop:0,pageScrollTop:0,tableScrollTop:0,tableScrollLeft:0,poolRealtimeBound:false,deskOrderRealtimeBound:false,virtStart:0,attPage:0};
+  var state={route:'dashboard',session:null,data:null,services:[],servicesError:'',servicesSource:'',createOrderErrors:{bosses:'',companions:'',services:''},loading:false,error:'',notice:'',activeConversation:'',orderFilter:'',convFilter:'waiting',suppressAutoSelect:false,loginError:'',loginBusy:false,loginDraft:{account:'',password:'',remember:false},composerDraft:'',composerDrafts:{},composerFocused:false,sendingChat:false,showConversationList:true,acceptLock:null,readCursors:{},acceptingId:'',clockBusy:false,assignBusy:false,realtimeReady:false,hoursTimer:null,lastPollAt:'',listScrollTop:0,pageScrollTop:0,tableScrollTop:0,tableScrollLeft:0,poolRealtimeBound:false,deskOrderRealtimeBound:false,virtStart:0,attPage:0,csNoticeOpen:false,csNoticeItems:[],csNoticeLoading:false};
   var CONV_ROW_H=92;
   var CONV_OVERSCAN=6;
   var ATT_PAGE_SIZE=10;
@@ -2308,10 +2308,144 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, virtStartIndex }
     return '<nav class="cs-mobile-nav" aria-label="客服导航">'+primary+'<button type="button" data-cs-more class="'+(moreActive?'active':'')+'">更多</button></nav>'+
       '<div class="cs-more-sheet" data-cs-more-sheet hidden><div class="cs-more-panel" role="dialog" aria-label="更多功能"><div class="cs-more-head"><strong>更多</strong><button type="button" class="cs-btn ghost" data-cs-more-close>关闭</button></div><div class="cs-more-list">'+rest+'</div></div></div>';
   }
+  function looksLikeUuid(v){
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(v||'').trim());
+  }
+  function personLabel(name,id){
+    var n=String(name||'').trim();
+    if(n&&!looksLikeUuid(n))return n;
+    return id?'已删除账号':'未知用户';
+  }
+  function giftLabel(name){
+    var n=String(name||'').trim();
+    if(n&&!looksLikeUuid(n))return n;
+    return '未知礼物';
+  }
+  function orderNoLabel(o){
+    var n=String((o&&(o.orderNo||o.order_no))||'').trim();
+    if(n&&!looksLikeUuid(n))return n;
+    return '礼物订单';
+  }
+  function csNoticeBellHtml(){
+    var n=Number((window.__MCJ_BADGE_COUNT!=null?window.__MCJ_BADGE_COUNT:0))||0;
+    var inner=(window.MCJBell&&typeof MCJBell.inner==='function')?MCJBell.inner(n):('<span data-mcj-badge-count'+(n?'':' hidden')+'>'+(n>99?'99+':(n||''))+'</span>');
+    if(window.MCJBell&&typeof MCJBell.ensureCss==='function')MCJBell.ensureCss();
+    var expanded = state.csNoticeOpen ? "true" : "false";
+    var label = n ? ("通知 " + n) : "通知";
+    return '<button type="button" class="mcj-bell" data-cs-notices data-mcj-badge-bell="1" aria-label="'+label+'" aria-expanded="'+expanded+'">'+inner+'</button>';
+  }
+  function csNoticeHref(item){
+    var href=String((item&&(item.url||item.href))||'').trim();
+    if(href.charAt(0)==='/'&&href.charAt(1)!=='/'&&href.indexOf('/customer-service/')===0)return href;
+    var kind=String((item&&(item.category||item.type||item.kind))||'').toLowerCase();
+    if(kind==='gift'||kind==='gift_proof')return '/customer-service/gift-orders';
+    if(kind==='recharge'||kind==='recharge_proof')return '/customer-service/recharges';
+    if(kind==='consult'||kind==='cs_consult'||kind==='chat')return '/customer-service/conversations';
+    return '';
+  }
+  function paintCsNoticeList(){
+    var list=document.querySelector('#csNoticeSheet [data-cs-notice-list]');
+    if(!list)return;
+    if(state.csNoticeLoading&&!(state.csNoticeItems||[]).length){
+      list.innerHTML='<div class="cs-notice-empty">正在读取通知…</div>';
+      return;
+    }
+    var items=state.csNoticeItems||[];
+    if(!items.length){
+      list.innerHTML='<div class="cs-notice-empty">暂无通知</div>';
+      return;
+    }
+    list.innerHTML=items.map(function(n){
+      var when=fmtOrderDateTime(n.createdAt||n.at||n.readAt||'');
+      var unread=!n.isRead&&!n.readAt;
+      return '<button type="button" class="cs-notice-item'+(unread?'':' is-read')+'" data-cs-notice-id="'+esc(n.id||'')+'" data-cs-notice-href="'+esc(csNoticeHref(n))+'">'+
+        (unread?'<i class="cs-notice-dot" aria-hidden="true"></i>':'')+
+        '<strong>'+esc(n.title||'通知')+(unread?' · 未读':'')+'</strong>'+
+        '<span>'+esc(n.body||'')+'</span>'+
+        '<small>'+esc(when||'')+'</small></button>';
+    }).join('');
+  }
+  function ensureCsNoticeSheet(){
+    var sheet=document.getElementById('csNoticeSheet');
+    if(sheet)return sheet;
+    sheet=document.createElement('div');
+    sheet.id='csNoticeSheet';
+    sheet.hidden=true;
+    sheet.innerHTML='<div class="cs-notice-backdrop" data-cs-notice-close></div>'+
+      '<section class="cs-notice-panel" role="dialog" aria-modal="true" aria-label="通知">'+
+      '<div class="cs-notice-tools"><strong>通知</strong><div class="cs-notice-tool-btns">'+
+      '<button type="button" class="cs-btn ghost" data-cs-notice-read-all>全部已读</button>'+
+      '<button type="button" class="cs-btn ghost" data-cs-notice-close>关闭</button></div></div>'+
+      '<div class="cs-notice-list" data-cs-notice-list>加载中…</div></section>';
+    document.body.appendChild(sheet);
+    return sheet;
+  }
+  function closeCsNotices(){
+    state.csNoticeOpen=false;
+    var sheet=document.getElementById('csNoticeSheet');
+    if(sheet)sheet.hidden=true;
+    Array.prototype.forEach.call(document.querySelectorAll('[data-cs-notices]'),function(btn){
+      btn.setAttribute('aria-expanded','false');
+    });
+  }
+  function fetchCsNoticeInbox(){
+    var tok=token();
+    if(!tok)return Promise.resolve([]);
+    return fetch('/api/notifications?action=inbox&category=all',{
+      cache:'no-store',
+      headers:{Accept:'application/json',Authorization:'Bearer '+tok}
+    }).then(function(res){return res.json().then(function(body){return {res:res,body:body};});}).then(function(pack){
+      var body=pack.body||{};
+      if(!pack.res.ok||body.ok===false)throw new Error(body.message||'通知加载失败');
+      var items=Array.isArray(body.items)?body.items:[];
+      state.csNoticeItems=items;
+      if(window.MCJAppBadge&&typeof window.MCJAppBadge.refreshUnreadCount==='function'){
+        window.MCJAppBadge.refreshUnreadCount();
+      }else if(body.unread_count!=null||body.unreadCount!=null){
+        var raw=body.unread_count!=null?body.unread_count:body.unreadCount;
+        window.__MCJ_BADGE_COUNT=Number(raw)||0;
+        document.querySelectorAll('[data-mcj-badge-count]').forEach(function(el){
+          var n=window.__MCJ_BADGE_COUNT;
+          el.textContent=n>99?'99+':(n?String(n):'');
+          el.hidden=n<=0;
+        });
+      }
+      paintCsNoticeList();
+      return items;
+    });
+  }
+  function openCsNotices(){
+    state.csNoticeOpen=true;
+    var sheet=ensureCsNoticeSheet();
+    sheet.hidden=false;
+    Array.prototype.forEach.call(document.querySelectorAll('[data-cs-notices]'),function(btn){
+      btn.setAttribute('aria-expanded','true');
+    });
+    state.csNoticeLoading=true;
+    paintCsNoticeList();
+    fetchCsNoticeInbox().catch(function(err){
+      var list=document.querySelector('#csNoticeSheet [data-cs-notice-list]');
+      if(list)list.innerHTML='<div class="cs-notice-empty">'+esc((err&&err.message)||'通知暂时无法加载')+'</div>';
+    }).then(function(){state.csNoticeLoading=false;});
+  }
+  function restoreCsNoticeChrome(){
+    if(!state.csNoticeOpen)return;
+    ensureCsNoticeSheet().hidden=false;
+    paintCsNoticeList();
+  }
+  function notifyApi(action,payload){
+    var tok=token();
+    return fetch('/api/notifications',{
+      method:'POST',
+      cache:'no-store',
+      headers:{Accept:'application/json','Content-Type':'application/json',Authorization:'Bearer '+tok},
+      body:JSON.stringify(Object.assign({action:action},payload||{}))
+    }).then(function(res){return res.json().then(function(body){if(!res.ok||body.ok===false)throw new Error(body.message||'已读状态写入失败');return body;});});
+  }
   function paintSafeFallback(){
     try{
       var staff=(state.data&&state.data.staff)||(state.session&&state.session.user)||{};
-      root.innerHTML='<div class="cs-shell"><aside class="cs-side"><div class="cs-brand"><strong>MEOW CUI JIAO</strong><span>Customer Service</span></div>'+sideNavHtml(0)+'</aside><section class="cs-main"><header class="cs-top"><div><h1>客服工作台</h1><p>数据加载异常时仍保留工作台框架。</p></div><div class="cs-account"><span>'+esc(staff.name||staff.email||'客服')+'</span></div></header><main class="cs-page">'+dashboardHtml()+'</main></section>'+mobileNavHtml(0)+'</div>';
+      root.innerHTML='<div class="cs-shell"><aside class="cs-side"><div class="cs-brand"><strong>MEOW CUI JIAO</strong><span>Customer Service</span></div>'+sideNavHtml(0)+'</aside><section class="cs-main"><header class="cs-top"><div><h1>客服工作台</h1><p>数据加载异常时仍保留工作台框架。</p></div><div class="cs-account">'+csNoticeBellHtml()+'<span>'+esc(staff.name||staff.email||'客服')+'</span></div></header><main class="cs-page">'+dashboardHtml()+'</main></section>'+mobileNavHtml(0)+'</div>';
     }catch(e){
       root.textContent='客服工作台加载失败，请刷新页面。';
     }
@@ -2405,6 +2539,7 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, virtStartIndex }
       capturePageScroll();
       renderShell();
       restorePageScroll();
+      restoreCsNoticeChrome();
       syncPoolCounters();
       if(state.route==='conversations'){
         restoreComposer();
@@ -2502,7 +2637,7 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, virtStartIndex }
     var staff=(state.data&&state.data.staff)||(state.session&&state.session.user)||{};
     recomputeSummaryFromConversations();
     var unread=Number((state.data&&state.data.summary&&state.data.summary.unreadMessages)||0)||0;
-    root.innerHTML='<div class="cs-shell"><aside class="cs-side"><div class="cs-brand"><strong>MEOW CUI JIAO</strong><span>Customer Service</span></div>'+sideNavHtml(unread)+'</aside><section class="cs-main"><header class="cs-top"><div><h1>'+title()+'</h1><p>'+esc(staff.name||staff.email||'客服')+'</p></div><div class="cs-account"><span>'+esc(staff.name||staff.email||'客服')+'</span></div></header><main class="cs-page" data-route="'+esc(state.route||'dashboard')+'">'+pageHtml()+'</main></section>'+mobileNavHtml(unread)+'</div>'+noticeHtml();
+    root.innerHTML='<div class="cs-shell"><aside class="cs-side"><div class="cs-brand"><strong>MEOW CUI JIAO</strong><span>Customer Service</span></div>'+sideNavHtml(unread)+'</aside><section class="cs-main"><header class="cs-top"><div><h1>'+title()+'</h1><p>'+esc(staff.name||staff.email||'客服')+'</p></div><div class="cs-account">'+csNoticeBellHtml()+'<span>'+esc(staff.name||staff.email||'客服')+'</span></div></header><main class="cs-page" data-route="'+esc(state.route||'dashboard')+'">'+pageHtml()+'</main></section>'+mobileNavHtml(unread)+'</div>'+noticeHtml();
   }
   function maintenanceHtml(name){return '<div class="cs-page-head"><div><h2>'+esc(name||'模块已合并')+'</h2><p>该模块已合并到工作台其他页面，请返回工作台继续处理会话与订单。</p></div><button class="cs-btn primary" type="button" data-route="/customer-service/dashboard">返回工作台</button></div>'}
   function pageHtml(){
@@ -3341,7 +3476,7 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, virtStartIndex }
   }
   function giftOrdersHtml(){
     if(!giftOrdersState._booted){giftOrdersState._booted=true;setTimeout(loadGiftOrders,0)}
-    var filters=[['under_review','待审核'],['approved','已通过'],['rejected','已拒绝'],['all','全部']];
+    var filters=[['all','全部'],['under_review','待审核'],['approved','已通过'],['rejected','已拒绝']];
     var tabs=filters.map(function(f){
       return '<button type="button" class="cs-btn'+(giftOrdersState.filter===f[0]?' active':'')+'" data-gift-filter="'+f[0]+'">'+f[1]+'</button>';
     }).join('');
@@ -3349,31 +3484,52 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, virtStartIndex }
     if(giftOrdersState.loading) body='<div class="cs-card">加载礼物订单…</div>';
     else if(giftOrdersState.error) body='<div class="cs-card">'+esc(giftOrdersState.error)+' <button class="cs-btn" data-gift-reload>重试</button></div>';
     else if(!giftOrdersState.orders.length) body='<div class="cs-card">暂无礼物订单</div>';
-    else body='<section class="cs-table-wrap"><table class="cs-table"><thead><tr><th>订单号</th><th>老板</th><th>陪玩</th><th>礼物</th><th>数量</th><th>金额</th><th>凭证</th><th>时间</th><th>状态</th><th>操作</th></tr></thead><tbody>'+
-      giftOrdersState.orders.map(function(o){
+    else {
+      var rows=giftOrdersState.orders.map(function(o){
         var proof=giftOrdersState.proofMap[o.id]||o.paymentProofUrl||'';
         var proofCell=proof&&proof!=='__loading__'
           ?('<button type="button" class="cs-proof-thumb-btn" data-gift-proof-thumb="'+esc(o.id)+'" data-proof-lightbox="'+esc(proof)+'" title="查看付款截图"><img class="cs-proof-thumb" src="'+esc(proof)+'" alt="付款凭证" loading="lazy"></button>')
           :('<button type="button" class="cs-proof-thumb-btn" data-gift-proof-thumb="'+esc(o.id)+'" data-gift-proof="'+esc(o.id)+'" title="加载付款截图"><span class="cs-btn ghost cs-proof-fallback">'+(proof==='__loading__'?'加载中…':'加载截图')+'</span></button>');
         var actions=(o.status==='under_review'||o.status==='payment_submitted')
-          ?('<button class="cs-btn primary" data-gift-approve="'+esc(o.id)+'" data-gift-name="'+esc(o.giftName||'')+'">通过</button> <button class="cs-btn danger" data-gift-reject="'+esc(o.id)+'">拒绝</button>')
-          :'-';
+          ?('<button class="cs-btn primary" data-gift-approve="'+esc(o.id)+'" data-gift-name="'+esc(giftLabel(o.giftName))+'">通过</button> <button class="cs-btn danger" data-gift-reject="'+esc(o.id)+'">拒绝</button>')
+          :'';
         var focusGift='';
         try{focusGift=new URLSearchParams(location.search).get('id')||'';}catch(eGift){}
-        return '<tr data-gift-order="'+esc(o.id)+'"'+(focusGift&&focusGift===String(o.id)?' class="cs-row-focus"':'')+'>'+
-          '<td>'+esc(o.orderNo||o.id)+'</td>'+
-          '<td>'+esc(o.senderName||o.senderBossId||'-')+'</td>'+
-          '<td>'+esc(o.receiverName||o.receiverCompanionId||'-')+'</td>'+
-          '<td>'+esc(o.giftName||'-')+'</td>'+
-          '<td>×'+esc(o.quantity||1)+'</td>'+
-          '<td>'+esc(o.totalAmount)+' 猫粮</td>'+
-          '<td>'+proofCell+'</td>'+
-          '<td>'+esc(fmtOrderDateTime(o.paymentProofUploadedAt||o.createdAt))+'</td>'+
-          '<td>'+esc(giftOrderStatusLabel(o.status))+(o.rejectReason?'<br><small>'+esc(o.rejectReason)+'</small>':'')+'</td>'+
-          '<td><div class="cs-actions">'+actions+'</div></td></tr>';
-      }).join('')+'</tbody></table></section>';
-    return '<div class="cs-page-head"><div><h2>礼物审核</h2><p>审核付款截图；通过后礼物到账并进入礼物墙。</p></div></div>'+
-      '<div class="cs-actions" style="margin-bottom:12px">'+tabs+'<button class="cs-btn" data-gift-reload>刷新</button></div>'+body;
+        var sender=personLabel(o.senderName,o.senderBossId);
+        var receiver=personLabel(o.receiverName,o.receiverCompanionId);
+        var gname=giftLabel(o.giftName);
+        var no=orderNoLabel(o);
+        var when=fmtOrderDateTime(o.createdAt||o.paymentProofUploadedAt);
+        var st=giftOrderStatusLabel(o.status);
+        return {
+          tr:'<tr data-gift-order="'+esc(o.id)+'"'+(focusGift&&focusGift===String(o.id)?' class="cs-row-focus"':'')+'>'+
+            '<td>'+esc(no)+'</td>'+
+            '<td>'+esc(sender)+'</td>'+
+            '<td>'+esc(receiver)+'</td>'+
+            '<td>'+esc(gname)+(o.quantity?' ×'+esc(o.quantity):'')+'</td>'+
+            '<td>'+esc(o.totalAmount)+' 猫粮</td>'+
+            '<td>'+proofCell+'</td>'+
+            '<td>'+esc(when)+'</td>'+
+            '<td>'+esc(st)+(o.rejectReason?'<br><small>'+esc(o.rejectReason)+'</small>':'')+'</td>'+
+            '<td><div class="cs-actions">'+actions+' <button class="cs-btn ghost" type="button" data-gift-detail="'+esc(o.id)+'">详情</button></div></td></tr>',
+          card:'<article class="cs-gift-card'+(focusGift&&focusGift===String(o.id)?' cs-row-focus':'')+'" data-gift-order="'+esc(o.id)+'">'+
+            '<header><strong>'+esc(no)+'</strong><em>'+esc(st)+'</em></header>'+
+            '<dl>'+
+            '<div><dt>陪玩</dt><dd>'+esc(receiver)+'</dd></div>'+
+            '<div><dt>送礼用户</dt><dd>'+esc(sender)+'</dd></div>'+
+            '<div><dt>礼物</dt><dd>'+esc(gname)+(o.quantity?' ×'+esc(o.quantity):'')+'</dd></div>'+
+            '<div><dt>金额</dt><dd>'+esc(o.totalAmount)+' 猫粮</dd></div>'+
+            '<div><dt>创建时间</dt><dd>'+esc(when)+'</dd></div>'+
+            '</dl>'+
+            '<div class="cs-gift-card-actions">'+proofCell+actions+'<button class="cs-btn ghost" type="button" data-gift-detail="'+esc(o.id)+'">详情</button></div></article>'
+        };
+      });
+      body='<section class="cs-table-wrap cs-gift-table-wrap"><table class="cs-table"><thead><tr><th>订单编号</th><th>送礼用户</th><th>陪玩</th><th>礼物</th><th>金额</th><th>凭证</th><th>创建时间</th><th>状态</th><th>操作</th></tr></thead><tbody>'+
+        rows.map(function(r){return r.tr;}).join('')+'</tbody></table></section>'+
+        '<div class="cs-gift-card-list">'+rows.map(function(r){return r.card;}).join('')+'</div>';
+    }
+    return '<p class="cs-gift-head-note">审核付款截图；通过后礼物到账并进入礼物墙。</p>'+
+      '<div class="cs-actions cs-gift-filters">'+tabs+'<button class="cs-btn" data-gift-reload>刷新</button></div>'+body;
   }
   var reviewBadges={giftOrders:0,recharges:0,loaded:false,busy:false,timer:null};
   function reviewBadgeHtml(key){
@@ -4267,13 +4423,52 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, virtStartIndex }
     }
     if(e.target.closest('[data-cs-notices]')){
       e.preventDefault();
-      var notes=(state.data&&state.data.notifications)||[];
-      var unread=notes.filter(function(n){return !n.readAt;});
-      modal('<div class="cs-dialog-head"><h3>通知</h3><button class="cs-btn ghost" type="button" data-close-modal>关闭</button></div><div class="cs-info-list">'+
-        (notes.length?notes.slice(0,30).map(function(n){
-          return '<a href="'+esc(n.href||'#')+'"><span>'+esc(n.title||'通知')+(n.readAt?'':' · 未读')+'</span><strong>'+esc(n.body||'')+'</strong></a>';
-        }).join(''):'<div><span>通知</span><strong>暂无通知</strong></div>')+
-        '</div><p class="cs-note">未读 '+unread.length+'。刷新页面后仍然保留。</p>');
+      e.stopPropagation();
+      if(state.csNoticeOpen)closeCsNotices();
+      else openCsNotices();
+      return;
+    }
+    if(e.target.closest('[data-cs-notice-close]')){
+      e.preventDefault();
+      closeCsNotices();
+      return;
+    }
+    if(e.target.closest('[data-cs-notice-read-all]')){
+      e.preventDefault();
+      var tokAll=token();
+      if(!tokAll)return;
+      if(window.MCJAppBadge&&typeof window.MCJAppBadge.markAll==='function'){
+        window.MCJAppBadge.markAll().then(function(body){
+          if(body&&body.ok===false){toast(body.message||'已读状态写入失败');return;}
+          (state.csNoticeItems||[]).forEach(function(n){n.isRead=true;n.readAt=n.readAt||new Date().toISOString();});
+          paintCsNoticeList();
+          return fetchCsNoticeInbox();
+        }).catch(function(err){toast((err&&err.message)||'已读状态写入失败');});
+      }else{
+        notifyApi('badge_read_all',{}).then(function(){return fetchCsNoticeInbox();}).catch(function(err){toast((err&&err.message)||'已读状态写入失败');});
+      }
+      return;
+    }
+    var noticeItem=e.target.closest('[data-cs-notice-id]');
+    if(noticeItem){
+      e.preventDefault();
+      var nid=noticeItem.getAttribute('data-cs-notice-id')||'';
+      var nhref=noticeItem.getAttribute('data-cs-notice-href')||'';
+      var afterRead=function(){
+        (state.csNoticeItems||[]).forEach(function(n){if(String(n.id)===String(nid)){n.isRead=true;n.readAt=n.readAt||new Date().toISOString();}});
+        paintCsNoticeList();
+        if(window.MCJAppBadge&&typeof window.MCJAppBadge.refreshUnreadCount==='function')window.MCJAppBadge.refreshUnreadCount();
+        if(nhref){closeCsNotices();go(nhref);}
+        else fetchCsNoticeInbox().catch(function(){});
+      };
+      if(window.MCJAppBadge&&typeof window.MCJAppBadge.markOne==='function'&&nid){
+        window.MCJAppBadge.markOne(nid).then(function(body){
+          if(body&&body.ok===false){toast(body.message||'已读状态写入失败');return;}
+          afterRead();
+        }).catch(function(err){toast((err&&err.message)||'已读状态写入失败');});
+      }else if(nid){
+        notifyApi('badge_read',{id:nid}).then(afterRead).catch(function(err){toast((err&&err.message)||'已读状态写入失败');});
+      }
       return;
     }
     if(e.target.closest('[data-cs-quick-close]')){
@@ -4770,6 +4965,25 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, virtStartIndex }
         pay.textContent=oldPayText||'确认收款';
         toast(err.message||'确认付款失败');
       });
+      return;
+    }
+    var giftDetail=e.target.closest('[data-gift-detail]');
+    if(giftDetail){
+      e.preventDefault();
+      var did=giftDetail.getAttribute('data-gift-detail');
+      var dOrder=(giftOrdersState.orders||[]).filter(function(x){return String(x.id)===String(did);})[0];
+      if(!dOrder)return;
+      modal('<div class="cs-dialog-head"><h3>订单详情</h3><button class="cs-btn ghost" type="button" data-close-modal>关闭</button></div>'+
+        '<div class="cs-info-list">'+
+        '<div><span>订单编号</span><strong>'+esc(orderNoLabel(dOrder))+'</strong></div>'+
+        '<div><span>订单 ID</span><strong style="word-break:break-all">'+esc(dOrder.id||'-')+'</strong></div>'+
+        '<div><span>送礼用户</span><strong>'+esc(personLabel(dOrder.senderName,dOrder.senderBossId))+'</strong></div>'+
+        '<div><span>陪玩</span><strong>'+esc(personLabel(dOrder.receiverName,dOrder.receiverCompanionId))+'</strong></div>'+
+        '<div><span>礼物</span><strong>'+esc(giftLabel(dOrder.giftName))+'</strong></div>'+
+        '<div><span>金额</span><strong>'+esc(dOrder.totalAmount)+' 猫粮</strong></div>'+
+        '<div><span>状态</span><strong>'+esc(giftOrderStatusLabel(dOrder.status))+'</strong></div>'+
+        '<div><span>创建时间</span><strong>'+esc(fmtOrderDateTime(dOrder.createdAt))+'</strong></div>'+
+        '</div>');
       return;
     }
     var giftFilter=e.target.closest('[data-gift-filter]');

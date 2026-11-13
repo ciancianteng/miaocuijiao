@@ -255,9 +255,23 @@
     var host = headerBellHost();
     if (!host || !accessToken()) return;
     var which = portal();
+    if (which === "customer_service") {
+      if (document.querySelector("[data-cs-notices],[data-mcj-badge-bell]")) return;
+      var csBtn = document.createElement("button");
+      csBtn.type = "button";
+      csBtn.className = "mcj-bell";
+      csBtn.setAttribute("data-cs-notices", "1");
+      csBtn.setAttribute("data-mcj-badge-bell", "1");
+      csBtn.setAttribute("aria-label", "通知");
+      if (global.MCJBell && typeof MCJBell.ensureCss === "function") MCJBell.ensureCss();
+      csBtn.innerHTML = (global.MCJBell && MCJBell.inner) ? MCJBell.inner(0) : '<span data-mcj-badge-count hidden></span>';
+      host.insertBefore(csBtn, host.firstChild);
+      paint(global.__MCJ_BADGE_COUNT || 0);
+      return;
+    }
     var link = document.createElement("a");
     link.className = "mcj-bell";
-    link.href = which === "customer_service" ? "/notifications.html?portal=customer_service" : "/notifications.html";
+    link.href = "/notifications.html";
     link.setAttribute("data-mcj-badge-bell", "1");
     link.setAttribute("aria-label", "通知");
     if (global.MCJBell && typeof MCJBell.ensureCss === "function") MCJBell.ensureCss();
@@ -278,7 +292,7 @@
     var obs = new MutationObserver(function () {
       removeFloatingBells();
       if (portal() === "companion" || portal() === "admin") return;
-      if (document.querySelector("[data-mcj-badge-bell]")) return;
+      if (document.querySelector("[data-mcj-badge-bell],[data-cs-notices]")) return;
       mountHeaderBell();
     });
     obs.observe(document.body, { childList: true, subtree: true });
