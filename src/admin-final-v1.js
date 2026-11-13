@@ -1078,6 +1078,17 @@
   }
   var noticeBound=false;
   var lastNoticeToggle=0;
+  function placeNoticePanel(){
+    var panel=ensureNoticePanel();
+    var btn=document.getElementById('adminNoticeBtn');
+    if(!btn)return;
+    var r=btn.getBoundingClientRect();
+    var top=Math.round(r.bottom+8);
+    var right=Math.max(8,Math.round(window.innerWidth-r.right));
+    panel.style.top=top+'px';
+    panel.style.right=right+'px';
+    panel.style.left='auto';
+  }
   function setNoticeOpen(open){
     var panel=ensureNoticePanel();
     var btn=document.getElementById('adminNoticeBtn');
@@ -1085,6 +1096,7 @@
     if(open){
       panel.removeAttribute('hidden');
       document.body.classList.add('admin-notice-open');
+      placeNoticePanel();
       loadAdminNotices();
     }else{
       panel.setAttribute('hidden','');

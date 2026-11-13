@@ -244,7 +244,7 @@ body[data-admin-section="orders"] #orderManagement {
   position:fixed !important;
   right:12px;
   left:auto;
-  top:calc(env(safe-area-inset-top, 0px) + 72px);
+  top:calc(env(safe-area-inset-top, 0px) + 112px);
   z-index:130000 !important;
   width:min(320px,calc(100vw - 24px));
   max-height:min(420px,70dvh);
