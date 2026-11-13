@@ -10,7 +10,7 @@
  */
 (function () {
   var ICON_V = "20260914pwaPortal4";
-  var INSTALL_V = "20261106pwaAuto1";
+  var INSTALL_V = "20261114adminBell2";
 
   // Companion cards (dozens per carousel/grid) sit on a >=96% opaque gradient,
   // so their backdrop blur is invisible but each costs a composited layer that
@@ -263,7 +263,7 @@
     }
     if (document.querySelector("script[data-mcj-app-badge]")) return;
     var s = document.createElement("script");
-    s.src = "/src/app-badge.js?v=20261113csBell1";
+    s.src = "/src/app-badge.js?v=20261113adminFix1";
     s.defer = true;
     s.setAttribute("data-mcj-app-badge", "1");
     document.head.appendChild(s);

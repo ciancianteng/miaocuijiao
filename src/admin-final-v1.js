@@ -1048,13 +1048,137 @@
       row.hidden=hay.indexOf(q)<0;
     });
   });
+  function closestEl(el,sel){
+    if(!el)return null;
+    if(el.nodeType===3)el=el.parentNode;
+    if(el&&typeof el.closest==='function'){
+      try{return el.closest(sel);}catch(err){}
+    }
+    for(;el&&el.nodeType===1;el=el.parentElement||el.parentNode){
+      try{
+        if(el.matches&&el.matches(sel))return el;
+        if(el.msMatchesSelector&&el.msMatchesSelector(sel))return el;
+      }catch(err2){}
+    }
+    return null;
+  }
+  function ensureNoticePanel(){
+    var panel=document.getElementById('adminNoticePanel');
+    if(panel&&panel.parentNode===document.body)return panel;
+    if(panel&&panel.parentNode)panel.parentNode.removeChild(panel);
+    panel=document.createElement('div');
+    panel.id='adminNoticePanel';
+    panel.className='admin-notice-panel';
+    panel.hidden=true;
+    panel.setAttribute('role','dialog');
+    panel.setAttribute('aria-label','通知');
+    panel.innerHTML='<div class="admin-notice-tools"><strong>通知</strong><button type="button" id="adminNoticeReadAll">全部标记已读</button></div><div id="adminNoticeList"></div>';
+    document.body.appendChild(panel);
+    return panel;
+  }
+  var noticeBound=false;
+  var lastNoticeToggle=0;
+  function setNoticeOpen(open){
+    var panel=ensureNoticePanel();
+    var btn=document.getElementById('adminNoticeBtn');
+    panel.hidden=!open;
+    if(open){
+      panel.removeAttribute('hidden');
+      document.body.classList.add('admin-notice-open');
+      loadAdminNotices();
+    }else{
+      panel.setAttribute('hidden','');
+      document.body.classList.remove('admin-notice-open');
+    }
+    if(btn)btn.setAttribute('aria-expanded',open?'true':'false');
+  }
+  function toggleNoticePanel(e){
+    if(e){
+      e.preventDefault();
+      if(e.stopPropagation)e.stopPropagation();
+      if(e.stopImmediatePropagation)e.stopImmediatePropagation();
+    }
+    var now=Date.now();
+    if(now-lastNoticeToggle<350)return;
+    lastNoticeToggle=now;
+    var panel=ensureNoticePanel();
+    setNoticeOpen(!!panel.hidden);
+  }
+  function bindNoticeBell(btn){
+    if(!btn||btn.getAttribute('data-admin-notice-bound')==='1')return;
+    btn.setAttribute('data-admin-notice-bound','1');
+    btn.addEventListener('click',toggleNoticePanel,true);
+    btn.addEventListener('touchend',function(e){
+      toggleNoticePanel(e);
+    },{capture:true,passive:false});
+  }
   function mountAdminNotices(){
+    ensureNoticePanel();
     var bar=document.querySelector('.topbar-actions');
-    if(!bar||document.getElementById('adminNoticeBtn'))return;
-    var wrap=document.createElement('div');
-    wrap.className='admin-notice';
-    wrap.innerHTML='<button class="mcj-bell" type="button" id="adminNoticeBtn" aria-label="通知">'+((window.MCJBell&&MCJBell.icon)?(MCJBell.ensureCss(),MCJBell.icon()):'')+'<em id="adminNoticeBadge" data-mcj-badge-count hidden></em></button><div id="adminNoticePanel" hidden><div class="admin-notice-tools"><strong>通知</strong><button type="button" id="adminNoticeReadAll">全部标记已读</button></div><div id="adminNoticeList"></div></div>';
-    bar.insertBefore(wrap, bar.firstChild);
+    if(!bar)return;
+    var btn=document.getElementById('adminNoticeBtn');
+    if(!btn){
+      var wrap=document.createElement('div');
+      wrap.className='admin-notice';
+      wrap.innerHTML='<button class="mcj-bell" type="button" id="adminNoticeBtn" aria-label="通知" aria-haspopup="true" aria-expanded="false">'+((window.MCJBell&&MCJBell.icon)?(MCJBell.ensureCss(),MCJBell.icon()):'')+'<em id="adminNoticeBadge" class="admin-notice-badge" data-mcj-admin-unread hidden></em></button>';
+      bar.insertBefore(wrap, bar.firstChild);
+      btn=document.getElementById('adminNoticeBtn');
+    }
+    bindNoticeBell(btn);
+    if(noticeBound)return;
+    noticeBound=true;
+    document.addEventListener('click',function(e){
+      var preset=closestEl(e.target,'[data-dash-preset]');
+      if(preset){
+        dashRange.preset=preset.getAttribute('data-dash-preset')||'all';
+        if(dashRange.preset!=='custom'){dashRange.from='';dashRange.to='';}
+        renderDashboard();
+        return;
+      }
+      if(closestEl(e.target,'[data-dash-apply]')){
+        var from=document.querySelector('[data-dash-from]');
+        var to=document.querySelector('[data-dash-to]');
+        dashRange.preset='custom';
+        dashRange.from=from?from.value:'';
+        dashRange.to=to?to.value:'';
+        renderDashboard();
+        return;
+      }
+      if(closestEl(e.target,'#adminNoticeBtn')||closestEl(e.target,'.admin-notice'))return;
+      var readAll=closestEl(e.target,'#adminNoticeReadAll');
+      if(readAll){
+        e.preventDefault();
+        var stampAll=new Date().toISOString();
+        adminNotices.forEach(function(n){if(!n.readAt)n.readAt=stampAll;});
+        paintAdminNotices(adminNotices);
+        post('/api/admin/notifications',{action:'mark_all_read'}).then(function(res){
+          applyNoticeResponse(res);
+        }).catch(function(err){
+          alert((err&&err.message)||'已读状态写入失败');
+          loadAdminNotices();
+        });
+        return;
+      }
+      var link=closestEl(e.target,'[data-admin-notice]');
+      if(link){
+        e.preventDefault();
+        var nid=link.getAttribute('data-admin-notice');
+        var href=link.getAttribute('data-admin-notice-href')||'';
+        var stampOne=new Date().toISOString();
+        adminNotices.forEach(function(n){if(String(n.id)===String(nid)&&!n.readAt)n.readAt=stampOne;});
+        paintAdminNotices(adminNotices);
+        post('/api/admin/notifications',{action:'mark_read',id:nid}).then(function(res){
+          applyNoticeResponse(res);
+          if(href)location.href=href;
+        }).catch(function(err){
+          alert((err&&err.message)||'已读状态写入失败');
+          loadAdminNotices();
+        });
+        return;
+      }
+      var panel=document.getElementById('adminNoticePanel');
+      if(panel&&!panel.hidden&&!closestEl(e.target,'#adminNoticePanel'))setNoticeOpen(false);
+    },true);
   }
   var adminNotices=[];
   function paintAdminNotices(items){
@@ -1086,68 +1210,32 @@
     return loadAdminNotices();
   }
   function loadAdminNotices(){
-    if(!Auth)return Promise.resolve();
+    var list=document.getElementById('adminNoticeList');
+    if(!Auth||!Auth.get){
+      if(list)list.innerHTML='<div class="admin-notice-empty">请重新登录后台后再查看通知</div>';
+      return Promise.resolve();
+    }
     return get('/api/admin/notifications').then(function(res){
       paintAdminNotices((res&&res.notifications)||[]);
       return res;
-    }).catch(function(){return null;});
+    }).catch(function(err){
+      if(list)list.innerHTML='<div class="admin-notice-empty">'+esc((err&&err.message)||'通知读取失败')+'</div>';
+      return null;
+    });
   }
-  document.addEventListener('click',function(e){
-    var preset=e.target.closest&&e.target.closest('[data-dash-preset]');
-    if(preset){
-      dashRange.preset=preset.getAttribute('data-dash-preset')||'all';
-      if(dashRange.preset!=='custom'){dashRange.from='';dashRange.to='';}
+  function bootAdminChrome(){
+    mountAdminNotices();
+    if(!Auth)return;
+    Auth.ensureValidToken().then(function(){
+      ensureGrabModalHost();
+      mountAdminNotices();
+      loadAdminNotices();
       renderDashboard();
-      return;
-    }
-    if(e.target.closest&&e.target.closest('[data-dash-apply]')){
-      var from=document.querySelector('[data-dash-from]');
-      var to=document.querySelector('[data-dash-to]');
-      dashRange.preset='custom';
-      dashRange.from=from?from.value:'';
-      dashRange.to=to?to.value:'';
-      renderDashboard();
-      return;
-    }
-    var btn=e.target.closest&&e.target.closest('#adminNoticeBtn');
-    var panel=document.getElementById('adminNoticePanel');
-    if(btn&&panel){
-      panel.hidden=!panel.hidden;
-      if(!panel.hidden)loadAdminNotices();
-      return;
-    }
-    var readAll=e.target.closest&&e.target.closest('#adminNoticeReadAll');
-    if(readAll){
-      e.preventDefault();
-      var stampAll=new Date().toISOString();
-      adminNotices.forEach(function(n){if(!n.readAt)n.readAt=stampAll;});
-      paintAdminNotices(adminNotices);
-      post('/api/admin/notifications',{action:'mark_all_read'}).then(function(res){
-        applyNoticeResponse(res);
-      }).catch(function(err){
-        alert((err&&err.message)||'已读状态写入失败');
-        loadAdminNotices();
-      });
-      return;
-    }
-    var link=e.target.closest&&e.target.closest('[data-admin-notice]');
-    if(link){
-      e.preventDefault();
-      var nid=link.getAttribute('data-admin-notice');
-      var href=link.getAttribute('data-admin-notice-href')||'';
-      var stampOne=new Date().toISOString();
-      adminNotices.forEach(function(n){if(String(n.id)===String(nid)&&!n.readAt)n.readAt=stampOne;});
-      paintAdminNotices(adminNotices);
-      post('/api/admin/notifications',{action:'mark_read',id:nid}).then(function(res){
-        applyNoticeResponse(res);
-        if(href)location.href=href;
-      }).catch(function(err){
-        alert((err&&err.message)||'已读状态写入失败');
-        loadAdminNotices();
-      });
-      return;
-    }
-    if(panel&&!panel.hidden&&!(e.target.closest&&e.target.closest('.admin-notice')))panel.hidden=true;
-  });
-  document.addEventListener('DOMContentLoaded',function(){if(!Auth)return;Auth.ensureValidToken().then(function(){ensureGrabModalHost();mountAdminNotices();loadAdminNotices();renderDashboard();renderOrders();renderReports();renderContent()}).catch(function(){})});
+      renderOrders();
+      renderReports();
+      renderContent();
+    }).catch(function(){mountAdminNotices();});
+  }
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',bootAdminChrome);
+  else bootAdminChrome();
 })();

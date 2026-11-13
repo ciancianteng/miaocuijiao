@@ -62,16 +62,17 @@ body {
   box-sizing: border-box;
   position: sticky;
   top: 0;
-  z-index: 20;
+  z-index: 80;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  height: 72px;
-  min-height: 72px;
-  max-height: 72px;
+  height: auto;
+  min-height: calc(72px + env(safe-area-inset-top, 0px));
+  max-height: none;
   margin: 0;
-  padding: 0 24px;
+  padding: env(safe-area-inset-top, 0px) 24px 0;
+  overflow: visible;
   border: 0;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 0;
@@ -217,21 +218,47 @@ body[data-admin-section="orders"] #orderManagement {
 .admin-dash-custom{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:-6px 0 14px}
 .admin-dash-custom label{display:flex;align-items:center;gap:6px;color:#ffd6e7;font-size:13px;font-weight:700}
 .admin-dash-custom input{height:36px;border-radius:10px;border:1px solid rgba(255,158,207,.28);background:#120e16;color:#fff;padding:0 8px}
-.admin-notice{position:relative;flex:0 0 36px}
-.admin-notice #adminNoticePanel{
-  position:absolute;
-  right:0;
-  top:calc(100% + 8px);
-  z-index:40;
+.admin-notice{position:relative;flex:0 0 36px;z-index:90;touch-action:manipulation}
+.admin-notice .mcj-bell{
+  position:relative;
+  z-index:2;
+  cursor:pointer;
+  touch-action:manipulation;
+  -webkit-tap-highlight-color:transparent;
+  pointer-events:auto !important;
+}
+.admin-notice .mcj-bell svg,
+.admin-notice .mcj-bell path,
+.admin-notice .mcj-bell em,
+.admin-notice .mcj-bell *{
+  pointer-events:none !important;
+}
+.admin-notice-badge,
+.admin-notice [data-mcj-admin-unread]{
+  position:absolute;top:2px;right:2px;min-width:16px;height:16px;padding:0 4px;border-radius:999px;background:#ff8fc5;color:#1a0710;font-size:10px;font-weight:800;line-height:16px;text-align:center;box-sizing:border-box;pointer-events:none !important
+}
+.admin-notice-badge[hidden],
+.admin-notice [data-mcj-admin-unread][hidden]{display:none!important}
+#adminNoticePanel.admin-notice-panel,
+.admin-notice-panel{
+  position:fixed !important;
+  right:12px;
+  left:auto;
+  top:calc(env(safe-area-inset-top, 0px) + 72px);
+  z-index:130000 !important;
   width:min(320px,calc(100vw - 24px));
   max-height:min(420px,70dvh);
   overflow:auto;
+  -webkit-overflow-scrolling:touch;
   padding:8px;
   border-radius:14px;
   border:1px solid rgba(255,158,207,.28);
   background:#140c18;
+  box-shadow:0 12px 32px rgba(0,0,0,.45);
+  pointer-events:auto !important;
 }
-.admin-notice #adminNoticePanel[hidden]{display:none !important}
+#adminNoticePanel[hidden],
+.admin-notice-panel[hidden]{display:none !important}
 .admin-notice-tools{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px;color:#ffd6e7;font-size:13px}
 .admin-notice-tools button{border:0;background:transparent;color:#ffb6d9;font-weight:800;cursor:pointer}
 .admin-notice-item{display:grid;gap:2px;width:100%;margin:0 0 6px;padding:8px 10px;border:0;border-radius:10px;background:rgba(255,143,197,.12);color:#fff;text-align:left;cursor:pointer}
@@ -444,10 +471,11 @@ body[data-admin-section="orders"] #orderManagement {
 
   .admin-header {
     height: auto !important;
-    min-height: 64px !important;
+    min-height: calc(64px + env(safe-area-inset-top, 0px)) !important;
     max-height: none !important;
-    padding: 12px 16px !important;
+    padding: calc(12px + env(safe-area-inset-top, 0px)) 16px 12px !important;
     flex-wrap: wrap;
+    overflow: visible !important;
   }
 
   .admin-content {
