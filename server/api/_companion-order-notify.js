@@ -419,6 +419,54 @@ export async function broadcastCompanionOrderEvent(companionId, event, payload =
   }
 }
 
+const CS_DESK_ORDERS_TOPIC = "mcj-cs-desk-orders";
+
+/** Fire-and-forget so every open CS desk tab patches the same order without waiting for poll. */
+export async function broadcastCsDeskOrderEvent(order = {}, event = "order_changed") {
+  const id = String(order?.id || order?.orderId || "").trim();
+  if (!id) return { ok: false, skipped: true };
+  const base = env("SUPABASE_URL");
+  const key = env("SUPABASE_SERVICE_ROLE_KEY");
+  if (!base || !key) return { ok: false, skipped: true, reason: "no_supabase" };
+  try {
+    const response = await fetch(`${base}/realtime/v1/api/broadcast`, {
+      method: "POST",
+      headers: {
+        apikey: key,
+        Authorization: `Bearer ${key}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        messages: [
+          {
+            topic: CS_DESK_ORDERS_TOPIC,
+            event: String(event || "order_changed"),
+            payload: {
+              id,
+              status: order.status || "",
+              updated_at: order.updated_at || nowIso(),
+              companion_id: order.companion_id || "",
+              customer_service_id: order.customer_service_id || "",
+              order_no: order.order_no || "",
+              at: nowIso(),
+            },
+            private: false,
+          },
+        ],
+      }),
+    });
+    if (!response.ok) {
+      const text = await response.text().catch(() => "");
+      console.warn("[cs-desk-orders] broadcast fail", response.status, text.slice(0, 200));
+      return { ok: false, status: response.status };
+    }
+    return { ok: true, topic: CS_DESK_ORDERS_TOPIC };
+  } catch (err) {
+    console.warn("[cs-desk-orders] broadcast error", err?.message || err);
+    return { ok: false, error: String(err?.message || err) };
+  }
+}
+
 async function sendOrderMailOnce({
   companionId,
   order,

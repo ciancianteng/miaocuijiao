@@ -22,7 +22,7 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, virtStartIndex }
   var softRefreshSeq=0;
   var toastTimer=null;
   var COMPOSER_SEL='[data-cs-composer], form[data-send-message] textarea[name="content"], form[data-send-message] input[name="content"]';
-  var state={route:'dashboard',session:null,data:null,services:[],servicesError:'',servicesSource:'',createOrderErrors:{bosses:'',companions:'',services:''},loading:false,error:'',notice:'',activeConversation:'',orderFilter:'',convFilter:'waiting',suppressAutoSelect:false,loginError:'',loginBusy:false,loginDraft:{account:'',password:'',remember:false},composerDraft:'',composerDrafts:{},composerFocused:false,sendingChat:false,showConversationList:true,acceptLock:null,readCursors:{},acceptingId:'',clockBusy:false,assignBusy:false,realtimeReady:false,hoursTimer:null,lastPollAt:'',listScrollTop:0,pageScrollTop:0,tableScrollTop:0,tableScrollLeft:0,poolRealtimeBound:false,virtStart:0,attPage:0};
+  var state={route:'dashboard',session:null,data:null,services:[],servicesError:'',servicesSource:'',createOrderErrors:{bosses:'',companions:'',services:''},loading:false,error:'',notice:'',activeConversation:'',orderFilter:'',convFilter:'waiting',suppressAutoSelect:false,loginError:'',loginBusy:false,loginDraft:{account:'',password:'',remember:false},composerDraft:'',composerDrafts:{},composerFocused:false,sendingChat:false,showConversationList:true,acceptLock:null,readCursors:{},acceptingId:'',clockBusy:false,assignBusy:false,realtimeReady:false,hoursTimer:null,lastPollAt:'',listScrollTop:0,pageScrollTop:0,tableScrollTop:0,tableScrollLeft:0,poolRealtimeBound:false,deskOrderRealtimeBound:false,virtStart:0,attPage:0};
   var CONV_ROW_H=92;
   var CONV_OVERSCAN=6;
   var ATT_PAGE_SIZE=10;
@@ -735,6 +735,38 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, virtStartIndex }
         state._virtPainting=false;
       });
     },{passive:true});
+  }
+  function bindDeskOrderRealtime(force){
+    var RT=window.MCJChatRealtime;
+    if(!RT||typeof RT.subscribeDeskOrders!=='function')return;
+    var token=(state.session&&state.session.token)||'';
+    if(!token)return;
+    if(state.deskOrderRealtimeBound&&!force)return;
+    state.deskOrderRealtimeBound=true;
+    RT.subscribeDeskOrders(token,{
+      onChange:function(row){
+        if(!row||!row.id||!state.data)return;
+        var list=state.data.orders||[];
+        var idx=list.findIndex(function(o){return o.id===row.id});
+        var patch={
+          id:row.id,
+          status:row.status||'',
+          updatedAt:row.updated_at||new Date().toISOString(),
+          companionId:row.companion_id||'',
+          customerServiceId:row.customer_service_id||'',
+          paidAt:row.paid_at||'',
+          orderNo:row.order_no||undefined
+        };
+        if(idx>=0) list[idx]=Object.assign({},list[idx],patch);
+        else list.unshift(Object.assign({id:row.id,createdAt:row.created_at||patch.updatedAt},patch));
+        state.data.orders=list;
+        if(state.route==='orders'||state.route==='dashboard'||state.route==='grabHall'){
+          if(root.querySelector('.cs-table,.cs-order-list,[data-order-id]'))paint();
+        }
+      },
+      onReady:function(){state.deskOrderRealtimeBound=true;state.realtimeReady=true;},
+      onError:function(){state.deskOrderRealtimeBound=false;}
+    }).catch(function(){state.deskOrderRealtimeBound=false;});
   }
   function bindPoolRealtime(force){
     var RT=window.MCJChatRealtime;
@@ -1602,6 +1634,11 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, virtStartIndex }
     function doFetch(){
       var opts={method:method||'POST',headers:{'Content-Type':'application/json',Accept:'application/json'}};
       if(token())opts.headers['x-mcj-service-token']=token();
+      var ctrl=typeof AbortController!=='undefined'?new AbortController():null;
+      if(ctrl){
+        opts.signal=ctrl.signal;
+        setTimeout(function(){try{ctrl.abort()}catch(e){}},12000);
+      }
       if(opts.method==='GET')return fetch('/api/customer-service?action='+encodeURIComponent(action||'bootstrap'),opts).then(parse);
       opts.body=JSON.stringify(Object.assign({action:action},body||{}));
       return fetch('/api/customer-service',opts).then(parse);
@@ -1629,7 +1666,7 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, virtStartIndex }
       throw err;
     });
   }
-  function parse(res){return res.text().then(function(text){var body={};try{body=text?JSON.parse(text):{}}catch(e){throw new Error('接口返回格式错误')}if(!res.ok||body.ok===false){var err=new Error(body.message||body.msg||('请求失败：HTTP '+res.status));err.status=res.status;err.code=body.code||body.error_code;err.error_code=body.error_code||body.code;err.locked=body.locked;err.currentServiceName=body.currentServiceName;err.currentServiceId=body.currentServiceId;throw err;}return body})}
+  function parse(res){return res.text().then(function(text){if(res.status>=500){var busy=new Error('服务暂时繁忙，请稍后重试');busy.status=res.status;throw busy;}var body={};try{body=text?JSON.parse(text):{}}catch(e){var fmt=new Error('接口返回格式错误');fmt.status=res.status;throw fmt;}if(!res.ok||body.ok===false){var err=new Error(body.message||body.msg||('请求失败：HTTP '+res.status));err.status=res.status;err.code=body.code||body.error_code;err.error_code=body.error_code||body.code;err.locked=body.locked;err.currentServiceName=body.currentServiceName;err.currentServiceId=body.currentServiceId;throw err;}return body})}
   function emptyDashboardData(){
     var staff=(state.session&&state.session.user)||{};
     return {staff:staff,summary:{},conversations:[],messages:[],orders:[],bosses:[],companions:[],payrolls:[],orderStatuses:{},_unavailable:true};
@@ -1782,6 +1819,11 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, virtStartIndex }
     // Conversations page: lightweight poll (not full bootstrap) for <5s freshness.
     var poller=api('poll_updates',{conversation_id:keepRoute==='conversations'?(keepConv||''):'',since:state.lastPollAt||''}).catch(function(err){
       state.pollError=(err&&err.message)||'会话刷新失败';
+      var st=Number(err&&err.status)||0;
+      var msg=String((err&&err.name)||'')+' '+String((err&&err.message)||'');
+      if(st>=500||st===0||/超时|繁忙|AbortError|Failed to fetch|格式错误|NetworkError/i.test(msg)){
+        window.__MCJCsPollBackoffUntil=Date.now()+30000;
+      }
       return null;
     });
     return poller.then(function(res){
@@ -2017,6 +2059,7 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, virtStartIndex }
         });
       }
       bindPoolRealtime(true);
+      bindDeskOrderRealtime(true);
     }).catch(function(err){
       toast((err&&err.message)||'刷新失败，请重试');
     }).finally(function(){
@@ -2154,7 +2197,21 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, virtStartIndex }
   }
   function quietRefresh(){
     if(!state.session||!state.session.token||document.hidden||isLoginView())return Promise.resolve();
-    return softRefresh();
+    if(window.__MCJCsRefreshBusy)return Promise.resolve();
+    window.__MCJCsRefreshBusy=true;
+    return softRefresh().catch(function(err){
+      var st=Number(err&&err.status)||0;
+      if(st>=500||/超时|繁忙|AbortError|Failed to fetch/i.test(String((err&&err.message)||''))){
+        window.__MCJCsPollBackoffUntil=Date.now()+30000;
+      }
+      throw err;
+    }).then(function(v){
+      window.__MCJCsRefreshBusy=false;
+      return v;
+    },function(err){
+      window.__MCJCsRefreshBusy=false;
+      throw err;
+    });
   }
   function noteIncomingWaiting(prevList, nextList){
     var seen={};
@@ -2180,28 +2237,34 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, virtStartIndex }
     startReviewBadgePoll();
     if(window.__MCJCsPoll)return;
     bindPoolRealtime();
+    bindDeskOrderRealtime();
     var lastQuietAt=0;
     window.__MCJCsPoll=setInterval(function(){
-      if(isLoginView())return;
-      var gap=state.realtimeReady?12000:4000;
+      if(isLoginView()||document.hidden)return;
+      if(Date.now()<Number(window.__MCJCsPollBackoffUntil||0))return;
+      var gap=state.realtimeReady?15000:10000;
       var now=Date.now();
       if(now-lastQuietAt<gap)return;
       lastQuietAt=now;
       quietRefresh();
-    }, 2000);
+    }, 5000);
     if(!window.__MCJCsVisBound){
       window.__MCJCsVisBound=true;
       window.addEventListener('online',function(){
-        state.poolRealtimeBound=false;
+        if(Date.now()<Number(window.__MCJCsRtBindAt||0)+3000)return;
+        window.__MCJCsRtBindAt=Date.now();
         bindPoolRealtime(true);
+        bindDeskOrderRealtime(true);
         quietRefresh();
         refreshReviewBadges();
       });
       document.addEventListener('visibilitychange',function(){
         if(document.hidden)return;
         if(!state.session||!state.session.token)return;
-        state.poolRealtimeBound=false;
+        if(Date.now()<Number(window.__MCJCsRtBindAt||0)+3000)return;
+        window.__MCJCsRtBindAt=Date.now();
         bindPoolRealtime(true);
+        bindDeskOrderRealtime(true);
         if(state.activeConversation)bindRealtime(state.activeConversation);
         quietRefresh();
         refreshReviewBadges();
@@ -2217,7 +2280,9 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, virtStartIndex }
           RT.reconnect(session.token).catch(function(){});
         }
         state.poolRealtimeBound=false;
+        state.deskOrderRealtimeBound=false;
         bindPoolRealtime(true);
+        bindDeskOrderRealtime(true);
         if(state.activeConversation)bindRealtime(state.activeConversation);
       });
     }
@@ -3291,7 +3356,7 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, virtStartIndex }
           ?('<button type="button" class="cs-proof-thumb-btn" data-gift-proof-thumb="'+esc(o.id)+'" data-proof-lightbox="'+esc(proof)+'" title="查看付款截图"><img class="cs-proof-thumb" src="'+esc(proof)+'" alt="付款凭证" loading="lazy"></button>')
           :('<button type="button" class="cs-proof-thumb-btn" data-gift-proof-thumb="'+esc(o.id)+'" data-gift-proof="'+esc(o.id)+'" title="加载付款截图"><span class="cs-btn ghost cs-proof-fallback">'+(proof==='__loading__'?'加载中…':'加载截图')+'</span></button>');
         var actions=(o.status==='under_review'||o.status==='payment_submitted')
-          ?('<button class="cs-btn primary" data-gift-approve="'+esc(o.id)+'">通过</button> <button class="cs-btn danger" data-gift-reject="'+esc(o.id)+'">拒绝</button>')
+          ?('<button class="cs-btn primary" data-gift-approve="'+esc(o.id)+'" data-gift-name="'+esc(o.giftName||'')+'">通过</button> <button class="cs-btn danger" data-gift-reject="'+esc(o.id)+'">拒绝</button>')
           :'-';
         var focusGift='';
         try{focusGift=new URLSearchParams(location.search).get('id')||'';}catch(eGift){}
@@ -3363,7 +3428,7 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, virtStartIndex }
   function startReviewBadgePoll(){
     if(reviewBadges.timer)return;
     refreshReviewBadges();
-    reviewBadges.timer=setInterval(function(){if(!document.hidden)refreshReviewBadges();},4000);
+    reviewBadges.timer=setInterval(function(){if(!document.hidden)refreshReviewBadges();},30000);
     document.addEventListener('visibilitychange',function(){if(!document.hidden)refreshReviewBadges();});
   }
   var rechargesState={loading:false,items:[],filter:'pending_review',error:'',busyId:''};
@@ -3641,7 +3706,6 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, virtStartIndex }
       actions.push('<button class="cs-btn ghost" data-order-detail="'+esc(o.id)+'" data-detail-mode="detail">查看订单</button>');
       actions.push('<button class="cs-btn ghost" data-open-order-chat="'+esc(o.id)+'">打开会话</button>');
       actions.push('<button class="cs-btn primary" data-mark-in-progress="'+esc(o.id)+'">标记为服务中</button>');
-      actions.push('<button class="cs-btn danger" data-cancel-order="'+esc(o.id)+'">取消订单</button>');
     }else if(st==='in_progress'||orderEarlyPending(o)){
       actions.push('<button class="cs-btn ghost" data-order-detail="'+esc(o.id)+'" data-detail-mode="detail">查看订单</button>');
       actions.push('<button class="cs-btn ghost" data-open-order-chat="'+esc(o.id)+'">打开会话</button>');
@@ -4721,8 +4785,15 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, virtStartIndex }
     }
     var giftApprove=e.target.closest('[data-gift-approve]');
     if(giftApprove){
-      if(!confirm('确认通过该礼物订单？通过后礼物将正式到账。'))return;
-      api('approve_gift_order',{id:giftApprove.getAttribute('data-gift-approve')}).then(function(res){
+      var giftApproveName=String(giftApprove.getAttribute('data-gift-name')||'');
+      var giftApproveIsTip=giftApproveName==='自由打赏';
+      if(giftApproveIsTip){
+        if(!confirm('请先核对该金额已真实到账指定收款账户。截图不能自动视为付款成功。确认已核实到账并放行打赏？'))return;
+      }else if(!confirm('确认通过该礼物订单？通过后礼物将正式到账。'))return;
+      api('approve_gift_order',{
+        id:giftApprove.getAttribute('data-gift-approve'),
+        arrivalConfirmed:giftApproveIsTip?true:undefined
+      }).then(function(res){
         toast(res.message||'已通过');loadGiftOrders();refreshReviewBadges();
       }).catch(function(err){toast(err.message||'操作失败')});
       return;

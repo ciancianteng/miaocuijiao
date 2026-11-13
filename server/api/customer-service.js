@@ -754,6 +754,10 @@ async function runCsCancelOrRefund(res, order, serviceProfile, { intent = "cance
   });
   if (out.ok && !out.duplicate && out.order) {
     try {
+      const { broadcastCsDeskOrderEvent } = await import("./_companion-order-notify.js");
+      await broadcastCsDeskOrderEvent(out.order, "order_changed");
+    } catch (_) {}
+    try {
       const conversation = await ensureConversation({
         boss_id: out.order.boss_id,
         companion_id: out.order.companion_id || null,
@@ -2920,8 +2924,8 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
         recentPayOrders = await maybeRows(
           "orders",
           since
-            ? `?status=eq.awaiting_payment&updated_at=gt.${encodeURIComponent(since)}&order=updated_at.desc&limit=40`
-            : "?status=eq.awaiting_payment&order=updated_at.desc&limit=40"
+            ? `?updated_at=gt.${encodeURIComponent(since)}&order=updated_at.desc&limit=60`
+            : "?order=updated_at.desc&limit=40"
         );
       } catch {
         recentPayOrders = [];
@@ -3765,6 +3769,7 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
         orderId: id,
         staffId: service.profile.id,
         staffName: staffReviewerNameFromProfile(service.profile) || service.profile.display_name || "",
+        arrivalConfirmed: body.arrivalConfirmed === true || body.confirmArrival === true,
       });
       await import("./_user-notifications.js").then((mod) => mod.retireWorkNotices("gift", id)).catch(() => null);
       await import("./_staff-notify.js").then((mod) => mod.markStaffWorkDone("gift_proof", id)).catch(() => null);

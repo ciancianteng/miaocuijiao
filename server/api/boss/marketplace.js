@@ -320,8 +320,17 @@ function defaultSpecs(unit) {
   ];
 }
 
+/** 小猫：礼物抽成误设 80% 时按 20% 结算（仅此 user_id）。 */
+const XIAOMAO_COMPANION_USER_ID = "78a16b20-2858-425b-9011-27ec6c6282c4";
+
+function giftRateAfterXiaomaoFix(companionRow, rate) {
+  const id = String(companionRow?.user_id || companionRow?.id || "");
+  if (id === XIAOMAO_COMPANION_USER_ID && Math.abs(Number(rate) - 80) < 0.001) return 20;
+  return rate;
+}
+
 async function giftCommissionRate(companionRow) {
-  const fromCompanion = money(companionRow?.gift_commission_rate);
+  const fromCompanion = giftRateAfterXiaomaoFix(companionRow, money(companionRow?.gift_commission_rate));
   if (fromCompanion > 0) return fromCompanion;
   try {
     const rows = await companionDb("gift_settings", "?id=eq.1&limit=1");
@@ -748,6 +757,57 @@ export default async function handler(req, res) {
         throw selfErr;
       }
 
+      const claimedPaid = String(body.payment_status || body.status || body.paid || "").toLowerCase();
+      if (/^(1|true|paid|approved|credited)$/.test(claimedPaid)) {
+        return json(res, 400, { ok: false, code: "CLIENT_PAID_FORBIDDEN", message: "客户端不能设置支付状态" });
+      }
+      const requestedKind = String(body.kind || body.giftKind || "").toLowerCase();
+      if (action === "send_gift" && (requestedKind === "tip" || /自由打赏/.test(String(body.giftName || body.gift_name || "")))) {
+        return json(res, 400, { ok: false, code: "TIP_REQUIRES_PAYMENT", message: "打赏须先完成付款，不能直接入账" });
+      }
+
+      if (action === "send_tip") {
+        const { createGiftOrder, viewGiftOrder, resolveGiftPaymentInfo } = await import("../_gift-orders.js");
+        const payInfo = await resolveGiftPaymentInfo(body.paymentChannel || body.payment_channel || "").catch(
+          () => null
+        );
+        if (!payInfo || !String(payInfo.qrUrl || "").trim()) {
+          return json(res, 503, { ok: false, code: "PAY_MAINTENANCE", message: "付款功能维护中" });
+        }
+        try {
+          const result = await createGiftOrder({
+            bossId: boss.id,
+            companionId,
+            giftId: null,
+            quantity: 1,
+            amount: body.amount || body.catFood || body.cat_food,
+            kind: "tip",
+            idempotencyKey,
+            paymentChannel: body.paymentChannel || body.payment_channel || "",
+            clientNote: body.message || "",
+            paymentStatus: body.payment_status || "",
+            status: body.status || "",
+            paid: body.paid || "",
+          });
+          const order = result.order;
+          const paid = String(order?.status || "") === "approved";
+          return json(res, 200, {
+            ok: true,
+            needsPayment: !paid,
+            replayed: !!result.replayed,
+            alreadyPaid: paid,
+            message: paid ? "打赏已处理（防重复）" : "请完成付款",
+            order: viewGiftOrder(order),
+            payInfo: result.payInfo || payInfo,
+          });
+        } catch (tipErr) {
+          if (tipErr?.code === "GIFT_ORDERS_MISSING" || tipErr?.code === "PAY_MAINTENANCE") {
+            return json(res, 503, { ok: false, code: "PAY_MAINTENANCE", message: "付款功能维护中" });
+          }
+          throw tipErr;
+        }
+      }
+
       const { sendCatfoodGift, insufficientPayload } = await import("../_send-catfood-gift.js");
       try {
         const result = await sendCatfoodGift({
@@ -756,7 +816,7 @@ export default async function handler(req, res) {
           giftId: body.giftId || body.gift_id || null,
           quantity: body.quantity || 1,
           amount: body.amount || body.catFood || body.cat_food,
-          kind: action === "send_tip" ? "tip" : "gift",
+          kind: "gift",
           idempotencyKey,
           message: body.message || "",
           relatedOrderId: body.relatedOrderId || body.related_order_id || null,

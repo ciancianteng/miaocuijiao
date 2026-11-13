@@ -195,10 +195,31 @@ export async function listWalletTx(bossId, limit = 100) {
   }
 }
 
+const WALLET_CREDIT_TYPES = new Set([
+  "refund",
+  "order_refund",
+  "invite_reward",
+  "cs_dock_reward",
+  "platform_compensation",
+  "activity_reward",
+  "admin_adjustment",
+]);
+const WALLET_CREDIT_BLOCKED = /pollution|wallet_restore|opening_balance/i;
+
 export async function creditWallet(params) {
+  const txType = String(params.transactionType || "").trim();
+  if (!txType || WALLET_CREDIT_BLOCKED.test(txType) || !WALLET_CREDIT_TYPES.has(txType)) {
+    throw Object.assign(new Error("不允许的余额增加类型"), {
+      status: 403,
+      code: "WALLET_CREDIT_TYPE_BLOCKED",
+    });
+  }
+  if (!(money(params.amount) > 0)) {
+    throw Object.assign(new Error("入账金额无效"), { status: 400, code: "WALLET_CREDIT_AMOUNT_INVALID" });
+  }
   const body = {
     p_boss_id: params.bossId,
-    p_transaction_type: params.transactionType,
+    p_transaction_type: txType,
     p_amount: money(params.amount),
     p_balance_type: params.balanceType || "bonus",
     p_idempotency_key: params.idempotencyKey,
@@ -220,6 +241,9 @@ export async function creditWallet(params) {
 }
 
 export async function debitWallet(params) {
+  if (!(money(params.amount) > 0)) {
+    throw Object.assign(new Error("扣款金额无效"), { status: 400, code: "WALLET_DEBIT_AMOUNT_INVALID" });
+  }
   const body = {
     p_boss_id: params.bossId,
     p_transaction_type: params.transactionType || "order_payment",

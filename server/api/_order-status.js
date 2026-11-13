@@ -318,6 +318,12 @@ export async function transitionOrderStatus(
     operatorId,
     note,
   });
+  try {
+    const { broadcastCsDeskOrderEvent } = await import("./_companion-order-notify.js");
+    await broadcastCsDeskOrderEvent(saved, "order_changed");
+  } catch (err) {
+    console.warn("[order-status] cs desk broadcast", err?.message || err);
+  }
   return saved;
 }
 

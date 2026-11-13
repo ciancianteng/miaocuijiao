@@ -48,8 +48,17 @@ function extractWalletTxId(debitResult) {
   return null;
 }
 
+/** 小猫：礼物抽成误设 80% 时按 20% 结算（仅此 user_id）。 */
+const XIAOMAO_COMPANION_USER_ID = "78a16b20-2858-425b-9011-27ec6c6282c4";
+
+function giftRateAfterXiaomaoFix(companionRow, rate) {
+  const id = String(companionRow?.user_id || companionRow?.id || "");
+  if (id === XIAOMAO_COMPANION_USER_ID && Math.abs(Number(rate) - 80) < 0.001) return 20;
+  return rate;
+}
+
 async function giftCommissionRate(companionRow) {
-  const fromCompanion = money(companionRow?.gift_commission_rate);
+  const fromCompanion = giftRateAfterXiaomaoFix(companionRow, money(companionRow?.gift_commission_rate));
   if (fromCompanion > 0) return fromCompanion;
   try {
     const rows = await companionDb("gift_settings", "?id=eq.1&limit=1");
@@ -113,6 +122,9 @@ export async function sendCatfoodGift({
   if (!boss) throw httpError("请先登录老板账号", 401);
   if (!companion) throw httpError("请选择赠送对象陪玩", 400);
   if (!key) throw httpError("缺少 idempotency_key", 400);
+  if (String(kind || "").toLowerCase() === "tip") {
+    throw httpError("打赏须先完成付款，不能直接入账", 400, { code: "TIP_REQUIRES_PAYMENT" });
+  }
 
   try {
     const existed = await companionDb(

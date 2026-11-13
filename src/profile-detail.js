@@ -1380,7 +1380,11 @@
           ">" +
           (uploading ? "提交中…" : "提交付款凭证") +
           "</button></div>" +
-          '<p class="mcj-gift-pay-hint">提交后进入客服审核；通过前不会增加礼物墙。</p>'
+          '<p class="mcj-gift-pay-hint">' +
+          (meta.isTip
+            ? "提交后进入客服审核；通过前不会发放打赏，也不会显示成功。"
+            : "提交后进入客服审核；通过前不会增加礼物墙。") +
+          "</p>"
       );
       var sheet = document.querySelector(".mcj-sheet");
       sheet.querySelector("[data-close-sheet]").onclick = closeSheet;
@@ -1487,7 +1491,7 @@
             companionId: state.companion.id || state.companion.uid,
             amount: amount,
             message: sheet.querySelector("[data-tip-msg]").value || "",
-            idempotencyKey: stableKey("tip|" + (state.companion.id || state.companion.uid) + "|" + amount),
+            idempotencyKey: stableKey("tip-order|" + (state.companion.id || state.companion.uid) + "|" + amount),
           }),
         })
           .then(function (res) {
@@ -1497,13 +1501,27 @@
             });
           })
           .then(function (body) {
-            clearKey("tip|" + (state.companion.id || state.companion.uid) + "|" + amount);
-            alert(body.message || "打赏成功");
-            closeSheet();
+            clearKey("tip-order|" + (state.companion.id || state.companion.uid) + "|" + amount);
+            if (body.needsPayment && body.order) {
+              closeSheet();
+              openProfileGiftPaySheet(body.order, body.payInfo, {
+                gift: { name: "自由打赏" },
+                companionName: (state.companion && (state.companion.nickname || state.companion.name)) || "陪玩",
+                quantity: 1,
+                isTip: true,
+              });
+              return;
+            }
+            if (body.alreadyPaid) {
+              alert("该打赏已入账，不会重复支付");
+              closeSheet();
+              return;
+            }
+            alert(body.message || "请完成付款");
           })
           .catch(function (err) {
-            if (err.code === "INSUFFICIENT_BALANCE" || /余额不足/.test(err.message || "")) {
-              if (confirm("猫粮余额不足，是否去充值？")) location.href = err.rechargeUrl || "recharge.html";
+            if (err.code === "PAY_MAINTENANCE" || /付款功能维护中/.test(err.message || "")) {
+              alert("付款功能维护中");
               return;
             }
             alert(err.message || "打赏失败");

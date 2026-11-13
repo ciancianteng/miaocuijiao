@@ -145,8 +145,17 @@ async function loadBossProfile(bossId) {
   return rows?.[0] || null;
 }
 
+/** 小猫：礼物抽成误设 80% 时按 20% 结算（仅此 user_id）。 */
+const XIAOMAO_COMPANION_USER_ID = "78a16b20-2858-425b-9011-27ec6c6282c4";
+
+function giftRateAfterXiaomaoFix(companionRow, rate) {
+  const id = String(companionRow?.user_id || companionRow?.id || "");
+  if (id === XIAOMAO_COMPANION_USER_ID && Math.abs(Number(rate) - 80) < 0.001) return 20;
+  return rate;
+}
+
 async function giftCommissionRate(companionRow) {
-  const fromCompanion = money(companionRow?.gift_commission_rate);
+  const fromCompanion = giftRateAfterXiaomaoFix(companionRow, money(companionRow?.gift_commission_rate));
   if (fromCompanion > 0) return fromCompanion;
   try {
     const rows = await companionDb("gift_settings", "?id=eq.1&limit=1");
@@ -154,6 +163,23 @@ async function giftCommissionRate(companionRow) {
   } catch {
     return 20;
   }
+}
+
+async function findGiftIncomeByOrderId(companionId, giftOrderId) {
+  const oid = String(giftOrderId || "").trim();
+  const cid = String(companionId || "").trim();
+  if (!oid || !cid) return null;
+  const needle = `"giftOrderId":"${oid}"`;
+  const rows = await companionDb(
+    "transactions",
+    `?user_id=eq.${encodeURIComponent(cid)}&transaction_type=eq.companion_income&note=like.*${encodeURIComponent(oid)}*&order=created_at.asc&limit=20`
+  ).catch(() => []);
+  return (
+    (rows || []).find((r) => {
+      if (/cancelled|canceled/i.test(String(r.status || ""))) return false;
+      return String(r.note || "").includes(needle);
+    }) || null
+  );
 }
 
 async function creditCompanionIncome(companionId, amount, note, relatedId) {
@@ -223,24 +249,41 @@ export async function resolveGiftPaymentInfo(preferredMethod = "") {
   };
 }
 
+function isTipOrder(order = {}) {
+  return (
+    String(order.gift_name_snapshot || "") === "自由打赏" ||
+    /^\[tip\]/i.test(String(order.client_note || ""))
+  );
+}
+
 export async function createGiftOrder({
   bossId,
   companionId,
   giftId,
   quantity = 1,
+  amount = null,
+  kind = "gift",
   idempotencyKey = "",
   paymentChannel = "",
   clientNote = "",
-}) {
+  paymentStatus = "",
+  status = "",
+  paid = "",
+} = {}) {
   const boss = String(bossId || "").trim();
   const companion = String(companionId || "").trim();
+  const isTip = String(kind || "").toLowerCase() === "tip";
   const gid = String(giftId || "").trim();
-  const qty = Math.max(1, Math.floor(Number(quantity || 1)));
+  const qty = isTip ? 1 : Math.max(1, Math.floor(Number(quantity || 1)));
   const key = String(idempotencyKey || "").trim();
   if (!boss) throw httpError("请先登录老板账号", 401);
   if (!companion) throw httpError("请选择赠送对象陪玩", 400);
-  if (!gid) throw httpError("请选择礼物", 400);
+  if (!isTip && !gid) throw httpError("请选择礼物", 400);
   if (!key) throw httpError("缺少 idempotency_key", 400);
+  const claimedPaid = String(paymentStatus || status || paid || "").toLowerCase();
+  if (/^(1|true|paid|approved|credited)$/.test(claimedPaid)) {
+    throw httpError("客户端不能设置支付状态", 400, { code: "CLIENT_PAID_FORBIDDEN" });
+  }
 
   try {
     const existed = await companionDb(
@@ -255,32 +298,56 @@ export async function createGiftOrder({
     if (!isMissingRelation(e)) throw e;
   }
 
-  const gift = await loadGift(gid);
-  if (!gift) throw httpError("礼物不存在或已下架", 400);
   const companionRow = await loadCompanionProfile(companion);
   if (!companionRow) throw httpError("陪玩不存在", 404);
   try {
     const { assertNotSelfTrade } = await import("./_account-roles.js");
-    assertNotSelfTrade(boss, companionRow.user_id || companion, "送礼给自己");
+    assertNotSelfTrade(boss, companionRow.user_id || companion, isTip ? "打赏给自己" : "送礼给自己");
   } catch (selfErr) {
     if (selfErr?.code === "SELF_ORDER_NOT_ALLOWED" || selfErr?.code === "SELF_TRADE_FORBIDDEN") {
-      throw httpError("不能向自己的陪玩账号送礼", 403, { code: selfErr.code });
+      throw httpError(isTip ? "不能向自己的陪玩账号打赏" : "不能向自己的陪玩账号送礼", 403, { code: selfErr.code });
     }
     throw selfErr;
   }
 
-  const unit = money(gift.cat_food_price);
-  if (unit <= 0) throw httpError("礼物价格无效", 400);
-  const total = money(unit * qty);
+  let gift = null;
+  let unit = 0;
+  let total = 0;
+  let giftName = "礼物";
+  let giftImage = "";
+  let resolvedGiftId = gid || null;
+  if (isTip) {
+    total = money(amount);
+    unit = total;
+    if (total <= 0) throw httpError("请输入打赏金额", 400);
+    giftName = "自由打赏";
+    resolvedGiftId = null;
+  } else {
+    gift = await loadGift(gid);
+    if (!gift) throw httpError("礼物不存在或已下架", 400);
+    unit = money(gift.cat_food_price);
+    if (unit <= 0) throw httpError("礼物价格无效", 400);
+    total = money(unit * qty);
+    giftName = String(gift.name || "礼物");
+    giftImage = String(gift.icon_url || "");
+    resolvedGiftId = gift.id;
+  }
   const payInfo = await resolveGiftPaymentInfo(paymentChannel);
+  if (isTip && !String(payInfo?.qrUrl || "").trim()) {
+    throw httpError("付款功能维护中", 503, { code: "PAY_MAINTENANCE" });
+  }
+
+  const note = isTip
+    ? `[tip] ${String(clientNote || "").trim()}`.trim()
+    : String(clientNote || "").trim();
 
   const row = {
     order_no: orderNo(),
     sender_boss_id: boss,
     receiver_companion_id: companion,
-    gift_id: gift.id,
-    gift_name_snapshot: String(gift.name || "礼物"),
-    gift_image_snapshot: String(gift.icon_url || ""),
+    gift_id: resolvedGiftId,
+    gift_name_snapshot: giftName,
+    gift_image_snapshot: giftImage,
     unit_price: unit,
     quantity: qty,
     total_amount: total,
@@ -290,7 +357,7 @@ export async function createGiftOrder({
     payment_instructions: payInfo.instructions,
     payment_qr_url: payInfo.qrUrl || "",
     idempotency_key: key,
-    client_note: String(clientNote || "").trim(),
+    client_note: note,
     created_at: nowIso(),
     updated_at: nowIso(),
   };
@@ -583,7 +650,7 @@ async function insertFulfilledTransaction(order, rate, { approvedBy = null } = {
     net_companion_income: companionIncome,
     message: "",
     related_order_id: null,
-    kind: "gift",
+    kind: isTipOrder(order) ? "tip" : "gift",
     idempotency_key: `gift-order:${order.id}`,
     gift_order_id: order.id,
     fulfillment_status: "completed",
@@ -632,7 +699,7 @@ async function insertFulfilledTransaction(order, rate, { approvedBy = null } = {
   throw httpError("礼物成交写入失败", 500);
 }
 
-export async function approveGiftOrder({ orderId, staffId, staffName = "" }) {
+export async function approveGiftOrder({ orderId, staffId, staffName = "", arrivalConfirmed = false }) {
   const id = String(orderId || "").trim();
   if (!id) throw httpError("缺少礼物订单 ID", 400);
   const order = await getGiftOrderById(id);
@@ -646,6 +713,9 @@ export async function approveGiftOrder({ orderId, staffId, staffName = "" }) {
     throw httpError("当前状态不可审核通过", 409);
   }
   if (!String(order.payment_proof_path || "").trim()) throw httpError("尚未上传付款截图", 409);
+  if (isTipOrder(order) && arrivalConfirmed !== true) {
+    throw httpError("请先核实真实到账后再通过", 400, { code: "ARRIVAL_NOT_CONFIRMED" });
+  }
 
   const claimed = await patchOrder(
     id,
@@ -676,54 +746,73 @@ export async function approveGiftOrder({ orderId, staffId, staffName = "" }) {
     approvedBy: staffId || working.reviewed_by || null,
   });
 
-  // A replay whose income never landed (first attempt failed mid-way) finishes delivery exactly once.
-  const needsIncomeRepair =
-    fulfilled.replayed && !fulfilled.tx?.settlement_transaction_id && fulfilled.companionIncome > 0;
-  if (!fulfilled.replayed || needsIncomeRepair) {
-    // Gift net → companion earnings ledger with source=gift (never MCJ_SETTLEMENT / order_income).
-    // Do NOT put gift_order id into transactions.order_id — that field is companion order FK.
-    const giftNote = `礼物收益：${working.gift_name_snapshot || "礼物"} MCJ_GIFT:${JSON.stringify({
-      source: "gift",
-      giftOrderId: working.id,
-      giftName: working.gift_name_snapshot || "礼物",
-      qty: working.quantity,
-      gross: fulfilled.gross,
-      platformCommission: fulfilled.commissionAmount,
-      net: fulfilled.companionIncome,
-      paymentMethod: working.payment_channel || "external",
-    })}`;
-    let incomeTx = null;
-    if (needsIncomeRepair) {
-      const prior = await companionDb(
-        "transactions",
-        `?user_id=eq.${encodeURIComponent(working.receiver_companion_id)}&transaction_type=eq.companion_income&note=like.${encodeURIComponent(`*"giftOrderId":"${working.id}"*`)}&limit=1`
-      ).catch(() => []);
-      incomeTx = prior?.[0] || null;
-    }
-    if (!incomeTx) {
-      incomeTx = await creditCompanionIncome(
-        working.receiver_companion_id,
-        fulfilled.companionIncome,
-        giftNote,
-        null
-      );
-    }
-    if (!incomeTx?.id && fulfilled.companionIncome > 0) {
-      throw httpError("陪玩礼物收益写入失败，请稍后重试审核（不会重复入账）", 500, { code: "GIFT_INCOME_PENDING" });
-    }
-    if (incomeTx?.id && fulfilled.tx?.id) {
-      await companionDb(
+  const giftNote = `礼物收益：${working.gift_name_snapshot || "礼物"} MCJ_GIFT:${JSON.stringify({
+    source: "gift",
+    giftOrderId: working.id,
+    giftName: working.gift_name_snapshot || "礼物",
+    qty: working.quantity,
+    gross: fulfilled.gross,
+    platformCommission: fulfilled.commissionAmount,
+    net: fulfilled.companionIncome,
+    paymentMethod: working.payment_channel || "external",
+  })}`;
+  let incomeTx = await findGiftIncomeByOrderId(working.receiver_companion_id, working.id);
+  if (!incomeTx && fulfilled.tx?.settlement_transaction_id) {
+    const settled = await companionDb(
+      "transactions",
+      `?id=eq.${encodeURIComponent(fulfilled.tx.settlement_transaction_id)}&limit=1`
+    ).catch(() => []);
+    incomeTx = settled?.[0] || null;
+  }
+  if (!incomeTx && fulfilled.companionIncome > 0) {
+    incomeTx = await creditCompanionIncome(
+      working.receiver_companion_id,
+      fulfilled.companionIncome,
+      giftNote,
+      null
+    );
+  }
+  if (!incomeTx?.id && fulfilled.companionIncome > 0) {
+    throw httpError("陪玩礼物收益写入失败，请稍后重试审核（不会重复入账）", 500, { code: "GIFT_INCOME_PENDING" });
+  }
+  if (incomeTx?.id && fulfilled.tx?.id) {
+    const linked = await companionDb(
+      "gift_transactions",
+      `?id=eq.${encodeURIComponent(fulfilled.tx.id)}&settlement_transaction_id=is.null`,
+      { method: "PATCH", body: JSON.stringify({ settlement_transaction_id: incomeTx.id }) }
+    ).catch(() => []);
+    const won = linked?.[0];
+    if (!won) {
+      const latestTx = await companionDb(
         "gift_transactions",
-        `?id=eq.${encodeURIComponent(fulfilled.tx.id)}&settlement_transaction_id=is.null`,
-        { method: "PATCH", body: JSON.stringify({ settlement_transaction_id: incomeTx.id }) }
-      ).catch(() => null);
+        `?id=eq.${encodeURIComponent(fulfilled.tx.id)}&limit=1`
+      ).catch(() => []);
+      const settledId = String(latestTx?.[0]?.settlement_transaction_id || "");
+      if (settledId && settledId !== String(incomeTx.id)) {
+        await companionDb(
+          "transactions",
+          `?id=eq.${encodeURIComponent(incomeTx.id)}`,
+          {
+            method: "PATCH",
+            body: JSON.stringify({
+              status: "cancelled",
+              note: `${incomeTx.note || giftNote} DUPLICATE_ABORT`,
+            }),
+          }
+        ).catch(() => null);
+        incomeTx = await findGiftIncomeByOrderId(working.receiver_companion_id, working.id);
+      }
     }
-    await upsertGiftWall(working);
+  }
+  if (!fulfilled.replayed) {
+    if (!isTipOrder(working)) await upsertGiftWall(working);
     await insertCompanionNotification({
       companionUserId: working.receiver_companion_id,
       category: "gift",
-      title: "🎁 你收到新礼物啦",
-      body: `老板送给你：「${working.gift_name_snapshot} ×${working.quantity}」\n礼物总额：${fulfilled.gross} 猫粮`,
+      title: isTipOrder(working) ? "你收到新打赏" : "🎁 你收到新礼物啦",
+      body: isTipOrder(working)
+        ? `老板打赏了 ${fulfilled.gross}（审核已通过）`
+        : `老板送给你：「${working.gift_name_snapshot} ×${working.quantity}」\n礼物总额：${fulfilled.gross} 猫粮`,
       href: "/companion/gifts",
       noticeKey: `gift-order-approved-${working.id}`,
       notificationType: "gift_received",

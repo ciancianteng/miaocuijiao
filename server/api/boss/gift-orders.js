@@ -154,14 +154,22 @@ export default async function handler(req, res) {
     }
 
     if (action === "create" || action === "create_order") {
+      if (/^(1|true|paid|approved|credited)$/i.test(String(body.payment_status || body.status || body.paid || ""))) {
+        return json(res, 400, { ok: false, code: "CLIENT_PAID_FORBIDDEN", message: "客户端不能设置支付状态" });
+      }
       const result = await createGiftOrder({
         bossId: boss.id,
         companionId: body.companionId || body.companion_id || body.receiverCompanionId,
         giftId: body.giftId || body.gift_id,
         quantity: body.quantity || 1,
+        amount: body.amount || body.catFood || body.cat_food,
+        kind: body.kind === "tip" ? "tip" : "gift",
         idempotencyKey: body.idempotencyKey || body.idempotency_key,
         paymentChannel: body.paymentChannel || body.payment_channel || "",
         clientNote: body.clientNote || body.note || "",
+        paymentStatus: body.payment_status || "",
+        status: body.status || "",
+        paid: body.paid || "",
       });
       const payInfo =
         result.payInfo || (await resolveGiftPaymentInfo(result.order?.payment_channel || "").catch(() => null));

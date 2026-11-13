@@ -12,6 +12,8 @@
     channels: {},
     token: "",
     handlers: {},
+    reconnectInflight: null,
+    reconnectAt: 0,
   };
 
   function loadScript() {
@@ -41,9 +43,14 @@
 
   function fetchConfig() {
     if (state.config) return Promise.resolve(state.config);
-    return fetch("/api/public/realtime-config", { credentials: "same-origin" })
+    var ac = typeof AbortController !== "undefined" ? new AbortController() : null;
+    if (ac) setTimeout(function () { try { ac.abort(); } catch (e) {} }, 8000);
+    return fetch("/api/public/realtime-config", { credentials: "same-origin", signal: ac ? ac.signal : undefined })
       .then(function (r) {
-        return r.json();
+        if (r.status >= 500) throw new Error("Realtime 配置暂时不可用");
+        return r.json().catch(function () {
+          throw new Error("Realtime 配置格式错误");
+        });
       })
       .then(function (body) {
         if (!body || !body.ok || !body.url || !body.anonKey) throw new Error((body && body.message) || "Realtime 未配置");
@@ -104,7 +111,7 @@
     return ensureClient(accessToken).then(function (client) {
       var retries = 0;
       function attach() {
-        var channel = client.channel(key + (retries ? ":r" + retries : ""));
+        var channel = client.channel(key);
         ["INSERT", "UPDATE"].forEach(function (event) {
           channel = channel.on(
             "postgres_changes",
@@ -137,14 +144,14 @@
               var hErr = state.handlers[key] || handlers;
               if (typeof hErr.onError === "function") hErr.onError(status);
             } catch (e) {}
-            if (retries >= 4) return;
+            if (retries >= 3) return;
             retries += 1;
             removeChannel(key);
             setTimeout(function () {
               if (state.channels[key]) return;
               if (!state.handlers[key]) return;
               attach();
-            }, 1000 * retries);
+            }, 2000 * retries);
           } else if (status === "SUBSCRIBED") {
             retries = 0;
             try {
@@ -174,7 +181,7 @@
       var retries = 0;
       function attach() {
         var channel = client
-          .channel(key + (retries ? ":r" + retries : ""))
+          .channel(key)
           .on(
             "postgres_changes",
             {
@@ -195,14 +202,14 @@
           )
           .subscribe(function (status) {
             if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
-              if (retries >= 4) return;
+              if (retries >= 3) return;
               retries += 1;
               removeChannel(key);
               setTimeout(function () {
                 if (state.channels[key]) return;
                 if (!state.handlers[key]) return;
                 attach();
-              }, 1200 * retries);
+              }, 2500 * retries);
             } else if (status === "SUBSCRIBED") {
               retries = 0;
             }
@@ -217,7 +224,10 @@
   /** Re-auth + re-subscribe known channels after tab wake / token refresh. */
   function reconnect(accessToken) {
     var token = String(accessToken || state.token || "").trim();
-    return ensureClient(token).then(function (client) {
+    if (state.reconnectInflight) return state.reconnectInflight;
+    if (Date.now() - Number(state.reconnectAt || 0) < 8000) return Promise.resolve();
+    state.reconnectAt = Date.now();
+    state.reconnectInflight = ensureClient(token).then(function (client) {
       try {
         if (token) client.realtime.setAuth(token);
       } catch (e) {}
@@ -237,10 +247,19 @@
           jobs.push(subscribeCompanionOrders(k.slice("mcj-companion-orders:".length), token, h));
         } else if (k.indexOf("mcj-orders:") === 0) {
           jobs.push(subscribeCompanionOrders(k.slice("mcj-orders:".length), token, h));
+        } else if (k === "mcj-desk-orders" || k === "mcj-cs-desk-orders") {
+          jobs.push(subscribeDeskOrders(token, h));
         }
       });
       return Promise.all(jobs);
+    }).then(function (v) {
+      state.reconnectInflight = null;
+      return v;
+    }, function (err) {
+      state.reconnectInflight = null;
+      throw err;
     });
+    return state.reconnectInflight;
   }
 
   /**
@@ -300,14 +319,71 @@
               var hErr = state.handlers[key] || handlers;
               if (typeof hErr.onError === "function") hErr.onError(status);
             } catch (e) {}
-            if (retries >= 6) return;
+            if (retries >= 3) return;
             retries += 1;
             removeChannel(key);
             setTimeout(function () {
               if (state.channels[key]) return;
               if (!state.handlers[key]) return;
               attach();
-            }, 1200 * retries);
+            }, 2500 * retries);
+          } else if (status === "SUBSCRIBED") {
+            retries = 0;
+            try {
+              var hOk = state.handlers[key] || handlers;
+              if (typeof hOk.onReady === "function") hOk.onReady();
+            } catch (e) {}
+          }
+        });
+        state.channels[key] = channel;
+        return channel;
+      }
+      return attach();
+    });
+  }
+
+  function subscribeDeskOrders(accessToken, handlers) {
+    handlers = handlers || {};
+    var key = "mcj-cs-desk-orders";
+    state.handlers[key] = handlers;
+    removeChannel(key);
+    return ensureClient(accessToken).then(function (client) {
+      var retries = 0;
+      function attach() {
+        var channel = client.channel(key, { config: { broadcast: { self: false } } });
+        channel = channel.on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "orders" },
+          function (payload) {
+            var row = (payload && payload.new) || (payload && payload.old) || null;
+            if (!row) return;
+            try {
+              var h = state.handlers[key] || handlers;
+              if (typeof h.onChange === "function") h.onChange(row, (payload && payload.eventType) || "", payload);
+            } catch (e) {}
+          }
+        );
+        channel = channel.on("broadcast", { event: "order_changed" }, function (payload) {
+          try {
+            var h = state.handlers[key] || handlers;
+            var body = (payload && payload.payload) || payload || {};
+            if (typeof h.onChange === "function") h.onChange(body, "BROADCAST", payload);
+          } catch (e) {}
+        });
+        channel.subscribe(function (status) {
+          if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+            try {
+              var hErr = state.handlers[key] || handlers;
+              if (typeof hErr.onError === "function") hErr.onError(status);
+            } catch (e) {}
+            if (retries >= 3) return;
+            retries += 1;
+            removeChannel(key);
+            setTimeout(function () {
+              if (state.channels[key]) return;
+              if (!state.handlers[key]) return;
+              attach();
+            }, 2500 * retries);
           } else if (status === "SUBSCRIBED") {
             retries = 0;
             try {
@@ -337,6 +413,7 @@
     subscribeMessages: subscribeMessages,
     subscribeConversations: subscribeConversations,
     subscribeCompanionOrders: subscribeCompanionOrders,
+    subscribeDeskOrders: subscribeDeskOrders,
     unsubscribe: unsubscribe,
     unsubscribeAll: unsubscribeAll,
     reconnect: reconnect,
