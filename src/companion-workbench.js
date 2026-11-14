@@ -27,6 +27,7 @@
     '/companion/order-hall':'hall','/companion/orders':'orders',
     '/companion/earnings':'earnings','/companion/wallet':'earnings',
     '/companion/profile':'profile',
+    '/companion/services':'services',
     '/companion/account':'account','/companion/gifts':'gifts','/companion/mine':'account','/companion/verification':'account',
     '/companion/withdraw':'withdraw',
     '/companion/messages':'messages',
@@ -88,7 +89,7 @@
     }catch(e){return false}
   }
   var HIDDEN_MVP_ROUTES={};
-  var state={route:'dashboard',session:null,data:null,notice:'',loading:false,error:'',walletWarning:'',authTab:'login',loginMethod:'otp',loginError:'',loginBusy:false,registerToken:'',registerVerifiedEmail:'',registerCooldownUntil:0,registerBusy:false,inviteCode:'',forgotStep:'',forgotAccount:'',forgotBusy:false,forgotMsg:'',forgotResetToken:'',profileServices:[],profileVoiceTypes:[],profileCompanionTags:[],profileErrors:{},profileDraft:null,accountDraft:null,uploadBusy:'',galleryPending:[],statusBusy:false,pendingOnlineStatus:null,settlement:null,orderFilter:'all',pollTimer:null,rulesPollTimer:null,ordersCacheAt:0,msgFilter:'all',settings:null,earningsTab:'overview',chatSession:'cs',chatConversationId:'',chatBusy:false,withdrawBusy:false,inbox:null,inboxError:'',hallOrderType:'all',hallGame:'all',drawerOpen:false,_prevDesignated:null,_prevAuditLocked:null,_toastTimer:null,_ordersRtReady:false,_alertedOrderIds:null,_baseDocTitle:'',_focusOrderId:'',myGifts:null,myGiftsBusy:false,myGiftsError:'',giftWall:[],_giftPopupShown:false};
+  var state={route:'dashboard',session:null,data:null,notice:'',loading:false,error:'',walletWarning:'',authTab:'login',loginMethod:'otp',loginError:'',loginBusy:false,registerToken:'',registerVerifiedEmail:'',registerCooldownUntil:0,registerBusy:false,inviteCode:'',forgotStep:'',forgotAccount:'',forgotBusy:false,forgotMsg:'',forgotResetToken:'',profileServices:[],profileVoiceTypes:[],profileCompanionTags:[],profileErrors:{},profileDraft:null,servicesDraft:null,accountDraft:null,uploadBusy:'',galleryPending:[],statusBusy:false,pendingOnlineStatus:null,settlement:null,orderFilter:'all',pollTimer:null,rulesPollTimer:null,ordersCacheAt:0,msgFilter:'all',settings:null,earningsTab:'overview',chatSession:'cs',chatConversationId:'',chatBusy:false,withdrawBusy:false,inbox:null,inboxError:'',hallOrderType:'all',hallGame:'all',drawerOpen:false,_prevDesignated:null,_prevAuditLocked:null,_toastTimer:null,_ordersRtReady:false,_alertedOrderIds:null,_baseDocTitle:'',_focusOrderId:'',myGifts:null,myGiftsBusy:false,myGiftsError:'',giftWall:[],_giftPopupShown:false};
   var IMAGE_ACCEPT='image/jpeg,image/jpg,image/png,image/webp,image/*';
   /** Fallback only when platform voice_types empty — admin「声线管理」is SoT. */
   var FIXED_VOICE_OPTIONS=['甜妹','御姐','少御','萝莉','温柔','清冷','慵懒','磁性','少年','青叔','大叔','其他'];
@@ -445,7 +446,7 @@
       var name=String((s&&(s.name||s.title))||'').trim();
       if(!id||!name||seen[id])return;
       seen[id]=1;
-      list.push({id:id,name:name});
+      list.push({id:id,name:name,pricingUnit:s.pricingUnit||s.pricing_unit||'per_hour'});
     });
     return list;
   }
@@ -762,6 +763,8 @@
     }
     var leavingProfile=state.route==='profile'&&next.indexOf('/companion/profile')===-1;
     if(leavingProfile)state.profileDraft=null;
+    var leavingServices=state.route==='services'&&next.indexOf('/companion/services')===-1;
+    if(leavingServices)state.servicesDraft=null;
     var leavingAccount=isAccountRoute(state.route)&&!/\/companion\/(account|mine|verification)(\/|$)/.test(next);
     if(leavingAccount)state.accountDraft=null;
     closeMobileMenus();
@@ -773,6 +776,11 @@
     return r==='account'||r==='mine'||r==='verification';
   }
   function isEditingProfileForm(){
+    if(state.route==='services'){
+      var svcEl=document.activeElement;
+      if(svcEl&&svcEl.closest&&svcEl.closest('[data-services-form]'))return true;
+      return !!state.servicesDraft;
+    }
     if(state.route!=='profile')return false;
     var el=document.activeElement;
     if(el&&el.closest&&el.closest('[data-profile-form]'))return true;
@@ -823,6 +831,7 @@
   function readProfileDraft(form){
     if(!form)return null;
     var fd=new FormData(form);
+    var hasGameFields=!!form.querySelector('[data-game-price-grid],input[name="service_id_opt"],input[name="service_type_opt"]');
     var serviceTypes=Array.prototype.map.call(form.querySelectorAll('input[name="service_type_opt"]:checked'),function(el){return el.value}).filter(Boolean);
     var serviceIds=Array.prototype.map.call(form.querySelectorAll('input[name="service_id_opt"]:checked'),function(el){return el.value}).filter(Boolean);
     var gamePrices={};
@@ -850,9 +859,9 @@
       game_id:String(fd.get('game_id')||''),
       rank:String(fd.get('rank')||''),
       position:String(fd.get('position')||''),
-      serviceTypes:serviceTypes,
-      serviceIds:serviceIds,
-      gamePrices:gamePrices,
+      serviceTypes:hasGameFields?serviceTypes:(state.profileDraft&&Array.isArray(state.profileDraft.serviceTypes)?state.profileDraft.serviceTypes:null),
+      serviceIds:hasGameFields?serviceIds:(state.profileDraft&&Array.isArray(state.profileDraft.serviceIds)?state.profileDraft.serviceIds:null),
+      gamePrices:hasGameFields?gamePrices:(state.profileDraft&&state.profileDraft.gamePrices?state.profileDraft.gamePrices:null),
       focus:captureFieldFocus(form)
     };
   }
@@ -1006,6 +1015,12 @@
     return draft;
   }
   function captureLiveForms(force){
+    var svcForm=document.querySelector('[data-services-form]');
+    if(svcForm){
+      var svcActive=document.activeElement;
+      var svcFocused=!!(svcActive&&svcForm.contains(svcActive));
+      if(force||svcFocused||state.servicesDraft)state.servicesDraft=readProfileDraft(svcForm);
+    }
     var form=document.querySelector('[data-profile-form]');
     if(form){
       var active=document.activeElement;
@@ -2364,7 +2379,7 @@
     if(Auth&&Auth.bindPasswordToggles)Auth.bindPasswordToggles(root);
     if(Auth&&Auth.prepareAuthForm)Auth.prepareAuthForm(root,{clearAccount:!state.loginError&&!state.loginBusy,keepErrors:!!state.loginError});
   }
-  function title(){return ({dashboard:'工作台',hall:'抢单大厅',orders:'我的订单',earnings:'收益中心',wallet:'收益中心',profile:isIsolationMode()?'申请资料':'编辑公开资料',account:isIsolationMode()?'账号资料':'账号中心（隐私）',mine:'账号中心（隐私）',gifts:'我的礼物',withdraw:'提现',messages:'消息中心',settings:'设置',popularity:'我的人气',rules:'陪玩规则','review-status':'审核状态'})[state.route]||'陪玩端'}
+  function title(){return ({dashboard:'工作台',hall:'抢单大厅',orders:'我的订单',earnings:'收益中心',wallet:'收益中心',profile:isIsolationMode()?'申请资料':'编辑公开资料',services:'我的服务',account:isIsolationMode()?'账号资料':'账号中心（隐私）',mine:'账号中心（隐私）',gifts:'我的礼物',withdraw:'提现',messages:'消息中心',settings:'设置',popularity:'我的人气',rules:'陪玩规则','review-status':'审核状态'})[state.route]||'陪玩端'}
   function maintenanceHtml(name){return '<div class="pw-page-head"><div><h2>'+esc(name||'模块已合并')+'</h2><p>该模块已合并到工作台其他页面，请从工作台进入相应功能。</p></div><button class="pw-btn primary" type="button" data-route="/companion/dashboard">返回工作台</button></div>'}
   function bottomNavHtml(){
     var items=isIsolationMode()?ISOLATION_BOTTOM_NAV:BOTTOM_NAV;
@@ -2379,7 +2394,7 @@
       ['订单编号',s.orderNo||humanId(s.orderId)],
       ['老板', (s.bossName||'-')+(s.bossUid?' / '+s.bossUid:'')],
       ['服务项目',s.serviceName||s.game||'-'],
-      ['服务时长',s.duration||'-'],
+      [/局/.test(String(s.duration||''))?'数量':'服务时长',s.duration||'-'],
       ['订单总猫粮',s.totalCatFood],
       ['平台抽成比例',(s.platformCommissionRate!=null?s.platformCommissionRate:'-')+'%'],
       ['平台抽成猫粮',s.platformCommissionCatFood],
@@ -2473,9 +2488,10 @@
         if(window.MCJCompanionAnnouncements.onShellPaint)window.MCJCompanionAnnouncements.onShellPaint();
       }
       if(state.route==='profile'){
-      restoreProfileFocus();
-      mountOfferManager();
-    }
+        restoreProfileFocus();
+        mountOfferManager();
+      }
+      if(state.route==='services')restoreFocusOnForm(document.querySelector('[data-services-form]'),state.servicesDraft&&state.servicesDraft.focus);
       if(isAccountRoute()){
         restoreAccountFocus();
         mountCompanionAccountSecurity();
@@ -2524,6 +2540,7 @@
       restoreProfileFocus();
       mountOfferManager();
     }
+    if(state.route==='services')restoreFocusOnForm(document.querySelector('[data-services-form]'),state.servicesDraft&&state.servicesDraft.focus);
     if(isAccountRoute()){
       restoreAccountFocus();
       mountCompanionAccountSecurity();
@@ -2633,6 +2650,7 @@
     else if(state.route==='settings')body=settingsHtml();
     else if(state.route==='popularity')body=popularityHtml();
     else if(state.route==='profile')body=profileHtml();
+    else if(state.route==='services')body=servicesHtml();
     else if(state.route==='account'||state.route==='mine')body=accountHtml();
     else if(state.route==='gifts')body=giftsHtml();
     else if(state.route==='rules')body=rulesHtml();
@@ -2741,8 +2759,8 @@
       '<nav class="pw-hub-list" aria-label="账号入口">'+
       [
         ['/companion/profile','我的资料','公开资料与相册'],
-        ['/companion/profile','我的服务','可接游戏与服务类型'],
-        ['/companion/profile','等级与价格','当前等级与报价'],
+        ['/companion/services','我的服务','新增、编辑个人服务与价格'],
+        ['/companion/services','等级与价格','按当前等级规则查看并改价'],
         ['/companion/account','认证信息','身份证 / 押金'],
         ['/companion/messages','消息中心','订单与系统通知'],
         ['/companion/rules','规则与制度','陪玩工作规则'],
@@ -3027,9 +3045,9 @@
       '<span>'+esc(((STATUS_META[currentOnlineStatus()]||STATUS_META.offline||{}).label)||currentOnlineStatus())+' · '+esc(certLabel)+'</span></div></div>';
     var stack=
       pwAccHtml('dash-services','我的服务', gameNames.length?('已开启 '+gameNames.length+' 个游戏'):'尚未配置游戏',
-        '<div class="pw-info-list">'+infoRow('可接游戏',gameNames.join('、')||'-')+infoRow('服务类型',(selectedServiceTypesFromPlayer(p,raw)||[]).join('、')||'-')+'</div><div class="pw-actions" style="margin-top:10px"><button class="pw-btn" type="button" data-route="/companion/profile">去编辑服务</button></div>', false)+
+        '<div class="pw-info-list">'+infoRow('可接游戏',gameNames.join('、')||'-')+infoRow('服务类型',(selectedServiceTypesFromPlayer(p,raw)||[]).join('、')||'-')+'</div><div class="pw-actions" style="margin-top:10px"><button class="pw-btn" type="button" data-route="/companion/services">去编辑服务</button></div>', false)+
       pwAccHtml('dash-price','我的等级与价格', (function(){var bp=level.basePrice!=null?level.basePrice:(level.base_price!=null?level.base_price:null);return bp!=null?('Lv '+levelLabel+' · 基础价 '+bp):('当前等级 '+levelLabel);})(),
-        '<div class="pw-info-list">'+infoRow('等级',levelLabel)+infoRow('价格区间',level.priceRangeText||'-')+infoRow('说明','价格由等级/后台规则决定，可在公开资料页按游戏调整（若开放）')+'</div><div class="pw-actions" style="margin-top:10px"><button class="pw-btn" type="button" data-route="/companion/profile">查看价格设置</button></div>', false)+
+        '<div class="pw-info-list">'+infoRow('等级',levelLabel)+infoRow('价格区间',level.priceRangeText||'-')+infoRow('说明','价格只在「我的服务」修改，并遵守后台等级加价规则。公开资料不会另存一份价格。')+'</div><div class="pw-actions" style="margin-top:10px"><button class="pw-btn" type="button" data-route="/companion/services">查看价格设置</button></div>', false)+
       pwAccHtml('dash-profile','我的资料', (p.name||p.nickname)?'基本资料已填写':'待完善资料',
         '<div class="pw-info-list">'+infoRow('昵称',p.name||p.nickname||'-')+infoRow('地区',raw.region||p.region||'-')+infoRow('审核状态',STATUS_CN.verification(ua.profile_review_status))+'</div><div class="pw-actions" style="margin-top:10px"><button class="pw-btn" type="button" data-route="/companion/profile">编辑公开资料</button></div>', false)+
       pwAccHtml('dash-cert','认证信息', certLabel,
@@ -3185,15 +3203,25 @@
       '<div><span>老板昵称/编号</span><strong>'+esc((o.bossName||'-')+(o.bossUid?' / '+o.bossUid:''))+'</strong></div>'+
       (o.isRenewal?'<div><span>原订单号</span><strong>'+esc(o.renewalSourceOrderNo||'-')+'</strong></div><div><span>新订单号</span><strong>'+esc(humanOrderNo(o))+'</strong></div>':'')+
       '<div><span>你的服务</span><strong>'+esc(o.serviceName||o.game||'-')+'</strong></div>'+
-      '<div><span>数量/预计时长</span><strong>'+esc(o.duration||(o.hours?o.hours+'小时':'-'))+'</strong></div>'+
-      '<div><span>陪玩单价</span><strong>'+money(o.unitPrice||0)+'</strong></div>'+
-      '<div><span>你的订单金额</span><strong>'+money(o.amount||0)+'</strong></div>'+
-      '<div><span>预计到手猫粮</span><strong>'+money(o.playerIncome||0)+'</strong></div>'+
-      '<div><span>平台抽成</span><strong>'+money(o.platformFee||0)+'</strong></div>'+
+      (o.billingUnit==='per_game'
+        ? '<div><span>数量</span><strong>'+esc(o.quantityLabel||((o.quantity||1)+'局'))+'</strong></div>'+
+          '<div><span>陪玩单价</span><strong>'+money(o.unitPrice||0)+'/局</strong></div>'+
+          '<div><span>订单金额</span><strong>'+money(o.amount||0)+'</strong></div>'+
+          '<div><span>预计到手</span><strong>'+money(o.playerIncome||0)+'</strong></div>'+
+          '<div><span>平台抽成</span><strong>'+money(o.platformFee||0)+'</strong></div>'+
+          '<div><span>服务结束时间</span><strong>'+esc(o.endLabel||'不限制，完成局数即可结束')+'</strong></div>'+
+          (o.serviceSchedule&&!/[–—-]/.test(String(o.serviceSchedule))?'<div><span>服务开始时间</span><strong>'+esc(o.serviceSchedule)+'</strong></div>':'')
+        : '<div><span>数量/预计时长</span><strong>'+esc(o.duration||(o.hours?o.hours+'小时':'-'))+'</strong></div>'+
+          '<div><span>陪玩单价</span><strong>'+money(o.unitPrice||0)+'</strong></div>'+
+          '<div><span>你的订单金额</span><strong>'+money(o.amount||0)+'</strong></div>'+
+          '<div><span>预计到手猫粮</span><strong>'+money(o.playerIncome||0)+'</strong></div>'+
+          '<div><span>平台抽成</span><strong>'+money(o.platformFee||0)+'</strong></div>')+
       '<div><span>老板游戏ID</span><strong>'+esc(o.gameId||'-')+'</strong></div>'+
-      (o.serviceSchedule||o.schedule
+      (o.billingUnit==='per_game'
+        ? ''
+        : (o.serviceSchedule||o.schedule
         ?'<div><span>服务时段</span><strong>'+esc(formatSchedule24h(o.serviceSchedule||o.schedule))+'</strong></div>'
-        :'')+
+        :''))+
       '<div><span>语音方式</span><strong>'+esc(voiceModeLabel(o))+'</strong></div>'+
       voiceDiscordActions(o)+
       '<div><span>老板备注</span><strong>'+esc(o.bossNotes||'-')+'</strong></div>'+
@@ -4193,6 +4221,74 @@
     e.preventDefault();
     openServiceStandardEditor(btn.getAttribute('data-std-edit')||'',btn.getAttribute('data-std-name')||'');
   });
+  function gamesEditorFieldsHtml(){
+    var p=(state.data&&state.data.player)||{};
+    var raw=p.raw||{};
+    var draft=state.route==='services'?(state.servicesDraft||null):(state.profileDraft||null);
+    var level=(state.data&&state.data.levelInfo)||{};
+    var gameId=draft&&draft.game_id!=null?String(draft.game_id):(p.gameId||raw.game_id||'');
+    var rankVal=draft&&draft.rank!=null?String(draft.rank):String(raw.game_rank||raw.rank||'');
+    var positionVal=draft&&draft.position!=null?String(draft.position):String(raw.position||'');
+    var serviceOptions=availableServiceOptions();
+    var selectedIds=draft&&Array.isArray(draft.serviceIds)?draft.serviceIds.slice():selectedServiceIdsFromPlayer(p,raw);
+    var selectedTypes=draft&&Array.isArray(draft.serviceTypes)?draft.serviceTypes.slice():selectedServiceTypesFromPlayer(p,raw);
+    selectedIds.forEach(function(id){
+      if(!serviceOptions.some(function(s){return s.id===id})){
+        var name=String(p.mainGame||raw.game||'').split(/[,，、/|]+/).map(function(x){return x.trim()}).filter(Boolean)[0]||id;
+        serviceOptions.push({id:id,name:name});
+      }
+    });
+    var gamePrices=Object.assign({},p.gamePrices||level.gamePrices||{},(draft&&draft.gamePrices)||{});
+    var minP=level.minPrice!=null?level.minPrice:20;
+    var maxP=level.maxPrice!=null?level.maxPrice:30;
+    var maxPlus=!!level.maxPlus;
+    var rangeText=level.priceRangeText||('RM'+minP+'–RM'+maxP+(maxPlus?'+':'')+' / 小时');
+    var levelLabel=level.level||p.level||'未设置';
+    var fallbackPrice=level.price!=null?level.price:(p.rawPrice||p.price||'');
+    var needsReset=!!(level.priceNeedsReset||p.priceNeedsReset);
+    var serviceTypeChecks=['陪玩服务','陪聊服务'].map(function(t){
+      var on=selectedTypes.indexOf(t)!==-1;
+      return '<label class="pw-check-chip"><input type="checkbox" name="service_type_opt" value="'+esc(t)+'" '+(on?'checked':'')+'> '+esc(t)+'</label>';
+    }).join('');
+    var gameChecks=serviceOptions.length?serviceOptions.map(function(s){
+      var on=selectedIds.indexOf(s.id)!==-1;
+      return '<label class="pw-check-chip"><input type="checkbox" name="service_id_opt" value="'+esc(s.id)+'" data-game-name="'+esc(s.name)+'" '+(on?'checked':'')+' data-game-toggle> '+esc(s.name)+'</label>';
+    }).join(''):'<div class="pw-empty"><strong>暂无游戏</strong><span>请后台在「服务管理」新增游戏后刷新。</span></div>';
+    var priceRows=serviceOptions.length?serviceOptions.map(function(s){
+      var on=selectedIds.indexOf(s.id)!==-1;
+      var draftPrice=draft&&draft.gamePrices&&draft.gamePrices[s.id]!=null?draft.gamePrices[s.id]:'';
+      var val=draftPrice!==''?draftPrice:(gamePrices[s.id]!=null&&gamePrices[s.id]!==''?gamePrices[s.id]:(gamePrices[s.name]!=null&&gamePrices[s.name]!==''?gamePrices[s.name]:(on&&!needsReset?fallbackPrice:'')));
+      return '<label class="pw-game-price'+(on?' is-on':'')+'" data-game-price-row="'+esc(s.id)+'">'+
+        '<span>'+esc(s.name)+'</span>'+
+        '<span class="pw-game-price-unit"><input name="game_price_'+esc(s.id)+'" type="number" inputmode="decimal" step="0.01" min="0" value="'+(needsReset&&!(draftPrice||gamePrices[s.id]||gamePrices[s.name])?'':esc(val))+'" placeholder="RM" '+(on?'':'disabled')+' data-min-price="'+esc(minP)+'" data-max-price="'+esc(maxP)+'" data-max-plus="'+(maxPlus?'1':'0')+'"> '+(/per_game|局/.test(String(s.pricingUnit||''))?'/局':'/小时')+'</span>'+
+        '</label>';
+    }).join(''):'';
+    return '<div class="pw-field" data-field="service_type">'+fieldLabel('可提供服务',true)+'<div class="pw-chip-grid">'+serviceTypeChecks+'</div>'+'<p class="pw-field-hint">可多选：陪玩服务 / 陪聊服务</p>'+fieldErr('service_type')+'</div>'+
+      '<div class="pw-field" data-field="main_game">'+fieldLabel('可接游戏',true)+'<div class="pw-chip-grid">'+gameChecks+'</div>'+'<p class="pw-field-hint">从后台启用游戏中多选；每个勾选游戏需单独设置价格</p>'+fieldErr('main_game')+'</div>'+
+      '<div class="pw-field" data-field="price">'+fieldLabel('各游戏价格',true)+
+      '<div class="pw-price-meta"><div>当前等级：<strong>'+esc(levelLabel)+'</strong></div><div>可设置范围：<strong>'+esc(rangeText)+'</strong></div>'+
+      (needsReset?'<div class="pw-field-error">有价格超出等级范围，请按游戏重新设置</div>':'')+
+      '</div>'+
+      '<div class="pw-game-price-grid" data-game-price-grid>'+priceRows+'</div>'+fieldErr('price')+'</div>'+
+      '<div class="pw-two-col">'+
+      '<div class="pw-field">'+fieldLabel('游戏 ID',true)+'<input name="game_id" value="'+esc(gameId)+'" placeholder="游戏内昵称或 ID">'+fieldErr('game_id')+'</div>'+
+      '<div class="pw-field">'+fieldLabel('段位',false)+'<input name="rank" value="'+esc(rankVal)+'" placeholder="例如：超凡 2"></div>'+
+      '</div>'+
+      '<div class="pw-field">'+fieldLabel('擅长位置',false)+'<input name="position" value="'+esc(positionVal)+'" placeholder="例如：决斗 / 烟位"></div>';
+  }
+  function servicesHtml(){
+    var p=(state.data&&state.data.player)||{};
+    var level=(state.data&&state.data.levelInfo)||{};
+    var levelLabel=level.level||p.level||'未设置';
+    var rangeText=level.priceRangeText||'';
+    return '<div class="pw-page-head"><div><h2>我的服务</h2><p>这里是修改个人服务和价格的唯一入口。价格必须落在当前等级允许的区间内，保存后老板端与公开主页读取同一份数据。</p></div><div class="pw-actions"><button class="pw-btn" type="button" data-route="/companion/profile">返回公开资料</button></div></div>'+
+      '<form class="pw-form-narrow pw-profile-form" data-services-form novalidate>'+
+      '<div class="pw-acc-stack">'+
+      pwAccHtml('svc-editor','可接游戏与价格', levelLabel+(rangeText?(' · '+rangeText):''), gamesEditorFieldsHtml(), false)+
+      '</div>'+
+      '<button class="pw-btn primary" type="submit">保存服务价格</button>'+
+      '</form>';
+  }
   function profileHtml(){
     var p=(state.data&&state.data.player)||{};
     var raw=p.raw||{};
@@ -4257,33 +4353,32 @@
     var voiceCustomHtml='<div class="pw-voice-custom'+(voiceSel.otherOn?' is-on':'')+'" data-voice-custom-wrap '+(voiceSel.otherOn?'':'hidden')+'>'+
       '<input name="voice_type_custom" type="text" maxlength="20" value="'+esc(voiceSel.custom)+'" placeholder="选择「其他」时填写自定义声线，例如：奶狗音" data-voice-custom>'+
       '</div>';
-    var serviceTypeChecks=['陪玩服务','陪聊服务'].map(function(t){
-      var on=selectedTypes.indexOf(t)!==-1;
-      return '<label class="pw-check-chip"><input type="checkbox" name="service_type_opt" value="'+esc(t)+'" '+(on?'checked':'')+'> '+esc(t)+'</label>';
-    }).join('');
-    var gameChecks=serviceOptions.length?serviceOptions.map(function(s){
-      var on=selectedIds.indexOf(s.id)!==-1;
-      return '<label class="pw-check-chip"><input type="checkbox" name="service_id_opt" value="'+esc(s.id)+'" data-game-name="'+esc(s.name)+'" '+(on?'checked':'')+' data-game-toggle> '+esc(s.name)+'</label>';
-    }).join(''):'<div class="pw-empty"><strong>暂无游戏</strong><span>请后台在「服务管理」新增游戏后刷新。</span></div>';
-    var priceRows=serviceOptions.length?serviceOptions.map(function(s){
-      var on=selectedIds.indexOf(s.id)!==-1;
-      var draftPrice=draft&&draft.gamePrices&&draft.gamePrices[s.id]!=null?draft.gamePrices[s.id]:'';
-      var val=draftPrice!==''?draftPrice:(gamePrices[s.id]!=null&&gamePrices[s.id]!==''?gamePrices[s.id]:(gamePrices[s.name]!=null&&gamePrices[s.name]!==''?gamePrices[s.name]:(on&&!needsReset?fallbackPrice:'')));
-      return '<label class="pw-game-price'+(on?' is-on':'')+'" data-game-price-row="'+esc(s.id)+'">'+
-        '<span>'+esc(s.name)+'</span>'+
-        '<span class="pw-game-price-unit"><input name="game_price_'+esc(s.id)+'" type="number" inputmode="decimal" step="0.01" min="0" value="'+(needsReset&&!(draftPrice||gamePrices[s.id]||gamePrices[s.name])?'':esc(val))+'" placeholder="RM" '+(on?'':'disabled')+' data-min-price="'+esc(minP)+'" data-max-price="'+esc(maxP)+'" data-max-plus="'+(maxPlus?'1':'0')+'"> /小时</span>'+
-        '</label>';
-    }).join(''):'';
     var galleryHtml=""; // rendered via pwGalleryUploadHtml
     var previewId=encodeURIComponent(p.id||p.uid||'');
-    return '<div class="pw-page-head"><div><h2>编辑公开资料</h2><p>仅编辑老板可见的可填写字段。在线状态 / 收藏 / 评价 / 订单摘要请点「预览老板端展示」查看。</p></div><div class="pw-actions">'+
+    var selectedGameNames=selectedIds.map(function(id){
+      var hit=serviceOptions.find(function(s){return s.id===id});
+      return hit?hit.name:'';
+    }).filter(Boolean);
+    if(!selectedGameNames.length){
+      selectedGameNames=String(p.mainGame||raw.game||'').split(/[,，、/|]+/).map(function(x){return x.trim()}).filter(Boolean);
+    }
+    var servicesSummary=selectedGameNames.length?('已配置 '+selectedGameNames.length+' 项'):'尚未配置';
+    var servicesDisplay='<div class="pw-info-list">'+
+      infoRow('可接游戏',selectedGameNames.join('、')||'尚未配置')+
+      infoRow('服务类型',(selectedTypes||[]).join('、')||'-')+
+      '</div><p class="pw-field-hint">服务与价格只在「我的服务」修改，并按后台等级加价规则生效。此页保存不会改价。</p>'+
+      '<div class="pw-actions" style="margin-top:10px"><button class="pw-btn" type="button" data-route="/companion/services">前往我的服务</button></div>';
+    var gamesSection=isIsolationMode()
+      ? pwAccHtml('profile-games','游戏与价格', (selectedIds&&selectedIds.length?('已选 '+selectedIds.length+' 个游戏 · '+levelLabel):('待选择游戏 · '+levelLabel)), gamesEditorFieldsHtml(), false)
+      : pwAccHtml('profile-services','我的服务', servicesSummary, servicesDisplay, false);
+    return '<div class="pw-page-head"><div><h2>'+(isIsolationMode()?'申请资料':'编辑公开资料')+'</h2><p>'+(isIsolationMode()?'填写申请所需资料，通过后即可接单。':'只编辑老板可见的展示资料。游戏、等级加价与单价请到「我的服务」修改。')+'</p></div><div class="pw-actions">'+
       (previewId?'<a class="pw-btn" href="/profile.html?player='+previewId+'" target="_blank" rel="noopener">预览老板端展示</a>':'')+
       '<button class="pw-btn" type="button" data-route="/companion/account">账号中心</button>'+
       '</div></div>'+
       publishGateBannerHtml()+
       reviewRejectBannerHtml('/companion/profile')+
       '<div class="pw-alert"><strong>隐私提醒</strong><span>以下内容将展示给老板，请勿填写身份证、银行卡、私人联系方式等隐私信息。</span></div>'+
-      '<form class="pw-form-narrow pw-profile-form" data-profile-form novalidate>'+
+      '<form class="pw-form-narrow pw-profile-form" data-profile-form '+(isIsolationMode()?'':'data-public-profile')+' novalidate>'+
       '<div class="pw-acc-stack">'+
       pwAccHtml('profile-basic','基本展示资料','头像 · 昵称 · 声线 · 标签',
         '<div class="pw-field pw-upload-block'+(state.profileErrors&&state.profileErrors.avatar?' is-missing':'')+'" data-field="avatar">'+
@@ -4309,21 +4404,8 @@
         '<p class="pw-field-hint">可多选；保存后同步老板端大厅展示</p></div>'+
         '<div class="pw-field">'+fieldLabel('介绍',false)+'<textarea name="bio" rows="4" placeholder="简单介绍你的技术、声音和陪玩风格">'+esc(bioVal)+'</textarea></div>'
       , false)+
-      pwAccHtml('profile-games','游戏与价格', (selectedIds&&selectedIds.length?('已选 '+selectedIds.length+' 个游戏 · '+levelLabel):('待选择游戏 · '+levelLabel)),
-        '<div class="pw-field" data-field="service_type">'+fieldLabel('可提供服务',true)+'<div class="pw-chip-grid">'+serviceTypeChecks+'</div>'+'<p class="pw-field-hint">可多选：陪玩服务 / 陪聊服务</p>'+fieldErr('service_type')+'</div>'+
-        '<div class="pw-field" data-field="main_game">'+fieldLabel('可接游戏',true)+'<div class="pw-chip-grid">'+gameChecks+'</div>'+'<p class="pw-field-hint">从后台启用游戏中多选；每个勾选游戏需单独设置价格</p>'+fieldErr('main_game')+'</div>'+
-        '<div class="pw-field" data-field="price">'+fieldLabel('各游戏价格',true)+
-        '<div class="pw-price-meta"><div>当前等级：<strong>'+esc(levelLabel)+'</strong></div><div>可设置范围：<strong>'+esc(rangeText)+'</strong></div>'+
-        (needsReset?'<div class="pw-field-error">有价格超出等级范围，请按游戏重新设置</div>':'')+
-        '</div>'+
-        '<div class="pw-game-price-grid" data-game-price-grid>'+priceRows+'</div>'+fieldErr('price')+'</div>'+
-        serviceStandardRowsHtml(serviceOptions.filter(function(s){return selectedIds.indexOf(s.id)!==-1}))+
-        '<div class="pw-two-col">'+
-        '<div class="pw-field">'+fieldLabel('游戏 ID',true)+'<input name="game_id" value="'+esc(gameId)+'" placeholder="游戏内昵称或 ID">'+fieldErr('game_id')+'</div>'+
-        '<div class="pw-field">'+fieldLabel('段位',false)+'<input name="rank" value="'+esc(rankVal)+'" placeholder="例如：超凡 2"></div>'+
-        '</div>'+
-        '<div class="pw-field">'+fieldLabel('擅长位置',false)+'<input name="position" value="'+esc(positionVal)+'" placeholder="例如：决斗 / 烟位"></div>'
-      , false)+
+      gamesSection+
+      (isIsolationMode()?'':pwAccHtml('profile-std','服务标准','老板下单时可见', serviceStandardRowsHtml(serviceOptions.filter(function(s){return selectedIds.indexOf(s.id)!==-1})), false))+
       pwAccHtml('profile-offers','我的服务 / 更多玩法','添加到个人主页，老板打开主页就能看到',
         '<div id="pwOfferManager"><p class="pw-note">正在读取平台服务…</p></div>', false)+
       pwAccHtml('profile-media','展示资料','相册 · 语音试听 · 视频 · 战绩',
@@ -4424,7 +4506,7 @@
         var orderNo=o.orderNo||humanId(o.id)||'-';
         var created=o.createdAt||o.appointmentAt||'';
         var createdLabel=created?fmtTime(created):'-';
-        return '<article class="pw-grab-card'+(hallState==='settled'?' is-settled':'')+'" data-order-id="'+esc(o.id)+'"><header><div><span class="pw-type">'+esc(o.orderType||o.orderSource||'订单')+'</span>'+hallBadge+'<h3>'+esc(o.game||'-')+'</h3><p>'+esc(serviceText)+'</p></div><strong>'+money(o.amount||o.budget||0)+'</strong></header><div class="pw-order-meta"><div><span>订单编号</span><strong>'+esc(orderNo)+'</strong></div><div><span>服务类型</span><strong>'+esc(o.serviceType||o.serviceName||o.orderType||'-')+'</strong></div><div><span>游戏</span><strong>'+esc(o.game||'-')+'</strong></div>'+(o.gameId?'<div><span>老板游戏ID</span><strong>'+esc(o.gameId)+'</strong></div>':'')+bossRankMetaHtml(o)+orderRequirementHtml(o)+(o.serviceSchedule||o.schedule?'<div><span>服务时段</span><strong>'+esc(formatSchedule24h(o.serviceSchedule||o.schedule))+'</strong></div>':(o.gameServer&&o.gameServer!=='-'?'<div><span>区服</span><strong>'+esc(o.gameServer)+'</strong></div>':''))+'<div><span>单价</span><strong>'+money(o.unitPrice||0)+'</strong></div><div><span>时长/局数</span><strong>'+esc(o.duration||'-')+'</strong></div><div><span>老板备注</span><strong>'+esc(o.bossNotes||o.remark||'-')+'</strong></div><div><span>下单时间</span><strong>'+esc(createdLabel)+'</strong></div><div><span>订单来源</span><strong>'+esc(o.orderSource||o.orderType||'-')+'</strong></div><div><span>预计收入</span><strong>'+money(o.playerIncome||0)+'</strong></div><div><span>抢单人数</span><strong>'+esc(grabCount)+'</strong></div><div><span>当前状态</span><strong>'+esc(o.hallStateLabel||o.statusText||o.orderStatus||'待抢单')+'</strong></div></div><footer><button class="pw-btn primary" data-accept-order="'+esc(o.id)+'" '+(disabled?'disabled':'')+'>'+esc(btnLabel)+'</button></footer></article>';
+        return '<article class="pw-grab-card'+(hallState==='settled'?' is-settled':'')+'" data-order-id="'+esc(o.id)+'"><header><div><span class="pw-type">'+esc(o.orderType||o.orderSource||'订单')+'</span>'+hallBadge+'<h3>'+esc(o.game||'-')+'</h3><p>'+esc(serviceText)+'</p></div><strong>'+money(o.amount||o.budget||0)+'</strong></header><div class="pw-order-meta"><div><span>订单编号</span><strong>'+esc(orderNo)+'</strong></div><div><span>服务类型</span><strong>'+esc(o.serviceType||o.serviceName||o.orderType||'-')+'</strong></div><div><span>游戏</span><strong>'+esc(o.game||'-')+'</strong></div>'+(o.gameId?'<div><span>老板游戏ID</span><strong>'+esc(o.gameId)+'</strong></div>':'')+bossRankMetaHtml(o)+orderRequirementHtml(o)+(o.billingUnit==='per_game'?(o.serviceSchedule&&!/[–—-]/.test(String(o.serviceSchedule||''))?'<div><span>服务开始时间</span><strong>'+esc(o.serviceSchedule)+'</strong></div>':''):(o.serviceSchedule||o.schedule?'<div><span>服务时段</span><strong>'+esc(formatSchedule24h(o.serviceSchedule||o.schedule))+'</strong></div>':(o.gameServer&&o.gameServer!=='-'?'<div><span>区服</span><strong>'+esc(o.gameServer)+'</strong></div>':'')))+'<div><span>单价</span><strong>'+money(o.unitPrice||0)+(o.billingUnit==='per_game'?'/局':'')+'</strong></div><div><span>'+(o.billingUnit==='per_game'?'数量':'时长/局数')+'</span><strong>'+esc(o.quantityLabel||o.duration||'-')+'</strong></div><div><span>老板备注</span><strong>'+esc(o.bossNotes||o.remark||'-')+'</strong></div><div><span>下单时间</span><strong>'+esc(createdLabel)+'</strong></div><div><span>订单来源</span><strong>'+esc(o.orderSource||o.orderType||'-')+'</strong></div><div><span>预计收入</span><strong>'+money(o.playerIncome||0)+'</strong></div><div><span>抢单人数</span><strong>'+esc(grabCount)+'</strong></div><div><span>当前状态</span><strong>'+esc(o.hallStateLabel||o.statusText||o.orderStatus||'待抢单')+'</strong></div></div><footer><button class="pw-btn primary" data-accept-order="'+esc(o.id)+'" '+(disabled?'disabled':'')+'>'+esc(btnLabel)+'</button></footer></article>';
       }).join(''):'<div class="pw-empty"><strong>暂无可抢订单</strong><span>'+(locked?auditHint():(!online?'请先切换为在线接单。':'客服发布订单后会自动显示，或调整筛选条件。'))+'</span></div>')+'</section>';
   }
   function accountDocCard(opts){
@@ -5095,18 +5177,23 @@
       gamePrices[id]=price;
       if(name)gamePrices[name]=price;
     });
-    if(!nickname){errors.nickname='请填写昵称';missing.push('缺少昵称')}
-    if(!Number.isFinite(age)||age<18||age>60){errors.age='年龄须为 18–60 的数字';missing.push('缺少年龄')}
-    if(!gender){errors.gender='请选择性别';missing.push('缺少性别')}
-    if(!region){errors.region='请填写地区';missing.push('缺少地区')}
-    if(voiceOtherOn&&!voiceCustom){errors.voice_type='选择「其他」时请填写自定义声线';missing.push('缺少声线')}
-    else if(!voiceTypes.length){errors.voice_type='请至少选择一种声线';missing.push('缺少声线')}
-    if(!serviceTypes.length){errors.service_type='请至少选择一种可提供服务';missing.push('缺少服务类型')}
-    if(!serviceIds.length){errors.main_game='请至少选择一个可接游戏';missing.push('缺少游戏资料')}
-    if(!gameId){errors.game_id='请填写游戏 ID';if(missing.indexOf('缺少游戏资料')===-1)missing.push('缺少游戏资料')}
-    if(priceError){errors.price=priceError;missing.push('缺少价格')}
-
+    var servicesOnly=!!(form&&form.hasAttribute&&form.hasAttribute('data-services-form'));
+    var publicOnly=!!(form&&form.hasAttribute&&form.hasAttribute('data-public-profile'));
     var p=(state.data&&state.data.player)||{};
+    if(!servicesOnly){
+      if(!nickname){errors.nickname='请填写昵称';missing.push('缺少昵称')}
+      if(!Number.isFinite(age)||age<18||age>60){errors.age='年龄须为 18–60 的数字';missing.push('缺少年龄')}
+      if(!gender){errors.gender='请选择性别';missing.push('缺少性别')}
+      if(!region){errors.region='请填写地区';missing.push('缺少地区')}
+      if(voiceOtherOn&&!voiceCustom){errors.voice_type='选择「其他」时请填写自定义声线';missing.push('缺少声线')}
+      else if(!voiceTypes.length){errors.voice_type='请至少选择一种声线';missing.push('缺少声线')}
+    }
+    if(!publicOnly){
+      if(!serviceTypes.length){errors.service_type='请至少选择一种可提供服务';missing.push('缺少服务类型')}
+      if(!serviceIds.length){errors.main_game='请至少选择一个可接游戏';missing.push('缺少游戏资料')}
+      if(!servicesOnly&&!gameId){errors.game_id='请填写游戏 ID';if(missing.indexOf('缺少游戏资料')===-1)missing.push('缺少游戏资料')}
+      if(priceError){errors.price=priceError;missing.push('缺少价格')}
+    }
     var media=(state.data&&state.data.media)||[];
     var pendingGal=(state.galleryPending||[]).filter(function(g){return g&&!g._failed&&(g.url||g._uploading||g._done)});
     var hasAvatar=media.some(function(m){return m.mediaType==='avatar'&&(m.url||m.storagePath||m.storage_path)})||!!(p.hasCustomAvatar&&p.avatar&&p.avatar!=='/default-avatar.png');
@@ -5114,9 +5201,11 @@
     var voiceMedia=media.filter(function(m){return m.mediaType==='voice'&&(m.url||m.storagePath||m.storage_path)})[0];
     var rawVoice=p.raw&&(p.raw.voice_url||p.raw.voiceUrl);
     var hasVoice=!!(voiceMedia)||!!(p.voiceUrl&&String(p.voiceUrl).trim())||!!(rawVoice&&String(rawVoice).trim());
-    if(!hasAvatar){errors.avatar='缺少头像';missing.push('缺少头像')}
-    if(!hasGallery){errors.gallery='缺少相册';missing.push('缺少相册')}
-    if(!hasVoice){errors.voice='缺少录音';missing.push('缺少录音')}
+    if(!servicesOnly){
+      if(!hasAvatar){errors.avatar='缺少头像';missing.push('缺少头像')}
+      if(!hasGallery){errors.gallery='缺少相册';missing.push('缺少相册')}
+      if(!hasVoice){errors.voice='缺少录音';missing.push('缺少录音')}
+    }
 
     // de-dupe missing labels while preserving order
     var seen={};
@@ -5124,10 +5213,34 @@
     state.profileErrors=errors;
     state.profileMissing=missing;
     var primaryPrice=serviceIds.length&&gamePrices[serviceIds[0]]!=null?String(gamePrices[serviceIds[0]]):'';
-    return {
-      ok:!Object.keys(errors).length,
-      missing:missing,
-      payload:{
+    var payload;
+    if(publicOnly){
+      payload={
+        nickname:nickname,
+        age:String(age),
+        gender:gender,
+        region:region,
+        bio:String(fd.get('bio')||'').trim(),
+        public_tags:publicTagsJoined,
+        tags:publicTagsJoined,
+        voice_type:voiceTypes.join('、'),
+        voiceType:voiceTypes.join('、'),
+        public_profile_only:true
+      };
+    }else if(servicesOnly){
+      payload={
+        services_only:true,
+        service_type:serviceTypes.join(','),
+        service_ids:serviceIds,
+        main_game:serviceNames.join('、'),
+        game_id:gameId,
+        rank:String(fd.get('rank')||'').trim(),
+        position:String(fd.get('position')||'').trim(),
+        price:primaryPrice,
+        game_prices:gamePrices
+      };
+    }else{
+      payload={
         nickname:nickname,
         age:String(age),
         gender:gender,
@@ -5145,7 +5258,12 @@
         voiceType:voiceTypes.join('、'),
         price:primaryPrice,
         game_prices:gamePrices
-      }
+      };
+    }
+    return {
+      ok:!Object.keys(errors).length,
+      missing:missing,
+      payload:payload
     };
   }
   function highlightProfileMissing(form){
@@ -6561,6 +6679,11 @@
     else toast(state.voicePlayError);
   },true);
   document.addEventListener('change',function(e){
+    var svcField=e.target.closest('[data-services-form] input,[data-services-form] textarea,[data-services-form] select');
+    if(svcField){
+      var sForm=svcField.closest('[data-services-form]');
+      if(sForm)state.servicesDraft=readProfileDraft(sForm);
+    }
     var profileField=e.target.closest('[data-profile-form] input,[data-profile-form] textarea,[data-profile-form] select');
     if(profileField){
       var pForm=profileField.closest('[data-profile-form]');
@@ -6791,7 +6914,7 @@
       });
       return;
     }
-    if(e.target.matches('[data-profile-form]')){
+    if(e.target.matches('[data-profile-form],[data-services-form]')){
       e.preventDefault();
       var formEl=e.target;
       captureLiveForms(true);
@@ -6803,7 +6926,7 @@
         return;
       }
       var saveBtn=formEl.querySelector('[type="submit"]');
-      var saveLabel=saveBtn?String(saveBtn.textContent||'保存公开资料'):'保存公开资料';
+      var saveLabel=saveBtn?String(saveBtn.textContent||'保存'):'保存';
       if(saveBtn){saveBtn.disabled=true;saveBtn.textContent='保存中…';}
       api('update_profile',checked.payload).then(function(res){
         state.profileErrors={};

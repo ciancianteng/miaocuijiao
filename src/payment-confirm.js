@@ -459,12 +459,12 @@
             "<p><span>服务</span> " +
             esc(meta.service) +
             "</p>" +
-            "<p><span>时长</span> " +
-            esc(meta.hours) +
-            " 小时</p>" +
+            "<p><span>" + (ch.billingUnit === "per_game" ? "局数" : "时长") + "</span> " +
+            esc(ch.billingUnit === "per_game" ? (ch.quantityLabel || ((ch.quantity || 1) + "局")) : meta.hours) +
+            (ch.billingUnit === "per_game" ? "</p>" : " 小时</p>") +
             "<p><span>单价</span> " +
             esc(money(meta.unitPrice)) +
-            "/小时</p>" +
+            (ch.billingUnit === "per_game" ? "/局</p>" : "/小时</p>") +
             "<p><span>小计</span> " +
             esc(money(meta.subtotal)) +
             "</p>" +

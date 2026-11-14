@@ -1,173 +1,131 @@
 (function () {
   "use strict";
+  var STYLES = {
+    1: { edge: "#A9A5B2", ink: "#C8C4CE", crown: "#C8C4CE" },
+    2: { edge: "#75B8F7", ink: "#75B8F7", crown: "#75B8F7" },
+    3: { edge: "#D69CFB", ink: "#D69CFB", crown: "#D69CFB" },
+    4: { edge: "#F2B77D", ink: "#F2B77D", crown: "#F2B77D" },
+    5: { edge: "#EAA4C9", ink: "#F7D4E6", crown: "#F7C779" },
+  };
+  var state = { levels: [], games: [], open: "" };
+
   function esc(v) {
     return String(v == null ? "" : v).replace(/[&<>"']/g, function (c) {
       return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
     });
   }
-  function rangeText(level) {
-    if (window.MCJCompanionLevels && window.MCJCompanionLevels.formatRange) {
-      return window.MCJCompanionLevels.formatRange(level);
-    }
-    return (level.min || 0) + "–" + (level.max || 0) + (level.maxPlus ? "+" : "") + " 猫粮";
+  function crown() {
+    return '<span class="price-crown" aria-hidden="true"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M3 18.2 5.1 8.4l4.2 3.2L12 5.6l2.7 6 4.2-3.2L21 18.2H3zm1.4 1.3h15.2v1.6H4.4v-1.6z"/></svg></span>';
   }
-  function card(level) {
-    var bg =
-      window.MCJCompanionLevels && window.MCJCompanionLevels.cardBackgroundCss
-        ? window.MCJCompanionLevels.cardBackgroundCss(level)
-        : "linear-gradient(135deg,#1a1218,#2a1824)";
-    return (
-      '<article class="club-level-card" style="--lvl:' +
-      esc(level.color || "#f472b6") +
-      ";background:" +
-      esc(bg) +
-      '">' +
-      '<header><span class="club-level-badge">' +
-      esc(level.icon || "●") +
-      " " +
-      esc(level.code) +
-      "</span><strong>" +
-      esc(level.name) +
-      "</strong></header>" +
-      '<p class="club-level-price">' +
-      esc(rangeText(level)) +
-      "</p>" +
-      (level.description ? '<p class="club-level-desc">' + esc(level.description) + "</p>" : "") +
-      '<dl class="club-level-meta">' +
-      (level.requirements || level.upgradeCondition
-        ? "<div><dt>等级要求 / 升级条件</dt><dd>" + esc(level.requirements || level.upgradeCondition) + "</dd></div>"
-        : "") +
-      (level.downgradeCondition
-        ? "<div><dt>降级条件</dt><dd>" + esc(level.downgradeCondition) + "</dd></div>"
-        : "") +
-      (level.benefits ? "<div><dt>等级权益</dt><dd>" + esc(level.benefits) + "</dd></div>" : "") +
-      "</dl></article>"
-    );
+  function star() {
+    return '<span class="price-star" aria-hidden="true"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 1.6 13.4 8l6.2-.4-4.8 3.8 1.7 6.2L12 14.4 7.5 17.6 9.2 11.4 4.4 7.6 10.6 8 12 1.6z"/></svg></span>';
   }
-  function clubNoteModule() {
-    var paras = [
-      "我们不是不重视陪玩的能力，而是经过多年对陪玩行业的观察与审核后发现：",
-      "“考核通过”与“真正会接单、会服务老板”，其实是两件不同的事情。",
-      "有的人考核成绩很好，却不一定懂得沟通、照顾老板的游戏体验；也有人并不擅长应付统一标准的考核，但在真实接单过程中认真、负责、有耐心，能够让老板获得很好的陪伴体验。",
-      "所以在妙脆角，我们更希望把选择权交给双方。",
-      "陪玩对自己的资料、能力、服务态度与每一张订单负责；老板则通过真实下单，亲自感受这位陪玩的服务。",
-      "平台不会替任何一位陪玩“保证一定适合所有老板”，但我们会通过真实评价、订单记录、投诉与售后记录，让真正认真服务的陪玩逐渐获得更高的等级、曝光和机会。",
-    ];
-    var summaryHtml = paras
-      .slice(0, 3)
-      .map(function (p) {
-        return "<p>" + esc(p) + "</p>";
-      })
-      .join("");
-    var fullHtml = paras
-      .map(function (p) {
-        return "<p>" + esc(p) + "</p>";
-      })
-      .join("");
-    return (
-      '<section class="club-levels-note" data-club-note aria-label="本俱乐部说明">' +
-      '<div class="club-levels-note-card">' +
-      "<header>" +
-      "<h2>本俱乐部说明</h2>" +
-      '<p class="club-levels-note-sub">为什么妙脆角没有传统的陪玩考核？</p>' +
-      "</header>" +
-      '<div class="club-levels-note-body" data-club-note-body data-expanded="0">' +
-      '<div class="club-levels-note-summary" data-club-note-summary>' +
-      summaryHtml +
-      "</div>" +
-      '<div class="club-levels-note-full" data-club-note-full hidden>' +
-      fullHtml +
-      "</div>" +
-      "</div>" +
-      '<button type="button" class="club-levels-note-toggle" data-club-note-toggle aria-expanded="false">展开全文</button>' +
-      "</div></section>"
-    );
+  function moneyOf(raw) {
+    var text = String(raw == null ? "" : raw).replace(/,/g, "");
+    var match = text.match(/(\d+(?:\.\d+)?)/);
+    if (!match) return null;
+    var n = Number(match[1]);
+    return Number.isFinite(n) && n > 0 ? Math.round(n * 100) / 100 : null;
   }
-  function bindClubNote(root) {
-    if (!root) return;
-    var note = root.querySelector("[data-club-note]");
-    if (!note || note.getAttribute("data-bound") === "1") return;
-    note.setAttribute("data-bound", "1");
-    var btn = note.querySelector("[data-club-note-toggle]");
-    var body = note.querySelector("[data-club-note-body]");
-    var summary = note.querySelector("[data-club-note-summary]");
-    var full = note.querySelector("[data-club-note-full]");
-    if (!btn || !body || !summary || !full) return;
-    btn.addEventListener("click", function () {
-      var open = body.getAttribute("data-expanded") === "1";
-      if (open) {
-        body.setAttribute("data-expanded", "0");
-        full.hidden = true;
-        summary.hidden = false;
-        btn.setAttribute("aria-expanded", "false");
-        btn.textContent = "展开全文";
-      } else {
-        body.setAttribute("data-expanded", "1");
-        summary.hidden = true;
-        full.hidden = false;
-        btn.setAttribute("aria-expanded", "true");
-        btn.textContent = "收起";
+  function plusText(n) {
+    if (!(n > 0)) return "待配置";
+    return "+" + (Number.isInteger(n) ? String(n) : String(n));
+  }
+  function markupOf(level) {
+    var base = moneyOf(level && (level.basePrice != null ? level.basePrice : level.base_price));
+    if (base) return base;
+    return moneyOf(level && (level.minPrice != null ? level.minPrice : level.min));
+  }
+  function unitLabel(unit) {
+    return /per_game|局/i.test(String(unit || "")) ? "猫粮/局" : "猫粮/小时";
+  }
+  function gameName(service) {
+    var name = String((service && (service.name || service.title)) || "").trim();
+    if (name.indexOf("三角洲") >= 0) return "三角洲行动";
+    return name || "未命名游戏";
+  }
+  function groupGames(services) {
+    var map = {};
+    var order = [];
+    (services || []).forEach(function (service) {
+      if (service && service.enabled === false) return;
+      var key = gameName(service);
+      if (!map[key]) {
+        map[key] = { name: key, icon: service.icon || "🎮", services: [] };
+        order.push(key);
       }
+      map[key].services.push(service);
     });
+    return order.map(function (key) { return map[key]; });
   }
-  function render(guide, levels) {
+  function levelCards(levels) {
+    var list = (levels || []).slice().sort(function (a, b) { return Number(a.level || a.sort) - Number(b.level || b.sort); }).slice(0, 5);
+    if (!list.length) return '<p class="price-empty">后台暂未发布等级加价</p>';
+    return '<div class="price-level-grid">' + list.map(function (level) {
+      var n = Number(level.level) || 0;
+      var style = STYLES[n] || STYLES[1];
+      var amount = markupOf(level);
+      var marks = (n === 5 ? '<span class="price-badge">最高等级</span>' : "") + crown();
+      return '<article class="price-level-card' + (n === 5 ? " is-lv5" : "") + '" style="--edge:' + style.edge + ";--ink:" + style.ink + ";--crown:" + style.crown + '">' +
+        '<div class="price-level-top"><span class="price-lv">LV' + esc(n || "") + '</span><span class="price-level-marks">' + marks + "</span></div>" +
+        '<p class="price-name">' + esc(level.name || "未命名") + "</p>" +
+        '<p class="price-amount' + (amount ? "" : " is-empty") + '">' + esc(plusText(amount)) + "</p>" +
+        '<p class="price-foot">等级加价 · 猫粮/小时</p></article>';
+    }).join("") + "</div>";
+  }
+  function serviceBlock(service, levels) {
+    var base = moneyOf(service.defaultPrice != null ? service.defaultPrice : service.default_price);
+    var unit = unitLabel(service.pricingUnit || service.pricing_unit);
+    var rows = (levels || []).map(function (level) {
+      var add = markupOf(level);
+      var finalText = base && add ? String(Math.round((base + add) * 100) / 100) + " 猫粮" : "暂未定价";
+      return "LV" + esc(level.level) + " " + esc(level.name || "") + " 加价 " + esc(plusText(add)) + " · 最终 " + esc(finalText);
+    }).join("<br>");
+    return '<div class="price-service"><div class="price-service-name">' + esc(service.name || service.title || "服务") + "</div>" +
+      "<p>基础单价 <strong>" + esc(base ? base + " 猫粮" : "暂未定价") + "</strong></p>" +
+      "<p>计价单位 <strong>" + esc(unit) + "</strong></p>" +
+      "<p>" + (rows || "暂未定价") + "</p></div>";
+  }
+  function render() {
     var root = document.getElementById("clubLevelsRoot");
     if (!root) return;
-    var list = (levels || []).filter(function (l) {
-      return l.enabled !== false;
-    });
+    var open = state.games.filter(function (g) { return g.name === state.open; })[0];
     root.innerHTML =
-      '<section class="club-levels-hero"><h1>' +
-      esc(guide.title || "俱乐部等级说明") +
-      "</h1><p>" +
-      esc(guide.intro || "") +
-      "</p>" +
-      (guide.updatedAt
-        ? "<small>更新时间：" +
-          esc(new Date(guide.updatedAt).toLocaleString("zh-CN", { hour12: false })) +
-          "</small>"
+      '<header class="price-hero"><div><h1>✦ 陪玩等级 · 加价权益</h1><p>不同等级，专属服务加价权益</p></div>' + star() + "</header>" +
+      levelCards(state.levels) +
+      '<section class="price-section"><h2>游戏服务价格表</h2><p class="price-sub">选择游戏，查看全部陪玩项目及单价</p>' +
+      '<div class="price-games">' +
+      (state.games.length ? state.games.map(function (game) {
+        return '<button type="button" class="price-game' + (game.name === state.open ? " is-on" : "") + '" data-price-game="' + esc(game.name) + '">' +
+          '<span class="price-game-icon">' + esc(game.icon || "🎮") + '</span><span class="price-game-name">' + esc(game.name) + "</span></button>";
+      }).join("") : '<p class="price-empty">暂无已发布游戏</p>') +
+      "</div>" +
+      (open
+        ? '<div class="price-detail"><h3>' + esc(open.name) + "</h3>" + open.services.map(function (s) { return serviceBlock(s, state.levels); }).join("") + "</div>"
         : "") +
-      "</section>" +
-      clubNoteModule() +
-      '<section class="club-levels-grid">' +
-      (list.length ? list.map(card).join("") : '<div class="club-levels-empty">后台暂未发布等级说明</div>') +
       "</section>";
-    bindClubNote(root);
+  }
+  function bind(root) {
+    if (!root || root.getAttribute("data-bound") === "1") return;
+    root.setAttribute("data-bound", "1");
+    root.addEventListener("click", function (e) {
+      var btn = e.target.closest("[data-price-game]");
+      if (!btn) return;
+      var name = btn.getAttribute("data-price-game");
+      state.open = state.open === name ? "" : name;
+      render();
+    });
   }
   function load() {
+    var root = document.getElementById("clubLevelsRoot");
+    bind(root);
     return Promise.all([
-      fetch("/api/platform/content?types=club_level_guide", {
-        cache: "no-store",
-        headers: { Accept: "application/json" },
-      })
-        .then(function (r) {
-          return r.json();
-        })
-        .catch(function () {
-          return {};
-        }),
-      (window.MCJCompanionLevels && typeof window.MCJCompanionLevels.fetchLevelsResponse === "function"
-        ? window.MCJCompanionLevels.fetchLevelsResponse().then(function (result) {
-            return result.body;
-          })
-        : fetch("/api/platform/companion-levels", {
-            cache: "no-store",
-            headers: { Accept: "application/json" },
-          }).then(function (r) {
-            return r.json();
-          })
-      ).catch(function () {
-        return {};
-      }),
+      fetch("/api/platform/companion-levels", { cache: "no-store", headers: { Accept: "application/json" } }).then(function (r) { return r.json(); }).catch(function () { return {}; }),
+      fetch("/api/platform/services", { cache: "no-store", headers: { Accept: "application/json" } }).then(function (r) { return r.json(); }).catch(function () { return {}; }),
     ]).then(function (pair) {
-      var guideRows = ((pair[0] || {}).byType || {}).club_level_guide || [];
-      var guide = guideRows[0] || { title: "俱乐部等级说明", intro: "" };
-      var levels = (pair[1] && (pair[1].levels || pair[1].data || [])) || [];
-      if (window.MCJCompanionLevels && window.MCJCompanionLevels.hydrateFromList) {
-        window.MCJCompanionLevels.hydrateFromList(levels);
-        levels = window.MCJCompanionLevels.list ? window.MCJCompanionLevels.list() : levels;
-      }
-      render(guide, levels);
+      state.levels = ((pair[0] && pair[0].levels) || []).filter(function (l) { return l.enabled !== false; });
+      state.games = groupGames((pair[1] && pair[1].services) || []);
+      render();
     });
   }
   load();

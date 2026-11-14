@@ -20,6 +20,9 @@ create table if not exists public.services (
 alter table public.services add column if not exists icon text not null default '🎮';
 alter table public.services add column if not exists default_price text not null default '';
 alter table public.services add column if not exists display_positions jsonb not null default '["home","gameplay","boss_order","companion_apply","cs_order","companion_profile"]'::jsonb;
+alter table public.services add column if not exists content text not null default '';
+alter table public.services add column if not exists requirements text not null default '';
+alter table public.services add column if not exists order_fields jsonb not null default '[]'::jsonb;
 
 create index if not exists idx_services_enabled_sort on public.services(enabled, sort);
 create index if not exists idx_services_category on public.services(category);

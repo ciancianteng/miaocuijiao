@@ -45,6 +45,7 @@ const pages = [
   "companion/earnings/index.html",
   "companion/wallet/index.html",
   "companion/profile/index.html",
+  "companion/services/index.html",
   "companion/verification/index.html",
   "companion/review-status/index.html",
   "custom-order.html",

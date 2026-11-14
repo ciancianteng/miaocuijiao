@@ -33,6 +33,7 @@ import {
   isBusinessOrderRoot,
   isRealCompletedBusinessOrder,
 } from "../_business-order-stats.js";
+import { FINANCE_VIEW_ROLES, loadCompanionBalanceReport } from "./companion-balances.js";
 
 export {
   isBusinessOrderRoot,
@@ -512,13 +513,17 @@ export default async function handler(req, res) {
     });
   }
   try {
-    await requireAdmin(req);
-    const [profiles, orders, withdrawals, companionProfiles, paymentTransactions] = await Promise.all([
+    const admin = await requireAdmin(req);
+    const [profiles, orders, withdrawals, companionProfiles, paymentTransactions, balanceReport] = await Promise.all([
       loadProfilesForStats(),
       loadOrdersForStats(),
       loadWithdrawalsForStats(),
       loadCompanionProfilesForStats(),
       loadPaymentTransactionsForStats(),
+      loadCompanionBalanceReport({ query: req.query || {} }).catch((error) => ({
+        ok: false,
+        message: error.message || "陪玩余额读取失败",
+      })),
     ]);
     const { stats, filter, definitions } = buildDashboardStats({
       profiles,
@@ -527,6 +532,17 @@ export default async function handler(req, res) {
       companionProfiles,
       paymentTransactions,
     });
+    const canViewBalances = FINANCE_VIEW_ROLES.has(String(admin.role || ""));
+    stats.companionBalancesVisible = canViewBalances;
+    stats.companionBalanceScope = "current";
+    stats.companionBalanceLabel = "当前余额";
+    stats.companionBalanceSnapshot = false;
+    if (canViewBalances && balanceReport?.ok) {
+      stats.companionWithdrawableTotal = balanceReport.totals?.withdrawable || 0;
+      stats.companionPendingSettlementTotal = balanceReport.totals?.pendingSettlement || 0;
+    } else if (canViewBalances) {
+      stats.companionBalanceError = balanceReport?.message || "陪玩余额读取失败";
+    }
     return json(res, 200, { ok: true, configured: true, stats, filter, definitions });
   } catch (error) {
     return json(res, error.status || 500, { ok: false, message: error.message || "后台统计接口异常。" });

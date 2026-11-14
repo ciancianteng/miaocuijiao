@@ -66,6 +66,8 @@ function view(row = {}) {
     allowOrder: normalized.allow_order,
     displayPositions: normalized.display_positions,
     display_positions: normalized.display_positions,
+    pricingUnit: normalized.pricing_unit,
+    pricing_unit: normalized.pricing_unit,
     sort: normalized.sort,
     createdAt: normalized.created_at,
     updatedAt: normalized.updated_at,

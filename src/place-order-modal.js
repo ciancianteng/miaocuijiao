@@ -840,7 +840,9 @@
       var hero = mask.querySelector("[data-po-price-hero]");
       if (hero && state.companion) hero.textContent = moneyText(state.companion.unitPrice);
       var unitLabel = mask.querySelector(".mcj-po-price-row small");
-      if (unitLabel && state.companion) unitLabel.textContent = "/ " + (state.companion.pricingUnit || "小时");
+      if (unitLabel && state.companion) {
+        unitLabel.textContent = "/ " + (perGameOrder() ? "局" : (/per_hour/i.test(String(state.companion.pricingUnit || "")) ? "小时" : (state.companion.pricingUnit || "小时")));
+      }
     }
     refreshServiceStandard();
     refreshTotals();
@@ -1041,6 +1043,9 @@
     if (list[0] && list.length === 1) return { service: list[0].name, custom: "", item: list[0] };
     return { service: "", custom: "", item: null };
   }
+  function perGameOrder() {
+    return /局|per_game/i.test(String((state.companion && state.companion.pricingUnit) || ""));
+  }
   function currentHours() {
     return Math.max(0.5, money(state.hours) || 1);
   }
@@ -1134,21 +1139,19 @@
     var start = readStartTimeFromDom(scope);
     if (!start) start = defaultStartTime();
     writeStartTimeToDom(scope, start);
-    var end = addHoursToTime(start, serviceDurationHours());
+    var end = perGameOrder() ? "" : addHoursToTime(start, serviceDurationHours());
     state.endTime = end;
-    if (endEl) endEl.textContent = end;
+    if (endEl) endEl.textContent = end || "不限制";
     if (hintEl) {
-      hintEl.textContent =
-        "服务时段：" +
-        scheduleWindowLabel(start, end) +
-        "（" +
-        serviceDurationHours() +
-        "小时）";
+      hintEl.textContent = perGameOrder()
+        ? "预约开始：" + start + "。按局服务不限制时长。"
+        : "服务时段：" + scheduleWindowLabel(start, end) + "（" + serviceDurationHours() + "小时）";
     }
   }
   function totalAmount() {
     var c = state.companion;
     if (!c) return 0;
+    if (perGameOrder()) return Math.round(money(c.unitPrice) * currentQuantity() * 100) / 100;
     return Math.round(money(c.unitPrice) * currentHours() * currentQuantity() * 100) / 100;
   }
   function requireLogin() {
@@ -1233,7 +1236,7 @@
       "[data-po-footer-total]": total,
       "[data-po-total]": total,
       "[data-po-footer-unit]": unit,
-      "[data-po-footer-qty]": hours + " × " + qty,
+      "[data-po-footer-qty]": perGameOrder() ? qty + "局" : hours + " × " + qty,
       "[data-po-footer-discount]": moneyText(0),
       "[data-po-hours-label]": hours + " 小时 × " + qty,
     };
@@ -1420,10 +1423,10 @@
       "</div></div>" +
       '<div class="mcj-po-scroll">' +
       '<div class="mcj-po-price-card">' +
-      '<div class="mcj-po-price-row"><span>单价</span>' +
+      '<div class="mcj-po-price-row"><span>' + (perGameOrder() ? "每局单价" : "单价") + '</span>' +
       priceHeroHtml(c.unitPrice) +
       "<small>/ " +
-      esc(c.pricingUnit || "小时") +
+      esc(perGameOrder() ? "局" : (/per_hour/i.test(String(c.pricingUnit || "")) ? "小时" : (c.pricingUnit || "小时"))) +
       "</small></div>" +
       "<div>当前服务：<strong data-po-service-preview>" +
       esc(currentServiceLabel()) +
@@ -1434,17 +1437,19 @@
       '<div class="mcj-po-standard" data-po-standard aria-live="polite">' +
       serviceStandardHtml(selectedServiceItem()) +
       "</div></div>" +
-      '<div class="mcj-po-field"><span class="mcj-po-label">数量或时长</span><div class="mcj-po-chips" role="radiogroup">' +
-      hourChips +
-      "</div>" +
-      '<div class="mcj-po-custom-hours' +
-      (state.hoursMode === "custom" ? " show" : "") +
-      '" data-po-custom-hours><input type="number" min="0.5" step="0.5" data-po-custom-hours-input value="' +
-      esc(state.hours) +
-      '" placeholder="小时数"></div></div>' +
-      '<label>数量<input type="number" min="1" step="1" data-po-quantity value="' +
-      esc(state.quantity) +
-      '"></label>' +
+      (perGameOrder()
+        ? '<label>购买局数<input type="number" min="1" step="1" data-po-quantity value="' + esc(state.quantity) + '"></label>'
+        : '<div class="mcj-po-field"><span class="mcj-po-label">数量或时长</span><div class="mcj-po-chips" role="radiogroup">' +
+          hourChips +
+          "</div>" +
+          '<div class="mcj-po-custom-hours' +
+          (state.hoursMode === "custom" ? " show" : "") +
+          '" data-po-custom-hours><input type="number" min="0.5" step="0.5" data-po-custom-hours-input value="' +
+          esc(state.hours) +
+          '" placeholder="小时数"></div></div>' +
+          '<label>数量<input type="number" min="1" step="1" data-po-quantity value="' +
+          esc(state.quantity) +
+          '"></label>') +
       gameIdFieldHtml() +
       '<div data-po-requirements></div>' +
       '<label>我的段位（选填，陪玩接单前可见）<input data-po-boss-rank maxlength="30" autocomplete="off" placeholder="例如：钻石 2 / 星耀 / 无段位" value="' +
@@ -1464,12 +1469,17 @@
           esc(state.startTime || defaultStartTime()) +
           '</span><span class="mcj-po-time-card-chevron" aria-hidden="true">›</span></button>') +
       "</div>" +
-      '<div class="mcj-po-time-col mcj-po-time-end" data-po-end-wrap><span class="mcj-po-time-cap">预计结束</span>' +
-      (window.MCJTimePicker && window.MCJTimePicker.endCardHtml
-        ? window.MCJTimePicker.endCardHtml("--", { endAttr: "data-po-end-time" })
-        : '<div class="mcj-po-time-card is-readonly" aria-live="polite"><span class="mcj-po-time-card-value" data-po-end-time>--</span></div>') +
-      "</div></div>" +
-      '<p class="mcj-po-time-hint" data-po-schedule-preview>选择开始时间后自动计算结束时间</p></div>' +
+      (perGameOrder()
+        ? ""
+        : '<div class="mcj-po-time-col mcj-po-time-end" data-po-end-wrap><span class="mcj-po-time-cap">预计结束</span>' +
+          (window.MCJTimePicker && window.MCJTimePicker.endCardHtml
+            ? window.MCJTimePicker.endCardHtml("--", { endAttr: "data-po-end-time" })
+            : '<div class="mcj-po-time-card is-readonly" aria-live="polite"><span class="mcj-po-time-card-value" data-po-end-time>--</span></div>') +
+          "</div>") +
+      "</div>" +
+      '<p class="mcj-po-time-hint" data-po-schedule-preview>' +
+      (perGameOrder() ? "可预约开始时间。按局服务不限制时长，完成购买局数即可结束。" : "选择开始时间后自动计算结束时间") +
+      "</p></div>" +
       '<label>订单备注（选填）<textarea data-po-notes rows="2" placeholder="选填：特殊要求、开局说明等"></textarea></label>' +
       '<label>优惠码<input data-po-coupon placeholder="可选" value="' +
       esc(state.couponCode) +
@@ -1831,8 +1841,9 @@
       game: currentServiceLabel(),
       gameId: readModalGameId(),
       gamePrices: c.gamePrices || c.game_prices || {},
-      hours: currentHours(),
+      hours: perGameOrder() ? 0 : currentHours(),
       quantity: currentQuantity(),
+      pricingUnit: perGameOrder() ? "per_game" : "per_hour",
       services: resolveServices(c),
       online: c.online !== false,
       status: c.availabilityStatus || "",
@@ -1946,9 +1957,9 @@
         return;
       }
       state.startTime = startTime;
-      var endTime = addHoursToTime(startTime, serviceDurationHours());
+      var endTime = perGameOrder() ? "" : addHoursToTime(startTime, serviceDurationHours());
       state.endTime = endTime;
-      var schedule = scheduleWindowLabel(startTime, endTime);
+      var schedule = endTime ? scheduleWindowLabel(startTime, endTime) : startTime;
       if (state.payMethodsLoading) {
         failValidate("支付方式加载中，请稍候再试");
         return;
@@ -1970,7 +1981,7 @@
       if (orderRequirements.some(function (item) { return !item; })) return;
       if (qtyEl) state.quantity = Math.max(1, Math.floor(money(qtyEl.value) || 1));
       if (couponEl) state.couponCode = String(couponEl.value || "").trim();
-      var hours = currentHours();
+      var hours = perGameOrder() ? 0 : currentHours();
       var quantity = currentQuantity();
       var total = totalAmount();
       if (!(total > 0)) {
@@ -1994,7 +2005,8 @@
 
       var noteParts = [];
       if (notesEl && String(notesEl.value || "").trim()) noteParts.push(String(notesEl.value || "").trim());
-      noteParts.push("服务时段：" + schedule);
+      if (perGameOrder()) noteParts.push("预约开始：" + startTime);
+      else noteParts.push("服务时段：" + schedule);
 
       var replaceSlot = null;
       try {
@@ -2019,6 +2031,7 @@
             service: currentServiceLabel(),
             game: currentServiceLabel(),
             serviceId: state.selectedServiceId || "",
+            pricingUnit: perGameOrder() ? "per_game" : "per_hour",
             unitPrice: money(c.unitPrice),
             hours: hours,
             quantity: quantity,
@@ -2045,6 +2058,7 @@
             service: currentServiceLabel(),
             game: currentServiceLabel(),
             serviceId: /^[0-9a-f-]{36}$/i.test(String(state.selectedServiceId || "")) ? state.selectedServiceId : "",
+            pricingUnit: perGameOrder() ? "per_game" : "per_hour",
             unitPrice: money(c.unitPrice),
             hours: hours,
             quantity: quantity,

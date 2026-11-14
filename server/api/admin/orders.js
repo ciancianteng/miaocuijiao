@@ -1,4 +1,5 @@
 import { ORDER_STATUS_LABELS, fetchOrdersActivityDesc, sortOrdersByActivityDesc } from "../_order-status.js";
+import { describeOrderBilling } from "../_billing-unit.js";
 import { normalizeReviewImages } from "../_review-images.js";
 import { viewServiceSnapshot } from "../_service-standard.js";
 import { readEarlyFinish, readEarlyFinishReject } from "../_order-early-finish.js";
@@ -265,6 +266,7 @@ export function safeOrder(row, profiles, extras = {}) {
     "";
   const reviewerCode = formatCsCode(reviewerProfile) || formatCsCode({ display_name: reviewerName });
   const reviewStatus = String(review.paymentReviewStatus || receipt?.status || "").toLowerCase();
+  const bill = describeOrderBilling(row);
   const flowStatus =
     extras.flowStatus ||
     ({
@@ -374,6 +376,16 @@ export function safeOrder(row, profiles, extras = {}) {
     bossLevelCode: row.boss_level_code || "",
     directBossId: row.direct_boss_id || "",
     settlementStatus: row.settlement_status || "",
+    hours: bill.hours,
+    quantity: bill.quantity,
+    unitPrice: money(row.unit_price),
+    billingUnit: bill.billingUnit,
+    billingStatus: bill.billingStatus,
+    quantityLabel: bill.quantityLabel,
+    duration: bill.durationLabel,
+    durationLabel: bill.durationLabel,
+    unitLabel: bill.unitLabel,
+    endLabel: bill.endLabel,
   };
 }
 async function enrichSafeOrders(orders, profiles, baseExtrasById = {}) {

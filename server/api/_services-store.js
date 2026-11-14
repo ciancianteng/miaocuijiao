@@ -39,6 +39,74 @@ function parsePositions(raw, fallback) {
   return Array.isArray(fallback) ? fallback.slice() : [];
 }
 
+export const SERVICE_META_PREFIX = "[[MCJ_SERVICE_META]]";
+
+function parseJsonArray(raw) {
+  if (Array.isArray(raw)) return raw;
+  if (typeof raw === "string" && raw.trim()) {
+    try {
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
+export function normalizeOrderFields(raw) {
+  return parseJsonArray(raw)
+    .slice(0, 30)
+    .map((item, index) => {
+      const type = ["text", "textarea", "number", "select"].includes(item?.type) ? item.type : "text";
+      return {
+        key: String(item?.key || `field_${index + 1}`).trim().slice(0, 40) || `field_${index + 1}`,
+        label: String(item?.label || "").trim().slice(0, 40),
+        type,
+        required: item?.required === true || item?.required === "true" || item?.required === 1,
+        placeholder: String(item?.placeholder || "").trim().slice(0, 120),
+        options: String(item?.options || "").trim().slice(0, 300),
+      };
+    })
+    .filter((item) => item.label);
+}
+
+function clipText(value, max) {
+  return String(value || "").slice(0, max);
+}
+
+function extractServiceMeta(positions) {
+  const keys = [];
+  let meta = null;
+  for (const item of positions) {
+    const text = String(item || "");
+    if (text.startsWith(SERVICE_META_PREFIX)) {
+      try {
+        const parsed = JSON.parse(text.slice(SERVICE_META_PREFIX.length));
+        if (parsed && typeof parsed === "object") meta = parsed;
+      } catch {
+        /* ignore damaged marker */
+      }
+      continue;
+    }
+    keys.push(text);
+  }
+  return { positions: keys, meta };
+}
+
+export function attachServiceMeta(positions, meta) {
+  const keys = (Array.isArray(positions) ? positions : []).filter((item) => !String(item || "").startsWith(SERVICE_META_PREFIX));
+  return keys.concat(
+    SERVICE_META_PREFIX +
+      JSON.stringify({
+        content: clipText(meta?.content, 8000),
+        requirements: clipText(meta?.requirements, 8000),
+        orderFields: normalizeOrderFields(meta?.orderFields || meta?.order_fields),
+        pricingUnit: meta?.pricingUnit || meta?.pricing_unit || "",
+      })
+  );
+}
+
 function defaultPositionsFromFlags(row = {}) {
   const list = [];
   if (row.show_home !== false && row.showHome !== false) list.push("home");
@@ -53,6 +121,9 @@ export function normalizeServiceRow(row = {}) {
   const allowApply = row.allow_apply !== false && row.allowApply !== false;
   const allowOrder = row.allow_order !== false && row.allowOrder !== false;
   let positions = parsePositions(row.display_positions ?? row.displayPositions, null);
+  const extracted = extractServiceMeta(positions);
+  positions = extracted.positions;
+  const meta = extracted.meta || {};
   if (!positions.length) positions = defaultPositionsFromFlags(row);
   if (showHome && !positions.includes("home")) positions.push("home");
   if (!showHome) positions = positions.filter((key) => key !== "home");
@@ -68,6 +139,10 @@ export function normalizeServiceRow(row = {}) {
     allow_apply: allowApply,
     allow_order: allowOrder,
     display_positions: positions,
+    content: clipText(row.content || meta.content, 8000),
+    requirements: clipText(row.requirements || meta.requirements, 8000),
+    order_fields: normalizeOrderFields(row.order_fields ?? row.orderFields ?? meta.orderFields),
+    pricing_unit: /per_game|局/.test(String(row.pricing_unit || row.pricingUnit || meta.pricingUnit || "")) ? "per_game" : "per_hour",
     sort: Number.isFinite(Number(row.sort ?? row.sort_order ?? row.sortOrder))
       ? Number(row.sort ?? row.sort_order ?? row.sortOrder)
       : 100,

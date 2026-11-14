@@ -35,8 +35,28 @@
         {label:'平台利润',value:money(s.platformProfit||0),href:'#orders'},
         {label:'提现中/已打款',value:money(s.withdrawPending||0)+' / '+money(s.withdrawPaid||0),href:'#service-reports',valueClass:'admin-final-stat-value-wrap'}
       ];
-      target.innerHTML=(res.message?note(res.message):'')+'<div class="admin-final-grid">'+cards.map(function(item){
-        return '<a class="admin-final-stat" href="'+esc(item.href)+'"><span>'+esc(item.label)+'</span><strong'+(item.valueClass?' class="'+esc(item.valueClass)+'"':'')+'>'+esc(item.value)+'</strong></a>';
+      if(s.companionBalancesVisible){
+        cards.push({
+          label:'陪玩未提现总余额',
+          value:s.companionBalanceError?'—':money(s.companionWithdrawableTotal||0),
+          sub:'当前余额',
+          action:'balances'
+        });
+        cards.push({
+          label:'陪玩待结算金额',
+          value:s.companionBalanceError?'—':money(s.companionPendingSettlementTotal||0),
+          sub:'当前余额',
+          static:true
+        });
+      }
+      var balanceNote=s.companionBalancesVisible
+        ?(s.companionBalanceError?note(s.companionBalanceError):note('未提现与待结算是当前余额，不随日期变化。待结算等于收益中心的订单24h锁定，不是营业额减利润。'))
+        :'';
+      target.innerHTML=(res.message?note(res.message):'')+balanceNote+'<div class="admin-final-grid">'+cards.map(function(item){
+        var body='<span>'+esc(item.label)+'</span><strong'+(item.valueClass?' class="'+esc(item.valueClass)+'"':'')+'>'+esc(item.value)+'</strong>'+(item.sub?'<small>'+esc(item.sub)+'</small>':'');
+        if(item.action==='balances')return '<button type="button" class="admin-final-stat" data-open-companion-balances>'+body+'</button>';
+        if(item.static)return '<div class="admin-final-stat" aria-disabled="true">'+body+'</div>';
+        return '<a class="admin-final-stat" href="'+esc(item.href)+'">'+body+'</a>';
       }).join('')+'</div>';
     }).catch(function(err){
       target.innerHTML=note(err.message||'数据加载失败')+'<button class="mini-btn" type="button" data-admin-final-refresh="dashboard">重试</button>';
@@ -804,7 +824,126 @@
     },true);
   }
   bindOrderManageChrome();
+  var balanceView={rows:[],totals:null,q:'',sort:'withdrawable',dir:'desc',loading:false};
+  function balanceSum(rows,key){
+    return rows.reduce(function(n,row){return Math.round((n+Number(row[key]||0))*100)/100;},0);
+  }
+  function balanceRowsView(){
+    var q=String(balanceView.q||'').trim().toLowerCase();
+    var rows=(balanceView.rows||[]).filter(function(row){
+      if(!q)return true;
+      return (String(row.name||'')+' '+String(row.publicId||'')).toLowerCase().indexOf(q)>=0;
+    });
+    var key=balanceView.sort||'withdrawable';
+    var dir=balanceView.dir==='asc'?1:-1;
+    rows.sort(function(a,b){
+      var d=(Number(a[key]||0)-Number(b[key]||0))*dir;
+      if(d)return d;
+      return String(a.publicId||'').localeCompare(String(b.publicId||''));
+    });
+    return rows;
+  }
+  function paintCompanionBalances(){
+    var panel=document.getElementById('companionBalancePanel');
+    if(!panel)return;
+    var totals=balanceView.totals||{};
+    var shown=balanceRowsView();
+    var shownTotals={
+      withdrawable:balanceSum(shown,'withdrawable'),
+      pendingSettlement:balanceSum(shown,'pendingSettlement'),
+      withdrawing:balanceSum(shown,'withdrawing'),
+      withdrawn:balanceSum(shown,'withdrawn')
+    };
+    var allMatch=balanceSum(balanceView.rows||[],'withdrawable')===Number(totals.withdrawable||0)
+      && balanceSum(balanceView.rows||[],'pendingSettlement')===Number(totals.pendingSettlement||0)
+      && balanceSum(balanceView.rows||[],'withdrawing')===Number(totals.withdrawing||0)
+      && balanceSum(balanceView.rows||[],'withdrawn')===Number(totals.withdrawn||0);
+    var head='<div class="admin-final-head"><div><h3>陪玩余额明细</h3><p>当前余额。待结算等于收益中心「订单24h锁定」。提现中、已打款分开统计，不重复计入可提现。</p></div><button class="mini-btn" type="button" data-close-companion-balances>关闭</button></div>';
+    var tools='<div class="admin-balance-tools"><input type="search" data-balance-search placeholder="搜索陪玩名称或 ID" value="'+esc(balanceView.q)+'"><select data-balance-sort>'+
+      [['withdrawable','按可提现余额'],['pendingSettlement','按待结算'],['withdrawing','按提现中'],['withdrawn','按已提现']].map(function(item){
+        return '<option value="'+item[0]+'"'+(balanceView.sort===item[0]?' selected':'')+'>'+item[1]+'</option>';
+      }).join('')+'</select><button class="mini-btn" type="button" data-balance-dir>'+(balanceView.dir==='asc'?'从低到高':'从高到低')+'</button><button class="mini-btn" type="button" data-balance-refresh>刷新</button></div>';
+    var summary='<div class="admin-final-grid admin-balance-summary"><div class="admin-final-stat"><span>可提现合计 · 当前余额</span><strong>'+esc(money(totals.withdrawable||0))+'</strong></div><div class="admin-final-stat"><span>待结算合计 · 当前余额</span><strong>'+esc(money(totals.pendingSettlement||0))+'</strong></div><div class="admin-final-stat"><span>提现中合计</span><strong>'+esc(money(totals.withdrawing||0))+'</strong></div><div class="admin-final-stat"><span>已提现合计</span><strong>'+esc(money(totals.withdrawn||0))+'</strong></div></div>';
+    var filterNote=balanceFilterNote(shownTotals);
+    var mismatch=allMatch?'':note('明细合计与总金额不一致，请刷新后再看。');
+    var body=balanceTableBody(shown);
+    panel.hidden=false;
+    panel.innerHTML=head+tools+summary+'<div data-balance-filter-note>'+filterNote+'</div>'+mismatch+'<div class="admin-final-table-wrap"><table class="admin-final-table"><thead><tr><th>陪玩名称 / ID</th><th>当前可提现余额</th><th>待结算金额</th><th>提现中金额</th><th>累计已提现金额</th></tr></thead><tbody>'+body+'</tbody></table></div>';
+  }
+  function balanceFilterNote(shownTotals){
+    if(!balanceView.q)return '';
+    return note('筛选合计：可提现 '+money(shownTotals.withdrawable)+'，待结算 '+money(shownTotals.pendingSettlement)+'，提现中 '+money(shownTotals.withdrawing)+'，已提现 '+money(shownTotals.withdrawn)+'。卡片总金额对全部明细，不对筛选结果。');
+  }
+  function balanceTableBody(shown){
+    return shown.length?shown.map(function(row){
+      return '<tr><td><strong>'+esc(row.name||'-')+'</strong><small>'+esc(row.publicId||'-')+'</small></td><td>'+esc(money(row.withdrawable))+'</td><td>'+esc(money(row.pendingSettlement))+'</td><td>'+esc(money(row.withdrawing))+'</td><td>'+esc(money(row.withdrawn))+'</td></tr>';
+    }).join(''):'<tr><td colspan="5">没有匹配的陪玩</td></tr>';
+  }
+  function refreshBalanceRows(){
+    var panel=document.getElementById('companionBalancePanel');
+    var tbody=panel&&panel.querySelector('tbody');
+    if(!tbody){paintCompanionBalances();return;}
+    var shown=balanceRowsView();
+    var shownTotals={
+      withdrawable:balanceSum(shown,'withdrawable'),
+      pendingSettlement:balanceSum(shown,'pendingSettlement'),
+      withdrawing:balanceSum(shown,'withdrawing'),
+      withdrawn:balanceSum(shown,'withdrawn')
+    };
+    tbody.innerHTML=balanceTableBody(shown);
+    var noteHost=panel.querySelector('[data-balance-filter-note]');
+    if(noteHost)noteHost.innerHTML=balanceFilterNote(shownTotals);
+    var dirBtn=panel.querySelector('[data-balance-dir]');
+    if(dirBtn)dirBtn.textContent=balanceView.dir==='asc'?'从低到高':'从高到低';
+  }
+  function loadCompanionBalances(){
+    var panel=document.getElementById('companionBalancePanel');
+    if(!panel)return;
+    balanceView.loading=true;
+    panel.hidden=false;
+    panel.innerHTML='<div class="content-loading">正在读取陪玩余额...</div>';
+    get('/api/admin/companion-balances').then(function(res){
+      balanceView.loading=false;
+      if(res.ok===false){
+        panel.innerHTML=note(res.message||'没有财务查看权限')+'<button class="mini-btn" type="button" data-close-companion-balances>关闭</button>';
+        return;
+      }
+      balanceView.rows=res.rows||[];
+      balanceView.totals=res.totals||{};
+      paintCompanionBalances();
+      panel.scrollIntoView({behavior:'smooth',block:'start'});
+    }).catch(function(err){
+      balanceView.loading=false;
+      panel.innerHTML=note(err.message||'余额读取失败')+'<button class="mini-btn" type="button" data-close-companion-balances>关闭</button>';
+    });
+  }
+  document.addEventListener('input',function(e){
+    if(!e.target || !e.target.matches || !e.target.matches('[data-balance-search]'))return;
+    balanceView.q=e.target.value||'';
+    refreshBalanceRows();
+  });
+  document.addEventListener('change',function(e){
+    if(!e.target || !e.target.matches || !e.target.matches('[data-balance-sort]'))return;
+    balanceView.sort=e.target.value||'withdrawable';
+    refreshBalanceRows();
+  });
   document.addEventListener('click',function(e){
+    if(e.target.closest('[data-open-companion-balances]')){
+      e.preventDefault();
+      loadCompanionBalances();
+      return;
+    }
+    if(e.target.closest('[data-close-companion-balances]')){
+      var panel=document.getElementById('companionBalancePanel');
+      if(panel){panel.hidden=true;panel.innerHTML='';}
+      return;
+    }
+    if(e.target.closest('[data-balance-refresh]')){loadCompanionBalances();return;}
+    if(e.target.closest('[data-balance-dir]')){
+      balanceView.dir=balanceView.dir==='asc'?'desc':'asc';
+      refreshBalanceRows();
+      return;
+    }
     if(e.target.closest('[data-admin-final-refresh="orders"]'))renderOrders();
     if(e.target.closest('[data-admin-final-refresh="reports"]'))renderReports();
     if(e.target.closest('[data-admin-final-refresh="dashboard"]'))renderDashboard();

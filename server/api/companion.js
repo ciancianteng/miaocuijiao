@@ -38,6 +38,7 @@ import {
   parseServiceIds,
   parseServiceTypes,
 } from "./_game-prices.js";
+import { describeOrderBilling } from "./_billing-unit.js";
 import { loadPublicServices } from "./platform/services.js";
 import { syncCompanionServicesFromGamePrices } from "./_admin-service-prices.js";
 import {
@@ -68,7 +69,8 @@ import {
   money as incomeMoney,
   clawbackCompanionIncomeForOrder,
 } from "./_companion-income.js";
-import { splitCompanionIncomeByWithdrawLock, companionEarningsUnlockMeta } from "./_earnings-windows.js";
+import { companionEarningsUnlockMeta } from "./_earnings-windows.js";
+import { companionEarningsBalance } from "./_companion-earnings-balance.js";
 import {
   anonymousBossLabel,
   allocateWithdrawalNo,
@@ -108,7 +110,6 @@ import {
   mergeWeeklySettings,
   normalizePayoutStatus,
   PAYOUT_STATUS_TEXT,
-  PAYOUT_FROZEN_STATUSES,
   viewWeeklyRules,
 } from "./_weekly-settlement.js";
 import {
@@ -1353,6 +1354,7 @@ function viewOrder(row = {}, boss = {}, settlement = null) {
   const gameIdFromDesc = (description.match(/游戏ID[：:]\s*([^\n；;]+)/i) || [])[1] || "";
   const scheduleFromDesc =
     (description.match(/服务时段[：:]\s*([^\n；;]+)/i) || [])[1] ||
+    (description.match(/预约开始[：:]\s*([^\n；;]+)/i) || [])[1] ||
     (description.match(/(?:开始时间|服务时间)[：:]\s*([^\n；;]+)/i) || [])[1] ||
     "";
   const serverFromDesc =
@@ -1400,11 +1402,8 @@ function viewOrder(row = {}, boss = {}, settlement = null) {
     stripOrderFacingText(row.title || "") ||
     stripOrderFacingText(row.note || "") ||
     "";
-  const durationLabel = row.hours
-    ? `${row.hours}小时`
-    : row.rounds || row.games_count
-      ? `${row.rounds || row.games_count}局`
-      : "";
+  const bill = describeOrderBilling(row);
+  const durationLabel = bill.durationLabel;
   return {
     id: row.id,
     orderNo: row.order_no || row.id,
@@ -1429,7 +1428,13 @@ function viewOrder(row = {}, boss = {}, settlement = null) {
     earlyFinish: companionEarlyFinishView(row),
     earlyFinishReject: (() => { const r = readEarlyFinishReject(row); return r ? { reason: r.reason, at: r.at } : null; })(),
     duration: durationLabel,
-    hours: money(row.hours),
+    hours: bill.billingUnit === "per_game" ? 0 : money(row.hours),
+    quantity: bill.quantity,
+    billingUnit: bill.billingUnit,
+    billingStatus: bill.billingStatus,
+    quantityLabel: bill.quantityLabel,
+    unitLabel: bill.unitLabel,
+    endLabel: bill.endLabel,
     unitPrice,
     amount,
     playerIncome: net,
@@ -2230,58 +2235,30 @@ function summaryFrom(myOrders, transactions, withdrawals = [], linkedOrders = []
     return d.toISOString().slice(0, 10);
   })();
   const ordersForMap = linkedOrders && linkedOrders.length ? linkedOrders : myOrders;
-  const { orderIncome, giftIncome, inviteIncome, rewardOther, orderMap } = partitionCompanionIncome(
+  const { orderIncome, giftIncome, inviteIncome, rewardOther } = partitionCompanionIncome(
     transactions,
     ordersForMap
   );
   const incomeRows = orderIncome;
   const giftRows = giftIncome || [];
   const inviteRows = inviteIncome || [];
-  const orderIncomeIds = new Set(incomeRows.map((r) => String(r.order_id || "")).filter(Boolean));
-  const refundRows = (transactions || []).filter((row) => {
-    if (row.transaction_type !== "refund" || row.status === "cancelled") return false;
-    const oid = row.order_id ? String(row.order_id) : "";
-    if (!oid) return true;
-    return orderIncomeIds.has(oid);
-  });
-  // §8 freeze: in-flight withdrawals lock balance until REJECTED / CANCELED / PAID settles.
-  const frozen = (withdrawals || [])
-    .filter((w) => WITHDRAW_FROZEN.has(w.status) && !WITHDRAW_RELEASED.has(w.status))
-    .reduce((n, w) => n + money(w.cat_food_amount || w.amount), 0);
-  const withdrawn = (withdrawals || [])
-    .filter((w) => w.status === "completed")
-    .reduce((n, w) => n + money(w.cat_food_amount || w.amount), 0);
-  // Withdrawal-locked + already-withdrawn must both reduce available (never double-spend).
-  const locked = (withdrawals || [])
-    .filter((w) => WITHDRAW_ACTIVE.has(w.status))
-    .reduce((n, w) => n + money(w.cat_food_amount || w.amount), 0);
-  const orderGross = incomeRows.reduce((n, row) => n + money(row.amount), 0);
-  const giftGross = giftRows.reduce((n, row) => n + money(row.amount), 0);
-  const inviteGross = inviteRows.reduce((n, row) => n + money(row.amount), 0);
-  const refundTotal = refundRows.reduce((n, row) => n + money(row.amount), 0);
-  const orderNet = Math.max(0, roundMoney(orderGross - refundTotal));
-  // Gift + invite catfood ledger rows enter withdrawable (source kept via incomeKind).
-  // Order income: unlock at earliest of Boss confirm OR serviceComplete+24h (read-time).
-  const withdrawableBase = Math.max(0, roundMoney(orderNet + giftGross + inviteGross));
   const bonus = sumTxAmount(rewardOther);
   const sumIncomeOn = (pred) =>
     [...incomeRows, ...giftRows, ...inviteRows].filter(pred).reduce((n, row) => n + money(row.amount), 0);
-
-  // Owner lock: order income unlocks only at completed_at + 24h. Gift/invite unlock immediately.
-  let earningsLocked = 0;
-  try {
-    const { locked: lockedRows } = splitCompanionIncomeByWithdrawLock(incomeRows, orderMap, Date.now());
-    const lockedGross = lockedRows.reduce((n, row) => n + money(row.amount), 0);
-    const lockedOrderIds = new Set(lockedRows.map((r) => String(r.order_id || "")).filter(Boolean));
-    const lockedRefund = refundRows
-      .filter((r) => lockedOrderIds.has(String(r.order_id || "")))
-      .reduce((n, r) => n + money(r.amount), 0);
-    earningsLocked = Math.max(0, roundMoney(lockedGross - lockedRefund));
-  } catch {
-    earningsLocked = 0;
-  }
-
-  const withdrawable = Math.max(0, roundMoney(withdrawableBase - earningsLocked - locked));
+  // Same read-only buckets as 收益中心. pendingSettlement stays the withdrawal-freeze alias.
+  const bal = companionEarningsBalance({
+    transactions,
+    withdrawals,
+    orders: ordersForMap,
+  });
+  const orderNet = bal.orderNet;
+  const giftGross = bal.giftGross;
+  const inviteGross = bal.inviteGross;
+  const withdrawableBase = bal.withdrawableBase;
+  const earningsLocked = bal.earningsLocked;
+  const withdrawn = bal.withdrawn;
+  const frozen = bal.withdrawing;
+  const withdrawable = bal.withdrawable;
   return {
     todayOrders: myOrders.filter((o) => String(o.createdAt || "").slice(0,10) === today).length,
     waitingConfirm: myOrders.filter((o) => o.status === "claimed").length,
@@ -4986,6 +4963,101 @@ return json(res, 200, {
         return json(res, 200, { ok: true, message: "联系方式已保存（仅自己/客服/后台可见）" });
       }
 
+      if (body.services_only === true || body.services_only === "true" || body.services_only === 1) {
+        if (!companion?.id) return json(res, 400, { ok: false, message: "请先完成陪玩申请" });
+        const reviewStSvc = normalizeProfileReviewStatus(companion || {});
+        if (reviewStSvc === "pending") {
+          return json(res, 403, { ok: false, message: "资料审核中，暂不可修改价格。请等待审核结果。", field: "price" });
+        }
+        const servicesBundle = await loadPublicServices().catch(() => ({ services: [] }));
+        const catalog = Array.isArray(servicesBundle?.services) ? servicesBundle.services : [];
+        const byId = new Map(catalog.map((s) => [String(s.id), s]));
+        const byName = new Map(catalog.map((s) => [String(s.name || s.title || "").trim(), s]));
+        let serviceIds = [];
+        if (Array.isArray(body.service_ids) || Array.isArray(body.serviceIds)) {
+          serviceIds = parseServiceIds(body.service_ids || body.serviceIds);
+        } else if (body.service_ids != null || body.serviceIds != null) {
+          serviceIds = parseServiceIds(body.service_ids || body.serviceIds);
+        }
+        const selectedNamesFromBody = splitGames(body.main_game || body.game || "");
+        if (!serviceIds.length && selectedNamesFromBody.length) {
+          serviceIds = selectedNamesFromBody.map((name) => byName.get(name)?.id).filter(Boolean).map(String);
+        }
+        serviceIds = [...new Set(serviceIds.filter((id) => byId.has(String(id))))];
+        if (!serviceIds.length) return json(res, 400, { ok: false, message: "请至少选择一个可接游戏", field: "main_game" });
+        const selectedServices = serviceIds.map((id) => byId.get(String(id))).filter(Boolean);
+        const mainGame = selectedServices.map((s) => s.name || s.title).filter(Boolean).join("、");
+        const serviceTypes = parseServiceTypes(body.service_type || body.serviceType || body.service_types || body.serviceTypes, { fallbackPlayWhenGame: false });
+        if (!serviceTypes.length) {
+          return json(res, 400, { ok: false, message: "请至少选择一种可提供服务（陪玩服务 / 陪聊服务）", field: "service_type" });
+        }
+        const levelBundle = await resolveLevelBundle(companion || {});
+        const min = money(levelBundle.minPrice);
+        const max = money(levelBundle.maxPrice);
+        if (!levelBundle.level) return json(res, 400, { ok: false, message: "当前账号尚未设置等级，无法保存单价，请联系后台", field: "price" });
+        let gamePricesInput = body.game_prices;
+        if (typeof gamePricesInput === "string") {
+          try { gamePricesInput = JSON.parse(gamePricesInput); } catch { gamePricesInput = {}; }
+        }
+        if (!gamePricesInput || typeof gamePricesInput !== "object") gamePricesInput = {};
+        const nextGamePrices = {};
+        for (const svc of selectedServices) {
+          const id = String(svc.id);
+          const name = String(svc.name || svc.title || "").trim();
+          const rawG = gamePricesInput[id] != null
+            ? String(gamePricesInput[id]).trim()
+            : gamePricesInput[name] != null
+              ? String(gamePricesInput[name]).trim()
+              : "";
+          if (!rawG) return json(res, 400, { ok: false, message: `请填写 ${name} 的价格`, field: "price" });
+          if (!/^\d+(\.\d{1,2})?$/.test(rawG)) {
+            return json(res, 400, { ok: false, message: `${name} 单价只能输入有效数字，最多保留 2 位小数`, field: "price" });
+          }
+          const pv = roundMoney(rawG);
+          if (pv < min || (!levelBundle.maxPlus && pv > max)) {
+            return json(res, 400, { ok: false, message: `${name} 单价必须在 RM${min}–RM${max}${levelBundle.maxPlus ? "+" : ""} 之间`, field: "price" });
+          }
+          nextGamePrices[id] = pv;
+          if (name) nextGamePrices[name] = pv;
+        }
+        const firstId = serviceIds[0];
+        const firstName = selectedServices[0]?.name || selectedServices[0]?.title || "";
+        const priceValue = nextGamePrices[firstId] != null ? nextGamePrices[firstId] : nextGamePrices[firstName];
+        const keptGameId = String(body.game_id || companion.game_id || "").trim();
+        let tagsForWrite = stripGamePricesMarker(String(companion.tags || ""));
+        tagsForWrite = writeGamePricesMarker(tagsForWrite, nextGamePrices);
+        const patch = {
+          game: mainGame,
+          service_type: serviceTypes.join(","),
+          service_ids: serviceIds,
+          price: priceValue != null ? priceValue : money(companion.price),
+          game_prices: nextGamePrices,
+          game_rank: String(body.rank || body.game_rank || companion.game_rank || ""),
+          position: String(body.position || companion.position || ""),
+          tags: tagsForWrite,
+          updated_at: nowIso(),
+        };
+        if (keptGameId) patch.game_id = keptGameId;
+        await patchCompanionProfile(`?user_id=eq.${encodeURIComponent(auth.profile.id)}`, patch);
+        try {
+          await syncCompanionServicesFromGamePrices({
+            companionId: auth.profile.id,
+            companion: { ...companion, user_id: auth.profile.id, level_id: companion?.level_id },
+            gamePrices: nextGamePrices,
+            selectedServices,
+            source: "companion_custom",
+          });
+        } catch (syncErr) {
+          if (!isMissingRelation(syncErr)) console.warn("[companion/services] companion_services sync", syncErr?.message || syncErr);
+        }
+        return json(res, 200, {
+          ok: true,
+          message: "服务价格已保存",
+          gamePrices: nextGamePrices,
+          price: patch.price,
+        });
+      }
+
       const nickname = String(body.nickname || "").trim();
       const ageNum = body.age === "" || body.age == null ? null : Number(body.age);
       const gender = String(body.gender || "").trim();
@@ -4998,6 +5070,54 @@ return json(res, 200, {
       if (!["男", "女", "不公开"].includes(gender)) return json(res, 400, { ok: false, message: "请选择性别", field: "gender" });
       if (!region) return json(res, 400, { ok: false, message: "请填写地区", field: "region" });
       if (contactProvided && !contact) return json(res, 400, { ok: false, message: "请填写联系方式", field: "contact_phone" });
+      if (body.public_profile_only === true || body.public_profile_only === "true" || body.public_profile_only === 1) {
+        if (!companion?.id) return json(res, 400, { ok: false, message: "请先完成陪玩申请" });
+        const publicTags = String(body.public_tags || body.tags || "").trim();
+        const galleryKeep = (String(companion.tags || "").match(/\[\[MCJ_GALLERY:[\s\S]*?\]\]/) || [])[0] || "";
+        let tagsForWrite = publicTags || stripGamePricesMarker(String(companion.tags || "")).replace(/\[\[MCJ_GALLERY:[\s\S]*?\]\]/g, "").trim();
+        if (galleryKeep && tagsForWrite.indexOf(galleryKeep) === -1) tagsForWrite = `${tagsForWrite}${tagsForWrite ? "," : ""}${galleryKeep}`;
+        tagsForWrite = writeGamePricesMarker(tagsForWrite, readGamePrices(companion || {}));
+        let voiceTypeValue = "";
+        try {
+          voiceTypeValue = await normalizeSelectedVoiceTypes(
+            body.voice_type != null || body.voiceType != null
+              ? body.voice_type || body.voiceType
+              : companion.voice_type || "",
+            { required: true }
+          );
+        } catch (voiceErr) {
+          return json(res, voiceErr.status || 400, {
+            ok: false,
+            message: voiceErr.message || "请选择声线",
+            field: voiceErr.field || "voice_type",
+          });
+        }
+        const profilePatch = {
+          nickname,
+          description: String(body.bio || body.description || ""),
+          voice_type: voiceTypeValue,
+          age: ageNum,
+          gender,
+          region,
+          tags: tagsForWrite,
+          updated_at: nowIso(),
+        };
+        if (contactProvided) profilePatch.contact_phone = contact;
+        await patchCompanionProfile(`?user_id=eq.${encodeURIComponent(auth.profile.id)}`, profilePatch);
+        try {
+          await supabaseJson(restUrl("profiles", `?id=eq.${encodeURIComponent(auth.profile.id)}`), {
+            method: "PATCH",
+            headers: serviceHeaders(),
+            body: JSON.stringify({
+              display_name: nickname,
+              ...(contactProvided ? { phone: contact } : {}),
+            }),
+          });
+        } catch {
+          /* display name mirror is optional */
+        }
+        return json(res, 200, { ok: true, message: "公开资料已保存" });
+      }
       if (!gameId) return json(res, 400, { ok: false, message: "请填写游戏 ID", field: "game_id" });
 
       const servicesBundle = await loadPublicServices().catch(() => ({ services: [] }));

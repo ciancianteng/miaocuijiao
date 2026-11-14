@@ -8,6 +8,8 @@ import { scheduleRecomputeSoft } from "../_popularity.js";
 import { servicesFromGamePrices, readGamePrices } from "../_game-prices.js";
 import { resolveEffectiveServicePrice } from "../_resolve-effective-service-price.js";
 import { pickServiceStandard, publicStandard, rankForService, readServiceStandards } from "../_service-standard.js";
+import { resolveBillingUnit } from "../_billing-unit.js";
+import { loadPublicServices } from "../platform/services.js";
 import { hasBossRole } from "../_account-roles.js";
 import { allocateOrderNo, resolveCompanionPublicCode } from "../_account-codes.js";
 import {
@@ -150,6 +152,15 @@ async function loadCompanionServicesRaw(companionUserId, companionRow) {
   } catch (e) {
     if (!isMissingRelation(e)) throw e;
   }
+  const catalog = await loadPublicServices().catch(() => ({ services: [] }));
+  const catalogUnitFor = (serviceId, name) => {
+    const hit = (Array.isArray(catalog?.services) ? catalog.services : []).find((item) => {
+      const id = String(item?.id || "");
+      const label = String(item?.name || item?.title || "").trim();
+      return (serviceId && id === String(serviceId)) || (name && label === String(name || "").trim());
+    });
+    return hit?.pricing_unit || hit?.pricingUnit || "";
+  };
   if (rows?.length) {
     return rows.map((r) => {
       const resolved = resolveEffectiveServicePrice({
@@ -166,8 +177,8 @@ async function loadCompanionServicesRaw(companionUserId, companionRow) {
         name: r.service_name || "服务",
         price: money(resolved.price || r.price),
         pricingSource: resolved.source,
-        pricingUnit: r.pricing_unit || "小时",
-        specs: Array.isArray(r.specs) && r.specs.length ? r.specs : defaultSpecs(r.pricing_unit),
+        pricingUnit: resolveBillingUnit(catalogUnitFor(r.service_id, r.service_name), r.pricing_unit),
+        specs: Array.isArray(r.specs) && r.specs.length ? r.specs : defaultSpecs(resolveBillingUnit(catalogUnitFor(r.service_id, r.service_name), r.pricing_unit)),
         requiresGameId: r.requires_game_id !== false,
         customFields: Array.isArray(r.custom_fields) ? r.custom_fields : [],
       };
@@ -189,8 +200,8 @@ async function loadCompanionServicesRaw(companionUserId, companionRow) {
       ...s,
       price: money(resolved.price || s.price),
       pricingSource: resolved.source,
-      pricingUnit: s.pricingUnit || unit,
-      specs: defaultSpecs(unit),
+      pricingUnit: resolveBillingUnit(catalogUnitFor(s.serviceId, s.name), s.pricingUnit, unit),
+      specs: defaultSpecs(resolveBillingUnit(catalogUnitFor(s.serviceId, s.name), s.pricingUnit, unit)),
       requiresGameId: !/语音|陪聊|聊天/i.test(s.name),
       customFields: [],
     };
@@ -199,7 +210,7 @@ async function loadCompanionServicesRaw(companionUserId, companionRow) {
 
 function defaultSpecs(unit) {
   const u = String(unit || "小时");
-  if (/局/.test(u)) {
+  if (/局|per_game/i.test(u)) {
     return [
       { id: "1", label: "1 局", quantity: 1 },
       { id: "3", label: "3 局", quantity: 3 },

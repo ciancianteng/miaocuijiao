@@ -6,6 +6,8 @@ import {
   DEFAULT_ICONS,
   DISPLAY_POSITIONS,
   normalizeServiceRow,
+  normalizeOrderFields,
+  attachServiceMeta,
   readLocalServices,
   readLocalCategories,
   writeLocalCategories,
@@ -152,6 +154,12 @@ function view(row = {}) {
     allowOrder: normalized.allow_order,
     displayPositions: normalized.display_positions,
     display_positions: normalized.display_positions,
+    content: normalized.content || "",
+    requirements: normalized.requirements || "",
+    orderFields: normalized.order_fields || [],
+    order_fields: normalized.order_fields || [],
+    pricingUnit: normalized.pricing_unit || "per_hour",
+    pricing_unit: normalized.pricing_unit || "per_hour",
     sort: normalized.sort,
     sortOrder: normalized.sort,
     createdAt: normalized.created_at,
@@ -169,7 +177,15 @@ function dbPayload(normalized) {
     show_home: normalized.show_home,
     allow_apply: normalized.allow_apply,
     allow_order: normalized.allow_order,
-    display_positions: normalized.display_positions,
+    display_positions: attachServiceMeta(normalized.display_positions, {
+      content: normalized.content,
+      requirements: normalized.requirements,
+      orderFields: normalized.order_fields,
+      pricingUnit: normalized.pricing_unit,
+    }),
+    content: normalized.content || "",
+    requirements: normalized.requirements || "",
+    order_fields: normalized.order_fields || [],
     sort: normalized.sort,
     updated_at: new Date().toISOString(),
   };
@@ -197,6 +213,7 @@ function clean(input = {}, categories = DEFAULT_CATEGORIES) {
   if (!finalPositions.length) {
     throw Object.assign(new Error("请至少勾选一个显示位置。"), { status: 400 });
   }
+  const orderFields = normalizeOrderFields(input.orderFields ?? input.order_fields);
   return normalizeServiceRow({
     id: input.id,
     name,
@@ -208,10 +225,33 @@ function clean(input = {}, categories = DEFAULT_CATEGORIES) {
     allow_apply: truthy(input.allowApply ?? input.allow_apply, true),
     allow_order: truthy(input.allowOrder ?? input.allow_order, true),
     display_positions: finalPositions,
+    content: input.content,
+    requirements: input.requirements,
+    order_fields: orderFields,
+    pricing_unit: input.pricingUnit || input.pricing_unit || "per_hour",
     sort: number(input.sort ?? input.sortOrder ?? input.sort_order, 100),
     created_at: input.createdAt || input.created_at,
     updated_at: new Date().toISOString(),
   });
+}
+
+function isMissingExtraColumn(error) {
+  const text = `${error?.message || ""} ${JSON.stringify(error?.body || "")}`;
+  return /PGRST204|Could not find the '(content|requirements|order_fields)' column|(content|requirements|order_fields).{0,40}does not exist/i.test(text);
+}
+
+function payloadWithoutExtraColumns(dbBody, payload) {
+  const slim = { ...dbBody };
+  delete slim.content;
+  delete slim.requirements;
+  delete slim.order_fields;
+  slim.display_positions = attachServiceMeta(dbBody.display_positions, {
+    content: payload.content,
+    requirements: payload.requirements,
+    orderFields: payload.order_fields,
+    pricingUnit: payload.pricing_unit,
+  });
+  return slim;
 }
 
 async function listCategories() {
@@ -334,12 +374,12 @@ async function saveService(body, categories) {
     throw Object.assign(new Error("数据库未配置，禁止只保存到本地。"), { status: 503 });
   }
 
-  try {
+  async function writeRow(body) {
     if (id) {
       const rows = await supabaseJson(restUrl("services", `?id=eq.${encodeURIComponent(id)}`), {
         method: "PATCH",
         headers: serviceHeaders(),
-        body: JSON.stringify(dbBody),
+        body: JSON.stringify(body),
       });
       const saved = Array.isArray(rows) ? rows[0] : rows;
       if (!saved?.id) {
@@ -350,18 +390,28 @@ async function saveService(body, categories) {
     const rows = await supabaseJson(restUrl("services"), {
       method: "POST",
       headers: serviceHeaders(),
-      body: JSON.stringify({ ...dbBody, created_at: new Date().toISOString() }),
+      body: JSON.stringify({ ...body, created_at: new Date().toISOString() }),
     });
     const saved = Array.isArray(rows) ? rows[0] : rows;
     if (!saved?.id) {
       throw Object.assign(new Error("服务保存失败：数据库未返回新记录。"), { status: 502 });
     }
     return { service: view(saved), source: "supabase" };
+  }
+
+  try {
+    try {
+      return await writeRow(dbBody);
+    } catch (error) {
+      if (!isMissingExtraColumn(error)) throw error;
+      return await writeRow(payloadWithoutExtraColumns(dbBody, payload));
+    }
   } catch (error) {
     if (isMissingTable(error)) {
       throw Object.assign(new Error("services 表未初始化。请先执行 supabase/services.sql。"), { status: 503 });
     }
-    throw error;
+    const message = error?.message || "保存失败";
+    throw Object.assign(new Error(message), { status: error.status || 500, body: error.body });
   }
 }
 

@@ -11,6 +11,8 @@ import {
   isMultiGroupParent,
 } from "./_order-group.js";
 import { resolveOrderUnitPrice } from "./_admin-service-prices.js";
+import { quoteOrder, resolveBillingUnit } from "./_billing-unit.js";
+import { loadPublicServices } from "./platform/services.js";
 import { readLocalLevels } from "./_companion-levels-store.js";
 import { buildServiceSnapshotForCompanion, cleanRank, persistOrderServiceSnapshot } from "./_service-standard.js";
 
@@ -227,9 +229,8 @@ export async function placeMultiOrder(ctx) {
       return { ok: false, status: 400, message: orderable.message || `陪玩不可下单：${companionId}` };
     }
     const cp = orderable.cp;
-    const quantity = Math.max(1, Math.floor(money(line.quantity || 1) || 1));
-    const baseHours = Math.max(0.5, money(line.hours || line.duration || body.hours || 1));
-    const hours = Math.round(baseHours * quantity * 100) / 100;
+    const requestedQuantity = Math.max(1, Math.floor(money(line.quantity || 1) || 1));
+    const requestedHours = money(line.hours || line.duration || body.hours || 1);
     const serviceId = String(line.serviceId || line.service_id || "").trim();
     const gameHint = String(
       line.serviceName ||
@@ -260,6 +261,25 @@ export async function placeMultiOrder(ctx) {
       level,
     });
     let unitPrice = money(resolved.price);
+    const catalog = await loadPublicServices().catch(() => ({ services: [] }));
+    const catalogHit = (Array.isArray(catalog?.services) ? catalog.services : []).find((item) => {
+      const id = String(item?.id || "");
+      const name = String(item?.name || item?.title || "").trim();
+      return (serviceId && id === serviceId) || (gameHint && name === gameHint);
+    });
+    const billingUnit = resolveBillingUnit(
+      catalogHit?.pricing_unit || catalogHit?.pricingUnit,
+      resolved.serviceRow?.pricing_unit || resolved.serviceRow?.pricingUnit,
+      cp?.pricing_unit
+    );
+    const quote = quoteOrder({
+      unit: billingUnit,
+      unitPrice,
+      quantity: requestedQuantity,
+      hours: requestedHours || 1,
+    });
+    const quantity = quote.quantity;
+    const hours = quote.hours;
     if (!(unitPrice > 0)) {
       return {
         ok: false,
@@ -270,7 +290,7 @@ export async function placeMultiOrder(ctx) {
     }
     // Allow explicit amount override only when it matches server unit*hours (±0.05) OR
     // client sends amount that equals server calc — never trust bare client amount alone.
-    let totalAmount = Math.round(unitPrice * hours * 100) / 100;
+    let totalAmount = quote.totalAmount;
     const clientTotal = money(line.totalAmount || line.total_amount || line.amount);
     const clientUnit = money(line.unitPrice || line.unit_price || line.price);
     if (clientUnit > 0 && Math.abs(clientUnit - unitPrice) > 0.05) {
@@ -334,6 +354,7 @@ export async function placeMultiOrder(ctx) {
       quantity,
       unitPrice,
       totalAmount,
+      billingUnit: quote.billingUnit,
       game: serviceType,
     });
   }
@@ -435,13 +456,14 @@ export async function placeMultiOrder(ctx) {
     for (let i = 0; i < prepared.length; i++) {
       const line = prepared[i];
       const childNo = await nextOrderNo();
-      const title = `${line.serviceType} · ${line.companionName || line.companionId} · ${line.hours}小时`;
+      const title = `${line.serviceType} · ${line.companionName || line.companionId} · ${line.billingUnit === "per_game" ? line.quantity + "局" : line.hours + "小时"}`;
       const description = [
         `服务：${line.serviceType}`,
         line.serviceRowId ? `service_row_id：${line.serviceRowId}` : "",
         line.serviceId ? `service_id：${line.serviceId}` : "",
         `单价快照：${line.unitPrice}`,
-        `时长：${line.hours}`,
+        `计费单位：${line.billingUnit || "per_hour"}`,
+        line.billingUnit === "per_game" ? `局数：${line.quantity}` : `时长：${line.hours}`,
         `小计快照：${line.totalAmount}`,
         line.gameId ? `游戏ID：${line.gameId}` : "",
         `付款方式：${paymentMethod}`,
@@ -472,6 +494,7 @@ export async function placeMultiOrder(ctx) {
         game_id_value: line.gameId,
         notes: description,
         quantity: line.quantity,
+        pricing_unit: line.billingUnit || "per_hour",
         voice_mode: voiceMode,
       };
       let child;

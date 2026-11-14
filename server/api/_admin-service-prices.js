@@ -354,7 +354,8 @@ export async function syncCompanionServicesFromGamePrices({
       const sid = String(svc?.id || svc?.serviceId || svc?.service_id || "").trim();
       const name = String(svc?.name || svc?.title || svc?.serviceName || "").trim();
       const unitPrice = money(prices[sid] != null ? prices[sid] : prices[name]);
-      return { serviceId: sid, serviceName: name, unitPrice };
+      const pricingUnit = /per_game|局/.test(String(svc?.pricing_unit || svc?.pricingUnit || "")) ? "per_game" : "";
+      return { serviceId: sid, serviceName: name, unitPrice, pricingUnit };
     })
     .filter((x) => x.unitPrice > 0 && (x.serviceId || x.serviceName));
   if (!items.length) return { written: [], mode: "noop" };
@@ -380,7 +381,7 @@ export async function syncCompanionServicesFromGamePrices({
       service_id: item.serviceId || null,
       service_name: item.serviceName || "服务",
       price: money(item.unitPrice),
-      pricing_unit: "小时",
+      pricing_unit: item.pricingUnit === "per_game" ? "per_game" : "小时",
       enabled: true,
       review_status: "approved",
       source: source || "companion_custom",
@@ -398,6 +399,7 @@ export async function syncCompanionServicesFromGamePrices({
           source: body.source,
           service_name: body.service_name,
           service_id: body.service_id,
+          ...(item.pricingUnit === "per_game" ? { pricing_unit: "per_game" } : {}),
           level_id_at_price: body.level_id_at_price,
           updated_at: body.updated_at,
         }),

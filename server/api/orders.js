@@ -5,6 +5,8 @@ import { resolvePlatformCommission } from "./_commission-rates.js";
 import { readLocalLevels } from "./_companion-levels-store.js";
 import { priceForGame } from "./_game-prices.js";
 import { resolveOrderUnitPrice } from "./_admin-service-prices.js";
+import { describeOrderBilling, quoteOrder, resolveBillingUnit } from "./_billing-unit.js";
+import { loadPublicServices } from "./platform/services.js";
 import {
   buildServiceSnapshot,
   buildServiceSnapshotForCompanion,
@@ -573,6 +575,7 @@ export function viewOrder(row = {}) {
       companionConfirm = { key: "awaiting_payment", icon: "pay", label: "待付款/审核", needsReplacement: false };
     }
   }
+  const bill = describeOrderBilling(row);
   return {
     id: row.id,
     parentOrderId: row.parent_order_id || null,
@@ -641,7 +644,16 @@ export function viewOrder(row = {}) {
       return null;
     })(),
 
-    hours: Number(row.hours || 0),
+    hours: bill.billingUnit === "per_game" ? 0 : Number(row.hours || 0),
+    quantity: bill.quantity,
+    pricingUnit: bill.billingUnit,
+    billingUnit: bill.billingUnit,
+    billingStatus: bill.billingStatus,
+    quantityLabel: bill.quantityLabel,
+    duration: bill.durationLabel,
+    durationLabel: bill.durationLabel,
+    unitLabel: bill.unitLabel,
+    endLabel: bill.endLabel,
     unitPrice: money(row.unit_price),
     totalAmount: money(row.total_amount),
     amount: money(row.total_amount),
@@ -1435,9 +1447,11 @@ export default async function handler(req, res) {
           });
         }
       }
-      const quantity = Math.max(1, Math.floor(money(order.quantity || 1) || 1));
-      const baseHours = Math.max(0.5, money(order.hours || order.duration || 1));
-      const hours = Math.round(baseHours * quantity * 100) / 100;
+      const requestedQuantity = Math.max(1, Math.floor(money(order.quantity || 1) || 1));
+      const requestedHours = money(order.hours || order.duration || 1);
+      let quantity = requestedQuantity;
+      let hours = Math.round(Math.max(0.5, requestedHours || 1) * requestedQuantity * 100) / 100;
+      let billingUnit = "per_hour";
       const serviceType = String(order.serviceType || order.service_type || order.serviceName || order.service || "陪玩").trim() || "陪玩";
       const companionName = String(order.companionName || order.companion_name || "").trim();
       const gameId = String(order.gameId || order.game_id || order.gameIdValue || order.game_id_value || "").trim();
@@ -1517,7 +1531,27 @@ export default async function handler(req, res) {
             message: "该陪玩所选服务尚未设置单价，且等级无基础价格，无法下单。",
           });
         }
-        totalAmount = Math.round(unitPrice * hours * 100) / 100;
+        const catalog = await loadPublicServices().catch(() => ({ services: [] }));
+        const catalogHit = (Array.isArray(catalog?.services) ? catalog.services : []).find((item) => {
+          const id = String(item?.id || "");
+          const name = String(item?.name || item?.title || "").trim();
+          return (serviceId && id === serviceId) || (gameHint && name === gameHint);
+        });
+        billingUnit = resolveBillingUnit(
+          catalogHit?.pricing_unit || catalogHit?.pricingUnit,
+          resolved.serviceRow?.pricing_unit || resolved.serviceRow?.pricingUnit,
+          cp?.pricing_unit
+        );
+        const quote = quoteOrder({
+          unit: billingUnit,
+          unitPrice,
+          quantity: requestedQuantity,
+          hours: requestedHours || 1,
+        });
+        quantity = quote.quantity;
+        hours = quote.hours;
+        billingUnit = quote.billingUnit;
+        totalAmount = quote.totalAmount;
         const clientUnit = money(order.unit_price || order.unitPrice || order.price || order.budget || 0);
         const clientTotal = money(order.total_amount || order.totalAmount);
         if (clientUnit > 0 && Math.abs(clientUnit - unitPrice) > 0.05) {
@@ -1578,9 +1612,10 @@ export default async function handler(req, res) {
       const useWallet = action === "place_order" && isWalletMethod(paymentMethod);
       // 统一支付链路：下单只创建待付款订单，真正支付在 payment-confirm 完成。
       let status = "awaiting_payment";
+      const amountWord = billingUnit === "per_game" ? `${quantity}局` : `${hours}小时`;
       const title = companionName
-        ? `${serviceType} · ${companionName} · ${hours}小时`
-        : String(order.title || `${serviceType} · ${hours}小时`);
+        ? `${serviceType} · ${companionName} · ${amountWord}`
+        : String(order.title || `${serviceType} · ${amountWord}`);
       const descriptionParts =
         action === "place_order"
           ? [
@@ -1589,6 +1624,8 @@ export default async function handler(req, res) {
               couponCode ? `优惠券：${couponCode}` : "",
               `付款方式：${paymentMethod}`,
               companionName ? `指定陪玩：${companionName}` : "",
+              `计费单位：${billingUnit}`,
+              billingUnit === "per_game" ? `局数：${quantity}` : `时长：${hours}`,
             ].filter(Boolean)
           : [
               String(order.description || order.requirements || order.service_content || notes || ""),
@@ -1662,7 +1699,14 @@ export default async function handler(req, res) {
         game_id_value: gameId || String(order.game_id || "").trim(),
         notes: notes || descriptionParts.join("\n"),
         quantity,
-        pricing_unit: String(order.pricingUnit || order.pricing_unit || "小时"),
+        pricing_unit: billingUnit,
+        price_snapshot: {
+          billingUnit,
+          unitPrice,
+          quantity,
+          hours,
+          totalAmount,
+        },
         voice_mode: voiceMode,
       };
       if (productCommissionSnapshot != null) {
@@ -1682,8 +1726,18 @@ export default async function handler(req, res) {
       }
       if (serviceSnapshot) enriched.service_snapshot = serviceSnapshot;
       let rows;
+      let insertPayload = { ...enriched };
       try {
-        rows = await supabaseJson(restUrl(TABLE), { method: "POST", headers: serviceHeaders(), body: JSON.stringify(enriched) });
+        for (let attempt = 0; attempt < 8; attempt++) {
+          try {
+            rows = await supabaseJson(restUrl(TABLE), { method: "POST", headers: serviceHeaders(), body: JSON.stringify(insertPayload) });
+            break;
+          } catch (insertErr) {
+            const missing = String(insertErr.message || "").match(/Could not find the '([^']+)' column/i);
+            if (!missing || !Object.prototype.hasOwnProperty.call(insertPayload, missing[1])) throw insertErr;
+            delete insertPayload[missing[1]];
+          }
+        }
       } catch (insertErr) {
         const msg = String(insertErr.message || "");
         if (idempotencyKey && /duplicate|unique|idempotency/i.test(msg)) {

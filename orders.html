@@ -918,8 +918,8 @@
             '<div class="od-module"><h3>服务信息</h3><div class="od-fields">'+
               field('游戏/服务',esc(isMultiParent(o)?('多人订单 · '+childrenOf(o.id).length+'位陪玩'):(o.serviceType||o.serviceName||o.game||o.title||'-')))+
               field('游戏 ID',esc(o.gameId||o.game_id||'-'))+
-              field('时长',esc((o.hours!=null?o.hours:'-')+' 小时'))+
-              field('单价',esc(money(o.unitPrice)+'/小时'))+
+              field(o.billingUnit==='per_game'?'购买局数':'时长',esc(o.billingUnit==='per_game'?(o.quantityLabel||((o.quantity||1)+'局')):((o.hours!=null?o.hours:'-')+' 小时')))+
+              field(o.billingUnit==='per_game'?'每局单价':'单价',esc(money(o.unitPrice)+(o.billingUnit==='per_game'?'/局':'/小时')))+
               field('负责客服',esc(serviceName(o)))+
               field('支付方式',esc(o.paymentMethod||o.payment_method||'-'))+
               field('语音方式',esc(voiceModeLabel(o)))+
@@ -1037,9 +1037,9 @@
               :(left
                 ?('陪玩已申请完成，请确认本次服务。若订单没有问题，系统将在 '+left+' 后自动确认完成。')
                 :'陪玩已申请完成，请确认本次服务。');
-            html='<div class="status-panel"><p><strong>等待您确认完成</strong></p><p>当前陪玩：'+esc(companionName(o))+'</p><p>开始时间：'+esc(date(o.startedAt||o.started_at))+'</p><p>订单时长：'+esc(o.hours||'-')+' 小时</p><p class="order-hint">'+esc(hint)+'</p><div class="status-actions"><button class="order-btn primary" data-action="confirm_completion" data-id="'+esc(o.id)+'">确认完成订单</button><button class="order-btn" data-action="report_order_problem" data-id="'+esc(o.id)+'">订单有问题，联系客服</button></div></div>';
+            html='<div class="status-panel"><p><strong>等待您确认完成</strong></p><p>当前陪玩：'+esc(companionName(o))+'</p><p>开始时间：'+esc(date(o.startedAt||o.started_at))+'</p><p>'+(o.billingUnit==='per_game'?('购买局数：'+esc(o.quantityLabel||((o.quantity||1)+'局'))+'，完成局数即可结束'):('订单时长：'+esc(o.hours||'-')+' 小时'))+'</p><p class="order-hint">'+esc(hint)+'</p><div class="status-actions"><button class="order-btn primary" data-action="confirm_completion" data-id="'+esc(o.id)+'">确认完成订单</button><button class="order-btn" data-action="report_order_problem" data-id="'+esc(o.id)+'">订单有问题，联系客服</button></div></div>';
           }else{
-            html='<div class="status-panel"><p>当前陪玩：'+esc(isMultiParent(o)?'组合订单（见左侧子订单）':companionName(o))+'</p><p>开始时间：'+esc(date(o.startedAt||o.started_at))+'</p><p>订单时长：'+esc(o.hours||'-')+' 小时</p><p class="order-hint">服务进行中。陪玩申请完成后，这里会出现「确认完成订单」。</p><div class="status-actions"><a class="order-btn primary" href="support.html?order='+encodeURIComponent(o.id)+'">联系客服</a></div></div>';
+            html='<div class="status-panel"><p>当前陪玩：'+esc(isMultiParent(o)?'组合订单（见左侧子订单）':companionName(o))+'</p><p>开始时间：'+esc(date(o.startedAt||o.started_at))+'</p><p>'+(o.billingUnit==='per_game'?('购买局数：'+esc(o.quantityLabel||((o.quantity||1)+'局'))+'，完成局数即可结束'):('订单时长：'+esc(o.hours||'-')+' 小时'))+'</p><p class="order-hint">服务进行中。陪玩申请完成后，这里会出现「确认完成订单」。</p><div class="status-actions"><a class="order-btn primary" href="support.html?order='+encodeURIComponent(o.id)+'">联系客服</a></div></div>';
           }
         }else if(o.status==='completed'||o.status==='reviewed'||o.reviewed){
           html='<div class="status-panel"><p>完成时间：'+esc(date(o.completedAt||o.completed_at))+'</p>';
