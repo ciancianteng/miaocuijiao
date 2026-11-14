@@ -1,9 +1,9 @@
 /**
  * Per-catalog-service × LV1–LV5 markup (加价额度) SoT.
  *
- * Final sell price = catalog services.default_price + (markupOn ? markup_allowance : 0)
+ * Final sell price = catalog services.default_price + markup_allowance for that LV.
  * markup_allowance lives on service_level_prices (settings matrix as read fallback).
- * Companion only persists markupOn; never types a custom amount.
+ * Companion cannot change admin amounts; historical orders keep their snapshot unit_price.
  * base/min/max on the same table are NOT the markup.
  */
 import { LOCKED_MATRIX_LEVEL_IDS, readServiceLevelPrices } from "./_service-level-prices.js";
@@ -54,21 +54,20 @@ export function markupFor(map, serviceId, levelId) {
 export function quoteMarkupPrice({
   serviceRow = null,
   levelId = "",
-  markupOn = false,
   markupMap = null,
 } = {}) {
   const basePrice = catalogBasePrice(serviceRow || {});
   const pack = markupFor(markupMap, serviceRow?.id || serviceRow?.serviceId, levelId);
-  const on = parseMarkupOn(markupOn) && pack.markupAllowance > 0;
-  const finalPrice = computeFinalPrice(basePrice, pack.markupAllowance, on);
+  const applied = pack.markupAllowance > 0;
+  const finalPrice = computeFinalPrice(basePrice, pack.markupAllowance, true);
   return {
     basePrice,
     markupAllowance: pack.markupAllowance,
     markupConfigured: pack.configured,
     markupSource: pack.source,
-    markupOn: on,
+    markupOn: applied,
     finalPrice,
-    source: on ? "catalog_plus_markup" : "catalog_base",
+    source: applied ? "catalog_plus_markup" : "catalog_base",
     blocked: !(basePrice > 0),
     message: basePrice > 0 ? "" : "该服务尚未设置基础价格，无法报价。",
   };

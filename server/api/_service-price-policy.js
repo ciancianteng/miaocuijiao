@@ -59,7 +59,6 @@ export function quoteVisibleService({ row, policy, offer, fallbackPrice = 0, lev
   const quoted = quoteMarkupPrice({
     serviceRow: row,
     levelId: levelId || offer?.levelId || offer?.level_id,
-    markupOn: offer?.markupOn,
     markupMap,
   });
   let price = quoted.finalPrice;

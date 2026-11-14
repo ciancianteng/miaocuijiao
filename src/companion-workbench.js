@@ -2868,62 +2868,116 @@
       mountDirectBossCard();
     }
   }
+  function offerPriceSig(res){
+    return ((res&&res.catalog&&res.catalog.services)||[]).map(function(s){
+      return [s.id,s.basePrice,s.markupAllowance,s.finalPrice,s.levelId,s.levelName].join(':');
+    }).join('|');
+  }
+  function paintOfferManager(host,res){
+    var selected={};
+    (res.offers||[]).forEach(function(item){selected[item.kind+':'+item.id]=item;});
+    var catalog=((res.catalog&&res.catalog.services)||[]).map(function(item){return Object.assign({kind:'service'},item);});
+    if(!catalog.length){
+      host.innerHTML='<p class="pw-note">平台还没有可提供的服务。</p>';
+      return;
+    }
+    var ordered=window.MCJServicePinyinOrder&&window.MCJServicePinyinOrder.sortByPinyin
+      ? window.MCJServicePinyinOrder.sortByPinyin(catalog)
+      : catalog.map(function(item,index){return {item:item,index:index};});
+    var openIds={};
+    host.querySelectorAll('[data-offer-card].is-open').forEach(function(card){
+      openIds[card.getAttribute('data-id')]='1';
+    });
+    host.innerHTML='<div class="pw-svc-toolbar"><button type="button" class="pw-btn" data-offers-close-all>一键关闭全部服务</button></div><div class="pw-my-service-list">'+ordered.map(function(entry){
+      var item=entry.item;
+      var key=item.kind+':'+item.id;
+      var saved=selected[key]||null;
+      var policy=item.policy||{};
+      var unit=policy.unit||'局';
+      var requirement=String(policy.requirements||'').trim();
+      var accepting=!saved||saved.accepting!==false;
+      var basePrice=item.basePrice!=null?item.basePrice:(item.defaultPrice!=null?item.defaultPrice:item.price);
+      var markup=Number(item.markupAllowance!=null?item.markupAllowance:0)||0;
+      var finalPrice=item.finalPrice!=null?item.finalPrice:(Number(basePrice||0)+markup);
+      var levelLabel=item.levelName||(item.levelId?String(item.levelId).toUpperCase():'未设置等级');
+      var headPrice=String(finalPrice||0)+' 猫粮 / '+unit;
+      var opened=!!openIds[item.id];
+      return '<article class="pw-my-service pw-svc'+(opened?' is-open':'')+'" data-offer-card data-kind="service" data-id="'+esc(item.id)+'" data-offer-sort="'+esc(entry.index)+'" data-saved="'+(saved?'1':'0')+'" data-accepting="'+(accepting?'1':'0')+'">'+
+        '<div class="pw-svc-head">'+
+          '<button type="button" class="pw-svc-fold" data-offer-fold aria-expanded="'+(opened?'true':'false')+'">'+
+            '<span class="pw-svc-copy"><b class="pw-svc-name">'+esc(item.name||'服务')+'</b><span class="pw-svc-cat">'+esc(item.category||'服务')+'</span></span>'+
+            '<strong class="pw-svc-quote" data-offer-quote>'+esc(headPrice)+'</strong>'+
+            '<i class="pw-svc-chevron" aria-hidden="true"></i>'+
+          '</button>'+
+          '<button type="button" class="pw-offer-switch'+(accepting?' is-on':'')+'" data-offer-toggle aria-label="'+(accepting?'开':'关')+'" aria-pressed="'+(accepting?'true':'false')+'"><span>关</span><span>开</span><i></i></button>'+
+        '</div>'+
+        '<div class="pw-svc-panel"><div class="pw-svc-panel-inner">'+
+          '<p class="pw-my-service-status">'+(accepting?'● 接单中':'● 已关闭')+'</p>'+
+          '<div class="pw-svc-row"><span>游戏名称</span><strong data-offer-name>'+esc(item.name||'-')+'</strong></div>'+
+          '<div class="pw-svc-row"><span>当前等级</span><strong data-offer-level>'+esc(levelLabel)+'</strong></div>'+
+          '<div class="pw-svc-row"><span>基础单价</span><strong data-offer-base>'+esc(basePrice!=null&&basePrice!==''?basePrice:'未设置')+' 猫粮</strong></div>'+
+          '<div class="pw-svc-row"><span>等级加价</span><strong data-offer-markup>'+esc(markup)+' 猫粮</strong></div>'+
+          '<div class="pw-svc-row"><span>最终单价</span><strong data-offer-final>'+esc(finalPrice)+' 猫粮 / '+esc(unit)+'</strong></div>'+
+          serviceDetailsHtml({layout:'requirements',requirementsOpen:false,requirements:requirement})+
+        '</div></div></article>';
+    }).join('')+'</div>';
+  }
+  function patchOfferPrices(host,res){
+    var byId={};
+    ((res.catalog&&res.catalog.services)||[]).forEach(function(s){byId[String(s.id)]=s;});
+    var cards=host.querySelectorAll('[data-offer-card]');
+    if(!cards.length){paintOfferManager(host,res);return;}
+    cards.forEach(function(card){
+      var item=byId[card.getAttribute('data-id')];
+      if(!item)return;
+      var unit=(item.policy&&item.policy.unit)||'局';
+      var basePrice=item.basePrice!=null?item.basePrice:item.price;
+      var markup=Number(item.markupAllowance!=null?item.markupAllowance:0)||0;
+      var finalPrice=item.finalPrice!=null?item.finalPrice:(Number(basePrice||0)+markup);
+      var levelLabel=item.levelName||(item.levelId?String(item.levelId).toUpperCase():'未设置等级');
+      var quote=card.querySelector('[data-offer-quote]');
+      var nameEl=card.querySelector('[data-offer-name]');
+      var levelEl=card.querySelector('[data-offer-level]');
+      var baseEl=card.querySelector('[data-offer-base]');
+      var markupEl=card.querySelector('[data-offer-markup]');
+      var finalEl=card.querySelector('[data-offer-final]');
+      if(quote)quote.textContent=String(finalPrice||0)+' 猫粮 / '+unit;
+      if(nameEl)nameEl.textContent=item.name||'-';
+      if(levelEl)levelEl.textContent=levelLabel;
+      if(baseEl)baseEl.textContent=(basePrice!=null&&basePrice!==''?basePrice:'未设置')+' 猫粮';
+      if(markupEl)markupEl.textContent=markup+' 猫粮';
+      if(finalEl)finalEl.textContent=finalPrice+' 猫粮 / '+unit;
+    });
+  }
+  function refreshOfferPrices(host){
+    if(!host||!host.isConnected)return;
+    api('my_offers').then(function(res){
+      var next=offerPriceSig(res);
+      if(host.dataset.priceSig===next)return;
+      host.dataset.priceSig=next;
+      if(host.querySelector('[data-offer-card]'))patchOfferPrices(host,res);
+      else paintOfferManager(host,res);
+    }).catch(function(){});
+  }
   function mountOfferManager(){
     var host=document.getElementById('pwOfferManager');
-    if(!host||host.dataset.loaded==='1')return;
+    if(!host)return;
+    if(host.dataset.pollBound!=='1'){
+      host.dataset.pollBound='1';
+      var timer=setInterval(function(){
+        if(!host.isConnected){clearInterval(timer);return;}
+        refreshOfferPrices(host);
+      },8000);
+      document.addEventListener('visibilitychange',function visOffers(){
+        if(!host.isConnected){document.removeEventListener('visibilitychange',visOffers);return;}
+        if(!document.hidden)refreshOfferPrices(host);
+      });
+    }
+    if(host.dataset.loaded==='1')return;
     host.dataset.loaded='1';
     api('my_offers').then(function(res){
-      var selected={};
-      (res.offers||[]).forEach(function(item){selected[item.kind+':'+item.id]=item;});
-      var catalog=((res.catalog&&res.catalog.services)||[]).map(function(item){return Object.assign({kind:'service'},item);});
-      if(!catalog.length){
-        host.innerHTML='<p class="pw-note">平台还没有可提供的服务。</p>';
-        return;
-      }
-      var ordered=window.MCJServicePinyinOrder&&window.MCJServicePinyinOrder.sortByPinyin
-        ? window.MCJServicePinyinOrder.sortByPinyin(catalog)
-        : catalog.map(function(item,index){return {item:item,index:index};});
-      host.innerHTML='<div class="pw-svc-toolbar"><button type="button" class="pw-btn" data-offers-close-all>一键关闭全部服务</button></div><div class="pw-my-service-list">'+ordered.map(function(entry){
-        var item=entry.item;
-        var key=item.kind+':'+item.id;
-        var saved=selected[key]||null;
-        var policy=item.policy||{};
-        var unit=policy.unit||'局';
-        var requirement=String(policy.requirements||'').trim();
-        var accepting=!saved||saved.accepting!==false;
-        var basePrice=item.basePrice!=null?item.basePrice:(item.defaultPrice!=null?item.defaultPrice:item.price);
-        var markup=Number(item.markupAllowance!=null?item.markupAllowance:0)||0;
-        var markupOn=!!(saved&&saved.markupOn)||!!item.markupOn;
-        if(!(markup>0))markupOn=false;
-        var finalPrice=item.finalPrice!=null?item.finalPrice:(Number(basePrice||0)+(markupOn?markup:0));
-        var levelLabel=item.levelName||item.levelId||'未设置等级';
-        var markupHint=item.markupConfigured?('当前等级允许 +'+markup+' 猫粮'):'当前游戏该等级尚未配置加价（+0）';
-        var headPrice=String(finalPrice||0)+' 猫粮 / '+unit;
-        return '<article class="pw-my-service pw-svc" data-offer-card data-kind="service" data-id="'+esc(item.id)+'" data-offer-sort="'+esc(entry.index)+'" data-saved="'+(saved?'1':'0')+'" data-accepting="'+(accepting?'1':'0')+'" data-markup-on="'+(markupOn?'1':'0')+'" data-markup-cap="'+esc(markup)+'">'+
-          '<div class="pw-svc-head">'+
-            '<button type="button" class="pw-svc-fold" data-offer-fold aria-expanded="false">'+
-              '<span class="pw-svc-copy"><b class="pw-svc-name">'+esc(item.name||'服务')+'</b><span class="pw-svc-cat">'+esc(item.category||'服务')+'</span></span>'+
-              '<strong class="pw-svc-quote">'+esc(headPrice)+'</strong>'+
-              '<i class="pw-svc-chevron" aria-hidden="true"></i>'+
-            '</button>'+
-            '<button type="button" class="pw-offer-switch'+(accepting?' is-on':'')+'" data-offer-toggle aria-label="'+(accepting?'开':'关')+'" aria-pressed="'+(accepting?'true':'false')+'"><span>关</span><span>开</span><i></i></button>'+
-          '</div>'+
-          '<div class="pw-svc-panel"><div class="pw-svc-panel-inner">'+
-            '<p class="pw-my-service-status">'+(accepting?'● 接单中':'● 已关闭')+'</p>'+
-            '<div class="pw-svc-row"><span>游戏名称</span><strong>'+esc(item.name||'-')+'</strong></div>'+
-            '<div class="pw-svc-row"><span>当前游戏等级</span><strong>'+esc(levelLabel)+'</strong></div>'+
-            '<div class="pw-svc-row"><span>服务基础价格</span><strong>'+esc(basePrice!=null&&basePrice!==''?basePrice:'未设置')+' 猫粮</strong></div>'+
-            '<div class="pw-svc-row"><span>当前等级允许加价</span><strong>'+esc(markupHint)+'</strong></div>'+
-            '<div class="pw-svc-switch"><span>是否加价</span>'+
-              (markup>0
-                ? '<button type="button" class="pw-offer-switch'+(markupOn?' is-on':'')+'" data-markup-toggle aria-pressed="'+(markupOn?'true':'false')+'"><span>+0</span><span>+'+esc(markup)+'</span><i></i></button>'
-                : '<strong>不可加价</strong>')+
-            '</div>'+
-            '<div class="pw-svc-row"><span>最终展示价格</span><strong data-offer-final>'+esc(finalPrice)+' 猫粮 / '+esc(unit)+'</strong></div>'+
-            '<button class="pw-btn" type="button" data-offer-save>保存加价选择</button>'+
-            serviceDetailsHtml({layout:'requirements',requirementsOpen:false,requirements:requirement})+
-          '</div></div></article>';
-      }).join('')+'</div>';
+      host.dataset.priceSig=offerPriceSig(res);
+      paintOfferManager(host,res);
     }).catch(function(err){
       host.dataset.loaded='';
       host.innerHTML='<p class="pw-note">'+esc(err.message||'读取失败')+'</p>';
@@ -3052,7 +3106,7 @@
     else if(state.route==='settings')body=settingsHtml();
     else if(state.route==='popularity')body=popularityHtml();
     else if(state.route==='profile')body=profileHtml();
-    else if(state.route==='services')body='<section class="pw-my-services"><h2>我的服务</h2><p class="pw-note">每个游戏按你的陪玩等级显示允许加价；你只能选择是否加价。保存后刷新回读。已创建订单的成交价不会因之后改加价而变化。</p><div id="pwOfferManager"><p class="pw-note">正在读取平台服务…</p></div></section>';
+    else if(state.route==='services')body='<section class="pw-my-services"><h2>我的服务</h2><p class="pw-note">价格由后台按游戏基础单价 + 你的等级加价自动计算，不能自行修改。管理员改价后本页会自动更新。开关只控制是否接单，不影响历史订单。</p><div id="pwOfferManager"><p class="pw-note">正在读取平台服务…</p></div></section>';
     else if(state.route==='account'||state.route==='mine')body=accountHtml();
     else if(state.route==='gifts')body=giftsHtml();
     else if(state.route==='rules')body=rulesHtml();
@@ -6175,27 +6229,6 @@
       if(!any){toast('没有已开启的服务');return;}
       offerAction=closeAll;
     }
-    var markupBtn=e.target.closest('[data-markup-toggle]');
-    if(markupBtn){
-      var markupCard=markupBtn.closest('[data-offer-card]');
-      if(markupCard){
-        var cap=Number(markupCard.getAttribute('data-markup-cap')||0)||0;
-        if(!(cap>0)){toast('当前等级未配置加价额度');return;}
-        var nextOn=markupCard.getAttribute('data-markup-on')==='1'?'0':'1';
-        markupCard.setAttribute('data-markup-on',nextOn);
-        markupCard.setAttribute('data-touched','1');
-        markupBtn.classList.toggle('is-on',nextOn==='1');
-        markupBtn.setAttribute('aria-pressed',nextOn==='1'?'true':'false');
-        var finalEl=markupCard.querySelector('[data-offer-final]');
-        var quoteEl=markupCard.querySelector('.pw-svc-quote');
-        var baseTxt=markupCard.querySelectorAll('.pw-svc-row strong')[2];
-        var baseNum=Number(String(baseTxt&&baseTxt.textContent||'').replace(/[^\d.-]/g,''))||0;
-        var shown=baseNum+(nextOn==='1'?cap:0);
-        if(finalEl)finalEl.textContent=shown+' 猫粮';
-        if(quoteEl)quoteEl.textContent=shown+' 猫粮';
-      }
-      return;
-    }
     var offerAction=e.target.closest('[data-save-offers],[data-offer-save],[data-offer-toggle]');
     if(closeAll)offerAction=closeAll;
     if(offerAction){
@@ -6217,7 +6250,6 @@
             kind:card.getAttribute('data-kind')||'service',
             id:card.getAttribute('data-id'),
             accepting:accepting,
-            markupOn:card.getAttribute('data-markup-on')==='1',
             sort:isFinite(savedSort)?savedSort:index
           });
         });

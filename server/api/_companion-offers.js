@@ -66,14 +66,16 @@ async function catalog() {
   return { serviceRows, productRows };
 }
 
-async function companionLevelId(userId) {
+async function companionLevelMeta(userId) {
   const id = String(userId || "").trim();
-  if (!id) return "";
+  if (!id) return { levelId: "", levelName: "" };
   const rows = await companionDb(
     "companion_profiles",
-    `?user_id=eq.${encodeURIComponent(id)}&select=level_id&limit=1`
+    `?user_id=eq.${encodeURIComponent(id)}&select=level_id,level_name&limit=1`
   ).catch(() => []);
-  return String(rows?.[0]?.level_id || "").trim().toLowerCase();
+  const levelId = String(rows?.[0]?.level_id || "").trim().toLowerCase();
+  const levelName = String(rows?.[0]?.level_name || "").trim() || (levelId ? levelId.toUpperCase() : "");
+  return { levelId, levelName };
 }
 
 export async function listCompanionOffers(userId, { enabledOnly = false } = {}) {
@@ -81,7 +83,7 @@ export async function listCompanionOffers(userId, { enabledOnly = false } = {}) 
   const raw = loaded.standards?.[OFFER_KEY];
   const saved = cleanOffers(raw);
   const { serviceRows, productRows } = await catalog();
-  const [levelId, markupMap] = await Promise.all([companionLevelId(userId), loadMarkupMap()]);
+  const [{ levelId, levelName }, markupMap] = await Promise.all([companionLevelMeta(userId), loadMarkupMap()]);
   let policies = {};
   try {
     const { loadAllPricePolicies, normalizePricePolicy } = await import("./_service-price-policy.js");
@@ -112,7 +114,6 @@ export async function listCompanionOffers(userId, { enabledOnly = false } = {}) 
       const quoted = quoteMarkupPrice({
         serviceRow: row,
         levelId,
-        markupOn: item.markupOn,
         markupMap,
       });
       return {
@@ -125,6 +126,7 @@ export async function listCompanionOffers(userId, { enabledOnly = false } = {}) 
         platformEnabled: row.enabled !== false,
         price: quoted.finalPrice,
         levelId,
+        levelName,
         href: "",
       };
     })
@@ -133,11 +135,9 @@ export async function listCompanionOffers(userId, { enabledOnly = false } = {}) 
     offers: enabledOnly ? offers.filter((item) => item.accepting !== false) : offers,
     catalog: {
       services: serviceRows.map((row) => {
-        const hit = saved.find((item) => item.kind === "service" && item.id === String(row.id));
         const quoted = quoteMarkupPrice({
           serviceRow: row,
           levelId,
-          markupOn: hit?.markupOn,
           markupMap,
         });
         return {
@@ -151,6 +151,7 @@ export async function listCompanionOffers(userId, { enabledOnly = false } = {}) 
           policy: policies[String(row.id)] || { min: null, max: null, unit: "局", allowSelfPrice: false, allowSelfOff: false },
           ...quoted,
           levelId,
+          levelName,
           markupOn: quoted.markupOn,
         };
       }),

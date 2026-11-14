@@ -138,15 +138,15 @@ const saveOff = companion
       offers: [{ kind: "service", id: WANGZHE, accepting: true, markupOn: true }],
     })
   : { status: 0, json: {} };
-step("companion save markupOn", saveOff.status === 200 && saveOff.json?.ok === true, `status=${saveOff.status} ${saveOff.json?.message || ""}`);
+step("companion save accepting", saveOff.status === 200 && saveOff.json?.ok === true, `status=${saveOff.status} ${saveOff.json?.message || ""}`);
 
 const offers2 = companion ? await api("/api/companion", companion, { action: "my_offers" }) : { json: {} };
 const saved = (offers2.json?.offers || []).find((s) => s.id === WANGZHE) || (offers2.json?.catalog?.services || []).find((s) => s.id === WANGZHE);
 const expectedFinal = Number(saved?.basePrice || 0) + Number(saved?.markupAllowance || 0);
 step(
-  "reload persists markupOn and final=base+markup",
-  !!(saved && saved.markupOn === true && Number(saved.finalPrice) === expectedFinal && expectedFinal > 0),
-  `markupOn=${saved?.markupOn} base=${saved?.basePrice} markup=${saved?.markupAllowance} final=${saved?.finalPrice}`
+  "my_offers final=base+level markup",
+  !!(saved && Number(saved.finalPrice) === expectedFinal && expectedFinal > 0),
+  `base=${saved?.basePrice} markup=${saved?.markupAllowance} final=${saved?.finalPrice} level=${saved?.levelId}`
 );
 
 const saveOff0 = companion
@@ -157,10 +157,11 @@ const saveOff0 = companion
   : { status: 0, json: {} };
 const offers3 = companion ? await api("/api/companion", companion, { action: "my_offers" }) : { json: {} };
 const saved0 = (offers3.json?.catalog?.services || []).find((s) => s.id === WANGZHE);
+const stillFinal = Number(saved0?.basePrice || 0) + Number(saved0?.markupAllowance || 0);
 step(
-  "companion can turn markup off to +0",
-  saveOff0.json?.ok === true && saved0 && saved0.markupOn === false && Number(saved0.finalPrice) === Number(saved0.basePrice),
-  `markupOn=${saved0?.markupOn} final=${saved0?.finalPrice} base=${saved0?.basePrice}`
+  "companion cannot turn off admin markup",
+  saveOff0.json?.ok === true && saved0 && Number(saved0.finalPrice) === stillFinal && Number(saved0.finalPrice) === Number(saved0.basePrice) + Number(saved0.markupAllowance),
+  `final=${saved0?.finalPrice} base=${saved0?.basePrice} markup=${saved0?.markupAllowance}`
 );
 
 const over = companion
@@ -189,8 +190,11 @@ const hijack = companion
 const hijackRow = (hijack.json?.catalog?.services || []).find((s) => s.id === WANGZHE);
 step(
   "companion save ignores foreign userId (own row only)",
-  hijack.status === 200 && hijack.json?.ok === true && hijackRow && hijackRow.markupOn === false,
-  `status=${hijack.status} markupOn=${hijackRow?.markupOn}`
+  hijack.status === 200 &&
+    hijack.json?.ok === true &&
+    hijackRow &&
+    Number(hijackRow.finalPrice) === Number(hijackRow.basePrice) + Number(hijackRow.markupAllowance),
+  `status=${hijack.status} final=${hijackRow?.finalPrice}`
 );
 
 const distinctWang = [
@@ -578,14 +582,19 @@ if (!altTok) {
     action: "save_offers",
     userId: companionSess.id,
     companionId: companionSess.id,
-    offers: [{ kind: "service", id: WANGZHE, accepting: true, markupOn: !beforeOwn?.markupOn }],
+    offers: [{ kind: "service", id: WANGZHE, accepting: false }],
   });
   const afterOwn = await api("/api/companion", companion, { action: "my_offers" });
   const ownRow = (afterOwn.json?.catalog?.services || []).find((s) => s.id === WANGZHE);
+  const ownOffer = (afterOwn.json?.offers || []).find((s) => s.id === WANGZHE);
+  const beforeOffer = (beforeAlt.json?.offers || []).find((s) => s.id === WANGZHE);
   step(
     "second companion account isolation",
-    altSave.json?.ok === true && ownRow && ownRow.markupOn === beforeOwn?.markupOn,
-    `alt=${altEmailUsed} ownBefore=${beforeOwn?.markupOn} ownAfter=${ownRow?.markupOn} altStatus=${altSave.status}`
+    altSave.json?.ok === true &&
+      ownRow &&
+      Number(ownRow.finalPrice) === Number(beforeOwn?.finalPrice) &&
+      (beforeOffer ? ownOffer?.accepting === beforeOffer.accepting : true),
+    `alt=${altEmailUsed} ownFinalBefore=${beforeOwn?.finalPrice} ownFinalAfter=${ownRow?.finalPrice} altStatus=${altSave.status}`
   );
 }
 

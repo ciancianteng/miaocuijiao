@@ -65,7 +65,7 @@
           esc(String(lv.levelId || "").toUpperCase()) +
           (configured ? " · 已配置" : " · 未配置") +
           "</div>" +
-          '<label style="display:grid;gap:2px;font-size:11px;margin:0"><span>允许加价（猫粮）</span><input name="' +
+          '<label style="display:grid;gap:2px;font-size:11px;margin:0"><span>等级加价（猫粮）</span><input name="' +
           prefix +
           'markup" type="number" min="0" step="1" value="' +
           esc(lv.markupAllowance != null ? lv.markupAllowance : 0) +
@@ -84,7 +84,7 @@
       return;
     }
     var head =
-      '<div class="content-admin-head"><div><h3>各游戏 LV1–LV5 等级加价</h3><p>只配置每个游戏、每个等级允许加价多少猫粮。陪玩只能选「不加价 +0」或使用该额度。基础价格来自服务目录，不是这张表的 min/max。</p></div>' +
+      '<div class="content-admin-head"><div><h3>各游戏 LV1–LV5 等级加价</h3><p>最终单价 = 游戏基础单价 + 该等级加价。基础价格来自服务目录。陪玩不能改价；历史订单成交价不变。</p></div>' +
       '<div class="content-version-meta"><span>' +
       esc(state.grid.length) +
       " 个游戏</span><span>" +
