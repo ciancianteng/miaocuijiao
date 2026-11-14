@@ -426,7 +426,9 @@
       { value: "rejected", label: "已驳回" },
       { value: "resubmit", label: "需要补资料" },
     ].map(function (opt) {
-      return '<option value="' + opt.value + '" ' + (String(selected) === opt.value ? "selected" : "") + ">" + opt.label + "</option>";
+      var sel = String(selected || "").toLowerCase();
+      if (sel === "paid" || sel === "verified" || sel === "passed" || sel === "received" || sel === "confirmed") sel = "approved";
+      return '<option value="' + opt.value + '" ' + (sel === opt.value ? "selected" : "") + ">" + opt.label + "</option>";
     }).join("");
   }
 
@@ -496,14 +498,20 @@
   }
 
   function reviewBox(kind, currentStatus) {
+    var statusName = kind === "deposit" ? "depositStatus" : "reviewStatus";
+    var reasonName = kind === "deposit" ? "depositRejectReason" : "rejectReason";
     return (
       '<div class="player-edit-grid" data-player-review="' +
       esc(kind) +
       '">' +
-      '<label><span>审核状态</span><select name="reviewStatus">' +
+      '<label><span>审核状态</span><select name="' +
+      statusName +
+      '">' +
       statusOptions(currentStatus || "pending") +
       "</select></label>" +
-      '<label><span>驳回原因</span><input name="rejectReason" placeholder="驳回时必填"></label>' +
+      '<label><span>驳回原因</span><input name="' +
+      reasonName +
+      '" placeholder="驳回时必填"></label>' +
       '<div class="form-actions"><button class="mini-btn primary-lite" type="button" data-player-review-save="' +
       esc(kind) +
       '">保存审核</button></div></div>'
@@ -1218,6 +1226,9 @@
           .join("") +
         "</div>";
     }
+    if (edit && (!deposit.empty || depositHistory.length)) {
+      depositHtml += reviewBox("deposit", deposit.status || "pending");
+    }
 
     var orderRows = (d.recentOrders || [])
       .map(function (o) {
@@ -1339,13 +1350,29 @@
     var hasVideos = (media.videos || []).length > 0;
     var hasVoices = (media.voices || []).length > 0;
     var hasIdentityOk = isDepositCert
-      ? !!(deposit.hasProof || (deposit.paidAmount != null && Number(deposit.paidAmount) > 0) || /paid|approved|pending/.test(String(deposit.status || "")))
+      ? !!(
+          d.depositIdentityExempt ||
+          /^(paid|approved|verified|passed|received|confirmed|completed)$/i.test(String(deposit.status || ""))
+        )
       : !!(identity.hasFront && identity.hasBack);
+    var depositWarn = "押金凭证缺失";
+    if (isDepositCert && !hasIdentityOk) {
+      var depositSt = String(deposit.status || "").toLowerCase();
+      var refundSt = String(deposit.refundStatus || "").toLowerCase();
+      var hasProofNow = !!(deposit.hasProof || deposit.proofUrl);
+      if (/refund/.test(depositSt) || (/refund/.test(refundSt) && refundSt !== "none")) {
+        depositWarn = "押金已退款，不可免交身份证";
+      } else if (/reject/.test(depositSt)) {
+        depositWarn = "押金已拒绝，不可免交身份证";
+      } else if (hasProofNow || /pending|draft|submit|review/.test(depositSt)) {
+        depositWarn = "押金待审核（截图已上传，审核通过后方可免交身份证）";
+      }
+    }
     var hasBasicOk = !!(d.name || d.nickname) && !!(d.mainGame || d.game || app.mainGame);
     var hasPriceOk = !playerMissingPrice(d) || !!findLevelByValue(d.levelId || d.level_id || d.levelName, levels);
     var completenessItems = [
       { ok: hasBasicOk, label: "基本资料", warn: "基本资料不完整", required: true },
-      { ok: hasIdentityOk, label: isDepositCert ? "押金认证" : "身份认证", warn: isDepositCert ? "押金凭证缺失" : "身份证正反面未齐", required: true },
+      { ok: hasIdentityOk, label: isDepositCert ? "押金认证" : "身份认证", warn: isDepositCert ? depositWarn : "身份证正反面未齐", required: true },
       { ok: hasPhotos, label: "照片", warn: "尚未上传照片", required: true },
       {
         ok: hasVideos,
@@ -1463,7 +1490,7 @@
       esc(appStatusRaw) +
       '" data-missing-price="' +
       (playerMissingPrice(d) ? "1" : "0") +
-      '">' +
+      '"><div class="player-drawer-scroll">' +
       quickReviewHtml +
       section("basic", "① 基本资料", basicCompact + (edit && basic.indexOf('class="player-edit-grid"') >= 0 ? basic.slice(basic.indexOf('<div class="player-edit-grid">')) : ""), true) +
       certSections +
@@ -1474,6 +1501,7 @@
       section("cert-badges", "认证徽章（前台卡片）", certHtml, false) +
       section("income", "订单与收益", income, false) +
       section("account", "账号管理", account, false) +
+      "</div>" +
       (edit
         ? '<div class="player-drawer-actions"><button class="btn primary" type="button" data-player-action="save-detail" data-player-id="' +
           esc(d.id) +
@@ -1794,6 +1822,8 @@
         payload.levelName = lv.name || "";
         payload.level_name = lv.name || "";
       }
+      var depSel = form.querySelector('[data-player-review="deposit"] select');
+      if (depSel && depSel.value) payload.depositStatus = depSel.value;
       doReview();
     } else {
       promptRejectReason().then(function (reason) {
@@ -1853,6 +1883,22 @@
 
   // Warm voice catalog for admin companion edit.
   loadVoiceCatalog();
+
+  function syncDrawerKeyboardInset() {
+    var el = document.querySelector(".player-detail-drawer:not([hidden])");
+    if (!el || !window.visualViewport) return;
+    var vv = window.visualViewport;
+    var kb = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+    el.style.setProperty("--mcj-kb", kb + "px");
+  }
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener("resize", syncDrawerKeyboardInset);
+    window.visualViewport.addEventListener("scroll", syncDrawerKeyboardInset);
+  }
+  window.addEventListener("focusin", syncDrawerKeyboardInset);
+  window.addEventListener("focusout", function () {
+    setTimeout(syncDrawerKeyboardInset, 80);
+  });
 
   document.addEventListener("click", function (e) {
     var preview = e.target.closest("[data-player-preview-src]");
@@ -2043,8 +2089,8 @@
       var wrap = reviewSave.closest("[data-player-review]");
       if (!form3 || !wrap) return;
       var kind2 = reviewSave.getAttribute("data-player-review-save");
-      var status = (wrap.querySelector('[name="reviewStatus"]') || {}).value || "pending";
-      var reason = (wrap.querySelector('[name="rejectReason"]') || {}).value || "";
+      var status = (wrap.querySelector("select") || {}).value || "pending";
+      var reason = (wrap.querySelector("input") || {}).value || "";
       if ((status === "rejected" || status === "resubmit") && !String(reason).trim()) {
         alert("驳回时必须填写原因");
         return;
@@ -2075,6 +2121,7 @@
                 ? "review_deposit"
                 : "review_application";
       var payload = { status: status, rejectReason: reason };
+      if (kind2 === "deposit") payload.depositStatus = status;
       if (kind2 === "application" && status === "approved") {
         var levelEl2 = form3.querySelector('[name="levelId"]');
         var levelVal2 = levelEl2 ? String(levelEl2.value || "").trim() : "";

@@ -20,7 +20,7 @@ import {
 } from "../_companion-cert-tags-store.js";
 import { readMedalStatus, writeMedalStatus } from "../_companion-medal.js";
 import { isApplicationApproved, isApplicationArchived, isApplicationDraft, matchesApplicationListScope } from "../_companion-draft.js";
-import { isDepositIdentityExempt } from "../_companion-credential-gate.js";
+import { isDepositIdentityExempt, pickExemptDepositRow } from "../_companion-credential-gate.js";
 import {
   parseCompanionShareOverride,
   resolveEffectiveCompanionCommission,
@@ -494,6 +494,76 @@ function mapListPlayer(row = {}, profile = {}) {
   return attachPublishFields(mapped, row, profile);
 }
 
+async function listCompanionDeposits(companion = {}) {
+  const pid = String(companion.id || "").trim();
+  const uid = String(companion.user_id || "").trim();
+  let rows = [];
+  if (pid) {
+    rows = await companionDb(
+      "companion_deposits",
+      `?companion_profile_id=eq.${encodeURIComponent(pid)}&order=created_at.desc&limit=50`
+    ).catch((e) => {
+      if (isMissingRelation(e)) return [];
+      throw e;
+    });
+  }
+  if ((!Array.isArray(rows) || !rows.length) && uid) {
+    rows = await companionDb(
+      "companion_deposits",
+      `?user_id=eq.${encodeURIComponent(uid)}&order=created_at.desc&limit=50`
+    ).catch((e) => {
+      if (isMissingRelation(e)) return [];
+      throw e;
+    });
+  }
+  return Array.isArray(rows) ? rows : [];
+}
+
+async function persistDepositDecision(req, companion, payload, admin) {
+  const decision = String(payload?.depositStatus || "").trim();
+  if (!/^(approved|paid|rejected|resubmit|refunded)$/i.test(decision)) return null;
+  return reviewDeposit(
+    req,
+    companion,
+    {
+      status: decision,
+      rejectReason: payload.depositRejectReason || payload.rejectReason || payload.reason || "",
+      remark: payload.depositConfirmRemark || payload.remark || "",
+      depositId: payload.depositId || payload.deposit_id || "",
+    },
+    admin
+  );
+}
+
+async function assertIdentityOrExemptDeposit(companion) {
+  const deposits = await listCompanionDeposits(companion);
+  const depositRow = pickExemptDepositRow(deposits);
+  const idRows = await companionDb(
+    "companion_identity_verifications",
+    `?companion_profile_id=eq.${encodeURIComponent(companion.id)}&limit=1`
+  ).catch(() => []);
+  const idRow = Array.isArray(idRows) ? idRows[0] : null;
+  const idOk = !!(idRow && idRow.id_front_path && idRow.id_back_path);
+  if (isDepositIdentityExempt(companion, depositRow) || idOk) return;
+  const pendingProof = deposits.some((row) => {
+    const st = String(row?.status || "").toLowerCase();
+    if (/refund|reject|expired/.test(st)) return false;
+    const proof = String(row?.proof_path || row?.proof_url || "").trim();
+    return !!proof && /pending|draft|submit|review/.test(st);
+  });
+  throw Object.assign(
+    new Error(
+      pendingProof
+        ? "押金尚未审核通过。请先在押金审核中点「保存审核」通过后，即可免交身份证正反面。仅上传截图、待审核、拒绝或退款均不能免交。"
+        : "身份证正反面未齐。有效押金确认后可免提交。"
+    ),
+    {
+      status: 400,
+      code: "IDENTITY_REQUIRED",
+    }
+  );
+}
+
 async function loadRelated(profileId, companionId) {
   const empty = { identity: null, payment: null, media: [], deposit: null, deposits: [], orders: [], income: [], reviews: [] };
   try {
@@ -513,12 +583,10 @@ async function loadRelated(profileId, companionId) {
         if (isMissingRelation(e)) return [];
         throw e;
       }),
-      companionDb("companion_deposits", `?companion_profile_id=eq.${encodeURIComponent(companionId)}&order=created_at.desc&limit=50`).catch(
-        (e) => {
-          if (isMissingRelation(e)) return [];
-          throw e;
-        }
-      ),
+      listCompanionDeposits({ id: companionId, user_id: profileId }).catch((e) => {
+        if (isMissingRelation(e)) return [];
+        throw e;
+      }),
       companionDb("orders", `?companion_id=eq.${encodeURIComponent(profileId)}&order=created_at.desc&limit=20`).catch(() => []),
       companionDb(
         "transactions",
@@ -533,13 +601,14 @@ async function loadRelated(profileId, companionId) {
       }),
     ]);
     const deposits = Array.isArray(depositRows) ? depositRows : [];
-    const paid = deposits.find((d) => /^(paid|approved|verified|passed|received)$/i.test(String(d.status || ""))) || null;
+    const paid = pickExemptDepositRow(deposits);
     return {
       identity: identityRows?.[0] || null,
       payment: paymentRows?.[0] || null,
       media: Array.isArray(mediaRows) ? mediaRows : [],
       deposit: paid || deposits[0] || null,
       depositLatest: deposits[0] || null,
+      depositExempt: paid,
       deposits,
       orders: Array.isArray(orderRows) ? orderRows : [],
       income: Array.isArray(txRows) ? txRows : [],
@@ -877,7 +946,7 @@ async function buildDetail(row, profile, opts = {}) {
       reviewedByName: appReviewerName || "",
       empty: !row.application_submitted_at && !row.main_service && !row.game,
     },
-    depositIdentityExempt: isDepositIdentityExempt(row, related.depositLatest || deposit),
+    depositIdentityExempt: !!pickExemptDepositRow(related.deposits || []),
     applicationReviewedBy: row.application_reviewed_by || "",
     applicationReviewedByName: appReviewerName || "",
     bio: row.description || "",
@@ -1454,18 +1523,11 @@ async function bulkApprovePendingGalleryPhotos(req, companion, admin = null, opt
 
 async function reviewDeposit(req, companion, payload, admin = null) {
   const status = normalizeStatusInput(payload.status || payload.depositStatus, "pending");
-  const reason = String(payload.rejectReason || payload.reason || "").trim();
+  const reason = String(payload.rejectReason || payload.reason || payload.depositRejectReason || "").trim();
   if ((status === "rejected" || status === "resubmit") && !reason) {
     throw Object.assign(new Error("驳回押金时必须填写原因。"), { status: 400 });
   }
-  const rows = await companionDb(
-    "companion_deposits",
-    `?companion_profile_id=eq.${encodeURIComponent(companion.id)}&order=created_at.desc&limit=20`
-  ).catch((e) => {
-    if (isMissingRelation(e)) throw Object.assign(new Error("请先执行 supabase/companion-admin-data.sql"), { status: 503 });
-    throw e;
-  });
-  const list = Array.isArray(rows) ? rows : [];
+  const list = await listCompanionDeposits(companion);
   const targetId = String(payload.depositId || payload.deposit_id || "").trim();
   const before =
     (targetId && list.find((r) => String(r.id) === targetId)) ||
@@ -1473,6 +1535,13 @@ async function reviewDeposit(req, companion, payload, admin = null) {
     list[0];
   const mapped =
     status === "approved" ? "paid" : status === "unpaid" ? "unpaid" : status === "refunded" ? "refunded" : status;
+  if (before && mapped === "paid" && /^(paid|approved|verified|passed|received|confirmed)$/i.test(String(before.status || ""))) {
+    await companionDb(PLAYER_TABLE, `?id=eq.${encodeURIComponent(companion.id)}`, {
+      method: "PATCH",
+      body: JSON.stringify({ deposit_status: "paid", updated_at: new Date().toISOString() }),
+    });
+    return { status: "paid", reason, unchanged: true };
+  }
   if (before) {
     const patch = {
       status: mapped,
@@ -1599,27 +1668,11 @@ async function reviewApplication(req, companion, payload) {
       alreadyApproved: true,
     };
   }
-  if (status === "approved") {
-    const depRows = await companionDb(
-      "companion_deposits",
-      `?companion_profile_id=eq.${encodeURIComponent(companion.id)}&order=created_at.desc&limit=20`
-    ).catch(() => []);
-    const deposits = Array.isArray(depRows) ? depRows : [];
-    const depositRow = deposits[0] || null;
-    const idRows = await companionDb(
-      "companion_identity_verifications",
-      `?companion_profile_id=eq.${encodeURIComponent(companion.id)}&limit=1`
-    ).catch(() => []);
-    const idRow = Array.isArray(idRows) ? idRows[0] : null;
-    const idOk = !!(idRow && idRow.id_front_path && idRow.id_back_path);
-    if (!isDepositIdentityExempt(companion, depositRow) && !idOk) {
-      throw Object.assign(new Error("身份证正反面未齐。有效押金确认后可免提交。"), {
-        status: 400,
-        code: "IDENTITY_REQUIRED",
-      });
-    }
-  }
   const adminActor = await requireAdmin(req).catch(() => null);
+  if (status === "approved") {
+    await persistDepositDecision(req, companion, payload, adminActor);
+    await assertIdentityOrExemptDeposit(companion);
+  }
   const reviewedAt = new Date().toISOString();
   const { approveListingPatchForRow, unlistListingPatch } = await import("../_companion-listing-sync.js");
   let profileBefore = companion.user_id ? await getProfile(companion.user_id) : {};
@@ -1807,12 +1860,12 @@ async function reviewApplication(req, companion, payload) {
           body: JSON.stringify(idPatch),
         }).catch(() => {});
       }
-      if (certMode === "deposit") {
+      if (certMode === "deposit" && status !== "approved") {
         await reviewDeposit(
           req,
           companion,
           {
-            status: status === "approved" ? "approved" : status,
+            status,
             rejectReason: reason,
           },
           adminActor
@@ -2274,8 +2327,10 @@ export default async function handler(req, res) {
     // admin corrections on already-approved companions.
     const firstApproveViaEdit = isFirstApprovalTransition(companion, companionPatch.application_status);
     let profileBeforeEdit = companion.user_id ? await getProfile(companion.user_id) : {};
+    await persistDepositDecision(req, companion, payload, admin);
     if (firstApproveViaEdit) {
       // Same shared guard as review_application — no bypass via auditStatus/edit.
+      await assertIdentityOrExemptDeposit(companion);
       const gatePayload = { ...payload, ...companionPatch };
       await ensureFirstApprovalReady(companion, gatePayload, profileBeforeEdit);
       const levelMeta = gatePayload._p2LevelMeta;

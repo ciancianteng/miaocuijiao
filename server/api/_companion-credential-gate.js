@@ -44,11 +44,17 @@ export function isDepositVerified(row = {}, depositRow = null) {
     row.depositStatus
   ).toLowerCase();
   if (!raw) return false;
-  // unpaid / draft must not match "paid"
-  if (/unpaid|draft|none|not_submitted|missing|未缴|rejected|驳回|拒绝|refund/.test(raw)) {
+  // unpaid / draft / pending must not match "paid"
+  if (
+    /^(unpaid|draft|pending|none|not_submitted|missing|rejected|refunded|expired)$|未缴|待审|驳回|拒绝|退款/.test(
+      raw
+    )
+  ) {
     return false;
   }
-  return /^(approved|verified|passed|paid|received)$|已通过|已缴纳|已到账/.test(raw);
+  return /^(approved|verified|passed|paid|received|confirmed|completed|success)$|已通过|已缴纳|已到账|已确认/.test(
+    raw
+  );
 }
 
 /**
@@ -61,9 +67,18 @@ export function isDepositIdentityExempt(row = {}, depositRow = null) {
   if (!depositRow || !String(depositRow.id || "").trim()) return false;
   const refund = String(depositRow.refund_status || "").trim().toLowerCase();
   if (refund && refund !== "none" && /refund|退|失效|expired|fail|invalid/.test(refund)) return false;
-  const paid = Number(depositRow.paid_amount);
-  if (Number.isFinite(paid) && paid <= 0) return false;
+  const paidRaw = depositRow.paid_amount;
+  if (paidRaw != null && paidRaw !== "") {
+    const paid = Number(paidRaw);
+    if (Number.isFinite(paid) && paid <= 0) return false;
+  }
   return isDepositVerified({}, depositRow);
+}
+
+/** Prefer a confirmed valid deposit row over a newer pending/draft resubmit. */
+export function pickExemptDepositRow(rows = []) {
+  const list = Array.isArray(rows) ? rows : [];
+  return list.find((row) => isDepositIdentityExempt({}, row)) || null;
 }
 
 /** True when identity_verified OR deposit_verified. */

@@ -13,6 +13,8 @@ import {
   isIdentityVerified,
   isDepositVerified,
   isCredentialOrOk,
+  isDepositIdentityExempt,
+  pickExemptDepositRow,
   evaluateCredentialMatrix,
 } from "../server/api/_companion-credential-gate.js";
 import { evaluatePublishGate } from "../server/api/_companion-publish-gate.js";
@@ -144,6 +146,17 @@ runCase(
   assert.equal(gate.hallVisible, true);
   assert.equal(gate.canWork, true);
   console.log("PASS boss_dual_role_companion_hall_visible");
+}
+
+{
+  assert.equal(isDepositIdentityExempt({}, { id: "d1", status: "paid", paid_amount: null, refund_status: "none" }), true);
+  assert.equal(isDepositIdentityExempt({}, { id: "d2", status: "pending", paid_amount: 100, refund_status: "none" }), false);
+  const picked = pickExemptDepositRow([
+    { id: "newer", status: "pending", paid_amount: 100, refund_status: "none" },
+    { id: "paid", status: "paid", paid_amount: 100, refund_status: "none" },
+  ]);
+  assert.equal(picked && picked.id, "paid");
+  console.log("PASS deposit_exempt_ignores_null_paid_amount_and_newer_pending");
 }
 
 console.log("verify-companion-credential-or-gate: ok");
