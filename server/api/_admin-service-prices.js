@@ -551,4 +551,71 @@ export async function resolveOrderUnitPrice({
   return resolved;
 }
 
+/**
+ * CS / appointment quote: companion offer + catalog default_price + LV markup.
+ * Does not trust the client amount when a catalog or companion quote exists.
+ */
+export async function resolveCsOrCatalogUnitPrice({
+  companionUserId = "",
+  serviceId = "",
+  gameName = "",
+  fallbackUnit = 0,
+} = {}) {
+  const uid = String(companionUserId || "").trim();
+  if (uid) {
+    const rows = await companionDb(
+      "companion_profiles",
+      `?user_id=eq.${encodeURIComponent(uid)}&select=*&limit=1`
+    ).catch(() => []);
+    const companion = Array.isArray(rows) ? rows[0] : null;
+    if (companion) {
+      const resolved = await resolveOrderUnitPrice({
+        companion,
+        companionId: uid,
+        serviceId,
+        gameName,
+      });
+      if (resolved?.blocked) {
+        throw Object.assign(new Error(resolved.message || "该服务已关闭，不能创建新订单。"), {
+          status: 400,
+          code: "SERVICE_CLOSED",
+        });
+      }
+      if (money(resolved?.price) > 0) {
+        return { unit: money(resolved.price), source: resolved.source || "markup_quote" };
+      }
+    }
+  }
+  let platform = null;
+  const sid = String(serviceId || "").trim();
+  if (sid) {
+    const found = await companionDb(
+      "services",
+      `?id=eq.${encodeURIComponent(sid)}&select=id,name,default_price,enabled,allow_order&limit=1`
+    ).catch(() => []);
+    platform = Array.isArray(found) ? found[0] : null;
+  }
+  const name = String(gameName || "").trim();
+  if (!platform && name) {
+    const found = await companionDb(
+      "services",
+      `?name=eq.${encodeURIComponent(name)}&select=id,name,default_price,enabled,allow_order&limit=1`
+    ).catch(() => []);
+    platform = Array.isArray(found) ? found[0] : null;
+  }
+  if (platform) {
+    const { quoteMarkupPrice } = await import("./_lv-markup.js");
+    const quoted = quoteMarkupPrice({
+      serviceRow: platform,
+      levelId: "",
+      markupOn: false,
+      markupMap: new Map(),
+    });
+    if (quoted.finalPrice > 0) return { unit: quoted.finalPrice, source: "catalog_base" };
+  }
+  const fb = money(fallbackUnit);
+  if (fb > 0) return { unit: fb, source: "legacy_fallback" };
+  return { unit: 0, source: "none" };
+}
+
 export { money as moneyAmount, buildAdminServicePriceList as listServicePricesForAdmin };

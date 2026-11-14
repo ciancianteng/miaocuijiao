@@ -3333,41 +3333,30 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
           return json(res, 400, { ok: false, message: "指定陪玩无效，请选择真实陪玩账号（UUID / 陪玩 UID）。" });
         }
         companionId = companion.id;
-        const { priceForGame, projectGamePrices, stripGamePricesMarker } = await import("./_game-prices.js");
-        const cpRows = await supabaseJson(
-          restUrl(
-            "companion_profiles",
-            `?user_id=eq.${encodeURIComponent(companionId)}&select=price,game_prices,tags,game,main_service,service_ids,level_id,level_name&limit=1`
-          ),
-          { headers: serviceHeaders() }
-        ).catch(() => []);
-        const cp = Array.isArray(cpRows) ? cpRows[0] : null;
-        const gameName = String(o.game || "").trim();
-        let level = null;
-        try {
-          const { readLocalLevels } = await import("./_companion-levels-store.js");
-          const levels = await readLocalLevels();
-          level =
-            (Array.isArray(levels) ? levels : []).find(
-              (item) =>
-                String(item.id) === String(cp?.level_id || "") ||
-                String(item.name) === String(cp?.level_name || "")
-            ) || null;
-        } catch {
-          level = null;
-        }
-        const projected = projectGamePrices(cp || {}, level);
-        unit = money(
-          priceForGame(
-            { ...(cp || {}), game_prices: projected, tags: stripGamePricesMarker(cp?.tags) },
-            gameName,
-            String(o.service_id || o.serviceId || "").trim()
-          )
-        );
-        if (!(unit > 0)) unit = money(cp?.price);
+        const { resolveCsOrCatalogUnitPrice } = await import("./_admin-service-prices.js");
+        const quoted = await resolveCsOrCatalogUnitPrice({
+          companionUserId: companionId,
+          serviceId: String(o.service_id || o.serviceId || "").trim(),
+          gameName: String(o.game || "").trim(),
+          fallbackUnit: o.unit_price || o.unitPrice || o.price,
+        });
+        unit = money(quoted.unit);
       }
-      // Without companion catalog price, CS may quote — but total is always recomputed server-side from unit×hours.
-      if (!(unit > 0)) unit = money(o.unit_price || o.unitPrice || o.price);
+      // No companion: catalog default_price (markup off). Last resort is CS typed amount.
+      if (!(unit > 0)) {
+        const { resolveCsOrCatalogUnitPrice } = await import("./_admin-service-prices.js");
+        const quoted = await resolveCsOrCatalogUnitPrice({
+          companionUserId: "",
+          serviceId: String(o.service_id || o.serviceId || "").trim(),
+          gameName: String(o.game || "").trim(),
+          fallbackUnit: o.unit_price || o.unitPrice || o.price,
+        });
+        unit = money(quoted.unit);
+      }
+      const clientUnit = money(o.unit_price || o.unitPrice || o.price);
+      if (clientUnit > 0 && unit > 0 && Math.abs(clientUnit - unit) > 0.05) {
+        return json(res, 400, { ok: false, message: `价格已变化，请刷新后重试（单价 ${unit}）` });
+      }
       const total = Math.round(unit * hours * 100) / 100;
       if (!o.game || (!o.description && !o.title) || total <= 0 || !(unit > 0)) {
         return json(res, 400, { ok: false, message: "请完整填写游戏、需求和金额。" });
