@@ -1181,7 +1181,22 @@
         paintAdminNotices(adminNotices);
         post('/api/admin/notifications',{action:'mark_read',id:nid}).then(function(res){
           applyNoticeResponse(res);
-          if(href)location.href=href;
+          setNoticeOpen(false);
+          if(href){
+            try{
+              var next=new URL(href,location.origin);
+              var here=location.pathname.replace(/\/$/,'');
+              var there=next.pathname.replace(/\/$/,'');
+              if(there===here||there==='/admin'||there==='/admin.html'){
+                if(next.hash)location.hash=next.hash;
+                else if(next.search)location.href=next.pathname+next.search+next.hash;
+                return;
+              }
+              location.href=next.pathname+next.search+next.hash;
+            }catch(navErr){
+              location.href=href;
+            }
+          }
         }).catch(function(err){
           alert((err&&err.message)||'已读状态写入失败');
           loadAdminNotices();
@@ -1235,6 +1250,21 @@
       return null;
     });
   }
+  var noticePollTimer=null;
+  function startNoticePoll(){
+    if(noticePollTimer)return;
+    noticePollTimer=setInterval(function(){
+      if(document.hidden)return;
+      loadAdminNotices();
+    },15000);
+    document.addEventListener('visibilitychange',function(){
+      if(!document.hidden)loadAdminNotices();
+    });
+    window.addEventListener('resize',function(){
+      var panel=document.getElementById('adminNoticePanel');
+      if(panel&&!panel.hidden)placeNoticePanel();
+    });
+  }
   function bootAdminChrome(){
     mountAdminNotices();
     if(!Auth)return;
@@ -1242,6 +1272,7 @@
       ensureGrabModalHost();
       mountAdminNotices();
       loadAdminNotices();
+      startNoticePoll();
       renderDashboard();
       renderOrders();
       renderReports();

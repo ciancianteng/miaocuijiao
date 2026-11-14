@@ -154,27 +154,24 @@ body[data-admin-section="orders"] #orderManagement {
 .admin-header .admin-title-block {
   flex: 1 1 auto;
   min-width: 0;
-  display: grid;
-  gap: 4px;
+  display: flex;
+  align-items: center;
   text-align: left;
+}
+.admin-header .admin-breadcrumb {
+  display: none !important;
 }
 
 .admin-header h1 {
   margin: 0;
+  min-width: 0;
   font-size: 22px;
   font-weight: 800;
   line-height: 1.2;
   color: #fff;
-}
-
-.admin-header .admin-breadcrumb {
-  margin: 0;
-  color: #8f8790;
-  font-size: 12px;
-  font-weight: 600;
-  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .admin-header .topbar-actions {
@@ -471,11 +468,19 @@ body[data-admin-section="orders"] #orderManagement {
 
   .admin-header {
     height: auto !important;
-    min-height: calc(64px + env(safe-area-inset-top, 0px)) !important;
+    min-height: calc(56px + env(safe-area-inset-top, 0px)) !important;
     max-height: none !important;
-    padding: calc(12px + env(safe-area-inset-top, 0px)) 16px 12px !important;
-    flex-wrap: wrap;
+    padding: calc(10px + env(safe-area-inset-top, 0px)) 10px 10px !important;
+    flex-wrap: nowrap !important;
+    gap: 8px !important;
     overflow: visible !important;
+  }
+  .admin-header h1 {
+    font-size: 16px !important;
+  }
+  .admin-header .admin-text-btn {
+    padding: 0 8px;
+    font-size: 12px;
   }
 
   .admin-content {
@@ -519,8 +524,23 @@ body[data-admin-section="orders"] #orderManagement {
   }
 
   .admin-header .topbar-actions {
-    width: 100%;
+    width: auto !important;
+    flex: 0 1 auto;
+    min-width: 0;
     justify-content: flex-end;
+    flex-wrap: nowrap !important;
+    gap: 6px;
+  }
+  .admin-header .admin-notice {
+    flex: 0 0 36px;
+  }
+}
+
+@media (max-width: 420px) {
+  .admin-header .admin-profile-menu .admin-text-btn {
+    max-width: 4.8em;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 }
 

@@ -2176,9 +2176,7 @@
   function setTitle(name){
     var meta=sectionTitles[name]||[name,''];
     var title=document.getElementById('pageTitle');
-    var crumb=document.getElementById('adminBreadcrumb');
     if(title)title.textContent=meta[0];
-    if(crumb)crumb.textContent='超级管理员后台 / '+(meta[0]||name);
   }
   function initTabs(){
     var buttons=document.querySelectorAll('[data-section]');
@@ -2200,10 +2198,8 @@
     function updateTitle(activeName,target,label,parentLabel){
       var meta=sectionTitles[activeName]||sectionTitles[target]||[label||activeName,''];
       var title=document.getElementById('pageTitle');
-      var crumb=document.getElementById('adminBreadcrumb');
       var displayTitle=label||meta[0]||activeName;
       if(title)title.textContent=displayTitle;
-      if(crumb)crumb.textContent='超级管理员后台 / '+(parentLabel?parentLabel+' / ':'')+displayTitle;
     }
     function activate(btn){
       var activeName=btn&&btn.dataset?btn.dataset.section:'';
