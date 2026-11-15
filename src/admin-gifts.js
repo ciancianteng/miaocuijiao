@@ -36,7 +36,13 @@
     opts = opts || {};
     opts.headers = Object.assign({ Accept: "application/json", "x-mcj-admin-role": role() }, opts.headers || {});
     return (Auth && Auth.fetch ? Auth.fetch(path, opts) : fetch(path, opts)).then(function (res) {
-      return res.json().then(function (body) {
+      return res.text().then(function (text) {
+        var body = {};
+        try {
+          body = text ? JSON.parse(text) : {};
+        } catch (e) {
+          throw new Error("礼物接口返回无法解析");
+        }
         if (!res.ok || body.ok === false) throw new Error(body.message || "请求失败");
         return body;
       });
@@ -328,7 +334,7 @@
       })
       .join("");
     box.innerHTML =
-      '<div class="admin-section-head compact"><div><h3>礼物管理</h3><p>配置老板端礼物商城。修改后全站同步。已产生订单的礼物请下架（soft disable），勿物理删除。</p></div>' +
+      '<div class="admin-section-head compact" lang="zh-CN" style="font-family:\'PingFang SC\',\'Microsoft YaHei\',\'Noto Sans SC\',sans-serif"><div><h3>礼物管理</h3><p>配置老板端礼物商城。修改后全站同步。已产生订单的礼物请下架（soft disable），勿物理删除。</p></div>' +
       '<button class="mini-btn primary-lite" type="button" data-gift-new>新增礼物</button> <button class="mini-btn" type="button" data-gift-reload>刷新</button></div>' +
       (state.message ? '<div class="admin-sync-note">' + esc(state.message) + "</div>" : "") +
       '<div class="table-wrap"><table><thead><tr><th>名称</th><th>猫粮价格</th><th>状态</th><th>推荐</th><th>排序</th><th>操作</th></tr></thead><tbody>' +

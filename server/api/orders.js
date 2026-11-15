@@ -655,6 +655,11 @@ export function viewOrder(row = {}) {
     })(),
 
     hours: Number(row.hours || 0),
+    billingUnit: /per_game|局/i.test(String(row.pricing_unit || "")) || /计费单位[:：]\s*per_game/.test(String(row.description || "") + "\n" + String(row.notes || "")) ? "per_game" : "per_hour",
+    quantity: Number(row.quantity || 0) || null,
+    quantityLabel: (/per_game|局/i.test(String(row.pricing_unit || "")) || /计费单位[:：]\s*per_game/.test(String(row.description || "")))
+      ? `${Math.max(1, Math.floor(Number(row.quantity) || Number((String(row.description || "").match(/局数[:：]\s*(\d+)/) || [])[1]) || 1))}局`
+      : "",
     unitPrice: money(row.unit_price),
     totalAmount: money(row.total_amount),
     amount: money(row.total_amount),
@@ -1470,9 +1475,10 @@ export default async function handler(req, res) {
           });
         }
       }
-      const quantity = Math.max(1, Math.floor(money(order.quantity || 1) || 1));
+      let quantity = Math.max(1, Math.floor(money(order.quantity || 1) || 1));
       const baseHours = Math.max(0.5, money(order.hours || order.duration || 1));
-      const hours = Math.round(baseHours * quantity * 100) / 100;
+      let hours = Math.round(baseHours * quantity * 100) / 100;
+      let perGameOrder = false;
       const serviceType = String(order.serviceType || order.service_type || order.serviceName || order.service || "陪玩").trim() || "陪玩";
       const companionName = String(order.companionName || order.companion_name || "").trim();
       const gameId = String(order.gameId || order.game_id || order.gameIdValue || order.game_id_value || "").trim();
@@ -1548,7 +1554,12 @@ export default async function handler(req, res) {
           return json(res, 400, { ok: false, code: "SERVICE_CLOSED", message: resolved.message || "该服务已关闭，不能创建新订单。" });
         }
         unitPrice = money(resolved.price);
-        const catalogUnit = String(resolved.pricingUnit || "").trim();
+        const catalogUnit = String(resolved.pricingUnit || order.pricingUnit || order.pricing_unit || "").trim();
+        perGameOrder = /per_game|局/i.test(catalogUnit);
+        if (perGameOrder) {
+          quantity = Math.max(1, Math.floor(money(order.quantity || order.hours || 1)));
+          hours = 0;
+        }
         if (!(unitPrice > 0)) {
           return json(res, 400, {
             ok: false,
@@ -1556,7 +1567,9 @@ export default async function handler(req, res) {
             message: "该陪玩所选服务尚未设置单价，且等级无基础价格，无法下单。",
           });
         }
-        totalAmount = Math.round(unitPrice * hours * 100) / 100;
+        totalAmount = perGameOrder
+          ? Math.round(unitPrice * quantity * 100) / 100
+          : Math.round(unitPrice * hours * 100) / 100;
         const clientUnit = money(order.unit_price || order.unitPrice || order.price || order.budget || 0);
         const clientTotal = money(order.total_amount || order.totalAmount);
         if (clientUnit > 0 && Math.abs(clientUnit - unitPrice) > 0.05) {
@@ -1650,12 +1663,14 @@ export default async function handler(req, res) {
       // 统一支付链路：下单只创建待付款订单，真正支付在 payment-confirm 完成。
       let status = "awaiting_payment";
       const title = companionName
-        ? `${serviceType} · ${companionName} · ${hours}小时`
-        : String(order.title || `${serviceType} · ${hours}小时`);
+        ? `${serviceType} · ${companionName} · ${perGameOrder ? quantity + "局" : hours + "小时"}`
+        : String(order.title || `${serviceType} · ${perGameOrder ? quantity + "局" : hours + "小时"}`);
       const descriptionParts =
         action === "place_order"
           ? [
               notes || `${serviceType}订单`,
+              perGameOrder ? `计费单位：per_game` : "",
+              perGameOrder ? `局数：${quantity}` : "",
               gameId ? `游戏ID：${gameId}` : "",
               order._couponSnap ? `优惠券：${order._couponSnap.name} -${order._couponSnap.discount}` : couponCode ? `优惠券：${couponCode}` : "",
               order._couponSnap ? (await import("./_order-coupon.js")).couponMarker(order._couponSnap) : "",
@@ -1734,7 +1749,7 @@ export default async function handler(req, res) {
         game_id_value: gameId || String(order.game_id || "").trim(),
         notes: notes || descriptionParts.join("\n"),
         quantity,
-        pricing_unit: String(order.pricingUnit || order.pricing_unit || "小时"),
+        pricing_unit: perGameOrder ? "per_game" : String(order.pricingUnit || order.pricing_unit || "小时"),
         voice_mode: voiceMode,
       };
       if (voiceMode === "discord") {

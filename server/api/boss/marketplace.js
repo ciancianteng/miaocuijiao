@@ -320,12 +320,15 @@ function defaultSpecs(unit) {
   ];
 }
 
-/** 小猫：礼物抽成误设 80% 时按 20% 结算（仅此 user_id）。 */
-const XIAOMAO_COMPANION_USER_ID = "78a16b20-2858-425b-9011-27ec6c6282c4";
+/** 已确认误设 80% 的陪玩：礼物抽成按 20% 结算（仅这些 user_id）。 */
+const GIFT_RATE_80_TO_20_USER_IDS = new Set([
+  "78a16b20-2858-425b-9011-27ec6c6282c4", // 小猫
+  "a9f6b9c6-12c1-4d3f-a31d-b2465ebb1a27", // 宁宁
+]);
 
 function giftRateAfterXiaomaoFix(companionRow, rate) {
   const id = String(companionRow?.user_id || companionRow?.id || "");
-  if (id === XIAOMAO_COMPANION_USER_ID && Math.abs(Number(rate) - 80) < 0.001) return 20;
+  if (GIFT_RATE_80_TO_20_USER_IDS.has(id) && Math.abs(Number(rate) - 80) < 0.001) return 20;
   return rate;
 }
 

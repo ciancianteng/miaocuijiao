@@ -3670,7 +3670,7 @@
       '<div><span>老板昵称/编号</span><strong>'+esc((o.bossName||'-')+(o.bossUid?' / '+o.bossUid:''))+'</strong></div>'+
       (o.isRenewal?'<div><span>原订单号</span><strong>'+esc(o.renewalSourceOrderNo||'-')+'</strong></div><div><span>新订单号</span><strong>'+esc(humanOrderNo(o))+'</strong></div>':'')+
       '<div><span>你的服务</span><strong>'+esc(o.serviceName||o.game||'-')+'</strong></div>'+
-      '<div><span>数量/预计时长</span><strong>'+esc(o.duration||(o.hours?o.hours+'小时':'-'))+'</strong></div>'+
+      '<div><span>'+(o.billingUnit==='per_game'?'购买局数':'数量/预计时长')+'</span><strong>'+esc(o.billingUnit==='per_game'?(o.quantityLabel||((o.quantity||1)+'局')):(o.duration||(o.hours?o.hours+'小时':'-')))+'</strong></div>'+
       '<div><span>陪玩单价</span><strong>'+money(o.unitPrice||0)+'</strong></div>'+
       '<div><span>你的订单金额</span><strong>'+money(o.amount||0)+'</strong></div>'+
       '<div><span>预计到手猫粮</span><strong>'+money(o.playerIncome||0)+'</strong></div>'+
@@ -3724,7 +3724,7 @@
           content:s.sections.filter(function(sec){return sec&&(sec.label==='服务内容'||sec.label==='包含'||sec.label==='计费标准');}).map(function(sec){return {title:sec.label,body:sec.value};}),
           requirements:s.sections.filter(function(sec){return sec&&sec.label!=='服务内容'&&sec.label!=='包含'&&sec.label!=='计费标准';}).map(function(sec){return {title:sec.label,body:sec.value};})
         })
-      :'<p class="pw-note">下单时你尚未填写该项目的服务标准（按'+esc(s.pricingUnit||'小时')+'计费）。可在「编辑资料 → 游戏与价格」补充，之后的新订单会带上。</p>';
+      :'<p class="pw-note">下单时你尚未填写该项目的服务标准（按'+esc(s.pricingUnit||'小时')+'计费）。可在「我的服务」查看计价单位，之后的新订单会带上。</p>';
     return '<details class="pw-order-std"'+(open?' open':'')+'><summary>本单服务标准（下单时快照）· '+esc(s.serviceName||o.serviceName||'-')+'</summary>'+
       body+'<p class="pw-order-std-foot">这是下单时保存的服务要求。之后修改不会改变本单。</p></details>';
   }
@@ -4853,20 +4853,10 @@
         '<p class="pw-field-hint">可多选；保存后同步老板端大厅展示</p></div>'+
         '<div class="pw-field">'+fieldLabel('介绍',false)+'<textarea name="bio" rows="4" placeholder="简单介绍你的技术、声音和陪玩风格">'+esc(bioVal)+'</textarea></div>'
       , false)+
-      pwAccHtml('profile-games','游戏与价格', (selectedIds&&selectedIds.length?('已选 '+selectedIds.length+' 个游戏 · '+levelLabel):('待选择游戏 · '+levelLabel)),
+      pwAccHtml('profile-games','可接游戏', (selectedIds&&selectedIds.length?('已选 '+selectedIds.length+' 个游戏 · '+levelLabel):('待选择游戏 · '+levelLabel)),
         '<div class="pw-field" data-field="service_type">'+fieldLabel('可提供服务',true)+'<div class="pw-chip-grid">'+serviceTypeChecks+'</div>'+'<p class="pw-field-hint">可多选：陪玩服务 / 陪聊服务</p>'+fieldErr('service_type')+'</div>'+
-        '<div class="pw-field" data-field="main_game">'+fieldLabel('可接游戏',true)+'<div class="pw-chip-grid">'+gameChecks+'</div>'+'<p class="pw-field-hint">从后台启用游戏中多选；每个勾选游戏需单独设置价格</p>'+fieldErr('main_game')+'</div>'+
-        '<div class="pw-field" data-field="price">'+fieldLabel('各游戏价格',true)+
-        '<div class="pw-price-meta">'+
-        '<div>当前等级：<strong>'+esc(levelLabel)+'</strong></div>'+
-        '<div>平台默认售价：<strong>'+esc(baseP)+'</strong></div>'+
-        '<div>允许价格范围：<strong>'+esc(minP+'–'+maxP)+'</strong></div>'+
-        '<div>最多可加价：<strong>+'+esc(markupCap)+'</strong></div>'+
-        '<div>最终可设上限：<strong>'+esc(sellMax)+'</strong></div>'+
-        '<div class="pw-field-hint">'+esc(rangeText)+' · 不可修改平台等级价格范围</div>'+
-        (needsReset?'<div class="pw-field-error">有价格超出等级范围，请按游戏重新设置</div>':'')+
-        '</div>'+
-        '<div class="pw-game-price-grid" data-game-price-grid>'+priceRows+'</div>'+fieldErr('price')+'</div>'+
+        '<div class="pw-field" data-field="main_game">'+fieldLabel('可接游戏',true)+'<div class="pw-chip-grid">'+gameChecks+'</div>'+'<p class="pw-field-hint">从后台启用游戏中多选</p>'+fieldErr('main_game')+'</div>'+
+        '<p class="pw-field-hint">单价不在公开资料里修改。请到「我的服务」查看，价格按后台基础单价加等级加价计算。</p>'+
         serviceStandardRowsHtml(serviceOptions.filter(function(s){return selectedIds.indexOf(s.id)!==-1}))+
         '<div class="pw-two-col">'+
         '<div class="pw-field">'+fieldLabel('游戏 ID',true)+'<input name="game_id" value="'+esc(gameId)+'" placeholder="游戏内昵称或 ID">'+fieldErr('game_id')+'</div>'+
@@ -5608,12 +5598,13 @@
     var publicTagList=Array.prototype.map.call(form.querySelectorAll('input[name="public_tag_opt"]:checked'),function(el){return el.value}).filter(Boolean);
     var publicTagsJoined=publicTagList.join('、');
     var serviceInputs=Array.prototype.slice.call(form.querySelectorAll('input[name="service_id_opt"]:checked'));
-    var hasServiceEditor=!!form.querySelector('[data-game-price-grid]');
+    var hasGameEditor=!!form.querySelector('input[name="service_id_opt"]');
+    var hasPriceEditor=!!form.querySelector('[data-game-price-grid]');
     var serviceIds=serviceInputs.map(function(el){return el.value}).filter(Boolean);
     var serviceNames=serviceInputs.map(function(el){return el.getAttribute('data-game-name')||el.value}).filter(Boolean);
     var storedPlayer=(state.data&&state.data.player)||{};
     var storedRaw=storedPlayer.raw||{};
-    if(!hasServiceEditor){
+    if(!hasGameEditor){
       serviceTypes=selectedServiceTypesFromPlayer(storedPlayer,storedRaw);
       serviceIds=selectedServiceIdsFromPlayer(storedPlayer,storedRaw);
       serviceNames=String(storedPlayer.mainGame||storedRaw.game||'').split(/[,，、/|]+/).map(function(x){return x.trim()}).filter(Boolean);
@@ -5621,7 +5612,7 @@
     }
     var gamePrices={};
     var priceError='';
-    if(!hasServiceEditor){
+    if(!hasPriceEditor){
       gamePrices=Object.assign({},storedPlayer.gamePrices||((state.data&&state.data.levelInfo)||{}).gamePrices||{});
     }else serviceInputs.forEach(function(el){
       var id=el.value;
@@ -5647,7 +5638,7 @@
     if(!region){errors.region='请填写地区';missing.push('缺少地区')}
     if(voiceOtherOn&&!voiceCustom){errors.voice_type='选择「其他」时请填写自定义声线';missing.push('缺少声线')}
     else if(!voiceTypes.length){errors.voice_type='请至少选择一种声线';missing.push('缺少声线')}
-    if(hasServiceEditor){
+    if(hasGameEditor){
     if(!serviceTypes.length){errors.service_type='请至少选择一种可提供服务';missing.push('缺少服务类型')}
     if(!serviceIds.length){errors.main_game='请至少选择一个可接游戏';missing.push('缺少游戏资料')}
     if(!gameId){errors.game_id='请填写游戏 ID';if(missing.indexOf('缺少游戏资料')===-1)missing.push('缺少游戏资料')}

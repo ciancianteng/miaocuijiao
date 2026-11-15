@@ -185,8 +185,9 @@
           '<label><span>平台抽成 %</span><input name="commissionRate" type="number" min="0" max="100" step="0.1" value="' + esc(level.commissionRate != null ? level.commissionRate : 20) + '" readonly><span class="muted" style="font-size:11px;font-weight:600">只读展示；订单/工资/提现仍按平台既有 20% 抽成规则，本页不改财务口径</span></label>' +
           '<div class="wide muted" style="font-size:12px;font-weight:700;padding:8px 0">生效范围：' + esc(rangeText(level)) + " · " + esc(saveStatusText()) + "</div>"
         ) +
-        moduleBlock("④ 升级规则", "升级条件与等级说明（与价格配置分开；清零等级内容不清除服务价表）",
-          '<label class="wide"><span>升级条件</span><textarea name="upgradeCondition" rows="4" placeholder="订单数 / 好评率 / 认证完成">' + esc(level.upgradeCondition || "") + "</textarea></label>" +
+        moduleBlock("④ 升级规则（前台已隐藏）", "历史字段保留；前台不再展示升级申请/条件。陪玩等级只由管理员手动设置。",
+          '<p class="muted" style="grid-column:1/-1;margin:0">自动升级/降级已停用。设置 LV1 即保持 LV1，设置 LV5 即保持 LV5。</p>' +
+          '<label class="wide" hidden><span>升级条件</span><textarea name="upgradeCondition" rows="4">' + esc(level.upgradeCondition || "") + "</textarea></label>" +
           '<label class="wide"><span>等级说明</span><textarea name="description" rows="3">' + esc(level.description || "") + "</textarea></label>"
         ) +
         '<div class="row level-editor-actions">' +

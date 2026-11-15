@@ -27,6 +27,7 @@ import {
   isTestTouchedOrder,
 } from "../_test-accounts.js";
 import { PLATFORM_STATS_TIMEZONE, isCreatedOnLocalDay, localDateYmd, localYmdInRange, resolveStatsRange } from "../_platform-day.js";
+import { companionWalletBalances } from "../_companion-wallet-balance.js";
 import {
   assertOrdersCarryParentField,
   countCompletedBusinessOrders,
@@ -516,6 +517,130 @@ async function loadWithdrawalsForStats() {
   return [];
 }
 
+function takeLatest(rows, keyFn, limit) {
+  const map = new Map();
+  for (const row of rows || []) {
+    const key = keyFn(row);
+    if (!key) continue;
+    const list = map.get(key) || [];
+    if (list.length < limit) {
+      list.push(row);
+      map.set(key, list);
+    }
+  }
+  return map;
+}
+
+async function loadWalletRows() {
+  const queries = [
+    "?select=id,user_id,amount,transaction_type,order_id,status,note,created_at&transaction_type=in.(companion_income,refund)&order=created_at.desc&limit=20000",
+    "?select=id,user_id,amount,transaction_type,order_id,status,created_at&transaction_type=eq.companion_income&order=created_at.desc&limit=20000",
+  ];
+  for (const q of queries) {
+    try {
+      const rows = await supabaseJson(restUrl("transactions", q), { headers: serviceHeaders() });
+      return Array.isArray(rows) ? rows : [];
+    } catch (error) {
+      if (isMissingRelationError(error)) return [];
+    }
+  }
+  return [];
+}
+
+async function loadBalanceWithdrawals() {
+  const queries = [
+    "?select=id,companion_id,status,cat_food_amount,amount,submitted_at,created_at&order=submitted_at.desc&limit=8000",
+    "?select=id,companion_id,status,cat_food_amount,amount,created_at&order=created_at.desc&limit=8000",
+  ];
+  for (const q of queries) {
+    try {
+      const rows = await supabaseJson(restUrl("companion_withdrawals", q), { headers: serviceHeaders() });
+      return Array.isArray(rows) ? rows : [];
+    } catch (error) {
+      if (isMissingRelationError(error)) return [];
+    }
+  }
+  return [];
+}
+
+async function loadOrdersByIds(ids) {
+  const out = [];
+  const list = [...new Set(ids.filter(Boolean))];
+  for (let i = 0; i < list.length; i += 80) {
+    const chunk = list.slice(i, i + 80);
+    try {
+      const rows = await supabaseJson(
+        restUrl(
+          "orders",
+          `?id=in.(${chunk.map(encodeURIComponent).join(",")})&select=id,status,completed_at,cancelled_at,completion_method,note,description`
+        ),
+        { headers: serviceHeaders() }
+      );
+      if (Array.isArray(rows)) out.push(...rows);
+    } catch {
+      /* unlock falls back to locked when order row is missing — same as earnings center */
+    }
+  }
+  return out;
+}
+
+export async function buildCompanionBalanceReport({
+  profiles = [],
+  companionProfiles = [],
+  transactions = [],
+  withdrawals = [],
+  orders = [],
+} = {}) {
+  const { byId, testIds } = indexProfilesForStats(profiles);
+  const txByUser = takeLatest(transactions, (row) => String(row.user_id || ""), 200);
+  const wdByUser = takeLatest(withdrawals, (row) => String(row.companion_id || ""), 100);
+  const orderMap = new Map((orders || []).map((row) => [String(row.id), row]));
+  const rows = [];
+  for (const cp of companionProfiles || []) {
+    const userId = String(cp.user_id || "").trim();
+    if (!userId || testIds.has(userId)) continue;
+    const profile = byId.get(userId) || null;
+    if (profile && isTestAccountRecord(profile)) continue;
+    if (cp.is_test_account === true) continue;
+    const txs = txByUser.get(userId) || [];
+    const wds = wdByUser.get(userId) || [];
+    const needed = txs.map((tx) => String(tx.order_id || "")).filter((id) => id && orderMap.has(id));
+    const linked = needed.map((id) => orderMap.get(id));
+    const bal = companionWalletBalances({ transactions: txs, withdrawals: wds, orders: linked });
+    if (!(bal.withdrawable || bal.earningsLocked || bal.frozen || bal.withdrawn || bal.withdrawableBase)) continue;
+    rows.push({
+      userId,
+      companionId: cp.id || "",
+      name: cp.nickname || profile?.display_name || "未命名陪玩",
+      withdrawable: bal.withdrawable,
+      pendingSettlement: bal.earningsLocked,
+      frozen: bal.frozen,
+      withdrawn: bal.withdrawn,
+    });
+  }
+  const sum = (key) => Math.round(rows.reduce((n, row) => n + Number(row[key] || 0), 0) * 100) / 100;
+  return {
+    asOf: "current",
+    label: "当前余额",
+    note: "与陪玩收益中心同一口径：可提现为已解锁余额；待结算为订单收入锁定（收益中心「订单24h锁定」）。不随控制台日期筛选变化，也不含提现中或已打款。",
+    totals: {
+      withdrawable: sum("withdrawable"),
+      pendingSettlement: sum("pendingSettlement"),
+      frozen: sum("frozen"),
+      withdrawn: sum("withdrawn"),
+      count: rows.length,
+    },
+    rows,
+  };
+}
+
+async function loadCompanionBalanceReport(profiles, companionProfiles) {
+  const [transactions, withdrawals] = await Promise.all([loadWalletRows(), loadBalanceWithdrawals()]);
+  const orderIds = transactions.map((row) => String(row.order_id || "")).filter(Boolean);
+  const orders = await loadOrdersByIds(orderIds);
+  return buildCompanionBalanceReport({ profiles, companionProfiles, transactions, withdrawals, orders });
+}
+
 export default async function handler(req, res) {
   if (!hasDb()) {
     return json(res, 200, {
@@ -553,6 +678,14 @@ export default async function handler(req, res) {
       paymentTransactions,
       range,
     });
+    const balances = await loadCompanionBalanceReport(profiles, companionProfiles);
+    stats.companionWithdrawable = balances.totals.withdrawable;
+    stats.companionPendingSettlement = balances.totals.pendingSettlement;
+    stats.companionBalanceAsOf = "current";
+    stats.companionBalanceLabel = "当前余额";
+    if (String(search.view || query.view || "") === "balances") {
+      return json(res, 200, { ok: true, configured: true, balances });
+    }
     return json(res, 200, { ok: true, configured: true, stats, filter, definitions });
   } catch (error) {
     return json(res, error.status || 500, { ok: false, message: error.message || "后台统计接口异常。" });

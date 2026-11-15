@@ -10,7 +10,7 @@
   function get(url){return Auth.get(url)}
   function post(url,body){return Auth.post(url,body)}
   var dashRange={preset:'all',from:'',to:''};
-  var DASH_RANGES=[['all','全部'],['today','今日'],['yesterday','昨日'],['7d','近7天'],['30d','近30天'],['month','本月'],['last_month','上月'],['custom','自定义日期']];
+  var DASH_RANGES=[['all','全部'],['today','今日'],['yesterday','昨日'],['7d','最近7天'],['30d','近30天'],['month','本月'],['last_month','上月'],['custom','自定义日期']];
   function dashRangeBar(){
     var custom=dashRange.preset==='custom';
     var chips=DASH_RANGES.map(function(item){
@@ -24,6 +24,61 @@
     var q='range='+encodeURIComponent(dashRange.preset);
     if(dashRange.preset==='custom')q+='&from='+encodeURIComponent(dashRange.from)+'&to='+encodeURIComponent(dashRange.to);
     return '/api/admin/dashboard?'+q;
+  }
+  var balanceState={q:'',sort:'withdrawable',dir:'desc',rows:[],totals:{},note:''};
+  function renderCompanionBalances(){
+    var host=document.getElementById('companionBalanceDetail');
+    if(!host)return;
+    host.innerHTML='<div class="content-loading">正在读取陪玩余额明细...</div>';
+    get('/api/admin/dashboard?view=balances').then(function(res){
+      if(res.ok===false){host.innerHTML=note(res.message||'无权查看或读取失败');return;}
+      var pack=res.balances||{};
+      balanceState.rows=pack.rows||[];
+      balanceState.totals=pack.totals||{};
+      balanceState.note=pack.note||'';
+      paintCompanionBalances();
+    }).catch(function(err){host.innerHTML=note(err.message||'读取失败');});
+  }
+  function paintCompanionBalances(){
+    var host=document.getElementById('companionBalanceDetail');
+    if(!host)return;
+    var totals=balanceState.totals||{};
+    var q=String(balanceState.q||'').trim().toLowerCase();
+    var rows=(balanceState.rows||[]).filter(function(row){
+      if(!q)return true;
+      return String(row.name||'').toLowerCase().indexOf(q)>=0||String(row.userId||'').toLowerCase().indexOf(q)>=0||String(row.companionId||'').toLowerCase().indexOf(q)>=0;
+    });
+    rows.sort(function(a,b){
+      var key=balanceState.sort||'withdrawable';
+      var av=key==='name'?String(a.name||''):Number(a[key]||0);
+      var bv=key==='name'?String(b.name||''):Number(b[key]||0);
+      if(av<bv)return balanceState.dir==='asc'?-1:1;
+      if(av>bv)return balanceState.dir==='asc'?1:-1;
+      return 0;
+    });
+    var sum=function(key){return rows.reduce(function(n,row){return n+Number(row[key]||0)},0)};
+    host.innerHTML=
+      '<section class="panel" style="margin-top:16px"><h3 style="margin:0 0 8px">陪玩余额明细</h3>'+
+      '<p class="admin-final-note">'+esc(balanceState.note||'')+' 标注：当前余额。</p>'+
+      '<div class="admin-final-grid">'+
+      '<div class="admin-final-stat"><span>未提现合计</span><strong>'+esc(money(totals.withdrawable||0))+'</strong></div>'+
+      '<div class="admin-final-stat"><span>待结算合计</span><strong>'+esc(money(totals.pendingSettlement||0))+'</strong></div>'+
+      '<div class="admin-final-stat"><span>提现中合计</span><strong>'+esc(money(totals.frozen||0))+'</strong></div>'+
+      '<div class="admin-final-stat"><span>已提现合计</span><strong>'+esc(money(totals.withdrawn||0))+'</strong></div>'+
+      '</div>'+
+      '<div style="display:flex;gap:8px;flex-wrap:wrap;margin:12px 0">'+
+      '<input data-balance-q value="'+esc(balanceState.q)+'" placeholder="搜索陪玩名称 / ID" style="min-width:180px">'+
+      '<select data-balance-sort><option value="withdrawable">按可提现</option><option value="pendingSettlement">按待结算</option><option value="frozen">按提现中</option><option value="withdrawn">按已提现</option><option value="name">按名称</option></select>'+
+      '<button class="mini-btn" type="button" data-balance-dir>'+(balanceState.dir==='desc'?'金额从高到低':'金额从低到高')+'</button>'+
+      '</div>'+
+      '<div class="table-wrap"><table class="admin-final-table"><thead><tr><th>陪玩</th><th>当前可提现</th><th>待结算</th><th>提现中</th><th>累计已提现</th></tr></thead><tbody>'+
+      (rows.length?rows.map(function(row){
+        return '<tr><td><strong>'+esc(row.name||'-')+'</strong><small style="display:block;color:#9ca3af">'+esc(row.userId||row.companionId||'-')+'</small></td><td>'+esc(money(row.withdrawable))+'</td><td>'+esc(money(row.pendingSettlement))+'</td><td>'+esc(money(row.frozen))+'</td><td>'+esc(money(row.withdrawn))+'</td></tr>';
+      }).join(''):'<tr><td colspan="5">暂无余额记录</td></tr>')+
+      '</tbody></table></div>'+
+      '<p class="admin-final-note">当前筛选合计：可提现 '+esc(money(sum('withdrawable')))+' · 待结算 '+esc(money(sum('pendingSettlement')))+'。未筛选时与上方卡片一致。</p></section>';
+    var sortEl=host.querySelector('[data-balance-sort]');
+    if(sortEl)sortEl.value=balanceState.sort;
   }
   function renderDashboard(){
     var target=document.getElementById('superStats');
@@ -51,11 +106,16 @@
         {label:'退款订单',value:s.refunds||0,href:'#orders'},
         {label:'营业额',value:money(s.totalAmount||0),href:'#orders'},
         {label:'平台利润',value:money(s.platformProfit||0),href:'#orders'},
-        {label:'提现中/已打款',value:money(s.withdrawPending||0)+' / '+money(s.withdrawPaid||0),href:'#service-reports',valueClass:'admin-final-stat-value-wrap'}
+        {label:'提现中/已打款',value:money(s.withdrawPending||0)+' / '+money(s.withdrawPaid||0),href:'#service-reports',valueClass:'admin-final-stat-value-wrap'},
+        {label:'陪玩未提现总余额',value:money(s.companionWithdrawable||0),hint:'当前余额',openBalances:true},
+        {label:'陪玩待结算金额',value:money(s.companionPendingSettlement||0),hint:'当前余额',openBalances:true}
       ];
       target.innerHTML=dashRangeBar()+(res.message?note(res.message):'')+'<div class="admin-final-grid">'+cards.map(function(item){
+        if(item.openBalances){
+          return '<a class="admin-final-stat" href="#companion-balances" data-open-companion-balances><span>'+esc(item.label)+'</span><strong>'+esc(item.value)+'</strong><small style="display:block;margin-top:6px;color:#9ca3af">'+esc(item.hint)+'</small></a>';
+        }
         return '<a class="admin-final-stat" href="'+esc(item.href)+'"><span>'+esc(item.label)+'</span><strong'+(item.valueClass?' class="'+esc(item.valueClass)+'"':'')+'>'+esc(item.value)+'</strong></a>';
-      }).join('')+'</div>';
+      }).join('')+'</div><p class="admin-final-note">未提现余额与待结算为当前实时余额，不随上方日期变化。</p><div id="companionBalanceDetail"></div>';
     }).catch(function(err){
       target.innerHTML=dashRangeBar()+note(err.message||'数据加载失败')+'<button class="mini-btn" type="button" data-admin-final-refresh="dashboard">重试</button>';
     });
@@ -309,7 +369,7 @@
       rows.push(['状态',ef.status==='done'?'已提前结束':'处理中'+(ef.refundError?'（退款未完成：'+ef.refundError+'）':'')]);
       rows.push(['发起人',(ef.initiator&&ef.initiator.label)||'-']);
       rows.push(['确认人',ef.confirmedByName||'-']);
-      rows.push(['实际时长',ef.servedHours+' 小时 / 预约 '+ef.bookedHours+' 小时']);
+      rows.push([o.billingUnit==='per_game'?'完成局数':'实际时长', o.billingUnit==='per_game'?(o.quantityLabel||((o.quantity||1)+'局')):(ef.servedHours+' 小时 / 预约 '+ef.bookedHours+' 小时')]);
       rows.push(['结算',money(ef.settleAmount)]);
       rows.push(['退款（猫粮余额）',money(ef.refundAmount)]);
       rows.push(['陪玩收入',money(ef.companionIncome)]);
@@ -328,7 +388,8 @@
   function serviceStandardSection(o){
     var s=o&&o.serviceSnapshot;
     if(!s)return '';
-    var rows=[['项目',s.serviceName||o.serviceContent||'-'],['下单时单价',money(s.unitPrice)+' / '+(s.pricingUnit||'小时')]];
+    var unitText=/per_game|^局$/i.test(String(s.pricingUnit||''))||o.billingUnit==='per_game'?'局':(s.pricingUnit||'小时');
+    var rows=[['项目',s.serviceName||o.serviceContent||'-'],['下单时单价',money(s.unitPrice)+' / '+unitText]];
     if(s.bossRank&&s.bossRank.rank)rows.push(['老板段位',(s.bossRank.game?s.bossRank.game+' · ':'')+s.bossRank.rank]);
     rows.push(['服务要求', s.serviceRequirements ? esc(s.serviceRequirements).replace(/\n/g,'<br>') : '下单时未保存', true]);
     if(s.requirementsAck&&s.requirementsAck.at)rows.push(['服务要求确认', fmtOrderTime(s.requirementsAck.at)+(s.requirementsAck.companionId?' · 陪玩已确认':'')]);
@@ -377,6 +438,7 @@
         ['订单类型',o.orderType||o.type||'-'],
         ['人数',memberCount?String(memberCount):'-'],
         ['金额',money(o.totalAmount)],
+        ['计费',o.billingUnit==='per_game'?(o.quantityLabel||((o.quantity||1)+'局')):((o.hours!=null&&o.hours!==''?o.hours:'-')+' 小时')],
         ['猫粮',money(o.totalAmount)],
         ['创建时间',fmtOrderTime(o.createdAt)],
         ['订单状态',o.statusText||statusText(o.status)],
@@ -504,6 +566,7 @@
         '<div><span>老板</span><div class="admin-order-card-party">'+displayParty(o.bossName,o.bossUid)+'</div></div>'+
         '<div><span>陪玩</span><div class="admin-order-card-party">'+displayParty(o.companionsLabel||o.companionName||o.playerName,o.companionCode||o.playerUid)+'</div></div>'+
         '<div><span>金额</span><b>'+money(o.totalAmount)+'</b></div>'+
+        '<div><span>计费</span><b>'+esc(o.billingUnit==='per_game'?(o.quantityLabel||((o.quantity||1)+'局')):((o.hours!=null&&o.hours!==''?o.hours:'-')+' 小时'))+'</b></div>'+
         '<div><span>支付方式</span><b>'+esc(o.paymentMethod||'-')+'</b></div>'+
         '<div><span>创建时间</span><b>'+esc(fmtOrderTime(o.createdAt))+'</b></div>'+
         '</div>'+
@@ -824,10 +887,25 @@
     },true);
   }
   bindOrderManageChrome();
+  document.addEventListener('input',function(e){
+    var balanceQ=e.target.closest&&e.target.closest('[data-balance-q]');
+    if(!balanceQ)return;
+    balanceState.q=balanceQ.value;
+    paintCompanionBalances();
+  });
+  document.addEventListener('change',function(e){
+    var balanceSort=e.target.closest&&e.target.closest('[data-balance-sort]');
+    if(!balanceSort)return;
+    balanceState.sort=balanceSort.value;
+    paintCompanionBalances();
+  });
   document.addEventListener('click',function(e){
     if(e.target.closest('[data-admin-final-refresh="orders"]'))renderOrders();
     if(e.target.closest('[data-admin-final-refresh="reports"]'))renderReports();
     if(e.target.closest('[data-admin-final-refresh="dashboard"]'))renderDashboard();
+    var openBalances=e.target.closest('[data-open-companion-balances]');
+    if(openBalances){e.preventDefault();renderCompanionBalances();}
+    if(e.target.closest('[data-balance-dir]')){balanceState.dir=balanceState.dir==='desc'?'asc':'desc';paintCompanionBalances();}
     var reviewToggle=e.target.closest('[data-admin-review-toggle]');
     if(reviewToggle){
       reviewSectionOpen=!reviewSectionOpen;

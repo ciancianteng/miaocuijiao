@@ -78,6 +78,7 @@ import {
   clawbackCompanionIncomeForOrder,
 } from "./_companion-income.js";
 import { splitCompanionIncomeByWithdrawLock, companionEarningsUnlockMeta } from "./_earnings-windows.js";
+import { companionWalletBalances } from "./_companion-wallet-balance.js";
 import { readMedalStatus, writeMedalStatus, medalDisplayTag } from "./_companion-medal.js";
 import {
   anonymousBossLabel,
@@ -309,7 +310,22 @@ const REJECT_REASONS = [
 ];
 const COMPANION_CONFIRM_TIMEOUT_MS = 5 * 60 * 1000;
 
-function json(res, status, data) { res.status(status).json(data); }
+function json(res, status, data) {
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+  res.setHeader("Pragma", "no-cache");
+  res.setHeader("CDN-Cache-Control", "no-store");
+  res.setHeader("Vercel-CDN-Cache-Control", "no-store");
+  res.setHeader("Vary", "Authorization, x-mcj-companion-token");
+  res.status(status).json(data);
+}
+
+function earningsIdentity(profile = {}, companion = {}) {
+  return {
+    authUserId: String(profile.id || ""),
+    companionProfileId: String(companion.id || ""),
+    nickname: String(companion.nickname || profile.display_name || "").trim(),
+  };
+}
 function hasDb() { return REQUIRED_ENV.every((key) => process.env[key]); }
 function anonHeaders(extra = {}) { return { apikey: process.env.SUPABASE_ANON_KEY, "Content-Type": "application/json", ...extra }; }
 function serviceHeaders(extra = {}) {
@@ -453,7 +469,9 @@ function buildSettlement({ order, boss = {}, companion = {}, rates, completedAt 
     bossId: order.boss_id || "",
     serviceName: order.title || order.description || order.game || "陪玩服务",
     game: order.game || "",
-    duration: order.hours ? `${order.hours}小时` : "",
+    duration: /per_game|局/i.test(String(order.pricing_unit || "")) || /计费单位[:：]\s*per_game/.test(String(order.description || ""))
+      ? `${Math.max(1, Math.floor(Number(order.quantity) || Number((String(order.description || "").match(/局数[:：]\s*(\d+)/) || [])[1]) || 1))}局`
+      : (order.hours ? `${order.hours}小时` : ""),
     hours: money(order.hours),
     totalCatFood: total,
     platformCommissionRate: platformRate,
@@ -1440,11 +1458,15 @@ function viewOrder(row = {}, boss = {}, settlement = null) {
     stripOrderFacingText(row.title || "") ||
     stripOrderFacingText(row.note || "") ||
     "";
-  const durationLabel = row.hours
-    ? `${row.hours}小时`
-    : row.rounds || row.games_count
-      ? `${row.rounds || row.games_count}局`
-      : "";
+  const perGame = /per_game|局/i.test(String(row.pricing_unit || "")) || /计费单位[:：]\s*per_game/.test(`${row.description || ""}\n${row.notes || ""}`);
+  const gameQty = Math.max(1, Math.floor(Number(row.quantity) || Number((String(row.description || "").match(/局数[:：]\s*(\d+)/) || [])[1]) || 1));
+  const durationLabel = perGame
+    ? `${gameQty}局`
+    : row.hours
+      ? `${row.hours}小时`
+      : row.rounds || row.games_count
+        ? `${row.rounds || row.games_count}局`
+        : "";
   return {
     id: row.id,
     orderNo: row.order_no || row.id,
@@ -1469,6 +1491,9 @@ function viewOrder(row = {}, boss = {}, settlement = null) {
     earlyFinish: companionEarlyFinishView(row),
     earlyFinishReject: (() => { const r = readEarlyFinishReject(row); return r ? { reason: r.reason, at: r.at } : null; })(),
     duration: durationLabel,
+    billingUnit: perGame ? "per_game" : "per_hour",
+    quantity: perGame ? gameQty : Number(row.quantity || 0) || null,
+    quantityLabel: perGame ? `${gameQty}局` : "",
     hours: money(row.hours),
     unitPrice,
     amount,
@@ -2270,6 +2295,7 @@ async function loadWalletBundle(profile, myOrders = []) {
         withdrawn: summary.withdrawn || 0,
         availableWithdrawable: summary.withdrawable || 0,
       },
+      identity: earningsIdentity(profile),
     },
     warnings,
   };
@@ -2285,58 +2311,18 @@ function summaryFrom(myOrders, transactions, withdrawals = [], linkedOrders = []
     return d.toISOString().slice(0, 10);
   })();
   const ordersForMap = linkedOrders && linkedOrders.length ? linkedOrders : myOrders;
-  const { orderIncome, giftIncome, inviteIncome, rewardOther, orderMap } = partitionCompanionIncome(
+  const { orderIncome, giftIncome, inviteIncome, rewardOther } = partitionCompanionIncome(
     transactions,
     ordersForMap
   );
   const incomeRows = orderIncome;
   const giftRows = giftIncome || [];
   const inviteRows = inviteIncome || [];
-  const orderIncomeIds = new Set(incomeRows.map((r) => String(r.order_id || "")).filter(Boolean));
-  const refundRows = (transactions || []).filter((row) => {
-    if (row.transaction_type !== "refund" || row.status === "cancelled") return false;
-    const oid = row.order_id ? String(row.order_id) : "";
-    if (!oid) return true;
-    return orderIncomeIds.has(oid);
-  });
-  // §8 freeze: in-flight withdrawals lock balance until REJECTED / CANCELED / PAID settles.
-  const frozen = (withdrawals || [])
-    .filter((w) => WITHDRAW_FROZEN.has(w.status) && !WITHDRAW_RELEASED.has(w.status))
-    .reduce((n, w) => n + money(w.cat_food_amount || w.amount), 0);
-  const withdrawn = (withdrawals || [])
-    .filter((w) => w.status === "completed")
-    .reduce((n, w) => n + money(w.cat_food_amount || w.amount), 0);
-  // Withdrawal-locked + already-withdrawn must both reduce available (never double-spend).
-  const locked = (withdrawals || [])
-    .filter((w) => WITHDRAW_ACTIVE.has(w.status))
-    .reduce((n, w) => n + money(w.cat_food_amount || w.amount), 0);
-  const orderGross = incomeRows.reduce((n, row) => n + money(row.amount), 0);
-  const giftGross = giftRows.reduce((n, row) => n + money(row.amount), 0);
-  const inviteGross = inviteRows.reduce((n, row) => n + money(row.amount), 0);
-  const refundTotal = refundRows.reduce((n, row) => n + money(row.amount), 0);
-  const orderNet = Math.max(0, roundMoney(orderGross - refundTotal));
-  // Gift + invite catfood ledger rows enter withdrawable (source kept via incomeKind).
-  // Order income: unlock at earliest of Boss confirm OR serviceComplete+24h (read-time).
-  const withdrawableBase = Math.max(0, roundMoney(orderNet + giftGross + inviteGross));
+  const balances = companionWalletBalances({ transactions, withdrawals, orders: ordersForMap });
   const bonus = sumTxAmount(rewardOther);
   const sumIncomeOn = (pred) =>
     [...incomeRows, ...giftRows, ...inviteRows].filter(pred).reduce((n, row) => n + money(row.amount), 0);
-
-  // Owner lock: order income unlocks only at completed_at + 24h. Gift/invite unlock immediately.
-  let earningsLocked = 0;
-  try {
-    const { locked: lockedRows } = splitCompanionIncomeByWithdrawLock(incomeRows, orderMap, Date.now());
-    const lockedGross = lockedRows.reduce((n, row) => n + money(row.amount), 0);
-    const lockedOrderIds = new Set(lockedRows.map((r) => String(r.order_id || "")).filter(Boolean));
-    const lockedRefund = refundRows
-      .filter((r) => lockedOrderIds.has(String(r.order_id || "")))
-      .reduce((n, r) => n + money(r.amount), 0);
-    earningsLocked = Math.max(0, roundMoney(lockedGross - lockedRefund));
-  } catch {
-    earningsLocked = 0;
-  }
-
-  const withdrawable = Math.max(0, roundMoney(withdrawableBase - earningsLocked - locked));
+  const { withdrawableBase, orderNet, giftGross, inviteGross, earningsLocked, withdrawn, frozen, withdrawable } = balances;
   return {
     todayOrders: myOrders.filter((o) => String(o.createdAt || "").slice(0,10) === today).length,
     waitingConfirm: myOrders.filter((o) => o.status === "claimed").length,
@@ -3015,6 +3001,7 @@ async function bootstrapData(profile, companion) {
             withdrawn: summary.withdrawn || 0,
             availableWithdrawable: summary.withdrawable || 0,
           },
+          identity: earningsIdentity(profile, companionRow),
         },
     earningDetails: permissions.isolationMode ? [] : earningDetails,
     walletLedger: permissions.isolationMode ? [] : walletLedger,
@@ -4404,7 +4391,10 @@ export default async function handler(req, res) {
           profileId: auth.profile.id,
           companionId: companion.id || null,
           summary: wallet.summary,
-          earnings: wallet.earnings,
+          earnings: {
+            ...(wallet.earnings || {}),
+            identity: earningsIdentity(auth.profile, companion),
+          },
           walletLedger: wallet.walletLedger,
           earningDetails: wallet.earningDetails,
           withdrawals: await Promise.all((wallet.withdrawalRows || []).map((w) => viewCompanionWithdrawal(w))),

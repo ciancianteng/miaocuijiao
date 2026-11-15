@@ -111,6 +111,7 @@
   }
 
   function paint(count) {
+    if (portal() === "admin") return;
     var n = Number(count);
     if (!isFinite(n) || n < 0) n = 0;
     var label = n > 99 ? "99+" : String(n);

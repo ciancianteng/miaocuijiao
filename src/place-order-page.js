@@ -136,6 +136,12 @@
   function qs() {
     return new URLSearchParams(location.search || "");
   }
+  function perGameOrder() {
+    return /局|per_game/i.test(String((state.companion && state.companion.pricingUnit) || ""));
+  }
+  function gameCount() {
+    return Math.max(1, Math.floor(money(state.hours) || 1));
+  }
   function currentHours() {
     return Math.max(0.5, money(state.hours) || 1);
   }
@@ -234,13 +240,15 @@
     var endLabel = scheduleWindowLabel(start, end).split(" – ")[1] || end;
     if (endEl) endEl.textContent = endLabel;
     if (hintEl) {
-      hintEl.textContent =
-        "服务时段：" + scheduleWindowLabel(start, end) + "（" + serviceDurationHours() + "小时）";
+      hintEl.textContent = perGameOrder()
+        ? "按局计费：购买 " + gameCount() + " 局，完成局数即可结束，不按小时计时"
+        : "服务时段：" + scheduleWindowLabel(start, end) + "（" + serviceDurationHours() + "小时）";
     }
   }
   function totalAmount() {
     var c = state.companion;
     if (!c) return 0;
+    if (perGameOrder()) return Math.round(money(c.unitPrice) * gameCount() * 100) / 100;
     return Math.round(money(c.unitPrice) * currentHours() * currentQuantity() * 100) / 100;
   }
   function splitGameNames(value) {
@@ -439,7 +447,7 @@
         '" aria-pressed="' +
         (state.hoursMode === h.id ? "true" : "false") +
         '">' +
-        esc(h.label) +
+        esc(perGameOrder() && h.value ? h.value + " 局" : h.label) +
         "</button>"
       );
     }).join("");
@@ -484,7 +492,7 @@
       '<div class="mcj-po-price-row"><span>单价</span><span class="mcj-po-price-hero" data-po-price-hero>' +
       esc(moneyText(c.unitPrice)) +
       "</span><small>/ " +
-      esc(c.pricingUnit || "小时") +
+      esc(perGameOrder() ? "局" : (c.pricingUnit || "小时")) +
       "</small></div>" +
       "<div>当前服务：<strong data-po-service-preview>" +
       esc(currentServiceLabel()) +
@@ -492,14 +500,14 @@
       '<div class="mcj-po-field"><span class="mcj-po-label">游戏/服务项目</span><div class="mcj-po-chips" role="group">' +
       serviceChips +
       "</div></div>" +
-      '<div class="mcj-po-field"><span class="mcj-po-label">时长</span><div class="mcj-po-chips" role="radiogroup">' +
+      '<div class="mcj-po-field"><span class="mcj-po-label">' + (perGameOrder() ? "局数" : "时长") + '</span><div class="mcj-po-chips" role="radiogroup">' +
       hourChips +
       "</div>" +
       '<div class="mcj-po-custom-hours' +
       (state.hoursMode === "custom" ? " show" : "") +
       '" data-po-custom-hours><input type="number" min="0.5" step="0.5" data-po-custom-hours-input value="' +
       esc(state.hours) +
-      '" placeholder="小时数"></div></div>' +
+      '" placeholder="' + (perGameOrder() ? "局数" : "小时数") + '"></div></div>' +
       '<div class="mcj-po-field"><span class="mcj-po-label">游戏ID *</span>' +
       '<input data-po-game-id required placeholder="请输入游戏ID" autocomplete="off" inputmode="text"></div>' +
       '<div class="mcj-po-field mcj-po-schedule-field"><span class="mcj-po-label">服务时间 *</span>' +
@@ -743,8 +751,9 @@
         serviceType: currentServiceLabel(),
         service: currentServiceLabel(),
         game: currentServiceLabel(),
-        hours: currentHours(),
-        quantity: currentQuantity(),
+        hours: perGameOrder() ? 0 : currentHours(),
+        quantity: perGameOrder() ? gameCount() : currentQuantity(),
+        pricingUnit: perGameOrder() ? "per_game" : ((c && c.pricingUnit) || "小时"),
         unitPrice: c.unitPrice,
         totalAmount: totalAmount(),
         gameId: gameId,

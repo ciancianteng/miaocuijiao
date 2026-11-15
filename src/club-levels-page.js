@@ -1,174 +1,244 @@
 (function () {
   "use strict";
+
+  var state = {
+    levels: [],
+    games: [],
+    selectedGameId: "",
+    openGameId: "",
+  };
+
   function esc(v) {
     return String(v == null ? "" : v).replace(/[&<>"']/g, function (c) {
       return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
     });
   }
-  function rangeText(level) {
-    if (window.MCJCompanionLevels && window.MCJCompanionLevels.formatRange) {
-      return window.MCJCompanionLevels.formatRange(level);
+
+  function starSvg() {
+    return (
+      '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#F7D4E6" d="M12 2.4l1.62 5.1h5.36l-4.34 3.16 1.66 5.1L12 12.6 7.7 15.76l1.66-5.1L5.02 7.5h5.36L12 2.4z"/></svg>'
+    );
+  }
+
+  function crownSvg(fill) {
+    return (
+      '<svg class="mcj-lv-crown" viewBox="0 0 24 24" aria-hidden="true"><path fill="' +
+      esc(fill) +
+      '" d="M4 17.2 6.1 8.4l3.9 3.7L12 6.2l2 5.9 3.9-3.7 2.1 8.8H4zm0 1.6h16V20H4v-1.2z"/></svg>'
+    );
+  }
+
+  function crownFill(id) {
+    if (id === "lv5") return "#F7C779";
+    if (id === "lv4") return "#F2B77D";
+    if (id === "lv3") return "#D69CFB";
+    if (id === "lv2") return "#75B8F7";
+    return "#A9A5B2";
+  }
+
+  function selectedGame() {
+    return (state.games || []).find(function (g) {
+      return String(g.id) === String(state.selectedGameId);
+    }) || state.games[0] || null;
+  }
+
+  function markupByLevel(game, levelId) {
+    var rows = (game && game.levels) || [];
+    return rows.find(function (row) {
+      return String(row.levelId) === String(levelId);
+    }) || null;
+  }
+
+  function moneyText(n) {
+    if (n == null || !isFinite(Number(n))) return "";
+    var v = Math.round(Number(n) * 100) / 100;
+    return String(v);
+  }
+
+  function lvAmountHtml(hit) {
+    if (!hit || !hit.markupConfigured) return '<strong class="mcj-lv-amount is-empty">待配置</strong>';
+    return '<strong class="mcj-lv-amount">+' + esc(moneyText(hit.markupAllowance)) + "</strong>";
+  }
+
+  function priceCell(configured, value) {
+    if (!configured || value == null) return "暂未定价";
+    return moneyText(value) + " 猫粮";
+  }
+
+  function iconHtml(game) {
+    var icon = String(game.icon || "").trim();
+    if (/^(https?:)?\/\//.test(icon) || icon.indexOf("/") === 0 || /\.(png|jpe?g|webp|gif|svg)$/i.test(icon)) {
+      return '<img class="mcj-game-icon" src="' + esc(icon) + '" alt="">';
     }
-    return (level.min || 0) + "–" + (level.max || 0) + (level.maxPlus ? "+" : "") + " 猫粮";
+    return '<span class="mcj-game-icon" aria-hidden="true">' + esc(icon || "◆") + "</span>";
   }
-  function card(level) {
-    var bg =
-      window.MCJCompanionLevels && window.MCJCompanionLevels.cardBackgroundCss
-        ? window.MCJCompanionLevels.cardBackgroundCss(level)
-        : "linear-gradient(135deg,#1a1218,#2a1824)";
+
+  function lvCard(level, game) {
+    var id = String(level.id || "").toLowerCase();
+    var hit = markupByLevel(game, id);
+    var name = String(level.name || "").trim() || id.toUpperCase();
+    var extra =
+      id === "lv5"
+        ? '<span style="display:flex;align-items:center;gap:6px">' +
+          crownSvg(crownFill(id)) +
+          '<span class="mcj-lv-badge">最高等级</span></span>'
+        : crownSvg(crownFill(id));
     return (
-      '<article class="club-level-card" style="--lvl:' +
-      esc(level.color || "#f472b6") +
-      ";background:" +
-      esc(bg) +
+      '<article class="mcj-lv-card mcj-lv-card--' +
+      esc(id) +
       '">' +
-      '<header><span class="club-level-badge">' +
-      esc(level.icon || "●") +
-      " " +
-      esc(level.code) +
-      "</span><strong>" +
-      esc(level.name) +
-      "</strong></header>" +
-      '<p class="club-level-price">' +
-      esc(rangeText(level)) +
-      "</p>" +
-      (level.description ? '<p class="club-level-desc">' + esc(level.description) + "</p>" : "") +
-      '<dl class="club-level-meta">' +
-      (level.requirements || level.upgradeCondition
-        ? "<div><dt>等级要求 / 升级条件</dt><dd>" + esc(level.requirements || level.upgradeCondition) + "</dd></div>"
-        : "") +
-      (level.downgradeCondition
-        ? "<div><dt>降级条件</dt><dd>" + esc(level.downgradeCondition) + "</dd></div>"
-        : "") +
-      (level.benefits ? "<div><dt>等级权益</dt><dd>" + esc(level.benefits) + "</dd></div>" : "") +
-      "</dl></article>"
+      '<div class="mcj-lv-top"><span class="mcj-lv-code">' +
+      esc(level.code || id.toUpperCase()) +
+      "</span>" +
+      extra +
+      "</div>" +
+      '<span class="mcj-lv-name">' +
+      esc(name) +
+      "</span>" +
+      lvAmountHtml(hit) +
+      '<span class="mcj-lv-foot">等级加价 · 猫粮/小时</span>' +
+      "</article>"
     );
   }
-  function clubNoteModule() {
-    var paras = [
-      "我们不是不重视陪玩的能力，而是经过多年对陪玩行业的观察与审核后发现：",
-      "“考核通过”与“真正会接单、会服务老板”，其实是两件不同的事情。",
-      "有的人考核成绩很好，却不一定懂得沟通、照顾老板的游戏体验；也有人并不擅长应付统一标准的考核，但在真实接单过程中认真、负责、有耐心，能够让老板获得很好的陪伴体验。",
-      "所以在妙脆角，我们更希望把选择权交给双方。",
-      "陪玩对自己的资料、能力、服务态度与每一张订单负责；老板则通过真实下单，亲自感受这位陪玩的服务。",
-      "平台不会替任何一位陪玩“保证一定适合所有老板”，但我们会通过真实评价、订单记录、投诉与售后记录，让真正认真服务的陪玩逐渐获得更高的等级、曝光和机会。",
-    ];
-    var summaryHtml = paras
-      .slice(0, 3)
-      .map(function (p) {
-        return "<p>" + esc(p) + "</p>";
-      })
-      .join("");
-    var fullHtml = paras
-      .map(function (p) {
-        return "<p>" + esc(p) + "</p>";
-      })
-      .join("");
+
+  function gameDetailHtml(game) {
+    if (!game) return '<p class="club-levels-empty">暂无该游戏服务</p>';
+    var rows = (state.levels || []).map(function (level) {
+      var hit = markupByLevel(game, level.id);
+      return (
+        '<div class="mcj-svc-lv"><span>' +
+        esc(level.code || level.id) +
+        " 加价 / 最终单价</span><strong>" +
+        esc(hit && hit.markupConfigured ? "+" + moneyText(hit.markupAllowance) : "待配置") +
+        " · " +
+        esc(priceCell(hit && hit.finalConfigured, hit && hit.finalPrice)) +
+        "</strong></div>"
+      );
+    }).join("");
     return (
-      '<section class="club-levels-note" data-club-note aria-label="本俱乐部说明">' +
-      '<div class="club-levels-note-card">' +
-      "<header>" +
-      "<h2>本俱乐部说明</h2>" +
-      '<p class="club-levels-note-sub">为什么妙脆角没有传统的陪玩考核？</p>' +
-      "</header>" +
-      '<div class="club-levels-note-body" data-club-note-body data-expanded="0">' +
-      '<div class="club-levels-note-summary" data-club-note-summary>' +
-      summaryHtml +
-      "</div>" +
-      '<div class="club-levels-note-full" data-club-note-full hidden>' +
-      fullHtml +
-      "</div>" +
-      "</div>" +
-      '<button type="button" class="club-levels-note-toggle" data-club-note-toggle aria-expanded="false">展开全文</button>' +
-      "</div></section>"
+      '<div class="mcj-game-detail" data-game-detail="' +
+      esc(game.id) +
+      '">' +
+      '<div class="mcj-svc-row">' +
+      '<p class="mcj-svc-name">' +
+      esc(game.name) +
+      "</p>" +
+      '<p class="mcj-svc-meta">基础单价：' +
+      esc(priceCell(game.baseConfigured, game.basePrice)) +
+      "　计价单位：" +
+      esc(game.unit || "局") +
+      "</p>" +
+      '<div class="mcj-svc-levels">' +
+      rows +
+      "</div></div></div>"
     );
   }
-  function bindClubNote(root) {
-    if (!root) return;
-    var note = root.querySelector("[data-club-note]");
-    if (!note || note.getAttribute("data-bound") === "1") return;
-    note.setAttribute("data-bound", "1");
-    var btn = note.querySelector("[data-club-note-toggle]");
-    var body = note.querySelector("[data-club-note-body]");
-    var summary = note.querySelector("[data-club-note-summary]");
-    var full = note.querySelector("[data-club-note-full]");
-    if (!btn || !body || !summary || !full) return;
-    btn.addEventListener("click", function () {
-      var open = body.getAttribute("data-expanded") === "1";
-      if (open) {
-        body.setAttribute("data-expanded", "0");
-        full.hidden = true;
-        summary.hidden = false;
-        btn.setAttribute("aria-expanded", "false");
-        btn.textContent = "展开全文";
-      } else {
-        body.setAttribute("data-expanded", "1");
-        summary.hidden = true;
-        full.hidden = false;
-        btn.setAttribute("aria-expanded", "true");
-        btn.textContent = "收起";
-      }
-    });
-  }
-  function render(guide, levels) {
+
+  function render() {
     var root = document.getElementById("clubLevelsRoot");
     if (!root) return;
-    var list = (levels || []).filter(function (l) {
-      return l.enabled !== false;
-    });
-    root.innerHTML =
-      '<section class="club-levels-hero"><h1>' +
-      esc(guide.title || "俱乐部等级说明") +
-      "</h1><p>" +
-      esc(guide.intro || "") +
-      "</p>" +
-      (guide.updatedAt
-        ? "<small>更新时间：" +
-          esc(new Date(guide.updatedAt).toLocaleString("zh-CN", { hour12: false })) +
-          "</small>"
-        : "") +
-      "</section>" +
-      clubNoteModule() +
-      '<section class="club-levels-grid">' +
-      (list.length ? list.map(card).join("") : '<div class="club-levels-empty">后台暂未发布等级说明</div>') +
-      "</section>";
-    bindClubNote(root);
-  }
-  function load() {
-    return Promise.all([
-      fetch("/api/platform/content?types=club_level_guide", {
-        cache: "no-store",
-        headers: { Accept: "application/json" },
+    var game = selectedGame();
+    var selector = "";
+    if ((state.games || []).length > 1) {
+      selector =
+        '<label class="mcj-pt-select-wrap"><select class="mcj-pt-select" data-price-game>' +
+        state.games
+          .map(function (g) {
+            return (
+              '<option value="' +
+              esc(g.id) +
+              '"' +
+              (String(g.id) === String(state.selectedGameId) ? " selected" : "") +
+              ">" +
+              esc(g.name) +
+              "</option>"
+            );
+          })
+          .join("") +
+        "</select></label>";
+    }
+    var lvHtml = (state.levels || [])
+      .map(function (level) {
+        return lvCard(level, game);
       })
-        .then(function (r) {
-          return r.json();
-        })
-        .catch(function () {
-          return {};
-        }),
-      (window.MCJCompanionLevels && typeof window.MCJCompanionLevels.fetchLevelsResponse === "function"
-        ? window.MCJCompanionLevels.fetchLevelsResponse().then(function (result) {
-            return result.body;
-          })
-        : fetch("/api/platform/companion-levels", {
-            cache: "no-store",
-            headers: { Accept: "application/json" },
-          }).then(function (r) {
-            return r.json();
-          })
-      ).catch(function () {
-        return {};
-      }),
-    ]).then(function (pair) {
-      var guideRows = ((pair[0] || {}).byType || {}).club_level_guide || [];
-      var guide = guideRows[0] || { title: "俱乐部等级说明", intro: "" };
-      var levels = (pair[1] && (pair[1].levels || pair[1].data || [])) || [];
-      if (window.MCJCompanionLevels && window.MCJCompanionLevels.hydrateFromList) {
-        window.MCJCompanionLevels.hydrateFromList(levels);
-        levels = window.MCJCompanionLevels.list ? window.MCJCompanionLevels.list() : levels;
-      }
-      render(guide, levels);
+      .join("");
+    var gamesHtml = (state.games || [])
+      .map(function (g) {
+        var open = String(state.openGameId) === String(g.id);
+        return (
+          '<button type="button" class="mcj-game-card' +
+          (open ? " is-open" : "") +
+          '" data-open-game="' +
+          esc(g.id) +
+          '">' +
+          iconHtml(g) +
+          '<span class="mcj-game-name">' +
+          esc(g.name) +
+          "</span></button>" +
+          (open ? gameDetailHtml(g) : "")
+        );
+      })
+      .join("");
+    root.innerHTML =
+      '<section class="mcj-pt-hero"><div><h1>✦ 陪玩等级 · 加价权益</h1><p>不同等级，专属服务加价权益</p></div><div class="mcj-pt-stars">' +
+      starSvg() +
+      starSvg() +
+      "</div></section>" +
+      '<section class="mcj-pt-card">' +
+      selector +
+      '<div class="mcj-lv-grid">' +
+      (lvHtml || '<div class="club-levels-empty">暂无等级配置</div>') +
+      "</div></section>" +
+      '<section class="mcj-games-head"><h2>游戏服务价格表</h2><p>选择游戏，查看全部陪玩项目及单价</p></section>' +
+      '<section class="mcj-game-grid">' +
+      (gamesHtml || '<div class="club-levels-empty">暂无启用游戏</div>') +
+      "</section>";
+  }
+
+  function bind() {
+    var root = document.getElementById("clubLevelsRoot");
+    if (!root || root.getAttribute("data-bound") === "1") return;
+    root.setAttribute("data-bound", "1");
+    root.addEventListener("change", function (e) {
+      var sel = e.target.closest("[data-price-game]");
+      if (!sel) return;
+      state.selectedGameId = sel.value;
+      render();
+    });
+    root.addEventListener("click", function (e) {
+      var btn = e.target.closest("[data-open-game]");
+      if (!btn) return;
+      var id = btn.getAttribute("data-open-game");
+      state.openGameId = String(state.openGameId) === String(id) ? "" : id;
+      state.selectedGameId = id;
+      render();
     });
   }
+
+  function pickDefaultGame(games) {
+    var delta = (games || []).find(function (g) {
+      return /三角洲/.test(String(g.name || ""));
+    });
+    return (delta && delta.id) || (games[0] && games[0].id) || "";
+  }
+
+  function load() {
+    bind();
+    fetch("/api/public/club-price-table", { cache: "no-store", headers: { Accept: "application/json" } })
+      .then(function (r) {
+        return r.json();
+      })
+      .then(function (body) {
+        state.levels = (body && body.levels) || [];
+        state.games = (body && body.games) || [];
+        state.selectedGameId = pickDefaultGame(state.games);
+        render();
+      })
+      .catch(function () {
+        var root = document.getElementById("clubLevelsRoot");
+        if (root) root.innerHTML = '<div class="club-levels-empty">价格表暂时无法读取</div>';
+      });
+  }
+
   load();
 })();

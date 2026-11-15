@@ -402,7 +402,8 @@
 
   var chatUnreadInflight = null;
   var chatUnreadFetchedAt = 0;
-  var CHAT_UNREAD_MIN_INTERVAL_MS = 8000;
+  var CHAT_UNREAD_MIN_INTERVAL_MS = 15000;
+  var chatUnreadBackoffUntil = 0;
 
   function refreshChatUnread(opts) {
     opts = opts || {};
@@ -419,6 +420,9 @@
       return Promise.resolve(0);
     }
     if (chatUnreadInflight) return chatUnreadInflight;
+    if (!opts.force && Date.now() < chatUnreadBackoffUntil) {
+      return Promise.resolve(chatUnreadState.unread);
+    }
     if (
       !opts.force &&
       chatUnreadFetchedAt &&
@@ -431,6 +435,15 @@
       cache: "no-store",
     })
       .then(function (res) {
+        if (res.status >= 500) {
+          chatUnreadBackoffUntil = Date.now() + 30000;
+          return {};
+        }
+        var ctype = String(res.headers.get("content-type") || "");
+        if (ctype.indexOf("json") === -1) {
+          chatUnreadBackoffUntil = Date.now() + 15000;
+          return {};
+        }
         return res.json().catch(function () {
           return {};
         });
@@ -787,7 +800,8 @@
 
   var notifyInflight = null;
   var notifyFetchedAt = 0;
-  var NOTIFY_MIN_INTERVAL_MS = 8000;
+  var NOTIFY_MIN_INTERVAL_MS = 15000;
+  var notifyBackoffUntil = 0;
 
   function loadNotifications(opts) {
     opts = opts || {};
@@ -800,6 +814,9 @@
       return Promise.resolve();
     }
     if (notifyInflight) return notifyInflight;
+    if (opts.silent && !opts.force && Date.now() < notifyBackoffUntil) {
+      return Promise.resolve();
+    }
     if (
       opts.silent &&
       !opts.force &&
@@ -822,6 +839,10 @@
         notifyState.error = "";
       })
       .catch(function (err) {
+        var st = Number(err && err.status) || 0;
+        if (st >= 500 || /超时|繁忙|Failed to fetch|NetworkError/i.test(String((err && err.message) || ""))) {
+          notifyBackoffUntil = Date.now() + 30000;
+        }
         notifyState.error = err.message || "通知暂时无法加载，请稍后重试";
         if (!notifyState.items.length) notifyState.unread = 0;
       })
@@ -833,8 +854,23 @@
     return notifyInflight;
   }
 
+  function applyLocalRead(id) {
+    notifyState.items.forEach(function (item) {
+      if (id && String(item.id) !== String(id)) return;
+      if (!item.read) {
+        item.read = true;
+        item.readAt = item.readAt || new Date().toISOString();
+      }
+    });
+    notifyState.unread = notifyState.items.filter(function (item) {
+      return !item.read;
+    }).length;
+    renderNotifyPanel();
+  }
+
   function markAllRead() {
     if (!hasAuthSession()) return Promise.resolve();
+    applyLocalRead("");
     return ensureBossAuthScript()
       .then(function (Auth) {
         return Auth.authFetch("/api/notifications", {
@@ -844,7 +880,7 @@
         });
       })
       .then(function () {
-        return loadNotifications({ silent: true });
+        return loadNotifications({ silent: true, force: true });
       })
       .catch(function (err) {
         notifyState.error = err.message || "通知暂时无法加载，请稍后重试";
@@ -854,6 +890,7 @@
 
   function markOneRead(id) {
     if (!id || !hasAuthSession()) return Promise.resolve();
+    applyLocalRead(id);
     return ensureBossAuthScript()
       .then(function (Auth) {
         return Auth.authFetch("/api/notifications", {
@@ -863,9 +900,11 @@
         });
       })
       .then(function () {
-        return loadNotifications({ silent: true });
+        return loadNotifications({ silent: true, force: true });
       })
-      .catch(function () {});
+      .catch(function () {
+        return loadNotifications({ silent: true, force: true });
+      });
   }
 
   function stopNotifyPoll() {
@@ -888,13 +927,13 @@
         return;
       }
       loadNotifications({ silent: true });
-    }, 12000);
+    }, 30000);
   }
 
   function mount() {
     if (!isBossPublicPage() || !document.body) return;
     // Always rebuild header markup for tab-nav-only layout
-    ensureCss("/src/boss-header.css?v=20261018brand1", "data-mcj-boss-header-css");
+    ensureCss("/src/boss-header.css?v=20261115nav1", "data-mcj-boss-header-css");
     ensureCss("/src/mcj-safe-area.css?v=20260802mobileP0c", "data-mcj-safe-area-css");
     ensureCss("/src/home-mobile.css?v=20260802mobileP0c", "data-mcj-home-mobile-css");
     // Shared install guide also loaded by /pwa-boot.js sitewide; keep as boss fallback.
@@ -1347,7 +1386,7 @@
       if (chatUnreadState.pollTimer) clearInterval(chatUnreadState.pollTimer);
       chatUnreadState.pollTimer = setInterval(function () {
         if (!document.hidden && isLoggedIn()) refreshChatUnread();
-      }, 20000);
+      }, 30000);
       // Idle-prefetch frequent boss shells (static only).
       try {
         if (window.MCJBossNavPrefetch && typeof window.MCJBossNavPrefetch.run === "function") {

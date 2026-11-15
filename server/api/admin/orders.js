@@ -304,6 +304,12 @@ export function safeOrder(row, profiles, extras = {}) {
     earlyFinishReject: readEarlyFinishReject(row),
     amount: money(row.total_amount),
     totalAmount: money(row.total_amount),
+    billingUnit: /per_game|局/i.test(String(row.pricing_unit || "")) || /计费单位[:：]\s*per_game/.test(`${row.description || ""}\n${row.notes || ""}`) ? "per_game" : "per_hour",
+    hours: Number(row.hours || 0),
+    quantity: Number(row.quantity || 0) || null,
+    quantityLabel: (/per_game|局/i.test(String(row.pricing_unit || "")) || /计费单位[:：]\s*per_game/.test(String(row.description || "")))
+      ? `${Math.max(1, Math.floor(Number(row.quantity) || Number((String(row.description || "").match(/局数[:：]\s*(\d+)/) || [])[1]) || 1))}局`
+      : "",
     paymentMethod: row.parent_order_id ? "主单分配" : paymentMethodFrom(row, receipt),
     paymentStatus: paymentStatusLabel(status, reviewStatus, row),
     parentOrderId: row.parent_order_id || "",

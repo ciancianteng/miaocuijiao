@@ -4,6 +4,7 @@ import { writeAdminLog } from "../_wallet.js";
 const GIFT_BUCKET = "gift-icons";
 
 function json(res, status, data) {
+  res.setHeader("Content-Type", "application/json; charset=utf-8");
   return res.status(status).json(data);
 }
 function roleFrom(req) {

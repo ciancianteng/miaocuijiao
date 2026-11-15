@@ -1162,6 +1162,7 @@
           '<label><span>当前等级</span><select name="levelId">' +
           levelOptions(d.levelId || d.level_id || d.levelName, levels) +
           "</select></label>" +
+          '<p class="muted" style="grid-column:1/-1;margin:0">等级仅管理员手动设置为 LV1–LV5，不会按订单数、评价或完成率自动升降。</p>' +
           field("订单平台抽成 %（继承基数）", "orderCommissionRate", d.orderCommissionRate != null ? d.orderCommissionRate : d.commission_rate) +
           field("礼物抽成 %", "giftCommissionRate", d.giftCommissionRate != null ? d.giftCommissionRate : d.gift_commission_rate || 0) +
           field("直属陪返点 %", "directRebateRate", d.directRebateRate != null ? d.directRebateRate : d.direct_rebate_rate || 0) +

@@ -1,110 +1,203 @@
 .club-levels-page{
   margin:0;
   min-height:100vh;
-  background:
-    radial-gradient(1200px 500px at 10% -10%,rgba(244,114,182,.22),transparent 55%),
-    radial-gradient(900px 420px at 100% 0%,rgba(251,113,133,.16),transparent 50%),
-    #0b070c;
-  color:#ffe4f0;
+  background:#100D16;
+  color:#F7D4E6;
   font-family:"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+  overflow-x:hidden;
 }
 .club-levels-top{
   position:sticky;top:0;z-index:5;
   display:flex;align-items:center;gap:12px;
   padding:12px 16px;
-  background:rgba(12,8,14,.88);
-  backdrop-filter:blur(10px);
-  border-bottom:1px solid rgba(244,114,182,.22);
+  background:rgba(16,13,22,.92);
+  backdrop-filter:blur(12px);
+  border-bottom:1px solid rgba(234,164,201,.18);
 }
-.club-levels-back{color:#f9a8d4;text-decoration:none;font-size:14px}
-.club-levels-top strong{font-size:16px;letter-spacing:.02em}
-.club-levels-main{max-width:980px;margin:0 auto;padding:18px 16px 48px;overflow-x:hidden}
-.club-levels-loading,.club-levels-empty{padding:28px;text-align:center;color:rgba(255,228,240,.62)}
-.club-levels-hero{margin-bottom:18px}
-.club-levels-hero h1{margin:0 0 8px;font-size:clamp(22px,4vw,32px);color:#fff}
-.club-levels-hero p{margin:0;line-height:1.65;color:rgba(255,228,240,.78);font-size:15px}
-.club-levels-hero small{display:block;margin-top:8px;color:rgba(255,228,240,.45)}
-.club-levels-note{margin:0 0 16px;max-width:100%}
-.club-levels-note-card{
-  border:1px solid rgba(244,114,182,.28);
-  border-radius:16px;
-  padding:16px;
-  background:rgba(18,12,20,.88);
-  box-shadow:0 10px 28px rgba(0,0,0,.24);
-  display:grid;
-  gap:12px;
+.club-levels-back{color:#F7D4E6;text-decoration:none;font-size:14px}
+.club-levels-top strong{font-size:16px;letter-spacing:.04em;color:#fff}
+.club-levels-main{max-width:720px;margin:0 auto;padding:18px 14px 56px;box-sizing:border-box;width:100%}
+.club-levels-loading,.club-levels-empty{padding:28px;text-align:center;color:#B5A4B4}
+.mcj-pt-hero{
+  display:flex;align-items:flex-start;justify-content:space-between;gap:10px;
+  margin:0 0 16px;
+}
+.mcj-pt-hero h1{
+  margin:0;
+  font-size:20px;
+  font-weight:750;
+  color:#F7D4E6;
+  letter-spacing:.04em;
+  line-height:1.35;
+}
+.mcj-pt-hero p{margin:6px 0 0;color:#B5A4B4;font-size:13px;line-height:1.5}
+.mcj-pt-stars{display:flex;gap:4px;flex:0 0 auto;padding-top:2px}
+.mcj-pt-stars svg{width:16px;height:16px;opacity:.92}
+.mcj-pt-card{
+  background:#211925;
+  border:1px solid rgba(247,212,230,.12);
+  border-radius:18px;
+  padding:14px;
+  box-shadow:0 10px 28px rgba(0,0,0,.28);
   box-sizing:border-box;
   max-width:100%;
 }
-.club-levels-note-card header h2{
-  margin:0 0 6px;
-  font-size:17px;
+.mcj-pt-select{
+  width:100%;
+  margin:0 0 12px;
+  min-height:40px;
+  border-radius:12px;
+  border:1px solid rgba(247,212,230,.2);
+  background:#160F18;
+  color:#F7D4E6;
+  padding:0 12px;
+  font-size:14px;
+  box-sizing:border-box;
+}
+.mcj-lv-grid{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:10px;
+}
+.mcj-lv-card{
+  position:relative;
+  min-width:0;
+  border-radius:16px;
+  background:#1A141D;
+  border:1px solid #A9A5B2;
+  padding:12px 12px 10px;
+  box-shadow:0 0 0 1px rgba(255,255,255,.02), 0 8px 18px rgba(0,0,0,.22);
+  box-sizing:border-box;
+}
+.mcj-lv-card--lv1{border-color:#A9A5B2}
+.mcj-lv-card--lv2{border-color:#75B8F7}
+.mcj-lv-card--lv3{border-color:#D69CFB}
+.mcj-lv-card--lv4{border-color:#F2B77D}
+.mcj-lv-card--lv5{
+  grid-column:1 / -1;
+  background:#30202B;
+  border-color:#EAA4C9;
+  box-shadow:0 0 24px rgba(247,199,121,.08);
+}
+.mcj-lv-top{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
+.mcj-lv-code{
+  font-size:12px;
+  font-weight:800;
+  letter-spacing:.08em;
+}
+.mcj-lv-card--lv1 .mcj-lv-code,.mcj-lv-card--lv1 .mcj-lv-name{color:#C9C5D0}
+.mcj-lv-card--lv2 .mcj-lv-code,.mcj-lv-card--lv2 .mcj-lv-name{color:#75B8F7}
+.mcj-lv-card--lv3 .mcj-lv-code,.mcj-lv-card--lv3 .mcj-lv-name{color:#D69CFB}
+.mcj-lv-card--lv4 .mcj-lv-code,.mcj-lv-card--lv4 .mcj-lv-name{color:#F2B77D}
+.mcj-lv-card--lv5 .mcj-lv-code{color:#EAA4C9}
+.mcj-lv-card--lv5 .mcj-lv-name{color:#F7D4E6}
+.mcj-lv-crown{width:18px;height:18px;flex:0 0 auto}
+.mcj-lv-badge{
+  display:inline-flex;
+  align-items:center;
+  height:20px;
+  padding:0 8px;
+  border-radius:999px;
+  border:1px solid #F7C779;
+  color:#F7C779;
+  font-size:10px;
+  font-weight:800;
+  letter-spacing:.04em;
+}
+.mcj-lv-name{
+  display:block;
+  margin:10px 0 6px;
+  font-size:18px;
+  font-weight:750;
+  line-height:1.2;
+}
+.mcj-lv-amount{
+  display:block;
+  font-size:26px;
+  font-weight:800;
   color:#fff;
   letter-spacing:.02em;
-  font-weight:750;
+  line-height:1.15;
 }
-.club-levels-note-sub{
-  margin:0;
-  font-size:14px;
-  line-height:1.5;
-  color:#fda4af;
-  font-weight:650;
+.mcj-lv-amount.is-empty{font-size:18px;color:#B5A4B4;font-weight:650}
+.mcj-lv-foot{
+  display:block;
+  margin-top:6px;
+  font-size:11px;
+  color:#B5A4B4;
 }
-.club-levels-note-body{min-width:0}
-.club-levels-note-body p{
-  margin:0 0 10px;
-  font-size:14px;
-  line-height:1.7;
-  color:rgba(255,228,240,.82);
-  overflow-wrap:anywhere;
-  word-break:break-word;
+.mcj-games-head{margin:22px 0 12px}
+.mcj-games-head h2{margin:0;font-size:18px;color:#F7D4E6;font-weight:750}
+.mcj-games-head p{margin:6px 0 0;color:#B5A4B4;font-size:13px}
+.mcj-game-grid{
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:10px;
 }
-.club-levels-note-body p:last-child{margin-bottom:0}
-.club-levels-note-toggle{
-  justify-self:start;
-  min-height:36px;
-  padding:0 14px;
-  border-radius:999px;
-  border:1px solid rgba(249,168,212,.42);
-  background:rgba(244,114,182,.14);
-  color:#ffe4f0;
-  font-size:13px;
-  font-weight:700;
+.mcj-game-card{
+  min-width:0;
+  border:0;
+  background:#211925;
+  border-radius:16px;
+  padding:14px 8px 12px;
+  color:#F7D4E6;
+  display:grid;
+  justify-items:center;
+  gap:8px;
+  box-shadow:0 8px 18px rgba(0,0,0,.22);
+  border:1px solid rgba(247,212,230,.1);
   cursor:pointer;
 }
-.club-levels-note-toggle:hover{background:rgba(244,114,182,.2)}
-.club-levels-note-toggle:active{transform:scale(.98)}
-.club-levels-grid{display:grid;gap:12px;grid-template-columns:1fr}
-.club-level-card{
-  border:1px solid color-mix(in srgb,var(--lvl,#f472b6) 45%,transparent);
-  border-radius:16px;padding:16px;display:grid;gap:10px;
-  box-shadow:0 10px 28px rgba(0,0,0,.28);
+.mcj-game-card.is-open{border-color:rgba(234,164,201,.45);box-shadow:0 0 0 1px rgba(234,164,201,.2)}
+.mcj-game-icon{
+  width:48px;height:48px;border-radius:14px;
+  object-fit:cover;
+  background:#160F18;
+  display:grid;place-items:center;
+  font-size:22px;
 }
-.club-level-card header{display:flex;align-items:center;justify-content:space-between;gap:10px}
-.club-level-card strong{font-size:18px;color:#fff}
-.club-level-badge{
-  display:inline-flex;align-items:center;gap:6px;
-  min-height:28px;padding:0 10px;border-radius:999px;
-  border:1px solid rgba(255,255,255,.18);
-  background:rgba(0,0,0,.25);font-size:12px;font-weight:700;color:#ffe4f0;
+.mcj-game-name{
+  font-size:12px;
+  font-weight:700;
+  text-align:center;
+  line-height:1.35;
+  overflow-wrap:anywhere;
+  color:#fff;
 }
-.club-level-price{margin:0;font-size:16px;font-weight:800;color:#fda4af}
-.club-level-desc{margin:0;color:rgba(255,228,240,.72);line-height:1.55;font-size:13px;white-space:pre-wrap}
-.club-level-meta{margin:0;display:grid;gap:8px}
-.club-level-meta div{display:grid;gap:4px}
-.club-level-meta dt{font-size:11px;letter-spacing:.04em;color:rgba(255,228,240,.48);text-transform:uppercase}
-.club-level-meta dd{margin:0;font-size:13px;line-height:1.55;color:rgba(255,228,240,.82);white-space:pre-wrap}
-@media(min-width:720px){
-  .club-levels-grid{grid-template-columns:1fr 1fr}
+.mcj-game-detail{
+  grid-column:1 / -1;
+  background:#211925;
+  border:1px solid rgba(247,212,230,.12);
+  border-radius:16px;
+  padding:12px;
+  box-sizing:border-box;
 }
-@media(min-width:1024px){
-  .club-levels-grid{grid-template-columns:1fr 1fr}
-  .club-levels-main{padding-top:28px}
+.mcj-svc-row{
+  display:grid;
+  gap:6px;
+  padding:12px 0;
+  border-bottom:1px solid rgba(247,212,230,.1);
 }
-@media(max-width:430px){
-  .club-levels-main{padding:14px 12px 40px}
-  .club-level-card{border-radius:14px;padding:14px}
-  .club-levels-note-card{border-radius:14px;padding:14px}
-  .club-levels-note-card header h2{font-size:16px}
-  .club-levels-note-body p{font-size:13.5px;line-height:1.68}
+.mcj-svc-row:last-child{border-bottom:0;padding-bottom:0}
+.mcj-svc-name{margin:0;color:#fff;font-size:15px;font-weight:750}
+.mcj-svc-meta{margin:0;color:#B5A4B4;font-size:12px}
+.mcj-svc-levels{
+  display:grid;
+  gap:6px;
+  margin:4px 0 0;
+}
+.mcj-svc-lv{
+  display:flex;
+  justify-content:space-between;
+  gap:8px;
+  font-size:13px;
+  color:#F7D4E6;
+}
+.mcj-svc-lv strong{color:#fff;font-weight:750;text-align:right}
+@media (max-width:430px){
+  .mcj-game-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .club-levels-main{padding:14px 12px 48px}
+  .mcj-lv-amount{font-size:22px}
+  .mcj-lv-name{font-size:16px}
+  .mcj-game-icon{width:44px;height:44px}
 }

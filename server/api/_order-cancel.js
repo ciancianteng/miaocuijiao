@@ -214,10 +214,6 @@ export async function csCancelOrRefundOrder(order, { intent = "cancel", reason =
     return { ok: true, status: 200, duplicate: true, message: st === "refunded" ? "订单已退款。" : "订单已取消。", order };
   }
   if (BLOCKED_TEXT[st]) return fail(409, "NOT_CANCELLABLE", BLOCKED_TEXT[st], { order });
-  const { isMultiGroupParent } = await import("./_order-group.js");
-  if (isMultiGroupParent(order) || String(order.order_type || "").toLowerCase() === "multi_group" || order.parent_order_id) {
-    return fail(409, "MULTI_ORDER_USE_GROUP_FLOW", "多人订单请在订单详情中按子订单处理（退出/替换/售后），不能整单直接取消。", { order });
-  }
   const note = String(order.note || "").trim();
   const resuming = st === "refund_requested" && note.includes(CS_CANCEL_MARKER);
   if (st === "refund_requested" && !resuming) {
@@ -228,6 +224,14 @@ export async function csCancelOrRefundOrder(order, { intent = "cancel", reason =
 
   const stamp = `${CS_CANCEL_MARKER}${nowIso()}|${role}:${operator.id || ""}|${why}`;
   const facts = await loadOrderMoneyFacts(order);
+  const { isMultiGroupParent } = await import("./_order-group.js");
+  const isMulti =
+    isMultiGroupParent(order) ||
+    String(order.order_type || "").toLowerCase() === "multi_group" ||
+    !!order.parent_order_id;
+  if (isMulti && (facts.refundable > 0 || facts.hasActiveHold)) {
+    return fail(409, "MULTI_ORDER_USE_GROUP_FLOW", "已付款多人订单请按子订单处理（退出/替换/售后），不能整单直接取消。", { order });
+  }
   const captured = facts.refundable > 0;
 
   // ---------- no successful payment: cancel, never credit the order price ----------
@@ -253,6 +257,18 @@ export async function csCancelOrRefundOrder(order, { intent = "cancel", reason =
     }
     await tryReleaseHold(order, `客服取消释放冻结 ${no}`, operator.id);
     await supersedeReceipts(receipts);
+    if (isMultiGroupParent(saved) || String(saved.order_type || "").toLowerCase() === "multi_group") {
+      const kids = await supabaseJson(
+        restUrl("orders", `?parent_order_id=eq.${encodeURIComponent(saved.id)}&status=eq.${encodeURIComponent(st)}&select=id,status,order_no`),
+        { headers: serviceHeaders() }
+      ).catch(() => []);
+      for (const kid of Array.isArray(kids) ? kids : []) {
+        await casPatch(kid.id, kid.status || st, [
+          { status: "cancelled", cancelled_at: at, cancel_reason: why, note: `[客服取消] ${why}` },
+          { status: "cancelled", note: `[客服取消] ${why}` },
+        ]);
+      }
+    }
     await writeOrderStatusLog(db, { orderId: order.id, fromStatus: st, toStatus: "cancelled", operatorRole: role, operatorId: operator.id, note: `cs_cancel:unpaid:${why}` });
     const notice = await sideEffects(saved, { finalStatus: "cancelled", reason: why, mode: "unpaid", amount: 0, operator });
     return { ok: true, status: 200, message: "订单已取消（未付款，无需退款）。", order: saved, mode: "unpaid", amount: 0, notice };

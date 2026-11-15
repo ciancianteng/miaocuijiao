@@ -151,6 +151,16 @@ header.mcj-boss-header {
 
 header.mcj-boss-header .mcj-desk-nav {
   display: none;
+  min-width: 0;
+}
+@media (min-width: 900px) {
+  header.mcj-boss-header .mcj-boss-header-inner {
+    min-width: 0;
+  }
+  header.mcj-boss-header .mcj-desk-nav {
+    flex: 1 1 auto;
+    max-width: 100%;
+  }
 }
 
 header.mcj-boss-header .mcj-mnav {

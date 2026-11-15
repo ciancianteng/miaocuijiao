@@ -1205,7 +1205,7 @@
       esc(String(total)) +
       " 猫粮</strong></div>" +
       '<button type="button" class="mcj-team-submit" data-mcj-team-submit' +
-      (state.lines.length < 2 || !String(state.paymentMethod || "").trim() ? " disabled" : "") +
+      (state.submitting || state.lines.length < 2 || !String(state.paymentMethod || "").trim() ? " disabled" : "") +
       ">确认并支付 " +
       esc(String(total)) +
       "猫粮</button>" +
@@ -1415,7 +1415,11 @@
   }
 
   function submitTeam() {
-    if (state.submitting) return;
+    if (state.submitting) {
+      var waited = Date.now() - (state.submitStartedAt || 0);
+      if (waited < 25000) return;
+      state.submitting = false;
+    }
     if (state.lines.length < 2) {
       toast("多人下单至少选择 2 位陪玩");
       setSheetError("多人下单至少选择 2 位陪玩");
@@ -1475,6 +1479,7 @@
       return;
     }
     state.submitting = true;
+    state.submitStartedAt = Date.now();
     paintSheetTotals();
     fetch("/api/orders", {
       method: "POST",
