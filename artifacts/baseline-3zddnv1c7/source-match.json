@@ -1,0 +1,136 @@
+{
+  "live": {
+    "src/admin-companion-levels.js": {
+      "status": 200,
+      "sha": "4ad613dd9471f0ffdd98fb91adf2df061e639722cca043b92a531aef268bb262",
+      "bytes": 35279
+    },
+    "src/club-levels-page.js": {
+      "status": 200,
+      "sha": "1be430cd192fa0d5f77b435125f15e29e8570daed586194bdd3eca5c9a8f5727",
+      "bytes": 8167
+    },
+    "src/admin-final-v1.js": {
+      "status": 200,
+      "sha": "849be68afa5366f151c9793fa5322329cb5e18e9cc6f7a01b32f0186441ef919",
+      "bytes": 78530
+    },
+    "src/mcj-home-companion-entry.js": {
+      "status": 200,
+      "sha": "ca500ed279e6fcf2281dd948e1b42317e98502a40f62a668ab8a3f4c7410710d",
+      "bytes": 1018
+    },
+    "src/admin-suite.js": {
+      "status": 200,
+      "sha": "25f1150d8290e1609ed4c371782d1b9e298bdf256b8a852520f202b30cfc9141",
+      "bytes": 310846
+    },
+    "index.html": {
+      "status": 200,
+      "sha": "b2728bf06927fffb49b008934a1ec8ff5d037b2a1e9821a57ad901714dfead14",
+      "bytes": 269263
+    },
+    "admin.html": {
+      "status": 200,
+      "sha": "dd81e806c7e7e18b9424d0089173fea4ac7a23e2fac625abbc49b01fb5af3efd",
+      "bytes": 22353
+    },
+    "club-levels.html": {
+      "status": 200,
+      "sha": "debd2608f7531a64e47cebc2ef188e235602bd3293f1ca6740803fedbc7ae27a",
+      "bytes": 1802
+    }
+  },
+  "rows": [
+    {
+      "name": "f49bc9ab",
+      "match": 5,
+      "total": 8,
+      "per": {
+        "src/admin-companion-levels.js": "MATCH",
+        "src/club-levels-page.js": "MATCH",
+        "src/admin-final-v1.js": "MATCH",
+        "src/mcj-home-companion-entry.js": "MATCH",
+        "src/admin-suite.js": "MATCH",
+        "index.html": "DIFF",
+        "admin.html": "DIFF",
+        "club-levels.html": "DIFF"
+      }
+    },
+    {
+      "name": "status474-HEAD-f49",
+      "match": 5,
+      "total": 8,
+      "per": {
+        "src/admin-companion-levels.js": "MATCH",
+        "src/club-levels-page.js": "MATCH",
+        "src/admin-final-v1.js": "MATCH",
+        "src/mcj-home-companion-entry.js": "MATCH",
+        "src/admin-suite.js": "MATCH",
+        "index.html": "DIFF",
+        "admin.html": "DIFF",
+        "club-levels.html": "DIFF"
+      }
+    },
+    {
+      "name": "dd7b15be",
+      "match": 2,
+      "total": 8,
+      "per": {
+        "src/admin-companion-levels.js": "DIFF",
+        "src/club-levels-page.js": "DIFF",
+        "src/admin-final-v1.js": "DIFF",
+        "src/mcj-home-companion-entry.js": "MATCH",
+        "src/admin-suite.js": "MATCH",
+        "index.html": "DIFF",
+        "admin.html": "DIFF",
+        "club-levels.html": "DIFF"
+      }
+    },
+    {
+      "name": "1e003f4a",
+      "match": 1,
+      "total": 8,
+      "per": {
+        "src/admin-companion-levels.js": "DIFF",
+        "src/club-levels-page.js": "DIFF",
+        "src/admin-final-v1.js": "DIFF",
+        "src/mcj-home-companion-entry.js": "MATCH",
+        "src/admin-suite.js": "DIFF",
+        "index.html": "DIFF",
+        "admin.html": "DIFF",
+        "club-levels.html": "DIFF"
+      }
+    },
+    {
+      "name": "status474-worktree",
+      "match": 1,
+      "total": 8,
+      "per": {
+        "src/admin-companion-levels.js": "MATCH",
+        "src/club-levels-page.js": "DIFF",
+        "src/admin-final-v1.js": "DIFF",
+        "src/mcj-home-companion-entry.js": "DIFF",
+        "src/admin-suite.js": "DIFF",
+        "index.html": "DIFF",
+        "admin.html": "DIFF",
+        "club-levels.html": "DIFF"
+      }
+    },
+    {
+      "name": "0959c95f",
+      "match": 0,
+      "total": 8,
+      "per": {
+        "src/admin-companion-levels.js": "DIFF",
+        "src/club-levels-page.js": "DIFF",
+        "src/admin-final-v1.js": "DIFF",
+        "src/mcj-home-companion-entry.js": "DIFF",
+        "src/admin-suite.js": "DIFF",
+        "index.html": "DIFF",
+        "admin.html": "DIFF",
+        "club-levels.html": "DIFF"
+      }
+    }
+  ]
+}

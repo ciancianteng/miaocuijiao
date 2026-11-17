@@ -142,8 +142,11 @@
     ).toLowerCase();
     if (/已通过/.test(code)) code = "approved";
     if (/待审核|审核中/.test(code)) code = "pending";
+    if (/pending|review|submitted/.test(code)) return "pending";
     var submitted = row.application_submitted_at || row.applicationSubmittedAt;
-    if (!submitted && !/approved|verified|passed|rejected|resubmit|need_more|^draft$|草稿/.test(code)) return "draft";
+    if (!submitted && !/approved|verified|passed|rejected|resubmit|need_more|^draft$|草稿|pending|review|submitted/.test(code)) {
+      return "draft";
+    }
     return code || "pending";
   }
   function statusLabel(code) {
@@ -179,8 +182,9 @@
     var code = statusCode(row);
     if (/^draft$|草稿|archived|deleted/.test(code)) return false;
     if (/approved|verified|passed|rejected|resubmit|need_more/.test(code)) return true;
+    if (/pending|review|submitted/.test(code)) return true;
     var submitted = row.application_submitted_at || row.applicationSubmittedAt;
-    return !!submitted && /pending|review|submitted/.test(code);
+    return !!submitted;
   }
   function missingPrice(row) {
     if (!row) return true;

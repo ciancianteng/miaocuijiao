@@ -201,7 +201,13 @@ function isBatchApprovableApplication(companion) {
   if (/approved|verified|passed|已通过/.test(raw)) return false;
   if (/resubmit|need_more|待补充|需要补资料/.test(raw)) return false;
   if (/^draft$|草稿/.test(raw)) return false;
-  if (!companion.application_submitted_at) return false;
+  // Explicit pending/review counts even when legacy rows lack application_submitted_at.
+  if (
+    !companion.application_submitted_at &&
+    !/pending|review|submitted|审核中|待审核|未审核/.test(raw)
+  ) {
+    return false;
+  }
   return /pending|review|submitted|审核中|待审核|未审核/.test(raw);
 }
 
@@ -462,8 +468,17 @@ function mapListPlayer(row = {}, profile = {}) {
     mediaStatus: labelStatus(mediaRaw),
     application_status: reviewCode,
     applicationStatus: labelStatus(reviewCode),
-    application_submitted_at: row.application_submitted_at || "",
-    applicationSubmittedAt: row.application_submitted_at || "",
+    application_submitted_at:
+      row.application_submitted_at ||
+      ((/pending|submitted|review/.test(String(applicationRaw || "").toLowerCase()) &&
+        (row.updated_at || row.created_at)) ||
+        ""),
+    applicationSubmittedAt:
+      row.application_submitted_at ||
+      ((/pending|submitted|review/.test(String(applicationRaw || "").toLowerCase()) &&
+        (row.updated_at || row.created_at)) ||
+        ""),
+    email_search: String(profile.email || "").toLowerCase(),
     online_status: (() => {
       const verified = /approved|verified|passed/.test(String(row.verification_status || applicationRaw || ""));
       if (!verified) return "offline";
@@ -1283,6 +1298,8 @@ function profileEditablePatch(payload = {}) {
 async function profilesForUsers(userIds) {
   const map = {};
   const ids = [...new Set((userIds || []).map((id) => String(id || "").trim()).filter(Boolean))];
+  // IMPORTANT: applicants may still have profiles.role=boss while companion_profiles exists.
+  // Always join by profile id — never filter role=companion (that hid Terence.lip@gmail.com).
   for (let i = 0; i < ids.length; i += 60) {
     const chunk = ids.slice(i, i + 60);
     const rows = await companionDb(
@@ -1294,6 +1311,30 @@ async function profilesForUsers(userIds) {
     }
   }
   return map;
+}
+
+async function healMissingApplicationSubmittedAt(rows = []) {
+  const { isExplicitPendingApplication, inferApplicationSubmittedAt } = await import("../_companion-draft.js");
+  await Promise.all(
+    (Array.isArray(rows) ? rows : []).map(async (row) => {
+      if (!row?.id || row.application_submitted_at) return;
+      if (!isExplicitPendingApplication(row)) return;
+      const inferred = inferApplicationSubmittedAt(row);
+      if (!inferred) return;
+      try {
+        await companionDb(PLAYER_TABLE, `?id=eq.${encodeURIComponent(row.id)}`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            application_submitted_at: inferred,
+            application_status: row.application_status || "pending",
+          }),
+        });
+        row.application_submitted_at = inferred;
+      } catch (_) {
+        /* non-fatal */
+      }
+    })
+  );
 }
 
 async function listPlayers(scope = "formal") {
@@ -1310,8 +1351,10 @@ async function listPlayers(scope = "formal") {
     }
     companions = await companionDb(PLAYER_TABLE, "?order=updated_at.desc,created_at.desc&limit=500");
   }
-  const profileMap = await profilesForUsers((Array.isArray(companions) ? companions : []).map((row) => row.user_id));
-  const visible = (Array.isArray(companions) ? companions : []).filter((row) => {
+  const list = Array.isArray(companions) ? companions : [];
+  await healMissingApplicationSubmittedAt(list);
+  const profileMap = await profilesForUsers(list.map((row) => row.user_id));
+  const visible = list.filter((row) => {
     if (row.is_test_account === true) return false;
     if (isApplicationArchived(row)) return false;
     if (isTestAccountRecord(profileMap[row.user_id] || {}, row)) return false;

@@ -1,0 +1,308 @@
+{
+  "base": "https://meow-cuijiao-homepage-3zddnv1c7-ciancianteng-4581s-projects.vercel.app",
+  "when": "2026-11-17T06:56:12.500Z",
+  "pages": {
+    "home": {
+      "status": 200,
+      "sha256": "565bdd3d2ea2a0d2c0fb16e39d60438b48e11b411d1068f0f043c8b770d3f0dd",
+      "bytes": 269263,
+      "priceTable": true,
+      "clubLevel": false,
+      "capp": false
+    },
+    "admin": {
+      "status": 200,
+      "sha256": "b33ee96425fba7d1421b3f9363048fd5fa812080490e46ddcefa428afa2a3991",
+      "bytes": 22353,
+      "scripts": [
+        "/pwa-boot.js?v=20261114adminBell2",
+        "/src/companion-levels.js",
+        "/src/admin-auth-fetch.js?v=20260914webpushTest1",
+        "/src/admin-payment-settings.js?v=20261006acctpay1",
+        "/src/admin-form-controls.js?v=20261029svc5",
+        "/src/admin-banner-manager.js?v=20260911bannerWysiwyg3to1",
+        "/src/admin-service-manager.js?v=20261029svc6",
+        "/src/admin-companion-levels.js?v=20261114clubPrice1",
+        "/src/admin-companion-tags.js?v=20260907prodClean1",
+        "/src/admin-companion-voice-types.js?v=20260924voiceAdmin1",
+        "/src/admin-companion-cert-tags.js?v=20261006certHolders3",
+        "/src/admin-gameplay-mall.js?v=20260806p0final1",
+        "/src/admin-team-lobby.js?v=20260911community1",
+        "/src/admin-profile.js?v=20260809withdrawRevealP0",
+        "/src/admin-player-detail.js?v=20261114clubPrice1",
+        "/src/admin-recharge-campaigns.js",
+        "/src/admin-recharge-review.js?v=20261005bankQrImage1",
+        "/src/admin-compensation-review.js",
+        "/src/admin-finance.js?v=20261106financePendingNotif1",
+        "/src/admin-gifts.js?v=20261113adminFix1",
+        "/src/admin-gift-orders.js?v=20261113giftCard1",
+        "/src/admin-points-settings.js?v=20260907prodClean1",
+        "/src/admin-boss-companion-relations.js?v=20261008rel1",
+        "/src/admin-boss-vip.js?v=20260921bossVipAdmin2",
+        "/src/admin-popularity.js?v=20260815adminPopDisabled2",
+        "/src/companion-identity.js?v=20261028medal1",
+        "/src/admin-suite.js?v=20261114adminHead1",
+        "/src/admin-companion-applications.js?v=20261101prod1",
+        "/src/admin-service-accounts.js?v=20261007b1528",
+        "/src/admin-cs-rewards.js?v=20260809csRewardLayout2",
+        "/src/admin-service-level-prices.js?v=20261114lvPrice1",
+        "/src/admin-rules-hub.js?v=20261108slp1",
+        "/src/admin-final-v1.js?v=20261115orderUnit1",
+        "/src/admin-service-packages.js",
+        "/src/admin-platform-settings.js?v=20261007b1528",
+        "/src/admin-mail-logs.js?v=20260806orderNotify1"
+      ],
+      "css": [
+        "/assets/admin-w2Abi1fc.css",
+        "/assets/companion-identity-5yxri6kG.css"
+      ]
+    },
+    "club": {
+      "status": 200,
+      "sha256": "fc93394dd74f9a2ed55a25f68701e9b83acad7366b50ca6f927d84f1a9c42538",
+      "bytes": 1802
+    }
+  },
+  "assets": [
+    {
+      "href": "/assets/index-BP4Amd-B.js",
+      "status": 200,
+      "sha256": "4c222985f1787156a64761212699aba31a67c6fcb0d37a41e107a979d7869ce3",
+      "bytes": 107442
+    },
+    {
+      "href": "/assets/currency-CfMUYzq0.js",
+      "status": 200,
+      "sha256": "68a627e0cde907ba80b9e629fc531e931cce37ec2d327590aca2407826c55304",
+      "bytes": 1821
+    },
+    {
+      "href": "/assets/modulepreload-polyfill-Dezn_h7o.js",
+      "status": 200,
+      "sha256": "785597bca2e7dd97a652a20a197c077079e635a5663433448e0e1d9fd8c98a64",
+      "bytes": 698
+    },
+    {
+      "href": "/assets/forgot-password-yvpTcjlc.js",
+      "status": 200,
+      "sha256": "0f0190196a9eb5f9f82fd7d628d6e01af1e245ea3b461a3195bb3671db11a9fa",
+      "bytes": 14109
+    },
+    {
+      "href": "/assets/role-gates-zJZAeY0V.js",
+      "status": 200,
+      "sha256": "477c9f101b76b976edc54d6a4c6ceb8b047978ab731e73dc40de47a9a533d134",
+      "bytes": 48798
+    },
+    {
+      "href": "/assets/real-data-admin-XQFEWzP-.js",
+      "status": 200,
+      "sha256": "72ad9536bd1c0a4807f855e6e419d4acd5bb90cea81ac9ec7f4b54c23f30999c",
+      "bytes": 29949
+    },
+    {
+      "href": "/assets/dropdown-system-BMTtE3fg.js",
+      "status": 200,
+      "sha256": "62183023dac904f571f8ed2fa254ac42bccf80da7ecffade7376cf59331befb7",
+      "bytes": 6766
+    },
+    {
+      "href": "/assets/design-system-V_7FCOhp.js",
+      "status": 200,
+      "sha256": "8896359d4409953089e1988bb94787b7d180d8463a04ca278e368f30a629e08b",
+      "bytes": 5872
+    },
+    {
+      "href": "/assets/index-WRaL5Nu-.css",
+      "status": 200,
+      "sha256": "90a92d8ccd7f8c2a28e6178a1fa9c524b9e3c404b31ba2256c3a0f4974675167",
+      "bytes": 179097
+    },
+    {
+      "href": "/assets/real-data-admin-DKHMFpI9.css",
+      "status": 200,
+      "sha256": "a7b5f1117f87aee48aeff91a3ee0f3aeeea04002f4093bde3d0597821703d58a",
+      "bytes": 3105
+    },
+    {
+      "href": "/assets/design-system-uv93V4AY.css",
+      "status": 200,
+      "sha256": "eb50a81f1b846050c83adc06be41ed7f4aa25dd8c167043bc89e38198c08deb4",
+      "bytes": 38828
+    },
+    {
+      "href": "/assets/place-order-modal-CStTMd9_.css",
+      "status": 200,
+      "sha256": "781bbb1be6db3f72baf5494c18f5312e6d90be1cb8008abf2dd3903bf1122046",
+      "bytes": 19806
+    },
+    {
+      "href": "/assets/mcj-time-picker-Det1rQgX.css",
+      "status": 200,
+      "sha256": "7eb55991241d650dadcc948fe36fd2f947a0a6ba1ed17dc02a92d4b1872f528c",
+      "bytes": 4608
+    },
+    {
+      "href": "/assets/multi-companion-team-BXMGb0Vo.css",
+      "status": 200,
+      "sha256": "fe09d06794624359bd6b0fe5b451036be0465a49d9226a6edad544266b0bc340",
+      "bytes": 11088
+    },
+    {
+      "href": "/assets/notify-system-S5DURIzK.css",
+      "status": 200,
+      "sha256": "b23622903c8d1ef2371f6eb65a3ea48b330e2b4d3dadb796ca4fc7533fc9dae1",
+      "bytes": 549
+    },
+    {
+      "href": "/assets/mcj-ui-feedback-Bv4JRfGP.css",
+      "status": 200,
+      "sha256": "e033ed054937cb95af010a077be8c27fcc37c57d07ca8afa968a0eed2a1a9994",
+      "bytes": 1550
+    },
+    {
+      "href": "/assets/boss-header-CTFwTZJr.css",
+      "status": 200,
+      "sha256": "a4698058ee6a16f911f20212308de04532e0ca8dda9875a2762aa4aca5e74b12",
+      "bytes": 14935
+    },
+    {
+      "href": "/assets/ui-linglu-polish-O4PV2QDs.css",
+      "status": 200,
+      "sha256": "fdfa6489e6eee8ac455f8a9e43d0ee5c67497300bd76af8113d6ef66f0d43ced",
+      "bytes": 29215
+    },
+    {
+      "href": "/assets/meow-cuijiao-hero-ip-ouEvZ9-k.webp",
+      "status": 200,
+      "sha256": "3acc208eb5e67d89427b0e97a306ed6757902974c420698aad34bee4b46403ef",
+      "bytes": 89604
+    },
+    {
+      "href": "/src/supabase-recovery-reset.js?v=20260907recoveryReset1",
+      "status": 200,
+      "sha256": "21bc68da7542336d71c76485a8ffd67e1886bced21917f807080c6e2bb90f273",
+      "bytes": 13191
+    },
+    {
+      "href": "/src/mcj-swr.js?v=20260925perf1",
+      "status": 200,
+      "sha256": "a7fde3dedbf734b4cad8fc7b8685033806dfc9d2c2e77fe7ebeea389e40ff929",
+      "bytes": 2880
+    },
+    {
+      "href": "/src/mcj-companions-cache.js?v=20260925perf1",
+      "status": 200,
+      "sha256": "75acee3c8b3f2f306ef5e0f3eaa9fbb2ca069aa44ffd0d01da79b62b6a956438",
+      "bytes": 2124
+    },
+    {
+      "href": "/src/mcj-ui-feedback.js?v=20260925perf1",
+      "status": 200,
+      "sha256": "1ca1e106e0f36aa6fcb754a55936af94739077833fe0abf8c05e20e5d10181e7",
+      "bytes": 2581
+    },
+    {
+      "href": "/src/boss-profile-cache.js?v=20260911perfP2",
+      "status": 200,
+      "sha256": "cf1e987f09404bc594ae540d5c64990061527727ab6ae41546d2fd907b3a98f1",
+      "bytes": 4621
+    },
+    {
+      "href": "/src/boss-header.js?v=20261115nav1",
+      "status": 200,
+      "sha256": "a5f772d9c7610d99b58d8b7f0c44e0a7102d9440154d84de5c8da78c46b74871",
+      "bytes": 50531
+    },
+    {
+      "href": "/src/mcj-time-picker.js?v=20261019appt1",
+      "status": 200,
+      "sha256": "f9f7b33babb4aa99428aa9b274a429fbc7fb175990fb8642016d0311a7c186ae",
+      "bytes": 15099
+    },
+    {
+      "href": "/src/service-details-tabs.js?v=20261029split1",
+      "status": 200,
+      "sha256": "061a12cece10c4e1fb5a20f46bac909c361a1f2a328d89f8111bc50e83df6ebb",
+      "bytes": 7692
+    },
+    {
+      "href": "/src/place-order-modal.js?v=20261106poUi8",
+      "status": 200,
+      "sha256": "d742a1cc198485f7802336b74b3606769af0a43aada3c856bc09f08e674bd44f",
+      "bytes": 115473
+    },
+    {
+      "href": "/src/multi-companion-team.js?v=20261019appt1",
+      "status": 200,
+      "sha256": "c95d048c050537386a0eb3501598ce071e0cc00901d6f76439fb45acbceab059",
+      "bytes": 76585
+    },
+    {
+      "href": "/src/mcj-home-companion-entry.js?v=20260925perf1",
+      "status": 200,
+      "sha256": "0bd1dd805dc588f4a5287cf6e21179685e388deeaf72ebfbdbbc3647f965a6f7",
+      "bytes": 1018
+    },
+    {
+      "href": "/src/boss-nav-prefetch.js?v=20261004navPerf1",
+      "status": 200,
+      "sha256": "5b8eba9cfe6d9d106f695f2a1cae2e17caf1eb6e2b7b57e6b386fb0a07409c68",
+      "bytes": 3464
+    },
+    {
+      "href": "/assets/admin-w2Abi1fc.css",
+      "status": 200,
+      "sha256": "1e7b4e04ec9197470eef3068dd4787ebd31514cc829b9a1f1412e0bd93970481",
+      "bytes": 208471
+    },
+    {
+      "href": "/assets/companion-identity-5yxri6kG.css",
+      "status": 200,
+      "sha256": "72a30318e8a76f300156988f9ce0d326cf6aaa7fe82a2d06a3ef12c97ba6b682",
+      "bytes": 13532
+    },
+    {
+      "href": "/src/role-gates.js?v=20261028note1",
+      "status": 200,
+      "sha256": "881ca884b954eaf75f0a6ae45943a44fcad2c83e5ef1dac498a861e7b85c0e99",
+      "bytes": 94856
+    },
+    {
+      "href": "/src/companion-levels.js",
+      "status": 200,
+      "sha256": "89520db8356d98caa4901f266c69fe72bad83ee8f048ec0223e5986dd0268282",
+      "bytes": 22050
+    },
+    {
+      "href": "/src/admin-auth-fetch.js?v=20260914webpushTest1",
+      "status": 200,
+      "sha256": "ad880e17482320708ab6ebef3251412cd49537fc6c8ee7b8b54f81f3cd8fa82e",
+      "bytes": 10873
+    },
+    {
+      "href": "/src/admin-payment-settings.js?v=20261006acctpay1",
+      "status": 200,
+      "sha256": "deafa82b81a6d605a4941ea44fc60c20bcd6e052eada024eea40d35807c97593",
+      "bytes": 47507
+    },
+    {
+      "href": "/src/admin-form-controls.js?v=20261029svc5",
+      "status": 200,
+      "sha256": "6f13bb7c854a937f8f226c515491daea7e2f6f490497627ff4000c56fbcbd538",
+      "bytes": 18419
+    },
+    {
+      "href": "/src/banner-crop.js?v=20260911bannerWysiwyg3to1",
+      "status": 200,
+      "sha256": "9a631e4a6af9726e82819a4c161690d21527916677db9defa5615dacbc406931",
+      "bytes": 4843
+    },
+    {
+      "href": "/src/admin-banner-manager.js?v=20260911bannerWysiwyg3to1",
+      "status": 200,
+      "sha256": "b9bce6ce4ed458760ae8ac216cd066669275c2a5d964a726a811b3ac514757f8",
+      "bytes": 48857
+    }
+  ]
+}
