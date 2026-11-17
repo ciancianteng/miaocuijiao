@@ -132,7 +132,11 @@
     );
   }
   function statusCode(row) {
-    return String(row.application_status || row.applicationStatus || row.verification_status || row.auditStatus || "pending").toLowerCase();
+    var code = String(row.application_status || row.applicationStatus || row.verification_status || row.auditStatus || "pending").toLowerCase();
+    if (/已通过/.test(code)) return "approved";
+    if (/待审核|审核中/.test(code)) return "pending";
+    if (/pending|review|submitted/.test(code)) return "pending";
+    return code;
   }
   function statusLabel(code) {
     var key = String(code || "").toLowerCase().trim();

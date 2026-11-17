@@ -371,6 +371,12 @@ function mapListPlayer(row = {}, profile = {}) {
   const applicationRaw = row.application_status || row.verification_status || "pending";
   const depositRaw = row.deposit_status || "unpaid";
   const mediaRaw = row.media_status || "pending";
+  const submittedAt =
+    row.application_submitted_at ||
+    row.applicationSubmittedAt ||
+    ((/pending|submitted|review/.test(String(applicationRaw || "").toLowerCase()) &&
+      (row.updated_at || row.created_at)) ||
+      "");
   // Same public companion ID source as marketplace hall (`mapCompanionPublicFields` /
   // `resolveCompanionPublicCode`). Keep `id` as DB UUID for internal admin actions only.
   const publicId = resolveCompanionPublicCode(row) || "";
@@ -445,6 +451,9 @@ function mapListPlayer(row = {}, profile = {}) {
     mediaStatus: labelStatus(mediaRaw),
     application_status: applicationRaw,
     applicationStatus: labelStatus(applicationRaw),
+    application_submitted_at: submittedAt || "",
+    applicationSubmittedAt: submittedAt || "",
+    email_search: String(profile.email || "").toLowerCase(),
     online_status: (() => {
       const verified = /approved|verified|passed/.test(String(row.verification_status || applicationRaw || ""));
       if (!verified) return "offline";
@@ -1191,6 +1200,50 @@ function profileEditablePatch(payload = {}) {
   return patch;
 }
 
+async function profilesForCompanionUsers(userIds = []) {
+  const ids = [...new Set((userIds || []).map((id) => String(id || "").trim()).filter(Boolean))];
+  const map = {};
+  if (!ids.length) return map;
+  // IMPORTANT: applicants may still have profiles.role=boss while companion_profiles exists.
+  // Never filter profiles by role=companion here — that hid emails/details (e.g. Terence.lip@gmail.com).
+  const chunkSize = 80;
+  for (let i = 0; i < ids.length; i += chunkSize) {
+    const chunk = ids.slice(i, i + chunkSize);
+    const rows = await companionDb(
+      "profiles",
+      `?id=in.(${chunk.map(encodeURIComponent).join(",")})&select=id,email,display_name,phone,avatar_url,status,role,is_test_account,email_verified&limit=${chunk.length}`
+    ).catch(() => []);
+    for (const p of Array.isArray(rows) ? rows : []) {
+      if (p?.id) map[p.id] = p;
+    }
+  }
+  return map;
+}
+
+async function healMissingApplicationSubmittedAt(rows = []) {
+  const { isExplicitPendingApplication, inferApplicationSubmittedAt } = await import("../_companion-draft.js");
+  await Promise.all(
+    (Array.isArray(rows) ? rows : []).map(async (row) => {
+      if (!row?.id || row.application_submitted_at) return;
+      if (!isExplicitPendingApplication(row)) return;
+      const inferred = inferApplicationSubmittedAt(row);
+      if (!inferred) return;
+      try {
+        await companionDb(PLAYER_TABLE, `?id=eq.${encodeURIComponent(row.id)}`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            application_submitted_at: inferred,
+            application_status: row.application_status || "pending",
+          }),
+        });
+        row.application_submitted_at = inferred;
+      } catch (_) {
+        /* non-fatal */
+      }
+    })
+  );
+}
+
 async function listPlayers() {
   // Prefer DB-level exclude of is_test_account=true; fall back if column missing.
   let companions;
@@ -1205,13 +1258,11 @@ async function listPlayers() {
     }
     companions = await companionDb(PLAYER_TABLE, "?order=updated_at.desc,created_at.desc&limit=500");
   }
-  const profiles = await companionDb("profiles", "?role=eq.companion&limit=800").catch(() => []);
-  const profileMap = (Array.isArray(profiles) ? profiles : []).reduce((m, p) => {
-    m[p.id] = p;
-    return m;
-  }, {});
+  const list = Array.isArray(companions) ? companions : [];
+  await healMissingApplicationSubmittedAt(list);
+  const profileMap = await profilesForCompanionUsers(list.map((row) => row.user_id));
   // JS safety net: also drop rows whose linked profile is_test_account=true (no deletes).
-  return (Array.isArray(companions) ? companions : [])
+  return list
     .filter((row) => !isTestAccountRecord(profileMap[row.user_id] || {}, row))
     .filter((row) => row.is_test_account !== true && profileMap[row.user_id]?.is_test_account !== true)
     .map((row) => mapListPlayer(row, profileMap[row.user_id] || {}));

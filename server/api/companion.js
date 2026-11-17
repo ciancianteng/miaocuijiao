@@ -109,6 +109,7 @@ import {
   computeSettlementDate,
   mergeWeeklySettings,
   normalizePayoutStatus,
+  PAYOUT_FROZEN_STATUSES,
   PAYOUT_STATUS_TEXT,
   viewWeeklyRules,
 } from "./_weekly-settlement.js";
@@ -990,11 +991,12 @@ function normalizeProfileReviewStatus(companion = {}) {
   if (/reject/.test(raw)) return "rejected";
   if (/resubmit|need_more/.test(raw)) return "need_more";
   if (/^draft$|^archived$|^deleted$/.test(raw)) return "draft";
-  // submitted / pending_review → pending (审核中)
-  if (/submitted|pending_review/.test(raw)) return "pending";
-  // Legacy never-submitted register rows behave as draft for UI.
+  // submitted / pending_review / explicit pending → 审核中
+  if (/submitted|pending_review|^pending$/.test(raw)) return "pending";
+  if (/review/.test(raw) && !/preview/.test(raw)) return "pending";
+  // Legacy never-submitted register rows (empty/null status) behave as draft.
+  if (!companion.application_submitted_at && (!raw || raw === "draft")) return "draft";
   if (!companion.application_submitted_at && !/pending|submitted|review/.test(raw)) return "draft";
-  if (!companion.application_submitted_at && (!raw || raw === "pending")) return "draft";
   return "pending";
 }
 function normalizeDepositStatus(companion = {}, depositRow = null) {

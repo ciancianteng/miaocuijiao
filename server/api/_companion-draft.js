@@ -25,19 +25,26 @@ export function isApplicationArchived(row = {}) {
 }
 
 /**
+ * Explicitly submitted / in-review statuses. These belong in the admin queue
+ * even when legacy rows are missing application_submitted_at.
+ */
+export function isExplicitPendingApplication(row = {}) {
+  const st = normalizeApplicationStatus(row);
+  return /^(pending|submitted|pending_review)$/.test(st) || (/review/.test(st) && !/preview/.test(st));
+}
+
+/**
  * Never-submitted / explicit draft / archived rows.
- * Legacy: application_status=pending (or empty) without application_submitted_at.
+ * Explicit pending/submitted/review is NOT a draft — even if application_submitted_at is null.
  */
 export function isApplicationDraft(row = {}) {
   if (!row || !row.id) return false;
   if (isApplicationApproved(row)) return false;
   const st = normalizeApplicationStatus(row);
   if (/^(draft|archived|deleted)$/.test(st)) return true;
+  if (isExplicitPendingApplication(row)) return false;
   const submitted = row.application_submitted_at || row.applicationSubmittedAt || "";
   if (submitted) return false;
-  // Rejected/resubmit without submitted_at is still not a formal companion —
-  // treat as draft-like for formal-list exclusion, but applications queue
-  // requires submitted_at so they won't show there either unless re-submitted.
   if (/^(rejected|resubmit|need_more)$/.test(st)) return false;
   return true;
 }
@@ -47,12 +54,24 @@ export function isFormalCompanion(row = {}) {
   return isApplicationApproved(row) && !isApplicationArchived(row);
 }
 
-/** 陪玩申请审核 queue: must have formally submitted. */
+/** Infer submitted timestamp for legacy pending rows missing the column. */
+export function inferApplicationSubmittedAt(row = {}) {
+  const existing = row.application_submitted_at || row.applicationSubmittedAt || "";
+  if (existing) return existing;
+  if (!isExplicitPendingApplication(row) && !/^(rejected|resubmit|need_more)$/.test(normalizeApplicationStatus(row))) {
+    return "";
+  }
+  return row.updated_at || row.updatedAt || row.created_at || row.createdAt || "";
+}
+
+/** 陪玩申请审核 queue: formally submitted OR explicit pending/review status. */
 export function isApplicationQueueRow(row = {}) {
   if (!row || !row.id) return false;
-  if (isApplicationDraft(row) || isApplicationArchived(row)) return false;
-  const submitted = row.application_submitted_at || row.applicationSubmittedAt || "";
-  return !!submitted;
+  if (isApplicationArchived(row) || isApplicationApproved(row)) return false;
+  if (isApplicationDraft(row)) return false;
+  const submitted = inferApplicationSubmittedAt(row);
+  if (submitted) return true;
+  return isExplicitPendingApplication(row);
 }
 
 /** Active (non-archived) application — blocks duplicate register. */
