@@ -177,12 +177,12 @@
           '<label><span>图标颜色</span><input name="badgeIcon" type="color" value="' + esc(level.badgeIcon || level.color || "#9CA3AF") + '"></label>' +
           '<label><span>卡片背景</span><select name="cardBackground" data-admin-control="select">' + bgOptions + "</select></label>"
         ) +
-        moduleBlock("③ 等级服务价格", "默认售价 / 最低·最高允许售价 / 加价上限（单位：猫粮；最低 ≤ 默认 ≤ 最高；默认+加价 ≤ 最高）",
-          '<label><span>默认售价</span><input name="basePrice" type="number" min="0" step="1" value="' + esc(level.basePrice != null ? level.basePrice : (level.min != null ? level.min : 0)) + '" required></label>' +
-          '<label><span>最低允许售价</span><input name="min" type="number" min="0" step="1" value="' + esc(level.min != null ? level.min : 0) + '" required></label>' +
-          '<label><span>最高允许售价</span><input name="max" type="number" min="0" step="1" value="' + esc(level.max != null ? level.max : 0) + '" required></label>' +
-          '<label><span>允许加价上限</span><input name="markupAllowance" type="number" min="0" step="1" value="' + esc(level.markupAllowance != null ? level.markupAllowance : 0) + '" required><span class="muted" style="font-size:11px;font-weight:600">陪玩最终售价 ≤ 默认售价 + 加价上限，且不超过最高价</span></label>' +
-          '<label><span>平台抽成 %</span><input name="commissionRate" type="number" min="0" max="100" step="0.1" value="' + esc(level.commissionRate != null ? level.commissionRate : 20) + '" readonly><span class="muted" style="font-size:11px;font-weight:600">只读展示；订单/工资/提现仍按平台既有 20% 抽成规则，本页不改财务口径</span></label>' +
+        moduleBlock("③ 等级加价与价格带", "前台最终价 = 游戏基础价（服务目录）+ 本页「等级加价」。发布后同步到价格表。",
+          '<label><span>等级加价（猫粮/小时）</span><input name="markupAllowance" type="number" min="0" step="1" inputmode="numeric" value="' + esc(level.markupAllowance != null ? level.markupAllowance : 0) + '" required><span class="muted" style="font-size:11px;font-weight:600">例：游戏基础 25，LV1 加价 20 → 最终 45</span></label>' +
+          '<label><span>等级默认参考价</span><input name="basePrice" type="number" min="0" step="1" inputmode="numeric" value="' + esc(level.basePrice != null ? level.basePrice : (level.min != null ? level.min : 0)) + '" required></label>' +
+          '<label><span>最低允许售价</span><input name="min" type="number" min="0" step="1" inputmode="numeric" value="' + esc(level.min != null ? level.min : 0) + '" required></label>' +
+          '<label><span>最高允许售价</span><input name="max" type="number" min="0" step="1" inputmode="numeric" value="' + esc(level.max != null ? level.max : 0) + '" required></label>' +
+          '<label><span>平台抽成 %</span><input name="commissionRate" type="number" min="0" max="100" step="0.1" value="' + esc(level.commissionRate != null ? level.commissionRate : 20) + '" readonly><span class="muted" style="font-size:11px;font-weight:600">只读；财务口径不变。游戏基础价请在「服务管理」修改。</span></label>' +
           '<div class="wide muted" style="font-size:12px;font-weight:700;padding:8px 0">生效范围：' + esc(rangeText(level)) + " · " + esc(saveStatusText()) + "</div>"
         ) +
         moduleBlock("④ 升级规则（前台已隐藏）", "历史字段保留；前台不再展示升级申请/条件。陪玩等级只由管理员手动设置。",
@@ -191,14 +191,16 @@
           '<label class="wide"><span>等级说明</span><textarea name="description" rows="3">' + esc(level.description || "") + "</textarea></label>"
         ) +
         '<div class="row level-editor-actions">' +
-          '<button class="primary-btn" type="submit" data-level-save-current' + (state.saving || state.publishing ? " disabled" : "") + ">保存当前等级</button>" +
-          '<button class="primary-btn level-publish-btn" type="button" data-level-publish' + (state.saving || state.publishing ? " disabled" : "") + '>发布到全站</button>' +
           '<button class="ghost-btn" type="button" data-level-clear="' + esc(level.id) + '">清零配置</button>' +
           (isLockedLevel(level.id)
             ? '<button class="ghost-btn" type="button" disabled title="LV1–LV5 永久保留">等级结构锁定</button>'
             : '<button class="ghost-btn" type="button" data-level-delete="' + esc(level.id) + '">删除</button>') +
         "</div>" +
-        '<p class="admin-sync-note" style="margin:0">逐级保存后点「发布到全站」四端生效。仅影响新报价/新订单；已付款订单价格快照不变。LV1–LV5 不可删除。</p>' +
+        '<p class="admin-sync-note" style="margin:0">逐级保存后点「发布到全站」：前台价格表立即读取最新等级加价。游戏基础价在服务管理修改。历史订单金额不变。LV1–LV5 不可删除。</p>' +
+        '<div class="level-editor-actions level-editor-actions--sticky">' +
+          '<button class="primary-btn" type="submit" data-level-save-current' + (state.saving || state.publishing ? " disabled" : "") + ">保存当前等级</button>" +
+          '<button class="primary-btn level-publish-btn" type="button" data-level-publish' + (state.saving || state.publishing ? " disabled" : "") + '>发布到全站</button>' +
+        "</div>" +
       "</form>"
     );
   }
@@ -704,6 +706,12 @@
     bind();
     load();
   }
+
+  window.addEventListener("beforeunload", function (e) {
+    if (!state.dirty) return;
+    e.preventDefault();
+    e.returnValue = "";
+  });
 
   document.addEventListener("mcj:admin-section", function (e) {
     var section = e && e.detail && e.detail.section;

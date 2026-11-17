@@ -7,6 +7,7 @@
  * base/min/max on the same table are NOT the markup.
  */
 import { LOCKED_MATRIX_LEVEL_IDS, readServiceLevelPrices } from "./_service-level-prices.js";
+import { readLocalLevels } from "./_companion-levels-store.js";
 
 function money(value) {
   const n = Number(String(value ?? "").replace(/[^\d.-]/g, ""));
@@ -28,7 +29,10 @@ export function computeFinalPrice(basePrice, markupAllowance, markupOn) {
 }
 
 export async function loadMarkupMap() {
-  const rows = await readServiceLevelPrices().catch(() => []);
+  const [rows, levels] = await Promise.all([
+    readServiceLevelPrices().catch(() => []),
+    readLocalLevels().catch(() => []),
+  ]);
   const map = new Map();
   for (const row of Array.isArray(rows) ? rows : []) {
     const sid = String(row.serviceId || "").trim();
@@ -40,6 +44,20 @@ export async function loadMarkupMap() {
       source: "service_level_matrix",
     });
   }
+  // Fallback defaults from companion_levels so publishing LV markup is visible
+  // even before per-game matrix cells are filled.
+  const levelDefaults = new Map();
+  for (const lv of Array.isArray(levels) ? levels : []) {
+    const lid = String(lv.id || "").trim().toLowerCase();
+    if (!LOCKED_MATRIX_LEVEL_IDS.includes(lid)) continue;
+    if (lv.enabled === false) continue;
+    levelDefaults.set(lid, {
+      markupAllowance: Math.max(0, money(lv.markupAllowance)),
+      configured: true,
+      source: "companion_levels",
+    });
+  }
+  map.__levelDefaults = levelDefaults;
   return map;
 }
 
@@ -48,6 +66,9 @@ export function markupFor(map, serviceId, levelId) {
   const lid = String(levelId || "").trim().toLowerCase();
   const hit = map instanceof Map ? map.get(`${sid}::${lid}`) : null;
   if (hit) return hit;
+  const defaults = map instanceof Map ? map.__levelDefaults : null;
+  const fallback = defaults && typeof defaults.get === "function" ? defaults.get(lid) : null;
+  if (fallback) return fallback;
   return { markupAllowance: 0, configured: false, source: "unconfigured" };
 }
 

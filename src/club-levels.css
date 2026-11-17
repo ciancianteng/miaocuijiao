@@ -78,6 +78,17 @@
   background:#30202B;
   border-color:#EAA4C9;
   box-shadow:0 0 24px rgba(247,199,121,.08);
+  padding:12px 12px 10px;
+  overflow:hidden;
+  max-width:100%;
+}
+.mcj-lv-card--lv5 .mcj-lv-amount{
+  font-size:22px;
+  overflow-wrap:anywhere;
+  word-break:break-word;
+}
+.mcj-lv-card--lv5 .mcj-lv-name{
+  overflow-wrap:anywhere;
 }
 .mcj-lv-top{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
 .mcj-lv-code{
@@ -200,4 +211,17 @@
   .mcj-lv-amount{font-size:22px}
   .mcj-lv-name{font-size:16px}
   .mcj-game-icon{width:44px;height:44px}
+  .mcj-lv-card--lv5{
+    grid-column:1 / -1;
+    padding:10px;
+  }
+  .mcj-lv-card--lv5 .mcj-lv-amount{font-size:20px}
+  .mcj-svc-lv{
+    flex-wrap:wrap;
+    align-items:flex-start;
+  }
+  .mcj-svc-lv strong{
+    max-width:100%;
+    overflow-wrap:anywhere;
+  }
 }

@@ -452,3 +452,55 @@ export function assertPriceInBand(price, band) {
   if (!maxPlus && !(pv <= sellMax + 1e-9)) return { ok: false, message: `单价不能高于 ${sellMax}` };
   return { ok: true, price: pv, min, sellMax };
 }
+
+/**
+ * After companion_levels publish: push LV markupAllowance onto every known
+ * service_level_prices row (and seed missing LV cells) so front club-price-table
+ * stays in sync. Does not rewrite catalog services.default_price (game base).
+ * Never touches paid order snapshots.
+ */
+export async function syncLevelMarkupsAcrossServices(levels = []) {
+  const byLevel = new Map();
+  for (const lv of Array.isArray(levels) ? levels : []) {
+    const lid = String(lv.id || "").trim().toLowerCase();
+    if (!LOCKED_MATRIX_LEVEL_IDS.includes(lid)) continue;
+    if (lv.enabled === false) continue;
+    byLevel.set(lid, Math.max(0, money(lv.markupAllowance)));
+  }
+  if (!byLevel.size) {
+    return { ok: true, updatedServices: 0, skipped: true, message: "no_level_markups" };
+  }
+  const current = await readServiceLevelPrices();
+  const serviceIds = [...new Set((current || []).map((r) => String(r.serviceId || "").trim()).filter(Boolean))];
+  // Always union public catalog services so new games also get LV cells.
+  try {
+    const { loadPublicServices } = await import("./platform/services.js");
+    const loaded = await loadPublicServices();
+    for (const svc of loaded.services || []) {
+      const id = String(svc.id || "").trim();
+      if (id && svc.enabled !== false) serviceIds.push(id);
+    }
+  } catch (_) {
+    /* optional */
+  }
+  let updatedServices = 0;
+  const errors = [];
+  for (const sid of [...new Set(serviceIds)]) {
+    try {
+      const items = LOCKED_MATRIX_LEVEL_IDS.map((levelId) => ({
+        levelId,
+        markupAllowance: byLevel.has(levelId) ? byLevel.get(levelId) : 0,
+      }));
+      await saveServiceMarkups(sid, items);
+      updatedServices += 1;
+    } catch (error) {
+      errors.push(`${sid}: ${error?.message || error}`);
+    }
+  }
+  return {
+    ok: errors.length === 0,
+    updatedServices,
+    errors,
+    message: errors.length ? errors[0] : `synced ${updatedServices} services`,
+  };
+}

@@ -13,6 +13,7 @@ import {
   isLockedLevelId,
   clearLevelEditableConfig,
 } from "../_companion-levels-store.js";
+import { syncLevelMarkupsAcrossServices } from "../_service-level-prices.js";
 
 import { requireAdmin as requireAdminJwt } from "../_admin-auth.js";
 
@@ -85,7 +86,7 @@ function verifyPublished(levels, expected) {
 
 export default async function handler(req, res) {
   try {
-    if (!requireAdmin(req, res)) return;
+    if (!(await requireAdmin(req, res))) return;
 
     if (req.method === "GET") {
       const levels = await readLocalLevels();
@@ -172,7 +173,14 @@ export default async function handler(req, res) {
         }
       }
 
-      const checklist = buildPublishSyncChecklist({ verified: true, commission });
+      let markupSync = { ok: true, updatedServices: 0, errors: [] };
+      try {
+        markupSync = await syncLevelMarkupsAcrossServices(levels);
+      } catch (error) {
+        markupSync = { ok: false, updatedServices: 0, errors: [error.message || "加价矩阵同步失败"] };
+      }
+
+      const checklist = buildPublishSyncChecklist({ verified: true, commission, markupSync });
       const commissionFailed = commission && commission.ok === false && !(commission.skipped > 0);
       if (commissionFailed) {
         return json(res, 207, {
@@ -181,6 +189,7 @@ export default async function handler(req, res) {
           checklist,
           sync: checklist,
           commission,
+          markupSync,
           levels: levels.map(toPublicLevel),
           published: true,
           publishedAt: new Date().toISOString(),
@@ -189,10 +198,13 @@ export default async function handler(req, res) {
 
       return json(res, 200, {
         ok: true,
-        message: "已同步全站",
+        message: markupSync.ok
+          ? "已同步全站（含前台等级加价）"
+          : `等级已发布；加价矩阵部分同步失败：${(markupSync.errors && markupSync.errors[0]) || "未知"}`,
         checklist,
         sync: checklist,
         commission,
+        markupSync,
         levels: levels.map(toPublicLevel),
         published: true,
         publishedAt: new Date().toISOString(),

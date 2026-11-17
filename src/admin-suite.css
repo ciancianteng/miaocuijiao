@@ -2590,6 +2590,33 @@ body[data-admin-section="players"] .player-more-wrap{overflow:visible!important;
 .level-editor-actions .level-publish-btn{
   background:linear-gradient(135deg,#34d399,#10b981);
 }
+.level-editor-actions--sticky{
+  position:sticky;
+  bottom:0;
+  z-index:12;
+  display:flex;
+  align-items:center;
+  gap:10px;
+  flex-wrap:wrap;
+  margin:8px 0 0;
+  padding:12px 0 calc(12px + env(safe-area-inset-bottom,0px));
+  background:linear-gradient(180deg,rgba(16,12,20,0),rgba(16,12,20,.94) 28%,rgba(16,12,20,.98));
+  border-top:1px solid rgba(255,255,255,.08);
+  box-shadow:0 -10px 24px rgba(0,0,0,.28);
+  pointer-events:auto;
+}
+.level-editor-actions--sticky .primary-btn,
+.level-editor-actions--sticky .ghost-btn{
+  pointer-events:auto;
+  touch-action:manipulation;
+}
+.level-admin-page .admin-self-form label input[type="number"],
+.level-admin-page .admin-self-form label input[type="text"],
+.admin-overlay-body .admin-self-form label input[type="number"],
+.admin-overlay-body .admin-self-form label input[type="text"]{
+  font-size:16px;
+  min-height:42px;
+}
 .level-preview-heading{
   margin:0 0 10px;
   color:rgba(255,255,255,.72);
@@ -2785,6 +2812,19 @@ body[data-admin-section="players"] .player-more-wrap{overflow:visible!important;
     width:100%;
     min-height:42px;
     justify-content:center;
+  }
+  .level-editor-actions--sticky{
+    display:grid;
+    grid-template-columns:1fr;
+    gap:8px;
+    margin-left:-2px;
+    margin-right:-2px;
+    padding-left:2px;
+    padding-right:2px;
+  }
+  .admin-overlay-body,
+  #adminModal .admin-modal-scroll{
+    padding-bottom:calc(24px + env(safe-area-inset-bottom,0px));
   }
   .level-list-item{
     flex-wrap:wrap;
