@@ -188,7 +188,7 @@
   function moreCardHtml() {
     return (
       '<a class="pop-rank-card pop-rank-more" href="ranking.html" data-pop-rank="more" aria-label="查看全俱乐部接单榜">' +
-      '<span class="pop-rank-more-glow" aria-hidden="true"></span>' +
+      '<span class="rank-border-flow" aria-hidden="true"></span>' +
       '<div class="pop-rank-more-inner">' +
       '<span class="pop-rank-more-badge">MORE</span>' +
       "<strong>更多</strong>" +

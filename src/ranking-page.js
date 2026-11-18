@@ -53,6 +53,7 @@
       ' href="' +
       esc(profileHref(item)) +
       '">' +
+      '<span class="rank-border-flow" aria-hidden="true"></span>' +
       '<div class="rank-hist-no">' +
       esc(r) +
       "</div>" +
