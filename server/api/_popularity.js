@@ -692,6 +692,92 @@ function weekIsoBounds(bounds) {
   return { start, end };
 }
 
+/**
+ * Pull completed orders for ranking. Weekly uses MY week window.
+ * Total pages through ALL completed rows (no week filter / no 5000 hard cap).
+ */
+async function fetchCompletedOrdersForRanking({
+  isTotal,
+  rangeStartIso,
+  rangeEndIso,
+  orderSelect,
+  orderSelectLite,
+  orderSelectMinimal,
+}) {
+  const pageSize = 1000;
+  const hardCap = isTotal ? 80000 : 8000;
+  const rows = [];
+  let offset = 0;
+  let select = orderSelect;
+
+  async function pageOnce(sel, off) {
+    const q = isTotal
+      ? `?status=eq.completed&select=${sel}&order=completed_at.desc.nullslast&limit=${pageSize}&offset=${off}`
+      : `?status=eq.completed&select=${sel}&completed_at=gte.${encodeURIComponent(rangeStartIso)}&completed_at=lte.${encodeURIComponent(rangeEndIso)}&order=completed_at.desc&limit=${pageSize}&offset=${off}`;
+    try {
+      return await db("orders", q);
+    } catch (e) {
+      if (!/column|order_type|parent_order_id|completed_at|quantity|pricing_unit|enum|22P02|reviewed|nullslast/i.test(String(e.message || ""))) {
+        if (isMissingRelation(e)) return [];
+        throw e;
+      }
+      // Fallbacks: drop nullslast / slim select, then client-filter for weekly.
+      const liteQ = isTotal
+        ? `?status=eq.completed&select=${orderSelectLite}&order=completed_at.desc&limit=${pageSize}&offset=${off}`
+        : `?status=eq.completed&select=${orderSelectLite}&order=completed_at.desc&limit=${pageSize}&offset=${off}`;
+      let chunk = await dbMaybe("orders", liteQ).catch(async () =>
+        dbMaybe(
+          "orders",
+          isTotal
+            ? `?status=eq.completed&select=${orderSelectMinimal}&order=completed_at.desc&limit=${pageSize}&offset=${off}`
+            : `?status=eq.completed&select=${orderSelectMinimal}&order=completed_at.desc&limit=${pageSize}&offset=${off}`
+        )
+      );
+      if (!isTotal) {
+        chunk = (chunk || []).filter((o) =>
+          inPeriod(o.completed_at || o.created_at, rangeStartIso.slice(0, 10), rangeEndIso.slice(0, 10))
+        );
+      }
+      select = orderSelectMinimal;
+      return chunk || [];
+    }
+  }
+
+  for (;;) {
+    const chunk = await pageOnce(select, offset);
+    if (!chunk.length) break;
+    rows.push(...chunk);
+    offset += chunk.length;
+    if (chunk.length < pageSize || offset >= hardCap) break;
+  }
+
+  // Null completed_at rows (weekly: created in window; total: any)
+  const nullPage = 1000;
+  let nullOffset = 0;
+  for (;;) {
+    const nullQ = isTotal
+      ? `?status=eq.completed&completed_at=is.null&select=${select}&order=created_at.desc&limit=${nullPage}&offset=${nullOffset}`
+      : `?status=eq.completed&completed_at=is.null&select=${select}&created_at=gte.${encodeURIComponent(rangeStartIso)}&created_at=lte.${encodeURIComponent(rangeEndIso)}&limit=${nullPage}&offset=${nullOffset}`;
+    const chunk = await dbMaybe("orders", nullQ).catch(async () =>
+      dbMaybe(
+        "orders",
+        isTotal
+          ? `?status=eq.completed&completed_at=is.null&select=${orderSelectMinimal}&order=created_at.desc&limit=${nullPage}&offset=${nullOffset}`
+          : `?status=eq.completed&completed_at=is.null&select=${orderSelectMinimal}&created_at=gte.${encodeURIComponent(rangeStartIso)}&created_at=lte.${encodeURIComponent(rangeEndIso)}&limit=${nullPage}&offset=${nullOffset}`
+      )
+    );
+    if (!chunk?.length) break;
+    const seen = new Set(rows.map((o) => o.id));
+    for (const o of chunk) {
+      if (!seen.has(o.id)) rows.push(o);
+    }
+    nullOffset += chunk.length;
+    if (chunk.length < nullPage || nullOffset >= (isTotal ? 20000 : 4000)) break;
+  }
+
+  return rows;
+}
+
 function hallServicesFromProfile(row = {}, catalog = []) {
   const view = servicesFromGamePrices(
     {
@@ -775,58 +861,23 @@ export async function listWeeklyCompletedTop({ limit = 3, period = "weekly", off
     "id,boss_id,companion_id,status,hours,completed_at,created_at";
 
   // Production enum mcj_order_status = completed only (no reviewed). Never filter reviewed in REST.
-  const datedQuery = isTotal
-    ? `?status=eq.completed&select=${orderSelect}&order=completed_at.desc&limit=5000`
-    : `?status=eq.completed&select=${orderSelect}&completed_at=gte.${encodeURIComponent(rangeStartIso)}&completed_at=lte.${encodeURIComponent(rangeEndIso)}&order=completed_at.desc&limit=5000`;
-  let orders = await db("orders", datedQuery).catch(async (e) => {
-    // Fallback if completed_at filter / order_type column missing
-    // NOTE: Production orders has NO updated_at — never select it.
-    if (/column|order_type|parent_order_id|completed_at|quantity|pricing_unit|enum|22P02|reviewed/i.test(String(e.message || ""))) {
-      const all = await dbMaybe(
-        "orders",
-        `?status=eq.completed&select=${orderSelectLite}&order=completed_at.desc&limit=5000`
-      ).catch(async () =>
-        dbMaybe(
-          "orders",
-          `?status=eq.completed&select=${orderSelectMinimal}&order=completed_at.desc&limit=5000`
-        )
-      );
-      return (all || []).filter((o) =>
-        inPeriod(o.completed_at || o.created_at, bounds.periodStart, bounds.periodEnd)
-      );
-    }
-    if (isMissingRelation(e)) return [];
-    throw e;
+  // Total MUST page all history — a single limit=5000 (desc) silently drops older orders.
+  let orders = await fetchCompletedOrdersForRanking({
+    isTotal,
+    rangeStartIso,
+    rangeEndIso,
+    orderSelect,
+    orderSelectLite,
+    orderSelectMinimal,
   });
-
-  // Catch completed rows whose completed_at is null (weekly: created in range; total: any null stamp)
-  const nullQuery = isTotal
-    ? `?status=eq.completed&completed_at=is.null&select=${orderSelect}&order=created_at.desc&limit=2000`
-    : `?status=eq.completed&completed_at=is.null&select=${orderSelect}&created_at=gte.${encodeURIComponent(rangeStartIso)}&created_at=lte.${encodeURIComponent(rangeEndIso)}&limit=2000`;
-  const nullCompleted = await dbMaybe("orders", nullQuery).catch(async () =>
-    dbMaybe(
-      "orders",
-      isTotal
-        ? `?status=eq.completed&completed_at=is.null&select=${orderSelectMinimal}&order=created_at.desc&limit=2000`
-        : `?status=eq.completed&completed_at=is.null&select=${orderSelectMinimal}&created_at=gte.${encodeURIComponent(rangeStartIso)}&created_at=lte.${encodeURIComponent(rangeEndIso)}&limit=2000`
-    )
-  );
-  if (nullCompleted?.length) {
-    const seen = new Set((orders || []).map((o) => o.id));
-    for (const o of nullCompleted) {
-      if (!seen.has(o.id)) {
-        orders = orders || [];
-        orders.push(o);
-      }
-    }
-  }
 
   // Aggregate ranking minutes per companion (dedupe order id). Ranking-only math.
   const byCompanion = new Map(); // cid -> { orderIds:Set, minutes, lastCompletedAt }
   for (const o of orders || []) {
     if (!countsTowardCompanionCompleted(o)) continue;
     const ts = o.completed_at || o.created_at;
-    if (!inPeriod(ts, bounds.periodStart, bounds.periodEnd)) continue;
+    // Weekly: enforce MY week window. Total: never apply week bounds.
+    if (!isTotal && !inPeriod(ts, bounds.periodStart, bounds.periodEnd)) continue;
     const mins = rankingServiceMinutesFromOrder(o);
     if (!(mins > 0)) continue;
     const cid = String(o.companion_id).trim();
@@ -852,6 +903,7 @@ export async function listWeeklyCompletedTop({ limit = 3, period = "weekly", off
       rankingUnitRule: "completed_service_minutes / 60",
       timezone: TZ,
       period: periodType,
+      periodScope: isTotal ? "all_time" : "weekly_my",
       periodStart: bounds.periodStart,
       periodEnd: bounds.periodEnd,
       periodLabel,
@@ -861,6 +913,13 @@ export async function listWeeklyCompletedTop({ limit = 3, period = "weekly", off
       offset: pageOffset,
       limit: pageSize,
       hasMore: false,
+      evidence: {
+        orderRowsScanned: (orders || []).length,
+        companionsRanked: 0,
+        oldestOrderAt: "",
+        newestOrderAt: "",
+        weekFilterApplied: !isTotal,
+      },
       rules: {
         showScore: false,
         showOrders: true,
@@ -923,7 +982,7 @@ export async function listWeeklyCompletedTop({ limit = 3, period = "weekly", off
   for (const o of orders || []) {
     if (!countsTowardCompanionCompleted(o)) continue;
     const ts = o.completed_at || o.created_at;
-    if (!inPeriod(ts, bounds.periodStart, bounds.periodEnd)) continue;
+    if (!isTotal && !inPeriod(ts, bounds.periodStart, bounds.periodEnd)) continue;
     const mins = rankingServiceMinutesFromOrder(o);
     if (!(mins > 0)) continue;
     const cid = String(o.companion_id).trim();
@@ -1042,6 +1101,10 @@ export async function listWeeklyCompletedTop({ limit = 3, period = "weekly", off
     };
   });
 
+  const scannedTs = (orders || [])
+    .map((o) => String(o.completed_at || o.created_at || ""))
+    .filter(Boolean)
+    .sort();
   return {
     ok: true,
     enabled: true,
@@ -1049,6 +1112,7 @@ export async function listWeeklyCompletedTop({ limit = 3, period = "weekly", off
     rankingUnitRule: "completed_service_minutes / 60",
     timezone: TZ,
     period: periodType,
+    periodScope: isTotal ? "all_time" : "weekly_my",
     periodStart: bounds.periodStart,
     periodEnd: bounds.periodEnd,
     periodLabel,
@@ -1058,6 +1122,13 @@ export async function listWeeklyCompletedTop({ limit = 3, period = "weekly", off
     offset: pageOffset,
     limit: pageSize,
     hasMore: pageOffset + pageSize < total,
+    evidence: {
+      orderRowsScanned: (orders || []).length,
+      companionsRanked: total,
+      oldestOrderAt: scannedTs[0] || "",
+      newestOrderAt: scannedTs[scannedTs.length - 1] || "",
+      weekFilterApplied: !isTotal,
+    },
     rules: {
       showScore: false,
       showOrders: true,
