@@ -47,15 +47,27 @@ export default async function handler(req, res) {
   try {
     const action = String(req.method === "GET" ? req.query.action || "board" : req.body?.action || "board").trim();
 
-    // Homepage「本周人气榜」= live weekly completed-order TOP3 (not composite score / pinned).
-    if (req.method === "GET" && action === "home") {
-      const limit = Math.min(10, Math.max(1, Number(req.query.limit || 3) || 3));
-      const board = await listWeeklyCompletedTop({ limit });
+    // Homepage weekly TOP3 / historical cumulative board share minutes÷60. Not wage/billing.
+    if (req.method === "GET" && (action === "home" || action === "weekly_completed" || action === "total_completed")) {
+      const isTotal = action === "total_completed";
+      const rawLimit = Number(req.query.limit || (action === "home" ? 3 : isTotal ? 30 : 200));
+      const limit = Math.min(isTotal ? 50 : 500, Math.max(1, Number.isFinite(rawLimit) ? rawLimit : 3));
+      const offset = Math.max(0, Number(req.query.offset || 0) || 0);
+      const period = isTotal ? "total" : "weekly";
+      const board = await listWeeklyCompletedTop({ limit, period, offset });
       return json(res, 200, board);
     }
 
     if (req.method === "GET" && action === "board") {
       const period = String(req.query.period || "weekly");
+      // Weekly home SoT + historical cumulative SoT: completed service minutes ÷ 60.
+      if (period === "weekly" || period === "total") {
+        const isTotal = period === "total";
+        const limit = Math.min(isTotal ? 50 : 500, Math.max(1, Number(req.query.limit || (isTotal ? 30 : 200)) || 30));
+        const offset = Math.max(0, Number(req.query.offset || 0) || 0);
+        const board = await listWeeklyCompletedTop({ limit, period, offset });
+        return json(res, 200, board);
+      }
       const gameKey = String(req.query.game || req.query.gameKey || req.query.service || "");
       const limit = Number(req.query.limit || 50);
       const onlineOnly = req.query.online === "1" || req.query.online === "true";

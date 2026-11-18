@@ -1,7 +1,7 @@
 (function () {
   "use strict";
 
-  var state = { items: [], rules: null, loading: true, error: "", periodStart: "", periodEnd: "" };
+  var state = { items: [], rules: null, loading: true, error: "", periodStart: "", periodEnd: "", periodLabel: "" };
 
   function esc(v) {
     return String(v == null ? "" : v).replace(/[&<>"']/g, function (c) {
@@ -34,6 +34,12 @@
   function money(v) {
     var n = Number(v || 0);
     return Number.isFinite(n) ? n : 0;
+  }
+  function formatUnits(v) {
+    var n = Number(v || 0);
+    if (!Number.isFinite(n) || n <= 0) return "0";
+    if (Number.isInteger(n)) return String(n);
+    return String(Math.round(n * 100) / 100);
   }
   function statusClass(code) {
     if (window.MCJCompanionPresence) {
@@ -80,7 +86,7 @@
       '<div class="pop-rank-foot">' +
       '<div class="pop-rank-stats">' +
       '<span class="pop-rank-stat"><small>本周完成</small><b>' +
-      esc(item.completedOrders || 0) +
+      esc(formatUnits(item.completedOrders)) +
       " 单</b></span>" +
       '<span class="pop-rank-stat price"><small>单价</small><b>' +
       esc(money(item.price).toFixed(0)) +
@@ -148,7 +154,7 @@
     var opts = {
       variant: "home",
       extraClass: "pop-rank-card rank-" + r,
-      extraAttrs: 'data-pop-rank="' + esc(r) + '" data-completed-orders="' + esc(item.completedOrders || 0) + '"',
+      extraAttrs: 'data-pop-rank="' + esc(r) + '" data-completed-orders="' + esc(formatUnits(item.completedOrders || 0)) + '"',
       actionsHtml: rankActionsHtml(item),
       maxTags: 1,
     };
@@ -157,7 +163,41 @@
     return String(html).replace('<div class="hot-cover">', '<div class="hot-cover">' + topBadge(r));
   }
 
-  /** Honest ranks only — never pad podium with zero-score public companions. */
+  function shortWeekLabel(start, end, fallback) {
+    var fromApi = String(fallback || "").trim();
+    if (/^\d{1,2}月\d{1,2}日\s*[–-]\s*\d{1,2}月\d{1,2}日$/.test(fromApi)) return fromApi;
+    var s = String(start || "").split("-");
+    var e = String(end || "").split("-");
+    if (s.length < 3 || e.length < 3) return "";
+    var sm = Number(s[1]);
+    var sd = Number(s[2]);
+    var em = Number(e[1]);
+    var ed = Number(e[2]);
+    if (!(sm > 0 && sd > 0 && em > 0 && ed > 0)) return "";
+    return sm + "月" + sd + "日 – " + em + "月" + ed + "日";
+  }
+
+  function syncWeekLabel() {
+    var el = document.getElementById("homePopularityWeek");
+    if (!el) return;
+    var label = shortWeekLabel(state.periodStart, state.periodEnd, state.periodLabel);
+    if (label) el.textContent = label;
+  }
+
+  /** Slot 4: MORE → 俱乐部总接单榜. Same card chrome as TOP3. */
+  function moreCardHtml() {
+    return (
+      '<a class="pop-rank-card pop-rank-more" href="ranking.html" data-pop-rank="more" aria-label="查看全俱乐部接单榜">' +
+      '<span class="pop-rank-more-glow" aria-hidden="true"></span>' +
+      '<div class="pop-rank-more-inner">' +
+      '<span class="pop-rank-more-badge">MORE</span>' +
+      "<strong>更多</strong>" +
+      "<p>查看全俱乐部接单榜</p>" +
+      "</div></a>"
+    );
+  }
+
+  /** Honest ranks only — never pad with zero-unit companions; never show TOP 4. */
   function normalizeRankItems(items) {
     return (items || [])
       .filter(function (it) {
@@ -187,13 +227,22 @@
       return;
     }
     if (!state.items.length) {
-      root.innerHTML = '<div class="pop-empty">本周暂无已完成订单排行</div>';
+      root.innerHTML =
+        '<div class="pop-rank-grid pop-rank-count-0">' +
+        '<div class="pop-empty">本周暂无有效完成服务的陪玩</div>' +
+        moreCardHtml() +
+        "</div>";
       return;
     }
     var top = state.items.slice(0, 3);
-    // Rank order must stay TOP1 → TOP2 → TOP3 (no visual reordering).
+    // Fixed slots: TOP1…TOP3 (as available) + always「查看更多」as 4th slot — never TOP4.
     root.innerHTML =
-      '<div class="pop-rank-grid pop-rank-count-' + top.length + '">' + top.map(rankCard).join("") + "</div>";
+      '<div class="pop-rank-grid pop-rank-count-' +
+      top.length +
+      '">' +
+      top.map(rankCard).join("") +
+      moreCardHtml() +
+      "</div>";
   }
 
   function load() {
@@ -210,7 +259,9 @@
         state.rules = body.rules || null;
         state.periodStart = body.periodStart || "";
         state.periodEnd = body.periodEnd || "";
+        state.periodLabel = body.periodLabel || "";
         state.error = "";
+        syncWeekLabel();
         if (body.enabled === false) {
           state.items = [];
           state.error = "人气榜暂未开启";

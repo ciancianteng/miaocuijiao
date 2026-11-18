@@ -83,6 +83,19 @@ export function periodBounds(periodType, anchorYmd = todayYmd()) {
   return { periodType: "total", periodStart: "2000-01-01", periodEnd: "9999-12-31" };
 }
 
+/** Homepage week subtitle only — e.g. 11月16日 – 11月22日 (MY week bounds). */
+export function formatShortWeekLabel(periodStart = "", periodEnd = "") {
+  const s = String(periodStart || "").split("-");
+  const e = String(periodEnd || "").split("-");
+  if (s.length < 3 || e.length < 3) return "";
+  const sm = Number(s[1]);
+  const sd = Number(s[2]);
+  const em = Number(e[1]);
+  const ed = Number(e[2]);
+  if (!(sm > 0 && sd > 0 && em > 0 && ed > 0)) return "";
+  return `${sm}月${sd}日 – ${em}月${ed}日`;
+}
+
 async function db(table, query = "", init) {
   return supabaseJson(restUrl(table, query), {
     method: init?.method || "GET",
@@ -626,19 +639,50 @@ export async function recomputePopularity({ periods, gameKeys, operatorId, opera
 }
 
 /**
- * Homepage「本周人气榜」SoT: live TOP by weekly completed-order count.
- * Sort: completed_orders DESC → average_rating DESC → last_completed_at DESC.
- * Independent of popularity_score / pinned / featured / admin recommend.
+ * Homepage / ranking「本周人气榜」SoT — RANKING ONLY (never used for wages/billing).
  *
- * Multi-order: each completed child (or standalone) credits its companion once
- * (dedupe by order id). Multi-group parents never inflate companion counts.
+ * Club rule: ranking units = valid completed service minutes ÷ 60
+ * (30m=0.5, 60m=1, 90m=1.5, 120m=2). Source field: orders.hours (already hours).
+ *
+ * Sort: units DESC → average_rating DESC → last_completed_at DESC → companionId ASC.
+ * Independent of popularity_score / pinned / featured / admin recommend / wage math.
+ *
+ * Multi-group parents never inflate companion totals; each completed child/standalone
+ * contributes its own service minutes once (dedupe by order id).
  */
 export function countsTowardCompanionCompleted(order = {}) {
   if (!isRealCompletedOrder(order)) return false;
   const cid = String(order.companion_id || order.companionId || "").trim();
   if (!cid) return false;
   if (isMultiGroupParent(order)) return false;
+  const st = String(order.status || "").trim().toLowerCase();
+  if (["cancelled", "canceled", "refunded", "refund", "invalid", "void", "unpaid", "pending_payment"].includes(st)) {
+    return false;
+  }
   return true;
+}
+
+/** Ranking-only: booked service minutes from a completed order. Does not touch wage/billing. */
+export function rankingServiceMinutesFromOrder(order = {}) {
+  if (!countsTowardCompanionCompleted(order)) return 0;
+  const hours = Number(order.hours);
+  if (!Number.isFinite(hours) || hours <= 0) return 0;
+  // orders.hours already stores hours (0.5 = 30 minutes). Never use order-count = 1.
+  return Math.round(hours * 60 * 100) / 100;
+}
+
+/** Ranking-only: minutes ÷ 60 → club “单量”. */
+export function rankingUnitsFromMinutes(minutes = 0) {
+  const m = Number(minutes);
+  if (!Number.isFinite(m) || m <= 0) return 0;
+  return Math.round((m / 60) * 100) / 100;
+}
+
+export function formatRankingUnits(units = 0) {
+  const n = Number(units);
+  if (!Number.isFinite(n) || n <= 0) return "0";
+  if (Number.isInteger(n)) return String(n);
+  return String(Math.round(n * 100) / 100);
 }
 
 function weekIsoBounds(bounds) {
@@ -709,26 +753,42 @@ async function withHallDisplay(items) {
   });
 }
 
-export async function listWeeklyCompletedTop({ limit = 3 } = {}) {
-  const displayLimit = Math.min(10, Math.max(1, Number(limit) || 3));
-  const bounds = periodBounds("weekly");
-  const { start: weekStartIso, end: weekEndIso } = weekIsoBounds(bounds);
+export async function listWeeklyCompletedTop({ limit = 3, period = "weekly", offset = 0 } = {}) {
+  // Home weekly TOP3; total board paginates all companions with units > 0.
+  // period: "weekly" | "total" (历史累计接单). Never pad with zero-unit companions.
+  const periodType = String(period || "weekly") === "total" ? "total" : "weekly";
+  const isTotal = periodType === "total";
+  const pageSize = Math.min(isTotal ? 50 : 500, Math.max(1, Number(limit) || (isTotal ? 30 : 3)));
+  const pageOffset = Math.max(0, Number(offset) || 0);
+  const bounds = periodBounds(periodType);
+  const { start: rangeStartIso, end: rangeEndIso } = weekIsoBounds(bounds);
+  const rankingMode = isTotal ? "total_completed_minutes" : "weekly_completed_minutes";
+  // Short week label for homepage (e.g. 11月16日–22日); total has no week range.
+  const periodLabel = isTotal
+    ? ""
+    : formatShortWeekLabel(bounds.periodStart, bounds.periodEnd);
+  const orderSelect =
+    "id,boss_id,companion_id,status,order_type,parent_order_id,hours,quantity,pricing_unit,completed_at,created_at";
+  const orderSelectLite =
+    "id,boss_id,companion_id,status,order_type,parent_order_id,hours,completed_at,created_at";
+  const orderSelectMinimal =
+    "id,boss_id,companion_id,status,hours,completed_at,created_at";
 
   // Production enum mcj_order_status = completed only (no reviewed). Never filter reviewed in REST.
-  let orders = await db(
-    "orders",
-    `?status=eq.completed&select=id,boss_id,companion_id,status,order_type,parent_order_id,completed_at,created_at&completed_at=gte.${encodeURIComponent(weekStartIso)}&completed_at=lte.${encodeURIComponent(weekEndIso)}&order=completed_at.desc&limit=5000`
-  ).catch(async (e) => {
+  const datedQuery = isTotal
+    ? `?status=eq.completed&select=${orderSelect}&order=completed_at.desc&limit=5000`
+    : `?status=eq.completed&select=${orderSelect}&completed_at=gte.${encodeURIComponent(rangeStartIso)}&completed_at=lte.${encodeURIComponent(rangeEndIso)}&order=completed_at.desc&limit=5000`;
+  let orders = await db("orders", datedQuery).catch(async (e) => {
     // Fallback if completed_at filter / order_type column missing
     // NOTE: Production orders has NO updated_at — never select it.
-    if (/column|order_type|parent_order_id|completed_at|enum|22P02|reviewed/i.test(String(e.message || ""))) {
+    if (/column|order_type|parent_order_id|completed_at|quantity|pricing_unit|enum|22P02|reviewed/i.test(String(e.message || ""))) {
       const all = await dbMaybe(
         "orders",
-        "?status=eq.completed&select=id,boss_id,companion_id,status,order_type,parent_order_id,completed_at,created_at&order=completed_at.desc&limit=5000"
+        `?status=eq.completed&select=${orderSelectLite}&order=completed_at.desc&limit=5000`
       ).catch(async () =>
         dbMaybe(
           "orders",
-          "?status=eq.completed&select=id,boss_id,companion_id,status,completed_at,created_at&order=completed_at.desc&limit=5000"
+          `?status=eq.completed&select=${orderSelectMinimal}&order=completed_at.desc&limit=5000`
         )
       );
       return (all || []).filter((o) =>
@@ -739,14 +799,16 @@ export async function listWeeklyCompletedTop({ limit = 3 } = {}) {
     throw e;
   });
 
-  // Catch completed rows whose completed_at is null but created this week
-  const nullCompleted = await dbMaybe(
-    "orders",
-    `?status=eq.completed&completed_at=is.null&select=id,boss_id,companion_id,status,order_type,parent_order_id,completed_at,created_at&created_at=gte.${encodeURIComponent(weekStartIso)}&created_at=lte.${encodeURIComponent(weekEndIso)}&limit=2000`
-  ).catch(async () =>
+  // Catch completed rows whose completed_at is null (weekly: created in range; total: any null stamp)
+  const nullQuery = isTotal
+    ? `?status=eq.completed&completed_at=is.null&select=${orderSelect}&order=created_at.desc&limit=2000`
+    : `?status=eq.completed&completed_at=is.null&select=${orderSelect}&created_at=gte.${encodeURIComponent(rangeStartIso)}&created_at=lte.${encodeURIComponent(rangeEndIso)}&limit=2000`;
+  const nullCompleted = await dbMaybe("orders", nullQuery).catch(async () =>
     dbMaybe(
       "orders",
-      `?status=eq.completed&completed_at=is.null&select=id,boss_id,companion_id,status,completed_at,created_at&created_at=gte.${encodeURIComponent(weekStartIso)}&created_at=lte.${encodeURIComponent(weekEndIso)}&limit=2000`
+      isTotal
+        ? `?status=eq.completed&completed_at=is.null&select=${orderSelectMinimal}&order=created_at.desc&limit=2000`
+        : `?status=eq.completed&completed_at=is.null&select=${orderSelectMinimal}&created_at=gte.${encodeURIComponent(rangeStartIso)}&created_at=lte.${encodeURIComponent(rangeEndIso)}&limit=2000`
     )
   );
   if (nullCompleted?.length) {
@@ -759,21 +821,24 @@ export async function listWeeklyCompletedTop({ limit = 3 } = {}) {
     }
   }
 
-  // Aggregate distinct completed order ids per companion
-  const byCompanion = new Map(); // cid -> { orderIds:Set, lastCompletedAt }
+  // Aggregate ranking minutes per companion (dedupe order id). Ranking-only math.
+  const byCompanion = new Map(); // cid -> { orderIds:Set, minutes, lastCompletedAt }
   for (const o of orders || []) {
     if (!countsTowardCompanionCompleted(o)) continue;
     const ts = o.completed_at || o.created_at;
     if (!inPeriod(ts, bounds.periodStart, bounds.periodEnd)) continue;
+    const mins = rankingServiceMinutesFromOrder(o);
+    if (!(mins > 0)) continue;
     const cid = String(o.companion_id).trim();
     let bucket = byCompanion.get(cid);
     if (!bucket) {
-      bucket = { orderIds: new Set(), lastCompletedAt: "" };
+      bucket = { orderIds: new Set(), minutes: 0, lastCompletedAt: "" };
       byCompanion.set(cid, bucket);
     }
     const oid = String(o.id || "").trim();
     if (!oid || bucket.orderIds.has(oid)) continue;
     bucket.orderIds.add(oid);
+    bucket.minutes = Math.round((bucket.minutes + mins) * 100) / 100;
     if (!bucket.lastCompletedAt || String(ts) > bucket.lastCompletedAt) {
       bucket.lastCompletedAt = String(ts || "");
     }
@@ -783,18 +848,25 @@ export async function listWeeklyCompletedTop({ limit = 3 } = {}) {
     return {
       ok: true,
       enabled: true,
-      rankingMode: "weekly_completed",
-      period: "weekly",
+      rankingMode,
+      rankingUnitRule: "completed_service_minutes / 60",
+      timezone: TZ,
+      period: periodType,
       periodStart: bounds.periodStart,
       periodEnd: bounds.periodEnd,
+      periodLabel,
       gameKey: "",
       items: [],
+      total: 0,
+      offset: pageOffset,
+      limit: pageSize,
+      hasMore: false,
       rules: {
         showScore: false,
         showOrders: true,
         showGifts: false,
         showOnline: true,
-        displayCount: displayLimit,
+        displayCount: pageSize,
       },
       updatedAt: nowIso(),
     };
@@ -846,12 +918,14 @@ export async function listWeeklyCompletedTop({ limit = 3 } = {}) {
   const pMap = Object.fromEntries((profiles || []).map((p) => [p.id, p]));
   const bossMap = Object.fromEntries((bossProfiles || []).map((p) => [p.id, p]));
 
-  // Rebuild counts excluding test companions / test bosses / draft companions
+  // Rebuild minutes excluding test companions / test bosses / draft companions
   const clean = new Map();
   for (const o of orders || []) {
     if (!countsTowardCompanionCompleted(o)) continue;
     const ts = o.completed_at || o.created_at;
     if (!inPeriod(ts, bounds.periodStart, bounds.periodEnd)) continue;
+    const mins = rankingServiceMinutesFromOrder(o);
+    if (!(mins > 0)) continue;
     const cid = String(o.companion_id).trim();
     const c = cMap[cid];
     const p = pMap[cid] || {};
@@ -868,12 +942,13 @@ export async function listWeeklyCompletedTop({ limit = 3 } = {}) {
     if (!appSt && !c.application_submitted_at) continue;
     let bucket = clean.get(cid);
     if (!bucket) {
-      bucket = { orderIds: new Set(), lastCompletedAt: "" };
+      bucket = { orderIds: new Set(), minutes: 0, lastCompletedAt: "" };
       clean.set(cid, bucket);
     }
     const oid = String(o.id || "").trim();
     if (!oid || bucket.orderIds.has(oid)) continue;
     bucket.orderIds.add(oid);
+    bucket.minutes = Math.round((bucket.minutes + mins) * 100) / 100;
     if (!bucket.lastCompletedAt || String(ts) > bucket.lastCompletedAt) {
       bucket.lastCompletedAt = String(ts || "");
     }
@@ -898,9 +973,12 @@ export async function listWeeklyCompletedTop({ limit = 3 } = {}) {
         ratingAgg[cid] && ratingAgg[cid].n
           ? Math.round((ratingAgg[cid].sum / ratingAgg[cid].n) * 100) / 100
           : 0;
+      const units = rankingUnitsFromMinutes(bucket.minutes);
       return {
         companionId: cid,
-        completedOrders: bucket.orderIds.size,
+        completedMinutes: bucket.minutes,
+        completedOrders: units, // club “单量” = minutes/60 (keep field name for UI)
+        orderRows: bucket.orderIds.size,
         averageRating: avg,
         lastCompletedAt: bucket.lastCompletedAt || "",
       };
@@ -909,12 +987,16 @@ export async function listWeeklyCompletedTop({ limit = 3 } = {}) {
     .sort((a, b) => {
       if (b.completedOrders !== a.completedOrders) return b.completedOrders - a.completedOrders;
       if (b.averageRating !== a.averageRating) return b.averageRating - a.averageRating;
-      return String(b.lastCompletedAt).localeCompare(String(a.lastCompletedAt));
-    })
-    .slice(0, displayLimit);
+      const t = String(b.lastCompletedAt).localeCompare(String(a.lastCompletedAt));
+      if (t) return t;
+      return String(a.companionId).localeCompare(String(b.companionId));
+    });
+
+  const total = ranked.length;
+  const page = ranked.slice(pageOffset, pageOffset + pageSize);
 
   const catalog = await loadServiceCatalog();
-  const items = ranked.map((r, idx) => {
+  const items = page.map((r, idx) => {
     const c = cMap[r.companionId] || {};
     const p = pMap[r.companionId] || {};
     const hallSvc = hallServicesFromProfile(c, catalog);
@@ -922,7 +1004,7 @@ export async function listWeeklyCompletedTop({ limit = 3 } = {}) {
     const availabilityStatus =
       availRaw === "online" ? "online" : availRaw === "busy" ? "busy" : availRaw === "paused" ? "paused" : "offline";
     return {
-      rank: idx + 1,
+      rank: pageOffset + idx + 1,
       companionId: r.companionId,
       publicId: resolveCompanionPublicCode(c) || "",
       nickname: resolveCompanionName(c, p) || "未命名陪玩",
@@ -942,6 +1024,8 @@ export async function listWeeklyCompletedTop({ limit = 3 } = {}) {
       ],
       popularityScore: 0,
       completedOrders: r.completedOrders,
+      completedMinutes: r.completedMinutes,
+      completedOrderRows: r.orderRows,
       averageRating: r.averageRating,
       lastCompletedAt: r.lastCompletedAt,
       fiveStarReviews: 0,
@@ -950,29 +1034,36 @@ export async function listWeeklyCompletedTop({ limit = 3 } = {}) {
       onlineMinutes: 0,
       favorites: 0,
       anomaly: false,
-      periodType: "weekly",
+      periodType,
       periodStart: bounds.periodStart,
       periodEnd: bounds.periodEnd,
       gameKey: "",
-      rankingMode: "weekly_completed",
+      rankingMode,
     };
   });
 
   return {
     ok: true,
     enabled: true,
-    rankingMode: "weekly_completed",
-    period: "weekly",
+    rankingMode,
+    rankingUnitRule: "completed_service_minutes / 60",
+    timezone: TZ,
+    period: periodType,
     periodStart: bounds.periodStart,
     periodEnd: bounds.periodEnd,
+    periodLabel,
     gameKey: "",
     items: await withHallDisplay(items),
+    total,
+    offset: pageOffset,
+    limit: pageSize,
+    hasMore: pageOffset + pageSize < total,
     rules: {
       showScore: false,
       showOrders: true,
       showGifts: false,
       showOnline: true,
-      displayCount: displayLimit,
+      displayCount: pageSize,
     },
     updatedAt: nowIso(),
   };

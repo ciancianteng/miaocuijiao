@@ -160,7 +160,24 @@
   .pop-list-cta{display:none}
 }
 
-/* ===== Homepage weekly ranking — hall card variant + TOP badge ===== */
+/* Homepage week date — soft champagne / pink-violet */
+.home-popularity-section .home-pop-week,
+.home-popularity-section #homePopularityWeek{
+  margin:6px 0 0!important;
+  font-size:13px!important;
+  font-weight:850!important;
+  letter-spacing:.02em!important;
+  text-transform:none!important;
+  background:linear-gradient(105deg,#ffe8f4 0%,#f0c4ff 42%,#ffd6b8 100%)!important;
+  -webkit-background-clip:text!important;
+  background-clip:text!important;
+  color:transparent!important;
+  -webkit-text-fill-color:transparent!important;
+  filter:drop-shadow(0 0 10px rgba(243,168,203,.22));
+}
+
+/* ===== Homepage weekly ranking — 2×2: TOP1 TOP2 / TOP3 MORE ===== */
+.home-popularity-section .pop-rank-grid,
 .pop-rank-grid{
   display:grid!important;
   grid-template-columns:repeat(2,minmax(0,1fr))!important;
@@ -171,7 +188,7 @@
   box-sizing:border-box!important;
 }
 @media(min-width:721px){
-  .pop-rank-grid{grid-template-columns:repeat(auto-fill,minmax(190px,228px))!important;gap:14px!important}
+  .home-popularity-section .pop-rank-grid{gap:14px!important;max-width:480px!important}
 }
 .pop-rank-grid .pop-rank-card{
   position:relative!important;
@@ -372,6 +389,159 @@
   font-weight:900!important;
   text-decoration:none!important;
   box-shadow:0 4px 12px rgba(243,168,203,.18)!important;
+}
+
+/* Slot 4 — MORE (same card size as TOP3; never TOP4 companion) */
+.pop-rank-card.pop-rank-more{
+  position:relative!important;
+  display:flex!important;
+  align-items:stretch!important;
+  justify-content:center!important;
+  text-decoration:none!important;
+  color:#fff4fa!important;
+  min-height:0!important;
+  height:100%!important;
+  overflow:hidden!important;
+  border:1px solid rgba(220,160,255,.28)!important;
+  background:
+    linear-gradient(160deg,rgba(120,60,180,.28),transparent 46%),
+    linear-gradient(165deg,rgba(28,14,40,.98),rgba(8,5,14,.99))!important;
+  box-shadow:0 8px 22px rgba(0,0,0,.28),0 0 18px rgba(180,100,220,.14)!important;
+}
+.pop-rank-more-glow{
+  position:absolute;inset:-1px;border-radius:inherit;padding:1px;pointer-events:none;z-index:0;
+  background:conic-gradient(from 0deg,rgba(255,160,220,.05),#e9b4ff,#ffc6e4,#c9a6ff,rgba(255,160,220,.05));
+  -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);
+  mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);
+  -webkit-mask-composite:xor;mask-composite:exclude;
+  opacity:.85;
+  animation:rankFlowBorder 9s linear infinite;
+}
+.pop-rank-more-inner{
+  position:relative;z-index:1;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;
+  width:100%;min-height:100%;padding:18px 14px;box-sizing:border-box;text-align:center;
+}
+.pop-rank-more-badge{
+  display:inline-flex;align-items:center;justify-content:center;
+  min-width:88px;min-height:44px;padding:0 16px;border-radius:14px;
+  border:1px solid rgba(255,190,230,.4);
+  background:linear-gradient(160deg,rgba(255,180,220,.2),rgba(120,60,180,.22));
+  color:#fff4fb;font-size:18px;font-weight:1000;letter-spacing:.12em;
+  box-shadow:0 0 18px rgba(220,140,255,.2);
+}
+.pop-rank-more-inner strong{font-size:16px;font-weight:1000;line-height:1.2;color:#fff7fb}
+.pop-rank-more-inner p{margin:0;color:rgba(255,214,232,.72);font-size:11px;font-weight:700;line-height:1.35}
+.pop-rank-grid .pop-empty{
+  grid-column:1/-1;text-align:center;padding:22px 14px;border-radius:16px;
+  border:1px solid rgba(243,168,203,.18);background:rgba(12,8,16,.72);color:#d8c4cf;font-weight:800;
+}
+
+/* ===== Club total ranking page ===== */
+.rank-hist-body{
+  margin:0;color:#f7e9f0;min-height:100vh;
+  background:
+    radial-gradient(circle at 16% 0%, rgba(168,85,247,.16), transparent 34%),
+    radial-gradient(circle at 88% 8%, rgba(255,120,180,.14), transparent 32%),
+    linear-gradient(180deg,#07040c,#140a18 48%,#050406);
+}
+.rank-hist-page{
+  max-width:720px;margin:0 auto;
+  padding:18px 14px calc(88px + env(safe-area-inset-bottom));
+  box-sizing:border-box;
+}
+.rank-hist-top{
+  display:flex;align-items:center;gap:12px;margin-bottom:14px;
+}
+.rank-hist-back{
+  display:inline-flex;align-items:center;justify-content:center;gap:6px;
+  height:36px;padding:0 14px 0 12px;border-radius:999px;box-sizing:border-box;
+  border:1px solid rgba(220,160,255,.38);
+  background:linear-gradient(180deg,rgba(36,18,48,.92),rgba(12,8,18,.96));
+  color:#ffe6f4;font-size:13px;font-weight:900;text-decoration:none;
+  box-shadow:0 4px 14px rgba(0,0,0,.25);
+  transition:transform .12s ease,border-color .15s ease,background .15s ease;
+}
+.rank-hist-back:active{transform:scale(.97);border-color:rgba(255,190,230,.55)}
+.rank-hist-back svg{width:14px;height:14px;flex:0 0 auto}
+.rank-hist-hero{flex:1;min-width:0}
+.rank-hist-hero h1{
+  margin:0;font-size:clamp(20px,5vw,26px);font-weight:1000;color:#fff5fa;letter-spacing:.02em;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+
+.rank-hist-list{display:grid;gap:8px}
+.rank-hist-row{
+  position:relative;
+  display:grid;grid-template-columns:40px 44px minmax(0,1fr) auto;gap:10px;align-items:center;
+  height:64px;min-height:64px;max-height:64px;padding:0 12px;border-radius:14px;
+  text-decoration:none;color:inherit;box-sizing:border-box;overflow:hidden;
+  border:1px solid rgba(180,120,220,.2);
+  background:
+    linear-gradient(120deg,rgba(90,40,130,.18),transparent 42%),
+    linear-gradient(145deg,rgba(32,16,42,.92),rgba(10,7,14,.96));
+}
+.rank-hist-row::before{
+  content:"";position:absolute;inset:-20%;border-radius:inherit;padding:1px;pointer-events:none;z-index:0;
+  background:conic-gradient(from 0deg,rgba(255,160,220,.06),#e9b4ff,#ffc6e4,#b8a0ff,rgba(255,160,220,.06));
+  -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);
+  mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);
+  -webkit-mask-composite:xor;mask-composite:exclude;
+  opacity:.55;
+  animation:rankFlowBorder 10s linear infinite;
+  will-change:transform;
+}
+.rank-hist-row > *{position:relative;z-index:1}
+.rank-hist-row.top-1{border-color:rgba(255,212,120,.42);box-shadow:0 0 14px rgba(255,196,90,.12)}
+.rank-hist-row.top-2{border-color:rgba(210,220,235,.36)}
+.rank-hist-row.top-3{border-color:rgba(220,150,100,.36)}
+.rank-hist-no{
+  display:inline-flex;align-items:center;justify-content:center;
+  width:32px;height:28px;margin:0 auto;border-radius:9px;
+  font-weight:1000;font-size:13px;color:#e7c7ff;
+  background:rgba(255,255,255,.05);
+}
+.rank-hist-row.top-1 .rank-hist-no{color:#2a1800;background:linear-gradient(145deg,#fff1c4,#e4b34a)}
+.rank-hist-row.top-2 .rank-hist-no{color:#1a222c;background:linear-gradient(145deg,#f7f9fc,#b8c2cf)}
+.rank-hist-row.top-3 .rank-hist-no{color:#2a1208;background:linear-gradient(145deg,#f6d0b0,#c87a48)}
+.rank-hist-row img{
+  width:40px;height:40px;border-radius:50%;object-fit:cover;background:#1a1018;
+  border:1.5px solid color-mix(in srgb, var(--mcj-level-color, #e89ac4) 55%, transparent);
+  box-shadow:0 0 10px color-mix(in srgb, var(--mcj-level-color, #e178b4) 28%, transparent);
+}
+.rank-hist-main{min-width:0;display:flex;flex-direction:column;gap:3px;justify-content:center}
+.rank-hist-main strong{
+  display:block;color:#fff5fa;font-size:14px;font-weight:950;line-height:1.2;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+.rank-hist-main .companion-level-pill{
+  --mcj-badge-h:22px;--mcj-badge-fs:11px;--mcj-badge-pad-x:8px;
+  align-self:flex-start;max-width:100%;
+}
+.rank-hist-units{text-align:right;min-width:72px;white-space:nowrap}
+.rank-hist-units b{font-size:14px;font-weight:1000;color:#ffd6e8}
+.rank-hist-units b em{font-style:normal;font-size:12px;font-weight:850;opacity:.85}
+
+.rank-hist-more{
+  display:block;width:100%;margin-top:12px;min-height:42px;border-radius:12px;
+  border:1px solid rgba(243,168,203,.28);
+  background:linear-gradient(180deg,rgba(255,160,205,.16),rgba(40,18,48,.88));
+  color:#fff0f7;font-size:13px;font-weight:900;cursor:pointer;
+}
+.rank-hist-more:disabled{opacity:.65;cursor:wait}
+
+@keyframes rankFlowBorder{to{transform:rotate(360deg)}}
+
+@media (prefers-reduced-motion:reduce){
+  .pop-rank-more-glow,
+  .rank-hist-row::before{animation:none!important;opacity:.5;transform:none!important}
+}
+
+@media(max-width:560px){
+  .rank-hist-page{padding:14px 12px calc(84px + env(safe-area-inset-bottom))}
+  .rank-hist-row{grid-template-columns:34px 40px minmax(0,1fr) auto;gap:8px;padding:0 10px}
+  .rank-hist-units{min-width:64px}
+  .rank-hist-units b{font-size:13px}
 }
 
 /* Ranking page extras */
