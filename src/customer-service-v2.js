@@ -1006,7 +1006,7 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, virtStartIndex }
         input.disabled=false;
         input.readOnly=false;
         input.removeAttribute('readonly');
-        input.placeholder='输入消息，Enter 发送，Shift+Enter 换行';
+        input.placeholder='输入消息';
         state.composerFocused=true;
         try{input.focus({preventScroll:true});}catch(err){try{input.focus();}catch(e2){}}
       }
@@ -1530,6 +1530,16 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, virtStartIndex }
     }
   }
   function syncComposerEnabled(){
+    // Mobile must never show desktop Enter/Shift+Enter copy; also collapse duplicate composers.
+    root.querySelectorAll('.mcj-enter-hint').forEach(function(node){node.remove();});
+    var wraps=root.querySelectorAll('[data-cs-composer-wrap]');
+    if(wraps.length>1){
+      Array.prototype.slice.call(wraps,1).forEach(function(node){node.remove();});
+    }
+    root.querySelectorAll(COMPOSER_SEL).forEach(function(el){
+      var ph=String(el.placeholder||'');
+      if(/Enter|Shift\+Enter|换行/.test(ph)) el.placeholder='输入消息';
+    });
     var input=root.querySelector(COMPOSER_SEL);
     var sendBtn=root.querySelector('[data-cs-send]');
     var hint=root.querySelector('[data-cs-composer-hint]');
@@ -1543,7 +1553,7 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, virtStartIndex }
       input.readOnly=!can;
       if(can)input.removeAttribute('readonly');
       else input.setAttribute('readonly','readonly');
-      input.placeholder=can?'输入消息，Enter 发送，Shift+Enter 换行':(reason||'无法回复');
+      input.placeholder=can?'输入消息':(reason||'无法回复');
     }
     if(sendBtn){
       sendBtn.disabled=!can||!!state.sendingChat||empty;
@@ -1615,9 +1625,42 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, virtStartIndex }
       toastTimer=null;
     },2200);
   }
+  function apiTimeoutMs(action){
+    var a=String(action||'');
+    // Prod bootstrap commonly lands ~6–8s; 12s abort caused false "Fetch is aborted" + 共0单.
+    if(a==='bootstrap'||a==='session_pool')return 45000;
+    if(a==='poll_updates')return 20000;
+    return 25000;
+  }
+  function isAbortOrTimeoutErr(err){
+    if(!err)return false;
+    if(err.name==='AbortError'||err.code==='timeout'||err.timeout)return true;
+    var msg=String(err.message||err.name||'');
+    return /abort|timeout|超时|Fetch is aborted|The user aborted|signal is aborted/i.test(msg);
+  }
+  function normalizeApiErr(err){
+    if(!isAbortOrTimeoutErr(err))return err;
+    var out=Object.assign(new Error('请求超时，请重试'),{
+      status:408,
+      code:'timeout',
+      timeout:true,
+      cause:err
+    });
+    return out;
+  }
+  function hasUsableDashboardData(data){
+    if(!data||data._unavailable)return false;
+    return !!(
+      (data.orders&&data.orders.length)||
+      (data.conversations&&data.conversations.length)||
+      (data.bosses&&data.bosses.length)||
+      (data.companions&&data.companions.length)
+    );
+  }
   function api(action,body,method){
     var reloginMsg=(window.MCJServiceAuth&&window.MCJServiceAuth.expiredMessage)||'登录状态已失效，请重新登录';
     function isAuthErr(err){
+      if(isAbortOrTimeoutErr(err))return false;
       if(window.MCJServiceAuth&&typeof window.MCJServiceAuth.isAuthUnauthorized==='function'){
         return window.MCJServiceAuth.isAuthUnauthorized(err&&err.status,(err&&err.message)||'',err);
       }
@@ -1635,22 +1678,34 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, virtStartIndex }
       var opts={method:method||'POST',headers:{'Content-Type':'application/json',Accept:'application/json'}};
       if(token())opts.headers['x-mcj-service-token']=token();
       var ctrl=typeof AbortController!=='undefined'?new AbortController():null;
+      var abortTimer=null;
       if(ctrl){
         opts.signal=ctrl.signal;
-        setTimeout(function(){try{ctrl.abort()}catch(e){}},12000);
+        abortTimer=setTimeout(function(){try{ctrl.abort()}catch(e){}},apiTimeoutMs(action));
       }
-      if(opts.method==='GET')return fetch('/api/customer-service?action='+encodeURIComponent(action||'bootstrap'),opts).then(parse);
-      opts.body=JSON.stringify(Object.assign({action:action},body||{}));
-      return fetch('/api/customer-service',opts).then(parse);
+      var req=opts.method==='GET'
+        ?fetch('/api/customer-service?action='+encodeURIComponent(action||'bootstrap'),opts).then(parse)
+        :(opts.body=JSON.stringify(Object.assign({action:action},body||{})),fetch('/api/customer-service',opts).then(parse));
+      return Promise.resolve(req).catch(function(err){
+        throw normalizeApiErr(err);
+      }).finally(function(){
+        if(abortTimer)clearTimeout(abortTimer);
+      });
     }
     var ready=window.MCJServiceAuth&&window.MCJServiceAuth.ensureSession
       ?window.MCJServiceAuth.ensureSession().catch(function(){return null;})
       :Promise.resolve();
-    return ready.then(doFetch).catch(function(err){
+    // Cap session heal so refresh never hangs forever on "刷新中…".
+    var readyBudget=new Promise(function(resolve){
+      setTimeout(function(){resolve(null);},8000);
+    });
+    return Promise.race([ready,readyBudget]).then(doFetch).catch(function(err){
+      err=normalizeApiErr(err);
       if(isAuthErr(err)&&window.MCJServiceAuth&&window.MCJServiceAuth.refreshSession){
         return window.MCJServiceAuth.refreshSession().then(function(){
           state.session=readSession();
           return doFetch().catch(function(err2){
+            err2=normalizeApiErr(err2);
             if(isAuthErr(err2)){
               forceRelogin();
               throw Object.assign(new Error(reloginMsg),{status:401,code:'bad_jwt'});
@@ -1659,6 +1714,7 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, virtStartIndex }
           });
         }).catch(function(err3){
           if(err3&&err3.code==='bad_jwt')throw err3;
+          if(isAbortOrTimeoutErr(err3)||isAbortOrTimeoutErr(err))throw normalizeApiErr(err3||err);
           forceRelogin();
           throw Object.assign(new Error(reloginMsg),{status:401,code:'bad_jwt'});
         });
@@ -1725,7 +1781,8 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, virtStartIndex }
       bootFailed=true;
       bootMsg=err&&err.message?err.message:'客服端数据读取失败';
       state.error=bootMsg;
-      if(conversationRows().length){
+      // Never false-zero the desk on timeout/abort/network blips if we already have data.
+      if(hasUsableDashboardData(state.data)||conversationRows().length){
         state.dataUnavailable=false;
         return {data:state.data,ok:false,keep:true};
       }
@@ -2035,12 +2092,20 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, virtStartIndex }
     var seq=++softRefreshSeq;
     setRefreshButtonsBusy(true);
     toast('刷新中…');
+    var safety=setTimeout(function(){
+      if(seq!==softRefreshSeq)return;
+      state.refreshing=false;
+      setRefreshButtonsBusy(false);
+    },50000);
     return api('bootstrap',{},'GET').then(function(res){
       if(seq!==softRefreshSeq)return;
       var remote=res.data||state.data||emptyDashboardData();
+      if(remote&&remote._unavailable)delete remote._unavailable;
       healSessionStaff(remote);
       applyReadCursors(remote);
       state.data=remote;
+      state.dataUnavailable=false;
+      state.error='';
       state.lastPollAt=new Date().toISOString();
       if(state.suppressAutoSelect){
         state.activeConversation='';
@@ -2060,9 +2125,14 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, virtStartIndex }
       }
       bindPoolRealtime(true);
       bindDeskOrderRealtime(true);
+      toast('已刷新');
     }).catch(function(err){
+      // Keep prior orders/conversations — never paint 共0单 on timeout/abort.
+      if(hasUsableDashboardData(state.data))state.dataUnavailable=false;
       toast((err&&err.message)||'刷新失败，请重试');
+      try{paint();}catch(e){}
     }).finally(function(){
+      clearTimeout(safety);
       state.refreshing=false;
       setRefreshButtonsBusy(false);
     });
@@ -3334,7 +3404,6 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, virtStartIndex }
       ?('<div class="cs-chat-composer" data-cs-composer-wrap>'+
         (lockedActive?lockPanelHtml(active):'')+
         '<p class="cs-composer-hint" data-cs-composer-hint'+(canReply?' hidden':'')+'>'+esc(canReply?'':blockReason)+'</p>'+
-        '<p class="mcj-enter-hint">Enter 发送，Shift+Enter 换行</p>'+
         '<form class="cs-chat-input" data-send-message action="#" method="post" autocomplete="off" onsubmit="return false;">'+
         '<div class="cs-composer-tools">'+
         '<button class="cs-tool" type="button" data-cs-emoji'+(canReply?'':' disabled')+' aria-label="表情" title="表情">'+CS_ICO_EMOJI+'</button>'+
@@ -3342,7 +3411,7 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, virtStartIndex }
         '<button class="cs-tool cs-tool-quick" type="button" data-cs-quick'+(canReply?'':' disabled')+' aria-label="快捷回复" title="快捷回复" aria-expanded="false">'+CS_ICO_BOLT+'<span>快捷回复</span></button>'+
         '</div>'+
         '<div class="cs-composer-line">'+
-        '<textarea name="content" data-cs-composer rows="1" placeholder="'+esc(canReply?'输入消息，Enter 发送，Shift+Enter 换行':(blockReason||'无法回复'))+'" autocomplete="off" enterkeyhint="send" maxlength="2000"'+(canReply?'':' disabled readonly')+'></textarea>'+
+        '<textarea name="content" data-cs-composer rows="1" placeholder="'+esc(canReply?'输入消息':(blockReason||'无法回复'))+'" autocomplete="off" enterkeyhint="send" maxlength="2000"'+(canReply?'':' disabled readonly')+'></textarea>'+
         '<button class="cs-send-btn" type="button" data-cs-send aria-label="发送"'+(canReply&&String(state.composerDraft||'').trim()?'':' disabled')+'>'+CS_ICO_SEND+'</button>'+
         '</div>'+
         '</form>'+

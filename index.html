@@ -360,45 +360,51 @@ body:not(.is-logged-in) .top-actions .login{display:inline-flex!important}
   header.mcj-boss-header .mcj-mnav-drawer[hidden]{display:none!important}
   .mobile-bottom-nav{
     position:fixed;
-    left:max(8px, env(safe-area-inset-left));
-    right:max(8px, env(safe-area-inset-right));
-    bottom:max(8px, env(safe-area-inset-bottom));
+    left:0;
+    right:0;
+    bottom:0;
     z-index:80;
     display:grid;
     grid-template-columns:repeat(5,minmax(0,1fr));
-    gap:4px;
-    width:auto;
+    gap:0;
+    width:100%;
     max-width:100%;
     box-sizing:border-box;
-    padding:8px 6px;
-    border:1px solid rgba(243,168,203,.24);
-    border-radius:18px;
-    background:rgba(8,6,12,.88);
-    backdrop-filter:blur(16px);
-    box-shadow:0 12px 34px rgba(0,0,0,.42);
+    padding:4px max(8px,env(safe-area-inset-left)) calc(6px + env(safe-area-inset-bottom)) max(8px,env(safe-area-inset-right));
+    border:0;
+    border-top:1px solid rgba(244,166,200,.14);
+    border-radius:0;
+    background:rgba(11,10,16,.96);
+    backdrop-filter:blur(10px);
+    box-shadow:none;
     overflow:visible;
   }
   .mobile-bottom-nav a,.mobile-bottom-nav button{
-    min-width:0;
+    position:relative;
+    min-width:44px;
     width:100%;
-    height:44px;
-    padding:0 2px;
+    height:48px;
+    padding:0;
     border:0;
-    border-radius:12px;
+    border-radius:0;
     background:transparent;
-    color:#f7dce9;
-    font-size:12px;
-    font-weight:950;
+    color:#C9C3D0;
+    font-size:11px;
+    font-weight:650;
     line-height:1.2;
-    display:grid;
-    place-items:center;
+    display:flex;
+    align-items:center;
+    justify-content:center;
     text-align:center;
     text-decoration:none;
     white-space:nowrap;
     overflow:visible;
   }
-  .mobile-bottom-nav .active{background:rgba(243,168,203,.14);color:#fff5fa}
-  .container{padding-bottom:calc(96px + env(safe-area-inset-bottom))!important}
+  .mobile-bottom-nav .active{background:transparent;color:#F4A6C8;filter:drop-shadow(0 0 8px rgba(244,166,200,.35))}
+  .mobile-bottom-nav .mcj-app-tab-label{display:none!important}
+  .mobile-bottom-nav .mcj-app-tab-ico{display:grid;place-items:center;width:22px;height:22px;font-size:0;line-height:0}
+  .mobile-bottom-nav .mcj-app-tab-ico svg{display:block;width:22px;height:22px}
+  .container{padding-bottom:calc(72px + env(safe-area-inset-bottom))!important}
 }
 
 /* today-data-detail-v1 */
@@ -3499,7 +3505,7 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:clip!importan
   <link rel="stylesheet" href="src/gameplay-flow.css">
   <link rel="stylesheet" href="src/design-system.css?v=20261018brand1">
   <link rel="stylesheet" href="src/home-banner.css?v=20260911bannerWysiwyg3to1">
-  <link rel="stylesheet" href="src/home-brand-hero.css?v=20260910homeFix1">
+  <link rel="stylesheet" href="src/home-brand-hero.css?v=20261120taglineGone1">
   <link rel="stylesheet" href="src/home-banner-promo.css?v=20260911bannerWysiwyg3to1">
   <link rel="stylesheet" href="src/home-trust-stats.css?v=20260910appProto2">
   <link rel="stylesheet" href="src/home-announcements.css?v=20260910dataRestore1">
@@ -3528,7 +3534,7 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:clip!importan
   <link rel="stylesheet" href="src/boss-header.css?v=20261019nav1">
   <link rel="stylesheet" href="/src/mcj-safe-area.css?v=20261019nav1">
   <link rel="stylesheet" href="src/home-mobile.css?v=20260910appProto1">
-  <link rel="stylesheet" href="src/home-app-mobile.css?v=20261019nav1">
+  <link rel="stylesheet" href="src/home-app-mobile.css?v=20261120tabIcon1">
   <link rel="stylesheet" href="src/ui-linglu-polish.css?v=20260924hallHomeCard1">
 </head>
 <body class="mcj-app-shell">
@@ -3568,7 +3574,6 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:clip!importan
           <p class="home-brand-hero-kicker">MEOW CUI JIAO</p>
           <h1 class="home-brand-hero-title">妙脆角</h1>
           <div class="home-brand-hero-stats home-trust-stats" data-home-brand-hero-stats data-home-daily-stats aria-label="平台实时数据" hidden></div>
-          <p class="home-brand-hero-tagline">专业陪玩，每一场游戏认真对待，每一位热爱电竞的你。</p>
           <div class="home-brand-hero-actions">
             <a class="home-brand-hero-btn primary" href="companion-center.html">进入陪玩大厅</a>
             <a class="home-brand-hero-btn" href="support.html?start=1">联系客服</a>
@@ -3677,11 +3682,11 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:clip!importan
     <footer class="site-footer"><strong>MEOW CUI JIAO ENTERPRISE</strong><br><span>✓ Registered Malaysian Enterprise</span><br><small>© MEOW CUI JIAO ENTERPRISE. All rights reserved.</small><br><small class="mcj-footer-ssm" style="display:inline-block;margin-top:4px;font-size:11px;line-height:1.35;opacity:.85">SSM Registration No. 202603181917</small></footer>
   </main>
     <nav class="mobile-bottom-nav mcj-app-tabbar" aria-label="底部导航">
-    <a class="active" href="index.html" data-app-tab="home"><span class="mcj-app-tab-ico" aria-hidden="true">⌂</span><span class="mcj-app-tab-label">首页</span></a>
-    <a href="companion-center.html" data-app-tab="hall"><span class="mcj-app-tab-ico" aria-hidden="true">▦</span><span class="mcj-app-tab-label">大厅</span></a>
-    <a href="orders.html" data-app-tab="orders"><span class="mcj-app-tab-ico" aria-hidden="true">☰</span><span class="mcj-app-tab-label">订单</span></a>
-    <a href="support.html?start=1" data-app-tab="support"><span class="mcj-app-tab-ico" aria-hidden="true">💬</span><span class="mcj-app-tab-label">消息</span></a>
-    <a href="mine.html" data-app-tab="mine" data-mobile-mine><span class="mcj-app-tab-ico" aria-hidden="true">☺</span><span class="mcj-app-tab-label">我的</span></a>
+    <a class="active" href="index.html" data-app-tab="home" aria-label="首页" title="首页"><span class="mcj-app-tab-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/><path d="M3 10a2 2 0 0 1 .709-1.528l7-6a2 2 0 0 1 2.582 0l7 6A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></span><span class="mcj-app-tab-label">首页</span></a>
+    <a href="companion-center.html" data-app-tab="hall" aria-label="大厅" title="大厅"><span class="mcj-app-tab-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M7 12h10"/><path d="M10 18h4"/></svg></span><span class="mcj-app-tab-label">大厅</span></a>
+    <a href="orders.html" data-app-tab="orders" aria-label="订单" title="订单"><span class="mcj-app-tab-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect width="8" height="4" x="8" y="2" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/><path d="M8 11h.01"/><path d="M8 16h.01"/></svg></span><span class="mcj-app-tab-label">订单</span></a>
+    <a href="support.html?start=1" data-app-tab="support" aria-label="消息" title="消息"><span class="mcj-app-tab-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span><span class="mcj-app-tab-label">消息</span><em class="mcj-chat-unread-badge mcj-app-tab-badge" data-mcj-chat-unread-badge hidden></em></a>
+    <a href="mine.html" data-app-tab="mine" data-mobile-mine aria-label="我的" title="我的"><span class="mcj-app-tab-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 0 0-16 0"/></svg></span><span class="mcj-app-tab-label">我的</span></a>
   </nav>
 
   <div class="modal" id="modal"><div class="dialog"><button class="close" data-close>×</button><div id="modalBody"></div></div></div>

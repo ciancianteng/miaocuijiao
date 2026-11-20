@@ -293,6 +293,19 @@
         });
       })
       .catch(function (err) {
+        // Network / abort must NOT wipe the CS session (that caused 刷新中卡住 + false 0 orders).
+        var msg = String((err && (err.message || err.name)) || "");
+        var transient =
+          (err && err.name === "AbortError") ||
+          /abort|timeout|Failed to fetch|NetworkError|Load failed|网络/i.test(msg);
+        if (transient) {
+          var keep = Object.assign(new Error("请求超时，请重试"), {
+            status: 408,
+            code: "timeout",
+            timeout: true,
+          });
+          throw keep;
+        }
         clearSession("refresh_error");
         throw new Error(EXPIRED_MESSAGE);
       })
@@ -353,11 +366,15 @@
 
   function isAuthUnauthorized(status, message, meta) {
     var st = Number(status);
+    if (st === 408 || (meta && (meta.timeout || meta.code === "timeout"))) return false;
+    var text = String(message || "").toLowerCase();
+    if (/abort|timeout|超时|fetch is aborted|failed to fetch|networkerror/.test(text)) {
+      return false;
+    }
     if (st === 401) return true;
     var code = String(
       (meta && (meta.error_code || meta.code || meta.errorCode)) || ""
     ).toLowerCase();
-    var text = String(message || "").toLowerCase();
     var blob = code + " " + text;
     if (
       /bad_jwt|invalid.?jwt|invalid.?token|malformed.?jwt|jwt.?expired|token.?is.?expired|expired.?token/i.test(
@@ -373,9 +390,9 @@
       text.indexOf("登录已过期") > -1 ||
       text.indexOf("登录状态已失效") > -1 ||
       text.indexOf("请先登录") > -1 ||
-      text.indexOf("jwt") > -1 ||
       text.indexOf("token is expired") > -1 ||
-      text.indexOf("invalid jwt") > -1
+      text.indexOf("invalid jwt") > -1 ||
+      text.indexOf("bad_jwt") > -1
     );
   }
 

@@ -86,21 +86,24 @@
   display: none !important;
 }
 
+/* Tagline removed from homepage — keep rule so any leftover node never shows. */
 .home-brand-hero-tagline {
+  display: none !important;
   margin: 0 !important;
-  max-width: min(28em, 100%) !important;
-  font-size: 13px !important;
-  line-height: 1.55 !important;
-  color: rgba(255, 232, 242, 0.78) !important;
-  white-space: normal !important;
-  overflow-wrap: anywhere !important;
+  padding: 0 !important;
+  height: 0 !important;
+  overflow: hidden !important;
+  max-width: 0 !important;
+  font-size: 0 !important;
+  line-height: 0 !important;
+  visibility: hidden !important;
 }
 
 .home-brand-hero-actions {
   display: flex !important;
   flex-wrap: wrap !important;
   gap: 8px !important;
-  margin-top: 2px !important;
+  margin-top: 0 !important;
   width: 100% !important;
 }
 
@@ -134,6 +137,11 @@
   max-width: 100% !important;
   margin: 2px 0 0 !important;
   padding: 0 !important;
+}
+
+/* Stats → CTA: no orphan gap from removed tagline */
+.home-brand-hero-stats + .home-brand-hero-actions {
+  margin-top: 0 !important;
 }
 
 .home-brand-hero .home-trust-strip {
@@ -415,12 +423,12 @@
   }
 
   .home-brand-hero-tagline {
-    font-size: 12px !important;
-    max-width: 16em !important;
+    display: none !important;
   }
 
   .home-brand-hero-actions {
     gap: 8px !important;
+    margin-top: 0 !important;
   }
 
   .home-brand-hero-btn {

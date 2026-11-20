@@ -120,7 +120,7 @@ body.mcj-app-shell {
     width: 100% !important;
     max-width: 100% !important;
     margin: 0 !important;
-    padding: 0 14px calc(88px + env(safe-area-inset-bottom, 0px)) !important;
+    padding: 0 14px calc(72px + env(safe-area-inset-bottom, 0px)) !important;
     box-sizing: border-box !important;
     overflow-x: hidden !important;
   }
@@ -495,9 +495,10 @@ body.mcj-app-shell {
     opacity: 0.55 !important;
   }
 
-  /* True APP tab bar — must not be trapped by body transform */
+  /* True APP tab bar — icon-only, companion-workbench aligned (approved 2026-11-18) */
   .mobile-bottom-nav,
   .mobile-bottom-nav.mcj-app-tabbar,
+  .bottom-nav.mcj-app-tabbar,
   .mcj-app-tabbar {
     position: fixed !important;
     left: 0 !important;
@@ -512,57 +513,94 @@ body.mcj-app-shell {
     width: 100% !important;
     max-width: 100vw !important;
     margin: 0 !important;
-    padding: 8px 6px calc(8px + env(safe-area-inset-bottom, 0px)) !important;
+    padding: 4px max(8px, env(safe-area-inset-left, 0px)) calc(6px + env(safe-area-inset-bottom, 0px)) max(8px, env(safe-area-inset-right, 0px)) !important;
     border: 0 !important;
-    border-top: 1px solid rgba(255, 214, 232, 0.1) !important;
+    border-top: 1px solid rgba(244, 166, 200, 0.14) !important;
     border-radius: 0 !important;
-    background: rgba(8, 6, 12, 0.92) !important;
-    backdrop-filter: blur(20px) saturate(1.1) !important;
-    -webkit-backdrop-filter: blur(20px) saturate(1.1) !important;
-    box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.28) !important;
+    background: rgba(11, 10, 16, 0.96) !important;
+    backdrop-filter: blur(10px) !important;
+    -webkit-backdrop-filter: blur(10px) !important;
+    box-shadow: none !important;
     box-sizing: border-box !important;
-    overflow: hidden !important;
+    overflow: visible !important;
     transform: none !important;
     filter: none !important;
   }
 
   .mobile-bottom-nav a,
+  .mobile-bottom-nav.mcj-app-tabbar a,
+  .bottom-nav.mcj-app-tabbar a,
   .mcj-app-tabbar a {
+    position: relative !important;
     display: flex !important;
-    flex-direction: column !important;
+    flex-direction: row !important;
     align-items: center !important;
     justify-content: center !important;
-    gap: 2px !important;
-    min-width: 0 !important;
+    gap: 0 !important;
+    min-width: 44px !important;
     width: 100% !important;
     height: 48px !important;
-    padding: 0 2px !important;
+    min-height: 44px !important;
+    padding: 0 !important;
     border: 0 !important;
-    border-radius: 14px !important;
+    border-radius: 0 !important;
     background: transparent !important;
-    color: rgba(247, 220, 233, 0.58) !important;
+    color: #c9c3d0 !important;
     text-decoration: none !important;
     box-sizing: border-box !important;
+    box-shadow: none !important;
   }
 
   .mobile-bottom-nav a.active,
+  .mobile-bottom-nav.mcj-app-tabbar a.active,
+  .bottom-nav.mcj-app-tabbar a.active,
   .mcj-app-tabbar a.active {
-    background: linear-gradient(135deg, rgba(255, 140, 200, 0.18), rgba(150, 80, 200, 0.14)) !important;
-    color: #fff5fa !important;
-    box-shadow: inset 0 0 0 1px rgba(255, 160, 210, 0.22) !important;
+    background: transparent !important;
+    color: #f4a6c8 !important;
+    box-shadow: none !important;
+    filter: drop-shadow(0 0 8px rgba(244, 166, 200, 0.38)) !important;
   }
 
-  .mcj-app-tab-ico {
-    font-size: 16px !important;
-    line-height: 1 !important;
+  .mobile-bottom-nav .mcj-app-tab-ico,
+  .mobile-bottom-nav.mcj-app-tabbar .mcj-app-tab-ico,
+  .bottom-nav.mcj-app-tabbar .mcj-app-tab-ico,
+  .mcj-app-tabbar .mcj-app-tab-ico {
+    display: grid !important;
+    place-items: center !important;
+    width: 22px !important;
+    height: 22px !important;
+    font-size: 0 !important;
+    line-height: 0 !important;
   }
 
-  .mcj-app-tab-label {
+  .mobile-bottom-nav .mcj-app-tab-ico svg,
+  .mobile-bottom-nav.mcj-app-tabbar .mcj-app-tab-ico svg,
+  .bottom-nav.mcj-app-tabbar .mcj-app-tab-ico svg,
+  .mcj-app-tabbar .mcj-app-tab-ico svg {
+    display: block !important;
+    width: 22px !important;
+    height: 22px !important;
+  }
+
+  .mobile-bottom-nav .mcj-app-tab-label,
+  .mobile-bottom-nav.mcj-app-tabbar .mcj-app-tab-label,
+  .bottom-nav.mcj-app-tabbar .mcj-app-tab-label,
+  .mcj-app-tabbar .mcj-app-tab-label {
+    display: none !important;
+  }
+
+  .mobile-bottom-nav .mcj-app-tab-badge,
+  .mobile-bottom-nav.mcj-app-tabbar .mcj-chat-unread-badge,
+  .bottom-nav.mcj-app-tabbar .mcj-chat-unread-badge {
+    position: absolute !important;
+    top: 6px !important;
+    right: calc(50% - 18px) !important;
+    margin: 0 !important;
+    min-width: 16px !important;
+    height: 16px !important;
+    padding: 0 4px !important;
     font-size: 10px !important;
-    font-weight: 700 !important;
-    letter-spacing: 0.02em !important;
-    line-height: 1.1 !important;
-    white-space: nowrap !important;
+    z-index: 2 !important;
   }
 
   /* Kill website-feeling ambient noise slightly on mobile */

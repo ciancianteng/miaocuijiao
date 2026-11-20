@@ -1572,7 +1572,6 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx } from './scroll-
           }).join('') +
           '</div>'
         : '') +
-      '<p class="mcj-enter-hint">Enter 发送，Shift+Enter 换行</p>' +
       '<form class="support-composer" data-send>' +
       '<div class="support-composer-tools mcj-composer-tools">' +
       '<button class="support-tool-btn mcj-composer-tool" type="button" data-toggle-emoji aria-label="表情">😊</button>' +
