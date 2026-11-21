@@ -1757,10 +1757,23 @@ body[data-admin-section="players"] .player-data-table th:nth-child(14){z-index:8
 .inline-admin-control{width:100%;height:28px;border-radius:7px;border:1px solid rgba(255,255,255,.10);background:#16161c;color:#f6eef3;padding:0 7px;font-size:12px;outline:none;}
 .inline-admin-control.percent{text-align:center;}
 .inline-admin-control:focus{border-color:rgba(243,168,203,.42);box-shadow:0 0 0 2px rgba(243,168,203,.08);}
-.player-detail-drawer{position:fixed;right:0;top:0;bottom:0;z-index:90;width:min(560px,92vw);max-width:100%;height:100%;height:100dvh;display:flex;flex-direction:column;overflow:hidden;background:#101014;border-left:1px solid rgba(255,255,255,.10);box-shadow:-28px 0 80px rgba(0,0,0,.45);padding:max(18px,env(safe-area-inset-top,0px)) 18px 0;box-sizing:border-box;--mcj-kb:0px;}
+/* Mounted on document.body. z-index above admin sidebar/overlays so iPhone can scroll the full detail. */
+.player-detail-drawer{position:fixed;right:0;top:0;bottom:auto;z-index:120000;width:min(560px,92vw);max-width:100%;height:100%;height:100dvh;max-height:100dvh;display:flex;flex-direction:column;overflow:hidden;background:#101014;border-left:1px solid rgba(255,255,255,.10);box-shadow:-28px 0 80px rgba(0,0,0,.45);padding:max(18px,env(safe-area-inset-top,0px)) 18px 0;box-sizing:border-box;--mcj-kb:0px;-webkit-transform:translateZ(0);transform:translateZ(0);}
 .player-detail-drawer[hidden]{display:none!important;}
-.player-detail-drawer form[data-player-detail-form]{display:flex;flex-direction:column;flex:1 1 auto;min-height:0;overflow:hidden;padding-bottom:0;}
-.player-drawer-scroll{flex:1 1 auto;min-height:0;overflow-x:hidden;overflow-y:auto;-webkit-overflow-scrolling:touch;padding-bottom:12px;overscroll-behavior:contain;}
+.player-detail-drawer form[data-player-detail-form]{display:flex;flex-direction:column;flex:1 1 auto;min-height:0;height:100%;max-height:100%;overflow:hidden;padding-bottom:0;}
+.player-drawer-scroll{flex:1 1 auto;min-height:0;overflow-x:hidden;overflow-y:auto;-webkit-overflow-scrolling:touch;padding-bottom:calc(16px + env(safe-area-inset-bottom,0px));overscroll-behavior:contain;touch-action:pan-y;}
+html.player-drawer-open,
+html.player-drawer-open body{
+  overflow:hidden!important;
+  overscroll-behavior:none;
+}
+body.player-drawer-open{
+  position:fixed!important;
+  width:100%!important;
+  left:0;
+  right:0;
+  touch-action:none;
+}
 .player-drawer-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:14px;min-width:0;}
 .player-drawer-head h2{margin:0;color:#fff;font-size:22px;overflow-wrap:anywhere;}.player-drawer-head p{margin:5px 0 0;color:#9f949c;font-size:13px;}
 .player-detail-hero{display:grid;grid-template-columns:52px minmax(0,1fr) auto;align-items:center;gap:12px;margin-bottom:14px;padding:12px;border:1px solid rgba(255,255,255,.08);border-radius:12px;background:rgba(255,255,255,.025);min-width:0;max-width:100%;box-sizing:border-box;}
@@ -1923,7 +1936,16 @@ body[data-admin-section="players"] .player-data-table th:nth-child(14){z-index:8
   .admin-service-price-row{grid-template-columns:minmax(140px,1fr) minmax(160px,240px);}
 }
 @media(max-width:767px){
-  .player-detail-drawer{width:100%;max-width:100%;padding:max(14px,env(safe-area-inset-top,0px)) 12px 0;}
+  .player-detail-drawer{
+    left:0;
+    right:0;
+    width:100%;
+    max-width:100%;
+    padding:max(14px,env(safe-area-inset-top,0px)) 12px 0;
+    border-left:0;
+    border-radius:0;
+  }
+  .player-drawer-scroll{padding-bottom:calc(28px + env(safe-area-inset-bottom,0px));}
   .admin-service-price-row{grid-template-columns:1fr;gap:6px;align-items:stretch;}
   .admin-service-price-input{grid-template-columns:minmax(0,1fr) auto;}
   .player-drawer-actions{justify-content:stretch;}
@@ -2825,6 +2847,22 @@ body[data-admin-section="players"] .player-more-wrap{overflow:visible!important;
   .admin-overlay-body,
   #adminModal .admin-modal-scroll{
     padding-bottom:calc(24px + env(safe-area-inset-bottom,0px));
+  }
+  /* Boss / shared admin modal: avoid iPhone 86vh cutoff leaving a black dead zone */
+  #adminModal.modal{
+    align-items:stretch;
+    padding:max(8px,env(safe-area-inset-top,0px)) 8px max(8px,env(safe-area-inset-bottom,0px));
+  }
+  #adminModal .modal-card[data-admin-modal-card]{
+    width:100%;
+    max-width:100%;
+    max-height:none;
+    height:calc(100dvh - 16px - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px));
+  }
+  #adminModal .admin-modal-scroll{
+    max-height:none;
+    flex:1 1 auto;
+    min-height:0;
   }
   .level-list-item{
     flex-wrap:wrap;

@@ -1,7 +1,11 @@
-/* 仅作用于陪玩管理内容区，不改后台壳布局 */
+/* 仅作用于陪玩管理内容区，不改后台壳布局.
+   Do NOT put overflow-x:hidden/clip on this root — it clips the iOS
+   position:fixed player detail drawer when the drawer was nested here.
+   Horizontal overflow is contained on the table/shell children instead. */
 #playerManagement {
   min-width: 0;
-  overflow-x: hidden;
+  max-width: 100%;
+  overflow: visible;
 }
 
 #playerManagement .player-admin-page {
@@ -399,7 +403,7 @@
  */
 @media (max-width: 900px) {
   #playerManagement {
-    overflow-x: clip;
+    overflow: visible !important;
     min-width: 0 !important;
     max-width: 100% !important;
   }

@@ -1886,15 +1886,25 @@
   loadVoiceCatalog();
 
   function syncDrawerKeyboardInset() {
-    var el = document.querySelector(".player-detail-drawer:not([hidden])");
-    if (!el || !window.visualViewport) return;
+    var el = document.querySelector(".player-detail-drawer.open:not([hidden])");
+    if (!el) return;
     var vv = window.visualViewport;
+    if (!vv) {
+      el.style.setProperty("--mcj-kb", "0px");
+      return;
+    }
+    // Pin drawer to visualViewport so iOS URL-bar / keyboard does not leave a black dead zone.
+    var top = Math.max(0, vv.offsetTop || 0);
+    var height = Math.max(240, vv.height || window.innerHeight || 0);
+    el.style.top = top + "px";
+    el.style.height = height + "px";
+    el.style.maxHeight = height + "px";
     var kb = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
     el.style.setProperty("--mcj-kb", kb + "px");
   }
   if (window.visualViewport) {
-    window.visualViewport.addEventListener("resize", syncDrawerKeyboardInset);
-    window.visualViewport.addEventListener("scroll", syncDrawerKeyboardInset);
+    window.visualViewport.addEventListener("resize", syncDrawerKeyboardInset, { passive: true });
+    window.visualViewport.addEventListener("scroll", syncDrawerKeyboardInset, { passive: true });
   }
   window.addEventListener("focusin", syncDrawerKeyboardInset);
   window.addEventListener("focusout", function () {

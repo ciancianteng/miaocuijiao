@@ -500,3 +500,38 @@ body.svc-dialog-lock{position:fixed;width:100%;overflow:hidden}
   background:#5c2a40;
   box-shadow:inset 0 0 0 1px rgba(244,166,200,.55);
 }
+
+/* Price-table category management (business panel inside existing service admin) */
+.svc-cat-panel{
+  margin:0 0 18px;
+  padding:14px;
+  border-radius:16px;
+  border:1px solid rgba(255,190,224,.18);
+  background:rgba(255,255,255,.03);
+}
+.svc-cat-add{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto;
+  gap:8px;
+  margin:0 0 12px;
+}
+.svc-cat-list{display:grid;gap:8px}
+.svc-cat-row{
+  display:flex;
+  flex-wrap:wrap;
+  gap:10px;
+  align-items:center;
+  justify-content:space-between;
+  padding:10px 12px;
+  border-radius:12px;
+  border:1px solid rgba(255,255,255,.08);
+  background:rgba(0,0,0,.18);
+}
+.svc-cat-main{display:flex;flex-wrap:wrap;gap:8px;align-items:center;min-width:0}
+.svc-cat-main strong{color:#fff5fa}
+.svc-cat-main em{color:rgba(255,245,250,.55);font-style:normal;font-size:12px}
+.svc-cat-actions{display:flex;flex-wrap:wrap;gap:6px}
+@media (max-width:720px){
+  .svc-cat-add{grid-template-columns:1fr}
+  .svc-cat-row{align-items:flex-start}
+}

@@ -6,7 +6,16 @@ const DATA_DIR = path.join(process.cwd(), ".local-data");
 const DATA_FILE = path.join(DATA_DIR, "platform-services.json");
 const CATEGORY_FILE = path.join(DATA_DIR, "service-categories.json");
 
-export const DEFAULT_CATEGORIES = ["手游", "端游", "语音", "娱乐", "定制", "其他"];
+export const DEFAULT_CATEGORIES = ["端游", "手游", "娱乐陪伴", "语音", "娱乐", "定制", "其他"];
+export const DEFAULT_CATEGORY_ROWS = [
+  { name: "端游", sort: 1, enabled: true },
+  { name: "手游", sort: 2, enabled: true },
+  { name: "娱乐陪伴", sort: 3, enabled: true },
+  { name: "语音", sort: 4, enabled: true },
+  { name: "娱乐", sort: 5, enabled: true },
+  { name: "定制", sort: 6, enabled: true },
+  { name: "其他", sort: 7, enabled: true },
+];
 export const DEFAULT_ICONS = ["🎮", "🎤", "⚔️", "🛡️", "🎯", "🎲", "💬"];
 export const DISPLAY_POSITIONS = [
   { key: "home", label: "首页" },
@@ -110,28 +119,68 @@ export async function updateLocalServices(mutator) {
   return result;
 }
 
-export async function readLocalCategories() {
+function normalizeLocalCategoryRow(row, index = 0) {
+  if (typeof row === "string") {
+    const name = String(row || "").trim();
+    return name ? { id: name, name, sort: index + 1, enabled: true } : null;
+  }
+  const name = String((row && row.name) || "").trim();
+  if (!name) return null;
+  const sort = Number(row.sort_order ?? row.sort ?? index + 1);
+  return {
+    id: String(row.id || name),
+    name,
+    sort: Number.isFinite(sort) ? sort : index + 1,
+    enabled: row.is_enabled !== false && row.enabled !== false,
+  };
+}
+
+export async function readLocalCategoryRows() {
   await ensureDir();
   try {
     const text = await fs.readFile(CATEGORY_FILE, "utf8");
     const parsed = JSON.parse(String(text || "[]").replace(/^\uFEFF/, ""));
-    const list = (Array.isArray(parsed) ? parsed : []).map((name) => String(name || "").trim()).filter(Boolean);
-    if (list.length) return list;
+    const list = (Array.isArray(parsed) ? parsed : [])
+      .map((row, i) => normalizeLocalCategoryRow(row, i))
+      .filter(Boolean);
+    if (list.length) {
+      return list.sort((a, b) => a.sort - b.sort || String(a.name).localeCompare(String(b.name), "zh"));
+    }
   } catch (error) {
     if (error.code !== "ENOENT") throw error;
   }
-  await writeLocalCategories(DEFAULT_CATEGORIES);
-  return DEFAULT_CATEGORIES.slice();
+  await writeLocalCategoryRows(DEFAULT_CATEGORY_ROWS);
+  return DEFAULT_CATEGORY_ROWS.map((row, i) => normalizeLocalCategoryRow(row, i));
 }
 
-export async function writeLocalCategories(rows) {
-  const list = Array.from(
-    new Set((Array.isArray(rows) ? rows : []).map((name) => String(name || "").trim()).filter(Boolean))
-  );
+export async function readLocalCategories() {
+  const rows = await readLocalCategoryRows();
+  return rows.map((row) => row.name);
+}
+
+export async function writeLocalCategoryRows(rows) {
+  const list = [];
+  const seen = new Set();
+  (Array.isArray(rows) ? rows : []).forEach((row, i) => {
+    const normalized = normalizeLocalCategoryRow(row, i);
+    if (!normalized || seen.has(normalized.name)) return;
+    seen.add(normalized.name);
+    list.push(normalized);
+  });
   if (process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME) {
     throw Object.assign(new Error("服务分类必须写入数据库，请确认 service_categories 表已迁移。"), { status: 503 });
   }
   await ensureDir();
   await fs.writeFile(CATEGORY_FILE, JSON.stringify(list, null, 2), "utf8");
   return list;
+}
+
+export async function writeLocalCategories(rows) {
+  if (Array.isArray(rows) && rows.length && typeof rows[0] === "object") {
+    return writeLocalCategoryRows(rows);
+  }
+  const list = Array.from(
+    new Set((Array.isArray(rows) ? rows : []).map((name) => String(name || "").trim()).filter(Boolean))
+  ).map((name, i) => ({ name, sort: i + 1, enabled: true }));
+  return writeLocalCategoryRows(list);
 }

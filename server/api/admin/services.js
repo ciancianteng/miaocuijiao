@@ -3,13 +3,17 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import {
   DEFAULT_CATEGORIES,
+  DEFAULT_CATEGORY_ROWS,
   DEFAULT_ICONS,
   DISPLAY_POSITIONS,
   normalizeServiceRow,
   readLocalServices,
   readLocalCategories,
+  readLocalCategoryRows,
   writeLocalCategories,
+  writeLocalCategoryRows,
 } from "../_services-store.js";
+import { normalizeCategoryRow } from "../_price-table-catalog.js";
 
 loadLocalEnv();
 
@@ -221,14 +225,17 @@ function clean(input = {}, categories = DEFAULT_CATEGORIES) {
   });
 }
 
-async function listCategories() {
+async function listCategoryRows({ includeDisabled = true } = {}) {
   if (hasDb()) {
     try {
-      const rows = await supabaseJson(restUrl("service_categories", "?is_enabled=eq.true&order=sort_order.asc,name.asc"), {
+      const query = includeDisabled
+        ? "?order=sort_order.asc,name.asc"
+        : "?is_enabled=eq.true&order=sort_order.asc,name.asc";
+      const rows = await supabaseJson(restUrl("service_categories", query), {
         headers: serviceHeaders(),
       });
-      const names = (Array.isArray(rows) ? rows : []).map((row) => String(row.name || "").trim()).filter(Boolean);
-      if (names.length) return { categories: names, source: "supabase" };
+      const mapped = (Array.isArray(rows) ? rows : []).map((row, i) => normalizeCategoryRow(row, i));
+      if (mapped.length) return { categoryRows: mapped, categories: mapped.map((r) => r.name), source: "supabase" };
     } catch (error) {
       if (!isMissingTable(error)) throw error;
     }
@@ -237,17 +244,28 @@ async function listCategories() {
       const fromServices = Array.from(
         new Set((Array.isArray(services) ? services : []).map((row) => String(row.category || "").trim()).filter(Boolean))
       );
-      const merged = Array.from(new Set(DEFAULT_CATEGORIES.concat(fromServices)));
-      return { categories: merged, source: "supabase-derived" };
+      const seed = DEFAULT_CATEGORY_ROWS.map((row, i) => normalizeCategoryRow(row, i));
+      const byName = new Map(seed.map((r) => [r.name, r]));
+      fromServices.forEach((name, i) => {
+        if (!byName.has(name)) byName.set(name, normalizeCategoryRow({ name, sort: 100 + i, enabled: true }, seed.length + i));
+      });
+      const mapped = Array.from(byName.values()).sort((a, b) => a.sort - b.sort || a.name.localeCompare(b.name, "zh"));
+      return { categoryRows: mapped, categories: mapped.map((r) => r.name), source: "supabase-derived" };
     } catch (error) {
       if (!isMissingTable(error)) throw error;
     }
   }
-  const local = await readLocalCategories();
-  return { categories: local.length ? local : DEFAULT_CATEGORIES.slice(), source: "local" };
+  const localRows = await readLocalCategoryRows();
+  const mapped = (localRows.length ? localRows : DEFAULT_CATEGORY_ROWS).map((row, i) => normalizeCategoryRow(row, i));
+  return { categoryRows: mapped, categories: mapped.map((r) => r.name), source: "local" };
 }
 
-async function ensureCategory(name) {
+async function listCategories() {
+  const result = await listCategoryRows({ includeDisabled: true });
+  return { categories: result.categories, categoryRows: result.categoryRows, source: result.source };
+}
+
+async function ensureCategory(name, { sort = 100, enabled = true } = {}) {
   const category = String(name || "").trim();
   if (!category) return;
   if (hasDb()) {
@@ -257,25 +275,188 @@ async function ensureCategory(name) {
         headers: serviceHeaders({ Prefer: "resolution=ignore-duplicates,return=minimal" }),
         body: JSON.stringify({
           name: category,
-          sort_order: 100,
-          is_enabled: true,
+          sort_order: Number(sort) || 100,
+          is_enabled: enabled !== false,
           updated_at: new Date().toISOString(),
         }),
       });
       return;
     } catch (error) {
       if (!isMissingTable(error)) {
-        // ignore unique conflicts
         if (!/duplicate|unique/i.test(error.message || "")) throw error;
         return;
       }
     }
   }
-  const list = await readLocalCategories();
-  if (!list.includes(category)) {
-    list.push(category);
-    await writeLocalCategories(list);
+  const list = await readLocalCategoryRows();
+  if (!list.some((row) => row.name === category)) {
+    list.push({ name: category, sort: Number(sort) || list.length + 1, enabled: enabled !== false });
+    await writeLocalCategoryRows(list);
   }
+}
+
+async function countServicesInCategory(name) {
+  const category = String(name || "").trim();
+  if (!category) return 0;
+  if (hasDb()) {
+    try {
+      const rows = await supabaseJson(
+        restUrl("services", `?select=id&category=eq.${encodeURIComponent(category)}`),
+        { headers: serviceHeaders() }
+      );
+      return Array.isArray(rows) ? rows.length : 0;
+    } catch (error) {
+      if (!isMissingTable(error)) throw error;
+    }
+  }
+  const services = await readLocalServices();
+  return services.filter((row) => String(row.category || "").trim() === category).length;
+}
+
+async function reassignServicesCategory(fromName, toName) {
+  const from = String(fromName || "").trim();
+  const to = String(toName || "").trim();
+  if (!from || !to || from === to) return 0;
+  if (hasDb()) {
+    try {
+      const updated = await supabaseJson(restUrl("services", `?category=eq.${encodeURIComponent(from)}`), {
+        method: "PATCH",
+        headers: serviceHeaders({ Prefer: "return=representation" }),
+        body: JSON.stringify({ category: to, updated_at: new Date().toISOString() }),
+      });
+      return Array.isArray(updated) ? updated.length : 0;
+    } catch (error) {
+      if (!isMissingTable(error)) throw error;
+    }
+  }
+  const list = await readLocalServices();
+  let count = 0;
+  for (const row of list) {
+    if (String(row.category || "").trim() === from) {
+      row.category = to;
+      row.updated_at = new Date().toISOString();
+      count += 1;
+    }
+  }
+  if (count) {
+    const { writeLocalServices } = await import("../_services-store.js");
+    await writeLocalServices(list);
+  }
+  return count;
+}
+
+async function updateCategoryRecord({ id, name, newName, sort, enabled }) {
+  const currentName = String(name || "").trim();
+  const nextName = String(newName || currentName || "").trim();
+  if (!currentName && !id) throw Object.assign(new Error("缺少分类。"), { status: 400 });
+  if (!nextName) throw Object.assign(new Error("请填写分类名称。"), { status: 400 });
+  const sortOrder = Number(sort);
+  const isEnabled = enabled === undefined ? undefined : enabled !== false;
+
+  if (hasDb()) {
+    try {
+      const filter = id
+        ? `?id=eq.${encodeURIComponent(id)}`
+        : `?name=eq.${encodeURIComponent(currentName)}`;
+      const payload = { updated_at: new Date().toISOString() };
+      if (nextName) payload.name = nextName;
+      if (Number.isFinite(sortOrder)) payload.sort_order = sortOrder;
+      if (isEnabled !== undefined) payload.is_enabled = isEnabled;
+      await supabaseJson(restUrl("service_categories", filter), {
+        method: "PATCH",
+        headers: serviceHeaders({ Prefer: "return=minimal" }),
+        body: JSON.stringify(payload),
+      });
+      if (currentName && nextName && currentName !== nextName) {
+        await reassignServicesCategory(currentName, nextName);
+      }
+      return listCategoryRows({ includeDisabled: true });
+    } catch (error) {
+      if (!isMissingTable(error)) throw error;
+    }
+  }
+
+  const rows = await readLocalCategoryRows();
+  const idx = rows.findIndex((row) => (id && String(row.id) === String(id)) || row.name === currentName);
+  if (idx < 0) throw Object.assign(new Error("分类不存在。"), { status: 404 });
+  const prev = rows[idx].name;
+  rows[idx] = {
+    ...rows[idx],
+    name: nextName,
+    sort: Number.isFinite(sortOrder) ? sortOrder : rows[idx].sort,
+    enabled: isEnabled === undefined ? rows[idx].enabled !== false : isEnabled,
+  };
+  await writeLocalCategoryRows(rows);
+  if (prev !== nextName) await reassignServicesCategory(prev, nextName);
+  return listCategoryRows({ includeDisabled: true });
+}
+
+async function reorderCategoryRecords(names) {
+  const order = (Array.isArray(names) ? names : []).map((n) => String(n || "").trim()).filter(Boolean);
+  if (!order.length) throw Object.assign(new Error("缺少分类顺序。"), { status: 400 });
+  if (hasDb()) {
+    try {
+      for (let i = 0; i < order.length; i += 1) {
+        await supabaseJson(restUrl("service_categories", `?name=eq.${encodeURIComponent(order[i])}`), {
+          method: "PATCH",
+          headers: serviceHeaders({ Prefer: "return=minimal" }),
+          body: JSON.stringify({ sort_order: i + 1, updated_at: new Date().toISOString() }),
+        });
+      }
+      return listCategoryRows({ includeDisabled: true });
+    } catch (error) {
+      if (!isMissingTable(error)) throw error;
+    }
+  }
+  const rows = await readLocalCategoryRows();
+  const byName = new Map(rows.map((r) => [r.name, r]));
+  const next = order.map((name, i) => {
+    const hit = byName.get(name) || { name, enabled: true };
+    return { ...hit, sort: i + 1 };
+  });
+  rows.forEach((row) => {
+    if (!order.includes(row.name)) next.push({ ...row, sort: next.length + 1 });
+  });
+  await writeLocalCategoryRows(next);
+  return listCategoryRows({ includeDisabled: true });
+}
+
+async function deleteCategoryRecord({ name, id, reassignTo }) {
+  const currentName = String(name || "").trim();
+  if (!currentName && !id) throw Object.assign(new Error("缺少分类。"), { status: 400 });
+  const target = String(reassignTo || "").trim();
+  const count = await countServicesInCategory(currentName);
+  if (count > 0 && !target) {
+    throw Object.assign(
+      new Error(`分类「${currentName}」下仍有 ${count} 个游戏服务。请先选择安全迁移目标分类，服务与价格不会被删除。`),
+      { status: 400, serviceCount: count }
+    );
+  }
+  if (count > 0 && target === currentName) {
+    throw Object.assign(new Error("迁移目标不能与待删除分类相同。"), { status: 400 });
+  }
+  if (count > 0) {
+    await ensureCategory(target);
+    await reassignServicesCategory(currentName, target);
+  }
+  if (hasDb()) {
+    try {
+      const filter = id
+        ? `?id=eq.${encodeURIComponent(id)}`
+        : `?name=eq.${encodeURIComponent(currentName)}`;
+      await supabaseJson(restUrl("service_categories", filter), {
+        method: "DELETE",
+        headers: serviceHeaders({ Prefer: "return=minimal" }),
+      });
+      return { ...(await listCategoryRows({ includeDisabled: true })), reassigned: count, reassignTo: target || null };
+    } catch (error) {
+      if (!isMissingTable(error)) throw error;
+    }
+  }
+  const rows = await readLocalCategoryRows();
+  const next = rows.filter((row) => (id ? String(row.id) !== String(id) : row.name !== currentName));
+  await writeLocalCategoryRows(next);
+  return { ...(await listCategoryRows({ includeDisabled: true })), reassigned: count, reassignTo: target || null };
 }
 
 async function listFromDb() {
@@ -290,6 +471,7 @@ async function listServices() {
     return {
       services: rows.map(view).sort((a, b) => a.sort - b.sort),
       categories: categoryResult.categories,
+      categoryRows: categoryResult.categoryRows || [],
       icons: DEFAULT_ICONS,
       positions: DISPLAY_POSITIONS,
       source: "local",
@@ -319,6 +501,7 @@ async function listServices() {
     return {
       services,
       categories: categoryResult.categories,
+      categoryRows: categoryResult.categoryRows || [],
       icons: DEFAULT_ICONS,
       positions: DISPLAY_POSITIONS,
       source: "supabase",
@@ -328,6 +511,7 @@ async function listServices() {
     return {
       services: [],
       categories: categoryResult.categories.length ? categoryResult.categories : DEFAULT_CATEGORIES.slice(),
+      categoryRows: categoryResult.categoryRows || [],
       icons: DEFAULT_ICONS,
       positions: DISPLAY_POSITIONS,
       source: "missing_table",
@@ -511,6 +695,46 @@ export default async function handler(req, res) {
     if (action === "add_category") {
       const result = await addCategory(body.name || body.category);
       return json(res, 200, { ok: true, message: "分类已添加", ...result });
+    }
+
+    if (action === "update_category") {
+      const result = await updateCategoryRecord({
+        id: body.id,
+        name: body.name || body.category,
+        newName: body.newName || body.nextName || body.name || body.category,
+        sort: body.sort ?? body.sort_order,
+        enabled: body.enabled ?? body.is_enabled,
+      });
+      return json(res, 200, { ok: true, message: "分类已更新", ...result });
+    }
+
+    if (action === "toggle_category") {
+      const result = await updateCategoryRecord({
+        id: body.id,
+        name: body.name || body.category,
+        enabled: body.enabled ?? body.is_enabled ?? !(body.disable === true),
+      });
+      return json(res, 200, { ok: true, message: "分类启停已更新", ...result });
+    }
+
+    if (action === "reorder_categories") {
+      const result = await reorderCategoryRecords(body.names || body.order || body.ids || []);
+      return json(res, 200, { ok: true, message: "分类顺序已更新", ...result });
+    }
+
+    if (action === "delete_category") {
+      const result = await deleteCategoryRecord({
+        id: body.id,
+        name: body.name || body.category,
+        reassignTo: body.reassignTo || body.moveTo || body.targetCategory,
+      });
+      return json(res, 200, {
+        ok: true,
+        message: result.reassigned
+          ? `分类已删除，已将 ${result.reassigned} 个游戏服务安全迁移到「${result.reassignTo}」。服务与价格均保留。`
+          : "分类已删除（未连带删除任何游戏服务）。",
+        ...result,
+      });
     }
 
     if (action === "reorder") {

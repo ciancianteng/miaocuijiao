@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Admin player drawer harness</title>
+  <link rel="stylesheet" href="/src/admin-suite.css?v=20261121playerDrawer1">
+  <link rel="stylesheet" href="/src/admin-player-management.css?v=20261121playerDrawer1">
+  <style>
+    html, body { margin: 0; background: #060507; color: #fff5fa; min-height: 100%; }
+    #playerManagement {
+      padding: 12px;
+      /* intentional regression check: overflow must NOT clip body-mounted drawer */
+      overflow-x: hidden;
+      max-width: 100%;
+    }
+    .fake-list { height: 220px; border: 1px dashed rgba(255,255,255,.2); border-radius: 12px; padding: 12px; }
+  </style>
+</head>
+<body>
+  <div id="playerManagement">
+    <div class="fake-list">假列表（短容器，用于复现 overflow 裁切）</div>
+  </div>
+  <script>
+    (function () {
+      var drawer = document.createElement("aside");
+      drawer.id = "playerDetailDrawer";
+      drawer.className = "player-detail-drawer open";
+      drawer.hidden = false;
+      var blocks = "";
+      for (var i = 1; i <= 12; i++) {
+        blocks +=
+          '<details class="player-detail-section" open><summary><h3>模块 ' +
+          i +
+          "</h3></summary><div class=\"player-edit-grid\"><label><span>字段 A</span><input value=\"示例\"></label><label><span>昵称</span><input value=\"测试昵称\"></label></div><p style=\"color:#9f949c;line-height:1.5\">长内容用于验证可以从顶部滚动到最底部，不出现黑屏裁切。</p></details>";
+      }
+      drawer.innerHTML =
+        '<div class="player-drawer-head"><div><h2>陪玩审核</h2><p>harness · 滚动验收</p></div><button class="mini-btn" type="button" id="closeBtn">关闭</button></div>' +
+        '<form data-player-detail-form><div class="player-drawer-scroll">' +
+        '<div class="player-review-bar"><strong>① 基本资料上方区域</strong></div>' +
+        blocks +
+        "</div>" +
+        '<div class="player-drawer-actions"><button class="btn primary" type="button">保存修改</button><button class="btn" type="button" id="cancelBtn">取消</button></div></form>';
+      document.body.appendChild(drawer);
+      document.documentElement.classList.add("player-drawer-open");
+      document.body.classList.add("player-drawer-open");
+      function pin() {
+        var vv = window.visualViewport;
+        if (!vv) return;
+        drawer.style.top = Math.max(0, vv.offsetTop || 0) + "px";
+        drawer.style.height = Math.max(240, vv.height || window.innerHeight) + "px";
+        drawer.style.maxHeight = drawer.style.height;
+      }
+      pin();
+      if (window.visualViewport) {
+        window.visualViewport.addEventListener("resize", pin, { passive: true });
+        window.visualViewport.addEventListener("scroll", pin, { passive: true });
+      }
+      window.__drawerHarness = {
+        drawer: drawer,
+        scrollEl: drawer.querySelector(".player-drawer-scroll"),
+        sectionCount: drawer.querySelectorAll(".player-detail-section").length,
+      };
+    })();
+  </script>
+</body>
+</html>

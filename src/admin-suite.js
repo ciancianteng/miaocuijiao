@@ -900,8 +900,10 @@
         '</div>'+
       '</div>'+
       '<div id="playerManagementTable" class="player-table-shell"><div class="player-empty-state"><strong>正在加载陪玩列表…</strong></div></div>'+
-      '<aside id="playerDetailDrawer" class="player-detail-drawer" hidden></aside>'+
     '</div>';
+    // Drawer lives on document.body (not inside #playerManagement) so iOS Safari
+    // does not clip position:fixed under overflow-x:hidden/clip ancestors.
+    ensurePlayerDetailDrawer();
     var scopeSelect=target.querySelector('[data-player-scope]');
     if(scopeSelect)scopeSelect.value=playerAdminState.scope||'formal';
     loadPlayerAdminRows();
@@ -1194,16 +1196,75 @@
     var account=playerDetailRows([['当前在线状态',item.online],['账号状态',item.account],['是否已设置密码',(item.raw&&(item.raw.hasPassword||item.raw.has_password))?'是':'否'],['注册邮箱',item.email||'-'],['邮箱验证状态',(item.raw&&(item.raw.emailVerifiedLabel||item.raw.email_verified_label))||((item.raw&&(item.raw.emailVerified===false||item.raw.email_verified===false))?'❌ 未验证':'✅ 已验证')],['最近密码重置',(item.raw&&(item.raw.passwordSetAt||item.raw.password_set_at))||'-']])+(edit?'<div class="player-edit-grid">'+playerSelectField('账号状态','accountStatus',playerAccountOptions(item.account))+'</div>':'')+'<div class="player-edit-grid" style="margin-top:10px"><button class="mini-btn" type="button" data-player-sec="send_password_reset" data-player-id="'+esc(item.id)+'">发送密码重置邮件</button><button class="mini-btn" type="button" data-player-sec="force_change_password" data-player-id="'+esc(item.id)+'">强制下次改密</button><button class="mini-btn" type="button" data-player-sec="revoke_sessions" data-player-id="'+esc(item.id)+'">注销全部会话</button><button class="mini-btn" type="button" data-player-sec="enable" data-player-id="'+esc(item.id)+'">解封账号</button></div><div class="admin-sync-note">后台不可查看真实密码或哈希；重置仅发送邮箱验证码由用户自行设置。邮箱验证状态来自注册验证码流程。</div>';
     return '<div class="player-drawer-head"><div><h2>'+esc(edit?'编辑陪玩':'陪玩详情')+'</h2><p>'+esc(item.name)+' · '+esc(item.playerId)+'</p></div><button class="mini-btn" type="button" data-player-drawer-close>关闭</button></div><form data-player-detail-form data-player-id="'+esc(item.id)+'"><div class="player-detail-hero"><img src="'+esc(playerAvatarSrc(item))+'" alt="" onerror="this.onerror=null;this.src=\'/assets/meow-cuijiao-brand.jpg\'"><div><strong>'+esc(item.name)+'</strong><span>'+esc(item.levelText)+' · '+esc(item.mainGame)+'</span></div>'+statusChip(item.account)+'</div>'+playerDetailSection('basic','基本资料',basic)+playerDetailSection('verify','资料与认证',verify)+playerDetailSection('split','等级与分成',split)+playerDetailSection('deposit','押金',deposit)+playerDetailSection('income','订单与收入',income)+playerDetailSection('withdraw','提现',withdraw)+playerDetailSection('complaints','退款和投诉',complaints)+playerDetailSection('account','账号管理',account)+'<div class="player-drawer-actions"><button class="btn primary" type="button" data-player-action="save-detail" data-player-id="'+esc(item.id)+'">保存修改</button><button class="btn" type="button" data-player-drawer-close>取消</button></div></form>';
   }
-  function openPlayerDetail(playerId,mode,focus){
+  var playerDrawerScrollLock={y:0,locked:false};
+  function ensurePlayerDetailDrawer(){
     var drawer=document.getElementById('playerDetailDrawer');
+    if(!drawer){
+      drawer=document.createElement('aside');
+      drawer.id='playerDetailDrawer';
+      drawer.className='player-detail-drawer';
+      drawer.hidden=true;
+      drawer.setAttribute('aria-hidden','true');
+    }
+    // Always mount on <body> — overflow-x:hidden/clip on #playerManagement clips fixed drawers on iOS.
+    if(drawer.parentNode!==document.body){
+      document.body.appendChild(drawer);
+    }
+    // Drop any stale in-tree copies left from older templates.
+    document.querySelectorAll('#playerManagement #playerDetailDrawer, .player-admin-page #playerDetailDrawer').forEach(function(node){
+      if(node!==drawer) node.remove();
+    });
+    return drawer;
+  }
+  function lockPlayerDrawerScroll(){
+    if(playerDrawerScrollLock.locked) return;
+    playerDrawerScrollLock.y=window.scrollY||document.documentElement.scrollTop||0;
+    playerDrawerScrollLock.locked=true;
+    document.documentElement.classList.add('player-drawer-open');
+    document.body.classList.add('player-drawer-open');
+    document.body.style.top='-'+playerDrawerScrollLock.y+'px';
+  }
+  function unlockPlayerDrawerScroll(){
+    if(!playerDrawerScrollLock.locked) return;
+    playerDrawerScrollLock.locked=false;
+    document.documentElement.classList.remove('player-drawer-open');
+    document.body.classList.remove('player-drawer-open');
+    document.body.style.top='';
+    window.scrollTo(0, playerDrawerScrollLock.y||0);
+  }
+  function syncPlayerDrawerViewport(){
+    var drawer=document.getElementById('playerDetailDrawer');
+    if(!drawer||drawer.hidden||!drawer.classList.contains('open')) return;
+    var vv=window.visualViewport;
+    if(!vv){
+      drawer.style.top='0px';
+      drawer.style.height='';
+      drawer.style.maxHeight='';
+      drawer.style.setProperty('--mcj-kb','0px');
+      return;
+    }
+    var top=Math.max(0, vv.offsetTop||0);
+    var height=Math.max(240, vv.height||window.innerHeight||0);
+    drawer.style.top=top+'px';
+    drawer.style.height=height+'px';
+    drawer.style.maxHeight=height+'px';
+    var kb=Math.max(0, (window.innerHeight||0) - vv.height - (vv.offsetTop||0));
+    drawer.style.setProperty('--mcj-kb', kb+'px');
+  }
+  function openPlayerDetail(playerId,mode,focus){
+    var drawer=ensurePlayerDetailDrawer();
     if(!drawer)return;
     drawer.hidden=false;
     drawer.classList.add('open');
+    drawer.setAttribute('aria-hidden','false');
+    lockPlayerDrawerScroll();
+    syncPlayerDrawerViewport();
     drawer.innerHTML='<div class="player-drawer-head"><div><h2>陪玩详情</h2><p>正在读取真实资料…</p></div><button class="mini-btn" type="button" data-player-drawer-close>关闭</button></div><div class="admin-sync-note">资料加载中，请稍候。</div>';
     var Detail=window.MCJAdminPlayerDetail;
     var finish=function(detail,err){
       if(err){
         drawer.innerHTML='<div class="player-drawer-head"><div><h2>陪玩详情</h2><p>资料加载失败</p></div><button class="mini-btn" type="button" data-player-drawer-close>关闭</button></div><div class="admin-sync-note">资料加载失败，请重试：'+esc(err.message||err)+'</div><div class="player-drawer-actions"><button class="btn" type="button" data-player-action="view" data-player-id="'+esc(playerId)+'">重试</button><button class="btn" type="button" data-player-drawer-close>关闭</button></div>';
+        syncPlayerDrawerViewport();
         return;
       }
       var paint=function(){
@@ -1213,7 +1274,16 @@
           var item=normalizePlayerAdmin(detail);
           drawer.innerHTML=playerDetailHtml(item,mode||'view',focus||'');
         }
-        if(focus){var section=drawer.querySelector('[data-player-detail-section="'+focus+'"]');if(section)section.scrollIntoView({block:'start'});}
+        syncPlayerDrawerViewport();
+        if(focus){
+          var section=drawer.querySelector('[data-player-detail-section="'+focus+'"]');
+          var scroller=drawer.querySelector('.player-drawer-scroll');
+          if(section&&scroller){
+            try{ section.scrollIntoView({block:'start'}); }catch(e){ scroller.scrollTop=Math.max(0, section.offsetTop-12); }
+          }else if(section){
+            section.scrollIntoView({block:'start'});
+          }
+        }
       };
       if((mode||'view')==='edit'&&Detail&&Detail.ensureVoiceCatalog){
         Detail.ensureVoiceCatalog().then(paint).catch(paint);
@@ -1239,7 +1309,26 @@
     reloadDetail:function(id,mode){openPlayerDetail(id,mode||'view');},
     reloadList:function(){loadPlayerAdminRows();}
   };
-  function closePlayerDrawer(){var drawer=document.getElementById('playerDetailDrawer');if(drawer){drawer.hidden=true;drawer.classList.remove('open');drawer.innerHTML='';}}
+  function closePlayerDrawer(){
+    var drawer=document.getElementById('playerDetailDrawer');
+    if(drawer){
+      drawer.hidden=true;
+      drawer.classList.remove('open');
+      drawer.setAttribute('aria-hidden','true');
+      drawer.innerHTML='';
+      drawer.style.top='';
+      drawer.style.height='';
+      drawer.style.maxHeight='';
+      drawer.style.removeProperty('--mcj-kb');
+    }
+    unlockPlayerDrawerScroll();
+  }
+  if(window.visualViewport&&!window.__mcjPlayerDrawerVvBound){
+    window.__mcjPlayerDrawerVvBound=1;
+    window.visualViewport.addEventListener('resize',syncPlayerDrawerViewport,{passive:true});
+    window.visualViewport.addEventListener('scroll',syncPlayerDrawerViewport,{passive:true});
+  }
+  window.addEventListener('orientationchange',function(){ setTimeout(syncPlayerDrawerViewport,120); });
   var playerMorePopover={el:null,anchor:null,home:null,onScroll:null,bound:false};
   function clearPlayerMoreMenuInlineStyles(menu){
     if(!menu||!menu.style)return;

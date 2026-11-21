@@ -17,7 +17,12 @@
     error: "",
     message: "",
     services: [],
-    categories: ["手游", "端游", "语音", "娱乐", "定制", "其他"],
+    categories: ["端游", "手游", "娱乐陪伴", "语音", "娱乐", "定制", "其他"],
+    categoryRows: [
+      { name: "端游", sort: 1, enabled: true },
+      { name: "手游", sort: 2, enabled: true },
+      { name: "娱乐陪伴", sort: 3, enabled: true },
+    ],
     icons: DEFAULT_ICONS.slice(),
     positions: DEFAULT_POSITIONS.slice(),
     editing: null,
@@ -583,6 +588,68 @@
     }).join("");
   }
 
+  function categoryCount(name) {
+    return state.services.filter(function (row) {
+      return String(row.category || "").trim() === String(name || "").trim();
+    }).length;
+  }
+
+  function categoryPanelHtml() {
+    var rows = (state.categoryRows || []).slice().sort(function (a, b) {
+      return Number(a.sort || 0) - Number(b.sort || 0) || String(a.name).localeCompare(String(b.name), "zh");
+    });
+    var list = rows
+      .map(function (row, index) {
+        var on = row.enabled !== false;
+        var count = categoryCount(row.name);
+        return (
+          '<article class="svc-cat-row" data-cat-row="' +
+          esc(row.name) +
+          '">' +
+          '<div class="svc-cat-main">' +
+          "<strong>" +
+          esc(row.name) +
+          "</strong>" +
+          statusChip(on ? "启用" : "停用", on) +
+          "<em>" +
+          count +
+          " 个游戏服务</em></div>" +
+          '<div class="svc-cat-actions">' +
+          '<button class="mini-btn" type="button" data-cat-up="' +
+          esc(row.name) +
+          '"' +
+          (index === 0 ? " disabled" : "") +
+          ">上移</button>" +
+          '<button class="mini-btn" type="button" data-cat-down="' +
+          esc(row.name) +
+          '"' +
+          (index === rows.length - 1 ? " disabled" : "") +
+          ">下移</button>" +
+          '<button class="mini-btn" type="button" data-cat-rename="' +
+          esc(row.name) +
+          '">改名</button>' +
+          (on
+            ? '<button class="mini-btn" type="button" data-cat-disable="' + esc(row.name) + '">停用</button>'
+            : '<button class="mini-btn primary-lite" type="button" data-cat-enable="' + esc(row.name) + '">启用</button>') +
+          '<button class="mini-btn danger" type="button" data-cat-delete="' +
+          esc(row.name) +
+          '">删除</button>' +
+          "</div></article>"
+        );
+      })
+      .join("");
+    return (
+      '<section class="svc-cat-panel" data-service-categories>' +
+      '<div class="content-admin-head"><div><h3>价格表分类</h3><p>用户端「游戏价格表」读取这里的启用分类。删除分类不会删除游戏服务或基础价格，必须先安全迁移到其他分类。</p></div></div>' +
+      '<form class="svc-cat-add" data-cat-add-form>' +
+      '<input name="name" maxlength="20" placeholder="新分类名称，如：端游 / 手游 / 娱乐陪伴" required>' +
+      '<button class="btn primary" type="submit">新增分类</button></form>' +
+      '<div class="svc-cat-list">' +
+      (list || '<div class="content-empty-action"><strong>暂无分类</strong></div>') +
+      "</div></section>"
+    );
+  }
+
   function render() {
     var box = target();
     if (!box) return;
@@ -594,7 +661,8 @@
       (state.error ? '<div class="admin-sync-note">' + esc(state.error) + "</div>" : "") +
       (state.message && !state.error ? '<div class="admin-sync-note">' + esc(state.message) + "</div>" : "") +
       '<div class="platform-content-admin base-data-admin" data-service-admin>' +
-      '<div class="content-admin-head"><div><h3>服务列表</h3><p>管理平台提供的服务（不是游戏管理）。保存后同步首页、申请陪玩、陪玩资料、客服建单、老板下单与更多玩法。</p></div></div>' +
+      categoryPanelHtml() +
+      '<div class="content-admin-head"><div><h3>服务列表</h3><p>管理平台提供的服务（不是游戏管理）。把已有游戏分配到对应分类后，用户端价格表会按分类筛选。保存后同步首页、申请陪玩、陪玩资料、客服建单、老板下单与更多玩法。等级加价请到「制度与等级」独立管理。</p></div></div>' +
       '<div class="svc-toolbar svc-toolbar-row"><input data-service-search value="' + esc(state.query) + '" placeholder="搜索中文、拼音或首字母">' +
       '<button class="btn primary svc-new-btn" type="button" data-service-new>新增服务</button></div>' +
       letterNavHtml() +
@@ -655,6 +723,13 @@
           return Number(a.sort || 100) - Number(b.sort || 100);
         });
         if (Array.isArray(res.categories) && res.categories.length) state.categories = res.categories.slice();
+        if (Array.isArray(res.categoryRows) && res.categoryRows.length) {
+          state.categoryRows = res.categoryRows.slice();
+        } else if (Array.isArray(res.categories) && res.categories.length) {
+          state.categoryRows = res.categories.map(function (name, i) {
+            return { name: name, sort: i + 1, enabled: true };
+          });
+        }
         if (Array.isArray(res.icons) && res.icons.length) state.icons = res.icons.slice();
         if (Array.isArray(res.positions) && res.positions.length) state.positions = res.positions.slice();
         state.message = res.message || "";
@@ -774,6 +849,112 @@
       })
       .catch(function (err) {
         alert(err.message || "操作失败");
+      });
+  }
+
+  function applyCategoryResult(res, fallbackMessage) {
+    if (res && Array.isArray(res.categoryRows)) state.categoryRows = res.categoryRows.slice();
+    if (res && Array.isArray(res.categories)) state.categories = res.categories.slice();
+    state.message = (res && res.message) || fallbackMessage || "分类已更新";
+    return load();
+  }
+
+  function orderedCategoryNames() {
+    return (state.categoryRows || [])
+      .slice()
+      .sort(function (a, b) {
+        return Number(a.sort || 0) - Number(b.sort || 0) || String(a.name).localeCompare(String(b.name), "zh");
+      })
+      .map(function (row) {
+        return row.name;
+      });
+  }
+
+  function moveCategory(name, delta) {
+    var names = orderedCategoryNames();
+    var idx = names.indexOf(name);
+    var next = idx + delta;
+    if (idx < 0 || next < 0 || next >= names.length) return;
+    var tmp = names[idx];
+    names[idx] = names[next];
+    names[next] = tmp;
+    apiPost({ action: "reorder_categories", names: names })
+      .then(function (res) {
+        return applyCategoryResult(res, "分类顺序已更新");
+      })
+      .catch(function (err) {
+        alert(err.message || "调整分类顺序失败");
+      });
+  }
+
+  function renameCategory(name) {
+    var next = window.prompt("修改分类名称（不会删除游戏服务）", name || "");
+    if (next == null) return;
+    next = String(next).trim();
+    if (!next || next === name) return;
+    apiPost({ action: "update_category", name: name, newName: next })
+      .then(function (res) {
+        return applyCategoryResult(res, "分类已改名");
+      })
+      .catch(function (err) {
+        alert(err.message || "改名失败");
+      });
+  }
+
+  function toggleCategory(name, enabled) {
+    apiPost({ action: "toggle_category", name: name, enabled: !!enabled })
+      .then(function (res) {
+        return applyCategoryResult(res, enabled ? "分类已启用" : "分类已停用");
+      })
+      .catch(function (err) {
+        alert(err.message || "启停失败");
+      });
+  }
+
+  function deleteCategorySafe(name) {
+    var count = categoryCount(name);
+    var others = orderedCategoryNames().filter(function (n) {
+      return n !== name;
+    });
+    if (count > 0) {
+      if (!others.length) {
+        alert("该分类下仍有游戏服务，且没有可迁移的目标分类。请先新增目标分类。");
+        return;
+      }
+      var target = window.prompt(
+        "分类「" +
+          name +
+          "」下有 " +
+          count +
+          " 个游戏服务。删除分类不会删除服务或价格。\n请输入要迁移到的目标分类名称：\n" +
+          others.join(" / "),
+        others[0]
+      );
+      if (target == null) return;
+      target = String(target).trim();
+      if (!target || target === name) {
+        alert("请填写有效的迁移目标分类。");
+        return;
+      }
+      if (!confirm("确认删除分类「" + name + "」，并将 " + count + " 个游戏服务迁移到「" + target + "」？服务与基础价格全部保留。")) {
+        return;
+      }
+      apiPost({ action: "delete_category", name: name, reassignTo: target })
+        .then(function (res) {
+          return applyCategoryResult(res, "分类已安全删除");
+        })
+        .catch(function (err) {
+          alert(err.message || "删除失败");
+        });
+      return;
+    }
+    if (!confirm("确认删除空分类「" + name + "」？不会删除任何游戏服务。")) return;
+    apiPost({ action: "delete_category", name: name })
+      .then(function (res) {
+        return applyCategoryResult(res, "分类已删除");
+      })
+      .catch(function (err) {
+        alert(err.message || "删除失败");
       });
   }
 
@@ -922,10 +1103,58 @@
       if (deleteBtn) {
         if (!confirm("确认删除该服务？删除后各端将同步移除（历史订单仍保留原服务名）。")) return;
         mutate("delete", deleteBtn.getAttribute("data-service-delete"));
+        return;
+      }
+
+      var catUp = e.target.closest("[data-cat-up]");
+      if (catUp) {
+        moveCategory(catUp.getAttribute("data-cat-up"), -1);
+        return;
+      }
+      var catDown = e.target.closest("[data-cat-down]");
+      if (catDown) {
+        moveCategory(catDown.getAttribute("data-cat-down"), 1);
+        return;
+      }
+      var catRename = e.target.closest("[data-cat-rename]");
+      if (catRename) {
+        renameCategory(catRename.getAttribute("data-cat-rename"));
+        return;
+      }
+      var catEnable = e.target.closest("[data-cat-enable]");
+      if (catEnable) {
+        toggleCategory(catEnable.getAttribute("data-cat-enable"), true);
+        return;
+      }
+      var catDisable = e.target.closest("[data-cat-disable]");
+      if (catDisable) {
+        toggleCategory(catDisable.getAttribute("data-cat-disable"), false);
+        return;
+      }
+      var catDelete = e.target.closest("[data-cat-delete]");
+      if (catDelete) {
+        deleteCategorySafe(catDelete.getAttribute("data-cat-delete"));
       }
     });
 
     document.addEventListener("submit", function (e) {
+      var catForm = e.target.closest("[data-cat-add-form]");
+      if (catForm) {
+        e.preventDefault();
+        var name = String((new FormData(catForm).get("name") || "")).trim();
+        if (!name) return;
+        apiPost({ action: "add_category", name: name })
+          .then(function (res) {
+            if (res && res.categoryRows) state.categoryRows = res.categoryRows.slice();
+            if (res && res.categories) state.categories = res.categories.slice();
+            state.message = (res && res.message) || "分类已添加";
+            render();
+          })
+          .catch(function (err) {
+            alert(err.message || "新增分类失败");
+          });
+        return;
+      }
       var form = e.target.closest("[data-service-form]");
       if (!form) return;
       e.preventDefault();
