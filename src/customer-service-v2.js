@@ -1,7 +1,7 @@
 import './mcj-chat-media.js';
 import './mcj-chat-realtime.js';
 import './customer-service-v2.css';
-import { captureChatScroll, restoreChatScroll, keyboardInsetPx, virtStartIndex } from './scroll-keep.js';
+import { captureChatScroll, restoreChatScroll, keyboardInsetPx, readVisualViewportBox, applyVisualViewportCss, isChatKeyboardOpen, virtStartIndex } from './scroll-keep.js';
 
 (function(){
   var root=document.getElementById('serviceApp');
@@ -1048,17 +1048,44 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, virtStartIndex }
   }
   function syncKeyboardInset(){
     try{
-      var vv=window.visualViewport;
-      if(!vv){
-        document.documentElement.style.setProperty('--cs-keyboard-inset','0px');
-        return;
+      var box=readVisualViewportBox(window);
+      var ae=document.activeElement;
+      var composerActive=!!(ae&&ae.matches&&ae.matches(COMPOSER_SEL));
+      var focused=!!(state.composerFocused||composerActive);
+      var onChatRoute=state.route==='conversations';
+      var hasComposer=!!(root.querySelector&&root.querySelector('.cs-page[data-route="conversations"] .cs-chat-composer'));
+      var lock=onChatRoute&&hasComposer;
+      // Root fix: iOS often reports inset=0 (innerHeight shrinks with VV). Focus = kb mode.
+      var kbOpen=isChatKeyboardOpen({lock:lock,focused:focused,inset:box.inset});
+      var tabbar=0;
+      if(lock&&!kbOpen){
+        try{
+          var nav=root.querySelector('.cs-mobile-nav');
+          if(nav){
+            var disp=window.getComputedStyle(nav).display;
+            if(disp&&disp!=='none')tabbar=Math.round(nav.getBoundingClientRect().height||0);
+          }
+        }catch(e2){}
+        if(!tabbar){
+          var raw=String(getComputedStyle(document.documentElement).getPropertyValue('--cs-mobile-tabbar')||'').trim();
+          var n=parseFloat(raw);
+          if(n&&n>0)tabbar=Math.round(n);
+        }
       }
-      var inset=keyboardInsetPx(window);
-      document.documentElement.style.setProperty('--cs-keyboard-inset',inset+'px');
-      var box=root.querySelector('.cs-chat-messages');
-      if(inset>0&&state.composerFocused&&box){
-        var snap=captureChatScroll(box);
-        if(snap&&snap.near)restoreChatScroll(box,snap,true);
+      applyVisualViewportCss('cs',box,{
+        lock:lock,
+        kbOpen:kbOpen,
+        lockClass:'cs-chat-lock',
+        kbClass:'cs-kb-open',
+        shellSelector:'.cs-shell',
+        tabbarPx:tabbar
+      });
+      // Keep legacy alias used by older CSS.
+      document.documentElement.style.setProperty('--cs-vv-offset',(box.top||0)+'px');
+      var msgs=root.querySelector('.cs-chat-messages');
+      if(kbOpen&&msgs){
+        // Keyboard open: pin to latest so iOS layout shift doesn't hide the tail.
+        try{msgs.scrollTop=msgs.scrollHeight;}catch(e3){}
       }
     }catch(e){}
   }
@@ -1066,9 +1093,36 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, virtStartIndex }
     if(window.__MCJCsKeyboardBound)return;
     window.__MCJCsKeyboardBound=true;
     if(window.visualViewport){
-      window.visualViewport.addEventListener('resize',syncKeyboardInset);
+      window.visualViewport.addEventListener('resize',syncKeyboardInset,{passive:true});
+      window.visualViewport.addEventListener('scroll',syncKeyboardInset,{passive:true});
     }
-    window.addEventListener('resize',syncKeyboardInset);
+    window.addEventListener('resize',syncKeyboardInset,{passive:true});
+    window.addEventListener('orientationchange',function(){setTimeout(syncKeyboardInset,120);});
+    document.addEventListener('focusin',function(e){
+      if(e&&e.target&&e.target.matches&&e.target.matches(COMPOSER_SEL)){
+        state.composerFocused=true;
+        // Pin shell first, then kill iOS page pan. Order matters — scrollTo before
+        // pin left the chat above the visual viewport (blank screen).
+        syncKeyboardInset();
+        try{window.scrollTo(0,0);}catch(err){}
+        if(typeof requestAnimationFrame==='function'){
+          requestAnimationFrame(function(){
+            try{window.scrollTo(0,0);}catch(err2){}
+            syncKeyboardInset();
+          });
+        }
+      }
+    },true);
+    document.addEventListener('focusout',function(){
+      // Slightly longer than one keyboard-dismiss frame so inset residual can clear.
+      setTimeout(function(){
+        var ae=document.activeElement;
+        if(!(ae&&ae.matches&&ae.matches(COMPOSER_SEL))){
+          state.composerFocused=false;
+          syncKeyboardInset();
+        }
+      },180);
+    },true);
     syncKeyboardInset();
   }
   function autoResizeComposer(el){
@@ -2622,6 +2676,7 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, virtStartIndex }
       }
       if(state.route==='dashboard')startHoursTimer();
       if(state.route==='profile')mountCsWebPushSettings();
+      syncKeyboardInset();
     }catch(e){
       paintSafeFallback();
     }

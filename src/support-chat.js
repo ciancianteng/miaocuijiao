@@ -8,13 +8,19 @@ import {
   openDiscordInvite,
   refreshDiscordInviteFromPlatform,
 } from './discord-community-config.js';
-import { captureChatScroll, restoreChatScroll, keyboardInsetPx } from './scroll-keep.js';
+import {
+  captureChatScroll,
+  restoreChatScroll,
+  readVisualViewportBox,
+  applyVisualViewportCss,
+  isChatKeyboardOpen,
+} from './scroll-keep.js';
 
 (function () {
   var root = document.getElementById("supportApp");
   if (!root) return;
   try {
-    window.__MCJ_SUPPORT_CHAT_LAGFIX = "20260811bossMsgQr4";
+    window.__MCJ_SUPPORT_CHAT_LAGFIX = "20261121chatVvFocus1";
   } catch (_) {}
 
   document.documentElement.classList.add("support-page");
@@ -26,6 +32,7 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx } from './scroll-
     authLoading: true,
     customerLoading: false,
     opening: false,
+    openingShell: false,
     sending: false,
     creatingGeneral: false,
     creatingOrder: "",
@@ -45,6 +52,7 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx } from './scroll-
     mobileDetail: false,
     orderCardOpen: false,
     emojiOpen: false,
+    pendingImage: null,
     realtimeReady: false,
     poolRealtimeBound: false,
     totalUnread: 0,
@@ -54,10 +62,29 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx } from './scroll-
     threadLoadSeq: 0,
   };
   var THREAD_CACHE_MAX = 24;
+  var perfT0 = 0;
+  try {
+    perfT0 = performance.now();
+  } catch (_) {
+    perfT0 = Date.now();
+  }
 
   var COMPOSER_SEL = '[data-send] [name="content"]';
-  var EMOJIS = ["😀", "😁", "😂", "😊", "😍", "😘", "👍", "🙏", "🎉", "🐱", "💖", "🔥"];
+  var SUPPORT_ICO_IMAGE =
+    '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="14" rx="2.4" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="9" cy="10" r="1.3" fill="currentColor"/><path d="M5.2 16.4 9.2 12.8 12.1 15.3 15.1 11.8 18.8 16.4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round"/></svg>';
+  var SUPPORT_ICO_SEND =
+    '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.2 11.6 19.2 4.8 13.2 19.6 11.2 13.4 4.2 11.6z" fill="currentColor"/></svg>';
   var toastTimer = null;
+
+  function markPerf(label) {
+    try {
+      var now = performance.now();
+      var ms = Math.round(now - perfT0);
+      console.info("[support-chat-perf]", label, ms + "ms");
+      window.__MCJ_SUPPORT_PERF = window.__MCJ_SUPPORT_PERF || {};
+      window.__MCJ_SUPPORT_PERF[label] = ms;
+    } catch (_) {}
+  }
   var BOSS_CONSULT_TYPES = [
     { key: "other", label: "普通咨询（无需下单）", needsOrder: false },
     { key: "new_order", label: "新订单咨询", needsOrder: false },
@@ -267,6 +294,53 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx } from './scroll-
     role = String(role || "").trim().toLowerCase();
     return role === "boss" || role === "customer" || role === "owner" || role === "user";
   }
+  function applyBossIdentityFromUser(user) {
+    if (!user) return null;
+    if (!isBossLikeRole(user.role)) {
+      var role = String(user.role || "").toLowerCase();
+      if (window.MCJRoleGate && typeof window.MCJRoleGate.clearSharedAuthMirrors === "function") {
+        window.MCJRoleGate.clearSharedAuthMirrors();
+      } else {
+        ["mcjAuthAccessToken", "mcjAuthRefreshToken", "mcjAuthExpiresAt", "mcjRole"].forEach(function (k) {
+          try {
+            localStorage.removeItem(k);
+            sessionStorage.removeItem(k);
+          } catch (e) {}
+        });
+      }
+      if (role === "companion" || role === "player") {
+        state.authError = "当前登录的是陪玩账号，请使用老板账号打开在线客服。";
+      } else if (role === "customer_service" || role === "service") {
+        state.authError = "当前登录的是客服账号，请使用老板账号打开在线客服。";
+      } else {
+        state.authError = "当前账号不是老板客户身份，无法使用老板端在线客服。";
+      }
+      state.identity = null;
+      return null;
+    }
+    state.identity = {
+      authUserId: user.id || "",
+      customerId: user.id || "",
+      bossId: user.id || "",
+      bossUid: user.bossUid || user.boss_uid || "",
+      role: user.role || "boss",
+      email: user.email || "",
+      displayName: user.displayName || "",
+    };
+    state.authError = "";
+    return state.identity;
+  }
+  function applyBossIdentityFromChat(body) {
+    var id = body && body.identity;
+    if (!id) return null;
+    return applyBossIdentityFromUser({
+      id: id.bossId || id.customerId || id.authUserId || id.id || "",
+      role: id.role || "boss",
+      bossUid: id.bossUid || id.boss_uid || "",
+      email: id.email || "",
+      displayName: id.displayName || id.display_name || "",
+    });
+  }
   function resolveIdentity() {
     state.authLoading = true;
     state.customerLoading = true;
@@ -291,43 +365,38 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx } from './scroll-
     return ready
       .then(function () {
         if (!hasAuthSession()) return null;
-        return fetchJson("/api/auth?action=me", { _mcjTimeoutMs: 6000 });
+        markPerf("ensureSession_done");
+        // Parallel: /me + conversation list (list also returns identity) — cut serial RTT.
+        return Promise.all([
+          fetchJson("/api/auth?action=me", { _mcjTimeoutMs: 6000 }).catch(function (err) {
+            return { __err: err };
+          }),
+          loadList().catch(function (err) {
+            return { __err: err };
+          }),
+        ]);
       })
-      .then(function (body) {
-        if (!body || !body.user) return null;
-        var user = body.user;
-        if (!isBossLikeRole(user.role)) {
-          var role = String(user.role || "").toLowerCase();
-          // Stale foreign JWT: drop shared mirrors so boss UI stops reading CS/companion identity.
-          if (window.MCJRoleGate && typeof window.MCJRoleGate.clearSharedAuthMirrors === "function") {
-            window.MCJRoleGate.clearSharedAuthMirrors();
-          } else {
-            ["mcjAuthAccessToken", "mcjAuthRefreshToken", "mcjAuthExpiresAt", "mcjRole"].forEach(function (k) {
-              try {
-                localStorage.removeItem(k);
-                sessionStorage.removeItem(k);
-              } catch (e) {}
-            });
+      .then(function (pair) {
+        if (!pair) return null;
+        var meBody = pair[0];
+        var listBody = pair[1];
+        markPerf("identity_and_list_done");
+        if (listBody && !listBody.__err) {
+          applyBossIdentityFromChat(listBody);
+        }
+        if (meBody && !meBody.__err && meBody.user) {
+          applyBossIdentityFromUser(meBody.user);
+        }
+        if (!state.identity) {
+          var err = (meBody && meBody.__err) || (listBody && listBody.__err) || null;
+          var msg = (err && err.message) || "账号资料加载失败，请重试";
+          if (/登录|过期|未登录|请先登录/i.test(msg)) {
+            state.authError = "请先登录后使用在线客服";
+          } else if (!state.authError) {
+            state.authError = msg;
           }
-          if (role === "companion" || role === "player") {
-            state.authError = "当前登录的是陪玩账号，请使用老板账号打开在线客服。";
-          } else if (role === "customer_service" || role === "service") {
-            state.authError = "当前登录的是客服账号，请使用老板账号打开在线客服。";
-          } else {
-            state.authError = "当前账号不是老板客户身份，无法使用老板端在线客服。";
-          }
-          state.identity = null;
           return null;
         }
-        state.identity = {
-          authUserId: user.id || "",
-          customerId: user.id || "",
-          bossId: user.id || "",
-          bossUid: user.bossUid || user.boss_uid || "",
-          role: user.role || "boss",
-          email: user.email || "",
-          displayName: user.displayName || "",
-        };
         try {
           console.info("[support-chat] identity", state.identity);
         } catch (e) {}
@@ -608,12 +677,61 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx } from './scroll-
       }) || list[0]
     );
   }
+  /** Prefer an open (non-closed) thread — never invent duplicates for the same order/general hub. */
+  function findReusableConversation(opts) {
+    opts = opts || {};
+    var oid = String(opts.orderId || "").trim();
+    var list = state.conversations || [];
+    if (oid) {
+      return (
+        list.find(function (c) {
+          return String(c.orderId || c.order_id || "") === oid && !isClosedConversation(c);
+        }) || null
+      );
+    }
+    return (
+      list.find(function (c) {
+        return !isOrderConversation(c) && !isClosedConversation(c);
+      }) || null
+    );
+  }
+  function showOpeningShell(hint) {
+    state.openingShell = true;
+    state.mobileDetail = true;
+    state.error = "";
+    state.loading = false;
+    // Keep prior messages visible when reopening, but never stay on closed/ended chrome.
+    if (!state.conversation) {
+      state.conversation = {
+        id: "",
+        status: "waiting_service",
+        _opening: true,
+        customerServiceName: "在线客服",
+      };
+      state.messages = [];
+    } else {
+      state.conversation = Object.assign({}, state.conversation, {
+        status: "waiting_service",
+        _opening: true,
+        closed_at: null,
+        closed_by: null,
+      });
+    }
+    if (hint) state.notice = hint;
+    softUpdate({ keepScroll: true, forceMain: true, remountFooter: true });
+  }
   function syncChatChrome() {
-    var inChat = !!(state.conversation && state.conversation.id && (state.mobileDetail || !isMobile()));
+    var inChat = !!(
+      (state.conversation && state.conversation.id && (state.mobileDetail || !isMobile())) ||
+      (state.openingShell && state.mobileDetail)
+    );
     document.body.classList.toggle("support-chat-live", inChat);
     // softUpdate must keep mobile list/chat panes in sync (paint used to remount this class).
     var layout = root.querySelector(".support-layout");
     if (layout) layout.classList.toggle("mobile-detail", !!state.mobileDetail);
+    try {
+      syncKeyboardInset();
+    } catch (_) {}
   }
   function syncUrl(conversation) {
     try {
@@ -880,6 +998,8 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx } from './scroll-
     captureComposer();
     if (!same) cacheActiveThread();
     state.emojiOpen = false;
+    state.pendingImage = null;
+    state.openingShell = false;
     state.error = "";
     // Never gate the whole main pane on thread loading — keep shell interactive.
     state.loading = false;
@@ -1001,7 +1121,9 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx } from './scroll-
     if (btn) {
       var empty = !(input && String(input.value || state.composerDraft || "").trim());
       btn.disabled = !!state.sending || empty;
-      btn.textContent = state.sending ? "发送中…" : "发送";
+      btn.setAttribute("aria-busy", state.sending ? "true" : "false");
+      btn.title = state.sending ? "发送中…" : "发送";
+      if (!btn.querySelector("svg")) btn.innerHTML = SUPPORT_ICO_SEND;
     }
     if (!input) return;
     input.readOnly = !!state.sending;
@@ -1009,8 +1131,8 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx } from './scroll-
       input.value = state.composerDraft || "";
     }
     try {
-      input.style.height = "44px";
-      var nextH = Math.min(120, Math.max(44, input.scrollHeight));
+      input.style.height = "40px";
+      var nextH = Math.min(108, Math.max(40, input.scrollHeight));
       input.style.height = nextH + "px";
     } catch (e) {}
     if (state.composerFocused && document.activeElement !== input && !state.sending) focusComposer();
@@ -1231,9 +1353,6 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx } from './scroll-
     if (state.opening) {
       return Promise.reject(new Error("正在创建会话，请稍候…"));
     }
-    state.opening = true;
-    state.error = "";
-    softUpdate({ keepScroll: true });
     var bodyPayload = Object.assign({ action: "open" }, payload || {});
     // Never send empty IDs that confuse the API.
     if (!bodyPayload.order_id && !bodyPayload.orderId) {
@@ -1244,6 +1363,25 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx } from './scroll-
       delete bodyPayload.conversation_id;
       delete bodyPayload.conversationId;
     }
+    var wantForceNew = !!(
+      bodyPayload.forceNew ||
+      bodyPayload.force_new ||
+      bodyPayload.action === "reopen"
+    );
+    var reuseOid = String(bodyPayload.order_id || bodyPayload.orderId || "").trim();
+    if (!wantForceNew) {
+      var localHit = findReusableConversation({ orderId: reuseOid });
+      if (localHit && localHit.id) {
+        markPerf("reuse_local_hit");
+        selectConversationInstant(localHit.id);
+        toast("已进入客服会话");
+        return Promise.resolve({ ok: true, created: false, conversation: localHit, reused: true });
+      }
+    }
+    state.opening = true;
+    state.error = "";
+    markPerf("open_api_start");
+    showOpeningShell("正在接入客服…");
     return fetchJson("/api/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1253,8 +1391,11 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx } from './scroll-
       if (!body || !body.ok || !(body.conversation && body.conversation.id)) {
         throw new Error((body && body.message) || "创建客服会话失败，请稍后重试。");
       }
+      markPerf("open_api_done");
       state.composerDraft = "";
       state.mobileDetail = true;
+      state.openingShell = false;
+      state.pendingImage = null;
       applyPayload(body, { keepScroll: false });
       toast(body.created ? "已创建新的客服会话" : "已进入客服会话");
       return body;
@@ -1265,13 +1406,21 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx } from './scroll-
         return Promise.reject(err);
       }
       state.error = msg;
+      state.openingShell = false;
+      if (state.conversation && state.conversation._opening) {
+        state.conversation = null;
+        state.messages = [];
+        state.mobileDetail = false;
+      }
       toast(msg);
-      softUpdate({ keepScroll: true });
+      softUpdate({ keepScroll: true, forceMain: true });
       throw err;
     }).finally(function () {
       state.opening = false;
+      state.openingShell = false;
       state.loading = false;
       softUpdate({ keepScroll: true });
+      markPerf("open_finally");
     });
   }
   function pickConversation(list) {
@@ -1505,7 +1654,7 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx } from './scroll-
     if (!state.identity) {
       return '<div class="support-empty-panel"><strong>账号资料加载失败，请重试</strong><button class="support-btn" type="button" data-refresh>重试</button></div>';
     }
-    if (state.loading && !state.conversation && !state.conversations.length && !state.error) {
+    if (state.loading && !state.conversation && !state.conversations.length && !state.error && !state.openingShell) {
       return '<div class="support-empty-panel"><strong>正在加载客服会话…</strong><span>请稍候</span></div>';
     }
     if (state.error && !state.conversation) {
@@ -1515,40 +1664,52 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx } from './scroll-
         '</span><button class="support-btn" type="button" data-refresh>重试</button></div>'
       );
     }
-    if (!state.conversation) return '<div class="support-empty-panel"><strong>请选择一个会话</strong><span>先从会话列表进入聊天。</span></div>';
+    if (!state.conversation && !state.openingShell) {
+      return '<div class="support-empty-panel"><strong>请选择一个会话</strong><span>先从会话列表进入聊天。</span></div>';
+    }
     var order = conversationOrder(state.conversation);
-    var serviceName = state.conversation.customerServiceName || state.conversation.serviceName || '在线客服';
-    var orderNo = state.conversation.orderNo || state.conversation.order_no || (order && order.orderNo) || '';
-    var chatStatus = topStatusText(state.conversation);
-    if (isClosedConversation(state.conversation)) chatStatus = '会话已结束 · 可重新发起咨询';
-    else if (state.serviceStatus && !/重新安排/.test(String(state.serviceStatus || ''))) {
+    var serviceName = (state.conversation && (state.conversation.customerServiceName || state.conversation.serviceName)) || '在线客服';
+    var orderNo = (state.conversation && (state.conversation.orderNo || state.conversation.order_no)) || (order && order.orderNo) || '';
+    var chatStatus = state.openingShell
+      ? (state.notice || '正在接入客服…')
+      : topStatusText(state.conversation);
+    if (!state.openingShell && isClosedConversation(state.conversation)) chatStatus = '会话已结束 · 可重新发起咨询';
+    else if (!state.openingShell && state.serviceStatus && !/重新安排/.test(String(state.serviceStatus || ''))) {
       if (/等待客服接待|客服暂时离线|客服已接入|正在为您服务|会话已结束|正在为你更换客服/.test(String(state.serviceStatus))) {
         chatStatus = state.serviceStatus;
       }
     }
+    var cid = (state.conversation && state.conversation.id) || "";
+    var hasCs = !!(state.conversation && (state.conversation.customerServiceId || state.conversation.customer_service_id));
     return (
       '<header class="support-main-head"><div class="support-main-title"><button class="support-back-btn" type="button" data-back-list>返回</button><div class="support-main-copy"><h2>' +
-      esc(state.conversation.customerServiceId || state.conversation.customer_service_id ? serviceName : '在线客服') +
+      esc(hasCs ? serviceName : '在线客服') +
       '</h2>' +
       (orderNo ? '<p class="support-order-no" title="' + esc(orderNo) + '">订单 ' + esc(orderNo) + '</p>' : '<p>人工客服咨询</p>') +
       '<p class="support-chat-status">' + esc(chatStatus) + '</p>' +
       '</div></div><button class="support-btn" type="button" data-refresh>刷新</button></header>' +
       (order ? orderSummaryHtml(order) : '') +
       '<div class="support-messages" data-messages data-cid="' +
-      esc(state.conversation.id || "") +
+      esc(cid) +
       '">' +
-      (state.messages.length ? renderSupportMessages(state.messages) : '<div class="support-list-empty">你可以先留言，客服上线后会尽快回复。</div>') +
+      (state.openingShell && !state.messages.length
+        ? '<div class="support-list-empty">正在打开会话…</div>'
+        : state.messages.length
+          ? renderSupportMessages(state.messages)
+          : '<div class="support-list-empty">你可以先留言，客服上线后会尽快回复。</div>') +
       '</div>' +
       '<div class="support-footer" data-support-footer data-closed="' +
       (isClosedConversation(state.conversation) ? "1" : "0") +
-      '" data-emoji="' +
-      (state.emojiOpen ? "1" : "0") +
-      '">' +
+      '" data-emoji="0">' +
       composerHtml() +
       '</div>'
     );
   }
   function composerHtml() {
+    // Reopen/create in flight — never keep showing the ended panel under the opening shell.
+    if (state.openingShell || (state.conversation && state.conversation._opening)) {
+      return '<div class="support-ended-panel support-opening-panel"><p>正在接入客服…</p><p class="support-ended-hint">会话创建后即可发送消息</p></div>';
+    }
     if (isClosedConversation(state.conversation)) {
       var orderMode = isOrderConversation(state.conversation);
       return (
@@ -1564,26 +1725,31 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx } from './scroll-
       );
     }
     var empty = !String(state.composerDraft || '').trim();
+    var preview = state.pendingImage;
     return (
-      (state.emojiOpen
-        ? '<div class="support-emoji-panel" data-emoji-panel>' +
-          EMOJIS.map(function (e) {
-            return '<button type="button" data-emoji="' + esc(e) + '">' + e + '</button>';
-          }).join('') +
-          '</div>'
+      (preview
+        ? '<div class="support-image-preview" data-image-preview>' +
+          '<img src="' +
+          esc(preview.dataUrl) +
+          '" alt="预览">' +
+          '<div class="support-image-preview-actions">' +
+          '<button type="button" class="support-btn" data-cancel-pending-image>取消</button>' +
+          '<button type="button" class="support-btn primary" data-confirm-pending-image' +
+          (state.sending ? ' disabled' : '') +
+          '>发送图片</button>' +
+          '</div></div>'
         : '') +
       '<form class="support-composer" data-send>' +
-      '<div class="support-composer-tools mcj-composer-tools">' +
-      '<button class="support-tool-btn mcj-composer-tool" type="button" data-toggle-emoji aria-label="表情">😊</button>' +
-      '<button class="support-tool-btn mcj-composer-tool mcj-composer-tool-img" type="button" data-chat-image-btn aria-label="图片/相册" title="图片/相册">图片</button>' +
-      '</div>' +
+      '<button class="support-tool-btn support-tool-image" type="button" data-chat-image-btn aria-label="图片" title="图片">' +
+      SUPPORT_ICO_IMAGE +
+      '</button>' +
       '<textarea name="content" rows="1" enterkeyhint="send" placeholder="输入消息…" autocomplete="off" maxlength="2000">' +
       esc(state.composerDraft || '') +
       '</textarea>' +
-      '<button class="support-send-btn" type="submit" data-send-btn' +
+      '<button class="support-send-btn" type="submit" data-send-btn aria-label="发送" title="发送"' +
       (state.sending || empty ? ' disabled' : '') +
       '>' +
-      (state.sending ? '发送中…' : '发送') +
+      SUPPORT_ICO_SEND +
       '</button></form>' +
       '<div class="mcj-upload-status" data-upload-status></div>'
     );
@@ -1669,19 +1835,23 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx } from './scroll-
     var footer = root.querySelector("[data-support-footer]");
     if (!footer || !state.conversation) return false;
     var closed = isClosedConversation(state.conversation) ? "1" : "0";
-    var emoji = state.emojiOpen ? "1" : "0";
+    var previewKey = state.pendingImage ? "1" : "0";
+    var openingKey = state.openingShell ? "1" : "0";
     if (
       !force &&
       footer.getAttribute("data-closed") === closed &&
-      footer.getAttribute("data-emoji") === emoji &&
-      footer.querySelector("[data-send], [data-ended-panel]")
+      footer.getAttribute("data-preview") === previewKey &&
+      footer.getAttribute("data-opening") === openingKey &&
+      footer.querySelector("[data-send], [data-ended-panel], .support-opening-panel")
     ) {
       syncComposerChrome();
       return true;
     }
     captureComposer();
     footer.setAttribute("data-closed", closed);
-    footer.setAttribute("data-emoji", emoji);
+    footer.setAttribute("data-preview", previewKey);
+    footer.setAttribute("data-opening", openingKey);
+    footer.setAttribute("data-emoji", "0");
     footer.innerHTML = composerHtml();
     syncComposerChrome();
     return true;
@@ -1710,7 +1880,8 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx } from './scroll-
         !!state.authError ||
         !state.identity ||
         (!!state.error && !state.conversation) ||
-        (!!state.loading && !state.conversation && !(state.conversations || []).length);
+        (!!state.loading && !state.conversation && !(state.conversations || []).length) ||
+        !!state.openingShell;
 
       patchAsideHead();
       patchSessionList();
@@ -1827,6 +1998,7 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx } from './scroll-
     }
   }
   function bootstrap() {
+    markPerf("bootstrap_start");
     if (!hasAuthSession()) {
       state.loading = false;
       state.authLoading = false;
@@ -1845,55 +2017,64 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx } from './scroll-
     state.loading = true;
     state.error = "";
     state.authError = "";
+    var deepOid = orderId();
+    var deepCid = conversationParam();
+    if (deepOid || deepCid) {
+      // Enter chat chrome immediately — do not wait for identity/list/messages.
+      showOpeningShell("正在打开会话…");
+    }
     return resolveIdentity()
       .then(function (identity) {
         softUpdate({ keepScroll: true });
         if (!identity) {
           state.loading = false;
+          state.openingShell = false;
           softUpdate({ keepScroll: true });
           return null;
         }
-        return Promise.all([loadList()]).then(function () {
-          state.loading = false;
-          softUpdate({ keepScroll: true });
-          var oid = orderId();
-          var cid = conversationParam();
-          var picked = pickConversation(state.conversations);
-          function openOwned() {
-            if (oid && (!picked || String(picked.orderId || picked.order_id || "") !== String(oid))) {
-              return openConversation({ order_id: oid }).catch(function (err) {
-                var msg = String((err && err.message) || "");
-                var status = Number(err && err.status) || 0;
-                if (status === 403 || /无权限/.test(msg)) state.error = "无权限查看该订单";
-                else if (status === 404 || /不存在/.test(msg)) state.error = "订单不存在";
-                softUpdate({ keepScroll: true });
-                return null;
-              });
-            }
-            if (cid && !picked) {
-              return loadThread(cid, false);
-            }
-            if (picked) {
-              state.conversation = Object.assign({}, picked, {
-                id: picked.id,
-                order_id: picked.orderId || picked.order_id || "",
-                customer_service_id: picked.customerServiceId || "",
-              });
-              state.mobileDetail = isMobile();
-              syncUrl(state.conversation);
-              return loadThread(picked.id, false);
-            }
-            state.conversation = null;
-            state.messages = [];
-            state.mobileDetail = false;
-            softUpdate({ keepScroll: true });
-            return null;
+        // resolveIdentity already loaded the conversation list in parallel with /me.
+        state.loading = false;
+        softUpdate({ keepScroll: true });
+        var oid = orderId();
+        var cid = conversationParam();
+        var picked = pickConversation(state.conversations);
+        function openOwned() {
+          if (oid && (!picked || String(picked.orderId || picked.order_id || "") !== String(oid))) {
+            return openConversation({ order_id: oid }).catch(function (err) {
+              var msg = String((err && err.message) || "");
+              var status = Number(err && err.status) || 0;
+              if (status === 403 || /无权限/.test(msg)) state.error = "无权限查看该订单";
+              else if (status === 404 || /不存在/.test(msg)) state.error = "订单不存在";
+              state.openingShell = false;
+              softUpdate({ keepScroll: true });
+              return null;
+            });
           }
-          return openOwned();
-        }).then(function (result) {
-          applyDraftFromQuery();
-          return result;
-        });
+          if (cid && !picked) {
+            state.openingShell = false;
+            selectConversationInstant(cid);
+            return Promise.resolve(null);
+          }
+          if (picked) {
+            state.openingShell = false;
+            // Instant shell from list row; messages load async (do not block entry).
+            selectConversationInstant(picked.id);
+            if (!isMobile()) state.mobileDetail = true;
+            return Promise.resolve(null);
+          }
+          state.conversation = null;
+          state.messages = [];
+          state.mobileDetail = false;
+          state.openingShell = false;
+          softUpdate({ keepScroll: true });
+          return null;
+        }
+        return openOwned();
+      })
+      .then(function (result) {
+        applyDraftFromQuery();
+        markPerf("bootstrap_ready");
+        return result;
       })
       .catch(function (err) {
         var msg = err.message || "消息读取失败";
@@ -1907,6 +2088,7 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx } from './scroll-
         } else {
           state.error = msg;
         }
+        state.openingShell = false;
         softUpdate({ keepScroll: true });
       })
       .finally(function () {
@@ -2019,18 +2201,29 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx } from './scroll-
         toast('正在创建会话，请稍候…');
         return;
       }
-      // Different consult types MUST create independent conversations (no account lock reuse).
+      markPerf('contact_click');
+      // Fast path: reuse any open general consult without modal / recreate.
+      var reusable = findReusableConversation({});
+      if (reusable && reusable.id) {
+        selectConversationInstant(reusable.id);
+        toast('已进入客服会话');
+        markPerf('contact_reuse_instant');
+        return;
+      }
       pickBossConsultType("other").then(function (picked) {
         if (!picked) return;
         state.creatingGeneral = true;
         softUpdate({ keepScroll: true });
         var consultType = picked.consultType || "other";
         var linkedOrder = String(picked.orderId || "").trim();
-        var needNew = isClosedConversation(state.conversation) ||
-          (state.conversation && String(state.conversation.consultType || state.conversation.consult_type || "") !== consultType);
-        var openPayload = needNew
-          ? { action: "reopen", forceNew: true, consult_type: consultType }
-          : { action: "open", consult_type: consultType };
+        // Prefer local reuse; never forceNew for an already-open matching thread.
+        var hit = findReusableConversation({ orderId: linkedOrder });
+        if (hit && hit.id) {
+          selectConversationInstant(hit.id);
+          toast('已进入客服会话');
+          return;
+        }
+        var openPayload = { action: "open", consult_type: consultType };
         if (linkedOrder) openPayload.order_id = linkedOrder;
         return openConversation(openPayload).then(startPoll);
       })
@@ -2056,21 +2249,78 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx } from './scroll-
       }
       var cur = state.conversation || {};
       var oid = String(cur.orderId || cur.order_id || orderId() || '').trim();
-      pickBossConsultType(oid ? "current_order" : "other").then(function (picked) {
-        if (!picked) return;
-        var consultType = picked.consultType || (oid ? "current_order" : "other");
-        var linked = String(picked.orderId || oid || "").trim();
-        var payload = linked
-          ? { action: 'reopen', forceNew: true, order_id: linked, consult_type: consultType }
-          : { action: 'reopen', forceNew: true, consult_type: consultType };
-        return openConversation(payload).then(startPoll);
-      }).catch(function () {});
+      // Explicit「重新发起」from ended panel: always reopen/create for THIS context.
+      // Do not silently jump to a different open general thread.
+      if (oid) {
+        openConversation({ action: 'reopen', forceNew: true, order_id: oid, consult_type: 'current_order' })
+          .then(startPoll)
+          .catch(function () {});
+        return;
+      }
+      openConversation({ action: 'reopen', forceNew: true, consult_type: 'other' })
+        .then(startPoll)
+        .catch(function () {});
       return;
     }
-    var emojiToggle = e.target.closest('[data-toggle-emoji]');
-    if (emojiToggle) {
-      state.emojiOpen = !state.emojiOpen;
+    var cancelPending = e.target.closest('[data-cancel-pending-image]');
+    if (cancelPending && root.contains(cancelPending)) {
+      e.preventDefault();
+      state.pendingImage = null;
       softUpdate({ keepScroll: true, remountFooter: true });
+      return;
+    }
+    var confirmPending = e.target.closest('[data-confirm-pending-image]');
+    if (confirmPending && root.contains(confirmPending)) {
+      e.preventDefault();
+      if (!state.pendingImage || state.sending) return;
+      if (!state.conversation || !state.conversation.id) {
+        toast('会话未就绪，请稍候再发图片');
+        return;
+      }
+      var MediaConfirm = window.MCJChatMedia;
+      if (!MediaConfirm) {
+        toast('图片组件未加载');
+        return;
+      }
+      var pending = state.pendingImage;
+      var statusElConfirm = root.querySelector('[data-upload-status]');
+      var tokenConfirm = authAccessToken();
+      state.sending = true;
+      softUpdate({ keepScroll: true, remountFooter: true });
+      if (statusElConfirm) statusElConfirm.textContent = '上传中…';
+      Promise.resolve()
+        .then(function () {
+          if (pending.file && MediaConfirm.compressFile) {
+            return MediaConfirm.compressFile(pending.file);
+          }
+          return { dataUrl: pending.dataUrl, filename: pending.filename || 'chat.jpg' };
+        })
+        .then(function (packed) {
+          return MediaConfirm.uploadDataUrl(
+            packed.dataUrl,
+            packed.filename || pending.filename || 'chat.jpg',
+            tokenConfirm,
+            String(state.conversation.id)
+          );
+        })
+        .then(function (up) {
+          state.pendingImage = null;
+          return sendImageMessage(up || { url: up && up.url });
+        })
+        .then(function () {
+          if (statusElConfirm) statusElConfirm.textContent = '发送成功';
+          setTimeout(function () {
+            if (statusElConfirm) statusElConfirm.textContent = '';
+          }, 1500);
+        })
+        .catch(function (err) {
+          toast((err && err.message) || '图片发送失败，请重试');
+          if (statusElConfirm) statusElConfirm.textContent = '发送失败';
+        })
+        .finally(function () {
+          state.sending = false;
+          softUpdate({ keepScroll: true, remountFooter: true });
+        });
       return;
     }
     var imgBtn = e.target.closest('[data-chat-image-btn]');
@@ -2092,38 +2342,32 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx } from './scroll-
         }).catch(function () {});
         return;
       }
-      var Media = window.MCJChatMedia;
-      if (!Media) {
-        toast('图片组件未加载');
-        return;
-      }
-      var statusEl = root.querySelector('[data-upload-status]');
-      var token = authAccessToken();
-      Media.pickAndSendImages({
-        token: token,
-        conversationId: String((state.conversation && state.conversation.id) || ''),
-        multiple: true,
-        onStatus: function (t) {
-          if (statusEl) statusEl.textContent = t || '';
-        },
-        onError: function () {
-          toast('图片发送失败，请重试');
-        },
-        onUploaded: function (url, up) {
-          return sendImageMessage(up || { url: url });
-        },
-      }).then(function () {
-        if (statusEl) setTimeout(function () { statusEl.textContent = ''; }, 1500);
+      var input = document.createElement('input');
+      input.type = 'file';
+      input.accept = 'image/jpeg,image/jpg,image/png,image/webp';
+      input.style.display = 'none';
+      document.body.appendChild(input);
+      input.addEventListener('change', function () {
+        var file = (input.files && input.files[0]) || null;
+        try {
+          input.remove();
+        } catch (errRem) {}
+        if (!file) return;
+        var reader = new FileReader();
+        reader.onload = function () {
+          state.pendingImage = {
+            file: file,
+            dataUrl: String(reader.result || ''),
+            filename: file.name || 'chat.jpg',
+          };
+          softUpdate({ keepScroll: true, remountFooter: true });
+        };
+        reader.onerror = function () {
+          toast('读取图片失败，请重试');
+        };
+        reader.readAsDataURL(file);
       });
-      return;
-    }
-    var emojiBtn = e.target.closest('[data-emoji]');
-    if (emojiBtn) {
-      var emoji = emojiBtn.getAttribute('data-emoji') || '';
-      state.composerDraft = String(state.composerDraft || '') + emoji;
-      state.composerFocused = true;
-      softUpdate({ keepScroll: true, remountFooter: true });
-      setTimeout(focusComposer, 0);
+      input.click();
       return;
     }
     var refresh = e.target.closest('[data-refresh]');
@@ -2144,7 +2388,7 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx } from './scroll-
       if (!oid2) return;
       var existingOrderConv = findOrderConversation(oid2);
       state.creatingOrder = oid2;
-      state.emojiOpen = false;
+      state.pendingImage = null;
       if (existingOrderConv && isClosedConversation(existingOrderConv)) {
         openConversation({ action: 'reopen', forceNew: true, order_id: oid2 }).catch(function () {}).finally(function () {
           state.creatingOrder = '';
@@ -2160,7 +2404,8 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx } from './scroll-
     }
     if (e.target.closest('[data-back-list]')) {
       state.mobileDetail = false;
-      state.emojiOpen = false;
+      state.openingShell = false;
+      state.pendingImage = null;
       state.conversation = null;
       state.messages = [];
       syncUrl(null);
@@ -2390,26 +2635,93 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx } from './scroll-
 
   function syncKeyboardInset() {
     try {
-      var vv = window.visualViewport;
       var mobile = window.matchMedia && window.matchMedia("(max-width: 820px)").matches;
-      if (!vv || !mobile) {
+      var live = document.body.classList.contains("support-chat-live");
+      var box = readVisualViewportBox(window);
+      var ae = document.activeElement;
+      var composerActive = !!(ae && ae.matches && ae.matches(COMPOSER_SEL));
+      var focused = !!(state.composerFocused || composerActive);
+      var lock = !!(mobile && live);
+      // Same as CS: focus opens kb mode. Do not require inset>0 (iOS often reports 0).
+      var kbOpen = isChatKeyboardOpen({ lock: lock, focused: focused, inset: box.inset });
+      if (!mobile) {
         document.documentElement.style.setProperty("--support-keyboard-inset", "0px");
+        document.documentElement.classList.remove("support-chat-lock", "support-kb-open");
+        document.body.classList.remove("support-chat-lock", "support-kb-open");
+        applyVisualViewportCss("support", { top: 0, height: window.innerHeight || 0, inset: 0 }, {
+          lock: false,
+          kbOpen: false,
+          lockClass: "support-chat-lock",
+          kbClass: "support-kb-open",
+          shellSelector: ".support-shell, #supportApp",
+        });
         return;
       }
-      var inset = keyboardInsetPx(window);
-      document.documentElement.style.setProperty("--support-keyboard-inset", inset + "px");
+      applyVisualViewportCss("support", box, {
+        lock: lock,
+        kbOpen: kbOpen,
+        lockClass: "support-chat-lock",
+        kbClass: "support-kb-open",
+        shellSelector: ".support-shell, #supportApp",
+      });
+      document.body.classList.toggle("support-chat-lock", lock);
+      document.body.classList.toggle("support-kb-open", kbOpen);
       var messages = root.querySelector("[data-messages]");
-      if (inset > 0 && state.composerFocused && messages) {
-        var snap = captureChatScroll(messages);
-        if (snap && snap.near) restoreChatScroll(messages, snap, true);
+      if (kbOpen && messages) {
+        try {
+          messages.scrollTop = messages.scrollHeight;
+        } catch (e2) {}
       }
     } catch (e) {}
   }
-  if (window.visualViewport) {
-    window.visualViewport.addEventListener("resize", syncKeyboardInset);
+  function bindSupportKeyboardInset() {
+    if (window.__MCJSupportKeyboardBound) return;
+    window.__MCJSupportKeyboardBound = true;
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener("resize", syncKeyboardInset, { passive: true });
+      window.visualViewport.addEventListener("scroll", syncKeyboardInset, { passive: true });
+    }
+    window.addEventListener("resize", syncKeyboardInset, { passive: true });
+    window.addEventListener("orientationchange", function () {
+      setTimeout(syncKeyboardInset, 120);
+    });
+    document.addEventListener(
+      "focusin",
+      function (e) {
+        if (e && e.target && e.target.matches && e.target.matches(COMPOSER_SEL)) {
+          state.composerFocused = true;
+          syncKeyboardInset();
+          try {
+            window.scrollTo(0, 0);
+          } catch (err) {}
+          if (typeof requestAnimationFrame === "function") {
+            requestAnimationFrame(function () {
+              try {
+                window.scrollTo(0, 0);
+              } catch (err2) {}
+              syncKeyboardInset();
+            });
+          }
+        }
+      },
+      true
+    );
+    document.addEventListener(
+      "focusout",
+      function () {
+        setTimeout(function () {
+          var ae = document.activeElement;
+          if (!(ae && ae.matches && ae.matches(COMPOSER_SEL))) {
+            state.composerFocused = false;
+            syncKeyboardInset();
+          }
+        }, 180);
+      },
+      true
+    );
+    syncKeyboardInset();
   }
-  window.addEventListener("resize", syncKeyboardInset);
-  syncKeyboardInset();
+  bindSupportKeyboardInset();
 
   if (window.MCJChatMedia) window.MCJChatMedia.bindLightboxClicks(root);
   paint();

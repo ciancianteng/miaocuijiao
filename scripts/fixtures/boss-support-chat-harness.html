@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="zh-CN" class="support-page">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Boss support chat harness</title>
+  <link rel="stylesheet" href="/src/support-chat.css?v=20261121chatVvFocus1" />
+  <link rel="stylesheet" href="/src/mcj-chat-skin.css?v=20261121chatVvFocus1" />
+  <style>
+    html.support-page, body.support-page {
+      overflow: hidden !important;
+      height: 100%;
+      height: 100dvh;
+      margin: 0;
+      background: #08070a;
+      color: #fff;
+    }
+    .harness-note {
+      position: fixed; left: 8px; top: 8px; z-index: 9999;
+      background: #222; color: #fff; padding: 6px 8px; font: 12px monospace;
+      max-width: 94vw; white-space: pre-wrap;
+    }
+  </style>
+</head>
+<body class="support-page support-chat-live">
+  <div id="note" class="harness-note">init</div>
+  <main class="support-shell" id="supportApp">
+    <section class="support-layout mobile-detail">
+      <aside class="support-aside" hidden></aside>
+      <div class="support-main">
+        <header class="support-main-head">
+          <div class="support-main-title">
+            <button class="support-back-btn" type="button">返回</button>
+            <div class="support-main-copy">
+              <h2>在线客服</h2>
+              <p>人工客服咨询</p>
+              <p class="support-chat-status">等待客服接待</p>
+            </div>
+          </div>
+        </header>
+        <section class="support-order-summary">
+          <button class="support-order-summary-toggle" type="button">
+            <div class="support-order-summary-meta">
+              <strong>订单 MCJ-TEST</strong>
+              <span>王者荣耀</span>
+              <span>88 猫粮</span>
+              <span>进行中</span>
+            </div>
+            <span>展开</span>
+          </button>
+        </section>
+        <div class="support-messages" data-messages id="msgs"></div>
+        <div class="support-footer" data-support-footer data-closed="0">
+          <form class="support-composer" data-send>
+            <button class="support-tool-btn support-tool-image" type="button" data-chat-image-btn aria-label="图片" title="图片">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="14" rx="2.4" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="9" cy="10" r="1.3" fill="currentColor"/><path d="M5.2 16.4 9.2 12.8 12.1 15.3 15.1 11.8 18.8 16.4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round"/></svg>
+            </button>
+            <textarea name="content" rows="1" enterkeyhint="send" placeholder="输入消息…" autocomplete="off" maxlength="2000"></textarea>
+            <button class="support-send-btn" type="submit" data-send-btn aria-label="发送" title="发送" disabled>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.2 11.6 19.2 4.8 13.2 19.6 11.2 13.4 4.2 11.6z" fill="currentColor"/></svg>
+            </button>
+          </form>
+        </div>
+      </div>
+    </section>
+  </main>
+  <script type="module">
+    import { readVisualViewportBox, applyVisualViewportCss } from "/src/scroll-keep.js";
+    const msgs = document.getElementById("msgs");
+    const note = document.getElementById("note");
+    const input = document.querySelector('textarea[name="content"]');
+    const sendBtn = document.querySelector("[data-send-btn]");
+
+    function seed() {
+      for (let i = 1; i <= 20; i++) {
+        const el = document.createElement("div");
+        el.className = "support-msg" + (i % 3 === 0 ? " mine" : "");
+        el.innerHTML = "<p>老板消息 " + i + " — 布局滚动测试</p><small>12:" + String(10 + (i % 50)).padStart(2, "0") + "</small>";
+        msgs.appendChild(el);
+      }
+      msgs.scrollTop = msgs.scrollHeight;
+    }
+
+    function measure() {
+      const shell = document.querySelector(".support-shell");
+      const footer = document.querySelector(".support-footer");
+      const head = document.querySelector(".support-main-head");
+      const order = document.querySelector(".support-order-summary");
+      const sr = shell.getBoundingClientRect();
+      const fr = footer.getBoundingClientRect();
+      const mr = msgs.getBoundingClientRect();
+      const hr = head.getBoundingClientRect();
+      const or = order ? order.getBoundingClientRect() : null;
+      const overflowX = document.documentElement.scrollWidth > window.innerWidth + 1;
+      return {
+        lock: document.documentElement.classList.contains("support-chat-lock"),
+        kb: document.documentElement.classList.contains("support-kb-open"),
+        shellTop: Math.round(sr.top),
+        shellHeight: Math.round(sr.height),
+        composerBottom: Math.round(fr.bottom),
+        composerTop: Math.round(fr.top),
+        msgsHeight: Math.round(mr.height),
+        headBottom: Math.round(hr.bottom),
+        orderBottom: or ? Math.round(or.bottom) : null,
+        overflowX,
+        hasEmoji: !!document.querySelector("[data-toggle-emoji], .support-emoji-panel"),
+        imageIsSvg: !!document.querySelector("[data-chat-image-btn] svg"),
+        sendIsSvg: !!document.querySelector("[data-send-btn] svg"),
+        imageText: String(document.querySelector("[data-chat-image-btn]")?.textContent || "").trim(),
+        vvTop: getComputedStyle(document.documentElement).getPropertyValue("--support-vv-top").trim(),
+        vvHeight: getComputedStyle(document.documentElement).getPropertyValue("--support-vv-height").trim(),
+        inset: getComputedStyle(document.documentElement).getPropertyValue("--support-keyboard-inset").trim(),
+      };
+    }
+
+    window.__applyKb = function (open) {
+      const box = open
+        ? { top: 0, height: 420, inset: 380 }
+        : { top: 0, height: window.innerHeight || 844, inset: 0 };
+      applyVisualViewportCss("support", box, {
+        lock: true,
+        kbOpen: !!open,
+        lockClass: "support-chat-lock",
+        kbClass: "support-kb-open",
+        shellSelector: ".support-shell, #supportApp",
+      });
+      document.body.classList.toggle("support-chat-lock", true);
+      document.body.classList.toggle("support-kb-open", !!open);
+      if (open) msgs.scrollTop = msgs.scrollHeight;
+      const m = measure();
+      note.textContent = JSON.stringify(m, null, 2);
+      return m;
+    };
+
+    input.addEventListener("input", () => {
+      sendBtn.disabled = !String(input.value || "").trim();
+    });
+
+    seed();
+    const closed = window.__applyKb(false);
+    note.textContent = JSON.stringify(closed, null, 2);
+  </script>
+</body>
+</html>

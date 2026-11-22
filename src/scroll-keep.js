@@ -70,13 +70,117 @@ export function restoreChatScroll(box, snap, stick) {
   });
 }
 
-/** Keyboard overlap only. Ignore visualViewport offset from page scroll and the URL bar. */
+/**
+ * Keyboard overlap only (layout viewport bottom minus visual viewport bottom).
+ * Uses offsetTop so URL-bar / pinch-zoom scroll does not inflate the inset.
+ *
+ * NOTE: On many iOS Safari builds, focusing an input shrinks window.innerHeight
+ * together with visualViewport.height, so this returns 0 even while the keyboard
+ * is open. Callers must NOT gate keyboard layout mode on inset alone — use
+ * composer focus (see isChatKeyboardOpen).
+ */
 export function keyboardInsetPx(view) {
   var win = view || (typeof window !== "undefined" ? window : null);
   if (!win || !win.visualViewport) return 0;
-  var covered = Math.round((win.innerHeight || 0) - win.visualViewport.height);
-  if (covered < 80) return 0;
-  return covered;
+  var vv = win.visualViewport;
+  var bottom = Math.round((win.innerHeight || 0) - (vv.height + (vv.offsetTop || 0)));
+  if (bottom < 80) return 0;
+  return Math.max(0, bottom);
+}
+
+/**
+ * Stable mobile chat keyboard mode.
+ * Focus means the soft keyboard is (or will be) open — do not wait for inset.
+ * Keep mode briefly while inset remains after blur (dismiss animation).
+ */
+export function isChatKeyboardOpen(opts) {
+  var o = opts || {};
+  if (!o.lock) return false;
+  if (o.focused) return true;
+  return Math.round(o.inset || 0) >= 80;
+}
+
+/**
+ * Pin a chat shell to the visualViewport box.
+ * Prefer this over sticky + 100dvh + keyboard padding (those fight on iOS and cause upward drift).
+ */
+export function readVisualViewportBox(view) {
+  var win = view || (typeof window !== "undefined" ? window : null);
+  if (!win) return { top: 0, height: 0, inset: 0 };
+  if (!win.visualViewport) {
+    return {
+      top: 0,
+      height: Math.round(win.innerHeight || 0),
+      inset: 0,
+    };
+  }
+  var vv = win.visualViewport;
+  return {
+    top: Math.round(vv.offsetTop || 0),
+    height: Math.round(vv.height || win.innerHeight || 0),
+    inset: keyboardInsetPx(win),
+  };
+}
+
+function clearVvShellInline(shell) {
+  if (!shell || shell.getAttribute("data-vv-shell") !== "1") return;
+  ["position", "left", "right", "top", "height", "max-height", "min-height", "width", "overflow"].forEach(
+    function (prop) {
+      shell.style.removeProperty(prop);
+    }
+  );
+  shell.removeAttribute("data-vv-shell");
+}
+
+function pinVvShellInline(shell, topPx, heightPx) {
+  if (!shell) return;
+  shell.style.setProperty("position", "fixed", "important");
+  shell.style.setProperty("left", "0px", "important");
+  shell.style.setProperty("right", "0px", "important");
+  shell.style.setProperty("top", topPx + "px", "important");
+  shell.style.setProperty("height", heightPx + "px", "important");
+  shell.style.setProperty("max-height", heightPx + "px", "important");
+  shell.style.setProperty("min-height", "0px", "important");
+  shell.style.setProperty("width", "100%", "important");
+  shell.style.setProperty("overflow", "hidden", "important");
+  shell.setAttribute("data-vv-shell", "1");
+}
+
+export function applyVisualViewportCss(prefix, box, opts) {
+  var doc = typeof document !== "undefined" ? document.documentElement : null;
+  if (!doc) return;
+  var p = String(prefix || "cs");
+  var b = box || readVisualViewportBox();
+  var lock = !!(opts && opts.lock);
+  var kbOpen = !!(opts && opts.kbOpen);
+  var topPx = Math.max(0, Math.round(b.top || 0));
+  var heightPx = Math.max(0, Math.round(b.height || 0));
+  if (lock && !kbOpen && opts && opts.tabbarPx) {
+    heightPx = Math.max(0, heightPx - Math.round(opts.tabbarPx || 0));
+  }
+  doc.style.setProperty("--" + p + "-vv-top", topPx + "px");
+  doc.style.setProperty("--" + p + "-vv-height", heightPx + "px");
+  // Locked chat shells track visualViewport height. Extra composer padding
+  // double-counts the keyboard and lifts the input into a blank dead zone.
+  // Always zero the inset var while locked; only non-lock surfaces may use it.
+  doc.style.setProperty("--" + p + "-keyboard-inset", lock ? "0px" : (b.inset || 0) + "px");
+  if (opts && opts.lockClass) doc.classList.toggle(opts.lockClass, lock);
+  if (opts && opts.kbClass) doc.classList.toggle(opts.kbClass, kbOpen);
+  // Inline pin beats base min-height:100dvh / sticky fights that CSSOM sometimes drops.
+  var shellSel = opts && opts.shellSelector ? opts.shellSelector : "";
+  if (shellSel && typeof document !== "undefined") {
+    var shells = document.querySelectorAll(shellSel);
+    var i;
+    for (i = 0; i < shells.length; i++) {
+      if (lock) pinVvShellInline(shells[i], topPx, heightPx);
+      else clearVvShellInline(shells[i]);
+    }
+  }
+  if (lock && typeof window !== "undefined" && (window.scrollX || window.scrollY)) {
+    try {
+      window.scrollTo(0, 0);
+    } catch (e) {}
+  }
 }
 
 export function virtStartIndex(scrollTop, rowH, overscan) {

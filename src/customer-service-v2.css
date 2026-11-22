@@ -231,17 +231,20 @@
 .cs-product-card span{display:block;margin-top:4px;color:#ffd6e7;font-weight:800}
 .cs-product-card small{display:block;margin-top:4px;color:rgba(255,255,255,.5);font-size:11px;line-height:1.4}
 
-/* Keep chat composer above bottom nav / keyboard while typing */
+/* Composer is a flex footer inside the chat column — never sticky.
+   Sticky + visualViewport pin + keyboard-inset padding caused iOS blank screens. */
 .cs-chat-composer{
-  position:sticky;
-  bottom:0;
+  position:relative;
+  bottom:auto;
   z-index:40;
   pointer-events:auto;
   background:#111116;
   border-top:1px solid rgba(255,255,255,.08);
+  flex:0 0 auto;
   flex-shrink:0;
   min-height:0;
-  padding-bottom:calc(env(safe-area-inset-bottom,0px) + var(--cs-keyboard-inset,0px));
+  /* Inset var is zeroed while cs-chat-lock is on (shell tracks VV). */
+  padding-bottom:env(safe-area-inset-bottom,0px);
 }
 .cs-composer-hint{
   margin:0;
@@ -262,10 +265,10 @@
   display:flex;
   flex-wrap:nowrap;
   gap:8px;
-  padding:8px 12px;
+  padding:6px 10px 8px;
   border-top:0;
   align-items:flex-end;
-  min-height:56px;
+  min-height:0;
   height:auto;
   box-sizing:border-box;
 }
@@ -292,13 +295,13 @@
 .cs-chat-input textarea{
   flex:1 1 auto;
   min-width:0;
-  height:56px;
-  min-height:56px;
-  max-height:120px;
+  height:42px;
+  min-height:42px;
+  max-height:108px;
   resize:none;
   overflow-y:auto;
   border:1px solid rgba(255,255,255,.12);
-  border-radius:10px;
+  border-radius:18px;
   background:rgba(0,0,0,.25);
   color:#fff;
   padding:10px 12px;
@@ -955,10 +958,10 @@
   flex-direction:column;
   align-items:stretch;
   flex-wrap:nowrap;
-  gap:8px;
+  gap:6px;
   min-height:0;
   height:auto;
-  padding:8px 10px 10px;
+  padding:6px 10px 8px;
 }
 .cs-composer-tools{display:flex;align-items:center;gap:8px;min-width:0;flex:0 0 auto}
 .cs-tool{
@@ -1271,9 +1274,123 @@ button.cs-metric{display:block;width:100%;text-align:left;color:inherit;backgrou
     height:100%;
     overflow:hidden;
   }
-  .cs-chat-head{flex:0 0 auto;height:auto;min-height:52px;position:sticky;top:0}
+  .cs-chat-head{flex:0 0 auto;height:auto;min-height:52px;position:relative;top:auto}
   .cs-chat-messages{flex:1 1 auto;min-height:0}
-  .cs-chat-composer{padding-bottom:var(--cs-keyboard-inset, 0px)}
+  /*
+    Chat lock: pin .cs-shell to visualViewport (top + height).
+    Do NOT use sticky + 100dvh + keyboard padding together — that causes upward drift / blank iOS screens.
+    Only .cs-chat-messages scrolls. Composer focus hides the bottom tabbar (kb mode).
+  */
+  html.cs-chat-lock{--cs-keyboard-inset:0px !important}
+  html.cs-chat-lock,
+  html.cs-chat-lock body{
+    overflow:hidden !important;
+    overscroll-behavior:none;
+    touch-action:manipulation;
+    height:100% !important;
+    max-height:100% !important;
+  }
+  html.cs-chat-lock .cs-app{
+    height:100% !important;
+    max-height:100% !important;
+    min-height:0 !important;
+    overflow:hidden !important;
+  }
+  html.cs-chat-lock .cs-shell{
+    /* Override base .cs-shell min-height:100dvh which otherwise beats max-height. */
+    min-height:0 !important;
+    position:fixed !important;
+    left:0;
+    right:0;
+    top:var(--cs-vv-top, 0px) !important;
+    height:var(--cs-vv-height, 100dvh) !important;
+    max-height:var(--cs-vv-height, 100dvh) !important;
+    width:100% !important;
+    margin:0 !important;
+    overflow:hidden !important;
+    display:flex !important;
+    flex-direction:column !important;
+    z-index:20;
+  }
+  html.cs-chat-lock .cs-main{
+    flex:1 1 auto !important;
+    min-height:0 !important;
+    height:auto !important;
+    max-height:none !important;
+    overflow:hidden !important;
+    display:flex !important;
+    flex-direction:column !important;
+  }
+  html.cs-chat-lock .cs-top{
+    position:relative !important;
+    top:auto !important;
+    flex:0 0 auto !important;
+  }
+  html.cs-chat-lock .cs-page[data-route="conversations"]{
+    flex:1 1 auto !important;
+    min-height:0 !important;
+    height:auto !important;
+    max-height:none !important;
+    overflow:hidden !important;
+    padding:0 !important;
+    display:flex !important;
+    flex-direction:column !important;
+  }
+  html.cs-chat-lock .cs-chat-layout,
+  html.cs-chat-lock .cs-chat-main{
+    flex:1 1 auto !important;
+    min-height:0 !important;
+    height:100% !important;
+    max-height:100% !important;
+    overflow:hidden !important;
+  }
+  html.cs-chat-lock .cs-chat-head{
+    position:relative !important;
+    top:auto !important;
+    flex:0 0 auto !important;
+    z-index:5;
+  }
+  html.cs-chat-lock .cs-chat-messages{
+    flex:1 1 auto !important;
+    min-height:0 !important;
+    overflow-x:hidden !important;
+    overflow-y:auto !important;
+    -webkit-overflow-scrolling:touch;
+    overscroll-behavior:contain;
+  }
+  html.cs-chat-lock .cs-chat-composer{
+    position:relative !important;
+    bottom:auto !important;
+    flex:0 0 auto !important;
+    /* Shell already sits above the tabbar via --cs-vv-height; no extra inset pad. */
+    padding-bottom:0 !important;
+    z-index:6;
+  }
+  html.cs-kb-open{
+    --cs-mobile-tabbar:0px;
+  }
+  html.cs-kb-open .cs-mobile-nav{
+    display:none !important;
+    pointer-events:none !important;
+    visibility:hidden !important;
+    height:0 !important;
+  }
+  /* Shell tracks visualViewport — keep a tiny thumb gap, never keyboard-inset padding. */
+  html.cs-kb-open .cs-chat-composer{
+    padding-bottom:6px !important;
+  }
+  html.cs-chat-lock:not(.cs-kb-open) .cs-shell{
+    /* Reserve bottom tabbar when keyboard closed — JS also subtracts tabbarPx into --cs-vv-height */
+    height:var(--cs-vv-height, 100dvh) !important;
+    max-height:var(--cs-vv-height, 100dvh) !important;
+  }
+  /* Prevent nested 100dvh / sticky ancestors from pushing the composer off-screen. */
+  html.cs-chat-lock .cs-mobile-nav{
+    z-index:15;
+  }
+  html.cs-kb-open .cs-top{
+    padding-top:env(safe-area-inset-top, 0px);
+  }
 }
 /* P0 CS soft-archive helpers only */
 .cs-card-check{display:flex;align-items:center;gap:6px;font-size:12px;color:#c8c9d1}

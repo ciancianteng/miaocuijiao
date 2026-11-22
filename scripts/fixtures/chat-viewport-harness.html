@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Chat viewport harness</title>
+  <link rel="stylesheet" href="/src/customer-service-v2.css?v=20261121chatVvFocus1" />
+  <link rel="stylesheet" href="/src/mcj-chat-skin.css?v=20261121chatVvFocus1" />
+  <style>
+    .harness-note{position:fixed;left:8px;top:8px;z-index:9999;background:#222;color:#fff;padding:6px 8px;font:12px monospace;max-width:94vw;white-space:pre-wrap}
+    .cs-msg{padding:8px 10px;margin:4px 0;border-radius:12px;background:rgba(255,255,255,.06)}
+    .cs-msg.mine{margin-left:auto;max-width:80%;background:rgba(255,143,197,.2)}
+  </style>
+</head>
+<body>
+  <div id="note" class="harness-note">init</div>
+  <div id="serviceApp" class="cs-app">
+    <div class="cs-shell">
+      <section class="cs-main">
+        <header class="cs-top"><div><h1>客服</h1><p>harness</p></div></header>
+        <main class="cs-page" data-route="conversations">
+          <div class="cs-chat-layout">
+            <section class="cs-chat-main">
+              <header class="cs-chat-head"><div class="cs-chat-head-main"><div><h2>老板测试</h2><p>会话头</p></div></div></header>
+              <div class="cs-chat-messages" id="msgs"></div>
+              <div class="cs-chat-composer" data-cs-composer-wrap>
+                <p class="mcj-enter-hint">Enter 发送，Shift+Enter 换行</p>
+                <p class="cs-composer-hint" data-cs-composer-hint hidden></p>
+                <form class="cs-chat-input" data-send-message action="#" method="post" autocomplete="off" onsubmit="return false;">
+                  <div class="cs-composer-tools">
+                    <button class="cs-tool" type="button" aria-label="表情">😊</button>
+                    <button class="cs-tool" type="button" aria-label="图片">图</button>
+                    <button class="cs-tool cs-tool-quick" type="button" aria-label="快捷回复">⚡<span>快捷回复</span></button>
+                  </div>
+                  <div class="cs-composer-line">
+                    <textarea name="content" data-cs-composer rows="1" placeholder="输入消息…" autocomplete="off" enterkeyhint="send" maxlength="2000"></textarea>
+                    <button class="cs-send-btn" type="button" data-cs-send aria-label="发送">发</button>
+                  </div>
+                </form>
+              </div>
+            </section>
+          </div>
+        </main>
+      </section>
+      <nav class="cs-mobile-nav" style="display:grid"><button>工作台</button><button>会话</button><button>订单</button><button>更多</button></nav>
+    </div>
+  </div>
+  <script type="module">
+    import { readVisualViewportBox, applyVisualViewportCss } from "/src/scroll-keep.js";
+    const msgs = document.getElementById("msgs");
+    const input = document.querySelector("[data-cs-composer]");
+    const sendBtn = document.querySelector("[data-cs-send]");
+    // Seed leftover Enter tip + long placeholder to prove scrub/CSS hide.
+    function seed() {
+      for (let i = 1; i <= 24; i++) {
+        const el = document.createElement("div");
+        el.className = "cs-msg" + (i % 3 === 0 ? " mine" : "");
+        el.innerHTML = "<p>消息 " + i + " — 布局滚动测试</p>";
+        msgs.appendChild(el);
+      }
+      msgs.scrollTop = msgs.scrollHeight;
+    }
+    function scrub() {
+      document.querySelectorAll(".mcj-enter-hint").forEach((n) => n.remove());
+      document.querySelectorAll("textarea[data-cs-composer]").forEach((el) => {
+        const ph = String(el.getAttribute("placeholder") || "");
+        if (/Enter/.test(ph) || /换行/.test(ph)) el.placeholder = "输入消息…";
+      });
+    }
+    function measure() {
+      const shell = document.querySelector(".cs-shell");
+      const head = document.querySelector(".cs-chat-head");
+      const composer = document.querySelector(".cs-chat-composer");
+      const nav = document.querySelector(".cs-mobile-nav");
+      const sr = shell.getBoundingClientRect();
+      const hr = head.getBoundingClientRect();
+      const mr = msgs.getBoundingClientRect();
+      const cr = composer.getBoundingClientRect();
+      const style = getComputedStyle(msgs);
+      const formStyle = getComputedStyle(document.querySelector("form.cs-chat-input"));
+      return {
+        shellTop: Math.round(sr.top),
+        shellHeight: Math.round(sr.height),
+        headTop: Math.round(hr.top),
+        msgsTop: Math.round(mr.top),
+        msgsHeight: Math.round(mr.height),
+        composerBottom: Math.round(cr.bottom),
+        composerTop: Math.round(cr.top),
+        msgsOverflowY: style.overflowY,
+        formDir: formStyle.flexDirection,
+        navDisplay: getComputedStyle(nav).display,
+        enterHints: document.querySelectorAll(".mcj-enter-hint").length,
+        enterTextHits: (document.body.innerText.match(/Enter\s*发送/g) || []).length,
+        placeholder: input.placeholder,
+        lock: document.documentElement.classList.contains("cs-chat-lock"),
+        kb: document.documentElement.classList.contains("cs-kb-open"),
+        vv: readVisualViewportBox(window),
+      };
+    }
+    function apply(kb) {
+      scrub();
+      const real = readVisualViewportBox(window);
+      const box = kb
+        ? { top: 0, height: Math.max(280, Math.round((real.height || window.innerHeight) * 0.55)), inset: 320 }
+        : { top: real.top, height: real.height || window.innerHeight, inset: 0 };
+      applyVisualViewportCss("cs", box, {
+        lock: true,
+        kbOpen: !!kb,
+        lockClass: "cs-chat-lock",
+        kbClass: "cs-kb-open",
+        shellSelector: ".cs-shell",
+        tabbarPx: kb ? 0 : 54,
+      });
+      const m = measure();
+      document.getElementById("note").textContent = JSON.stringify(m);
+      window.__HARNESS__ = m;
+      return m;
+    }
+    function send() {
+      const text = String(input.value || "").trim();
+      if (!text) return false;
+      const el = document.createElement("div");
+      el.className = "cs-msg mine";
+      el.innerHTML = "<p>" + text.replace(/[<>&]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[c])) + "</p>";
+      msgs.appendChild(el);
+      input.value = "";
+      msgs.scrollTop = msgs.scrollHeight;
+      return true;
+    }
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+        e.preventDefault();
+        send();
+      }
+    });
+    sendBtn.addEventListener("click", send);
+    window.__applyKb = apply;
+    window.__send = send;
+    window.__measure = measure;
+    seed();
+    apply(false);
+  </script>
+</body>
+</html>
