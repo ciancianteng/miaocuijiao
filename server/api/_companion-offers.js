@@ -2,10 +2,20 @@
  * Companion-selected catalog offers.
  * Stored on the existing companion_profiles.service_standards map under a
  * reserved key so we do not add a second catalog or require new columns.
+ *
+ * markupAmount = companion-chosen add-on (default 0), clamped to level CAP.
+ * markupAllowance on quotes is the CAP, never auto-applied.
  */
 import { companionDb } from "./_companion-media-store.js";
 import { loadCompanionServiceStandards } from "./_service-standard.js";
-import { loadMarkupMap, parseMarkupOn, quoteMarkupPrice } from "./_lv-markup.js";
+import {
+  clampMarkupAmount,
+  loadMarkupMap,
+  markupFor,
+  normalizeMarkupAmount,
+  parseMarkupOn,
+  quoteMarkupPrice,
+} from "./_lv-markup.js";
 
 const OFFER_KEY = "__catalogOffers";
 
@@ -24,6 +34,16 @@ export function companionAcceptingFlag(raw) {
   return raw?.enabled !== false && raw?.enabled !== "false";
 }
 
+function readStoredMarkupAmount(raw) {
+  if (!raw || typeof raw !== "object") return 0;
+  if (raw.markupAmount != null || raw.markup_amount != null) {
+    return normalizeMarkupAmount(raw.markupAmount ?? raw.markup_amount);
+  }
+  // Legacy markupOn without amount must NOT fill CAP — treat as 0.
+  if (parseMarkupOn(raw.markupOn ?? raw.markup_on)) return 0;
+  return 0;
+}
+
 function cleanOffers(input) {
   const list = Array.isArray(input) ? input : [];
   const seen = new Set();
@@ -32,12 +52,14 @@ function cleanOffers(input) {
       const kind = raw?.kind === "product" ? "product" : "service";
       const id = String(raw?.id || "").trim();
       const accepting = companionAcceptingFlag(raw);
+      const markupAmount = readStoredMarkupAmount(raw);
       return {
         kind,
         id,
         enabled: accepting,
         accepting,
-        markupOn: parseMarkupOn(raw?.markupOn ?? raw?.markup_on),
+        markupAmount,
+        markupOn: markupAmount > 0,
         price: kind === "service" ? null : cleanPrice(raw?.price),
         sort: Number.isFinite(Number(raw?.sort)) ? Number(raw.sort) : index,
       };
@@ -78,6 +100,36 @@ async function companionLevelMeta(userId) {
   return { levelId, levelName };
 }
 
+function quoteServiceOffer(row, levelId, levelName, markupMap, savedOffer) {
+  const chosen = savedOffer ? normalizeMarkupAmount(savedOffer.markupAmount) : 0;
+  const quoted = quoteMarkupPrice({
+    serviceRow: row,
+    levelId,
+    markupMap,
+    markupAmount: chosen,
+  });
+  return {
+    ...(savedOffer || {}),
+    kind: "service",
+    id: row.id,
+    accepting: savedOffer ? savedOffer.accepting !== false : true,
+    enabled: savedOffer ? savedOffer.accepting !== false : true,
+    ...quoted,
+    // Preserve companion choice (quoted already clamped); do not clobber with CAP-derived flags alone.
+    markupAmount: quoted.markupAmount,
+    markupOn: quoted.markupAmount > 0,
+    name: row.name || "服务",
+    category: row.category || "",
+    icon: row.icon || "🎮",
+    platformPrice: quoted.basePrice,
+    platformEnabled: row.enabled !== false,
+    price: quoted.finalPrice,
+    levelId,
+    levelName,
+    href: "",
+  };
+}
+
 export async function listCompanionOffers(userId, { enabledOnly = false } = {}) {
   const loaded = await loadCompanionServiceStandards(userId);
   const raw = loaded.standards?.[OFFER_KEY];
@@ -96,6 +148,7 @@ export async function listCompanionOffers(userId, { enabledOnly = false } = {}) 
   }
   const serviceMap = new Map(serviceRows.map((row) => [String(row.id), row]));
   const productMap = new Map(productRows.map((row) => [String(row.id), row]));
+  const savedById = new Map(saved.filter((item) => item.kind === "service").map((item) => [String(item.id), item]));
   const offers = saved
     .map((item) => {
       if (item.kind === "product") {
@@ -111,48 +164,24 @@ export async function listCompanionOffers(userId, { enabledOnly = false } = {}) 
       }
       const row = serviceMap.get(item.id);
       if (!row) return null;
-      const quoted = quoteMarkupPrice({
-        serviceRow: row,
-        levelId,
-        markupMap,
-      });
-      return {
-        ...item,
-        ...quoted,
-        name: row.name || "服务",
-        category: row.category || "",
-        icon: row.icon || "🎮",
-        platformPrice: quoted.basePrice,
-        platformEnabled: row.enabled !== false,
-        price: quoted.finalPrice,
-        levelId,
-        levelName,
-        href: "",
-      };
+      return quoteServiceOffer(row, levelId, levelName, markupMap, item);
     })
     .filter(Boolean);
   return {
     offers: enabledOnly ? offers.filter((item) => item.accepting !== false) : offers,
     catalog: {
       services: serviceRows.map((row) => {
-        const quoted = quoteMarkupPrice({
-          serviceRow: row,
-          levelId,
-          markupMap,
-        });
+        const savedOffer = savedById.get(String(row.id)) || null;
+        const quoted = quoteServiceOffer(row, levelId, levelName, markupMap, savedOffer);
         return {
-          kind: "service",
-          id: row.id,
-          name: row.name,
-          category: row.category || "",
-          icon: row.icon || "🎮",
-          price: quoted.finalPrice,
-          enabled: row.enabled !== false,
-          policy: policies[String(row.id)] || { min: null, max: null, unit: "局", allowSelfPrice: false, allowSelfOff: false },
           ...quoted,
-          levelId,
-          levelName,
-          markupOn: quoted.markupOn,
+          policy: policies[String(row.id)] || {
+            min: null,
+            max: null,
+            unit: "局",
+            allowSelfPrice: false,
+            allowSelfOff: false,
+          },
         };
       }),
       products: productRows.map((row) => ({
@@ -185,6 +214,7 @@ export function assertCompanionOfferPrice(item, policy, prevPrice) {
 export async function saveCompanionOffers(userId, offers) {
   const id = String(userId || "").trim();
   if (!id) throw Object.assign(new Error("缺少陪玩账号"), { status: 400 });
+  const incomingRaw = Array.isArray(offers) ? offers : [];
   const wanted = cleanOffers(offers);
   const { serviceRows, productRows } = await catalog();
   const allowed = new Set([
@@ -200,6 +230,7 @@ export async function saveCompanionOffers(userId, offers) {
     throw Object.assign(new Error("陪玩资料尚未就绪，暂时不能保存服务"), { status: 503 });
   }
   const previous = cleanOffers(loaded.standards?.[OFFER_KEY]);
+  const [{ levelId }, markupMap] = await Promise.all([companionLevelMeta(id), loadMarkupMap()]);
   let policies = {};
   try {
     const { loadAllPricePolicies, normalizePricePolicy } = await import("./_service-price-policy.js");
@@ -212,9 +243,30 @@ export async function saveCompanionOffers(userId, offers) {
     if (item.kind !== "service") continue;
     const policy = policies[item.id] || { allowSelfPrice: false, allowSelfOff: false, min: null, max: null };
     const prev = previous.find((row) => row.kind === "service" && row.id === item.id);
+    const rawIn = incomingRaw.find(
+      (row) => String(row?.id || "") === item.id && (row?.kind === "product" ? "product" : "service") === item.kind
+    );
+    // Toggle-only saves omit markupAmount — keep previous companion choice.
+    if (
+      rawIn &&
+      !Object.prototype.hasOwnProperty.call(rawIn, "markupAmount") &&
+      !Object.prototype.hasOwnProperty.call(rawIn, "markup_amount") &&
+      prev
+    ) {
+      item.markupAmount = normalizeMarkupAmount(prev.markupAmount);
+      item.markupOn = item.markupAmount > 0;
+    }
     if (Number.isNaN(item.price)) throw Object.assign(new Error("不允许输入无效金额。"), { status: 400 });
     const prevPrice = prev && prev.price != null && !Number.isNaN(prev.price) ? Number(prev.price) : null;
     if (item.price != null) assertCompanionOfferPrice(item, policy, prevPrice);
+    const cap = markupFor(markupMap, item.id, levelId).markupAllowance;
+    const requested = normalizeMarkupAmount(item.markupAmount);
+    if (requested > cap + 1e-9) {
+      throw Object.assign(new Error(`加价不得超过等级上限 +${cap}`), { status: 400 });
+    }
+    const clamped = clampMarkupAmount(requested, cap);
+    item.markupAmount = clamped;
+    item.markupOn = clamped > 0;
   }
   const incoming = new Set(wanted.map((item) => `${item.kind}:${item.id}`));
   const keptProducts = previous.filter((item) => item.kind === "product" && !incoming.has(`product:${item.id}`));

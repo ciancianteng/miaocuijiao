@@ -2870,8 +2870,18 @@
   }
   function offerPriceSig(res){
     return ((res&&res.catalog&&res.catalog.services)||[]).map(function(s){
-      return [s.id,s.basePrice,s.markupAllowance,s.finalPrice,s.levelId,s.levelName].join(':');
+      return [s.id,s.basePrice,s.markupAllowance,s.markupAmount,s.finalPrice,s.levelId,s.levelName].join(':');
     }).join('|');
+  }
+  function offerMarkupOptionsHtml(cap, selected){
+    var max=Math.max(0,Math.floor(Number(cap)||0));
+    if(max<=0)return '';
+    var cur=Math.max(0,Math.min(max,Math.floor(Number(selected)||0)));
+    var opts=[];
+    for(var n=0;n<=max;n++){
+      opts.push('<option value="'+n+'"'+(n===cur?' selected':'')+'>+'+n+'</option>');
+    }
+    return '<label class="pw-svc-markup-pick"><span>自主加价</span><select data-offer-markup-amount>'+opts.join('')+'</select></label>';
   }
   function paintOfferManager(host,res){
     var selected={};
@@ -2897,12 +2907,14 @@
       var requirement=String(policy.requirements||'').trim();
       var accepting=!saved||saved.accepting!==false;
       var basePrice=item.basePrice!=null?item.basePrice:(item.defaultPrice!=null?item.defaultPrice:item.price);
-      var markup=Number(item.markupAllowance!=null?item.markupAllowance:0)||0;
-      var finalPrice=item.finalPrice!=null?item.finalPrice:(Number(basePrice||0)+markup);
+      var markupCap=Number(item.markupAllowance!=null?item.markupAllowance:0)||0;
+      var markupAmt=Number(item.markupAmount!=null?item.markupAmount:(saved&&saved.markupAmount!=null?saved.markupAmount:0))||0;
+      var finalPrice=item.finalPrice!=null?item.finalPrice:(Number(basePrice||0)+markupAmt);
       var levelLabel=item.levelName||(item.levelId?String(item.levelId).toUpperCase():'未设置等级');
       var headPrice=String(finalPrice||0)+' 猫粮 / '+unit;
       var opened=!!openIds[item.id];
-      return '<article class="pw-my-service pw-svc'+(opened?' is-open':'')+'" data-offer-card data-kind="service" data-id="'+esc(item.id)+'" data-offer-sort="'+esc(entry.index)+'" data-saved="'+(saved?'1':'0')+'" data-accepting="'+(accepting?'1':'0')+'">'+
+      var markupPick=offerMarkupOptionsHtml(markupCap,markupAmt);
+      return '<article class="pw-my-service pw-svc'+(opened?' is-open':'')+'" data-offer-card data-kind="service" data-id="'+esc(item.id)+'" data-offer-sort="'+esc(entry.index)+'" data-saved="'+(saved?'1':'0')+'" data-accepting="'+(accepting?'1':'0')+'" data-markup-cap="'+esc(markupCap)+'" data-markup-amount="'+esc(markupAmt)+'">'+
         '<div class="pw-svc-head">'+
           '<button type="button" class="pw-svc-fold" data-offer-fold aria-expanded="'+(opened?'true':'false')+'">'+
             '<span class="pw-svc-copy"><b class="pw-svc-name">'+esc(item.name||'服务')+'</b><span class="pw-svc-cat">'+esc(item.category||'服务')+'</span></span>'+
@@ -2916,8 +2928,11 @@
           '<div class="pw-svc-row"><span>游戏名称</span><strong data-offer-name>'+esc(item.name||'-')+'</strong></div>'+
           '<div class="pw-svc-row"><span>当前等级</span><strong data-offer-level>'+esc(levelLabel)+'</strong></div>'+
           '<div class="pw-svc-row"><span>基础单价</span><strong data-offer-base>'+esc(basePrice!=null&&basePrice!==''?basePrice:'未设置')+' 猫粮</strong></div>'+
-          '<div class="pw-svc-row"><span>等级加价</span><strong data-offer-markup>'+esc(markup)+' 猫粮</strong></div>'+
+          '<div class="pw-svc-row"><span>加价上限</span><strong data-offer-markup-cap>+'+esc(markupCap)+' 猫粮</strong></div>'+
+          '<div class="pw-svc-row"><span>当前加价</span><strong data-offer-markup>+'+esc(markupAmt)+' 猫粮</strong></div>'+
           '<div class="pw-svc-row"><span>最终单价</span><strong data-offer-final>'+esc(finalPrice)+' 猫粮 / '+esc(unit)+'</strong></div>'+
+          (markupPick||'')+
+          (markupCap>0?'<button type="button" class="pw-btn pw-svc-markup-save" data-offer-save>保存加价</button>':'')+
           serviceDetailsHtml({layout:'requirements',requirementsOpen:false,requirements:requirement})+
         '</div></div></article>';
     }).join('')+'</div>';
@@ -2932,21 +2947,28 @@
       if(!item)return;
       var unit=(item.policy&&item.policy.unit)||'局';
       var basePrice=item.basePrice!=null?item.basePrice:item.price;
-      var markup=Number(item.markupAllowance!=null?item.markupAllowance:0)||0;
-      var finalPrice=item.finalPrice!=null?item.finalPrice:(Number(basePrice||0)+markup);
+      var markupCap=Number(item.markupAllowance!=null?item.markupAllowance:0)||0;
+      var markupAmt=Number(item.markupAmount!=null?item.markupAmount:0)||0;
+      var finalPrice=item.finalPrice!=null?item.finalPrice:(Number(basePrice||0)+markupAmt);
       var levelLabel=item.levelName||(item.levelId?String(item.levelId).toUpperCase():'未设置等级');
+      card.setAttribute('data-markup-cap',String(markupCap));
+      card.setAttribute('data-markup-amount',String(markupAmt));
       var quote=card.querySelector('[data-offer-quote]');
       var nameEl=card.querySelector('[data-offer-name]');
       var levelEl=card.querySelector('[data-offer-level]');
       var baseEl=card.querySelector('[data-offer-base]');
+      var markupCapEl=card.querySelector('[data-offer-markup-cap]');
       var markupEl=card.querySelector('[data-offer-markup]');
       var finalEl=card.querySelector('[data-offer-final]');
+      var sel=card.querySelector('[data-offer-markup-amount]');
       if(quote)quote.textContent=String(finalPrice||0)+' 猫粮 / '+unit;
       if(nameEl)nameEl.textContent=item.name||'-';
       if(levelEl)levelEl.textContent=levelLabel;
       if(baseEl)baseEl.textContent=(basePrice!=null&&basePrice!==''?basePrice:'未设置')+' 猫粮';
-      if(markupEl)markupEl.textContent=markup+' 猫粮';
+      if(markupCapEl)markupCapEl.textContent='+'+markupCap+' 猫粮';
+      if(markupEl)markupEl.textContent='+'+markupAmt+' 猫粮';
       if(finalEl)finalEl.textContent=finalPrice+' 猫粮 / '+unit;
+      if(sel&&String(sel.value)!==String(markupAmt))sel.value=String(markupAmt);
     });
   }
   function refreshOfferPrices(host){
@@ -3106,7 +3128,7 @@
     else if(state.route==='settings')body=settingsHtml();
     else if(state.route==='popularity')body=popularityHtml();
     else if(state.route==='profile')body=profileHtml();
-    else if(state.route==='services')body='<section class="pw-my-services"><h2>我的服务</h2><p class="pw-note">价格由后台按游戏基础单价 + 你的等级加价自动计算，不能自行修改。管理员改价后本页会自动更新。开关只控制是否接单，不影响历史订单。</p><div id="pwOfferManager"><p class="pw-note">正在读取平台服务…</p></div></section>';
+    else if(state.route==='services')body='<section class="pw-my-services"><h2>我的服务</h2><p class="pw-note">最终单价 = 基础价 + 你主动设置的加价。未设置时加价为 +0。等级只决定加价上限（如 Lv2 最高 +3），不会自动加价。开关只控制是否接单，不影响历史订单。</p><div id="pwOfferManager"><p class="pw-note">正在读取平台服务…</p></div></section>';
     else if(state.route==='account'||state.route==='mine')body=accountHtml();
     else if(state.route==='gifts')body=giftsHtml();
     else if(state.route==='rules')body=rulesHtml();
@@ -6237,10 +6259,14 @@
           if(card.getAttribute('data-saved')!=='1'&&card.getAttribute('data-touched')!=='1')return;
           var accepting=card.getAttribute('data-accepting')!=='0';
           var savedSort=Number(card.getAttribute('data-offer-sort'));
+          var markupSel=card.querySelector('[data-offer-markup-amount]');
+          var markupAmount=markupSel?Number(markupSel.value||0):Number(card.getAttribute('data-markup-amount')||0);
+          if(!isFinite(markupAmount)||markupAmount<0)markupAmount=0;
           offers.push({
             kind:card.getAttribute('data-kind')||'service',
             id:card.getAttribute('data-id'),
             accepting:accepting,
+            markupAmount:markupAmount,
             sort:isFinite(savedSort)?savedSort:index
           });
         });
@@ -7215,6 +7241,28 @@
     else toast(state.voicePlayError);
   },true);
   document.addEventListener('change',function(e){
+    var markupSel=e.target.closest('[data-offer-markup-amount]');
+    if(markupSel){
+      var card=markupSel.closest('[data-offer-card]');
+      if(card){
+        card.setAttribute('data-touched','1');
+        var amt=Number(markupSel.value||0)||0;
+        card.setAttribute('data-markup-amount',String(amt));
+        var baseEl=card.querySelector('[data-offer-base]');
+        var baseTxt=baseEl?String(baseEl.textContent||'').replace(/[^\d.-]/g,''):'';
+        var base=Number(baseTxt)||0;
+        var unitMatch=(card.querySelector('[data-offer-final]')||{}).textContent||'';
+        var unit=/\/\s*(\S+)/.exec(unitMatch);
+        var unitLabel=unit?unit[1]:'局';
+        var markupEl=card.querySelector('[data-offer-markup]');
+        var finalEl=card.querySelector('[data-offer-final]');
+        var quote=card.querySelector('[data-offer-quote]');
+        if(markupEl)markupEl.textContent='+'+amt+' 猫粮';
+        if(finalEl)finalEl.textContent=(base+amt)+' 猫粮 / '+unitLabel;
+        if(quote)quote.textContent=(base+amt)+' 猫粮 / '+unitLabel;
+      }
+      return;
+    }
     var profileField=e.target.closest('[data-profile-form] input,[data-profile-form] textarea,[data-profile-form] select');
     if(profileField){
       var pForm=profileField.closest('[data-profile-form]');

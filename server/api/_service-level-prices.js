@@ -454,10 +454,9 @@ export function assertPriceInBand(price, band) {
 }
 
 /**
- * After companion_levels publish: push LV markupAllowance onto every known
- * service_level_prices row (and seed missing LV cells) so front club-price-table
- * stays in sync. Does not rewrite catalog services.default_price (game base).
- * Never touches paid order snapshots.
+ * After companion_levels publish: seed MISSING service×level CAP cells only.
+ * Never overwrite an existing matrix cell (keeps per-game / per-level independence).
+ * Does not rewrite catalog services.default_price or paid order snapshots.
  */
 export async function syncLevelMarkupsAcrossServices(levels = []) {
   const byLevel = new Map();
@@ -471,8 +470,13 @@ export async function syncLevelMarkupsAcrossServices(levels = []) {
     return { ok: true, updatedServices: 0, skipped: true, message: "no_level_markups" };
   }
   const current = await readServiceLevelPrices();
+  const existing = new Set();
+  for (const row of current || []) {
+    const sid = String(row.serviceId || "").trim();
+    const lid = String(row.levelId || "").trim().toLowerCase();
+    if (sid && lid) existing.add(`${sid}::${lid}`);
+  }
   const serviceIds = [...new Set((current || []).map((r) => String(r.serviceId || "").trim()).filter(Boolean))];
-  // Always union public catalog services so new games also get LV cells.
   try {
     const { loadPublicServices } = await import("./platform/services.js");
     const loaded = await loadPublicServices();
@@ -484,15 +488,24 @@ export async function syncLevelMarkupsAcrossServices(levels = []) {
     /* optional */
   }
   let updatedServices = 0;
+  let seededCells = 0;
   const errors = [];
   for (const sid of [...new Set(serviceIds)]) {
     try {
-      const items = LOCKED_MATRIX_LEVEL_IDS.map((levelId) => ({
-        levelId,
-        markupAllowance: byLevel.has(levelId) ? byLevel.get(levelId) : 0,
-      }));
+      const missing = LOCKED_MATRIX_LEVEL_IDS.filter((levelId) => !existing.has(`${sid}::${levelId}`));
+      if (!missing.length) continue;
+      // Preserve existing cells: merge current values with seeds for missing LVs only.
+      const bySid = (current || []).filter((r) => String(r.serviceId || "").trim() === sid);
+      const items = LOCKED_MATRIX_LEVEL_IDS.map((levelId) => {
+        const hit = bySid.find((r) => String(r.levelId || "").trim().toLowerCase() === levelId);
+        if (hit) {
+          return { levelId, markupAllowance: Math.max(0, money(hit.markupAllowance)) };
+        }
+        return { levelId, markupAllowance: byLevel.has(levelId) ? byLevel.get(levelId) : 0 };
+      });
       await saveServiceMarkups(sid, items);
       updatedServices += 1;
+      seededCells += missing.length;
     } catch (error) {
       errors.push(`${sid}: ${error?.message || error}`);
     }
@@ -500,7 +513,8 @@ export async function syncLevelMarkupsAcrossServices(levels = []) {
   return {
     ok: errors.length === 0,
     updatedServices,
+    seededCells,
     errors,
-    message: errors.length ? errors[0] : `synced ${updatedServices} services`,
+    message: errors.length ? errors[0] : `seeded ${seededCells} missing cells across ${updatedServices} services`,
   };
 }

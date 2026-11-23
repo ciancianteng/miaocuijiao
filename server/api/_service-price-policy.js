@@ -56,10 +56,17 @@ export function quoteVisibleService({ row, policy, offer, fallbackPrice = 0, lev
   if (offer && offer.accepting === false) {
     return { visible: false, blocked: true, price: 0, source: "companion_closed", unit: rules.unit, description: rules.description, requirements: rules.requirements, message: "该陪玩已关闭此服务，不能创建新订单。" };
   }
+  // Companion-chosen markup only. Never treat level CAP as auto-applied surcharge.
+  // Legacy markupOn without markupAmount must NOT fill the full CAP.
+  const chosenAmount =
+    offer && (offer.markupAmount != null || offer.markup_amount != null)
+      ? offer.markupAmount ?? offer.markup_amount
+      : 0;
   const quoted = quoteMarkupPrice({
     serviceRow: row,
     levelId: levelId || offer?.levelId || offer?.level_id,
     markupMap,
+    markupAmount: chosenAmount,
   });
   let price = quoted.finalPrice;
   let source = quoted.source;
@@ -78,6 +85,7 @@ export function quoteVisibleService({ row, policy, offer, fallbackPrice = 0, lev
     message: price > 0 ? "" : quoted.message || "该服务尚未设置单价，无法下单。",
     basePrice: quoted.basePrice,
     markupAllowance: quoted.markupAllowance,
+    markupAmount: quoted.markupAmount,
     markupOn: quoted.markupOn,
     finalPrice: quoted.finalPrice,
   };

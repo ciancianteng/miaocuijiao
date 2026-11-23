@@ -84,7 +84,7 @@
       return;
     }
     var head =
-      '<div class="content-admin-head"><div><h3>各游戏 LV1–LV5 等级加价</h3><p>最终单价 = 游戏基础单价 + 该等级加价。基础价格来自服务目录。陪玩不能改价；历史订单成交价不变。</p></div>' +
+      '<div class="content-admin-head"><div><h3>各游戏 LV1–LV5 等级加价上限</h3><p>这里填的是陪玩可自主加价的上限（CAP），不是自动加价。未设置陪玩加价时最终价=基础价；仅陪玩明确选 +1～+CAP 才加价。每游戏每等级独立，互不继承。历史订单成交价不变。</p></div>' +
       '<div class="content-version-meta"><span>' +
       esc(state.grid.length) +
       " 个游戏</span><span>" +

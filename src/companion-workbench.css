@@ -1621,6 +1621,29 @@ body:has(.pw-shell.is-services),
 .pw-app .pw-my-services button.pw-offer-switch.is-on i{background:#fff !important}
 .pw-app .pw-my-services input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="hidden"]):not([type="range"]){background:#000 !important;border:1px solid rgba(255,255,255,.28) !important;border-radius:8px !important;color:#fff !important}
 .pw-app .pw-my-services .pw-btn{border:1px solid rgba(255,255,255,.28) !important;background:#000 !important;color:#fff !important;border-radius:8px !important}
+.pw-app .pw-my-services .pw-svc-markup-pick{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  margin:10px 0 8px;
+  color:#9a9a9a;
+  font-size:13px;
+}
+.pw-app .pw-my-services .pw-svc-markup-pick select{
+  min-width:96px;
+  height:36px;
+  border:1px solid rgba(255,255,255,.28) !important;
+  border-radius:8px !important;
+  background:#000 !important;
+  color:#fff !important;
+  padding:0 10px;
+}
+.pw-app .pw-my-services .pw-svc-markup-save{
+  width:100%;
+  margin:0 0 10px;
+  min-height:40px;
+}
 .pw-status-panel.compact{display:block !important;height:auto !important;min-height:0 !important;max-height:none !important;overflow:visible !important;padding:10px 12px !important}
 .pw-status-panel.compact .pw-status-current{display:flex !important;align-items:center;gap:6px;white-space:nowrap;font-size:13px !important;font-weight:700;color:#fff}
 .pw-status-panel.compact .pw-status-current strong{font-size:13px !important}
