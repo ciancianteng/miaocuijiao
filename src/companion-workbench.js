@@ -1193,11 +1193,11 @@
       clearSession();
       return Promise.reject(new Error('登录已过期，请重新登录。'));
     }
-    refreshPromise=fetch('/api/auth',{
+    refreshPromise=fetchWithTimeout('/api/auth',{
       method:'POST',
       headers:{'Content-Type':'application/json',Accept:'application/json'},
       body:JSON.stringify({action:'refresh',refreshToken:refreshToken})
-    }).then(function(res){
+    },18000).then(function(res){
       return res.text().then(function(text){
         var body={};try{body=text?JSON.parse(text):{}}catch(e){body={}}
         if(!res.ok||body.ok===false){
@@ -1299,9 +1299,49 @@
     }
     return text.replace(/^上传失败：\s*/,'');
   }
+  function authDiag(stage,extra){
+    try{
+      var payload={t:Date.now(),stage:String(stage||''),route:String(state.route||''),busy:!!state.loginBusy};
+      if(extra&&typeof extra==='object'){
+        Object.keys(extra).forEach(function(k){
+          if(/pass|pwd|token|code|otp|secret|authorization|bearer/i.test(k))return;
+          var v=extra[k];
+          if(v==null)return;
+          if(typeof v==='string'&&v.length>120)v=v.slice(0,120);
+          payload[k]=v;
+        });
+      }
+      if(!window.__mcjCompanionAuthDiag)window.__mcjCompanionAuthDiag=[];
+      window.__mcjCompanionAuthDiag.push(payload);
+      if(window.__mcjCompanionAuthDiag.length>40)window.__mcjCompanionAuthDiag.shift();
+      if(window.console&&typeof console.info==='function')console.info('[mcj-companion-auth]',payload.stage,payload);
+    }catch(e){}
+  }
+  function fetchWithTimeout(url,opts,ms){
+    opts=opts||{};
+    ms=Math.max(3000,Number(ms)||18000);
+    var ctrl=typeof AbortController!=='undefined'?new AbortController():null;
+    var timer=null;
+    if(ctrl){
+      opts.signal=ctrl.signal;
+      timer=setTimeout(function(){try{ctrl.abort()}catch(e){}},ms);
+    }
+    var started=Date.now();
+    return fetch(url,opts).then(function(res){
+      if(timer)clearTimeout(timer);
+      authDiag('fetch_ok',{url:String(url).split('?')[0],ms:Date.now()-started,status:res.status});
+      return res;
+    }).catch(function(err){
+      if(timer)clearTimeout(timer);
+      var aborted=err&&(err.name==='AbortError'||/aborted/i.test(String(err.message||'')));
+      authDiag(aborted?'fetch_timeout':'fetch_fail',{url:String(url).split('?')[0],ms:Date.now()-started});
+      if(aborted)throw new Error('登录请求超时，请检查网络后重试');
+      throw err;
+    });
+  }
   function ensureFreshCompanionSession(){
     var session=state.session||readSession()||{};
-    if(!session.token){
+    if(!session.token&&!session.refreshToken&&!session.refresh_token){
       return Promise.reject(new Error('登录状态已过期，请重新登录后继续。'));
     }
     var expRaw=session.expiresAt!=null?session.expiresAt:session.expires_at;
@@ -1309,10 +1349,15 @@
     // Support unix seconds or ms.
     if(exp>1e12)exp=Math.floor(exp/1000);
     var nowSec=Math.floor(Date.now()/1000);
-    if(exp && exp <= nowSec + 90){
+    if((exp && exp <= nowSec + 90) || (!session.token && (session.refreshToken||session.refresh_token))){
+      authDiag('session_refresh_needed',{hasExp:!!exp});
       return refreshCompanionSession();
     }
     return Promise.resolve(session);
+  }
+  // Alias kept for older call sites / accidental renames — never leave loginBusy stuck.
+  function ensureFreshSession(){
+    return ensureFreshCompanionSession();
   }
   function api(action,body,method,retried){
     var opts={method:method||'POST',headers:{'Content-Type':'application/json'}};
@@ -2235,20 +2280,48 @@
       state.loginBusy=true;
       state.loginError='';
       paint();
-      ensureFreshSession()
+      authDiag('init_resume_start');
+      var resumeSettled=false;
+      var resumeWatch=setTimeout(function(){
+        if(resumeSettled)return;
+        resumeSettled=true;
+        authDiag('init_resume_timeout');
+        clearSession();
+        state.session=null;
+        state.loginBusy=false;
+        state.loginError='登录校验超时，请检查网络后重试。';
+        paint();
+      },20000);
+      Promise.resolve()
+        .then(function(){return ensureFreshCompanionSession();})
         .then(function(sess){
+          if(resumeSettled)return;
+          resumeSettled=true;
+          clearTimeout(resumeWatch);
           state.session=sess||readSession();
           if(!state.session||!sessionLooksValid(state.session)){
             throw new Error('登录已失效');
           }
           state.loginBusy=false;
-          resumeAfterVerifiedLogin();
+          authDiag('init_resume_ok');
+          // Hard navigate — Android WebView / WeChat SPA pushState is unreliable after auth.
+          var savedTarget=companionReturnTarget(readSavedLoginTarget());
+          clearSavedLoginTarget();
+          var resume=savedTarget||'/companion/review-status';
+          if(!/^\/companion\//.test(String(resume).split('?')[0]))resume='/companion/review-status';
+          try{location.assign(resume);}catch(eNav){resumeAfterVerifiedLogin();}
         })
-        .catch(function(){
+        .catch(function(err){
+          if(resumeSettled)return;
+          resumeSettled=true;
+          clearTimeout(resumeWatch);
+          authDiag('init_resume_fail',{msg:String((err&&err.message)||err||'').slice(0,80)});
           clearSession();
           state.session=null;
           state.loginBusy=false;
-          state.loginError='登录已失效，请重新登录。';
+          state.loginError=/超时|网络|连接/.test(String((err&&err.message)||''))
+            ? (err.message||'登录校验超时，请重试。')
+            : '登录已失效，请重新登录。';
           // Drop stale returnTo that pointed at dashboard — prevents re-entry loops.
           try{
             var pending=readSavedLoginTarget();
@@ -2627,8 +2700,7 @@
           : '<p class="mcj-auth-note">请先完成邮箱验证，验证成功后才能注册。</p>')+
         '<input type="hidden" name="registerToken" value="'+esc(state.registerToken||'')+'">'+
         (state.inviteCode
-          ? '<input type="hidden" name="inviteCode" value="'+esc(state.inviteCode)+'">'+
-            '<p class="mcj-auth-note">邀请注册：登录后需确认绑定才会成为直属（邀请码 '+esc(state.inviteCode.slice(0,8))+'…）</p>'
+          ? '<input type="hidden" name="inviteCode" value="'+esc(state.inviteCode)+'">'
           : '')+
         regPwd+regConfirm+
         '<label class="mcj-auth-check"><input name="agree" type="checkbox" required> 我已阅读并同意服务条款</label>'+
@@ -2724,7 +2796,7 @@
       ['完成时间',s.completedAt?fmtTime(s.completedAt):'-'],
       ['结算状态',s.settlementStatus||'已结算']
     ];
-    var note=s.bossCommissionTransparencyNote||'老板直属分成由平台抽成支付，不扣陪玩收入';
+    var note=s.bossCommissionTransparencyNote||'平台抽成与陪玩到账按订单结算快照执行；直属分成已下线。';
     return '<div class="pw-modal" data-close-settlement><div class="pw-dialog" data-settlement-dialog><div class="pw-dialog-head"><h3>订单结算详情</h3><button type="button" class="pw-btn" data-close-settlement>关闭</button></div><div class="pw-info-list">'+rows.map(function(r){return '<div><span>'+esc(r[0])+'</span><strong>'+esc(r[1])+'</strong></div>'}).join('')+'</div><p class="pw-empty" style="margin:12px 0 0;text-align:left">'+esc(note)+'</p><div class="pw-actions" style="margin-top:14px"><button class="pw-btn primary" type="button" data-route="/companion/earnings" data-earnings-tab="overview">查看收入</button><button class="pw-btn" type="button" data-close-settlement>关闭</button></div></div></div>';
   }
   function syncPwKeyboardInset(){
@@ -3025,7 +3097,10 @@
     }).finally(function(){clearTimeout(timer);});
   }
   function mountDirectBossCard(){
+    // 直属关系已下线：不再挂载入口，也不再请求 /api/companion/direct-boss。
     var mount=document.getElementById('pwDirectRelation');
+    if(mount){try{mount.remove();}catch(e){}}
+    return;
     if(!mount)return;
     var token=companionToken();
     function paintRelation(view){
@@ -3646,7 +3721,7 @@
     if(raw==='claimed'||/等待陪玩确认|已支付待陪玩/.test(s)){
       out.push('<div class="pw-order-actions sticky">'+
         '<button class="pw-btn primary" type="button" data-order-action="accept_direct_order" data-order-id="'+id+'">确认接单</button>'+
-        '<button class="pw-btn danger" type="button" data-order-action="reject_direct_order" data-order-id="'+id+'">无法接单</button>'+
+        '<button class="pw-btn danger" type="button" data-order-action="reject_direct_order" data-order-id="'+id+'">拒绝</button>'+
         '</div>');
     }
     if(raw==='confirmed'||s==='已接单待开始'||s==='待开始')out.push('<button class="pw-btn primary" data-order-action="start_order" data-order-id="'+id+'">开始服务</button>');
@@ -3685,32 +3760,34 @@
         '<p class="pw-note">你只能操作自己的子订单；其他陪玩收入不会显示。</p>'+
         '</div>';
     }
-    return '<article id="order-'+esc(o.id)+'" class="pw-order-card'+(o.status==='claimed'?' is-designated':'')+(focused?' is-focus':'')+(isGroup?' is-multi-group':'')+'"'+(focused?' data-order-focus="1"':'')+(isGroup?' data-multi-child="1"':'')+'>'+banner+
+    var hoursTxt=o.billingUnit==='per_game'?(o.quantityLabel||((o.quantity||1)+'局')):(o.duration||(o.hours?o.hours+'小时':'-'));
+    var qtyTxt=o.billingUnit==='per_game'?String(o.quantity||1):(o.hours!=null?String(o.hours):(o.quantity!=null?String(o.quantity):'1'));
+    var paidBadge=o.paidAt||o.paid_at||String(o.paymentReviewStatus||'').toLowerCase()==='approved'
+      ?'<div class="pw-paid-note" role="status">已扣款</div>':'';
+    var gameLabel=o.game||'-';
+    var svcLabel=o.serviceName||o.serviceContent||'-';
+    return '<article id="order-'+esc(o.id)+'" class="pw-order-card'+(o.status==='claimed'?' is-designated':'')+(focused?' is-focus':'')+(isGroup?' is-multi-group':'')+'"'+(focused?' data-order-focus="1"':'')+(isGroup?' data-multi-child="1"':'')+'>'+
+      (o.isRenewal?'<div class="pw-order-banner">老板申请续单</div>':'')+
       (isGroup?'<div class="pw-order-banner group">这是多人联合订单</div>':'')+
-      '<header><div><h3>'+esc(humanOrderNo(o))+'</h3><p>'+esc(o.game||o.serviceName||'-')+' / '+esc(o.serviceName||o.serviceContent||'-')+'</p></div><span class="pw-status info">'+esc(orderStatus(o))+'</span></header>'+
-      '<div class="pw-order-meta">'+
-      '<div><span>老板昵称/编号</span><strong>'+esc((o.bossName||'-')+(o.bossUid?' / '+o.bossUid:''))+'</strong></div>'+
-      (o.isRenewal?'<div><span>原订单号</span><strong>'+esc(o.renewalSourceOrderNo||'-')+'</strong></div><div><span>新订单号</span><strong>'+esc(humanOrderNo(o))+'</strong></div>':'')+
-      '<div><span>你的服务</span><strong>'+esc(o.serviceName||o.game||'-')+'</strong></div>'+
-      '<div><span>'+(o.billingUnit==='per_game'?'购买局数':'数量/预计时长')+'</span><strong>'+esc(o.billingUnit==='per_game'?(o.quantityLabel||((o.quantity||1)+'局')):(o.duration||(o.hours?o.hours+'小时':'-')))+'</strong></div>'+
+      paidBadge+
+      '<header><div><h3>'+esc(gameLabel)+'</h3><p>'+esc(svcLabel)+'</p></div><span class="pw-status info">'+esc(orderStatus(o))+'</span></header>'+
+      '<div class="pw-order-meta pw-order-meta-focus">'+
+      '<div><span>服务</span><strong>'+esc(svcLabel)+'</strong></div>'+
+      '<div class="is-wide"><span>老板需求</span><strong>'+esc(o.bossNotes||o.description||o.serviceContent||'-')+'</strong></div>'+
+      '<div><span>时长</span><strong>'+esc(hoursTxt)+'</strong></div>'+
+      '<div><span>单量</span><strong>'+esc(qtyTxt)+'</strong></div>'+
+      '<div><span>订单金额</span><strong class="pw-amt">'+money(o.amount||0)+'</strong></div>'+
+      '<div><span>老板</span><strong>'+esc((o.bossName||'-')+(o.bossUid?' / '+o.bossUid:''))+'</strong></div>'+
+      (o.isRenewal?'<div><span>原订单号</span><strong>'+esc(o.renewalSourceOrderNo||'-')+'</strong></div>':'')+
       '<div><span>陪玩单价</span><strong>'+money(o.unitPrice||0)+'</strong></div>'+
-      '<div><span>你的订单金额</span><strong>'+money(o.amount||0)+'</strong></div>'+
-      '<div><span>预计到手猫粮</span><strong>'+money(o.playerIncome||0)+'</strong></div>'+
-      '<div><span>平台抽成</span><strong>'+money(o.platformFee||0)+'</strong></div>'+
-      '<div><span>老板游戏ID</span><strong>'+esc(o.gameId||'-')+'</strong></div>'+
+      '<div><span>预计到手</span><strong>'+money(o.playerIncome||0)+'</strong></div>'+
       (o.serviceSchedule||o.schedule
         ?'<div><span>服务时段</span><strong>'+esc(formatSchedule24h(o.serviceSchedule||o.schedule))+'</strong></div>'
         :'')+
       '<div><span>语音方式</span><strong>'+esc(voiceModeLabel(o))+'</strong></div>'+
       voiceDiscordActions(o)+
-      '<div><span>老板备注</span><strong>'+esc(o.bossNotes||'-')+'</strong></div>'+
       '<div><span>下单时间</span><strong>'+esc(fmtTime(o.createdAt))+'</strong></div>'+
-      (o.confirmDeadline?'<div><span>最迟确认时间</span><strong>'+esc(fmtTime(o.confirmDeadline))+'</strong></div>':'')+
-      (String(o.paymentReviewStatus||'').toLowerCase()==='approved'||o.paymentReviewedByName
-        ?('<div><span>付款状态</span><strong>付款已审核</strong></div>'+
-          (o.paymentReviewedByName?'<div><span>审核客服</span><strong>'+esc(o.paymentReviewedByName)+'</strong></div>':'')+
-          (o.paymentReviewedAt?'<div><span>审核时间</span><strong>'+esc(fmtTime(o.paymentReviewedAt))+'</strong></div>':''))
-        :'')+
+      (o.confirmDeadline?'<div><span>最迟确认</span><strong>'+esc(fmtTime(o.confirmDeadline))+'</strong></div>':'')+
       bossRankMetaHtml(o)+orderRequirementHtml(o)+earlyFinishMetaHtml(o)+'</div>'+orderServiceStandardHtml(o)+peerHtml+'<footer class="pw-actions">'+orderActions(o)+'</footer></article>';
   }
   /** Boss rank frozen in the order snapshot at create time. */
@@ -5335,7 +5412,6 @@
         infoRow('押金状态',depositStatus)+
         infoRow('当前等级',levelLabel)+
       '</div></section>'+
-      '<section class="pw-rel" id="pwDirectRelation" data-direct-relation data-open="0"><button type="button" class="pw-rel-toggle" data-rel-toggle aria-expanded="false"><span><strong>我的直属关系</strong><small>读取中…</small></span><i aria-hidden="true">▼</i></button><div class="pw-rel-body" hidden></div></section>'+
       '<div class="pw-acc-stack">'+
       pwAccHtml('account-contact','联系资料', raw.contact_phone||v.phone||'未填写',
         '<form class="pw-form" data-private-contact-form><label>联系方式（WhatsApp / 手机）<input name="contact_phone" value="'+esc(contactPhone)+'" required placeholder="仅后台/客服可见"></label><button class="pw-btn primary" type="submit">保存联系方式</button></form>', false)+
@@ -7400,25 +7476,59 @@
   document.addEventListener('submit',function(e){
     if(e.target.matches('[data-login]')){
       e.preventDefault();
+      if(state.loginBusy)return;
       var form=e.target;var fd=new FormData(form);var btn=form.querySelector('[type="submit"]');
       var remember=fd.get('remember')!=null;
       var method=String(form.getAttribute('data-login-method')||state.loginMethod||'password').toLowerCase();
+      var fallbackLabel=method==='otp'?'验证码登录':'登录';
+      function finishLoginUi(ok){
+        state.loginBusy=false;
+        if(Auth&&Auth.setLoading)Auth.setLoading(btn,false,fallbackLabel);else if(btn){btn.disabled=false;btn.textContent=fallbackLabel;}
+        if(!ok){
+          if(Auth&&Auth.setFormError)Auth.setFormError(form,state.loginError);else{var errBox=form.querySelector('[data-auth-error]');if(errBox)errBox.textContent=state.loginError;else if(state.loginError)toast(state.loginError);}
+          paint();
+        }
+      }
+      function classifyLoginError(err){
+        var raw=String((err&&err.message)||err||'');
+        if(Gate&&Gate.humanizeAuthError){
+          var h=Gate.humanizeAuthError(err);
+          if(h)return h;
+        }
+        if(/超时|AbortError|aborted/i.test(raw))return '登录请求超时，请检查网络后重试。若刚才已收到验证码，请先确认是否已登录成功，避免重复提交。';
+        if(/failed to fetch|network|连接|Load failed|ERR_/i.test(raw))return '网络连接失败，请切换网络后重试。';
+        if(/权限|角色|暂无陪玩/i.test(raw))return raw;
+        return raw||'登录失败，请重试。';
+      }
       state.loginError='';state.loginBusy=true;
       if(Auth&&Auth.setFormError)Auth.setFormError(form,'');else{var box=form.querySelector('[data-auth-error]');if(box)box.textContent='';}
       if(Auth&&Auth.setLoading)Auth.setLoading(btn,true);else if(btn){btn.disabled=true;btn.textContent='登录中…';}
+      paint();
       var account=String(fd.get('account')||'').trim().toLowerCase();
       var Gate=window.MCJRoleGate;
       var run;
+      var loginStarted=Date.now();
+      authDiag('login_submit',{method:method});
       if(method==='otp'){
         var code=String(fd.get('code')||'').trim();
-        if(!account||!/^\S+@\S+\.\S+$/.test(account)){state.loginBusy=false;state.loginError='请输入有效邮箱。';if(Auth&&Auth.setLoading)Auth.setLoading(btn,false,'验证码登录');else if(btn){btn.disabled=false;btn.textContent='验证码登录';}if(Auth&&Auth.setFormError)Auth.setFormError(form,state.loginError);else{var e1=form.querySelector('[data-auth-error]');if(e1)e1.textContent=state.loginError;}return;}
-        if(!/^\d{4,8}$/.test(code)){state.loginBusy=false;state.loginError='请输入验证码。';if(Auth&&Auth.setLoading)Auth.setLoading(btn,false,'验证码登录');else if(btn){btn.disabled=false;btn.textContent='验证码登录';}if(Auth&&Auth.setFormError)Auth.setFormError(form,state.loginError);else{var e2=form.querySelector('[data-auth-error]');if(e2)e2.textContent=state.loginError;}return;}
-        run=fetch('/api/auth',{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify({action:'login_with_otp',email:account,code:code,role:'companion',loginPortal:'companion'})}).then(function(r){return r.json().then(function(j){if(!r.ok||j.ok===false)throw new Error((j&&j.message)||'登录失败');return j;});});
+        if(!account||!/^\S+@\S+\.\S+$/.test(account)){state.loginError='请输入有效邮箱。';finishLoginUi(false);return;}
+        if(!/^\d{4,8}$/.test(code)){state.loginError='请输入验证码。';finishLoginUi(false);return;}
+        run=fetchWithTimeout('/api/auth',{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify({action:'login_with_otp',email:account,code:code,role:'companion',loginPortal:'companion'})},18000).then(function(r){return r.json().then(function(j){if(!r.ok||j.ok===false){var e=new Error((j&&j.message)||'登录失败');e.code=j&&j.code;throw e;}return j;});});
       }else{
         var password=String(fd.get('password')||'');
-        run=Gate&&typeof Gate.loginPortal==='function'?Gate.loginPortal('companion',account,password,remember):api('login',{account:account,password:password,remember:remember});
+        if(!account){state.loginError='请输入邮箱。';finishLoginUi(false);return;}
+        if(!password){state.loginError='请输入密码。';finishLoginUi(false);return;}
+        if(Gate&&typeof Gate.loginPortal==='function'){
+          run=Promise.race([
+            Gate.loginPortal('companion',account,password,remember),
+            new Promise(function(_,rej){setTimeout(function(){rej(new Error('登录请求超时，请检查网络后重试'));},18000);})
+          ]);
+        }else{
+          run=api('login',{account:account,password:password,remember:remember});
+        }
       }
       run.then(function(res){
+        authDiag('login_auth_ok',{ms:Date.now()-loginStarted,method:method});
         var sess=res.session||{};
         var user=Object.assign({},sess.user||{},{role:'companion'});
         if(!(user.hasCompanion||user.role==='companion')){
@@ -7439,21 +7549,48 @@
           user:user,
           remember:remember
         },remember);
-        state.loginBusy=false;state.loginError='';
+        if(!sessionLooksValid(state.session||readSession())){
+          throw new Error('登录会话写入失败，请关闭无痕/隐私模式或允许网站存储后重试。');
+        }
+        state.loginBusy=false;
+        state.loginError='';
         try{sessionStorage.removeItem('__mcjCompanionAuthRedirectAt')}catch(eL){}
         try{window.__mcjCompanionAuthRedirecting=''}catch(eL2){}
         var saved=companionReturnTarget(readSavedLoginTarget());
         clearSavedLoginTarget();
         var next=saved||String((res&&res.redirect)||'/companion/review-status');
         if(!/^\/companion\//.test(next.split('?')[0]))next='/companion/review-status';
-        go(next);
-        return loadData();
+        authDiag('login_redirect',{ms:Date.now()-loginStarted,next:next.split('?')[0]});
+        // Hard navigation avoids SPA deadlocks on Android / WeChat WebView.
+        try{
+          location.assign(next);
+        }catch(eNav){
+          go(next);
+          return loadData({soft:false});
+        }
+        // Some Android/WeChat WebViews swallow assign without navigating — fallback once.
+        setTimeout(function(){
+          if(state.route!=='login')return;
+          if(!sessionLooksValid(readSession()))return;
+          authDiag('login_redirect_fallback',{ms:Date.now()-loginStarted,next:next.split('?')[0]});
+          try{location.replace(next);}catch(eFb){resumeAfterVerifiedLogin();}
+        },2500);
       }).catch(function(err){
-        state.loginBusy=false;
-        state.loginError=(Gate&&Gate.humanizeAuthError?Gate.humanizeAuthError(err):null)||err.message||'账号或密码错误。';
-        var fallbackLabel=method==='otp'?'验证码登录':'登录';
-        if(Auth&&Auth.setLoading)Auth.setLoading(btn,false,fallbackLabel);else if(btn){btn.disabled=false;btn.textContent=fallbackLabel;}
-        if(Auth&&Auth.setFormError)Auth.setFormError(form,state.loginError);else{var errBox=form.querySelector('[data-auth-error]');if(errBox)errBox.textContent=state.loginError;else toast(state.loginError);}
+        // Auth timed out but session may already be written (esp. OTP / race with portal login).
+        if(/超时/.test(String((err&&err.message)||''))){
+          var maybe=readSession();
+          if(sessionLooksValid(maybe)){
+            authDiag('login_timeout_but_session',{ms:Date.now()-loginStarted,method:method});
+            state.session=maybe;
+            state.loginBusy=false;
+            state.loginError='';
+            try{location.assign('/companion/review-status');}catch(eR){resumeAfterVerifiedLogin();}
+            return;
+          }
+        }
+        authDiag('login_fail',{ms:Date.now()-loginStarted,method:method,msg:String((err&&err.message)||'').slice(0,80)});
+        state.loginError=classifyLoginError(err);
+        finishLoginUi(false);
       });
       return;
     }
