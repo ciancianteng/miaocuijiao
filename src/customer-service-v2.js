@@ -2778,7 +2778,7 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, readVisualViewpo
     if(state.route==='recharges')return note+rechargesHtml();
     if(state.route==='compensation')return note+compensationHtml();
     if(state.route==='reports')return note+reportsHtml();
-    if(state.route==='createOrder')return (state.loading?note:'')+createOrderHtml();
+    if(state.route==='createOrder'){var _proxyHtml=(state.loading?note:'')+createOrderHtml();setTimeout(function(){bindProxyOrderForm();},0);return _proxyHtml;}
     if(state.route==='profile')return note+profileHtml();
     return note+dashboardHtml();
   }
@@ -4121,6 +4121,215 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, readVisualViewpo
       (menu.length?'<div class="cs-order-more" hidden>'+menu.join('')+'</div>':'')+
       '</article>';
   }
+  
+  function proxyMoney(n){var x=Number(n);return (Number.isFinite(x)?x:0).toFixed(2)}
+  function bindProxyOrderForm(root){
+    root=root||document.querySelector('[data-proxy-order-root]');
+    if(!root||root._proxyBound)return;
+    root._proxyBound=true;
+    var form=root.querySelector('[data-order-form]');
+    if(!form)return;
+    function selectedBoss(){
+      var sel=form.querySelector('[data-proxy-boss-select]');
+      var opt=sel&&sel.selectedOptions&&sel.selectedOptions[0];
+      if(!sel||!sel.value||!opt)return null;
+      return {id:sel.value,uid:opt.getAttribute('data-boss-uid')||'',name:opt.getAttribute('data-boss-name')||opt.textContent||'',avatar:opt.getAttribute('data-boss-avatar')||''};
+    }
+    function syncBossUidHidden(b){
+      var uidInput=form.querySelector('[data-proxy-boss-uid]');
+      if(uidInput)uidInput.value=(b&&b.uid)||'';
+    }
+    function syncBossPickUi(){
+      var b=selectedBoss();
+      var pick=form.querySelector('[data-proxy-boss-pick]');
+      var card=form.querySelector('[data-proxy-boss-card]');
+      syncBossUidHidden(b);
+      if(pick)pick.hidden=!!b;
+      if(!card)return;
+      if(!b){card.hidden=true;return;}
+      card.hidden=false;
+      var av=card.querySelector('[data-proxy-boss-avatar]');if(av)av.src=b.avatar||'/default-avatar.png';
+      var nm=card.querySelector('[data-proxy-boss-name]');if(nm)nm.textContent=b.name||'-';
+      var uid=card.querySelector('[data-proxy-boss-uid]');if(uid)uid.textContent=b.uid||b.id||'-';
+    }
+    function refreshCompanionChip(){
+      var sel=form.querySelector('[data-proxy-companion-select]');
+      var chip=form.querySelector('[data-proxy-companion-chip]');
+      var pick=form.querySelector('[data-proxy-companion-pick]');
+      if(!sel||!chip)return;
+      var opt=sel.selectedOptions&&sel.selectedOptions[0];
+      if(!sel.value||!opt){
+        chip.hidden=true;chip.innerHTML='';
+        if(pick)pick.hidden=false;
+        return;
+      }
+      if(pick)pick.hidden=true;
+      chip.hidden=false;
+      chip.innerHTML='<img src="'+esc(opt.getAttribute('data-avatar')||'/default-avatar.png')+'" alt="" onerror="this.onerror=null;this.src=\'/default-avatar.png\'"><div class="cs-proxy-chip-meta"><strong>'+esc(opt.getAttribute('data-name')||'')+'</strong><span>'+esc(opt.getAttribute('data-code')||'')+(opt.getAttribute('data-level')?' · '+esc(opt.getAttribute('data-level')):'')+(opt.getAttribute('data-game')?' · '+esc(opt.getAttribute('data-game')):'')+'</span></div><button type="button" class="cs-proxy-text-btn" data-proxy-companion-clear>更换 ›</button>';
+    }
+    function syncMode(){
+      var mode=(form.querySelector('[name="publish_mode"]:checked')||{}).value||'assigned';
+      var block=form.querySelector('[data-proxy-companion-block]');
+      if(block)block.hidden=mode!=='assigned';
+      var csel=form.querySelector('[data-proxy-companion-select]');
+      if(mode==='public'&&csel){
+        csel.value='';
+        var cq=form.querySelector('[data-proxy-companion-q]');
+        if(cq)cq.value='';
+      }
+      refreshCompanionChip();
+      recalc();
+    }
+    function loadBossWallet(){
+      var b=selectedBoss();
+      syncBossPickUi();
+      var card=form.querySelector('[data-proxy-boss-card]');
+      if(!b){state._proxyWallet=null;recalc();return;}
+      api('get_boss_wallet',{boss_id:b.id||'',boss_uid:b.uid||''}).then(function(res){
+        state._proxyWallet=res.wallet||null;
+        if(res.boss&&card){
+          card.hidden=false;
+          var av2=card.querySelector('[data-proxy-boss-avatar]');if(av2)av2.src=res.boss.avatar||'/default-avatar.png';
+          var nm2=card.querySelector('[data-proxy-boss-name]');if(nm2)nm2.textContent=res.boss.name||'-';
+          var uid2=card.querySelector('[data-proxy-boss-uid]');if(uid2)uid2.textContent=res.boss.bossUid||b.uid||'-';
+          syncBossUidHidden({uid:res.boss.bossUid||b.uid||''});
+        }
+        var bal=card&&card.querySelector('[data-proxy-boss-balance]');
+        if(bal)bal.textContent=proxyMoney((res.wallet&&res.wallet.availableBalance)||0);
+        var held=card&&card.querySelector('[data-proxy-boss-held]');
+        if(held){
+          var h=Number((res.wallet&&res.wallet.heldBalance)||0);
+          held.hidden=!(h>0);
+          held.textContent=h>0?('冻结 '+proxyMoney(h)):'';
+        }
+        recalc();
+      }).catch(function(){state._proxyWallet=null;recalc();});
+    }
+    function recalc(){
+      var svc=form.querySelector('[data-proxy-service]');
+      var opt=svc&&svc.selectedOptions&&svc.selectedOptions[0];
+      var unitInput=form.querySelector('[data-proxy-unit-input]');
+      var unit=Number((opt&&opt.getAttribute('data-unit-price'))||(unitInput&&unitInput.value)||0);
+      var csel=form.querySelector('[data-proxy-companion-select]');
+      var copt=csel&&csel.value&&csel.selectedOptions&&csel.selectedOptions[0];
+      if(copt&&Number(copt.getAttribute('data-price'))>0)unit=Number(copt.getAttribute('data-price'));
+      var pricingUnit=(opt&&opt.getAttribute('data-pricing-unit'))||'小时';
+      var pu=form.querySelector('[data-proxy-pricing-unit]');if(pu)pu.value=pricingUnit;
+      var sid=form.querySelector('[data-proxy-service-id]');if(sid)sid.value=(opt&&opt.getAttribute('data-service-id'))||'';
+      var hoursEl=form.querySelector('[data-proxy-hours]');
+      var hours=Math.max(1,Math.round(Number(hoursEl&&hoursEl.value)||1));
+      if(hoursEl)hoursEl.value=String(hours);
+      var hourly=/小时|hour/i.test(pricingUnit)&&!/局|单|场/.test(pricingUnit);
+      var hoursTitle=form.querySelector('[data-proxy-hours-title]');
+      if(hoursTitle)hoursTitle.textContent=hourly?'服务时长':'服务数量';
+      var hoursUnit=form.querySelector('[data-proxy-hours-unit]');
+      if(hoursUnit)hoursUnit.textContent=hourly?'小时':(pricingUnit||'单位');
+      form.querySelectorAll('[data-proxy-qty-label]').forEach(function(el){el.textContent=hourly?'下单数量（单）':'下单数量';});
+      var total=Math.round(unit*hours*100)/100;
+      var setTxt=function(sel,v){form.querySelectorAll(sel).forEach(function(el){el.textContent=v;});};
+      var faceName=form.querySelector('[data-proxy-svc-face-name]');
+      var facePrice=form.querySelector('[data-proxy-svc-face-price]');
+      if(faceName)faceName.textContent=(opt&&opt.value)?String(opt.value):'选择服务';
+      if(facePrice)facePrice.textContent=(opt&&opt.value&&unit>0)?(proxyMoney(unit)+' / '+(pricingUnit||'小时')):'';
+      setTxt('[data-proxy-unit]',proxyMoney(unit));
+      setTxt('[data-proxy-qty]',String(hours));
+      setTxt('[data-proxy-total-hours]',hourly?(hours+' 小时'):(hours+' '+pricingUnit));
+      setTxt('[data-proxy-total]',proxyMoney(total));
+      if(unitInput)unitInput.value=String(unit);
+      var ti=form.querySelector('[data-proxy-total-input]');if(ti)ti.value=String(total);
+      var before=Number((state._proxyWallet&&state._proxyWallet.availableBalance)||0);
+      setTxt('[data-proxy-bal-before]',proxyMoney(before));
+      setTxt('[data-proxy-bal-debit]',proxyMoney(total));
+      setTxt('[data-proxy-bal-after]',proxyMoney(before-total));
+      var insuffEls=form.querySelectorAll('[data-proxy-insuff]');
+      var submits=form.querySelectorAll('[data-proxy-submit]');
+      var bad=!(before+0.001>=total)||!(total>0)||!!(state._proxyWallet&&state._proxyWallet.frozen)||!!state._proxySubmitting;
+      insuffEls.forEach(function(insuff){insuff.hidden=!bad||!(total>0)||!!state._proxySubmitting;});
+      submits.forEach(function(submit){if(!state._proxySubmitting)submit.disabled=bad;});
+    }
+    function filterSelect(sel,q,hayFn){
+      if(!sel)return;
+      q=String(q||'').trim().toLowerCase();
+      [].slice.call(sel.options).forEach(function(opt,i){
+        if(i===0){opt.hidden=false;return;}
+        var hay=String(hayFn(opt)||'').toLowerCase();
+        opt.hidden=!!(q&&hay.indexOf(q)<0);
+      });
+    }
+    form.addEventListener('change',function(ev){
+      if(ev.target.matches('[data-proxy-mode]'))syncMode();
+      if(ev.target.matches('[data-proxy-boss-select]'))loadBossWallet();
+      if(ev.target.matches('[data-proxy-companion-select]')){refreshCompanionChip();recalc();}
+      if(ev.target.matches('[data-proxy-service],[data-proxy-hours]'))recalc();
+    });
+    form.addEventListener('input',function(ev){
+      if(ev.target.matches('[data-proxy-hours]'))recalc();
+      if(ev.target.matches('[data-proxy-companion-q]')){
+        filterSelect(form.querySelector('[data-proxy-companion-select]'),ev.target.value,function(opt){
+          return (opt.getAttribute('data-name')||'')+' '+(opt.getAttribute('data-code')||'')+' '+(opt.getAttribute('data-level')||'')+' '+(opt.getAttribute('data-game')||'');
+        });
+      }
+      if(ev.target.matches('[data-proxy-boss-q]')){
+        filterSelect(form.querySelector('[data-proxy-boss-select]'),ev.target.value,function(opt){
+          return (opt.getAttribute('data-boss-name')||'')+' '+(opt.getAttribute('data-boss-uid')||'')+' '+opt.textContent;
+        });
+      }
+    });
+    form.addEventListener('click',function(ev){
+      var clearBoss=ev.target.closest('[data-proxy-boss-clear]');
+      if(clearBoss){
+        ev.preventDefault();
+        var bsel=form.querySelector('[data-proxy-boss-select]');
+        var bq=form.querySelector('[data-proxy-boss-q]');
+        if(bsel)bsel.value='';
+        if(bq)bq.value='';
+        filterSelect(bsel,'',function(){return '';});
+        state._proxyPrefillBossId='';
+        state._proxyPrefillUid='';
+        loadBossWallet();
+        return;
+      }
+      var clearComp=ev.target.closest('[data-proxy-companion-clear]');
+      if(clearComp){
+        ev.preventDefault();
+        var csel=form.querySelector('[data-proxy-companion-select]');
+        var cq=form.querySelector('[data-proxy-companion-q]');
+        if(csel)csel.value='';
+        if(cq)cq.value='';
+        filterSelect(csel,'',function(){return '';});
+        refreshCompanionChip();
+        recalc();
+        return;
+      }
+      var dec=ev.target.closest('[data-proxy-hours-dec]');
+      var inc=ev.target.closest('[data-proxy-hours-inc]');
+      if(!dec&&!inc)return;
+      ev.preventDefault();
+      var hoursEl=form.querySelector('[data-proxy-hours]');
+      var h=Math.max(1,Math.round(Number(hoursEl&&hoursEl.value)||1));
+      if(dec)h=Math.max(1,h-1);
+      if(inc)h=h+1;
+      if(hoursEl)hoursEl.value=String(h);
+      recalc();
+    });
+    // Prefill by boss_uid query when id missing.
+    (function prefillBoss(){
+      var bsel=form.querySelector('[data-proxy-boss-select]');
+      if(!bsel)return;
+      if(bsel.value)return;
+      var preUid=String(state._proxyPrefillUid||'').trim().toLowerCase();
+      if(!preUid)return;
+      [].slice.call(bsel.options).some(function(opt){
+        var uid=String(opt.getAttribute('data-boss-uid')||'').trim().toLowerCase();
+        if(uid&&uid===preUid){bsel.value=opt.value;return true;}
+        return false;
+      });
+    })();
+    syncMode();
+    if((form.querySelector('[data-proxy-boss-select]')||{}).value)loadBossWallet();
+    else{syncBossPickUi();recalc();}
+  }
+
   function createOrderHtml(){
     var bosses=(state.data&&state.data.bosses)||[];
     var companions=(state.data&&state.data.companions)||[];
@@ -4131,21 +4340,127 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, readVisualViewpo
     var servicesErr=errs.services||state.servicesError||'';
     var draft=null;
     try{draft=JSON.parse(sessionStorage.getItem('mcjGameplayOrderDraft')||'null');}catch(e){draft=null;}
+    var qBoss= '';
+    try{var sp=new URLSearchParams(location.search||'');qBoss=String(sp.get('boss_id')||sp.get('bossId')||'').trim();var qUid=String(sp.get('boss_uid')||sp.get('bossUid')||'').trim();if(qUid)state._proxyPrefillUid=qUid;if(qBoss)state._proxyPrefillBossId=qBoss;}catch(e){}
+    var preBoss=state._proxyPrefillBossId||(draft&&draft.bossId)||'';
+    var preUid=state._proxyPrefillUid||'';
     var bossesTip=bossesErr
       ?('<div class="cs-empty" data-create-order-bosses-err>'+esc(bossesErr)+'</div>')
-      :(!bosses.length?'<div class="cs-empty" data-create-order-bosses-empty>暂无老板账号，可手动输入老板 UID。</div>':'');
+      :(!bosses.length?'<div class="cs-empty">可搜索昵称 / UID 选择老板。</div>':'');
     var companionsTip=companionsErr
-      ?('<div class="cs-empty" data-create-order-companions-err>'+esc(companionsErr)+'</div>')
-      :(!companions.length?'<div class="cs-empty" data-create-order-companions-empty>暂无陪玩数据。</div>':'');
-    var serviceField;
-    if(services.length){
-      serviceField='<label>服务<select name="game" required><option value="">请选择服务</option>'+(draft&&draft.name?'<option value="'+esc(draft.name)+'" selected>'+esc(draft.name)+' / 更多玩法</option>':'')+services.map(function(s){var price=s.defaultPrice||s.default_price||'';var label=(s.icon?s.icon+' ':'')+(s.name||'')+(price?' · '+price:'')+' / '+(s.category||'-');return '<option value="'+esc(s.name)+'">'+esc(label)+'</option>'}).join('')+'</select></label>';
-    }else if(state.servicesSource==='missing_table'||/services\.sql|表未初始化/i.test(servicesErr||'')){
-      serviceField='<label>服务<select name="game" disabled><option value="">暂不可用</option></select></label><div class="cs-empty" data-create-order-services-err>'+esc(servicesErr||'services 表未初始化。请在 Supabase SQL Editor 执行 supabase/services.sql。')+'</div>'+(draft&&draft.name?'<input type="hidden" name="game" value="'+esc(draft.name)+'">':'');
-    }else{
-      serviceField='<label>服务<select name="game" '+(draft&&draft.name?'':'disabled')+'><option value="">'+(servicesErr||'暂无服务配置')+'</option>'+(draft&&draft.name?'<option value="'+esc(draft.name)+'" selected>'+esc(draft.name)+' / 更多玩法</option>':'')+'</select></label><div class="cs-empty" data-create-order-services-empty>'+esc(servicesErr||'暂无服务配置')+'</div>';
-    }
-    return '<div class="cs-page-head"><div><h2>客服代下单</h2><p>客服根据老板需求代为创建订单。可通过老板 UID 识别账号。</p></div></div><form class="cs-card cs-form" data-order-form><label>选择老板<select name="boss_id"><option value="">请选择老板</option>'+bosses.map(function(b){return '<option value="'+esc(b.id)+'" '+(draft&&draft.bossId===b.id?'selected':'')+'>'+esc(b.bossUid||b.uid||'')+' / '+esc(b.name)+'</option>'}).join('')+'</select></label>'+bossesTip+'<label>或输入老板 UID<input name="boss_uid" placeholder="例如 MCJ00001" value=""></label><label>发布方式<select name="companion_id"><option value="">A · 发布到抢单大厅（公开抢单）</option>'+companions.map(function(p){return '<option value="'+esc(p.id)+'">B · 指定陪玩：'+esc(p.name)+' / '+esc((p.companionCode||p.publicId||(p.companionUid?('PW'+String(p.companionUid).padStart(5,'0')):''))||p.id)+' / '+esc(p.game||'-')+' / '+money(p.price)+'</option>'}).join('')+'</select></label>'+companionsTip+serviceField+'<label>订单类型<input name="order_type" value="'+(draft?'gameplay_mall':'customer_service')+'"></label><label>需求说明<textarea name="description" required>'+(draft?('更多玩法商品：'+(draft.name||'')+'（ID：'+(draft.productId||'')+'）\n计价：'+(draft.unit||'')+'\n数量：\n时长：\n游戏区服：\n开始时间：\n备注：'):'')+'</textarea></label><label>时长<input name="hours" type="number" min="1" value="1" required></label><label>单价 RM<input name="unit_price" type="number" min="0" value="'+esc(draft&&draft.price||'')+'" required></label><label>总金额 RM<input name="total_amount" type="number" min="1" value="'+esc(draft&&draft.price||'')+'" required></label><button class="cs-btn primary" type="submit">创建订单</button></form>';
+      ?('<div class="cs-empty">'+esc(companionsErr)+'</div>')
+      :'';
+    var serviceOptions=services.length
+      ? services.map(function(svc){
+          var price=svc.defaultPrice||svc.default_price||'';
+          var unit=svc.pricingUnit||svc.pricing_unit||svc.unit||'小时';
+          return '<option value="'+esc(svc.name)+'" data-service-id="'+esc(svc.id||'')+'" data-unit-price="'+esc(price||'')+'" data-pricing-unit="'+esc(unit)+'">'+esc(svc.name||'')+'</option>';
+        }).join('')
+      : '';
+    var settleBody=
+      '<div class="cs-proxy-settle-title">结算明细</div>'+
+      '<div class="cs-proxy-bill-row"><span>服务单价</span><strong data-proxy-unit>0.00</strong></div>'+
+      '<div class="cs-proxy-bill-row"><span data-proxy-qty-label>下单数量（单）</span><strong data-proxy-qty>1</strong></div>'+
+      '<div class="cs-proxy-bill-row"><span>总时长</span><strong data-proxy-total-hours>1 小时</strong></div>'+
+      '<div class="cs-proxy-bill-row total"><span>结算金额</span><strong data-proxy-total>0.00</strong></div>'+
+      '<div class="cs-proxy-wallet-preview" data-proxy-wallet-preview>'+
+        '<div><span>扣款前</span><b data-proxy-bal-before>0.00</b></div>'+
+        '<div><span>本次扣款</span><b class="debit" data-proxy-bal-debit>0.00</b></div>'+
+        '<div><span>扣款后</span><b data-proxy-bal-after>0.00</b></div>'+
+      '</div>'+
+      '<p class="cs-proxy-warn" data-proxy-insuff hidden>余额不足，禁止下单</p>';
+    var bossOptions=bosses.map(function(b){
+      var selected=preBoss&&String(preBoss)===String(b.id);
+      if(!selected&&preUid&&String(preUid)===String(b.bossUid||b.uid||''))selected=true;
+      return '<option value="'+esc(b.id)+'" '+(selected?'selected':'')+' data-boss-uid="'+esc(b.bossUid||b.uid||'')+'" data-boss-name="'+esc(b.name||b.bossName||'')+'" data-boss-avatar="'+esc(b.avatar||'')+'">'+esc((b.name||b.bossName||'')+' · '+(b.bossUid||b.uid||''))+'</option>';
+    }).join('');
+    var companionOptions=companions.map(function(p){
+      var code=(p.companionCode||p.publicId||(p.companionUid?('PW'+String(p.companionUid).padStart(5,'0')):''))||'';
+      return '<option value="'+esc(p.id)+'" data-name="'+esc(p.name)+'" data-code="'+esc(code)+'" data-level="'+esc(p.level||'')+'" data-game="'+esc(p.game||'')+'" data-price="'+esc(p.price||'')+'" data-avatar="'+esc(p.avatar||'')+'">'+esc(p.name)+' · '+esc(code)+(p.level?' · '+esc(p.level):'')+(p.game?' · '+esc(p.game):'')+(p.price!=null?' · '+proxyMoney(p.price):'')+'</option>';
+    }).join('');
+    return '<div class="cs-proxy-page" data-proxy-order-root>'+
+      '<p class="cs-proxy-sub">扣老板猫粮 · 1小时＝1单</p>'+
+      '<form class="cs-proxy-form" data-order-form>'+
+        '<div class="cs-proxy-scroll">'+
+          '<div class="cs-proxy-layout">'+
+            '<div class="cs-proxy-main">'+
+              '<div class="cs-proxy-sheet">'+
+                '<section class="cs-proxy-block">'+
+                  '<div class="cs-proxy-block-label">老板</div>'+
+                  '<div class="cs-proxy-combo" data-proxy-boss-pick>'+
+                    '<input type="search" data-proxy-boss-q placeholder="搜索昵称 / UID" autocomplete="off" enterkeyhint="search">'+
+                    '<select name="boss_id" data-proxy-boss-select required><option value="">选择老板</option>'+bossOptions+'</select>'+
+                  '</div>'+
+                  bossesTip+
+                  '<div class="cs-proxy-boss" data-proxy-boss-card hidden>'+
+                    '<img data-proxy-boss-avatar alt="" class="cs-proxy-avatar" src="/default-avatar.png" onerror="this.onerror=null;this.src=\'/default-avatar.png\'">'+
+                    '<div class="cs-proxy-boss-meta"><strong data-proxy-boss-name>-</strong><span data-proxy-boss-uid>-</span></div>'+
+                    '<div class="cs-proxy-boss-bal"><em>可用</em><b data-proxy-boss-balance>0.00</b><small data-proxy-boss-held hidden></small></div>'+
+                    '<button type="button" class="cs-proxy-text-btn" data-proxy-boss-clear>更换 ›</button>'+
+                  '</div>'+
+                  '<input type="hidden" name="boss_uid" value="'+esc(preUid)+'" data-proxy-boss-uid>'+
+                '</section>'+
+                '<section class="cs-proxy-block">'+
+                  '<div class="cs-proxy-block-label">发布方式</div>'+
+                  '<div class="cs-proxy-mode-seg" role="radiogroup" aria-label="发布方式">'+
+                    '<label class="cs-proxy-mode-opt"><input type="radio" name="publish_mode" value="assigned" data-proxy-mode checked><span>指定陪玩</span></label>'+
+                    '<label class="cs-proxy-mode-opt"><input type="radio" name="publish_mode" value="public" data-proxy-mode><span>公开抢单</span></label>'+
+                  '</div>'+
+                  '<div class="cs-proxy-companion-block" data-proxy-companion-block>'+
+                    '<div class="cs-proxy-combo" data-proxy-companion-pick>'+
+                      '<input type="search" data-proxy-companion-q placeholder="搜索陪玩昵称 / UID" autocomplete="off" enterkeyhint="search">'+
+                      '<select name="companion_id" data-proxy-companion-select><option value="">选择陪玩</option>'+companionOptions+'</select>'+
+                    '</div>'+
+                    '<div class="cs-proxy-companion-chip" data-proxy-companion-chip hidden></div>'+
+                    companionsTip+
+                  '</div>'+
+                '</section>'+
+                '<section class="cs-proxy-block">'+
+                  '<div class="cs-proxy-line cs-proxy-svc-line">'+
+                    '<div class="cs-proxy-svc-face" aria-hidden="true">'+
+                      '<span data-proxy-svc-face-name>选择服务</span>'+
+                      '<span class="cs-proxy-svc-face-right"><em data-proxy-svc-face-price></em><i></i></span>'+
+                    '</div>'+
+                    '<select name="game" required data-proxy-service class="cs-proxy-svc-native"><option value="">选择服务</option>'+(draft&&draft.name?'<option value="'+esc(draft.name)+'" selected data-unit-price="'+esc(draft.price||'')+'" data-pricing-unit="小时">'+esc(draft.name)+'</option>':'')+serviceOptions+'</select>'+
+                  '</div>'+
+                  (servicesErr&&!services.length?'<div class="cs-empty">'+esc(servicesErr)+'</div>':'')+
+                  '<div class="cs-proxy-line" data-proxy-hours-label>'+
+                    '<span class="cs-proxy-line-k" data-proxy-hours-title>服务时长</span>'+
+                    '<div class="cs-proxy-stepper">'+
+                      '<button type="button" class="cs-proxy-step" data-proxy-hours-dec aria-label="减少">−</button>'+
+                      '<div class="cs-proxy-hours-mid"><input name="hours" type="number" min="1" step="1" value="1" required data-proxy-hours inputmode="numeric"><span class="cs-proxy-hours-unit" data-proxy-hours-unit>小时</span></div>'+
+                      '<button type="button" class="cs-proxy-step" data-proxy-hours-inc aria-label="增加">+</button>'+
+                    '</div>'+
+                  '</div>'+
+                  '<p class="cs-proxy-hint">1 小时＝1 单 · 单价读取真实服务价与加价规则</p>'+
+                '</section>'+
+                '<section class="cs-proxy-block">'+
+                  '<label class="cs-proxy-field"><span>老板需求</span><textarea name="description" rows="3" required placeholder="区服、时间、对局要求等">'+(draft?('更多玩法：'+(draft.name||'')):'')+'</textarea></label>'+
+                  '<details class="cs-proxy-note">'+
+                    '<summary>订单备注（可选）</summary>'+
+                    '<textarea name="boss_note" rows="2" placeholder="内部备注，会同步到陪玩端"></textarea>'+
+                  '</details>'+
+                '</section>'+
+                '<section class="cs-proxy-settle-inline" data-proxy-settle-inline>'+settleBody+'</section>'+
+              '</div>'+
+              '<input type="hidden" name="order_type" value="'+(draft?'gameplay_mall':'direct_companion')+'">'+
+              '<input type="hidden" name="pricing_unit" value="小时" data-proxy-pricing-unit>'+
+              '<input type="hidden" name="service_id" value="" data-proxy-service-id>'+
+              '<input type="hidden" name="unit_price" value="'+esc(draft&&draft.price||'0')+'" data-proxy-unit-input>'+
+              '<input type="hidden" name="total_amount" value="'+esc(draft&&draft.price||'0')+'" data-proxy-total-input>'+
+            '</div>'+
+            '<aside class="cs-proxy-settle cs-proxy-settle-desk" data-proxy-settle>'+
+              '<div class="cs-proxy-settle-panel">'+settleBody+
+                '<button class="cs-btn cs-proxy-submit cs-proxy-submit-desk" type="submit" data-proxy-submit>确认扣款并派单</button>'+
+              '</div>'+
+            '</aside>'+
+          '</div>'+
+        '</div>'+
+        '<div class="cs-proxy-footer">'+
+          '<div class="cs-proxy-footer-sum"><span>本次扣款</span><b data-proxy-total>0.00</b></div>'+
+          '<button class="cs-btn cs-proxy-submit" type="submit" data-proxy-submit>确认扣款并派单</button>'+
+        '</div>'+
+      '</form></div>';
   }
   function reportsHtml(){var work=(state.data&&state.data.workData)||{},salary=work.salary||{},cur=salary.current||{},history=salary.history||[],attRows=(work.attendance&&work.attendance.rows)||[],notices=((state.data&&state.data.notifications)||[]).filter(function(n){return n.kind!=='recharge_proof'&&n.kind!=='gift_proof'}),payrolls=(state.data&&state.data.payrolls)||[],settlements=(state.data&&state.data.commissionSettlements)||work.commissionSettlements||[],sum=(state.data&&state.data.summary)||{},cfg=work.config||{},withdrawable=sum.withdrawableSalary!=null?sum.withdrawableSalary:(cur.totalSalary||0);var noticeBlock=notices.length?'<section class="cs-card" style="margin-bottom:14px"><h3 style="margin:0 0 8px">工资通知</h3>'+notices.slice(0,8).map(function(n){return '<div style="padding:8px 0;border-bottom:1px solid #eee"><strong>'+esc(n.title||'通知')+'</strong><div style="color:#9ca3af;font-size:12px;margin-top:4px">'+esc(n.body||'')+'</div><div style="color:#6b7280;font-size:11px;margin-top:4px">'+esc(n.at||'')+'</div></div>'}).join('')+'</section>':'';var withdrawBlock='<section class="cs-card" style="margin-bottom:14px"><h3 style="margin:0 0 8px">每周五统一结算</h3><p style="margin:0 0 10px;color:#6b7280;font-size:13px">'+esc(((state.data&&state.data.weeklySettlement)||{}).csBannerBody||'周四 23:59 前 → 本周五；截止后 → 下周五。金额系统自动计算，不可手填。')+'</p><div class="cs-info-list"><div><span>本周可结算工资</span><strong>'+money(((state.data&&state.data.payrollSummary)||{}).settleableAmount!=null?state.data.payrollSummary.settleableAmount:withdrawable)+'</strong></div><div><span>已申请金额</span><strong>'+money(((state.data&&state.data.payrollSummary)||{}).appliedAmount||0)+'</strong></div><div><span>待周五发放金额</span><strong>'+money(((state.data&&state.data.payrollSummary)||{}).pendingFridayAmount||0)+'</strong></div><div><span>预计发放日期</span><strong>'+esc((((state.data&&state.data.weeklySettlement)||{}).nextSettlementDate||((state.data&&state.data.payrollSummary)||{}).nextSettlementDate||'-'))+( ((state.data&&state.data.weeklySettlement)||{}).nextSettlementDate?'（星期五）':'')+'</strong></div><div><span>可申请金额</span><strong>'+money(withdrawable)+'</strong></div></div><div class="cs-actions" style="margin-top:12px"><button class="cs-btn primary" type="button" data-request-salary-withdraw '+(Number(withdrawable)<=0?'disabled':'')+'>申请本周结算（'+money(withdrawable)+'）</button></div></section>';var dockRows=((state.data&&state.data.dockRewards)||[]).filter(function(r){return r&&(r.status==='settled'||r.status==='clawed_back')});var dockTotal=dockRows.reduce(function(sum,r){return sum+(r.status==='settled'?Number(r.amount)||0:0)},0);var dockBlock='<section class="cs-table-wrap" style="margin-top:14px"><h3 style="margin:0 0 10px">订单对接猫粮</h3><p style="margin:0 0 8px">已入账钱包 '+money(dockTotal)+'。同一订单只入账一次。</p><table class="cs-table"><thead><tr><th>订单号</th><th>猫粮</th><th>状态</th></tr></thead><tbody>'+(dockRows.length?dockRows.map(function(r){return '<tr><td>'+esc(r.orderNo||'-')+'</td><td>'+money(r.amount||0)+'</td><td>'+esc(r.status==='settled'?'已入账':r.status)+'</td></tr>'}).join(''):'<tr><td colspan="3">暂无对接奖励</td></tr>')+'</tbody></table></section>';var rewardBlock='<section class="cs-table-wrap" style="margin-top:14px"><h3 style="margin:0 0 10px">奖励记录</h3><table class="cs-table"><thead><tr><th>订单号</th><th>奖励类型</th><th>固定奖励</th><th>提成</th><th>夜班补贴</th><th>全勤奖励</th><th>退款扣回</th><th>最终金额</th><th>状态</th></tr></thead><tbody>'+(settlements.length?settlements.map(function(r){return '<tr><td>'+esc(r.orderNo||'-')+'</td><td>'+esc(r.rewardType||'order_commission')+'</td><td>'+money(r.fixedRewardRm||0)+'</td><td>'+money(r.percentCommissionRm||0)+'</td><td>'+money(r.nightShiftRm||0)+'</td><td>'+money(r.attendanceBonusRm||0)+'</td><td>'+money(r.clawbackRm||0)+'</td><td>'+money(r.finalAmountRm||0)+'</td><td>'+esc(r.status||'-')+'</td></tr>'}).join(''):'<tr><td colspan="9">暂无奖励记录（完成订单后按后台佣金设置自动入账）</td></tr>')+'</tbody></table></section>';var payrollBlock='<section class="cs-table-wrap" style="margin-top:14px"><h3 style="margin:0 0 10px">历史结算记录</h3><table class="cs-table"><thead><tr><th>单号</th><th>周期</th><th>底薪</th><th>奖金</th><th>扣款</th><th>应发</th><th>预计发放</th><th>状态</th><th></th></tr></thead><tbody>'+(payrolls.length?payrolls.map(function(p){return '<tr><td>'+esc(p.payrollNo||'-')+'</td><td>'+esc((p.periodStart||'')+' ~ '+(p.periodEnd||''))+'</td><td>'+money(p.baseSalaryRm||0)+'</td><td>'+money(p.bonusRm||0)+'</td><td>'+money(p.deductionRm||0)+'</td><td>'+money(p.netSalaryRm||0)+'</td><td>'+esc(p.settlementDate||'-')+'</td><td>'+esc(p.statusText||p.status||'-')+'</td><td>'+(p.status!=='completed'?'<button class="cs-btn ghost" type="button" data-payroll-appeal="'+esc(p.id)+'">申诉</button>':'-')+'</td></tr>'}).join(''):'<tr><td colspan="9">暂无发放记录</td></tr>')+'</tbody></table></section>';var fold=function(title,hint,body){return '<section class="cs-fold"><button type="button" class="cs-fold-toggle" data-cs-fold aria-expanded="false"><span>'+title+'</span><em'+(hint==='本月暂无打卡记录'?' data-fold-static="1"':'')+'>'+hint+'</em></button><div class="cs-fold-body" hidden>'+body+'</div></section>';};
     var weekly=(state.data&&state.data.weeklySettlement)||{};
@@ -4532,7 +4847,7 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, readVisualViewpo
       sendChatMessage();
       return;
     }
-    if(e.target.matches('[data-login]')){e.preventDefault();var form=e.target;var fd=new FormData(form);var btn=form.querySelector('[type="submit"]');var remember=!!fd.get('remember');captureLoginDraft();state.loginError='';state.loginBusy=true;updateLoginChrome();if(Auth&&Auth.setFormError)Auth.setFormError(form,'');else{var box=form.querySelector('[data-auth-error]');if(box)box.textContent='';}if(Auth&&Auth.setLoading)Auth.setLoading(btn,true);else if(btn){btn.disabled=true;btn.textContent='登录中…';}api('login',{account:String(fd.get('account')||'').trim(),password:String(fd.get('password')||''),remember:remember}).then(function(res){saveSession(res.session,true);state.loginBusy=false;state.loginError='';state.loginDraft={account:'',password:'',remember:false};location.assign('/customer-service/dashboard/');}).catch(function(err){state.loginBusy=false;state.loginError=err.message||'账号或密码错误。';updateLoginChrome();if(Auth&&Auth.setLoading)Auth.setLoading(btn,false,'登录');else if(btn){btn.disabled=false;btn.textContent='登录';}if(Auth&&Auth.setFormError)Auth.setFormError(form,state.loginError);else{var errBox=form.querySelector('[data-auth-error]');if(errBox)errBox.textContent=state.loginError;else toast(state.loginError);}restoreLoginDraft();});return}if(e.target.matches('[data-order-form]')){e.preventDefault();var fd2=new FormData(e.target),order={};fd2.forEach(function(v,k){order[k]=String(v||'')});var bossId=String(order.boss_id||'').trim();var bossUid=String(order.boss_uid||'').trim();var companionId=String(order.companion_id||'').trim();if(!bossId&&!bossUid){toast('请选择老板或输入老板 UID');return;}order.boss_id=bossId||bossUid;order.boss_uid=bossUid||'';order.companion_id=companionId||null;if(!companionId){order.send_to_hall=true;order.order_type=order.order_type||'open_grab';}api('create_order',{order:order}).then(function(res){toast(res.message||(res.sentToGrabHall?'已发送至抢单大厅。':'订单已创建'));go('/customer-service/orders');return softRefresh()}).catch(function(err){toast(err.message||'创建订单失败')});return}if(e.target.matches('[data-compensation-form]')){e.preventDefault();var cf=new FormData(e.target),payload={};cf.forEach(function(v,k){payload[k]=String(v||'')});if(payload.boss_uid&&payload.boss_uid.trim())payload.boss_id=payload.boss_uid.trim();api('apply_compensation',payload).then(function(res){toast(res.message||'补偿申请已提交');go('/customer-service/orders');return softRefresh()}).catch(function(err){toast(err.message)});return}if(e.target.matches('[data-report-form]')){e.preventDefault();toast('客服不能自行填写应付工资，请使用工资记录申诉');return}
+    if(e.target.matches('[data-login]')){e.preventDefault();var form=e.target;var fd=new FormData(form);var btn=form.querySelector('[type="submit"]');var remember=!!fd.get('remember');captureLoginDraft();state.loginError='';state.loginBusy=true;updateLoginChrome();if(Auth&&Auth.setFormError)Auth.setFormError(form,'');else{var box=form.querySelector('[data-auth-error]');if(box)box.textContent='';}if(Auth&&Auth.setLoading)Auth.setLoading(btn,true);else if(btn){btn.disabled=true;btn.textContent='登录中…';}api('login',{account:String(fd.get('account')||'').trim(),password:String(fd.get('password')||''),remember:remember}).then(function(res){saveSession(res.session,true);state.loginBusy=false;state.loginError='';state.loginDraft={account:'',password:'',remember:false};location.assign('/customer-service/dashboard/');}).catch(function(err){state.loginBusy=false;state.loginError=err.message||'账号或密码错误。';updateLoginChrome();if(Auth&&Auth.setLoading)Auth.setLoading(btn,false,'登录');else if(btn){btn.disabled=false;btn.textContent='登录';}if(Auth&&Auth.setFormError)Auth.setFormError(form,state.loginError);else{var errBox=form.querySelector('[data-auth-error]');if(errBox)errBox.textContent=state.loginError;else toast(state.loginError);}restoreLoginDraft();});return}if(e.target.matches('[data-order-form]')){e.preventDefault();if(state._proxySubmitting)return;var form=e.target;var fd2=new FormData(form),order={};fd2.forEach(function(v,k){order[k]=String(v||'')});var bossId=String(order.boss_id||'').trim();var bossUid=String(order.boss_uid||'').trim();var mode=(form.querySelector('[name="publish_mode"]:checked')||{}).value||'assigned';var companionId=mode==='public'?'':String(order.companion_id||'').trim();if(!bossId&&!bossUid){toast('请选择老板');return;}if(mode==='assigned'&&!companionId){toast('请选择指定陪玩');return;}order.boss_id=bossId||bossUid;order.boss_uid=bossUid||'';order.companion_id=companionId||null;order.send_to_hall=mode==='public';order.order_type=mode==='public'?'open_grab':(order.order_type||'direct_companion');order.hours=String(Math.max(1,Math.round(Number(order.hours)||1)));order.boss_note=String(order.boss_note||'').trim();order.idempotency_key='cs-proxy-'+String(Date.now())+'-'+Math.random().toString(36).slice(2,8);var total=Number(order.total_amount||0);var before=Number((state._proxyWallet&&state._proxyWallet.availableBalance)!=null?state._proxyWallet.availableBalance:((form.querySelector('[data-proxy-bal-before]')||{}).textContent||0));if(!(total>0)){toast('总金额无效');return;}if(!!(state._proxyWallet&&state._proxyWallet.frozen)){toast('老板钱包已冻结，禁止下单');return;}if(!(before+0.001>=total)){toast('老板余额不足，禁止下单');return;}if(!confirm('确认扣除老板 '+total.toFixed(2)+' 猫粮并派单？'))return;state._proxySubmitting=true;var btns=[].slice.call(form.querySelectorAll('[data-proxy-submit]'));btns.forEach(function(btn){btn.disabled=true;btn.textContent='提交中…';});api('create_order',{order:order}).then(function(res){toast(res.message||'已扣款并派单');try{sessionStorage.removeItem('mcjGameplayOrderDraft');}catch(e){}go(res.sentToGrabHall?'/customer-service/grab-hall':'/customer-service/orders');return softRefresh()}).catch(function(err){state._proxySubmitting=false;toast(err.message||'创建订单失败');btns.forEach(function(btn){btn.disabled=false;btn.textContent='确认扣款并派单';});}).finally(function(){});return}if(e.target.matches('[data-compensation-form]')){e.preventDefault();var cf=new FormData(e.target),payload={};cf.forEach(function(v,k){payload[k]=String(v||'')});if(payload.boss_uid&&payload.boss_uid.trim())payload.boss_id=payload.boss_uid.trim();api('apply_compensation',payload).then(function(res){toast(res.message||'补偿申请已提交');go('/customer-service/orders');return softRefresh()}).catch(function(err){toast(err.message)});return}if(e.target.matches('[data-report-form]')){e.preventDefault();toast('客服不能自行填写应付工资，请使用工资记录申诉');return}
   });
   document.addEventListener('click',function(e){
     if(e.target.closest('[data-clock-in]')){

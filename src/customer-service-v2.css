@@ -1435,3 +1435,435 @@ button.cs-metric{display:block;width:100%;text-align:left;color:inherit;backgrou
   .cs-gift-card-list{display:block}
   .cs-top .cs-account{flex:0 0 auto;max-width:46%;position:relative;z-index:40}
 }
+
+/* CS proxy order — scroll shell + docked footer (no fixed-inside-overflow) */
+.cs-page[data-route="createOrder"]{
+  display:flex;
+  flex-direction:column;
+  height:100%;
+  min-height:0;
+  overflow:hidden !important;
+  padding:0 !important;
+  background:#0b0b0f;
+}
+.cs-proxy-page{
+  display:flex;
+  flex-direction:column;
+  flex:1 1 auto;
+  min-height:0;
+  width:100%;
+  margin:0;
+  padding:0;
+  background:#0b0b0f;
+}
+.cs-proxy-sub{
+  flex:0 0 auto;
+  margin:0;
+  padding:6px 16px 4px;
+  color:#8b909a;
+  font-size:12px;
+  font-weight:500;
+}
+.cs-proxy-form{
+  display:flex;
+  flex-direction:column;
+  flex:1 1 auto;
+  min-height:0;
+  margin:0;
+  padding:0;
+  border:0;
+  background:transparent;
+  overflow:hidden;
+}
+.cs-proxy-scroll{
+  flex:1 1 auto;
+  min-height:0;
+  overflow-x:hidden;
+  overflow-y:auto;
+  -webkit-overflow-scrolling:touch;
+  overscroll-behavior:contain;
+  padding:0 12px 10px;
+  background:#0b0b0f;
+}
+.cs-proxy-layout{display:grid;gap:0}
+.cs-proxy-sheet{
+  border-radius:14px;
+  background:#121218;
+  border:1px solid rgba(255,255,255,.06);
+  overflow:hidden;
+}
+.cs-proxy-block{
+  display:grid;
+  gap:10px;
+  padding:14px 14px;
+}
+.cs-proxy-block + .cs-proxy-block,
+.cs-proxy-block + .cs-proxy-settle-inline{
+  border-top:1px solid rgba(255,255,255,.06);
+}
+.cs-proxy-block-label{
+  font-size:11px;
+  letter-spacing:.06em;
+  text-transform:uppercase;
+  color:#7d8490;
+  font-weight:650;
+}
+.cs-proxy-combo{display:grid;gap:8px}
+.cs-proxy-combo input,
+.cs-proxy-combo select{
+  width:100%;
+  box-sizing:border-box;
+  height:40px;
+  min-height:40px;
+  border-radius:12px;
+  border:1px solid rgba(255,255,255,.07);
+  background:#1a1a22;
+  color:#f3f4f6;
+  padding:0 12px;
+  font-size:13px;
+  font-weight:500;
+}
+.cs-proxy-combo select{appearance:none;-webkit-appearance:none}
+.cs-proxy-text-btn{
+  border:0;
+  background:transparent;
+  color:#c9cdd6;
+  font-size:12px;
+  font-weight:600;
+  padding:4px 0;
+  cursor:pointer;
+  white-space:nowrap;
+}
+.cs-proxy-text-btn:hover{color:#ff8fc5}
+.cs-proxy-boss{
+  display:grid;
+  grid-template-columns:40px minmax(0,1fr) auto auto;
+  gap:10px;
+  align-items:center;
+  padding:10px 12px;
+  border-radius:14px;
+  background:#18181f;
+  border:1px solid rgba(255,255,255,.05);
+}
+.cs-proxy-boss[hidden],
+.cs-proxy-companion-chip[hidden],
+.cs-proxy-combo[hidden],
+.cs-proxy-companion-block[hidden]{display:none !important}
+.cs-proxy-avatar{width:40px;height:40px;border-radius:50%;object-fit:cover;background:#22222b}
+.cs-proxy-boss-meta{min-width:0}
+.cs-proxy-boss-meta strong{display:block;font-size:14px;font-weight:650;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#f5f6f8}
+.cs-proxy-boss-meta span{display:block;color:#8b909a;font-size:12px;margin-top:2px}
+.cs-proxy-boss-bal{text-align:right;padding-right:4px}
+.cs-proxy-boss-bal em{display:block;font-style:normal;color:#8b909a;font-size:11px}
+.cs-proxy-boss-bal b{display:block;font-size:16px;color:#ff8fc5;margin-top:1px;font-weight:700;font-variant-numeric:tabular-nums}
+.cs-proxy-boss-bal small{display:block;color:var(--warn);font-size:11px;margin-top:2px}
+.cs-proxy-mode-seg{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:2px;
+  padding:3px;
+  border-radius:12px;
+  background:#0e0e13;
+  border:1px solid rgba(255,255,255,.06);
+}
+.cs-proxy-mode-opt{position:relative;display:grid;place-items:center;min-height:36px;border-radius:10px;cursor:pointer}
+.cs-proxy-mode-opt input{position:absolute;opacity:0;pointer-events:none}
+.cs-proxy-mode-opt span{font-size:13px;font-weight:600;color:#8b909a}
+.cs-proxy-mode-opt:has(input:checked){background:#1f1f28}
+.cs-proxy-mode-opt:has(input:checked) span{color:#ff8fc5}
+.cs-proxy-companion-block{display:grid;gap:8px}
+.cs-proxy-companion-chip{
+  display:grid;
+  grid-template-columns:36px minmax(0,1fr) auto;
+  gap:10px;
+  align-items:center;
+  padding:2px 0;
+  background:transparent;
+  border:0;
+}
+.cs-proxy-companion-chip img{width:36px;height:36px;border-radius:50%;object-fit:cover;background:#22222b}
+.cs-proxy-chip-meta{min-width:0}
+.cs-proxy-chip-meta strong{display:block;font-size:13px;font-weight:650;color:#f3f4f6}
+.cs-proxy-chip-meta span{display:block;color:#8b909a;font-size:11px;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cs-proxy-line{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  min-height:44px;
+}
+.cs-proxy-line-k{font-size:13px;font-weight:600;color:#c9cdd6;flex:0 0 auto}
+.cs-proxy-svc-line{
+  position:relative;
+  min-height:48px;
+  padding:0;
+  border-radius:12px;
+  background:#1a1a22;
+  border:1px solid rgba(255,255,255,.06);
+  overflow:hidden;
+}
+.cs-proxy-svc-face{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  width:100%;
+  padding:0 12px;
+  pointer-events:none;
+  min-height:48px;
+}
+.cs-proxy-svc-face > span:first-child{
+  font-size:13px;
+  font-weight:600;
+  color:#f3f4f6;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  min-width:0;
+}
+.cs-proxy-svc-face-right{
+  display:inline-flex;
+  align-items:center;
+  gap:8px;
+  flex:0 0 auto;
+  color:#8b909a;
+  font-size:12px;
+  font-variant-numeric:tabular-nums;
+}
+.cs-proxy-svc-face-right em{font-style:normal;color:#ff8fc5;font-weight:650}
+.cs-proxy-svc-face-right i{
+  display:inline-block;
+  width:8px;height:8px;
+  border-right:1.5px solid #9ca3af;
+  border-bottom:1.5px solid #9ca3af;
+  transform:rotate(45deg);
+  margin-top:-4px;
+}
+.cs-proxy-svc-native{
+  position:absolute;
+  inset:0;
+  width:100%;
+  height:100%;
+  opacity:0;
+  cursor:pointer;
+  border:0;
+  background:transparent;
+  appearance:none;
+  -webkit-appearance:none;
+  font-size:16px;
+}
+.cs-proxy-stepper{
+  display:inline-grid;
+  grid-template-columns:34px auto 34px;
+  align-items:center;
+  gap:0;
+  height:36px;
+  border-radius:12px;
+  background:#1a1a22;
+  border:1px solid rgba(255,255,255,.06);
+  overflow:hidden;
+  flex:0 0 auto;
+}
+.cs-proxy-step{
+  width:34px;
+  height:36px;
+  border:0;
+  background:transparent;
+  color:#d7dbe3;
+  font-size:16px;
+  line-height:1;
+  display:grid;
+  place-items:center;
+}
+.cs-proxy-step:active{background:rgba(255,255,255,.05)}
+.cs-proxy-hours-mid{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap:4px;
+  min-width:64px;
+  height:36px;
+  padding:0 6px;
+  box-sizing:border-box;
+}
+.cs-proxy-stepper input[data-proxy-hours]{
+  width:1.8em;
+  max-width:2.6em;
+  height:28px;
+  border:0;
+  background:transparent;
+  color:#f5f6f8;
+  text-align:center;
+  font-size:14px;
+  font-weight:700;
+  padding:0;
+  -moz-appearance:textfield;
+}
+.cs-proxy-stepper input[data-proxy-hours]::-webkit-outer-spin-button,
+.cs-proxy-stepper input[data-proxy-hours]::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+.cs-proxy-hours-unit{color:#c9cdd6;font-size:12px;font-weight:600;white-space:nowrap}
+.cs-proxy-hint{margin:0;color:#7d8490;font-size:11px;line-height:1.45;padding-left:0}
+.cs-proxy-field{display:grid;gap:6px;color:#8b909a;font-size:12px;font-weight:600}
+.cs-proxy-field textarea,
+.cs-proxy-note textarea{
+  width:100%;
+  box-sizing:border-box;
+  resize:vertical;
+  min-height:72px;
+  border-radius:12px;
+  border:1px solid rgba(255,255,255,.05);
+  background:#1a1a22;
+  color:#e8eaef;
+  padding:10px 12px;
+  font-size:13px;
+  font-weight:500;
+  line-height:1.45;
+}
+.cs-proxy-field textarea::placeholder,
+.cs-proxy-note textarea::placeholder{color:#6b7280}
+.cs-proxy-note{border:0;padding:0;margin:0}
+.cs-proxy-note summary{
+  list-style:none;
+  cursor:pointer;
+  color:#8b909a;
+  font-size:12px;
+  font-weight:600;
+  padding:2px 0;
+  user-select:none;
+}
+.cs-proxy-note summary::-webkit-details-marker{display:none}
+.cs-proxy-note summary::after{content:" ›";color:#6b7280}
+.cs-proxy-note[open] summary{margin-bottom:8px}
+.cs-proxy-note[open] summary::after{content:" ⌄"}
+.cs-proxy-settle-inline,
+.cs-proxy-settle-panel{
+  display:grid;
+  gap:8px;
+  padding:14px;
+}
+.cs-proxy-settle-title{font-size:12px;font-weight:650;color:#8b909a;letter-spacing:.04em}
+.cs-proxy-bill-row{display:flex;justify-content:space-between;gap:10px;font-size:13px;color:#8b909a}
+.cs-proxy-bill-row strong{color:#f3f4f6;font-weight:650;font-variant-numeric:tabular-nums}
+.cs-proxy-bill-row.total strong{color:#ff8fc5;font-size:16px;font-weight:720}
+.cs-proxy-wallet-preview{
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:6px;
+  padding-top:10px;
+  border-top:1px solid rgba(255,255,255,.06);
+}
+.cs-proxy-wallet-preview div{display:grid;gap:3px;text-align:center}
+.cs-proxy-wallet-preview span{color:#7d8490;font-size:11px}
+.cs-proxy-wallet-preview b{font-size:13px;color:#f3f4f6;font-weight:650;font-variant-numeric:tabular-nums}
+.cs-proxy-wallet-preview b.debit{color:#ff8fc5}
+.cs-proxy-warn{margin:0;color:var(--bad);font-size:12px;font-weight:650}
+.cs-proxy-submit{
+  height:40px;
+  border-radius:12px;
+  border:0 !important;
+  background:#ff8fc5 !important;
+  color:#14060e !important;
+  font-size:14px;
+  font-weight:720;
+  box-shadow:none !important;
+  padding:0 16px;
+}
+.cs-proxy-submit:disabled{opacity:.4;cursor:not-allowed}
+.cs-proxy-submit-desk{width:100%;margin-top:4px}
+.cs-proxy-footer{
+  position:relative;
+  flex:0 0 auto;
+  z-index:8;
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto;
+  gap:12px;
+  align-items:center;
+  padding:8px 12px calc(8px + env(safe-area-inset-bottom,0px));
+  border-top:1px solid rgba(255,255,255,.07);
+  background:#0b0b0f;
+}
+.cs-proxy-footer-sum span{display:block;color:#8b909a;font-size:11px}
+.cs-proxy-footer-sum b{display:block;color:#ff8fc5;font-size:18px;font-weight:740;margin-top:1px;font-variant-numeric:tabular-nums}
+.cs-proxy-footer .cs-proxy-submit{min-width:140px;margin:0}
+.cs-proxy-settle-desk{display:none}
+@media(min-width:1051px){
+  .cs-page[data-route="createOrder"]{padding:16px 24px !important;overflow:auto !important;background:transparent}
+  .cs-proxy-page{max-width:1080px;margin:0 auto;height:auto;min-height:0;background:transparent}
+  .cs-proxy-sub{padding:0 0 10px}
+  .cs-proxy-form{display:block;flex:none;min-height:0;overflow:visible}
+  .cs-proxy-scroll{overflow:visible;padding:0;flex:none;background:transparent}
+  .cs-proxy-layout{grid-template-columns:minmax(0,1fr) 300px;gap:14px;align-items:start}
+  .cs-proxy-settle-desk{display:block;position:sticky;top:12px}
+  .cs-proxy-settle-panel{
+    border-radius:14px;
+    background:#121218;
+    border:1px solid rgba(255,255,255,.06);
+  }
+  .cs-proxy-settle-inline,.cs-proxy-footer{display:none}
+  .cs-proxy-submit-desk{display:block}
+  .cs-proxy-field textarea{font-size:13px}
+}
+@media(max-width:1050px){
+  .cs-proxy-submit-desk{display:none}
+  .cs-proxy-settle-desk{display:none}
+}
+/* Neutralize global pink form chrome inside proxy order only (keep other CS pages untouched). */
+.cs-page[data-route="createOrder"] .cs-proxy-form input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="hidden"]):not([type="range"]),
+.cs-page[data-route="createOrder"] .cs-proxy-form select,
+.cs-page[data-route="createOrder"] .cs-proxy-form textarea{
+  background:#1a1a22 !important;
+  color:#f3f4f6 !important;
+  border:1px solid rgba(255,255,255,.06) !important;
+  border-radius:12px !important;
+  box-shadow:none !important;
+  background-image:none !important;
+  min-height:40px;
+}
+.cs-page[data-route="createOrder"] .cs-proxy-form input:focus,
+.cs-page[data-route="createOrder"] .cs-proxy-form select:focus,
+.cs-page[data-route="createOrder"] .cs-proxy-form textarea:focus{
+  border-color:rgba(255,255,255,.14) !important;
+  box-shadow:none !important;
+}
+.cs-page[data-route="createOrder"] .cs-proxy-form input::placeholder,
+.cs-page[data-route="createOrder"] .cs-proxy-form textarea::placeholder{
+  color:#6b7280 !important;
+}
+.cs-page[data-route="createOrder"] .cs-proxy-form textarea{
+  min-height:72px;
+  padding:10px 12px;
+}
+.cs-page[data-route="createOrder"] .cs-proxy-stepper input[data-proxy-hours]{
+  width:1.8em !important;
+  max-width:2.6em !important;
+  height:28px !important;
+  min-height:0 !important;
+  border:0 !important;
+  background:transparent !important;
+  box-shadow:none !important;
+  padding:0 !important;
+  border-radius:0 !important;
+}
+.cs-page[data-route="createOrder"] .cs-proxy-svc-native{
+  opacity:0 !important;
+  border:0 !important;
+  background:transparent !important;
+  background-image:none !important;
+  box-shadow:none !important;
+  min-height:0 !important;
+  padding:0 !important;
+  border-radius:0 !important;
+}
+.cs-page[data-route="createOrder"] .cs-proxy-step{
+  border:0 !important;
+  background:transparent !important;
+  box-shadow:none !important;
+  min-height:0 !important;
+  color:#d7dbe3 !important;
+}
+.cs-page[data-route="createOrder"] .cs-proxy-submit{
+  border:0 !important;
+  background:#ff8fc5 !important;
+  color:#14060e !important;
+  box-shadow:none !important;
+}
