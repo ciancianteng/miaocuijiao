@@ -195,7 +195,7 @@
 
     box.innerHTML =
       tip +
-      '<p class="admin-sync-note" style="margin:0 0 12px">老板根据<strong>客服确认的累计有效消费</strong>自动升级 VIP。可配置：等级名称、升级门槛（猫粮）、多条福利、排序、启停。直属分成请到「直属关系管理」。</p>' +
+      '<p class="admin-sync-note" style="margin:0 0 12px">老板根据<strong>客服确认的累计有效消费</strong>自动升级 VIP。可配置：等级名称、升级门槛（猫粮）、多条福利、排序、启停。</p>' +
       '<div class="admin-toolbar" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px">' +
       '<button type="button" class="primary-btn" data-vip-new' +
       (state.busy ? " disabled" : "") +

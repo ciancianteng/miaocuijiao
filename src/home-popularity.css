@@ -406,7 +406,7 @@
   background:linear-gradient(165deg,rgba(28,14,40,.98),rgba(8,5,14,.99))!important;
   box-shadow:0 8px 22px rgba(0,0,0,.28),0 0 18px rgba(180,100,220,.14)!important;
 }
-/* Border-only marquee: mask stays put; animate conic angle (no element rotate). */
+/* Soft local rim sheen: mask fixed; animate conic angle only (no element rotate / full-ring flash). */
 @property --rank-border-angle{
   syntax:"<angle>";
   inherits:false;
@@ -420,23 +420,30 @@
   box-sizing:border-box;
   pointer-events:none;
   z-index:0;
+  opacity:.72;
+  will-change:--rank-border-angle;
   background:conic-gradient(
     from var(--rank-border-angle),
     transparent 0deg,
-    transparent 300deg,
-    rgba(255,190,230,.14) 318deg,
-    rgba(255,240,248,.98) 334deg,
-    #e9b4ff 344deg,
-    rgba(201,166,255,.4) 352deg,
+    transparent 328deg,
+    rgba(255,190,230,.08) 338deg,
+    rgba(255,236,246,.58) 346deg,
+    rgba(233,180,255,.55) 351deg,
+    rgba(201,166,255,.22) 356deg,
     transparent 360deg
   );
   -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);
   mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);
   -webkit-mask-composite:xor;
   mask-composite:exclude;
-  animation:rankBorderAngle 3.2s linear infinite;
+  animation:rankBorderAngle var(--rank-border-dur,15s) linear infinite;
+  animation-delay:var(--rank-border-delay,0s);
 }
-.pop-rank-more > .rank-border-flow{opacity:.92}
+.pop-rank-more > .rank-border-flow{
+  opacity:.62;
+  --rank-border-dur:16.4s;
+  --rank-border-delay:-5.7s;
+}
 .pop-rank-more-inner{
   position:relative;z-index:1;
   display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;
@@ -499,8 +506,17 @@
   border:1px solid rgba(180,120,220,.2);
   background:linear-gradient(145deg,rgba(32,16,42,.92),rgba(10,7,14,.96));
 }
-.rank-hist-row > .rank-border-flow{opacity:.75}
+.rank-hist-row > .rank-border-flow{opacity:.55}
 .rank-hist-row > *:not(.rank-border-flow){position:relative;z-index:1}
+/* Stable per-card phase/speed so the club list never marches in lockstep. */
+.rank-hist-list > .rank-hist-row:nth-child(8n+1) > .rank-border-flow{--rank-border-dur:12.6s;--rank-border-delay:-1.4s}
+.rank-hist-list > .rank-hist-row:nth-child(8n+2) > .rank-border-flow{--rank-border-dur:13.8s;--rank-border-delay:-6.2s}
+.rank-hist-list > .rank-hist-row:nth-child(8n+3) > .rank-border-flow{--rank-border-dur:14.7s;--rank-border-delay:-9.8s}
+.rank-hist-list > .rank-hist-row:nth-child(8n+4) > .rank-border-flow{--rank-border-dur:15.5s;--rank-border-delay:-3.1s}
+.rank-hist-list > .rank-hist-row:nth-child(8n+5) > .rank-border-flow{--rank-border-dur:16.2s;--rank-border-delay:-11.4s}
+.rank-hist-list > .rank-hist-row:nth-child(8n+6) > .rank-border-flow{--rank-border-dur:16.9s;--rank-border-delay:-7.6s}
+.rank-hist-list > .rank-hist-row:nth-child(8n+7) > .rank-border-flow{--rank-border-dur:17.6s;--rank-border-delay:-13.2s}
+.rank-hist-list > .rank-hist-row:nth-child(8n+8) > .rank-border-flow{--rank-border-dur:18s;--rank-border-delay:-4.9s}
 .rank-hist-row.top-1{border-color:rgba(255,212,120,.42);box-shadow:0 0 14px rgba(255,196,90,.12)}
 .rank-hist-row.top-2{border-color:rgba(210,220,235,.36)}
 .rank-hist-row.top-3{border-color:rgba(220,150,100,.36)}
@@ -544,8 +560,9 @@
 @media (prefers-reduced-motion:reduce){
   .rank-border-flow{
     animation:none!important;
+    will-change:auto;
     --rank-border-angle:210deg;
-    opacity:.55;
+    opacity:.38;
   }
 }
 

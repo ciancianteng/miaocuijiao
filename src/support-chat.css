@@ -945,11 +945,14 @@ button.support-send-btn[type="submit"]:disabled {
   }
 
   /*
-    Pin the live chat shell to visualViewport (same approach as CS desk).
-    Avoid sticky + 100dvh + keyboard padding fights that cause upward drift / blank screens.
+    Pin live chat shell to visualViewport height (CS approach), with one boss-only
+    difference: top is always 0. Boss page is 100dvh + overflow:hidden from load, so
+    iOS treats position:fixed as visual-viewport-relative — using vv.offsetTop here
+    double-shifts (black blank + clipped header). Do not stack keyboard padding.
   */
   html.support-chat-lock {
     --support-keyboard-inset: 0px !important;
+    --support-vv-top: 0px !important;
   }
   html.support-chat-lock,
   html.support-chat-lock body.support-page,
@@ -960,17 +963,20 @@ button.support-send-btn[type="submit"]:disabled {
     height: 100% !important;
     max-height: 100% !important;
   }
+  html.support-chat-lock body.support-page > .topbar,
   body.support-page.support-chat-lock > .topbar {
     display: none !important;
   }
+  html.support-chat-lock .support-shell,
+  html.support-chat-lock #supportApp,
   body.support-page.support-chat-lock .support-shell,
   body.support-page.support-chat-lock #supportApp {
     position: fixed !important;
     left: 0;
     right: 0;
-    top: var(--support-vv-top, 0px) !important;
-    height: var(--support-vv-height, 100dvh) !important;
-    max-height: var(--support-vv-height, 100dvh) !important;
+    top: 0 !important;
+    height: var(--support-vv-height, 100%) !important;
+    max-height: var(--support-vv-height, 100%) !important;
     min-height: 0 !important;
     width: 100% !important;
     margin: 0 !important;
@@ -978,6 +984,8 @@ button.support-send-btn[type="submit"]:disabled {
     overflow: hidden !important;
     z-index: 30;
   }
+  html.support-chat-lock .support-layout,
+  html.support-chat-lock .support-main,
   body.support-page.support-chat-lock .support-layout,
   body.support-page.support-chat-lock .support-main {
     height: 100% !important;
@@ -985,15 +993,23 @@ button.support-send-btn[type="submit"]:disabled {
     min-height: 0 !important;
     overflow: hidden !important;
   }
+  html.support-chat-lock .support-main,
   body.support-page.support-chat-lock .support-main {
     display: flex !important;
     flex-direction: column !important;
   }
+  html.support-chat-lock .support-main-head,
   body.support-page.support-chat-lock .support-main-head {
     position: relative !important;
     top: auto !important;
     flex: 0 0 auto !important;
   }
+  html.support-chat-lock .support-order-summary,
+  body.support-page.support-chat-lock .support-order-summary {
+    flex: 0 0 auto !important;
+  }
+  html.support-chat-lock .support-messages,
+  html.support-chat-lock [data-messages],
   body.support-page.support-chat-lock .support-messages,
   body.support-page.support-chat-lock [data-messages] {
     flex: 1 1 auto !important;
@@ -1002,6 +1018,7 @@ button.support-send-btn[type="submit"]:disabled {
     -webkit-overflow-scrolling: touch;
     overscroll-behavior: contain;
   }
+  html.support-chat-lock .support-footer,
   body.support-page.support-chat-lock .support-footer {
     position: relative !important;
     bottom: auto !important;
@@ -1009,10 +1026,12 @@ button.support-send-btn[type="submit"]:disabled {
     /* Keyboard closed: keep home-indicator clearance. */
     padding-bottom: env(safe-area-inset-bottom, 0px) !important;
   }
+  html.support-kb-open .support-footer,
   body.support-page.support-kb-open .support-footer {
     /* Keyboard open: shell already ends above the keyboard. */
     padding-bottom: 0 !important;
   }
+  html.support-kb-open .support-composer,
   body.support-page.support-kb-open .support-composer {
     padding-bottom: 6px !important;
   }

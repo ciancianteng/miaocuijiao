@@ -1151,7 +1151,6 @@
         ["当前等级", d.levelName || d.level_name || "未设置"],
         ["平台抽成（继承基数）", (d.orderCommissionRate != null ? d.orderCommissionRate : d.commission_rate) + "%"],
         ["礼物抽成", (d.giftCommissionRate != null ? d.giftCommissionRate : d.gift_commission_rate || 0) + "%"],
-        ["直属陪返点", (d.directRebateRate != null ? d.directRebateRate : d.direct_rebate_rate || 0) + "%"],
         ["等级生效时间", formatMYT(d.level_effective_at)],
         ["抽成生效时间", formatMYT(d.commission_effective_at)],
         ["价格完整性", playerMissingPrice(d) ? "缺少接单价格（无法公开上架）" : "已设置"],
@@ -1165,7 +1164,6 @@
           '<p class="muted" style="grid-column:1/-1;margin:0">等级仅管理员手动设置为 LV1–LV5，不会按订单数、评价或完成率自动升降。</p>' +
           field("订单平台抽成 %（继承基数）", "orderCommissionRate", d.orderCommissionRate != null ? d.orderCommissionRate : d.commission_rate) +
           field("礼物抽成 %", "giftCommissionRate", d.giftCommissionRate != null ? d.giftCommissionRate : d.gift_commission_rate || 0) +
-          field("直属陪返点 %", "directRebateRate", d.directRebateRate != null ? d.directRebateRate : d.direct_rebate_rate || 0) +
           field("调整原因", "reason", "") +
           levelPricePreviewHtml(d.levelId || d.level_id || d.levelName, levels) +
           servicePricesEditHtml(d, levels) +

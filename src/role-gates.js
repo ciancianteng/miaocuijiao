@@ -235,6 +235,9 @@
 
   function humanizeAuthError(error) {
     var msg = String((error && error.message) || error || "").trim();
+    if (/AbortError|aborted|请求超时|登录请求超时/i.test(msg)) {
+      return "登录请求超时，请检查网络后重试";
+    }
     if (!msg || /failed to fetch|fetch failed|networkerror|network request failed|load failed|err_connection|econnrefused|econnreset|enotfound|timeout/i.test(msg)) {
       return "暂时无法连接服务器，请稍后重试";
     }
@@ -706,16 +709,36 @@
 
   async function postAuth(payload) {
     var response;
+    var ctrl = typeof AbortController !== "undefined" ? new AbortController() : null;
+    var timer = null;
+    var started = Date.now();
+    var action = String((payload && payload.action) || "auth");
     try {
+      if (ctrl) timer = setTimeout(function () { try { ctrl.abort(); } catch (e) {} }, 18000);
       response = await fetch("/api/auth", {
         method: "POST",
         headers: { "Content-Type": "application/json", Accept: "application/json" },
         body: JSON.stringify(payload),
+        signal: ctrl ? ctrl.signal : undefined,
       });
     } catch (error) {
+      if (timer) clearTimeout(timer);
+      try {
+        if (!window.__mcjAuthDiag) window.__mcjAuthDiag = [];
+        window.__mcjAuthDiag.push({ t: Date.now(), stage: "postAuth_fail", action: action, ms: Date.now() - started });
+      } catch (eDiag) {}
+      if (error && (error.name === "AbortError" || /aborted/i.test(String(error.message || "")))) {
+        throw new Error("登录请求超时，请检查网络后重试");
+      }
       throw new Error(humanizeAuthError(error));
     }
+    if (timer) clearTimeout(timer);
     var body = await response.json().catch(function () { return {}; });
+    try {
+      if (!window.__mcjAuthDiag) window.__mcjAuthDiag = [];
+      window.__mcjAuthDiag.push({ t: Date.now(), stage: "postAuth_ok", action: action, ms: Date.now() - started, status: response.status });
+      if (window.__mcjAuthDiag.length > 40) window.__mcjAuthDiag.shift();
+    } catch (eDiag2) {}
     if (!response.ok || !body.ok) throw new Error(humanizeAuthError(body.message || "请求失败。"));
     return body;
   }

@@ -4,6 +4,10 @@
  */
 import { hasBossRole } from "../_account-roles.js";
 import { listBossCommissionEarnings } from "../_boss-commission.js";
+import {
+  isBossDirectRelationsEnabled,
+  bossDirectRelationsDisabledReason,
+} from "../_feature-flags.js";
 import { envValue, isMissingRelation, serviceHeaders, supabaseJson } from "../_wallet.js";
 
 function json(res, status, data) {
@@ -56,6 +60,14 @@ async function requireBoss(req) {
 }
 
 export default async function handler(req, res) {
+  if (!isBossDirectRelationsEnabled()) {
+    return json(res, 410, {
+      ok: false,
+      code: "BOSS_DIRECT_RELATIONS_RETIRED",
+      message: "直属关系功能已下线",
+      reason: bossDirectRelationsDisabledReason(),
+    });
+  }
   if (req.method !== "GET") {
     return json(res, 405, { ok: false, message: "Method not allowed" });
   }

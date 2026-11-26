@@ -2657,6 +2657,14 @@ import {
         });
         return;
       }
+      // Root cause vs CS: support.html / support-chat.css lock html+body to 100dvh +
+      // overflow:hidden from page load. On that non-scrollable page, iOS Safari positions
+      // position:fixed relative to the visual viewport. Reusing CS's layout-viewport pin
+      // (top = vv.offsetTop) double-shifts the shell → black blank + clipped header.
+      // Keep height = vv.height; force top = 0. Do not stack padding / inset.
+      if (lock) {
+        box = { top: 0, height: box.height, inset: box.inset };
+      }
       applyVisualViewportCss("support", box, {
         lock: lock,
         kbOpen: kbOpen,

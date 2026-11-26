@@ -538,7 +538,6 @@
         var u=state.user||{};
         var publicUid=u.bossUid||u.boss_uid||u.uid||'-';
         var pointsBal=(state.points&&state.points.balance!=null)?state.points.balance:0;
-        var directCount=(state.directCount!=null)?state.directCount:0;
         var setHint=u.hasPassword===true||u.has_password===true?'':'建议设置登录密码，便于下次邮箱+密码登录（不强制）。';
         var tipHtml=state.pendingReviewTipId
           ?('<div class="review-tip" role="status"><p>您有订单还未评价陪玩</p><div class="tip-actions"><button class="tip-link" type="button" data-open-pending-review>去评价</button><button class="tip-dismiss" type="button" data-dismiss-review-tip aria-label="关闭">×</button></div></div>')
@@ -554,7 +553,6 @@
             '</div>'+
             '<div class="boss-stats">'+
               '<a class="boss-stat" href="points.html"><span class="boss-stat-label">积分</span><strong class="boss-stat-value">'+esc(pointsBal)+'</strong></a>'+
-              '<a class="boss-stat" href="my-direct-companions.html"><span class="boss-stat-label">直属</span><strong class="boss-stat-value">'+esc(directCount)+'</strong></a>'+
             '</div>'+
           '</section>'+
           bossVipCardHtml()+
@@ -607,13 +605,11 @@ async function load(){
               .then(function(r){return r.json().then(function(b){return {r:r,b:b}})}).catch(function(){return null}),
             fetch('/api/points?limit=1',{headers:authHdr,cache:'no-store'})
               .then(function(r){return r.json().then(function(b){return {r:r,b:b}})}).catch(function(){return null}),
-            fetch('/api/boss/direct-companions',{headers:authHdr,cache:'no-store'})
-              .then(function(r){return r.json().then(function(b){return {r:r,b:b}})}).catch(function(){return null}),
             fetch('/api/boss/vip',{headers:authHdr,cache:'no-store'})
               .then(function(r){return r.json().then(function(b){return {r:r,b:b}})}).catch(function(){return null})
           ]);
           secondary.then(function(rows){
-            var sec=rows[0], wr=rows[1], pr=rows[2], dr=rows[3], vr=rows[4];
+            var sec=rows[0], wr=rows[1], pr=rows[2], vr=rows[3];
             if(sec&&sec.r&&sec.r.ok&&sec.b&&sec.b.ok&&sec.b.user){
               state.user=Object.assign({},state.user,sec.b.user);
               state.passwordHint=sec.b.passwordHint||state.passwordHint;
@@ -627,8 +623,6 @@ async function load(){
             else state.wallet=state.wallet||null;
             if(pr&&pr.r&&pr.r.ok&&pr.b&&pr.b.ok)state.points=pr.b.account||{balance:0,lifetimeEarned:0};
             else state.points=state.points||{balance:0,lifetimeEarned:0};
-            if(dr&&dr.r&&dr.r.ok&&dr.b&&dr.b.ok&&Array.isArray(dr.b.companions))state.directCount=dr.b.companions.length;
-            else state.directCount=state.directCount!=null?state.directCount:0;
             if(vr&&vr.r&&vr.r.ok&&vr.b&&vr.b.ok)state.vip=vr.b.vip||null;
             else state.vip=state.vip||null;
             paint();

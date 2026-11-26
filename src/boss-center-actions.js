@@ -158,7 +158,6 @@
       quickTile("/orders.html", "orders", "我的订单") +
       quickTile("/recharge.html", "recharge", "充值") +
       quickTile("gifts.html", "gifts", "礼物中心") +
-      quickTile("my-direct-companions.html", "direct", "直属陪玩") +
       "</div>" +
       "</section>" +
       '<section class="bca-section" aria-labelledby="bcaAccountTitle">' +

@@ -94,6 +94,27 @@
   border-spacing: 0;
 }
 
+/* Compact list: kill legacy wide table min-widths (1100/1540/1640) */
+#playerManagement .player-data-table.player-data-table-compact {
+  min-width: 0 !important;
+  width: 100% !important;
+  table-layout: fixed !important;
+}
+#playerManagement .player-data-table.player-data-table-compact th,
+#playerManagement .player-data-table.player-data-table-compact td {
+  width: auto !important;
+}
+#playerManagement .player-data-table.player-data-table-compact .avatar-cell {
+  width: 52px !important;
+}
+#playerManagement .player-data-table.player-data-table-compact .player-action-cell,
+#playerManagement .player-data-table.player-data-table-compact th:last-child {
+  width: 88px !important;
+  min-width: 0 !important;
+  position: static !important;
+  box-shadow: none !important;
+}
+
 #playerManagement .player-data-table thead,
 #playerManagement .player-data-table tbody,
 #playerManagement .player-data-table tr,
@@ -392,7 +413,8 @@
 
 /* Desktop: compact card chrome stays hidden; table layout unchanged */
 #playerManagement .player-card-facts,
-#playerManagement .player-expand-btn {
+#playerManagement .player-expand-btn,
+#playerManagement .player-card-meta {
   display: none;
 }
 
@@ -437,8 +459,14 @@
   }
 
   #playerManagement .player-filter-main {
-    flex-wrap: nowrap !important;
+    flex-wrap: wrap !important;
     gap: 6px !important;
+  }
+  #playerManagement .player-filter-main [data-player-scope] {
+    flex: 1 1 120px !important;
+    width: auto !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
   }
 
   #playerManagement .player-filter-panel .player-keyword,
@@ -548,17 +576,13 @@
   }
 
   #playerManagement .player-data-table tr.player-list-row {
-    display: grid !important;
+    display: flex !important;
+    flex-wrap: wrap !important;
+    align-items: center !important;
     width: 100% !important;
     max-width: 100% !important;
     min-width: 0 !important;
     box-sizing: border-box !important;
-    grid-template-columns: 28px 48px minmax(0, 1fr);
-    grid-template-areas:
-      "pick avatar name"
-      "facts facts facts"
-      "actions actions actions"
-      "extra extra extra";
     gap: 8px 10px;
     margin: 0 0 10px;
     padding: 12px;
@@ -587,19 +611,35 @@
     font-size: 15px;
   }
 
-  #playerManagement .player-data-table td.player-pick { grid-area: pick; align-self: center; }
-  #playerManagement .player-data-table td.avatar-cell { grid-area: avatar; }
-  #playerManagement .player-data-table td.player-name-cell { grid-area: name; min-width: 0; }
-  #playerManagement .player-data-table td.player-action-cell { grid-area: actions; }
-  #playerManagement .player-data-table td.player-extra { grid-area: extra; }
-
+  #playerManagement .player-data-table td.player-pick { order: 0; flex: 0 0 auto; align-self: center; }
+  #playerManagement .player-data-table td.avatar-cell { order: 1; flex: 0 0 auto; align-self: flex-start; }
+  #playerManagement .player-data-table td.player-name-cell { order: 2; flex: 1 1 0; min-width: 0; }
+  #playerManagement .player-data-table td.player-action-cell { order: 3; flex: 0 0 auto; align-self: flex-start; margin-left: auto; }
   #playerManagement .player-data-table td.player-id,
   #playerManagement .player-data-table td.player-level,
   #playerManagement .player-data-table td.player-audit,
+  #playerManagement .player-data-table td.player-col-desk,
   #playerManagement .player-data-table td.player-extra,
   #playerManagement .player-name-meta,
   #playerManagement .player-more-wrap {
     display: none !important;
+  }
+  #playerManagement .player-card-meta {
+    display: flex !important;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 8px;
+    margin-top: 4px;
+    color: #f0c6da;
+    font-size: 12px;
+    line-height: 1.35;
+    min-width: 0;
+    max-width: 100%;
+  }
+  #playerManagement .player-card-meta .chip,
+  #playerManagement .player-card-meta .status {
+    min-height: 20px;
+    font-size: 11px;
   }
 
   #playerManagement .player-data-table tr.is-expanded {

@@ -7,6 +7,12 @@
   "use strict";
   var root = document.getElementById("directCompanionsApp");
   if (!root) return;
+  // 直属关系已下线：页面保留路由以免旧书签 404，不再请求直属 API。
+  root.innerHTML =
+    '<section class="page-head"><div><h1>直属功能已下线</h1>' +
+    '<p>直属关系与直属分成已停止使用。历史记录保留，不影响钱包、订单与普通结算。</p></div>' +
+    '<a class="boss-btn primary" href="mine.html">返回我的</a></section>';
+  return;
 
   function esc(v) {
     return String(v == null ? "" : v).replace(/[&<>"']/g, function (c) {

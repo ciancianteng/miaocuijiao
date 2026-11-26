@@ -22,6 +22,10 @@ import {
   unbindRelation,
   updateRelationCommissionRate,
 } from "../_boss-companion-relations.js";
+import {
+  isBossDirectRelationsEnabled,
+  bossDirectRelationsDisabledReason,
+} from "../_feature-flags.js";
 import { loadLocalEnv } from "../_load-env.js";
 import { restUrl, serviceHeaders, supabaseJson } from "../_wallet.js";
 
@@ -313,6 +317,14 @@ async function ensureMigration(oneshot = {}) {
 }
 
 export default async function handler(req, res) {
+  if (!isBossDirectRelationsEnabled()) {
+    return json(res, 410, {
+      ok: false,
+      code: "BOSS_DIRECT_RELATIONS_RETIRED",
+      message: "直属关系功能已下线",
+      reason: bossDirectRelationsDisabledReason(),
+    });
+  }
   let admin;
   try {
     admin = await requireAdmin(req);

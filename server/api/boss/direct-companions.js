@@ -4,6 +4,10 @@
  * 不包含绑定/换绑/分成写入逻辑。
  */
 import { hasBossRole } from "../_account-roles.js";
+import {
+  isBossDirectRelationsEnabled,
+  bossDirectRelationsDisabledReason,
+} from "../_feature-flags.js";
 import { envValue, isMissingRelation, serviceHeaders, supabaseJson } from "../_wallet.js";
 import { companionDb } from "../_companion-media-store.js";
 import { ensureCompanionPublicCode, resolveCompanionPublicCode } from "../_account-codes.js";
@@ -116,6 +120,14 @@ function viewCompanion(row, profile, companionProfile) {
 }
 
 export default async function handler(req, res) {
+  if (!isBossDirectRelationsEnabled()) {
+    return json(res, 410, {
+      ok: false,
+      code: "BOSS_DIRECT_RELATIONS_RETIRED",
+      message: "直属关系功能已下线",
+      reason: bossDirectRelationsDisabledReason(),
+    });
+  }
   if (req.method !== "GET") {
     return json(res, 405, { ok: false, message: "Method not allowed" });
   }

@@ -17,6 +17,10 @@ import {
   resolveBossPublicCode,
   resolveCompanionPublicCode,
 } from "./_account-codes.js";
+import {
+  isBossDirectRelationsEnabled,
+  bossDirectRelationsDisabledReason,
+} from "./_feature-flags.js";
 import { isMissingRelation, restUrl, serviceHeaders, supabaseJson } from "./_wallet.js";
 
 const REL_TABLE = "boss_companion_relations";
@@ -413,6 +417,12 @@ export async function bindRelation({
   reason = "",
   skipCapabilityCheck = false,
 } = {}) {
+  if (!isBossDirectRelationsEnabled()) {
+    throw httpError("直属关系功能已下线", 410, {
+      code: "BOSS_DIRECT_RELATIONS_RETIRED",
+      reason: bossDirectRelationsDisabledReason(),
+    });
+  }
   const auditReason = String(reason || "").trim() || String(remark || "").trim();
   if (!auditReason) {
     throw httpError("绑定必须填写 reason（审计：谁/何时/原因）", 400, { code: "REASON_REQUIRED" });
@@ -491,6 +501,12 @@ export async function bindRelation({
 }
 
 export async function rebindRelation({ companionId, newBossId, operatorId, remark = "", commissionRate = null, reason = "" } = {}) {
+  if (!isBossDirectRelationsEnabled()) {
+    throw httpError("直属关系功能已下线", 410, {
+      code: "BOSS_DIRECT_RELATIONS_RETIRED",
+      reason: bossDirectRelationsDisabledReason(),
+    });
+  }
   const auditReason = requireAdminReason(reason, "换绑");
   const caps = await assertBindCapabilities(newBossId, companionId);
   const existing = await getActiveRelationForCompanion(companionId);
@@ -596,6 +612,12 @@ export async function unbindRelation({ companionId, operatorId, remark = "", rea
 
 
 export async function updateRelationCommissionRate({ relationId, companionId, commissionRate, operatorId, remark = "", reason = "" } = {}) {
+  if (!isBossDirectRelationsEnabled()) {
+    throw httpError("直属关系功能已下线", 410, {
+      code: "BOSS_DIRECT_RELATIONS_RETIRED",
+      reason: bossDirectRelationsDisabledReason(),
+    });
+  }
   const auditReason = requireAdminReason(reason, "设置分成");
   let row = null;
   if (relationId) {

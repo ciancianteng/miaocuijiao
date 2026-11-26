@@ -22,7 +22,12 @@ import {
   isRelationsMissing,
 } from "./_boss-companion-relations.js";
 import { getEffectiveBossLevelForSettle } from "./_boss-levels.js";
-import { isSettlementEnabled, settlementDisabledReason } from "./_feature-flags.js";
+import {
+  isBossDirectRelationsEnabled,
+  bossDirectRelationsDisabledReason,
+  isSettlementEnabled,
+  settlementDisabledReason,
+} from "./_feature-flags.js";
 import {
   assertNotTestPartiesForSettlement,
   isProductionRuntime,
@@ -186,6 +191,11 @@ export async function settleBossCommissionFromPlatformFee(
 ) {
   if (!order?.id || !order?.companion_id) {
     return { skipped: true, reason: "no_order_or_companion" };
+  }
+
+  // 直属关系已下线：不再写入新的老板直属分成；历史 clawback 仍走 clawbackBossCommissionForOrder。
+  if (!isBossDirectRelationsEnabled()) {
+    return { skipped: true, reason: bossDirectRelationsDisabledReason() || "boss_direct_relations_retired" };
   }
 
   // G8: Production settlement writes stay off until flag explicitly enabled.

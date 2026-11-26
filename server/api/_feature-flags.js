@@ -44,17 +44,35 @@ export function pointsAwardDisabledReason(env = process.env) {
 }
 
 /**
+ * Boss ↔ Companion 直属关系（绑定 / 邀请码 / 直属分成写入）.
+ * 2026-11-24 产品下线：默认关闭。历史表与 clawback 保留。
+ * Env: BOSS_DIRECT_RELATIONS_ENABLED=1 仅紧急回滚时显式打开。
+ */
+export function isBossDirectRelationsEnabled(env = process.env) {
+  const parsed = parseBoolFlag(env.BOSS_DIRECT_RELATIONS_ENABLED);
+  if (parsed != null) return parsed;
+  return false;
+}
+
+export function bossDirectRelationsDisabledReason(env = process.env) {
+  if (isBossDirectRelationsEnabled(env)) return null;
+  return "boss_direct_relations_retired";
+}
+
+/**
  * Boss open invite links (generate / resolve / redeem → existing 直属 bind).
  * Env: BOSS_INVITE_LINKS_ENABLED
- * Production fail-closed when unset; non-production defaults on (local/staging).
+ * Also gated by isBossDirectRelationsEnabled (直属已下线则邀请链同步关闭).
  */
 export function isBossInviteLinksEnabled(env = process.env) {
+  if (!isBossDirectRelationsEnabled(env)) return false;
   const parsed = parseBoolFlag(env.BOSS_INVITE_LINKS_ENABLED);
   if (parsed != null) return parsed;
   return !isProductionRuntime(env);
 }
 
 export function bossInviteLinksDisabledReason(env = process.env) {
+  if (!isBossDirectRelationsEnabled(env)) return bossDirectRelationsDisabledReason(env);
   if (isBossInviteLinksEnabled(env)) return null;
   return "boss_invite_links_flag_disabled";
 }

@@ -10,6 +10,10 @@ import {
   isRelationsMissing,
 } from "../_boss-companion-relations.js";
 import { resolveBossPublicCode } from "../_account-codes.js";
+import {
+  isBossDirectRelationsEnabled,
+  bossDirectRelationsDisabledReason,
+} from "../_feature-flags.js";
 import { envValue, serviceHeaders, supabaseJson } from "../_wallet.js";
 
 function json(res, status, data) {
@@ -58,6 +62,14 @@ async function requireCompanion(req) {
 }
 
 export default async function handler(req, res) {
+  if (!isBossDirectRelationsEnabled()) {
+    return json(res, 410, {
+      ok: false,
+      code: "BOSS_DIRECT_RELATIONS_RETIRED",
+      message: "直属关系功能已下线",
+      reason: bossDirectRelationsDisabledReason(),
+    });
+  }
   if (req.method !== "GET") {
     return json(res, 405, { ok: false, message: "Method not allowed" });
   }

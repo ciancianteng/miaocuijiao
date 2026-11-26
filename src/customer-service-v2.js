@@ -3887,7 +3887,7 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, readVisualViewpo
       ['平台手续费',o.platformFee!=null?money(o.platformFee)+(o.platformFeeRate!=null?' ('+o.platformFeeRate+'%)':''):'-'],
       ['Boss 分成',o.bossCommissionAmount!=null?money(o.bossCommissionAmount)+(o.bossCommissionRate!=null?' · '+o.bossCommissionRate+'%':''):'-'],
       ['陪玩收入',o.companionIncome!=null?money(o.companionIncome):'-'],
-      ['结算说明',o.settlementNote||(Number(o.bossCommissionAmount)>0?'老板分成由平台抽成支付，不扣陪玩收入':'-')],
+      ['结算说明',o.settlementNote||(Number(o.bossCommissionAmount)>0?'历史 Boss 分成记录（新订单已停止直属分成）':'-')],
       ['创建时间',fmtOrderDateTime(o.createdAt)]
     ];
     if(o.csArchived)rows.push(['列表归档','已归档 · '+fmtOrderDateTime(o.csArchivedAt)+(o.csArchivedByName?' · '+o.csArchivedByName:'')]);

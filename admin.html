@@ -48,13 +48,13 @@
     html[data-mcj-auth-gate="pending"] .admin-shell{display:none!important}
     #mcjAuthBootOverlay{visibility:visible!important;opacity:1!important}
   </style>
-  <link rel="stylesheet" href="/src/admin-suite.css?v=20261121playerDrawer1">
-  <link rel="stylesheet" href="/src/admin-final-v1.css?v=20260926ordersUi1">
+  <link rel="stylesheet" href="/src/admin-suite.css?v=20261124-admin-compact-1">
+  <link rel="stylesheet" href="/src/admin-final-v1.css?v=20261124-admin-compact-1">
   <link rel="stylesheet" href="/src/admin-layout.css?v=20261114adminHead1">
   <link rel="stylesheet" href="/src/companion-identity.css?v=20261028medal1">
   <link rel="stylesheet" href="/src/admin-service-manager.css?v=20261120priceFinal1">
   <link rel="stylesheet" href="/src/admin-banner-manager.css?v=20260911bannerWysiwyg3to1">
-  <link rel="stylesheet" href="/src/admin-player-management.css?v=20261121playerDrawer1">
+  <link rel="stylesheet" href="/src/admin-player-management.css?v=20261124-admin-compact-1">
   <link rel="stylesheet" href="/src/admin-finance.css?v=20261106financePendingNotif1">
   <link rel="stylesheet" href="/src/admin-form-controls.css?v=20260920priceInputDark">
   <link rel="stylesheet" href="/src/admin-gameplay-mall.css">
@@ -96,7 +96,6 @@
         <button type="button" data-section="gifts">礼物管理</button>
         <button type="button" data-section="gift-orders">礼物订单管理</button>
         <button type="button" data-section="points-settings">积分设置</button>
-        <button type="button" data-section="boss-companion-relations">直属关系管理</button>
         <button type="button" data-section="popularity">人气榜设置</button>
         <button type="button" data-section="payment">支付设置</button>
         <button type="button" data-section="mail-logs">邮件通知记录</button>
@@ -180,8 +179,7 @@
         <section class="section" id="section-mail-logs"><section class="panel"><h2>邮件通知记录</h2><div id="mailNotificationLogs"></div></section></section>
         <section class="section" id="section-gifts"><section class="panel"><h2>礼物管理</h2><div id="giftManagement"></div></section></section>
         <section class="section" id="section-gift-orders"><section class="panel"><div id="giftOrderManagement"></div></section></section>
-        <section class="section" id="section-points-settings"><section class="panel"><h2>积分设置</h2><p class="admin-sync-note" style="margin:0 0 12px">Boss 订单积分：按实付金额 × 倍率（与陪玩人气无关）。已完成订单不补发。</p><div id="pointsSettingsMount"></div></section></section>
-        <section class="section" id="section-boss-companion-relations"><section class="panel"><h2>直属关系管理</h2><p class="admin-sync-note" style="margin:0 0 12px">Boss ↔ Companion 直属关系按用户 ID 保存。陪玩可用有效邀请码绑定一次；已绑定后不能自行覆盖。更换负责人须由管理员填写 reason 后换绑，历史记录保留。不改工资、钱包和已结算订单。</p><div id="bossCompanionRelationsMount"></div></section></section>
+        <section class="section" id="section-points-settings"><section class="panel"><h2>积分设置</h2><p class="admin-sync-note" style="margin:0 0 12px">Boss 订单积分：按实付金额 × 倍率（与陪玩人气无关）。已完成订单不补发。</p><div id="pointsSettingsMount"></div></section></section></section>
         <section class="section" id="section-boss-levels"><section class="panel"><h2>Boss VIP 等级管理</h2><p class="admin-sync-note" style="margin:0 0 12px">配置老板会员等级名称、升级所需累计有效消费（猫粮）、多条专属福利、排序与启停。老板端 VIP 卡自动读取；客服确认的有效消费达标后自动升级。</p><div id="bossLevelsMount"></div></section></section>
         <section class="section" id="section-popularity"><section class="panel"><h2>人气榜设置</h2><div id="popularityManagement" data-mcj-popularity-disabled="1" aria-live="polite"><div class="admin-sync-note" style="padding:18px;line-height:1.75" data-mcj-popularity-disabled-notice="1"><strong>人气榜功能暂未开放</strong><p style="margin:10px 0 0">当前真实礼物 / 收藏 / 在线时长等数据链路尚未完整验收，暂不提供榜单重算。</p><p style="margin:8px 0 0" class="empty">已停用 · 不展示旧榜单 / mock 排名 · 不可保存规则 / 调分 / 手动加减分</p></div></div></section></section>
         <section class="section" id="section-settings"><section class="panel"><h2>系统设置</h2><p class="admin-sync-note" style="margin:0 0 12px">平台配置与接入中心：普通配置可编辑；敏感密钥仅服务端管理。</p><div id="systemSettings"></div></section></section>
@@ -221,7 +219,6 @@
   <script src="/src/admin-gifts.js?v=20261113adminFix1" charset="utf-8"></script>
   <script src="/src/admin-gift-orders.js?v=20261113giftCard1"></script>
   <script src="/src/admin-points-settings.js?v=20260907prodClean1"></script>
-  <script src="/src/admin-boss-companion-relations.js?v=20261008rel1"></script>
   <script src="/src/admin-boss-vip.js?v=20260921bossVipAdmin2"></script>
   <script src="/src/admin-popularity.js?v=20260815adminPopDisabled2"></script>
   <script src="/src/companion-identity.js?v=20261028medal1"></script>
@@ -231,7 +228,7 @@
   <script src="/src/admin-service-level-prices.js?v=20261114lvPrice1"></script>
   <script src="/src/admin-rules-hub.js?v=20261108slp1"></script>
   <script src="/src/mcj-bell.js?v=20261029bell2"></script>
-  <script src="/src/admin-final-v1.js?v=20261115orderUnit1"></script>
+  <script src="/src/admin-final-v1.js?v=20261124-admin-compact-1"></script>
 
   <script src="/src/admin-service-packages.js"></script>
   <script src="/src/admin-platform-settings.js?v=20261007b1528"></script>
