@@ -265,6 +265,8 @@
     { "source": "/customer-service/conversations/", "destination": "/customer-service/conversations/index.html" },
     { "source": "/customer-service/chats", "destination": "/customer-service/conversations/index.html" },
     { "source": "/customer-service/chats/", "destination": "/customer-service/conversations/index.html" },
+    { "source": "/customer-service/create-order", "destination": "/customer-service/create-order/index.html" },
+    { "source": "/customer-service/create-order/", "destination": "/customer-service/create-order/index.html" },
     { "source": "/customer-service", "destination": "/customer-service/index.html" },
     { "source": "/customer-service/", "destination": "/customer-service/index.html" },
     { "source": "/customer-service/:path*", "destination": "/customer-service/index.html" },
