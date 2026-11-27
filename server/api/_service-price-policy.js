@@ -32,7 +32,9 @@ function clipText(value, max) {
 export function normalizePricePolicy(raw = {}) {
   const min = moneyOrNull(raw.min ?? raw.priceMin);
   const max = moneyOrNull(raw.max ?? raw.priceMax);
-  const unit = UNITS.has(String(raw.unit || "").trim()) ? String(raw.unit).trim() : "局";
+  // Empty policy must NOT invent 「局」— most companion services are hourly.
+  // Explicit admin unit (局/小时/场/次) still wins when set.
+  const unit = UNITS.has(String(raw.unit || "").trim()) ? String(raw.unit).trim() : "小时";
   return {
     min,
     max,

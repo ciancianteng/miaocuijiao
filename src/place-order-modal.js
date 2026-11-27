@@ -258,7 +258,7 @@
     return h;
   }
   function ensureCss() {
-    var href = "/src/place-order-modal.css?v=20261106poUi8";
+    var href = "/src/place-order-modal.css?v=20261127billHours1";
     var link = document.querySelector('link[data-mcj-place-order-css]');
     if (!link) {
       link = document.createElement("link");
@@ -2510,6 +2510,7 @@
             unitPrice: money(c.unitPrice),
             hours: hours,
             quantity: quantity,
+            pricingUnit: currentPricingUnit(),
             totalAmount: total,
             gameId: gameId,
             bossRank: readBossRank(),

@@ -528,7 +528,19 @@ export default async function handler(req, res) {
       const service = services.find((s) => String(s.id) === serviceKey) || services[0];
       if (!service) return json(res, 400, { ok: false, message: "没有可下单服务" });
 
-      const quantity = Math.max(0.5, money(body.quantity || 1));
+      // Adjustable count may arrive as hours (place-order modal) or quantity (legacy marketplace).
+      // Never prefer quantity=1 over a real hours value.
+      const billCount = Math.max(
+        0.5,
+        money(
+          body.hours != null && body.hours !== ""
+            ? body.hours
+            : body.quantity != null && body.quantity !== ""
+              ? body.quantity
+              : 1
+        ) || 1
+      );
+      const quantity = billCount;
       // Server-authoritative unit price from companion service listing — never trust client unitPrice.
       const unitPrice = money(service.price);
       if (unitPrice <= 0) return json(res, 400, { ok: false, message: "单价无效" });

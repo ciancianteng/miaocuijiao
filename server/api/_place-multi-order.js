@@ -11,6 +11,7 @@ import {
   isMultiGroupParent,
 } from "./_order-group.js";
 import { resolveOrderUnitPrice } from "./_admin-service-prices.js";
+import { computeOrderBillAmount, resolveBillingUnit } from "./_order-bill-amount.js";
 import { readLocalLevels } from "./_companion-levels-store.js";
 import { buildServiceSnapshotForCompanion, cleanRank, persistOrderServiceSnapshot } from "./_service-standard.js";
 import { attachDiscordContact } from "./_discord-desk.js";
@@ -228,9 +229,8 @@ export async function placeMultiOrder(ctx) {
       return { ok: false, status: 400, message: orderable.message || `陪玩不可下单：${companionId}` };
     }
     const cp = orderable.cp;
-    const quantity = Math.max(1, Math.floor(money(line.quantity || 1) || 1));
-    const baseHours = Math.max(0.5, money(line.hours || line.duration || body.hours || 1));
-    const hours = Math.round(baseHours * quantity * 100) / 100;
+    let quantity = Math.max(1, Math.floor(money(line.quantity != null ? line.quantity : 1) || 1));
+    let hours = Math.max(0.5, money(line.hours != null && line.hours !== "" ? line.hours : line.duration || body.hours || 1) || 1);
     const serviceId = String(line.serviceId || line.service_id || "").trim();
     const gameHint = String(
       line.serviceName ||
@@ -277,9 +277,24 @@ export async function placeMultiOrder(ctx) {
         message: `陪玩所选服务尚未设置单价（${companionId}）`,
       };
     }
+    const pricingUnit = resolveBillingUnit({
+      companionUnit: resolved?.serviceRow?.pricing_unit || resolved?.serviceRow?.pricingUnit,
+      catalogUnit: resolved.pricingUnit,
+      clientUnit: line.pricingUnit || line.pricing_unit,
+      fallback: "小时",
+    });
+    const billed = computeOrderBillAmount({
+      unitPrice,
+      hours: line.hours != null && line.hours !== "" ? line.hours : body.hours,
+      duration: line.duration,
+      quantity: line.quantity,
+      pricingUnit,
+    });
+    hours = billed.hours;
+    quantity = billed.quantity;
     // Allow explicit amount override only when it matches server unit*hours (±0.05) OR
     // client sends amount that equals server calc — never trust bare client amount alone.
-    let totalAmount = Math.round(unitPrice * hours * 100) / 100;
+    let totalAmount = billed.totalAmount;
     const clientTotal = money(line.totalAmount || line.total_amount || line.amount);
     const clientUnit = money(line.unitPrice || line.unit_price || line.price);
     if (clientUnit > 0 && Math.abs(clientUnit - unitPrice) > 0.05) {

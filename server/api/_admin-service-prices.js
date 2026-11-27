@@ -544,7 +544,20 @@ export async function resolveOrderUnitPrice({
     if (!quote.visible || quote.blocked) {
       return { ...resolved, price: 0, blocked: true, pricingUnit: quote.unit, message: quote.message || "该服务已停用，不能创建新订单。" };
     }
-    return { ...resolved, price: quote.price, source: quote.source, pricingUnit: quote.unit, catalogDescription: quote.description, catalogRequirements: quote.requirements };
+    // Companion service row unit beats empty/default policy unit so 「小时」rows are not
+    // misclassified as 「局」and then billed as quantity=1.
+    const rowUnit = String(
+      resolved?.serviceRow?.pricing_unit || resolved?.serviceRow?.pricingUnit || ""
+    ).trim();
+    const pricingUnit = rowUnit || String(quote.unit || "").trim() || "小时";
+    return {
+      ...resolved,
+      price: quote.price,
+      source: quote.source,
+      pricingUnit,
+      catalogDescription: quote.description,
+      catalogRequirements: quote.requirements,
+    };
   } catch (err) {
     console.warn("[order-price] companion offer", err?.message || err);
   }

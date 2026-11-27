@@ -5,6 +5,7 @@ import { resolvePlatformCommission } from "./_commission-rates.js";
 import { readLocalLevels } from "./_companion-levels-store.js";
 import { priceForGame } from "./_game-prices.js";
 import { resolveOrderUnitPrice } from "./_admin-service-prices.js";
+import { computeOrderBillAmount, resolveBillingUnit } from "./_order-bill-amount.js";
 import {
   buildServiceSnapshot,
   buildServiceSnapshotForCompanion,
@@ -1475,10 +1476,10 @@ export default async function handler(req, res) {
           });
         }
       }
-      let quantity = Math.max(1, Math.floor(money(order.quantity || 1) || 1));
-      const baseHours = Math.max(0.5, money(order.hours || order.duration || 1));
-      let hours = Math.round(baseHours * quantity * 100) / 100;
+      let quantity = Math.max(1, Math.floor(money(order.quantity != null ? order.quantity : 1) || 1));
+      let hours = Math.max(0.5, money(order.hours != null && order.hours !== "" ? order.hours : order.duration || 1) || 1);
       let perGameOrder = false;
+      let billingUnit = String(order.pricingUnit || order.pricing_unit || "小时").trim() || "小时";
       const serviceType = String(order.serviceType || order.service_type || order.serviceName || order.service || "陪玩").trim() || "陪玩";
       const companionName = String(order.companionName || order.companion_name || "").trim();
       const gameId = String(order.gameId || order.game_id || order.gameIdValue || order.game_id_value || "").trim();
@@ -1554,12 +1555,16 @@ export default async function handler(req, res) {
           return json(res, 400, { ok: false, code: "SERVICE_CLOSED", message: resolved.message || "该服务已关闭，不能创建新订单。" });
         }
         unitPrice = money(resolved.price);
-        const catalogUnit = String(resolved.pricingUnit || order.pricingUnit || order.pricing_unit || "").trim();
-        perGameOrder = /per_game|局/i.test(catalogUnit);
-        if (perGameOrder) {
-          quantity = Math.max(1, Math.floor(money(order.quantity || order.hours || 1)));
-          hours = 0;
-        }
+        const rowUnit = String(
+          resolved?.serviceRow?.pricing_unit || resolved?.serviceRow?.pricingUnit || cp.pricing_unit || ""
+        ).trim();
+        const catalogUnit = resolveBillingUnit({
+          companionUnit: rowUnit,
+          catalogUnit: resolved.pricingUnit,
+          clientUnit: order.pricingUnit || order.pricing_unit,
+          fallback: "小时",
+        });
+        billingUnit = catalogUnit;
         if (!(unitPrice > 0)) {
           return json(res, 400, {
             ok: false,
@@ -1567,9 +1572,19 @@ export default async function handler(req, res) {
             message: "该陪玩所选服务尚未设置单价，且等级无基础价格，无法下单。",
           });
         }
-        totalAmount = perGameOrder
-          ? Math.round(unitPrice * quantity * 100) / 100
-          : Math.round(unitPrice * hours * 100) / 100;
+        // Same formula as place-order-modal: unitPrice × hours × quantity.
+        // Never use `quantity || hours` — quantity defaults to 1 and used to wipe 4h → 1.
+        const billed = computeOrderBillAmount({
+          unitPrice,
+          hours: order.hours,
+          duration: order.duration,
+          quantity: order.quantity,
+          pricingUnit: catalogUnit,
+        });
+        perGameOrder = billed.perGame;
+        hours = billed.hours;
+        quantity = billed.quantity;
+        totalAmount = billed.totalAmount;
         const clientUnit = money(order.unit_price || order.unitPrice || order.price || order.budget || 0);
         const clientTotal = money(order.total_amount || order.totalAmount);
         if (clientUnit > 0 && Math.abs(clientUnit - unitPrice) > 0.05) {
@@ -1614,7 +1629,7 @@ export default async function handler(req, res) {
             serviceId: serviceId || resolved?.serviceRow?.service_id || "",
             serviceName: serviceType,
             unitPrice,
-            pricingUnit: catalogUnit || String(order.pricingUnit || order.pricing_unit || cp.pricing_unit || "小时"),
+            pricingUnit: billingUnit,
             catalogDescription: resolved.catalogDescription || "",
             catalogRequirements: resolved.catalogRequirements || "",
             hours,
@@ -1749,7 +1764,7 @@ export default async function handler(req, res) {
         game_id_value: gameId || String(order.game_id || "").trim(),
         notes: notes || descriptionParts.join("\n"),
         quantity,
-        pricing_unit: perGameOrder ? "per_game" : String(order.pricingUnit || order.pricing_unit || "小时"),
+        pricing_unit: perGameOrder ? "per_game" : billingUnit,
         voice_mode: voiceMode,
       };
       if (voiceMode === "discord") {
