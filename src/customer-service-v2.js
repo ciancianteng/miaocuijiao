@@ -4247,14 +4247,118 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, readVisualViewpo
       insuffEls.forEach(function(insuff){insuff.hidden=!bad||!(total>0)||!!state._proxySubmitting;});
       submits.forEach(function(submit){if(!state._proxySubmitting)submit.disabled=bad;});
     }
-    function filterSelect(sel,q,hayFn){
-      if(!sel)return;
-      q=String(q||'').trim().toLowerCase();
-      [].slice.call(sel.options).forEach(function(opt,i){
-        if(i===0){opt.hidden=false;return;}
-        var hay=String(hayFn(opt)||'').toLowerCase();
-        opt.hidden=!!(q&&hay.indexOf(q)<0);
+    function setSearchStatus(kind,text){
+      var el=form.querySelector(kind==='boss'?'[data-proxy-boss-status]':'[data-proxy-companion-status]');
+      if(!el)return;
+      if(!text){el.hidden=true;el.textContent='';return;}
+      el.hidden=false;
+      el.textContent=text;
+    }
+    function hideSearchResults(kind){
+      var box=form.querySelector(kind==='boss'?'[data-proxy-boss-results]':'[data-proxy-companion-results]');
+      if(box){box.hidden=true;box.innerHTML='';}
+    }
+    function ensureSelectOption(sel,value,label,attrs){
+      if(!sel||!value)return;
+      var opt=[].slice.call(sel.options).find(function(o){return String(o.value)===String(value);});
+      if(!opt){
+        opt=document.createElement('option');
+        opt.value=String(value);
+        sel.appendChild(opt);
+      }
+      opt.textContent=label||value;
+      Object.keys(attrs||{}).forEach(function(k){opt.setAttribute(k,attrs[k]==null?'':String(attrs[k]));});
+      sel.value=String(value);
+    }
+    function renderPeopleResults(kind,items){
+      var box=form.querySelector(kind==='boss'?'[data-proxy-boss-results]':'[data-proxy-companion-results]');
+      if(!box)return;
+      if(!items||!items.length){
+        box.hidden=true;box.innerHTML='';
+        return;
+      }
+      box.hidden=false;
+      box.innerHTML=items.map(function(p){
+        var uid=kind==='boss'?(p.bossUid||p.uid||''):(p.companionCode||p.uid||'');
+        var meta=kind==='boss'?uid:(uid+(p.level?' · '+p.level:'')+(p.game?' · '+p.game:''));
+        return '<button type="button" class="cs-proxy-search-item" data-proxy-pick="'+esc(kind)+'" data-id="'+esc(p.id||'')+'" data-name="'+esc(p.name||'')+'" data-uid="'+esc(uid)+'" data-avatar="'+esc(p.avatar||'/default-avatar.png')+'" data-code="'+esc(p.companionCode||'')+'" data-level="'+esc(p.level||'')+'" data-game="'+esc(p.game||'')+'" data-price="'+esc(p.price!=null?p.price:'')+'">'+
+          '<img src="'+esc(p.avatar||'/default-avatar.png')+'" alt="" onerror="this.onerror=null;this.src=\'/default-avatar.png\'">'+
+          '<span><strong>'+esc(p.name||'-')+'</strong><em>'+esc(meta||'-')+'</em></span></button>';
+      }).join('');
+    }
+    var searchTimers={boss:null,companion:null};
+    var searchSeq={boss:0,companion:0};
+    var composing={boss:false,companion:false};
+    function runPeopleSearch(kind,rawQ){
+      var q=String(rawQ||'').trim();
+      if(!q){
+        setSearchStatus(kind,'');
+        hideSearchResults(kind);
+        return;
+      }
+      var seq=++searchSeq[kind];
+      setSearchStatus(kind,'搜索中…');
+      hideSearchResults(kind);
+      api('search_proxy_people',{role:kind,q:q,limit:12}).then(function(res){
+        if(seq!==searchSeq[kind])return;
+        var items=(res&&res.items)||[];
+        if(!items.length){
+          setSearchStatus(kind,'未找到匹配用户');
+          hideSearchResults(kind);
+          return;
+        }
+        setSearchStatus(kind,'');
+        renderPeopleResults(kind,items);
+      }).catch(function(){
+        if(seq!==searchSeq[kind])return;
+        setSearchStatus(kind,'搜索失败，请重试');
+        hideSearchResults(kind);
       });
+    }
+    function schedulePeopleSearch(kind,rawQ){
+      clearTimeout(searchTimers[kind]);
+      searchTimers[kind]=setTimeout(function(){runPeopleSearch(kind,rawQ);},300);
+    }
+    function pickBossFromSearch(btn){
+      var id=btn.getAttribute('data-id')||'';
+      var name=btn.getAttribute('data-name')||'';
+      var uid=btn.getAttribute('data-uid')||'';
+      var avatar=btn.getAttribute('data-avatar')||'/default-avatar.png';
+      var bsel=form.querySelector('[data-proxy-boss-select]');
+      ensureSelectOption(bsel,id,name+' · '+uid,{
+        'data-boss-uid':uid,
+        'data-boss-name':name,
+        'data-boss-avatar':avatar
+      });
+      var bq=form.querySelector('[data-proxy-boss-q]');
+      if(bq)bq.value=name;
+      hideSearchResults('boss');
+      setSearchStatus('boss','');
+      loadBossWallet();
+    }
+    function pickCompanionFromSearch(btn){
+      var id=btn.getAttribute('data-id')||'';
+      var name=btn.getAttribute('data-name')||'';
+      var code=btn.getAttribute('data-code')||btn.getAttribute('data-uid')||'';
+      var level=btn.getAttribute('data-level')||'';
+      var game=btn.getAttribute('data-game')||'';
+      var price=btn.getAttribute('data-price')||'';
+      var avatar=btn.getAttribute('data-avatar')||'/default-avatar.png';
+      var csel=form.querySelector('[data-proxy-companion-select]');
+      ensureSelectOption(csel,id,name+' · '+code,{
+        'data-name':name,
+        'data-code':code,
+        'data-level':level,
+        'data-game':game,
+        'data-price':price,
+        'data-avatar':avatar
+      });
+      var cq=form.querySelector('[data-proxy-companion-q]');
+      if(cq)cq.value=name;
+      hideSearchResults('companion');
+      setSearchStatus('companion','');
+      refreshCompanionChip();
+      recalc();
     }
     form.addEventListener('change',function(ev){
       if(ev.target.matches('[data-proxy-mode]'))syncMode();
@@ -4262,20 +4366,40 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, readVisualViewpo
       if(ev.target.matches('[data-proxy-companion-select]')){refreshCompanionChip();recalc();}
       if(ev.target.matches('[data-proxy-service],[data-proxy-hours]'))recalc();
     });
+    form.addEventListener('compositionstart',function(ev){
+      if(ev.target.matches('[data-proxy-boss-q]'))composing.boss=true;
+      if(ev.target.matches('[data-proxy-companion-q]'))composing.companion=true;
+    });
+    form.addEventListener('compositionend',function(ev){
+      if(ev.target.matches('[data-proxy-boss-q]')){
+        composing.boss=false;
+        schedulePeopleSearch('boss',ev.target.value);
+      }
+      if(ev.target.matches('[data-proxy-companion-q]')){
+        composing.companion=false;
+        schedulePeopleSearch('companion',ev.target.value);
+      }
+    });
     form.addEventListener('input',function(ev){
       if(ev.target.matches('[data-proxy-hours]'))recalc();
-      if(ev.target.matches('[data-proxy-companion-q]')){
-        filterSelect(form.querySelector('[data-proxy-companion-select]'),ev.target.value,function(opt){
-          return (opt.getAttribute('data-name')||'')+' '+(opt.getAttribute('data-code')||'')+' '+(opt.getAttribute('data-level')||'')+' '+(opt.getAttribute('data-game')||'');
-        });
-      }
       if(ev.target.matches('[data-proxy-boss-q]')){
-        filterSelect(form.querySelector('[data-proxy-boss-select]'),ev.target.value,function(opt){
-          return (opt.getAttribute('data-boss-name')||'')+' '+(opt.getAttribute('data-boss-uid')||'')+' '+opt.textContent;
-        });
+        if(ev.isComposing||composing.boss)return;
+        schedulePeopleSearch('boss',ev.target.value);
+      }
+      if(ev.target.matches('[data-proxy-companion-q]')){
+        if(ev.isComposing||composing.companion)return;
+        schedulePeopleSearch('companion',ev.target.value);
       }
     });
     form.addEventListener('click',function(ev){
+      var pickBtn=ev.target.closest('[data-proxy-pick]');
+      if(pickBtn){
+        ev.preventDefault();
+        var kind=pickBtn.getAttribute('data-proxy-pick');
+        if(kind==='boss')pickBossFromSearch(pickBtn);
+        else if(kind==='companion')pickCompanionFromSearch(pickBtn);
+        return;
+      }
       var clearBoss=ev.target.closest('[data-proxy-boss-clear]');
       if(clearBoss){
         ev.preventDefault();
@@ -4283,7 +4407,8 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, readVisualViewpo
         var bq=form.querySelector('[data-proxy-boss-q]');
         if(bsel)bsel.value='';
         if(bq)bq.value='';
-        filterSelect(bsel,'',function(){return '';});
+        hideSearchResults('boss');
+        setSearchStatus('boss','');
         state._proxyPrefillBossId='';
         state._proxyPrefillUid='';
         loadBossWallet();
@@ -4296,7 +4421,8 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, readVisualViewpo
         var cq=form.querySelector('[data-proxy-companion-q]');
         if(csel)csel.value='';
         if(cq)cq.value='';
-        filterSelect(csel,'',function(){return '';});
+        hideSearchResults('companion');
+        setSearchStatus('companion','');
         refreshCompanionChip();
         recalc();
         return;
@@ -4388,8 +4514,12 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, readVisualViewpo
                 '<section class="cs-proxy-block">'+
                   '<div class="cs-proxy-block-label">老板</div>'+
                   '<div class="cs-proxy-combo" data-proxy-boss-pick>'+
-                    '<input type="search" data-proxy-boss-q placeholder="搜索昵称 / UID" autocomplete="off" enterkeyhint="search">'+
-                    '<select name="boss_id" data-proxy-boss-select required><option value="">选择老板</option>'+bossOptions+'</select>'+
+                    '<div class="cs-proxy-search-wrap">'+
+                      '<input type="search" data-proxy-boss-q placeholder="搜索昵称 / UID" autocomplete="off" enterkeyhint="search" inputmode="search">'+
+                      '<div class="cs-proxy-search-status" data-proxy-boss-status hidden></div>'+
+                      '<div class="cs-proxy-search-results" data-proxy-boss-results hidden></div>'+
+                    '</div>'+
+                    '<select name="boss_id" data-proxy-boss-select required class="cs-proxy-select-hidden" tabindex="-1" aria-hidden="true"><option value="">选择老板</option>'+bossOptions+'</select>'+
                   '</div>'+
                   bossesTip+
                   '<div class="cs-proxy-boss" data-proxy-boss-card hidden>'+
@@ -4408,8 +4538,12 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, readVisualViewpo
                   '</div>'+
                   '<div class="cs-proxy-companion-block" data-proxy-companion-block>'+
                     '<div class="cs-proxy-combo" data-proxy-companion-pick>'+
-                      '<input type="search" data-proxy-companion-q placeholder="搜索陪玩昵称 / UID" autocomplete="off" enterkeyhint="search">'+
-                      '<select name="companion_id" data-proxy-companion-select><option value="">选择陪玩</option>'+companionOptions+'</select>'+
+                      '<div class="cs-proxy-search-wrap">'+
+                        '<input type="search" data-proxy-companion-q placeholder="搜索陪玩昵称 / UID" autocomplete="off" enterkeyhint="search" inputmode="search">'+
+                        '<div class="cs-proxy-search-status" data-proxy-companion-status hidden></div>'+
+                        '<div class="cs-proxy-search-results" data-proxy-companion-results hidden></div>'+
+                      '</div>'+
+                      '<select name="companion_id" data-proxy-companion-select class="cs-proxy-select-hidden" tabindex="-1" aria-hidden="true"><option value="">选择陪玩</option>'+companionOptions+'</select>'+
                     '</div>'+
                     '<div class="cs-proxy-companion-chip" data-proxy-companion-chip hidden></div>'+
                     companionsTip+

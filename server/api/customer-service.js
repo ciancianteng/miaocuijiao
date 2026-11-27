@@ -263,6 +263,127 @@ async function resolveCompanion(input) {
   }
   return null;
 }
+function sanitizeSearchToken(raw) {
+  return String(raw || "")
+    .trim()
+    .replace(/[%_,.()]/g, " ")
+    .replace(/\s+/g, " ")
+    .slice(0, 64);
+}
+function dedupeById(list) {
+  const seen = new Set();
+  const out = [];
+  for (const row of list || []) {
+    const id = String(row?.id || "").trim();
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    out.push(row);
+  }
+  return out;
+}
+/** CS proxy-order people search — service-role PostgREST, keeps RLS intact for clients. */
+async function searchProxyPeople(role, qRaw, limit = 12) {
+  const q = sanitizeSearchToken(qRaw);
+  if (!q) return [];
+  const lim = Math.max(1, Math.min(20, Number(limit) || 12));
+  const like = `*${q}*`;
+  if (role === "boss") {
+    const rows = [];
+    const byResolve = await resolveBoss(q).catch(() => null);
+    if (byResolve && byResolve.role === "boss" && (!byResolve.status || byResolve.status === "active")) {
+      rows.push(byResolve);
+    }
+    const fuzzy = await maybeRows(
+      "profiles",
+      `?role=eq.boss&status=eq.active&or=(display_name.ilike.${encodeURIComponent(like)},boss_uid.ilike.${encodeURIComponent(like)})&select=id,display_name,boss_uid,avatar_url,status,role&limit=${lim}`
+    ).catch(() => []);
+    rows.push(...(fuzzy || []));
+    return dedupeById(rows)
+      .slice(0, lim)
+      .map((p) => {
+        const b = bossForCs(p);
+        return {
+          id: b.id || p.id,
+          name: b.name || b.bossName || p.display_name || "老板",
+          bossUid: b.bossUid || p.boss_uid || "",
+          uid: b.bossUid || p.boss_uid || "",
+          avatar: b.avatar || p.avatar_url || "/default-avatar.png",
+          role: "boss",
+        };
+      })
+      .filter((p) => isUuid(p.id));
+  }
+
+  // companion
+  const hits = [];
+  const byResolve = await resolveCompanion(q).catch(() => null);
+  if (byResolve && isUuid(byResolve.id)) hits.push({ user_id: byResolve.id, profile: byResolve });
+
+  const cpFuzzy = await maybeRows(
+    "companion_profiles",
+    `?or=(nickname.ilike.${encodeURIComponent(like)},companion_code.ilike.${encodeURIComponent(like)})&select=id,user_id,nickname,companion_code,companion_uid,game,level_name,price,avatar_url,cover_url,application_status,verification_status,online_status&limit=${lim}`
+  ).catch(() => []);
+  for (const cp of cpFuzzy || []) {
+    if (!isUuid(cp.user_id)) continue;
+    hits.push({ user_id: cp.user_id, cp });
+  }
+
+  // Dual-role companions often keep profiles.role=boss; prefer companion_profiles.
+  // Still allow profiles.display_name hits, but only keep rows that pass companionCapableProfile.
+  const nameFuzzy = await maybeRows(
+    "profiles",
+    `?display_name.ilike.${encodeURIComponent(like)}&select=id,display_name,avatar_url,status,role&limit=${lim}`
+  ).catch(() => []);
+  for (const p of nameFuzzy || []) {
+    if (!isUuid(p.id)) continue;
+    const capable = await companionCapableProfile(p.id).catch(() => null);
+    if (!capable) continue;
+    hits.push({ user_id: p.id, profile: capable });
+  }
+
+  const out = [];
+  const seen = new Set();
+  for (const hit of hits) {
+    const uid = hit.user_id;
+    if (!isUuid(uid) || seen.has(uid)) continue;
+    const profile = hit.profile || (await companionCapableProfile(uid).catch(() => null));
+    if (!profile) continue;
+    const cps =
+      hit.cp ||
+      (
+        await maybeRows(
+          "companion_profiles",
+          `?user_id=eq.${encodeURIComponent(uid)}&select=id,user_id,nickname,companion_code,companion_uid,game,level_name,price,avatar_url,cover_url,application_status,verification_status,online_status,application_submitted_at&limit=1`
+        ).catch(() => [])
+      )[0];
+    if (!cps) continue;
+    const appSt = String(cps.application_status || "").toLowerCase();
+    const isDraft =
+      /^(draft|archived|deleted)$/.test(appSt) ||
+      (!cps.application_submitted_at && !/approved|verified|passed/.test(appSt));
+    if (isDraft) continue;
+    const verified = /approved|verified|passed/.test(String(cps.application_status || cps.verification_status || ""));
+    if (!verified) continue;
+    if (profile.status && profile.status !== "active" && profile.status !== "启用") continue;
+    const mapped = mapCompanionPublicFields(cps, profile);
+    const code = mapped.companionCode || mapped.publicId || cps.companion_code || "";
+    seen.add(uid);
+    out.push({
+      id: mapped.id || uid,
+      name: mapped.name || cps.nickname || profile.display_name || "陪玩",
+      companionCode: code,
+      companionUid: mapped.companionUid || cps.companion_uid || "",
+      uid: code || String(cps.companion_uid || ""),
+      avatar: mapped.avatar || cps.avatar_url || profile.avatar_url || "/default-avatar.png",
+      game: cps.game || mapped.game || "",
+      level: cps.level_name || "",
+      price: money(cps.price),
+      role: "companion",
+    });
+    if (out.length >= lim) break;
+  }
+  return out;
+}
 async function profileMap(ids) { const uniq = [...new Set((ids || []).filter(isUuid))]; if (!uniq.length) return {}; const rows = await maybeRows("profiles", `?id=in.(${uniq.map(encodeURIComponent).join(",")})&limit=1000`); return rows.reduce((map, row) => { map[row.id] = row; return map; }, {}); }
 async function authUserFromToken(token) {
   try {
@@ -1732,6 +1853,45 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
     const service = await requireService(req); if (req.method === "GET") return json(res, 200, { ok: true, configured: true, data: await loadBootstrap(service.profile) });
     if (action === "session_pool") return json(res, 200, { ok: true, configured: true, data: await loadSessionPool(service.profile) });
     if (action === "bootstrap" || !action) return json(res, 200, { ok: true, configured: true, data: await loadBootstrap(service.profile) });
+    if (action === "get_boss_wallet" || action === "boss_wallet") {
+      const rawBossId = String(body.boss_id || body.bossId || body.id || "").trim();
+      const rawBossUid = String(body.boss_uid || body.bossUid || "").trim();
+      const bossInput = isUuid(rawBossId) ? rawBossId : rawBossUid || rawBossId;
+      const boss = await resolveBoss(bossInput);
+      if (!boss || boss.role !== "boss" || !isUuid(boss.id)) {
+        return json(res, 400, { ok: false, message: "请选择真实老板账号。" });
+      }
+      const { readBossWalletForCs } = await import("./_cs-proxy-order-charge.js");
+      const wallet = await readBossWalletForCs(boss.id);
+      return json(res, 200, {
+        ok: true,
+        boss: {
+          id: boss.id,
+          bossUid: boss.boss_uid || boss.bossUid || "",
+          name: boss.display_name || boss.name || "",
+          avatar: boss.avatar_url || "",
+        },
+        wallet,
+      });
+    }
+    if (
+      action === "search_proxy_people" ||
+      action === "proxy_search" ||
+      action === "search_boss" ||
+      action === "search_companion"
+    ) {
+      const roleRaw = String(body.role || body.targetRole || (action === "search_companion" ? "companion" : action === "search_boss" ? "boss" : "") || "boss")
+        .trim()
+        .toLowerCase();
+      const role = roleRaw === "companion" || roleRaw === "陪玩" ? "companion" : "boss";
+      const q = String(body.q || body.query || body.keyword || body.search || "").trim();
+      try {
+        const items = await searchProxyPeople(role, q, 12);
+        return json(res, 200, { ok: true, role, q, items, count: items.length });
+      } catch (err) {
+        return json(res, 500, { ok: false, message: err?.message || "搜索失败，请重试" });
+      }
+    }
     if (action === "take_conversation") {
       const id = String(body.id || body.conversation_id || body.conversationId || "").trim();
       if (!id) return json(res, 400, { ok: false, message: "缺少会话 ID。" });

@@ -1524,6 +1524,58 @@ button.cs-metric{display:block;width:100%;text-align:left;color:inherit;backgrou
   font-weight:500;
 }
 .cs-proxy-combo select{appearance:none;-webkit-appearance:none}
+.cs-proxy-select-hidden{
+  position:absolute!important;
+  width:1px!important;
+  height:1px!important;
+  opacity:0!important;
+  pointer-events:none!important;
+  overflow:hidden!important;
+  clip:rect(0,0,0,0)!important;
+}
+.cs-proxy-search-wrap{position:relative;display:grid;gap:6px}
+.cs-proxy-search-status{
+  margin:0;
+  color:#8b909a;
+  font-size:12px;
+  line-height:1.4;
+}
+.cs-proxy-search-results{
+  display:grid;
+  gap:4px;
+  max-height:220px;
+  overflow:auto;
+  padding:6px;
+  border-radius:12px;
+  border:1px solid rgba(255,255,255,.08);
+  background:#15151c;
+}
+.cs-proxy-search-results[hidden],
+.cs-proxy-search-status[hidden]{display:none!important}
+.cs-proxy-search-item{
+  display:grid;
+  grid-template-columns:36px minmax(0,1fr);
+  gap:10px;
+  align-items:center;
+  width:100%;
+  border:0;
+  border-radius:10px;
+  background:transparent;
+  color:#f3f4f6;
+  text-align:left;
+  padding:8px;
+  cursor:pointer;
+}
+.cs-proxy-search-item:hover,
+.cs-proxy-search-item:focus{
+  background:rgba(255,255,255,.06);
+  outline:none;
+}
+.cs-proxy-search-item img{
+  width:36px;height:36px;border-radius:50%;object-fit:cover;background:#22222b;
+}
+.cs-proxy-search-item strong{display:block;font-size:13px;font-weight:650}
+.cs-proxy-search-item em{display:block;margin-top:2px;font-style:normal;color:#8b909a;font-size:11px}
 .cs-proxy-text-btn{
   border:0;
   background:transparent;
