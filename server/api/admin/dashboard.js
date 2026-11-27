@@ -428,7 +428,9 @@ async function loadProfilesForStats() {
 
 async function loadCompanionProfilesForStats() {
   const queries = [
-    "?select=id,user_id,nickname,verification_status,application_status,is_test_account&limit=5000",
+    "?select=id,user_id,nickname,companion_code,companion_uid,verification_status,application_status,is_test_account&limit=5000",
+    "?select=id,user_id,nickname,companion_code,verification_status,application_status,is_test_account&limit=5000",
+    "?select=id,user_id,nickname,companion_code,verification_status,application_status&limit=5000",
     "?select=id,user_id,nickname,verification_status,application_status&limit=5000",
     "?select=id,user_id,nickname,verification_status&limit=5000",
   ];
@@ -566,18 +568,34 @@ async function loadBalanceWithdrawals() {
 async function loadOrdersByIds(ids) {
   const out = [];
   const list = [...new Set(ids.filter(Boolean))];
+  // Prod may lack optional columns (e.g. completion_method). Fall back so order income
+  // is not voided — same unlock math as companion earnings (method resolved from note).
+  const selects = [
+    "id,status,completed_at,cancelled_at,completion_method,note,description",
+    "id,status,completed_at,cancelled_at,note,description",
+    "id,status,completed_at,cancelled_at,note",
+    "id,status,completed_at,cancelled_at",
+    "id,status,completed_at",
+    "id,status",
+  ];
   for (let i = 0; i < list.length; i += 80) {
     const chunk = list.slice(i, i + 80);
-    try {
-      const rows = await supabaseJson(
-        restUrl(
-          "orders",
-          `?id=in.(${chunk.map(encodeURIComponent).join(",")})&select=id,status,completed_at,cancelled_at,completion_method,note,description`
-        ),
-        { headers: serviceHeaders() }
-      );
-      if (Array.isArray(rows)) out.push(...rows);
-    } catch {
+    let loaded = false;
+    for (const select of selects) {
+      try {
+        const rows = await supabaseJson(
+          restUrl("orders", `?id=in.(${chunk.map(encodeURIComponent).join(",")})&select=${select}`),
+          { headers: serviceHeaders() }
+        );
+        if (Array.isArray(rows)) out.push(...rows);
+        loaded = true;
+        break;
+      } catch (error) {
+        if (isMissingColumnError(error) || isMissingRelationError(error)) continue;
+        break;
+      }
+    }
+    if (!loaded) {
       /* unlock falls back to locked when order row is missing — same as earnings center */
     }
   }
@@ -607,11 +625,14 @@ export async function buildCompanionBalanceReport({
     const needed = txs.map((tx) => String(tx.order_id || "")).filter((id) => id && orderMap.has(id));
     const linked = needed.map((id) => orderMap.get(id));
     const bal = companionWalletBalances({ transactions: txs, withdrawals: wds, orders: linked });
-    if (!(bal.withdrawable || bal.earningsLocked || bal.frozen || bal.withdrawn || bal.withdrawableBase)) continue;
+    const publicId = String(cp.companion_code || cp.companion_uid || cp.companionCode || "").trim();
     rows.push({
       userId,
       companionId: cp.id || "",
       name: cp.nickname || profile?.display_name || "未命名陪玩",
+      publicId,
+      companionCode: publicId,
+      companion_code: publicId,
       withdrawable: bal.withdrawable,
       pendingSettlement: bal.earningsLocked,
       frozen: bal.frozen,
@@ -629,6 +650,7 @@ export async function buildCompanionBalanceReport({
       frozen: sum("frozen"),
       withdrawn: sum("withdrawn"),
       count: rows.length,
+      activeCount: rows.filter((row) => Number(row.withdrawable || 0) > 0 || Number(row.pendingSettlement || 0) > 0).length,
     },
     rows,
   };

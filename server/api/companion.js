@@ -2048,19 +2048,27 @@ async function ordersForIncomeTransactions(transactions = [], myOrders = []) {
     ),
   ].slice(0, 120);
   if (incomeOids.length) {
-    try {
-      const rows = await supabaseJson(
-        restUrl(
-          "orders",
-          `?id=in.(${incomeOids.map(encodeURIComponent).join(",")})&select=id,status,order_no,companion_id,completed_at,cancelled_at,completion_method,note,description`
-        ),
-        { headers: serviceHeaders() }
-      );
-      for (const row of Array.isArray(rows) ? rows : []) {
-        byId.set(String(row.id), row);
+    const selects = [
+      "id,status,order_no,companion_id,completed_at,cancelled_at,completion_method,note,description",
+      "id,status,order_no,companion_id,completed_at,cancelled_at,note,description",
+      "id,status,order_no,companion_id,completed_at,cancelled_at,note",
+      "id,status,completed_at,cancelled_at,note,description",
+      "id,status,completed_at,cancelled_at",
+      "id,status,completed_at",
+    ];
+    for (const select of selects) {
+      try {
+        const rows = await supabaseJson(
+          restUrl("orders", `?id=in.(${incomeOids.map(encodeURIComponent).join(",")})&select=${select}`),
+          { headers: serviceHeaders() }
+        );
+        for (const row of Array.isArray(rows) ? rows : []) {
+          byId.set(String(row.id), row);
+        }
+        break;
+      } catch {
+        /* try next select shape — keep myOrders seed if all fail */
       }
-    } catch {
-      /* soft-fail: keep myOrders seed */
     }
   }
   return [...byId.values()];
