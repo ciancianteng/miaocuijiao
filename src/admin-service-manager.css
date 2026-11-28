@@ -535,3 +535,162 @@ body.svc-dialog-lock{position:fixed;width:100%;overflow:hidden}
   .svc-cat-add{grid-template-columns:1fr}
   .svc-cat-row{align-items:flex-start}
 }
+
+/* Compact service manager shell (2026-11-28 redesign) */
+body[data-admin-section="games"] #section-games > .panel > h2{
+  display:none !important;
+}
+body[data-admin-section="games"] #section-games > .panel{
+  padding:14px !important;
+  border:0 !important;
+  background:transparent !important;
+  box-shadow:none !important;
+}
+.svc-shell{
+  display:grid;
+  gap:12px;
+  min-width:0;
+}
+.svc-topbar{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  min-width:0;
+}
+.svc-topbar h3{
+  margin:0;
+  font-size:18px;
+  font-weight:800;
+  color:#fff5fa;
+}
+.svc-topbar-actions{
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px;
+  justify-content:flex-end;
+}
+.svc-toolbar{
+  display:block !important;
+  margin:0 !important;
+}
+.svc-toolbar input{
+  width:100%;
+}
+.svc-cat-tabs{
+  display:flex;
+  flex-wrap:nowrap;
+  gap:8px;
+  overflow-x:auto;
+  -webkit-overflow-scrolling:touch;
+  padding-bottom:2px;
+}
+.svc-cat-tab{
+  flex:0 0 auto;
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  min-height:34px;
+  padding:0 12px;
+  border-radius:999px;
+  border:1px solid rgba(255,255,255,.12);
+  background:rgba(255,255,255,.04);
+  color:#ffdceb;
+  font-size:13px;
+  font-weight:750;
+  cursor:pointer;
+}
+.svc-cat-tab i{
+  font-style:normal;
+  opacity:.7;
+  font-size:12px;
+}
+.svc-cat-tab.is-on{
+  border-color:rgba(255,143,199,.55);
+  background:rgba(255,111,179,.16);
+  color:#fff;
+}
+.svc-letter-wrap{display:grid;gap:8px}
+.svc-letter-toggle{justify-self:start}
+.svc-row-list{
+  display:grid;
+  gap:8px;
+}
+.svc-row{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto auto;
+  gap:10px;
+  align-items:center;
+  padding:10px 12px;
+  border-radius:12px;
+  border:1px solid rgba(255,143,199,.14);
+  background:rgba(255,255,255,.03);
+}
+.svc-row-main{min-width:0;display:grid;gap:2px}
+.svc-row-main strong{
+  color:#fff5fa;
+  font-size:14px;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.svc-row-meta{
+  color:rgba(255,245,250,.58);
+  font-size:12px;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.svc-row-actions{
+  display:flex;
+  align-items:center;
+  gap:6px;
+}
+.svc-more{position:relative}
+.svc-more-menu{
+  position:absolute;
+  right:0;
+  top:calc(100% + 4px);
+  z-index:20;
+  min-width:120px;
+  display:grid;
+  gap:2px;
+  padding:6px;
+  border-radius:12px;
+  border:1px solid rgba(255,255,255,.12);
+  background:#161018;
+  box-shadow:0 16px 40px rgba(0,0,0,.45);
+}
+.svc-more-menu button{
+  appearance:none;
+  border:0;
+  background:transparent;
+  color:#fff5fa;
+  text-align:left;
+  min-height:34px;
+  padding:0 10px;
+  border-radius:8px;
+  cursor:pointer;
+  font:inherit;
+}
+.svc-more-menu button:hover{background:rgba(255,255,255,.06)}
+.svc-more-menu button.danger{color:#ff9bb8}
+.svc-error-banner,
+.svc-load-failed{
+  border-color:rgba(255,120,150,.35) !important;
+}
+.svc-shell .content-admin-head,
+.svc-shell .platform-content-admin > .content-admin-head{
+  display:none;
+}
+@media (max-width:720px){
+  .svc-row{
+    grid-template-columns:minmax(0,1fr) auto;
+    grid-template-areas:
+      "main actions"
+      "status actions";
+  }
+  .svc-row-main{grid-area:main}
+  .svc-row .status{grid-area:status;justify-self:start}
+  .svc-row-actions{grid-area:actions}
+}

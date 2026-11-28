@@ -1,6 +1,5 @@
 (function () {
   "use strict";
-  var Auth = window.MCJAdminAuthFetch;
   var TARGET_ID = "gameManagement";
   var DEFAULT_ICONS = ["🎮", "🎤", "⚔️", "🛡️", "🎯", "🎲", "💬"];
   var DEFAULT_POSITIONS = [
@@ -16,6 +15,7 @@
     saving: false,
     error: "",
     message: "",
+    loadFailed: false,
     services: [],
     categories: ["端游", "手游", "娱乐陪伴", "语音", "娱乐", "定制", "其他"],
     categoryRows: [
@@ -29,7 +29,17 @@
     formOpen: false,
     query: "",
     letter: "",
+    categoryFilter: "全部",
+    categoryPanelOpen: false,
+    letterOpen: false,
+    moreOpenId: "",
   };
+
+  function authApi() {
+    var api = window.MCJAdminAuthFetch;
+    if (!api || typeof api.get !== "function") throw new Error("后台鉴权模块未加载");
+    return api;
+  }
 
   function esc(v) {
     return String(v == null ? "" : v).replace(/[&<>"']/g, function (c) {
@@ -59,11 +69,11 @@
   }
 
   function apiGet() {
-    return Auth.get("/api/admin/services");
+    return authApi().get("/api/admin/services");
   }
 
   function apiPost(body) {
-    return Auth.post("/api/admin/services", body);
+    return authApi().post("/api/admin/services", body);
   }
 
   function positionsOf(item) {
@@ -505,87 +515,189 @@
     return String(name || "").toLowerCase().indexOf(q) >= 0;
   }
 
-  function serviceGroups() {
-    var matched = state.services.filter(function (item) {
+  function filteredServices() {
+    return state.services.filter(function (item) {
       var name = item.name || "";
+      if (state.categoryFilter && state.categoryFilter !== "全部") {
+        if (String(item.category || "").trim() !== String(state.categoryFilter).trim()) return false;
+      }
       if (!serviceMatches(name, state.query)) return false;
       if (state.letter && serviceInitial(name) !== state.letter) return false;
       return true;
     });
+  }
+
+  function serviceGroups() {
+    var matched = filteredServices();
     var api = pinyinApi();
     var ordered = api && api.sortByPinyin ? api.sortByPinyin(matched).map(function (row) { return row.item; }) : matched;
-    var groups = [];
-    var byLetter = {};
-    ordered.forEach(function (item) {
-      var letter = serviceInitial(item.name || "");
-      if (!byLetter[letter]) {
-        byLetter[letter] = { letter: letter, games: [] };
-        groups.push(byLetter[letter]);
-      }
-      var gameName = String(item.name || "").trim() || "未命名";
-      var games = byLetter[letter].games;
-      var last = games[games.length - 1];
-      if (!last || last.name !== gameName) {
-        last = { name: gameName, items: [] };
-        games.push(last);
-      }
-      last.items.push(item);
-    });
-    return groups;
+    return ordered;
   }
 
   function letterNavHtml() {
     var used = {};
     state.services.forEach(function (item) {
+      if (state.categoryFilter && state.categoryFilter !== "全部") {
+        if (String(item.category || "").trim() !== String(state.categoryFilter).trim()) return;
+      }
       if (serviceMatches(item.name || "", state.query)) used[serviceInitial(item.name || "")] = 1;
     });
     var letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ#".split("");
     var allOn = !state.letter;
-    return '<div class="svc-letters" role="tablist">' +
-      '<button type="button" class="svc-letter svc-letter-all' + (allOn ? " is-on" : "") + '" data-service-letter="ALL" aria-pressed="' + (allOn ? "true" : "false") + '">ALL</button>' +
-      letters.map(function (letter) {
-      var on = state.letter === letter;
-      var has = !!used[letter];
-      return '<button type="button" class="svc-letter' + (on ? " is-on" : "") + '" data-service-letter="' + letter + '"' + (has ? "" : " disabled") + ' aria-pressed="' + (on ? "true" : "false") + '">' + letter + "</button>";
-    }).join("") + "</div>";
+    var body =
+      '<div class="svc-letters" role="tablist">' +
+      '<button type="button" class="svc-letter svc-letter-all' +
+      (allOn ? " is-on" : "") +
+      '" data-service-letter="ALL" aria-pressed="' +
+      (allOn ? "true" : "false") +
+      '">ALL</button>' +
+      letters
+        .map(function (letter) {
+          var on = state.letter === letter;
+          var has = !!used[letter];
+          return (
+            '<button type="button" class="svc-letter' +
+            (on ? " is-on" : "") +
+            '" data-service-letter="' +
+            letter +
+            '"' +
+            (has ? "" : " disabled") +
+            ' aria-pressed="' +
+            (on ? "true" : "false") +
+            '">' +
+            letter +
+            "</button>"
+          );
+        })
+        .join("") +
+      "</div>";
+    return (
+      '<div class="svc-letter-wrap' +
+      (state.letterOpen ? " is-open" : "") +
+      '">' +
+      '<button type="button" class="svc-letter-toggle mini-btn" data-letter-toggle aria-expanded="' +
+      (state.letterOpen ? "true" : "false") +
+      '">A–Z 筛选' +
+      (state.letter ? " · " + esc(state.letter) : "") +
+      (state.letterOpen ? " ▴" : " ▾") +
+      "</button>" +
+      (state.letterOpen ? body : "") +
+      "</div>"
+    );
   }
 
-  function serviceCardHtml(item) {
+  function categoryTabsHtml() {
+    var tabs = ["全部"].concat(
+      (state.categoryRows || [])
+        .slice()
+        .sort(function (a, b) {
+          return Number(a.sort || 0) - Number(b.sort || 0) || String(a.name).localeCompare(String(b.name), "zh");
+        })
+        .filter(function (row) {
+          return row.enabled !== false;
+        })
+        .map(function (row) {
+          return row.name;
+        })
+    );
+    return (
+      '<div class="svc-cat-tabs" role="tablist" aria-label="服务分类">' +
+      tabs
+        .map(function (name) {
+          var on = state.categoryFilter === name;
+          var count =
+            name === "全部"
+              ? state.services.length
+              : state.services.filter(function (row) {
+                  return String(row.category || "").trim() === String(name).trim();
+                }).length;
+          return (
+            '<button type="button" class="svc-cat-tab' +
+            (on ? " is-on" : "") +
+            '" data-cat-filter="' +
+            esc(name) +
+            '" aria-pressed="' +
+            (on ? "true" : "false") +
+            '">' +
+            esc(name) +
+            "<i>" +
+            count +
+            "</i></button>"
+          );
+        })
+        .join("") +
+      "</div>"
+    );
+  }
+
+  function serviceRowHtml(item) {
     var policy = item.pricePolicy || {};
     var unit = policy.unit || "局";
     var price = item.defaultPrice || item.default_price || "-";
     var on = item.enabled !== false;
+    var moreOpen = state.moreOpenId && String(state.moreOpenId) === String(item.id);
     return (
-      '<article class="svc-card svc-card-compact" data-service-row="' + esc(item.id) + '" data-service-card>' +
-      '<div class="svc-card-main"><strong>' + esc(item.name || "-") + "</strong>" +
-      "<em>" + esc(price) + " / " + esc(unit) + "</em>" +
+      '<article class="svc-row" data-service-row="' +
+      esc(item.id) +
+      '">' +
+      '<div class="svc-row-main">' +
+      "<strong>" +
+      esc(item.name || "-") +
+      "</strong>" +
+      '<span class="svc-row-meta">' +
+      esc(item.category || "未分类") +
+      " · " +
+      esc(price) +
+      " 猫粮/" +
+      esc(unit) +
+      "</span></div>" +
       statusChip(on ? "启用" : "停用", on) +
-      "</div>" +
-      '<div class="svc-card-actions">' +
-      '<button class="mini-btn" type="button" data-service-edit="' + esc(item.id) + '">编辑</button>' +
-      (on
-        ? '<button class="mini-btn" type="button" data-service-disable="' + esc(item.id) + '">停用</button>'
-        : '<button class="mini-btn primary-lite" type="button" data-service-enable="' + esc(item.id) + '">启用</button>') +
-      "</div></article>"
+      '<div class="svc-row-actions">' +
+      '<button class="mini-btn" type="button" data-service-edit="' +
+      esc(item.id) +
+      '">编辑</button>' +
+      '<div class="svc-more' +
+      (moreOpen ? " is-open" : "") +
+      '">' +
+      '<button class="mini-btn" type="button" data-service-more="' +
+      esc(item.id) +
+      '" aria-expanded="' +
+      (moreOpen ? "true" : "false") +
+      '">更多</button>' +
+      (moreOpen
+        ? '<div class="svc-more-menu" role="menu">' +
+          (on
+            ? '<button type="button" data-service-disable="' + esc(item.id) + '">停用</button>'
+            : '<button type="button" data-service-enable="' + esc(item.id) + '">启用</button>') +
+          '<button type="button" data-service-copy="' +
+          esc(item.id) +
+          '">复制</button>' +
+          '<button type="button" class="danger" data-service-delete="' +
+          esc(item.id) +
+          '">删除</button>' +
+          "</div>"
+        : "") +
+      "</div></div></article>"
     );
   }
 
   function renderRows() {
+    if (state.loadFailed && !state.services.length) {
+      return (
+        '<div class="content-empty-action svc-load-failed"><strong>服务列表读取失败</strong><span>' +
+        esc(state.error || "请检查网络后重试，不会显示假的空数据。") +
+        '</span><button class="btn primary" type="button" data-service-reload>重新加载</button></div>'
+      );
+    }
     if (!state.services.length) {
       return (
-        '<div class="content-empty-action"><strong>暂无服务</strong><span>点击「新增服务」添加平台服务。首页、陪玩申请、客服建单、老板下单将读取同一份数据。</span>' +
+        '<div class="content-empty-action"><strong>暂无服务</strong><span>当前数据库确实没有服务记录。</span>' +
         '<button class="btn primary" type="button" data-service-new>新增服务</button></div>'
       );
     }
-    var groups = serviceGroups();
-    if (!groups.length) return '<div class="content-empty-action"><strong>没有匹配的服务</strong></div>';
-    return groups.map(function (group) {
-      return '<section class="svc-letter-block" id="svc-letter-' + group.letter + '"><h4>' + esc(group.letter) + "</h4>" +
-        group.games.map(function (game) {
-          return '<div class="svc-game-block"><p class="svc-game-name">' + esc(game.name) + "</p>" +
-            game.items.map(serviceCardHtml).join("") + "</div>";
-        }).join("") + "</section>";
-    }).join("");
+    var rows = serviceGroups();
+    if (!rows.length) return '<div class="content-empty-action"><strong>没有匹配的服务</strong></div>';
+    return '<div class="svc-row-list" data-service-sortable>' + rows.map(serviceRowHtml).join("") + "</div>";
   }
 
   function categoryCount(name) {
@@ -595,6 +707,7 @@
   }
 
   function categoryPanelHtml() {
+    if (!state.categoryPanelOpen) return "";
     var rows = (state.categoryRows || []).slice().sort(function (a, b) {
       return Number(a.sort || 0) - Number(b.sort || 0) || String(a.name).localeCompare(String(b.name), "zh");
     });
@@ -613,7 +726,7 @@
           statusChip(on ? "启用" : "停用", on) +
           "<em>" +
           count +
-          " 个游戏服务</em></div>" +
+          " 个</em></div>" +
           '<div class="svc-cat-actions">' +
           '<button class="mini-btn" type="button" data-cat-up="' +
           esc(row.name) +
@@ -640,9 +753,8 @@
       .join("");
     return (
       '<section class="svc-cat-panel" data-service-categories>' +
-      '<div class="content-admin-head"><div><h3>价格表分类</h3><p>用户端「游戏价格表」读取这里的启用分类。删除分类不会删除游戏服务或基础价格，必须先安全迁移到其他分类。</p></div></div>' +
       '<form class="svc-cat-add" data-cat-add-form>' +
-      '<input name="name" maxlength="20" placeholder="新分类名称，如：端游 / 手游 / 娱乐陪伴" required>' +
+      '<input name="name" maxlength="20" placeholder="新分类名称" required>' +
       '<button class="btn primary" type="submit">新增分类</button></form>' +
       '<div class="svc-cat-list">' +
       (list || '<div class="content-empty-action"><strong>暂无分类</strong></div>') +
@@ -658,16 +770,30 @@
       return;
     }
     box.innerHTML =
-      (state.error ? '<div class="admin-sync-note">' + esc(state.error) + "</div>" : "") +
+      '<div class="svc-shell" data-service-admin>' +
+      '<div class="svc-topbar">' +
+      "<h3>服务管理</h3>" +
+      '<div class="svc-topbar-actions">' +
+      '<button class="mini-btn" type="button" data-cat-panel-toggle aria-expanded="' +
+      (state.categoryPanelOpen ? "true" : "false") +
+      '">分类管理</button>' +
+      '<button class="btn primary svc-new-btn" type="button" data-service-new>新增服务</button>' +
+      "</div></div>" +
+      (state.error
+        ? '<div class="admin-sync-note svc-error-banner">' +
+          esc(state.error) +
+          ' <button class="mini-btn" type="button" data-service-reload>重试</button></div>'
+        : "") +
       (state.message && !state.error ? '<div class="admin-sync-note">' + esc(state.message) + "</div>" : "") +
-      '<div class="platform-content-admin base-data-admin" data-service-admin>' +
       categoryPanelHtml() +
-      '<div class="content-admin-head"><div><h3>服务列表</h3><p>管理平台提供的服务（不是游戏管理）。把已有游戏分配到对应分类后，用户端价格表会按分类筛选。保存后同步首页、申请陪玩、陪玩资料、客服建单、老板下单与更多玩法。等级加价请到「制度与等级」独立管理。</p></div></div>' +
-      '<div class="svc-toolbar svc-toolbar-row"><input data-service-search value="' + esc(state.query) + '" placeholder="搜索中文、拼音或首字母">' +
-      '<button class="btn primary svc-new-btn" type="button" data-service-new>新增服务</button></div>' +
+      '<div class="svc-toolbar"><input data-service-search value="' +
+      esc(state.query) +
+      '" placeholder="搜索中文、拼音或首字母" autocomplete="off"></div>' +
+      categoryTabsHtml() +
       letterNavHtml() +
-      '<div data-service-groups>' + renderRows() + "</div>" +
-      "</div>";
+      '<div data-service-groups>' +
+      renderRows() +
+      "</div></div>";
     if (window.MCJAdminForms && window.MCJAdminForms.enhance) window.MCJAdminForms.enhance(box);
     bindSortable();
   }
@@ -716,9 +842,13 @@
   function load() {
     state.loading = true;
     state.error = "";
+    state.loadFailed = false;
     render();
     return apiGet()
       .then(function (res) {
+        if (res && res.ok === false) {
+          throw new Error(res.message || "服务列表读取失败");
+        }
         state.services = (res.services || []).slice().sort(function (a, b) {
           return Number(a.sort || 100) - Number(b.sort || 100);
         });
@@ -733,10 +863,16 @@
         if (Array.isArray(res.icons) && res.icons.length) state.icons = res.icons.slice();
         if (Array.isArray(res.positions) && res.positions.length) state.positions = res.positions.slice();
         state.message = res.message || "";
+        state.loadFailed = false;
+        state.error = "";
+        if (state.categoryFilter !== "全部" && state.categories.indexOf(state.categoryFilter) < 0) {
+          state.categoryFilter = "全部";
+        }
       })
       .catch(function (err) {
         state.error = err.message || "服务列表读取失败";
-        state.services = [];
+        state.loadFailed = true;
+        // Keep last good snapshot — never paint fake empty catalog on read failure.
       })
       .finally(function () {
         state.loading = false;
@@ -1099,10 +1235,58 @@
         mutate("disable", disableBtn.getAttribute("data-service-disable"));
         return;
       }
+      var moreBtn = e.target.closest("[data-service-more]");
+      if (moreBtn) {
+        var mid = moreBtn.getAttribute("data-service-more") || "";
+        state.moreOpenId = String(state.moreOpenId) === String(mid) ? "" : mid;
+        render();
+        return;
+      }
+      var catFilter = e.target.closest("[data-cat-filter]");
+      if (catFilter) {
+        state.categoryFilter = catFilter.getAttribute("data-cat-filter") || "全部";
+        state.moreOpenId = "";
+        render();
+        return;
+      }
+      if (e.target.closest("[data-cat-panel-toggle]")) {
+        state.categoryPanelOpen = !state.categoryPanelOpen;
+        render();
+        return;
+      }
+      if (e.target.closest("[data-letter-toggle]")) {
+        state.letterOpen = !state.letterOpen;
+        render();
+        return;
+      }
       var deleteBtn = e.target.closest("[data-service-delete]");
       if (deleteBtn) {
-        if (!confirm("确认删除该服务？删除后各端将同步移除（历史订单仍保留原服务名）。")) return;
-        mutate("delete", deleteBtn.getAttribute("data-service-delete"));
+        var delId = deleteBtn.getAttribute("data-service-delete");
+        var delItem = state.services.find(function (row) {
+          return String(row.id) === String(delId);
+        });
+        var delName = (delItem && delItem.name) || "该服务";
+        if (!confirm("确认删除「" + delName + "」？\n\n第一次确认：删除后各端服务列表将同步移除。历史订单金额与快照仍保留。")) return;
+        if (!confirm("再次确认删除「" + delName + "」？\n\n若仍有陪玩资料引用，需要强制删除才会继续。建议优先「停用」。")) return;
+        state.moreOpenId = "";
+        apiPost({ action: "delete", id: delId })
+          .then(function () {
+            return load();
+          })
+          .catch(function (err) {
+            if (err && (err.status === 409 || /仍被引用|SERVICE_IN_USE/.test(String(err.message || "")))) {
+              if (confirm((err.message || "服务仍被引用。") + "\n\n是否强制删除？历史订单不会改价。")) {
+                return apiPost({ action: "delete", id: delId, force: true }).then(function () {
+                  return load();
+                });
+              }
+              return;
+            }
+            alert((err && err.message) || "删除失败");
+          })
+          .catch(function (err2) {
+            alert((err2 && err2.message) || "删除失败");
+          });
         return;
       }
 
@@ -1179,8 +1363,10 @@
       if (!e.target.closest("[data-service-search]")) return;
       state.query = String(e.target.value || "");
       var groups = document.querySelector("[data-service-groups]");
-      var nav = document.querySelector(".svc-letters");
+      var nav = document.querySelector(".svc-letter-wrap");
+      var tabs = document.querySelector(".svc-cat-tabs");
       if (nav) nav.outerHTML = letterNavHtml();
+      if (tabs) tabs.outerHTML = categoryTabsHtml();
       if (groups) groups.innerHTML = renderRows();
     });
   }

@@ -461,11 +461,31 @@ async function deleteCategoryRecord({ name, id, reassignTo }) {
 
 async function listFromDb() {
   const rows = await supabaseJson(restUrl("services", "?order=sort.asc,updated_at.desc"), { headers: serviceHeaders() });
-  return (Array.isArray(rows) ? rows : []).map(view);
+  const list = Array.isArray(rows) ? rows : [];
+  const out = [];
+  for (const row of list) {
+    try {
+      out.push(view(row));
+    } catch (err) {
+      console.warn("[admin/services] skip bad service row", row?.id, err?.message || err);
+    }
+  }
+  return out;
 }
 
 async function listServices() {
-  const categoryResult = await listCategories();
+  let categoryResult;
+  try {
+    categoryResult = await listCategories();
+  } catch (catErr) {
+    // Categories must not blank the whole services page.
+    console.warn("[admin/services] categories", catErr?.message || catErr);
+    categoryResult = {
+      categories: DEFAULT_CATEGORIES.slice(),
+      categoryRows: DEFAULT_CATEGORY_ROWS.map((row, i) => normalizeCategoryRow(row, i)),
+      source: "fallback",
+    };
+  }
   if (!hasDb()) {
     const rows = await readLocalServices();
     return {
@@ -484,7 +504,11 @@ async function listServices() {
       const { loadAllOrderFieldConfigs, normalizeOrderFields } = await import("../_order-requirements.js");
       const map = await loadAllOrderFieldConfigs();
       services.forEach((item) => {
-        item.orderFields = normalizeOrderFields(map[item.id] || []);
+        try {
+          item.orderFields = normalizeOrderFields(map[item.id] || []);
+        } catch {
+          item.orderFields = [];
+        }
       });
     } catch (fieldErr) {
       console.warn("[admin/services] order fields", fieldErr?.message || fieldErr);
@@ -493,7 +517,11 @@ async function listServices() {
       const { loadAllPricePolicies, normalizePricePolicy } = await import("../_service-price-policy.js");
       const policies = await loadAllPricePolicies();
       services.forEach((item) => {
-        item.pricePolicy = normalizePricePolicy(policies[item.id] || {});
+        try {
+          item.pricePolicy = normalizePricePolicy(policies[item.id] || {});
+        } catch {
+          item.pricePolicy = {};
+        }
       });
     } catch (priceErr) {
       console.warn("[admin/services] price policy", priceErr?.message || priceErr);
@@ -507,7 +535,13 @@ async function listServices() {
       source: "supabase",
     };
   } catch (error) {
-    if (!isMissingTable(error)) throw error;
+    if (!isMissingTable(error)) {
+      // Surface a clear read failure — never pretend the catalog is empty.
+      throw Object.assign(
+        new Error(`服务列表读取失败：${error.message || "请稍后重试"}`),
+        { status: error.status && error.status >= 400 ? error.status : 500 }
+      );
+    }
     return {
       services: [],
       categories: categoryResult.categories.length ? categoryResult.categories : DEFAULT_CATEGORIES.slice(),
@@ -582,14 +616,68 @@ async function toggleService(id, enabled) {
   }
 }
 
-async function deleteService(id) {
+async function countServiceUsage(id, name) {
+  const serviceId = String(id || "").trim();
+  const serviceName = String(name || "").trim();
+  let companionRefs = 0;
+  let orderRefs = 0;
+  if (!hasDb() || !serviceId) return { companionRefs, orderRefs };
+  try {
+    const companions = await supabaseJson(
+      restUrl("companion_profiles", `?select=id,service_ids&service_ids=cs.{${encodeURIComponent(serviceId)}}&limit=200`),
+      { headers: serviceHeaders() }
+    ).catch(() => null);
+    if (Array.isArray(companions)) companionRefs = companions.length;
+    else {
+      const all = await supabaseJson(restUrl("companion_profiles", "?select=id,service_ids&limit=2000"), {
+        headers: serviceHeaders(),
+      }).catch(() => []);
+      companionRefs = (Array.isArray(all) ? all : []).filter((row) => {
+        const ids = row?.service_ids;
+        if (Array.isArray(ids)) return ids.map(String).includes(serviceId);
+        return String(ids || "").includes(serviceId);
+      }).length;
+    }
+  } catch (err) {
+    console.warn("[admin/services] companion usage", err?.message || err);
+  }
+  if (serviceName) {
+    try {
+      const orders = await supabaseJson(
+        restUrl("orders", `?select=id&game=eq.${encodeURIComponent(serviceName)}&limit=1`),
+        { headers: serviceHeaders({ Prefer: "count=exact" }) }
+      ).catch(() => []);
+      // Prefer header count when available; fall back to array length.
+      orderRefs = Array.isArray(orders) ? orders.length : 0;
+    } catch (err) {
+      console.warn("[admin/services] order usage", err?.message || err);
+    }
+  }
+  return { companionRefs, orderRefs };
+}
+
+async function deleteService(id, { force = false } = {}) {
   if (!hasDb()) throw Object.assign(new Error("数据库未配置。"), { status: 503 });
   try {
+    const rows = await supabaseJson(restUrl("services", `?id=eq.${encodeURIComponent(id)}&select=id,name&limit=1`), {
+      headers: serviceHeaders(),
+    });
+    const current = Array.isArray(rows) ? rows[0] : null;
+    if (!current?.id) throw Object.assign(new Error("服务不存在。"), { status: 404 });
+    const usage = await countServiceUsage(current.id, current.name);
+    if (!force && (usage.companionRefs > 0 || usage.orderRefs > 0)) {
+      throw Object.assign(
+        new Error(
+          `该服务仍被引用：陪玩资料 ${usage.companionRefs}、同名订单样本 ${usage.orderRefs}。请先停用，或确认后强制删除（历史订单金额与快照仍保留）。`
+        ),
+        { status: 409, code: "SERVICE_IN_USE", usage }
+      );
+    }
     await supabaseJson(restUrl("services", `?id=eq.${encodeURIComponent(id)}`), {
       method: "DELETE",
       headers: serviceHeaders(),
     });
-    return { source: "supabase" };
+    return { source: "supabase", usage };
   } catch (error) {
     if (isMissingTable(error)) {
       throw Object.assign(new Error("services 表未初始化。请先执行 supabase/services.sql。"), { status: 503 });
@@ -757,7 +845,8 @@ export default async function handler(req, res) {
     }
 
     if (action === "delete") {
-      const result = await deleteService(id);
+      const force = body.force === true || body.confirmForce === true || body.forceDelete === true;
+      const result = await deleteService(id, { force });
       return json(res, 200, { ok: true, message: "服务已删除", ...result });
     }
 
