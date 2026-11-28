@@ -3636,6 +3636,99 @@
   }
   function todoList(){var s=(state.data||{}).summary||{},ua=unifiedAccess();var accessLabel=isForcedAckLocked()?'暂不可接单（待确认强制公告）':(isCredentialIncomplete()?'认证未完成':STATUS_CN.accountAccess(ua.account_access_status));var rows=[['待确认订单',s.waitingConfirm||0],['进行中就绪',s.waitingStart||0],['待完成订单',s.waitingComplete||0],['待处理消息',unreadCount()],['资料审核状态',STATUS_CN.verification(ua.profile_review_status)],['身份证认证',STATUS_CN.identity(ua.identity_status)],['押金认证',STATUS_CN.deposit(ua.deposit_status)],['账号接单权限',accessLabel]];return '<div class="pw-info-list">'+rows.map(function(r){return '<div><span>'+esc(r[0])+'</span><strong>'+esc(r[1])+'</strong></div>'}).join('')+'</div>'}
   function orderStatus(o){return o.orderStatus||o.statusText||o.status||'-'}
+  function isUuidLike(v){
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(v||'').trim());
+  }
+  /** Boss in-game ID from order snapshot — never platform UID / UUID. */
+  function resolveBossGameIdFromOrder(o){
+    if(!o||typeof o!=='object')return '';
+    var snap=o.serviceSnapshot||{};
+    var fromReq='';
+    (Array.isArray(snap.requirements)?snap.requirements:[]).forEach(function(f){
+      var name=String(f&&f.name||'').trim();
+      if(!/游戏\s*ID|老板游戏/i.test(name))return;
+      var val=Array.isArray(f.value)?f.value.join('、'):String(f.value||'');
+      if(val.trim())fromReq=val.trim();
+    });
+    if(fromReq&&!isUuidLike(fromReq))return fromReq;
+    var desc=String(o.description||o.serviceContent||'');
+    var dm=desc.match(/游戏ID[：:]\s*([^\n；;]+)/i);
+    var fromDesc=dm?String(dm[1]||'').trim():'';
+    var bossUid=String(o.bossUid||'').trim();
+    var candidates=[o.gameId,o.game_id,o.game_id_value,o.bossGameId,o.playerGameId,snap.bossGameId,snap.gameId,snap.game_id,fromDesc];
+    for(var i=0;i<candidates.length;i++){
+      var t=String(candidates[i]||'').trim();
+      if(!t||isUuidLike(t))continue;
+      if(bossUid&&t===bossUid)continue;
+      return t;
+    }
+    return '';
+  }
+  function findOrderForNotice(n){
+    var orders=(state.data&&state.data.myOrders)||[];
+    if(!n||!orders.length)return null;
+    var key=String(n.key||n.id||'');
+    var m=key.match(/^ord-(.+)$/i);
+    if(m){
+      var hit=orders.find(function(o){return String(o.id)===m[1]});
+      if(hit)return hit;
+    }
+    var href=String(n.href||'');
+    var fm=href.match(/[?&]focus=([^&]+)/);
+    if(fm){
+      var oid=decodeURIComponent(fm[1]);
+      var hit2=orders.find(function(o){return String(o.id)===oid});
+      if(hit2)return hit2;
+    }
+    return null;
+  }
+  function copyBossGameIdText(text){
+    var value=String(text||'').trim();
+    if(!value)return Promise.reject(new Error('empty'));
+    if(window.MCJCopyText&&typeof window.MCJCopyText.copy==='function')return window.MCJCopyText.copy(value);
+    if(navigator.clipboard&&typeof navigator.clipboard.writeText==='function'){
+      return navigator.clipboard.writeText(value).catch(function(){
+        return copyBossGameIdText._fallback(value);
+      });
+    }
+    return copyBossGameIdText._fallback(value);
+  }
+  copyBossGameIdText._fallback=function(value){
+    return new Promise(function(resolve,reject){
+      var ta=document.createElement('textarea');
+      ta.value=value;
+      ta.setAttribute('readonly','');
+      ta.style.cssText='position:fixed;left:-9999px;top:0;opacity:0';
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      try{
+        if(document.execCommand('copy'))resolve();
+        else reject(new Error('copy_failed'));
+      }catch(err){
+        reject(err);
+      }finally{
+        document.body.removeChild(ta);
+      }
+    });
+  };
+  function bossGameIdCopyBtnHtml(gameId){
+    var gid=String(gameId||'').trim();
+    if(!gid)return '';
+    return '<button type="button" class="pw-copy-id-btn" data-copy-boss-game-id="'+esc(gid)+'" aria-label="复制老板游戏ID">复制 ID</button>';
+  }
+  function bossGameIdRowHtml(o){
+    var gid=resolveBossGameIdFromOrder(o);
+    if(!gid)return '';
+    return '<div class="pw-boss-game-id" data-boss-game-id-row><span>老板游戏ID</span><strong class="pw-inline-val">'+esc(gid)+'</strong>'+bossGameIdCopyBtnHtml(gid)+'</div>';
+  }
+  function orderNoticeBossGameIdHtml(n){
+    var o=findOrderForNotice(n);
+    if(!o)return '';
+    var gid=resolveBossGameIdFromOrder(o);
+    if(!gid)return '';
+    return '<p class="pw-notice-game-id"><span>老板游戏ID</span><strong>'+esc(gid)+'</strong>'+bossGameIdCopyBtnHtml(gid)+'</p>';
+  }
   function formatSchedule24h(raw){
     var s=String(raw||'').trim();
     if(!s)return '';
@@ -3778,6 +3871,7 @@
       '<div><span>单量</span><strong>'+esc(qtyTxt)+'</strong></div>'+
       '<div><span>订单金额</span><strong class="pw-amt">'+money(o.amount||0)+'</strong></div>'+
       '<div><span>老板</span><strong>'+esc((o.bossName||'-')+(o.bossUid?' / '+o.bossUid:''))+'</strong></div>'+
+      bossGameIdRowHtml(o)+
       (o.isRenewal?'<div><span>原订单号</span><strong>'+esc(o.renewalSourceOrderNo||'-')+'</strong></div>':'')+
       '<div><span>陪玩单价</span><strong>'+money(o.unitPrice||0)+'</strong></div>'+
       '<div><span>预计到手</span><strong>'+money(o.playerIncome||0)+'</strong></div>'+
@@ -4170,7 +4264,8 @@
     var head='<div class="pw-chat-head"><div><h3>系统通知</h3><p>全部 '+esc(total)+' · 未读 '+esc(unread)+'</p></div><button class="pw-btn" type="button" data-msg-read-all '+(unread?'':'disabled')+'>全部已读</button></div>';
     var body=notices.length?'<div class="pw-notice-list">'+notices.map(function(n){
       var cat=n.categoryLabel||CATEGORY_LABEL_CN[n.category]||n.category||'通知';
-      return '<article class="pw-msg-card'+(n.unread?' is-unread':'')+'" data-notice-id="'+esc(n.id||n.key)+'"><header><strong>'+esc(n.title)+'</strong><span>'+esc(cat)+'</span></header><p>'+esc(n.body)+'</p><footer>'+esc(fmtTime(n.at))+(n.unread?' · 未读':'')+'</footer></article>';
+      var orderExtra=(cat.indexOf('订单')>=0||n.category==='order')?orderNoticeBossGameIdHtml(n):'';
+      return '<article class="pw-msg-card'+(n.unread?' is-unread':'')+'" data-notice-id="'+esc(n.id||n.key)+'"><header><strong>'+esc(n.title)+'</strong><span>'+esc(cat)+'</span></header><p>'+esc(n.body)+'</p>'+orderExtra+'<footer>'+esc(fmtTime(n.at))+(n.unread?' · 未读':'')+'</footer></article>';
     }).join('')+'</div>':'<div class="pw-empty"><strong>暂无通知</strong><span>订单 / 审核 / 提现 / 活动通知会出现在这里。</span></div>';
     return '<div class="pw-chat-main pw-chat-main-notices">'+head+body+'</div>';
   }
@@ -6565,6 +6660,14 @@
       }else{
         paint();
       }
+      return;
+    }
+    var copyBossGameBtn=e.target.closest('[data-copy-boss-game-id]');
+    if(copyBossGameBtn){
+      e.preventDefault();
+      e.stopPropagation();
+      var copyVal=copyBossGameBtn.getAttribute('data-copy-boss-game-id')||'';
+      copyBossGameIdText(copyVal).then(function(){toast('已复制');}).catch(function(){toast('复制失败，请长按手动复制');});
       return;
     }
     var noticeEl=e.target.closest('[data-notice-id]');

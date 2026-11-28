@@ -32,6 +32,94 @@
       return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
     });
   }
+  function klDate(v) {
+    if (v == null || v === "") return null;
+    if (typeof v === "number" || v instanceof Date) {
+      var t = new Date(v);
+      return isNaN(t.getTime()) ? null : new Date(t.getTime() + 288e5);
+    }
+    var s = String(v).trim();
+    var n = s.match(/^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2}))?(?:\.\d+)?)?$/);
+    if (n) return new Date(Date.UTC(+n[1], +n[2] - 1, +n[3], +(n[4] || 0), +(n[5] || 0), +(n[6] || 0)));
+    var d = new Date(
+      s
+        .replace(/^(\d{4}-\d{2}-\d{2}) /, "$1T")
+        .replace(/([+-]\d{2})(\d{2})$/, "$1:$2")
+        .replace(/([+-]\d{2})$/, "$1:00")
+    );
+    return isNaN(d.getTime()) ? null : new Date(d.getTime() + 288e5);
+  }
+  function fmtFinKl(v) {
+    if (!v) return "—";
+    var d = (window.MCJContentTime && window.MCJContentTime.klDate && window.MCJContentTime.klDate(v)) || klDate(v);
+    if (!d) return String(v).slice(0, 19).replace("T", " ").replace(/-/g, "/");
+    function p(n) {
+      return n < 10 ? "0" + n : String(n);
+    }
+    return (
+      d.getUTCFullYear() +
+      "/" +
+      p(d.getUTCMonth() + 1) +
+      "/" +
+      p(d.getUTCDate()) +
+      " " +
+      p(d.getUTCHours()) +
+      ":" +
+      p(d.getUTCMinutes())
+    );
+  }
+  function copyText(value) {
+    var text = String(value || "");
+    if (!text) return Promise.reject(new Error("无可复制内容"));
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      return navigator.clipboard.writeText(text);
+    }
+    return new Promise(function (resolve, reject) {
+      var ta = document.createElement("textarea");
+      ta.value = text;
+      ta.setAttribute("readonly", "");
+      ta.style.position = "fixed";
+      ta.style.left = "-9999px";
+      document.body.appendChild(ta);
+      ta.select();
+      try {
+        document.execCommand("copy");
+        resolve();
+      } catch (err) {
+        reject(err);
+      } finally {
+        document.body.removeChild(ta);
+      }
+    });
+  }
+  function accountDigitsOnly(value) {
+    return String(value || "").replace(/\D/g, "");
+  }
+  function withdrawMaskedAccount(w) {
+    return "*****" + esc(w.accountLast4 || "----");
+  }
+  function withdrawAccountDisplay(w) {
+    if (state.canReveal && w.accountNumber) return esc(String(w.accountNumber).replace(/\s+/g, ""));
+    return withdrawMaskedAccount(w);
+  }
+  function withdrawAccountCopyValue(w) {
+    if (state.canReveal && w.accountNumber) return accountDigitsOnly(w.accountNumber);
+    return "";
+  }
+  function copyAccountBtn(w, extraClass) {
+    var copyVal = withdrawAccountCopyValue(w);
+    if (!copyVal) return "";
+    return (
+      '<button class="mini-btn fin-copy-account' +
+      (extraClass ? " " + extraClass : "") +
+      '" type="button" data-fin-copy-account="' +
+      esc(copyVal) +
+      '">复制账号</button>'
+    );
+  }
+  function isWithdrawSettled(status) {
+    return /^(completed|paid)$/i.test(String(status || ""));
+  }
   function toast(msg) {
     var el = document.getElementById("adminFinalToast");
     if (!el) {
@@ -132,6 +220,7 @@
     var accountNo =
       account.accountNumber ||
       account.bankAccount ||
+      w.accountNumber ||
       tng ||
       alipay ||
       (w.accountLast4 ? "*****" + w.accountLast4 : "—");
@@ -169,6 +258,10 @@
           },
           res.account || w.paymentAccount || {}
         );
+        if (w.accountNumber || account.accountNumber) {
+          finish(w, Object.assign({}, account, { accountNumber: w.accountNumber || account.accountNumber }));
+          return;
+        }
         if (!state.canReveal || !(w.paymentAccountId || account.id)) {
           finish(w, account);
           return;
@@ -293,17 +386,18 @@
     }
     /* Prefer live withdraw/payroll rows so confirm-paid immediately drops them after reload. */
     (state.withdrawals || []).forEach(function (w) {
-      if (!isUnpaidWithdrawStatus(w.status)) return;
+      if (isWithdrawSettled(w.status) || !isUnpaidWithdrawStatus(w.status)) return;
       add({
         id: "wd:" + w.id,
         paymentNo: w.withdrawalNo || w.id,
         paymentType: "companion_withdraw",
         paymentTypeText: "陪玩提现",
         relatedRecordId: w.id,
-        payeeName: w.companionName || w.accountHolder || "-",
+        payeeName: w.accountHolder || w.companionName || "-",
         payeeUid: w.companionUid || "",
         amountRm: w.netAmountRm,
         payeeBank: w.bankName || "",
+        payeePayoutMethod: paymentMethodLabel(w.payoutMethod || w.method || ""),
         payeeAccountLast4: w.accountLast4 || "",
         status: w.status,
         statusText: w.statusText || "待打款",
@@ -331,6 +425,13 @@
       });
     });
     (state.pendingPayments || []).forEach(function (p) {
+      var related = String(p.relatedRecordId || p.withdrawalId || "").trim();
+      if (p.paymentType === "companion_withdraw" && related) {
+        var wd = (state.withdrawals || []).find(function (w) {
+          return String(w.id) === related;
+        });
+        if (wd && isWithdrawSettled(wd.status)) return;
+      }
       add(
         Object.assign({}, p, {
           source: p.paymentType || p.payment_type || "payment",
@@ -376,7 +477,7 @@
           '</td><td data-label="状态">' +
           esc(r.statusText || r.status) +
           '</td><td data-label="申请时间">' +
-          esc(String(r.createdAt || "").slice(0, 19).replace("T", " ")) +
+          esc(fmtFinKl(r.createdAt)) +
           '</td><td data-label="操作"><div class="fin-row-actions">' +
           actions +
           "</div></td></tr>"
@@ -391,18 +492,13 @@
   }
 
   function withdrawPayeeCard(w) {
-    var masked = "*****" + esc(w.accountLast4 || "----");
+    var masked = withdrawMaskedAccount(w);
+    var shown = withdrawAccountDisplay(w);
     var method = paymentMethodLabel(w.payoutMethod || w.method || "");
     var revealBlock =
-      w.paymentAccountId && state.canReveal
-        ? '<button class="mini-btn" type="button" data-fin-reveal="' +
-          esc(w.paymentAccountId) +
-          '" data-fin-reveal-wd="' +
-          esc(w.id) +
-          '" data-fin-reveal-state="masked">查看完整账号</button>'
-        : w.paymentAccountId
-          ? '<div class="admin-sync-note fin-wd-reveal-note">完整账号仅超级管理员/财务可查看</div>'
-          : "";
+      !state.canReveal && w.paymentAccountId
+        ? '<div class="admin-sync-note fin-wd-reveal-note">完整账号仅超级管理员/财务可查看</div>'
+        : "";
     return (
       '<div class="fin-payee-card payout-field-card fin-wd-payee">' +
       '<div class="fin-wd-payee-desktop">' +
@@ -415,10 +511,16 @@
       '<div class="payout-field-label">收款人姓名</div><div class="payout-field-value">' +
       esc(w.accountHolder || "—") +
       "</div>" +
-      '<div class="payout-field-label">银行账号</div><div class="payout-field-value fin-account-value" data-fin-account-display data-masked="' +
+      '<div class="payout-field-label">实际打款 RM</div><div class="payout-field-value"><strong class="fin-wd-amt-rm">RM ' +
+      esc(w.netAmountRm) +
+      "</strong></div>" +
+      '<div class="payout-field-label">银行账号</div><div class="payout-field-value fin-account-row">' +
+      '<span class="fin-account-value" data-fin-account-display data-masked="' +
       masked +
       '">' +
-      masked +
+      shown +
+      "</span>" +
+      copyAccountBtn(w) +
       "</div>" +
       revealBlock +
       '<button class="mini-btn" type="button" data-fin-view-wd="' +
@@ -441,15 +543,21 @@
       '<div class="fin-wd-fact fin-wd-fact-wide"><span>收款方式</span><b>' +
       esc(method) +
       "</b></div>" +
-      '<div class="fin-wd-fact fin-wd-fact-wide"><span>脱敏账号</span><b class="fin-account-value" data-fin-account-display data-masked="' +
+      '<div class="fin-wd-fact"><span>实际打款</span><b class="fin-wd-amt-rm">RM ' +
+      esc(w.netAmountRm) +
+      "</b></div>" +
+      '<div class="fin-wd-fact fin-wd-fact-wide fin-account-fact"><span>账号</span><b class="fin-account-value" data-fin-account-display data-masked="' +
       masked +
       '">' +
-      masked +
-      "</b></div>" +
+      shown +
+      "</b>" +
+      copyAccountBtn(w, "fin-copy-account-inline") +
+      "</div>" +
       "</div>" +
       '<details class="fin-wd-more">' +
       "<summary>打款资料</summary>" +
       '<div class="fin-wd-more-body">' +
+      copyAccountBtn(w) +
       revealBlock +
       '<button class="mini-btn" type="button" data-fin-view-wd="' +
       esc(w.id) +
@@ -458,8 +566,8 @@
       "</div>"
     );
   }
-  function withdrawalsHtml() {
-    var rows = (state.withdrawals || [])
+  function withdrawalsHtml(list) {
+    var rows = (list || state.withdrawals || [])
       .map(function (w) {
         var actions = "";
         if (
@@ -517,7 +625,7 @@
           esc(w.statusText) +
           "</span></td>" +
           '<td class="fin-wd-time" data-label="提交时间">' +
-          esc(w.submittedAt) +
+          esc(fmtFinKl(w.submittedAt || w.requestedAt)) +
           "</td>" +
           '<td class="fin-wd-ops" data-label="操作"><div class="fin-wd-actions fin-row-actions">' +
           actions +
@@ -624,6 +732,8 @@
           esc(p.payeeName) +
           '</td><td data-label="UID">' +
           esc(p.payeeUid) +
+          '</td><td data-label="收款方式">' +
+          esc(p.payeePayoutMethod || paymentMethodLabel(p.payoutMethod || p.method || "")) +
           '</td><td data-label="银行">' +
           esc(p.payeeBank || "-") +
           (p.payeeAccountLast4 ? " ****" + esc(p.payeeAccountLast4) : "") +
@@ -638,8 +748,8 @@
       })
       .join("");
     return (
-      '<div class="table-wrap fin-table-wrap"><table class="fin-table fin-pending-table"><thead><tr><th>付款类型</th><th>单号</th><th>收款人</th><th>UID</th><th>银行</th><th>应付 RM</th><th>状态</th><th>操作</th></tr></thead><tbody>' +
-      (rows || '<tr><td colspan="8">暂无待打款</td></tr>') +
+      '<div class="table-wrap fin-table-wrap"><table class="fin-table fin-pending-table"><thead><tr><th>付款类型</th><th>单号</th><th>收款人</th><th>UID</th><th>收款方式</th><th>银行</th><th>应付 RM</th><th>状态</th><th>操作</th></tr></thead><tbody>' +
+      (rows || '<tr><td colspan="9">暂无待打款</td></tr>') +
       "</tbody></table></div>"
     );
   }
@@ -748,7 +858,7 @@
             ? '<br><small class="muted">staff_id: ' + esc(r.reviewedByStaffId) + "</small>"
             : "") +
           "</td><td>" +
-          esc(r.uploadedAt || "-") +
+          esc(fmtFinKl(r.uploadedAt)) +
           "</td><td>-</td><td><button class=\"mini-btn primary-lite\" type=\"button\" data-fin-approve-proof=\"" +
           esc(r.orderId) +
           '" data-receipt-id="' +
@@ -780,7 +890,7 @@
             ? '<br><small class="muted">staff_id: ' + esc(r.reviewedByStaffId) + "</small>"
             : "") +
           "</td><td>" +
-          esc(r.reviewedAt || r.confirmedAt || "-") +
+          esc(fmtFinKl(r.reviewedAt || r.confirmedAt)) +
           "</td><td>-</td></tr>"
         );
       })
@@ -804,7 +914,7 @@
             ? '<br><small class="muted">staff_id: ' + esc(r.reviewedByStaffId) + "</small>"
             : "") +
           "</td><td>" +
-          esc(r.reviewedAt || "-") +
+          esc(fmtFinKl(r.reviewedAt)) +
           "</td><td>" +
           esc(r.rejectReason || "-") +
           "</td></tr>"
@@ -863,7 +973,11 @@
                     })
                   ) +
                   "<h4>陪玩工资（待处理）</h4>" +
-                  withdrawalsHtml() +
+                  withdrawalsHtml(
+                    (state.withdrawals || []).filter(function (w) {
+                      return !isWithdrawSettled(w.status);
+                    })
+                  ) +
                   "<h4>客服工资（待处理）</h4>" +
                   payrollsHtml()
                 : withdrawalsHtml();
@@ -894,7 +1008,7 @@
         var caps = res.capabilities || {};
         state.role = caps.role || role();
         state.roleLabel = caps.roleLabel || "";
-        state.canReveal = caps.canReveal === true || /^(admin|super_admin|finance_admin)$/.test(String(state.role || ""));
+        state.canReveal = caps.canReveal === true;
         state.canConfirmPay = caps.canConfirmPay !== false;
         state.loading = false;
         paint();
@@ -1469,7 +1583,14 @@
         .then(function (res) {
           var w = res.item || res.withdrawal || res.detail || res || {};
           var a = res.account || w.paymentAccount || {};
-          var masked = w.accountLast4 ? "*****" + w.accountLast4 : "*****----";
+          var merged = Object.assign({}, w, {
+            accountNumber: w.accountNumber || a.accountNumber || "",
+            bankName: w.bankName || a.bankName || "",
+            accountHolder: w.accountHolder || a.accountHolder || "",
+            payoutMethod: w.payoutMethod || w.method || a.method || "",
+          });
+          var masked = withdrawMaskedAccount(merged);
+          var accountShown = withdrawAccountDisplay(merged);
           var html =
             '<div style="display:grid;gap:10px;text-align:left">' +
             "<div><span style=\"color:#9ca3af\">提现单号</span><br><strong>" +
@@ -1487,18 +1608,21 @@
             " 猫粮）</strong></div>" +
             '<div class="fin-payee-card payout-detail-card">' +
             '<div class="payout-field-label">收款方式</div><div class="payout-field-value">' +
-            esc(paymentMethodLabel(a.method || w.payoutMethod || w.method || "")) +
+            esc(paymentMethodLabel(merged.payoutMethod || merged.method || "")) +
             "</div>" +
             '<div class="payout-field-label">银行名称</div><div class="payout-field-value">' +
-            esc(a.bankName || w.bankName || "—") +
+            esc(merged.bankName || "—") +
             "</div>" +
             '<div class="payout-field-label">收款人姓名</div><div class="payout-field-value">' +
-            esc(a.accountHolder || w.accountHolder || "—") +
+            esc(merged.accountHolder || "—") +
             "</div>" +
-            '<div class="payout-field-label">银行账号</div><div class="payout-field-value fin-account-value" data-fin-account-display data-masked="' +
+            '<div class="payout-field-label">银行账号</div><div class="payout-field-value fin-account-row">' +
+            '<span class="fin-account-value" data-fin-account-display data-masked="' +
             esc(masked) +
             '" style="letter-spacing:.08em">' +
-            esc(masked) +
+            accountShown +
+            "</span>" +
+            copyAccountBtn(merged) +
             "</div>" +
             '<div class="payout-field-label">TNG账号</div><div class="payout-field-value">' +
             esc(a.tngAccount || w.tngAccount || "—") +
@@ -1506,16 +1630,15 @@
             '<div class="payout-field-label">支付宝账号</div><div class="payout-field-value">' +
             esc(a.alipayAccount || w.alipayAccount || "—") +
             "</div>" +
-            (state.canReveal && (w.paymentAccountId || w.id)
-              ? '<button class="mini-btn" type="button" data-fin-reveal="' +
-                esc(w.paymentAccountId || "") +
-                '" data-fin-reveal-wd="' +
-                esc(w.id || viewWd.dataset.finViewWd) +
-                '" data-fin-reveal-state="masked" style="margin-top:8px">查看完整账号</button>'
-              : '<div class="admin-sync-note" style="margin-top:8px">完整账号需超级管理员/财务点击「查看完整账号」</div>') +
+            (!state.canReveal
+              ? '<div class="admin-sync-note" style="margin-top:8px">完整账号仅超级管理员/财务可查看</div>'
+              : "") +
             "</div>" +
             "<div><span style=\"color:#9ca3af\">状态</span><br><strong>" +
             esc(w.statusText || w.status || "-") +
+            "</strong></div>" +
+            "<div><span style=\"color:#9ca3af\">提交时间</span><br><strong>" +
+            esc(fmtFinKl(w.submittedAt || w.requestedAt)) +
             "</strong></div></div>";
           if (!openAdminUi("打款信息详情", html)) toast("无法打开打款信息详情");
         })
@@ -1524,7 +1647,7 @@
             (state.withdrawals || []).find(function (x) {
               return String(x.id) === String(viewWd.dataset.finViewWd);
             }) || {};
-          var masked = w.accountLast4 ? "*****" + w.accountLast4 : "*****----";
+          var masked = withdrawMaskedAccount(w);
           var html =
             '<div style="display:grid;gap:10px;text-align:left">' +
             "<div>银行：<strong>" +
@@ -1536,11 +1659,29 @@
             '<div>账号：<strong class="fin-account-value" data-fin-account-display data-masked="' +
             esc(masked) +
             '">' +
-            esc(masked) +
-            "</strong></div>" +
+            withdrawAccountDisplay(w) +
+            "</strong>" +
+            copyAccountBtn(w) +
+            "</div>" +
             (err && err.message ? '<div class="admin-sync-note">' + esc(err.message) + "</div>" : "") +
             "</div>";
           if (!openAdminUi("打款信息详情", html)) toast(err.message || "读取打款信息失败");
+        });
+      return;
+    }
+    var copyBtn = e.target.closest("[data-fin-copy-account]");
+    if (copyBtn) {
+      var copyVal = copyBtn.getAttribute("data-fin-copy-account") || "";
+      if (!copyVal) {
+        toast("无可复制账号");
+        return;
+      }
+      copyText(copyVal)
+        .then(function () {
+          toast("已复制");
+        })
+        .catch(function () {
+          toast("复制失败");
         });
       return;
     }

@@ -6,9 +6,14 @@
 html,
 body {
   height: 100%;
+  max-height: 100%;
   margin: 0;
   overflow: hidden;
   overflow-x: clip;
+}
+html {
+  height: 100%;
+  height: 100dvh;
 }
 
 body {
@@ -16,7 +21,8 @@ body {
   overflow-x: clip;
   background: #060507;
   color: #fff5fa;
-  /* iOS PWA (black-translucent): keep shell clear of the status bar */
+  /* iOS PWA (black-translucent): keep shell clear of the status bar.
+     Use a single body inset — do not also pad header/sidebar with the same inset. */
   padding-top: env(safe-area-inset-top, 0px);
   padding-left: env(safe-area-inset-left, 0px);
   padding-right: env(safe-area-inset-right, 0px);
@@ -29,7 +35,9 @@ body {
   display: grid !important;
   grid-template-columns: 220px minmax(0, 1fr) !important;
   width: 100% !important;
-  height: 100vh !important;
+  /* Fill the padded body box (avoids 100vh + safe-area double height / blank band). */
+  height: 100% !important;
+  max-height: 100% !important;
   max-width: none !important;
   overflow: hidden !important;
   background: linear-gradient(180deg, #070609, #0b080d);
@@ -40,7 +48,7 @@ body {
   width: 220px !important;
   min-width: 220px !important;
   max-width: 220px !important;
-  height: 100vh !important;
+  height: 100% !important;
   overflow-x: hidden !important;
   overflow-y: auto !important;
   position: relative !important;
@@ -57,7 +65,7 @@ body {
   box-sizing: border-box !important;
   min-width: 0 !important;
   width: auto !important;
-  height: 100vh !important;
+  height: 100% !important;
   overflow-x: hidden !important;
   overflow-y: auto !important;
   padding: 0 !important;
@@ -113,13 +121,21 @@ body[data-admin-section="orders"] #orderManagement {
 }
 
 /* ----- Brand ----- */
-.admin-sidebar .side-brand,
-.admin-sidebar .brand-copy {
-  display: block;
+.admin-sidebar .side-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   margin: 0 0 14px;
   padding: 0 2px 12px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   text-align: left;
+  min-width: 0;
+}
+
+.admin-sidebar .brand-copy {
+  display: block;
+  min-width: 0;
+  flex: 1 1 auto;
 }
 
 .admin-sidebar .side-brand strong,
@@ -127,7 +143,7 @@ body[data-admin-section="orders"] #orderManagement {
   display: block;
   margin: 0;
   color: #fff;
-  font-size: 24px;
+  font-size: 18px;
   font-weight: 800;
   line-height: 1.15;
   letter-spacing: 0.01em;
@@ -139,17 +155,48 @@ body[data-admin-section="orders"] #orderManagement {
 .admin-sidebar .side-brand span,
 .admin-sidebar .brand-copy span {
   display: block;
-  margin-top: 6px;
+  margin-top: 4px;
   color: #9ca3af;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 500;
   white-space: nowrap;
 }
 
 .admin-sidebar .side-brand img,
-.admin-sidebar .side-brand svg,
-.admin-sidebar .brand-logo {
-  display: none !important;
+.admin-sidebar .side-brand .brand-logo {
+  display: block !important;
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  object-fit: cover;
+}
+
+.admin-header-brand {
+  display: none;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  text-decoration: none;
+  color: inherit;
+}
+
+.admin-header-brand-logo {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  object-fit: cover;
+  flex: 0 0 auto;
+}
+
+.admin-header-brand-text {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #ffe6f2;
 }
 
 /* Fixed 220px sidebar: collapse control unused on desktop */
@@ -248,7 +295,8 @@ body[data-admin-section="orders"] #orderManagement {
   position:fixed !important;
   right:12px;
   left:auto;
-  top:calc(env(safe-area-inset-top, 0px) + 112px);
+  /* Body already insets safe-area; do not add inset again or the panel floats too low. */
+  top:72px;
   z-index:130000 !important;
   width:min(320px,calc(100vw - 24px));
   max-height:min(420px,70dvh);
@@ -426,13 +474,15 @@ body[data-admin-section="orders"] #orderManagement {
   .admin-sidebar {
     position: fixed !important;
     left: 0 !important;
-    top: env(safe-area-inset-top, 0px) !important;
+    /* Body already applies safe-area padding; pin drawer to the padded content top. */
+    top: 0 !important;
     bottom: 0 !important;
     z-index: 90 !important;
     width: 220px !important;
     min-width: 220px !important;
     max-width: 220px !important;
-    height: calc(100vh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)) !important;
+    height: 100% !important;
+    max-height: 100dvh !important;
     padding-top: 18px;
     transform: translateX(-105%) !important;
     transition: transform 0.2s ease !important;
@@ -482,6 +532,14 @@ body[data-admin-section="orders"] #orderManagement {
     flex-wrap: nowrap !important;
     gap: 8px !important;
     overflow: visible !important;
+  }
+  .admin-header-brand {
+    display: inline-flex !important;
+    max-width: 42vw;
+  }
+  .admin-header .admin-title-block {
+    flex: 1 1 auto;
+    min-width: 0;
   }
   .admin-header h1 {
     font-size: 16px !important;

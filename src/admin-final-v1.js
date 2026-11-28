@@ -1,5 +1,9 @@
 (function(){
-  var Auth=window.MCJAdminAuthFetch;
+  function authApi(){
+    var api=window.MCJAdminAuthFetch;
+    if(!api||typeof api.get!=='function')throw new Error('后台鉴权模块未加载');
+    return api;
+  }
   function esc(v){return String(v==null?'':v).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
   function money(v){
     if(window.MCJCurrency)return window.MCJCurrency.formatPlain(v);
@@ -7,10 +11,13 @@
   }
   function note(text){return '<div class="admin-final-note">'+esc(text)+'</div>'}
   function statusText(s){return ({awaiting_payment:'待付款',pending:'等待陪玩抢单',claimed:'等待陪玩确认',waiting_boss_confirm:'等待老板选择',confirmed:'进行中',in_progress:'进行中',completed:'已完成',cancelled:'已取消',refund_requested:'售后',refunded:'已退款',after_sale:'售后',reviewed:'已评价'})[s]||s||'-'}
-  function get(url){return Auth.get(url)}
-  function post(url,body){return Auth.post(url,body)}
+  function get(url){return authApi().get(url)}
+  function post(url,body){return authApi().post(url,body)}
   var DASH_TIMEOUT_MS=12000;
+  /* Balances rebuild can cold-start past 12s on iPhone PWA; keep core fast, only widen this path. */
+  var BALANCE_TIMEOUT_MS=45000;
   var DASH_RETRIES=1;
+  var BALANCE_RETRIES=2;
   function withTimeout(promise,ms,label){
     return new Promise(function(resolve,reject){
       var done=false;
@@ -39,6 +46,10 @@
     };
     return attempt();
   }
+  function getBalances(forceRefresh){
+    var url='/api/admin/dashboard?view=balances'+(forceRefresh?'&refresh=1':'');
+    return getRetry(url,'陪玩余额',BALANCE_TIMEOUT_MS,BALANCE_RETRIES);
+  }
   var dashRange={preset:'all',from:'',to:''};
   var DASH_RANGES=[['all','全部'],['today','今日'],['yesterday','昨日'],['7d','最近7天'],['30d','近30天'],['month','本月'],['last_month','上月'],['custom','自定义日期']];
   function dashRangeBar(){
@@ -66,7 +77,7 @@
     }
     return parts.length?'/api/admin/dashboard?'+parts.join('&'):'/api/admin/dashboard';
   }
-  var balanceState={q:'',sort:'withdrawable',dir:'desc',rows:[],totals:{},note:'',open:false,loaded:false};
+  var balanceState={q:'',sort:'withdrawable',dir:'desc',rows:[],totals:{},note:'',open:false,loaded:false,lastError:''};
   function balancePublicId(row){
     var code=String((row&&(row.publicId||row.companion_code||row.companionCode))||'').trim();
     if(code&&!isUuid(code))return code;
@@ -77,13 +88,14 @@
     if(!host)return;
     balanceState.open=true;
     host.innerHTML='<div class="content-loading">正在读取陪玩余额明细...</div>';
-    getRetry('/api/admin/dashboard?view=balances','陪玩余额明细').then(function(res){
+    getBalances(true).then(function(res){
       if(res.ok===false){host.innerHTML=note(res.message||'无权查看或读取失败');return;}
       var pack=res.balances||{};
       balanceState.rows=pack.rows||[];
       balanceState.totals=pack.totals||{};
       balanceState.note=pack.note||'';
       balanceState.loaded=true;
+      balanceState.lastError='';
       paintCompanionBalances();
     }).catch(function(err){host.innerHTML=note(err.message||'读取失败');});
   }
@@ -158,8 +170,14 @@
     function paint(s,realtimeState){
       if(reqId!==renderDashboard._reqId)return;
       var rt=realtimeState||{};
-      var withdrawVal=rt.loading?'加载中…':(rt.error?('失败 · 重试'):money(s.companionWithdrawable||0));
-      var pendingVal=rt.loading?'加载中…':(rt.error?('失败 · 重试'):money(s.companionPendingSettlement||0));
+      var failHint='失败 · 重试';
+      var withdrawVal=rt.loading?'加载中…':(rt.error?failHint:money(s.companionWithdrawable));
+      var pendingVal=rt.loading?'加载中…':(rt.error?failHint:money(s.companionPendingSettlement));
+      /* Never paint fake 0 while balances are still pending or failed. */
+      if(!rt.loading&&!rt.error&&(s.companionWithdrawable==null||s.companionPendingSettlement==null)){
+        withdrawVal='—';
+        pendingVal='—';
+      }
       var cards=[
         {label:'老板总数',value:s.bosses||0,href:'#bosses',group:'count'},
         {label:'陪玩总数',value:s.companions||0,href:'#players',group:'count'},
@@ -173,18 +191,24 @@
         {label:'营业额',value:money(s.totalAmount||0),href:'#orders',group:'dated'},
         {label:'平台利润',value:money(s.platformProfit||0),href:'#orders',group:'dated'},
         {label:'提现中/已打款',value:money(s.withdrawPending||0)+' / '+money(s.withdrawPaid||0),href:'#service-reports',valueClass:'admin-final-stat-value-wrap',group:'dated'},
-        {label:'陪玩未提现总余额',value:withdrawVal,openBalances:true,group:'realtime'},
-        {label:'陪玩待结算金额',value:pendingVal,openBalances:true,group:'realtime'}
+        {label:'陪玩未提现总余额',value:withdrawVal,openBalances:true,retryBalances:!!rt.error,group:'realtime'},
+        {label:'陪玩待结算金额',value:pendingVal,openBalances:true,retryBalances:!!rt.error,group:'realtime'}
       ];
       var dated=cards.filter(function(c){return c.group!=='realtime'});
       var realtime=cards.filter(function(c){return c.group==='realtime'});
+      function cardHtmlRt(item){
+        if(item.retryBalances){
+          return '<button type="button" class="admin-final-stat is-balance-error" data-retry-companion-balances title="'+esc(rt.errorMessage||'点击重试读取真实余额')+'"><span>'+esc(item.label)+'</span><strong>'+esc(item.value)+'</strong></button>';
+        }
+        return cardHtml(item);
+      }
       target.innerHTML=dashRangeBar()+
         '<div class="admin-final-grid">'+dated.map(cardHtml).join('')+'</div>'+
-        '<div class="admin-final-grid admin-final-grid-realtime">'+realtime.map(cardHtml).join('')+'</div>'+
+        '<div class="admin-final-grid admin-final-grid-realtime">'+realtime.map(cardHtmlRt).join('')+'</div>'+
         '<div id="companionBalanceDetail"></div>';
     }
     var coreStats=null;
-    var realtimeState={loading:true,error:false};
+    var realtimeState={loading:true,error:false,errorMessage:''};
     getRetry(dashQuery(forceRefresh?{refresh:'1'}:null), '核心统计').then(function(res){
       if(reqId!==renderDashboard._reqId)return;
       if(res.ok===false){
@@ -192,18 +216,20 @@
         return;
       }
       coreStats=res.stats||{};
-      if(coreStats.companionBalancePending===false&&coreStats.companionWithdrawable!=null){
-        realtimeState={loading:false,error:false};
+      if(coreStats.companionBalancePending===false&&coreStats.companionWithdrawable!=null&&coreStats.companionPendingSettlement!=null){
+        realtimeState={loading:false,error:false,errorMessage:''};
       }
       paint(coreStats,realtimeState);
     }).catch(function(err){
       if(reqId!==renderDashboard._reqId)return;
       target.innerHTML=dashRangeBar()+note(err.message||'数据加载失败')+'<button class="mini-btn" type="button" data-admin-final-refresh="dashboard">重试</button>';
     });
-    getRetry('/api/admin/dashboard?view=balances'+(forceRefresh?'&refresh=1':''),'陪玩余额').then(function(res){
+    getBalances(forceRefresh).then(function(res){
       if(reqId!==renderDashboard._reqId)return;
       if(res.ok===false){
-        realtimeState={loading:false,error:true};
+        var msg=res.message||'无权查看或读取失败';
+        balanceState.lastError=msg;
+        realtimeState={loading:false,error:true,errorMessage:msg};
         if(coreStats)paint(coreStats,realtimeState);
         return;
       }
@@ -212,15 +238,18 @@
       coreStats.companionWithdrawable=totals.withdrawable;
       coreStats.companionPendingSettlement=totals.pendingSettlement;
       coreStats.companionBalancePending=false;
-      realtimeState={loading:false,error:false};
+      realtimeState={loading:false,error:false,errorMessage:''};
       balanceState.rows=(res.balances&&res.balances.rows)||[];
       balanceState.totals=totals;
       balanceState.note=(res.balances&&res.balances.note)||'';
       balanceState.loaded=true;
+      balanceState.lastError='';
       if(document.getElementById('superStats'))paint(coreStats,realtimeState);
-    }).catch(function(){
+    }).catch(function(err){
       if(reqId!==renderDashboard._reqId)return;
-      realtimeState={loading:false,error:true};
+      var msg=(err&&err.message)||'读取失败';
+      balanceState.lastError=msg;
+      realtimeState={loading:false,error:true,errorMessage:msg};
       if(coreStats)paint(coreStats,realtimeState);
     });
   }
@@ -1007,6 +1036,12 @@
     if(e.target.closest('[data-admin-final-refresh="orders"]'))renderOrders();
     if(e.target.closest('[data-admin-final-refresh="reports"]'))renderReports();
     if(e.target.closest('[data-admin-final-refresh="dashboard"]'))renderDashboard({refresh:true});
+    var retryBalances=e.target.closest('[data-retry-companion-balances]');
+    if(retryBalances){
+      e.preventDefault();
+      renderDashboard({refresh:true});
+      return;
+    }
     var openBalances=e.target.closest('[data-open-companion-balances]');
     if(openBalances){
       e.preventDefault();

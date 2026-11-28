@@ -1,11 +1,13 @@
-/* mcj-sw 20261008badge1
+/* mcj-sw 20261128adminHeaderBal1
    MCJ service worker — installability + Web Push
    Do NOT rewrite navigations to "/". Portal PWAs (companion / customer-service /
    admin) must keep their own start_url paths when launched from the home screen.
    Shared SW scope "/" keeps Web Push / #248 subscriptions intact.
    No "fetch" listener on purpose: a pass-through handler forces the worker to
    boot and proxy every page/asset request, slowing each page switch on iOS/Android.
-   Chrome 108+ (mobile) / 112+ (desktop) no longer require one for installability. */
+   Chrome 108+ (mobile) / 112+ (desktop) no longer require one for installability.
+   Version bump clears any leftover Cache Storage from older SW builds so installed
+   PWAs pick up admin/companion asset query bumps without reinstall. */
 self.addEventListener("install", function () {
   self.skipWaiting();
 });

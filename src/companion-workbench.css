@@ -343,6 +343,11 @@ a.pw-btn{display:inline-flex;align-items:center;justify-content:center;text-deco
 .pw-order-meta div{min-height:58px;padding:10px 11px;border:1px solid rgba(255,255,255,.07);border-radius:13px;background:rgba(255,255,255,.025)}
 .pw-order-meta span{display:block;color:var(--pw-muted);font-size:12px;margin-bottom:6px}
 .pw-order-meta strong{display:block;color:#fff;font-size:13px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pw-boss-game-id .pw-inline-val{display:inline;margin-right:6px;white-space:normal;overflow:visible;text-overflow:unset;word-break:break-word}
+.pw-copy-id-btn{margin-left:4px;padding:2px 10px;font-size:11px;font-weight:700;line-height:1.5;border-radius:999px;border:1px solid var(--pw-line-pink);background:var(--pw-pink-soft);color:var(--pw-pink);vertical-align:middle}
+.pw-copy-id-btn:active{opacity:.85}
+.pw-notice-game-id{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;margin:8px 0 0;font-size:13px;color:var(--pw-muted)}
+.pw-notice-game-id strong{color:var(--pw-text);font-weight:700}
 .pw-timer{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px;margin-top:12px;padding:12px;border:1px solid rgba(255,145,195,.18);border-radius:14px;background:rgba(255,143,197,.055)}
 .pw-timer div{display:grid;gap:5px}
 .pw-timer span{color:var(--pw-muted);font-size:12px}

@@ -340,8 +340,25 @@ function resolveRowId(row = {}) {
   return String(row.id || row.uuid || row.withdrawal_id || row.withdrawalId || "").trim();
 }
 
-function viewWithdraw(row, profile = {}, account = {}, adminMap = {}, companionExtra = {}) {
+function resolvePayoutMethod(account = {}, row = {}) {
+  return String(account.method || row.payout_method || row.method || "").trim();
+}
+
+function resolveFullPayeeAccount(account = {}, row = {}) {
+  const bank = String(account.bank_account || "").replace(/\s+/g, "");
+  if (bank) return bank;
+  const duit = resolveDuitNowId(account, row);
+  if (duit) return String(duit).replace(/\s+/g, "");
+  const tng = String(account.tng_account || row.tng_account || "").trim();
+  if (tng && !/^\*+/.test(tng)) return tng.replace(/\s+/g, "");
+  const alipay = String(account.alipay_account || row.alipay_account || "").trim();
+  if (alipay && !/^\*+/.test(alipay)) return alipay.replace(/\s+/g, "");
+  return "";
+}
+
+function viewWithdraw(row, profile = {}, account = {}, adminMap = {}, companionExtra = {}, opts = {}) {
   const id = resolveRowId(row);
+  const includeFullAccount = !!opts.canReveal;
   const approvedById = row.approved_by || row.reviewed_by || "";
   const paidById = row.paid_by || row.confirmed_by || "";
   const approvedAdmin = adminMap[approvedById] || {};
@@ -364,9 +381,19 @@ function viewWithdraw(row, profile = {}, account = {}, adminMap = {}, companionE
     grossAmountRm: money(row.gross_amount_rm),
     feeRm: money(row.fee_rm),
     netAmountRm: money(row.net_amount_rm),
+    payoutMethod: resolvePayoutMethod(account, row),
+    method: resolvePayoutMethod(account, row),
     bankName: row.bank_name || account.bank_name || "",
-    accountHolder: row.account_holder || account.account_name || "",
+    accountHolder: row.account_holder || row.account_name || account.account_name || "",
     accountLast4: row.account_last4 || account.account_last4 || maskBankAccount(account.bank_account).slice(-4),
+    tngAccount: String(account.tng_account || row.tng_account || "").trim(),
+    alipayAccount: String(account.alipay_account || row.alipay_account || "").trim(),
+    duitnowId: includeFullAccount ? resolveDuitNowId(account, row) : "",
+    ...(includeFullAccount
+      ? {
+          accountNumber: resolveFullPayeeAccount(account, row) || undefined,
+        }
+      : {}),
     accountStatus: account.status || "",
     remark: row.remark || "",
     paymentRemark: row.payment_remark || row.finance_note || "",
@@ -658,7 +685,14 @@ export default async function handler(req, res) {
         currentBatch,
         bossRefunds,
         withdrawals: withdrawals.map((r) =>
-          viewWithdraw(r, profiles[r.companion_id], accounts[r.payment_account_id], profiles, companionCodes[r.companion_id])
+          viewWithdraw(
+            r,
+            profiles[r.companion_id],
+            accounts[r.payment_account_id],
+            profiles,
+            companionCodes[r.companion_id],
+            { canReveal: canReveal(adminProfile) }
+          )
         ),
         payrolls: payrolls.map((r) => viewPayroll(r, profiles[r.staff_id], profiles)),
         payoutRequests: [
@@ -674,7 +708,14 @@ export default async function handler(req, res) {
             statusText: r.statusText,
           })),
           ...withdrawals.map((r) => ({
-            ...viewWithdraw(r, profiles[r.companion_id], accounts[r.payment_account_id], profiles, companionCodes[r.companion_id]),
+            ...viewWithdraw(
+              r,
+              profiles[r.companion_id],
+              accounts[r.payment_account_id],
+              profiles,
+              companionCodes[r.companion_id],
+              { canReveal: canReveal(adminProfile) }
+            ),
             applicantType: "companion",
             applicantTypeText: "陪玩提现",
             payoutType: "companion_wage",
@@ -2553,9 +2594,23 @@ export default async function handler(req, res) {
       if (pay?.id) {
         receipt = (await companionDb("finance_receipts", `?payment_id=eq.${encodeURIComponent(pay.id)}&limit=1`).catch(() => []))?.[0];
       }
+      const revealOk = canReveal(adminProfile);
+      const item = viewWithdraw(row, profiles[row.companion_id], account, profiles, {}, { canReveal: revealOk });
+      const full = revealOk ? resolveFullPayeeAccount(account, row) : "";
       return json(res, 200, {
         ok: true,
-        item: viewWithdraw(row, profiles[row.companion_id], account, profiles),
+        item,
+        account: {
+          id: account.id || row.payment_account_id || "",
+          bankName: item.bankName || account.bank_name || row.bank_name || "",
+          accountHolder: item.accountHolder || "",
+          method: item.payoutMethod || item.method || "",
+          accountNumber: full || undefined,
+          accountLast4: item.accountLast4 || "",
+          tngAccount: item.tngAccount || "",
+          alipayAccount: item.alipayAccount || "",
+          duitnowId: revealOk ? resolveDuitNowId(account, row) : "",
+        },
         payment: pay ? viewPayment(pay, profiles[pay.payee_user_id]) : null,
         receipt: receipt ? viewReceipt(receipt, pay || {}, profiles[row.companion_id], { withdrawalNo: row.withdrawal_no }) : null,
       });

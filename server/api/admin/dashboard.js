@@ -519,16 +519,15 @@ async function loadWithdrawalsForStats() {
   return [];
 }
 
-function takeLatest(rows, keyFn, limit) {
+/** Group every row by key — wallet totals must not drop history past N txs. */
+function groupAll(rows, keyFn) {
   const map = new Map();
   for (const row of rows || []) {
     const key = keyFn(row);
     if (!key) continue;
     const list = map.get(key) || [];
-    if (list.length < limit) {
-      list.push(row);
-      map.set(key, list);
-    }
+    list.push(row);
+    map.set(key, list);
   }
   return map;
 }
@@ -619,8 +618,9 @@ export async function buildCompanionBalanceReport({
   orders = [],
 } = {}) {
   const { byId, testIds } = indexProfilesForStats(profiles);
-  const txByUser = takeLatest(transactions, (row) => String(row.user_id || ""), 200);
-  const wdByUser = takeLatest(withdrawals, (row) => String(row.companion_id || ""), 100);
+  // Full history per companion — takeLatest(200) under-counted wallets with long ledgers.
+  const txByUser = groupAll(transactions, (row) => String(row.user_id || ""));
+  const wdByUser = groupAll(withdrawals, (row) => String(row.companion_id || ""));
   const orderMap = new Map((orders || []).map((row) => [String(row.id), row]));
   const rows = [];
   for (const cp of companionProfiles || []) {
@@ -652,7 +652,7 @@ export async function buildCompanionBalanceReport({
   return {
     asOf: "current",
     label: "当前余额",
-    note: "与陪玩收益中心同一口径：可提现为已解锁余额；待结算为订单收入锁定（收益中心「订单24h锁定」）。不随控制台日期筛选变化，也不含提现中或已打款。",
+    note: "与陪玩收益中心同一口径：可提现为已解锁余额；待结算为订单收入锁定（收益中心「订单24h锁定」）。按全部历史流水汇总（不截断每人 200 条），不随控制台日期筛选变化，也不含提现中或已打款。",
     totals: {
       withdrawable: sum("withdrawable"),
       pendingSettlement: sum("pendingSettlement"),
@@ -667,9 +667,8 @@ export async function buildCompanionBalanceReport({
 
 async function loadCompanionBalanceReport(profiles, companionProfiles) {
   const [transactions, withdrawals] = await Promise.all([loadWalletRows(), loadBalanceWithdrawals()]);
-  // Same takeLatest(200/user) window as buildCompanionBalanceReport — fetch only those order rows.
-  const keptTx = [...takeLatest(transactions, (row) => String(row.user_id || ""), 200).values()].flat();
-  const orderIds = keptTx.map((row) => String(row.order_id || "")).filter(Boolean);
+  // Load every order referenced by wallet rows so unlock windows stay accurate for long histories.
+  const orderIds = (transactions || []).map((row) => String(row.order_id || "")).filter(Boolean);
   const orders = await loadOrdersByIds(orderIds);
   return buildCompanionBalanceReport({ profiles, companionProfiles, transactions, withdrawals, orders });
 }

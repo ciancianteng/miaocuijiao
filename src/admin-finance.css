@@ -70,6 +70,23 @@
   letter-spacing: 0.08em;
 }
 
+#serviceReportsManagement .fin-account-row,
+#serviceReportsManagement .fin-account-fact {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+}
+
+#serviceReportsManagement .fin-copy-account {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+#serviceReportsManagement .fin-copy-account-inline {
+  margin-left: 0;
+}
+
 #serviceReportsManagement .fin-wd-payee-desktop .mini-btn,
 #serviceReportsManagement .fin-wd-payee-desktop .admin-sync-note {
   margin-top: 6px;
