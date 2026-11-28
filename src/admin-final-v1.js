@@ -1469,7 +1469,7 @@
   }
   function loadAdminNotices(){
     var list=document.getElementById('adminNoticeList');
-    if(!Auth||!Auth.get){
+    try{authApi();}catch(e){
       if(list)list.innerHTML='<div class="admin-notice-empty">请重新登录后台后再查看通知</div>';
       return Promise.resolve();
     }
@@ -1498,8 +1498,9 @@
   }
   function bootAdminChrome(){
     mountAdminNotices();
-    if(!Auth)return;
-    Auth.ensureValidToken().then(function(){
+    var api;
+    try{api=authApi();}catch(e){return;}
+    api.ensureValidToken().then(function(){
       ensureGrabModalHost();
       mountAdminNotices();
       loadAdminNotices();
