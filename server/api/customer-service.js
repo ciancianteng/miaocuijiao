@@ -243,7 +243,7 @@ async function resolveCompanion(input) {
       if (profile) return profile;
     }
   }
-  // Nickname / display_name fallback (exact then ilike).
+  // Nickname / display_name fallback (exact, then quoted ilike). Dual-role may keep role=boss.
   const nickExact = await maybeRows(
     "companion_profiles",
     `?nickname=eq.${encodeURIComponent(value)}&select=user_id&limit=3`
@@ -253,22 +253,64 @@ async function resolveCompanion(input) {
     const profile = await companionCapableProfile(row.user_id);
     if (profile) return profile;
   }
+  const likePat = ilikePattern(value);
+  if (likePat) {
+    const nickFuzzy = await companionProfilesForSearch(`nickname=ilike.${encodeURIComponent(likePat)}`, 5);
+    for (const row of nickFuzzy || []) {
+      if (!isUuid(row?.user_id)) continue;
+      const profile = await companionCapableProfile(row.user_id);
+      if (profile) return profile;
+    }
+  }
   const nameExact = await maybeRows(
     "profiles",
-    `?role=eq.companion&display_name=eq.${encodeURIComponent(value)}&select=id&limit=3`
+    `?display_name=eq.${encodeURIComponent(value)}&select=id,role,status&limit=5`
   );
-  if (isUuid(nameExact[0]?.id)) {
-    const profile = await profileById(nameExact[0].id);
-    if (profile && profile.role === "companion") return profile;
+  for (const row of nameExact || []) {
+    if (!isUuid(row?.id)) continue;
+    const profile = await companionCapableProfile(row.id);
+    if (profile) return profile;
   }
   return null;
 }
 function sanitizeSearchToken(raw) {
   return String(raw || "")
     .trim()
-    .replace(/[%_,.()]/g, " ")
+    .replace(/[%_,.()\"']/g, " ")
     .replace(/\s+/g, " ")
     .slice(0, 64);
+}
+/** PostgREST ilike pattern (* → %). Prefer plain *token* (quoted form breaks top-level filters). */
+function ilikePattern(q) {
+  const token = sanitizeSearchToken(q);
+  if (!token) return "";
+  return `*${token}*`;
+}
+function isMissingColumnError(error) {
+  return /column|42703|PGRST204|schema cache|Could not find the/i.test(String(error?.message || error || ""));
+}
+const COMPANION_SEARCH_SELECTS = [
+  "id,user_id,nickname,companion_code,companion_uid,game,level_name,price,card_image_url,application_status,verification_status,online_status,application_submitted_at",
+  "id,user_id,nickname,companion_code,companion_uid,game,level_name,price,application_status,verification_status,online_status,application_submitted_at",
+  "id,user_id,nickname,companion_code,companion_uid,application_status,verification_status,online_status,application_submitted_at",
+  "id,user_id,nickname,companion_code,application_status,verification_status,online_status",
+  "id,user_id,nickname,companion_code,application_status,verification_status",
+];
+async function companionProfilesForSearch(filterQuery, limit = 12) {
+  const lim = Math.max(1, Math.min(40, Number(limit) || 12));
+  for (const select of COMPANION_SEARCH_SELECTS) {
+    try {
+      const rows = await tableRows(
+        "companion_profiles",
+        `?${filterQuery}&select=${select}&limit=${lim}`
+      );
+      return Array.isArray(rows) ? rows : [];
+    } catch (error) {
+      if (isMissingColumnError(error)) continue;
+      return [];
+    }
+  }
+  return [];
 }
 function dedupeById(list) {
   const seen = new Set();
@@ -281,12 +323,25 @@ function dedupeById(list) {
   }
   return out;
 }
+function isEligibleCompanionRow(cps, profile) {
+  if (!cps || !profile) return false;
+  if (profile.status && profile.status !== "active" && profile.status !== "启用") return false;
+  const appSt = String(cps.application_status || "").toLowerCase();
+  const verSt = String(cps.verification_status || "").toLowerCase();
+  if (/^(draft|archived|deleted)$/.test(appSt)) return false;
+  const approved = /approved|verified|passed/.test(appSt) || /approved|verified|passed/.test(verSt);
+  if (!approved) return false;
+  // Draft-without-submit only when neither status is approved.
+  if (!cps.application_submitted_at && !approved) return false;
+  return true;
+}
 /** CS proxy-order people search — service-role PostgREST, keeps RLS intact for clients. */
 async function searchProxyPeople(role, qRaw, limit = 12) {
   const q = sanitizeSearchToken(qRaw);
   if (!q) return [];
   const lim = Math.max(1, Math.min(20, Number(limit) || 12));
-  const like = `*${q}*`;
+  const likePat = ilikePattern(q);
+  if (!likePat) return [];
   if (role === "boss") {
     const rows = [];
     const byResolve = await resolveBoss(q).catch(() => null);
@@ -295,7 +350,7 @@ async function searchProxyPeople(role, qRaw, limit = 12) {
     }
     const fuzzy = await maybeRows(
       "profiles",
-      `?role=eq.boss&status=eq.active&or=(display_name.ilike.${encodeURIComponent(like)},boss_uid.ilike.${encodeURIComponent(like)})&select=id,display_name,boss_uid,avatar_url,status,role&limit=${lim}`
+      `?role=eq.boss&status=eq.active&or=(display_name.ilike.${encodeURIComponent(likePat)},boss_uid.ilike.${encodeURIComponent(likePat)})&select=id,display_name,boss_uid,avatar_url,status,role&limit=${lim}`
     ).catch(() => []);
     rows.push(...(fuzzy || []));
     return dedupeById(rows)
@@ -314,31 +369,35 @@ async function searchProxyPeople(role, qRaw, limit = 12) {
       .filter((p) => isUuid(p.id));
   }
 
-  // companion
+  // companion — never rely on a preloaded FE list; always query DB.
   const hits = [];
   const byResolve = await resolveCompanion(q).catch(() => null);
   if (byResolve && isUuid(byResolve.id)) hits.push({ user_id: byResolve.id, profile: byResolve });
 
-  const cpFuzzy = await maybeRows(
-    "companion_profiles",
-    `?or=(nickname.ilike.${encodeURIComponent(like)},companion_code.ilike.${encodeURIComponent(like)})&select=id,user_id,nickname,companion_code,companion_uid,game,level_name,price,avatar_url,cover_url,application_status,verification_status,online_status&limit=${lim}`
-  ).catch(() => []);
+  // Prod has no companion_profiles.avatar_url/cover_url — select known columns with fallbacks.
+  const cpFuzzy = await companionProfilesForSearch(
+    `or=(nickname.ilike.${encodeURIComponent(likePat)},companion_code.ilike.${encodeURIComponent(likePat)})`,
+    lim
+  );
   for (const cp of cpFuzzy || []) {
     if (!isUuid(cp.user_id)) continue;
     hits.push({ user_id: cp.user_id, cp });
   }
 
   // Dual-role companions often keep profiles.role=boss; prefer companion_profiles.
-  // Still allow profiles.display_name hits, but only keep rows that pass companionCapableProfile.
+  // Top-level PostgREST filter MUST be display_name=ilike.*q* (equals before op).
   const nameFuzzy = await maybeRows(
     "profiles",
-    `?display_name.ilike.${encodeURIComponent(like)}&select=id,display_name,avatar_url,status,role&limit=${lim}`
+    `?display_name=ilike.${encodeURIComponent(likePat)}&select=id,display_name,avatar_url,status,role&limit=${lim}`
   ).catch(() => []);
-  for (const p of nameFuzzy || []) {
-    if (!isUuid(p.id)) continue;
-    const capable = await companionCapableProfile(p.id).catch(() => null);
-    if (!capable) continue;
-    hits.push({ user_id: p.id, profile: capable });
+  const nameCapable = await Promise.all(
+    (nameFuzzy || []).filter((p) => isUuid(p.id)).map(async (p) => {
+      const capable = await companionCapableProfile(p.id).catch(() => null);
+      return capable ? { user_id: p.id, profile: capable } : null;
+    })
+  );
+  for (const hit of nameCapable) {
+    if (hit) hits.push(hit);
   }
 
   const out = [];
@@ -348,23 +407,12 @@ async function searchProxyPeople(role, qRaw, limit = 12) {
     if (!isUuid(uid) || seen.has(uid)) continue;
     const profile = hit.profile || (await companionCapableProfile(uid).catch(() => null));
     if (!profile) continue;
-    const cps =
-      hit.cp ||
-      (
-        await maybeRows(
-          "companion_profiles",
-          `?user_id=eq.${encodeURIComponent(uid)}&select=id,user_id,nickname,companion_code,companion_uid,game,level_name,price,avatar_url,cover_url,application_status,verification_status,online_status,application_submitted_at&limit=1`
-        ).catch(() => [])
-      )[0];
-    if (!cps) continue;
-    const appSt = String(cps.application_status || "").toLowerCase();
-    const isDraft =
-      /^(draft|archived|deleted)$/.test(appSt) ||
-      (!cps.application_submitted_at && !/approved|verified|passed/.test(appSt));
-    if (isDraft) continue;
-    const verified = /approved|verified|passed/.test(String(cps.application_status || cps.verification_status || ""));
-    if (!verified) continue;
-    if (profile.status && profile.status !== "active" && profile.status !== "启用") continue;
+    let cps = hit.cp || null;
+    if (!cps) {
+      const rows = await companionProfilesForSearch(`user_id=eq.${encodeURIComponent(uid)}`, 1);
+      cps = rows[0] || null;
+    }
+    if (!isEligibleCompanionRow(cps, profile)) continue;
     const mapped = mapCompanionPublicFields(cps, profile);
     const code = mapped.companionCode || mapped.publicId || cps.companion_code || "";
     seen.add(uid);
@@ -374,7 +422,7 @@ async function searchProxyPeople(role, qRaw, limit = 12) {
       companionCode: code,
       companionUid: mapped.companionUid || cps.companion_uid || "",
       uid: code || String(cps.companion_uid || ""),
-      avatar: mapped.avatar || cps.avatar_url || profile.avatar_url || "/default-avatar.png",
+      avatar: mapped.avatar || cps.card_image_url || profile.avatar_url || "/default-avatar.png",
       game: cps.game || mapped.game || "",
       level: cps.level_name || "",
       price: money(cps.price),

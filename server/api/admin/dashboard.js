@@ -568,37 +568,46 @@ async function loadBalanceWithdrawals() {
 async function loadOrdersByIds(ids) {
   const out = [];
   const list = [...new Set(ids.filter(Boolean))];
-  // Prod may lack optional columns (e.g. completion_method). Fall back so order income
-  // is not voided — same unlock math as companion earnings (method resolved from note).
+  // Prod lacks completion_method — put known-good select first to avoid a failed round-trip per chunk.
+  // Fallbacks keep unlock math intact (method may still resolve from note).
   const selects = [
-    "id,status,completed_at,cancelled_at,completion_method,note,description",
     "id,status,completed_at,cancelled_at,note,description",
+    "id,status,completed_at,cancelled_at,completion_method,note,description",
     "id,status,completed_at,cancelled_at,note",
     "id,status,completed_at,cancelled_at",
     "id,status,completed_at",
     "id,status",
   ];
-  for (let i = 0; i < list.length; i += 80) {
-    const chunk = list.slice(i, i + 80);
-    let loaded = false;
-    for (const select of selects) {
+  const chunks = [];
+  for (let i = 0; i < list.length; i += 120) chunks.push(list.slice(i, i + 120));
+  let preferredSelect = selects[0];
+  async function loadChunk(chunk) {
+    const order = [preferredSelect, ...selects.filter((s) => s !== preferredSelect)];
+    for (const select of order) {
       try {
         const rows = await supabaseJson(
           restUrl("orders", `?id=in.(${chunk.map(encodeURIComponent).join(",")})&select=${select}`),
           { headers: serviceHeaders() }
         );
-        if (Array.isArray(rows)) out.push(...rows);
-        loaded = true;
-        break;
+        preferredSelect = select;
+        return Array.isArray(rows) ? rows : [];
       } catch (error) {
         if (isMissingColumnError(error) || isMissingRelationError(error)) continue;
-        break;
+        return [];
       }
     }
-    if (!loaded) {
-      /* unlock falls back to locked when order row is missing — same as earnings center */
+    return [];
+  }
+  const concurrency = Math.min(6, Math.max(1, chunks.length));
+  let cursor = 0;
+  async function worker() {
+    while (cursor < chunks.length) {
+      const my = cursor++;
+      const rows = await loadChunk(chunks[my]);
+      if (rows.length) out.push(...rows);
     }
   }
+  await Promise.all(Array.from({ length: concurrency }, () => worker()));
   return out;
 }
 
@@ -658,9 +667,37 @@ export async function buildCompanionBalanceReport({
 
 async function loadCompanionBalanceReport(profiles, companionProfiles) {
   const [transactions, withdrawals] = await Promise.all([loadWalletRows(), loadBalanceWithdrawals()]);
-  const orderIds = transactions.map((row) => String(row.order_id || "")).filter(Boolean);
+  // Same takeLatest(200/user) window as buildCompanionBalanceReport — fetch only those order rows.
+  const keptTx = [...takeLatest(transactions, (row) => String(row.user_id || ""), 200).values()].flat();
+  const orderIds = keptTx.map((row) => String(row.order_id || "")).filter(Boolean);
   const orders = await loadOrdersByIds(orderIds);
   return buildCompanionBalanceReport({ profiles, companionProfiles, transactions, withdrawals, orders });
+}
+
+/** Short in-memory TTL cache (per serverless instance). Keeps accuracy with refresh=1 / 20s expiry. */
+const DASH_CACHE_TTL_MS = 20_000;
+const dashCache = new Map();
+function cacheGet(key) {
+  const hit = dashCache.get(key);
+  if (!hit) return null;
+  if (Date.now() - hit.at > DASH_CACHE_TTL_MS) {
+    dashCache.delete(key);
+    return null;
+  }
+  return hit.value;
+}
+function cacheSet(key, value) {
+  dashCache.set(key, { at: Date.now(), value });
+  return value;
+}
+function applyBalanceTotals(stats, balances) {
+  if (!stats || !balances?.totals) return stats;
+  stats.companionWithdrawable = balances.totals.withdrawable;
+  stats.companionPendingSettlement = balances.totals.pendingSettlement;
+  stats.companionBalanceAsOf = "current";
+  stats.companionBalanceLabel = "当前余额";
+  stats.companionBalancePending = false;
+  return stats;
 }
 
 export default async function handler(req, res) {
@@ -672,6 +709,7 @@ export default async function handler(req, res) {
       message: "未配置 Supabase，后台首页只显示 0，不返回假统计。",
     });
   }
+  const t0 = Date.now();
   try {
     await requireAdmin(req);
     const query = req.query && typeof req.query === "object" ? req.query : {};
@@ -685,30 +723,84 @@ export default async function handler(req, res) {
       from: search.from || query.from || "",
       to: search.to || query.to || "",
     });
-    const [profiles, orders, withdrawals, companionProfiles, paymentTransactions] = await Promise.all([
-      loadProfilesForStats(),
-      loadOrdersForStats(),
-      loadWithdrawalsForStats(),
-      loadCompanionProfilesForStats(),
-      loadPaymentTransactionsForStats(),
-    ]);
-    const { stats, filter, definitions } = buildDashboardStats({
-      profiles,
-      orders,
-      withdrawals,
-      companionProfiles,
-      paymentTransactions,
-      range,
-    });
-    const balances = await loadCompanionBalanceReport(profiles, companionProfiles);
-    stats.companionWithdrawable = balances.totals.withdrawable;
-    stats.companionPendingSettlement = balances.totals.pendingSettlement;
-    stats.companionBalanceAsOf = "current";
-    stats.companionBalanceLabel = "当前余额";
-    if (String(search.view || query.view || "") === "balances") {
-      return json(res, 200, { ok: true, configured: true, balances });
+    const view = String(search.view || query.view || "");
+    const bust = String(search.refresh || query.refresh || "") === "1";
+    const syncBalances =
+      String(search.include_balances || query.include_balances || "") === "1" ||
+      String(search.include_balances || query.include_balances || "") === "true";
+
+    // Independent balances module — do not load order/GMV tables.
+    if (view === "balances") {
+      const cacheKey = "balances:current";
+      if (!bust) {
+        const hit = cacheGet(cacheKey);
+        if (hit) {
+          res.setHeader("Server-Timing", `total;dur=${Date.now() - t0};desc="balances-cache"`);
+          return json(res, 200, { ok: true, configured: true, balances: hit, cache: "hit" });
+        }
+      }
+      const [profiles, companionProfiles] = await Promise.all([
+        loadProfilesForStats(),
+        loadCompanionProfilesForStats(),
+      ]);
+      const balances = await loadCompanionBalanceReport(profiles, companionProfiles);
+      cacheSet(cacheKey, balances);
+      res.setHeader("Server-Timing", `total;dur=${Date.now() - t0};desc="balances"`);
+      return json(res, 200, { ok: true, configured: true, balances, cache: "miss" });
     }
-    return json(res, 200, { ok: true, configured: true, stats, filter, definitions });
+
+    const rangeKey = `${range?.preset || "all"}:${range?.from || ""}:${range?.to || ""}`;
+    const statsKey = `stats:${rangeKey}`;
+    let pack = !bust ? cacheGet(statsKey) : null;
+    let cacheState = pack ? "hit" : "miss";
+    if (!pack) {
+      const [profiles, orders, withdrawals, companionProfiles, paymentTransactions] = await Promise.all([
+        loadProfilesForStats(),
+        loadOrdersForStats(),
+        loadWithdrawalsForStats(),
+        loadCompanionProfilesForStats(),
+        loadPaymentTransactionsForStats(),
+      ]);
+      pack = buildDashboardStats({
+        profiles,
+        orders,
+        withdrawals,
+        companionProfiles,
+        paymentTransactions,
+        range,
+      });
+      cacheSet(statsKey, pack);
+    }
+    const { stats, filter, definitions } = {
+      stats: { ...pack.stats },
+      filter: pack.filter,
+      definitions: pack.definitions,
+    };
+
+    if (syncBalances) {
+      // Legacy single-response path (tests / old clients). Prefer separate view=balances.
+      let balances = !bust ? cacheGet("balances:current") : null;
+      if (!balances) {
+        const [profiles, companionProfiles] = await Promise.all([
+          loadProfilesForStats(),
+          loadCompanionProfilesForStats(),
+        ]);
+        balances = await loadCompanionBalanceReport(profiles, companionProfiles);
+        cacheSet("balances:current", balances);
+      }
+      applyBalanceTotals(stats, balances);
+    } else {
+      const balHit = cacheGet("balances:current");
+      if (balHit) applyBalanceTotals(stats, balHit);
+      else {
+        stats.companionBalancePending = true;
+        stats.companionWithdrawable = null;
+        stats.companionPendingSettlement = null;
+      }
+    }
+
+    res.setHeader("Server-Timing", `total;dur=${Date.now() - t0};desc="stats-${cacheState}"`);
+    return json(res, 200, { ok: true, configured: true, stats, filter, definitions, cache: cacheState });
   } catch (error) {
     return json(res, error.status || 500, { ok: false, message: error.message || "后台统计接口异常。" });
   }

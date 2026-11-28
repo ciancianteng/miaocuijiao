@@ -2966,24 +2966,46 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, readVisualViewpo
       return false;
     }).slice(0,8);
   }
+  var companionSearchTimer=null;
+  var companionSearchSeq=0;
+  var companionSearchComposing=false;
   function renderCompanionResults(input){
     var box=root.querySelector('[data-cs-companion-results]');
     if(!box)return;
     if(!input||!String(input.value||'').trim()){box.hidden=true;box.innerHTML='';return;}
     var q=String(input.value||'').trim();
-    var items=filterCompanions(q);
-    if(!items.length){
-      box.hidden=false;
-      box.innerHTML='<button type="button" class="cs-nc-person" data-start-companion="'+esc(q)+'">'+
-        '<span class="cs-nc-avatar cs-nc-avatar-fallback">?</span>'+
-        '<span class="cs-nc-person-main"><strong class="cs-nc-name">查找「'+esc(q)+'」</strong>'+
-        '<span class="cs-nc-meta">按编号 / 昵称打开会话</span></span></button>';
-      return;
-    }
+    var seq=++companionSearchSeq;
     box.hidden=false;
-    box.innerHTML=items.map(function(p){
-      return newChatPersonCardHtml('companion',p,'').replace('data-new-chat-pick=','data-start-companion=');
-    }).join('');
+    box.innerHTML='<p class="cs-muted cs-nc-empty-hint">搜索中…</p>';
+    api('search_proxy_people',{role:'companion',q:q,limit:12}).then(function(res){
+      if(seq!==companionSearchSeq)return;
+      var items=(res&&res.items)||[];
+      if(!items.length){
+        box.innerHTML='<button type="button" class="cs-nc-person" data-start-companion="'+esc(q)+'">'+
+          '<span class="cs-nc-avatar cs-nc-avatar-fallback">?</span>'+
+          '<span class="cs-nc-person-main"><strong class="cs-nc-name">未找到「'+esc(q)+'」</strong>'+
+          '<span class="cs-nc-meta">可输入完整编号后再试</span></span></button>';
+        return;
+      }
+      box.innerHTML=items.map(function(p){
+        return newChatPersonCardHtml('companion',p,'').replace('data-new-chat-pick=','data-start-companion=');
+      }).join('');
+    }).catch(function(){
+      if(seq!==companionSearchSeq)return;
+      // Fallback to bootstrapped list only if API fails.
+      var local=filterCompanions(q);
+      if(local.length){
+        box.innerHTML=local.map(function(p){
+          return newChatPersonCardHtml('companion',p,'').replace('data-new-chat-pick=','data-start-companion=');
+        }).join('');
+        return;
+      }
+      box.innerHTML='<p class="cs-muted cs-nc-empty-hint">搜索失败，请重试</p>';
+    });
+  }
+  function scheduleCompanionResults(input){
+    clearTimeout(companionSearchTimer);
+    companionSearchTimer=setTimeout(function(){renderCompanionResults(input);},400);
   }
   function resolveOrderIdForCompanion(companionId){
     var cid=String(companionId||'').trim();
@@ -3140,7 +3162,10 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, readVisualViewpo
       }
       box.innerHTML=skipHtml+list.map(function(o){return newChatOrderCardHtml(o,selected.orderId);}).join('');
     }
-    function paintResults(){
+    var newChatSearchTimer=null;
+    var newChatSearchSeq=0;
+    var newChatComposing=false;
+    function paintResultsLocal(){
       var q=String((rootModal.querySelector('[data-new-chat-search]')||{}).value||'').trim().toLowerCase();
       var role=selected.role;
       var list=role==='companion'?companions:bosses;
@@ -3158,6 +3183,35 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, readVisualViewpo
       }
       box.innerHTML=items.map(function(p){return newChatPersonCardHtml(role,p,selected.id);}).join('');
     }
+    function paintResults(){
+      var input=rootModal.querySelector('[data-new-chat-search]');
+      var q=String((input&&input.value)||'').trim();
+      var role=selected.role;
+      var box=rootModal.querySelector('[data-new-chat-results]');
+      if(!box)return;
+      if(!q){
+        paintResultsLocal();
+        return;
+      }
+      var seq=++newChatSearchSeq;
+      box.innerHTML='<p class="cs-muted cs-nc-empty-hint">搜索中…</p>';
+      api('search_proxy_people',{role:role,q:q,limit:12}).then(function(res){
+        if(seq!==newChatSearchSeq)return;
+        var items=(res&&res.items)||[];
+        if(!items.length){
+          box.innerHTML='<p class="cs-muted cs-nc-empty-hint">未找到匹配'+(role==='companion'?'陪玩':'老板')+'。可输入完整编号后直接创建。</p>';
+          return;
+        }
+        box.innerHTML=items.map(function(p){return newChatPersonCardHtml(role,p,selected.id);}).join('');
+      }).catch(function(){
+        if(seq!==newChatSearchSeq)return;
+        paintResultsLocal();
+      });
+    }
+    function scheduleNewChatSearch(){
+      clearTimeout(newChatSearchTimer);
+      newChatSearchTimer=setTimeout(function(){paintResults();},400);
+    }
     function syncUi(){
       rootModal.querySelectorAll('[data-new-chat-role]').forEach(function(btn){
         btn.classList.toggle('is-active',btn.getAttribute('data-new-chat-role')===selected.role);
@@ -3171,8 +3225,28 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, readVisualViewpo
       paintResults();
       paintOrders();
     }
+    rootModal.addEventListener('compositionstart',function(ev){
+      if(ev.target.matches('[data-new-chat-search]'))newChatComposing=true;
+    });
+    rootModal.addEventListener('compositionend',function(ev){
+      if(ev.target.matches('[data-new-chat-search]')){
+        newChatComposing=false;
+        scheduleNewChatSearch();
+        var btn=rootModal.querySelector('[data-new-chat-submit]');
+        var searchVal=String((rootModal.querySelector('[data-new-chat-search]')||{}).value||'').trim();
+        if(btn)btn.disabled=!(selected.id||searchVal);
+      }
+    });
     rootModal.addEventListener('input',function(ev){
-      if(ev.target.matches('[data-new-chat-search]'))syncUi();
+      if(ev.target.matches('[data-new-chat-search]')){
+        if(ev.isComposing||newChatComposing)return;
+        scheduleNewChatSearch();
+        var btn=rootModal.querySelector('[data-new-chat-submit]');
+        var searchVal=String((rootModal.querySelector('[data-new-chat-search]')||{}).value||'').trim();
+        if(btn)btn.disabled=!(selected.id||searchVal);
+        paintOrders();
+        return;
+      }
     });
     rootModal.addEventListener('click',function(ev){
       if(ev.target.closest('[data-close-modal]')||ev.target===rootModal){rootModal.remove();return;}
@@ -4317,7 +4391,7 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, readVisualViewpo
     }
     function schedulePeopleSearch(kind,rawQ){
       clearTimeout(searchTimers[kind]);
-      searchTimers[kind]=setTimeout(function(){runPeopleSearch(kind,rawQ);},300);
+      searchTimers[kind]=setTimeout(function(){runPeopleSearch(kind,rawQ);},400);
     }
     function pickBossFromSearch(btn){
       var id=btn.getAttribute('data-id')||'';
@@ -4902,6 +4976,15 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, readVisualViewpo
       syncComposerEnabled();
     });
   }
+  document.addEventListener('compositionstart',function(e){
+    if(e.target&&e.target.matches&&e.target.matches('[data-cs-companion-search]'))companionSearchComposing=true;
+  },true);
+  document.addEventListener('compositionend',function(e){
+    if(e.target&&e.target.matches&&e.target.matches('[data-cs-companion-search]')){
+      companionSearchComposing=false;
+      scheduleCompanionResults(e.target);
+    }
+  },true);
   document.addEventListener('input',function(e){
     if(!e.target||!e.target.closest)return;
     if(e.target.closest('form[data-login]'))captureLoginDraft();
@@ -4917,7 +5000,8 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, readVisualViewpo
       syncKeyboardInset();
     }
     if(e.target.matches&&e.target.matches('[data-cs-companion-search]')){
-      renderCompanionResults(e.target);
+      if(e.isComposing||companionSearchComposing)return;
+      scheduleCompanionResults(e.target);
     }
     if(e.target.matches&&e.target.matches('[data-order-query]')){
       state.orderQuery=String(e.target.value||'');
@@ -4962,8 +5046,13 @@ import { captureChatScroll, restoreChatScroll, keyboardInsetPx, readVisualViewpo
       e.preventDefault();
       var q=String(e.target.value||'').trim();
       if(!q)return;
-      var items=filterCompanions(q);
-      openCompanionChat(items.length===1?items[0].id:q);
+      api('search_proxy_people',{role:'companion',q:q,limit:5}).then(function(res){
+        var items=(res&&res.items)||[];
+        openCompanionChat(items.length===1?items[0].id:q);
+      }).catch(function(){
+        var items=filterCompanions(q);
+        openCompanionChat(items.length===1?items[0].id:q);
+      });
       return;
     }
     var input=e.target&&e.target.closest&&e.target.closest(COMPOSER_SEL);
